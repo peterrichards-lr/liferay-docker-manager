@@ -1,3 +1,8 @@
 7.4-common/activation-key-dxpdevelopment-7.4-developeractivationkeys.xml
 .venv/
 .gemini/settings.json
+__pycache__/
+*.tmp
+/client-extensions/
+common/activation-key-*.xml
+/temp

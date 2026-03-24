@@ -1,9 +1,19 @@
 # Liferay Docker Scripts - Project Context
 
 ## Project Overview
-This repository contains automation tools for managing Liferay DXP instances using Docker. It provides a Python-based manager with shell and batch wrappers, along with standalone utility scripts for snapshots and restoration.
+
+This repository contains automation tools for managing Liferay DXP instances using Docker. It provides a Python-based manager (`ldm`) with shell and batch wrappers, designed for **high-velocity evaluation and demonstration**.
+
+## Project Intent
+
+- **Sandbox Environment**: This tool is designed for quickly standing up environments to evaluate Liferay, test new features, and build demonstrations.
+- **Multi-Instance Session Isolation**: It allows running multiple Liferay instances side-by-side on the same host without session cross-talk by managing unique session cookie names and virtual hostnames.
+- **State Persistence & Recovery**: It provides robust snapshot (backup/restore) capabilities to save a "gold-standard" demo state and recover it instantly.
+- **Not for Production**: It is **not** production-grade and should not be used for hosting live services.
+- **Not a Development Platform**: It does **not** replace Liferay's official development processes or tools (like Workspace or Blade). It is a consumer of development artifacts, not a generator of them.
 
 ## Core Mandates
+
 - **Logic Source of Truth**: `liferay_docker.py` is the primary source of business logic for container management.
 - **Platform Parity**: Ensure that changes to `.sh` scripts (for macOS/Linux) have equivalent updates in `.bat` scripts (for Windows) where applicable.
 - **Idempotency**: All scripts must handle existing containers, volumes, and network configurations gracefully (e.g., using `docker ps -a` checks).
@@ -25,23 +35,41 @@ This repository contains automation tools for managing Liferay DXP instances usi
   - **Backtick Escaping**: Traefik labels containing Host rules must use escaped backticks (e.g., `Host(\`${HOST_NAME}\`)`) to prevent Zsh from interpreting the hostname as a sub-command.
   - **macOS Socat Bridge**: To resolve connectivity issues between Docker and sidecars (like Traefik) on macOS M1/M2 architectures, scripts must use `alpine/socat` to bridge the Unix socket to a TCP endpoint within the shared network.
 - **Snapshot Integrity**: Snapshot tools must verify the state of `data/document_library` and database connectivity before proceeding. DB dumps must be verified for reachability and authentication using dummy queries (e.g., `SELECT 1`) before archiving files. Success must be confirmed via process return codes and resulting archive integrity (non-zero size).
+- **Dynamic Logging**: Support hierarchical logging configuration via `logging.json`.
+  - **Bundles**: Generate `[symbolic-name]-log4j-ext.xml` in `osgi/log4j/` with `monitorInterval` for hot-reloads.
+  - **Portal**: Generate `portal-log4j-ext.xml` in `classes/META-INF/` using `references/portal-log4j.xml` as a template (if present). Include the `<Null name="XML_FILE" />` appender patch.
+- **Graceful Termination**: All Liferay services must include a `stop_grace_period: 60s` in their Compose configuration. The utility must explicitly pass the `-t 60` timeout flag to `docker compose stop` and `docker compose down` commands.
+- **Restart logic**: The `restart` command and automated logging restarts must suppress the "Re-init?" project prompt using the `is_restart` context flag.
+- **Browser Launcher**: Support automatic browser launching based on the `browser.launcher.url` property in the project's `portal-ext.properties`.
+  - **Absent**: Launch default URL (`/web/guest/home`).
+  - **Empty**: Suppress browser launch.
+  - **Value**: Replace protocol/host/port with the active project URL and launch.
+- **Common Asset Synchronization**: Automatically synchronize files from the global `common/` folder (e.g., `*.config`, `*.cfg`, `*.xml`, `*.lpkg`) to project subdirectories. Use a `.liferay-docker.deployed` tracking file to ensure each asset is only deployed once, preventing redundant processing by Liferay's scanners.
+- **Double-Underscore Convention**: Use Liferay's preferred `__` (double-underscore) convention for all system-generated environment variables (e.g., `LIFERAY_VIRTUAL__HOSTS__VALID__HOSTS`) to ensure correct property mapping and eliminate "Unable to decode part" warnings in logs.
+- **UI Interaction Standards**:
+  - **Standardized Prompts**: All binary questions must support the `(y/n/q)` format, where `q` triggers an immediate abort.
+  - **Sanitization**: Automatically trim leading and trailing whitespace from all user inputs.
 - **Security Safeguards**:
   - **Zip Slip Protection**: Extractions must validate all member paths against the target root to prevent path traversal.
   - **Property Management**: `portal-ext.properties` must be updated using regex-based in-place replacements to avoid duplicate key entries.
 - **Database Support**: Maintain support for Hypersonic (default), PostgreSQL, and MySQL.
 
 ## Engineering Standards
+
 - **Liferay Versioning**: Adhere to Liferay 7.4+ tag formats (`YYYY.qX.N`).
 - **File System Structure**: Respect the expected directory layout:
   - `deploy/`: Liferay deployment folder.
   - `files/`: Configuration files (e.g., `portal-ext.properties`).
   - `data/`: Persistent Liferay data (document library, etc.).
   - `osgi/`: Client extensions and state.
+
 ## UI & Interaction Consistency
+
 - **Background Startup**: Containers start in detached mode by default. Users must use `--follow` or `-f` to attach to logs.
 - **UI Consistency**: Use the `UI` helper class in Python and `terminal-colors.txt` in shell scripts for consistent logging.
 
 ## Definition of Done
+
 - **Manual Verification**:
   1. Run `liferay-docker.sh run` to ensure container creation and startup.
   2. Verify volume mounting by checking `files/portal-ext.properties` inside the container.
@@ -51,24 +79,34 @@ This repository contains automation tools for managing Liferay DXP instances usi
 ## Gotchas & Engineering Insights
 
 ### 1. macOS M1/M2/M3 Socket Isolation
+
 - **Issue**: Docker Desktop for Mac uses a symlink at `/var/run/docker.sock` that containers cannot follow, leading to empty "Error response from daemon" messages.
 - **Fix**: Use an `alpine/socat` sidecar container to bridge the real socket path (`~/.docker/run/docker.sock`) to a TCP endpoint within the shared Docker network.
 
 ### 2. Traefik v3 Parsing
+
 - **Issue**: Traefik v3 changed its rule parser. Using `Host("domain.com")` results in 404s or "illegal rune" errors.
 - **Fix**: Always use backticks for Host rules in labels: `Host(\`domain.com\`)`.
 
 ### 3. Docker API Negotiation
+
 - **Issue**: Modern Docker versions (v29+) have deprecated older API handshakes, which can break sidecar communication.
 - **Fix**: Explicitly set the environment variable `DOCKER_API_VERSION=1.44` for any container that needs to interact with the Docker API.
 
 ### 4. The `sudo` Environment Gap
+
 - **Issue**: Running scripts with `sudo` often clears user-level environment variables and changes `$HOME` to `/var/root`, causing path and configuration failures.
-- **Fix**: 
+- **Fix**:
   - Use `REAL_HOME=$(eval echo "~${SUDO_USER:-$USER}")` in shell scripts to find the actual user's home directory.
   - In Python, always include default values or perform existence checks (e.g., `if var and var.isdigit()`) before type casting to prevent crashes if `sudo` strips an expected variable.
 
-### 5. Snapshotting Gotchas
+### 5. Python `hash()` Randomization
+
+- **Issue**: Since Python 3.3, the built-in `hash()` function is randomized per-process. Using it for Docker Compose signatures causes containers to restart on every execution, even if the configuration is identical.
+- **Fix**: Always use a stable hashing algorithm like `hashlib.md5()` for generating configuration signatures.
+
+### 6. Snapshotting Gotchas
+
 - **Atomic Snapshots & Volume Locking**: Stopping the container before snapshotting is critical for data integrity and host-side access. On macOS (VirtioFS), an active container can prevent tools like `tar` from reading OSGi state files or database locks.
 - **Database Pre-flighting**: Scripts must perform a "Fast-Fail" check (e.g., `SELECT 1`) via `psql` or `mysql` before starting file archival. This prevents wasting time on large file operations if the database is unreachable or credentials have expired.
 - **Standard vs. Cloud Layout**:
