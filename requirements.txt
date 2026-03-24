@@ -1,0 +1,2 @@
+# No external dependencies currently required, but this ensures a clean environment
+# You can add packages here (like requests, packaging) if needed in the future
