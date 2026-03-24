@@ -1,0 +1,32 @@
+##
+# Liferay Docker Scripts - Example Hosts File
+#
+# This file demonstrates how to map multiple Liferay instances to unique 
+# loopback addresses. This allows you to run multiple portals on port 8080 
+# and multiple Elasticsearch sidecars on port 9200 without collisions.
+##
+
+# Standard Loopback
+127.0.0.1       localhost
+::1             localhost
+255.255.255.255 broadcasthost
+
+# Instance 1 - primary.liferay.local
+# Usage: ./liferay-docker.sh run --host-name primary.liferay.local -p 8080
+127.0.0.1       primary.liferay.local
+
+# Instance 2 - secondary.liferay.local
+# Usage: ./liferay-docker.sh run --host-name secondary.liferay.local -p 8080
+127.0.0.2       secondary.liferay.local
+
+# Instance 3 - development.liferay.local (Custom IP)
+# Usage: ./liferay-docker.sh run --host-name development.liferay.local -p 8080
+127.0.0.74      development.liferay.local
+
+# --- macOS NOTE ---
+# On macOS, if you use a loopback IP other than 127.0.0.1, you must also alias it:
+# sudo ifconfig lo0 alias 127.0.0.74 up
+# ------------------
+
+# Infrastructure
+127.0.0.1       kubernetes.docker.internal

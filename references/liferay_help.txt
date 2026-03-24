@@ -1,0 +1,118 @@
+=== LDM Help Reference ===
+usage: liferay_docker.py [-h] [--select] [-y]
+                         {run,stop,restart,down,infra-down,logs,deploy,env,log-level,browser,snapshots,search-status,snapshot,restore,clear-cache,doctor} ...
+
+Liferay Docker Manager (ldm) - A high-velocity sandbox for evaluation and
+demonstration.
+
+positional arguments:
+  {run,stop,restart,down,infra-down,logs,deploy,env,log-level,browser,snapshots,search-status,snapshot,restore,clear-cache,doctor}
+    infra-down          Bring down shared infrastructure
+    log-level           Manage Liferay logging levels via logging.json
+    browser             Manage browser launch URL
+
+options:
+  -h, --help            show this help message and exit
+  --select
+  -y, --non-interactive
+                        Execute without prompting for user input
+\n=== Sub-command: run ===
+usage: liferay_docker.py run [-h] [-t TAG] [-p PROJECT_FLAG] [-c CONTAINER]
+                             [--host-name HOST_NAME] [--ssl] [--no-ssl]
+                             [--force-ssl] [--port PORT]
+                             [--db {postgresql,mysql,hypersonic}]
+                             [--jdbc-username JDBC_USERNAME]
+                             [--jdbc-password JDBC_PASSWORD]
+                             [--release-type {any,u,lts,qr}] [--portal]
+                             [--refresh] [--sidecar] [--mount-logs]
+                             [--gogo-port GOGO_PORT] [-f] [--env ENV]
+                             [project]
+
+positional arguments:
+  project               Project name or path
+
+options:
+  -h, --help            show this help message and exit
+  -t, --tag TAG         Liferay Docker image tag (e.g. 2025.q4.0)
+  -p, --project PROJECT_FLAG
+                        Project name or path
+  -c, --container CONTAINER
+                        Docker container name
+  --host-name HOST_NAME
+                        Custom hostname for the instance
+  --ssl                 Enable SSL support
+  --no-ssl              Disable SSL support
+  --force-ssl           Force regeneration of SSL certificates
+  --port PORT           HTTP port for Liferay (default: 8080)
+  --db {postgresql,mysql,hypersonic}
+                        Database type
+  --jdbc-username JDBC_USERNAME
+                        JDBC username
+  --jdbc-password JDBC_PASSWORD
+                        JDBC password
+  --release-type {any,u,lts,qr}
+                        Liferay release type filter
+  --portal              Use Liferay Portal (CE) images instead of DXP
+  --refresh             Force refresh of Docker Hub tag cache
+  --sidecar             Force use of local search sidecar instead of shared
+                        OpenSearch
+  --mount-logs          Mount the logs folder to the container
+  --gogo-port GOGO_PORT
+                        Expose Gogo shell on this host port
+  -f, --follow          Follow container logs after startup
+  --env ENV             Additional environment variables (KEY=VALUE)
+\n=== Sub-command: restart ===
+usage: liferay_docker.py restart [-h] [-p PROJECT_FLAG] [project]
+
+positional arguments:
+  project               Project name or path
+
+options:
+  -h, --help            show this help message and exit
+  -p, --project PROJECT_FLAG
+                        Project name or path
+\n=== Sub-command: down ===
+usage: liferay_docker.py down [-h] [-p PROJECT_FLAG] [-v] [-d] [--infra]
+                              [project]
+
+positional arguments:
+  project               Project name or path
+
+options:
+  -h, --help            show this help message and exit
+  -p, --project PROJECT_FLAG
+                        Project name or path
+  -v, --volumes
+  -d, --delete          Delete the project folder
+  --infra               Also bring down shared infrastructure
+\n=== Sub-command: log-level ===
+usage: liferay_docker.py log-level [-h] [-p PROJECT_FLAG] [-r] [-l]
+                                   [project] [bundle] [category] [level]
+
+positional arguments:
+  project               Project name or path
+  bundle                Symbolic Bundle Name or 'portal'
+  category              Logger category (e.g. com.liferay.portal)
+  level                 Log level (DEBUG|INFO|WARN|ERROR)
+
+options:
+  -h, --help            show this help message and exit
+  -p, --project PROJECT_FLAG
+                        Project name or path
+  -r, --remove          Remove the specified category
+  -l, --list            List current custom logging levels
+\n=== Sub-command: browser ===
+usage: liferay_docker.py browser [-h] [-p PROJECT_FLAG] [-r] [-l]
+                                 [project] [url]
+
+positional arguments:
+  project               Project name or path
+  url                   The URL to launch (leave empty to suppress, use
+                        'DEFAULT' to remove)
+
+options:
+  -h, --help            show this help message and exit
+  -p, --project PROJECT_FLAG
+                        Project name or path
+  -r, --remove          Remove the property entirely
+  -l, --list            Show current browser launcher setting
