@@ -351,7 +351,14 @@ colima start --cpu 4 --memory 8
 
 ## Interactive Mode Tips
 
----
+- **Smart Project Detection**: `ldm` prioritizes project detection in this order:
+    1. Positional argument (e.g., `ldm run my-project`).
+    2. CLI flag (e.g., `ldm run -p my-project`).
+    3. The current working directory (if it's an LDM project).
+    4. An interactive list of all discovered projects.
+- **Quick Quit**: You can type `q` at any interactive prompt to safely abort the current command.
+- **Bypass Prompts**: Use the `-y` or `--non-interactive` flag to skip all confirmations and use default values. This is ideal for scripts and CI/CD pipelines.
+- **Tag Discovery**: When running `ldm run` without a version tag, the tool will offer to fetch the latest available tags from Docker Hub based on your release type preference (LTS, QR, etc.).
 
 ## License
 
