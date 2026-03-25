@@ -236,7 +236,11 @@ def main():
     }
 
     if args.command in cmds:
-        cmds[args.command]()
+        try:
+            cmds[args.command]()
+        except KeyboardInterrupt:
+            print(f"\n{UI.WHITE}Aborted.{UI.COLOR_OFF}")
+            return
 
         # Passive update check (silent, respects cache)
         if args.command != "update-check":
