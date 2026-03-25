@@ -41,7 +41,7 @@ class ConfigHandler:
             ]
             return (
                 '<?xml version="1.0"?>\n'
-                '<Configuration status="WARN" strict="true">\n'
+                '<Configuration monitorInterval="5" status="WARN" strict="true">\n'
                 "    <Appenders>\n"
                 '        <Null name="XML_FILE" />\n'
                 "    </Appenders>\n"
@@ -52,6 +52,11 @@ class ConfigHandler:
             )
 
         content = template_file.read_text()
+        if "monitorInterval" not in content:
+            content = re.sub(
+                r"(<Configuration\s+[^>]*)>", r'\1 monitorInterval="5">', content
+            )
+
         content = re.sub(r"(<Appenders>)", r'\1\n\t\t<Null name="XML_FILE" />', content)
         content = re.sub(
             r'\t\t<Appender [^>]*name="XML_FILE"[^>]*>.*?</Appender>\n?',
@@ -386,8 +391,17 @@ class ConfigHandler:
             if not flat:
                 UI.info("No custom levels.")
             else:
+                colors = {
+                    "DEBUG": UI.CYAN,
+                    "INFO": UI.GREEN,
+                    "WARN": UI.YELLOW,
+                    "ERROR": UI.RED,
+                    "FATAL": UI.BRED,
+                    "OFF": UI.WHITE,
+                }
                 for k, v in sorted(flat.items()):
-                    print(f"  {k} = {v}")
+                    color = colors.get(v, UI.WHITE)
+                    print(f"  {k} = {color}{v}{UI.COLOR_OFF}")
             return
 
         if not bundle and not self.non_interactive:
@@ -399,8 +413,11 @@ class ConfigHandler:
             if not bundle:
                 return
             category = UI.ask(f"Category for {bundle} (empty for root)").strip()
-            if not remove:
-                level = UI.ask("Level (DEBUG|INFO|WARN|ERROR)", "DEBUG").strip()
+
+        if not level and not remove and not self.non_interactive and bundle:
+            level = UI.ask(
+                f"Level for {bundle} (DEBUG|INFO|WARN|ERROR)", "DEBUG"
+            ).strip()
 
         if bundle:
             key = bundle.lower() if bundle.lower() == "portal" else bundle

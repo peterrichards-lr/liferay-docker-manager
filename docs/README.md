@@ -92,18 +92,24 @@ ldm.bat --help
 
 ## Quick Start
 
+> [!IMPORTANT]
+> **Binary vs Script**: If you have installed the **Standalone Binary**, use `ldm` in your commands. If you are using the **Manual Installation**, use `./ldm` (on Linux/macOS) or `ldm.bat` (on Windows) from the root of this repository.
+
 ```bash
 # Import assets from an existing Liferay Workspace
-./ldm import /path/to/workspace --project my-project
+ldm import /path/to/workspace --project my-project
 
 # Run a project (automatically detects folder if you are inside it)
-./ldm run
+ldm run
+
+# Monitor a workspace for automatic hot-deployments (requires 'watchdog')
+ldm monitor /path/to/workspace
 
 # Scale the Liferay service to 2 nodes for clustering tests
-./ldm scale my-project liferay=2
+ldm scale my-project liferay=2
 
 # View logs for a specific project
-./ldm logs my-project
+ldm logs my-project
 ```
 
 ---
@@ -115,7 +121,7 @@ ldm.bat --help
 Display a tabulated overview of all initialized LDM sandbox environments.
 
 ```bash
-./ldm list
+ldm list
 ```
 
 ### `import`
@@ -126,13 +132,13 @@ Scaffold a new project from an existing workspace. Supports standard folders, Li
 
 ```bash
 # Simple import from a local workspace folder
-./ldm import ~/repos/my-workspace my-project
+ldm import ~/repos/my-workspace my-project
 
 # Full Stack Restore: Build modules and restore a Cloud backup (DB + Data)
-./ldm import ./workspace my-cloud-restore --build --backup-dir ./backups/uat-state
+ldm import ./workspace my-cloud-restore --build --backup-dir ./backups/uat-state
 
 # Import directly from a source archive
-./ldm import ./workspace-main.zip
+ldm import ./workspace-main.zip
 ```
 
 ### `run`
@@ -141,10 +147,18 @@ Initialize and start a project stack.
 
 ```bash
 # Run with a specific tag and virtual hostname
-./ldm run --tag 2025.q1.0 --host-name demo.local
+ldm run --tag 2025.q1.0 --host-name demo.local
 
 # Interactive run (will prompt for version and project name)
-./ldm run
+ldm run
+```
+
+### `monitor`
+
+Continuously monitor a Liferay workspace and automatically sync built artifacts (`.jar`, `.war`, `.zip`) to your running project.
+
+```bash
+ldm monitor [path_to_workspace] --delay 2.0
 ```
 
 ### `logs`
@@ -152,25 +166,28 @@ Initialize and start a project stack.
 View real-time logs. Supports filtering by project and specific service.
 
 ```bash
-./ldm logs [project] [service]
+ldm logs [project] [service]
 
 # Examples:
-./ldm logs                  # All logs for current project
-./ldm logs demo             # All logs for 'demo' project
-./ldm logs demo liferay     # Only Liferay logs for 'demo'
-./ldm logs demo my-extension # Only logs for a specific client extension
+ldm logs                  # All logs for current project
+ldm logs demo             # All logs for 'demo' project
+ldm logs demo liferay     # Only Liferay logs for 'demo'
+ldm logs demo my-extension # Only logs for a specific client extension
 ```
 
-### `restart`
+### `stop`, `restart`, `down`
 
-Restart a project or a specific service.
+Manage the lifecycle of a project or a specific service.
 
 ```bash
-./ldm restart [project] [service]
+ldm stop [project] [service]      # Stop containers gracefully
+ldm restart [project] [service]   # Stop and then start
+ldm down [project] [service]      # Remove containers (and optionally -v volumes)
 
 # Examples:
-./ldm restart               # Full stack restart (graceful stop + run)
-./ldm restart demo liferay  # Surgical restart of just the Liferay container
+ldm restart               # Full stack restart (graceful stop + run)
+ldm restart demo liferay  # Surgical restart of just the Liferay container
+ldm down --volumes        # Tear down stack and clear all database/data state
 ```
 
 ### `deploy`
@@ -178,11 +195,11 @@ Restart a project or a specific service.
 Hot-deploy built artifacts or rebuild extension images.
 
 ```bash
-./ldm deploy [project] [service] --rebuild
+ldm deploy [project] [service] --rebuild
 
 # Examples:
-./ldm deploy                # Sync all artifacts and refresh stack
-./ldm deploy demo my-ext --rebuild  # Rebuild and restart one extension
+ldm deploy                # Sync all artifacts and refresh stack
+ldm deploy demo my-ext --rebuild  # Rebuild and restart one extension
 ```
 
 ### `scale`
@@ -190,11 +207,11 @@ Hot-deploy built artifacts or rebuild extension images.
 Scale services within a project for multi-node simulation and clustering tests.
 
 ```bash
-./ldm scale [project] service=count
+ldm scale [project] service=count
 
 # Examples:
-./ldm scale demo liferay=2  # Scale Liferay to 2 nodes (enables clustering)
-./ldm scale demo my-ext=3   # Scale a client extension to 3 nodes
+ldm scale demo liferay=2  # Scale Liferay to 2 nodes (enables clustering)
+ldm scale demo my-ext=3   # Scale a client extension to 3 nodes
 ```
 
 ### `snapshot` & `restore`
@@ -205,13 +222,11 @@ Backup and recover project states, including files, DB, and search indices.
 
 ```bash
 # Create a named snapshot
-./ldm snapshot demo --name "post-setup-gold-standard"
+ldm snapshot demo --name "post-setup-gold-standard"
 
 # List snapshots for a project
-./ldm snapshots demo
-
-# Restore to a specific snapshot index
-./ldm restore demo --index 1
+ldm restore demo          # No index provided = list all
+ldm restore demo --index 1 # Restore to index 1
 ```
 
 ### `shell` & `gogo`
@@ -220,13 +235,13 @@ Jump into a container shell or connect to the OSGi Gogo console.
 
 ```bash
 # Enter bash in the Liferay container
-./ldm shell demo
+ldm shell demo
 
 # Enter bash in an extension container
-./ldm shell demo my-node-service
+ldm shell demo my-node-service
 
 # Connect to the Gogo shell (if port was exposed during run)
-./ldm gogo demo
+ldm gogo demo
 ```
 
 ### `env`
@@ -234,9 +249,9 @@ Jump into a container shell or connect to the OSGi Gogo console.
 Manage persistent environment variables in project metadata.
 
 ```bash
-./ldm env [project] KEY=VALUE
-./ldm env [project] --remove KEY
-./ldm env                   # Interactive manager (view and edit all)
+ldm env [project] KEY=VALUE
+ldm env [project] --remove KEY
+ldm env                   # Interactive manager (view and edit all)
 ```
 
 ### `log-level`
@@ -244,8 +259,14 @@ Manage persistent environment variables in project metadata.
 Manage Liferay internal logging levels (Log4j2) without restarts.
 
 ```bash
-./ldm log-level [project] portal com.liferay.portal DEBUG
-./ldm log-level --list
+# List current custom levels
+ldm log-level --list
+
+# Set a specific category to DEBUG
+ldm log-level [project] --bundle portal --category com.liferay.portal --level DEBUG
+
+# Interactive configuration
+ldm log-level
 ```
 
 ### `doctor`
@@ -253,15 +274,17 @@ Manage Liferay internal logging levels (Log4j2) without restarts.
 Verify host environment health, Docker resources (CPUs/Memory), and project dependencies.
 
 ```bash
-./ldm doctor
+ldm doctor
 ```
 
-### `prune`
+### `prune`, `infra-down`, `clear-cache`
 
-Identify and remove orphaned Docker containers and temporary files from projects that have been deleted.
+Identify and remove orphaned resources and maintenance.
 
 ```bash
-./ldm prune
+ldm prune                 # Remove orphaned containers and temp files
+ldm infra-down            # Tear down global proxy and search services
+ldm clear-cache           # Clear the Docker tag cache (~/.liferay_docker_cache.json)
 ```
 
 ---
@@ -274,19 +297,25 @@ Identify and remove orphaned Docker containers and temporary files from projects
 
 ---
 
-## Interactive Mode Tips
-
-- **Project Detection**: `ldm` prioritizes positional arguments, then CLI flags, then your current directory. If no project is found, it will show you a list to choose from.
-- **Quitting**: Type `q` at any prompt to abort.
-
----
-
 ## Prerequisites
 
 - **Docker Engine**: Docker Desktop, Colima, or native WSL2.
-- **Resources**: Recommended 4 CPUs and 8GB RAM allocated to Docker.
-- **Python**: 3.10+
+- **Resources**: Recommended **4 CPUs and 8GB RAM** allocated to Docker.
+- **Python**: 3.10+ (if not using binary)
 - **mkcert**: (Optional) For automated local SSL.
+
+### Increasing Resources in Colima
+
+If `ldm doctor` reports insufficient resources in Colima, you can increase them with these commands:
+
+```bash
+colima stop
+colima start --cpu 4 --memory 8
+```
+
+---
+
+## Interactive Mode Tips
 
 ---
 

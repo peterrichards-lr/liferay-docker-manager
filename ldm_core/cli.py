@@ -106,6 +106,24 @@ def main():
     gogo.add_argument("project", nargs="?")
     gogo.add_argument("-p", "--project", dest="project_flag")
 
+    log_level = subparsers.add_parser("log-level")
+    log_level.add_argument("project", nargs="?")
+    log_level.add_argument("-p", "--project", dest="project_flag")
+    log_level.add_argument("-b", "--bundle")
+    log_level.add_argument("-c", "--category")
+    log_level.add_argument(
+        "-l", "--level", choices=["DEBUG", "INFO", "WARN", "ERROR", "FATAL", "OFF"]
+    )
+    log_level.add_argument("--remove", action="store_true")
+    log_level.add_argument("--list", action="store_true")
+
+    browser = subparsers.add_parser("browser")
+    browser.add_argument("project", nargs="?")
+    browser.add_argument("-p", "--project", dest="project_flag")
+    browser.add_argument("-u", "--url")
+    browser.add_argument("--remove", action="store_true")
+    browser.add_argument("--list", action="store_true")
+
     scale = subparsers.add_parser("scale")
     scale.add_argument("project", nargs="?")
     scale.add_argument("service_scale", nargs="+")
@@ -132,6 +150,7 @@ def main():
         "restore",
         "import",
         "scale",
+        "log-level",
     ]
     if args.command in docker_required and not manager.check_docker():
         UI.die("Docker not accessible.")
@@ -159,6 +178,8 @@ def main():
         "list": lambda: manager.cmd_list(),
         "shell": lambda: manager.cmd_shell(project_id, getattr(args, "service", None)),
         "gogo": lambda: manager.cmd_gogo(project_id),
+        "log-level": lambda: manager.cmd_log_level(project_id),
+        "browser": lambda: manager.cmd_browser(project_id),
         "scale": lambda: manager.cmd_scale(project_id, args.service_scale),
         "prune": lambda: manager.cmd_prune(),
     }

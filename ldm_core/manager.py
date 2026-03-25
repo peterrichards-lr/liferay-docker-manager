@@ -64,6 +64,11 @@ class LiferayManager(
             "gogo_port",
             "samples",
             "service_scale",
+            "bundle",
+            "category",
+            "level",
+            "list",
+            "url",
         ]
         for attr in run_attrs:
             if not hasattr(self.args, attr):
