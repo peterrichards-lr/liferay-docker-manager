@@ -20,8 +20,11 @@ def download_samples(version, destination):
 
     try:
         UI.info(f"Downloading sample pack v{version}...")
+        if not url.startswith("https://"):
+            raise ValueError(f"Invalid URL scheme: {url}")
+
         req = Request(url, headers={"User-Agent": "ldm-cli"})
-        with urlopen(req, timeout=15) as response:
+        with urlopen(req, timeout=15) as response:  # nosec B310
             with open(temp_zip, "wb") as f:
                 shutil.copyfileobj(response, f)
 
@@ -137,6 +140,9 @@ def run_command(cmd, shell=False, capture_output=True, check=True, env=None, cwd
 
 def get_json(url):
     try:
+        if not url.startswith(("http://", "https://")):
+            raise ValueError(f"Invalid URL scheme: {url}")
+
         # Bandit: B310 (urllib-urlopen) is safe as we are fetching from trusted Liferay APIs.
         req = Request(url, headers={"User-Agent": "Mozilla/5.0"})
         with urlopen(req) as response:  # nosec B310
@@ -331,8 +337,11 @@ def check_for_updates(current_version, force=False):
 
     try:
         url = "https://api.github.com/repos/peterrichards-lr/liferay-docker-manager/releases/latest"
+        if not url.startswith("https://"):
+            raise ValueError(f"Invalid URL scheme: {url}")
+
         req = Request(url, headers={"User-Agent": "ldm-cli"})
-        with urlopen(req, timeout=5) as response:
+        with urlopen(req, timeout=5) as response:  # nosec B310
             res_data = json.loads(response.read().decode())
             latest_version = res_data.get("tag_name", "").lstrip("v")
             release_url = res_data.get("html_url")
