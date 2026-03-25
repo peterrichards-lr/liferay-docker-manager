@@ -1,14 +1,20 @@
 import argparse
 from ldm_core.ui import UI
 from ldm_core.manager import LiferayManager
+from ldm_core.constants import VERSION
+from ldm_core.utils import check_for_updates
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Liferay Docker Manager (ldm)")
+    parser = argparse.ArgumentParser(
+        description=f"Liferay Docker Manager (ldm) v{VERSION}"
+    )
     parser.add_argument("-v", "--verbose", action="store_true")
-    parser.add_argument("--select", action="store_true")
     parser.add_argument("-y", "--non-interactive", action="store_true")
     subparsers = parser.add_subparsers(dest="command")
+
+    # Command: update-check
+    subparsers.add_parser("update-check")
 
     # Command: run
     run = subparsers.add_parser("run")
@@ -221,10 +227,20 @@ def main():
             project_id, getattr(args, "env_id", None)
         ),
         "prune": lambda: manager.cmd_prune(),
+        "update-check": lambda: manager.cmd_update_check(force=True),
     }
 
     if args.command in cmds:
         cmds[args.command]()
+
+        # Passive update check (silent, respects cache)
+        if args.command != "update-check":
+            latest, url = check_for_updates(VERSION)
+            if latest and latest != VERSION:
+                print(
+                    f"\n{UI.BYELLOW}[!] A new version of LDM is available: v{latest}{UI.COLOR_OFF}"
+                )
+                print(f"    Download: {UI.CYAN}{url}{UI.COLOR_OFF}\n")
     else:
         parser.print_help()
 

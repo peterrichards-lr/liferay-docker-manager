@@ -263,3 +263,42 @@ def get_docker_socket_path():
     if system in ["windows", "win32"]:
         return "//./pipe/docker_engine"
     return "/var/run/docker.sock"
+
+
+def check_for_updates(current_version, force=False):
+    """Checks GitHub for the latest release of LDM."""
+    cache_file = Path.home() / ".ldm_update_cache"
+    cache_duration = 86400  # 24 hours
+    now = time.time()
+
+    if not force and cache_file.exists():
+        try:
+            data = json.loads(cache_file.read_text())
+            if now - data.get("last_check", 0) < cache_duration:
+                return data.get("latest_version"), data.get("url")
+        except Exception:
+            pass
+
+    try:
+        url = "https://api.github.com/repos/peterrichards-lr/liferay-docker-manager/releases/latest"
+        req = Request(url, headers={"User-Agent": "ldm-cli"})
+        with urlopen(req, timeout=5) as response:
+            res_data = json.loads(response.read().decode())
+            latest_version = res_data.get("tag_name", "").lstrip("v")
+            release_url = res_data.get("html_url")
+
+            # Update cache
+            cache_file.write_text(
+                json.dumps(
+                    {
+                        "last_check": now,
+                        "latest_version": latest_version,
+                        "url": release_url,
+                    }
+                )
+            )
+
+            return latest_version, release_url
+    except Exception:
+        # Silent fail for background checks
+        return None, None

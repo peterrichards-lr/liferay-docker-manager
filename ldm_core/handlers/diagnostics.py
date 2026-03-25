@@ -3,12 +3,28 @@ import sys
 import platform
 import shutil
 from ldm_core.ui import UI
-from ldm_core.constants import PROJECT_META_FILE, SCRIPT_DIR
-from ldm_core.utils import run_command, get_actual_home
+from ldm_core.constants import PROJECT_META_FILE, SCRIPT_DIR, VERSION
+from ldm_core.utils import run_command, get_actual_home, check_for_updates
 
 
 class DiagnosticsHandler:
     """Mixin for diagnostic and maintenance commands."""
+
+    def cmd_update_check(self, force=True):
+        UI.heading("LDM Update Check")
+        latest, url = check_for_updates(VERSION, force=force)
+        if not latest:
+            UI.error("Could not reach GitHub to check for updates.")
+            return
+
+        if latest == VERSION:
+            UI.success(f"You are up to date! (v{VERSION})")
+        else:
+            print(
+                f"{UI.BYELLOW}[!] A new version is available: v{latest}{UI.COLOR_OFF}"
+            )
+            print(f"    Current version: v{VERSION}")
+            print(f"    Download: {UI.CYAN}{url}{UI.COLOR_OFF}\n")
 
     def cmd_clear_cache(self):
         cache_path = get_actual_home() / ".liferay_docker_cache.json"
@@ -22,6 +38,13 @@ class DiagnosticsHandler:
         UI.heading("LDM Doctor - Environmental Health Check")
 
         results = []
+
+        # 0. Version Check
+        latest, _ = check_for_updates(VERSION)
+        if latest and latest != VERSION:
+            results.append(("LDM Version", f"v{VERSION} (v{latest} available)", "warn"))
+        else:
+            results.append(("LDM Version", f"v{VERSION} (Latest)", True))
 
         # 1. System Info
         results.append(("Python Version", sys.version.split()[0], True))
