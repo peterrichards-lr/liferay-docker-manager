@@ -266,6 +266,27 @@ ldm env [project] --remove KEY
 ldm env                   # Interactive manager (view and edit all)
 ```
 
+### `cloud-fetch` (Fetch Cloud State)
+
+Synchronize an **existing local project** with data, logs, and configuration from Liferay Cloud (LCP). This is used for local debugging and state hydration, not for importing source code.
+
+> [!NOTE]
+> **Prerequisite:** You must have the [LCP CLI](https://customer.liferay.com/documentation/cloud/latest/en/reference/command-line-tool.html) installed and authenticated (`lcp login`).
+
+```bash
+# 1. Discover available cloud environments
+ldm cloud-fetch --list-envs
+
+# 2. Stream remote logs from UAT to your local terminal
+ldm cloud-fetch [project] uat liferay --logs
+
+# 3. Pull the latest Cloud backups (DB/Data) into your local project snapshots
+ldm cloud-fetch [project] uat --download
+
+# 4. Sync Cloud environment variables to your local project metadata
+ldm cloud-fetch [project] uat --sync-env
+```
+
 ### `log-level`
 
 Manage Liferay internal logging levels (Log4j2) without restarts.
