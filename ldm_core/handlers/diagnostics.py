@@ -40,7 +40,7 @@ class DiagnosticsHandler:
         results = []
 
         # 0. Version Check
-        latest, _ = check_for_updates(VERSION)
+        latest, _ = check_for_updates(VERSION, force=True)
         if latest and latest != VERSION:
             results.append(("LDM Version", f"v{VERSION} (v{latest} available)", "warn"))
         else:
