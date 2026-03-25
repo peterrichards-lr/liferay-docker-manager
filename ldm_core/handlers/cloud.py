@@ -86,25 +86,37 @@ class CloudHandler:
             return
 
         project_meta = self.read_meta(root_path / PROJECT_META_FILE)
-        project_name = project_meta.get("project_name") or root_path.name
 
         # Use provided env_id or positional arg
         target_env = env_id or getattr(self.args, "env_id", None)
 
         if getattr(self.args, "list_envs", False) or not target_env:
-            UI.heading(f"Liferay Cloud Environments: {project_name}")
+            UI.heading("Available Liferay Cloud Environments")
             data = self._run_lcp_cmd(["list"])
             if data:
-                # Filter environments by project name if possible
-                for proj in data:
-                    if project_name in proj.get("name", "").lower() or not getattr(
-                        self.args, "list_envs", False
-                    ):
-                        UI.info(f"Project: {proj.get('name')} ({proj.get('id')})")
-                        for env in proj.get("environments", []):
+                # If we have a lot of data, we just print it all
+                # Some LCP CLI versions return a list of projects, others a flat list of project-envs
+                for item in data:
+                    p_name = item.get("name") or item.get("project", "Unknown")
+                    p_id = item.get("id") or item.get("projectId")
+
+                    if "environments" in item:
+                        # Hierarchical format
+                        UI.info(f"Project: {p_name} ({p_id})")
+                        for env in item.get("environments", []):
                             print(
                                 f"  - {UI.CYAN}{env.get('id')}{UI.COLOR_OFF} ({env.get('name')})"
                             )
+                    else:
+                        # Flat format (Project-Env as a single line)
+                        # Filter out infra if not explicitly requested? No, show all for now.
+                        status = item.get("status", "")
+                        status_color = (
+                            UI.GREEN if "running" in status.lower() else UI.WHITE
+                        )
+                        print(
+                            f"  - {UI.CYAN}{p_id:<30}{UI.COLOR_OFF} [{status_color}{status}{UI.COLOR_OFF}]"
+                        )
             return
 
         if getattr(self.args, "list_backups", False):
