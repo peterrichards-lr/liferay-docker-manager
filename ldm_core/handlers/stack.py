@@ -866,7 +866,7 @@ class StackHandler:
             UI.info("Waiting for Liferay to start...")
             start_time = time.time()
             is_ready = False
-            while time.time() - start_time < int(project_meta.get("timeout", 300)):
+            while time.time() - start_time < int(project_meta.get("timeout", 600)):
                 try:
                     res = run_command(["curl", "-k", "-I", access_url], check=False)
                     if res and ("200" in res or "302" in res):
@@ -888,28 +888,27 @@ class StackHandler:
         print(f"  {UI.WHITE}🌐 Liferay:        {UI.CYAN}{access_url}{UI.COLOR_OFF}")
         for e in [e for e in extensions if "url" in e]:
             print(f"     - {UI.WHITE}{e['id']:<14} {UI.CYAN}{e['url']}")
+
         if not show_summary:
             return
 
-            launch_url, found_prop = None, False
-            if (paths["files"] / "portal-ext.properties").exists():
-                for line in (
-                    (paths["files"] / "portal-ext.properties").read_text().splitlines()
-                ):
-                    if line.strip().startswith("browser.launcher.url"):
-                        found_prop = True
-                        if "=" in line:
-                            val = line.split("=", 1)[1].strip()
-                            if val:
-                                launch_url = re.sub(r"https?://[^/]+", access_url, val)
-                        break
-            if not found_prop:
-                launch_url = f"{access_url}/web/guest/home"
-            if launch_url:
-                UI.info(f"Launching browser: {launch_url}")
-                webbrowser.open(launch_url)
-        else:
-            UI.error("Startup timed out.")
+        launch_url, found_prop = None, False
+        if (paths["files"] / "portal-ext.properties").exists():
+            for line in (
+                (paths["files"] / "portal-ext.properties").read_text().splitlines()
+            ):
+                if line.strip().startswith("browser.launcher.url"):
+                    found_prop = True
+                    if "=" in line:
+                        val = line.split("=", 1)[1].strip()
+                        if val:
+                            launch_url = re.sub(r"https?://[^/]+", access_url, val)
+                    break
+        if not found_prop:
+            launch_url = f"{access_url}/web/guest/home"
+        if launch_url:
+            UI.info(f"Launching browser: {launch_url}")
+            webbrowser.open(launch_url)
 
     def cmd_run(self, is_restart=False):
         if getattr(self.args, "select", False):

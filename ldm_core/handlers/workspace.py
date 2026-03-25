@@ -816,11 +816,19 @@ class WorkspaceHandler:
 
             if root.endswith("build/libs"):
                 watch_targets.append(Path(root))
+                dirs[:] = []  # Stop descending into build/libs subdirs
             elif (
                 root.endswith("dist")
                 and (Path(root).parent / "client-extension.yaml").exists()
             ):
                 watch_targets.append(Path(root))
+                dirs[:] = []  # Stop descending into dist subdirs
+            elif root.endswith("build"):
+                # If we are in a 'build' folder, ONLY allow descending into 'libs'
+                if "libs" in dirs:
+                    dirs[:] = ["libs"]
+                else:
+                    dirs[:] = []
 
         # If no standard output folders found, fallback to core roots but warn
         if not watch_targets:
