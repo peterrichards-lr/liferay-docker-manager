@@ -213,7 +213,7 @@ class SnapshotHandler:
         )
         UI.success(f"Snapshot saved: {snap_dir}")
 
-    def cmd_restore(self, project_id=None):
+    def cmd_restore(self, project_id=None, auto_index=None):
         root_path = self.detect_project_path(project_id)
         if not root_path:
             return
@@ -222,7 +222,9 @@ class SnapshotHandler:
         if not backups:
             UI.die("No snapshots available.")
 
-        if getattr(self.args, "index", None):
+        if auto_index is not None:
+            choice = backups[auto_index - 1]
+        elif getattr(self.args, "index", None):
             choice = backups[self.args.index - 1]
         else:
             choice = backups[int(UI.ask("Select snapshot index", "1")) - 1]

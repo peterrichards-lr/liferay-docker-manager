@@ -32,9 +32,14 @@ def main():
     run.add_argument("--gogo-port", type=int)
     run.add_argument("-f", "--follow", action="store_true")
     run.add_argument("--env", action="append")
+    run.add_argument(
+        "--samples",
+        action="store_true",
+        help="Initialize with sample client extensions",
+    )
 
     # Command: import
-    imp = subparsers.add_parser("import", aliases=["init-from"])
+    imp = subparsers.add_parser("import")
     imp.add_argument("source")
     imp.add_argument("project", nargs="?")
     imp.add_argument("-p", "--project", dest="project_flag")
@@ -50,6 +55,23 @@ def main():
     imp.add_argument("--mount-logs", action="store_true")
     imp.add_argument("--gogo-port", type=int)
     imp.add_argument("--env", action="append")
+
+    # Command: init-from
+    init_from = subparsers.add_parser("init-from")
+    init_from.add_argument("source")
+    init_from.add_argument("project", nargs="?")
+    init_from.add_argument("-p", "--project", dest="project_flag")
+    init_from.add_argument("--target-env", default="local")
+    init_from.add_argument("--build", action="store_true")
+    init_from.add_argument("--host-name")
+    init_from.add_argument("--ssl", action="store_true", default=None)
+    init_from.add_argument("--no-ssl", action="store_false", dest="ssl")
+    init_from.add_argument("--port", type=int)
+    init_from.add_argument("--db", choices=["postgresql", "mysql", "hypersonic"])
+    init_from.add_argument("--mount-logs", action="store_true")
+    init_from.add_argument("--gogo-port", type=int)
+    init_from.add_argument("--env", action="append")
+    init_from.add_argument("--delay", type=float, default=2.0)
 
     # Command: monitor
     monitor = subparsers.add_parser("monitor")
@@ -172,6 +194,7 @@ def main():
     cmds = {
         "run": lambda: manager.cmd_run(),
         "import": lambda: manager.cmd_import(args.source),
+        "init-from": lambda: manager.cmd_init_from(args.source),
         "monitor": lambda: manager.cmd_monitor(args.source),
         "stop": lambda: manager.cmd_stop(project_id, getattr(args, "service", None)),
         "restart": lambda: manager.cmd_restart(

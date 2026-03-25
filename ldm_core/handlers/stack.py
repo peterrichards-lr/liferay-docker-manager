@@ -937,6 +937,14 @@ class StackHandler:
             else {}
         )
 
+        # Handle Samples Switch
+        is_sample_run = getattr(self.args, "samples", False)
+        sample_meta = {}
+        if is_sample_run:
+            sample_meta_file = SCRIPT_DIR / "samples" / "metadata.json"
+            if sample_meta_file.exists():
+                sample_meta = json.loads(sample_meta_file.read_text())
+
         host_name = self.args.host_name or project_meta.get("host_name") or "localhost"
         if host_name != "localhost" and not self.check_hostname(host_name):
             sys.exit(1)
@@ -952,8 +960,10 @@ class StackHandler:
 
         tag = self.args.tag or project_meta.get("tag")
         if not tag:
-            ans = self.args.release_type or UI.ask(
-                "Release type (any|u|lts|qr) or prefix", "any"
+            ans = (
+                self.args.release_type
+                or (sample_meta.get("reference_tag") if is_sample_run else None)
+                or UI.ask("Release type (any|u|lts|qr) or prefix", "any")
             )
             api = API_BASE_PORTAL if self.args.portal else API_BASE_DXP
             tag = (
@@ -970,12 +980,42 @@ class StackHandler:
             if not tag:
                 UI.die(f"Could not discover tag for '{ans}'.")
             if not self.non_interactive:
-                tag = UI.ask("Enter Liferay Tag", tag)
+                default_tag = (
+                    sample_meta.get("reference_tag", tag) if is_sample_run else tag
+                )
+                tag = UI.ask("Enter Liferay Tag", default_tag)
+
+        # Version Check for Samples
+        if is_sample_run and sample_meta.get("reference_tag"):
+            ref_v = self.parse_version(sample_meta["reference_tag"])
+            user_v = self.parse_version(tag)
+            if user_v < ref_v:
+                UI.warning(
+                    f"Samples require Liferay {sample_meta['reference_tag']} or later. Skipping."
+                )
+                is_sample_run = False
+            elif user_v > ref_v:
+                UI.warning(
+                    "Applying samples to newer Liferay. Database upgrade will be attempted."
+                )
 
         project_id = self.args.project or UI.ask(
             "Project Path", project_id or f"./{tag}"
         )
         paths = self.setup_paths(project_id)
+
+        if is_sample_run:
+            self.args.db = "postgresql"
+            self.sync_samples(paths)
+            if user_v > ref_v:
+                self.update_portal_ext(
+                    paths["files"] / "portal-ext.properties",
+                    {
+                        "upgrade.database.auto.run": "true",
+                        "upgrade.report.enabled": "true",
+                    },
+                )
+
         container_name = (
             self.args.container
             or project_meta.get("container_name")
@@ -1002,12 +1042,25 @@ class StackHandler:
                 "port": str(port),
                 "ssl": str(use_ssl),
                 "container_name": container_name,
+                "db_type": self.args.db or project_meta.get("db_type"),
                 "mount_logs": str(
                     getattr(self.args, "mount_logs", False)
                     or project_meta.get("mount_logs", "False")
                 ).lower(),
             }
         )
+
+        # Trigger Auto-Restore for Samples
+        if is_sample_run:
+            # We must ensure DB/ES are up before restore
+            self.sync_stack(paths, project_meta, no_up=True, show_summary=False)
+            UI.info("Preparing sample data...")
+            run_command(["docker", "compose", "up", "-d", "db"], cwd=str(paths["root"]))
+            # Give DB a moment
+            time.sleep(5)
+            # Restore Sample Gold
+            self.cmd_restore(project_id, auto_index=1)
+
         self.sync_stack(
             paths,
             project_meta,

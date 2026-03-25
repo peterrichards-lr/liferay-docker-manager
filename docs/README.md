@@ -96,20 +96,17 @@ ldm.bat --help
 > **Binary vs Script**: If you have installed the **Standalone Binary**, use `ldm` in your commands. If you are using the **Manual Installation**, use `./ldm` (on Linux/macOS) or `ldm.bat` (on Windows) from the root of this repository.
 
 ```bash
-# Import assets from an existing Liferay Workspace
-ldm import /path/to/workspace --project my-project
+# 1. THE CONFIDENCE BOOSTER: Run Liferay with pre-configured samples
+ldm run my-sample-project --samples
 
-# Run a project (automatically detects folder if you are inside it)
-ldm run
+# 2. THE DEVELOPER FLOW: Initialize from a workspace and start monitoring
+ldm init-from /path/to/workspace my-project
 
-# Monitor a workspace for automatic hot-deployments (requires 'watchdog')
+# 3. THE ARCHIVE FLOW: Import a static snapshot of a workspace
+ldm import /path/to/workspace my-static-project
+
+# Monitor an existing project (manually)
 ldm monitor /path/to/workspace
-
-# Scale the Liferay service to 2 nodes for clustering tests
-ldm scale my-project liferay=2
-
-# View logs for a specific project
-ldm logs my-project
 ```
 
 ---
@@ -124,38 +121,40 @@ Display a tabulated overview of all initialized LDM sandbox environments.
 ldm list
 ```
 
-### `import`
-
-Scaffold a new project from an existing workspace. Supports standard folders, Liferay Cloud, and source archives (`.zip`, `.tgz`).
-
-**Examples:**
-
-```bash
-# Simple import from a local workspace folder
-ldm import ~/repos/my-workspace my-project
-
-# Full Stack Restore: Build modules and restore a Cloud backup (DB + Data)
-ldm import ./workspace my-cloud-restore --build --backup-dir ./backups/uat-state
-
-# Import directly from a source archive
-ldm import ./workspace-main.zip
-```
-
 ### `run`
 
 Initialize and start a project stack.
 
 ```bash
 # Run with a specific tag and virtual hostname
-ldm run --tag 2025.q1.0 --host-name demo.local
+ldm run --tag 2024.q4.0 --host-name demo.local
+
+# Initialize with "Confidence Booster" samples
+ldm run demo --samples
 
 # Interactive run (will prompt for version and project name)
 ldm run
 ```
 
+### `init-from` (Live Link)
+
+Initialize a project from a source workspace and establish a **persistent link**. This command automatically starts the `monitor` process to sync your code changes in real-time.
+
+```bash
+ldm init-from ~/repos/my-workspace my-project
+```
+
+### `import` (Static Snapshot)
+
+Scaffold a new project by taking a **one-time snapshot** of an existing workspace. This project is detached from the source; changes to the source workspace will not be synced.
+
+```bash
+ldm import ~/repos/my-workspace my-static-project
+```
+
 ### `monitor`
 
-Continuously monitor a Liferay workspace and automatically sync built artifacts (`.jar`, `.war`, `.zip`) to your running project.
+Continuously monitor a Liferay workspace and automatically sync built artifacts (`.jar`, `.war`, `.zip`) to your running project. (Automatically invoked by `init-from`).
 
 ```bash
 ldm monitor [path_to_workspace] --delay 2.0

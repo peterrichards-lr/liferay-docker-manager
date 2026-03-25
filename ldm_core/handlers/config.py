@@ -89,6 +89,45 @@ class ConfigHandler:
             + content
         )
 
+    def sync_samples(self, paths):
+        """Sync global samples into the current project path."""
+        global_samples_dir = SCRIPT_DIR / "samples"
+        if not global_samples_dir.exists():
+            UI.warning("Global samples directory not found.")
+            return False
+
+        UI.info("Hydrating project with sample assets...")
+
+        # 1. Sync Client Extensions
+        src_ce = global_samples_dir / "client-extensions"
+        if src_ce.exists():
+            for item in src_ce.iterdir():
+                if item.is_dir() and not item.name.startswith("."):
+                    dest = paths["ce_dir"] / item.name
+                    if dest.exists():
+                        shutil.rmtree(dest)
+                    shutil.copytree(item, dest)
+                    UI.info(f"  + Sample Extension: {item.name}")
+
+        # 2. Sync Deployable Artifacts
+        src_deploy = global_samples_dir / "deploy"
+        if src_deploy.exists():
+            for item in src_deploy.iterdir():
+                if item.is_file() and not item.name.startswith("."):
+                    shutil.copy2(item, paths["deploy"] / item.name)
+                    UI.info(f"  + Sample Artifact: {item.name}")
+
+        # 3. Sync the 'Gold' Snapshot
+        src_gold = global_samples_dir / "snapshots" / "gold"
+        if src_gold.exists():
+            dest_gold = paths["backups"] / "sample-gold-standard"
+            if dest_gold.exists():
+                shutil.rmtree(dest_gold)
+            shutil.copytree(src_gold, dest_gold)
+            UI.info("  + Sample Snapshot: Gold Standard")
+
+        return True
+
     def sync_logging(self, paths):
         json_file = paths["root"] / "logging.json"
         existing_ldm_files = []

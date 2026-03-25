@@ -294,7 +294,15 @@ class WorkspaceHandler:
         }
         return [f"{k}={v}" for k, v in {**global_pool, **targeted}.items()]
 
-    def cmd_import(self, source_path):
+    def cmd_init_from(self, source_path):
+        """Initialize project with a persistent link to a source workspace and start monitoring."""
+        # 1. Perform a standard import (but we will keep the link)
+        self.cmd_import(source_path, is_init_from=True)
+
+        # 2. Immediately start monitoring
+        self.cmd_monitor(source_path)
+
+    def cmd_import(self, source_path, is_init_from=False):
         source = Path(source_path).resolve()
         temp_extract_dir = None
 
@@ -423,7 +431,7 @@ class WorkspaceHandler:
                 "gogo_port": str(getattr(self.args, "gogo_port", "None")),
                 "custom_env": json.dumps(custom_env),
                 "db_type": getattr(self.args, "db", None),
-                "workspace_path": str(source) if not temp_extract_dir else None,
+                "workspace_path": str(source) if is_init_from else None,
             }
 
             gradle_props = workspace_root / "gradle.properties"
@@ -714,16 +722,19 @@ class WorkspaceHandler:
             if temp_extract_dir:
                 self.safe_rmtree(temp_extract_dir)
 
-    def cmd_monitor(self, source_path):
+    def cmd_monitor(self, source_path=None):
         if not Observer:
             UI.die("watchdog required: pip install watchdog")
         project_id = getattr(self.args, "project", None) or self.detect_project_path()
         paths = self.setup_paths(project_id)
         project_meta = self.read_meta(paths["root"] / PROJECT_META_FILE)
+
         if not source_path:
             source_path = project_meta.get("workspace_path")
             if not source_path:
-                UI.die("No workspace path provided.")
+                UI.die(
+                    "No workspace path provided and project is not linked to a source."
+                )
             UI.info(f"Using linked workspace: {source_path}")
 
         source = Path(source_path).resolve()
