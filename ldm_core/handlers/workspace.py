@@ -805,37 +805,44 @@ class WorkspaceHandler:
         watch_targets = []
 
         # We surgically target only the directories where build artifacts are placed
-        # This dramatically reduces file handles and CPU usage
-        for root, dirs, _ in os.walk(workspace_root):
-            # Skip hidden and junk dirs during the scan
-            dirs[:] = [
-                d
-                for d in dirs
-                if d not in [".git", ".gradle", "node_modules", ".ldm_temp"]
-            ]
+        # within the three supported subfolders
+        allowed_branches = ["client-extensions", "modules", "fragments"]
 
-            if root.endswith("build/libs"):
-                watch_targets.append(Path(root))
-                dirs[:] = []  # Stop descending into build/libs subdirs
-            elif (
-                root.endswith("dist")
-                and (Path(root).parent / "client-extension.yaml").exists()
-            ):
-                watch_targets.append(Path(root))
-                dirs[:] = []  # Stop descending into dist subdirs
-            elif root.endswith("build"):
-                # If we are in a 'build' folder, ONLY allow descending into 'libs'
-                if "libs" in dirs:
-                    dirs[:] = ["libs"]
-                else:
-                    dirs[:] = []
+        for branch in allowed_branches:
+            branch_path = workspace_root / branch
+            if not branch_path.exists():
+                continue
+
+            for root, dirs, _ in os.walk(branch_path):
+                # Skip hidden and junk dirs during the scan
+                dirs[:] = [
+                    d
+                    for d in dirs
+                    if d not in [".git", ".gradle", "node_modules", ".ldm_temp"]
+                ]
+
+                if root.endswith("build/libs"):
+                    watch_targets.append(Path(root))
+                    dirs[:] = []  # Stop descending
+                elif (
+                    root.endswith("dist")
+                    and (Path(root).parent / "client-extension.yaml").exists()
+                ):
+                    watch_targets.append(Path(root))
+                    dirs[:] = []  # Stop descending
+                elif root.endswith("build"):
+                    # If we are in a 'build' folder, ONLY allow descending into 'libs'
+                    if "libs" in dirs:
+                        dirs[:] = ["libs"]
+                    else:
+                        dirs[:] = []
 
         # If no standard output folders found, fallback to core roots but warn
         if not watch_targets:
             UI.warning(
-                "No build output directories (build/libs or dist) found. Monitoring core roots instead."
+                "No build output directories (build/libs or dist) found. Monitoring core branches instead."
             )
-            for folder in ["client-extensions", "modules", "themes", "fragments"]:
+            for folder in allowed_branches:
                 target = workspace_root / folder
                 if target.exists():
                     watch_targets.append(target)

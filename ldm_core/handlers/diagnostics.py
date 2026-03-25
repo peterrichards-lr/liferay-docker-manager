@@ -3,6 +3,8 @@ import sys
 import platform
 import shutil
 import json
+import hashlib
+from pathlib import Path
 from ldm_core.ui import UI
 from ldm_core.constants import PROJECT_META_FILE, SCRIPT_DIR, VERSION
 from ldm_core.utils import run_command, get_actual_home, check_for_updates
@@ -46,6 +48,18 @@ class DiagnosticsHandler:
             results.append(("LDM Version", f"v{VERSION} (v{latest} available)", "warn"))
         else:
             results.append(("LDM Version", f"v{VERSION} (Latest)", True))
+
+        # 0.1 Executable Checksum
+        try:
+            exe_path = Path(sys.argv[0]).resolve()
+            if exe_path.exists() and exe_path.is_file():
+                sha = hashlib.sha256()
+                with open(exe_path, "rb") as f:
+                    for chunk in iter(lambda: f.read(4096), b""):
+                        sha.update(chunk)
+                results.append(("Executable Checksum", sha.hexdigest()[:12], True))
+        except Exception:
+            pass
 
         # 1. System Info
         results.append(("Python Version", sys.version.split()[0], True))
