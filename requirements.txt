@@ -1,6 +1,5 @@
-# No external dependencies currently required, but this ensures a clean environment
-# You can add packages here (like requests, packaging) if needed in the future
 ruff==0.15.6
 watchdog==4.0.1
+pyobjc-framework-FSEvents; sys_platform == 'darwin'
 pre-commit
 bandit

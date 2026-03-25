@@ -47,7 +47,7 @@ class DiagnosticsHandler:
                     mem_gb = mem_bytes / (1024**3)
 
                     results.append(("Docker CPUs", f"{cpus} Cores", cpus >= 4))
-                    results.append(("Docker Memory", f"{mem_gb:.1f} GB", mem_gb >= 8))
+                    results.append(("Docker Memory", f"{mem_gb:.1f} GB", mem_gb >= 7.5))
                 except Exception:
                     pass
         else:

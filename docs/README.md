@@ -301,6 +301,7 @@ ldm clear-cache           # Clear the Docker tag cache (~/.liferay_docker_cache.
 
 - **Docker Engine**: Docker Desktop, Colima, or native WSL2.
 - **Resources**: Recommended **4 CPUs and 8GB RAM** allocated to Docker.
+  - *Note*: `ldm doctor` expects these minimums. If you allocate exactly 8GB, Docker may report ~7.7GB due to system overhead; the tool accounts for this by allowing a 7.5GB threshold.
 - **Python**: 3.10+ (if not using binary)
 - **mkcert**: (Optional) For automated local SSL.
 
