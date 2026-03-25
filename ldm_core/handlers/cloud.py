@@ -15,11 +15,12 @@ class CloudHandler:
             return False, "LCP CLI not installed"
 
         try:
-            # We use 'list' as a cheap way to verify the session
+            # Using 'auth token' is a reliable way to check login status without triggering project selection
             res = subprocess.run(
-                [lcp_bin, "list"], capture_output=True, text=True, check=False
+                [lcp_bin, "auth", "token"], capture_output=True, text=True, check=False
             )
-            if res.returncode == 0:
+            # If logged in, it returns the token. If not, it returns "No token available..."
+            if res.returncode == 0 and "No token available" not in res.stdout:
                 return True, "Authenticated"
             return False, "Not authenticated"
         except Exception:
