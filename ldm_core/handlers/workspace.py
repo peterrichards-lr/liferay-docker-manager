@@ -801,17 +801,49 @@ class WorkspaceHandler:
 
         observer = Observer()
 
-        observer.schedule(
-            WorkspaceEventHandler(
-                self,
-                workspace_root,
-                paths,
-                project_meta,
-                float(getattr(self.args, "delay", 2.0)),
-            ),
-            str(workspace_root),
-            recursive=True,
+        # Define directories to ignore to prevent 'Too many open files' and improve performance
+        ignored_dirs = [".git", ".gradle", "node_modules", "build", "bin", ".ldm_temp"]
+
+        def should_watch(path):
+            p = Path(path)
+            for ignored in ignored_dirs:
+                if ignored in p.parts:
+                    return False
+            return True
+
+        # We use a custom walker or just filter the events, but for kqueue (macOS),
+        # it's best to avoid scheduling watches on massive subtrees.
+
+        # Implementation Note: Watchdog's schedule() doesn't have a built-in filter,
+        # so we will wrap the event handler to be silent for ignored paths,
+        # but to TRULY fix the file handle issue, we should only watch the roots
+        # we care about (client-extensions, modules, themes).
+
+        UI.info("Scanning for monitorable directories...")
+        watch_targets = []
+        # Core workspace folders
+        for folder in ["client-extensions", "modules", "themes", "fragments"]:
+            target = workspace_root / folder
+            if target.exists():
+                watch_targets.append(target)
+
+        # If no standard folders, watch the whole root but we'll still hit the limit
+        # if there are massive un-ignored subdirs.
+        if not watch_targets:
+            watch_targets = [workspace_root]
+
+        handler = WorkspaceEventHandler(
+            self,
+            workspace_root,
+            paths,
+            project_meta,
+            float(getattr(self.args, "delay", 2.0)),
         )
+
+        for target in watch_targets:
+            UI.info(f"  + Watching: {target.relative_to(workspace_root)}")
+            observer.schedule(handler, str(target), recursive=True)
+
         observer.start()
         try:
             UI.info("Watching for changes (Press Ctrl+C to stop)...")
