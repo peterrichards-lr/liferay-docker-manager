@@ -801,34 +801,37 @@ class WorkspaceHandler:
 
         observer = Observer()
 
-        # Define directories to ignore to prevent 'Too many open files' and improve performance
-        ignored_dirs = [".git", ".gradle", "node_modules", "build", "bin", ".ldm_temp"]
-
-        def should_watch(path):
-            p = Path(path)
-            for ignored in ignored_dirs:
-                if ignored in p.parts:
-                    return False
-            return True
-
-        # We use a custom walker or just filter the events, but for kqueue (macOS),
-        # it's best to avoid scheduling watches on massive subtrees.
-
-        # Implementation Note: Watchdog's schedule() doesn't have a built-in filter,
-        # so we will wrap the event handler to be silent for ignored paths,
-        # but to TRULY fix the file handle issue, we should only watch the roots
-        # we care about (client-extensions, modules, themes).
-
-        UI.info("Scanning for monitorable directories...")
+        UI.info("Scanning for build output directories...")
         watch_targets = []
-        # Core workspace folders
-        for folder in ["client-extensions", "modules", "themes", "fragments"]:
-            target = workspace_root / folder
-            if target.exists():
-                watch_targets.append(target)
 
-        # If no standard folders, watch the whole root but we'll still hit the limit
-        # if there are massive un-ignored subdirs.
+        # We surgically target only the directories where build artifacts are placed
+        # This dramatically reduces file handles and CPU usage
+        for root, dirs, _ in os.walk(workspace_root):
+            # Skip hidden and junk dirs during the scan
+            dirs[:] = [
+                d
+                for d in dirs
+                if d not in [".git", ".gradle", "node_modules", ".ldm_temp"]
+            ]
+
+            if root.endswith("build/libs"):
+                watch_targets.append(Path(root))
+            elif (
+                root.endswith("dist")
+                and (Path(root).parent / "client-extension.yaml").exists()
+            ):
+                watch_targets.append(Path(root))
+
+        # If no standard output folders found, fallback to core roots but warn
+        if not watch_targets:
+            UI.warning(
+                "No build output directories (build/libs or dist) found. Monitoring core roots instead."
+            )
+            for folder in ["client-extensions", "modules", "themes", "fragments"]:
+                target = workspace_root / folder
+                if target.exists():
+                    watch_targets.append(target)
+
         if not watch_targets:
             watch_targets = [workspace_root]
 
@@ -841,10 +844,14 @@ class WorkspaceHandler:
         )
 
         for target in watch_targets:
-            UI.info(f"  + Watching: {target.relative_to(workspace_root)}")
-            observer.schedule(handler, str(target), recursive=True)
+            rel_path = target.relative_to(workspace_root)
+            UI.info(f"  + Watching: {rel_path}")
+            # We watch these non-recursively because we only care about the files
+            # appearing directly in these output folders.
+            observer.schedule(handler, str(target), recursive=False)
 
         observer.start()
+
         try:
             UI.info("Watching for changes (Press Ctrl+C to stop)...")
             while True:
