@@ -309,8 +309,8 @@ class WorkspaceHandler:
                 if source.suffix.lower() not in [".zip", ".tgz", ".gz", ".tar"]:
                     UI.die(f"Unsupported source format: {source.suffix}")
                 temp_extract_dir = (
-                    SCRIPT_DIR
-                    / "temp"
+                    Path.cwd()
+                    / ".ldm_temp"
                     / f"import_{datetime.now().strftime('%Y%m%d%H%M%S')}"
                 )
                 temp_extract_dir.mkdir(parents=True)
@@ -350,7 +350,7 @@ class WorkspaceHandler:
                 if not self.non_interactive:
                     project_name = UI.ask("Project Name", project_name)
 
-            project_path = SCRIPT_DIR / project_name
+            project_path = self.detect_project_path(project_name, for_init=True)
 
             if project_path.exists():
                 if (

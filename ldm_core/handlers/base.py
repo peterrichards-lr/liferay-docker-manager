@@ -62,21 +62,29 @@ class BaseHandler:
             UI.error(f"Failed to verify Gradle JVM version: {e}")
             return False
 
-    def detect_project_path(self, project_id=None):
+    def detect_project_path(self, project_id=None, for_init=False):
         """Resolves a project ID or path to a full filesystem path."""
         pid = project_id or getattr(self.args, "project", None)
         if pid:
+            # 1. Direct path check
             p = Path(pid).resolve()
-            if (p / PROJECT_META_FILE).exists():
+            if (p / PROJECT_META_FILE).exists() or for_init:
                 return p
+
+            # 2. Check in CWD first (important for standalone binaries)
+            p_in_cwd = Path.cwd() / pid
+            if (p_in_cwd / PROJECT_META_FILE).exists() or for_init:
+                return p_in_cwd.resolve()
+
+            # 3. Check in SCRIPT_DIR (developer repo workflow)
             p_in_root = SCRIPT_DIR / pid
             if (p_in_root / PROJECT_META_FILE).exists():
                 return p_in_root.resolve()
-            p_in_cwd = Path.cwd() / pid
-            if (p_in_cwd / PROJECT_META_FILE).exists():
-                return p_in_cwd.resolve()
 
-            for search_dir in [SCRIPT_DIR, Path.cwd()]:
+            # 4. Deep search by project_name in metadata
+            for search_dir in [Path.cwd(), SCRIPT_DIR]:
+                if not search_dir.exists():
+                    continue
                 for item in search_dir.iterdir():
                     if item.is_dir() and not item.name.startswith("."):
                         meta_file = item / PROJECT_META_FILE
@@ -84,9 +92,11 @@ class BaseHandler:
                             meta = self.read_meta(meta_file)
                             if meta.get("project_name") == pid:
                                 return item.resolve()
-            UI.die(f"Project '{pid}' not found or missing {PROJECT_META_FILE}")
 
-        # Fall back to CWD detection
+            if not for_init:
+                UI.die(f"Project '{pid}' not found or missing {PROJECT_META_FILE}")
+
+        # Fall back to CWD detection for existing projects
         cwd = Path.cwd()
         if (
             (cwd / "files" / "portal-ext.properties").exists()
