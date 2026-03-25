@@ -15,13 +15,6 @@ from ldm_core.ui import UI
 from ldm_core.constants import PROJECT_META_FILE, SCRIPT_DIR
 from ldm_core.utils import run_command, load_env_blacklist, is_env_var_blacklisted
 
-try:
-    from watchdog.observers import Observer
-    from watchdog.events import FileSystemEventHandler
-except ImportError:
-    Observer = None
-    FileSystemEventHandler = object
-
 
 class WorkspaceHandler:
     """Mixin for workspace management (import, monitor, scanning)."""
@@ -723,8 +716,12 @@ class WorkspaceHandler:
                 self.safe_rmtree(temp_extract_dir)
 
     def cmd_monitor(self, source_path=None):
-        if not Observer:
+        try:
+            from watchdog.observers import Observer
+            from watchdog.events import FileSystemEventHandler
+        except ImportError:
             UI.die("watchdog required: pip install watchdog")
+
         project_id = getattr(self.args, "project", None) or self.detect_project_path()
         paths = self.setup_paths(project_id)
         project_meta = self.read_meta(paths["root"] / PROJECT_META_FILE)
@@ -751,7 +748,7 @@ class WorkspaceHandler:
                     self.paths,
                     self.project_meta,
                     self.delay,
-                ) = manager, workspace_root, paths, project_meta, delay
+                ) = (manager, workspace_root, paths, project_meta, delay)
                 self.timer, self.pending_files, self.lock = (
                     None,
                     set(),
@@ -803,6 +800,7 @@ class WorkspaceHandler:
                 UI.success("Deployment complete.")
 
         observer = Observer()
+
         observer.schedule(
             WorkspaceEventHandler(
                 self,

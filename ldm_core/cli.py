@@ -1,4 +1,5 @@
 import argparse
+import warnings
 from ldm_core.ui import UI
 from ldm_core.manager import LiferayManager
 from ldm_core.constants import VERSION
@@ -6,6 +7,9 @@ from ldm_core.utils import check_for_updates
 
 
 def main():
+    # Suppress watchdog warning on macOS when fsevents is missing (kqueue is a fine fallback)
+    warnings.filterwarnings("ignore", message="Failed to import fsevents")
+
     parser = argparse.ArgumentParser(
         description=f"Liferay Docker Manager (ldm) v{VERSION}"
     )
