@@ -608,10 +608,7 @@ class StackHandler:
                 f"traefik.http.routers.{container_name}-main.tls.domains[0].sans=*.{host_name}",
                 f"traefik.http.services.{container_name}-main-svc.loadbalancer.server.port=8080",
             ]
-            if (
-                platform.system() == "darwin"
-                and not Path("/var/run/docker.sock").exists()
-            ):
+            if platform.system() == "darwin":
                 compose["services"]["docker-socket-bridge"] = {
                     "image": "alpine/socat",
                     "container_name": f"{container_name}-socket-bridge",
