@@ -160,11 +160,35 @@ class DiagnosticsHandler:
             version = r["version"]
 
             # Check container status
-            status_raw = run_command(
-                ["docker", "inspect", "-f", "{{.State.Status}}", name], check=False
+            containers_status = run_command(
+                [
+                    "docker",
+                    "ps",
+                    "-a",
+                    "--filter",
+                    f"label=com.liferay.ldm.project={name}",
+                    "--format",
+                    "{{.State}}",
+                ],
+                check=False,
             )
-            status = status_raw.capitalize() if status_raw else "Stopped"
-            status_color = UI.GREEN if status == "Running" else UI.WHITE
+            if containers_status:
+                states = containers_status.splitlines()
+                running_count = states.count("running")
+                total_count = len(states)
+                if total_count > 1:
+                    status = (
+                        f"Running ({running_count}/{total_count})"
+                        if running_count > 0
+                        else f"Stopped (0/{total_count})"
+                    )
+                    status_color = UI.GREEN if running_count > 0 else UI.WHITE
+                else:
+                    status = states[0].capitalize()
+                    status_color = UI.GREEN if status == "Running" else UI.WHITE
+            else:
+                status = "Stopped"
+                status_color = UI.WHITE
 
             # Access URL
             host = meta.get("host_name", "localhost")

@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "liferay-docker-manager"
+version = "1.1.0"
+description = "A professional command-line orchestrator for Liferay Docker environments."
+authors = [{ name = "Peter Richards", email = "peter.richards@liferay.com" }]
+requires-python = ">=3.10"
+dependencies = [
+    "ruff==0.15.6",
+    "watchdog==4.0.1",
+    "pre-commit",
+    "bandit",
+    "pip-audit"
+]
+
+[project.scripts]
+ldm = "ldm_core.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["ldm_core*"]

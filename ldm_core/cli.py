@@ -26,6 +26,8 @@ def main():
     run.add_argument("--portal", action="store_true")
     run.add_argument("--refresh", action="store_true")
     run.add_argument("--sidecar", action="store_true")
+    run.add_argument("--no-up", action="store_true")
+    run.add_argument("--no-wait", action="store_true")
     run.add_argument("--mount-logs", action="store_true")
     run.add_argument("--gogo-port", type=int)
     run.add_argument("-f", "--follow", action="store_true")
@@ -104,6 +106,11 @@ def main():
     gogo.add_argument("project", nargs="?")
     gogo.add_argument("-p", "--project", dest="project_flag")
 
+    scale = subparsers.add_parser("scale")
+    scale.add_argument("project", nargs="?")
+    scale.add_argument("service_scale", nargs="+")
+    scale.add_argument("-p", "--project", dest="project_flag")
+
     args = parser.parse_args()
     if not args.command:
         parser.print_help()
@@ -124,6 +131,7 @@ def main():
         "snapshot",
         "restore",
         "import",
+        "scale",
     ]
     if args.command in docker_required and not manager.check_docker():
         UI.die("Docker not accessible.")
@@ -151,6 +159,7 @@ def main():
         "list": lambda: manager.cmd_list(),
         "shell": lambda: manager.cmd_shell(project_id, getattr(args, "service", None)),
         "gogo": lambda: manager.cmd_gogo(project_id),
+        "scale": lambda: manager.cmd_scale(project_id, args.service_scale),
         "prune": lambda: manager.cmd_prune(),
     }
 

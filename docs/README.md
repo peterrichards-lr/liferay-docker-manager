@@ -36,6 +36,60 @@ A professional command-line orchestrator for quickly standing up Liferay Portal 
 
 ---
 
+## Installation
+
+### 1. Standalone Binary (Recommended)
+
+The standalone binary is a single-file executable that includes all dependencies.
+
+**macOS / Linux / WSL2:**
+
+Download the latest `ldm-standalone` from the [GitHub Releases](https://github.com/peterrichards-lr/liferay-docker-manager/releases) page.
+
+```bash
+# Move to your path and make executable
+sudo mv ldm-standalone /usr/local/bin/ldm
+sudo chmod +x /usr/local/bin/ldm
+
+# Verify
+ldm --help
+```
+
+> [!TIP]
+> **WSL2 Users:** Use the Linux binary within your WSL terminal. Ensure your Docker Desktop is configured to "Use the WSL 2 based engine" and that integration is enabled for your specific distribution. LDM will automatically detect the Windows-side browser when launching URLs.
+
+**Windows:**
+
+Download the latest `ldm-standalone.exe` from the [GitHub Releases](https://github.com/peterrichards-lr/liferay-docker-manager/releases) page.
+
+```powershell
+# Move to a folder in your PATH (e.g., C:\bin)
+# Then verify in PowerShell or CMD
+ldm --help
+```
+
+### 2. Manual Installation (Development)
+
+Clone this repository and use the provided wrapper script for your platform. The wrapper will automatically set up a local Python virtual environment and install the required dependencies on its first run.
+
+**macOS / Linux / WSL2:**
+
+```bash
+git clone https://github.com/peterrichards-lr/liferay-docker-manager.git
+cd liferay-docker-manager
+./ldm --help
+```
+
+**Windows:**
+
+```cmd
+git clone https://github.com/peterrichards-lr/liferay-docker-manager.git
+cd liferay-docker-manager
+ldm.bat --help
+```
+
+---
+
 ## Quick Start
 
 ```bash
@@ -45,11 +99,11 @@ A professional command-line orchestrator for quickly standing up Liferay Portal 
 # Run a project (automatically detects folder if you are inside it)
 ./ldm run
 
+# Scale the Liferay service to 2 nodes for clustering tests
+./ldm scale my-project liferay=2
+
 # View logs for a specific project
 ./ldm logs my-project
-
-# View logs for just the 'liferay' service in a project
-./ldm logs my-project liferay
 ```
 
 ---
@@ -129,6 +183,18 @@ Hot-deploy built artifacts or rebuild extension images.
 # Examples:
 ./ldm deploy                # Sync all artifacts and refresh stack
 ./ldm deploy demo my-ext --rebuild  # Rebuild and restart one extension
+```
+
+### `scale`
+
+Scale services within a project for multi-node simulation and clustering tests.
+
+```bash
+./ldm scale [project] service=count
+
+# Examples:
+./ldm scale demo liferay=2  # Scale Liferay to 2 nodes (enables clustering)
+./ldm scale demo my-ext=3   # Scale a client extension to 3 nodes
 ```
 
 ### `snapshot` & `restore`

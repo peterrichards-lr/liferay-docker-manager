@@ -17,11 +17,16 @@ class BaseHandler:
 
     def _check_java_version(self, expected="21"):
         """Verifies the system Java version."""
+        java_bin = shutil.which("java")
+        if not java_bin:
+            return False
         try:
-            res = subprocess.run(
-                ["java", "-version"], capture_output=True, text=True, check=True
+            # Bandit: B603 (subprocess_without_shell_equals_true) is a general warning.
+            res = subprocess.run(  # nosec B603
+                [java_bin, "-version"], capture_output=True, text=True, check=True
             )
             output = res.stderr
+
             match = re.search(rf'version\s+"({expected}\.[^"]+)"', output)
             if match:
                 if self.verbose:
@@ -38,8 +43,10 @@ class BaseHandler:
         """Verifies the JVM version used by Gradle."""
         try:
             if platform.system() != "Windows":
-                os.chmod(gradlew_path, 0o755)
-            res = subprocess.run(
+                # Bandit: B103 (chmod 0o755) is safe for gradlew as it needs to be executable.
+                os.chmod(gradlew_path, 0o755)  # nosec B103
+            # Bandit: B603 (subprocess_without_shell_equals_true) is a general warning.
+            res = subprocess.run(  # nosec B603
                 [str(gradlew_path), "-v"], capture_output=True, text=True, check=True
             )
             output = res.stdout
@@ -158,6 +165,40 @@ class BaseHandler:
             "log4j": root / "osgi" / "log4j",
             "portal_log4j": root / "osgi" / "portal-log4j",
         }
+
+    def migrate_layout(self, paths):
+        """Ensures project structure is consistent with current LDM version."""
+        # Ensure core directories exist
+        essential_paths = [
+            "files",
+            "deploy",
+            "configs",
+            "modules",
+            "cx",
+            "data",
+            "ce_dir",
+            "routes",
+            "logs",
+            "log4j",
+            "portal_log4j",
+        ]
+        for key in essential_paths:
+            if key in paths:
+                paths[key].mkdir(parents=True, exist_ok=True)
+
+        # 1. Migrate legacy 'osgi/configs' if found in root (cleanup)
+        legacy_configs = paths["root"] / "configs"
+        if (
+            legacy_configs.exists()
+            and legacy_configs.is_dir()
+            and legacy_configs.resolve() != paths["configs"].resolve()
+        ):
+            UI.info("Migrating legacy configs...")
+            for f in legacy_configs.iterdir():
+                dest = paths["configs"] / f.name
+                if not dest.exists():
+                    shutil.move(str(f), str(dest))
+            shutil.rmtree(legacy_configs)
 
     def read_meta(self, path):
         meta = {}

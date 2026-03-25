@@ -112,3 +112,19 @@ This repository contains automation tools for managing Liferay DXP instances usi
 - **Standard vs. Cloud Layout**:
   - **Standard**: Full Liferay Home structure suitable for local restoration.
   - **Liferay Cloud**: Specific layout (`database.gz` + `volume.tgz`) that strips owner/privilege data from SQL dumps, making them ready for immediate Liferay Cloud console imports.
+
+## Current State & Next Steps
+
+### Current State (March 25, 2026)
+
+- **Core Orchestration**: Modularized Python package (`ldm_core`) is stable and functional.
+- **Multi-Node Simulation (`ldm scale`)**: COMPLETED. Users can now scale services (e.g., `ldm scale liferay=2`) with automated Traefik load-balancing, clustering configuration, and separate OSGi state/logs handling.
+- **Project Discovery**: Standardized 4-step discovery is implemented.
+- **Isolation**: Traefik-based multi-instance isolation is working.
+- **State Recovery**: Snapshot and restoration (including Cloud archives) are robust.
+- **Diagnostics**: `doctor` and `list` commands are scale-aware.
+
+### Next Steps
+
+1. **Enhanced Cloud Sync (`ldm cloud-fetch`)**: Implement deep integration for pulling logs and metadata from Liferay Cloud projects.
+2. **Internal Log4j Management**: Refine `ldm log-level` for more granular control over hot-reloading XML configurations.

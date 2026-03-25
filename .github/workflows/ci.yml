@@ -1,0 +1,185 @@
+name: LDM CI & Release
+
+on:
+  push:
+    branches: [ "master" ]
+    tags: [ "v*" ] # Trigger on tags like v1.0.0
+  pull_request:
+    branches: [ "master" ]
+
+permissions:
+  contents: write # Needed for creating releases
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true # Opt into Node.js 24 early
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12", "3.13"]
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ matrix.python-version }}
+        cache: 'pip'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+        pip install pytest bandit pip-audit
+
+    - name: Lint with Ruff
+      run: |
+        ruff check .
+        ruff format --check .
+
+    - name: Security Scan (Bandit)
+      run: |
+        # Scan for common security issues in Python code. 
+        # We only fail on Medium/High severity to allow necessary subprocess patterns.
+        bandit -r ldm_core/ -x ldm_core/tests/ --severity-level medium
+
+    - name: Dependency Audit (pip-audit)
+      run: |
+        # Ignoring CVE-2026-4539 (pygments) as it is currently unpatched and doesn't affect LDM.
+        pip-audit --ignore-vuln CVE-2026-4539
+
+    - name: Lint Shell scripts (ShellCheck)
+      run: |
+        sudo apt-get install -y shellcheck
+        find . -name "*.sh" -not -path "*/.*" | xargs shellcheck
+
+    - name: Lint Markdown
+      uses: DavidAnson/markdownlint-cli2-action@v16
+      with:
+        globs: "**/*.md"
+
+    - name: Run unit tests
+      run: |
+        export PYTHONPATH=$PYTHONPATH:.
+        pytest
+
+  smoke-test:
+    needs: lint-and-test
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' || github.event_name == 'pull_request'
+    
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.13"
+
+    - name: Install dependencies
+      run: |
+        pip install -r requirements.txt
+
+    - name: Install mkcert
+      run: |
+        # Install mkcert for SSL smoke tests
+        sudo apt-get update
+        sudo apt-get install -y libnss3-tools
+        curl -L https://github.com/FiloSottile/mkcert/releases/download/v1.4.4/mkcert-v1.4.4-linux-amd64 -o mkcert
+        chmod +x mkcert
+        sudo mv mkcert /usr/local/bin/
+        mkcert -install
+
+    - name: LDM Doctor Smoke Test
+      run: |
+        # Run doctor in non-interactive mode
+        export PYTHONPATH=$PYTHONPATH:.
+        python3 liferay_docker.py -y doctor
+
+    - name: LDM Run Smoke Test (Mock)
+      run: |
+        # Create a mock project
+        mkdir -p smoke-project/files
+        touch smoke-project/files/portal-ext.properties
+        # Using an older version format to avoid triggering global search logic in CI
+        echo "tag=7.4.13-u100" > smoke-project/.liferay-docker.meta
+        echo "container_name=smoke-test" >> smoke-project/.liferay-docker.meta
+        echo "image_tag=alpine" >> smoke-project/.liferay-docker.meta
+        
+        # Run LDM to generate compose
+        # Using --sidecar ensures a local search container is included in the file
+        # Using --no-wait skips the long startup verification loop
+        export PYTHONPATH=$PYTHONPATH:.
+        python3 liferay_docker.py -y run smoke-project --no-up --sidecar --no-wait
+        
+        # Verify docker-compose.yml was generated
+        if [ ! -f smoke-project/docker-compose.yml ]; then
+          echo "❌ docker-compose.yml not generated!"
+          exit 1
+        fi
+        echo "✅ docker-compose.yml generated successfully."
+
+  release:
+    needs: [lint-and-test, smoke-test]
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    if: startsWith(github.ref, 'refs/tags/v')
+    
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.13"
+
+    - name: Build Standalone (Linux/macOS)
+      if: matrix.os == 'ubuntu-latest'
+      run: |
+        pip install shiv
+        pip install .
+        shiv -e ldm_core.cli:main -o ldm-standalone -p '/usr/bin/env python3' .
+        chmod +x ldm-standalone
+
+    - name: Build Standalone (Windows)
+      if: matrix.os == 'windows-latest'
+      run: |
+        pip install pyinstaller -r requirements.txt
+        pyinstaller --onefile --name ldm-standalone liferay_docker.py
+
+    - name: Create GitHub Release
+      uses: softprops/action-gh-release@v2
+      with:
+        files: |
+          ldm-standalone
+          dist/ldm-standalone.exe
+          LICENSE
+        body: |
+          ## Liferay Docker Manager (LDM) Release
+          
+          This release includes standalone LDM executables for Linux, macOS, and Windows.
+          
+          ### Installation
+          
+          **macOS / Linux:**
+          1. Download `ldm-standalone`
+          2. Move it to your path: `sudo mv ldm-standalone /usr/local/bin/ldm`
+          3. Make it executable: `sudo chmod +x /usr/local/bin/ldm`
+          
+          **Windows:**
+          1. Download `ldm-standalone.exe`
+          2. Move it to a folder in your PATH.
+          
+          ### Changes in this version
+          - Multi-node simulation support (`ldm scale`)
+          - Automated SSL via Traefik singleton
+          - Enhanced project discovery and health checks
+          - Cross-platform standalone distribution
+        draft: false
+        prerelease: false

@@ -2,6 +2,7 @@ import os
 import re
 import json
 import time
+import shutil
 import platform
 import subprocess
 import socket
@@ -32,9 +33,8 @@ class StackHandler:
     """Mixin for stack management commands (run, stop, restart, down, sync)."""
 
     def check_mkcert(self):
-        try:
-            subprocess.run(["mkcert", "-version"], capture_output=True, check=True)
-        except Exception:
+        mkcert_bin = shutil.which("mkcert")
+        if not mkcert_bin:
             UI.error("mkcert is not installed. Fast-failing SSL setup.")
             UI.info(
                 "Installation Guide: https://github.com/FiloSottile/mkcert#installation"
@@ -42,9 +42,15 @@ class StackHandler:
             UI.die("Please install mkcert and try again.")
 
         try:
-            ca_root = subprocess.run(
-                ["mkcert", "-CAROOT"], capture_output=True, text=True, check=True
+            subprocess.run([mkcert_bin, "-version"], capture_output=True, check=True)  # nosec B603
+        except Exception:
+            UI.die("Failed to execute mkcert. Check your installation.")
+
+        try:
+            ca_root = subprocess.run(  # nosec B603
+                [mkcert_bin, "-CAROOT"], capture_output=True, text=True, check=True
             ).stdout.strip()
+
             if not ca_root or not os.path.exists(ca_root) or not os.listdir(ca_root):
                 raise ValueError("Root CA not found")
         except Exception:
@@ -70,21 +76,24 @@ class StackHandler:
         needs_gen = not cert_file.exists() or getattr(self.args, "force_ssl", False)
 
         if not needs_gen:
-            try:
-                res = subprocess.run(
-                    ["openssl", "x509", "-in", str(cert_file), "-text", "-noout"],
-                    capture_output=True,
-                    text=True,
-                    check=True,
-                )
-                if f"DNS:{wildcard_host}" not in res.stdout:
-                    if self.verbose:
-                        UI.info(
-                            f"Certificate for {host_name} missing wildcard SAN. Regenerating..."
-                        )
+            openssl_bin = shutil.which("openssl")
+            if openssl_bin:
+                try:
+                    res = subprocess.run(  # nosec B603
+                        [openssl_bin, "x509", "-in", str(cert_file), "-text", "-noout"],
+                        capture_output=True,
+                        text=True,
+                        check=True,
+                    )
+
+                    if f"DNS:{wildcard_host}" not in res.stdout:
+                        if self.verbose:
+                            UI.info(
+                                f"Certificate for {host_name} missing wildcard SAN. Regenerating..."
+                            )
+                        needs_gen = True
+                except Exception:
                     needs_gen = True
-            except Exception:
-                needs_gen = True
 
         if needs_gen:
             if self.verbose:
@@ -154,7 +163,9 @@ class StackHandler:
         search_backup_dir = actual_home / ".liferay_docker_search_backups"
         search_backup_dir.mkdir(parents=True, exist_ok=True)
         try:
-            os.chmod(search_backup_dir, 0o777)
+            # Bandit: B103 (chmod 777) is needed here as Elasticsearch container
+            # runs with a different UID and needs write access to the host volume.
+            os.chmod(search_backup_dir, 0o777)  # nosec B103
         except Exception:
             pass
 
@@ -412,12 +423,16 @@ class StackHandler:
             config.get("db_user"),
             config.get("db_pass"),
         )
+        scale_map = {
+            k.replace("scale_", ""): int(v)
+            for k, v in config.items()
+            if k.startswith("scale_") and str(v).isdigit()
+        }
 
         socket_path = get_docker_socket_path()
         liferay_volumes = [
             f"{paths['files'].as_posix()}:/mnt/liferay/files",
             f"{paths['scripts'].as_posix()}:/mnt/liferay/scripts",
-            f"{paths['state'].as_posix()}:/opt/liferay/osgi/state",
             f"{paths['configs'].as_posix()}:/opt/liferay/osgi/configs",
             f"{paths['modules'].as_posix()}:/opt/liferay/osgi/modules",
             f"{paths['marketplace'].as_posix()}:/opt/liferay/osgi/marketplace",
@@ -428,15 +443,20 @@ class StackHandler:
             f"{paths['log4j'].as_posix()}:/opt/liferay/osgi/log4j",
             f"{paths['portal_log4j'].as_posix()}/portal-log4j-ext.xml:/opt/liferay/tomcat/webapps/ROOT/WEB-INF/classes/META-INF/portal-log4j-ext.xml",
         ]
-        if mount_logs:
-            liferay_volumes.append(f"{paths['logs'].as_posix()}:/opt/liferay/logs")
+        if scale_map.get("liferay", 1) <= 1:
+            liferay_volumes.append(
+                f"{paths['state'].as_posix()}:/opt/liferay/osgi/state"
+            )
+            if mount_logs:
+                liferay_volumes.append(f"{paths['logs'].as_posix()}:/opt/liferay/logs")
 
         gogo_env = (
             "0.0.0.0:11311"
             if gogo_port and str(gogo_port).isdigit()
             else "localhost:11311"
         )
-        config_sig = hashlib.md5(
+        # Use SHA256 for configuration fingerprinting (resolves Bandit B324)
+        config_sig = hashlib.sha256(
             json.dumps(custom_env, sort_keys=True).encode()
         ).hexdigest()[:12]
 
@@ -448,11 +468,18 @@ class StackHandler:
             f"LIFERAY_MODULE__FRAMEWORK__PROPERTIES__OSGI__CONSOLE={gogo_env}",
             f"OSGI_CONSOLE={gogo_env}",
         ]
+        if scale_map.get("liferay", 1) > 1:
+            liferay_env.extend(
+                [
+                    "LIFERAY_CLUSTER__LINK__ENABLED=true",
+                    "LIFERAY_LUCENE__REPLICATE__WRITE=true",
+                ]
+            )
+
         compose = {
             "services": {
                 "liferay": {
                     "image": image_tag,
-                    "container_name": container_name,
                     "ports": [],
                     "environment": liferay_env,
                     "volumes": liferay_volumes,
@@ -467,6 +494,9 @@ class StackHandler:
             },
             "networks": {"liferay-net": {"external": True}},
         }
+
+        if scale_map.get("liferay", 1) <= 1:
+            compose["services"]["liferay"]["container_name"] = container_name
 
         if db_type in ["postgresql", "mysql"]:
             db_img, db_port = (
@@ -594,7 +624,6 @@ class StackHandler:
             ext_env.extend(self.get_host_passthrough_env(paths, ext_id))
             compose["services"][ext_name] = {
                 "build": {"context": ext["path"].as_posix()},
-                "container_name": f"{container_name}-{ext_name}",
                 "networks": ["liferay-net"],
                 "environment": ext_env,
                 "volumes": [f"{paths['routes'].as_posix()}:/opt/liferay/routes"],
@@ -606,6 +635,11 @@ class StackHandler:
                     f"com.liferay.ldm.project={container_name}",
                 ],
             }
+            if scale_map.get(ext_name, 1) <= 1:
+                compose["services"][ext_name]["container_name"] = (
+                    f"{container_name}-{ext_name}"
+                )
+
             probe = ext.get("readinessProbe") or ext.get("livenessProbe")
             if probe:
                 compose["services"][ext_name]["healthcheck"] = (
@@ -638,6 +672,29 @@ class StackHandler:
             paths["compose"].write_text(yaml_content)
             UI.success(f"Generated {paths['compose'].name}")
         return all_services, has_changed
+
+    def cmd_scale(self, project_id, scale_args):
+        project_path = self.detect_project_path(project_id)
+        if not project_path:
+            UI.die("Project not found.")
+
+        meta = self.read_meta(project_path / PROJECT_META_FILE)
+
+        for arg in scale_args:
+            if "=" not in arg:
+                UI.error(f"Invalid scale argument: {arg}. Expected service=number")
+                continue
+            service, count = arg.split("=", 1)
+            if not count.isdigit():
+                UI.error(f"Invalid scale count for {service}: {count}")
+                continue
+            meta[f"scale_{service}"] = count
+
+        self.write_meta(project_path / PROJECT_META_FILE, meta)
+        UI.success(f"Updated scale factors for project {project_path.name}")
+
+        # Trigger regeneration and restart
+        self.cmd_run(project_id)
 
     def sync_stack(
         self,
@@ -729,28 +786,30 @@ class StackHandler:
         if use_shared_search:
             self.setup_global_search()
 
-        extensions, has_changed = self.write_docker_compose(
-            paths,
-            {
-                "container_name": container_name,
-                "image_tag": image_tag,
-                "port": port,
-                "resolved_ip": resolved_ip,
-                "use_ssl": use_ssl,
-                "ssl_port": ssl_port,
-                "host_name": host_name,
-                "env_args": env_args,
-                "custom_env": json.loads(project_meta.get("custom_env", "{}")),
-                "use_shared_search": use_shared_search,
-                "mount_logs": str(project_meta.get("mount_logs")).lower() == "true",
-                "gogo_port": getattr(self.args, "gogo_port", None)
-                or project_meta.get("gogo_port"),
-                "db_type": project_meta.get("db_type"),
-                "db_name": project_meta.get("db_name", "lportal"),
-                "db_user": project_meta.get("db_user", "liferay"),
-                "db_pass": project_meta.get("db_pass", "liferay"),
-            },
-        )
+        config_payload = {
+            "container_name": container_name,
+            "image_tag": image_tag,
+            "port": port,
+            "resolved_ip": resolved_ip,
+            "use_ssl": use_ssl,
+            "ssl_port": ssl_port,
+            "host_name": host_name,
+            "env_args": env_args,
+            "custom_env": json.loads(project_meta.get("custom_env", "{}")),
+            "use_shared_search": use_shared_search,
+            "mount_logs": str(project_meta.get("mount_logs")).lower() == "true",
+            "gogo_port": getattr(self.args, "gogo_port", None)
+            or project_meta.get("gogo_port"),
+            "db_type": project_meta.get("db_type"),
+            "db_name": project_meta.get("db_name", "lportal"),
+            "db_user": project_meta.get("db_user", "liferay"),
+            "db_pass": project_meta.get("db_pass", "liferay"),
+        }
+        for k, v in project_meta.items():
+            if k.startswith("scale_"):
+                config_payload[k] = v
+
+        extensions, has_changed = self.write_docker_compose(paths, config_payload)
 
         project_meta.update({"last_run": datetime.now().isoformat()})
         self.write_meta(paths["root"] / PROJECT_META_FILE, project_meta)
@@ -765,7 +824,13 @@ class StackHandler:
         if no_up:
             return
 
-        cmd = ["docker", "compose", "up", "-d"]
+        scale_args = []
+        for k, v in project_meta.items():
+            if k.startswith("scale_") and str(v).isdigit():
+                service = k.replace("scale_", "")
+                scale_args.extend(["--scale", f"{service}={v}"])
+
+        cmd = ["docker", "compose", "up", "-d"] + scale_args
         if rebuild:
             cmd.append("--build")
         run_command(cmd, capture_output=False, cwd=str(paths["root"]))
@@ -777,10 +842,16 @@ class StackHandler:
             )
         else:
             self.print_success_summary(
-                paths, project_meta, extensions, show_summary=show_summary
+                paths,
+                project_meta,
+                extensions,
+                show_summary=show_summary,
+                no_wait=no_up or getattr(self.args, "no_wait", False),
             )
 
-    def print_success_summary(self, paths, project_meta, extensions, show_summary=True):
+    def print_success_summary(
+        self, paths, project_meta, extensions, show_summary=True, no_wait=False
+    ):
         host_name, port = (
             project_meta.get("host_name", "localhost"),
             project_meta.get("port", "8080"),
@@ -791,28 +862,34 @@ class StackHandler:
         )
         access_url = f"{'https' if ssl else 'http'}://{host_name}{f':{ssl_port}' if ssl and ssl_port != '443' else (f':{port}' if not ssl else '')}"
 
-        UI.info("Waiting for Liferay to start...")
-        start_time = time.time()
-        is_ready = False
-        while time.time() - start_time < int(project_meta.get("timeout", 300)):
-            try:
-                res = run_command(["curl", "-k", "-I", access_url], check=False)
-                if res and ("200" in res or "302" in res):
-                    is_ready = True
-                    break
-            except Exception:
-                pass
-            sys.stdout.write(".")
-            sys.stdout.flush()
-            time.sleep(10)
-        print("\n")
-        if is_ready:
-            UI.success(f"Stack {project_meta.get('container_name')} is READY!")
-            print(f"  {UI.WHITE}🌐 Liferay:        {UI.CYAN}{access_url}{UI.COLOR_OFF}")
-            for e in [e for e in extensions if "url" in e]:
-                print(f"     - {UI.WHITE}{e['id']:<14} {UI.CYAN}{e['url']}")
-            if not show_summary:
-                return
+        if not no_wait:
+            UI.info("Waiting for Liferay to start...")
+            start_time = time.time()
+            is_ready = False
+            while time.time() - start_time < int(project_meta.get("timeout", 300)):
+                try:
+                    res = run_command(["curl", "-k", "-I", access_url], check=False)
+                    if res and ("200" in res or "302" in res):
+                        is_ready = True
+                        break
+                except Exception:
+                    pass
+                sys.stdout.write(".")
+                sys.stdout.flush()
+                time.sleep(10)
+            print("\n")
+            if is_ready:
+                UI.success(f"Stack {project_meta.get('container_name')} is READY!")
+            else:
+                UI.error("Startup timed out.")
+        else:
+            UI.info("Skipping startup verification.")
+
+        print(f"  {UI.WHITE}🌐 Liferay:        {UI.CYAN}{access_url}{UI.COLOR_OFF}")
+        for e in [e for e in extensions if "url" in e]:
+            print(f"     - {UI.WHITE}{e['id']:<14} {UI.CYAN}{e['url']}")
+        if not show_summary:
+            return
 
             launch_url, found_prop = None, False
             if (paths["files"] / "portal-ext.properties").exists():
@@ -931,7 +1008,12 @@ class StackHandler:
                 ).lower(),
             }
         )
-        self.sync_stack(paths, project_meta, follow=getattr(self.args, "follow", False))
+        self.sync_stack(
+            paths,
+            project_meta,
+            follow=getattr(self.args, "follow", False),
+            no_up=getattr(self.args, "no_up", False),
+        )
 
     def cmd_deploy(self, project_id=None, service=None):
         root = self.detect_project_path(project_id)
@@ -1048,9 +1130,14 @@ class StackHandler:
             target_container = container_prefix
 
         UI.info(f"Entering container: {target_container}")
+        docker_bin = shutil.which("docker")
+        if not docker_bin:
+            UI.die("docker command not found.")
         try:
             # We use subprocess.run directly for interactive TTY
-            subprocess.run(["docker", "exec", "-it", target_container, "/bin/bash"])
+            subprocess.run(  # nosec B603
+                [docker_bin, "exec", "-it", target_container, "/bin/bash"]
+            )
         except KeyboardInterrupt:
             pass
 
@@ -1070,13 +1157,15 @@ class StackHandler:
         UI.info("Hint: Type 'help' for commands, 'exit' to disconnect.")
 
         # Try telnet, fallback to connection instruction
-        try:
-            subprocess.run(["telnet", "localhost", str(port)])
-        except FileNotFoundError:
+        telnet_bin = shutil.which("telnet")
+        if telnet_bin:
+            try:
+                subprocess.run([telnet_bin, "localhost", str(port)])  # nosec B603
+            except KeyboardInterrupt:
+                pass
+        else:
             UI.error("telnet binary not found on host.")
             print(f"Run: {UI.CYAN}telnet localhost {port}{UI.COLOR_OFF}")
-        except KeyboardInterrupt:
-            pass
 
     def is_port_available(self, port, ip="127.0.0.1"):
         try:

@@ -175,7 +175,9 @@ class WorkspaceHandler:
                             if target_folder.exists():
                                 self.safe_rmtree(target_folder)
                             target_folder.mkdir(parents=True)
-                            zip_ref.extractall(target_folder)
+                            from ldm_core.utils import safe_extract
+
+                            safe_extract(zip_ref, target_folder)
                         dest_zip = osgi_cx_dir / item.name
                         if dest_zip.exists():
                             os.remove(dest_zip)
@@ -312,15 +314,17 @@ class WorkspaceHandler:
                 )
                 temp_extract_dir.mkdir(parents=True)
                 UI.info("Extracting source archive...")
+                from ldm_core.utils import safe_extract
+
                 if source.suffix.lower() == ".zip":
                     with zipfile.ZipFile(source, "r") as z:
-                        z.extractall(temp_extract_dir)
+                        safe_extract(z, temp_extract_dir)
                 else:
                     with tarfile.open(
                         source,
                         "r:gz" if source.suffix.lower() in [".tgz", ".gz"] else "r:",
                     ) as t:
-                        self.safe_extract(t, temp_extract_dir)
+                        safe_extract(t, temp_extract_dir)
 
                 for r, d, f in os.walk(temp_extract_dir):
                     if (
@@ -378,7 +382,8 @@ class WorkspaceHandler:
                     if not self._check_gradle_java_version(gradlew, "21"):
                         UI.die("Gradle requires JDK 21.")
                     if platform.system() != "Windows":
-                        os.chmod(gradlew, 0o755)
+                        # Bandit: B103 (chmod 0o755) is safe for gradlew.
+                        os.chmod(gradlew, 0o755)  # nosec B103
                     try:
                         UI.info(f"Executing clean build in {gradlew.parent}...")
                         run_command(
@@ -541,8 +546,10 @@ class WorkspaceHandler:
                     vol = backup_dir / "volume.tgz"
                     if vol.exists():
                         UI.info("Restoring volume...")
+                        from ldm_core.utils import safe_extract
+
                         with tarfile.open(vol, "r:gz") as tar:
-                            self.safe_extract(tar, paths["data"])
+                            safe_extract(tar, paths["data"])
                     db_dump = backup_dir / "database.gz"
                     if db_dump.exists():
                         UI.info("Detecting database dialect from dump...")
@@ -566,7 +573,9 @@ class WorkspaceHandler:
                             project_meta["db_type"] = db_type
                             project_meta["db_name"] = "lportal"
                             project_meta["db_user"] = "liferay"
-                            project_meta["db_pass"] = "liferay"
+                            # Bandit: B105 (password string) is safe here as 'liferay' is the
+                            # standard default for local developer instances.
+                            project_meta["db_pass"] = "liferay"  # nosec B105
                             self.write_meta(
                                 project_path / PROJECT_META_FILE, project_meta
                             )
@@ -671,7 +680,9 @@ class WorkspaceHandler:
                                     stdout = (
                                         None if self.verbose else subprocess.DEVNULL
                                     )
-                                    subprocess.run(
+                                    # Bandit: B602 (shell=True) is used here to stream the
+                                    # decompressed database dump directly into the container.
+                                    subprocess.run(  # nosec B602 B603
                                         cmd,
                                         shell=True,
                                         check=True,
@@ -696,7 +707,9 @@ class WorkspaceHandler:
             UI.success(f"Project created at: {project_path}")
             if not getattr(self.args, "no_run", False):
                 self.args.project = str(project_path)
-                self.cmd_run(is_restart=True)
+                from ldm_core.handlers.stack import StackHandler
+
+                StackHandler.cmd_run(self, is_restart=True)
         finally:
             if temp_extract_dir:
                 self.safe_rmtree(temp_extract_dir)

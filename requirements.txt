@@ -2,3 +2,5 @@
 # You can add packages here (like requests, packaging) if needed in the future
 ruff==0.15.6
 watchdog==4.0.1
+pre-commit
+bandit

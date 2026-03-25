@@ -18,12 +18,9 @@ As the core orchestration and isolation pillars are now robustly implemented, fu
 - **Automated Fetch**: Implement `ldm cloud-fetch` to pull logs or metadata directly from an LCP project via CLI.
 - **Environment Parity**: Add validation to ensure local `LCP.json` resource limits closely match the target Cloud environment.
 
-### 2. Multi-Node Simulation
+### 2. Multi-Site Isolation
 
-**Objective**: Test clustering and load-balancing behavior locally.
-
-- **Implementation**: Allow `ldm scale liferay=2` to spin up a second Liferay container.
-- **Routing**: Update the Traefik labels to support round-robin balancing between the nodes.
+**Objective**: Enhance multi-site isolation for local testing.
 
 ---
 
@@ -38,6 +35,7 @@ As the core orchestration and isolation pillars are now robustly implemented, fu
 
 ### **Orchestration & Workflow**
 
+- **Multi-Node Simulation**: Implement `ldm scale [service]=N` to spin up multiple Liferay or extension containers with automated Traefik routing and Liferay clustering.
 - **Full Stack Import Engine**: Scaffolds projects from standard/Cloud workspaces or archives. Includes automatic Gradle builds and orchestrated backup restoration.
 - **Managed Database Containers**: Automatic provisioning of PostgreSQL 16 and MySQL 5.7 containers to support local data restoration.
 - **Orchestrated Search Snapshots**: Linked Elasticsearch 8.x snapshots to project backups, ensuring search indices stay in sync with the database and files.
@@ -45,6 +43,8 @@ As the core orchestration and isolation pillars are now robustly implemented, fu
 
 ### **Management & Diagnostics**
 
+- **Professional CI/CD Pipeline**: Implemented GitHub Actions for security scanning (Bandit, pip-audit), multi-language linting, and automated smoke testing.
+- **Standalone Distribution**: Automated packaging of LDM into a single-file executable (`ldm-standalone`) via `shiv`, distributed through GitHub Releases.
 - **Project Visibility (`ldm list`)**: Tabulated overview of all initialized environments, versions, and current statuses.
 - **Resource Guard (`ldm doctor`)**: proactive verification of Docker host CPU and Memory allocations to prevent runtime failures.
 - **Global Maintenance (`ldm prune`)**: Reliable identification and removal of orphaned containers from deleted projects.

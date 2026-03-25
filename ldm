@@ -40,5 +40,13 @@ if [ ! -d "$VENV_PATH" ]; then
 	fi
 fi
 
+# Automated Pre-commit setup
+if [ -d "$SCRIPT_DIR/.git" ] && command -v "$VENV_PATH/bin/pre-commit" &>/dev/null; then
+    if [ ! -f "$SCRIPT_DIR/.git/hooks/pre-commit" ]; then
+        echo "⚓ Automating local git hooks (pre-commit)..."
+        "$VENV_PATH/bin/pre-commit" install &>/dev/null
+    fi
+fi
+
 # Run the script using the venv's python interpreter
 "$VENV_PATH/bin/python" "$PYTHON_SCRIPT" "$@"

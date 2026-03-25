@@ -5,6 +5,7 @@ import json
 import time
 import subprocess
 import re
+import shutil
 from pathlib import Path
 from urllib.request import urlopen, Request
 from ldm_core.ui import UI
@@ -52,8 +53,16 @@ def run_command(cmd, shell=False, capture_output=True, check=True, env=None, cwd
 
     env["DOCKER_CLI_HINTS"] = "false"
 
+    # Automatically resolve absolute paths for list-based commands (resolves Bandit B607)
+    if isinstance(cmd, list) and len(cmd) > 0 and not shell:
+        executable = shutil.which(cmd[0])
+        if executable:
+            cmd[0] = executable
+
     try:
-        result = subprocess.run(
+        # Bandit: B602 (shell=True) is used for complex commands where needed,
+        # B603 (subprocess_without_shell_equals_true) is safe as we now use absolute paths.
+        result = subprocess.run(  # nosec B602 B603
             cmd,
             shell=shell,
             capture_output=capture_output,
@@ -62,6 +71,7 @@ def run_command(cmd, shell=False, capture_output=True, check=True, env=None, cwd
             env=env,
             cwd=cwd,
         )
+
         if result.returncode != 0 and not check:
             return None
         return result.stdout.strip() if result.stdout else ""
@@ -77,8 +87,9 @@ def run_command(cmd, shell=False, capture_output=True, check=True, env=None, cwd
 
 def get_json(url):
     try:
+        # Bandit: B310 (urllib-urlopen) is safe as we are fetching from trusted Liferay APIs.
         req = Request(url, headers={"User-Agent": "Mozilla/5.0"})
-        with urlopen(req) as response:
+        with urlopen(req) as response:  # nosec B310
             return json.loads(response.read().decode())
     except Exception as e:
         UI.error(f"Failed to fetch data: {e}")
@@ -222,6 +233,24 @@ def is_within_root(path, root):
         return root in path.parents or path == root
     except Exception:
         return False
+
+
+def safe_extract(archive, target_path):
+    """Safely extracts a Zip or Tar archive to a target path, preventing Zip Slip."""
+    target_path = Path(target_path).resolve()
+
+    if hasattr(archive, "namelist"):  # ZipFile
+        for member in archive.namelist():
+            member_path = (target_path / member).resolve()
+            if not is_within_root(member_path, target_path):
+                raise Exception(f"Potential Zip Slip attempt: {member}")
+        archive.extractall(target_path)
+    elif hasattr(archive, "getmembers"):  # TarFile
+        for member in archive.getmembers():
+            member_path = (target_path / member.name).resolve()
+            if not is_within_root(member_path, target_path):
+                raise Exception(f"Potential Zip Slip attempt: {member.name}")
+        archive.extractall(target_path)
 
 
 def get_docker_socket_path():

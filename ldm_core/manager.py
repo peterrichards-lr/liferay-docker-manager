@@ -58,9 +58,12 @@ class LiferayManager(
             "index",
             "checkpoint",
             "sidecar",
+            "no_up",
+            "no_wait",
             "mount_logs",
             "gogo_port",
             "samples",
+            "service_scale",
         ]
         for attr in run_attrs:
             if not hasattr(self.args, attr):
