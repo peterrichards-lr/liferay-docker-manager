@@ -179,6 +179,14 @@ class WorkspaceHandler:
                             {
                                 "name": item.stem.lower().replace("_", "-"),
                                 "id": ext_info.get("id") or item.stem,
+                                "port": next(
+                                    (
+                                        p.get("port")
+                                        for p in ext_info.get("ports", [])
+                                        if p.get("external")
+                                    ),
+                                    80,
+                                ),
                                 **ext_info,
                             }
                         )
@@ -200,7 +208,7 @@ class WorkspaceHandler:
                         for p in ext_info.get("ports", [])
                         if p.get("external")
                     ),
-                    8080,
+                    80,
                 )
                 entry = {
                     "id": ext_info.get("id") or item.name,
@@ -242,7 +250,7 @@ class WorkspaceHandler:
                         for p in ext_info.get("ports", [])
                         if p.get("external")
                     ),
-                    8080,
+                    80,
                 )
                 services.append(
                     {
