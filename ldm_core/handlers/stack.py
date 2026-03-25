@@ -1123,6 +1123,9 @@ class StackHandler:
     def cmd_down(self, project_id=None, service=None):
         root = self.detect_project_path(project_id)
         if not root:
+            # If project not found but --infra is passed, still run infra-down
+            if getattr(self.args, "infra", False):
+                self.cmd_infra_down()
             return
 
         if service:
@@ -1138,6 +1141,10 @@ class StackHandler:
             if getattr(self.args, "volumes", False):
                 cmd.append("-v")
             run_command(cmd, capture_output=False, cwd=str(root))
+
+            if getattr(self.args, "infra", False):
+                self.cmd_infra_down()
+
             if getattr(self.args, "delete", False):
                 self.safe_rmtree(root)
 

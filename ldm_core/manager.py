@@ -76,6 +76,9 @@ class LiferayManager(
             "list_backups",
             "download",
             "sync_env",
+            "volumes",
+            "delete",
+            "infra",
         ]
         for attr in run_attrs:
             if not hasattr(self.args, attr):
