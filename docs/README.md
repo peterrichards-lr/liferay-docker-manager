@@ -44,15 +44,20 @@ The standalone binary is a single-file executable that includes all dependencies
 
 **macOS / Linux / WSL2:**
 
-Download the latest `ldm-standalone` from the [GitHub Releases](https://github.com/peterrichards-lr/liferay-docker-manager/releases) page.
+Download the latest `ldm` directly using your terminal:
 
 ```bash
-# Move to your path and make executable
-sudo mv ldm-standalone /usr/local/bin/ldm
+# Using curl
+sudo curl -L https://github.com/peterrichards-lr/liferay-docker-manager/releases/latest/download/ldm-standalone -o /usr/local/bin/ldm
+
+# OR using wget
+sudo wget https://github.com/peterrichards-lr/liferay-docker-manager/releases/latest/download/ldm-standalone -O /usr/local/bin/ldm
+
+# Make it executable
 sudo chmod +x /usr/local/bin/ldm
 
 # Verify
-ldm --help
+ldm --version
 ```
 
 > [!TIP]
@@ -60,12 +65,20 @@ ldm --help
 
 **Windows:**
 
-Download the latest `ldm-standalone.exe` from the [GitHub Releases](https://github.com/peterrichards-lr/liferay-docker-manager/releases) page.
+Open PowerShell as an Administrator and run:
 
 ```powershell
-# Move to a folder in your PATH (e.g., C:\bin)
-# Then verify in PowerShell or CMD
-ldm --help
+# Create a bin folder if it doesn't exist
+New-Item -ItemType Directory -Force -Path "$HOME\bin"
+
+# Download the executable
+Invoke-WebRequest -Uri "https://github.com/peterrichards-lr/liferay-docker-manager/releases/latest/download/ldm-standalone.exe" -OutFile "$HOME\bin\ldm.exe"
+
+# Add to your User PATH (one-time setup)
+[Environment]::SetEnvironmentVariable("Path", [Environment]::GetEnvironmentVariable("Path", "User") + ";$HOME\bin", "User")
+
+# Verify (in a new terminal window)
+ldm --version
 ```
 
 ### 2. Manual Installation (Development)
