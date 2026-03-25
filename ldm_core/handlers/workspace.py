@@ -735,6 +735,7 @@ class WorkspaceHandler:
     def cmd_monitor(self, source_path=None):
         try:
             from watchdog.observers import Observer
+            from watchdog.observers.polling import PollingObserver
             from watchdog.events import FileSystemEventHandler
         except ImportError:
             UI.die("watchdog required: pip install watchdog")
@@ -817,6 +818,12 @@ class WorkspaceHandler:
                 UI.success("Deployment complete.")
 
         observer = Observer()
+        if platform.system() == "darwin":
+            from watchdog.observers.kqueue import KqueueObserver
+
+            if isinstance(observer, KqueueObserver):
+                UI.info("Using PollingObserver for macOS stability.")
+                observer = PollingObserver()
 
         UI.info("Scanning for build output directories...")
         watch_targets = []

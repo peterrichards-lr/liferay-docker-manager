@@ -47,11 +47,11 @@ The standalone binary is a single-file executable that includes all dependencies
 Download the latest `ldm` directly using your terminal:
 
 ```bash
-# Using curl
-sudo curl -L https://github.com/peterrichards-lr/liferay-docker-manager/releases/latest/download/ldm-standalone -o /usr/local/bin/ldm
+# For macOS (Intel or Apple Silicon)
+sudo curl -L https://github.com/peterrichards-lr/liferay-docker-manager/releases/latest/download/ldm-macos -o /usr/local/bin/ldm
 
-# OR using wget
-sudo wget https://github.com/peterrichards-lr/liferay-docker-manager/releases/latest/download/ldm-standalone -O /usr/local/bin/ldm
+# For Linux / WSL2
+sudo curl -L https://github.com/peterrichards-lr/liferay-docker-manager/releases/latest/download/ldm-linux -o /usr/local/bin/ldm
 
 # Make it executable
 sudo chmod +x /usr/local/bin/ldm
@@ -61,7 +61,7 @@ ldm --version
 ```
 
 > [!TIP]
-> **WSL2 Users:** Use the Linux binary within your WSL terminal. Ensure your Docker Desktop is configured to "Use the WSL 2 based engine" and that integration is enabled for your specific distribution. LDM will automatically detect the Windows-side browser when launching URLs.
+> **WSL2 Users:** Use the `ldm-linux` binary within your WSL terminal. Ensure your Docker Desktop is configured to "Use the WSL 2 based engine" and that integration is enabled for your specific distribution. LDM will automatically detect the Windows-side browser when launching URLs.
 
 **Windows:**
 
@@ -72,7 +72,7 @@ Open PowerShell as an Administrator and run:
 New-Item -ItemType Directory -Force -Path "$HOME\bin"
 
 # Download the executable
-Invoke-WebRequest -Uri "https://github.com/peterrichards-lr/liferay-docker-manager/releases/latest/download/ldm-standalone.exe" -OutFile "$HOME\bin\ldm.exe"
+Invoke-WebRequest -Uri "https://github.com/peterrichards-lr/liferay-docker-manager/releases/latest/download/ldm-windows.exe" -OutFile "$HOME\bin\ldm.exe"
 
 # Add to your User PATH (one-time setup)
 [Environment]::SetEnvironmentVariable("Path", [Environment]::GetEnvironmentVariable("Path", "User") + ";$HOME\bin", "User")

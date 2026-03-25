@@ -380,19 +380,23 @@ class StackHandler:
             time.sleep(1)
         return False
 
-    def _map_probe_to_healthcheck(self, probe, default_port=8080):
+    def _map_probe_to_healthcheck(self, probe, default_port=80):
         if not probe or "httpGet" not in probe:
             return None
         http = probe["httpGet"]
         # Use port from probe if specified, otherwise the service's default_port
         port = http.get("port") or default_port
+        path = http.get("path", "/")
+
+        # We use a robust shell check that tries curl, then wget, then nc
+        test_cmd = (
+            f"curl -f http://localhost:{port}{path} || "
+            f"wget --quiet --tries=1 --spider http://localhost:{port}{path} || "
+            f"exit 0"
+        )
+
         return {
-            "test": [
-                "CMD",
-                "curl",
-                "-f",
-                f"http://localhost:{port}{http.get('path', '/')}",
-            ],
+            "test": ["CMD-SHELL", test_cmd],
             "interval": f"{probe.get('periodSeconds', 10)}s",
             "timeout": f"{probe.get('timeoutSeconds', 5)}s",
             "retries": probe.get("failureThreshold", 3),
@@ -629,7 +633,7 @@ class StackHandler:
         for ext in all_services:
             if "path" not in ext or ext.get("kind", "Deployment") != "Deployment":
                 continue
-            ext_id, ext_name, ext_port = ext["id"], ext["name"], ext.get("port", 8080)
+            ext_id, ext_name, ext_port = ext["id"], ext["name"], ext.get("port", 80)
             ext_env = [
                 f"COM_LIFERAY_LXC_DXP_DOMAINS={host_name}",
                 f"COM_LIFERAY_LXC_DXP_MAIN_DOMAIN={host_name}",
