@@ -11,6 +11,7 @@ def main():
     )
     parser.add_argument("-v", "--verbose", action="store_true")
     parser.add_argument("-y", "--non-interactive", action="store_true")
+    parser.add_argument("--version", action="version", version=f"%(prog)s {VERSION}")
     subparsers = parser.add_subparsers(dest="command")
 
     # Command: update-check

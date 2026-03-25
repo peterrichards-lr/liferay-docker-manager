@@ -9,6 +9,7 @@ import shutil
 import zipfile
 from pathlib import Path
 from urllib.request import urlopen, Request
+from urllib.error import URLError, HTTPError
 from ldm_core.ui import UI
 from ldm_core.constants import TAG_PATTERN
 
@@ -341,7 +342,7 @@ def check_for_updates(current_version, force=False):
             raise ValueError(f"Invalid URL scheme: {url}")
 
         req = Request(url, headers={"User-Agent": "ldm-cli"})
-        with urlopen(req, timeout=5) as response:  # nosec B310
+        with urlopen(req, timeout=3) as response:  # nosec B310
             res_data = json.loads(response.read().decode())
             latest_version = res_data.get("tag_name", "").lstrip("v")
             release_url = res_data.get("html_url")
@@ -358,6 +359,8 @@ def check_for_updates(current_version, force=False):
             )
 
             return latest_version, release_url
+    except (HTTPError, URLError, TimeoutError, json.JSONDecodeError):
+        # Fail gracefully for background checks
+        return None, None
     except Exception:
-        # Silent fail for background checks
         return None, None
