@@ -6,10 +6,60 @@ import time
 import subprocess
 import re
 import shutil
+import zipfile
 from pathlib import Path
 from urllib.request import urlopen, Request
 from ldm_core.ui import UI
 from ldm_core.constants import TAG_PATTERN
+
+
+def download_samples(version, destination):
+    """Downloads and extracts the samples pack from GitHub."""
+    url = f"https://github.com/peterrichards-lr/liferay-docker-manager/releases/download/v{version}/samples.zip"
+    temp_zip = destination.parent / f"samples_{version}.zip"
+
+    try:
+        UI.info(f"Downloading sample pack v{version}...")
+        req = Request(url, headers={"User-Agent": "ldm-cli"})
+        with urlopen(req, timeout=15) as response:
+            with open(temp_zip, "wb") as f:
+                shutil.copyfileobj(response, f)
+
+        UI.info("Extracting samples...")
+        destination.mkdir(parents=True, exist_ok=True)
+        with zipfile.ZipFile(temp_zip, "r") as zip_ref:
+            # We assume the zip contains a 'samples/' folder at the root
+            # We extract to a temporary dir and then move content to destination
+            extract_temp = destination.parent / f"temp_samples_{version}"
+            if extract_temp.exists():
+                shutil.rmtree(extract_temp)
+            extract_temp.mkdir(parents=True)
+            zip_ref.extractall(extract_temp)
+
+            # Move content from temp/samples/* to destination/*
+            inner_samples = extract_temp / "samples"
+            if inner_samples.exists():
+                for item in inner_samples.iterdir():
+                    target = destination / item.name
+                    if target.exists():
+                        if target.is_dir():
+                            shutil.rmtree(target)
+                        else:
+                            os.remove(target)
+                    shutil.move(str(item), str(target))
+
+            shutil.rmtree(extract_temp)
+
+        if temp_zip.exists():
+            os.remove(temp_zip)
+
+        UI.success("Sample pack ready.")
+        return True
+    except Exception as e:
+        UI.error(f"Failed to download samples: {e}")
+        if temp_zip.exists():
+            os.remove(temp_zip)
+        return False
 
 
 def load_env_blacklist(path):

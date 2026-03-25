@@ -146,6 +146,8 @@ jobs:
         pip install .
         shiv -e ldm_core.cli:main -o ldm-standalone -p '/usr/bin/env python3' .
         chmod +x ldm-standalone
+        # Package samples for on-demand download
+        zip -r samples.zip samples/
 
     - name: Build Standalone (Windows)
       if: matrix.os == 'windows-latest'
@@ -159,6 +161,7 @@ jobs:
         files: |
           ldm-standalone
           dist/ldm-standalone.exe
+          samples.zip
           LICENSE
         body: |
           ## Liferay Docker Manager (LDM) Release

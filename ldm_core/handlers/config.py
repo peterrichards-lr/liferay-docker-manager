@@ -90,16 +90,38 @@ class ConfigHandler:
         )
 
     def sync_samples(self, paths):
-        """Sync global samples into the current project path."""
-        global_samples_dir = SCRIPT_DIR / "samples"
-        if not global_samples_dir.exists():
-            UI.warning("Global samples directory not found.")
-            return False
+        """Sync global samples into the current project path with on-demand download support."""
+        # 1. Prioritize local git repo samples (Developer Workflow)
+        samples_dir = SCRIPT_DIR / "samples"
 
-        UI.info("Hydrating project with sample assets...")
+        # 2. Check for cached standalone samples (vX.Y.Z)
+        if not samples_dir.exists() or not (samples_dir / "metadata.json").exists():
+            from ldm_core.constants import VERSION
+            from ldm_core.utils import get_actual_home, download_samples
+
+            samples_dir = get_actual_home() / ".ldm" / "samples" / f"v{VERSION}"
+
+            # 3. Trigger download if both are missing
+            if not samples_dir.exists() or not (samples_dir / "metadata.json").exists():
+                if self.non_interactive:
+                    UI.die(
+                        f"Sample assets for v{VERSION} not found locally or in cache."
+                    )
+
+                UI.warning(f"Sample assets (v{VERSION}) not found.")
+                if (
+                    UI.ask("Download sample pack from GitHub? (~50MB)", "Y").upper()
+                    == "Y"
+                ):
+                    if not download_samples(VERSION, samples_dir):
+                        UI.die("Failed to prepare sample assets.")
+                else:
+                    UI.die("Samples are required for this command switch.")
+
+        UI.info(f"Hydrating project with sample assets (Source: {samples_dir.name})...")
 
         # 1. Sync Client Extensions
-        src_ce = global_samples_dir / "client-extensions"
+        src_ce = samples_dir / "client-extensions"
         if src_ce.exists():
             for item in src_ce.iterdir():
                 if item.is_dir() and not item.name.startswith("."):
@@ -110,7 +132,7 @@ class ConfigHandler:
                     UI.info(f"  + Sample Extension: {item.name}")
 
         # 2. Sync Deployable Artifacts
-        src_deploy = global_samples_dir / "deploy"
+        src_deploy = samples_dir / "deploy"
         if src_deploy.exists():
             for item in src_deploy.iterdir():
                 if item.is_file() and not item.name.startswith("."):
@@ -118,7 +140,7 @@ class ConfigHandler:
                     UI.info(f"  + Sample Artifact: {item.name}")
 
         # 3. Sync the 'Gold' Snapshot
-        src_gold = global_samples_dir / "snapshots" / "gold"
+        src_gold = samples_dir / "snapshots" / "gold"
         if src_gold.exists():
             dest_gold = paths["backups"] / "sample-gold-standard"
             if dest_gold.exists():
