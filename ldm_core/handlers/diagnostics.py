@@ -1,6 +1,7 @@
 import os
 import sys
 import platform
+import shutil
 from ldm_core.ui import UI
 from ldm_core.constants import PROJECT_META_FILE, SCRIPT_DIR
 from ldm_core.utils import run_command, get_actual_home
@@ -76,6 +77,26 @@ class DiagnosticsHandler:
                 results.append(("OpenSSL", "Not found", False))
         except Exception:
             results.append(("OpenSSL", "Not found in PATH", False))
+
+        # 4.1 Liferay Cloud Check
+        try:
+            lcp_bin = shutil.which("lcp")
+            if lcp_bin:
+                is_auth, _ = self._is_cloud_authenticated()
+                if is_auth:
+                    results.append(("Liferay Cloud Auth", "Logged In", True))
+                else:
+                    results.append(
+                        (
+                            "Liferay Cloud Auth",
+                            "Not Logged In (Run 'lcp login')",
+                            "warn",
+                        )
+                    )
+            else:
+                results.append(("Liferay Cloud Auth", "LCP CLI Not Installed", "warn"))
+        except Exception:
+            pass
 
         # 5. Network Check
         has_net = run_command(

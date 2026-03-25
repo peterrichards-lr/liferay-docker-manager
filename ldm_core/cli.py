@@ -129,6 +129,18 @@ def main():
     scale.add_argument("service_scale", nargs="+")
     scale.add_argument("-p", "--project", dest="project_flag")
 
+    cloud = subparsers.add_parser("cloud-fetch")
+    cloud.add_argument("project", nargs="?")
+    cloud.add_argument("env_id", nargs="?")
+    cloud.add_argument("service", nargs="?")
+    cloud.add_argument("-p", "--project", dest="project_flag")
+    cloud.add_argument("--list-envs", action="store_true")
+    cloud.add_argument("--list-backups", action="store_true")
+    cloud.add_argument("--download", action="store_true")
+    cloud.add_argument("--restore", action="store_true")
+    cloud.add_argument("--sync-env", action="store_true")
+    cloud.add_argument("--logs", action="store_true")
+
     args = parser.parse_args()
     if not args.command:
         parser.print_help()
@@ -151,6 +163,7 @@ def main():
         "import",
         "scale",
         "log-level",
+        "cloud-fetch",
     ]
     if args.command in docker_required and not manager.check_docker():
         UI.die("Docker not accessible.")
@@ -181,6 +194,9 @@ def main():
         "log-level": lambda: manager.cmd_log_level(project_id),
         "browser": lambda: manager.cmd_browser(project_id),
         "scale": lambda: manager.cmd_scale(project_id, args.service_scale),
+        "cloud-fetch": lambda: manager.cmd_cloud_fetch(
+            project_id, getattr(args, "env_id", None)
+        ),
         "prune": lambda: manager.cmd_prune(),
     }
 

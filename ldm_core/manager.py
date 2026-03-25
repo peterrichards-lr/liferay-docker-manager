@@ -4,6 +4,7 @@ from ldm_core.handlers.workspace import WorkspaceHandler
 from ldm_core.handlers.snapshot import SnapshotHandler
 from ldm_core.handlers.config import ConfigHandler
 from ldm_core.handlers.diagnostics import DiagnosticsHandler
+from ldm_core.handlers.cloud import CloudHandler
 
 
 class LiferayManager(
@@ -13,6 +14,7 @@ class LiferayManager(
     SnapshotHandler,
     ConfigHandler,
     DiagnosticsHandler,
+    CloudHandler,
 ):
     """Orchestrator class for LDM, composed of multiple functional mixins."""
 
@@ -69,6 +71,11 @@ class LiferayManager(
             "level",
             "list",
             "url",
+            "env_id",
+            "list_envs",
+            "list_backups",
+            "download",
+            "sync_env",
         ]
         for attr in run_attrs:
             if not hasattr(self.args, attr):
