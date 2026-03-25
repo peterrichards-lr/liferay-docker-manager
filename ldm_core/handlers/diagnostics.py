@@ -2,6 +2,7 @@ import os
 import sys
 import platform
 import shutil
+import json
 from ldm_core.ui import UI
 from ldm_core.constants import PROJECT_META_FILE, SCRIPT_DIR, VERSION
 from ldm_core.utils import run_command, get_actual_home, check_for_updates
@@ -57,14 +58,36 @@ class DiagnosticsHandler:
         if docker_version:
             results.append(("Docker Engine", f"Running (v{docker_version})", True))
 
-            # 2.1 Docker Resources
+            # 2.1 Docker Credentials Check
+            try:
+                docker_config_path = get_actual_home() / ".docker" / "config.json"
+                if docker_config_path.exists():
+                    with open(docker_config_path, "r") as f:
+                        config = json.loads(f.read())
+                        creds_store = config.get("credsStore")
+                        if creds_store:
+                            helper_bin = f"docker-credential-{creds_store}"
+                            if not shutil.which(helper_bin):
+                                results.append(
+                                    (
+                                        "Docker Creds Store",
+                                        f"Broken ({creds_store} helper missing)",
+                                        False,
+                                    )
+                                )
+                            else:
+                                results.append(
+                                    ("Docker Creds Store", f"OK ({creds_store})", True)
+                                )
+            except Exception:
+                pass
+
+            # 2.2 Docker Resources
             docker_info_raw = run_command(
                 ["docker", "info", "--format", "{{json .}}"], check=False
             )
             if docker_info_raw:
                 try:
-                    import json
-
                     info = json.loads(docker_info_raw)
                     cpus = info.get("NCPU", 0)
                     mem_bytes = info.get("MemTotal", 0)
