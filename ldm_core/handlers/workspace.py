@@ -193,10 +193,19 @@ class WorkspaceHandler:
             ext_info = self._scan_extension_metadata(folder_path=item)
             if ext_info["type"] or (item / "LCP.json").exists():
                 found_ids.add(item.name)
+                # Determine port from LCP metadata if available, fallback to 8080
+                port = next(
+                    (
+                        p.get("port")
+                        for p in ext_info.get("ports", [])
+                        if p.get("external")
+                    ),
+                    8080,
+                )
                 entry = {
                     "id": ext_info.get("id") or item.name,
                     "name": item.name.lower().replace("_", "-"),
-                    "port": 8080,
+                    "port": port,
                     **ext_info,
                 }
                 if (item / "Dockerfile").exists():

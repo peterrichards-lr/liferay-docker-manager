@@ -384,12 +384,14 @@ class StackHandler:
         if not probe or "httpGet" not in probe:
             return None
         http = probe["httpGet"]
+        # Use port from probe if specified, otherwise the service's default_port
+        port = http.get("port") or default_port
         return {
             "test": [
                 "CMD",
                 "curl",
                 "-f",
-                f"http://localhost:{http.get('port', default_port)}{http.get('path', '/')}",
+                f"http://localhost:{port}{http.get('path', '/')}",
             ],
             "interval": f"{probe.get('periodSeconds', 10)}s",
             "timeout": f"{probe.get('timeoutSeconds', 5)}s",
@@ -467,6 +469,8 @@ class StackHandler:
             f"LDM_CONFIG_SIGNATURE={config_sig}",
             f"LIFERAY_MODULE__FRAMEWORK__PROPERTIES__OSGI__CONSOLE={gogo_env}",
             f"OSGI_CONSOLE={gogo_env}",
+            f"LIFERAY_VIRTUAL__HOSTS__VALID__HOSTS=127.0.0.1,[::1],{host_name},localhost",
+            f"LIFERAY_JVM_OPTS=-Dorg.apache.catalina.SESSION_COOKIE_NAME=LFR_SESSION_ID_{host_name.replace('.', '_')}",
         ]
         if scale_map.get("liferay", 1) > 1:
             liferay_env.extend(
@@ -486,6 +490,18 @@ class StackHandler:
                     "networks": ["liferay-net"],
                     "extra_hosts": [f"{host_name}:host-gateway"],
                     "stop_grace_period": "60s",
+                    "healthcheck": {
+                        "test": [
+                            "CMD",
+                            "curl",
+                            "-f",
+                            "http://localhost:8080/c/portal/layout",
+                        ],
+                        "interval": "30s",
+                        "timeout": "10s",
+                        "retries": 15,
+                        "start_period": "120s",
+                    },
                     "labels": [
                         "com.liferay.ldm.managed=true",
                         f"com.liferay.ldm.project={container_name}",
