@@ -23,7 +23,6 @@ from ldm_core.constants import (
 from ldm_core.utils import (
     run_command,
     get_actual_home,
-    get_docker_socket_path,
     dict_to_yaml,
     discover_latest_tag,
 )
@@ -247,20 +246,26 @@ class StackHandler:
         global_cert_dir = actual_home / ".liferay_docker_certs"
         global_cert_dir.mkdir(parents=True, exist_ok=True)
 
-        # 3. Start the Socket Proxy ONLY if the standard socket is missing (Docker Desktop Mac isolation)
+        # 3. Start the Socket Proxy ONLY on macOS (Darwin)
         api_proxy = "docker-socket-proxy"
-        standard_socket = Path("/var/run/docker.sock")
         is_darwin = platform.system() == "darwin"
 
-        # If standard socket exists and we can talk to it, we don't need the bridge
-        needs_bridge = is_darwin and not standard_socket.exists()
+        # On macOS, we ALWAYS want the bridge because containers cannot
+        # reliably talk to the host socket via symlinks or VirtioFS mounts.
+        needs_bridge = is_darwin
 
         if needs_bridge:
-            if not run_command(["docker", "ps", "-q", "-f", f"name=^{api_proxy}$"]):
-                run_command(["docker", "rm", "-f", api_proxy], check=False)
-                real_socket_path = f"{actual_home}/.docker/run/docker.sock"
+            # On macOS, /var/run/docker.sock is the standard entry point
+            # even if it is a symlink to the user-specific home path.
+            socket_path = Path("/var/run/docker.sock")
+
+            if not run_command(
+                ["docker", "ps", "-a", "-q", "-f", f"name=^{api_proxy}$"]
+            ):
                 if self.verbose:
-                    UI.info("Starting Docker Socket Proxy bridge for macOS...")
+                    UI.info(
+                        f"Starting Docker Socket Proxy bridge for macOS ({socket_path})..."
+                    )
                 run_command(
                     [
                         "docker",
@@ -271,7 +276,9 @@ class StackHandler:
                         "--network",
                         "liferay-net",
                         "-v",
-                        f"{real_socket_path}:/var/run/docker.sock:ro",
+                        f"{socket_path}:/var/run/docker.sock:ro",
+                        "-e",
+                        "DOCKER_API_VERSION=1.44",
                         "alpine/socat",
                         "TCP-LISTEN:2375,fork,reuseaddr",
                         "UNIX-CONNECT:/var/run/docker.sock",
@@ -280,7 +287,11 @@ class StackHandler:
 
         # 4. Start Traefik if not running
         proxy_name = "liferay-proxy-global"
-        if not run_command(["docker", "ps", "-q", "-f", f"name=^{proxy_name}$"]):
+        proxy_running = run_command(
+            ["docker", "ps", "-q", "-f", f"name=^{proxy_name}$"]
+        )
+
+        if not proxy_running:
             run_command(["docker", "rm", "-f", proxy_name], check=False)
 
             # Determine Traefik's Docker endpoint
@@ -324,6 +335,26 @@ class StackHandler:
                 ]
             )
             run_command(traefik_cmd)
+        elif needs_bridge:
+            # Traefik is running, but if we just started the bridge, we might need to
+            # check if Traefik is configured to use it.
+            # If Traefik was started with unix socket but we need TCP bridge, we must restart it.
+            inspect_endpoint = run_command(
+                [
+                    "docker",
+                    "inspect",
+                    "-f",
+                    "{{range .Config.Cmd}}{{.}} {{end}}",
+                    proxy_name,
+                ],
+                check=False,
+            )
+            required_endpoint = f"tcp://{api_proxy}:2375"
+            if required_endpoint not in (inspect_endpoint or ""):
+                UI.info("Restarting Traefik to use the Docker Socket Proxy bridge...")
+                run_command(["docker", "rm", "-f", proxy_name])
+                return self.setup_infrastructure(resolved_ip, ssl_port, paths, use_ssl)
+
         return True
 
     def check_hostname(self, host_name, silent=False, expected_ip=None):
@@ -388,11 +419,12 @@ class StackHandler:
         port = http.get("port") or default_port
         path = http.get("path", "/")
 
-        # We use a robust shell check that tries curl, then wget, then nc
+        # We use a robust shell check that tries curl, then wget, then nc.
+        # It only succeeds if at least one tool reports success.
         test_cmd = (
-            f"curl -f http://localhost:{port}{path} || "
+            f"(curl -f http://localhost:{port}{path} || "
             f"wget --quiet --tries=1 --spider http://localhost:{port}{path} || "
-            f"exit 0"
+            f"nc -z localhost {port})"
         )
 
         return {
@@ -402,7 +434,7 @@ class StackHandler:
             "retries": probe.get("failureThreshold", 3),
             "start_period": f"{probe.get('initialDelaySeconds', 0)}s"
             if probe.get("initialDelaySeconds")
-            else None,
+            else "30s",
         }
 
     def write_docker_compose(self, paths, config):
@@ -435,7 +467,6 @@ class StackHandler:
             if k.startswith("scale_") and str(v).isdigit()
         }
 
-        socket_path = get_docker_socket_path()
         liferay_volumes = [
             f"{paths['files'].as_posix()}:/mnt/liferay/files",
             f"{paths['scripts'].as_posix()}:/mnt/liferay/scripts",
@@ -450,9 +481,8 @@ class StackHandler:
             f"{paths['portal_log4j'].as_posix()}/portal-log4j-ext.xml:/opt/liferay/tomcat/webapps/ROOT/WEB-INF/classes/META-INF/portal-log4j-ext.xml",
         ]
         if scale_map.get("liferay", 1) <= 1:
-            liferay_volumes.append(
-                f"{paths['state'].as_posix()}:/opt/liferay/osgi/state"
-            )
+            # We use a named volume for OSGi state to avoid file-locking issues on macOS bind-mounts
+            liferay_volumes.append(f"{container_name}-state:/opt/liferay/osgi/state")
             if mount_logs:
                 liferay_volumes.append(f"{paths['logs'].as_posix()}:/opt/liferay/logs")
 
@@ -517,6 +547,12 @@ class StackHandler:
 
         if scale_map.get("liferay", 1) <= 1:
             compose["services"]["liferay"]["container_name"] = container_name
+            # Define named volume for OSGi state
+            if "volumes" not in compose:
+                compose["volumes"] = {}
+            compose["volumes"][f"{container_name}-state"] = {
+                "name": f"{container_name}-state"
+            }
 
         if db_type in ["postgresql", "mysql"]:
             db_img, db_port = (
@@ -608,15 +644,6 @@ class StackHandler:
                 f"traefik.http.routers.{container_name}-main.tls.domains[0].sans=*.{host_name}",
                 f"traefik.http.services.{container_name}-main-svc.loadbalancer.server.port=8080",
             ]
-            if platform.system() == "darwin":
-                compose["services"]["docker-socket-bridge"] = {
-                    "image": "alpine/socat",
-                    "container_name": f"{container_name}-socket-bridge",
-                    "networks": ["liferay-net"],
-                    "command": "TCP-LISTEN:2375,fork,reuseaddr UNIX-CONNECT:/var/run/docker.sock",
-                    "volumes": [f"{socket_path}:/var/run/docker.sock:ro"],
-                    "environment": ["DOCKER_API_VERSION=1.44"],
-                }
 
         extensions = self.scan_client_extensions(
             paths["root"], paths["cx"], paths["ce_dir"]
@@ -630,7 +657,14 @@ class StackHandler:
         for ext in all_services:
             if "path" not in ext or ext.get("kind", "Deployment") != "Deployment":
                 continue
-            ext_id, ext_name, ext_port = ext["id"], ext["name"], ext.get("port", 80)
+
+            # Determine internal port from LCP ports metadata if present
+            ext_port = 80
+            if ext.get("ports"):
+                # Use the first port from LCP.json as the internal port
+                ext_port = ext["ports"][0].get("port", 80)
+
+            ext_id, ext_name = ext["id"], ext["name"]
             ext_env = [
                 f"COM_LIFERAY_LXC_DXP_DOMAINS={host_name}",
                 f"COM_LIFERAY_LXC_DXP_MAIN_DOMAIN={host_name}",
@@ -802,6 +836,20 @@ class StackHandler:
         self.setup_infrastructure(resolved_ip, ssl_port, paths, use_ssl=use_ssl)
         if use_shared_search:
             self.setup_global_search()
+
+        # Ensure critical runtime directories are writable by the container (UID 1000)
+        for key in ["data", "deploy", "state"]:
+            if key in paths:
+                try:
+                    paths[key].mkdir(parents=True, exist_ok=True)
+                    # We use recursive chmod here because subdirectories created
+                    # by Liferay or the Host might have restrictive permissions.
+                    if platform.system() != "Windows":
+                        subprocess.run(
+                            ["chmod", "-R", "777", str(paths[key])], check=False
+                        )  # nosec B603 B607
+                except Exception:
+                    pass
 
         config_payload = {
             "container_name": container_name,

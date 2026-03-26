@@ -18,6 +18,18 @@ A professional command-line orchestrator for quickly standing up Liferay Portal 
 
 ---
 
+## 🛡️ Compatibility (Verified Environments)
+
+| Architecture | Host OS | Docker Provider | Status |
+| :--- | :--- | :--- | :--- |
+| **Apple Silicon** | macOS 14+ | **OrbStack** | ![macOS-Silicon-Orb](https://img.shields.io/badge/macOS_Silicon-OrbStack-success?style=flat-square&logo=apple&logoColor=white&color=00B0FF) |
+| **Apple Silicon** | macOS 14+ | **Docker Desktop** | ![macOS-Silicon-DD](https://img.shields.io/badge/macOS_Silicon-Docker_Desktop-success?style=flat-square&logo=apple&logoColor=white&color=00C853) |
+| **Apple Intel** | macOS 13+ | **Colima** | ![macOS-Intel-Col](https://img.shields.io/badge/macOS_Intel-Colima-success?style=flat-square&logo=apple&logoColor=white&color=FFAB00) |
+| **Windows PC** | Windows 11 | **Native WSL2** | ![Windows-WSL2](https://img.shields.io/badge/Windows_11-WSL2_Native-success?style=flat-square&logo=windows&logoColor=white&color=0078D4) |
+| **Linux Node** | Ubuntu 22.04 | **Docker Engine** | ![Linux-Native](https://img.shields.io/badge/Linux-Native_Docker-success?style=flat-square&logo=linux&logoColor=white&color=333333) |
+
+---
+
 ## Why use ldm?
 
 - **Multi-Instance Session Isolation**: Run multiple demos side-by-side on the same machine without session cross-talk. `ldm` automatically manages unique session cookie names and virtual hostnames.
@@ -31,75 +43,24 @@ A professional command-line orchestrator for quickly standing up Liferay Portal 
 
 ## Documentation
 
+- [Installation Guide](installation.md)
 - [Architecture Overview](LDM_ARCHITECTURE.md)
+- [Test & Validation Strategy](TESTING.md)
 - [Future Roadmap](roadmap.md)
 
 ---
 
-## Installation
+## Installation (Quick Start)
 
-### 1. Standalone Binary (Recommended)
-
-The standalone binary is a single-file executable that includes all dependencies.
-
-**macOS / Linux / WSL2:**
-
-Download the latest `ldm` directly using your terminal:
+The standalone binary is the recommended way to use LDM.
 
 ```bash
-# For macOS (Intel or Apple Silicon)
+# macOS/Linux/WSL2
 sudo curl -L https://github.com/peterrichards-lr/liferay-docker-manager/releases/latest/download/ldm-macos -o /usr/local/bin/ldm
-
-# For Linux / WSL2
-sudo curl -L https://github.com/peterrichards-lr/liferay-docker-manager/releases/latest/download/ldm-linux -o /usr/local/bin/ldm
-
-# Make it executable
 sudo chmod +x /usr/local/bin/ldm
-
-# Verify
-ldm --version
 ```
 
-> [!TIP]
-> **WSL2 Users:** Use the `ldm-linux` binary within your WSL terminal. Ensure your Docker Desktop is configured to "Use the WSL 2 based engine" and that integration is enabled for your specific distribution. LDM will automatically detect the Windows-side browser when launching URLs.
-
-**Windows:**
-
-Open PowerShell as an Administrator and run:
-
-```powershell
-# Create a bin folder if it doesn't exist
-New-Item -ItemType Directory -Force -Path "$HOME\bin"
-
-# Download the executable
-Invoke-WebRequest -Uri "https://github.com/peterrichards-lr/liferay-docker-manager/releases/latest/download/ldm-windows.exe" -OutFile "$HOME\bin\ldm.exe"
-
-# Add to your User PATH (one-time setup)
-[Environment]::SetEnvironmentVariable("Path", [Environment]::GetEnvironmentVariable("Path", "User") + ";$HOME\bin", "User")
-
-# Verify (in a new terminal window)
-ldm --version
-```
-
-### 2. Manual Installation (Development)
-
-Clone this repository and use the provided wrapper script for your platform. The wrapper will automatically set up a local Python virtual environment and install the required dependencies on its first run.
-
-**macOS / Linux / WSL2:**
-
-```bash
-git clone https://github.com/peterrichards-lr/liferay-docker-manager.git
-cd liferay-docker-manager
-./ldm --help
-```
-
-**Windows:**
-
-```cmd
-git clone https://github.com/peterrichards-lr/liferay-docker-manager.git
-cd liferay-docker-manager
-ldm.bat --help
-```
+For detailed instructions and Windows setup, see the **[Full Installation Guide](installation.md)**.
 
 ---
 

@@ -4,6 +4,7 @@ import time
 import tarfile
 import gzip
 import lzma
+import subprocess
 from pathlib import Path
 from datetime import datetime
 from ldm_core.ui import UI
@@ -58,11 +59,178 @@ class SnapshotHandler:
         if backups:
             UI.heading(f"Snapshots in {paths['backups']}")
             for i, b in enumerate(backups):
-                meta = self.read_meta(b / "meta")
-                size_bytes = sum(f.stat().st_size for f in b.glob("*") if f.is_file())
-                size = UI.format_size(size_bytes)
-                print(f"[{i + 1}] {meta.get('name', '(unnamed)')[:18]} - {size}")
+                meta_file = b / "meta"
+                if meta_file.exists():
+                    meta = self.read_meta(meta_file)
+                    size_bytes = sum(
+                        f.stat().st_size for f in b.glob("*") if f.is_file()
+                    )
+                    size = UI.format_size(size_bytes)
+                    print(f"[{i + 1}] {meta.get('name', '(unnamed)')[:18]} - {size}")
+                else:
+                    # Possibly a cloud backup directory
+                    print(f"[{i + 1}] {b.name} (Cloud Backup)")
         return backups
+
+    def _restore_from_cloud_layout(self, backup_dir, paths, project_meta):
+        """Restores a project from a Liferay Cloud-style backup (database.gz + volume.tgz)."""
+        backup_dir = Path(backup_dir).resolve()
+        if not backup_dir.exists():
+            UI.error(f"Backup directory not found: {backup_dir}")
+            return False
+
+        restored_anything = False
+        vol = backup_dir / "volume.tgz"
+        if vol.exists():
+            UI.info("Restoring volume...")
+            from ldm_core.utils import safe_extract
+
+            with tarfile.open(vol, "r:gz") as tar:
+                safe_extract(tar, paths["data"])
+            restored_anything = True
+
+        db_dump = backup_dir / "database.gz"
+        if db_dump.exists():
+            UI.info("Detecting database dialect from dump...")
+            db_type = None
+            try:
+                with gzip.open(db_dump, "rt", encoding="utf-8", errors="ignore") as f:
+                    head = "".join([f.readline() for _ in range(50)])
+                    if "PostgreSQL" in head:
+                        db_type = "postgresql"
+                    elif "MySQL" in head or "MariaDB" in head:
+                        db_type = "mysql"
+            except Exception:
+                pass
+
+            if db_type:
+                UI.info(f"Detected {db_type} dump. Preparing orchestrated restore...")
+                project_meta["db_type"] = db_type
+                project_meta["db_name"] = "lportal"
+                project_meta["db_user"] = "liferay"
+                # Bandit: B105 (password string) is safe here as 'liferay' is the
+                # standard default for local developer instances.
+                project_meta["db_pass"] = "liferay"  # nosec B105
+                self.write_meta(paths["root"] / PROJECT_META_FILE, project_meta)
+
+                # Ensure stack is synced for the correct DB type
+                if hasattr(self, "sync_stack"):
+                    self.sync_stack(paths, project_meta, show_summary=False, no_up=True)
+
+                db_container = f"{project_meta['container_name']}-db"
+
+                UI.info(f"Starting database container: {db_container}...")
+                run_command(
+                    ["docker", "compose", "up", "-d", "db"],
+                    cwd=str(paths["root"]),
+                )
+
+                UI.info("Waiting for database service to become ready...")
+                start_time, db_ready = time.time(), False
+                while time.time() - start_time < 60:
+                    status = run_command(
+                        [
+                            "docker",
+                            "inspect",
+                            "-f",
+                            "{{.State.Health.Status}}",
+                            db_container,
+                        ],
+                        check=False,
+                    )
+                    if status == "healthy":
+                        db_ready = True
+                        break
+
+                    if db_type == "postgresql":
+                        res = run_command(
+                            [
+                                "docker",
+                                "exec",
+                                db_container,
+                                "pg_isready",
+                                "-U",
+                                "liferay",
+                                "-d",
+                                "lportal",
+                            ],
+                            check=False,
+                        )
+                        if res and "accepting connections" in res:
+                            db_ready = True
+                            break
+                    else:
+                        res = run_command(
+                            [
+                                "docker",
+                                "exec",
+                                db_container,
+                                "mysqladmin",
+                                "ping",
+                                "-h",
+                                "localhost",
+                                "-u",
+                                "liferay",
+                                "-pliferay",
+                            ],
+                            check=False,
+                        )
+                        if res and "mysqld is alive" in res:
+                            db_ready = True
+                            break
+                    time.sleep(2)
+
+                if db_ready:
+                    if db_type == "postgresql":
+                        UI.info("Creating compatibility roles for Cloud restoration...")
+                        run_command(
+                            [
+                                "docker",
+                                "exec",
+                                db_container,
+                                "psql",
+                                "-U",
+                                "liferay",
+                                "-d",
+                                "lportal",
+                                "-c",
+                                "CREATE ROLE cloudsqlsuperuser;",
+                            ],
+                            check=False,
+                        )
+
+                    UI.info("Streaming database dump into container...")
+                    try:
+                        cmd = (
+                            f"gunzip -c {db_dump} | docker exec -i {db_container} "
+                            + (
+                                "psql -U liferay -d lportal"
+                                if db_type == "postgresql"
+                                else "mysql -u liferay -pliferay lportal"
+                            )
+                        )
+                        stdout = None if self.verbose else subprocess.DEVNULL
+                        # Bandit: B602 (shell=True) is used here to stream the
+                        # decompressed database dump directly into the container.
+                        subprocess.run(
+                            cmd,
+                            shell=True,
+                            check=True,
+                            stdout=stdout,
+                            stderr=(None if self.verbose else subprocess.STDOUT),
+                        )  # nosec B602 B603
+                        UI.success("Database restored.")
+                        restored_anything = True
+                    except Exception as e:
+                        UI.error(f"Database restore failed: {e}")
+                else:
+                    UI.error(
+                        "Database container failed to become ready. Restore skipped."
+                    )
+            else:
+                UI.warning("Could not determine database dialect. Restore skipped.")
+
+        return restored_anything
 
     def cmd_snapshot(self, project_id=None):
         root_path = self.detect_project_path(project_id)
@@ -213,23 +381,42 @@ class SnapshotHandler:
         )
         UI.success(f"Snapshot saved: {snap_dir}")
 
-    def cmd_restore(self, project_id=None, auto_index=None):
+    def cmd_restore(self, project_id=None, auto_index=None, backup_dir=None):
         root_path = self.detect_project_path(project_id)
         if not root_path:
             return
         paths = self.setup_paths(root_path)
-        backups = self.cmd_snapshots(paths)
-        if not backups:
-            UI.die("No snapshots available.")
-
-        if auto_index is not None:
-            choice = backups[auto_index - 1]
-        elif getattr(self.args, "index", None):
-            choice = backups[self.args.index - 1]
-        else:
-            choice = backups[int(UI.ask("Select snapshot index", "1")) - 1]
-
         project_meta = self.read_meta(paths["root"] / PROJECT_META_FILE)
+
+        # 1. Resolve choice (direct dir, index, or interactive)
+        choice = None
+        if backup_dir:
+            choice = Path(backup_dir)
+        elif getattr(self.args, "backup_dir", None):
+            choice = Path(self.args.backup_dir)
+
+        if not choice:
+            backups = self.cmd_snapshots(paths)
+            if not backups:
+                UI.die("No snapshots available.")
+
+            if auto_index is not None:
+                choice = backups[auto_index - 1]
+            elif getattr(self.args, "index", None):
+                choice = backups[self.args.index - 1]
+            else:
+                choice = backups[int(UI.ask("Select snapshot index", "1")) - 1]
+
+        if not choice or not choice.exists():
+            UI.die(f"Snapshot directory not found: {choice}")
+
+        # 2. Handle Cloud Layout vs Standard Layout
+        if (choice / "database.gz").exists() or (choice / "volume.tgz").exists():
+            if self._restore_from_cloud_layout(choice, paths, project_meta):
+                UI.success("Cloud restoration successful.")
+            return
+
+        # Standard LDM Layout
         container_name = project_meta.get("container_name") or paths[
             "root"
         ].name.replace(".", "-")
@@ -239,8 +426,14 @@ class SnapshotHandler:
             )
             time.sleep(2)
 
-        with tarfile.open(choice / "files.tar.gz", "r:gz") as tar:
-            self.safe_extract(tar, paths["root"])
+        files_tar = choice / "files.tar.gz"
+        if files_tar.exists():
+            with tarfile.open(files_tar, "r:gz") as tar:
+                from ldm_core.utils import safe_extract
+
+                safe_extract(tar, paths["root"])
+        else:
+            UI.die(f"Standard snapshot files not found in {choice}")
 
         # --- SEARCH RESTORE (Orchestrated) ---
         snap_meta = self.read_meta(choice / "meta")

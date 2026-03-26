@@ -33,7 +33,9 @@ This repository contains automation tools for managing Liferay DXP instances usi
 - **Shell-Specific Implementation**:
   - **Zsh Environment**: Scripts must strictly follow the `#!/bin/zsh` shebang to support advanced features like `split` and nested array expansions (e.g., `${(z)status}`).
   - **Backtick Escaping**: Traefik labels containing Host rules must use escaped backticks (e.g., `Host(\`${HOST_NAME}\`)`) to prevent Zsh from interpreting the hostname as a sub-command.
-  - **macOS Socat Bridge**: To resolve connectivity issues between Docker and sidecars (like Traefik) on macOS M1/M2 architectures, scripts must use `alpine/socat` to bridge the Unix socket to a TCP endpoint within the shared network.
+  - **LCP.json Defaults**: When parsing `LCP.json` for client extensions or standalone services, default to **1 CPU** and **512MB Memory** if not explicitly specified, adhering to Liferay Cloud standards.
+- **Robust Healthchecks**: Client extensions must use robust multi-tool healthcheck probes (trying `curl`, then `wget`, then `nc`) to ensure accurate status reporting in Docker.
+- **Global macOS Bridge**: The `docker-socket-proxy` (socat) bridge on macOS is a **global singleton** shared by all projects. The infrastructure setup must ensure it is running and correctly linked to Traefik whenever the home-dir Docker socket is used.
 - **Snapshot Integrity**: Snapshot tools must verify the state of `data/document_library` and database connectivity before proceeding. DB dumps must be verified for reachability and authentication using dummy queries (e.g., `SELECT 1`) before archiving files. Success must be confirmed via process return codes and resulting archive integrity (non-zero size).
 - **Dynamic Logging**: Support hierarchical logging configuration via `logging.json`.
   - **Bundles**: Generate `[symbolic-name]-log4j-ext.xml` in `osgi/log4j/` with `monitorInterval` for hot-reloads.

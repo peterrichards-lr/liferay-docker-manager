@@ -4,10 +4,8 @@ import json
 import time
 import shutil
 import platform
-import subprocess
 import tarfile
 import zipfile
-import gzip
 import threading
 from pathlib import Path
 from datetime import datetime
@@ -55,8 +53,8 @@ class WorkspaceHandler:
         info = {
             "id": None,
             "kind": None,
-            "cpu": None,
-            "memory": None,
+            "cpu": 1,
+            "memory": 512,
             "ports": [],
             "readinessProbe": None,
             "livenessProbe": None,
@@ -88,8 +86,8 @@ class WorkspaceHandler:
             "id": None,
             "type": None,
             "kind": None,
-            "cpu": None,
-            "memory": None,
+            "cpu": 1,
+            "memory": 512,
             "ports": [],
             "readinessProbe": None,
             "livenessProbe": None,
@@ -561,165 +559,7 @@ class WorkspaceHandler:
             if backup_dir_path:
                 backup_dir = Path(backup_dir_path).resolve()
                 if backup_dir.exists():
-                    vol = backup_dir / "volume.tgz"
-                    if vol.exists():
-                        UI.info("Restoring volume...")
-                        from ldm_core.utils import safe_extract
-
-                        with tarfile.open(vol, "r:gz") as tar:
-                            safe_extract(tar, paths["data"])
-                    db_dump = backup_dir / "database.gz"
-                    if db_dump.exists():
-                        UI.info("Detecting database dialect from dump...")
-                        db_type = None
-                        try:
-                            with gzip.open(
-                                db_dump, "rt", encoding="utf-8", errors="ignore"
-                            ) as f:
-                                head = "".join([f.readline() for _ in range(50)])
-                                if "PostgreSQL" in head:
-                                    db_type = "postgresql"
-                                elif "MySQL" in head or "MariaDB" in head:
-                                    db_type = "mysql"
-                        except Exception:
-                            pass
-
-                        if db_type:
-                            UI.info(
-                                f"Detected {db_type} dump. Preparing orchestrated restore..."
-                            )
-                            project_meta["db_type"] = db_type
-                            project_meta["db_name"] = "lportal"
-                            project_meta["db_user"] = "liferay"
-                            # Bandit: B105 (password string) is safe here as 'liferay' is the
-                            # standard default for local developer instances.
-                            project_meta["db_pass"] = "liferay"  # nosec B105
-                            self.write_meta(
-                                project_path / PROJECT_META_FILE, project_meta
-                            )
-
-                            self.sync_stack(
-                                paths, project_meta, show_summary=False, no_up=True
-                            )
-                            db_container = f"{project_meta['container_name']}-db"
-
-                            UI.info(f"Starting database container: {db_container}...")
-                            run_command(
-                                ["docker", "compose", "up", "-d", "db"],
-                                cwd=str(project_path),
-                            )
-
-                            UI.info("Waiting for database service to become ready...")
-                            start_time, db_ready = time.time(), False
-                            while time.time() - start_time < 60:
-                                status = run_command(
-                                    [
-                                        "docker",
-                                        "inspect",
-                                        "-f",
-                                        "{{.State.Health.Status}}",
-                                        db_container,
-                                    ],
-                                    check=False,
-                                )
-                                if status == "healthy":
-                                    db_ready = True
-                                    break
-
-                                if db_type == "postgresql":
-                                    res = run_command(
-                                        [
-                                            "docker",
-                                            "exec",
-                                            db_container,
-                                            "pg_isready",
-                                            "-U",
-                                            "liferay",
-                                            "-d",
-                                            "lportal",
-                                        ],
-                                        check=False,
-                                    )
-                                    if res and "accepting connections" in res:
-                                        db_ready = True
-                                        break
-                                else:
-                                    res = run_command(
-                                        [
-                                            "docker",
-                                            "exec",
-                                            db_container,
-                                            "mysqladmin",
-                                            "ping",
-                                            "-h",
-                                            "localhost",
-                                            "-u",
-                                            "liferay",
-                                            "-pliferay",
-                                        ],
-                                        check=False,
-                                    )
-                                    if res and "mysqld is alive" in res:
-                                        db_ready = True
-                                        break
-                                time.sleep(2)
-
-                            if db_ready:
-                                if db_type == "postgresql":
-                                    UI.info(
-                                        "Creating compatibility roles for Cloud restoration..."
-                                    )
-                                    run_command(
-                                        [
-                                            "docker",
-                                            "exec",
-                                            db_container,
-                                            "psql",
-                                            "-U",
-                                            "liferay",
-                                            "-d",
-                                            "lportal",
-                                            "-c",
-                                            "CREATE ROLE cloudsqlsuperuser;",
-                                        ],
-                                        check=False,
-                                    )
-
-                                UI.info("Streaming database dump into container...")
-                                try:
-                                    cmd = (
-                                        f"gunzip -c {db_dump} | docker exec -i {db_container} "
-                                        + (
-                                            "psql -U liferay -d lportal"
-                                            if db_type == "postgresql"
-                                            else "mysql -u liferay -pliferay lportal"
-                                        )
-                                    )
-                                    stdout = (
-                                        None if self.verbose else subprocess.DEVNULL
-                                    )
-                                    # Bandit: B602 (shell=True) is used here to stream the
-                                    # decompressed database dump directly into the container.
-                                    subprocess.run(  # nosec B602 B603
-                                        cmd,
-                                        shell=True,
-                                        check=True,
-                                        stdout=stdout,
-                                        stderr=(
-                                            None if self.verbose else subprocess.STDOUT
-                                        ),
-                                    )
-                                    UI.success("Database restored.")
-                                except Exception as e:
-                                    UI.error(f"Database restore failed: {e}")
-                            else:
-                                UI.error(
-                                    "Database container failed to become ready. Restore skipped."
-                                )
-                        else:
-                            UI.warning(
-                                "Could not determine database dialect. Restore skipped."
-                            )
+                    self._restore_from_cloud_layout(backup_dir, paths, project_meta)
 
             self.write_meta(project_path / PROJECT_META_FILE, project_meta)
             UI.success(f"Project created at: {project_path}")
@@ -783,11 +623,26 @@ class WorkspaceHandler:
 
             def _handle_event(self, path):
                 p = Path(path)
-                if (p.suffix.lower() == ".zip" and p.parent.name == "dist") or (
-                    p.suffix.lower() in [".jar", ".war"]
-                    and p.parent.name == "libs"
-                    and p.parent.parent.name == "build"
-                ):
+                # Refined Filtering Logic:
+                # 1. client-extensions/*/dist/*.zip
+                # 2. fragments/*.zip
+                # 3. modules/*/build/libs/*.jar
+
+                is_valid = False
+                if p.suffix.lower() == ".zip":
+                    if "client-extensions" in p.parts and "dist" in p.parts:
+                        is_valid = True
+                    elif "fragments" in p.parts:
+                        is_valid = True
+                elif p.suffix.lower() in [".jar", ".war"]:
+                    if (
+                        "modules" in p.parts
+                        and "build" in p.parts
+                        and "libs" in p.parts
+                    ):
+                        is_valid = True
+
+                if is_valid:
                     with self.lock:
                         self.pending_files.add(p)
                         if self.timer:
@@ -825,51 +680,15 @@ class WorkspaceHandler:
                 UI.info("Using PollingObserver for macOS stability.")
                 observer = PollingObserver()
 
-        UI.info("Scanning for build output directories...")
+        UI.info("Scanning for workspace branches...")
         watch_targets = []
-
-        # We surgically target only the directories where build artifacts are placed
-        # within the three supported subfolders
         allowed_branches = ["client-extensions", "modules", "fragments"]
 
         for branch in allowed_branches:
-            branch_path = workspace_root / branch
-            if not branch_path.exists():
-                continue
-
-            for root, dirs, _ in os.walk(branch_path):
-                # Skip hidden and junk dirs during the scan
-                dirs[:] = [
-                    d
-                    for d in dirs
-                    if d not in [".git", ".gradle", "node_modules", ".ldm_temp"]
-                ]
-
-                if root.endswith("build/libs"):
-                    watch_targets.append(Path(root))
-                    dirs[:] = []  # Stop descending
-                elif (
-                    root.endswith("dist")
-                    and (Path(root).parent / "client-extension.yaml").exists()
-                ):
-                    watch_targets.append(Path(root))
-                    dirs[:] = []  # Stop descending
-                elif root.endswith("build"):
-                    # If we are in a 'build' folder, ONLY allow descending into 'libs'
-                    if "libs" in dirs:
-                        dirs[:] = ["libs"]
-                    else:
-                        dirs[:] = []
-
-        # If no standard output folders found, fallback to core roots but warn
-        if not watch_targets:
-            UI.warning(
-                "No build output directories (build/libs or dist) found. Monitoring core branches instead."
-            )
-            for folder in allowed_branches:
-                target = workspace_root / folder
-                if target.exists():
-                    watch_targets.append(target)
+            target = workspace_root / branch
+            if target.exists():
+                watch_targets.append(target)
+                UI.info(f"  + Watching: {branch}")
 
         if not watch_targets:
             watch_targets = [workspace_root]
@@ -883,11 +702,8 @@ class WorkspaceHandler:
         )
 
         for target in watch_targets:
-            rel_path = target.relative_to(workspace_root)
-            UI.info(f"  + Watching: {rel_path}")
-            # We watch these non-recursively because we only care about the files
-            # appearing directly in these output folders.
-            observer.schedule(handler, str(target), recursive=False)
+            # We now watch branches recursively but the handler filters precisely
+            observer.schedule(handler, str(target), recursive=True)
 
         observer.start()
 

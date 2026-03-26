@@ -195,6 +195,13 @@ class BaseHandler:
         for key in essential_paths:
             if key in paths:
                 paths[key].mkdir(parents=True, exist_ok=True)
+                try:
+                    # Bandit: B103 (chmod 777) is used here to ensure the Liferay container
+                    # (running as UID 1000) has write access to host-mounted volumes
+                    # on macOS/Windows environments.
+                    os.chmod(paths[key], 0o777)  # nosec B103
+                except Exception:
+                    pass
 
         # 1. Migrate legacy 'osgi/configs' if found in root (cleanup)
         legacy_configs = paths["root"] / "configs"
