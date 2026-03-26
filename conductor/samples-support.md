@@ -25,10 +25,10 @@ Implement the `--samples` switch for the `ldm run` command to allow users to ini
 
 - Add `sync_samples(self, paths)` to `ConfigHandler` or a similar mixin.
 - This method will:
-  - Locate the global `samples/` directory (relative to `SCRIPT_DIR`).
-  - Copy all directories from `samples/client-extensions/` to the project's `client-extensions/` (`paths['ce_dir']`).
-  - Copy all files from `samples/deploy/` to the project's `deploy/` (`paths['deploy']`).
-  - (Optional) Copy a pre-configured snapshot from `samples/snapshots/` to `paths['backups']`.
+  - Locate the global `references/samples/` directory (relative to `SCRIPT_DIR`).
+  - Copy all directories from `references/samples/client-extensions/` to the project's `client-extensions/` (`paths['ce_dir']`).
+  - Copy all files from `references/samples/deploy/` to the project's `deploy/` (`paths['deploy']`).
+  - (Optional) Copy a pre-configured snapshot from `references/samples/snapshots/` to `paths['backups']`.
 
 ### 4. Integration with `sync_stack`
 

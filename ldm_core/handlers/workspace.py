@@ -145,20 +145,34 @@ class WorkspaceHandler:
         extensions = []
         if not root_dir.exists():
             return extensions
-        ce_build_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Paths based on Core Mandates:
+        # root_dir / client-extensions -> Build Source of Truth
+        # root_dir / osgi / client-extensions -> Liferay Auto-deploy (ZIPs)
+        ce_source_truth = root_dir / "client-extensions"
+        ce_source_truth.mkdir(parents=True, exist_ok=True)
         osgi_cx_dir.mkdir(parents=True, exist_ok=True)
+        
         found_ids = set()
 
+        # 1. Process ZIPs from the workspace build directory (ldm-cx-samples/client-extensions/*/dist/*.zip)
         for item in [i for i in ce_build_dir.iterdir() if i.suffix.lower() == ".zip"]:
             try:
-                with zipfile.ZipFile(item, "r") as zip_ref:
+                # Root project folder is the build context (Source of Truth)
+                target_folder = ce_source_truth / item.stem
+                root_zip_copy = ce_source_truth / item.name
+                
+                # Copy to root first to expand
+                shutil.copy2(item, root_zip_copy)
+
+                with zipfile.ZipFile(root_zip_copy, "r") as zip_ref:
                     ext_info = self._scan_extension_metadata(zip_ref=zip_ref)
                     namelist = zip_ref.namelist()
+                    
                     if ext_info["type"] or any(
                         Path(f).name in ["client-extension.yaml", "LCP.json"]
                         for f in namelist
                     ):
-                        target_folder = ce_build_dir / item.stem
                         if (
                             any(Path(f).name == "Dockerfile" for f in namelist)
                             and ext_info.get("kind") != "Job"
@@ -167,16 +181,19 @@ class WorkspaceHandler:
                                 self.safe_rmtree(target_folder)
                             target_folder.mkdir(parents=True)
                             from ldm_core.utils import safe_extract
-
                             safe_extract(zip_ref, target_folder)
+                        
+                        # Move the original ZIP from root to OSGI for Liferay's scanner
                         dest_zip = osgi_cx_dir / item.name
                         if dest_zip.exists():
                             os.remove(dest_zip)
-                        shutil.move(str(item), str(dest_zip))
+                        shutil.move(str(root_zip_copy), str(dest_zip))
+                        
                         extensions.append(
                             {
                                 "name": item.stem.lower().replace("_", "-"),
                                 "id": ext_info.get("id") or item.stem,
+                                "path": target_folder, # Build from root/client-extensions/
                                 "port": next(
                                     (
                                         p.get("port")
@@ -191,15 +208,15 @@ class WorkspaceHandler:
             except Exception as e:
                 UI.error(f"Failed to process {item.name}: {e}")
 
+        # 2. Process existing folders in the Source of Truth
         for item in [
             i
-            for i in ce_build_dir.iterdir()
+            for i in ce_source_truth.iterdir()
             if i.is_dir() and not i.name.startswith(".")
         ]:
             ext_info = self._scan_extension_metadata(folder_path=item)
             if ext_info["type"] or (item / "LCP.json").exists():
                 found_ids.add(item.name)
-                # Determine port from LCP metadata if available, fallback to 8080
                 port = next(
                     (
                         p.get("port")
@@ -212,22 +229,15 @@ class WorkspaceHandler:
                     "id": ext_info.get("id") or item.name,
                     "name": item.name.lower().replace("_", "-"),
                     "port": port,
+                    "path": item, # Already in source of truth
                     **ext_info,
                 }
-                if (item / "Dockerfile").exists():
-                    entry["path"] = item
                 existing = next((e for e in extensions if e["id"] == entry["id"]), None)
                 if existing:
                     existing.update(entry)
                 else:
                     extensions.append(entry)
 
-        for folder in [
-            f
-            for f in ce_build_dir.iterdir()
-            if f.is_dir() and f.name not in found_ids and not f.name.startswith(".")
-        ]:
-            self.safe_rmtree(folder)
         return extensions
 
     def scan_standalone_services(self, root_path):
@@ -301,6 +311,59 @@ class WorkspaceHandler:
             if k.upper().startswith(prefix) and not is_env_var_blacklisted(k, blacklist)
         }
         return [f"{k}={v}" for k, v in {**global_pool, **targeted}.items()]
+
+    def _hydrate_from_workspace(self, workspace_root, paths):
+        """Initial scan and sync of artifacts from workspace to project."""
+        UI.info("Scanning workspace for built artifacts...")
+        
+        # 1. Sync Client Extensions (ZIPs from dist folders)
+        ce_dir = workspace_root / "client-extensions"
+        if ce_dir.exists():
+            for dist_zip in ce_dir.glob("*/dist/*.zip"):
+                self._sync_cx_artifact(dist_zip, paths)
+
+        # 2. Sync Modules (JARs from build/libs)
+        mod_dir = workspace_root / "modules"
+        if mod_dir.exists():
+            for jar in mod_dir.glob("*/build/libs/*.jar"):
+                if (jar.parent.parent.parent / "bnd.bnd").exists():
+                    shutil.copy2(jar, paths["modules"] / jar.name)
+                    UI.info(f"  + Synced Module: {jar.name}")
+
+        # 3. Sync Fragments (ZIPs from fragments folder)
+        frag_dir = workspace_root / "fragments"
+        if frag_dir.exists():
+            for zip_file in frag_dir.glob("*.zip"):
+                shutil.copy2(zip_file, paths["deploy"] / zip_file.name)
+                UI.info(f"  + Synced Fragment: {zip_file.name}")
+
+    def _sync_cx_artifact(self, zip_path, paths):
+        """Internal helper for the mandatory 3-step CX sync sequence."""
+        ce_source_truth = paths["root"] / "client-extensions"
+        ce_source_truth.mkdir(parents=True, exist_ok=True)
+        
+        # Step 1: Copy ZIP to root client-extensions/
+        root_zip_path = ce_source_truth / zip_path.name
+        shutil.copy2(zip_path, root_zip_path)
+        
+        # Step 2: Expand ZIP in root for Docker builds
+        try:
+            with zipfile.ZipFile(root_zip_path, "r") as zip_ref:
+                target_folder = ce_source_truth / zip_path.stem
+                if target_folder.exists():
+                    shutil.rmtree(target_folder)
+                target_folder.mkdir(parents=True)
+                from ldm_core.utils import safe_extract
+                safe_extract(zip_ref, target_folder)
+                UI.info(f"  + Synced & Expanded CX: {zip_path.name}")
+        except Exception as e:
+            UI.error(f"Failed to expand {zip_path.name}: {e}")
+
+        # Step 3: Move original ZIP to osgi/client-extensions/ for Liferay
+        dest_zip = paths["cx"] / zip_path.name
+        if dest_zip.exists():
+            os.remove(dest_zip)
+        shutil.move(str(root_zip_path), str(dest_zip))
 
     def cmd_init_from(self, source_path):
         """Initialize project with a persistent link to a source workspace and start monitoring."""
@@ -449,7 +512,9 @@ class WorkspaceHandler:
                         tag = re.sub(
                             r"^(dxp|portal)-", "", line.split("=", 1)[1].strip()
                         )
+                        # Workspace product always wins
                         project_meta["tag"] = tag
+                        self.args.tag = tag 
                         UI.info(f"Extracted version: {tag}")
                         break
 
@@ -561,6 +626,8 @@ class WorkspaceHandler:
                 if backup_dir.exists():
                     self._restore_from_cloud_layout(backup_dir, paths, project_meta)
 
+            self._hydrate_from_workspace(workspace_root, paths)
+
             self.write_meta(project_path / PROJECT_META_FILE, project_meta)
             UI.success(f"Project created at: {project_path}")
             if not getattr(self.args, "no_run", False):
@@ -659,17 +726,28 @@ class WorkspaceHandler:
                     )
                 if not files:
                     return
+                
+                updated_services = set()
                 for f in files:
-                    dest = (
-                        self.paths["ce_dir"] / f.name
-                        if f.suffix.lower() == ".zip"
-                        else self.paths["modules"] / f.name
-                    )
-                    UI.info(f"Syncing: {f.name}")
-                    shutil.copy2(f, dest)
-                self.manager.sync_stack(
-                    self.paths, self.project_meta, show_summary=False
-                )
+                    # 1. Determine action based on type
+                    if f.suffix.lower() == ".zip":
+                        # Client Extension
+                        self.manager._sync_cx_artifact(f, self.paths)
+                        if "client-extensions" in f.parts:
+                            updated_services.add(f.stem.lower().replace("_", "-"))
+                    else:
+                        # JARs for Liferay modules (sync to deploy)
+                        dest_path = self.paths["deploy"] / f.name
+                        UI.info(f"Syncing Module: {f.name}")
+                        shutil.copy2(f, dest_path)
+
+                # 3. Trigger deployment from the project's internal state
+                if updated_services:
+                    for svc in updated_services:
+                        self.manager.cmd_deploy(service=svc)
+                else:
+                    self.manager.cmd_deploy()
+                
                 UI.success("Deployment complete.")
 
         observer = Observer()

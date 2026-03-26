@@ -47,7 +47,15 @@ This repository contains automation tools for managing Liferay DXP instances usi
   - **Empty**: Suppress browser launch.
   - **Value**: Replace protocol/host/port with the active project URL and launch.
 - **Common Asset Synchronization**: Automatically synchronize files from the global `common/` folder (e.g., `*.config`, `*.cfg`, `*.xml`, `*.lpkg`) to project subdirectories. Use a `.liferay-docker.deployed` tracking file to ensure each asset is only deployed once, preventing redundant processing by Liferay's scanners.
-- **Double-Underscore Convention**: Use Liferay's preferred `__` (double-underscore) convention for all system-generated environment variables (e.g., `LIFERAY_VIRTUAL__HOSTS__VALID__HOSTS`) to ensure correct property mapping and eliminate "Unable to decode part" warnings in logs.
+- **Workspace Integration Workflows**:
+  - **Static Import (`import`)**: Performs a one-time, static import of a workspace. Follows the mandatory 3-step CX sequence. The resulting project is detached from the source.
+  - **Live Link (`init-from`)**: Initializes a project and establishes a persistent link by storing the `workspace_path` in project metadata. Automatically starts the `monitor` process.
+  - **Initial Hydration**: Commands that link or import from a workspace (`import`, `init-from`) MUST perform an initial scan and sync of all built artifacts from the workspace to the project internal structure before triggering the first stack startup.
+  - **Artifact Monitoring (`monitor`)**: Restricted to projects created via `init-from`. Restarts the background watch process for the linked workspace.
+- **Mandatory CX Sync Sequence**: Every Client Extension (CX) ZIP artifact imported from a workspace MUST follow this atomic sequence:
+  1. **Copy to Root**: Copy the ZIP from the workspace to the project's root `client-extensions/` folder (The Build Source of Truth).
+  2. **Expand**: Unzip the artifact into a subfolder within root `client-extensions/` to provide the Docker build context.
+  3. **Handoff**: Move the original ZIP artifact to `osgi/client-extensions/` for Liferay's internal auto-deployment.
 - **UI Interaction Standards**:
   - **Standardized Prompts**: All binary questions must support the `(y/n/q)` format, where `q` triggers an immediate abort.
   - **Sanitization**: Automatically trim leading and trailing whitespace from all user inputs.
@@ -60,10 +68,15 @@ This repository contains automation tools for managing Liferay DXP instances usi
 
 - **Liferay Versioning**: Adhere to Liferay 7.4+ tag formats (`YYYY.qX.N`).
 - **File System Structure**: Respect the expected directory layout:
-  - `deploy/`: Liferay deployment folder.
+  - `deploy/`: Liferay deployment folder (Bind Mount).
   - `files/`: Configuration files (e.g., `portal-ext.properties`).
-  - `data/`: Persistent Liferay data (document library, etc.).
-  - `osgi/`: Client extensions and state.
+  - `data/`: Persistent Liferay data (Bind Mount).
+  - `client-extensions/`: **Absolute Source of Truth** for Client Extensions (Bind Mount).
+  - `osgi/`: Internal Liferay state and auto-deployment targets.
+    - `osgi/client-extensions/`: Targeted strictly for Liferay's auto-deploy process (ZIP files).
+    - `osgi/state/`: Liferay cache/state. **MUST be a Bind Mount** to allow LDM to delete/clear it to resolve Liferay issues.
+- **Permission Management (macOS/Colima)**: Since host-to-container UID mapping can fail on Colima (especially when using QEMU), LDM MUST use a temporary container-based "Permission Fixer" on all bind-mounts before starting the stack. This fixer MUST apply `chown -R 1000:1000` and `chmod -R 775` to provide Liferay with native access while maintaining professional filesystem standards.
+- **Mount Verification**: Before starting a stack on macOS, LDM MUST verify that host volumes are actually shared with the Docker VM. If the project resides on an external volume (e.g., `/Volumes/SanDisk`), LDM must detect if the path is missing and provide the specific `colima start --mount` command required to resolve the "Ghost Mount" issue.
 
 ## UI & Interaction Consistency
 
@@ -114,6 +127,17 @@ This repository contains automation tools for managing Liferay DXP instances usi
 - **Standard vs. Cloud Layout**:
   - **Standard**: Full Liferay Home structure suitable for local restoration.
   - **Liferay Cloud**: Specific layout (`database.gz` + `volume.tgz`) that strips owner/privilege data from SQL dumps, making them ready for immediate Liferay Cloud console imports.
+
+### 7. Colima & External Volumes ("Ghost Mounts")
+
+- **Issue**: By default, Colima only shares `/Users`, `/tmp`, and `/var/folders`. If a project is on an external volume (e.g., `/Volumes/SanDisk`), Docker will create an empty "ghost directory" inside the VM instead of mounting the actual host files.
+- **Symptoms**: Liferay starts but cannot see `portal-ext.properties` or Log4j configs, leading to 404s and initialization failures.
+- **Fix**: LDM implements a **Mount Verifier** that writes a token to the host and verifies it from inside a container. If it fails, it provides the correct `colima start --mount /Volumes:w` command.
+
+### 8. The Log4j "Not a Directory" Conflict
+
+- **Issue**: If `portal-log4j-ext.xml` is accidentally created as a directory during setup, Docker will fail to start the container because it cannot mount a directory onto the expected file path.
+- **Fix**: LDM setup logic now explicitly checks if the XML path is a directory and removes it before writing the file.
 
 ## Current State & Next Steps
 

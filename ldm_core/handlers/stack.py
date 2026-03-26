@@ -467,24 +467,27 @@ class StackHandler:
             if k.startswith("scale_") and str(v).isdigit()
         }
 
+        is_darwin = platform.system() == "darwin"
+        
         liferay_volumes = [
             f"{paths['files'].as_posix()}:/mnt/liferay/files",
             f"{paths['scripts'].as_posix()}:/mnt/liferay/scripts",
             f"{paths['configs'].as_posix()}:/opt/liferay/osgi/configs",
             f"{paths['modules'].as_posix()}:/opt/liferay/osgi/modules",
             f"{paths['marketplace'].as_posix()}:/opt/liferay/osgi/marketplace",
-            f"{paths['data'].as_posix()}:/opt/liferay/data",
-            f"{paths['deploy'].as_posix()}:/mnt/liferay/deploy",
             f"{paths['cx'].as_posix()}:/opt/liferay/osgi/client-extensions",
             f"{paths['routes'].as_posix()}:/opt/liferay/routes",
             f"{paths['log4j'].as_posix()}:/opt/liferay/osgi/log4j",
             f"{paths['portal_log4j'].as_posix()}/portal-log4j-ext.xml:/opt/liferay/tomcat/webapps/ROOT/WEB-INF/classes/META-INF/portal-log4j-ext.xml",
+            # data, deploy, and state MUST be bind-mounts for host access, 
+            # snapshots, and the ability to clear Liferay state.
+            f"{paths['data'].as_posix()}:/opt/liferay/data",
+            f"{paths['deploy'].as_posix()}:/mnt/liferay/deploy",
+            f"{paths['state'].as_posix()}:/opt/liferay/osgi/state",
         ]
-        if scale_map.get("liferay", 1) <= 1:
-            # We use a named volume for OSGi state to avoid file-locking issues on macOS bind-mounts
-            liferay_volumes.append(f"{container_name}-state:/opt/liferay/osgi/state")
-            if mount_logs:
-                liferay_volumes.append(f"{paths['logs'].as_posix()}:/opt/liferay/logs")
+
+        if mount_logs:
+            liferay_volumes.append(f"{paths['logs'].as_posix()}:/opt/liferay/logs")
 
         gogo_env = (
             "0.0.0.0:11311"
@@ -547,12 +550,6 @@ class StackHandler:
 
         if scale_map.get("liferay", 1) <= 1:
             compose["services"]["liferay"]["container_name"] = container_name
-            # Define named volume for OSGi state
-            if "volumes" not in compose:
-                compose["volumes"] = {}
-            compose["volumes"][f"{container_name}-state"] = {
-                "name": f"{container_name}-state"
-            }
 
         if db_type in ["postgresql", "mysql"]:
             db_img, db_port = (
@@ -837,19 +834,72 @@ class StackHandler:
         if use_shared_search:
             self.setup_global_search()
 
-        # Ensure critical runtime directories are writable by the container (UID 1000)
-        for key in ["data", "deploy", "state"]:
+        # Ensure critical runtime directories exist
+        for key in ["data", "deploy", "state", "portal_log4j", "configs", "files"]:
             if key in paths:
-                try:
-                    paths[key].mkdir(parents=True, exist_ok=True)
-                    # We use recursive chmod here because subdirectories created
-                    # by Liferay or the Host might have restrictive permissions.
-                    if platform.system() != "Windows":
-                        subprocess.run(
-                            ["chmod", "-R", "777", str(paths[key])], check=False
-                        )  # nosec B603 B607
-                except Exception:
-                    pass
+                # Special Case: portal_log4j is a directory, but the XML is a file.
+                # If the XML exists as a directory (failed previous run), delete it.
+                if key == "portal_log4j":
+                    xml_path = paths[key] / "portal-log4j-ext.xml"
+                    if xml_path.is_dir():
+                        shutil.rmtree(xml_path)
+                
+                paths[key].mkdir(parents=True, exist_ok=True)
+
+        # On macOS (especially Colima/OrbStack), we must handle two issues:
+        # 1. Mount Verification: Ensure the host path is actually shared with the VM.
+        # 2. Permission Fixer: Solve UID 1000 mismatch via an internal chmod.
+        if platform.system() == "darwin":
+            UI.info("Verifying volume mounts and directory permissions...")
+            
+            # Create a unique mount-check token to avoid cache hits
+            import uuid
+            token_val = f"LDM_VERIFY_{uuid.uuid4().hex[:8]}"
+            token_file = paths["root"] / ".ldm_mount_check"
+            token_file.write_text(token_val)
+            
+            try:
+                # Run a single container to verify the mount AND fix permissions for the whole root
+                # We use chown 1000:1000 (liferay user) and chmod 775 as a realistic standard.
+                verify_res = run_command([
+                    "docker", "run", "--rm",
+                    "-v", f"{paths['root'].as_posix()}:/project",
+                    "alpine", "sh", "-c", 
+                    f"if [ \"$(cat /project/.ldm_mount_check 2>/dev/null)\" = \"{token_val}\" ]; then chown -R 1000:1000 /project && chmod -R 775 /project && echo 'OK'; else echo 'FAIL'; fi"
+                ])
+                
+                if "OK" not in (verify_res or ""):
+                    UI.error("\n❌ FATAL: VOLUME MOUNTING IS BROKEN")
+                    UI.info(f"{UI.BYELLOW}Reason:{UI.COLOR_OFF} Docker cannot see the files in: {paths['root']}")
+                    
+                    if "/Volumes/" in paths["root"].as_posix():
+                        UI.info("You are running on an external volume. Colima requires explicit mounting for /Volumes.")
+                        UI.info(f"\n{UI.CYAN}To fix this, run:{UI.COLOR_OFF}")
+                        UI.info("colima stop")
+                        UI.info(f"colima start --mount {paths['root'].anchor}Volumes:w --vm-type=vz --mount-type=virtiofs")
+                    else:
+                        UI.info("Check your Docker/Colima file sharing settings.")
+                    
+                    import sys
+                    sys.exit(1)
+                
+                UI.success("Volume mounts verified and permissions synchronized.")
+            except Exception as e:
+                UI.warning(f"Could not verify mounts automatically: {e}")
+            finally:
+                if token_file.exists():
+                    token_file.unlink()
+        else:
+            # Standard Linux/Windows fallback
+            for key in ["data", "deploy", "state"]:
+                if key in paths:
+                    try:
+                        if platform.system() != "Windows":
+                            subprocess.run(
+                                ["chmod", "-R", "777", str(paths[key])], check=False
+                            )  # nosec B603 B607
+                    except Exception:
+                        pass
 
         config_payload = {
             "container_name": container_name,
@@ -898,7 +948,24 @@ class StackHandler:
         cmd = ["docker", "compose", "up", "-d"] + scale_args
         if rebuild:
             cmd.append("--build")
-        run_command(cmd, capture_output=False, cwd=str(paths["root"]))
+        
+        try:
+            run_command(cmd, capture_output=False, cwd=str(paths["root"]))
+        except subprocess.CalledProcessError as e:
+            UI.error("\n❌ FAILED TO START STACK")
+            if extensions:
+                UI.info(f"{UI.BYELLOW}Diagnostic:{UI.COLOR_OFF} One or more Client Extensions require a Docker build.")
+                UI.info(f"Check the Docker build output above for 'target' failures or missing assets (e.g. '/static').")
+                UI.info(f"The issue is likely in the {UI.CYAN}Dockerfile{UI.COLOR_OFF} of the source extension.")
+            
+            if not self.args.verbose:
+                UI.info(f"Run with {UI.CYAN}-v{UI.COLOR_OFF} for full debug details.")
+            
+            # Since we hit a fatal build/startup error, we must exit gracefully 
+            # instead of letting the stacktrace propagate further.
+            import sys
+            sys.exit(1)
+
         if follow:
             run_command(
                 ["docker", "compose", "logs", "-f"],
@@ -1005,7 +1072,7 @@ class StackHandler:
         is_sample_run = getattr(self.args, "samples", False)
         sample_meta = {}
         if is_sample_run:
-            sample_meta_file = SCRIPT_DIR / "samples" / "metadata.json"
+            sample_meta_file = SCRIPT_DIR / "references" / "samples" / "metadata.json"
             if sample_meta_file.exists():
                 sample_meta = json.loads(sample_meta_file.read_text())
 

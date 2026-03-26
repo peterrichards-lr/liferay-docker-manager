@@ -154,7 +154,7 @@ jobs:
         
         # Only package samples once
         if [ "${{ matrix.os }}" = "ubuntu-latest" ]; then
-          zip -r samples.zip samples/
+          (cd references && zip -r ../samples.zip samples/)
         fi
 
     - name: Build Standalone (Windows)

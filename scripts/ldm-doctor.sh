@@ -19,6 +19,18 @@ fi
 DOCKER_OS=$(docker info --format '{{.Operating System}}' 2>/dev/null)
 echo "🐳 Docker Engine: $DOCKER_NAME ($DOCKER_OS)"
 
+# Colima Specific Advice
+if [[ "$DOCKER_OS" == *"colima"* ]]; then
+    echo "ℹ️  Colima Detected. Checking configuration..."
+    if [[ "$OS" == "Darwin" ]]; then
+        # Check if using VZ/VirtioFS (Best for Mac)
+        if ! colima status 2>&1 | grep -E "virtiofs|vz" > /dev/null; then
+            echo "💡 TIP: For best performance and permission mapping, use:"
+            echo "   colima start --vm-type=vz --mount-type=virtiofs --mount /Volumes:w"
+        fi
+    fi
+fi
+
 # 3. Memory Check (The #1 reason Liferay fails)
 MEM_BYTES=$(docker info --format '{{.MemTotal}}')
 MEM_GB=$(awk "BEGIN {print $MEM_BYTES / 1073741824}")
@@ -43,8 +55,7 @@ touch "$TEST_DIR/test.txt"
 if docker run --rm -v "$(pwd)/ldm-test-volume:/test" alpine ls /test/test.txt > /dev/null 2>&1; then
     echo "📂 Volume Mounting: PASS"
 else
-    echo "❌ Volume Mounting: FAIL (Check Docker File Sharing settings)"
-    echo "    Ensure '$(pwd)' is shared with Docker."
+    echo "❌ Volume Mounting: FAIL"
 fi
 
 rm -rf "$TEST_DIR"

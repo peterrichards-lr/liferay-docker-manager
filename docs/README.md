@@ -112,7 +112,7 @@ ldm run
 
 ### `init-from` (Live Link)
 
-Initialize a project from a source workspace and establish a **persistent link**. This command automatically starts the `monitor` process to sync your code changes in real-time.
+Initialize a project from a source workspace and establish a **persistent link**. This command records the workspace path in the project metadata and automatically starts the `monitor` process to sync your code changes in real-time.
 
 ```bash
 ldm init-from ~/repos/my-workspace my-project
@@ -120,7 +120,7 @@ ldm init-from ~/repos/my-workspace my-project
 
 ### `import` (Static Snapshot)
 
-Scaffold a new project by taking a **one-time snapshot** of an existing workspace. This project is detached from the source; changes to the source workspace will not be synced.
+Scaffold a new project by taking a **one-time static import** of an existing workspace. This project is detached from the source; changes to the source workspace will not be synced. Follows the same internal deployment sequence as `init-from`.
 
 ```bash
 ldm import ~/repos/my-workspace my-static-project
@@ -128,10 +128,10 @@ ldm import ~/repos/my-workspace my-static-project
 
 ### `monitor`
 
-Continuously monitor a Liferay workspace and automatically sync built artifacts (`.jar`, `.war`, `.zip`) to your running project. (Automatically invoked by `init-from`).
+Restarts the background watch process for a project linked to a Liferay workspace. This command can **only be used for projects created with `init-from`**. It automatically syncs built artifacts (`.jar`, `.war`, `.zip`) whenever they are updated in the workspace.
 
 ```bash
-ldm monitor [path_to_workspace] --delay 2.0
+ldm monitor [project_name] --delay 2.0
 ```
 
 ### `logs`

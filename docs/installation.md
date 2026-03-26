@@ -124,11 +124,14 @@ If `ldm doctor` reports insufficient memory even though you have 8GB+ installed:
 
 ### Increasing Resources in Colima (macOS)
 
-If `ldm doctor` reports insufficient resources, restart Colima with higher limits:
+If `ldm doctor` reports insufficient resources, or if you encounter permission issues on Apple Silicon, we **highly recommend** using the macOS Virtualization Framework (`vz`) with VirtioFS:
 
 ```bash
-colima stop
-colima start --cpu 4 --memory 8
+# Delete existing instance if it's misbehaving
+colima delete
+
+# Start with native macOS virtualization and VirtioFS
+colima start --cpu 4 --memory 8 --vm-type=vz --mount-type=virtiofs --mount /Volumes:w
 ```
 
 ---

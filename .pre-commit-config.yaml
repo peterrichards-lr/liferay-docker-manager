@@ -6,10 +6,13 @@ repos:
         args: [ --fix ]
       - id: ruff-format
 
-  - repo: https://github.com/koalaman/shellcheck-precommit
-    rev: v0.10.0
+  - repo: local
     hooks:
       - id: shellcheck
+        name: shellcheck
+        entry: shellcheck
+        language: system
+        types: [shell]
         exclude: ^ldm$
 
   - repo: https://github.com/DavidAnson/markdownlint-cli2
