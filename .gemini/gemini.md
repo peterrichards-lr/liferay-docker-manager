@@ -128,5 +128,6 @@ This repository contains automation tools for managing Liferay DXP instances usi
 
 ### Next Steps
 
-1. **Enhanced Cloud Sync (`ldm cloud-fetch`)**: Implement deep integration for pulling logs and metadata from Liferay Cloud projects.
-2. **Internal Log4j Management**: Refine `ldm log-level` for more granular control over hot-reloading XML configurations.
+- **Enhanced Cloud Sync (`ldm cloud-fetch`)**: Implement deep integration for pulling logs and metadata from Liferay Cloud projects.
+- **Log4j 2 Standardization**: Standardized `portal-log4j-ext.xml` templates and `log-level` command to use a consistent `XML_FILE` appender name and `UTF-8` encoding, ensuring compatibility with newer Liferay DXP releases.
+- **Environment Testing Ready**: All core features (Cloud Fetch, Optimized Monitoring, macOS Stability fixes) are implemented and verified via internal logic checks.
