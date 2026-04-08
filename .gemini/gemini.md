@@ -58,12 +58,21 @@ This repository contains automation tools for managing Liferay DXP instances usi
   3. **Handoff**: Move the original ZIP artifact to `osgi/client-extensions/` for Liferay's internal auto-deployment.
 - **UI Interaction Standards**:
   - **Standardized Prompts**: All binary questions must support the `(y/n/q)` format, where `q` triggers an immediate abort.
-  - **Sanitization**: Automatically trim leading and trailing whitespace from all user inputs.
+  - **Visible Infrastructure**: Global shared directories (e.g., certificates) MUST use non-hidden paths (no leading dot) to ensure reliable volume mounting across all Docker providers (OrbStack, Colima, WSL2).
+- **Client Extension Sync (SSCE)**: LDM MUST follow a mandatory 3-step sequence for all Client Extension ZIPs:
+  1. **Copy**: Copy the ZIP to the project root `client-extensions/`.
+  2. **Expand**: Unzip the artifact into a subfolder within root `client-extensions/` to provide a valid Docker build context.
+  3. **Move**: Move the original ZIP to `osgi/client-extensions/` for Liferay's auto-deploy scanner.
 - **Fail-Fast & Clean Errors**: LDM MUST prioritize early detection of environmental and state failures.
   - **Docker Dependency**: All commands requiring Docker MUST perform an explicit reachability check before modifying any project state or filesystem resources.
-  - **Graceful Failures**: Standard operational errors (e.g., Docker service down, missing `docker-compose.yml`, LCP CLI not found) MUST be handled via `UI.error` or `UI.die` with high-signal, user-friendly messages.
-  - **No Stack Traces**: Python stack traces (tracebacks) are strictly forbidden for common environmental failures. All subprocess errors MUST be caught and summarized to prevent exposing internal implementation details.
+  - **Infrastructure Validation**: Mount health and OS resource limits (e.g., file descriptors) MUST be verified and reported in verbose mode.
+  - **Graceful Failures**: Standard operational errors MUST be handled via `UI.error` or `UI.die` without Python tracebacks.
 - **Database Support**: Maintain support for Hypersonic (default), PostgreSQL, and MySQL.
+- **Commit Standards**: Every commit MUST follow these steps to ensure CI/CD success and maintainable project state:
+  1. **Update Context**: Update `.gemini/gemini.md` with any new architectural decisions, state changes, or "hardened" logic discovered.
+  2. **Linting**: Run `./lint.sh` and resolve all errors (Ruff, Markdownlint, shfmt) before staging.
+  3. **Testing**: Run `export PYTHONPATH=$PYTHONPATH:. && pytest` to ensure no regressions in orchestration logic.
+  4. **Atomic Commits**: Stage related changes together. Prefer descriptive commit messages that explain the "Why" and "How" of the change.
 
 ## Engineering Standards
 
