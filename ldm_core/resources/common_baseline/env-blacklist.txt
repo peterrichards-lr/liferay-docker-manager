@@ -1,0 +1,13 @@
+# Global Environment Variable Blacklist
+# Supports exact match, prefix*, and *suffix
+
+# Managed by LDM (Local Development)
+COM_LIFERAY_LXC_DXP_*
+LIFERAY_ROUTES_*
+
+# OAuth2 Secrets (Managed by local routes)
+*_OAUTH2_HEADLESS_SERVER_AUDIENCE
+*_OAUTH2_HEADLESS_SERVER_CLIENT_ID
+*_OAUTH2_HEADLESS_SERVER_CLIENT_SECRET
+*_OAUTH2_USER_AGENT_AUDIENCE
+*_OAUTH2_USER_AGENT_CLIENT_ID

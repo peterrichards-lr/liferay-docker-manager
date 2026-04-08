@@ -154,7 +154,8 @@ jobs:
         shell: bash
         run: |
           pip install pyinstaller -r requirements.txt
-          pyinstaller --onefile --name ldm-windows liferay_docker.py
+          # Bundling the resources directory into the Windows binary
+          pyinstaller --onefile --name ldm-windows --add-data "ldm_core/resources;ldm_core/resources" liferay_docker.py
           echo "BINARY_PATH=dist/ldm-windows.exe" >> $GITHUB_ENV
 
       - name: Upload Artifacts

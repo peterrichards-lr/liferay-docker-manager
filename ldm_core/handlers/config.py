@@ -281,6 +281,59 @@ class ConfigHandler:
             if f not in active_ldm_files:
                 f.unlink()
 
+    def cmd_init_common(self):
+        """Recreates the baseline common/ folder with standard development assets."""
+        common_dir = SCRIPT_DIR / "common"
+        common_dir.mkdir(parents=True, exist_ok=True)
+
+        UI.heading("Initializing Baseline Common Assets")
+
+        try:
+            import importlib.resources as pkg_resources
+            from ldm_core import resources
+
+            # 1. env-blacklist.txt
+            blacklist_file = common_dir / "env-blacklist.txt"
+            if not blacklist_file.exists():
+                content = (
+                    pkg_resources.files(resources)
+                    / "common_baseline"
+                    / "env-blacklist.txt"
+                ).read_text()
+                blacklist_file.write_text(content)
+                UI.info("  + Created env-blacklist.txt")
+
+            # 2. portal-ext.properties
+            pe_file = common_dir / "portal-ext.properties"
+            if not pe_file.exists():
+                content = (
+                    pkg_resources.files(resources)
+                    / "common_baseline"
+                    / "portal-ext.properties"
+                ).read_text()
+                pe_file.write_text(content)
+                UI.info("  + Created portal-ext.properties")
+
+            # 3. Session Timeout Config
+            timeout_config_name = "com.liferay.frontend.js.web.internal.session.timeout.configuration.SessionTimeoutConfiguration.scoped~3e124e46-69f0-4ebd-a3be-43b3de16f45a.config"
+            timeout_file = common_dir / timeout_config_name
+            if not timeout_file.exists():
+                content = (
+                    pkg_resources.files(resources)
+                    / "common_baseline"
+                    / timeout_config_name
+                ).read_text()
+                timeout_file.write_text(content)
+                UI.info("  + Created SessionTimeout config")
+
+            UI.success("Baseline common assets initialized.")
+        except Exception as e:
+            UI.error(f"Failed to initialize common assets: {e}")
+            if self.verbose:
+                import traceback
+
+                traceback.print_exc()
+
     def sync_common_assets(self, paths, host_updates=None, version=None):
         common_dir = SCRIPT_DIR / "common"
         target_ext = paths["files"] / "portal-ext.properties"
@@ -336,6 +389,13 @@ class ConfigHandler:
                             history.add(match.name)
 
             history_file.write_text("\n".join(sorted(list(history))))
+        else:
+            UI.warning(
+                "Global 'common/' folder not found. Some baseline assets may be missing."
+            )
+            UI.info(
+                f"You can recreate the baseline by running: {UI.CYAN}ldm init-common{UI.COLOR_OFF}"
+            )
 
         if host_updates:
             self.update_portal_ext(target_ext, host_updates)
