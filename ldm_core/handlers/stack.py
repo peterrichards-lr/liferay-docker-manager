@@ -443,6 +443,10 @@ class StackHandler:
 
         UI.heading("Initializing Global Infrastructure")
         self.setup_infrastructure(resolved_ip, ssl_port, use_ssl=True)
+
+        if getattr(self.args, "search", False):
+            self.setup_global_search(resolved_ip)
+
         UI.success("Global infrastructure services are ready.")
 
     def check_hostname(self, host_name, silent=False, expected_ip=None):

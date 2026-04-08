@@ -297,8 +297,9 @@ ldm init-common
 Independently manage global infrastructure services (Traefik proxy, Search sidecar, Bridge).
 
 ```bash
-ldm infra-setup   # Start global services manually
-ldm infra-down    # Stop and remove global services
+ldm infra-setup            # Start global services manually
+ldm infra-setup --search   # Also initialize the Global Search (ES8) container
+ldm infra-down             # Stop and remove global services
 ```
 
 ### `prune`, `clear-cache`

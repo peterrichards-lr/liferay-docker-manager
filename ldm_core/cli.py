@@ -125,7 +125,12 @@ def main():
 
     # Simple Commands
     subparsers.add_parser("init-common")
-    subparsers.add_parser("infra-setup")
+    infra_setup = subparsers.add_parser("infra-setup")
+    infra_setup.add_argument(
+        "--search",
+        action="store_true",
+        help="Also initialize Global Search (ES8) container",
+    )
     subparsers.add_parser("infra-down")
     subparsers.add_parser("clear-cache")
     subparsers.add_parser("doctor")
