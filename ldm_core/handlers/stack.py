@@ -548,7 +548,7 @@ class StackHandler:
             f"{paths['portal_log4j'].as_posix()}/portal-log4j-ext.xml:/opt/liferay/tomcat/webapps/ROOT/WEB-INF/classes/META-INF/portal-log4j-ext.xml",
             # data and deploy MUST be bind-mounts for host access and snapshots
             f"{paths['data'].as_posix()}:/opt/liferay/data",
-            f"{paths['deploy'].as_posix()}:/mnt/liferay/deploy",
+            f"{paths['deploy'].as_posix()}:/opt/liferay/deploy",
         ]
 
         # For scaled Liferay instances, host-mapped state and logs are disabled
