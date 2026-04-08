@@ -155,13 +155,17 @@ class TestStackOrchestration(unittest.TestCase):
             compose_call = mock_yaml.call_args[0][0]
             labels = compose_call["services"]["liferay"]["labels"]
 
-            # Verify Traefik SSL labels
             self.assertIn("traefik.http.routers.test-main.tls=true", labels)
             self.assertIn(
                 "traefik.http.routers.test-main.entrypoints=websecure", labels
             )
-            # Verify we REMOVED the ACME tls.domains labels (SNI matching should be used)
-            self.assertFalse(any("tls.domains" in label for label in labels))
+            # Verify we have explicit domain hints for SNI matching
+            self.assertTrue(
+                any("tls.domains[0].main=forge.demo" in label for label in labels)
+            )
+            self.assertTrue(
+                any("tls.domains[0].sans=*.forge.demo" in label for label in labels)
+            )
 
     @patch("ldm_core.handlers.stack.dict_to_yaml")
     def test_microservice_port_resolution(self, mock_yaml):

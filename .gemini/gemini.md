@@ -151,17 +151,17 @@ This repository contains automation tools for managing Liferay DXP instances usi
 
 ## Current State & Next Steps
 
-### Current State (March 25, 2026)
+### Current State (April 8, 2026)
 
-- **Core Orchestration**: Modularized Python package (`ldm_core`) is stable and functional.
-- **Multi-Node Simulation (`ldm scale`)**: COMPLETED. Users can now scale services (e.g., `ldm scale liferay=2`) with automated Traefik load-balancing, clustering configuration, and separate OSGi state/logs handling.
-- **Project Discovery**: Standardized 4-step discovery is implemented.
-- **Isolation**: Traefik-based multi-instance isolation is working.
-- **State Recovery**: Snapshot and restoration (including Cloud archives) are robust.
-- **Diagnostics**: `doctor` and `list` commands are scale-aware.
+- **Version 1.5.0 Hardening**: SIGNIFICANT. The tool has been hardened for non-proprietary Docker environments (Colima, WSL2).
+- **Environment Stability**: COMPLETED. Implemented `PollingObserver` and directory filtering to bypass macOS file descriptor limits. Proactively increases process `soft` limits on startup.
+- **SSL Wildcard & Redirection**: COMPLETED. Automated generation of wildcard certificates for custom domains (e.g. `*.forge.demo`). Traefik now supports global HTTP->HTTPS redirection.
+- **Port Discovery**: COMPLETED. LDM correctly extracts `targetPort` from `LCP.json` for microservices (e.g. port 3001) and applies them to Traefik routing.
+- **Fail-Fast Guardrails**: COMPLETED. Proactive validation of Docker reachability, volume mount health (Mount Verifier), and DNS resolution before execution.
+- **Test Coverage**: EXPANDED. Comprehensive unit tests for metadata parsing, DNS filtering, and orchestration logic.
 
 ### Next Steps
 
-- **Enhanced Cloud Sync (`ldm cloud-fetch`)**: Implement deep integration for pulling logs and metadata from Liferay Cloud projects.
-- **Log4j 2 Standardization**: Standardized `portal-log4j-ext.xml` templates and `log-level` command to use a consistent `XML_FILE` appender name and `UTF-8` encoding, ensuring compatibility with newer Liferay DXP releases.
-- **Environment Testing Ready**: All core features (Cloud Fetch, Optimized Monitoring, macOS Stability fixes) are implemented and verified via internal logic checks.
+- **Windows Hardening**: Validate the Colima refinements within a native WSL2 environment to ensure cross-platform consistency.
+- **Enhanced Cloud Sync (`ldm cloud-fetch`)**: Deepen integration for pulling logs and metadata from Liferay Cloud projects.
+- **Log4j 2 Standardization**: Standardized `portal-log4j-ext.xml` templates and `log-level` command to use a consistent `XML_FILE` appender name and `UTF-8` encoding.
