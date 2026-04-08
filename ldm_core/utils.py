@@ -184,6 +184,41 @@ def get_actual_home():
     return Path.home()
 
 
+def open_browser(url):
+    """Launches the system browser, with special handling for WSL to use the host browser."""
+    import webbrowser
+
+    system = platform.system().lower()
+
+    # 1. Detect WSL
+    is_wsl = False
+    if system == "linux":
+        try:
+            with open("/proc/version", "r") as f:
+                if "microsoft" in f.read().lower():
+                    is_wsl = True
+        except Exception:
+            pass
+
+    if is_wsl:
+        # On WSL, use the Windows host's 'start' command to open the browser
+        # We use cmd.exe /c start to bypass gio/xdg-open issues
+        try:
+            subprocess.run(
+                ["cmd.exe", "/c", "start", url.replace("&", "^&")], check=False
+            )
+            return True
+        except Exception:
+            # Fallback to standard Python launcher if cmd.exe fails
+            pass
+
+    # 2. Standard Launch
+    try:
+        return webbrowser.open(url)
+    except Exception:
+        return False
+
+
 def discover_latest_tag(
     api_url, release_type="any", prefix_filter=None, verbose=False, refresh=False
 ):

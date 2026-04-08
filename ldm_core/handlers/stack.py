@@ -7,7 +7,6 @@ import platform
 import subprocess
 import socket
 import hashlib
-import webbrowser
 import sys
 from pathlib import Path
 from datetime import datetime
@@ -1180,7 +1179,9 @@ class StackHandler:
             launch_url = f"{access_url}/web/guest/home"
         if launch_url:
             UI.info(f"Launching browser: {launch_url}")
-            webbrowser.open(launch_url)
+            from ldm_core.utils import open_browser
+
+            open_browser(launch_url)
 
     def cmd_run(self, is_restart=False):
         if getattr(self.args, "select", False):
