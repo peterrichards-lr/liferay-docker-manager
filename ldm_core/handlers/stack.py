@@ -163,16 +163,6 @@ class StackHandler:
 
     def setup_global_search(self):
         search_name = "liferay-search-global"
-
-        # Check if already running
-        is_running = run_command(
-            ["docker", "ps", "-q", "-f", f"name=^{search_name}$"], check=False
-        )
-        if is_running:
-            if self.verbose:
-                UI.info("Global Search (ES8) is already running.")
-            return True
-
         custom_image_name = f"liferay-search-global:{ELASTICSEARCH_VERSION}"
         target_image_base = (
             f"docker.elastic.co/elasticsearch/elasticsearch:{ELASTICSEARCH_VERSION}"
@@ -188,32 +178,48 @@ class StackHandler:
         except Exception:
             pass
 
+        # 1. Check if container exists (Running or Stopped)
         inspect = run_command(
             [
                 "docker",
                 "inspect",
                 "-f",
-                "{{.State.Running}} {{.Config.Image}} {{.HostConfig.PortBindings}} {{.HostConfig.Memory}} {{range .Mounts}}{{.Source}}:{{.Destination}} {{end}}",
+                "{{.State.Running}} {{.Config.Image}} {{.HostConfig.Memory}} {{range .Mounts}}{{.Source}}:{{.Destination}} {{end}}",
                 search_name,
             ],
             check=False,
         )
 
         if inspect:
-            parts = inspect.split(" ", 4)
+            parts = inspect.split(" ", 3)
+            is_running = parts[0] == "true"
+            image = parts[1]
+            memory = parts[2]
+            mounts = parts[3] if len(parts) > 3 else ""
+
+            # Verify if the existing container matches our current requirements
             if (
-                parts[0] == "true"
-                and parts[1] == custom_image_name
-                and "9200/tcp" in parts[2]
-                and parts[3] == "536870912"
+                image == custom_image_name
+                and memory == "536870912"
                 and f"{search_backup_dir.as_posix()}:/usr/share/elasticsearch/backup"
-                in (parts[4] if len(parts) > 4 else "")
+                in mounts
             ):
-                return True
+                if is_running:
+                    if self.verbose:
+                        UI.info("Global Search (ES8) is already running.")
+                    return True
+                else:
+                    UI.info("Starting existing Global Search (ES8) container...")
+                    run_command(["docker", "start", search_name])
+                    return True
+
+            # If it doesn't match, remove it so we can recreate it
             if self.verbose:
                 UI.info("Updating Global Search service...")
             run_command(["docker", "rm", "-f", search_name])
 
+        # 2. Build and Run if needed
+        UI.info("Initializing Global Search (ES8) sidecar...")
         if not run_command(["docker", "images", "-q", custom_image_name], check=False):
             search_build_dir = SCRIPT_DIR / "temp" / "search"
             search_build_dir.mkdir(parents=True, exist_ok=True)
