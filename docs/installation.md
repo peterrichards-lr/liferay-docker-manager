@@ -90,6 +90,36 @@ cd liferay-docker-manager
 
 ## 🛠️ Environment Setup & Troubleshooting
 
+### Global Configuration (The `common/` Folder)
+
+LDM allows you to synchronize files (e.g., OSGi configs, licenses, LPKG modules) to **every** project stack automatically.
+
+#### 1. Baseline Assets (`init-common`)
+
+LDM bundles a "Gold Standard" development baseline internally. To initialize or recreate this baseline in your global `common/` folder, run:
+
+```bash
+ldm init-common
+```
+
+This will create:
+
+- **`portal-ext.properties`**: Developer-mode overrides and modern image support.
+- **`env-blacklist.txt`**: Standard exclusions for environment variables (OAuth2 secrets, etc.).
+- **`com.liferay...config`**: OSGi configuration to prevent session timeouts during local demos.
+
+#### 2. Mandatory Infrastructure Settings
+
+LDM is designed to be **self-healing**. Even if you do not use a `common/` folder, the tool will automatically ensure that every project's `portal-ext.properties` contains the essential settings for SSL and virtual hosting (`web.server.host`, `web.server.protocol`, etc.).
+
+#### 3. Custom Overrides
+
+You can place any of the following file types into the `common/` folder to have them deployed to all projects:
+
+- `*.config` / `*.cfg`: Synced to `osgi/configs/`
+- `*.xml` / `*.lpkg`: Synced to `osgi/deploy/`
+- `portal-ext.properties`: Merged into the project-specific properties file.
+
 ### Windows: Installing SSL Tools (Scoop)
 
 To enable "Green Lock" SSL on Windows, we recommend using **Scoop** to manage `mkcert` and `openssl`. Run these commands in PowerShell:

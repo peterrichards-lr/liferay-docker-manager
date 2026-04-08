@@ -284,15 +284,24 @@ Verify host environment health, Docker resources (CPUs/Memory), and project depe
 ldm doctor
 ```
 
-### `prune`, `infra-down`, `clear-cache`
+### `init-common`
 
-Identify and remove orphaned resources and maintenance.
+Initialize or recreate the baseline global configuration (`common/` folder) from internal resources.
 
 ```bash
-ldm prune                 # Remove orphaned containers and temp files
-ldm infra-down            # Tear down global proxy and search services
-ldm clear-cache           # Clear the Docker tag cache (~/.liferay_docker_cache.json)
+ldm init-common
 ```
+
+### `infra-setup` & `infra-down`
+
+Independently manage global infrastructure services (Traefik proxy, Search sidecar, Bridge).
+
+```bash
+ldm infra-setup   # Start global services manually
+ldm infra-down    # Stop and remove global services
+```
+
+### `prune`, `clear-cache`
 
 ---
 

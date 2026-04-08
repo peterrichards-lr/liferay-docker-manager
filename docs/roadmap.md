@@ -48,6 +48,7 @@ As the core orchestration and isolation pillars are now robustly implemented, fu
 - **Project Visibility (`ldm list`)**: Tabulated overview of all initialized environments, versions, and current statuses.
 - **Resource Guard (`ldm doctor`)**: proactive verification of Docker host CPU and Memory allocations to prevent runtime failures.
 - **Global Maintenance (`ldm prune`)**: Reliable identification and removal of orphaned containers from deleted projects.
+- **Infrastructure Lifecycle**: Added `ldm infra-setup` and `ldm infra-down` for independent management of global services (Traefik, Search, Bridge).
 - **Shell Shortcuts**: Added `ldm shell` for instant bash access and `ldm gogo` for direct OSGi console interaction.
 - **Dynamic Logging**: Manage internal Log4j2 levels without restarts via `ldm log-level`.
 - **Automatic Browser Launch**: Smart URL detection based on `browser.launcher.url` project property.
