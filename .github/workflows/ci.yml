@@ -196,13 +196,13 @@ jobs:
           make_latest: true
           fail_on_unmatched_files: true
           body: |
-            ## Liferay Docker Manager (LDM) Release
+            ## Liferay Docker Manager (LDM) v1.5.0 - Hardened Edition
 
-            This release includes standalone LDM executables for Linux, macOS, and Windows.
+            This release introduces significant environmental hardening for macOS (Colima/OrbStack), Windows (WSL2), and Native Linux. 
 
-            ### Installation (Quick Start)
+            ### 🚀 Installation (Direct Binary)
 
-            **macOS:**
+            **macOS (Intel/Silicon):**
             ```bash
             sudo curl -L https://github.com/peterrichards-lr/liferay-docker-manager/releases/latest/download/ldm-macos -o /usr/local/bin/ldm
             sudo chmod +x /usr/local/bin/ldm
@@ -220,11 +220,11 @@ jobs:
             Invoke-WebRequest -Uri "https://github.com/peterrichards-lr/liferay-docker-manager/releases/latest/download/ldm-windows.exe" -OutFile "$HOME\bin\ldm.exe"
             ```
 
-            ### Key Features
-            - **Liferay Cloud Integration**: Fetch backups, logs, and config sync with `ldm cloud-fetch`.
-            - **Confidence Booster**: Run vanilla Liferay with pre-built SSCE samples using `ldm run --samples`.
-            - **Workspace Monitoring**: Surgical monitoring of `build/libs` and `dist` for instant hot-deployments.
-            - **Self-Updating**: Architecture-aware update checks keep you current.
-            - **Environmental Health**: `ldm doctor` verifies your Docker resources and configuration.
+            ### 🛠 Key v1.5.0 Improvements
+            - **Hardened Monitoring**: Native Polling on macOS to prevent "Too many open files" crashes.
+            - **Wildcard SSL**: Automatic generation and Traefik matching for custom subdomains (`*.forge.demo`).
+            - **Fail-Fast UI**: Proactive volume mount verification and DNS health checks before startup.
+            - **Smart Port Discovery**: Native support for `LCP.json` metadata (including `targetPort` for microservices).
+            - **Self-Updating**: The tool is now architecture-aware and will download the correct binary for your OS during updates.
           draft: false
           prerelease: false
