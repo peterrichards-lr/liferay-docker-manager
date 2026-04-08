@@ -206,9 +206,13 @@ def open_browser(url):
         cmd_exe = shutil.which("cmd.exe") or "/mnt/c/Windows/System32/cmd.exe"
         if os.path.exists(cmd_exe):
             try:
-                # We use cmd.exe /c start to bypass gio/xdg-open issues
+                # Fix: Force cmd.exe to start from a safe Windows path (C:\) to avoid
+                # "UNC paths are not supported" warnings when running from WSL.
                 subprocess.run(
-                    [cmd_exe, "/c", "start", url.replace("&", "^&")], check=False
+                    [cmd_exe, "/c", "start", url.replace("&", "^&")],
+                    check=False,
+                    cwd="/mnt/c",
+                    stderr=subprocess.DEVNULL,
                 )
                 return True
             except Exception:
