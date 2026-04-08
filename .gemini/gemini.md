@@ -153,6 +153,10 @@ This repository contains automation tools for managing Liferay DXP instances usi
 
 ### Current State (April 8, 2026)
 
+- **Version 1.5.4 Baseline Management**: COMPLETED. Added `ldm init-common` to recreate the baseline `common/` folder and essential development assets.
+- **Smart Asset Warnings**: FIXED. Added a warning during project sync if the global `common/` folder is missing, with a direct hint to use the new initialization command.
+- **Version 1.5.3 Infrastructure Management**: COMPLETED. Added `ldm infra-setup` for standalone initialization of global services (Traefik, Search, Bridge).
+- **Standalone Lifecycle**: FIXED. Refactored `setup_infrastructure` to be robust when called without a project context, allowing users to pre-flight their environment.
 - **Version 1.5.2 Project Discovery Refinement**: COMPLETED. Hardened project detection and validation to prevent runtime crashes.
 - **Graceful Error Handling**: FIXED. Added strict `project_id` validation to `cmd_run` and `cmd_monitor` to prevent `TypeError` tracebacks when no project is found.
 - **Cross-Platform Parity**: COMPLETED. Verified traceback-free behavior across macOS, WSL2, and Native Windows.

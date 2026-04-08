@@ -255,7 +255,7 @@ class StackHandler:
         return True
 
     def setup_infrastructure(
-        self, resolved_ip, ssl_port, paths, host_name, use_ssl=True
+        self, resolved_ip, ssl_port, paths=None, host_name=None, use_ssl=True
     ):
         run_command(["docker", "network", "create", "liferay-net"], check=False)
         if not use_ssl:
@@ -299,9 +299,11 @@ class StackHandler:
                     )
                     UI.info("Check your Docker/Colima file sharing settings.")
 
-                    mount_hint = self.get_colima_mount_flags(
-                        [global_cert_dir, paths["root"]]
-                    )
+                    verify_paths = [global_cert_dir]
+                    if paths and "root" in paths:
+                        verify_paths.append(paths["root"])
+
+                    mount_hint = self.get_colima_mount_flags(verify_paths)
 
                     UI.info(f"\n{UI.CYAN}To fix this, run:{UI.COLOR_OFF}")
                     UI.info("colima stop")
@@ -323,7 +325,6 @@ class StackHandler:
 
         if needs_bridge:
             # On macOS, /var/run/docker.sock is the standard entry point
-            # even if it is a symlink to the user-specific home path.
             socket_path = Path("/var/run/docker.sock")
 
             if not run_command(
@@ -403,7 +404,7 @@ class StackHandler:
                     # Global Redirect to HTTPS
                     "--entrypoints.web.http.redirections.entryPoint.to=websecure",
                     "--entrypoints.web.http.redirections.entryPoint.scheme=https",
-                    f"--providers.file.filename=/etc/traefik/certs/traefik-{host_name}.yml",
+                    "--providers.file.directory=/etc/traefik/certs",
                     "--providers.file.watch=true",
                 ]
             )
@@ -411,7 +412,6 @@ class StackHandler:
         elif needs_bridge:
             # Traefik is running, but if we just started the bridge, we might need to
             # check if Traefik is configured to use it.
-            # If Traefik was started with unix socket but we need TCP bridge, we must restart it.
             inspect_endpoint = run_command(
                 [
                     "docker",
@@ -426,9 +426,24 @@ class StackHandler:
             if required_endpoint not in (inspect_endpoint or ""):
                 UI.info("Restarting Traefik to use the Docker Socket Proxy bridge...")
                 run_command(["docker", "rm", "-f", proxy_name])
-                return self.setup_infrastructure(resolved_ip, ssl_port, paths, use_ssl)
+                return self.setup_infrastructure(
+                    resolved_ip, ssl_port, paths, host_name, use_ssl
+                )
 
         return True
+
+    def cmd_infra_setup(self):
+        """Standalone command to initialize global infrastructure services."""
+        if not self.check_docker():
+            UI.die("Docker is not reachable.")
+
+        # Infrastructure always binds to localhost/127.0.0.1 by default
+        resolved_ip = self.get_resolved_ip("localhost") or "127.0.0.1"
+        ssl_port = "443"
+
+        UI.heading("Initializing Global Infrastructure")
+        self.setup_infrastructure(resolved_ip, ssl_port, use_ssl=True)
+        UI.success("Global infrastructure services are ready.")
 
     def check_hostname(self, host_name, silent=False, expected_ip=None):
         if not host_name or host_name == "localhost":

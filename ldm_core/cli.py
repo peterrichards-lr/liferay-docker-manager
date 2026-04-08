@@ -124,6 +124,8 @@ def main():
     rest.add_argument("-i", "--index", type=int)
 
     # Simple Commands
+    subparsers.add_parser("init-common")
+    subparsers.add_parser("infra-setup")
     subparsers.add_parser("infra-down")
     subparsers.add_parser("clear-cache")
     subparsers.add_parser("doctor")
@@ -221,6 +223,8 @@ def main():
         "env": lambda: manager.cmd_env(project_id),
         "snapshot": lambda: manager.cmd_snapshot(project_id),
         "restore": lambda: manager.cmd_restore(project_id),
+        "init-common": lambda: manager.cmd_init_common(),
+        "infra-setup": lambda: manager.cmd_infra_setup(),
         "infra-down": lambda: manager.cmd_infra_down(),
         "clear-cache": lambda: manager.cmd_clear_cache(),
         "doctor": lambda: manager.cmd_doctor(project_id),
