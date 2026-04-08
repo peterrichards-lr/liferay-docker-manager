@@ -291,14 +291,9 @@ class StackHandler:
                     )
                     UI.info("Check your Docker/Colima file sharing settings.")
 
-                    mount_hint = (
-                        f"--mount {global_cert_dir.resolve().anchor}Users/$(whoami):w"
+                    mount_hint = self.get_colima_mount_flags(
+                        [global_cert_dir, paths["root"]]
                     )
-                    if (
-                        "/Volumes/" in global_cert_dir.as_posix()
-                        or "/Volumes/" in paths["root"].as_posix()
-                    ):
-                        mount_hint += " --mount /Volumes:w"
 
                     UI.info(f"\n{UI.CYAN}To fix this, run:{UI.COLOR_OFF}")
                     UI.info("colima stop")

@@ -42,7 +42,7 @@ class BaseHandler:
     def _check_gradle_java_version(self, gradlew_path, expected="21"):
         """Verifies the JVM version used by Gradle."""
         try:
-            if platform.system() != "Windows":
+            if platform.system().lower() != "windows":
                 # Bandit: B103 (chmod 0o755) is safe for gradlew as it needs to be executable.
                 os.chmod(gradlew_path, 0o755)  # nosec B103
             # Bandit: B603 (subprocess_without_shell_equals_true) is a general warning.
@@ -61,6 +61,41 @@ class BaseHandler:
         except Exception as e:
             UI.error(f"Failed to verify Gradle JVM version: {e}")
             return False
+
+    def select_project_interactively(self, roots=None, heading="Select Project"):
+        """Prompts the user to select a project from a list."""
+        if self.non_interactive:
+            return None
+
+        project_roots = roots or self.find_dxp_roots()
+        if not project_roots:
+            return None
+
+        UI.heading(heading)
+        for i, r in enumerate(project_roots):
+            print(f"[{i + 1}] {r['path'].name} [{UI.CYAN}{r['version']}{UI.COLOR_OFF}]")
+
+        choice = UI.ask("Select project index (or 'q' to quit)", "1")
+        if choice.lower() == "q":
+            import sys
+
+            sys.exit(0)
+
+        try:
+            idx = int(choice) - 1
+            if 0 <= idx < len(project_roots):
+                return project_roots[idx]
+        except (ValueError, IndexError):
+            pass
+        return None
+
+    def require_compose(self, root_path, silent=False):
+        """Verifies that a docker-compose.yml file exists in the project root."""
+        if not root_path or not (root_path / "docker-compose.yml").exists():
+            if not silent:
+                UI.error(f"docker-compose.yml not found in {root_path}")
+            return False
+        return True
 
     def detect_project_path(self, project_id=None, for_init=False):
         """Resolves a project ID or path to a full filesystem path."""
@@ -137,41 +172,6 @@ class BaseHandler:
                     version = meta.get("tag") or "unknown"
                     roots.append({"path": item, "version": version})
         return sorted(roots, key=lambda x: x["path"].name)
-
-    def select_project_interactively(self, roots=None, heading="Select Project"):
-        """Prompts the user to select a project from a list."""
-        if self.non_interactive:
-            return None
-
-        project_roots = roots or self.find_dxp_roots()
-        if not project_roots:
-            return None
-
-        UI.heading(heading)
-        for i, r in enumerate(project_roots):
-            print(f"[{i + 1}] {r['path'].name} [{UI.CYAN}{r['version']}{UI.COLOR_OFF}]")
-
-        choice = UI.ask("Select project index (or 'q' to quit)", "1")
-        if choice.lower() == "q":
-            import sys
-
-            sys.exit(0)
-
-        try:
-            idx = int(choice) - 1
-            if 0 <= idx < len(project_roots):
-                return project_roots[idx]
-        except (ValueError, IndexError):
-            pass
-        return None
-
-    def require_compose(self, root_path, silent=False):
-        """Verifies that a docker-compose.yml file exists in the project root."""
-        if not root_path or not (root_path / "docker-compose.yml").exists():
-            if not silent:
-                UI.error(f"docker-compose.yml not found in {root_path}")
-            return False
-        return True
 
     def setup_paths(self, root_path):
         root = Path(root_path).resolve()
@@ -319,10 +319,35 @@ class BaseHandler:
         except socket.gaierror:
             return None
 
+    def get_colima_mount_flags(self, paths):
+        """Calculates the unique set of Colima mount flags needed for the given paths."""
+        mounts = set()
+
+        for p in paths:
+            abs_path = Path(p).resolve()
+            parts = abs_path.parts
+
+            # Logic: We want to mount the first 3 parts for /Users or /Volumes,
+            # or the first 2 parts for other root-level directories.
+            # Example: /Users/peter/repos -> /Users/peter
+            # Example: /Volumes/SanDisk/projects -> /Volumes/SanDisk
+            # Example: /opt/liferay -> /opt
+
+            if len(parts) >= 3 and parts[1] in ["Users", "Volumes"]:
+                mount_point = os.path.join(parts[0], parts[1], parts[2])
+            elif len(parts) >= 2:
+                mount_point = os.path.join(parts[0], parts[1])
+            else:
+                mount_point = parts[0]
+
+            mounts.add(f"--mount {mount_point}:w")
+
+        return " ".join(sorted(list(mounts)))
+
     def verify_runtime_environment(self, paths):
         """Verifies volume mounts and synchronizes permissions across the project root."""
         root = paths["root"]
-        if platform.system() == "darwin":
+        if platform.system().lower() == "darwin":
             UI.info("Verifying volume mounts and directory permissions...")
 
             # Create a unique mount-check token to avoid cache hits
@@ -354,12 +379,17 @@ class BaseHandler:
                         f"{UI.BYELLOW}Reason:{UI.COLOR_OFF} Docker cannot see the files in: {root}"
                     )
 
-                    mount_hint = f"--mount {root.resolve().anchor}Users/$(whoami):w"
-                    if "/Volumes/" in root.as_posix():
-                        UI.info(
-                            "You are running on an external volume. Colima requires explicit mounting for /Volumes."
-                        )
-                        mount_hint += " --mount /Volumes:w"
+                    actual_home = Path.home()
+                    try:
+                        from ldm_core.utils import get_actual_home
+
+                        actual_home = get_actual_home()
+                    except ImportError:
+                        pass
+
+                    # Identify all critical paths that might need mounting
+                    cert_dir = actual_home / "liferay-docker-certs"
+                    mount_hint = self.get_colima_mount_flags([root, cert_dir])
 
                     UI.info(f"\n{UI.CYAN}To fix this, run:{UI.COLOR_OFF}")
                     UI.info("colima stop")
@@ -381,7 +411,7 @@ class BaseHandler:
             for key in ["data", "deploy", "state"]:
                 if key in paths:
                     try:
-                        if platform.system() != "Windows":
+                        if platform.system().lower() != "windows":
                             subprocess.run(
                                 ["chmod", "-R", "777", str(paths[key])], check=False
                             )  # nosec B603 B607
