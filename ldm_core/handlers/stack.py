@@ -25,6 +25,7 @@ from ldm_core.utils import (
     get_actual_home,
     dict_to_yaml,
     discover_latest_tag,
+    get_docker_socket_path,
 )
 
 
@@ -65,7 +66,7 @@ class StackHandler:
             return False
 
         actual_home = get_actual_home()
-        cert_dir = actual_home / ".liferay_docker_certs"
+        cert_dir = actual_home / "liferay-docker-certs"
         cert_dir.mkdir(parents=True, exist_ok=True)
 
         cert_file = cert_dir / f"{host_name}.pem"
@@ -96,7 +97,9 @@ class StackHandler:
 
         if needs_gen:
             if self.verbose:
-                UI.info(f"Generating SSL wildcard certificate for {host_name}...")
+                UI.info(
+                    f"Generating SSL wildcard certificate for {host_name} and {wildcard_host}..."
+                )
             if cert_file.exists():
                 os.remove(cert_file)
             if key_file.exists():
@@ -121,33 +124,39 @@ class StackHandler:
                 UI.error(f"mkcert failed: {e.stderr.decode().strip()}")
                 return False
 
+        # Ensure world-readable for the Traefik container
         os.chmod(cert_file, 0o644)
         os.chmod(key_file, 0o644)
+
         config_path = cert_dir / f"traefik-{host_name}.yml"
         config_path.write_text(
-            f"tls:\n  certificates:\n    - certFile: /etc/traefik/certs/{host_name}.pem\n"
+            f"tls:\n"
+            f"  certificates:\n"
+            f"    - certFile: /etc/traefik/certs/{host_name}.pem\n"
             f"      keyFile: /etc/traefik/certs/{host_name}-key.pem\n"
+            f"      stores:\n"
+            f"        - default\n"
+            f"  stores:\n"
+            f"    default:\n"
+            f"      defaultCertificate:\n"
+            f"        certFile: /etc/traefik/certs/{host_name}.pem\n"
+            f"        keyFile: /etc/traefik/certs/{host_name}-key.pem\n"
         )
         os.chmod(config_path, 0o644)
         return True
 
     def get_docker_socket_params(self):
-        system = sys.platform
-        if system == "darwin":
-            real_socket = get_actual_home() / ".docker/run/docker.sock"
-            path = str(real_socket) if real_socket.exists() else "/var/run/docker.sock"
+        path = get_docker_socket_path()
+        system = platform.system().lower()
+
+        if system in ["windows", "win32"]:
             return (
-                ["-v", f"{path}:/var/run/docker.sock:ro"],
-                "--providers.docker.endpoint=unix:///var/run/docker.sock",
-            )
-        elif system == "win32":
-            return (
-                ["-v", "//./pipe/docker_engine://./pipe/docker_engine"],
-                "--providers.docker.endpoint=npipe:////./pipe/docker_engine",
+                ["-v", f"{path}:{path}"],
+                f"--providers.docker.endpoint=npipe://{path}",
             )
         else:
             return (
-                ["-v", "/var/run/docker.sock:/var/run/docker.sock:ro"],
+                ["-v", f"{path}:/var/run/docker.sock:ro"],
                 "--providers.docker.endpoint=unix:///var/run/docker.sock",
             )
 
@@ -237,18 +246,39 @@ class StackHandler:
         )
         return True
 
-    def setup_infrastructure(self, resolved_ip, ssl_port, paths, use_ssl=True):
+    def setup_infrastructure(
+        self, resolved_ip, ssl_port, paths, host_name, use_ssl=True
+    ):
         run_command(["docker", "network", "create", "liferay-net"], check=False)
         if not use_ssl:
             return True
 
         actual_home = get_actual_home()
-        global_cert_dir = actual_home / ".liferay_docker_certs"
+        global_cert_dir = actual_home / "liferay-docker-certs"
         global_cert_dir.mkdir(parents=True, exist_ok=True)
 
         # 3. Start the Socket Proxy ONLY on macOS (Darwin)
         api_proxy = "docker-socket-proxy"
         is_darwin = platform.system() == "darwin"
+
+        if is_darwin:
+            # Apply Permission Fixer to global certs too
+            try:
+                run_command(
+                    [
+                        "docker",
+                        "run",
+                        "--rm",
+                        "-v",
+                        f"{global_cert_dir.as_posix()}:/certs",
+                        "alpine",
+                        "sh",
+                        "-c",
+                        "chown -R 1000:1000 /certs && chmod -R 775 /certs",
+                    ]
+                )
+            except Exception:
+                pass
 
         # On macOS, we ALWAYS want the bridge because containers cannot
         # reliably talk to the host socket via symlinks or VirtioFS mounts.
@@ -330,7 +360,7 @@ class StackHandler:
                     f"--providers.docker.endpoint={endpoint}",
                     "--providers.docker.exposedbydefault=false",
                     "--entrypoints.websecure.address=:443",
-                    "--providers.file.directory=/etc/traefik/certs",
+                    f"--providers.file.filename=/etc/traefik/certs/traefik-{host_name}.yml",
                     "--providers.file.watch=true",
                 ]
             )
@@ -467,8 +497,6 @@ class StackHandler:
             if k.startswith("scale_") and str(v).isdigit()
         }
 
-        is_darwin = platform.system() == "darwin"
-        
         liferay_volumes = [
             f"{paths['files'].as_posix()}:/mnt/liferay/files",
             f"{paths['scripts'].as_posix()}:/mnt/liferay/scripts",
@@ -479,14 +507,21 @@ class StackHandler:
             f"{paths['routes'].as_posix()}:/opt/liferay/routes",
             f"{paths['log4j'].as_posix()}:/opt/liferay/osgi/log4j",
             f"{paths['portal_log4j'].as_posix()}/portal-log4j-ext.xml:/opt/liferay/tomcat/webapps/ROOT/WEB-INF/classes/META-INF/portal-log4j-ext.xml",
-            # data, deploy, and state MUST be bind-mounts for host access, 
-            # snapshots, and the ability to clear Liferay state.
+            # data and deploy MUST be bind-mounts for host access and snapshots
             f"{paths['data'].as_posix()}:/opt/liferay/data",
             f"{paths['deploy'].as_posix()}:/mnt/liferay/deploy",
-            f"{paths['state'].as_posix()}:/opt/liferay/osgi/state",
         ]
 
-        if mount_logs:
+        # For scaled Liferay instances, host-mapped state and logs are disabled
+        # to prevent file-locking conflicts between nodes.
+        is_scaled = scale_map.get("liferay", 1) > 1
+
+        if not is_scaled:
+            liferay_volumes.append(
+                f"{paths['state'].as_posix()}:/opt/liferay/osgi/state"
+            )
+
+        if mount_logs and not is_scaled:
             liferay_volumes.append(f"{paths['logs'].as_posix()}:/opt/liferay/logs")
 
         gogo_env = (
@@ -637,8 +672,6 @@ class StackHandler:
                 f"traefik.http.routers.{container_name}-main.rule=Host(`{host_name}`)",
                 f"traefik.http.routers.{container_name}-main.entrypoints=websecure",
                 f"traefik.http.routers.{container_name}-main.tls=true",
-                f"traefik.http.routers.{container_name}-main.tls.domains[0].main={host_name}",
-                f"traefik.http.routers.{container_name}-main.tls.domains[0].sans=*.{host_name}",
                 f"traefik.http.services.{container_name}-main-svc.loadbalancer.server.port=8080",
             ]
 
@@ -650,6 +683,9 @@ class StackHandler:
         compose["services"]["liferay"]["environment"].extend(
             self.get_host_passthrough_env(paths, "liferay")
         )
+
+        # SSCE Port Mapping for non-SSL setup
+        current_ssce_port = 8081
 
         for ext in all_services:
             if "path" not in ext or ext.get("kind", "Deployment") != "Deployment":
@@ -669,6 +705,13 @@ class StackHandler:
                 f"LIFERAY_ROUTES_CLIENT_EXTENSION=/opt/liferay/routes/default/{ext_id}",
                 "LIFERAY_ROUTES_DXP=/opt/liferay/routes/default/dxp",
             ]
+
+            # Logic for non-SSL incremental ports
+            if not use_ssl:
+                ext_url = f"http://localhost:{current_ssce_port}"
+                ext_env.append(f"COM_LIFERAY_LXC_CLIENT_EXTENSION_URL={ext_url}")
+                ext["url"] = ext_url
+
             ext_env.extend(self.get_host_passthrough_env(paths, ext_id))
             compose["services"][ext_name] = {
                 "build": {"context": ext["path"].as_posix()},
@@ -683,6 +726,13 @@ class StackHandler:
                     f"com.liferay.ldm.project={container_name}",
                 ],
             }
+
+            if not use_ssl:
+                compose["services"][ext_name]["ports"] = [
+                    f"{resolved_ip}:{current_ssce_port}:{ext_port}"
+                ]
+                current_ssce_port += 1
+
             if scale_map.get(ext_name, 1) <= 1:
                 compose["services"][ext_name]["container_name"] = (
                     f"{container_name}-{ext_name}"
@@ -697,6 +747,8 @@ class StackHandler:
                 compose["services"][ext_name]["deploy"] = {
                     "resources": {"limits": {"memory": f"{ext['memory']}m"}}
                 }
+
+            # Determine the display URL
             if use_ssl and host_name != "localhost" and ext.get("has_load_balancer"):
                 ext_host = f"{ext_id}.{host_name}"
                 compose["services"][ext_name]["labels"] = [
@@ -704,10 +756,12 @@ class StackHandler:
                     f"traefik.http.routers.{container_name}-{ext_name}.rule=Host(`{ext_host}`)",
                     f"traefik.http.routers.{container_name}-{ext_name}.entrypoints=websecure",
                     f"traefik.http.routers.{container_name}-{ext_name}.tls=true",
-                    f"traefik.http.routers.{container_name}-{ext_name}.tls.domains[0].main={host_name}",
                     f"traefik.http.services.{container_name}-{ext_name}.loadbalancer.server.port={ext_port}",
                 ]
                 ext["url"] = f"https://{ext_host}"
+            elif not use_ssl and "url" in ext:
+                # Keep the incremental localhost URL assigned earlier
+                pass
             else:
                 ext["url"] = f"http://{ext_name}:{ext_port} (Internal)"
 
@@ -824,13 +878,22 @@ class StackHandler:
             for cfg, content in configs:
                 (paths["configs"] / cfg).write_text(content)
 
-        self.sync_common_assets(
-            paths, host_updates={"web.server.protocol": "https" if use_ssl else "http"}
-        )
+        host_updates = {
+            "web.server.protocol": "https" if use_ssl else "http",
+            "web.server.host": host_name,
+        }
+        if use_ssl:
+            host_updates["web.server.https.port"] = str(ssl_port)
+        else:
+            host_updates["web.server.http.port"] = str(port)
+
+        self.sync_common_assets(paths, host_updates=host_updates)
         self.sync_logging(paths)
         if use_ssl:
             self.setup_ssl(paths, host_name)
-        self.setup_infrastructure(resolved_ip, ssl_port, paths, use_ssl=use_ssl)
+        self.setup_infrastructure(
+            resolved_ip, ssl_port, paths, host_name, use_ssl=use_ssl
+        )
         if use_shared_search:
             self.setup_global_search()
 
@@ -843,7 +906,7 @@ class StackHandler:
                     xml_path = paths[key] / "portal-log4j-ext.xml"
                     if xml_path.is_dir():
                         shutil.rmtree(xml_path)
-                
+
                 paths[key].mkdir(parents=True, exist_ok=True)
 
         # On macOS (especially Colima/OrbStack), we must handle two issues:
@@ -851,38 +914,53 @@ class StackHandler:
         # 2. Permission Fixer: Solve UID 1000 mismatch via an internal chmod.
         if platform.system() == "darwin":
             UI.info("Verifying volume mounts and directory permissions...")
-            
+
             # Create a unique mount-check token to avoid cache hits
             import uuid
+
             token_val = f"LDM_VERIFY_{uuid.uuid4().hex[:8]}"
             token_file = paths["root"] / ".ldm_mount_check"
             token_file.write_text(token_val)
-            
+
             try:
                 # Run a single container to verify the mount AND fix permissions for the whole root
                 # We use chown 1000:1000 (liferay user) and chmod 775 as a realistic standard.
-                verify_res = run_command([
-                    "docker", "run", "--rm",
-                    "-v", f"{paths['root'].as_posix()}:/project",
-                    "alpine", "sh", "-c", 
-                    f"if [ \"$(cat /project/.ldm_mount_check 2>/dev/null)\" = \"{token_val}\" ]; then chown -R 1000:1000 /project && chmod -R 775 /project && echo 'OK'; else echo 'FAIL'; fi"
-                ])
-                
+                verify_res = run_command(
+                    [
+                        "docker",
+                        "run",
+                        "--rm",
+                        "-v",
+                        f"{paths['root'].as_posix()}:/project",
+                        "alpine",
+                        "sh",
+                        "-c",
+                        f"if [ \"$(cat /project/.ldm_mount_check 2>/dev/null)\" = \"{token_val}\" ]; then chown -R 1000:1000 /project && chmod -R 775 /project && echo 'OK'; else echo 'FAIL'; fi",
+                    ]
+                )
+
                 if "OK" not in (verify_res or ""):
                     UI.error("\n❌ FATAL: VOLUME MOUNTING IS BROKEN")
-                    UI.info(f"{UI.BYELLOW}Reason:{UI.COLOR_OFF} Docker cannot see the files in: {paths['root']}")
-                    
+                    UI.info(
+                        f"{UI.BYELLOW}Reason:{UI.COLOR_OFF} Docker cannot see the files in: {paths['root']}"
+                    )
+
                     if "/Volumes/" in paths["root"].as_posix():
-                        UI.info("You are running on an external volume. Colima requires explicit mounting for /Volumes.")
+                        UI.info(
+                            "You are running on an external volume. Colima requires explicit mounting for /Volumes."
+                        )
                         UI.info(f"\n{UI.CYAN}To fix this, run:{UI.COLOR_OFF}")
                         UI.info("colima stop")
-                        UI.info(f"colima start --mount {paths['root'].anchor}Volumes:w --vm-type=vz --mount-type=virtiofs")
+                        UI.info(
+                            f"colima start --mount {paths['root'].anchor}Volumes:w --vm-type=vz --mount-type=virtiofs"
+                        )
                     else:
                         UI.info("Check your Docker/Colima file sharing settings.")
-                    
+
                     import sys
+
                     sys.exit(1)
-                
+
                 UI.success("Volume mounts verified and permissions synchronized.")
             except Exception as e:
                 UI.warning(f"Could not verify mounts automatically: {e}")
@@ -948,22 +1026,29 @@ class StackHandler:
         cmd = ["docker", "compose", "up", "-d"] + scale_args
         if rebuild:
             cmd.append("--build")
-        
+
         try:
             run_command(cmd, capture_output=False, cwd=str(paths["root"]))
-        except subprocess.CalledProcessError as e:
+        except subprocess.CalledProcessError:
             UI.error("\n❌ FAILED TO START STACK")
             if extensions:
-                UI.info(f"{UI.BYELLOW}Diagnostic:{UI.COLOR_OFF} One or more Client Extensions require a Docker build.")
-                UI.info(f"Check the Docker build output above for 'target' failures or missing assets (e.g. '/static').")
-                UI.info(f"The issue is likely in the {UI.CYAN}Dockerfile{UI.COLOR_OFF} of the source extension.")
-            
+                UI.info(
+                    f"{UI.BYELLOW}Diagnostic:{UI.COLOR_OFF} One or more Client Extensions require a Docker build."
+                )
+                UI.info(
+                    "Check the Docker build output above for 'target' failures or missing assets (e.g. '/static')."
+                )
+                UI.info(
+                    f"The issue is likely in the {UI.CYAN}Dockerfile{UI.COLOR_OFF} of the source extension."
+                )
+
             if not self.args.verbose:
                 UI.info(f"Run with {UI.CYAN}-v{UI.COLOR_OFF} for full debug details.")
-            
-            # Since we hit a fatal build/startup error, we must exit gracefully 
+
+            # Since we hit a fatal build/startup error, we must exit gracefully
             # instead of letting the stacktrace propagate further.
             import sys
+
             sys.exit(1)
 
         if follow:
@@ -1044,22 +1129,14 @@ class StackHandler:
 
     def cmd_run(self, is_restart=False):
         if getattr(self.args, "select", False):
-            roots = self.find_dxp_roots()
-            UI.heading("Available Projects")
-            for i, r in enumerate(roots):
-                print(
-                    f"[{i + 1}] {r['path'].name} [{UI.CYAN}{r['version']}{UI.COLOR_OFF}]"
+            selection = self.select_project_interactively(heading="Available Projects")
+            if selection:
+                self.args.project, self.args.tag = (
+                    str(selection["path"]),
+                    selection["version"],
                 )
-            choice = UI.ask("Select index", "1")
-            try:
-                idx = int(choice) - 1
-                if 0 <= idx < len(roots):
-                    self.args.project, self.args.tag = (
-                        str(roots[idx]["path"]),
-                        roots[idx]["version"],
-                    )
-            except Exception:
-                UI.die("Invalid selection.")
+            else:
+                UI.die("No project selected.")
 
         project_id = self.args.project or self.detect_project_path()
         project_meta = (
@@ -1067,6 +1144,12 @@ class StackHandler:
             if project_id and Path(project_id).exists()
             else {}
         )
+
+        # 0. Early Docker Check
+        if not self.check_docker():
+            UI.die(
+                "Docker is not reachable. Ensure Docker Desktop, Colima, or OrbStack is running."
+            )
 
         # Handle Samples Switch
         is_sample_run = getattr(self.args, "samples", False)
@@ -1226,22 +1309,27 @@ class StackHandler:
         root = self.detect_project_path(project_id)
         if not root:
             return
+
         if service:
             UI.info(f"Restarting service '{service}' in {root.name}...")
+            if not self.require_compose(root):
+                return
             run_command(
                 ["docker", "compose", "restart", service],
                 capture_output=False,
                 cwd=str(root),
             )
         else:
-            self.cmd_stop(str(root))
+            if self.require_compose(root, silent=True):
+                self.cmd_stop(str(root))
             self.args.project = str(root)
             self.cmd_run(is_restart=True)
 
     def cmd_stop(self, project_id=None, service=None):
         root = self.detect_project_path(project_id)
-        if not root:
+        if not root or not self.require_compose(root, silent=True):
             return
+
         cmd = ["docker", "compose", "stop", "-t", "60"]
         if service:
             UI.info(f"Stopping service '{service}' in {root.name}...")
@@ -1262,22 +1350,32 @@ class StackHandler:
 
         if service:
             UI.info(f"Removing service '{service}' in {root.name}...")
+            if not self.require_compose(root):
+                return
+
             cmd = ["docker", "compose", "rm", "-fs"]
             if getattr(self.args, "volumes", False):
                 cmd.append("-v")
             cmd.append(service)
             run_command(cmd, capture_output=False, cwd=str(root))
         else:
-            self.cmd_stop(str(root))
-            cmd = ["docker", "compose", "down"]
-            if getattr(self.args, "volumes", False):
-                cmd.append("-v")
-            run_command(cmd, capture_output=False, cwd=str(root))
+            if self.require_compose(root, silent=True):
+                self.cmd_stop(str(root))
+                cmd = ["docker", "compose", "down"]
+                if getattr(self.args, "volumes", False):
+                    cmd.append("-v")
+                run_command(cmd, capture_output=False, cwd=str(root))
+            else:
+                UI.info(
+                    f"Skipping: Container shutdown (no docker-compose.yml found in {root.name})"
+                )
 
             if getattr(self.args, "infra", False):
+                UI.info("Proceeding: Global infrastructure cleanup...")
                 self.cmd_infra_down()
 
             if getattr(self.args, "delete", False):
+                UI.info(f"Proceeding: Deleting project folder {root}...")
                 self.safe_rmtree(root)
 
     def cmd_infra_down(self):

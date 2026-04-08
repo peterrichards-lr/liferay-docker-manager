@@ -25,7 +25,7 @@ This document outlines the systematic verification of the **Liferay Docker Manag
 | **2.1 Initialization** | `ldm init-from /path/to/ldm-cx-samples my-dev-stack` | Project is created. Metadata contains the `workspace_path`. |
 | **2.2 State Access** | Run `ldm down my-dev-stack` | The `osgi/state` folder is a **Bind Mount**, allowing LDM to clear it for maintenance. |
 | **2.3 Perm Enforcement** | Check host `data/` and `deploy/` folders. | Folders exist and have `775` permissions with ownership assigned to UID 1000. |
-| **2.4 Mount Verification**| Run project on external volume. | LDM detects if `/Volumes` is not shared and provides the correct `colima` command. |
+| **2.4 Mount Verification** | Run project on external volume. | LDM detects if `/Volumes` is not shared and provides the correct `colima` command. |
 | **2.5 Neg. Monitoring** | Modify a `.java` or `.yaml` file in source. | LDM detects the change but **DOES NOT** trigger a sync or restart. |
 | **2.6 CX Sync** | Place a `.zip` in `client-extensions/*/dist/`. | LDM follows the mandatory 3-step sequence: Copy to root, Expand for builds, Move to OSGi. |
 | **2.7 Module Sync** | Place a `.jar` in `modules/*/build/libs/`. | LDM syncs the jar to `deploy/` and triggers `cmd_deploy`. |

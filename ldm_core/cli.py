@@ -184,6 +184,8 @@ def main():
 
     docker_required = [
         "run",
+        "init-from",
+        "monitor",
         "stop",
         "restart",
         "down",

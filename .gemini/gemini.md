@@ -59,9 +59,10 @@ This repository contains automation tools for managing Liferay DXP instances usi
 - **UI Interaction Standards**:
   - **Standardized Prompts**: All binary questions must support the `(y/n/q)` format, where `q` triggers an immediate abort.
   - **Sanitization**: Automatically trim leading and trailing whitespace from all user inputs.
-- **Security Safeguards**:
-  - **Zip Slip Protection**: Extractions must validate all member paths against the target root to prevent path traversal.
-  - **Property Management**: `portal-ext.properties` must be updated using regex-based in-place replacements to avoid duplicate key entries.
+- **Fail-Fast & Clean Errors**: LDM MUST prioritize early detection of environmental and state failures.
+  - **Docker Dependency**: All commands requiring Docker MUST perform an explicit reachability check before modifying any project state or filesystem resources.
+  - **Graceful Failures**: Standard operational errors (e.g., Docker service down, missing `docker-compose.yml`, LCP CLI not found) MUST be handled via `UI.error` or `UI.die` with high-signal, user-friendly messages.
+  - **No Stack Traces**: Python stack traces (tracebacks) are strictly forbidden for common environmental failures. All subprocess errors MUST be caught and summarized to prevent exposing internal implementation details.
 - **Database Support**: Maintain support for Hypersonic (default), PostgreSQL, and MySQL.
 
 ## Engineering Standards

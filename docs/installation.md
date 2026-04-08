@@ -134,6 +134,46 @@ colima delete
 colima start --cpu 4 --memory 8 --vm-type=vz --mount-type=virtiofs --mount /Volumes:w
 ```
 
+### 🔐 Fixing SSL Trust Issues (mkcert)
+
+If your browser (Chrome, Edge, etc.) shows "Your connection is not private" or a red warning even though LDM is running with SSL, follow these steps to fix the trust relationship:
+
+#### 1. Initialize the Root CA (Mandatory)
+
+The most common cause is that the `mkcert` Root CA has not been added to your system's trust store. Run this in your terminal:
+
+```bash
+mkcert -install
+```
+
+- **macOS**: You may be prompted for your password or Touch ID to modify the System Keychain.
+- **Windows**: You will see a security prompt asking to install the "mkcert development CA." Click **Yes**.
+
+#### 2. Fully Restart your Browser
+
+Chrome and other Chromium-based browsers often cache certificate trust.
+
+- Simply refreshing the page is often **not enough**.
+- **Action**: Close **all** browser windows and restart the application.
+
+#### 3. Verify with `ldm doctor`
+
+Run `ldm doctor` to verify that your system sees the Root CA as trusted:
+
+```bash
+ldm doctor
+```
+
+Look for: `mkcert ✅ Installed (Root CA Trusted)`
+
+#### 4. Clear Project Certificates (Advanced)
+
+If you recently changed your `host-name` and are seeing a mismatch, you can force LDM to regenerate the certificates:
+
+1. Stop the stack: `ldm down [project]`
+2. Delete the hidden certs folder: `rm -rf ~/.liferay_docker_certs`
+3. Restart: `ldm run [project]`
+
 ---
 
 ## 🛡️ Supported & Tested Environments

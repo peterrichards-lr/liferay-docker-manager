@@ -4,6 +4,7 @@ import platform
 import shutil
 import json
 import hashlib
+import subprocess
 from pathlib import Path
 from ldm_core.ui import UI
 from ldm_core.constants import PROJECT_META_FILE, SCRIPT_DIR, VERSION
@@ -53,11 +54,25 @@ class DiagnosticsHandler:
         try:
             exe_path = Path(sys.argv[0]).resolve()
             if exe_path.exists() and exe_path.is_file():
-                sha = hashlib.sha256()
+                # Distinguish between Python source and binary
+                is_python_source = (
+                    exe_path.suffix.lower() == ".py" or exe_path.name == "ldm"
+                )
+
+                # Check for Shiv / Zipapp signature (PK\x03\x04 at start)
                 with open(exe_path, "rb") as f:
-                    for chunk in iter(lambda: f.read(4096), b""):
-                        sha.update(chunk)
-                results.append(("Executable Checksum", sha.hexdigest()[:12], True))
+                    magic = f.read(4)
+                    if magic == b"PK\x03\x04":
+                        is_python_source = False
+
+                if is_python_source:
+                    results.append(("Executable Checksum", "Python Source (N/A)", True))
+                else:
+                    sha = hashlib.sha256()
+                    with open(exe_path, "rb") as f:
+                        for chunk in iter(lambda: f.read(4096), b""):
+                            sha.update(chunk)
+                    results.append(("Executable Checksum", sha.hexdigest()[:12], True))
         except Exception:
             pass
 
@@ -66,9 +81,22 @@ class DiagnosticsHandler:
         results.append(("Platform", platform.platform(), True))
 
         # 2. Docker Check
-        docker_version = run_command(
-            ["docker", "version", "--format", "{{.Server.Version}}"], check=False
-        )
+        # Perform a silent check first to avoid double error reporting in the UI
+        docker_version = None
+        try:
+            docker_bin = shutil.which("docker")
+            if docker_bin:
+                res = subprocess.run(
+                    [docker_bin, "version", "--format", "{{.Server.Version}}"],
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+                if res.returncode == 0:
+                    docker_version = res.stdout.strip()
+        except Exception:
+            pass
+
         if docker_version:
             results.append(("Docker Engine", f"Running (v{docker_version})", True))
 
@@ -112,6 +140,8 @@ class DiagnosticsHandler:
                 except Exception:
                     pass
         else:
+            # Trigger the detailed error reporting from base.py
+            self.check_docker()
             results.append(("Docker Engine", "Not reachable", False))
 
         # 3. mkcert Check
@@ -186,6 +216,12 @@ class DiagnosticsHandler:
         # 7. Project-Specific Check (Optional)
         project_path = self.detect_project_path(project_id)
         if project_path:
+            # 7.1 Compose File Check
+            if self.require_compose(project_path, silent=True):
+                results.append(("Project Config", "docker-compose.yml OK", True))
+            else:
+                results.append(("Project Config", "docker-compose.yml MISSING", False))
+
             meta = self.read_meta(project_path / PROJECT_META_FILE)
             host_name = meta.get("host_name")
             if host_name and host_name != "localhost":

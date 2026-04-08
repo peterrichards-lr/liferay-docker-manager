@@ -145,14 +145,14 @@ class WorkspaceHandler:
         extensions = []
         if not root_dir.exists():
             return extensions
-        
+
         # Paths based on Core Mandates:
         # root_dir / client-extensions -> Build Source of Truth
         # root_dir / osgi / client-extensions -> Liferay Auto-deploy (ZIPs)
         ce_source_truth = root_dir / "client-extensions"
         ce_source_truth.mkdir(parents=True, exist_ok=True)
         osgi_cx_dir.mkdir(parents=True, exist_ok=True)
-        
+
         found_ids = set()
 
         # 1. Process ZIPs from the workspace build directory (ldm-cx-samples/client-extensions/*/dist/*.zip)
@@ -161,14 +161,14 @@ class WorkspaceHandler:
                 # Root project folder is the build context (Source of Truth)
                 target_folder = ce_source_truth / item.stem
                 root_zip_copy = ce_source_truth / item.name
-                
+
                 # Copy to root first to expand
                 shutil.copy2(item, root_zip_copy)
 
                 with zipfile.ZipFile(root_zip_copy, "r") as zip_ref:
                     ext_info = self._scan_extension_metadata(zip_ref=zip_ref)
                     namelist = zip_ref.namelist()
-                    
+
                     if ext_info["type"] or any(
                         Path(f).name in ["client-extension.yaml", "LCP.json"]
                         for f in namelist
@@ -181,19 +181,20 @@ class WorkspaceHandler:
                                 self.safe_rmtree(target_folder)
                             target_folder.mkdir(parents=True)
                             from ldm_core.utils import safe_extract
+
                             safe_extract(zip_ref, target_folder)
-                        
+
                         # Move the original ZIP from root to OSGI for Liferay's scanner
                         dest_zip = osgi_cx_dir / item.name
                         if dest_zip.exists():
                             os.remove(dest_zip)
                         shutil.move(str(root_zip_copy), str(dest_zip))
-                        
+
                         extensions.append(
                             {
                                 "name": item.stem.lower().replace("_", "-"),
                                 "id": ext_info.get("id") or item.stem,
-                                "path": target_folder, # Build from root/client-extensions/
+                                "path": target_folder,  # Build from root/client-extensions/
                                 "port": next(
                                     (
                                         p.get("port")
@@ -229,7 +230,7 @@ class WorkspaceHandler:
                     "id": ext_info.get("id") or item.name,
                     "name": item.name.lower().replace("_", "-"),
                     "port": port,
-                    "path": item, # Already in source of truth
+                    "path": item,  # Already in source of truth
                     **ext_info,
                 }
                 existing = next((e for e in extensions if e["id"] == entry["id"]), None)
@@ -315,37 +316,57 @@ class WorkspaceHandler:
     def _hydrate_from_workspace(self, workspace_root, paths):
         """Initial scan and sync of artifacts from workspace to project."""
         UI.info("Scanning workspace for built artifacts...")
-        
-        # 1. Sync Client Extensions (ZIPs from dist folders)
+
+        # 1. Sync Client Extensions (ZIPs)
         ce_dir = workspace_root / "client-extensions"
         if ce_dir.exists():
-            for dist_zip in ce_dir.glob("*/dist/*.zip"):
+            # Look in root and standard dist folders
+            for dist_zip in list(ce_dir.glob("*.zip")) + list(
+                ce_dir.glob("*/dist/*.zip")
+            ):
                 self._sync_cx_artifact(dist_zip, paths)
 
-        # 2. Sync Modules (JARs from build/libs)
-        mod_dir = workspace_root / "modules"
-        if mod_dir.exists():
-            for jar in mod_dir.glob("*/build/libs/*.jar"):
-                if (jar.parent.parent.parent / "bnd.bnd").exists():
-                    shutil.copy2(jar, paths["modules"] / jar.name)
-                    UI.info(f"  + Synced Module: {jar.name}")
+        # 2. Sync Modules & Themes (JARs from build/libs)
+        for folder in ["modules", "themes"]:
+            base_dir = workspace_root / folder
+            if base_dir.exists():
+                for jar in base_dir.glob("**/build/libs/*.[jw]ar"):
+                    # Check if it's a valid bundle (not sources/javadoc)
+                    if not any(
+                        x in jar.name.lower()
+                        for x in ["-sources", "-javadoc", "-tests"]
+                    ):
+                        shutil.copy2(jar, paths["modules"] / jar.name)
+                        UI.info(f"  + Synced {folder.capitalize()[:-1]}: {jar.name}")
 
-        # 3. Sync Fragments (ZIPs from fragments folder)
+        # 3. Sync Fragments (ZIPs)
         frag_dir = workspace_root / "fragments"
         if frag_dir.exists():
-            for zip_file in frag_dir.glob("*.zip"):
-                shutil.copy2(zip_file, paths["deploy"] / zip_file.name)
-                UI.info(f"  + Synced Fragment: {zip_file.name}")
+            # Look in root and any nested zips
+            for zip_file in list(frag_dir.glob("*.zip")) + list(
+                frag_dir.glob("*/dist/*.zip")
+            ):
+                # Check if it's a fragment or a CX being miscategorized
+                try:
+                    with zipfile.ZipFile(zip_file, "r") as zip_ref:
+                        if "liferay-deploy-fragments.json" in zip_ref.namelist():
+                            shutil.copy2(zip_file, paths["deploy"] / zip_file.name)
+                            UI.info(f"  + Synced Fragment: {zip_file.name}")
+                        else:
+                            # If it's a ZIP in fragments but not a fragment, try syncing as CX
+                            self._sync_cx_artifact(zip_file, paths)
+                except Exception:
+                    pass
 
     def _sync_cx_artifact(self, zip_path, paths):
         """Internal helper for the mandatory 3-step CX sync sequence."""
         ce_source_truth = paths["root"] / "client-extensions"
         ce_source_truth.mkdir(parents=True, exist_ok=True)
-        
+
         # Step 1: Copy ZIP to root client-extensions/
         root_zip_path = ce_source_truth / zip_path.name
         shutil.copy2(zip_path, root_zip_path)
-        
+
         # Step 2: Expand ZIP in root for Docker builds
         try:
             with zipfile.ZipFile(root_zip_path, "r") as zip_ref:
@@ -354,6 +375,7 @@ class WorkspaceHandler:
                     shutil.rmtree(target_folder)
                 target_folder.mkdir(parents=True)
                 from ldm_core.utils import safe_extract
+
                 safe_extract(zip_ref, target_folder)
                 UI.info(f"  + Synced & Expanded CX: {zip_path.name}")
         except Exception as e:
@@ -514,7 +536,7 @@ class WorkspaceHandler:
                         )
                         # Workspace product always wins
                         project_meta["tag"] = tag
-                        self.args.tag = tag 
+                        self.args.tag = tag
                         UI.info(f"Extracted version: {tag}")
                         break
 
@@ -552,30 +574,37 @@ class WorkspaceHandler:
                 count = 0
                 if not search_base.exists():
                     return 0
-                for ext_folder in [
+
+                # Check root of search_base
+                root_zips = list(search_base.glob("*.zip"))
+
+                # Check subdirectories
+                ext_folders = [
                     f
                     for f in search_base.iterdir()
                     if f.is_dir() and not f.name.startswith(".")
-                ]:
-                    dist_dir = ext_folder / "dist"
-                    zips = list(dist_dir.glob("*.zip")) if dist_dir.exists() else []
-                    for z in zips:
-                        if label == "Fragment":
-                            try:
-                                with zipfile.ZipFile(z, "r") as zip_ref:
-                                    if (
-                                        "liferay-deploy-fragments.json"
-                                        not in zip_ref.namelist()
-                                    ):
-                                        UI.error(
-                                            f"{ext_folder.name} missing fragment descriptor."
-                                        )
-                                        continue
-                            except Exception:
-                                UI.error(f"{ext_folder.name} corrupt.")
-                                continue
-                        shutil.copy2(z, target_dir / z.name)
-                        count += 1
+                ]
+
+                nested_zips = []
+                for folder in ext_folders:
+                    nested_zips.extend(list(folder.glob("dist/*.zip")))
+                    nested_zips.extend(list(folder.glob("*.zip")))
+
+                for z in list(set(root_zips + nested_zips)):
+                    if label == "Fragment":
+                        try:
+                            with zipfile.ZipFile(z, "r") as zip_ref:
+                                if (
+                                    "liferay-deploy-fragments.json"
+                                    not in zip_ref.namelist()
+                                ):
+                                    UI.error(f"{z.name} missing fragment descriptor.")
+                                    continue
+                        except Exception:
+                            UI.error(f"{z.name} corrupt.")
+                            continue
+                    shutil.copy2(z, target_dir / z.name)
+                    count += 1
                 return count
 
             import_zips(
@@ -690,16 +719,23 @@ class WorkspaceHandler:
 
             def _handle_event(self, path):
                 p = Path(path)
+
+                # Performance Optimization: Skip massive build/node_modules directories early
+                if any(
+                    x in p.parts for x in ["build", "node_modules", ".gradle", ".lsp"]
+                ):
+                    # We only care about the specific artifacts in 'dist' or 'libs'
+                    if not any(x in p.parts for x in ["dist", "libs"]):
+                        return
+
                 # Refined Filtering Logic:
-                # 1. client-extensions/*/dist/*.zip
-                # 2. fragments/*.zip
+                # 1. client-extensions/**/*.zip
+                # 2. fragments/**/*.zip
                 # 3. modules/*/build/libs/*.jar
 
                 is_valid = False
                 if p.suffix.lower() == ".zip":
-                    if "client-extensions" in p.parts and "dist" in p.parts:
-                        is_valid = True
-                    elif "fragments" in p.parts:
+                    if "client-extensions" in p.parts or "fragments" in p.parts:
                         is_valid = True
                 elif p.suffix.lower() in [".jar", ".war"]:
                     if (
@@ -726,7 +762,7 @@ class WorkspaceHandler:
                     )
                 if not files:
                     return
-                
+
                 updated_services = set()
                 for f in files:
                     # 1. Determine action based on type
@@ -747,16 +783,20 @@ class WorkspaceHandler:
                         self.manager.cmd_deploy(service=svc)
                 else:
                     self.manager.cmd_deploy()
-                
+
                 UI.success("Deployment complete.")
 
-        observer = Observer()
-        if platform.system() == "darwin":
-            from watchdog.observers.kqueue import KqueueObserver
-
-            if isinstance(observer, KqueueObserver):
-                UI.info("Using PollingObserver for macOS stability.")
-                observer = PollingObserver()
+        # On macOS, Native Observer (Kqueue) often hits file descriptor limits
+        # because it requires an open file handle for every directory.
+        # PollingObserver is much safer for large workspace monitoring.
+        is_mac = platform.system() == "darwin"
+        if is_mac:
+            UI.info(
+                "Using PollingObserver for macOS stability (avoids 'Too many open files')."
+            )
+            observer = PollingObserver()
+        else:
+            observer = Observer()
 
         UI.info("Scanning for workspace branches...")
         watch_targets = []
@@ -780,8 +820,23 @@ class WorkspaceHandler:
         )
 
         for target in watch_targets:
-            # We now watch branches recursively but the handler filters precisely
-            observer.schedule(handler, str(target), recursive=True)
+            try:
+                # We now watch branches recursively but the handler filters precisely
+                observer.schedule(handler, str(target), recursive=True)
+            except OSError as e:
+                if e.errno == 24:  # Too many open files
+                    if not is_mac:
+                        UI.error(
+                            "Hit system file limit. Switching to PollingObserver..."
+                        )
+                        observer = PollingObserver()
+                        observer.schedule(handler, str(target), recursive=True)
+                    else:
+                        UI.die(
+                            f"Fatal: OS file limit reached even with Polling. Path: {target}"
+                        )
+                else:
+                    raise e
 
         observer.start()
 

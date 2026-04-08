@@ -3,5 +3,10 @@
     "MD013": false,
     "MD033": false,
     "MD024": false
-  }
+  },
+  "ignores": [
+    ".venv",
+    "node_modules",
+    ".github"
+  ]
 }

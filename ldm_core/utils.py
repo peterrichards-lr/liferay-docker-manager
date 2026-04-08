@@ -133,7 +133,14 @@ def run_command(cmd, shell=False, capture_output=True, check=True, env=None, cwd
         if e.returncode == 130:
             raise KeyboardInterrupt()
         if check:
-            raise e
+            # Provide a clean, user-friendly error message instead of a stack trace
+            cmd_str = " ".join(cmd) if isinstance(cmd, list) else cmd
+            UI.error(f"Command failed (Exit {e.returncode}): {cmd_str}")
+            if e.stderr:
+                print(f"{UI.WHITE}Error Details:{UI.COLOR_OFF} {e.stderr.strip()}")
+            import sys
+
+            sys.exit(e.returncode)
         return None
     except KeyboardInterrupt:
         raise

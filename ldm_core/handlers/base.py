@@ -9,7 +9,7 @@ from pathlib import Path
 from datetime import datetime
 from ldm_core.ui import UI
 from ldm_core.constants import PROJECT_META_FILE, SCRIPT_DIR
-from ldm_core.utils import run_command, is_within_root
+from ldm_core.utils import is_within_root
 
 
 class BaseHandler:
@@ -106,23 +106,8 @@ class BaseHandler:
             return cwd
 
         # Interactive Fallback
-        if not self.non_interactive:
-            roots = self.find_dxp_roots()
-            if roots:
-                UI.heading("Select Project")
-                for i, r in enumerate(roots):
-                    print(
-                        f"[{i + 1}] {r['path'].name} [{UI.CYAN}{r['version']}{UI.COLOR_OFF}]"
-                    )
-                choice = UI.ask("Select project index", "1")
-                try:
-                    idx = int(choice) - 1
-                    if 0 <= idx < len(roots):
-                        return roots[idx]["path"]
-                except (ValueError, IndexError):
-                    pass
-
-        return None
+        selection = self.select_project_interactively()
+        return selection["path"] if selection else None
 
     def parse_version(self, tag):
         """Parses a Liferay tag (YYYY.qX.N) into a sortable tuple."""
@@ -153,6 +138,41 @@ class BaseHandler:
                     roots.append({"path": item, "version": version})
         return sorted(roots, key=lambda x: x["path"].name)
 
+    def select_project_interactively(self, roots=None, heading="Select Project"):
+        """Prompts the user to select a project from a list."""
+        if self.non_interactive:
+            return None
+
+        project_roots = roots or self.find_dxp_roots()
+        if not project_roots:
+            return None
+
+        UI.heading(heading)
+        for i, r in enumerate(project_roots):
+            print(f"[{i + 1}] {r['path'].name} [{UI.CYAN}{r['version']}{UI.COLOR_OFF}]")
+
+        choice = UI.ask("Select project index (or 'q' to quit)", "1")
+        if choice.lower() == "q":
+            import sys
+
+            sys.exit(0)
+
+        try:
+            idx = int(choice) - 1
+            if 0 <= idx < len(project_roots):
+                return project_roots[idx]
+        except (ValueError, IndexError):
+            pass
+        return None
+
+    def require_compose(self, root_path, silent=False):
+        """Verifies that a docker-compose.yml file exists in the project root."""
+        if not root_path or not (root_path / "docker-compose.yml").exists():
+            if not silent:
+                UI.error(f"docker-compose.yml not found in {root_path}")
+            return False
+        return True
+
     def setup_paths(self, root_path):
         root = Path(root_path).resolve()
         return {
@@ -166,7 +186,6 @@ class BaseHandler:
             "marketplace": root / "osgi" / "marketplace",
             "state": root / "osgi" / "state",
             "modules": root / "osgi" / "modules",
-            "certs": root / ".certs",
             "backups": root / "snapshots",
             "compose": root / "docker-compose.yml",
             "ce_dir": root / "client-extensions",
@@ -268,9 +287,28 @@ class BaseHandler:
 
     def check_docker(self):
         try:
-            run_command(["docker", "version", "--format", "{{.Server.Version}}"])
-            return True
-        except Exception:
+            # We use subprocess directly to capture the raw error message if it fails
+            docker_bin = shutil.which("docker")
+            if not docker_bin:
+                return False
+
+            res = subprocess.run(
+                [docker_bin, "version", "--format", "{{.Server.Version}}"],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            if res.returncode == 0:
+                return True
+
+            if res.stderr:
+                # Extract the first line of the error to avoid overwhelming the user
+                err = res.stderr.splitlines()[0]
+                UI.error(f"Docker Error: {err}")
+            return False
+        except Exception as e:
+            if self.verbose:
+                UI.error(f"Docker Exception: {e}")
             return False
 
     def get_resolved_ip(self, host_name):
