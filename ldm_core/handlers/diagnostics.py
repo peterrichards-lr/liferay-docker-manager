@@ -232,7 +232,7 @@ class DiagnosticsHandler:
                 pe_file = common_dir / "portal-ext.properties"
                 if not pe_file.exists():
                     results.append(
-                        ("Global Config", "✅ Overrides Active (no baseline)", True)
+                        ("Global Config", "Overrides Active (no baseline)", True)
                     )
                 else:
                     baseline_content = (
@@ -241,11 +241,11 @@ class DiagnosticsHandler:
                         / "portal-ext.properties"
                     ).read_text()
                     if pe_file.read_text().strip() == baseline_content.strip():
-                        results.append(("Global Config", "✅ Baseline (v1.5.5)", True))
+                        results.append(("Global Config", "Baseline (v1.5.5)", True))
                     else:
-                        results.append(("Global Config", "✅ Custom Overrides", True))
+                        results.append(("Global Config", "Custom Overrides", True))
             except Exception:
-                results.append(("Global Config", "✅ Overrides Active", True))
+                results.append(("Global Config", "Overrides Active", True))
 
         # 5. Network Check
         if docker_version:
