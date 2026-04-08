@@ -25,7 +25,14 @@ ldm --version
 ```
 
 > [!TIP]
-> **WSL2 Users:** Use the `ldm-linux` binary within your WSL terminal. To enable SSL, you **must** install `mkcert` inside the Linux environment (`sudo apt update && sudo apt install libnss3-tools`) and run `mkcert -install` there. LDM will automatically detect the Windows-side browser when launching URLs.
+> **WSL2 Users:** Use the `ldm-linux` binary within your WSL terminal. To enable SSL, you **must** install `mkcert` inside the Linux environment (`sudo apt update && sudo apt install libnss3-tools`).
+>
+> **Seamless WSL SSL (Green Lock):** To make your Windows browser (Edge/Chrome) trust LDM certificates generated inside WSL, you must share the Root CA:
+>
+> 1. In **PowerShell**, find your Windows CA path: `mkcert -CAROOT`
+> 2. In **WSL**, point to that path by adding this to your `.bashrc` or `.zshrc`:
+>    `export CAROOT="/mnt/c/Users/<your_user>/AppData/Local/mkcert"`
+> 3. Run `mkcert -install` inside WSL. This links the Linux environment to the Windows-trusted authority.
 
 ### Windows
 
