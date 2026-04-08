@@ -438,6 +438,8 @@ class BaseHandler:
             # Standard Linux/Windows fallback
             for key in ["data", "deploy", "state"]:
                 if key in paths:
+                    # Ensure directory exists before chmodding
+                    paths[key].mkdir(parents=True, exist_ok=True)
                     try:
                         if platform.system().lower() != "windows":
                             subprocess.run(
