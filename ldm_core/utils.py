@@ -202,15 +202,23 @@ def open_browser(url):
 
     if is_wsl:
         # On WSL, use the Windows host's 'start' command to open the browser
-        # We use cmd.exe /c start to bypass gio/xdg-open issues
-        try:
-            subprocess.run(
-                ["cmd.exe", "/c", "start", url.replace("&", "^&")], check=False
-            )
-            return True
-        except Exception:
-            # Fallback to standard Python launcher if cmd.exe fails
-            pass
+        # We try to find cmd.exe even if it's not in the current Linux PATH
+        cmd_exe = shutil.which("cmd.exe") or "/mnt/c/Windows/System32/cmd.exe"
+        if os.path.exists(cmd_exe):
+            try:
+                # We use cmd.exe /c start to bypass gio/xdg-open issues
+                subprocess.run(
+                    [cmd_exe, "/c", "start", url.replace("&", "^&")], check=False
+                )
+                return True
+            except Exception:
+                pass
+
+        # If we are in WSL and cmd.exe failed or wasn't found
+        UI.info(
+            f"Please open this URL in your Windows browser: {UI.CYAN}{url}{UI.COLOR_OFF}"
+        )
+        return False
 
     # 2. Standard Launch
     try:
