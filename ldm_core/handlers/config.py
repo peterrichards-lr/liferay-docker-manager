@@ -283,64 +283,62 @@ class ConfigHandler:
 
     def sync_common_assets(self, paths, host_updates=None, version=None):
         common_dir = SCRIPT_DIR / "common"
-        if not common_dir.exists():
-            return
-        history_file = paths["root"] / ".liferay-docker.deployed"
-        history = (
-            set(history_file.read_text().splitlines())
-            if history_file.exists()
-            else set()
-        )
+        target_ext = paths["files"] / "portal-ext.properties"
 
-        common_ext, target_ext = (
-            common_dir / "portal-ext.properties",
-            paths["files"] / "portal-ext.properties",
-        )
-        if common_ext.exists():
-            if not target_ext.exists():
-                shutil.copy(common_ext, target_ext)
-            else:
-                # Robust extraction of project keys, handling multi-line entries
-                target_content = target_ext.read_text()
-                project_keys = set(
-                    re.findall(r"^\s*([^#=\s]+)\s*=", target_content, re.MULTILINE)
-                )
+        if common_dir.exists():
+            history_file = paths["root"] / ".liferay-docker.deployed"
+            history = (
+                set(history_file.read_text().splitlines())
+                if history_file.exists()
+                else set()
+            )
 
-                common_content = common_ext.read_text()
-                # Find all potential updates in the common file
-                # Format: (key, full_value_including_continuations)
-                potential_updates = re.findall(
-                    r"^\s*([^#=\s]+)\s*=\s*((?:.*\\\n)*.*$)",
-                    common_content,
-                    re.MULTILINE,
-                )
+            common_ext = common_dir / "portal-ext.properties"
+            if common_ext.exists():
+                if not target_ext.exists():
+                    shutil.copy2(common_ext, target_ext)
+                else:
+                    # Robust extraction of project keys, handling multi-line entries
+                    target_content = target_ext.read_text()
+                    project_keys = set(
+                        re.findall(r"^\s*([^#=\s]+)\s*=", target_content, re.MULTILINE)
+                    )
 
-                to_add = {
-                    k.strip(): v.strip()
-                    for k, v in potential_updates
-                    if k.strip() not in project_keys
-                }
-                if to_add:
-                    self.update_portal_ext(target_ext, to_add)
+                    common_content = common_ext.read_text()
+                    # Find all potential updates in the common file
+                    # Format: (key, full_value_including_continuations)
+                    potential_updates = re.findall(
+                        r"^\s*([^#=\s]+)\s*=\s*((?:.*\\\n)*.*$)",
+                        common_content,
+                        re.MULTILINE,
+                    )
+
+                    to_add = {
+                        k.strip(): v.strip()
+                        for k, v in potential_updates
+                        if k.strip() not in project_keys
+                    }
+                    if to_add:
+                        self.update_portal_ext(target_ext, to_add)
+
+            patterns = [
+                ("*.xml", paths["deploy"]),
+                ("*.lpkg", paths["deploy"]),
+                ("*.config", paths["configs"]),
+                ("*.cfg", paths["configs"]),
+            ]
+            for pattern, target in patterns:
+                for match in common_dir.glob(pattern):
+                    if match.name not in history:
+                        dest = target / match.name
+                        if not dest.exists():
+                            shutil.copy(match, dest)
+                            history.add(match.name)
+
+            history_file.write_text("\n".join(sorted(list(history))))
 
         if host_updates:
             self.update_portal_ext(target_ext, host_updates)
-
-        patterns = [
-            ("*.xml", paths["deploy"]),
-            ("*.lpkg", paths["deploy"]),
-            ("*.config", paths["configs"]),
-            ("*.cfg", paths["configs"]),
-        ]
-        for pattern, target in patterns:
-            for match in common_dir.glob(pattern):
-                if match.name not in history:
-                    dest = target / match.name
-                    if not dest.exists():
-                        shutil.copy(match, dest)
-                        history.add(match.name)
-
-        history_file.write_text("\n".join(sorted(list(history))))
 
     def cmd_env(self, project_id=None):
         pid = project_id
