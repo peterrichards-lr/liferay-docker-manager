@@ -210,7 +210,9 @@ class ConfigHandler:
                 f.unlink()
             portal_ext_file.write_text(minimal_xml)
             try:
-                os.chmod(portal_ext_file, 0o666)
+                # Bandit: B103 (chmod 0o666) is needed to ensure the Liferay container
+                # (UID 1000) can write to host-mounted logging configs.
+                os.chmod(portal_ext_file, 0o666)  # nosec B103
             except Exception:
                 pass
             return
@@ -220,7 +222,9 @@ class ConfigHandler:
         except Exception:
             portal_ext_file.write_text(minimal_xml)
             try:
-                os.chmod(portal_ext_file, 0o666)
+                # Bandit: B103 (chmod 0o666) is needed to ensure the Liferay container
+                # (UID 1000) can write to host-mounted logging configs.
+                os.chmod(portal_ext_file, 0o666)  # nosec B103
             except Exception:
                 pass
             return
