@@ -440,11 +440,20 @@ class BaseHandler:
         # scan_client_extensions is inherited from WorkspaceHandler
         exts = self.scan_client_extensions(paths["root"], paths["cx"], paths["ce_dir"])
         for e in exts:
-            ext_domain = f"{e['id']}.{host_name}"
-            ip = self.get_resolved_ip(ext_domain)
-            if not ip or not (
-                ip.startswith("127.") or ip in ["::1", "0:0:0:0:0:0:0:1"]
+            # Criteria based on user requirements:
+            # 1. kind is "Deployment" (Services, not Jobs)
+            # 2. deploy flag is True (Active)
+            # 3. has_load_balancer is True (Has a public routing entry)
+            if (
+                e.get("kind") == "Deployment"
+                and e.get("deploy", True)
+                and e.get("has_load_balancer")
             ):
-                unresolved.append(ext_domain)
+                ext_domain = f"{e['id']}.{host_name}"
+                ip = self.get_resolved_ip(ext_domain)
+                if not ip or not (
+                    ip.startswith("127.") or ip in ["::1", "0:0:0:0:0:0:0:1"]
+                ):
+                    unresolved.append(ext_domain)
 
         return len(unresolved) == 0, unresolved

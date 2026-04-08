@@ -53,6 +53,7 @@ class WorkspaceHandler:
         info = {
             "id": None,
             "kind": None,
+            "deploy": True,  # Default to True if not specified
             "cpu": 1,
             "memory": 512,
             "ports": [],
@@ -72,6 +73,7 @@ class WorkspaceHandler:
                 "cpu",
                 "memory",
                 "ports",
+                "deploy",
                 "loadBalancer",
                 "readinessProbe",
                 "livenessProbe",
@@ -94,6 +96,7 @@ class WorkspaceHandler:
             "id": None,
             "type": None,
             "kind": None,
+            "deploy": True,
             "cpu": 1,
             "memory": 512,
             "ports": [],

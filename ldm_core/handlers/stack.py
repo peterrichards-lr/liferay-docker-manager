@@ -727,7 +727,15 @@ class StackHandler:
         current_ssce_port = 8081
 
         for ext in all_services:
-            if "path" not in ext or ext.get("kind", "Deployment") != "Deployment":
+            # Criteria:
+            # 1. Has a path (Source of truth folder)
+            # 2. kind is "Deployment" (Services, not Jobs)
+            # 3. deploy flag is True (Active)
+            if (
+                "path" not in ext
+                or ext.get("kind", "Deployment") != "Deployment"
+                or not ext.get("deploy", True)
+            ):
                 continue
 
             # Determine internal port from LCP ports metadata if present
