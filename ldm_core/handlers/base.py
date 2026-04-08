@@ -354,6 +354,9 @@ class BaseHandler:
         if platform.system().lower() == "darwin":
             UI.info("Verifying volume mounts and directory permissions...")
 
+            # Ensure the project root actually exists before we try to write to it
+            root.mkdir(parents=True, exist_ok=True)
+
             # Create a unique mount-check token to avoid cache hits
             import uuid
 
@@ -362,7 +365,8 @@ class BaseHandler:
             token_file.write_text(token_val)
 
             try:
-                # Run a single container to verify the mount AND fix permissions for the whole root
+                # Run a single container to verify the mount AND fix permissions for the whole root.
+                # We skip .git to avoid altering repository metadata permissions.
                 verify_res = run_command(
                     [
                         "docker",
@@ -373,7 +377,7 @@ class BaseHandler:
                         "alpine",
                         "sh",
                         "-c",
-                        f"if [ \"$(cat /project/.ldm_mount_check 2>/dev/null)\" = \"{token_val}\" ]; then chown -R 1000:1000 /project && chmod -R 775 /project && echo 'OK'; else echo 'FAIL'; fi",
+                        f"if [ \"$(cat /project/.ldm_mount_check 2>/dev/null)\" = \"{token_val}\" ]; then find /project -maxdepth 1 ! -name '.git' ! -name '.' -exec chown -R 1000:1000 {{}} + && chmod -R 775 /project && echo 'OK'; else echo 'FAIL'; fi",
                     ]
                 )
 
