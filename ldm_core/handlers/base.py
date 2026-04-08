@@ -321,8 +321,12 @@ class BaseHandler:
 
     def get_colima_mount_flags(self, paths):
         """Calculates the unique set of Colima mount flags needed for the given paths."""
+        import getpass
+
         mounts = set()
-        real_user = os.environ.get("SUDO_USER") or os.environ.get("USER")
+        real_user = (
+            os.environ.get("SUDO_USER") or os.environ.get("USER") or getpass.getuser()
+        )
 
         for p in paths:
             abs_path = Path(p).resolve()

@@ -102,11 +102,15 @@ class StackHandler:
             if key_file.exists():
                 os.remove(key_file)
 
-            real_user = os.environ.get("SUDO_USER") or os.environ.get("USER")
+            import getpass
+
+            current_user = (
+                os.environ.get("SUDO_USER")
+                or os.environ.get("USER")
+                or getpass.getuser()
+            )
+
             cmd = [
-                "sudo",
-                "-u",
-                real_user,
                 "mkcert",
                 "-cert-file",
                 str(cert_file),
@@ -115,10 +119,18 @@ class StackHandler:
                 host_name,
                 wildcard_host,
             ]
+
+            # sudo is only relevant for Unix-based systems when we want to drop privileges back to the user
+            if platform.system().lower() != "windows" and os.environ.get("SUDO_USER"):
+                cmd = ["sudo", "-u", current_user] + cmd
+
             try:
                 subprocess.run(cmd, check=True, capture_output=True)
-            except subprocess.CalledProcessError as e:
-                UI.error(f"mkcert failed: {e.stderr.decode().strip()}")
+            except (subprocess.CalledProcessError, FileNotFoundError) as e:
+                if isinstance(e, FileNotFoundError):
+                    UI.error("mkcert not found. Please install it to use SSL.")
+                else:
+                    UI.error(f"mkcert failed: {e.stderr.decode().strip()}")
                 return False
 
         # Ensure world-readable for the Traefik container

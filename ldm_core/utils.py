@@ -172,7 +172,11 @@ def get_json(url):
 
 def get_actual_home():
     """Returns the home directory of the real user, even when running with sudo."""
-    real_user = os.environ.get("SUDO_USER") or os.environ.get("USER")
+    import getpass
+
+    real_user = (
+        os.environ.get("SUDO_USER") or os.environ.get("USER") or getpass.getuser()
+    )
     if platform.system() == "darwin" and real_user:
         home = Path(f"/Users/{real_user}")
         if home.exists():
