@@ -92,6 +92,7 @@ This repository contains automation tools for managing Liferay DXP instances usi
 
 - **Background Startup**: Containers start in detached mode by default. Users must use `--follow` or `-f` to attach to logs.
 - **UI Consistency**: Use the `UI` helper class in Python and `terminal-colors.txt` in shell scripts for consistent logging.
+- **Single Icon Rule**: Diagnostic status strings (e.g., in `ldm doctor`) MUST NOT contain manual emojis (e.g., ✅, ⚠️, ❌). The `UI` printer is responsible for prepending the appropriate icon based on the result type to ensure a clean, consistent report and prevent icon duplication.
 
 ## Definition of Done
 
