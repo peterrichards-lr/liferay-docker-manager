@@ -322,6 +322,7 @@ class BaseHandler:
     def get_colima_mount_flags(self, paths):
         """Calculates the unique set of Colima mount flags needed for the given paths."""
         mounts = set()
+        real_user = os.environ.get("SUDO_USER") or os.environ.get("USER")
 
         for p in paths:
             abs_path = Path(p).resolve()
@@ -335,6 +336,9 @@ class BaseHandler:
 
             if len(parts) >= 3 and parts[1] in ["Users", "Volumes"]:
                 mount_point = os.path.join(parts[0], parts[1], parts[2])
+                # Mask the actual username with $(whoami) for the CLI hint
+                if parts[1] == "Users" and real_user and parts[2] == real_user:
+                    mount_point = os.path.join(parts[0], parts[1], "$(whoami)")
             elif len(parts) >= 2:
                 mount_point = os.path.join(parts[0], parts[1])
             else:
