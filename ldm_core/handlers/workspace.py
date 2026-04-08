@@ -696,6 +696,12 @@ class WorkspaceHandler:
             UI.die("watchdog required: pip install watchdog")
 
         project_id = getattr(self.args, "project", None) or self.detect_project_path()
+        if not project_id:
+            UI.die(
+                "No project specified and no project found in current directory. "
+                "Use 'ldm monitor <project_name>' or navigate to a project folder."
+            )
+
         paths = self.setup_paths(project_id)
         project_meta = self.read_meta(paths["root"] / PROJECT_META_FILE)
 

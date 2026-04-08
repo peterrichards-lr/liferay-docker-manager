@@ -153,6 +153,9 @@ This repository contains automation tools for managing Liferay DXP instances usi
 
 ### Current State (April 8, 2026)
 
+- **Version 1.5.2 Project Discovery Refinement**: COMPLETED. Hardened project detection and validation to prevent runtime crashes.
+- **Graceful Error Handling**: FIXED. Added strict `project_id` validation to `cmd_run` and `cmd_monitor` to prevent `TypeError` tracebacks when no project is found.
+- **Cross-Platform Parity**: COMPLETED. Verified traceback-free behavior across macOS, WSL2, and Native Windows.
 - **Version 1.5.1 Cross-Platform Refinement**: COMPLETED. Refined diagnostics and update checks for better consistency between macOS, WSL2, and Native Windows.
 - **Binary Checksums**: FIXED. Implemented "Magic Byte" detection (ELF/MZ/ZIP) to ensure checksums are correctly reported even if the binary is renamed.
 - **Semantic Versioning**: FIXED. Replaced simple string comparison with numeric tuple logic to prevent incorrect update notifications.

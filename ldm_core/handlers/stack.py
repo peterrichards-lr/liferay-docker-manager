@@ -1183,9 +1183,15 @@ class StackHandler:
                 UI.die("No project selected.")
 
         project_id = self.args.project or self.detect_project_path()
+        if not project_id:
+            UI.die(
+                "No project specified and no project found in current directory. "
+                "Use 'ldm run <project_name>' or navigate to a project folder."
+            )
+
         project_meta = (
             self.read_meta(Path(project_id) / PROJECT_META_FILE)
-            if project_id and Path(project_id).exists()
+            if Path(project_id).exists()
             else {}
         )
 
