@@ -745,6 +745,13 @@ class StackHandler:
                     f"LIFERAY_WEB__SERVER__HOST={host_name}",
                 ]
             )
+            # Add security override for custom hostnames (LPS-184385)
+            self.update_portal_ext(
+                paths["files"] / "portal-ext.properties",
+                {
+                    "virtual.hosts.valid.hosts": f"localhost,127.0.0.1,127.0.0.2,[::1],[0:0:0:0:0:0:0:1],{host_name},*.{host_name}"
+                },
+            )
             compose["services"]["liferay"]["labels"] = [
                 "traefik.enable=true",
                 f"traefik.http.routers.{container_name}-main.rule=Host(`{host_name}`)",
