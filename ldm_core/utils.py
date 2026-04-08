@@ -129,12 +129,22 @@ def run_command(cmd, shell=False, capture_output=True, check=True, env=None, cwd
         if result.returncode != 0 and not check:
             return None
         return result.stdout.strip() if result.stdout else ""
-    except subprocess.CalledProcessError as e:
-        if e.returncode == 130:
+    except (subprocess.CalledProcessError, FileNotFoundError) as e:
+        if isinstance(e, subprocess.CalledProcessError) and e.returncode == 130:
             raise KeyboardInterrupt()
+
         if check:
             # Provide a clean, user-friendly error message instead of a stack trace
             cmd_str = " ".join(cmd) if isinstance(cmd, list) else cmd
+
+            if isinstance(e, FileNotFoundError):
+                UI.error(
+                    f"Command not found: {cmd[0] if isinstance(cmd, list) else cmd}"
+                )
+                import sys
+
+                sys.exit(127)
+
             UI.error(f"Command failed (Exit {e.returncode}): {cmd_str}")
             if e.stderr:
                 print(f"{UI.WHITE}Error Details:{UI.COLOR_OFF} {e.stderr.strip()}")

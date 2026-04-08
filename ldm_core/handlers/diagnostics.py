@@ -202,29 +202,33 @@ class DiagnosticsHandler:
             pass
 
         # 5. Network Check
-        has_net = run_command(
-            ["docker", "network", "inspect", "liferay-net"], check=False
-        )
-        if has_net:
-            results.append(("Docker Network", "liferay-net exists", True))
-        else:
-            results.append(("Docker Network", "liferay-net missing", False))
-
-        # 6. Global Services Check
-        global_services = [
-            ("liferay-proxy-global", "Global SSL Proxy"),
-            ("liferay-search-global", "Global Search (ES8)"),
-            ("docker-socket-proxy", "Docker Socket Bridge"),
-        ]
-
-        for container, label in global_services:
-            is_running = run_command(
-                ["docker", "ps", "-q", "-f", f"name=^{container}$"], check=False
+        if docker_version:
+            has_net = run_command(
+                ["docker", "network", "inspect", "liferay-net"], check=False
             )
-            if is_running:
-                results.append((label, "Running", True))
+            if has_net:
+                results.append(("Docker Network", "liferay-net exists", True))
             else:
-                results.append((label, "Not running", "warn"))
+                results.append(("Docker Network", "liferay-net missing", False))
+
+            # 6. Global Services Check
+            global_services = [
+                ("liferay-proxy-global", "Global SSL Proxy"),
+                ("liferay-search-global", "Global Search (ES8)"),
+                ("docker-socket-proxy", "Docker Socket Bridge"),
+            ]
+
+            for container, label in global_services:
+                is_running = run_command(
+                    ["docker", "ps", "-q", "-f", f"name=^{container}$"], check=False
+                )
+                if is_running:
+                    results.append((label, "Running", True))
+                else:
+                    results.append((label, "Not running", "warn"))
+        else:
+            results.append(("Docker Network", "Skipped (Engine down)", "warn"))
+            results.append(("Global Infrastructure", "Skipped (Engine down)", "warn"))
 
         # 7. Project-Specific Check (Optional)
         project_path = self.detect_project_path(project_id)
