@@ -1103,6 +1103,43 @@ class StackHandler:
             )
             print(f"   {UI.CYAN}{target_ip} {' '.join(unresolved)}{UI.COLOR_OFF}\n")
 
+        # Verbose Routing Map
+        if self.verbose:
+            UI.heading("Traefik Routing Map (Active Configuration)")
+            print(f"  {UI.WHITE}Entrypoints:{UI.COLOR_OFF}")
+            print(
+                f"    - {UI.CYAN}web{UI.COLOR_OFF}       (Port 80)  -> {UI.GREEN}Redirects to websecure{UI.COLOR_OFF}"
+            )
+            print(
+                f"    - {UI.CYAN}websecure{UI.COLOR_OFF} (Port 443) -> {UI.GREEN}TLS Enabled (mkcert){UI.COLOR_OFF}"
+            )
+            print(
+                f"\n  {UI.WHITE}{'Router Rule':<50} {'Target Service':<25} {'Port'}{UI.COLOR_OFF}"
+            )
+            print(f"  {'-' * 85}")
+
+            # Liferay Main
+            rule = f"Host(`{host_name}`)"
+            print(
+                f"  {UI.CYAN}{rule:<50} {UI.WHITE}{'liferay':<25} {UI.GREEN}8080{UI.COLOR_OFF}"
+            )
+
+            # Extensions
+            for e in [e for e in extensions if "url" in e]:
+                ext_port = 80
+                if e.get("loadBalancer") and e["loadBalancer"].get("targetPort"):
+                    ext_port = e["loadBalancer"]["targetPort"]
+                elif e.get("ports"):
+                    ext_port = e["ports"][0].get("port", 80)
+
+                rule = (
+                    f"Host(`{e['id']}.{host_name}`)" if ssl else f"localhost:{ext_port}"
+                )
+                print(
+                    f"  {UI.CYAN}{rule:<50} {UI.WHITE}{e['id']:<25} {UI.GREEN}{ext_port}{UI.COLOR_OFF}"
+                )
+            print("")
+
         if not show_summary:
             return
 
