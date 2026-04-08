@@ -14,7 +14,7 @@ Download the latest `ldm` directly using your terminal:
 # For macOS (Intel or Apple Silicon)
 sudo curl -L https://github.com/peterrichards-lr/liferay-docker-manager/releases/latest/download/ldm-macos -o /usr/local/bin/ldm
 
-# For Linux / WSL2
+# For Linux / WSL2 (Native Linux)
 sudo curl -L https://github.com/peterrichards-lr/liferay-docker-manager/releases/latest/download/ldm-linux -o /usr/local/bin/ldm
 
 # Make it executable
@@ -25,7 +25,7 @@ ldm --version
 ```
 
 > [!TIP]
-> **WSL2 Users:** Use the `ldm-linux` binary within your WSL terminal. Ensure your Docker Desktop is configured to "Use the WSL 2 based engine" and that integration is enabled for your specific distribution. LDM will automatically detect the Windows-side browser when launching URLs.
+> **WSL2 Users:** Use the `ldm-linux` binary within your WSL terminal. To enable SSL, you **must** install `mkcert` inside the Linux environment (`sudo apt update && sudo apt install libnss3-tools`) and run `mkcert -install` there. LDM will automatically detect the Windows-side browser when launching URLs.
 
 ### Windows
 
@@ -61,10 +61,11 @@ cd liferay-docker-manager
 
 ### Windows
 
-```cmd
+```powershell
 git clone https://github.com/peterrichards-lr/liferay-docker-manager.git
 cd liferay-docker-manager
-ldm.bat --help
+# Note: On Windows, use the ldm.bat wrapper or the local python script
+.\ldm.bat --help
 ```
 
 ---
@@ -76,6 +77,7 @@ ldm.bat --help
   - *Note*: `ldm doctor` expects these minimums. If you allocate exactly 8GB, Docker may report ~7.7GB due to system overhead; the tool accounts for this by allowing a 7.5GB threshold.
 - **Python**: 3.10+ (if not using binary)
 - **SSL Tools**: `mkcert` and `openssl` are required for HTTPS support.
+  - **Windows Users**: Install **Git for Windows** or use **Scoop** (`scoop install openssl`) to provide the required `openssl` command.
 
 ---
 
@@ -89,7 +91,7 @@ To enable "Green Lock" SSL on Windows, we recommend using **Scoop** to manage `m
 # 1. Install Scoop (The Package Manager)
 Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser; iwr -useb get.scoop.sh | iex
 
-# 2. Install Git (Required for Scoop Buckets)
+# 2. Install Git (Required for Scoop Buckets and OpenSSL)
 scoop install git
 
 # 3. Add the Extras Bucket (Required for mkcert)
@@ -136,22 +138,19 @@ colima stop
 colima delete
 
 # Start with optimized settings
-colima start --cpu 4 --memory 8 --vm-type=vz --mount-type=virtiofs --mount /Users/$(whoami):w
+# Note: We mount both home AND the Volumes directory for external disks (e.g. SanDisk)
+colima start --cpu 4 --memory 8 --vm-type=vz --mount-type=virtiofs --mount /Users/$(whoami):w --mount /Volumes:w
 ```
 
 ### 2. The "Ghost Mount" Issue
 
 If LDM reports `FATAL: VOLUME MOUNTING IS BROKEN`, it means Colima's VM can see the folder but cannot see the files inside it.
 
-**The Fix**: Ensure your home directory is explicitly mounted with write permissions (`:w`). If your project is on an external volume, add it to the mount list:
-
-```bash
-colima start --mount /Users/$(whoami):w --mount /Volumes:w ...
-```
+**The Fix**: Ensure your home directory is explicitly mounted with write permissions (`:w`). If your project is on an external volume, add it to the mount list using the command above.
 
 ### 3. Permissions
 
-Unlike Docker Desktop, Colima does not "mask" file owners. LDM automatically handles this by running a **Permission Fixer** before every stack startup to ensure the `liferay` user (UID 1000) has access to your host files.
+Unlike Docker Desktop, Colima does not "mask" file owners. LDM automatically handles this by running a **Permission Fixer** before every stack startup to ensure the `liferay` user (UID 1000) has access to your host files. **Note:** LDM is smart enough to skip the `.git` directory to preserve your repository metadata permissions.
 
 ---
 
@@ -199,6 +198,7 @@ mkcert -install
 ```
 
 - **macOS**: You may be prompted for your password or Touch ID to modify the System Keychain.
+- **WSL2**: You **must** run this inside your WSL terminal to allow `curl` and Liferay modules to verify internal HTTPS traffic.
 - **Windows**: You will see a security prompt asking to install the "mkcert development CA." Click **Yes**.
 
 #### 2. Fully Restart your Browser
@@ -206,7 +206,7 @@ mkcert -install
 Chrome and other Chromium-based browsers often cache certificate trust.
 
 - Simply refreshing the page is often **not enough**.
-- **Action**: Close **all** browser windows and restart the application.
+- **Action**: **Completely Quit** (Cmd+Q on Mac) the browser and restart the application.
 
 #### 3. Verify with `ldm doctor`
 
@@ -218,13 +218,22 @@ ldm doctor
 
 Look for: `mkcert ✅ Installed (Root CA Trusted)`
 
-#### 4. Clear Project Certificates (Advanced)
+---
 
-If you recently changed your `host-name` and are seeing a mismatch, you can force LDM to regenerate the certificates:
+## 🚀 Running Commands
 
-1. Stop the stack: `ldm down [project]`
-2. Delete the certs folder: `rm -rf ~/liferay-docker-certs`
-3. Restart: `ldm run [project]`
+### Project Scope
+
+Most LDM commands (like `run`, `stop`, `logs`) require a project context.
+
+1. **Implicit**: If you are inside a project folder, LDM will detect it automatically.
+2. **Explicit**: You can target a project from anywhere using `ldm run <project_name>`.
+
+If LDM cannot find a project, it will provide a helpful error message instead of crashing.
+
+### Version Verification
+
+LDM binaries use **"Magic Byte" detection** to accurately report their checksum in `ldm doctor`. This ensures that even if you rename the file, LDM can still verify that you are running a valid, hardened production build.
 
 ---
 
