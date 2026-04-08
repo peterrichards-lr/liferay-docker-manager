@@ -468,6 +468,9 @@ class WorkspaceHandler:
             ]:
                 p.mkdir(parents=True, exist_ok=True)
 
+            # Fail Fast: Verify volume mounting before performing any sync/import work
+            self.verify_runtime_environment(paths)
+
             if getattr(self.args, "build", False):
                 UI.heading(f"Building Workspace: {workspace_root.name}")
                 gradlew = workspace_root / (

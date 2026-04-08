@@ -944,9 +944,6 @@ class StackHandler:
 
                 paths[key].mkdir(parents=True, exist_ok=True)
 
-        # Environment Pre-flight
-        self.verify_runtime_environment(paths)
-
         config_payload = {
             "container_name": container_name,
             "image_tag": image_tag,
@@ -1144,6 +1141,10 @@ class StackHandler:
             UI.die(
                 "Docker is not reachable. Ensure Docker Desktop, Colima, or OrbStack is running."
             )
+
+        # Fail Fast: Verify volume mounting before proceeding
+        paths = self.setup_paths(project_id)
+        self.verify_runtime_environment(paths)
 
         # Handle Samples Switch
         is_sample_run = getattr(self.args, "samples", False)
