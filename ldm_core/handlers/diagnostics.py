@@ -252,6 +252,8 @@ class DiagnosticsHandler:
                             False,
                         )
                     )
+                    for d in unresolved:
+                        print(f"  {UI.RED}×{UI.COLOR_OFF} {d}")
 
             # 7.3 Environment Check (Centralized)
             try:

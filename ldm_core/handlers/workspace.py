@@ -112,6 +112,10 @@ class WorkspaceHandler:
                         info[k] = info[k] or new_info[k]
                     elif k == "ports" and new_info[k]:
                         info[k].extend(new_info[k])
+                    elif k == "loadBalancer" and new_info[k]:
+                        if info[k] is None:
+                            info[k] = {}
+                        info[k].update(new_info[k])
                     else:
                         info[k] = new_info[k]
             if new_info.get("env"):
