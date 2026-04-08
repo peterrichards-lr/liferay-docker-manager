@@ -387,9 +387,9 @@ class StackHandler:
                 "--network",
                 "liferay-net",
                 "-p",
-                f"{resolved_ip}:{ssl_port}:443",
+                f"0.0.0.0:{ssl_port}:443",
                 "-p",
-                f"{resolved_ip}:80:80",  # Add HTTP port for redirection
+                "0.0.0.0:80:80",  # Add HTTP port for redirection
                 "-e",
                 "DOCKER_API_VERSION=1.44",
                 "-v",
@@ -1191,6 +1191,19 @@ class StackHandler:
 
         if not show_summary:
             return
+
+        # Helpful Commands
+        UI.heading("Helpful Commands")
+        p_id = project_meta.get("container_name") or paths["root"].name
+        print(f"  {UI.WHITE}View Logs:      {UI.CYAN}ldm logs -f {p_id}{UI.COLOR_OFF}")
+        print(f"  {UI.WHITE}Stop Project:   {UI.CYAN}ldm stop {p_id}{UI.COLOR_OFF}")
+        print(f"  {UI.WHITE}Container Shell:{UI.CYAN}ldm shell {p_id}{UI.COLOR_OFF}")
+        print(f"  {UI.WHITE}Hot Deploy:     {UI.CYAN}ldm deploy {p_id}{UI.COLOR_OFF}")
+        if project_meta.get("workspace_path"):
+            print(
+                f"  {UI.WHITE}Start Monitor:  {UI.CYAN}ldm monitor {p_id}{UI.COLOR_OFF}"
+            )
+        print("")
 
         launch_url, found_prop = None, False
         pe_path = paths["files"] / "portal-ext.properties"
