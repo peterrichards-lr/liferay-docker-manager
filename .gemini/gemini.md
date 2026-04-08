@@ -153,6 +153,10 @@ This repository contains automation tools for managing Liferay DXP instances usi
 
 ### Current State (April 8, 2026)
 
+- **Version 1.5.1 Cross-Platform Refinement**: COMPLETED. Refined diagnostics and update checks for better consistency between macOS, WSL2, and Native Windows.
+- **Binary Checksums**: FIXED. Implemented "Magic Byte" detection (ELF/MZ/ZIP) to ensure checksums are correctly reported even if the binary is renamed.
+- **Semantic Versioning**: FIXED. Replaced simple string comparison with numeric tuple logic to prevent incorrect update notifications.
+- **Windows Guidance**: IMPROVED. Added specific recovery hints for OpenSSL dependencies on Windows (Git/Scoop/Chocolatey).
 - **Version 1.5.0 Hardening**: SIGNIFICANT. The tool has been hardened for non-proprietary Docker environments (Colima, WSL2).
 - **Environment Stability**: COMPLETED. Implemented `PollingObserver` and directory filtering to bypass macOS file descriptor limits. Proactively increases process `soft` limits on startup.
 - **SSL Wildcard & Redirection**: COMPLETED. Automated generation of wildcard certificates for custom domains (e.g. `*.forge.demo`). Traefik now supports global HTTP->HTTPS redirection.

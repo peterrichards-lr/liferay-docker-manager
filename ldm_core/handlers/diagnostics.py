@@ -179,7 +179,16 @@ class DiagnosticsHandler:
             if openssl_version:
                 results.append(("OpenSSL", openssl_version, True))
             else:
-                results.append(("OpenSSL", "Not found", False))
+                if platform.system().lower() == "windows":
+                    results.append(
+                        (
+                            "OpenSSL",
+                            "Not found (Install Git for Windows, Scoop, or Chocolatey)",
+                            False,
+                        )
+                    )
+                else:
+                    results.append(("OpenSSL", "Not found", False))
         except Exception:
             results.append(("OpenSSL", "Not found in PATH", False))
 
