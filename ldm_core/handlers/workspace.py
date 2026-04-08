@@ -790,7 +790,18 @@ class WorkspaceHandler:
         # because it requires an open file handle for every directory.
         # PollingObserver is much safer for large workspace monitoring.
         is_mac = platform.system() == "darwin"
+
         if is_mac:
+            # Proactively increase file descriptor limits for this process
+            try:
+                import resource
+
+                soft, hard = resource.getrlimit(resource.RLIMIT_NOFILE)
+                # Try to set a generous limit (e.g., 4096)
+                resource.setrlimit(resource.RLIMIT_NOFILE, (min(hard, 4096), hard))
+            except Exception:
+                pass
+
             UI.info(
                 "Using PollingObserver for macOS stability (avoids 'Too many open files')."
             )
@@ -829,8 +840,12 @@ class WorkspaceHandler:
                         UI.error(
                             "Hit system file limit. Switching to PollingObserver..."
                         )
-                        observer = PollingObserver()
-                        observer.schedule(handler, str(target), recursive=True)
+                        # Switch to polling for this and future targets
+                        if not isinstance(observer, PollingObserver):
+                            observer.stop()
+                            observer = PollingObserver()
+                            observer.schedule(handler, str(target), recursive=True)
+                            observer.start()
                     else:
                         UI.die(
                             f"Fatal: OS file limit reached even with Polling. Path: {target}"

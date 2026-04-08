@@ -263,8 +263,14 @@ class StackHandler:
 
         if is_darwin:
             # Apply Permission Fixer to global certs too
+            import uuid
+
+            token_val = f"LDM_INFRA_VERIFY_{uuid.uuid4().hex[:8]}"
+            token_file = global_cert_dir / ".ldm_infra_mount_check"
+            token_file.write_text(token_val)
+
             try:
-                run_command(
+                verify_res = run_command(
                     [
                         "docker",
                         "run",
@@ -274,11 +280,31 @@ class StackHandler:
                         "alpine",
                         "sh",
                         "-c",
-                        "chown -R 1000:1000 /certs && chmod -R 775 /certs",
+                        f"if [ \"$(cat /certs/.ldm_infra_mount_check 2>/dev/null)\" = \"{token_val}\" ]; then chown -R 1000:1000 /certs && chmod -R 775 /certs && echo 'OK'; else echo 'FAIL'; fi",
                     ]
                 )
-            except Exception:
-                pass
+
+                if "OK" not in (verify_res or ""):
+                    UI.error("\n❌ FATAL: INFRASTRUCTURE VOLUME MOUNTING IS BROKEN")
+                    UI.info(
+                        f"{UI.BYELLOW}Reason:{UI.COLOR_OFF} Docker cannot see the global certificates in: {global_cert_dir}"
+                    )
+                    UI.info(
+                        "Colima requires explicit mounting for directories outside of /Users/yourname."
+                    )
+                    UI.info(f"\n{UI.CYAN}To fix this, run:{UI.COLOR_OFF}")
+                    UI.info("colima stop")
+                    UI.info(
+                        f"colima start --mount {global_cert_dir.parent}:w --vm-type=vz --mount-type=virtiofs"
+                    )
+                    import sys
+
+                    sys.exit(1)
+            except Exception as e:
+                UI.warning(f"Could not verify infra mounts automatically: {e}")
+            finally:
+                if token_file.exists():
+                    token_file.unlink()
 
         # On macOS, we ALWAYS want the bridge because containers cannot
         # reliably talk to the host socket via symlinks or VirtioFS mounts.
@@ -395,7 +421,11 @@ class StackHandler:
             UI.error(f"Hostname '{host_name}' could not be resolved.")
             target_ip = expected_ip or "127.0.0.1"
             print(
-                f"\n{UI.BRED}IMPORTANT:{UI.COLOR_OFF} Map '{host_name}' to {target_ip} in your hosts file."
+                f"\n{UI.BRED}ACTION REQUIRED:{UI.COLOR_OFF} Add the following to your hosts file:"
+            )
+            print(f"{UI.CYAN}{target_ip} {host_name} *.{host_name}{UI.COLOR_OFF}\n")
+            print(
+                f"{UI.WHITE}Note: macOS/Windows require explicit mapping for subdomains or a DNS proxy like dnsmasq.{UI.COLOR_OFF}"
             )
             if self.non_interactive:
                 sys.exit(1)
@@ -693,7 +723,9 @@ class StackHandler:
 
             # Determine internal port from LCP ports metadata if present
             ext_port = 80
-            if ext.get("ports"):
+            if ext.get("loadBalancer") and ext["loadBalancer"].get("targetPort"):
+                ext_port = ext["loadBalancer"]["targetPort"]
+            elif ext.get("ports"):
                 # Use the first port from LCP.json as the internal port
                 ext_port = ext["ports"][0].get("port", 80)
 
@@ -1103,8 +1135,34 @@ class StackHandler:
             UI.info("Skipping startup verification.")
 
         print(f"  {UI.WHITE}🌐 Liferay:        {UI.CYAN}{access_url}{UI.COLOR_OFF}")
+
+        unresolved = []
         for e in [e for e in extensions if "url" in e]:
-            print(f"     - {UI.WHITE}{e['id']:<14} {UI.CYAN}{e['url']}")
+            # Validation: Check if subdomain resolves (if not localhost)
+            status_icon = ""
+            if "https" in e["url"] and host_name != "localhost":
+                # Extract domain from URL
+                ext_domain = re.sub(r"https?://([^:/]+).*", r"\1", e["url"])
+                ip = self.get_resolved_ip(ext_domain)
+                if not ip or not (
+                    ip.startswith("127.") or ip in ["::1", "0:0:0:0:0:0:0:1"]
+                ):
+                    status_icon = f" {UI.RED}❌ (Unresolved){UI.COLOR_OFF}"
+                    unresolved.append(ext_domain)
+                else:
+                    status_icon = f" {UI.GREEN}✅{UI.COLOR_OFF}"
+
+            print(f"     - {UI.WHITE}{e['id']:<14} {UI.CYAN}{e['url']}{status_icon}")
+
+        if unresolved:
+            target_ip = self.get_resolved_ip(host_name) or "127.0.0.1"
+            print(
+                f"\n{UI.BYELLOW}⚠️  DNS WARNING:{UI.COLOR_OFF} Some subdomains are not resolving to your machine."
+            )
+            print(
+                f"   Please add them to your {UI.WHITE}/etc/hosts{UI.COLOR_OFF} file:"
+            )
+            print(f"   {UI.CYAN}{target_ip} {' '.join(unresolved)}{UI.COLOR_OFF}\n")
 
         if not show_summary:
             return
