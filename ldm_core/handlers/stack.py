@@ -289,13 +289,21 @@ class StackHandler:
                     UI.info(
                         f"{UI.BYELLOW}Reason:{UI.COLOR_OFF} Docker cannot see the global certificates in: {global_cert_dir}"
                     )
-                    UI.info(
-                        "Colima requires explicit mounting for directories outside of /Users/yourname."
+                    UI.info("Check your Docker/Colima file sharing settings.")
+
+                    mount_hint = (
+                        f"--mount {global_cert_dir.resolve().anchor}Users/$(whoami):w"
                     )
+                    if (
+                        "/Volumes/" in global_cert_dir.as_posix()
+                        or "/Volumes/" in paths["root"].as_posix()
+                    ):
+                        mount_hint += " --mount /Volumes:w"
+
                     UI.info(f"\n{UI.CYAN}To fix this, run:{UI.COLOR_OFF}")
                     UI.info("colima stop")
                     UI.info(
-                        f"colima start --mount {global_cert_dir.parent}:w --vm-type=vz --mount-type=virtiofs"
+                        f"colima start {mount_hint} --vm-type=vz --mount-type=virtiofs"
                     )
                     import sys
 

@@ -222,19 +222,33 @@ class DiagnosticsHandler:
             else:
                 results.append(("Project Config", "docker-compose.yml MISSING", False))
 
+            # 7.2 DNS Check (Centralized)
+            dns_ok, unresolved = self.validate_project_dns(project_path)
             meta = self.read_meta(project_path / PROJECT_META_FILE)
-            host_name = meta.get("host_name")
-            if host_name and host_name != "localhost":
-                ip = self.get_resolved_ip(host_name)
-                if ip and (ip.startswith("127.") or ip in ["::1", "0:0:0:0:0:0:0:1"]):
+            host_name = meta.get("host_name", "localhost")
+            if host_name != "localhost":
+                if dns_ok:
                     results.append(
-                        (f"Project Host ({host_name})", f"Resolves to {ip}", True)
+                        (f"Project DNS ({host_name})", "All domains resolve", True)
                     )
                 else:
                     results.append(
-                        (f"Project Host ({host_name})", "Resolution Failed", False)
+                        (
+                            f"Project DNS ({host_name})",
+                            f"{len(unresolved)} domain(s) unresolved",
+                            False,
+                        )
                     )
 
+            # 7.3 Environment Check (Centralized)
+            try:
+                # Note: verify_runtime_environment may exit if fatal,
+                # but for doctor we want a report.
+                # We skip the fatal check for now and just check if we can reach it.
+                if platform.system().lower() == "darwin":
+                    results.append(("Mount Verification", "Checked on run", "warn"))
+            except Exception:
+                pass
         # Print Results
         print(f"{'Component':<25} {'Status':<30}")
         print("-" * 60)

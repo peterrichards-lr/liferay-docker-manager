@@ -9,7 +9,7 @@ from pathlib import Path
 from datetime import datetime
 from ldm_core.ui import UI
 from ldm_core.constants import PROJECT_META_FILE, SCRIPT_DIR
-from ldm_core.utils import is_within_root
+from ldm_core.utils import run_command, is_within_root
 
 
 class BaseHandler:
@@ -318,3 +318,104 @@ class BaseHandler:
             return socket.gethostbyname(host_name)
         except socket.gaierror:
             return None
+
+    def verify_runtime_environment(self, paths):
+        """Verifies volume mounts and synchronizes permissions across the project root."""
+        root = paths["root"]
+        if platform.system() == "darwin":
+            UI.info("Verifying volume mounts and directory permissions...")
+
+            # Create a unique mount-check token to avoid cache hits
+            import uuid
+
+            token_val = f"LDM_VERIFY_{uuid.uuid4().hex[:8]}"
+            token_file = root / ".ldm_mount_check"
+            token_file.write_text(token_val)
+
+            try:
+                # Run a single container to verify the mount AND fix permissions for the whole root
+                verify_res = run_command(
+                    [
+                        "docker",
+                        "run",
+                        "--rm",
+                        "-v",
+                        f"{root.as_posix()}:/project",
+                        "alpine",
+                        "sh",
+                        "-c",
+                        f"if [ \"$(cat /project/.ldm_mount_check 2>/dev/null)\" = \"{token_val}\" ]; then chown -R 1000:1000 /project && chmod -R 775 /project && echo 'OK'; else echo 'FAIL'; fi",
+                    ]
+                )
+
+                if "OK" not in (verify_res or ""):
+                    UI.error("\n❌ FATAL: VOLUME MOUNTING IS BROKEN")
+                    UI.info(
+                        f"{UI.BYELLOW}Reason:{UI.COLOR_OFF} Docker cannot see the files in: {root}"
+                    )
+
+                    mount_hint = f"--mount {root.resolve().anchor}Users/$(whoami):w"
+                    if "/Volumes/" in root.as_posix():
+                        UI.info(
+                            "You are running on an external volume. Colima requires explicit mounting for /Volumes."
+                        )
+                        mount_hint += " --mount /Volumes:w"
+
+                    UI.info(f"\n{UI.CYAN}To fix this, run:{UI.COLOR_OFF}")
+                    UI.info("colima stop")
+                    UI.info(
+                        f"colima start {mount_hint} --vm-type=vz --mount-type=virtiofs"
+                    )
+                    import sys
+
+                    sys.exit(1)
+
+                UI.success("Volume mounts verified and permissions synchronized.")
+            except Exception as e:
+                UI.warning(f"Could not verify mounts automatically: {e}")
+            finally:
+                if token_file.exists():
+                    token_file.unlink()
+        else:
+            # Standard Linux/Windows fallback
+            for key in ["data", "deploy", "state"]:
+                if key in paths:
+                    try:
+                        if platform.system() != "Windows":
+                            subprocess.run(
+                                ["chmod", "-R", "777", str(paths[key])], check=False
+                            )  # nosec B603 B607
+                    except Exception:
+                        pass
+
+    def validate_project_dns(self, project_path):
+        """Validates that the project hostname and all extension subdomains resolve to loopback."""
+        meta = self.read_meta(Path(project_path) / PROJECT_META_FILE)
+        host_name = meta.get("host_name", "localhost")
+        if host_name == "localhost":
+            return True, []
+
+        unresolved = []
+        # Check base host
+        ip = self.get_resolved_ip(host_name)
+        if not ip or not (ip.startswith("127.") or ip in ["::1", "0:0:0:0:0:0:0:1"]):
+            unresolved.append(host_name)
+
+        # Check extensions
+        paths = self.setup_paths(project_path)
+        # We need StackHandler's scanner to get extensions
+        from ldm_core.handlers.stack import StackHandler
+
+        # We pass dummy args if needed, but BaseHandler should have them
+        exts = StackHandler.scan_client_extensions(
+            self, paths["root"], paths["cx"], paths["ce_dir"]
+        )
+        for e in exts:
+            ext_domain = f"{e['id']}.{host_name}"
+            ip = self.get_resolved_ip(ext_domain)
+            if not ip or not (
+                ip.startswith("127.") or ip in ["::1", "0:0:0:0:0:0:0:1"]
+            ):
+                unresolved.append(ext_domain)
+
+        return len(unresolved) == 0, unresolved
