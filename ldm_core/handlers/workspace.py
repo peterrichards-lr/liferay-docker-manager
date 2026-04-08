@@ -795,7 +795,11 @@ class WorkspaceHandler:
                         # Client Extension
                         self.manager._sync_cx_artifact(f, self.paths)
                         if "client-extensions" in f.parts:
-                            updated_services.add(f.stem.lower().replace("_", "-"))
+                            # Only trigger targeted deploy if it's a Docker-based service (SSCE)
+                            svc_id = f.stem.lower().replace("_", "-")
+                            target_folder = self.paths["ce_dir"] / f.stem
+                            if (target_folder / "Dockerfile").exists():
+                                updated_services.add(svc_id)
                     else:
                         # JARs for Liferay modules (sync to deploy)
                         dest_path = self.paths["deploy"] / f.name
