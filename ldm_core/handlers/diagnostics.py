@@ -54,16 +54,18 @@ class DiagnosticsHandler:
         try:
             exe_path = Path(sys.argv[0]).resolve()
             if exe_path.exists() and exe_path.is_file():
-                # Distinguish between Python source and binary
-                is_python_source = (
-                    exe_path.suffix.lower() == ".py" or exe_path.name == "ldm"
-                )
-
-                # Check for Shiv / Zipapp signature (PK\x03\x04 at start)
+                # Read the first few bytes to detect file type
                 with open(exe_path, "rb") as f:
                     magic = f.read(4)
-                    if magic == b"PK\x03\x04":
-                        is_python_source = False
+
+                # Check for known binary headers:
+                # - b"PK\x03\x04" : ZIP / Shiv / Jar
+                # - b"\x7fELF"    : Linux ELF Binary
+                # - b"MZ"         : Windows Executable
+                is_binary = magic.startswith((b"PK\x03\x04", b"\x7fELF", b"MZ"))
+
+                # It's source if it has a .py extension AND isn't one of the binary types
+                is_python_source = exe_path.suffix.lower() == ".py" and not is_binary
 
                 if is_python_source:
                     results.append(("Executable Checksum", "Python Source (N/A)", True))
