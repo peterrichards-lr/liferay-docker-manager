@@ -386,6 +386,18 @@ def get_docker_socket_path():
     return "/var/run/docker.sock"
 
 
+def version_to_tuple(v):
+    """Converts a version string (e.g. '1.5.4') to a numeric tuple for comparison."""
+    if not v:
+        return (0, 0, 0)
+    # Strip leading 'v' if present
+    v = v.lstrip("v")
+    try:
+        return tuple(map(int, (v.split(".") + ["0", "0"])[:3]))
+    except (ValueError, TypeError):
+        return (0, 0, 0)
+
+
 def check_for_updates(current_version, force=False):
     """Checks GitHub for the latest release of LDM."""
     cache_file = Path.home() / ".ldm_update_cache"

@@ -252,11 +252,9 @@ def main():
         if args.command != "update-check":
             latest, url = check_for_updates(VERSION)
             if latest:
-                # Simple numeric comparison for semantic versioning
-                def v_to_t(v):
-                    return tuple(map(int, (v.split(".") + ["0", "0"])[:3]))
+                from ldm_core.utils import version_to_tuple
 
-                if v_to_t(latest) > v_to_t(VERSION):
+                if version_to_tuple(latest) > version_to_tuple(VERSION):
                     print(
                         f"\n{UI.BYELLOW}[!] A new version of LDM is available: v{latest}{UI.COLOR_OFF}"
                     )

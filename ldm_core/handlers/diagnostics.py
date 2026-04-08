@@ -8,7 +8,12 @@ import subprocess
 from pathlib import Path
 from ldm_core.ui import UI
 from ldm_core.constants import PROJECT_META_FILE, SCRIPT_DIR, VERSION
-from ldm_core.utils import run_command, get_actual_home, check_for_updates
+from ldm_core.utils import (
+    run_command,
+    get_actual_home,
+    check_for_updates,
+    version_to_tuple,
+)
 
 
 class DiagnosticsHandler:
@@ -21,7 +26,7 @@ class DiagnosticsHandler:
             UI.error("Could not reach GitHub to check for updates.")
             return
 
-        if latest == VERSION:
+        if version_to_tuple(latest) <= version_to_tuple(VERSION):
             UI.success(f"You are up to date! (v{VERSION})")
         else:
             print(
@@ -45,7 +50,7 @@ class DiagnosticsHandler:
 
         # 0. Version Check
         latest, _ = check_for_updates(VERSION, force=True)
-        if latest and latest != VERSION:
+        if latest and version_to_tuple(latest) > version_to_tuple(VERSION):
             results.append(("LDM Version", f"v{VERSION} (v{latest} available)", "warn"))
         else:
             results.append(("LDM Version", f"v{VERSION} (Latest)", True))
