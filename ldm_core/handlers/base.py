@@ -437,13 +437,8 @@ class BaseHandler:
 
         # Check extensions
         paths = self.setup_paths(project_path)
-        # We need StackHandler's scanner to get extensions
-        from ldm_core.handlers.stack import StackHandler
-
-        # We pass dummy args if needed, but BaseHandler should have them
-        exts = StackHandler.scan_client_extensions(
-            self, paths["root"], paths["cx"], paths["ce_dir"]
-        )
+        # scan_client_extensions is inherited from WorkspaceHandler
+        exts = self.scan_client_extensions(paths["root"], paths["cx"], paths["ce_dir"])
         for e in exts:
             ext_domain = f"{e['id']}.{host_name}"
             ip = self.get_resolved_ip(ext_domain)
