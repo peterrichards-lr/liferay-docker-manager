@@ -351,6 +351,22 @@ class BaseHandler:
     def verify_runtime_environment(self, paths):
         """Verifies volume mounts and synchronizes permissions across the project root."""
         root = paths["root"]
+
+        # Proactively create all required standard directories to prevent Docker "Ghost Mounts"
+        # and eliminate chmod warnings during the permission fix phase.
+        for p_key in ["data", "deploy", "files", "state", "cx", "configs", "modules"]:
+            if p_key in paths:
+                paths[p_key].mkdir(parents=True, exist_ok=True)
+
+        # Ensure portal-ext.properties is a file, not a ghost directory
+        pe_file = paths["files"] / "portal-ext.properties"
+        if pe_file.exists() and pe_file.is_dir():
+            UI.warning(f"Removing ghost directory at {pe_file}")
+            shutil.rmtree(pe_file)
+
+        if not pe_file.exists():
+            pe_file.touch()
+
         if platform.system().lower() == "darwin":
             UI.info("Verifying volume mounts and directory permissions...")
 

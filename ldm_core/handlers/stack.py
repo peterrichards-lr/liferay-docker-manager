@@ -1154,10 +1154,9 @@ class StackHandler:
             return
 
         launch_url, found_prop = None, False
-        if (paths["files"] / "portal-ext.properties").exists():
-            for line in (
-                (paths["files"] / "portal-ext.properties").read_text().splitlines()
-            ):
+        pe_path = paths["files"] / "portal-ext.properties"
+        if pe_path.exists() and pe_path.is_file():
+            for line in pe_path.read_text().splitlines():
                 if line.strip().startswith("browser.launcher.url"):
                     found_prop = True
                     if "=" in line:
