@@ -221,7 +221,7 @@ class DiagnosticsHandler:
         common_dir = Path.cwd() / "common"
         if not common_dir.exists():
             results.append(
-                ("Global Config", "⚠️  Missing ('ldm init-common' available)", "warn")
+                ("Global Config", "Missing ('ldm init-common' available)", "warn")
             )
         else:
             try:
@@ -318,7 +318,7 @@ class DiagnosticsHandler:
         print(f"{'Component':<25} {'Status':<30}")
         print("-" * 60)
 
-        all_ok = True
+        all_ok, has_warnings = True, False
         for component, status, ok in results:
             if ok is True:
                 color = UI.GREEN
@@ -326,16 +326,19 @@ class DiagnosticsHandler:
             elif ok == "warn":
                 color = UI.YELLOW
                 icon = "⚠️ "
+                has_warnings = True
             else:
                 color = UI.RED
                 icon = "❌"
                 all_ok = False
             print(f"{component:<25} {color}{icon} {status}{UI.COLOR_OFF}")
 
-        if all_ok:
+        if all_ok and not has_warnings:
             UI.success("Everything looks good! Your environment is ready.")
+        elif all_ok and has_warnings:
+            UI.warning("Some non-critical issues were detected. Check the items above.")
         else:
-            UI.warning("Some issues were detected. Check the items above.")
+            UI.error("Critical issues were detected. Check the items above.")
 
     def cmd_list(self):
         UI.heading("LDM Sandbox Projects")
