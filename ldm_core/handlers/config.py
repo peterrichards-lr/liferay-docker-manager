@@ -2,6 +2,7 @@ import os
 import re
 import json
 import shutil
+from pathlib import Path
 from datetime import datetime
 from ldm_core.ui import UI
 from ldm_core.constants import PROJECT_META_FILE, SCRIPT_DIR
@@ -283,7 +284,8 @@ class ConfigHandler:
 
     def cmd_init_common(self):
         """Recreates the baseline common/ folder with standard development assets."""
-        common_dir = SCRIPT_DIR / "common"
+        # Ensure we create this in the CURRENT directory, not the script directory
+        common_dir = Path.cwd() / "common"
         common_dir.mkdir(parents=True, exist_ok=True)
 
         UI.heading("Initializing Baseline Common Assets")
@@ -326,7 +328,7 @@ class ConfigHandler:
                 timeout_file.write_text(content)
                 UI.info("  + Created SessionTimeout config")
 
-            UI.success("Baseline common assets initialized.")
+            UI.success(f"Baseline common assets initialized in: {common_dir}")
         except Exception as e:
             UI.error(f"Failed to initialize common assets: {e}")
             if self.verbose:
@@ -335,7 +337,8 @@ class ConfigHandler:
                 traceback.print_exc()
 
     def sync_common_assets(self, paths, host_updates=None, version=None):
-        common_dir = SCRIPT_DIR / "common"
+        # We look for 'common' in the PROJECT ROOT (current dir)
+        common_dir = Path.cwd() / "common"
         target_ext = paths["files"] / "portal-ext.properties"
 
         if common_dir.exists():

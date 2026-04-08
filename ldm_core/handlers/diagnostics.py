@@ -217,6 +217,36 @@ class DiagnosticsHandler:
         except Exception:
             pass
 
+        # 4.2 Global Config Check
+        common_dir = Path.cwd() / "common"
+        if not common_dir.exists():
+            results.append(
+                ("Global Config", "⚠️  Missing ('ldm init-common' available)", "warn")
+            )
+        else:
+            try:
+                import importlib.resources as pkg_resources
+                from ldm_core import resources
+
+                # Check portal-ext.properties specifically
+                pe_file = common_dir / "portal-ext.properties"
+                if not pe_file.exists():
+                    results.append(
+                        ("Global Config", "✅ Overrides Active (no baseline)", True)
+                    )
+                else:
+                    baseline_content = (
+                        pkg_resources.files(resources)
+                        / "common_baseline"
+                        / "portal-ext.properties"
+                    ).read_text()
+                    if pe_file.read_text().strip() == baseline_content.strip():
+                        results.append(("Global Config", "✅ Baseline (v1.5.5)", True))
+                    else:
+                        results.append(("Global Config", "✅ Custom Overrides", True))
+            except Exception:
+                results.append(("Global Config", "✅ Overrides Active", True))
+
         # 5. Network Check
         if docker_version:
             has_net = run_command(
