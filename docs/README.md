@@ -2,6 +2,9 @@
 
 A professional command-line orchestrator for quickly standing up Liferay Portal and DXP environments using Docker Compose.
 
+> [!CAUTION]
+> **Work in Progress:** LDM is currently in an active "Hardening" phase. While we aspire to provide seamless cross-platform support, certain environments (especially non-Docker Desktop providers) may require specific configuration or troubleshooting as we refine the logic.
+>
 > [!NOTE]
 > **Project History:** This tool was originally born as part of the [liferay-docker-scripts](https://github.com/peterrichards-lr/liferay-docker-scripts) repository. It has since evolved into a standalone application to provide better modularity and multi-instance stability.
 
@@ -20,13 +23,15 @@ A professional command-line orchestrator for quickly standing up Liferay Portal 
 
 ## 🛡️ Compatibility (Verified Environments)
 
+The badges below represent our aspirational goals for cross-platform support. Environments marked as **Hardened** have received specific logic refinements to handle non-proprietary Docker providers like Colima and WSL2.
+
 | Architecture | Host OS | Docker Provider | Status |
 | :--- | :--- | :--- | :--- |
 | **Apple Silicon** | macOS 14+ | **OrbStack** | ![macOS-Silicon-Orb](https://img.shields.io/badge/macOS_Silicon-OrbStack-success?style=flat-square&logo=apple&logoColor=white&color=00B0FF) |
-| **Apple Silicon** | macOS 14+ | **Docker Desktop** | ![macOS-Silicon-DD](https://img.shields.io/badge/macOS_Silicon-Docker_Desktop-success?style=flat-square&logo=apple&logoColor=white&color=00C853) |
-| **Apple Intel** | macOS 13+ | **Colima** | ![macOS-Intel-Col](https://img.shields.io/badge/macOS_Intel-Colima-success?style=flat-square&logo=apple&logoColor=white&color=FFAB00) |
-| **Windows PC** | Windows 11 | **Native WSL2** | ![Windows-WSL2](https://img.shields.io/badge/Windows_11-WSL2_Native-success?style=flat-square&logo=windows&logoColor=white&color=0078D4) |
-| **Linux Node** | Ubuntu 22.04 | **Docker Engine** | ![Linux-Native](https://img.shields.io/badge/Linux-Native_Docker-success?style=flat-square&logo=linux&logoColor=white&color=333333) |
+| **Apple Intel** | macOS 13+ | **Colima** | ![macOS-Intel-Col](https://img.shields.io/badge/macOS_Intel-Colima-hardened?style=flat-square&logo=apple&logoColor=white&color=FFAB00) |
+| **Windows PC** | Windows 11 | **Native WSL2** | ![Windows-WSL2](https://img.shields.io/badge/Windows_11-WSL2_Native-beta?style=flat-square&logo=windows&logoColor=white&color=0078D4) |
+| **Linux Node** | Ubuntu 22.04 | **Docker Engine** | ![Linux-Native](https://img.shields.io/badge/Linux-Native_Docker-beta?style=flat-square&logo=linux&logoColor=white&color=333333) |
+| **Apple Silicon** | macOS 14+ | **Docker Desktop** | ![macOS-Silicon-DD](https://img.shields.io/badge/macOS_Silicon-Docker_Desktop-legacy_success?style=flat-square&logo=apple&logoColor=white&color=00C853) |
 
 ---
 
@@ -37,6 +42,8 @@ A professional command-line orchestrator for quickly standing up Liferay Portal 
 - **Service-Specific Lifecycle**: Manage individual components within a project surgically. Restart or view logs for a single extension without affecting the rest of the stack.
 - **Client Extension Lifecycle**: Automatically detects and builds Server-Side Client Extensions (SSCE). Subdomains are automatically generated, and traffic is routed based on `LCP.json`.
 - **Zero-Config SSL**: Automated HTTPS using `mkcert` and a global Traefik proxy. Works on Docker Desktop, **Colima**, and **WSL2**.
+  - *Tip*: If your browser shows a certificate warning, see the **[SSL Troubleshooting Guide](installation.md#--fixing-ssl-trust-issues-mkcert)**.
+- **Fail-Fast Design**: Proactive environment checking. LDM verifies Docker availability, resource allocations (CPU/RAM), and configuration integrity before execution, providing clean, actionable error messages instead of technical stack traces.
 - **Smart Discovery**: Automatically detects projects from your current directory or provides an interactive selector if no project is specified.
 
 ---
