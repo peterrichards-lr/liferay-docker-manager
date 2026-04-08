@@ -196,10 +196,11 @@ jobs:
             bin-temp/LICENSE
           make_latest: true
           fail_on_unmatched_files: true
+          generate_release_notes: true
           body: |
-            ## Liferay Docker Manager (LDM) v1.5.0 - Hardened Edition
+            ## Liferay Docker Manager (LDM) ${{ github.ref_name }} - Hardened Edition
 
-            This release introduces significant environmental hardening for macOS (Colima/OrbStack), Windows (WSL2), and Native Linux. 
+            This release continues our commitment to environmental hardening for macOS, Windows, and Linux.
 
             ### 🚀 Installation (Direct Binary)
 
@@ -221,11 +222,11 @@ jobs:
             Invoke-WebRequest -Uri "https://github.com/peterrichards-lr/liferay-docker-manager/releases/latest/download/ldm-windows.exe" -OutFile "$HOME\bin\ldm.exe"
             ```
 
-            ### 🛠 Key v1.5.0 Improvements
-            - **Hardened Monitoring**: Native Polling on macOS to prevent "Too many open files" crashes.
-            - **Wildcard SSL**: Automatic generation and Traefik matching for custom subdomains (`*.forge.demo`).
-            - **Fail-Fast UI**: Proactive volume mount verification and DNS health checks before startup.
-            - **Smart Port Discovery**: Native support for `LCP.json` metadata (including `targetPort` for microservices).
-            - **Self-Updating**: The tool is now architecture-aware and will download the correct binary for your OS during updates.
+            ### 🛠 Standard Hardening Features
+            - **Hardened Monitoring**: Native Polling on macOS to prevent descriptor crashes.
+            - **Wildcard SSL**: Automatic generation and Traefik matching for `*.local` and custom domains.
+            - **Self-Healing Baseline**: Restore developer defaults via `ldm init-common`.
+            - **Infrastructure Management**: Control global proxy state via `ldm infra-setup`.
+            - **Architecture-Aware**: Automatic detection of OS for updates and checksums.
           draft: false
           prerelease: false
