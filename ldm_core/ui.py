@@ -14,36 +14,37 @@ class UI:
 
     @staticmethod
     def info(msg):
-        print(f"{UI.YELLOW}ℹ {msg}{UI.COLOR_OFF}")
+        print(f"{UI.YELLOW}ℹ {msg.strip()}{UI.COLOR_OFF}")
 
     @staticmethod
     def success(msg):
-        print(f"{UI.GREEN}✅ {msg}{UI.COLOR_OFF}")
+        print(f"{UI.GREEN}✅ {msg.strip()}{UI.COLOR_OFF}")
 
     @staticmethod
     def warning(msg):
-        print(f"{UI.YELLOW}⚠️  Warning: {msg}{UI.COLOR_OFF}")
+        print(f"{UI.YELLOW}⚠️  Warning: {msg.strip()}{UI.COLOR_OFF}")
 
     @staticmethod
     def error(msg):
-        print(f"{UI.BRED}❌ Error:{UI.COLOR_OFF} {msg}", file=sys.stderr)
+        print(f"{UI.BRED}❌ Error:{UI.COLOR_OFF} {msg.strip()}", file=sys.stderr)
 
     @staticmethod
     def die(msg):
-        UI.error(msg)
+        UI.error(msg.strip())
         sys.exit(1)
 
     @staticmethod
     def heading(msg):
-        print(f"\n{UI.BYELLOW}=== {msg} ==={UI.COLOR_OFF}")
+        print(f"\n{UI.BYELLOW}=== {msg.strip()} ==={UI.COLOR_OFF}")
 
     @staticmethod
     def debug(msg):
         """Prints info only if verbose mode is enabled (implicitly checked here)."""
-        print(f"{UI.WHITE}⚙️ {msg}{UI.COLOR_OFF}")
+        print(f"{UI.WHITE}⚙️  {msg.strip()}{UI.COLOR_OFF}")
 
     @staticmethod
     def ask(prompt, default=None):
+        prompt = prompt.strip()
         try:
             if default:
                 res = input(
