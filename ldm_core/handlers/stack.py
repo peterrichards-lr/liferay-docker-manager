@@ -142,13 +142,6 @@ class StackHandler:
             f"  certificates:\n"
             f"    - certFile: /etc/traefik/certs/{host_name}.pem\n"
             f"      keyFile: /etc/traefik/certs/{host_name}-key.pem\n"
-            f"      stores:\n"
-            f"        - default\n"
-            f"  stores:\n"
-            f"    default:\n"
-            f"      defaultCertificate:\n"
-            f"        certFile: /etc/traefik/certs/{host_name}.pem\n"
-            f"        keyFile: /etc/traefik/certs/{host_name}-key.pem\n"
         )
         os.chmod(config_path, 0o644)
         return True
