@@ -261,8 +261,11 @@ class DiagnosticsHandler:
             global_services = [
                 ("liferay-proxy-global", "Global SSL Proxy"),
                 ("liferay-search-global", "Global Search (ES8)"),
-                ("docker-socket-proxy", "Docker Socket Bridge"),
             ]
+
+            # The bridge is only relevant for macOS (Darwin)
+            if platform.system().lower() == "darwin":
+                global_services.append(("docker-socket-proxy", "Docker Socket Bridge"))
 
             for container, label in global_services:
                 is_running = run_command(

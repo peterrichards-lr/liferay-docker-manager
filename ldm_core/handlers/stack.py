@@ -163,6 +163,16 @@ class StackHandler:
 
     def setup_global_search(self):
         search_name = "liferay-search-global"
+
+        # Check if already running
+        is_running = run_command(
+            ["docker", "ps", "-q", "-f", f"name=^{search_name}$"], check=False
+        )
+        if is_running:
+            if self.verbose:
+                UI.info("Global Search (ES8) is already running.")
+            return True
+
         custom_image_name = f"liferay-search-global:{ELASTICSEARCH_VERSION}"
         target_image_base = (
             f"docker.elastic.co/elasticsearch/elasticsearch:{ELASTICSEARCH_VERSION}"
