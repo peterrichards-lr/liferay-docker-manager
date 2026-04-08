@@ -2,16 +2,13 @@ name: LDM CI & Release
 
 on:
   push:
-    branches: [ "master" ]
-    tags: [ "v*" ] # Trigger on tags like v1.0.0
+    branches: ["master"]
+    tags: ["v*"] # Trigger on tags like v1.0.0
   pull_request:
-    branches: [ "master" ]
+    branches: ["master"]
 
 permissions:
   contents: write # Needed for creating releases
-
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true # Opt into Node.js 24 early
 
 jobs:
   lint-and-test:
@@ -22,188 +19,212 @@ jobs:
         python-version: ["3.11", "3.12", "3.13"]
 
     steps:
-    - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-    - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v5
-      with:
-        python-version: ${{ matrix.python-version }}
-        cache: 'pip'
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: "pip"
 
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
-        pip install pytest bandit pip-audit
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          pip install pytest bandit pip-audit
 
-    - name: Lint with Ruff
-      run: |
-        ruff check .
-        ruff format --check .
+      - name: Lint with Ruff
+        run: |
+          ruff check .
+          ruff format --check .
 
-    - name: Security Scan (Bandit)
-      run: |
-        # Scan for common security issues in Python code. 
-        # We only fail on Medium/High severity to allow necessary subprocess patterns.
-        bandit -r ldm_core/ -x ldm_core/tests/ --severity-level medium
+      - name: Security Scan (Bandit)
+        run: |
+          # Scan for common security issues in Python code.
+          # We only fail on Medium/High severity to allow necessary subprocess patterns.
+          bandit -r ldm_core/ -x ldm_core/tests/ --severity-level medium
 
-    - name: Dependency Audit (pip-audit)
-      run: |
-        # Ignoring CVE-2026-4539 (pygments) as it is currently unpatched and doesn't affect LDM.
-        pip-audit --ignore-vuln CVE-2026-4539
+      - name: Dependency Audit (pip-audit)
+        run: |
+          # Ignoring CVE-2026-4539 (pygments) as it is currently unpatched and doesn't affect LDM.
+          pip-audit --ignore-vuln CVE-2026-4539
 
-    - name: Lint Shell scripts (ShellCheck)
-      run: |
-        sudo apt-get install -y shellcheck
-        find . -name "*.sh" -not -path "*/.*" | xargs shellcheck
+      - name: Lint Shell scripts (ShellCheck)
+        run: |
+          sudo apt-get install -y shellcheck
+          find . -name "*.sh" -not -path "*/.*" | xargs shellcheck
 
-    - name: Lint Markdown
-      uses: DavidAnson/markdownlint-cli2-action@v16
-      with:
-        globs: "**/*.md"
+      - name: Lint Markdown
+        uses: DavidAnson/markdownlint-cli2-action@v16
+        with:
+          globs: "**/*.md"
 
-    - name: Run unit tests
-      run: |
-        export PYTHONPATH=$PYTHONPATH:.
-        pytest
+      - name: Run unit tests
+        run: |
+          export PYTHONPATH=$PYTHONPATH:.
+          pytest
 
   smoke-test:
     needs: lint-and-test
     runs-on: ubuntu-latest
     if: github.event_name == 'push' || github.event_name == 'pull_request'
-    
+
     steps:
-    - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-    - name: Set up Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: "3.13"
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
 
-    - name: Install dependencies
-      run: |
-        pip install -r requirements.txt
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
 
-    - name: Install mkcert
-      run: |
-        # Install mkcert for SSL smoke tests
-        sudo apt-get update
-        sudo apt-get install -y libnss3-tools
-        curl -L https://github.com/FiloSottile/mkcert/releases/download/v1.4.4/mkcert-v1.4.4-linux-amd64 -o mkcert
-        chmod +x mkcert
-        sudo mv mkcert /usr/local/bin/
-        mkcert -install
+      - name: Install mkcert
+        run: |
+          # Install mkcert for SSL smoke tests
+          sudo apt-get update
+          sudo apt-get install -y libnss3-tools
+          curl -L https://github.com/FiloSottile/mkcert/releases/download/v1.4.4/mkcert-v1.4.4-linux-amd64 -o mkcert
+          chmod +x mkcert
+          sudo mv mkcert /usr/local/bin/
+          mkcert -install
 
-    - name: LDM Doctor Smoke Test
-      run: |
-        # Run doctor in non-interactive mode
-        export PYTHONPATH=$PYTHONPATH:.
-        python3 liferay_docker.py -y doctor
+      - name: LDM Doctor Smoke Test
+        run: |
+          # Run doctor in non-interactive mode
+          export PYTHONPATH=$PYTHONPATH:.
+          python3 liferay_docker.py -y doctor
 
-    - name: LDM Run Smoke Test (Mock)
-      run: |
-        # Create a mock project
-        mkdir -p smoke-project/files
-        touch smoke-project/files/portal-ext.properties
-        # Using an older version format to avoid triggering global search logic in CI
-        echo "tag=7.4.13-u100" > smoke-project/.liferay-docker.meta
-        echo "container_name=smoke-test" >> smoke-project/.liferay-docker.meta
-        echo "image_tag=alpine" >> smoke-project/.liferay-docker.meta
-        
-        # Run LDM to generate compose
-        # Using --sidecar ensures a local search container is included in the file
-        # Using --no-wait skips the long startup verification loop
-        export PYTHONPATH=$PYTHONPATH:.
-        python3 liferay_docker.py -y run smoke-project --no-up --sidecar --no-wait
-        
-        # Verify docker-compose.yml was generated
-        if [ ! -f smoke-project/docker-compose.yml ]; then
-          echo "❌ docker-compose.yml not generated!"
-          exit 1
-        fi
-        echo "✅ docker-compose.yml generated successfully."
+      - name: LDM Run Smoke Test (Mock)
+        run: |
+          # Create a mock project
+          mkdir -p smoke-project/files
+          touch smoke-project/files/portal-ext.properties
+          # Using an older version format to avoid triggering global search logic in CI
+          echo "tag=7.4.13-u100" > smoke-project/.liferay-docker.meta
+          echo "container_name=smoke-test" >> smoke-project/.liferay-docker.meta
+          echo "image_tag=alpine" >> smoke-project/.liferay-docker.meta
 
-  release:
+          # Run LDM to generate compose
+          # Using --sidecar ensures a local search container is included in the file
+          # Using --no-wait skips the long startup verification loop
+          export PYTHONPATH=$PYTHONPATH:.
+          python3 liferay_docker.py -y run smoke-project --no-up --sidecar --no-wait
+
+          # Verify docker-compose.yml was generated
+          if [ ! -f smoke-project/docker-compose.yml ]; then
+            echo "❌ docker-compose.yml not generated!"
+            exit 1
+          fi
+          echo "✅ docker-compose.yml generated successfully."
+
+  build:
     needs: [lint-and-test, smoke-test]
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     if: startsWith(github.ref, 'refs/tags/v')
-    
+
     steps:
-    - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-    - name: Set up Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: "3.13"
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
 
-    - name: Build Standalone (Linux/macOS)
-      if: matrix.os != 'windows-latest'
-      run: |
-        pip install shiv
-        pip install .
-        # Use specific names for clarity in release assets
-        OUTNAME="ldm-linux"
-        if [ "${{ matrix.os }}" = "macos-latest" ]; then
-          OUTNAME="ldm-macos"
-        fi
-        shiv -e ldm_core.cli:main -o $OUTNAME -p '/usr/bin/env python3' .
-        chmod +x $OUTNAME
-        
-        # Only package samples once
-        if [ "${{ matrix.os }}" = "ubuntu-latest" ]; then
+      - name: Build Standalone (Linux/macOS)
+        if: matrix.os != 'windows-latest'
+        run: |
+          pip install shiv
+          pip install .
+          OUTNAME="ldm-linux"
+          if [ "${{ matrix.os }}" = "macos-latest" ]; then
+            OUTNAME="ldm-macos"
+          fi
+          shiv -e ldm_core.cli:main -o $OUTNAME -p '/usr/bin/env python3' .
+          chmod +x $OUTNAME
+
+      - name: Build Standalone (Windows)
+        if: matrix.os == 'windows-latest'
+        run: |
+          pip install pyinstaller -r requirements.txt
+          pyinstaller --onefile --name ldm-windows liferay_docker.py
+
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ldm-binary-${{ matrix.os }}
+          path: |
+            ldm-linux
+            ldm-macos
+            dist/ldm-windows.exe
+          if-no-files-found: error
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download All Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: bin-temp
+          merge-multiple: true
+
+      - name: Prepare Samples and License
+        run: |
           (cd references && zip -r ../samples.zip samples/)
-        fi
+          cp LICENSE bin-temp/
+          mv samples.zip bin-temp/
 
-    - name: Build Standalone (Windows)
-      if: matrix.os == 'windows-latest'
-      run: |
-        pip install pyinstaller -r requirements.txt
-        pyinstaller --onefile --name ldm-windows liferay_docker.py
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            bin-temp/ldm-linux
+            bin-temp/ldm-macos
+            bin-temp/ldm-windows.exe
+            bin-temp/samples.zip
+            bin-temp/LICENSE
+          make_latest: true
+          fail_on_unmatched_files: true
+          body: |
+            ## Liferay Docker Manager (LDM) Release
 
-    - name: Create GitHub Release
-      uses: softprops/action-gh-release@v2
-      with:
-        files: |
-          ldm-linux
-          ldm-macos
-          dist/ldm-windows.exe
-          samples.zip
-          LICENSE
-        body: |
-          ## Liferay Docker Manager (LDM) Release
-          
-          This release includes standalone LDM executables for Linux, macOS, and Windows.
-          
-          ### Installation (Quick Start)
-          
-          **macOS:**
-          ```bash
-          sudo curl -L https://github.com/peterrichards-lr/liferay-docker-manager/releases/latest/download/ldm-macos -o /usr/local/bin/ldm
-          sudo chmod +x /usr/local/bin/ldm
-          ```
+            This release includes standalone LDM executables for Linux, macOS, and Windows.
 
-          **Linux / WSL2:**
-          ```bash
-          sudo curl -L https://github.com/peterrichards-lr/liferay-docker-manager/releases/latest/download/ldm-linux -o /usr/local/bin/ldm
-          sudo chmod +x /usr/local/bin/ldm
-          ```
-          
-          **Windows (PowerShell):**
-          ```powershell
-          New-Item -ItemType Directory -Force -Path "$HOME\bin"
-          Invoke-WebRequest -Uri "https://github.com/peterrichards-lr/liferay-docker-manager/releases/latest/download/ldm-windows.exe" -OutFile "$HOME\bin\ldm.exe"
-          ```
-          
-          ### Key Features
-          - **Liferay Cloud Integration**: Fetch backups, logs, and config sync with `ldm cloud-fetch`.
-          - **Confidence Booster**: Run vanilla Liferay with pre-built SSCE samples using `ldm run --samples`.
-          - **Workspace Monitoring**: Surgical monitoring of `build/libs` and `dist` for instant hot-deployments.
-          - **Self-Updating**: Passive background checks and `ldm update-check` keep you current.
-          - **Environmental Health**: `ldm doctor` verifies your Docker resources and configuration.
-        draft: false
-        prerelease: false
-        make_latest: true
-        fail_on_unmatched_files: true
+            ### Installation (Quick Start)
+
+            **macOS:**
+            ```bash
+            sudo curl -L https://github.com/peterrichards-lr/liferay-docker-manager/releases/latest/download/ldm-macos -o /usr/local/bin/ldm
+            sudo chmod +x /usr/local/bin/ldm
+            ```
+
+            **Linux / WSL2:**
+            ```bash
+            sudo curl -L https://github.com/peterrichards-lr/liferay-docker-manager/releases/latest/download/ldm-linux -o /usr/local/bin/ldm
+            sudo chmod +x /usr/local/bin/ldm
+            ```
+
+            **Windows (PowerShell):**
+            ```powershell
+            New-Item -ItemType Directory -Force -Path "$HOME\bin"
+            Invoke-WebRequest -Uri "https://github.com/peterrichards-lr/liferay-docker-manager/releases/latest/download/ldm-windows.exe" -OutFile "$HOME\bin\ldm.exe"
+            ```
+
+            ### Key Features
+            - **Liferay Cloud Integration**: Fetch backups, logs, and config sync with `ldm cloud-fetch`.
+            - **Confidence Booster**: Run vanilla Liferay with pre-built SSCE samples using `ldm run --samples`.
+            - **Workspace Monitoring**: Surgical monitoring of `build/libs` and `dist` for instant hot-deployments.
+            - **Self-Updating**: Architecture-aware update checks keep you current.
+            - **Environmental Health**: `ldm doctor` verifies your Docker resources and configuration.
+          draft: false
+          prerelease: false
