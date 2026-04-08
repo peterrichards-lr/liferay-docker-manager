@@ -66,7 +66,7 @@ class StackHandler:
             return False
 
         actual_home = get_actual_home()
-        cert_dir = actual_home / "liferay-docker-certs"
+        cert_dir = (actual_home / "liferay-docker-certs").resolve()
         cert_dir.mkdir(parents=True, exist_ok=True)
 
         cert_file = cert_dir / f"{host_name}.pem"
@@ -76,24 +76,21 @@ class StackHandler:
         needs_gen = not cert_file.exists() or getattr(self.args, "force_ssl", False)
 
         if not needs_gen:
-            openssl_bin = shutil.which("openssl")
-            if openssl_bin:
-                try:
-                    res = subprocess.run(  # nosec B603
-                        [openssl_bin, "x509", "-in", str(cert_file), "-text", "-noout"],
-                        capture_output=True,
-                        text=True,
-                        check=True,
+            # Verify the existing cert actually covers the current wildcard
+            try:
+                res = subprocess.run(
+                    ["openssl", "x509", "-in", str(cert_file), "-text", "-noout"],
+                    capture_output=True,
+                    text=True,
+                    check=True,
+                )
+                if f"DNS:{wildcard_host}" not in res.stdout:
+                    UI.info(
+                        f"Existing certificate for {host_name} missing wildcard SAN. Regenerating..."
                     )
-
-                    if f"DNS:{wildcard_host}" not in res.stdout:
-                        if self.verbose:
-                            UI.info(
-                                f"Certificate for {host_name} missing wildcard SAN. Regenerating..."
-                            )
-                        needs_gen = True
-                except Exception:
                     needs_gen = True
+            except Exception:
+                needs_gen = True
 
         if needs_gen:
             if self.verbose:
