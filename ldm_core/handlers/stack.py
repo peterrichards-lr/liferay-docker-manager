@@ -254,12 +254,12 @@ class StackHandler:
             return True
 
         actual_home = get_actual_home()
-        global_cert_dir = actual_home / "liferay-docker-certs"
+        global_cert_dir = (actual_home / "liferay-docker-certs").resolve()
         global_cert_dir.mkdir(parents=True, exist_ok=True)
 
         # 3. Start the Socket Proxy ONLY on macOS (Darwin)
         api_proxy = "docker-socket-proxy"
-        is_darwin = platform.system() == "darwin"
+        is_darwin = platform.system().lower() == "darwin"
 
         if is_darwin:
             # Apply Permission Fixer to global certs too
@@ -941,75 +941,8 @@ class StackHandler:
 
                 paths[key].mkdir(parents=True, exist_ok=True)
 
-        # On macOS (especially Colima/OrbStack), we must handle two issues:
-        # 1. Mount Verification: Ensure the host path is actually shared with the VM.
-        # 2. Permission Fixer: Solve UID 1000 mismatch via an internal chmod.
-        if platform.system() == "darwin":
-            UI.info("Verifying volume mounts and directory permissions...")
-
-            # Create a unique mount-check token to avoid cache hits
-            import uuid
-
-            token_val = f"LDM_VERIFY_{uuid.uuid4().hex[:8]}"
-            token_file = paths["root"] / ".ldm_mount_check"
-            token_file.write_text(token_val)
-
-            try:
-                # Run a single container to verify the mount AND fix permissions for the whole root
-                # We use chown 1000:1000 (liferay user) and chmod 775 as a realistic standard.
-                verify_res = run_command(
-                    [
-                        "docker",
-                        "run",
-                        "--rm",
-                        "-v",
-                        f"{paths['root'].as_posix()}:/project",
-                        "alpine",
-                        "sh",
-                        "-c",
-                        f"if [ \"$(cat /project/.ldm_mount_check 2>/dev/null)\" = \"{token_val}\" ]; then chown -R 1000:1000 /project && chmod -R 775 /project && echo 'OK'; else echo 'FAIL'; fi",
-                    ]
-                )
-
-                if "OK" not in (verify_res or ""):
-                    UI.error("\n❌ FATAL: VOLUME MOUNTING IS BROKEN")
-                    UI.info(
-                        f"{UI.BYELLOW}Reason:{UI.COLOR_OFF} Docker cannot see the files in: {paths['root']}"
-                    )
-
-                    if "/Volumes/" in paths["root"].as_posix():
-                        UI.info(
-                            "You are running on an external volume. Colima requires explicit mounting for /Volumes."
-                        )
-                        UI.info(f"\n{UI.CYAN}To fix this, run:{UI.COLOR_OFF}")
-                        UI.info("colima stop")
-                        UI.info(
-                            f"colima start --mount {paths['root'].anchor}Volumes:w --vm-type=vz --mount-type=virtiofs"
-                        )
-                    else:
-                        UI.info("Check your Docker/Colima file sharing settings.")
-
-                    import sys
-
-                    sys.exit(1)
-
-                UI.success("Volume mounts verified and permissions synchronized.")
-            except Exception as e:
-                UI.warning(f"Could not verify mounts automatically: {e}")
-            finally:
-                if token_file.exists():
-                    token_file.unlink()
-        else:
-            # Standard Linux/Windows fallback
-            for key in ["data", "deploy", "state"]:
-                if key in paths:
-                    try:
-                        if platform.system() != "Windows":
-                            subprocess.run(
-                                ["chmod", "-R", "777", str(paths[key])], check=False
-                            )  # nosec B603 B607
-                    except Exception:
-                        pass
+        # Environment Pre-flight
+        self.verify_runtime_environment(paths)
 
         config_payload = {
             "container_name": container_name,

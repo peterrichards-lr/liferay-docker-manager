@@ -122,17 +122,69 @@ If `ldm doctor` reports insufficient memory even though you have 8GB+ installed:
 
     Wait 10 seconds, restart Docker Desktop, and run `ldm doctor` again.
 
-### Increasing Resources in Colima (macOS)
+## 🐳 Colima (Advanced macOS Setup)
 
-If `ldm doctor` reports insufficient resources, or if you encounter permission issues on Apple Silicon, we **highly recommend** using the macOS Virtualization Framework (`vz`) with VirtioFS:
+Colima is a lightweight, open-source alternative to Docker Desktop. While highly performant on Apple Silicon, it is much stricter regarding file sharing and permissions.
+
+### 1. Recommended Start Command
+
+For the best compatibility with Liferay and SSCE build processes, we recommend using the macOS Virtualization Framework (`vz`) with **VirtioFS**.
 
 ```bash
 # Delete existing instance if it's misbehaving
+colima stop
 colima delete
 
-# Start with native macOS virtualization and VirtioFS
-colima start --cpu 4 --memory 8 --vm-type=vz --mount-type=virtiofs --mount /Volumes:w
+# Start with optimized settings
+colima start --cpu 4 --memory 8 --vm-type=vz --mount-type=virtiofs --mount /Users/$(whoami):w
 ```
+
+### 2. The "Ghost Mount" Issue
+
+If LDM reports `FATAL: VOLUME MOUNTING IS BROKEN`, it means Colima's VM can see the folder but cannot see the files inside it.
+
+**The Fix**: Ensure your home directory is explicitly mounted with write permissions (`:w`). If your project is on an external volume, add it to the mount list:
+
+```bash
+colima start --mount /Users/$(whoami):w --mount /Volumes:w ...
+```
+
+### 3. Permissions
+
+Unlike Docker Desktop, Colima does not "mask" file owners. LDM automatically handles this by running a **Permission Fixer** before every stack startup to ensure the `liferay` user (UID 1000) has access to your host files.
+
+---
+
+### 🌐 DNS & Subdomain Configuration
+
+Server-Side Client Extensions (SSCE) in LDM use subdomains (e.g., `https://my-ext.forge.demo`) for routing. Because these are local domains, your operating system needs to be told to route them to your machine.
+
+#### 1. Manual Mapping (The Standard Way)
+
+You must add each domain and subdomain to your system's `hosts` file.
+
+- **macOS / Linux**: Edit `/etc/hosts` using sudo:
+
+  ```bash
+  sudo nano /etc/hosts
+  ```
+
+  Add a line like this:
+
+  ```text
+  127.0.0.1 forge.demo ecopulse-microservice.forge.demo ecopulse-theme.forge.demo
+  ```
+
+- **Windows**: Edit `C:\Windows\System32\drivers\etc\hosts` as an Administrator.
+
+> [!TIP]
+> LDM will proactively check your DNS configuration during `ldm run` or `ldm doctor` and provide the exact line you need to copy-paste if any subdomains are missing.
+
+#### 2. Wildcard Mapping (The "Set and Forget" Way)
+
+If you frequently add new client extensions, we recommend using a local DNS proxy like **dnsmasq** to resolve all `*.demo` domains to `127.0.0.1` automatically.
+
+---
 
 ### 🔐 Fixing SSL Trust Issues (mkcert)
 
@@ -171,7 +223,7 @@ Look for: `mkcert ✅ Installed (Root CA Trusted)`
 If you recently changed your `host-name` and are seeing a mismatch, you can force LDM to regenerate the certificates:
 
 1. Stop the stack: `ldm down [project]`
-2. Delete the hidden certs folder: `rm -rf ~/.liferay_docker_certs`
+2. Delete the certs folder: `rm -rf ~/liferay-docker-certs`
 3. Restart: `ldm run [project]`
 
 ---

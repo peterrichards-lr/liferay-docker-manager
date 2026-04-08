@@ -726,6 +726,8 @@ class WorkspaceHandler:
                 ):
                     # We only care about the specific artifacts in 'dist' or 'libs'
                     if not any(x in p.parts for x in ["dist", "libs"]):
+                        if self.manager.verbose:
+                            UI.info(f"Monitor: Skipping deep build file: {p.name}")
                         return
 
                 # Refined Filtering Logic:
@@ -746,12 +748,16 @@ class WorkspaceHandler:
                         is_valid = True
 
                 if is_valid:
+                    if self.manager.verbose:
+                        UI.info(f"Monitor: Detected valid artifact: {p.name}")
                     with self.lock:
                         self.pending_files.add(p)
                         if self.timer:
                             self.timer.cancel()
                         self.timer = threading.Timer(self.delay, self._process_pending)
                         self.timer.start()
+                elif self.manager.verbose:
+                    UI.info(f"Monitor: Ignoring non-artifact change: {p.name}")
 
             def _process_pending(self):
                 with self.lock:
@@ -789,7 +795,7 @@ class WorkspaceHandler:
         # On macOS, Native Observer (Kqueue) often hits file descriptor limits
         # because it requires an open file handle for every directory.
         # PollingObserver is much safer for large workspace monitoring.
-        is_mac = platform.system() == "darwin"
+        is_mac = platform.system().lower() == "darwin"
 
         if is_mac:
             # Proactively increase file descriptor limits for this process
@@ -797,8 +803,13 @@ class WorkspaceHandler:
                 import resource
 
                 soft, hard = resource.getrlimit(resource.RLIMIT_NOFILE)
+
                 # Try to set a generous limit (e.g., 4096)
-                resource.setrlimit(resource.RLIMIT_NOFILE, (min(hard, 4096), hard))
+                new_soft = min(hard, 4096)
+                resource.setrlimit(resource.RLIMIT_NOFILE, (new_soft, hard))
+
+                if self.verbose:
+                    UI.info(f"OS File Limits: Soft={new_soft}, Hard={hard}")
             except Exception:
                 pass
 
