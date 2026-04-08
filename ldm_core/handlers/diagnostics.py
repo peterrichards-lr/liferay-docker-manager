@@ -247,6 +247,36 @@ class DiagnosticsHandler:
             except Exception:
                 results.append(("Global Config", "Overrides Active", True))
 
+        # 4.3 Traefik Config Check
+        if project_id:
+            project_path = self.detect_project_path(project_id)
+            if project_path:
+                meta = self.read_meta(project_path / PROJECT_META_FILE)
+                host_name = meta.get("host_name", "localhost")
+                if host_name != "localhost":
+                    actual_home = get_actual_home()
+                    traefik_conf = (
+                        actual_home
+                        / "liferay-docker-certs"
+                        / f"traefik-{host_name}.yml"
+                    )
+                    if traefik_conf.exists():
+                        results.append(
+                            (
+                                "Traefik Project SSL",
+                                f"Config loaded ({host_name})",
+                                True,
+                            )
+                        )
+                    else:
+                        results.append(
+                            (
+                                "Traefik Project SSL",
+                                f"Config MISSING ({host_name})",
+                                False,
+                            )
+                        )
+
         # 5. Network Check
         if docker_version:
             has_net = run_command(

@@ -219,7 +219,7 @@ class StackHandler:
             run_command(["docker", "rm", "-f", search_name])
 
         # 2. Build and Run if needed
-        UI.info("Initializing Global Search (ES8) sidecar...")
+        UI.info("Initializing Global Search (ES8) container...")
         if not run_command(["docker", "images", "-q", custom_image_name], check=False):
             search_build_dir = SCRIPT_DIR / "temp" / "search"
             search_build_dir.mkdir(parents=True, exist_ok=True)
@@ -413,8 +413,10 @@ class StackHandler:
                     # Global Redirect to HTTPS
                     "--entrypoints.web.http.redirections.entryPoint.to=websecure",
                     "--entrypoints.web.http.redirections.entryPoint.scheme=https",
+                    "--entrypoints.websecure.http.tls=true",
                     "--providers.file.directory=/etc/traefik/certs",
                     "--providers.file.watch=true",
+                    "--api.insecure=true",
                 ]
             )
             run_command(traefik_cmd)
