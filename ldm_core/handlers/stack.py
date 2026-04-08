@@ -370,6 +370,8 @@ class StackHandler:
                 "liferay-net",
                 "-p",
                 f"{resolved_ip}:{ssl_port}:443",
+                "-p",
+                f"{resolved_ip}:80:80",  # Add HTTP port for redirection
                 "-e",
                 "DOCKER_API_VERSION=1.44",
                 "-v",
@@ -389,6 +391,10 @@ class StackHandler:
                     f"--providers.docker.endpoint={endpoint}",
                     "--providers.docker.exposedbydefault=false",
                     "--entrypoints.websecure.address=:443",
+                    "--entrypoints.web.address=:80",
+                    # Global Redirect to HTTPS
+                    "--entrypoints.web.http.redirections.entryPoint.to=websecure",
+                    "--entrypoints.web.http.redirections.entryPoint.scheme=https",
                     f"--providers.file.filename=/etc/traefik/certs/traefik-{host_name}.yml",
                     "--providers.file.watch=true",
                 ]

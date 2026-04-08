@@ -150,9 +150,22 @@ class DiagnosticsHandler:
             if mkcert_version:
                 ca_root = run_command(["mkcert", "-CAROOT"], check=False)
                 if ca_root and os.path.exists(ca_root) and os.listdir(ca_root):
-                    results.append(("mkcert", "Installed (Root CA Trusted)", True))
+                    # Deep check for Root CA trust on macOS
+                    is_trusted = True
+                    if platform.system().lower() == "darwin":
+                        trust_check = run_command(
+                            ["security", "find-certificate", "-c", "mkcert"],
+                            check=False,
+                        )
+                        if not trust_check:
+                            is_trusted = False
+
+                    if is_trusted:
+                        results.append(("mkcert", "Installed (Root CA Trusted)", True))
+                    else:
+                        results.append(("mkcert", "Installed (NOT TRUSTED)", False))
                 else:
-                    results.append(("mkcert", "Installed (Root CA NOT TRUSTED)", False))
+                    results.append(("mkcert", "Installed (Root CA NOT FOUND)", False))
             else:
                 results.append(("mkcert", "Not installed", False))
         except Exception:

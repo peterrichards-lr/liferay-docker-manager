@@ -56,6 +56,7 @@ class WorkspaceHandler:
             "cpu": 1,
             "memory": 512,
             "ports": [],
+            "loadBalancer": None,
             "readinessProbe": None,
             "livenessProbe": None,
             "oauth_erc": None,
@@ -67,7 +68,14 @@ class WorkspaceHandler:
             info["id"] = data.get("id")
             if data.get("kind"):
                 info["kind"] = data["kind"].capitalize()
-            for k in ["cpu", "memory", "ports", "readinessProbe", "livenessProbe"]:
+            for k in [
+                "cpu",
+                "memory",
+                "ports",
+                "loadBalancer",
+                "readinessProbe",
+                "livenessProbe",
+            ]:
                 if k in data:
                     info[k] = data[k]
             info["has_load_balancer"] = "loadBalancer" in data or any(
@@ -89,6 +97,7 @@ class WorkspaceHandler:
             "cpu": 1,
             "memory": 512,
             "ports": [],
+            "loadBalancer": None,
             "readinessProbe": None,
             "livenessProbe": None,
             "oauth_erc": None,
