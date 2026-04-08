@@ -4,5 +4,6 @@
 __pycache__/
 *.tmp
 /client-extensions/
+/my-dev-stack/
 common/activation-key-*.xml
 /temp
