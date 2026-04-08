@@ -30,6 +30,9 @@ class MockManager(StackHandler, WorkspaceHandler):
     def setup_global_search(self, *args, **kwargs):
         pass
 
+    def check_docker(self, *args, **kwargs):
+        return True
+
     def sync_common_assets(self, *args, **kwargs):
         pass
 
@@ -212,6 +215,21 @@ class TestStackOrchestration(unittest.TestCase):
                 "traefik.http.services.test-my-ms.loadbalancer.server.port=3001",
                 ms_labels,
             )
+
+    def test_cmd_infra_setup(self):
+        with patch.object(self.manager, "check_docker", return_value=True):
+            with patch.object(
+                self.manager, "get_resolved_ip", return_value="127.0.0.1"
+            ):
+                with patch.object(self.manager, "setup_infrastructure") as mock_setup:
+                    self.manager.cmd_infra_setup()
+
+                    # Verify setup_infrastructure was called with default local settings
+                    mock_setup.assert_called_once()
+                    args, kwargs = mock_setup.call_args
+                    self.assertEqual(args[0], "127.0.0.1")  # resolved_ip
+                    self.assertEqual(args[1], "443")  # ssl_port
+                    self.assertTrue(kwargs.get("use_ssl"))
 
 
 if __name__ == "__main__":
