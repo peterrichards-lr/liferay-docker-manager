@@ -147,21 +147,21 @@ jobs:
           fi
           shiv -e ldm_core.cli:main -o $OUTNAME -p '/usr/bin/env python3' .
           chmod +x $OUTNAME
+          echo "BINARY_PATH=$OUTNAME" >> $GITHUB_ENV
 
       - name: Build Standalone (Windows)
         if: matrix.os == 'windows-latest'
+        shell: bash
         run: |
           pip install pyinstaller -r requirements.txt
           pyinstaller --onefile --name ldm-windows liferay_docker.py
+          echo "BINARY_PATH=dist/ldm-windows.exe" >> $GITHUB_ENV
 
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: ldm-binary-${{ matrix.os }}
-          path: |
-            ldm-linux
-            ldm-macos
-            dist/ldm-windows.exe
+          path: ${{ env.BINARY_PATH }}
           if-no-files-found: error
 
   release:
