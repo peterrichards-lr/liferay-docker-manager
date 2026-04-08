@@ -14,7 +14,13 @@ class ConfigHandler:
     def update_portal_ext(self, path, updates):
         content = path.read_text() if path.exists() else ""
         for key, value in updates.items():
-            pattern = re.compile(rf"^\s*{re.escape(key)}\s*=.*$", re.MULTILINE)
+            # Regex to match single or multi-line properties (handling backslash continuation)
+            # ^\s*key\s*=      : start of line with key
+            # (?:.*\\\n)*      : any number of lines ending with a backslash
+            # .*$              : the final line
+            pattern = re.compile(
+                rf"^\s*{re.escape(key)}\s*=(?:.*\\\n)*.*$", re.MULTILINE
+            )
             if pattern.search(content):
                 content = pattern.sub(f"{key}={value}", content)
             else:
@@ -294,16 +300,24 @@ class ConfigHandler:
             if not target_ext.exists():
                 shutil.copy(common_ext, target_ext)
             else:
-                project_keys = {
-                    line.split("=", 1)[0].strip()
-                    for line in target_ext.read_text().splitlines()
-                    if "=" in line and not line.strip().startswith("#")
-                }
+                # Robust extraction of project keys, handling multi-line entries
+                target_content = target_ext.read_text()
+                project_keys = set(
+                    re.findall(r"^\s*([^#=\s]+)\s*=", target_content, re.MULTILINE)
+                )
+
+                common_content = common_ext.read_text()
+                # Find all potential updates in the common file
+                # Format: (key, full_value_including_continuations)
+                potential_updates = re.findall(
+                    r"^\s*([^#=\s]+)\s*=\s*((?:.*\\\n)*.*$)",
+                    common_content,
+                    re.MULTILINE,
+                )
+
                 to_add = {
-                    k: v.strip()
-                    for line in common_ext.read_text().splitlines()
-                    if "=" in line and not line.strip().startswith("#")
-                    for k, v in [line.split("=", 1)]
+                    k.strip(): v.strip()
+                    for k, v in potential_updates
                     if k.strip() not in project_keys
                 }
                 if to_add:

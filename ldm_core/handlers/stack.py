@@ -543,9 +543,9 @@ class StackHandler:
             f"{paths['routes'].as_posix()}:/opt/liferay/routes",
             f"{paths['log4j'].as_posix()}:/opt/liferay/osgi/log4j",
             f"{paths['portal_log4j'].as_posix()}/portal-log4j-ext.xml:/opt/liferay/tomcat/webapps/ROOT/WEB-INF/classes/META-INF/portal-log4j-ext.xml",
-            # data and deploy MUST be bind-mounts for host access and snapshots
             f"{paths['data'].as_posix()}:/opt/liferay/data",
             f"{paths['deploy'].as_posix()}:/opt/liferay/deploy",
+            f"{paths['files'].as_posix()}/portal-ext.properties:/opt/liferay/portal-ext.properties",
         ]
 
         # For scaled Liferay instances, host-mapped state and logs are disabled
@@ -701,6 +701,7 @@ class StackHandler:
                 [
                     "LIFERAY_WEB__SERVER__PROTOCOL=https",
                     f"LIFERAY_WEB__SERVER__HTTPS__PORT={ssl_port}",
+                    f"LIFERAY_WEB__SERVER__HOST={host_name}",
                 ]
             )
             compose["services"]["liferay"]["labels"] = [
@@ -708,6 +709,8 @@ class StackHandler:
                 f"traefik.http.routers.{container_name}-main.rule=Host(`{host_name}`)",
                 f"traefik.http.routers.{container_name}-main.entrypoints=websecure",
                 f"traefik.http.routers.{container_name}-main.tls=true",
+                f"traefik.http.routers.{container_name}-main.tls.domains[0].main={host_name}",
+                f"traefik.http.routers.{container_name}-main.tls.domains[0].sans=*.{host_name}",
                 f"traefik.http.services.{container_name}-main-svc.loadbalancer.server.port=8080",
             ]
 
@@ -802,6 +805,8 @@ class StackHandler:
                     f"traefik.http.routers.{container_name}-{ext_name}.rule=Host(`{ext_host}`)",
                     f"traefik.http.routers.{container_name}-{ext_name}.entrypoints=websecure",
                     f"traefik.http.routers.{container_name}-{ext_name}.tls=true",
+                    f"traefik.http.routers.{container_name}-{ext_name}.tls.domains[0].main={host_name}",
+                    f"traefik.http.routers.{container_name}-{ext_name}.tls.domains[0].sans=*.{host_name}",
                     f"traefik.http.services.{container_name}-{ext_name}.loadbalancer.server.port={ext_port}",
                 ]
                 ext["url"] = f"https://{ext_host}"

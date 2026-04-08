@@ -155,6 +155,9 @@ class TestStackOrchestration(unittest.TestCase):
             compose_call = mock_yaml.call_args[0][0]
             labels = compose_call["services"]["liferay"]["labels"]
 
+            if not any("tls.domains[0].main=forge.demo" in label for label in labels):
+                print(f"\nDEBUG: Generated Labels: {labels}")
+
             self.assertIn("traefik.http.routers.test-main.tls=true", labels)
             self.assertIn(
                 "traefik.http.routers.test-main.entrypoints=websecure", labels
