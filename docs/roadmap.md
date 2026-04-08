@@ -44,7 +44,7 @@ As the core orchestration and isolation pillars are now robustly implemented, fu
 ### **Management & Diagnostics**
 
 - **Professional CI/CD Pipeline**: Implemented GitHub Actions for security scanning (Bandit, pip-audit), multi-language linting, and automated smoke testing.
-- **Standalone Distribution**: Automated packaging of LDM into a single-file executable (`ldm-standalone`) via `shiv`, distributed through GitHub Releases.
+- **Standalone Distribution**: Automated packaging of LDM into architecture-specific executables (`ldm-macos`, `ldm-linux`, `ldm-windows.exe`) via `shiv` and `PyInstaller`, distributed through GitHub Releases.
 - **Project Visibility (`ldm list`)**: Tabulated overview of all initialized environments, versions, and current statuses.
 - **Resource Guard (`ldm doctor`)**: proactive verification of Docker host CPU and Memory allocations to prevent runtime failures.
 - **Global Maintenance (`ldm prune`)**: Reliable identification and removal of orphaned containers from deleted projects.

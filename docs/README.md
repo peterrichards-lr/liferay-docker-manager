@@ -62,8 +62,13 @@ The badges below represent our aspirational goals for cross-platform support. En
 The standalone binary is the recommended way to use LDM.
 
 ```bash
-# macOS/Linux/WSL2
+# For macOS
 sudo curl -L https://github.com/peterrichards-lr/liferay-docker-manager/releases/latest/download/ldm-macos -o /usr/local/bin/ldm
+
+# For Linux / WSL2
+sudo curl -L https://github.com/peterrichards-lr/liferay-docker-manager/releases/latest/download/ldm-linux -o /usr/local/bin/ldm
+
+# Make it executable
 sudo chmod +x /usr/local/bin/ldm
 ```
 

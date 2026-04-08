@@ -179,16 +179,22 @@ jobs:
           
           ### Installation (Quick Start)
           
-          **macOS / Linux / WSL2:**
+          **macOS:**
           ```bash
-          # Download using curl
-          sudo curl -L https://github.com/peterrichards-lr/liferay-docker-manager/releases/latest/download/ldm-standalone -o /usr/local/bin/ldm
+          sudo curl -L https://github.com/peterrichards-lr/liferay-docker-manager/releases/latest/download/ldm-macos -o /usr/local/bin/ldm
+          sudo chmod +x /usr/local/bin/ldm
+          ```
+
+          **Linux / WSL2:**
+          ```bash
+          sudo curl -L https://github.com/peterrichards-lr/liferay-docker-manager/releases/latest/download/ldm-linux -o /usr/local/bin/ldm
           sudo chmod +x /usr/local/bin/ldm
           ```
           
           **Windows (PowerShell):**
           ```powershell
-          Invoke-WebRequest -Uri "https://github.com/peterrichards-lr/liferay-docker-manager/releases/latest/download/ldm-standalone.exe" -OutFile "$HOME\bin\ldm.exe"
+          New-Item -ItemType Directory -Force -Path "$HOME\bin"
+          Invoke-WebRequest -Uri "https://github.com/peterrichards-lr/liferay-docker-manager/releases/latest/download/ldm-windows.exe" -OutFile "$HOME\bin\ldm.exe"
           ```
           
           ### Key Features
@@ -199,3 +205,5 @@ jobs:
           - **Environmental Health**: `ldm doctor` verifies your Docker resources and configuration.
         draft: false
         prerelease: false
+        make_latest: true
+        fail_on_unmatched_files: true

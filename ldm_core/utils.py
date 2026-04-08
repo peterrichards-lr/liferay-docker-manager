@@ -352,7 +352,22 @@ def check_for_updates(current_version, force=False):
         with urlopen(req, timeout=3) as response:  # nosec B310
             res_data = json.loads(response.read().decode())
             latest_version = res_data.get("tag_name", "").lstrip("v")
-            release_url = res_data.get("html_url")
+
+            # Architecture-aware asset resolution
+            release_url = res_data.get("html_url")  # Fallback to release page
+            assets = res_data.get("assets", [])
+
+            system = sys.platform
+            target_asset = "ldm-linux"
+            if system == "darwin":
+                target_asset = "ldm-macos"
+            elif system in ["win32", "windows"]:
+                target_asset = "ldm-windows.exe"
+
+            for asset in assets:
+                if asset.get("name") == target_asset:
+                    release_url = asset.get("browser_download_url")
+                    break
 
             # Update cache
             cache_file.write_text(
