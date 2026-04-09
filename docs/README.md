@@ -2,9 +2,6 @@
 
 A professional command-line orchestrator for quickly standing up Liferay Portal and DXP environments using Docker Compose.
 
-> [!TIP]
-> **Hardened Edition (v1.5.8):** This version has been specifically refined for non-proprietary Docker environments. It includes native stability fixes for macOS (Colima/OrbStack/Docker Desktop), Windows (Native PowerShell), and Linux (Fedora/WSL2).
->
 > [!NOTE]
 > **Project History:** This tool was originally born as part of the [liferay-docker-scripts](https://github.com/peterrichards-lr/liferay-docker-scripts) repository. It has since evolved into a standalone application to provide better modularity and multi-instance stability.
 
@@ -47,7 +44,7 @@ The badges below represent our verified support for various Docker providers. En
 - **Service-Specific Lifecycle**: Manage individual components within a project surgically. Restart or view logs for a single extension without affecting the rest of the stack.
 - **Client Extension Lifecycle**: Automatically detects and builds Server-Side Client Extensions (SSCE). Subdomains are automatically generated, and traffic is routed based on `LCP.json`.
 - **Zero-Config SSL**: Automated HTTPS using `mkcert` and a global Traefik proxy. Works on Docker Desktop, **Colima**, and **WSL2**.
-- **Fail-Fast Design**: Proactive environment checking. LDM verifies volume mounts, resource allocations (CPU/RAM), and DNS resolution before execution, providing clean, actionable error messages instead of tracebacks.
+- **Fail-Fast Design**: Proactive environment checking. LDM verifies Docker reachability, volume mounts, resource allocations (CPU/RAM), and **Compose functionality** before execution, providing clean, actionable error messages instead of tracebacks.
 - **Architecture-Aware**: The tool detects your OS automatically to fetch the correct optimized binary during self-updates.
 
 ---
@@ -57,7 +54,35 @@ The badges below represent our verified support for various Docker providers. En
 - [Installation Guide](installation.md)
 - [Architecture Overview](LDM_ARCHITECTURE.md)
 - [Test & Validation Strategy](TESTING.md)
+- [Security Posture & Disclosures](SECURITY.md)
 - [Future Roadmap](roadmap.md)
+
+---
+
+## Scripting & Automation
+
+LDM is designed to be pipeline-friendly. The `ldm doctor` command returns a non-zero exit code if critical environment issues are detected.
+
+### Health Check Pipe
+
+Ensure your environment is healthy before attempting to start a project:
+
+```bash
+ldm doctor --skip-project && ldm run my-project
+```
+
+### CI/CD Integration
+
+You can use LDM in automated scripts to verify infrastructure:
+
+```bash
+if ldm doctor --skip-project; then
+  echo "Environment is healthy, proceeding..."
+else
+  echo "Critical environment failure!"
+  exit 1
+fi
+```
 
 ---
 
@@ -318,7 +343,8 @@ ldm doctor
 Automatically download and install the latest version of LDM for your architecture. Includes integrity verification.
 
 ```bash
-ldm upgrade
+ldm upgrade             # Standard upgrade to latest
+ldm upgrade --repair    # Re-download current version to fix integrity issues
 ```
 
 ### `renew-ssl`

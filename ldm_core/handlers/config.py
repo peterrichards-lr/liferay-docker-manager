@@ -425,6 +425,15 @@ class ConfigHandler:
                     custom_env[k] = val
             vars_to_apply = []
 
+        if (
+            not vars_to_apply
+            and self.non_interactive
+            and not getattr(self.args, "import_env", False)
+        ):
+            UI.die(
+                "No environment variables specified. In non-interactive mode, use: ldm env <pid> KEY=VALUE"
+            )
+
         if not vars_to_apply and not self.non_interactive:
             UI.heading("Environment Variables")
             if custom_env:
@@ -532,6 +541,11 @@ class ConfigHandler:
                 print(f"  {UI.GREEN}Default (Absent){UI.COLOR_OFF}")
             return
 
+        if not url and not remove and self.non_interactive:
+            UI.die(
+                "No URL or removal flag specified. In non-interactive mode, use: ldm browser <pid> --url <url>"
+            )
+
         if not url and not remove and not self.non_interactive:
             UI.heading("Configure Browser Launcher")
             current = (
@@ -593,6 +607,11 @@ class ConfigHandler:
                     color = colors.get(v, UI.WHITE)
                     print(f"  {k} = {color}{v}{UI.COLOR_OFF}")
             return
+
+        if not bundle and self.non_interactive:
+            UI.die(
+                "No bundle ID specified. In non-interactive mode, use: ldm log-level <pid> <bundle> [category] <level>"
+            )
 
         if not bundle and not self.non_interactive:
             UI.heading("Configure Logging")

@@ -4,7 +4,6 @@ import time
 import tarfile
 import gzip
 import lzma
-import subprocess
 from pathlib import Path
 from datetime import datetime
 from ldm_core.ui import UI
@@ -74,10 +73,15 @@ class SnapshotHandler:
 
     def _restore_from_cloud_layout(self, backup_dir, paths, project_meta):
         """Restores a project from a Liferay Cloud-style backup (database.gz + volume.tgz)."""
+        compose_base = get_compose_cmd()
+        if not compose_base:
+            UI.die(
+                "Docker Compose not found. Please run 'ldm doctor' for installation instructions."
+            )
+
         backup_dir = Path(backup_dir).resolve()
         if not backup_dir.exists():
-            UI.error(f"Backup directory not found: {backup_dir}")
-            return False
+            UI.die(f"Backup directory not found: {backup_dir}")
 
         restored_anything = False
         vol = backup_dir / "volume.tgz"
@@ -121,7 +125,7 @@ class SnapshotHandler:
 
                 UI.info(f"Starting database container: {db_container}...")
                 run_command(
-                    get_compose_cmd() + ["up", "-d", "db"],
+                    compose_base + ["up", "-d", "db"],
                     cwd=str(paths["root"]),
                 )
 
@@ -209,16 +213,14 @@ class SnapshotHandler:
                                 else "mysql -u liferay -pliferay lportal"
                             )
                         )
-                        stdout = None if self.verbose else subprocess.DEVNULL
-                        # Bandit: B602 (shell=True) is used here to stream the
-                        # decompressed database dump directly into the container.
-                        subprocess.run(
+                        # Stream the decompressed database dump directly into the container.
+                        # This now uses ldm_core.utils.run_command for shell sanitization.
+                        run_command(
                             cmd,
                             shell=True,
                             check=True,
-                            stdout=stdout,
-                            stderr=(None if self.verbose else subprocess.STDOUT),
-                        )  # nosec B602 B603
+                            capture_output=not self.verbose,
+                        )  # nosec B604
                         UI.success("Database restored.")
                         restored_anything = True
                     except Exception as e:
@@ -307,9 +309,12 @@ class SnapshotHandler:
                 not self.non_interactive
                 and UI.ask("Stop stack during backup?", "Y").upper() == "Y"
             ):
-                run_command(
-                    get_compose_cmd() + ["stop"], check=True, cwd=str(paths["root"])
-                )
+                compose_base = get_compose_cmd()
+                if not compose_base:
+                    UI.die(
+                        "Docker Compose not found. Please run 'ldm doctor' for installation instructions."
+                    )
+                run_command(compose_base + ["stop"], check=True, cwd=str(paths["root"]))
                 time.sleep(2)
 
         timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -409,6 +414,10 @@ class SnapshotHandler:
                 choice = backups[auto_index - 1]
             elif getattr(self.args, "index", None):
                 choice = backups[self.args.index - 1]
+            elif self.non_interactive:
+                UI.die(
+                    "No snapshot index specified. In non-interactive mode, use: ldm restore <pid> --index <num>"
+                )
             else:
                 choice = backups[int(UI.ask("Select snapshot index", "1")) - 1]
 
@@ -426,9 +435,12 @@ class SnapshotHandler:
             "root"
         ].name.replace(".", "-")
         if run_command(["docker", "ps", "-q", "-f", f"name=^{container_name}$"]):
-            run_command(
-                get_compose_cmd() + ["stop"], check=True, cwd=str(paths["root"])
-            )
+            compose_base = get_compose_cmd()
+            if not compose_base:
+                UI.die(
+                    "Docker Compose not found. Please run 'ldm doctor' for installation instructions."
+                )
+            run_command(compose_base + ["stop"], check=True, cwd=str(paths["root"]))
             time.sleep(2)
 
         files_tar = choice / "files.tar.gz"
@@ -582,8 +594,7 @@ class SnapshotHandler:
     def cmd_search_status(self, project_id=None):
         search_name = "liferay-search-global"
         if not run_command(["docker", "ps", "-q", "-f", f"name={search_name}"]):
-            UI.error("Global search service is not running.")
-            return
+            UI.die("Global search service is not running.")
         UI.heading("Search Snapshot Status")
         repo_check = run_command(
             [

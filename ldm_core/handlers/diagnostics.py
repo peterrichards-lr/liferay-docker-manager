@@ -24,7 +24,7 @@ class DiagnosticsHandler:
         latest, url = check_for_updates(VERSION, force=force)
         if not latest:
             UI.error("Could not reach GitHub to check for updates.")
-            return
+            sys.exit(1)
 
         if version_to_tuple(latest) <= version_to_tuple(VERSION):
             UI.success(f"You are up to date! (v{VERSION})")
@@ -46,19 +46,48 @@ class DiagnosticsHandler:
     def cmd_upgrade(self):
         """Self-upgrade the LDM binary to the latest version."""
         UI.heading("LDM Self-Upgrade")
+        is_repair = getattr(self.args, "repair", False)
 
         # 1. Check for updates
         latest, url = check_for_updates(VERSION, force=True)
-        if not latest or version_to_tuple(latest) <= version_to_tuple(VERSION):
+
+        # In repair mode, if we are already latest, we use the current VERSION as target
+        if is_repair and (
+            not latest or version_to_tuple(latest) <= version_to_tuple(VERSION)
+        ):
+            latest = VERSION
+            # Fetch URL for current version if latest check didn't provide one
+            if not url:
+                # Construct official asset URL for current version
+                system = platform.system().lower()
+                target_asset = "ldm-linux"
+                if system == "darwin":
+                    target_asset = "ldm-macos"
+                elif system in ["win32", "windows"]:
+                    target_asset = "ldm-windows.exe"
+                url = f"https://github.com/peterrichards-lr/liferay-docker-manager/releases/download/v{VERSION}/{target_asset}"
+
+        if not latest or (
+            version_to_tuple(latest) <= version_to_tuple(VERSION) and not is_repair
+        ):
             UI.success(f"LDM is already up to date (v{VERSION}).")
             return
 
-        UI.info(f"New version found: v{latest}")
+        if is_repair:
+            UI.info(f"Repairing current version: v{latest}")
+        else:
+            UI.info(f"New version found: v{latest}")
+
         if not url or not url.startswith("http"):
             UI.die("Download URL not found for your architecture.")
 
-        if not UI.ask(f"Upgrade from v{VERSION} to v{latest}?", "Y").upper() == "Y":
-            UI.info("Upgrade aborted.")
+        prompt = (
+            f"Repair v{latest}?"
+            if is_repair
+            else f"Upgrade from v{VERSION} to v{latest}?"
+        )
+        if not self.non_interactive and not UI.ask(prompt, "Y").upper() == "Y":
+            UI.info("Operation aborted.")
             return
 
         # 2. Preparation
@@ -173,14 +202,23 @@ del "%~f0"
         UI.heading("LDM Doctor - Environmental Health Check")
 
         # 0. Early Project Resolve (Optional skip allowed)
-        project_path = self.detect_project_path(project_id)
+        skip_project = getattr(self.args, "skip_project", False)
+        project_path = None
+        if not skip_project:
+            project_path = self.detect_project_path(project_id)
 
         results = []
 
         # 0.1 Version Check
         latest, _ = check_for_updates(VERSION, force=True)
         if latest and version_to_tuple(latest) > version_to_tuple(VERSION):
-            results.append(("LDM Version", f"v{VERSION} (v{latest} available)", "warn"))
+            results.append(
+                (
+                    "LDM Version",
+                    f"v{VERSION} (v{latest} available - Run 'ldm upgrade')",
+                    "warn",
+                )
+            )
         else:
             results.append(("LDM Version", f"v{VERSION} (Latest)", True))
 
@@ -278,10 +316,47 @@ del "%~f0"
             from ldm_core.utils import get_compose_cmd
 
             compose_cmd = get_compose_cmd()
-            compose_label = (
-                "v2 (Plugin)" if "compose" in compose_cmd else "v1 (Standalone)"
-            )
-            results.append(("Docker Compose", compose_label, True))
+            if not compose_cmd:
+                system = platform.system().lower()
+                hint = "Install docker-compose-plugin"
+                if system == "darwin":
+                    hint = "Run 'port install docker-compose-plugin' or 'brew install docker-compose'"
+                results.append(("Docker Compose", f"Not found ({hint})", False))
+            else:
+                compose_label = (
+                    "v2 (Plugin)" if "compose" in compose_cmd else "v1 (Standalone)"
+                )
+
+                # Deep Check: Verify it can actually talk to the socket
+                is_functional = True
+                try:
+                    # 'version' is usually safe, but on broken Standalone v1
+                    # it might still crash when trying to negotiate the API
+                    res = subprocess.run(
+                        compose_cmd + ["version", "--short"],
+                        capture_output=True,
+                        text=True,
+                        check=False,
+                        env=os.environ.copy(),  # Use raw env here to see if it's broken globally
+                    )
+                    if res.returncode != 0:
+                        is_functional = False
+                except Exception:
+                    is_functional = False
+
+                if is_functional:
+                    results.append(("Docker Compose", compose_label, True))
+                else:
+                    results.append(
+                        (
+                            "Docker Compose",
+                            f"{compose_label} (❌ BROKEN - Likely urllib3 mismatch)",
+                            "warn",
+                        )
+                    )
+                    UI.info(
+                        f"  + {UI.YELLOW}Hint:{UI.COLOR_OFF} Your docker-compose is broken. Try: {UI.CYAN}ldm run --no-wait{UI.COLOR_OFF}"
+                    )
 
             # 2.1 Docker Credentials Check
             try:
@@ -570,13 +645,14 @@ del "%~f0"
                 icon = "✅"
             elif ok == "warn":
                 color = UI.YELLOW
-                icon = "⚠️ "
+                icon = "⚠️"
                 has_warnings = True
             else:
                 color = UI.RED
                 icon = "❌"
                 all_ok = False
-            print(f"{component:<25} {color}{icon} {status}{UI.COLOR_OFF}")
+            padding = UI.get_padding(icon)
+            print(f"{component:<25} {color}{icon}{padding}{status}{UI.COLOR_OFF}")
 
         if all_ok and not has_warnings:
             UI.success("Everything looks good! Your environment is ready.")
@@ -584,6 +660,7 @@ del "%~f0"
             UI.warning("Some non-critical issues were detected. Check the items above.")
         else:
             UI.error("Critical issues were detected. Check the items above.")
+            sys.exit(1)
 
     def cmd_list(self):
         UI.heading("LDM Sandbox Projects")
@@ -701,7 +778,10 @@ del "%~f0"
             UI.info(f"Found {len(orphans)} orphaned containers from deleted projects:")
             for o in orphans:
                 print(f"  - {o}")
-            if UI.ask("Remove them? (y/n/q)", "N").upper() == "Y":
+            if (
+                self.non_interactive
+                or UI.ask("Remove them? (y/n/q)", "N").upper() == "Y"
+            ):
                 for o in orphans:
                     run_command(["docker", "rm", "-f", o])
                 UI.success("Orphaned containers removed.")
@@ -744,7 +824,11 @@ del "%~f0"
                         )
                         for s in orphaned_snaps:
                             print(f"  - {s}")
-                        if UI.ask("Remove them from global vault?", "N").upper() == "Y":
+                        if (
+                            self.non_interactive
+                            or UI.ask("Remove them from global vault?", "N").upper()
+                            == "Y"
+                        ):
                             for s in orphaned_snaps:
                                 run_command(
                                     [
@@ -769,7 +853,10 @@ del "%~f0"
         tmp_files = list(SCRIPT_DIR.glob("**/.*.tmp"))
         if tmp_files:
             UI.info(f"Found {len(tmp_files)} temporary files.")
-            if UI.ask("Remove them? (y/n/q)", "Y").upper() == "Y":
+            if (
+                self.non_interactive
+                or UI.ask("Remove them? (y/n/q)", "Y").upper() == "Y"
+            ):
                 for f in tmp_files:
                     f.unlink()
                 UI.success("Temporary files removed.")

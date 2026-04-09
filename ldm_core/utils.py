@@ -99,6 +99,33 @@ def is_env_var_blacklisted(key, blacklist):
     return False
 
 
+def _sanitize_shell_command(cmd):
+    """
+    Sanitizes a shell command string to prevent common injection attacks.
+    Allows pipes (|) and redirections (<, >) but blocks dangerous metacharacters.
+    """
+    if not isinstance(cmd, str):
+        return cmd
+
+    # 1. Block obviously malicious sequences
+    dangerous = [";", "&&", "||", "$(", "]]", "[[", "`"]
+    for char in dangerous:
+        if char in cmd:
+            UI.die(
+                f"Security Violation: Shell command contains forbidden character '{char}'"
+            )
+
+    # 2. Pattern Verification: If shell=True is used, it MUST match LDM usage patterns
+    # (Docker operations, Compression, or Windows bridge)
+    safe_patterns = ["docker", "gzip", "cmd.exe", "cat", "pg_dump", "mysql", "mariadb"]
+    is_safe = any(pattern in cmd.lower() for pattern in safe_patterns)
+
+    if not is_safe:
+        UI.die("Security Violation: Unrecognized shell command pattern.")
+
+    return cmd
+
+
 def run_command(cmd, shell=False, capture_output=True, check=True, env=None, cwd=None):
     if env is None:
         env = os.environ.copy()
@@ -107,11 +134,54 @@ def run_command(cmd, shell=False, capture_output=True, check=True, env=None, cwd
 
     env["DOCKER_CLI_HINTS"] = "false"
 
+    # UNIVERSAL SHIELD: On macOS Intel (x86_64), we often face modern context
+    # parsing failures (http+docker error) in legacy system libraries.
+    # We apply this shield to ALL docker and docker-compose commands.
+    system = platform.system().lower()
+    machine = platform.machine().lower()
+    is_intel_mac = system == "darwin" and ("x86" in machine or "i386" in machine)
+
+    cmd_str_0 = str(cmd[0]).lower() if isinstance(cmd, list) and len(cmd) > 0 else ""
+    is_docker_cmd = "docker" in cmd_str_0
+
+    if is_intel_mac and is_docker_cmd:
+        # Force absolute isolation from modern contexts
+        env["COMPOSE_PARAMIKO_SSH"] = "0"
+        env["DOCKER_CONTEXT"] = ""
+
+        # Resolve raw socket path
+        socket_path = get_docker_socket_path()
+        if socket_path and not str(socket_path).startswith("http"):
+            clean_path = str(socket_path).replace("unix://", "")
+            # Force raw unix path for both env and flag
+            env["DOCKER_HOST"] = f"unix://{clean_path}"
+
+            # Inject -H flag into list-based commands for maximum aggression
+            if isinstance(cmd, list) and "-H" not in cmd and "--host" not in cmd:
+                # Insert right after binary name
+                cmd.insert(1, "-H")
+                cmd.insert(2, f"unix://{clean_path}")
+        else:
+            env["DOCKER_HOST"] = "unix:///var/run/docker.sock"
+
+        # Force a stable legacy API version
+        if "DOCKER_API_VERSION" not in env:
+            env["DOCKER_API_VERSION"] = "1.39"
+
+    # Hardening: Sanitize if shell is enabled
+    if shell:
+        cmd = _sanitize_shell_command(cmd)
+
     # Automatically resolve absolute paths for list-based commands (resolves Bandit B607)
     if isinstance(cmd, list) and len(cmd) > 0 and not shell:
         executable = shutil.which(cmd[0])
         if executable:
             cmd[0] = executable
+
+    # Redact sensitive info for logging/display
+    display_cmd = UI.redact(" ".join(cmd) if isinstance(cmd, list) else cmd)
+    if "-v" in sys.argv or "--verbose" in sys.argv:
+        UI.debug(f"Executing: {display_cmd}")
 
     try:
         # Bandit: B602 (shell=True) is used for complex commands where needed,
@@ -141,14 +211,11 @@ def run_command(cmd, shell=False, capture_output=True, check=True, env=None, cwd
                 UI.error(
                     f"Command not found: {cmd[0] if isinstance(cmd, list) else cmd}"
                 )
-                import sys
-
                 sys.exit(127)
 
             UI.error(f"Command failed (Exit {e.returncode}): {cmd_str}")
             if e.stderr:
                 print(f"{UI.WHITE}Error Details:{UI.COLOR_OFF} {e.stderr.strip()}")
-            import sys
 
             sys.exit(e.returncode)
         return None
@@ -381,16 +448,18 @@ def safe_extract(archive, target_path):
 def get_compose_cmd():
     """Returns the correct base command for Docker Compose (Modern v2 vs Legacy v1)."""
     # 1. Try modern 'docker compose' (v2 plugin)
+    # This is the preferred method for all architectures, including Intel Mac
     docker_bin = shutil.which("docker")
     if docker_bin:
         try:
+            # Verify the plugin is installed and functional
             res = subprocess.run(
                 [docker_bin, "compose", "version"],
                 capture_output=True,
                 text=True,
                 check=False,
             )
-            if res.returncode == 0:
+            if res.returncode == 0 and "Docker Compose version" in res.stdout:
                 return ["docker", "compose"]
         except Exception:
             pass
@@ -398,10 +467,21 @@ def get_compose_cmd():
     # 2. Fallback to legacy 'docker-compose' (v1 standalone)
     legacy_bin = shutil.which("docker-compose")
     if legacy_bin:
-        return ["docker-compose"]
+        try:
+            # Verify the standalone binary actually works
+            res = subprocess.run(
+                [legacy_bin, "version"],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            if res.returncode == 0 and "Docker Compose version" in res.stdout:
+                return ["docker-compose"]
+        except Exception:
+            pass
 
-    # Final default (will trigger standard 'command not found' if both missing)
-    return ["docker", "compose"]
+    # Final: No working Compose found
+    return []
 
 
 def get_docker_socket_path():

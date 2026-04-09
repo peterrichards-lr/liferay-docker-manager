@@ -1,4 +1,5 @@
 import sys
+import platform
 
 
 # --- UI Helpers ---
@@ -13,13 +14,42 @@ class UI:
     CYAN = "\033[0;36m"
 
     @staticmethod
+    def get_padding(icon=None):
+        """Returns the OS-aware padding for icons."""
+        # macOS needs more breathing room for emojis to appear uniform with Windows/WSL
+        system = platform.system().lower()
+        padding = "   " if system == "darwin" else "  "
+
+        # Extra precision: The information icon (ℹ) is often narrow on macOS
+        if system == "darwin" and icon == "ℹ":
+            padding += " "
+
+        return padding
+
+    @staticmethod
+    def redact(text):
+        """Redacts sensitive patterns (passwords, tokens, keys) from a string."""
+        if not text:
+            return text
+
+        # Pattern to find key=value where key contains sensitive words
+        # e.g., MYSQL_PASSWORD=secret -> MYSQL_PASSWORD=[REDACTED]
+        sensitive_keys = ["PASSWORD", "SECRET", "TOKEN", "KEY", "AUTH"]
+        pattern = r"(?i)(" + "|".join(sensitive_keys) + r")=([^&\s]+)"
+
+        import re
+
+        return re.sub(pattern, r"\1=[REDACTED]", str(text))
+
+    @staticmethod
     def _print(msg, color=None, icon=None, file=sys.stdout):
         """Internal print helper with Unicode safety."""
         # Clean the message
         msg = msg.strip()
 
         # Format the output string
-        out = f"{icon} {msg}" if icon else msg
+        padding = UI.get_padding(icon)
+        out = f"{icon}{padding}{msg}" if icon else msg
         if color:
             out = f"{color}{out}{UI.COLOR_OFF}"
 
@@ -42,13 +72,13 @@ class UI:
 
     @staticmethod
     def warning(msg):
-        UI._print(msg, UI.YELLOW, "⚠️  Warning:")
+        UI._print(msg, UI.YELLOW, "⚠️")
 
     @staticmethod
     def error(msg, details=None):
-        UI._print(msg, UI.BRED, "❌ Error:", file=sys.stderr)
+        UI._print(msg, UI.BRED, "❌", file=sys.stderr)
         if details:
-            print(f"{UI.WHITE}Details:{UI.COLOR_OFF} {details}", file=sys.stderr)
+            print(f"{UI.WHITE}Details:{UI.COLOR_OFF}  {details}", file=sys.stderr)
 
     @staticmethod
     def die(msg, details=None):
@@ -69,8 +99,9 @@ class UI:
     def ask(prompt, default=None):
         prompt = prompt.strip()
         icon = "❓"
+        padding = UI.get_padding(icon)
         try:
-            formatted_prompt = f"{UI.WHITE}{icon} {prompt}"
+            formatted_prompt = f"{UI.WHITE}{icon}{padding}{prompt}"
             if default:
                 formatted_prompt += f" [{UI.GREEN}{default}{UI.WHITE}]: {UI.COLOR_OFF}"
             else:

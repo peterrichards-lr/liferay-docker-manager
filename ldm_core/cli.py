@@ -1,4 +1,5 @@
 import argparse
+import sys
 import warnings
 from ldm_core.ui import UI
 from ldm_core.manager import LiferayManager
@@ -143,11 +144,21 @@ def main():
     )
     subparsers.add_parser("infra-down")
     subparsers.add_parser("clear-cache")
-    subparsers.add_parser("upgrade")
+    upgrade = subparsers.add_parser("upgrade")
+    upgrade.add_argument(
+        "--repair",
+        action="store_true",
+        help="Re-download the current version to fix integrity issues",
+    )
     subparsers.add_parser("update-check")
     doctor = subparsers.add_parser("doctor")
     doctor.add_argument("project", nargs="?")
     doctor.add_argument("-p", "--project", dest="project_flag")
+    doctor.add_argument(
+        "--skip-project",
+        action="store_true",
+        help="Skip project-specific health checks",
+    )
     subparsers.add_parser("list")
     subparsers.add_parser("prune")
 
@@ -267,10 +278,18 @@ def main():
             cmds[args.command]()
         except KeyboardInterrupt:
             print(f"\n{UI.WHITE}Aborted.{UI.COLOR_OFF}")
-            return
+            sys.exit(130)
+        except Exception as e:
+            UI.error("An unexpected error occurred.", e)
+            if "-v" in sys.argv or "--verbose" in sys.argv:
+                import traceback
+
+                traceback.print_exc()
+            sys.exit(1)
 
         # Passive update check (silent, respects cache)
-        if args.command != "update-check":
+        # Suppress if we just ran upgrade or update-check to avoid redundant notifications
+        if args.command not in ["upgrade", "update-check"]:
             latest, url = check_for_updates(VERSION)
             if latest:
                 from ldm_core.utils import version_to_tuple
@@ -279,7 +298,9 @@ def main():
                     print(
                         f"\n{UI.BYELLOW}[!] A new version of LDM is available: v{latest}{UI.COLOR_OFF}"
                     )
-                    print(f"    Download: {UI.CYAN}{url}{UI.COLOR_OFF}\n")
+                    print(
+                        f"    Run {UI.CYAN}ldm upgrade{UI.COLOR_OFF} to install the latest version.\n"
+                    )
     else:
         parser.print_help()
 

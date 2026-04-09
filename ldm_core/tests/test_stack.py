@@ -230,8 +230,16 @@ class TestStackOrchestration(unittest.TestCase):
                     # Verify setup_infrastructure was called with default local settings
                     mock_setup.assert_called_once()
                     args, kwargs = mock_setup.call_args
-                    self.assertEqual(args[0], "127.0.0.1")  # resolved_ip
-                    self.assertEqual(args[1], "443")  # ssl_port
+
+                    import platform
+
+                    expected_ip = (
+                        "0.0.0.0"
+                        if platform.system().lower() == "darwin"
+                        else "127.0.0.1"
+                    )
+                    self.assertEqual(args[0], expected_ip)  # resolved_ip
+                    self.assertEqual(args[1], 443)  # ssl_port (integer)
                     self.assertTrue(kwargs.get("use_ssl"))
 
 
