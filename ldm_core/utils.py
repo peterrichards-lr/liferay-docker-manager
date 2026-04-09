@@ -380,6 +380,16 @@ def safe_extract(archive, target_path):
 
 def get_compose_cmd():
     """Returns the correct base command for Docker Compose (Modern v2 vs Legacy v1)."""
+    system = platform.system().lower()
+    machine = platform.machine().lower()
+
+    # 0. The Intel Exception: On older Intel Macs (Monterey and below),
+    # the v2 plugin is often broken or misidentified. Prefer standalone v1.
+    if system == "darwin" and (machine == "x86_64" or machine == "i386"):
+        legacy_bin = shutil.which("docker-compose")
+        if legacy_bin:
+            return ["docker-compose"]
+
     # 1. Try modern 'docker compose' (v2 plugin)
     docker_bin = shutil.which("docker")
     if docker_bin:
