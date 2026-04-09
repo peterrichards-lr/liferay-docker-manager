@@ -379,14 +379,37 @@ def safe_extract(archive, target_path):
 
 
 def get_docker_socket_path():
+    """Dynamically discovers the active Docker socket path."""
     system = platform.system().lower()
+    if system in ["windows", "win32"]:
+        return "//./pipe/docker_engine"
+
+    # 1. Try to ask Docker for the current context's endpoint
+    try:
+        # We run this silently to avoid chicken-and-egg errors during initialization
+        res = subprocess.run(
+            ["docker", "context", "inspect", "--format", "{{.Endpoints.docker.Host}}"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if res.returncode == 0 and res.stdout.strip():
+            endpoint = res.stdout.strip()
+            # Convert unix:///var/run/docker.sock to /var/run/docker.sock
+            if endpoint.startswith("unix://"):
+                path = endpoint.replace("unix://", "")
+                if os.path.exists(path):
+                    return path
+    except Exception:
+        pass
+
+    # 2. Fallback to common platform defaults
     if system == "darwin":
+        # Docker Desktop for Mac often uses this path even if not in the symlink
         real_socket = get_actual_home() / ".docker/run/docker.sock"
         if real_socket.exists():
             return str(real_socket)
-        return "/var/run/docker.sock"
-    if system in ["windows", "win32"]:
-        return "//./pipe/docker_engine"
+
     return "/var/run/docker.sock"
 
 
