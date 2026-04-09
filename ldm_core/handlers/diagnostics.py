@@ -84,11 +84,21 @@ class DiagnosticsHandler:
         if docker_version:
             results.append(("Docker Engine", f"Running (v{docker_version})", True))
 
-            # 2.0 Docker Context Check
+            # 2.0 Docker Context & Provider Check
             try:
                 context = run_command(["docker", "context", "show"], check=False)
                 if context:
-                    results.append(("Docker Context", context.strip(), True))
+                    context = context.strip()
+                    provider = "Unknown"
+                    if context == "colima":
+                        provider = "Colima"
+                    elif context == "orbstack":
+                        provider = "OrbStack"
+                    elif context in ["default", "desktop-linux"]:
+                        provider = "Docker Desktop"
+
+                    results.append(("Docker Context", context, True))
+                    results.append(("Docker Provider", provider, True))
             except Exception:
                 pass
 
