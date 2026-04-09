@@ -318,7 +318,8 @@ ldm doctor
 Automatically download and install the latest version of LDM for your architecture. Includes integrity verification.
 
 ```bash
-ldm upgrade
+ldm upgrade             # Standard upgrade to latest
+ldm upgrade --repair    # Re-download current version to fix integrity issues
 ```
 
 ### `renew-ssl`

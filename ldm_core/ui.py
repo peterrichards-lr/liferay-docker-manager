@@ -19,7 +19,8 @@ class UI:
         msg = msg.strip()
 
         # Format the output string
-        out = f"{icon} {msg}" if icon else msg
+        # Use two spaces after icons for better visual separation
+        out = f"{icon}  {msg}" if icon else msg
         if color:
             out = f"{color}{out}{UI.COLOR_OFF}"
 
@@ -42,13 +43,13 @@ class UI:
 
     @staticmethod
     def warning(msg):
-        UI._print(msg, UI.YELLOW, "⚠️  Warning:")
+        UI._print(msg, UI.YELLOW, "⚠️")
 
     @staticmethod
     def error(msg, details=None):
-        UI._print(msg, UI.BRED, "❌ Error:", file=sys.stderr)
+        UI._print(msg, UI.BRED, "❌", file=sys.stderr)
         if details:
-            print(f"{UI.WHITE}Details:{UI.COLOR_OFF} {details}", file=sys.stderr)
+            print(f"{UI.WHITE}Details:{UI.COLOR_OFF}  {details}", file=sys.stderr)
 
     @staticmethod
     def die(msg, details=None):
@@ -70,7 +71,8 @@ class UI:
         prompt = prompt.strip()
         icon = "❓"
         try:
-            formatted_prompt = f"{UI.WHITE}{icon} {prompt}"
+            # Standardized two-space icon padding
+            formatted_prompt = f"{UI.WHITE}{icon}  {prompt}"
             if default:
                 formatted_prompt += f" [{UI.GREEN}{default}{UI.WHITE}]: {UI.COLOR_OFF}"
             else:

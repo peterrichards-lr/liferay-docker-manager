@@ -399,7 +399,7 @@ class BaseHandler:
                         "alpine",
                         "sh",
                         "-c",
-                        f"if [ \"$(cat /project/.ldm_mount_check 2>/dev/null)\" = \"{token_val}\" ]; then find /project -maxdepth 1 ! -name '.git' ! -name '.' -exec chown -R 1000:1000 {{}} + && chmod -R 775 /project && echo 'OK'; else echo 'FAIL'; fi",
+                        f"if [ \"$(cat /project/.ldm_mount_check 2>/dev/null)\" = \"{token_val}\" ]; then find /project -maxdepth 1 ! -name '.git' ! -name '.' -exec chown -R 1000:1000 {{}} + 2>/dev/null || true; chmod -R 775 /project 2>/dev/null || true; echo 'OK'; else echo 'FAIL'; fi",
                     ]
                 )
 

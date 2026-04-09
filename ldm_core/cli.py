@@ -143,7 +143,12 @@ def main():
     )
     subparsers.add_parser("infra-down")
     subparsers.add_parser("clear-cache")
-    subparsers.add_parser("upgrade")
+    upgrade = subparsers.add_parser("upgrade")
+    upgrade.add_argument(
+        "--repair",
+        action="store_true",
+        help="Re-download the current version to fix integrity issues",
+    )
     subparsers.add_parser("update-check")
     doctor = subparsers.add_parser("doctor")
     doctor.add_argument("project", nargs="?")

@@ -64,6 +64,7 @@ We test the LDM against the four "Pillars of Demo Success" to guarantee it works
 | **1.2 DNS Alignment** | Point host to wrong IP | `ldm doctor` warns if hostname doesn't match Traefik's bound IP. |
 | **1.3 Infra Setup** | `ldm infra-setup --search` | Starts Traefik (on 0.0.0.0) and ES8 sidecar. Idempotent. |
 | **1.4 Cache Logic** | `ldm clear-cache` | Successfully removes `~/.liferay_docker_cache.json`. |
+| **1.5 Self-Repair** | `ldm upgrade --repair` | Successfully re-downloads and verifies the current version. |
 
 ### Phase 2: Developer Workflow
 

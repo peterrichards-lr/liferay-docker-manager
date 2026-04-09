@@ -49,6 +49,7 @@ While the v1.x "Hardened Edition" focused on cross-platform stability, **v2.0.0*
 - **Standardized Project Discovery**: Implemented a consistent 4-step discovery priority (Arg > Flag > CWD > Interactive Selector) across all commands.
 - **Multi-Instance Traefik Isolation**: Implemented project-specific namespacing and SNI-based routing to prevent collisions between parallel environments.
 - **Universal Socket & Provider Detection**: Added support for Colima, OrbStack, WSL2, and native Linux by dynamically detecting and using the active Docker socket path.
+- **Secure Self-Management**: Implemented `ldm upgrade` with SHA-256 integrity verification and `--repair` mode for fixing tampered binaries.
 - **Visible Infrastructure Store**: Centralized SSL certificates and routing configs in a non-hidden host directory (`~/liferay-docker-certs`) for cross-provider reliability.
 
 ### **Orchestration & Workflow**

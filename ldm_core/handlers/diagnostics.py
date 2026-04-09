@@ -46,19 +46,48 @@ class DiagnosticsHandler:
     def cmd_upgrade(self):
         """Self-upgrade the LDM binary to the latest version."""
         UI.heading("LDM Self-Upgrade")
+        is_repair = getattr(self.args, "repair", False)
 
         # 1. Check for updates
         latest, url = check_for_updates(VERSION, force=True)
-        if not latest or version_to_tuple(latest) <= version_to_tuple(VERSION):
+
+        # In repair mode, if we are already latest, we use the current VERSION as target
+        if is_repair and (
+            not latest or version_to_tuple(latest) <= version_to_tuple(VERSION)
+        ):
+            latest = VERSION
+            # Fetch URL for current version if latest check didn't provide one
+            if not url:
+                # Construct official asset URL for current version
+                system = platform.system().lower()
+                target_asset = "ldm-linux"
+                if system == "darwin":
+                    target_asset = "ldm-macos"
+                elif system in ["win32", "windows"]:
+                    target_asset = "ldm-windows.exe"
+                url = f"https://github.com/peterrichards-lr/liferay-docker-manager/releases/download/v{VERSION}/{target_asset}"
+
+        if not latest or (
+            version_to_tuple(latest) <= version_to_tuple(VERSION) and not is_repair
+        ):
             UI.success(f"LDM is already up to date (v{VERSION}).")
             return
 
-        UI.info(f"New version found: v{latest}")
+        if is_repair:
+            UI.info(f"Repairing current version: v{latest}")
+        else:
+            UI.info(f"New version found: v{latest}")
+
         if not url or not url.startswith("http"):
             UI.die("Download URL not found for your architecture.")
 
-        if not UI.ask(f"Upgrade from v{VERSION} to v{latest}?", "Y").upper() == "Y":
-            UI.info("Upgrade aborted.")
+        prompt = (
+            f"Repair v{latest}?"
+            if is_repair
+            else f"Upgrade from v{VERSION} to v{latest}?"
+        )
+        if not UI.ask(prompt, "Y").upper() == "Y":
+            UI.info("Operation aborted.")
             return
 
         # 2. Preparation
