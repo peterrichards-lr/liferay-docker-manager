@@ -25,6 +25,7 @@ from ldm_core.utils import (
     dict_to_yaml,
     discover_latest_tag,
     get_docker_socket_path,
+    get_compose_cmd,
 )
 
 
@@ -1061,7 +1062,7 @@ class StackHandler:
                 service = k.replace("scale_", "")
                 scale_args.extend(["--scale", f"{service}={v}"])
 
-        cmd = ["docker", "compose", "up", "-d"] + scale_args
+        cmd = get_compose_cmd() + ["up", "-d"] + scale_args
         if rebuild:
             cmd.append("--build")
 
@@ -1091,7 +1092,7 @@ class StackHandler:
 
         if follow:
             run_command(
-                ["docker", "compose", "logs", "-f"],
+                get_compose_cmd() + ["logs", "-f"],
                 capture_output=False,
                 cwd=str(paths["root"]),
             )
@@ -1432,7 +1433,7 @@ class StackHandler:
 
         if service:
             UI.heading(f"Deploying service '{service}' to {meta.get('container_name')}")
-            cmd = ["docker", "compose", "up", "-d"]
+            cmd = get_compose_cmd() + ["up", "-d"]
             if getattr(self.args, "rebuild", False):
                 cmd.append("--build")
             cmd.append(service)
@@ -1456,7 +1457,7 @@ class StackHandler:
             if not self.require_compose(root):
                 return
             run_command(
-                ["docker", "compose", "restart", service],
+                get_compose_cmd() + ["restart", service],
                 capture_output=False,
                 cwd=str(root),
             )
@@ -1471,7 +1472,7 @@ class StackHandler:
         if not root or not self.require_compose(root, silent=True):
             return
 
-        cmd = ["docker", "compose", "stop", "-t", "60"]
+        cmd = get_compose_cmd() + ["stop", "-t", "60"]
         if service:
             UI.info(f"Stopping service '{service}' in {root.name}...")
             cmd.append(service)
@@ -1494,7 +1495,7 @@ class StackHandler:
             if not self.require_compose(root):
                 return
 
-            cmd = ["docker", "compose", "rm", "-fs"]
+            cmd = get_compose_cmd() + ["rm", "-fs"]
             if getattr(self.args, "volumes", False):
                 cmd.append("-v")
             cmd.append(service)
@@ -1502,7 +1503,7 @@ class StackHandler:
         else:
             if self.require_compose(root, silent=True):
                 self.cmd_stop(str(root))
-                cmd = ["docker", "compose", "down"]
+                cmd = get_compose_cmd() + ["down"]
                 if getattr(self.args, "volumes", False):
                     cmd.append("-v")
                 run_command(cmd, capture_output=False, cwd=str(root))
@@ -1562,7 +1563,7 @@ class StackHandler:
         root = self.detect_project_path(project_id)
         if not root:
             return
-        cmd = ["docker", "compose", "logs", "-f"]
+        cmd = get_compose_cmd() + ["logs", "-f"]
         if service:
             cmd.append(service)
         try:

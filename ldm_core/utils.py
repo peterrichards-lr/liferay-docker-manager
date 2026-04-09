@@ -378,6 +378,32 @@ def safe_extract(archive, target_path):
         archive.extractall(target_path)
 
 
+def get_compose_cmd():
+    """Returns the correct base command for Docker Compose (Modern v2 vs Legacy v1)."""
+    # 1. Try modern 'docker compose' (v2 plugin)
+    docker_bin = shutil.which("docker")
+    if docker_bin:
+        try:
+            res = subprocess.run(
+                [docker_bin, "compose", "version"],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            if res.returncode == 0:
+                return ["docker", "compose"]
+        except Exception:
+            pass
+
+    # 2. Fallback to legacy 'docker-compose' (v1 standalone)
+    legacy_bin = shutil.which("docker-compose")
+    if legacy_bin:
+        return ["docker-compose"]
+
+    # Final default (will trigger standard 'command not found' if both missing)
+    return ["docker", "compose"]
+
+
 def get_docker_socket_path():
     """Dynamically discovers the active Docker socket path."""
     system = platform.system().lower()
@@ -409,6 +435,10 @@ def get_docker_socket_path():
         real_socket = get_actual_home() / ".docker/run/docker.sock"
         if real_socket.exists():
             return str(real_socket)
+
+    # Check for modern Linux socket path
+    if os.path.exists("/run/docker.sock"):
+        return "/run/docker.sock"
 
     return "/var/run/docker.sock"
 

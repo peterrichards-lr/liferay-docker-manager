@@ -154,6 +154,9 @@ This repository contains automation tools for managing Liferay DXP instances usi
 
 ### Current State (April 9, 2026)
 
+- **Version 1.5.8 Hardened Edition Conclusion**: COMPLETED. Finalized all cross-platform stability fixes and expanded the verified compatibility matrix.
+- **Compose Robustness**: FIXED. Implemented "Modern-then-Legacy" Docker Compose discovery to support both v2 plugins and v1 standalone binaries.
+- **Startup UX**: IMPROVED. Increased startup timeout to 15 minutes and added periodic 'ldm logs' reminders during the wait phase.
 - **Version 1.5.7 Release Hardening**: COMPLETED. Fixed a `TypeError` in `cmd_infra_setup` and finalized Docker provider detection logic.
 - **Provider Detection**: FIXED. Hardened provider discovery to correctly identify Colima, OrbStack, and Windows Docker Desktop by inspecting actual socket paths.
 - **Version 1.5.6 WSL Refinement**: COMPLETED. Fixed "UNC path" warnings when launching the browser from WSL.

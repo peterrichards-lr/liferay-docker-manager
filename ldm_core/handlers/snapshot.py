@@ -9,7 +9,7 @@ from pathlib import Path
 from datetime import datetime
 from ldm_core.ui import UI
 from ldm_core.constants import PROJECT_META_FILE, META_VERSION
-from ldm_core.utils import run_command
+from ldm_core.utils import run_command, get_compose_cmd
 
 
 class SnapshotHandler:
@@ -121,7 +121,7 @@ class SnapshotHandler:
 
                 UI.info(f"Starting database container: {db_container}...")
                 run_command(
-                    ["docker", "compose", "up", "-d", "db"],
+                    get_compose_cmd() + ["up", "-d", "db"],
                     cwd=str(paths["root"]),
                 )
 
@@ -308,7 +308,7 @@ class SnapshotHandler:
                 and UI.ask("Stop stack during backup?", "Y").upper() == "Y"
             ):
                 run_command(
-                    ["docker", "compose", "stop"], check=True, cwd=str(paths["root"])
+                    get_compose_cmd() + ["stop"], check=True, cwd=str(paths["root"])
                 )
                 time.sleep(2)
 
@@ -422,7 +422,7 @@ class SnapshotHandler:
         ].name.replace(".", "-")
         if run_command(["docker", "ps", "-q", "-f", f"name=^{container_name}$"]):
             run_command(
-                ["docker", "compose", "stop"], check=True, cwd=str(paths["root"])
+                get_compose_cmd() + ["stop"], check=True, cwd=str(paths["root"])
             )
             time.sleep(2)
 

@@ -144,6 +144,16 @@ class DiagnosticsHandler:
                     results.append(("Docker Provider", provider, True))
             except Exception:
                 pass
+
+            # 2.0.1 Docker Compose Check
+            from ldm_core.utils import get_compose_cmd
+
+            compose_cmd = get_compose_cmd()
+            compose_label = (
+                "v2 (Plugin)" if "compose" in compose_cmd else "v1 (Standalone)"
+            )
+            results.append(("Docker Compose", compose_label, True))
+
             # 2.1 Docker Credentials Check
             try:
                 docker_config_path = get_actual_home() / ".docker" / "config.json"
