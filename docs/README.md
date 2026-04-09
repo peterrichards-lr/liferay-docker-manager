@@ -30,10 +30,12 @@ The badges below represent our verified support for various Docker providers. En
 | :--- | :--- | :--- | :--- | :--- |
 | **Apple Silicon** | macOS 14+ | **OrbStack** | ![OrbStack](https://img.shields.io/badge/OrbStack-Hardened-00B0FF?style=flat-square&logo=apple) | ✅ |
 | **Apple Silicon** | macOS 14+ | **Docker Desktop** | ![DockerDesktop](https://img.shields.io/badge/Docker_Desktop-Hardened-00C853?style=flat-square&logo=apple) | ✅ |
-| **Apple Intel/M** | macOS 13+ | **Colima** | ![Colima](https://img.shields.io/badge/Colima-Hardened-FFAB00?style=flat-square&logo=apple) | ✅ |
+| **Apple Silicon** | macOS 14+ | **Colima** | ![Colima](https://img.shields.io/badge/Colima-Hardened-FFAB00?style=flat-square&logo=apple) | ✅ |
+| **Apple Intel** | macOS 13+ | **Colima** | ![Colima](https://img.shields.io/badge/Colima-Hardened-FFAB00?style=flat-square&logo=apple) | ⏳ Pending |
 | **Windows PC** | Windows 11 | **Native WSL2** | ![WSL2](https://img.shields.io/badge/WSL2-Hardened-blue?style=flat-square&logo=windows) | ✅ |
 | **Windows PC** | Windows 11 | **Docker Desktop** | ![DockerDesktop](https://img.shields.io/badge/Docker_Desktop-Hardened-00C853?style=flat-square&logo=windows) | ✅ |
 | **Linux Workstation** | Fedora 43 | **Native Docker** | ![Fedora](https://img.shields.io/badge/Fedora-Hardened-success?style=flat-square&logo=linux) | ✅ |
+| **Linux Node** | Ubuntu 22.04 | **Docker Engine** | ![Linux](https://img.shields.io/badge/Linux-Native-success?style=flat-square&logo=linux) | ✅ |
 <!-- COMPATIBILITY_END -->
 
 ---
@@ -221,29 +223,40 @@ ldm restore demo --index 1 # Restore to index 1
 
 ### `shell` & `gogo`
 
-...
+Jump into a container shell for deep inspection or connect to the OSGi Gogo console for runtime management.
 
-### `prune`, `clear-cache`
-
-Identify and remove orphaned resources and maintenance.
-
-```bash
-ldm prune                 # Remove orphaned containers, snapshots, and temp files
-ldm infra-down            # Tear down global proxy and search services
-ldm clear-cache           # Clear the Docker tag cache (~/.liferay_docker_cache.json)
-```
-
-Jump into a container shell or connect to the OSGi Gogo console.
+**Interactive Shell Examples:**
 
 ```bash
 # Enter bash in the Liferay container
 ldm shell demo
 
-# Enter bash in an extension container
-ldm shell demo my-node-service
+# Common Shell Tasks (inside container):
+# 1. View live Tomcat logs
+cd tomcat/logs && tail -f catalina.out
 
-# Connect to the Gogo shell (if port was exposed during run)
+# 2. Check injected environment variables
+env | grep LIFERAY
+
+# 3. Verify mounted OSGi configurations
+ls osgi/configs
+```
+
+**Gogo Shell Examples:**
+
+```bash
+# Connect to the Gogo shell (requires --gogo-port during run)
 ldm gogo demo
+
+# Common Gogo Commands:
+# 1. List all active bundles
+lb
+
+# 2. Check for unresolved dependencies
+diag
+
+# 3. List declarative services (SCR)
+scr:list
 ```
 
 ### `env`
@@ -298,6 +311,16 @@ Verify host environment health, Docker resources (CPUs/Memory), and project depe
 
 ```bash
 ldm doctor
+```
+
+### `renew-ssl`
+
+Refresh project-specific SSL certificates immediately.
+
+```bash
+ldm renew-ssl           # Interactive selector
+ldm renew-ssl demo      # Renew for 'demo' specifically
+ldm renew-ssl --all     # Renew certificates for every project
 ```
 
 ### `init-common`

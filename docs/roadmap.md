@@ -7,24 +7,41 @@ This document outlines potential enhancements to the Liferay Docker Manager (ldm
 
 ---
 
-## 🚀 Potential Next Steps
+## 🚀 Future Roadmap: v2.0.0 (The Ecosystem Phase)
 
-As the core orchestration and isolation pillars are now robustly implemented, future efforts could focus on:
+While the v1.x "Hardened Edition" focused on cross-platform stability, **v2.0.0** will shift focus toward developer onboarding and "Scenario-First" orchestration.
 
-### 1. Enhanced Cloud Synchronization
+### 1. Guided Onboarding & Scaffolding
 
-**Objective**: Deepen the integration with Liferay Cloud environments.
+- **Interactive Scaffolding**: Implement `ldm init` with guided templates for common use cases (e.g., "Commerce Demo," "Headless React Integration").
+- **Documentation Injection**: Automatically generate `README.md` and `setup.md` within new projects to onboard team members to that specific project's capabilities.
 
-- **Automated Fetch**: Implement `ldm cloud-fetch` to pull logs or metadata directly from an LCP project via CLI.
-- **Environment Parity**: Add validation to ensure local `LCP.json` resource limits closely match the target Cloud environment.
+### 2. CLI Simplification (Namespacing)
 
-### 2. Multi-Site Isolation
+- **Namespace Grouping**: Transition from flat commands to grouped namespaces to reduce cognitive load.
+  - `ldm system renew-ssl` / `ldm system prune`
+  - `ldm infra setup` / `ldm infra down`
+- **Legacy Compatibility**: Maintain flat aliases for 1.x power users.
 
-**Objective**: Enhance multi-site isolation for local testing.
+### 3. Visual Health Dashboard
+
+- **Local Monitoring UI**: A lightweight, read-only dashboard accessible via `http://localhost:19000` to visualize:
+  - Container health using real-time SVG status indicators.
+  - Route mapping and SSL expiry countdowns.
+  - Quick-access logs for each extension.
+
+### 4. High-Velocity Boot (Pre-Seeded DBs)
+
+- **Database "Fast-Forward"**: Support for downloading pre-initialized, empty database volumes.
+- **Objective**: Reduce the "First Run" wait time from 15 minutes to under 2 minutes by bypassing the initial Liferay schema generation.
+
+### 5. Shared Scenario Packs
+
+- **Portable Scenarios**: A formal specification for bundling a Snapshot + Client Extensions + LCP Metadata into a single "Pack" for easy distribution across Sales Engineering teams.
 
 ---
 
-## ✅ Completed Improvements
+## ✅ Completed Improvements (v1.5.x)
 
 ### **Infrastructure & Core**
 

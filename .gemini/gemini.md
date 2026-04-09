@@ -70,9 +70,10 @@ This repository contains automation tools for managing Liferay DXP instances usi
 - **Database Support**: Maintain support for Hypersonic (default), PostgreSQL, and MySQL.
 - **Commit Standards**: Every commit MUST follow these steps to ensure CI/CD success and maintainable project state:
   1. **Update Context**: Update `.gemini/gemini.md` with any new architectural decisions, state changes, or "hardened" logic discovered.
-  2. **Linting**: Run `./lint.sh` and resolve all errors (Ruff, Markdownlint, shfmt) before staging.
-  3. **Testing**: Run `export PYTHONPATH=$PYTHONPATH:. && pytest` to ensure no regressions in orchestration logic.
-  4. **Atomic Commits**: Stage related changes together. Prefer descriptive commit messages that explain the "Why" and "How" of the change.
+  2. **Documentation Stewardship**: All documentation (README, TESTING, etc.) MUST be reviewed against the changes in each commit and updated accordingly to ensure the project state remains 100% accurate. These updates must be included within the same commit as the code changes.
+  3. **Linting**: Run `./lint.sh` and resolve all errors (Ruff, Markdownlint, shfmt) before staging.
+  4. **Testing**: Run `export PYTHONPATH=$PYTHONPATH:. && pytest` to ensure no regressions in orchestration logic.
+  5. **Atomic Commits**: Stage related changes together. Prefer descriptive commit messages that explain the "Why" and "How" of the change.
 
 ## Engineering Standards
 
@@ -154,6 +155,8 @@ This repository contains automation tools for managing Liferay DXP instances usi
 
 ### Current State (April 9, 2026)
 
+- **Version 1.5.9 SSL Management**: COMPLETED. Added `ldm renew-ssl` to allow one-click/one-command refreshing of project-specific SSL certificates.
+- **Hygiene & Metadata**: FIXED. Automated the cleanup of certificates during project teardown and implemented explicit certificate tracking in metadata.
 - **Version 1.5.8 Hardened Edition Conclusion**: COMPLETED. Finalized all cross-platform stability fixes and expanded the verified compatibility matrix.
 - **Compose Robustness**: FIXED. Implemented "Modern-then-Legacy" Docker Compose discovery to support both v2 plugins and v1 standalone binaries.
 - **Startup UX**: IMPROVED. Increased startup timeout to 15 minutes and added periodic 'ldm logs' reminders during the wait phase.

@@ -9,10 +9,12 @@ To ensure that the Liferay Docker Manager (LDM) remains "Industrial-Grade," it i
 | :--- | :--- | :--- | :--- | :--- |
 | **Apple Silicon** | macOS 14+ | **OrbStack** | ![OrbStack](https://img.shields.io/badge/OrbStack-Hardened-00B0FF?style=flat-square&logo=apple) | ✅ |
 | **Apple Silicon** | macOS 14+ | **Docker Desktop** | ![DockerDesktop](https://img.shields.io/badge/Docker_Desktop-Hardened-00C853?style=flat-square&logo=apple) | ✅ |
-| **Apple Intel/M** | macOS 13+ | **Colima** | ![Colima](https://img.shields.io/badge/Colima-Hardened-FFAB00?style=flat-square&logo=apple) | ✅ |
+| **Apple Silicon** | macOS 14+ | **Colima** | ![Colima](https://img.shields.io/badge/Colima-Hardened-FFAB00?style=flat-square&logo=apple) | ✅ |
+| **Apple Intel** | macOS 13+ | **Colima** | ![Colima](https://img.shields.io/badge/Colima-Hardened-FFAB00?style=flat-square&logo=apple) | ⏳ Pending |
 | **Windows PC** | Windows 11 | **Native WSL2** | ![WSL2](https://img.shields.io/badge/WSL2-Hardened-blue?style=flat-square&logo=windows) | ✅ |
 | **Windows PC** | Windows 11 | **Docker Desktop** | ![DockerDesktop](https://img.shields.io/badge/Docker_Desktop-Hardened-00C853?style=flat-square&logo=windows) | ✅ |
 | **Linux Workstation** | Fedora 43 | **Native Docker** | ![Fedora](https://img.shields.io/badge/Fedora-Hardened-success?style=flat-square&logo=linux) | ✅ |
+| **Linux Node** | Ubuntu 22.04 | **Docker Engine** | ![Linux](https://img.shields.io/badge/Linux-Native-success?style=flat-square&logo=linux) | ✅ |
 <!-- COMPATIBILITY_END -->
 
 ### Reference Hardware & Lab Specs
@@ -51,7 +53,7 @@ We test the LDM against the four "Pillars of Demo Success" to guarantee it works
 
 ---
 
-## 📋 Functional Validation Checklist (v1.5.8)
+## 📋 Functional Validation Checklist (v1.5.9)
 
 ### Phase 1: Environment & Diagnostics
 
@@ -83,6 +85,15 @@ We test the LDM against the four "Pillars of Demo Success" to guarantee it works
 | :--- | :--- | :--- |
 | **4.1 SSL Hygiene** | Run `ldm down` | Correctly removes the certificates referenced in the project metadata (`ssl_cert`) and the matching Traefik YAML. |
 | **4.2 Prune Logic** | `ldm prune` | Safely identifies and removes orphaned containers and search snapshots without affecting active projects. |
+
+### Phase 5: Liferay Runtime Diagnostics
+
+| Test Case | Steps | Expected Outcome |
+| :--- | :--- | :--- |
+| **5.1 Container Shell** | `ldm shell [project]` | Opens an interactive bash session inside the Liferay DXP container. |
+| **5.2 Gogo Console** | `ldm gogo [project]` | Opens an interactive Telnet session to the OSGi Gogo shell (if port exposed). |
+| **5.3 Dynamic Logging** | `ldm log-level --level DEBUG` | Hot-reloads Log4j 2 categories without project restart. |
+| **5.4 SSL Renewal** | `ldm renew-ssl` | Surgically replaces existing project certificates and YAML with fresh 2-year versions. |
 
 ---
 

@@ -147,6 +147,62 @@ class StackHandler:
         os.chmod(config_path, 0o644)
         return True
 
+    def cmd_renew_ssl(self, project_id=None):
+        """Renew SSL certificates for one or all projects."""
+        targets = []
+        if getattr(self.args, "all", False):
+            roots = self.find_dxp_roots()
+            for r in roots:
+                meta = self.read_meta(r["path"] / PROJECT_META_FILE)
+                if str(meta.get("ssl", "false")).lower() == "true":
+                    targets.append({"path": r["path"], "meta": meta})
+        else:
+            root = self.detect_project_path(project_id)
+            if root:
+                meta = self.read_meta(root / PROJECT_META_FILE)
+                if str(meta.get("ssl", "false")).lower() == "true":
+                    targets.append({"path": root, "meta": meta})
+                else:
+                    UI.die(f"Project '{root.name}' is not configured for SSL.")
+
+        if not targets:
+            UI.info("No projects found requiring SSL renewal.")
+            return
+
+        UI.heading(f"Renewing SSL for {len(targets)} project(s)")
+
+        actual_home = get_actual_home()
+        cert_dir = actual_home / "liferay-docker-certs"
+
+        for t in targets:
+            host_name = t["meta"].get("host_name")
+            ssl_cert = t["meta"].get("ssl_cert")
+
+            if not host_name:
+                continue
+
+            UI.info(f"  + Renewing: {host_name}...")
+
+            # Use explicit reference from meta if possible
+            cert_base = ssl_cert.replace(".pem", "") if ssl_cert else host_name
+
+            # Surgical deletion to force mkcert to regenerate
+            files = [
+                cert_dir / f"{cert_base}.pem",
+                cert_dir / f"{cert_base}-key.pem",
+                cert_dir / f"traefik-{host_name}.yml",
+            ]
+            for f in files:
+                if f.exists():
+                    f.unlink()
+
+            # Trigger regeneration
+            self.setup_ssl(cert_dir, host_name)
+
+        UI.success(
+            "SSL renewal complete. Changes will be detected by Traefik automatically."
+        )
+
     def get_docker_socket_params(self):
         path = get_docker_socket_path()
         system = platform.system().lower()

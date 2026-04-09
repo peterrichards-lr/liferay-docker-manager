@@ -131,6 +131,13 @@ def main():
 
     # Simple Commands
     subparsers.add_parser("init-common")
+    renew_ssl = subparsers.add_parser("renew-ssl")
+    renew_ssl.add_argument("project", nargs="?")
+    renew_ssl.add_argument("-p", "--project", dest="project_flag")
+    renew_ssl.add_argument(
+        "--all", action="store_true", help="Renew SSL for all projects"
+    )
+
     infra_setup = subparsers.add_parser("infra-setup")
     infra_setup.add_argument(
         "--search",
@@ -235,6 +242,7 @@ def main():
         "snapshot": lambda: manager.cmd_snapshot(project_id),
         "restore": lambda: manager.cmd_restore(project_id),
         "init-common": lambda: manager.cmd_init_common(),
+        "renew-ssl": lambda: manager.cmd_renew_ssl(project_id),
         "infra-setup": lambda: manager.cmd_infra_setup(),
         "infra-down": lambda: manager.cmd_infra_down(),
         "clear-cache": lambda: manager.cmd_clear_cache(),
