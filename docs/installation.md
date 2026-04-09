@@ -93,14 +93,16 @@ cd liferay-docker-manager
 **Using [Homebrew](https://brew.sh/):**
 
 ```bash
-brew install mkcert nss openssl
+# Install Docker CLI and SSL tools
+brew install docker docker-compose mkcert nss openssl
 mkcert -install
 ```
 
 **Using [MacPorts](https://www.macports.org/):**
 
 ```bash
-sudo port install mkcert nss openssl
+# Install Docker CLI and SSL tools
+sudo port install docker docker-compose mkcert nss openssl
 mkcert -install
 ```
 
@@ -221,7 +223,8 @@ If you are running on an older Intel Mac (e.g. Early 2015 with 8GB RAM), use the
 
 ```bash
 # Optimized for Dual-Core Intel (8GB RAM)
-colima start --cpus 2 --memory 6 --mount-type virtiofs --mount /Users/$(whoami):w
+# Note: uses sshfs as virtiofs requires macOS 14+ on Intel
+colima start --cpus 2 --memory 6 --mount-type sshfs --mount /Users/$(whoami):w
 ```
 
 ### 3. The "Ghost Mount" Issue
