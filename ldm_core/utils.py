@@ -134,39 +134,10 @@ def run_command(cmd, shell=False, capture_output=True, check=True, env=None, cwd
 
     env["DOCKER_CLI_HINTS"] = "false"
 
-    # UNIVERSAL SHIELD: On macOS Intel (x86_64), we often face modern context
-    # parsing failures (http+docker error) in legacy system libraries.
-    # We apply this shield to ALL docker and docker-compose commands.
-    system = platform.system().lower()
-    machine = platform.machine().lower()
-    is_intel_mac = system == "darwin" and ("x86" in machine or "i386" in machine)
-
-    cmd_str_0 = str(cmd[0]).lower() if isinstance(cmd, list) and len(cmd) > 0 else ""
-    is_docker_cmd = "docker" in cmd_str_0
-
-    if is_intel_mac and is_docker_cmd:
-        # Force absolute isolation from modern contexts
-        env["COMPOSE_PARAMIKO_SSH"] = "0"
-        env["DOCKER_CONTEXT"] = ""
-
-        # Resolve raw socket path
-        socket_path = get_docker_socket_path()
-        if socket_path and not str(socket_path).startswith("http"):
-            clean_path = str(socket_path).replace("unix://", "")
-            # Force raw unix path for both env and flag
-            env["DOCKER_HOST"] = f"unix://{clean_path}"
-
-            # Inject -H flag into list-based commands for maximum aggression
-            if isinstance(cmd, list) and "-H" not in cmd and "--host" not in cmd:
-                # Insert right after binary name
-                cmd.insert(1, "-H")
-                cmd.insert(2, f"unix://{clean_path}")
-        else:
-            env["DOCKER_HOST"] = "unix:///var/run/docker.sock"
-
-        # Force a stable legacy API version
-        if "DOCKER_API_VERSION" not in env:
-            env["DOCKER_API_VERSION"] = "1.39"
+    # Hardening: Standardize on a modern API version for newer Docker engines (v29+)
+    # while suppressing CLI hints for clean automation output.
+    if "DOCKER_API_VERSION" not in env:
+        env["DOCKER_API_VERSION"] = "1.44"
 
     # Hardening: Sanitize if shell is enabled
     if shell:
