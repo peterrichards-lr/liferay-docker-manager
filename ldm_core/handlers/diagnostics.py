@@ -307,8 +307,21 @@ del "%~f0"
                     mem_bytes = info.get("MemTotal", 0)
                     mem_gb = mem_bytes / (1024**3)
 
-                    results.append(("Docker CPUs", f"{cpus} Cores", cpus >= 4))
-                    results.append(("Docker Memory", f"{mem_gb:.1f} GB", mem_gb >= 7.5))
+                    # CPU Check: 4 is recommended, 2 is warning, <2 is error
+                    if cpus >= 4:
+                        results.append(("Docker CPUs", f"{cpus} Cores", True))
+                    elif cpus >= 2:
+                        results.append(("Docker CPUs", f"{cpus} Cores", "warn"))
+                    else:
+                        results.append(("Docker CPUs", f"{cpus} Cores", False))
+
+                    # Memory Check: 8GB is recommended, 4GB is warning, <4GB is error
+                    if mem_gb >= 7.5:
+                        results.append(("Docker Memory", f"{mem_gb:.1f} GB", True))
+                    elif mem_gb >= 3.8:
+                        results.append(("Docker Memory", f"{mem_gb:.1f} GB", "warn"))
+                    else:
+                        results.append(("Docker Memory", f"{mem_gb:.1f} GB", False))
                 except Exception:
                     pass
         else:
