@@ -51,9 +51,9 @@ Every artifact imported from a workspace MUST follow this atomic 3-step sequence
 
 ## Current State (April 9, 2026)
 
-- **Version 1.6.7 Total Isolation Release**: COMPLETED. Definitively resolved legacy Docker Compose URI scheme crashes on Intel Macs by forcing `DOCKER_CONTEXT=default` and raw Unix sockets.
+- **Version 1.6.8 Nuclear Isolation Release**: COMPLETED. Definitively resolved legacy Docker Compose URI scheme crashes on Intel Macs by forcing an empty `DOCKER_CONTEXT` and raw Unix sockets.
+- **Version 1.6.7 Total Isolation Release**: COMPLETED. Refined legacy shield logic to isolate standalone binaries from modern Docker contexts.
 - **Version 1.6.6 Automation & Integrity Release**: COMPLETED. Implemented Fail-Fast discovery, comprehensive non-interactive support, pipeline-ready exit codes, and strict environment uniqueness.
-- **Version 1.6.5 Roadmap Completion**: COMPLETED. Added 'AI-Assisted Orchestration' to the v2.0.0 roadmap to leverage Gemini for real-time CLI troubleshooting.
 
 ## Hardening History (Version Log)
 

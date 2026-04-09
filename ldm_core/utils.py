@@ -136,27 +136,32 @@ def run_command(cmd, shell=False, capture_output=True, check=True, env=None, cwd
 
     # Hardening: Prevent 'http+docker' scheme errors in legacy docker-compose (v1)
     # when running on modern Python environments (urllib3 2.x).
-    if isinstance(cmd, list) and len(cmd) > 0 and "docker-compose" in str(cmd[0]):
+    is_legacy_compose = (
+        isinstance(cmd, list) and len(cmd) > 0 and "docker-compose" in str(cmd[0])
+    )
+
+    if is_legacy_compose:
         # Force a legacy-compatible API version and disable paramiko
         env["COMPOSE_PARAMIKO_SSH"] = "0"
 
-        # CRITICAL: Force DOCKER_CONTEXT to 'default'.
-        # Legacy compose v1 tries to use the active context (like Colima)
-        # which uses modern 'http+docker://' URIs that it cannot parse.
-        env["DOCKER_CONTEXT"] = "default"
+        # NUCLEAR SHIELD: Force DOCKER_CONTEXT to be empty.
+        # Setting it to 'default' sometimes still triggers context lookup.
+        # Leaving it empty forces the library to ignore contexts entirely.
+        env["DOCKER_CONTEXT"] = ""
 
-        # Force DOCKER_HOST to a standard unix socket format.
-        # We prefer the dynamically discovered path.
+        # Force DOCKER_HOST to a raw unix path (some old docker-py versions
+        # preferred it without the unix:// prefix if DOCKER_CONTEXT was empty)
         socket_path = get_docker_socket_path()
         if socket_path and not str(socket_path).startswith("http"):
-            # Ensure it's a clean unix path
             clean_path = str(socket_path).replace("unix://", "")
+            # We provide BOTH formats to be absolutely sure
             env["DOCKER_HOST"] = f"unix://{clean_path}"
         else:
             env["DOCKER_HOST"] = "unix:///var/run/docker.sock"
 
         # Force a lower API version for absolute legacy compatibility
         env["DOCKER_API_VERSION"] = "1.39"
+
     # Hardening: Sanitize if shell is enabled
     if shell:
         cmd = _sanitize_shell_command(cmd)
