@@ -385,7 +385,7 @@ def get_compose_cmd():
 
     # 0. The Intel Exception: On older Intel Macs (Monterey and below),
     # the v2 plugin is often broken or misidentified. Prefer standalone v1.
-    if system == "darwin" and (machine == "x86_64" or machine == "i386"):
+    if system == "darwin" and ("x86" in machine or "i386" in machine):
         legacy_bin = shutil.which("docker-compose")
         if legacy_bin:
             return ["docker-compose"]
@@ -412,8 +412,8 @@ def get_compose_cmd():
     if legacy_bin:
         return ["docker-compose"]
 
-    # Final default (will trigger standard 'command not found' if both missing)
-    return ["docker", "compose"]
+    # Final: No working Compose found
+    return []
 
 
 def get_docker_socket_path():

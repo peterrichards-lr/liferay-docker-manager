@@ -313,10 +313,17 @@ del "%~f0"
             from ldm_core.utils import get_compose_cmd
 
             compose_cmd = get_compose_cmd()
-            compose_label = (
-                "v2 (Plugin)" if "compose" in compose_cmd else "v1 (Standalone)"
-            )
-            results.append(("Docker Compose", compose_label, True))
+            if not compose_cmd:
+                system = platform.system().lower()
+                hint = "Install docker-compose"
+                if system == "darwin":
+                    hint = "Run 'brew install docker-compose' or 'port install docker-compose'"
+                results.append(("Docker Compose", f"Not found ({hint})", False))
+            else:
+                compose_label = (
+                    "v2 (Plugin)" if "compose" in compose_cmd else "v1 (Standalone)"
+                )
+                results.append(("Docker Compose", compose_label, True))
 
             # 2.1 Docker Credentials Check
             try:

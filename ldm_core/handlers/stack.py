@@ -1118,7 +1118,13 @@ class StackHandler:
                 service = k.replace("scale_", "")
                 scale_args.extend(["--scale", f"{service}={v}"])
 
-        cmd = get_compose_cmd() + ["up", "-d"] + scale_args
+        cmd_base = get_compose_cmd()
+        if not cmd_base:
+            UI.die(
+                "Docker Compose not found. Please run 'ldm doctor' for installation instructions."
+            )
+
+        cmd = cmd_base + ["up", "-d"] + scale_args
         if rebuild:
             cmd.append("--build")
 
