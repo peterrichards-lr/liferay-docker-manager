@@ -463,13 +463,19 @@ class WorkspaceHandler:
             )
             if not project_name:
                 project_name = source.name
-                if not self.non_interactive:
+                if self.non_interactive:
+                    UI.info(f"Using default project name: {project_name}")
+                else:
                     project_name = UI.ask("Project Name", project_name)
 
             project_path = self.detect_project_path(project_name, for_init=True)
 
             if project_path.exists():
-                if (
+                if self.non_interactive:
+                    UI.info(
+                        f"Project '{project_name}' exists. Overwriting in non-interactive mode."
+                    )
+                elif (
                     UI.ask(
                         f"Project '{project_name}' exists. Overwrite contents? (y/n/q)",
                         "N",
@@ -513,6 +519,8 @@ class WorkspaceHandler:
                         )
                     except Exception as e:
                         UI.error(f"Build failed: {e}")
+                        if self.non_interactive:
+                            UI.die("Build failed in non-interactive mode. Aborting.")
                         if UI.ask("Continue anyway? (y/n/q)", "N").upper() != "Y":
                             import sys
 

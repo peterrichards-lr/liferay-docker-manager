@@ -86,7 +86,7 @@ class DiagnosticsHandler:
             if is_repair
             else f"Upgrade from v{VERSION} to v{latest}?"
         )
-        if not UI.ask(prompt, "Y").upper() == "Y":
+        if not self.non_interactive and not UI.ask(prompt, "Y").upper() == "Y":
             UI.info("Operation aborted.")
             return
 
@@ -747,7 +747,10 @@ del "%~f0"
             UI.info(f"Found {len(orphans)} orphaned containers from deleted projects:")
             for o in orphans:
                 print(f"  - {o}")
-            if UI.ask("Remove them? (y/n/q)", "N").upper() == "Y":
+            if (
+                self.non_interactive
+                or UI.ask("Remove them? (y/n/q)", "N").upper() == "Y"
+            ):
                 for o in orphans:
                     run_command(["docker", "rm", "-f", o])
                 UI.success("Orphaned containers removed.")
@@ -790,7 +793,11 @@ del "%~f0"
                         )
                         for s in orphaned_snaps:
                             print(f"  - {s}")
-                        if UI.ask("Remove them from global vault?", "N").upper() == "Y":
+                        if (
+                            self.non_interactive
+                            or UI.ask("Remove them from global vault?", "N").upper()
+                            == "Y"
+                        ):
                             for s in orphaned_snaps:
                                 run_command(
                                     [
@@ -815,7 +822,10 @@ del "%~f0"
         tmp_files = list(SCRIPT_DIR.glob("**/.*.tmp"))
         if tmp_files:
             UI.info(f"Found {len(tmp_files)} temporary files.")
-            if UI.ask("Remove them? (y/n/q)", "Y").upper() == "Y":
+            if (
+                self.non_interactive
+                or UI.ask("Remove them? (y/n/q)", "Y").upper() == "Y"
+            ):
                 for f in tmp_files:
                     f.unlink()
                 UI.success("Temporary files removed.")

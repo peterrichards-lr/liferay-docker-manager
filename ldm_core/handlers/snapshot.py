@@ -417,6 +417,10 @@ class SnapshotHandler:
                 choice = backups[auto_index - 1]
             elif getattr(self.args, "index", None):
                 choice = backups[self.args.index - 1]
+            elif self.non_interactive:
+                UI.die(
+                    "No snapshot index specified. In non-interactive mode, use: ldm restore <pid> --index <num>"
+                )
             else:
                 choice = backups[int(UI.ask("Select snapshot index", "1")) - 1]
 

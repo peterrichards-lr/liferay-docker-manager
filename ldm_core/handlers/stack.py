@@ -860,18 +860,31 @@ class StackHandler:
     def cmd_run(self, is_restart=False):
         project_id = self.args.project or getattr(self.args, "project_flag", None)
         if getattr(self.args, "select", False):
+            if self.non_interactive:
+                UI.die(
+                    "Project selection is not supported in non-interactive mode. Please specify a project ID."
+                )
             selection = self.select_project_interactively(heading="Available Projects")
             if not selection:
                 return
             project_id = selection["path"].name
         root = self.detect_project_path(project_id, for_init=True)
         if not root:
+            if self.non_interactive:
+                UI.die(
+                    "Project not found and no name provided to initialize. Specify a project ID in non-interactive mode."
+                )
             UI.die("Project not found and no name provided to initialize.")
         project_meta = self.read_meta(root / PROJECT_META_FILE)
         tag, host_name = (
             self.args.tag or project_meta.get("tag"),
             self.args.host_name or project_meta.get("host_name") or "localhost",
         )
+        if not tag and self.non_interactive:
+            UI.die(
+                "No Liferay tag specified. In non-interactive mode, use: ldm run <pid> --tag <tag>"
+            )
+
         external_snapshot = getattr(self.args, "snapshot", None)
         if external_snapshot:
             snap_path = Path(external_snapshot).resolve()
