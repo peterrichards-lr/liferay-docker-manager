@@ -929,13 +929,13 @@ class StackHandler:
             # User used --ssl or --no-ssl explicitly
             ssl_val = ssl_arg
         else:
-            # Conservative Default: Use saved meta, or False (HTTP) if new.
-            # We do NOT auto-enable SSL just because a hostname exists.
+            # Default logic: Use saved meta, or True (SSL) if new.
             meta_ssl = project_meta.get("ssl")
             if meta_ssl is not None:
                 ssl_val = str(meta_ssl).lower() == "true"
             else:
-                ssl_val = False
+                # Default to SSL for new projects
+                ssl_val = True
 
         project_meta.update(
             {
