@@ -17,6 +17,7 @@ This repository contains automation tools for managing Liferay DXP instances usi
 ### 1. The "Modern-then-Legacy" Pattern
 
 - **Docker Compose**: Prefer `docker compose` (v2 plugin). On legacy Intel Macs (Monterey and older), automatically fall back to `docker-compose` (v1 standalone).
+- **Fail-Fast Discovery**: LDM MUST verify that the discovered Compose command is fully functional (via `version` inspection) before returning it. If no working Compose is found, handlers must abort immediately with a helpful installation hint instead of attempting to run malformed commands.
 - **Docker Socket**: Discover active endpoints via `docker context inspect`. Prefer `/run/docker.sock` (modern Linux/WSL) over legacy `/var/run/docker.sock`.
 
 ### 2. Permission & Mount Hardening

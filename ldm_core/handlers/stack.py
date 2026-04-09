@@ -1534,12 +1534,18 @@ class StackHandler:
         if not root:
             return
 
+        compose_base = get_compose_cmd()
+        if not compose_base:
+            UI.die(
+                "Docker Compose not found. Please run 'ldm doctor' for installation instructions."
+            )
+
         if service:
             UI.info(f"Restarting service '{service}' in {root.name}...")
             if not self.require_compose(root):
                 return
             run_command(
-                get_compose_cmd() + ["restart", service],
+                compose_base + ["restart", service],
                 capture_output=False,
                 cwd=str(root),
             )
@@ -1572,12 +1578,18 @@ class StackHandler:
                 self.cmd_infra_down()
             return
 
+        compose_base = get_compose_cmd()
+        if not compose_base:
+            UI.die(
+                "Docker Compose not found. Please run 'ldm doctor' for installation instructions."
+            )
+
         if service:
             UI.info(f"Removing service '{service}' in {root.name}...")
             if not self.require_compose(root):
                 return
 
-            cmd = get_compose_cmd() + ["rm", "-fs"]
+            cmd = compose_base + ["rm", "-fs"]
             if getattr(self.args, "volumes", False):
                 cmd.append("-v")
             cmd.append(service)
@@ -1585,7 +1597,7 @@ class StackHandler:
         else:
             if self.require_compose(root, silent=True):
                 self.cmd_stop(str(root))
-                cmd = get_compose_cmd() + ["down"]
+                cmd = compose_base + ["down"]
                 if getattr(self.args, "volumes", False):
                     cmd.append("-v")
                 run_command(cmd, capture_output=False, cwd=str(root))
@@ -1645,7 +1657,14 @@ class StackHandler:
         root = self.detect_project_path(project_id)
         if not root:
             return
-        cmd = get_compose_cmd() + ["logs", "-f"]
+
+        compose_base = get_compose_cmd()
+        if not compose_base:
+            UI.die(
+                "Docker Compose not found. Please run 'ldm doctor' for installation instructions."
+            )
+
+        cmd = compose_base + ["logs", "-f"]
         if service:
             cmd.append(service)
         try:

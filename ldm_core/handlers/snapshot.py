@@ -74,6 +74,12 @@ class SnapshotHandler:
 
     def _restore_from_cloud_layout(self, backup_dir, paths, project_meta):
         """Restores a project from a Liferay Cloud-style backup (database.gz + volume.tgz)."""
+        compose_base = get_compose_cmd()
+        if not compose_base:
+            UI.die(
+                "Docker Compose not found. Please run 'ldm doctor' for installation instructions."
+            )
+
         backup_dir = Path(backup_dir).resolve()
         if not backup_dir.exists():
             UI.error(f"Backup directory not found: {backup_dir}")
@@ -121,7 +127,7 @@ class SnapshotHandler:
 
                 UI.info(f"Starting database container: {db_container}...")
                 run_command(
-                    get_compose_cmd() + ["up", "-d", "db"],
+                    compose_base + ["up", "-d", "db"],
                     cwd=str(paths["root"]),
                 )
 
@@ -307,9 +313,12 @@ class SnapshotHandler:
                 not self.non_interactive
                 and UI.ask("Stop stack during backup?", "Y").upper() == "Y"
             ):
-                run_command(
-                    get_compose_cmd() + ["stop"], check=True, cwd=str(paths["root"])
-                )
+                compose_base = get_compose_cmd()
+                if not compose_base:
+                    UI.die(
+                        "Docker Compose not found. Please run 'ldm doctor' for installation instructions."
+                    )
+                run_command(compose_base + ["stop"], check=True, cwd=str(paths["root"]))
                 time.sleep(2)
 
         timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -426,9 +435,12 @@ class SnapshotHandler:
             "root"
         ].name.replace(".", "-")
         if run_command(["docker", "ps", "-q", "-f", f"name=^{container_name}$"]):
-            run_command(
-                get_compose_cmd() + ["stop"], check=True, cwd=str(paths["root"])
-            )
+            compose_base = get_compose_cmd()
+            if not compose_base:
+                UI.die(
+                    "Docker Compose not found. Please run 'ldm doctor' for installation instructions."
+                )
+            run_command(compose_base + ["stop"], check=True, cwd=str(paths["root"]))
             time.sleep(2)
 
         files_tar = choice / "files.tar.gz"
