@@ -152,9 +152,11 @@ This repository contains automation tools for managing Liferay DXP instances usi
 
 ## Current State & Next Steps
 
-### Current State (April 8, 2026)
+### Current State (April 9, 2026)
 
-- **Version 1.5.6 WSL Refinement**: COMPLETED. Fixed "UNC path" warnings when launching the browser from WSL by forcing `cmd.exe` to a safe host directory.
+- **Version 1.5.7 Release Hardening**: COMPLETED. Fixed a `TypeError` in `cmd_infra_setup` and finalized Docker provider detection logic.
+- **Provider Detection**: FIXED. Hardened provider discovery to correctly identify Colima, OrbStack, and Windows Docker Desktop by inspecting actual socket paths.
+- **Version 1.5.6 WSL Refinement**: COMPLETED. Fixed "UNC path" warnings when launching the browser from WSL.
 - **Version 1.5.5 Semantic Versioning**: COMPLETED. Corrected version comparison logic across all commands to prevent incorrect update notifications.
 - **Robust Comparisons**: FIXED. Implemented centralized `version_to_tuple` utility to ensure numeric semantic comparison.
 - **Single Icon Rule**: ENFORCED. Diagnostics now use a consistent single-icon reporting format via the UI helper.
