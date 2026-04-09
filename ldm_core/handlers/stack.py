@@ -1288,10 +1288,6 @@ class StackHandler:
                 "Docker is not reachable. Ensure Docker Desktop, Colima, or OrbStack is running."
             )
 
-        # Fail Fast: Verify volume mounting before proceeding
-        paths = self.setup_paths(project_id)
-        self.verify_runtime_environment(paths)
-
         # Handle Samples Switch
         is_sample_run = getattr(self.args, "samples", False)
         sample_meta = {}
@@ -1300,9 +1296,31 @@ class StackHandler:
             if sample_meta_file.exists():
                 sample_meta = json.loads(sample_meta_file.read_text())
 
+        # Seed initial values
+        tag = self.args.tag or project_meta.get("tag")
         host_name = self.args.host_name or project_meta.get("host_name") or "localhost"
+
+        # Handle External Snapshot Initialization
+        external_snapshot = getattr(self.args, "snapshot", None)
+        if external_snapshot:
+            snap_path = Path(external_snapshot).resolve()
+            if not snap_path.exists():
+                UI.die(f"Snapshot path not found: {snap_path}")
+
+            # Read metadata from snapshot to seed project if needed
+            snap_meta = self.read_meta(snap_path / "meta")
+            if not tag:
+                tag = snap_meta.get("tag")
+            if host_name == "localhost":
+                host_name = snap_meta.get("host_name") or "localhost"
+
+        # Hostname validation
         if host_name != "localhost" and not self.check_hostname(host_name):
             sys.exit(1)
+
+        # Fail Fast: Verify volume mounting before proceeding
+        paths = self.setup_paths(project_id)
+        self.verify_runtime_environment(paths)
 
         port = self.args.port or project_meta.get("port") or 8080
         use_ssl = getattr(self.args, "ssl", None)
@@ -1406,16 +1424,19 @@ class StackHandler:
             }
         )
 
-        # Trigger Auto-Restore for Samples
-        if is_sample_run:
+        # Trigger Auto-Restore for Samples or External Snapshot
+        if is_sample_run or external_snapshot:
             # We must ensure DB/ES are up before restore
             self.sync_stack(paths, project_meta, no_up=True, show_summary=False)
-            UI.info("Preparing sample data...")
-            run_command(["docker", "compose", "up", "-d", "db"], cwd=str(paths["root"]))
+            UI.info("Preparing data restoration...")
+            run_command(get_compose_cmd() + ["up", "-d", "db"], cwd=str(paths["root"]))
             # Give DB a moment
             time.sleep(5)
-            # Restore Sample Gold
-            self.cmd_restore(project_id, auto_index=1)
+            # Restore from Samples (index 1) or External Path
+            if is_sample_run:
+                self.cmd_restore(project_id, auto_index=1)
+            else:
+                self.cmd_restore(project_id, backup_dir=external_snapshot)
 
         self.sync_stack(
             paths,
