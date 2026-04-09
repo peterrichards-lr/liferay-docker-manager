@@ -49,8 +49,15 @@ Every artifact imported from a workspace MUST follow this atomic 3-step sequence
 - **Docker API Version**: Set `DOCKER_API_VERSION=1.44` for sidecars to ensure compatibility with modern (v29+) Docker engines.
 - **Python hash() randomization**: Always use `hashlib.md5()` for configuration signatures to prevent unnecessary container restarts.
 
+## Current State (April 9, 2026)
+
+- **Version 1.6.6 Automation & Integrity Release**: COMPLETED. Implemented Fail-Fast discovery, comprehensive non-interactive support, pipeline-ready exit codes, and strict environment uniqueness.
+- **Version 1.6.5 Roadmap Completion**: COMPLETED. Added 'AI-Assisted Orchestration' to the v2.0.0 roadmap to leverage Gemini for real-time CLI troubleshooting.
+- **Version 1.6.4 Self-Repair Release**: COMPLETED. Added `ldm upgrade --repair` to allow one-click fixing of `TAMPERED / MISMATCH` integrity errors.
+
 ## Hardening History (Version Log)
 
+- **v1.6.6**: IMPLEMENTED Fail-Fast discovery, non-interactive support for all commands, and dictionary-based environment generation to ensure uniqueness.
 - **v1.6.5**: FIXED Docker Compose misidentification on Intel Macs by implementing an architecture-based exception for `x86_64`.
 - **v1.6.4**: ADDED `ldm upgrade --repair` mode to allow one-click fixing of `TAMPERED / MISMATCH` integrity errors.
 - **v1.6.2**: ADDED proactive permission checks to `upgrade` to guide users on using `sudo` or Admin rights before download.
