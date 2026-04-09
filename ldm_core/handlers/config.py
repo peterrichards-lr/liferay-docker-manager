@@ -337,11 +337,11 @@ class ConfigHandler:
                 traceback.print_exc()
 
     def sync_common_assets(self, paths, host_updates=None, version=None):
-        # We look for 'common' in the PROJECT ROOT (current dir)
-        common_dir = Path.cwd() / "common"
+        # Use the binary-aware 'common' path from setup_paths
+        common_dir = paths.get("common")
         target_ext = paths["files"] / "portal-ext.properties"
 
-        if common_dir.exists():
+        if common_dir and common_dir.exists():
             history_file = paths["root"] / ".liferay-docker.deployed"
             history = (
                 set(history_file.read_text().splitlines())

@@ -924,10 +924,18 @@ class StackHandler:
             self.sync_samples(paths)
 
         # 6. Finalize Meta
-        ssl_val = getattr(self.args, "ssl", None)
-        if ssl_val is None:
-            # Fallback to meta, or True if host_name is custom
-            ssl_val = project_meta.get("ssl", host_name != "localhost")
+        ssl_arg = getattr(self.args, "ssl", None)
+        if ssl_arg is not None:
+            # User used --ssl or --no-ssl explicitly
+            ssl_val = ssl_arg
+        else:
+            # Conservative Default: Use saved meta, or False (HTTP) if new.
+            # We do NOT auto-enable SSL just because a hostname exists.
+            meta_ssl = project_meta.get("ssl")
+            if meta_ssl is not None:
+                ssl_val = str(meta_ssl).lower() == "true"
+            else:
+                ssl_val = False
 
         project_meta.update(
             {
