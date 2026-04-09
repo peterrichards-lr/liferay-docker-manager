@@ -212,11 +212,23 @@ Backup and recover project states, including files, DB, and search indices.
 ldm snapshot demo --name "post-setup-gold-standard"
 
 # List snapshots for a project
-ldm restore demo          # No index provided = list all
+ldm restore demo --list    # Non-interactive list of all snapshots
 ldm restore demo --index 1 # Restore to index 1
 ```
 
 ### `shell` & `gogo`
+
+...
+
+### `prune`, `clear-cache`
+
+Identify and remove orphaned resources and maintenance.
+
+```bash
+ldm prune                 # Remove orphaned containers, snapshots, and temp files
+ldm infra-down            # Tear down global proxy and search services
+ldm clear-cache           # Clear the Docker tag cache (~/.liferay_docker_cache.json)
+```
 
 Jump into a container shell or connect to the OSGi Gogo console.
 

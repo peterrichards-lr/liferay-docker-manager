@@ -556,7 +556,64 @@ class DiagnosticsHandler:
         else:
             UI.info("No orphaned containers found.")
 
-        # 2. Clean up .tmp files
+        # 2. Orphaned Search Snapshots
+        search_name = "liferay-search-global"
+        if run_command(["docker", "ps", "-q", "-f", f"name={search_name}"]):
+            snaps_raw = run_command(
+                [
+                    "docker",
+                    "exec",
+                    search_name,
+                    "curl",
+                    "-s",
+                    "localhost:9200/_snapshot/liferay_backup/_all",
+                ],
+                check=False,
+            )
+            if snaps_raw:
+                try:
+                    data = json.loads(snaps_raw)
+                    all_snaps = data.get("snapshots", [])
+                    orphaned_snaps = []
+                    for s in all_snaps:
+                        s_name = s.get("snapshot", "")
+                        # LDM search snapshots follow the pattern [project-name]-[timestamp]
+                        if "-" in s_name:
+                            project_id = s_name.rsplit("-", 2)[0]
+                            if project_id not in active_projects:
+                                orphaned_snaps.append(s_name)
+                        elif s_name == "initial_snapshot":
+                            # Special case for legacy manual snapshots
+                            orphaned_snaps.append(s_name)
+
+                    if orphaned_snaps:
+                        UI.info(
+                            f"Found {len(orphaned_snaps)} orphaned search snapshots:"
+                        )
+                        for s in orphaned_snaps:
+                            print(f"  - {s}")
+                        if UI.ask("Remove them from global vault?", "N").upper() == "Y":
+                            for s in orphaned_snaps:
+                                run_command(
+                                    [
+                                        "docker",
+                                        "exec",
+                                        search_name,
+                                        "curl",
+                                        "-s",
+                                        "-X",
+                                        "DELETE",
+                                        f"localhost:9200/_snapshot/liferay_backup/{s}",
+                                    ],
+                                    check=False,
+                                )
+                            UI.success("Orphaned search snapshots removed.")
+                    else:
+                        UI.info("No orphaned search snapshots found.")
+                except Exception:
+                    pass
+
+        # 3. Clean up .tmp files
         tmp_files = list(SCRIPT_DIR.glob("**/.*.tmp"))
         if tmp_files:
             UI.info(f"Found {len(tmp_files)} temporary files.")

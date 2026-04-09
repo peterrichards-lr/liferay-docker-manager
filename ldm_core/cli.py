@@ -122,6 +122,8 @@ def main():
     rest.add_argument("project", nargs="?")
     rest.add_argument("-p", "--project", dest="project_flag")
     rest.add_argument("-i", "--index", type=int)
+    rest.add_argument("--list", action="store_true", help="List available snapshots")
+    rest.add_argument("--backup-dir")
 
     # Simple Commands
     subparsers.add_parser("init-common")

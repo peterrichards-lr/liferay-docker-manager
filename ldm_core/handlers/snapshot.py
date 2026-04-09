@@ -388,6 +388,11 @@ class SnapshotHandler:
         paths = self.setup_paths(root_path)
         project_meta = self.read_meta(paths["root"] / PROJECT_META_FILE)
 
+        # 0. Support for --list (Non-interactive overview)
+        if getattr(self.args, "list", False):
+            self.cmd_snapshots(paths)
+            return
+
         # 1. Resolve choice (direct dir, index, or interactive)
         choice = None
         if backup_dir:
