@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import re
 from pathlib import Path
+from ldm_core.ui import UI
 
 
 def sync_table():
@@ -36,11 +37,11 @@ def sync_table():
             new_content = marker_regex.sub(replacement, content)
             if new_content != content:
                 target.write_text(new_content)
-                print(f"✅ Updated {target.name}")
+                UI.success(f"Updated {target.name}")
             else:
-                print(f"ℹ {target.name} already in sync.")
+                UI.info(f"{target.name} already in sync.")
         else:
-            print(f"⚠️ Marker not found in {target.name}")
+            UI.warning(f"Marker not found in {target.name}")
 
 
 if __name__ == "__main__":

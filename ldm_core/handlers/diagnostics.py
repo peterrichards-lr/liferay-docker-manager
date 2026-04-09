@@ -409,7 +409,7 @@ class DiagnosticsHandler:
                         )
                     )
                     for d in unresolved:
-                        print(f"  {UI.RED}×{UI.COLOR_OFF} {d}")
+                        UI._print(d, UI.RED, "×")
 
             # 7.3 Environment Check (Centralized)
             try:

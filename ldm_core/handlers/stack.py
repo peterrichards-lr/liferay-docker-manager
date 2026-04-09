@@ -1212,12 +1212,13 @@ class StackHandler:
         else:
             UI.info("Skipping startup verification.")
 
-        print(f"  {UI.WHITE}🌐 Liferay:        {UI.CYAN}{access_url}{UI.COLOR_OFF}")
+        UI.heading("Liferay Stack Ready")
+        UI._print(f"Liferay:        {UI.CYAN}{access_url}{UI.COLOR_OFF}", icon="🌐")
 
         unresolved = []
         for e in [e for e in extensions if "url" in e]:
             # Validation: Check if subdomain resolves (if not localhost)
-            status_icon = ""
+            status_suffix = ""
             if "https" in e["url"] and host_name != "localhost":
                 # Extract domain from URL
                 ext_domain = re.sub(r"https?://([^:/]+).*", r"\1", e["url"])
@@ -1225,18 +1226,16 @@ class StackHandler:
                 if not ip or not (
                     ip.startswith("127.") or ip in ["::1", "0:0:0:0:0:0:0:1"]
                 ):
-                    status_icon = f" {UI.RED}❌ (Unresolved){UI.COLOR_OFF}"
+                    status_suffix = f" {UI.RED}(Unresolved){UI.COLOR_OFF}"
                     unresolved.append(ext_domain)
                 else:
-                    status_icon = f" {UI.GREEN}✅{UI.COLOR_OFF}"
+                    status_suffix = f" {UI.GREEN}[OK]{UI.COLOR_OFF}"
 
-            print(f"     - {UI.WHITE}{e['id']:<14} {UI.CYAN}{e['url']}{status_icon}")
+            UI._print(f"  - {UI.WHITE}{e['id']:<14} {UI.CYAN}{e['url']}{status_suffix}")
 
         if unresolved:
             target_ip = self.get_resolved_ip(host_name) or "127.0.0.1"
-            print(
-                f"\n{UI.BYELLOW}⚠️  DNS WARNING:{UI.COLOR_OFF} Some subdomains are not resolving to your machine."
-            )
+            UI.warning("Some subdomains are not resolving to your machine.")
             print(
                 f"   Please add them to your {UI.WHITE}/etc/hosts{UI.COLOR_OFF} file:"
             )
