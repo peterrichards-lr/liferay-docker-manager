@@ -146,7 +146,8 @@ def main():
     )
     subparsers.add_parser("infra-down")
     subparsers.add_parser("clear-cache")
-    subparsers.add_parser("doctor")
+    subparsers.add_parser("upgrade")
+    subparsers.add_parser("update-check")
     subparsers.add_parser("list")
     subparsers.add_parser("prune")
 
@@ -257,6 +258,7 @@ def main():
             project_id, getattr(args, "env_id", None)
         ),
         "prune": lambda: manager.cmd_prune(),
+        "upgrade": lambda: manager.cmd_upgrade(),
         "update-check": lambda: manager.cmd_update_check(force=True),
     }
 

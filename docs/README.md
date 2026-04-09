@@ -312,6 +312,14 @@ Verify host environment health, Docker resources (CPUs/Memory), and project depe
 ldm doctor
 ```
 
+### `upgrade`
+
+Automatically download and install the latest version of LDM for your architecture. Includes integrity verification.
+
+```bash
+ldm upgrade
+```
+
 ### `renew-ssl`
 
 Refresh project-specific SSL certificates immediately.

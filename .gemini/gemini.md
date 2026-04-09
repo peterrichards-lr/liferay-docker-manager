@@ -155,8 +155,9 @@ This repository contains automation tools for managing Liferay DXP instances usi
 
 ### Current State (April 9, 2026)
 
-- **Version 1.5.9 SSL Management**: COMPLETED. Added `ldm renew-ssl` to allow one-click/one-command refreshing of project-specific SSL certificates.
-- **Hygiene & Metadata**: FIXED. Automated the cleanup of certificates during project teardown and implemented explicit certificate tracking in metadata.
+- **Version 1.6.0 Major Feature Release**: COMPLETED. Added `ldm upgrade` for secure, architecture-aware binary self-updates with SHA-256 verification.
+- **SSL Management**: COMPLETED. Added `ldm renew-ssl` to allow one-click/one-command refreshing of project-specific SSL certificates.
+- **Version 1.5.9 SSL Management**: COMPLETED. Finalized the `renew-ssl` logic and hygiene metadata.
 - **Version 1.5.8 Hardened Edition Conclusion**: COMPLETED. Finalized all cross-platform stability fixes and expanded the verified compatibility matrix.
 - **Compose Robustness**: FIXED. Implemented "Modern-then-Legacy" Docker Compose discovery to support both v2 plugins and v1 standalone binaries.
 - **Startup UX**: IMPROVED. Increased startup timeout to 15 minutes and added periodic 'ldm logs' reminders during the wait phase.

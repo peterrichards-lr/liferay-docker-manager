@@ -43,6 +43,120 @@ class DiagnosticsHandler:
         else:
             UI.info("Cache is already empty.")
 
+    def cmd_upgrade(self):
+        """Self-upgrade the LDM binary to the latest version."""
+        UI.heading("LDM Self-Upgrade")
+
+        # 1. Check for updates
+        latest, url = check_for_updates(VERSION, force=True)
+        if not latest or version_to_tuple(latest) <= version_to_tuple(VERSION):
+            UI.success(f"LDM is already up to date (v{VERSION}).")
+            return
+
+        UI.info(f"New version found: v{latest}")
+        if not url or not url.startswith("http"):
+            UI.die("Download URL not found for your architecture.")
+
+        if not UI.ask(f"Upgrade from v{VERSION} to v{latest}?", "Y").upper() == "Y":
+            UI.info("Upgrade aborted.")
+            return
+
+        # 2. Preparation
+        exe_path = Path(sys.argv[0]).resolve()
+        if exe_path.suffix.lower() == ".py":
+            UI.die(
+                "Self-upgrade is only supported for standalone binaries. Please use 'git pull' for source installations."
+            )
+
+        temp_new = exe_path.with_suffix(".new")
+
+        # 3. Download
+        UI.info(f"Downloading v{latest}...")
+        try:
+            from urllib.request import Request, urlopen
+
+            req = Request(url, headers={"User-Agent": "ldm-cli"})
+            with urlopen(req, timeout=30) as response:  # nosec B310
+                with open(temp_new, "wb") as f:
+                    shutil.copyfileobj(response, f)
+        except Exception as e:
+            UI.die("Download failed.", e)
+
+        # 4. Verify Integrity
+        UI.info("Verifying integrity...")
+        status, ok = verify_executable_checksum(latest)  # Verify the NEW binary version
+        # Note: verify_executable_checksum uses sys.argv[0], so we need a manual check for the .new file
+        import hashlib
+
+        sha = hashlib.sha256()
+        with open(temp_new, "rb") as f:
+            for chunk in iter(lambda: f.read(4096), b""):
+                sha.update(chunk)
+        new_hash = sha.hexdigest()
+
+        # Fetch official checksums.txt
+        checksum_url = f"https://github.com/peterrichards-lr/liferay-docker-manager/releases/download/v{latest}/checksums.txt"
+        try:
+            req_check = Request(checksum_url, headers={"User-Agent": "ldm-cli"})
+            with urlopen(req_check, timeout=10) as resp:  # nosec B310
+                official_data = resp.read().decode()
+
+                system = platform.system().lower()
+                target_name = "ldm-linux"
+                if system == "darwin":
+                    target_name = "ldm-macos"
+                elif system == "windows":
+                    target_name = "ldm-windows.exe"
+
+                verified = False
+                for line in official_data.splitlines():
+                    if target_name in line and new_hash == line.split()[0]:
+                        verified = True
+                        break
+
+                if not verified:
+                    if temp_new.exists():
+                        temp_new.unlink()
+                    UI.die(
+                        "Integrity verification failed! The downloaded binary does not match the official hash."
+                    )
+        except Exception as e:
+            UI.warning(
+                f"Could not verify hash remotely ({e}). Proceeding with caution..."
+            )
+
+        # 5. Atomic Swap
+        UI.info("Applying update...")
+        try:
+            if platform.system().lower() == "windows":
+                # Windows replacement logic via temporary batch file
+                bat_path = exe_path.with_suffix(".update.bat")
+                bat_content = f"""@echo off
+timeout /t 1 /nobreak > nul
+move /y "{temp_new}" "{exe_path}"
+start "" "{exe_path}" doctor
+del "%~f0"
+"""
+                bat_path.write_text(bat_content)
+                UI.success(
+                    "Update staged. LDM will restart in a new window to complete."
+                )
+                import subprocess
+
+                # Bandit: B602 (shell=True) is necessary here to launch the independent Windows batch updater.
+                # The path is internally generated and sanitized.
+                subprocess.Popen(["cmd.exe", "/c", str(bat_path)], shell=True)  # nosec B602
+                sys.exit(0)
+            else:
+                # Unix atomic rename
+                os.chmod(temp_new, 0o755)
+                os.replace(temp_new, exe_path)
+                UI.success(f"Successfully upgraded to v{latest}!")
+        except Exception as e:
+            if temp_new.exists():
+                temp_new.unlink()
+            UI.die("Failed to apply update.", e)
+
     def cmd_doctor(self, project_id=None):
         UI.heading("LDM Doctor - Environmental Health Check")
 
