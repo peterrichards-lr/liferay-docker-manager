@@ -30,8 +30,9 @@ As the core orchestration and isolation pillars are now robustly implemented, fu
 
 - **Modular Package Structure**: Refactored the monolithic script into a clean Python package (`ldm_core`) with specialized handlers.
 - **Standardized Project Discovery**: Implemented a consistent 4-step discovery priority (Arg > Flag > CWD > Interactive Selector) across all commands.
-- **Multi-Instance Traefik Isolation**: Implemented project-specific namespacing for all Traefik routers and services to prevent routing conflicts between parallel environments.
-- **Universal Socket Detection**: Added support for Colima, WSL2, and native Linux by detecting and using the standard Docker socket when available.
+- **Multi-Instance Traefik Isolation**: Implemented project-specific namespacing and SNI-based routing to prevent collisions between parallel environments.
+- **Universal Socket & Provider Detection**: Added support for Colima, OrbStack, WSL2, and native Linux by dynamically detecting and using the active Docker socket path.
+- **Visible Infrastructure Store**: Centralized SSL certificates and routing configs in a non-hidden host directory (`~/liferay-docker-certs`) for cross-provider reliability.
 
 ### **Orchestration & Workflow**
 

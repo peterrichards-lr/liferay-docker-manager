@@ -113,10 +113,6 @@ sudo apt update && sudo apt install mkcert libnss3-tools openssl
 mkcert -install
 ```
 
-### 🪟 Install SSL Tools (Windows / WSL2)
-
-See the detailed [Troubleshooting section](#windows-installing-ssl-tools-scoop) below for Scoop-based installation.
-
 ---
 
 ## 🛠️ Environment Setup & Troubleshooting
@@ -142,14 +138,6 @@ This will create:
 #### 2. Mandatory Infrastructure Settings
 
 LDM is designed to be **self-healing**. Even if you do not use a `common/` folder, the tool will automatically ensure that every project's `portal-ext.properties` contains the essential settings for SSL and virtual hosting (`web.server.host`, `web.server.protocol`, etc.).
-
-#### 3. Custom Overrides
-
-You can place any of the following file types into the `common/` folder to have them deployed to all projects:
-
-- `*.config` / `*.cfg`: Synced to `osgi/configs/`
-- `*.xml` / `*.lpkg`: Synced to `osgi/deploy/`
-- `portal-ext.properties`: Merged into the project-specific properties file.
 
 ### Windows: Installing SSL Tools (Scoop)
 
@@ -247,10 +235,6 @@ You must add each domain and subdomain to your system's `hosts` file.
 > [!TIP]
 > LDM will proactively check your DNS configuration during `ldm run` or `ldm doctor` and provide the exact line you need to copy-paste if any subdomains are missing.
 
-#### 2. Wildcard Mapping (The "Set and Forget" Way)
-
-If you frequently add new client extensions, we recommend using a local DNS proxy like **dnsmasq** to resolve all `*.demo` domains to `127.0.0.1` automatically.
-
 ---
 
 ### 🔐 Fixing SSL Trust Issues (mkcert)
@@ -307,11 +291,11 @@ LDM binaries use **"Magic Byte" detection** to accurately report their checksum 
 
 ## 🛡️ Supported & Tested Environments
 
-We maintain "Tier 1" support for the following configurations to ensure LDM works exactly as expected for Sales Engineers.
+We maintain "Tier 1" support for the following physical lab configurations:
 
-| Environment Type | Technology | Purpose |
+| Environment Type | Technology | Lab Hardware |
 | :--- | :--- | :--- |
-| **Corporate Standard** | WSL2 + Docker Desktop | Verify Windows file system (`C:\Users`) mapping. |
-| **"Pure" Linux** | VirtualBox + Ubuntu | Verify `chown` and Linux permissions. |
-| **"Locked" SE** | Hyper-V + Windows 11 | Verify LDM in "Nested" environments (Common for cloud VMs). |
-| **Modern Mac** | macOS + OrbStack | High-performance Apple Silicon testing. |
+| **Standard Mac** | macOS + OrbStack / DD | Apple M1 Pro (32GB) |
+| **Linux Workstation** | Fedora 43 (Native) | MacBook Pro 11,3 (Intel i7) |
+| **Corporate Windows** | Windows 11 + WSL2 | Intel i7-7800X (16GB) |
+| **Legacy/Intel Mac** | macOS + Colima | Apple Intel Core i7 (16GB) |
