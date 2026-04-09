@@ -449,37 +449,71 @@ class BaseHandler:
                         pass
 
     def validate_project_dns(self, project_path):
-        """Validates that the project hostname and all extension subdomains resolve to loopback."""
+        """Validates that the project hostname and all extension subdomains resolve to the local proxy IP."""
         meta = self.read_meta(Path(project_path) / PROJECT_META_FILE)
         host_name = meta.get("host_name", "localhost")
         if host_name == "localhost":
             return True, []
 
+        # Find the IP Traefik is actually bound to
+        proxy_ip = "127.0.0.1"
+        try:
+            inspect_res = run_command(
+                [
+                    "docker",
+                    "inspect",
+                    "-f",
+                    "{{range .NetworkSettings.Ports.443}}{{.HostIp}}{{end}}",
+                    "liferay-proxy-global",
+                ],
+                check=False,
+            )
+            if inspect_res and inspect_res.strip():
+                # If bound to 0.0.0.0, any loopback is fine.
+                # If bound to a specific IP (like 127.0.0.2), we MUST match it.
+                proxy_ip = inspect_res.strip()
+        except Exception:
+            pass
+
         unresolved = []
         # Check base host
         ip = self.get_resolved_ip(host_name)
-        if not ip or not (ip.startswith("127.") or ip in ["::1", "0:0:0:0:0:0:0:1"]):
+
+        # Validation: If proxy is on 0.0.0.0, allow any 127.x.x.x.
+        # Otherwise, strictly require the proxy_ip.
+        is_match = False
+        if ip:
+            if proxy_ip == "0.0.0.0":
+                is_match = ip.startswith("127.") or ip in ["::1", "0:0:0:0:0:0:0:1"]
+            else:
+                is_match = ip == proxy_ip
+
+        if not ip or not is_match:
             unresolved.append(host_name)
 
         # Check extensions
         paths = self.setup_paths(project_path)
-        # scan_client_extensions is inherited from WorkspaceHandler
         exts = self.scan_client_extensions(paths["root"], paths["cx"], paths["ce_dir"])
         for e in exts:
-            # Criteria based on user requirements:
-            # 1. kind is "Deployment" (Services, not Jobs)
-            # 2. deploy flag is True (Active)
-            # 3. has_load_balancer is True (Has a public routing entry)
             if (
                 e.get("kind") == "Deployment"
                 and e.get("deploy", True)
                 and e.get("has_load_balancer")
             ):
                 ext_domain = f"{e['id']}.{host_name}"
-                ip = self.get_resolved_ip(ext_domain)
-                if not ip or not (
-                    ip.startswith("127.") or ip in ["::1", "0:0:0:0:0:0:0:1"]
-                ):
+                sub_ip = self.get_resolved_ip(ext_domain)
+
+                sub_match = False
+                if sub_ip:
+                    if proxy_ip == "0.0.0.0":
+                        sub_match = sub_ip.startswith("127.") or sub_ip in [
+                            "::1",
+                            "0:0:0:0:0:0:0:1",
+                        ]
+                    else:
+                        sub_match = sub_ip == proxy_ip
+
+                if not sub_ip or not sub_match:
                     unresolved.append(ext_domain)
 
         return len(unresolved) == 0, unresolved
