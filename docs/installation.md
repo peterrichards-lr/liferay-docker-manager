@@ -90,10 +90,17 @@ cd liferay-docker-manager
 
 ### 🍎 Install SSL Tools (macOS)
 
-Using [Homebrew](https://brew.sh/):
+**Using [Homebrew](https://brew.sh/):**
 
 ```bash
 brew install mkcert nss openssl
+mkcert -install
+```
+
+**Using [MacPorts](https://www.macports.org/):**
+
+```bash
+sudo port install mkcert nss openssl
 mkcert -install
 ```
 
@@ -193,6 +200,11 @@ If `ldm doctor` reports insufficient memory even though you have 8GB+ installed:
 ## 🐳 Colima (Advanced macOS Setup)
 
 Colima is a lightweight, open-source alternative to Docker Desktop. While highly performant on Apple Silicon, it is much stricter regarding file sharing and permissions.
+
+### 0. Installation
+
+**Homebrew**: `brew install colima`  
+**MacPorts**: `sudo port install colima`
 
 ### 1. Recommended Start Command (Apple Silicon)
 
