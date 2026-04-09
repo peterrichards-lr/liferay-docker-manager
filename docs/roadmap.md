@@ -39,6 +39,12 @@ While the v1.x "Hardened Edition" focused on cross-platform stability, **v2.0.0*
 
 - **Portable Scenarios**: A formal specification for bundling a Snapshot + Client Extensions + LCP Metadata into a single "Pack" for easy distribution across Sales Engineering teams.
 
+### 6. AI-Assisted Orchestration
+
+- **The `ldm ai` Command**: Integrate a specialized AI handler (Gemini-powered) to provide interactive help and troubleshooting.
+- **Context-Aware Support**: Automatically inject `ldm doctor` reports and project metadata into AI queries to provide zero-copy troubleshooting for SSL, networking, and deployment failures.
+- **Recipe Generation**: Ask the AI to generate complex `portal-ext.properties` or `LCP.json` configurations based on natural language descriptions.
+
 ---
 
 ## ✅ Completed Improvements (v1.5.x)

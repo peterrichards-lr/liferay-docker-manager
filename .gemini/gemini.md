@@ -155,6 +155,7 @@ This repository contains automation tools for managing Liferay DXP instances usi
 
 ### Current State (April 9, 2026)
 
+- **Version 1.6.5 Roadmap Completion**: COMPLETED. Added 'AI-Assisted Orchestration' to the v2.0.0 roadmap to leverage Gemini for real-time CLI troubleshooting.
 - **Version 1.6.4 Self-Repair Release**: COMPLETED. Added `ldm upgrade --repair` to allow re-downloading the official binary to fix integrity mismatches.
 - **UI Spacing Polish**: FIXED. Standardized icon spacing with double-space padding for better visual clarity across all terminals.
 - **Version 1.6.3 Intel Mac Hardening**: COMPLETED. Fixed infrastructure permission fixer to tolerate restricted `chown` calls on legacy macOS/sshfs mounts.
