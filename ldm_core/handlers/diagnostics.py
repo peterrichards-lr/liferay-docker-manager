@@ -202,7 +202,10 @@ del "%~f0"
         UI.heading("LDM Doctor - Environmental Health Check")
 
         # 0. Early Project Resolve (Optional skip allowed)
-        project_path = self.detect_project_path(project_id)
+        skip_project = getattr(self.args, "skip_project", False)
+        project_path = None
+        if not skip_project:
+            project_path = self.detect_project_path(project_id)
 
         results = []
 
@@ -626,6 +629,7 @@ del "%~f0"
             UI.warning("Some non-critical issues were detected. Check the items above.")
         else:
             UI.error("Critical issues were detected. Check the items above.")
+            sys.exit(1)
 
     def cmd_list(self):
         UI.heading("LDM Sandbox Projects")

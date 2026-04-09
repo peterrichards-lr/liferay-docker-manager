@@ -153,6 +153,11 @@ def main():
     doctor = subparsers.add_parser("doctor")
     doctor.add_argument("project", nargs="?")
     doctor.add_argument("-p", "--project", dest="project_flag")
+    doctor.add_argument(
+        "--skip-project",
+        action="store_true",
+        help="Skip project-specific health checks",
+    )
     subparsers.add_parser("list")
     subparsers.add_parser("prune")
 
