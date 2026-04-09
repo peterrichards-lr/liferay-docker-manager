@@ -690,6 +690,7 @@ class StackHandler:
         rebuild=False,
         show_summary=True,
         no_up=False,
+        no_wait=False,
     ):
         self.migrate_layout(paths)
         tag, host_name = (
@@ -782,7 +783,7 @@ class StackHandler:
         except Exception as e:
             UI.die("Failed to start project stack.", e)
 
-        if not show_summary:
+        if not show_summary or no_wait:
             return
         p_id = project_meta.get("container_name") or paths["root"].name
         access_url = f"{'https' if use_ssl else 'http'}://{host_name}{f':{ssl_port}' if (use_ssl and ssl_port != 443) else (f':{port}' if not use_ssl else '')}"
@@ -948,11 +949,15 @@ class StackHandler:
                 if not getattr(self.args, "samples", False)
                 else None,
             )
+
+        # 8. Start Stack
         self.sync_stack(
             paths,
             project_meta,
             follow=getattr(self.args, "follow", False),
             rebuild=getattr(self.args, "rebuild", False),
+            no_up=getattr(self.args, "no_up", False),
+            no_wait=getattr(self.args, "no_wait", False),
         )
 
     def cmd_deploy(self, project_id=None, service=None):
