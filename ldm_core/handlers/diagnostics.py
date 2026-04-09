@@ -90,18 +90,39 @@ class DiagnosticsHandler:
                 if context:
                     context = context.strip()
                     provider = "Unknown"
-                    if context == "colima":
-                        provider = "Colima"
-                    elif context == "orbstack":
-                        provider = "OrbStack"
-                    elif context in ["default", "desktop-linux"]:
-                        provider = "Docker Desktop"
+
+                    # Inspect the host endpoint for more accurate provider detection
+                    endpoint = run_command(
+                        [
+                            "docker",
+                            "context",
+                            "inspect",
+                            "--format",
+                            "{{.Endpoints.docker.Host}}",
+                            context,
+                        ],
+                        check=False,
+                    )
+
+                    if endpoint:
+                        if ".colima" in endpoint:
+                            provider = "Colima"
+                        elif "orbstack" in endpoint:
+                            provider = "OrbStack"
+                        elif "docker.sock" in endpoint or "docker_engine" in endpoint:
+                            provider = "Docker Desktop"
+
+                    # Fallback to name-based if endpoint check was inconclusive
+                    if provider == "Unknown":
+                        if context == "colima":
+                            provider = "Colima"
+                        elif context == "orbstack":
+                            provider = "OrbStack"
 
                     results.append(("Docker Context", context, True))
                     results.append(("Docker Provider", provider, True))
             except Exception:
                 pass
-
             # 2.1 Docker Credentials Check
             try:
                 docker_config_path = get_actual_home() / ".docker" / "config.json"
