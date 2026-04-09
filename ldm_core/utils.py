@@ -384,13 +384,15 @@ def get_compose_cmd():
     docker_bin = shutil.which("docker")
     if docker_bin:
         try:
+            # We must check the output as some environments return 0 for unknown subcommands
             res = subprocess.run(
                 [docker_bin, "compose", "version"],
                 capture_output=True,
                 text=True,
                 check=False,
             )
-            if res.returncode == 0:
+            # Verify it actually reported a version and didn't just error out
+            if res.returncode == 0 and "Docker Compose version" in res.stdout:
                 return ["docker", "compose"]
         except Exception:
             pass
