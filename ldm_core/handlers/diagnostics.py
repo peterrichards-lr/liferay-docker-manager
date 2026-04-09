@@ -68,8 +68,8 @@ class DiagnosticsHandler:
                 "Self-upgrade is only supported for standalone binaries. Please use 'git pull' for source installations."
             )
 
-        # Check for write permissions to the binary itself
-        if not os.access(exe_path, os.W_OK):
+        # Check for write permissions to both the parent directory and the binary itself
+        if not os.access(exe_path.parent, os.W_OK) or not os.access(exe_path, os.W_OK):
             if platform.system().lower() == "windows":
                 UI.die(
                     "Permission denied. Please run your terminal as an Administrator to upgrade."
