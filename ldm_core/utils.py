@@ -410,7 +410,18 @@ def get_compose_cmd():
     # 2. Fallback to legacy 'docker-compose' (v1 standalone)
     legacy_bin = shutil.which("docker-compose")
     if legacy_bin:
-        return ["docker-compose"]
+        try:
+            # Verify the standalone binary actually works
+            res = subprocess.run(
+                [legacy_bin, "version"],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            if res.returncode == 0 and "Docker Compose version" in res.stdout:
+                return ["docker-compose"]
+        except Exception:
+            pass
 
     # Final: No working Compose found
     return []
