@@ -18,9 +18,6 @@ def main():
     parser.add_argument("--version", action="version", version=f"%(prog)s {VERSION}")
     subparsers = parser.add_subparsers(dest="command")
 
-    # Command: update-check
-    subparsers.add_parser("update-check")
-
     # Command: run
     run = subparsers.add_parser("run")
     run.add_argument("project", nargs="?")
