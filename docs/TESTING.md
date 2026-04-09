@@ -23,6 +23,7 @@ The following physical machines are used for the official verification of LDM re
 * **MacBook Pro (Apple Silicon)**: Apple M1 Pro, 32 GB RAM, macOS Tahoe 26.4 (25E246).
 * **Windows Workstation (x86_64)**: Intel(R) Core(TM) i7-7800X CPU @ 3.50GHz, 16GB RAM, Windows 11 Pro (23H2).
 * **Linux Workstation (Native)**: Apple MacBook Pro 11,3, Intel Core i7-4960HQ x 8, 16GB RAM, Fedora Linux 43 (Workstation Edition).
+* **MacBook Pro (Apple Intel)**: 13-inch Retina (Early 2015), 2.7 GHz Dual-Core Intel Core i5, 8GB RAM, macOS Monterey (12.7.6).
 
 ---
 
