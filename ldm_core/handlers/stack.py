@@ -339,10 +339,9 @@ class StackHandler:
             if not run_command(
                 ["docker", "ps", "-a", "-q", "-f", f"name=^{api_proxy}$"]
             ):
-                if self.verbose:
-                    UI.info(
-                        f"Starting Docker Socket Proxy bridge for macOS ({socket_path})..."
-                    )
+                UI.info(
+                    f"Starting Docker Socket Proxy bridge for macOS ({socket_path})..."
+                )
                 run_command(
                     [
                         "docker",
@@ -361,6 +360,14 @@ class StackHandler:
                         "UNIX-CONNECT:/var/run/docker.sock",
                     ]
                 )
+            else:
+                # If it exists but is stopped, start it
+                is_running = run_command(
+                    ["docker", "ps", "-q", "-f", f"name=^{api_proxy}$"], check=False
+                )
+                if not is_running:
+                    UI.info("Starting existing Docker Socket Proxy bridge...")
+                    run_command(["docker", "start", api_proxy])
 
         # 4. Start Traefik if not running
         proxy_name = "liferay-proxy-global"
