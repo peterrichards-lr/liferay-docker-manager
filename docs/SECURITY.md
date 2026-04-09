@@ -22,7 +22,14 @@ The LDM CI pipeline runs Bandit security scans. We explicitly ignore the followi
 | **B108** | Hardcoded /tmp directory. Used only for transient mount verification tokens. |
 | **CVE-2026-4539** | Pygments vulnerability. Ignored as LDM only uses Pygments for local console highlighting, posing no remote risk. |
 
-## 3. SSL Trust (mkcert)
+## 3. Sensitive Data Masking (Log Redaction)
+
+LDM implements a proactive redaction layer to prevent the accidental logging of sensitive information in clear-text.
+
+- **Automatic Redaction**: Common sensitive keys (e.g., `PASSWORD`, `SECRET`, `TOKEN`, `AUTH`) are automatically masked with `[REDACTED]` in all command execution logs and verbose output.
+- **Local Focus**: While LDM is a sandbox tool and developers are responsible for their local environment, this measure ensures that even when sharing logs for troubleshooting, sensitive credentials remain protected.
+
+## 4. SSL Trust (mkcert)
 
 LDM uses `mkcert` to provide a "Green Lock" experience. This requires installing a local Certificate Authority (CA) on your machine.
 

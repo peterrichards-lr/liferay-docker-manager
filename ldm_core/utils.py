@@ -172,6 +172,11 @@ def run_command(cmd, shell=False, capture_output=True, check=True, env=None, cwd
         if executable:
             cmd[0] = executable
 
+    # Redact sensitive info for logging/display
+    display_cmd = UI.redact(" ".join(cmd) if isinstance(cmd, list) else cmd)
+    if "-v" in sys.argv or "--verbose" in sys.argv:
+        UI.debug(f"Executing: {display_cmd}")
+
     try:
         # Bandit: B602 (shell=True) is used for complex commands where needed,
         # B603 (subprocess_without_shell_equals_true) is safe as we now use absolute paths.

@@ -27,6 +27,21 @@ class UI:
         return padding
 
     @staticmethod
+    def redact(text):
+        """Redacts sensitive patterns (passwords, tokens, keys) from a string."""
+        if not text:
+            return text
+
+        # Pattern to find key=value where key contains sensitive words
+        # e.g., MYSQL_PASSWORD=secret -> MYSQL_PASSWORD=[REDACTED]
+        sensitive_keys = ["PASSWORD", "SECRET", "TOKEN", "KEY", "AUTH"]
+        pattern = r"(?i)(" + "|".join(sensitive_keys) + r")=([^&\s]+)"
+
+        import re
+
+        return re.sub(pattern, r"\1=[REDACTED]", str(text))
+
+    @staticmethod
     def _print(msg, color=None, icon=None, file=sys.stdout):
         """Internal print helper with Unicode safety."""
         # Clean the message
