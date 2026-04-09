@@ -2,9 +2,6 @@
 
 A professional command-line orchestrator for quickly standing up Liferay Portal and DXP environments using Docker Compose.
 
-> [!TIP]
-> **Hardened Edition (v1.5.8):** This version has been specifically refined for non-proprietary Docker environments. It includes native stability fixes for macOS (Colima/OrbStack/Docker Desktop), Windows (Native PowerShell), and Linux (Fedora/WSL2).
->
 > [!NOTE]
 > **Project History:** This tool was originally born as part of the [liferay-docker-scripts](https://github.com/peterrichards-lr/liferay-docker-scripts) repository. It has since evolved into a standalone application to provide better modularity and multi-instance stability.
 
