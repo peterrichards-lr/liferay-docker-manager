@@ -903,11 +903,37 @@ class StackHandler:
             self.args.tag or project_meta.get("tag"),
             self.args.host_name or project_meta.get("host_name") or "localhost",
         )
-        if not tag and self.non_interactive:
-            UI.die(
-                "No Liferay tag specified. In non-interactive mode, use: ldm run <pid> --tag <tag>"
+
+        # 2. Tag Discovery (Restored)
+        if not tag:
+            if self.non_interactive:
+                UI.die(
+                    "No Liferay tag specified. In non-interactive mode, use: ldm run <pid> --tag <tag>"
+                )
+
+            release_type = self.args.release_type or UI.ask(
+                "Release type (any|u|lts|qr) or prefix", "any"
+            )
+            from ldm_core.constants import API_BASE_DXP, API_BASE_PORTAL
+
+            api_url = (
+                API_BASE_PORTAL if getattr(self.args, "portal", False) else API_BASE_DXP
             )
 
+            from ldm_core.utils import discover_latest_tag
+
+            latest_tag = discover_latest_tag(
+                api_url,
+                release_type=release_type,
+                verbose=True,
+                refresh=getattr(self.args, "refresh", False),
+            )
+            if not latest_tag:
+                UI.die("Could not discover any tags. Please specify one with --tag")
+
+            tag = UI.ask("Enter Liferay Tag", latest_tag)
+
+        # 3. Handle External Snapshot Initialization
         external_snapshot = getattr(self.args, "snapshot", None)
         if external_snapshot:
             snap_path = Path(external_snapshot).resolve()
