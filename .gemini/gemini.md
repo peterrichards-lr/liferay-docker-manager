@@ -155,6 +155,7 @@ This repository contains automation tools for managing Liferay DXP instances usi
 
 ### Current State (April 9, 2026)
 
+- **Version 1.6.3 Intel Mac Hardening**: COMPLETED. Fixed infrastructure permission fixer to tolerate restricted `chown` calls on legacy macOS/sshfs mounts.
 - **Version 1.6.2 Upgrade UX Hardening**: COMPLETED. Added proactive permission checks to `ldm upgrade` to guide users on using `sudo` or Admin rights.
 - **Version 1.6.1 Self-Upgrade Verification**: COMPLETED. Bumped version to provide a target for testing the 'ldm upgrade' command.
 - **Resource Thresholds**: FIXED. Downgraded low CPU/Memory checks to Warnings to support Legacy Intel hardware (8GB RAM).

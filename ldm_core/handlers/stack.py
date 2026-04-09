@@ -354,7 +354,7 @@ class StackHandler:
                         "alpine",
                         "sh",
                         "-c",
-                        f"if [ \"$(cat /certs/.ldm_infra_mount_check 2>/dev/null)\" = \"{token_val}\" ]; then chown -R 1000:1000 /certs && chmod -R 775 /certs && echo 'OK'; else echo 'FAIL'; fi",
+                        f"if [ \"$(cat /certs/.ldm_infra_mount_check 2>/dev/null)\" = \"{token_val}\" ]; then chown -R 1000:1000 /certs 2>/dev/null || true; chmod -R 775 /certs 2>/dev/null || true; echo 'OK'; else echo 'FAIL'; fi",
                     ]
                 )
 
