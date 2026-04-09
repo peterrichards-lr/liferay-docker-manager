@@ -177,8 +177,14 @@ class BaseHandler:
 
     def setup_paths(self, root_path):
         root = Path(root_path).resolve()
+
+        # Identify LDM Root (Location of script or binary) for common folder
+        exe_path = Path(sys.argv[0]).resolve()
+        ldm_root = SCRIPT_DIR if exe_path.suffix.lower() == ".py" else exe_path.parent
+
         return {
             "root": root,
+            "common": ldm_root / "common",
             "deploy": root / "deploy",
             "data": root / "data",
             "scripts": root / "scripts",

@@ -922,18 +922,19 @@ class StackHandler:
         self.verify_runtime_environment(paths)
         if getattr(self.args, "samples", False):
             self.sync_samples(paths)
+
+        # 6. Finalize Meta
+        ssl_val = getattr(self.args, "ssl", None)
+        if ssl_val is None:
+            # Fallback to meta, or True if host_name is custom
+            ssl_val = project_meta.get("ssl", host_name != "localhost")
+
         project_meta.update(
             {
                 "tag": tag,
                 "host_name": host_name,
                 "container_name": project_id,
-                "ssl": str(
-                    getattr(
-                        self.args,
-                        "ssl",
-                        project_meta.get("ssl", host_name != "localhost"),
-                    )
-                ).lower(),
+                "ssl": str(ssl_val).lower(),
             }
         )
         self.write_meta(root / PROJECT_META_FILE, project_meta)

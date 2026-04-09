@@ -459,7 +459,10 @@ del "%~f0"
             pass
 
         # 4.2 Global Config Check
-        common_dir = Path.cwd() / "common"
+        exe_path = Path(sys.argv[0]).resolve()
+        ldm_root = SCRIPT_DIR if exe_path.suffix.lower() == ".py" else exe_path.parent
+        common_dir = ldm_root / "common"
+
         if not common_dir.exists():
             results.append(
                 ("Global Config", "Missing ('ldm init-common' available)", "warn")
