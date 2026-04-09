@@ -3,7 +3,6 @@ import sys
 import platform
 import shutil
 import json
-import hashlib
 import subprocess
 from pathlib import Path
 from ldm_core.ui import UI
@@ -13,6 +12,7 @@ from ldm_core.utils import (
     get_actual_home,
     check_for_updates,
     version_to_tuple,
+    verify_executable_checksum,
 )
 
 
@@ -55,33 +55,10 @@ class DiagnosticsHandler:
         else:
             results.append(("LDM Version", f"v{VERSION} (Latest)", True))
 
-        # 0.1 Executable Checksum
-        try:
-            exe_path = Path(sys.argv[0]).resolve()
-            if exe_path.exists() and exe_path.is_file():
-                # Read the first few bytes to detect file type
-                with open(exe_path, "rb") as f:
-                    magic = f.read(4)
-
-                # Check for known binary headers:
-                # - b"PK\x03\x04" : ZIP / Shiv / Jar
-                # - b"\x7fELF"    : Linux ELF Binary
-                # - b"MZ"         : Windows Executable
-                is_binary = magic.startswith((b"PK\x03\x04", b"\x7fELF", b"MZ"))
-
-                # It's source if it has a .py extension AND isn't one of the binary types
-                is_python_source = exe_path.suffix.lower() == ".py" and not is_binary
-
-                if is_python_source:
-                    results.append(("Executable Checksum", "Python Source (N/A)", True))
-                else:
-                    sha = hashlib.sha256()
-                    with open(exe_path, "rb") as f:
-                        for chunk in iter(lambda: f.read(4096), b""):
-                            sha.update(chunk)
-                    results.append(("Executable Checksum", sha.hexdigest()[:12], True))
-        except Exception:
-            pass
+        # 0.1 Executable Integrity
+        status, ok = verify_executable_checksum(VERSION)
+        if status:
+            results.append(("Executable Integrity", status, ok))
 
         # 1. System Info
         results.append(("Python Version", sys.version.split()[0], True))
@@ -161,9 +138,9 @@ class DiagnosticsHandler:
 
         # 3. mkcert Check
         try:
-            mkcert_version = run_command(["mkcert", "-version"], check=False)
-            if mkcert_version:
-                ca_root = run_command(["mkcert", "-CAROOT"], check=False)
+            mkcert_bin = shutil.which("mkcert")
+            if mkcert_bin:
+                ca_root = run_command([mkcert_bin, "-CAROOT"], check=False)
                 if ca_root and os.path.exists(ca_root) and os.listdir(ca_root):
                     # Deep check for Root CA trust on macOS
                     is_trusted = True
@@ -178,13 +155,13 @@ class DiagnosticsHandler:
                     if is_trusted:
                         results.append(("mkcert", "Installed (Root CA Trusted)", True))
                     else:
-                        results.append(("mkcert", "Installed (NOT TRUSTED)", False))
+                        results.append(("mkcert", "Installed (NOT TRUSTED)", "warn"))
                 else:
-                    results.append(("mkcert", "Installed (Root CA NOT FOUND)", False))
+                    results.append(("mkcert", "Installed (Root CA NOT FOUND)", "warn"))
             else:
-                results.append(("mkcert", "Not installed", False))
+                results.append(("mkcert", "Not installed", "warn"))
         except Exception:
-            results.append(("mkcert", "Not found in PATH", False))
+            results.append(("mkcert", "Not found in PATH", "warn"))
 
         # 4. OpenSSL Check
         try:
@@ -249,41 +226,13 @@ class DiagnosticsHandler:
                         / "portal-ext.properties"
                     ).read_text()
                     if pe_file.read_text().strip() == baseline_content.strip():
-                        results.append(("Global Config", "Baseline (v1.5.5)", True))
+                        results.append(
+                            ("Global Config", f"Baseline (v{VERSION})", True)
+                        )
                     else:
                         results.append(("Global Config", "Custom Overrides", True))
             except Exception:
                 results.append(("Global Config", "Overrides Active", True))
-
-        # 4.3 Traefik Config Check
-        if project_id:
-            project_path = self.detect_project_path(project_id)
-            if project_path:
-                meta = self.read_meta(project_path / PROJECT_META_FILE)
-                host_name = meta.get("host_name", "localhost")
-                if host_name != "localhost":
-                    actual_home = get_actual_home()
-                    traefik_conf = (
-                        actual_home
-                        / "liferay-docker-certs"
-                        / f"traefik-{host_name}.yml"
-                    )
-                    if traefik_conf.exists():
-                        results.append(
-                            (
-                                "Traefik Project SSL",
-                                f"Config loaded ({host_name})",
-                                True,
-                            )
-                        )
-                    else:
-                        results.append(
-                            (
-                                "Traefik Project SSL",
-                                f"Config MISSING ({host_name})",
-                                False,
-                            )
-                        )
 
         # 5. Network Check
         if docker_version:
@@ -293,7 +242,9 @@ class DiagnosticsHandler:
             if has_net:
                 results.append(("Docker Network", "liferay-net exists", True))
             else:
-                results.append(("Docker Network", "liferay-net missing", False))
+                results.append(
+                    ("Docker Network", "missing (will be created on run)", "warn")
+                )
 
             # 6. Global Services Check
             global_services = [
@@ -312,7 +263,9 @@ class DiagnosticsHandler:
                 if is_running:
                     results.append((label, "Running", True))
                 else:
-                    results.append((label, "Not running", "warn"))
+                    results.append(
+                        (label, "Not running (Run 'ldm infra-setup')", "warn")
+                    )
         else:
             results.append(("Docker Network", "Skipped (Engine down)", "warn"))
             results.append(("Global Infrastructure", "Skipped (Engine down)", "warn"))
@@ -326,7 +279,55 @@ class DiagnosticsHandler:
             else:
                 results.append(("Project Config", "docker-compose.yml MISSING", False))
 
-            # 7.2 DNS Check (Centralized)
+            # 7.2 SSL Certificate Check
+            meta = self.read_meta(project_path / PROJECT_META_FILE)
+            host_name = meta.get("host_name", "localhost")
+            ssl_enabled = str(meta.get("ssl", "false")).lower() == "true"
+            ssl_cert_name = meta.get("ssl_cert")
+
+            if ssl_enabled and host_name != "localhost":
+                actual_home = get_actual_home()
+                cert_dir = actual_home / "liferay-docker-certs"
+                cert_file = cert_dir / (ssl_cert_name or f"{host_name}.pem")
+                key_file = cert_dir / cert_file.name.replace(".pem", "-key.pem")
+                traefik_conf = cert_dir / f"traefik-{host_name}.yml"
+
+                # Check .pem and -key.pem
+                if cert_file.exists() and key_file.exists():
+                    cert_status = "Cert & Key OK"
+                    # Try to get expiry info if openssl is available
+                    openssl_bin = shutil.which("openssl")
+                    if openssl_bin:
+                        try:
+                            expiry_res = run_command(
+                                [
+                                    openssl_bin,
+                                    "x509",
+                                    "-enddate",
+                                    "-noout",
+                                    "-in",
+                                    str(cert_file),
+                                ],
+                                check=False,
+                            )
+                            if expiry_res and "notAfter=" in expiry_res:
+                                expiry_date = expiry_res.split("=", 1)[1].strip()
+                                cert_status = f"Valid until {expiry_date}"
+                        except Exception:
+                            pass
+                    results.append(("Project SSL Cert", cert_status, True))
+                else:
+                    results.append(
+                        ("Project SSL Cert", "Missing (.pem or -key.pem)", False)
+                    )
+
+                # Check Traefik YAML
+                if traefik_conf.exists():
+                    results.append(("Traefik Project SSL", "Config loaded", True))
+                else:
+                    results.append(("Traefik Project SSL", "Config MISSING", False))
+
+            # 7.3 DNS Check (Centralized)
             dns_ok, unresolved = self.validate_project_dns(project_path)
             meta = self.read_meta(project_path / PROJECT_META_FILE)
             host_name = meta.get("host_name", "localhost")

@@ -66,6 +66,16 @@ else
 	error "Virtual environment not found. Skip Security scanning."
 fi
 
+# 5. Unit Tests (Pytest)
+info "Running Unit Tests (Pytest)..."
+if [ -d "$VENV_PATH" ]; then
+	export PYTHONPATH="$SCRIPT_DIR"
+	"$VENV_PATH/bin/pytest" "$SCRIPT_DIR/ldm_core/tests/" || EXIT_CODE=1
+	[[ $EXIT_CODE -eq 0 ]] && success "Unit tests passed."
+else
+	error "Virtual environment not found. Skip Unit tests."
+fi
+
 if [[ $EXIT_CODE -eq 0 ]]; then
 	success "All linting tasks completed successfully."
 else

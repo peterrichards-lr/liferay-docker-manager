@@ -4,13 +4,21 @@ To ensure that the Liferay Docker Manager (LDM) remains "Industrial-Grade," it i
 
 ## 🛡️ Compatibility Matrix (Verified Environments)
 
-| Architecture | Host OS | Docker Provider | Status |
-| :--- | :--- | :--- | :--- |
-| **Apple Silicon** | macOS 14+ | **OrbStack** | ![macOS-Silicon-Orb](https://img.shields.io/badge/macOS_Silicon-OrbStack-success?style=flat-square&logo=apple&logoColor=white&color=00B0FF) |
-| **Apple Silicon** | macOS 14+ | **Docker Desktop** | ![macOS-Silicon-DD](https://img.shields.io/badge/macOS_Silicon-Docker_Desktop-success?style=flat-square&logo=apple&logoColor=white&color=00C853) |
-| **Apple Intel/M** | macOS 13+ | **Colima** | ![macOS-Intel-Col](https://img.shields.io/badge/macOS-Colima_Hardened-orange?style=flat-square&logo=apple&logoColor=white) |
-| **Windows PC** | Windows 11 | **Native WSL2** | ![Windows-WSL2](https://img.shields.io/badge/Windows_11-WSL2_Hardened-blue?style=flat-square&logo=windows&logoColor=white) |
-| **Linux Node** | Ubuntu 22.04 | **Docker Engine** | ![Linux-Native](https://img.shields.io/badge/Linux-Native_Docker-success?style=flat-square&logo=linux&logoColor=white&color=333333) |
+| Architecture | Host OS | Docker Provider | Hardening | Verified |
+| :--- | :--- | :--- | :--- | :--- |
+| **Apple Silicon** | macOS 14+ | **OrbStack** | ![OrbStack](https://img.shields.io/badge/OrbStack-Hardened-00B0FF?style=flat-square&logo=apple) | ✅ |
+| **Apple Silicon** | macOS 14+ | **Docker Desktop** | ![DockerDesktop](https://img.shields.io/badge/Docker_Desktop-Hardened-00C853?style=flat-square&logo=apple) | ✅ |
+| **Apple Intel/M** | macOS 13+ | **Colima** | ![Colima](https://img.shields.io/badge/Colima-Hardened-FFAB00?style=flat-square&logo=apple) | ✅ |
+| **Windows PC** | Windows 11 | **Native WSL2** | ![WSL2](https://img.shields.io/badge/WSL2-Hardened-blue?style=flat-square&logo=windows) | ✅ |
+| **Linux Node** | Ubuntu 22.04 | **Docker Engine** | ![Linux](https://img.shields.io/badge/Linux-Native-success?style=flat-square&logo=linux) | ✅ |
+
+### Reference Hardware & Lab Specs
+
+The following physical machines are used for the official verification of LDM releases:
+
+* **MacBook Pro (Apple Silicon)**: Apple M1 Pro, 32 GB RAM, macOS Tahoe 26.4 (25E246).
+* **Windows Workstation (x86_64)**: Intel(R) Core(TM) i7-7800X CPU @ 3.50GHz, 16GB RAM, Windows 11 Pro (23H2).
+* **Linux Workstation (Native)**: Apple MacBook Pro 11,3, Intel Core i7-4960HQ x 8, 16GB RAM, Fedora Linux 43 (Workstation Edition).
 
 ---
 
@@ -46,7 +54,7 @@ We test the LDM against the four "Pillars of Demo Success" to guarantee it works
 
 | Test Case | Steps | Expected Outcome |
 | :--- | :--- | :--- |
-| **1.1 LDM Doctor** | Run `ldm doctor` | Correctly identifies Docker CPUs/RAM. Reports "Global Config" status. |
+| **1.1 LDM Doctor** | Run `ldm doctor` | Correctly identifies Docker CPUs/RAM. Reports "Global Config" status. Missing `liferay-net` is a **Warning** (not error) with setup hints. |
 | **1.2 DNS Alignment** | Point host to wrong IP | `ldm doctor` warns if hostname doesn't match Traefik's bound IP. |
 | **1.3 Infra Setup** | `ldm infra-setup --search` | Starts Traefik (on 0.0.0.0) and ES8 sidecar. Idempotent. |
 
@@ -64,6 +72,13 @@ We test the LDM against the four "Pillars of Demo Success" to guarantee it works
 | :--- | :--- | :--- |
 | **3.1 Engine Cleanup** | `ldm infra-down` before switch | Clears the macOS socket bridge and global proxy from the active engine. |
 | **3.2 Context Swap** | Stop Engine A, Start B | `ldm doctor` identifies the new provider correctly. |
+
+### Phase 4: Teardown & Hygiene
+
+| Test Case | Steps | Expected Outcome |
+| :--- | :--- | :--- |
+| **4.1 SSL Hygiene** | Run `ldm down` | Correctly removes the certificates referenced in the project metadata (`ssl_cert`) and the matching Traefik YAML. |
+| **4.2 Prune Logic** | `ldm prune` | Safely identifies and removes orphaned containers without affecting active projects. |
 
 ---
 

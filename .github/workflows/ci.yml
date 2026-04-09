@@ -136,10 +136,15 @@ jobs:
         with:
           python-version: "3.13"
 
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install pytest
+
       - name: Run Tests (Cross-Platform)
         shell: bash
         run: |
-          export PYTHONPATH=$PYTHONPATH:.
+          pip install -e .
           pytest ldm_core/tests/
 
       - name: Build Standalone (Linux/macOS)
@@ -191,6 +196,13 @@ jobs:
           cp LICENSE bin-temp/
           mv samples.zip bin-temp/
 
+      - name: Generate Checksums
+        shell: bash
+        run: |
+          cd bin-temp
+          sha256sum ldm-linux ldm-macos ldm-windows.exe samples.zip > checksums.txt
+          cat checksums.txt
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
@@ -199,6 +211,7 @@ jobs:
             bin-temp/ldm-macos
             bin-temp/ldm-windows.exe
             bin-temp/samples.zip
+            bin-temp/checksums.txt
             bin-temp/LICENSE
           make_latest: true
           fail_on_unmatched_files: true

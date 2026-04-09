@@ -79,12 +79,43 @@ cd liferay-docker-manager
 
 ## Prerequisites
 
-- **Docker Engine**: Docker Desktop, Colima, or native WSL2.
+- **Docker Engine**: Required for container orchestration.
+  - [Docker Desktop](https://www.docker.com/products/docker-desktop/) (Windows/Mac)
+  - [Colima](https://github.com/abiosoft/colima) or [OrbStack](https://orbstack.dev/) (Mac alternatives)
+  - [Native Docker Engine](https://docs.docker.com/engine/install/) (Linux)
 - **Resources**: Recommended **4 CPUs and 8GB RAM** allocated to Docker.
   - *Note*: `ldm doctor` expects these minimums. If you allocate exactly 8GB, Docker may report ~7.7GB due to system overhead; the tool accounts for this by allowing a 7.5GB threshold.
-- **Python**: 3.10+ (if not using binary)
+- **Python**: 3.10+ (only if running from source)
 - **SSL Tools**: `mkcert` and `openssl` are required for HTTPS support.
-  - **Windows Users**: Install **Git for Windows** or use **Scoop** (`scoop install openssl`) to provide the required `openssl` command.
+
+### 🍎 Install SSL Tools (macOS)
+
+Using [Homebrew](https://brew.sh/):
+
+```bash
+brew install mkcert nss openssl
+mkcert -install
+```
+
+### 🐧 Install SSL Tools (Native Linux)
+
+**Fedora / RHEL:**
+
+```bash
+sudo dnf install mkcert nss-tools openssl
+mkcert -install
+```
+
+**Ubuntu / Debian:**
+
+```bash
+sudo apt update && sudo apt install mkcert libnss3-tools openssl
+mkcert -install
+```
+
+### 🪟 Install SSL Tools (Windows / WSL2)
+
+See the detailed [Troubleshooting section](#windows-installing-ssl-tools-scoop) below for Scoop-based installation.
 
 ---
 

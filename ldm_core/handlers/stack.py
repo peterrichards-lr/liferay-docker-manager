@@ -1373,6 +1373,7 @@ class StackHandler:
                 "host_name": host_name,
                 "port": str(port),
                 "ssl": str(use_ssl),
+                "ssl_cert": f"{host_name}.pem" if use_ssl else None,
                 "container_name": container_name,
                 "db_type": self.args.db or project_meta.get("db_type"),
                 "mount_logs": str(
@@ -1491,6 +1492,32 @@ class StackHandler:
             if getattr(self.args, "infra", False):
                 UI.info("Proceeding: Global infrastructure cleanup...")
                 self.cmd_infra_down()
+
+            # Clean up SSL artifacts if they exist
+            meta = self.read_meta(root / PROJECT_META_FILE)
+            host_name = meta.get("host_name")
+            ssl_cert = meta.get("ssl_cert")
+
+            if host_name and host_name != "localhost":
+                actual_home = get_actual_home()
+                cert_dir = actual_home / "liferay-docker-certs"
+
+                # Use the explicit filename from meta if available, fallback to host_name pattern
+                cert_base = ssl_cert.replace(".pem", "") if ssl_cert else host_name
+
+                artifacts = [
+                    cert_dir / f"{cert_base}.pem",
+                    cert_dir / f"{cert_base}-key.pem",
+                    cert_dir / f"traefik-{host_name}.yml",
+                ]
+                for art in artifacts:
+                    if art.exists():
+                        try:
+                            art.unlink()
+                            if self.verbose:
+                                UI.info(f"Removed SSL artifact: {art.name}")
+                        except Exception:
+                            pass
 
             if getattr(self.args, "delete", False):
                 UI.info(f"Proceeding: Deleting project folder {root}...")

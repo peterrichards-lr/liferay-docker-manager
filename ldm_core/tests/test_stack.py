@@ -33,6 +33,9 @@ class MockManager(StackHandler, WorkspaceHandler):
     def check_docker(self, *args, **kwargs):
         return True
 
+    def update_portal_ext(self, *args, **kwargs):
+        pass
+
     def sync_common_assets(self, *args, **kwargs):
         pass
 

@@ -390,6 +390,51 @@ def get_docker_socket_path():
     return "/var/run/docker.sock"
 
 
+def verify_executable_checksum(version):
+    """Verifies the current binary against the official checksums.txt from GitHub."""
+    exe_path = Path(sys.argv[0]).resolve()
+    if not exe_path.exists() or exe_path.suffix.lower() == ".py":
+        return "Source", True
+
+    try:
+        import hashlib
+
+        # 1. Calculate local hash
+        sha = hashlib.sha256()
+        with open(exe_path, "rb") as f:
+            for chunk in iter(lambda: f.read(4096), b""):
+                sha.update(chunk)
+        local_hash = sha.hexdigest()
+
+        # 2. Fetch official checksums
+        url = f"https://github.com/peterrichards-lr/liferay-docker-manager/releases/download/v{version}/checksums.txt"
+        req = Request(url, headers={"User-Agent": "ldm-cli"})
+        official_data = ""
+        with urlopen(req, timeout=5) as response:  # nosec B310
+            official_data = response.read().decode()
+
+        # 3. Identify binary name in checksum file
+        # We check common release names
+        system = platform.system().lower()
+        target_name = "ldm-linux"
+        if system == "darwin":
+            target_name = "ldm-macos"
+        elif system == "windows":
+            target_name = "ldm-windows.exe"
+
+        for line in official_data.splitlines():
+            if target_name in line:
+                expected_hash = line.split()[0]
+                if local_hash == expected_hash:
+                    return f"Verified ({local_hash[:12]})", True
+                else:
+                    return f"TAMPERED / MISMATCH ({local_hash[:12]})", False
+
+        return f"Unknown Build ({local_hash[:12]})", "warn"
+    except Exception:
+        return None, "warn"
+
+
 def version_to_tuple(v):
     """Converts a version string (e.g. '1.5.4') to a numeric tuple for comparison."""
     if not v:

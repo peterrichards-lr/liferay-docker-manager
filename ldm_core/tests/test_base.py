@@ -1,5 +1,6 @@
 import unittest
 import os
+import platform
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 from ldm_core.handlers.base import BaseHandler
@@ -17,6 +18,9 @@ class TestBaseHardening(unittest.TestCase):
     def setUp(self):
         self.handler = MockBaseManager()
 
+    @unittest.skipIf(
+        platform.system().lower() == "windows", "Colima tests only valid on POSIX"
+    )
     def test_get_colima_mount_flags_home(self):
         # Path in home directory
         with patch.dict(os.environ, {"USER": "peter", "SUDO_USER": ""}):
@@ -24,12 +28,18 @@ class TestBaseHardening(unittest.TestCase):
             flags = self.handler.get_colima_mount_flags(paths)
             self.assertIn("--mount /Users/$(whoami):w", flags)
 
+    @unittest.skipIf(
+        platform.system().lower() == "windows", "Colima tests only valid on POSIX"
+    )
     def test_get_colima_mount_flags_volumes(self):
         # Path on external volume
         paths = [Path("/Volumes/SanDisk/projects")]
         flags = self.handler.get_colima_mount_flags(paths)
         self.assertIn("--mount /Volumes/SanDisk:w", flags)
 
+    @unittest.skipIf(
+        platform.system().lower() == "windows", "Colima tests only valid on POSIX"
+    )
     def test_get_colima_mount_flags_multiple(self):
         # Mixed paths
         with patch.dict(os.environ, {"USER": "peter"}):
