@@ -4,7 +4,6 @@ import time
 import tarfile
 import gzip
 import lzma
-import subprocess
 from pathlib import Path
 from datetime import datetime
 from ldm_core.ui import UI
@@ -214,16 +213,14 @@ class SnapshotHandler:
                                 else "mysql -u liferay -pliferay lportal"
                             )
                         )
-                        stdout = None if self.verbose else subprocess.DEVNULL
-                        # Bandit: B602 (shell=True) is used here to stream the
-                        # decompressed database dump directly into the container.
-                        subprocess.run(
+                        # Stream the decompressed database dump directly into the container.
+                        # This now uses ldm_core.utils.run_command for shell sanitization.
+                        run_command(
                             cmd,
                             shell=True,
                             check=True,
-                            stdout=stdout,
-                            stderr=(None if self.verbose else subprocess.STDOUT),
-                        )  # nosec B602 B603
+                            capture_output=not self.verbose,
+                        )  # nosec B604
                         UI.success("Database restored.")
                         restored_anything = True
                     except Exception as e:

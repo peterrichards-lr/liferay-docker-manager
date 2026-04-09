@@ -99,6 +99,33 @@ def is_env_var_blacklisted(key, blacklist):
     return False
 
 
+def _sanitize_shell_command(cmd):
+    """
+    Sanitizes a shell command string to prevent common injection attacks.
+    Allows pipes (|) and redirections (<, >) but blocks dangerous metacharacters.
+    """
+    if not isinstance(cmd, str):
+        return cmd
+
+    # 1. Block obviously malicious sequences
+    dangerous = [";", "&&", "||", "$(", "]]", "[[", "`"]
+    for char in dangerous:
+        if char in cmd:
+            UI.die(
+                f"Security Violation: Shell command contains forbidden character '{char}'"
+            )
+
+    # 2. Pattern Verification: If shell=True is used, it MUST match LDM usage patterns
+    # (Docker operations, Compression, or Windows bridge)
+    safe_patterns = ["docker", "gzip", "cmd.exe", "cat", "pg_dump", "mysql", "mariadb"]
+    is_safe = any(pattern in cmd.lower() for pattern in safe_patterns)
+
+    if not is_safe:
+        UI.die("Security Violation: Unrecognized shell command pattern.")
+
+    return cmd
+
+
 def run_command(cmd, shell=False, capture_output=True, check=True, env=None, cwd=None):
     if env is None:
         env = os.environ.copy()
@@ -106,6 +133,10 @@ def run_command(cmd, shell=False, capture_output=True, check=True, env=None, cwd
         env = env.copy()
 
     env["DOCKER_CLI_HINTS"] = "false"
+
+    # Hardening: Sanitize if shell is enabled
+    if shell:
+        cmd = _sanitize_shell_command(cmd)
 
     # Automatically resolve absolute paths for list-based commands (resolves Bandit B607)
     if isinstance(cmd, list) and len(cmd) > 0 and not shell:
