@@ -57,8 +57,9 @@ class DiagnosticsHandler:
 
         # 0.1 Executable Integrity
         status, ok = verify_executable_checksum(VERSION)
-        if status:
-            results.append(("Executable Integrity", status, ok))
+        if not status:
+            status, ok = "Verification Unavailable", "warn"
+        results.append(("Executable Integrity", status, ok))
 
         # 1. System Info
         results.append(("Python Version", sys.version.split()[0], True))
@@ -106,15 +107,28 @@ class DiagnosticsHandler:
 
                     if endpoint:
                         endpoint_low = endpoint.lower()
+                        context_low = context.lower()
+                        system_low = platform.system().lower()
+
                         if ".colima" in endpoint_low:
                             provider = "Colima"
                         elif "orbstack" in endpoint_low:
                             provider = "OrbStack"
-                        elif (
-                            "docker.sock" in endpoint_low
-                            or "docker_engine" in endpoint_low
-                            or "npipe://" in endpoint_low
+                        elif system_low == "linux" and (
+                            "docker.sock" in endpoint_low or "default" in context_low
                         ):
+                            provider = "Native Docker"
+                        elif (
+                            "docker-desktop" in endpoint_low
+                            or "docker-desktop" in context_low
+                        ):
+                            provider = "Docker Desktop"
+                        elif (
+                            "npipe://" in endpoint_low
+                            or "docker_engine" in endpoint_low
+                        ):
+                            provider = "Docker Desktop"
+                        elif "docker.sock" in endpoint_low:
                             provider = "Docker Desktop"
 
                     # Fallback to name-based if endpoint check was inconclusive
