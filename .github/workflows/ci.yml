@@ -66,8 +66,9 @@ jobs:
           git diff --exit-code docs/*.md
 
       - name: Run unit tests
+        shell: bash
         run: |
-          export PYTHONPATH=$PYTHONPATH:.
+          pip install -e .
           pytest
 
   smoke-test:
@@ -98,12 +99,14 @@ jobs:
           mkcert -install
 
       - name: LDM Doctor Smoke Test
+        shell: bash
         run: |
           # Run doctor in non-interactive mode
-          export PYTHONPATH=$PYTHONPATH:.
+          pip install -e .
           python3 liferay_docker.py -y doctor
 
       - name: LDM Run Smoke Test (Mock)
+        shell: bash
         run: |
           # Create a mock project
           mkdir -p smoke-project/files
@@ -114,9 +117,7 @@ jobs:
           echo "image_tag=alpine" >> smoke-project/.liferay-docker.meta
 
           # Run LDM to generate compose
-          # Using --sidecar ensures a local search container is included in the file
-          # Using --no-wait skips the long startup verification loop
-          export PYTHONPATH=$PYTHONPATH:.
+          pip install -e .
           python3 liferay_docker.py -y run smoke-project --no-up --sidecar --no-wait
 
           # Verify docker-compose.yml was generated
@@ -154,8 +155,9 @@ jobs:
           pytest ldm_core/tests/
 
       - name: LDM Maintenance Smoke Test
+        shell: bash
         run: |
-          export PYTHONPATH=$PYTHONPATH:.
+          pip install -e .
           # Verify clear-cache (Non-Docker)
           python3 liferay_docker.py -y clear-cache
           # Skip prune in CI as it requires a running Docker daemon
