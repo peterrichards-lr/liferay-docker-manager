@@ -134,6 +134,15 @@ def run_command(cmd, shell=False, capture_output=True, check=True, env=None, cwd
 
     env["DOCKER_CLI_HINTS"] = "false"
 
+    # Hardening: Prevent 'http+docker' scheme errors in legacy docker-compose (v1)
+    # when running on modern Python environments (urllib3 2.x).
+    if isinstance(cmd, list) and len(cmd) > 0 and "docker-compose" in str(cmd[0]):
+        # Force a legacy-compatible API version and disable paramiko
+        env["COMPOSE_PARAMIKO_SSH"] = "0"
+        # Only set if not already present to avoid overriding user intent
+        if "DOCKER_API_VERSION" not in env:
+            env["DOCKER_API_VERSION"] = "1.41"
+
     # Hardening: Sanitize if shell is enabled
     if shell:
         cmd = _sanitize_shell_command(cmd)

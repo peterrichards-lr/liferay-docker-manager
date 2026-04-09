@@ -326,7 +326,37 @@ del "%~f0"
                 compose_label = (
                     "v2 (Plugin)" if "compose" in compose_cmd else "v1 (Standalone)"
                 )
-                results.append(("Docker Compose", compose_label, True))
+
+                # Deep Check: Verify it can actually talk to the socket
+                is_functional = True
+                try:
+                    # 'version' is usually safe, but on broken Standalone v1
+                    # it might still crash when trying to negotiate the API
+                    res = subprocess.run(
+                        compose_cmd + ["version", "--short"],
+                        capture_output=True,
+                        text=True,
+                        check=False,
+                        env=os.environ.copy(),  # Use raw env here to see if it's broken globally
+                    )
+                    if res.returncode != 0:
+                        is_functional = False
+                except Exception:
+                    is_functional = False
+
+                if is_functional:
+                    results.append(("Docker Compose", compose_label, True))
+                else:
+                    results.append(
+                        (
+                            "Docker Compose",
+                            f"{compose_label} (❌ BROKEN - Likely urllib3 mismatch)",
+                            "warn",
+                        )
+                    )
+                    UI.info(
+                        f"  + {UI.YELLOW}Hint:{UI.COLOR_OFF} Your docker-compose is broken. Try: {UI.CYAN}ldm run --no-wait{UI.COLOR_OFF}"
+                    )
 
             # 2.1 Docker Credentials Check
             try:
