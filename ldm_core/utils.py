@@ -139,9 +139,14 @@ def run_command(cmd, shell=False, capture_output=True, check=True, env=None, cwd
     if isinstance(cmd, list) and len(cmd) > 0 and "docker-compose" in str(cmd[0]):
         # Force a legacy-compatible API version and disable paramiko
         env["COMPOSE_PARAMIKO_SSH"] = "0"
-        # Only set if not already present to avoid overriding user intent
+        # Force DOCKER_HOST to a standard unix socket format to bypass the
+        # 'http+docker' scheme parsing bug in legacy docker-py.
+        # We prefer /var/run/docker.sock as it's the standard entry point.
+        if "DOCKER_HOST" not in env or env["DOCKER_HOST"].startswith("http"):
+            env["DOCKER_HOST"] = "unix:///var/run/docker.sock"
+        # Force a lower API version for better legacy compatibility
         if "DOCKER_API_VERSION" not in env:
-            env["DOCKER_API_VERSION"] = "1.41"
+            env["DOCKER_API_VERSION"] = "1.39"
 
     # Hardening: Sanitize if shell is enabled
     if shell:
