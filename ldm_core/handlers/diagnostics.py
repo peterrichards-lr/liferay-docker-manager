@@ -46,9 +46,12 @@ class DiagnosticsHandler:
     def cmd_doctor(self, project_id=None):
         UI.heading("LDM Doctor - Environmental Health Check")
 
+        # 0. Early Project Resolve (Optional skip allowed)
+        project_path = self.detect_project_path(project_id)
+
         results = []
 
-        # 0. Version Check
+        # 0.1 Version Check
         latest, _ = check_for_updates(VERSION, force=True)
         if latest and version_to_tuple(latest) > version_to_tuple(VERSION):
             results.append(("LDM Version", f"v{VERSION} (v{latest} available)", "warn"))
@@ -333,7 +336,6 @@ class DiagnosticsHandler:
             results.append(("Global Infrastructure", "Skipped (Engine down)", "warn"))
 
         # 7. Project-Specific Check (Optional)
-        project_path = self.detect_project_path(project_id)
         if project_path:
             # 7.1 Compose File Check
             if self.require_compose(project_path, silent=True):

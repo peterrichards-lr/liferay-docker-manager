@@ -75,11 +75,14 @@ class BaseHandler:
         for i, r in enumerate(project_roots):
             print(f"[{i + 1}] {r['path'].name} [{UI.CYAN}{r['version']}{UI.COLOR_OFF}]")
 
-        choice = UI.ask("Select project index (or 'q' to quit)", "1")
+        choice = UI.ask("Select project index, 's' to skip, or 'q' to quit", "1")
         if choice.lower() == "q":
             import sys
 
             sys.exit(0)
+
+        if choice.lower() == "s":
+            return None
 
         try:
             idx = int(choice) - 1
