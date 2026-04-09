@@ -1,4 +1,5 @@
 import sys
+import platform
 
 
 # --- UI Helpers ---
@@ -13,14 +14,27 @@ class UI:
     CYAN = "\033[0;36m"
 
     @staticmethod
+    def get_padding(icon=None):
+        """Returns the OS-aware padding for icons."""
+        # macOS needs more breathing room for emojis to appear uniform with Windows/WSL
+        system = platform.system().lower()
+        padding = "   " if system == "darwin" else "  "
+
+        # Extra precision: The information icon (ℹ) is often narrow on macOS
+        if system == "darwin" and icon == "ℹ":
+            padding += " "
+
+        return padding
+
+    @staticmethod
     def _print(msg, color=None, icon=None, file=sys.stdout):
         """Internal print helper with Unicode safety."""
         # Clean the message
         msg = msg.strip()
 
         # Format the output string
-        # Use two spaces after icons for better visual separation
-        out = f"{icon}  {msg}" if icon else msg
+        padding = UI.get_padding(icon)
+        out = f"{icon}{padding}{msg}" if icon else msg
         if color:
             out = f"{color}{out}{UI.COLOR_OFF}"
 
@@ -70,9 +84,9 @@ class UI:
     def ask(prompt, default=None):
         prompt = prompt.strip()
         icon = "❓"
+        padding = UI.get_padding(icon)
         try:
-            # Standardized two-space icon padding
-            formatted_prompt = f"{UI.WHITE}{icon}  {prompt}"
+            formatted_prompt = f"{UI.WHITE}{icon}{padding}{prompt}"
             if default:
                 formatted_prompt += f" [{UI.GREEN}{default}{UI.WHITE}]: {UI.COLOR_OFF}"
             else:

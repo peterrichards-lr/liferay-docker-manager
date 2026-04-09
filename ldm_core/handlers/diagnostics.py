@@ -645,13 +645,14 @@ del "%~f0"
                 icon = "✅"
             elif ok == "warn":
                 color = UI.YELLOW
-                icon = "⚠️ "
+                icon = "⚠️"
                 has_warnings = True
             else:
                 color = UI.RED
                 icon = "❌"
                 all_ok = False
-            print(f"{component:<25} {color}{icon} {status}{UI.COLOR_OFF}")
+            padding = UI.get_padding(icon)
+            print(f"{component:<25} {color}{icon}{padding}{status}{UI.COLOR_OFF}")
 
         if all_ok and not has_warnings:
             UI.success("Everything looks good! Your environment is ready.")
