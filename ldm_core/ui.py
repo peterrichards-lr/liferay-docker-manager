@@ -13,55 +13,78 @@ class UI:
     CYAN = "\033[0;36m"
 
     @staticmethod
+    def _print(msg, color=None, icon=None, file=sys.stdout):
+        """Internal print helper with Unicode safety."""
+        # Clean the message
+        msg = msg.strip()
+
+        # Format the output string
+        out = f"{icon} {msg}" if icon else msg
+        if color:
+            out = f"{color}{out}{UI.COLOR_OFF}"
+
+        try:
+            # Try printing with the current encoding
+            print(out, file=file)
+        except UnicodeEncodeError:
+            # Fallback for old Windows consoles (CP1252)
+            # Replace problematic characters with safe ASCII equivalents
+            safe_out = out.encode("ascii", "replace").decode("ascii")
+            print(safe_out, file=file)
+
+    @staticmethod
     def info(msg):
-        print(f"{UI.YELLOW}ℹ {msg.strip()}{UI.COLOR_OFF}")
+        UI._print(msg, UI.YELLOW, "ℹ")
 
     @staticmethod
     def success(msg):
-        print(f"{UI.GREEN}✅ {msg.strip()}{UI.COLOR_OFF}")
+        UI._print(msg, UI.GREEN, "✅")
 
     @staticmethod
     def warning(msg):
-        print(f"{UI.YELLOW}⚠️  Warning: {msg.strip()}{UI.COLOR_OFF}")
+        UI._print(msg, UI.YELLOW, "⚠️  Warning:")
 
     @staticmethod
-    def error(msg):
-        print(f"{UI.BRED}❌ Error:{UI.COLOR_OFF} {msg.strip()}", file=sys.stderr)
+    def error(msg, details=None):
+        UI._print(msg, UI.BRED, "❌ Error:", file=sys.stderr)
+        if details:
+            print(f"{UI.WHITE}Details:{UI.COLOR_OFF} {details}", file=sys.stderr)
 
     @staticmethod
-    def die(msg):
-        UI.error(msg.strip())
+    def die(msg, details=None):
+        UI.error(msg, details)
         sys.exit(1)
 
     @staticmethod
     def heading(msg):
-        print(f"\n{UI.BYELLOW}=== {msg.strip()} ==={UI.COLOR_OFF}")
+        msg = msg.strip()
+        print(f"\n{UI.BYELLOW}=== {msg} ==={UI.COLOR_OFF}")
 
     @staticmethod
     def debug(msg):
-        """Prints info only if verbose mode is enabled (implicitly checked here)."""
-        print(f"{UI.WHITE}⚙️  {msg.strip()}{UI.COLOR_OFF}")
+        """Prints info only if verbose mode is enabled."""
+        UI._print(msg, UI.WHITE, "⚙️")
 
     @staticmethod
     def ask(prompt, default=None):
         prompt = prompt.strip()
+        icon = "❓"
         try:
+            formatted_prompt = f"{UI.WHITE}{icon} {prompt}"
             if default:
-                res = input(
-                    f"{UI.WHITE}❓ {prompt} [{UI.GREEN}{default}{UI.WHITE}]: {UI.COLOR_OFF}"
-                )
-                res = res.strip() if res else default
+                formatted_prompt += f" [{UI.GREEN}{default}{UI.WHITE}]: {UI.COLOR_OFF}"
             else:
-                res = input(f"{UI.WHITE}❓ {prompt}: {UI.COLOR_OFF}").strip()
+                formatted_prompt += f": {UI.COLOR_OFF}"
 
-            if res and res.lower() == "q":
-                print("")
-                UI.info("Aborted by user.")
-                sys.exit(0)
-            return res
-        except KeyboardInterrupt:
-            print("\n")
-            UI.info("Interrupted by user. Exiting...")
+            try:
+                res = input(formatted_prompt)
+            except UnicodeEncodeError:
+                # Fallback prompt for CP1252 (Standard Windows CMD)
+                res = input(f"? {prompt} [{default}]: " if default else f"? {prompt}: ")
+
+            return res.strip() if res else default
+        except (EOFError, KeyboardInterrupt):
+            print(f"\n{UI.WHITE}Aborted.{UI.COLOR_OFF}")
             sys.exit(130)
 
     @staticmethod
@@ -70,3 +93,4 @@ class UI:
             if size < 1024:
                 return f"{size:.1f} {unit}"
             size /= 1024
+        return f"{size:.1f} PB"
