@@ -459,9 +459,15 @@ del "%~f0"
             pass
 
         # 4.2 Global Config Check
-        exe_path = Path(sys.argv[0]).resolve()
-        ldm_root = SCRIPT_DIR if exe_path.suffix.lower() == ".py" else exe_path.parent
-        common_dir = ldm_root / "common"
+        # Prioritize Current Working Directory (standard for sandbox managers)
+        common_dir = Path.cwd() / "common"
+        if not common_dir.exists():
+            # Fallback to binary/script location
+            exe_path = Path(sys.argv[0]).resolve()
+            ldm_root = (
+                SCRIPT_DIR if exe_path.suffix.lower() == ".py" else exe_path.parent
+            )
+            common_dir = ldm_root / "common"
 
         if not common_dir.exists():
             results.append(
