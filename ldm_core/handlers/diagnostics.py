@@ -114,15 +114,15 @@ class DiagnosticsHandler:
                             provider = "Colima"
                         elif "orbstack" in endpoint_low:
                             provider = "OrbStack"
-                        elif system_low == "linux" and (
-                            "docker.sock" in endpoint_low or "default" in context_low
-                        ):
-                            provider = "Native Docker"
                         elif (
                             "docker-desktop" in endpoint_low
                             or "docker-desktop" in context_low
                         ):
                             provider = "Docker Desktop"
+                        elif system_low == "linux" and (
+                            "docker.sock" in endpoint_low or context_low == "default"
+                        ):
+                            provider = "Native Docker"
                         elif (
                             "npipe://" in endpoint_low
                             or "docker_engine" in endpoint_low
