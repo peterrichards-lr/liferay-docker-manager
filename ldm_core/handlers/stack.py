@@ -456,7 +456,7 @@ class StackHandler:
         self.setup_infrastructure(resolved_ip, ssl_port, use_ssl=True)
 
         if getattr(self.args, "search", False):
-            self.setup_global_search(resolved_ip)
+            self.setup_global_search()
 
         UI.success("Global infrastructure services are ready.")
 

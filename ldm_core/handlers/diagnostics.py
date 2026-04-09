@@ -105,20 +105,27 @@ class DiagnosticsHandler:
                     )
 
                     if endpoint:
-                        if ".colima" in endpoint:
+                        endpoint_low = endpoint.lower()
+                        if ".colima" in endpoint_low:
                             provider = "Colima"
-                        elif "orbstack" in endpoint:
+                        elif "orbstack" in endpoint_low:
                             provider = "OrbStack"
-                        elif "docker.sock" in endpoint or "docker_engine" in endpoint:
+                        elif (
+                            "docker.sock" in endpoint_low
+                            or "docker_engine" in endpoint_low
+                            or "npipe://" in endpoint_low
+                        ):
                             provider = "Docker Desktop"
 
                     # Fallback to name-based if endpoint check was inconclusive
                     if provider == "Unknown":
-                        if context == "colima":
+                        context_low = context.lower()
+                        if context_low == "colima":
                             provider = "Colima"
-                        elif context == "orbstack":
+                        elif context_low == "orbstack":
                             provider = "OrbStack"
-
+                        elif "desktop" in context_low:
+                            provider = "Docker Desktop"
                     results.append(("Docker Context", context, True))
                     results.append(("Docker Provider", provider, True))
             except Exception:
