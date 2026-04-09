@@ -217,11 +217,11 @@ colima start --cpu 4 --memory 8 --vm-type=vz --mount-type=virtiofs --mount /User
 
 ### 2. Recommended Start Command (Legacy Intel Mac)
 
-If you are running on an older Intel Mac (e.g. Early 2015 with 8GB RAM), use these restricted settings to ensure Liferay has enough host memory to function:
+If you are running on an older Intel Mac (e.g. Early 2015 with 8GB RAM), use these settings to ensure Liferay has enough host memory to function:
 
 ```bash
 # Optimized for Dual-Core Intel (8GB RAM)
-colima start --cpu 2 --memory 6 --vm-type=qemu --mount-type=virtiofs --mount /Users/$(whoami):w
+colima start --cpus 2 --memory 6 --mount-type virtiofs --mount /Users/$(whoami):w
 ```
 
 ### 3. The "Ghost Mount" Issue
