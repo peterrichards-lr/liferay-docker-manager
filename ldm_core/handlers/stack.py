@@ -1118,7 +1118,10 @@ class StackHandler:
         access_url = f"{'https' if ssl else 'http'}://{host_name}{f':{ssl_port}' if ssl and ssl_port != '443' else (f':{port}' if not ssl else '')}"
 
         if not no_wait:
-            UI.info("Waiting for Liferay to start...")
+            p_id = project_meta.get("container_name") or paths["root"].name
+            UI.info(
+                f"Waiting for Liferay to start... (Monitor progress with: {UI.CYAN}ldm logs -f {p_id}{UI.COLOR_OFF})"
+            )
             start_time = time.time()
             is_ready = False
             while time.time() - start_time < int(project_meta.get("timeout", 600)):
