@@ -76,6 +76,10 @@ else
 	error "Virtual environment not found. Skip Unit tests."
 fi
 
+# 6. Documentation Sync
+info "Synchronizing Documentation..."
+python3 "$SCRIPT_DIR/scripts/sync_docs.py" || EXIT_CODE=1
+
 if [[ $EXIT_CODE -eq 0 ]]; then
 	success "All linting tasks completed successfully."
 else
