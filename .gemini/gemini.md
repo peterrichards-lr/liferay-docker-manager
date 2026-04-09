@@ -155,6 +155,8 @@ This repository contains automation tools for managing Liferay DXP instances usi
 
 ### Current State (April 9, 2026)
 
+- **Version 1.6.1 Self-Upgrade Verification**: COMPLETED. Bumped version to provide a target for testing the 'ldm upgrade' command.
+- **Resource Thresholds**: FIXED. Downgraded low CPU/Memory checks to Warnings to support Legacy Intel hardware (8GB RAM).
 - **Version 1.6.0 Major Feature Release**: COMPLETED. Added `ldm upgrade` for secure, architecture-aware binary self-updates with SHA-256 verification.
 - **SSL Management**: COMPLETED. Added `ldm renew-ssl` to allow one-click/one-command refreshing of project-specific SSL certificates.
 - **Version 1.5.9 SSL Management**: COMPLETED. Finalized the `renew-ssl` logic and hygiene metadata.

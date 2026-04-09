@@ -1,7 +1,7 @@
 from pathlib import Path
 
 # --- Constants & Configuration ---
-VERSION = "1.6.0"
+VERSION = "1.6.1"
 IMAGE_NAME_DXP = "liferay/dxp"
 IMAGE_NAME_PORTAL = "liferay/portal"
 API_BASE_DXP = "https://hub.docker.com/v2/repositories/liferay/dxp/tags?page_size=200&ordering=name"
