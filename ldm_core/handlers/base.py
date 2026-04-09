@@ -1,5 +1,6 @@
 import os
 import re
+import sys
 import platform
 import subprocess
 import shutil
@@ -77,8 +78,6 @@ class BaseHandler:
 
         choice = UI.ask("Select project index, 's' to skip, or 'q' to quit", "1")
         if choice.lower() == "q":
-            import sys
-
             sys.exit(0)
 
         if choice.lower() == "s":

@@ -61,6 +61,7 @@ jobs:
 
       - name: Documentation Sync
         run: |
+          export PYTHONPATH=$PYTHONPATH:.
           python3 scripts/sync_docs.py
           # Fail CI if sync script made changes - this ensures docs were synced BEFORE commit
           git diff --exit-code docs/*.md
@@ -102,6 +103,7 @@ jobs:
         shell: bash
         run: |
           # Run doctor in non-interactive mode
+          export DOCKER_API_VERSION=1.44
           pip install -e .
           python3 liferay_docker.py -y doctor
 

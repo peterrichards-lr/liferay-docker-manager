@@ -78,6 +78,7 @@ fi
 
 # 6. Documentation Sync
 info "Synchronizing Documentation..."
+export PYTHONPATH="$SCRIPT_DIR"
 python3 "$SCRIPT_DIR/scripts/sync_docs.py" || EXIT_CODE=1
 
 if [[ $EXIT_CODE -eq 0 ]]; then
