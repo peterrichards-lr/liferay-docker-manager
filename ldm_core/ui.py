@@ -32,20 +32,25 @@ class UI:
         if not text:
             return text
 
-        # Pattern to find key=value where key contains sensitive words
-        # e.g., MYSQL_PASSWORD=secret -> MYSQL_PASSWORD=[REDACTED]
-        sensitive_keys = ["PASSWORD", "SECRET", "TOKEN", "KEY", "AUTH"]
-        pattern = r"(?i)(" + "|".join(sensitive_keys) + r")=([^&\s]+)"
-
         import re
 
-        return re.sub(pattern, r"\1=[REDACTED]", str(text))
+        # 1. Redact KEY=VALUE patterns (e.g. MYSQL_PASSWORD=secret)
+        keys = ["PASSWORD", "SECRET", "TOKEN", "KEY", "AUTH"]
+        kv_pattern = r"(?i)(" + "|".join(keys) + r")=([^&\s]+)"
+        text = re.sub(kv_pattern, r"\1=[REDACTED]", str(text))
+
+        # 2. Redact CLI password flags (e.g. -pPASSWORD or --password=secret)
+        # We are careful to only match -p if followed by characters (not just a space)
+        flag_pattern = r"(?i)(-p|--password=)([^&\s]+)"
+        text = re.sub(flag_pattern, r"\1[REDACTED]", text)
+
+        return text
 
     @staticmethod
     def _print(msg, color=None, icon=None, file=sys.stdout):
-        """Internal print helper with Unicode safety."""
-        # Clean the message
-        msg = msg.strip()
+        """Internal print helper with Unicode safety and automatic redaction."""
+        # Clean and Redact at the sink (Defensive Layer)
+        msg = UI.redact(msg.strip())
 
         # Format the output string
         padding = UI.get_padding(icon)

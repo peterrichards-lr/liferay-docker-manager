@@ -176,7 +176,8 @@ def run_command(cmd, shell=False, capture_output=True, check=True, env=None, cwd
 
         if check:
             # Provide a clean, user-friendly error message instead of a stack trace
-            cmd_str = " ".join(cmd) if isinstance(cmd, list) else cmd
+            # Use redaction to protect sensitive info in the error log
+            cmd_str = UI.redact(" ".join(cmd) if isinstance(cmd, list) else cmd)
 
             if isinstance(e, FileNotFoundError):
                 UI.error(
