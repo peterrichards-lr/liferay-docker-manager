@@ -7,6 +7,7 @@ import platform
 import tarfile
 import zipfile
 import threading
+import sys
 from pathlib import Path
 from datetime import datetime
 from ldm_core.ui import UI
@@ -522,8 +523,6 @@ class WorkspaceHandler:
                         if self.non_interactive:
                             UI.die("Build failed in non-interactive mode. Aborting.")
                         if UI.ask("Continue anyway? (y/n/q)", "N").upper() != "Y":
-                            import sys
-
                             sys.exit(1)
                 else:
                     UI.warning("gradlew not found. Skipping build.")

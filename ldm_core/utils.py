@@ -205,14 +205,11 @@ def run_command(cmd, shell=False, capture_output=True, check=True, env=None, cwd
                 UI.error(
                     f"Command not found: {cmd[0] if isinstance(cmd, list) else cmd}"
                 )
-                import sys
-
                 sys.exit(127)
 
             UI.error(f"Command failed (Exit {e.returncode}): {cmd_str}")
             if e.stderr:
                 print(f"{UI.WHITE}Error Details:{UI.COLOR_OFF} {e.stderr.strip()}")
-            import sys
 
             sys.exit(e.returncode)
         return None

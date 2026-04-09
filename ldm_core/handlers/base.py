@@ -426,7 +426,6 @@ class BaseHandler:
                     UI.info(
                         f"colima start {mount_hint} --vm-type=vz --mount-type=virtiofs"
                     )
-                    import sys
 
                     sys.exit(1)
 
