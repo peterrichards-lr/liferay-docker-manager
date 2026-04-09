@@ -127,9 +127,13 @@ class StackHandler:
             return ["-v", f"{path}://./pipe/docker_engine"]
         return ["-v", f"{path}:/var/run/docker.sock:ro"]
 
+    def _ensure_network(self):
+        """Idempotent creation of the shared liferay-net network."""
+        run_command(["docker", "network", "create", "liferay-net"], check=False)
+
     def setup_infrastructure(self, resolved_ip, ssl_port, use_ssl=True):
         """Initializes global Traefik proxy and search services."""
-        run_command(["docker", "network", "create", "liferay-net"], check=False)
+        self._ensure_network()
         if not use_ssl:
             return True
 
@@ -243,8 +247,9 @@ class StackHandler:
 
     def setup_global_search(self):
         """Starts a shared Elasticsearch 8.x container."""
-        container_name = "liferay-search-global"
-        if run_command(["docker", "ps", "-q", "-f", f"name=^{container_name}$"]):
+        self._ensure_network()
+        search_name = "liferay-search-global"
+        if run_command(["docker", "ps", "-q", "-f", f"name={search_name}"]):
             return True
 
         UI.info("Initializing Global Search (ES8) container...")
@@ -258,7 +263,7 @@ class StackHandler:
                 "run",
                 "-d",
                 "--name",
-                container_name,
+                search_name,
                 "--network",
                 "liferay-net",
                 "-e",
@@ -277,7 +282,7 @@ class StackHandler:
             [
                 "docker",
                 "exec",
-                container_name,
+                search_name,
                 "curl",
                 "-s",
                 "-X",
