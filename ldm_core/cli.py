@@ -288,7 +288,8 @@ def main():
             sys.exit(1)
 
         # Passive update check (silent, respects cache)
-        if args.command != "update-check":
+        # Suppress if we just ran upgrade or update-check to avoid redundant notifications
+        if args.command not in ["upgrade", "update-check"]:
             latest, url = check_for_updates(VERSION)
             if latest:
                 from ldm_core.utils import version_to_tuple
