@@ -145,6 +145,9 @@ def main():
     subparsers.add_parser("clear-cache")
     subparsers.add_parser("upgrade")
     subparsers.add_parser("update-check")
+    doctor = subparsers.add_parser("doctor")
+    doctor.add_argument("project", nargs="?")
+    doctor.add_argument("-p", "--project", dest="project_flag")
     subparsers.add_parser("list")
     subparsers.add_parser("prune")
 
