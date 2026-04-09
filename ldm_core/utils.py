@@ -139,22 +139,24 @@ def run_command(cmd, shell=False, capture_output=True, check=True, env=None, cwd
     if isinstance(cmd, list) and len(cmd) > 0 and "docker-compose" in str(cmd[0]):
         # Force a legacy-compatible API version and disable paramiko
         env["COMPOSE_PARAMIKO_SSH"] = "0"
-        # CRITICAL: Unset DOCKER_CONTEXT. Legacy compose v1 doesn't understand
-        # modern contexts and will crash trying to parse their URI schemes.
-        env.pop("DOCKER_CONTEXT", None)
+
+        # CRITICAL: Force DOCKER_CONTEXT to 'default'.
+        # Legacy compose v1 tries to use the active context (like Colima)
+        # which uses modern 'http+docker://' URIs that it cannot parse.
+        env["DOCKER_CONTEXT"] = "default"
 
         # Force DOCKER_HOST to a standard unix socket format.
-        # We prefer the dynamically discovered path to support Colima/OrbStack.
+        # We prefer the dynamically discovered path.
         socket_path = get_docker_socket_path()
-        if socket_path and not socket_path.startswith("http"):
-            env["DOCKER_HOST"] = f"unix://{socket_path}"
-        elif "DOCKER_HOST" not in env or env["DOCKER_HOST"].startswith("http"):
+        if socket_path and not str(socket_path).startswith("http"):
+            # Ensure it's a clean unix path
+            clean_path = str(socket_path).replace("unix://", "")
+            env["DOCKER_HOST"] = f"unix://{clean_path}"
+        else:
             env["DOCKER_HOST"] = "unix:///var/run/docker.sock"
 
-        # Force a lower API version for better legacy compatibility
-        if "DOCKER_API_VERSION" not in env:
-            env["DOCKER_API_VERSION"] = "1.39"
-
+        # Force a lower API version for absolute legacy compatibility
+        env["DOCKER_API_VERSION"] = "1.39"
     # Hardening: Sanitize if shell is enabled
     if shell:
         cmd = _sanitize_shell_command(cmd)
