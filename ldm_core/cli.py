@@ -284,7 +284,9 @@ def main():
                     print(
                         f"\n{UI.BYELLOW}[!] A new version of LDM is available: v{latest}{UI.COLOR_OFF}"
                     )
-                    print(f"    Download: {UI.CYAN}{url}{UI.COLOR_OFF}\n")
+                    print(
+                        f"    Run {UI.CYAN}ldm upgrade{UI.COLOR_OFF} to install the latest version.\n"
+                    )
     else:
         parser.print_help()
 

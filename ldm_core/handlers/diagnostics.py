@@ -209,7 +209,13 @@ del "%~f0"
         # 0.1 Version Check
         latest, _ = check_for_updates(VERSION, force=True)
         if latest and version_to_tuple(latest) > version_to_tuple(VERSION):
-            results.append(("LDM Version", f"v{VERSION} (v{latest} available)", "warn"))
+            results.append(
+                (
+                    "LDM Version",
+                    f"v{VERSION} (v{latest} available - Run 'ldm upgrade')",
+                    "warn",
+                )
+            )
         else:
             results.append(("LDM Version", f"v{VERSION} (Latest)", True))
 
