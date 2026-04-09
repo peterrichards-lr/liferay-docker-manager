@@ -76,7 +76,22 @@ else
 	error "Virtual environment not found. Skip Unit tests."
 fi
 
-# 6. Documentation Sync
+# 6. Doctor Pipeline Self-Test
+info "Testing Doctor Exit Codes..."
+if [ -d "$VENV_PATH" ]; then
+	# We expect this to either be 0 (Healthy) or 1 (Critical)
+	# It must NOT be 127 (Not found) or anything else
+	"$VENV_PATH/bin/python3" "$SCRIPT_DIR/liferay_docker.py" doctor --skip-project >/dev/null 2>&1
+	DOC_CODE=$?
+	if [[ $DOC_CODE -eq 0 ]] || [[ $DOC_CODE -eq 1 ]]; then
+		success "Doctor pipeline integrity verified (Code: $DOC_CODE)."
+	else
+		error "Doctor returned unexpected exit code: $DOC_CODE"
+		EXIT_CODE=1
+	fi
+fi
+
+# 7. Documentation Sync
 info "Synchronizing Documentation..."
 export PYTHONPATH="$SCRIPT_DIR"
 python3 "$SCRIPT_DIR/scripts/sync_docs.py" || EXIT_CODE=1

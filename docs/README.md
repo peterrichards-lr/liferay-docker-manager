@@ -57,7 +57,35 @@ The badges below represent our verified support for various Docker providers. En
 - [Installation Guide](installation.md)
 - [Architecture Overview](LDM_ARCHITECTURE.md)
 - [Test & Validation Strategy](TESTING.md)
+- [Security Posture & Disclosures](SECURITY.md)
 - [Future Roadmap](roadmap.md)
+
+---
+
+## Scripting & Automation
+
+LDM is designed to be pipeline-friendly. The `ldm doctor` command returns a non-zero exit code if critical environment issues are detected.
+
+### Health Check Pipe
+
+Ensure your environment is healthy before attempting to start a project:
+
+```bash
+ldm doctor --skip-project && ldm run my-project
+```
+
+### CI/CD Integration
+
+You can use LDM in automated scripts to verify infrastructure:
+
+```bash
+if ldm doctor --skip-project; then
+  echo "Environment is healthy, proceeding..."
+else
+  echo "Critical environment failure!"
+  exit 1
+fi
+```
 
 ---
 
