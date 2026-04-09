@@ -1122,9 +1122,21 @@ class StackHandler:
             UI.info(
                 f"Waiting for Liferay to start... (Monitor progress with: {UI.CYAN}ldm logs -f {p_id}{UI.COLOR_OFF})"
             )
+
+            # Increased default timeout to 15 minutes (900s) for first-run DB init
+            max_timeout = int(project_meta.get("timeout", 900))
             start_time = time.time()
             is_ready = False
-            while time.time() - start_time < int(project_meta.get("timeout", 600)):
+            last_reminder = start_time
+
+            while time.time() - start_time < max_timeout:
+                # Periodic reminder every 60 seconds
+                if time.time() - last_reminder > 60:
+                    UI.info(
+                        f"Still waiting... Tip: Open a new terminal and run {UI.CYAN}ldm logs -f {p_id}{UI.COLOR_OFF} to see internal progress."
+                    )
+                    last_reminder = time.time()
+
                 try:
                     res = run_command(["curl", "-k", "-I", access_url], check=False)
                     if res and ("200" in res or "302" in res):
