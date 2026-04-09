@@ -24,7 +24,7 @@ class DiagnosticsHandler:
         latest, url = check_for_updates(VERSION, force=force)
         if not latest:
             UI.error("Could not reach GitHub to check for updates.")
-            return
+            sys.exit(1)
 
         if version_to_tuple(latest) <= version_to_tuple(VERSION):
             UI.success(f"You are up to date! (v{VERSION})")

@@ -1,4 +1,5 @@
 import argparse
+import sys
 import warnings
 from ldm_core.ui import UI
 from ldm_core.manager import LiferayManager
@@ -277,7 +278,14 @@ def main():
             cmds[args.command]()
         except KeyboardInterrupt:
             print(f"\n{UI.WHITE}Aborted.{UI.COLOR_OFF}")
-            return
+            sys.exit(130)
+        except Exception as e:
+            UI.error("An unexpected error occurred.", e)
+            if "-v" in sys.argv or "--verbose" in sys.argv:
+                import traceback
+
+                traceback.print_exc()
+            sys.exit(1)
 
         # Passive update check (silent, respects cache)
         if args.command != "update-check":

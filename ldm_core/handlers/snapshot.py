@@ -82,8 +82,7 @@ class SnapshotHandler:
 
         backup_dir = Path(backup_dir).resolve()
         if not backup_dir.exists():
-            UI.error(f"Backup directory not found: {backup_dir}")
-            return False
+            UI.die(f"Backup directory not found: {backup_dir}")
 
         restored_anything = False
         vol = backup_dir / "volume.tgz"
@@ -594,8 +593,7 @@ class SnapshotHandler:
     def cmd_search_status(self, project_id=None):
         search_name = "liferay-search-global"
         if not run_command(["docker", "ps", "-q", "-f", f"name={search_name}"]):
-            UI.error("Global search service is not running.")
-            return
+            UI.die("Global search service is not running.")
         UI.heading("Search Snapshot Status")
         repo_check = run_command(
             [
