@@ -51,9 +51,9 @@ Every artifact imported from a workspace MUST follow this atomic 3-step sequence
 
 ## Current State (April 9, 2026)
 
-- **Version 1.6.10 Modern-First Discovery Release**: COMPLETED. Reverted Intel-specific v1 hard-coding to allow the `docker-compose-plugin` (v2) to be used on all architectures. Added MacPorts-specific hints to `ldm doctor`.
-- **Version 1.6.9 Direct Routing Release**: COMPLETED. Definitively resolved legacy Docker Compose URI scheme crashes on Intel Macs by explicitly injecting the `-H` flag with raw Unix sockets.
-- **Version 1.6.8 Nuclear Isolation Release**: COMPLETED. Implemented aggressive isolation for standalone binaries by forcing an empty `DOCKER_CONTEXT`.
+- **Version 1.6.9 Automation & Stability Release**: COMPLETED. Enforced mandatory Docker Compose v2 (Plugin), implemented Fail-Fast discovery, and finalized pipeline-ready exit codes and non-interactive support.
+- **Version 1.6.8 Nuclear Isolation Release**: COMPLETED. Definitively resolved legacy Docker Compose URI scheme crashes on Intel Macs by forcing an empty `DOCKER_CONTEXT` and raw Unix sockets.
+- **Version 1.6.7 Total Isolation Release**: COMPLETED. Refined legacy shield logic to isolate standalone binaries from modern Docker contexts.
 
 ## Hardening History (Version Log)
 
