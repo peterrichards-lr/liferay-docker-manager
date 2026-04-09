@@ -521,6 +521,7 @@ class StackHandler:
                 }
             )
 
+        # 4. Port Mapping
         if port and str(port).isdigit() and not use_ssl:
             compose["services"]["liferay"]["ports"].append(f"{resolved_ip}:{port}:8080")
         if gogo_port and str(gogo_port).isdigit():
@@ -530,6 +531,7 @@ class StackHandler:
         if not use_shared_search:
             compose["services"]["liferay"]["ports"].append(f"{resolved_ip}:9201:9201")
 
+        # 5. SSL & Security
         if use_ssl:
             liferay_env_dict.update(
                 {
