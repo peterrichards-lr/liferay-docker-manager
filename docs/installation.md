@@ -99,18 +99,28 @@ mkcert -install
 
 ### 🐧 Install SSL Tools (Native Linux)
 
-**Fedora / RHEL:**
-
-```bash
-sudo dnf install mkcert nss-tools openssl
-mkcert -install
-```
-
-**Ubuntu / Debian:**
+...
 
 ```bash
 sudo apt update && sudo apt install mkcert libnss3-tools openssl
 mkcert -install
+```
+
+### 🐳 Linux & WSL Docker Permissions
+
+If `ldm doctor` reports **Docker Engine: Not reachable** or you see **Permission Denied** errors on Linux/WSL, your user needs permission to talk to the Docker socket.
+
+Run these commands to grant access:
+
+```bash
+# 1. Add your user to the docker group
+sudo usermod -aG docker $USER
+
+# 2. Create a path bridge (if /var/run/docker.sock is missing)
+sudo ln -s /run/docker.sock /var/run/docker.sock
+
+# 3. Apply changes (or restart your terminal)
+newgrp docker
 ```
 
 ---
