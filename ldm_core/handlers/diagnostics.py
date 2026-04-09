@@ -149,7 +149,8 @@ del "%~f0"
                 sys.exit(0)
             else:
                 # Unix atomic rename
-                os.chmod(temp_new, 0o755)
+                # Bandit: B103 (chmod 0o755) is necessary to make the newly downloaded binary executable.
+                os.chmod(temp_new, 0o755)  # nosec B103
                 os.replace(temp_new, exe_path)
                 UI.success(f"Successfully upgraded to v{latest}!")
         except Exception as e:
