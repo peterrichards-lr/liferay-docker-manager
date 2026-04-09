@@ -48,6 +48,10 @@ def main():
         action="store_true",
         help="Initialize with sample client extensions",
     )
+    run.add_argument(
+        "--snapshot",
+        help="Initialize project from an external snapshot folder",
+    )
 
     # Command: import
     imp = subparsers.add_parser("import")

@@ -51,7 +51,7 @@ We test the LDM against the four "Pillars of Demo Success" to guarantee it works
 
 ---
 
-## 📋 Functional Validation Checklist (v1.5.6)
+## 📋 Functional Validation Checklist (v1.5.8)
 
 ### Phase 1: Environment & Diagnostics
 
@@ -60,13 +60,14 @@ We test the LDM against the four "Pillars of Demo Success" to guarantee it works
 | **1.1 LDM Doctor** | Run `ldm doctor` | Correctly identifies Docker CPUs/RAM. Reports "Global Config" status. Missing `liferay-net` is a **Warning** (not error) with setup hints. |
 | **1.2 DNS Alignment** | Point host to wrong IP | `ldm doctor` warns if hostname doesn't match Traefik's bound IP. |
 | **1.3 Infra Setup** | `ldm infra-setup --search` | Starts Traefik (on 0.0.0.0) and ES8 sidecar. Idempotent. |
+| **1.4 Cache Logic** | `ldm clear-cache` | Successfully removes `~/.liferay_docker_cache.json`. |
 
 ### Phase 2: Developer Workflow
 
 | Test Case | Steps | Expected Outcome |
 | :--- | :--- | :--- |
 | **2.1 init-common** | `ldm init-common` | Creates `common/` folder in **Current Directory** with gold-standard assets. |
-| **2.2 Ghost Mounts** | Run on new project | LDM proactively creates `data/`, `deploy/`, etc. |
+| **2.2 Ghost Mounts** | Run on new project | LDM proactively creates `data/`, `deploy/`, etc. to prevent Docker from creating directories where files should be. |
 | **2.3 WSL Browser** | `ldm run` in WSL | Automatically opens the Windows host browser without "UNC path" warnings. |
 
 ### Phase 3: Switching Engines (macOS)
@@ -81,7 +82,7 @@ We test the LDM against the four "Pillars of Demo Success" to guarantee it works
 | Test Case | Steps | Expected Outcome |
 | :--- | :--- | :--- |
 | **4.1 SSL Hygiene** | Run `ldm down` | Correctly removes the certificates referenced in the project metadata (`ssl_cert`) and the matching Traefik YAML. |
-| **4.2 Prune Logic** | `ldm prune` | Safely identifies and removes orphaned containers without affecting active projects. |
+| **4.2 Prune Logic** | `ldm prune` | Safely identifies and removes orphaned containers and search snapshots without affecting active projects. |
 
 ---
 

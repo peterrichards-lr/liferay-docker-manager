@@ -515,14 +515,20 @@ class DiagnosticsHandler:
         UI.heading("LDM Global Maintenance - Pruning Orphaned Resources")
 
         roots = self.find_dxp_roots()
-        active_projects = {
-            self.read_meta(r["path"] / PROJECT_META_FILE).get("container_name")
-            for r in roots
-        }
-        active_projects.discard(None)
+        active_projects = set()
+        for r in roots:
+            meta = self.read_meta(r["path"] / PROJECT_META_FILE)
+            # Use container_name from meta, or fall back to folder name
+            name = meta.get("container_name") or r["path"].name
+            active_projects.add(name)
+
+        if self.verbose:
+            UI.debug(
+                f"Active projects identified: {', '.join(active_projects) if active_projects else 'None'}"
+            )
 
         # 1. Orphaned Containers
-        # We look for containers with our management label and check if their project folder still exists
+        # We look for containers with our management label
         containers_raw = run_command(
             [
                 "docker",
@@ -539,10 +545,15 @@ class DiagnosticsHandler:
         orphans = []
         if containers_raw:
             for line in containers_raw.splitlines():
-                if "|" not in line:
+                line = line.strip()
+                if not line or "|" not in line:
                     continue
-                name, project = line.split("|")
-                if project not in active_projects:
+
+                # Docker names can sometimes have a leading slash
+                name, project = line.split("|", 1)
+                name = name.lstrip("/")
+
+                if not project or project not in active_projects:
                     orphans.append(name)
 
         if orphans:

@@ -93,6 +93,9 @@ ldm init-from /path/to/workspace my-project
 # 3. THE ARCHIVE FLOW: Import a static snapshot of a workspace
 ldm import /path/to/workspace my-static-project
 
+# 4. THE RECOVERY FLOW: Re-create a deleted project from a snapshot folder
+ldm run my-recovered-project --snapshot ~/Desktop/old-baseline-snapshot
+
 # Monitor an existing project (manually)
 ldm monitor /path/to/workspace
 ```
@@ -315,7 +318,27 @@ ldm infra-setup --search   # Also initialize the Global Search (ES8) container
 ldm infra-down             # Stop and remove global services
 ```
 
-### `prune`, `clear-cache`
+### `prune`
+
+Identify and remove orphaned resources. This command scans your Docker environment for containers and global search snapshots that no longer have a matching project folder on your disk.
+
+```bash
+ldm prune
+```
+
+**What it cleans:**
+
+- **Orphaned Containers**: Any container with the `com.liferay.ldm.managed` label whose project folder was manually deleted.
+- **Orphaned Search Snapshots**: Leftover Elasticsearch 8.x snapshots in the global vault from deleted projects.
+- **Temporary Files**: Residual `.*.tmp` files left behind by interrupted sync or build operations.
+
+### `clear-cache`
+
+Clears the local Docker Hub tag cache. LDM caches Liferay tags for 24 hours to improve performance; use this command to force a fresh fetch from the registry.
+
+```bash
+ldm clear-cache
+```
 
 ---
 

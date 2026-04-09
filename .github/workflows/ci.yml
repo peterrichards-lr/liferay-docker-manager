@@ -153,6 +153,14 @@ jobs:
           pip install -e .
           pytest ldm_core/tests/
 
+      - name: LDM Maintenance Smoke Test
+        run: |
+          export PYTHONPATH=$PYTHONPATH:.
+          # Verify clear-cache removes the file
+          python3 liferay_docker.py -y clear-cache
+          # Verify prune runs without crashing
+          python3 liferay_docker.py -y prune
+
       - name: Build Standalone (Linux/macOS)
         if: matrix.os != 'windows-latest'
         run: |
