@@ -83,6 +83,7 @@ cd liferay-docker-manager
   - [Docker Desktop](https://www.docker.com/products/docker-desktop/) (Windows/Mac)
   - [Colima](https://github.com/abiosoft/colima) or [OrbStack](https://orbstack.dev/) (Mac alternatives)
   - [Native Docker Engine](https://docs.docker.com/engine/install/) (Linux)
+- **Docker Compose**: **v2 (Plugin)** is mandatory. Legacy v1 standalone is not supported.
 - **Resources**: Recommended **4 CPUs and 8GB RAM** allocated to Docker.
   - *Note*: `ldm doctor` expects these minimums. If you allocate exactly 8GB, Docker may report ~7.7GB due to system overhead; the tool accounts for this by allowing a 7.5GB threshold.
 - **Python**: 3.10+ (only if running from source)

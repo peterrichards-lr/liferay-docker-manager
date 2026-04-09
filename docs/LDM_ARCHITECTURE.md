@@ -240,6 +240,7 @@ graph TD
 1. **Modular Orchestration (ldm_core Package):**
     * The tool logic is split into specialized handler mixins (`Stack`, `Workspace`, `Config`, `Snapshot`, `Diagnostics`), ensuring a maintainable and extensible codebase.
     * Every command supports a standardized discovery priority: **Argument > Flag > CWD > Interactive Selection**.
+    * **Mandatory Compose v2**: LDM strictly requires the **Docker Compose v2 Plugin** (`docker compose`). Legacy v1 standalone binaries are no longer supported due to modern library and API incompatibilities.
 
 2. **Shared Infrastructure (Global Tier):**
     * **Traefik (`liferay-proxy-global`)**: A singleton container that handles all SSL termination and namespaced routing. It works natively on **Linux, WSL2, and Colima** by detecting the standard Docker socket.

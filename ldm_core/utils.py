@@ -446,13 +446,11 @@ def safe_extract(archive, target_path):
 
 
 def get_compose_cmd():
-    """Returns the correct base command for Docker Compose (Modern v2 vs Legacy v1)."""
-    # 1. Try modern 'docker compose' (v2 plugin)
-    # This is the preferred method for all architectures, including Intel Mac
+    """Returns the base command for Docker Compose v2 (Plugin). Legacy v1 is not supported."""
     docker_bin = shutil.which("docker")
     if docker_bin:
         try:
-            # Verify the plugin is installed and functional
+            # Verify the v2 plugin is installed and functional
             res = subprocess.run(
                 [docker_bin, "compose", "version"],
                 capture_output=True,
@@ -464,23 +462,7 @@ def get_compose_cmd():
         except Exception:
             pass
 
-    # 2. Fallback to legacy 'docker-compose' (v1 standalone)
-    legacy_bin = shutil.which("docker-compose")
-    if legacy_bin:
-        try:
-            # Verify the standalone binary actually works
-            res = subprocess.run(
-                [legacy_bin, "version"],
-                capture_output=True,
-                text=True,
-                check=False,
-            )
-            if res.returncode == 0 and "Docker Compose version" in res.stdout:
-                return ["docker-compose"]
-        except Exception:
-            pass
-
-    # Final: No working Compose found
+    # Final: No working v2 Compose plugin found
     return []
 
 

@@ -323,39 +323,16 @@ del "%~f0"
                     hint = "Run 'port install docker-compose-plugin' or 'brew install docker-compose'"
                 results.append(("Docker Compose", f"Not found ({hint})", False))
             else:
-                compose_label = (
-                    "v2 (Plugin)" if "compose" in compose_cmd else "v1 (Standalone)"
-                )
-
-                # Deep Check: Verify it can actually talk to the socket
-                is_functional = True
-                try:
-                    # 'version' is usually safe, but on broken Standalone v1
-                    # it might still crash when trying to negotiate the API
-                    res = subprocess.run(
-                        compose_cmd + ["version", "--short"],
-                        capture_output=True,
-                        text=True,
-                        check=False,
-                        env=os.environ.copy(),  # Use raw env here to see if it's broken globally
-                    )
-                    if res.returncode != 0:
-                        is_functional = False
-                except Exception:
-                    is_functional = False
-
-                if is_functional:
-                    results.append(("Docker Compose", compose_label, True))
+                if "compose" in compose_cmd:
+                    results.append(("Docker Compose", "v2 (Plugin)", True))
                 else:
+                    # Found v1 standalone, which we no longer support
+                    system = platform.system().lower()
+                    hint = "Install docker-compose-plugin"
+                    if system == "darwin":
+                        hint = "Run 'port install docker-compose-plugin' or 'brew install docker-compose'"
                     results.append(
-                        (
-                            "Docker Compose",
-                            f"{compose_label} (❌ BROKEN - Likely urllib3 mismatch)",
-                            "warn",
-                        )
-                    )
-                    UI.info(
-                        f"  + {UI.YELLOW}Hint:{UI.COLOR_OFF} Your docker-compose is broken. Try: {UI.CYAN}ldm run --no-wait{UI.COLOR_OFF}"
+                        ("Docker Compose", f"v1 (❌ Unsupported - {hint})", False)
                     )
 
             # 2.1 Docker Credentials Check
