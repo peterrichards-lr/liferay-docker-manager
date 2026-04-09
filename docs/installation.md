@@ -194,21 +194,25 @@ If `ldm doctor` reports insufficient memory even though you have 8GB+ installed:
 
 Colima is a lightweight, open-source alternative to Docker Desktop. While highly performant on Apple Silicon, it is much stricter regarding file sharing and permissions.
 
-### 1. Recommended Start Command
+### 1. Recommended Start Command (Apple Silicon)
 
 For the best compatibility with Liferay and SSCE build processes, we recommend using the macOS Virtualization Framework (`vz`) with **VirtioFS**.
 
 ```bash
-# Delete existing instance if it's misbehaving
-colima stop
-colima delete
-
-# Start with optimized settings
-# Note: We mount both home AND the Volumes directory for external disks (e.g. SanDisk)
+# Optimized for M1/M2/M3 (16GB+ RAM)
 colima start --cpu 4 --memory 8 --vm-type=vz --mount-type=virtiofs --mount /Users/$(whoami):w --mount /Volumes:w
 ```
 
-### 2. The "Ghost Mount" Issue
+### 2. Recommended Start Command (Legacy Intel Mac)
+
+If you are running on an older Intel Mac (e.g. Early 2015 with 8GB RAM), use these restricted settings to ensure Liferay has enough host memory to function:
+
+```bash
+# Optimized for Dual-Core Intel (8GB RAM)
+colima start --cpu 2 --memory 6 --vm-type=qemu --mount-type=virtiofs --mount /Users/$(whoami):w
+```
+
+### 3. The "Ghost Mount" Issue
 
 If LDM reports `FATAL: VOLUME MOUNTING IS BROKEN`, it means Colima's VM can see the folder but cannot see the files inside it.
 
