@@ -214,6 +214,7 @@ class BaseHandler:
             "cx",
             "data",
             "ce_dir",
+            "scripts",
             "routes",
             "logs",
             "log4j",
