@@ -277,7 +277,22 @@ class StackHandler:
                 f"docker.elastic.co/elasticsearch/elasticsearch:{ELASTICSEARCH_VERSION}",
             ]
         )
-        time.sleep(5)
+        # Wait for Elasticsearch to be ready (up to 60s)
+        UI.info("Waiting for Elasticsearch to become ready...")
+        es_ready = False
+        for i in range(12):
+            res = run_command(
+                ["docker", "exec", search_name, "curl", "-s", "localhost:9200"],
+                check=False,
+            )
+            if res and "cluster_name" in res:
+                es_ready = True
+                break
+            time.sleep(5)
+
+        if not es_ready:
+            UI.die("Elasticsearch failed to start within 60 seconds.")
+
         run_command(
             [
                 "docker",
