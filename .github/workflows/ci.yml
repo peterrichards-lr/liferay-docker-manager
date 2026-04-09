@@ -60,8 +60,9 @@ jobs:
           globs: "**/*.md"
 
       - name: Documentation Sync
+        shell: bash
         run: |
-          export PYTHONPATH=$PYTHONPATH:.
+          pip install -e .
           python3 scripts/sync_docs.py
           # Fail CI if sync script made changes - this ensures docs were synced BEFORE commit
           git diff --exit-code docs/*.md
