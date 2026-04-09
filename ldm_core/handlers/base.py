@@ -483,7 +483,7 @@ class BaseHandler:
         # Otherwise, strictly require the proxy_ip.
         is_match = False
         if ip:
-            if proxy_ip == "0.0.0.0":
+            if proxy_ip == "0.0.0.0":  # nosec B104
                 is_match = ip.startswith("127.") or ip in ["::1", "0:0:0:0:0:0:0:1"]
             else:
                 is_match = ip == proxy_ip
@@ -505,7 +505,7 @@ class BaseHandler:
 
                 sub_match = False
                 if sub_ip:
-                    if proxy_ip == "0.0.0.0":
+                    if proxy_ip == "0.0.0.0":  # nosec B104
                         sub_match = sub_ip.startswith("127.") or sub_ip in [
                             "::1",
                             "0:0:0:0:0:0:0:1",

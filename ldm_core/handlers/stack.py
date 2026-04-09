@@ -980,6 +980,8 @@ class StackHandler:
         host_updates = {
             "web.server.protocol": "https" if use_ssl else "http",
             "web.server.host": host_name,
+            "liferay.docker.image": f"liferay/{image_type}",
+            "liferay.docker.tag": tag,
         }
         if use_ssl:
             host_updates["web.server.https.port"] = str(ssl_port)

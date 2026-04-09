@@ -107,6 +107,14 @@ class DiagnosticsHandler:
         if docker_version:
             results.append(("Docker Engine", f"Running (v{docker_version})", True))
 
+            # 2.0 Docker Context Check
+            try:
+                context = run_command(["docker", "context", "show"], check=False)
+                if context:
+                    results.append(("Docker Context", context.strip(), True))
+            except Exception:
+                pass
+
             # 2.1 Docker Credentials Check
             try:
                 docker_config_path = get_actual_home() / ".docker" / "config.json"

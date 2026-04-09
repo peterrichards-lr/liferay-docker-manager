@@ -136,6 +136,12 @@ jobs:
         with:
           python-version: "3.13"
 
+      - name: Run Tests (Cross-Platform)
+        shell: bash
+        run: |
+          export PYTHONPATH=$PYTHONPATH:.
+          pytest ldm_core/tests/
+
       - name: Build Standalone (Linux/macOS)
         if: matrix.os != 'windows-latest'
         run: |

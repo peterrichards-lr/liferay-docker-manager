@@ -3,7 +3,7 @@
 A professional command-line orchestrator for quickly standing up Liferay Portal and DXP environments using Docker Compose.
 
 > [!TIP]
-> **Hardened Edition (v1.5.2):** This version has been specifically refined for non-proprietary Docker environments. It includes native stability fixes for macOS (Colima/OrbStack), Windows (Native PowerShell), and WSL2.
+> **Hardened Edition (v1.5.6):** This version has been specifically refined for non-proprietary Docker environments. It includes native stability fixes for macOS (Colima/OrbStack/Docker Desktop), Windows (Native PowerShell), and WSL2.
 >
 > [!NOTE]
 > **Project History:** This tool was originally born as part of the [liferay-docker-scripts](https://github.com/peterrichards-lr/liferay-docker-scripts) repository. It has since evolved into a standalone application to provide better modularity and multi-instance stability.
@@ -28,10 +28,10 @@ The badges below represent our verified support for various Docker providers. En
 | Architecture | Host OS | Docker Provider | Status |
 | :--- | :--- | :--- | :--- |
 | **Apple Silicon** | macOS 14+ | **OrbStack** | ![macOS-Silicon-Orb](https://img.shields.io/badge/macOS_Silicon-OrbStack-success?style=flat-square&logo=apple&logoColor=white&color=00B0FF) |
+| **Apple Silicon** | macOS 14+ | **Docker Desktop** | ![macOS-Silicon-DD](https://img.shields.io/badge/macOS_Silicon-Docker_Desktop-success?style=flat-square&logo=apple&logoColor=white&color=00C853) |
 | **Apple Intel/M** | macOS 13+ | **Colima** | ![macOS-Intel-Col](https://img.shields.io/badge/macOS-Colima_Hardened-orange?style=flat-square&logo=apple&logoColor=white) |
 | **Windows PC** | Windows 11 | **Native WSL2** | ![Windows-WSL2](https://img.shields.io/badge/Windows_11-WSL2_Hardened-blue?style=flat-square&logo=windows&logoColor=white) |
 | **Linux Node** | Ubuntu 22.04 | **Docker Engine** | ![Linux-Native](https://img.shields.io/badge/Linux-Native_Docker-success?style=flat-square&logo=linux&logoColor=white&color=333333) |
-| **Legacy Mac** | macOS 14+ | **Docker Desktop** | ![macOS-Silicon-DD](https://img.shields.io/badge/macOS-Docker_Desktop-green?style=flat-square&logo=apple&logoColor=white) |
 
 ---
 
@@ -70,8 +70,6 @@ sudo curl -L https://github.com/peterrichards-lr/liferay-docker-manager/releases
 # Make it executable
 sudo chmod +x /usr/local/bin/ldm
 ```
-
-For detailed instructions and Windows setup, see the **[Full Installation Guide](installation.md)**.
 
 For detailed instructions and Windows setup, see the **[Full Installation Guide](installation.md)**.
 
