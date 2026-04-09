@@ -68,6 +68,17 @@ class DiagnosticsHandler:
                 "Self-upgrade is only supported for standalone binaries. Please use 'git pull' for source installations."
             )
 
+        # Check for write permissions to the binary itself
+        if not os.access(exe_path, os.W_OK):
+            if platform.system().lower() == "windows":
+                UI.die(
+                    "Permission denied. Please run your terminal as an Administrator to upgrade."
+                )
+            else:
+                UI.die(
+                    f"Permission denied. Please run: {UI.CYAN}sudo ldm upgrade{UI.COLOR_OFF}"
+                )
+
         temp_new = exe_path.with_suffix(".new")
 
         # 3. Download
