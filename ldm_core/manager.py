@@ -5,6 +5,7 @@ from ldm_core.handlers.snapshot import SnapshotHandler
 from ldm_core.handlers.config import ConfigHandler
 from ldm_core.handlers.diagnostics import DiagnosticsHandler
 from ldm_core.handlers.cloud import CloudHandler
+from ldm_core.handlers.license import LicenseHandler
 
 
 class LiferayManager(
@@ -15,6 +16,7 @@ class LiferayManager(
     ConfigHandler,
     DiagnosticsHandler,
     CloudHandler,
+    LicenseHandler,
 ):
     """Orchestrator class for LDM, composed of multiple functional mixins."""
 

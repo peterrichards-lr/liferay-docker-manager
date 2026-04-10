@@ -932,6 +932,20 @@ class StackHandler:
         if str(project_meta.get("use_shared_search", "true")).lower() == "true":
             self.setup_global_search()
         self.sync_common_assets(paths)
+
+        # License Verification
+        lic_status, lic_ok, lic_details = self.check_license_health(
+            {"common": paths.get("common"), **paths}, image_tag=tag
+        )
+        if not lic_ok or lic_ok == "warn":
+            UI.warning(f"Project License: {lic_status}")
+            if lic_details:
+                for detail in lic_details:
+                    print(f"  {UI.CYAN}ℹ{UI.COLOR_OFF} {detail}")
+            print(
+                f"  {UI.WHITE}Tip: Copy your .xml license to the 'common/' folder or the project 'deploy/' folder.{UI.COLOR_OFF}"
+            )
+
         self.sync_logging(paths)
 
         all_services, has_changed = self.write_docker_compose(

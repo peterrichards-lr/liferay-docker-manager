@@ -655,6 +655,16 @@ del "%~f0"
                     )
                 )
 
+            # 7.2.3 License Check
+            lic_status, lic_ok, lic_details = self.check_license_health(
+                {"common": common_dir, **self.setup_paths(project_path)},
+                image_tag=meta.get("tag"),
+            )
+            results.append(("Project License", lic_status, lic_ok))
+            if lic_details:
+                for detail in lic_details:
+                    print(f"  {UI.CYAN}ℹ{UI.COLOR_OFF} {detail}")
+
             # 7.3 SSL Certificate Check
             host_name = meta.get("host_name", "localhost")
             ssl_enabled = str(meta.get("ssl", "false")).lower() == "true"

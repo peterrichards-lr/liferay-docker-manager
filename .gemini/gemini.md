@@ -29,6 +29,7 @@ This file serves as the persistent state and technical knowledge base for the AI
 
 ### 4. Diagnostics & Health
 
+- **License Verification**: LDM MUST proactively check for valid Liferay XML licenses in `common/`, `deploy/`, and `osgi/modules/` folders. It must warn the user if a license is missing for DXP/EE images but remain silent for Portal CE images.
 - **Doctor Exit Codes**: `ldm doctor` must return **Exit Code 1** if critical issues are detected to support shell pipelines (`ldm doctor && ldm run`).
 - **Infrastructure Log Scans**: `ldm doctor` proactively scans the last 20 lines of global infrastructure logs (Traefik, ES8, Proxy) for `ERROR` or `WARN` keywords to identify platform-level failures.
 - **UTC Alignment**: Health check timestamps and "Still waiting" messages MUST use **UTC** to match Liferay container logs for easy correlation.

@@ -3,9 +3,10 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 from ldm_core.handlers.stack import StackHandler
 from ldm_core.handlers.workspace import WorkspaceHandler
+from ldm_core.handlers.license import LicenseHandler
 
 
-class MockManager(StackHandler, WorkspaceHandler):
+class MockManager(StackHandler, WorkspaceHandler, LicenseHandler):
     def __init__(self):
         self.args = MagicMock()
         self.verbose = False
