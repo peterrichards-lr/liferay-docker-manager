@@ -1244,17 +1244,20 @@ del "%~f0"
 
             lines = logs.splitlines()
 
+            import re
+
             # 1. Critical Errors (Hard failure keywords)
+            # Use word boundaries (\b) to avoid matching "error_logs" or other non-error strings
             critical_keywords = [
-                "ERROR",
-                "ERR",
-                "FATAL",
-                "CRITICAL",
+                r"\bERROR\b",
+                r"\bERR\b",
+                r"\bFATAL\b",
+                r"\bCRITICAL\b",
                 "Exit Code: 1",
-                "exception",
+                r"\bexception\b",
             ]
             for line in lines:
-                if any(k in line.upper() for k in critical_keywords):
+                if any(re.search(k, line, re.IGNORECASE) for k in critical_keywords):
                     # Special case: ignore known non-fatal "operation not supported" errors in some providers
                     if "operation not supported" in line.lower():
                         continue
@@ -1262,13 +1265,13 @@ del "%~f0"
 
             # 2. Warnings
             warning_keywords = [
-                "WARN",
-                "WARNING",
+                r"\bWARN\b",
+                r"\bWARNING\b",
                 "retrying",
                 "client version .* is too old",
             ]
             for line in lines:
-                if any(k in line.upper() for k in warning_keywords):
+                if any(re.search(k, line, re.IGNORECASE) for k in warning_keywords):
                     return f"Warning (Issue in logs: {line.strip()[:40]}...)", "warn"
 
             return None, None
