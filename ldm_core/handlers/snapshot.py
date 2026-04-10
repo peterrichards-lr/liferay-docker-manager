@@ -4,6 +4,7 @@ import time
 import tarfile
 import gzip
 import lzma
+import subprocess
 from pathlib import Path
 from datetime import datetime
 from ldm_core.ui import UI
@@ -205,24 +206,65 @@ class SnapshotHandler:
 
                     UI.info("Streaming database dump into container...")
                     try:
-                        cmd = (
-                            f"gunzip -c {db_dump} | docker exec -i {db_container} "
-                            + (
-                                "psql -U liferay -d lportal"
-                                if db_type == "postgresql"
-                                else "mysql -u liferay -pliferay lportal"
-                            )
+                        # Stream the decompressed database dump directly into the container without shell=True
+                        # This resolves potential security alerts for command injection.
+
+                        # 1. Start decompression process
+                        gunzip_proc = subprocess.Popen(
+                            ["gunzip", "-c", str(db_dump)],
+                            stdout=subprocess.PIPE,
+                            stderr=subprocess.PIPE,
                         )
-                        # Stream the decompressed database dump directly into the container.
-                        # This now uses ldm_core.utils.run_command for shell sanitization.
-                        run_command(
-                            cmd,
-                            shell=True,
-                            check=True,
-                            capture_output=not self.verbose,
-                        )  # nosec B604
-                        UI.success("Database restored.")
-                        restored_anything = True
+
+                        # 2. Start database import process
+                        db_cmd = (
+                            [
+                                "docker",
+                                "exec",
+                                "-i",
+                                db_container,
+                                "psql",
+                                "-U",
+                                "liferay",
+                                "-d",
+                                "lportal",
+                            ]
+                            if db_type == "postgresql"
+                            else [
+                                "docker",
+                                "exec",
+                                "-i",
+                                db_container,
+                                "mysql",
+                                "-u",
+                                "liferay",
+                                "-pliferay",
+                                "lportal",
+                            ]
+                        )
+
+                        import_proc = subprocess.Popen(
+                            db_cmd,
+                            stdin=gunzip_proc.stdout,
+                            stdout=subprocess.PIPE,
+                            stderr=subprocess.PIPE,
+                            text=True,
+                        )
+
+                        # Allow gunzip_proc to receive a SIGPIPE if import_proc exits.
+                        if gunzip_proc.stdout:
+                            gunzip_proc.stdout.close()
+
+                        stdout, stderr = import_proc.communicate()
+
+                        if import_proc.returncode == 0:
+                            UI.success("Database restored.")
+                            restored_anything = True
+                        else:
+                            UI.error(
+                                f"Database restore failed (Exit {import_proc.returncode})",
+                                stderr,
+                            )
                     except Exception as e:
                         UI.error(f"Database restore failed: {e}")
                 else:

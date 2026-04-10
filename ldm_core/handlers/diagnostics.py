@@ -808,7 +808,9 @@ del "%~f0"
             try:
                 if platform.system().lower() == "darwin":
                     # Determine if the Liferay container is running for this project
-                    p_id = meta.get("container_name") or project_path.name
+                    from ldm_core.utils import sanitize_id
+
+                    p_id = sanitize_id(meta.get("container_name") or project_path.name)
 
                     # Try LDM-standard name first, then fall back to Compose's default
                     liferay_container = None

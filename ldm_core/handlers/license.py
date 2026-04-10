@@ -1,6 +1,3 @@
-import xml.etree.ElementTree as ET  # nosec B405
-
-
 class LicenseHandler:
     """Mixin for Liferay license detection and parsing."""
 
@@ -47,46 +44,42 @@ class LicenseHandler:
         """
         Parses a Liferay XML license file and extracts key fields.
         Returns None if the file is not a valid Liferay license.
+        Uses regex for safety instead of a full XML parser to avoid XXE.
         """
         try:
-            # Liferay licenses can be large, but we only need small tags.
-            # Using a basic check first to avoid parsing non-license XMLs.
             content = file_path.read_text()
             if "<license" not in content.lower():
                 return None
 
-            # Bandit: B314 (xml_bad_elementtree) - Liferay licenses are trusted local XMLs.
-            tree = ET.parse(file_path)  # nosec B314
-            root = tree.getroot()
+            import re
+
+            def get_tag(tag, text):
+                # Standard tags: <tag-name>Value</tag-name> or <tagname>Value</tagname>
+                pattern = rf"<{tag}>(.*?)</{tag}>"
+                match = re.search(pattern, text, re.DOTALL | re.IGNORECASE)
+                return match.group(1).strip() if match else None
 
             # Liferay DXP/EE license tags
             info = {
-                "product": self._get_xml_text(root, "product-name"),
-                "owner": self._get_xml_text(root, "owner"),
-                "account": self._get_xml_text(root, "account-name"),
-                "expiration": self._get_xml_text(root, "expiration-date"),
-                "type": self._get_xml_text(root, "license-type"),
-                "version": self._get_xml_text(root, "product-version")
-                or self._get_xml_text(root, "version"),
-                "max_users": self._get_xml_text(root, "max-users"),
-                "description": self._get_xml_text(root, "description"),
+                "product": get_tag("product-name", content)
+                or get_tag("product", content),
+                "owner": get_tag("owner", content),
+                "account": get_tag("account-name", content),
+                "expiration": get_tag("expiration-date", content),
+                "type": get_tag("license-type", content),
+                "version": get_tag("product-version", content)
+                or get_tag("version", content),
+                "max_users": get_tag("max-users", content),
+                "description": get_tag("description", content),
             }
 
             # If we couldn't find a product name, it might not be a license we recognize
             if not info["product"]:
-                # Try fallback for different license versions
-                info["product"] = self._get_xml_text(root, "product")
-                if not info["product"]:
-                    return None
+                return None
 
             return info
         except Exception:
             return None
-
-    def _get_xml_text(self, root, tag_name):
-        """Helper to safely extract text from an XML tag."""
-        elem = root.find(tag_name)
-        return elem.text.strip() if elem is not None and elem.text else None
 
     def check_license_health(self, paths, image_tag=None):
         """

@@ -82,6 +82,18 @@ def load_env_blacklist(path):
     return patterns
 
 
+def sanitize_id(identifier):
+    """
+    Sanitizes a string to be used as a safe identifier (e.g. project ID, container name).
+    Allows only alphanumeric characters, dashes, and underscores.
+    """
+    if not identifier:
+        return identifier
+    import re
+
+    return re.sub(r"[^a-zA-Z0-9\-_]", "", str(identifier))
+
+
 def is_env_var_blacklisted(key, blacklist):
     """Checks if an environment variable key matches any pattern in the blacklist."""
     for pattern in blacklist:

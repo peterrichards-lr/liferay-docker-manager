@@ -893,7 +893,9 @@ class StackHandler:
         no_wait=False,
     ):
         self._ensure_network()
-        p_id = project_meta.get("container_name") or paths["root"].name
+        from ldm_core.utils import sanitize_id
+
+        p_id = sanitize_id(project_meta.get("container_name") or paths["root"].name)
         self.scrub_legacy_meta(p_id)
         self.migrate_layout(paths)
         tag, host_name = (
@@ -1323,7 +1325,9 @@ class StackHandler:
         if not root:
             return
 
-        p_id = root.name
+        from ldm_core.utils import sanitize_id
+
+        p_id = sanitize_id(root.name)
         paths = self.setup_paths(p_id)
 
         # 1. Ensure Liferay is NOT running

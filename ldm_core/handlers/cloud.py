@@ -90,15 +90,17 @@ class CloudHandler:
         if not root_path:
             return
 
+        from ldm_core.utils import sanitize_id
+
         project_meta = self.read_meta(root_path / PROJECT_META_FILE)
-        cp_id = (
+        cp_id = sanitize_id(
             project_meta.get("cloud_project_id")
             or project_meta.get("project_id")
             or root_path.name
         )
 
         # Use provided env_id or positional arg
-        target_env = env_id or getattr(self.args, "env_id", None)
+        target_env = sanitize_id(env_id or getattr(self.args, "env_id", None))
 
         if getattr(self.args, "list_envs", False) or not target_env:
             UI.heading(f"Available Liferay Cloud Environments (Project: {cp_id})")
