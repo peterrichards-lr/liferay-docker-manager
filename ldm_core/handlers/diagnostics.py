@@ -428,6 +428,7 @@ del "%~f0"
 
         # 4.2 Global Config Check
         common_dir = self.get_common_dir(project_path)
+        search_version = 8  # Default
 
         if not common_dir.exists():
             results.append(

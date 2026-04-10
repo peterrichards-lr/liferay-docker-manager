@@ -226,6 +226,8 @@ class ConfigHandler:
             es_configs = [
                 "com.liferay.portal.search.elasticsearch7.configuration.ElasticsearchConfiguration.config",
                 "com.liferay.portal.search.elasticsearch7.configuration.ElasticsearchConnectionConfiguration.config",
+                "com.liferay.portal.search.elasticsearch8.configuration.ElasticsearchConfiguration.config",
+                "com.liferay.portal.search.elasticsearch8.configuration.ElasticsearchConnectionConfiguration.config",
             ]
             for es_conf in es_configs:
                 target_file = common_dir / es_conf
