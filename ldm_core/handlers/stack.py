@@ -13,6 +13,8 @@ from ldm_core.ui import UI
 from ldm_core.constants import (
     PROJECT_META_FILE,
     ELASTICSEARCH_VERSION,
+    TRAEFIK_VERSION,
+    SOCAT_IMAGE,
 )
 from ldm_core.utils import (
     run_command,
@@ -168,11 +170,38 @@ class StackHandler:
         needs_bridge = False
         api_proxy = "docker-socket-proxy"
         if platform.system().lower() == "darwin":
-            # Use the dynamic socket path instead of hardcoded /var/run/docker.sock
+            # 1. Dynamic discovery
             socket_path = Path(get_docker_socket_path()).resolve()
-            if not run_command(
-                ["docker", "ps", "-a", "-q", "-f", f"name=^{api_proxy}$"]
-            ):
+
+            # 2. Existence check (including stopped)
+            existing_bridge = run_command(
+                ["docker", "ps", "-a", "-q", "-f", f"name=^{api_proxy}$"], check=False
+            )
+
+            if existing_bridge:
+                inspect_info = run_command(
+                    [
+                        "docker",
+                        "inspect",
+                        "-f",
+                        "{{.Config.Env}} {{.State.Running}}",
+                        api_proxy,
+                    ],
+                    check=False,
+                )
+                is_outdated = "DOCKER_API_VERSION" not in (inspect_info or "")
+                is_running = "true" in (inspect_info or "").lower()
+
+                if is_outdated:
+                    UI.info("Docker bridge is outdated. Recreating...")
+                    run_command(["docker", "rm", "-f", api_proxy], check=False)
+                    existing_bridge = None
+                elif not is_running:
+                    UI.info("Docker bridge is not running. Recreating...")
+                    run_command(["docker", "rm", "-f", api_proxy], check=False)
+                    existing_bridge = None
+
+            if not existing_bridge:
                 UI.info(
                     f"Starting Docker Socket Proxy bridge for macOS ({socket_path})..."
                 )
@@ -188,7 +217,9 @@ class StackHandler:
                     "liferay-net",
                     "-v",
                     f"{socket_path}:/var/run/docker.sock:ro",
-                    "alpine/socat",
+                    "-e",
+                    "DOCKER_API_VERSION=1.44",
+                    SOCAT_IMAGE,
                     "TCP-LISTEN:2375,fork,reuseaddr",
                     "UNIX-CONNECT:/var/run/docker.sock",
                 ]
@@ -260,8 +291,46 @@ class StackHandler:
             needs_bridge = True
 
         proxy_name = "liferay-proxy-global"
-        if not run_command(["docker", "ps", "-q", "-f", f"name=^{proxy_name}$"]):
-            UI.info("Initializing Global SSL Proxy (Traefik v3)...")
+        # 1. Existence check (including stopped)
+        existing_proxy = run_command(
+            ["docker", "ps", "-a", "-q", "-f", f"name=^{proxy_name}$"], check=False
+        )
+
+        if existing_proxy:
+            inspect_info = run_command(
+                [
+                    "docker",
+                    "inspect",
+                    "-f",
+                    "{{.Config.Env}} {{.Config.Image}} {{.State.Running}}",
+                    proxy_name,
+                ],
+                check=False,
+            )
+            # Detect if missing the CORRECT DOCKER_API_VERSION key or if using an older traefik image
+            is_outdated = "DOCKER_API_VERSION" not in (
+                inspect_info or ""
+            ) or f"traefik:{TRAEFIK_VERSION}" not in (inspect_info or "")
+            is_running = "true" in (inspect_info or "").lower()
+
+            if is_outdated:
+                UI.info(
+                    f"Global proxy is outdated. Recreating with {TRAEFIK_VERSION} API fixes..."
+                )
+                run_command(["docker", "rm", "-f", proxy_name], check=False)
+                existing_proxy = None  # Force re-creation below
+            elif not is_running:
+                UI.info(
+                    "Global proxy is not running. Recreating to ensure latest config..."
+                )
+                run_command(["docker", "rm", "-f", proxy_name], check=False)
+                existing_proxy = None
+            else:
+                # Already running and up-to-date
+                return True
+
+        if not existing_proxy:
+            UI.info(f"Initializing Global SSL Proxy (Traefik {TRAEFIK_VERSION})...")
 
             # Use the dynamic socket path for the endpoint on non-macOS platforms
             socket_path = get_docker_socket_path()
@@ -283,8 +352,8 @@ class StackHandler:
                 "-v",
                 f"{global_cert_dir.as_posix()}:/etc/traefik/certs:ro",
                 "-e",
-                "TRAEFIK_PROVIDERS_DOCKER_APIVERSION=1.44",
-                "traefik:v3.0",
+                "DOCKER_API_VERSION=1.44",
+                f"traefik:{TRAEFIK_VERSION}",
                 "--providers.docker=true",
                 f"--providers.docker.endpoint={endpoint}",
                 "--providers.docker.exposedbydefault=false",

@@ -14,6 +14,8 @@ PROJECT_META_FILE = ".liferay-docker.meta"
 TAG_PATTERN = r"^\d{4}\.q[1-4]\.\d+(-u\d+|-lts)?$"
 SCRIPT_DIR = Path(__file__).parent.parent.resolve()
 ELASTICSEARCH_VERSION = "8.17.0"
+TRAEFIK_VERSION = "v3.6.1"
+SOCAT_IMAGE = "alpine/socat"
 
 # --- Sample Extension Hashes (SHA-256) ---
 SAMPLE_HASHES = {
