@@ -438,6 +438,7 @@ class BaseHandler:
             try:
                 # Run a single container to verify the mount AND fix permissions for the whole root.
                 # We skip .git to avoid altering repository metadata permissions.
+                # Added explicit check for write access as UID 1000 (Liferay user).
                 verify_res = run_command(
                     [
                         "docker",
@@ -448,15 +449,21 @@ class BaseHandler:
                         "alpine",
                         "sh",
                         "-c",
-                        f"if [ \"$(cat /project/.ldm_mount_check 2>/dev/null)\" = \"{token_val}\" ]; then find /project -maxdepth 1 ! -name '.git' ! -name '.' -exec chown -R 1000:1000 {{}} + 2>/dev/null || true; chmod -R 775 /project 2>/dev/null || true; echo 'OK'; else echo 'FAIL'; fi",
+                        f"if [ \"$(cat /project/.ldm_mount_check 2>/dev/null)\" = \"{token_val}\" ]; then find /project -maxdepth 1 ! -name '.git' ! -name '.' -exec chown -R 1000:1000 {{}} + 2>/dev/null || true; chmod -R 775 /project 2>/dev/null || true; if touch /project/.ldm_write_test 2>/dev/null; then echo 'OK'; else echo 'NO_WRITE'; fi; else echo 'FAIL'; fi",
                     ]
                 )
 
                 if "OK" not in (verify_res or ""):
-                    UI.error("\n❌ FATAL: VOLUME MOUNTING IS BROKEN")
-                    UI.info(
-                        f"{UI.BYELLOW}Reason:{UI.COLOR_OFF} Docker cannot see the files in: {root}"
-                    )
+                    if "NO_WRITE" in (verify_res or ""):
+                        UI.error("\n❌ FATAL: VOLUME MOUNT IS READ-ONLY")
+                        UI.info(
+                            f"{UI.BYELLOW}Reason:{UI.COLOR_OFF} Docker can see the files, but the 'liferay' user cannot write to: {root}"
+                        )
+                    else:
+                        UI.error("\n❌ FATAL: VOLUME MOUNTING IS BROKEN")
+                        UI.info(
+                            f"{UI.BYELLOW}Reason:{UI.COLOR_OFF} Docker cannot see the files in: {root}"
+                        )
 
                     actual_home = Path.home()
                     try:
@@ -482,8 +489,12 @@ class BaseHandler:
             except Exception as e:
                 UI.warning(f"Could not verify mounts automatically: {e}")
             finally:
+                # Cleanup tokens
                 if token_file.exists():
                     token_file.unlink()
+                write_test = root / ".ldm_write_test"
+                if write_test.exists():
+                    write_test.unlink()
         else:
             # Standard Linux/Windows fallback
             for key in ["data", "deploy", "state"]:
