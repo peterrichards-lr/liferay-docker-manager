@@ -1,0 +1,49 @@
+name: Bug Report
+description: Report a bug to help us improve LDM
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to fill out this bug report!
+  - type: input
+    id: version
+    attributes:
+      label: LDM Version
+      description: What version of LDM are you using? (Run `ldm --version`)
+      placeholder: e.g., v1.6.31
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating System
+      options:
+        - macOS (Apple Silicon)
+        - macOS (Intel)
+        - Windows (WSL2)
+        - Linux (Native)
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to Reproduce
+      description: Please describe how we can reproduce the bug.
+      placeholder: |
+        1. Run `ldm up my-project`
+        2. Wait for boot
+        3. See error...
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant Logs
+      description: Please paste any error output from `ldm logs` or `ldm doctor`.
+      render: shell
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional Context
+      description: Anything else we should know?
