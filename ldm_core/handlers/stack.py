@@ -1467,6 +1467,21 @@ class StackHandler:
                 run_command(["docker", "rm", "-f", c], check=False)
         UI.success("Infrastructure cleanup complete.")
 
+    def cmd_infra_restart(self):
+        """Restarts all global infrastructure services."""
+        UI.heading("Restarting Global Infrastructure")
+
+        # Ensure we keep the search flag if it was used
+        search_active = run_command(
+            ["docker", "ps", "-a", "-q", "-f", "name=^liferay-search-global$"],
+            check=False,
+        )
+        if search_active:
+            setattr(self.args, "search", True)
+
+        self.cmd_infra_down()
+        self.cmd_infra_setup()
+
     def cmd_logs(self, project_id=None, service=None):
         root = self.detect_project_path(project_id)
         if not root:

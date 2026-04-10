@@ -2,7 +2,7 @@
 
 This file serves as the persistent state and technical knowledge base for the AI assistant working on the LDM project.
 
-## 🛠️ Core Architectural Mandates (Hardened v1.6.21)
+## 🛠️ Core Architectural Mandates (Hardened v1.6.24)
 
 ### 1. Configuration Priority (The "Liferay Way")
 

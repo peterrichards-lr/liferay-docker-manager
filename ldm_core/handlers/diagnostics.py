@@ -19,6 +19,93 @@ from ldm_core.utils import (
 class DiagnosticsHandler:
     """Mixin for diagnostic and maintenance commands."""
 
+    def cmd_status(self):
+        """Displays a summary of active global services and projects."""
+        UI.heading("LDM Service Status")
+
+        # 1. Global Infrastructure
+        print(f"{UI.WHITE}Global Infrastructure:{UI.COLOR_OFF}")
+        infra = [
+            ("liferay-proxy-global", "SSL Proxy (Traefik)"),
+            ("liferay-search-global", "Search (ES)"),
+            ("docker-socket-proxy", "macOS Socket Bridge"),
+        ]
+
+        any_infra = False
+        for container, label in infra:
+            res = run_command(
+                ["docker", "ps", "-q", "-f", f"name=^{container}$"], check=False
+            )
+            if res:
+                inspect = run_command(
+                    [
+                        "docker",
+                        "inspect",
+                        "--format",
+                        "{{.State.Status}} {{.Config.Image}}",
+                        container,
+                    ],
+                    check=False,
+                )
+                if inspect:
+                    status, image = inspect.split(" ", 1)
+                    print(
+                        f"  {UI.GREEN}●{UI.COLOR_OFF} {label:<25} {status.capitalize():<10} {image}"
+                    )
+                    any_infra = True
+
+        if not any_infra:
+            print(
+                f"  {UI.WHITE}No global services are currently running.{UI.COLOR_OFF}"
+            )
+
+        print()
+
+        # 2. Project Status
+        print(f"{UI.WHITE}Active Projects:{UI.COLOR_OFF}")
+        roots = self.find_dxp_roots()
+        active_projects = False
+
+        for r in roots:
+            path = r["path"]
+            meta = self.read_meta(path / PROJECT_META_FILE)
+            p_id = meta.get("container_name") or path.name
+
+            # Check if any container for this project is running
+            running = run_command(
+                [
+                    "docker",
+                    "ps",
+                    "-q",
+                    "--filter",
+                    f"label=com.liferay.ldm.project={p_id}",
+                    "--filter",
+                    "status=running",
+                ],
+                check=False,
+            )
+
+            if running:
+                active_projects = True
+                host = meta.get("host_name", "localhost")
+                ssl = str(meta.get("ssl")).lower() == "true"
+                proto = "https" if ssl else "http"
+                port = (
+                    str(meta.get("ssl_port", "443"))
+                    if ssl
+                    else str(meta.get("port", "8080"))
+                )
+                url = f"{proto}://{host}"
+                if (ssl and port != "443") or (not ssl and port != "80"):
+                    url += f":{port}"
+
+                print(
+                    f"  {UI.GREEN}●{UI.COLOR_OFF} {p_id:<25} {r['version']:<15} {url}"
+                )
+
+        if not active_projects:
+            print(f"  {UI.WHITE}No projects are currently running.{UI.COLOR_OFF}")
+
     def cmd_update_check(self, force=True):
         UI.heading("LDM Update Check")
         latest, url = check_for_updates(VERSION, force=force)
@@ -205,9 +292,16 @@ del "%~f0"
 
         # 0. Early Project Resolve (Optional skip allowed)
         skip_project = getattr(self.args, "skip_project", False)
-        project_path = None
-        if not skip_project:
-            project_path = self.detect_project_path(project_id)
+        check_all = getattr(self.args, "all", False)
+
+        project_paths = []
+        if check_all:
+            roots = self.find_dxp_roots()
+            project_paths = [r["path"] for r in roots]
+        elif not skip_project:
+            p_path = self.detect_project_path(project_id)
+            if p_path:
+                project_paths = [p_path]
 
         results = []
 
@@ -434,7 +528,10 @@ del "%~f0"
             pass
 
         # 4.2 Global Config Check
-        common_dir = self.get_common_dir(project_path)
+        # If multiple projects are being checked, we resolve 'common' relative to the first project
+        # or CWD. get_common_dir handles this internally if path is None.
+        base_path = project_paths[0] if project_paths else None
+        common_dir = self.get_common_dir(base_path)
         search_version = 8  # Default
 
         if not common_dir.exists():
@@ -505,7 +602,7 @@ del "%~f0"
                 )
                 es_conn = (
                     common_dir
-                    / f"com.liferay.portal.search.{v_id}.configuration.ElasticsearchConnectionConfiguration.config"
+                    / f"com.liferay.portal.search.{v_id}.configuration.ElasticsearchConnectionConfiguration-REMOTE.config"
                 )
 
                 # For ES8, we might also have ES7 configs for compatibility mode.
@@ -634,9 +731,10 @@ del "%~f0"
             results.append(("Global Infrastructure", "Skipped (Engine down)", "warn"))
 
         # 7. Project-Specific Check (Optional)
-        if project_path:
+        for p_path in project_paths:
+            UI.heading(f"Project Health: {p_path.name}")
             # 7.1 Metadata Health Check
-            meta = self.read_meta(project_path / PROJECT_META_FILE)
+            meta = self.read_meta(p_path / PROJECT_META_FILE)
             env_args = meta.get("env_args", [])
             blacklisted_prefixes = [
                 "LIFERAY_ELASTICSEARCH",
@@ -663,13 +761,13 @@ del "%~f0"
                 results.append(("Project Metadata", "Healthy", True))
 
             # 7.2 Compose File Check
-            if self.require_compose(project_path, silent=True):
+            if self.require_compose(p_path, silent=True):
                 results.append(("Project Config", "docker-compose.yml OK", True))
             else:
                 results.append(("Project Config", "docker-compose.yml MISSING", False))
 
             # 7.2.1 Portal Properties Validation
-            pe_file = project_path / "files" / "portal-ext.properties"
+            pe_file = p_path / "files" / "portal-ext.properties"
             if pe_file.exists():
                 prop_status, prop_ok, prop_details = self.validate_properties_file(
                     pe_file
@@ -684,7 +782,7 @@ del "%~f0"
                 )
 
             # 7.2.2 OSGi Search Config Check
-            osgi_config_dir = project_path / "osgi" / "configs"
+            osgi_config_dir = p_path / "osgi" / "configs"
             es_main_conf = (
                 osgi_config_dir
                 / "com.liferay.portal.search.elasticsearch7.configuration.ElasticsearchConfiguration.config"
@@ -709,7 +807,7 @@ del "%~f0"
 
             # 7.2.3 License Check
             lic_status, lic_ok, lic_details = self.check_license_health(
-                {"common": common_dir, **self.setup_paths(project_path)},
+                {"common": common_dir, **self.setup_paths(p_path)},
                 image_tag=meta.get("tag"),
             )
             results.append(("Project License", lic_status, lic_ok))
@@ -774,7 +872,7 @@ del "%~f0"
                     results.append(("Traefik Project SSL", "Config MISSING", False))
 
             # 7.3.1 Traefik Label Validation
-            compose_file = project_path / "docker-compose.yml"
+            compose_file = p_path / "docker-compose.yml"
             if compose_file.exists():
                 try:
                     import yaml
@@ -794,7 +892,7 @@ del "%~f0"
                     elif isinstance(labels, dict):
                         label_list = [f"{k}={v}" for k, v in labels.items()]
 
-                    p_id = meta.get("container_name") or project_path.name
+                    p_id = meta.get("container_name") or p_path.name
                     has_net_label = any(
                         "traefik.docker.network=liferay-net" in label
                         for label in label_list
@@ -828,7 +926,7 @@ del "%~f0"
                     results.append(("Traefik Labels", f"Check Failed ({e})", "warn"))
 
             # 7.4 DNS Check (Centralized)
-            dns_ok, unresolved = self.validate_project_dns(project_path)
+            dns_ok, unresolved = self.validate_project_dns(p_path)
             if host_name != "localhost":
                 if dns_ok:
                     results.append(
@@ -851,7 +949,7 @@ del "%~f0"
                     # Determine if the Liferay container is running for this project
                     from ldm_core.utils import sanitize_id
 
-                    p_id = sanitize_id(meta.get("container_name") or project_path.name)
+                    p_id = sanitize_id(meta.get("container_name") or p_path.name)
 
                     # Try LDM-standard name first, then fall back to Compose's default
                     liferay_container = None
@@ -870,7 +968,7 @@ del "%~f0"
                         import uuid
 
                         token_val = f"DOCTOR_LIVE_{uuid.uuid4().hex[:8]}"
-                        deploy_dir = project_path / "deploy"
+                        deploy_dir = p_path / "deploy"
                         token_file = deploy_dir / ".ldm_doctor_check"
 
                         try:
