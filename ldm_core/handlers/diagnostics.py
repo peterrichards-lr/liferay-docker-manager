@@ -574,9 +574,10 @@ del "%~f0"
 
                     results.append((label, status, ok))
                 else:
-                    results.append(
-                        (label, "Not running (Run 'ldm infra-setup')", "warn")
-                    )
+                    cmd_hint = "ldm infra-setup"
+                    if container == "liferay-search-global":
+                        cmd_hint = "ldm infra-setup --search"
+                    results.append((label, f"Not running (Run '{cmd_hint}')", "warn"))
         else:
             results.append(("Docker Network", "Skipped (Engine down)", "warn"))
             results.append(("Global Infrastructure", "Skipped (Engine down)", "warn"))
