@@ -1,9 +1,9 @@
 from pathlib import Path
 
 # --- Constants & Configuration ---
-# LDM_MAGIC_VERSION: 1.6.13
-VERSION = "1.6.13"
-BUILD_INFO = "Local Build - 2026-04-10 17:59:00"
+# LDM_MAGIC_VERSION: 1.6.14
+VERSION = "1.6.14"
+BUILD_INFO = "Local Build - 2026-04-10 18:15:30"
 IMAGE_NAME_DXP = "liferay/dxp"
 IMAGE_NAME_PORTAL = "liferay/portal"
 API_BASE_DXP = "https://hub.docker.com/v2/repositories/liferay/dxp/tags?page_size=200&ordering=name"
