@@ -892,6 +892,7 @@ class StackHandler:
         no_up=False,
         no_wait=False,
     ):
+        self._ensure_network()
         p_id = project_meta.get("container_name") or paths["root"].name
         self.scrub_legacy_meta(p_id)
         self.migrate_layout(paths)
