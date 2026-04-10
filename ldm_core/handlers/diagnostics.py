@@ -786,7 +786,61 @@ del "%~f0"
             # 7.5 Environment Check (Centralized)
             try:
                 if platform.system().lower() == "darwin":
-                    results.append(("Mount Verification", "Checked on run", "warn"))
+                    # Determine if the Liferay container is running for this project
+                    p_id = meta.get("container_name") or project_path.name
+
+                    # Try LDM-standard name first, then fall back to Compose's default
+                    liferay_container = None
+                    possible_names = [f"{p_id}-liferay", f"{p_id}-liferay-1", p_id]
+                    for name in possible_names:
+                        if run_command(
+                            ["docker", "ps", "-q", "-f", f"name=^{name}$"], check=False
+                        ):
+                            liferay_container = name
+                            break
+
+                    if liferay_container:
+                        # Perform a LIVE check inside the running container
+                        # 1. Create a fresh token
+                        import uuid
+
+                        token_val = f"DOCTOR_LIVE_{uuid.uuid4().hex[:8]}"
+                        token_file = project_path / ".ldm_doctor_check"
+                        token_file.write_text(token_val)
+
+                        # 2. Try to read it from INSIDE the container
+                        # The project root is typically mounted at /opt/liferay (DXP/Portal)
+                        # or mapped via Compose volumes.
+                        verify_res = run_command(
+                            [
+                                "docker",
+                                "exec",
+                                liferay_container,
+                                "sh",
+                                "-c",
+                                "cat /opt/liferay/.ldm_doctor_check 2>/dev/null || cat /mnt/liferay/.ldm_doctor_check 2>/dev/null",
+                            ],
+                            check=False,
+                        )
+
+                        if token_val in (verify_res or ""):
+                            results.append(("Mount Verification", "Live (OK)", True))
+                        else:
+                            results.append(
+                                (
+                                    "Mount Verification",
+                                    "BROKEN (Not visible in container)",
+                                    False,
+                                )
+                            )
+
+                        # Cleanup
+                        if token_file.exists():
+                            token_file.unlink()
+                    else:
+                        results.append(
+                            ("Mount Verification", "Verified on start", True)
+                        )
             except Exception:
                 pass
 

@@ -17,6 +17,7 @@ This file serves as the persistent state and technical knowledge base for the AI
 ### 2. Networking & Routing (Traefik v3)
 
 - **Explicit Network Labels**: Every container managed by LDM MUST have the `traefik.docker.network=liferay-net` label. Without this, Traefik v3 may fail to resolve the internal backend IP, resulting in persistent 404 errors.
+- **API Version Negotiation**: Traefik MUST be at least **v3.6.1** to support automatic API version negotiation. Older versions (v3.0-v3.5) are hardcoded to Docker API v1.24 and will fail on modern Docker engines (v29+) with "client version 1.24 is too old" errors.
 - **macOS Loopback**: Infrastructure (Traefik) on macOS MUST bind to `0.0.0.0` to support multi-IP loopback for custom virtual hostnames.
 - **Bridge Reliability**: The `docker-socket-proxy` bridge on macOS must be verified for network connectivity during every `run` and `doctor` command.
 
