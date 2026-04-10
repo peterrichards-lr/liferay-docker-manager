@@ -2,7 +2,7 @@
 
 This file serves as the persistent state and technical knowledge base for the AI assistant working on the LDM project.
 
-## 🛠️ Core Architectural Mandates (Hardened v1.6.11)
+## 🛠️ Core Architectural Mandates (Hardened v1.6.12)
 
 ### 1. Configuration Priority (The "Liferay Way")
 
@@ -57,7 +57,7 @@ This file serves as the persistent state and technical knowledge base for the AI
 ## 🏁 Definition of Done for Changes
 
 - [ ] Code passes `./lint.sh` (Ruff, Markdown, Bandit, Pytest).
-- [ ] All 18 unit tests pass.
+- [ ] All 25 unit tests pass.
 - [ ] Version-aware separator logic is maintained.
 - [ ] Explicit Traefik network labels are applied.
 - [ ] Documentation (`README.md`, `ROADMAP.md`) is updated.
