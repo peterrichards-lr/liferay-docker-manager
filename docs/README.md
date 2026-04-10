@@ -425,7 +425,7 @@ ldm infra-restart          # Reset all global services in one go
 
 ### `migrate-search`
 
-Migrates a project from using the internal Sidecar search to the shared **Global Search (ES8)** container.
+Migrates a project from using the internal Sidecar search to the shared **Global Search container**.
 
 ```bash
 ldm migrate-search [project]
@@ -438,6 +438,30 @@ ldm migrate-search [project]
 3. Deletes internal indices (`data/elasticsearch7` or `data/elasticsearch8`).
 4. Re-syncs Global ES configurations from `common/`.
 5. Offers to restart the project immediately.
+
+### `reset`
+
+Surgically clear project data folders. This command requires the project to be stopped.
+
+```bash
+ldm reset [project] [target]
+```
+
+**Available Targets:**
+
+- **`state`** (Default): Clears the `osgi/state` folder.
+- **`search`**: Clears internal Sidecar indices.
+- **`db`**: Clears the Hypersonic database (if used).
+- **`global-search`**: Deletes the project's indices from the shared Global Search container.
+- **`all`**: Performs all of the above.
+
+**Examples:**
+
+```bash
+ldm reset demo state          # Clear OSGi state for 'demo'
+ldm reset demo search,db      # Clear local search and DB
+ldm reset demo all            # Total project data wipe
+```
 
 ### `prune`
 

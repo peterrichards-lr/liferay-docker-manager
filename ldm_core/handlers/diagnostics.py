@@ -127,12 +127,27 @@ class DiagnosticsHandler:
             print(f"    Download: {UI.CYAN}{url}{UI.COLOR_OFF}\n")
 
     def cmd_clear_cache(self):
-        cache_path = get_actual_home() / ".liferay_docker_cache.json"
-        if cache_path.exists():
-            os.remove(cache_path)
-            UI.success("Docker tag cache cleared.")
+        """Deprecated: Use ldm cache instead."""
+        self.cmd_cache(target="tags")
+
+    def cmd_cache(self, target="all"):
+        """Manages LDM internal caches (tags, projects)."""
+        UI.heading("LDM Cache Management")
+
+        home = get_actual_home()
+        tag_cache = home / ".liferay_docker_cache.json"
+
+        cleared = []
+
+        if target in ["tags", "all"]:
+            if tag_cache.exists():
+                os.remove(tag_cache)
+                cleared.append("Docker tag cache")
+
+        if not cleared:
+            UI.info("No caches found to clear.")
         else:
-            UI.info("Cache is already empty.")
+            UI.success(f"Successfully cleared: {', '.join(cleared)}")
 
     def cmd_upgrade(self):
         """Self-upgrade the LDM binary to the latest version."""

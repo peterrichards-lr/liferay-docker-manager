@@ -165,7 +165,16 @@ def main():
     )
     subparsers.add_parser("infra-down")
     subparsers.add_parser("infra-restart")
-    subparsers.add_parser("clear-cache")
+
+    # Cache management
+    cache = subparsers.add_parser("cache", aliases=["clear-cache", "clear-tags"])
+    cache.add_argument(
+        "target",
+        nargs="?",
+        default="tags",
+        help="Target to clear: tags, all (default: tags)",
+    )
+
     upgrade = subparsers.add_parser("upgrade")
     upgrade.add_argument(
         "--repair",
@@ -299,7 +308,9 @@ def main():
         "infra-setup": lambda: manager.cmd_infra_setup(),
         "infra-down": lambda: manager.cmd_infra_down(),
         "infra-restart": lambda: manager.cmd_infra_restart(),
-        "clear-cache": lambda: manager.cmd_clear_cache(),
+        "cache": lambda: manager.cmd_cache(getattr(args, "target", "tags")),
+        "clear-cache": lambda: manager.cmd_cache("tags"),
+        "clear-tags": lambda: manager.cmd_cache("tags"),
         "doctor": lambda: manager.cmd_doctor(project_id),
         "status": lambda: manager.cmd_status(),
         "list": lambda: manager.cmd_list(),
