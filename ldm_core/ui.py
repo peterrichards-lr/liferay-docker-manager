@@ -83,7 +83,11 @@ class UI:
     def error(msg, details=None):
         UI._print(msg, UI.BRED, "❌", file=sys.stderr)
         if details:
-            print(f"{UI.WHITE}Details:{UI.COLOR_OFF}  {details}", file=sys.stderr)
+            # Redact details before printing
+            redacted_details = UI.redact(str(details))
+            print(
+                f"{UI.WHITE}Details:{UI.COLOR_OFF}  {redacted_details}", file=sys.stderr
+            )
 
     @staticmethod
     def die(msg, details=None):
@@ -92,7 +96,8 @@ class UI:
 
     @staticmethod
     def heading(msg):
-        msg = msg.strip()
+        # Redact headers just in case (e.g. project names containing sensitive words)
+        msg = UI.redact(msg.strip())
         print(f"\n{UI.BYELLOW}=== {msg} ==={UI.COLOR_OFF}")
 
     @staticmethod

@@ -638,7 +638,10 @@ del "%~f0"
                 icon = "❌"
                 all_ok = False
             padding = UI.get_padding(icon)
-            print(f"{component:<25} {color}{icon}{padding}{status}{UI.COLOR_OFF}")
+            # Redact component and status for the tabulated output
+            r_comp = UI.redact(component)
+            r_stat = UI.redact(status)
+            print(f"{r_comp:<25} {color}{icon}{padding}{r_stat}{UI.COLOR_OFF}")
 
         if all_ok and not has_warnings:
             UI.success("Everything looks good! Your environment is ready.")
