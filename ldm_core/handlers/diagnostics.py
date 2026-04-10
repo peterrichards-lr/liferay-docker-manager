@@ -6,7 +6,7 @@ import json
 import subprocess
 from pathlib import Path
 from ldm_core.ui import UI
-from ldm_core.constants import PROJECT_META_FILE, SCRIPT_DIR, VERSION
+from ldm_core.constants import PROJECT_META_FILE, SCRIPT_DIR, VERSION, BUILD_INFO
 from ldm_core.utils import (
     run_command,
     get_actual_home,
@@ -24,7 +24,7 @@ class DiagnosticsHandler:
         latest, url = check_for_updates(VERSION, force=force)
         if not latest:
             UI.error("Could not reach GitHub to check for updates.")
-            sys.exit(1)
+            return
 
         if version_to_tuple(latest) <= version_to_tuple(VERSION):
             UI.success(f"You are up to date! (v{VERSION})")
@@ -124,7 +124,9 @@ class DiagnosticsHandler:
 
         # 4. Verify Integrity
         UI.info("Verifying integrity...")
-        status, ok = verify_executable_checksum(latest)  # Verify the NEW binary version
+        status, ok, _ = verify_executable_checksum(
+            latest
+        )  # Verify the NEW binary version
         # Note: verify_executable_checksum uses sys.argv[0], so we need a manual check for the .new file
         import hashlib
 
@@ -209,23 +211,46 @@ del "%~f0"
 
         results = []
 
-        # 0.1 Version Check
+        # 0. Version Check
+        v_display = f"v{VERSION}"
+        if BUILD_INFO:
+            v_display += f" ({BUILD_INFO})"
+
         latest, _ = check_for_updates(VERSION, force=True)
         if latest and version_to_tuple(latest) > version_to_tuple(VERSION):
             results.append(
                 (
                     "LDM Version",
-                    f"v{VERSION} (v{latest} available - Run 'ldm upgrade')",
+                    f"{v_display} (v{latest} available - Run 'ldm upgrade')",
                     "warn",
                 )
             )
         else:
-            results.append(("LDM Version", f"v{VERSION} (Latest)", True))
+            results.append(("LDM Version", f"{v_display} (Latest)", True))
 
         # 0.1 Executable Integrity
-        status, ok = verify_executable_checksum(VERSION)
+        status, ok, detected_version = verify_executable_checksum(VERSION)
         if not status:
             status, ok = "Verification Unavailable", "warn"
+
+        # If the version in memory differs from the one detected in the binary,
+        # it means shadowing is occurring. We update the version reporting to reflect this.
+        if detected_version != VERSION:
+            # Re-check for updates using the ACTUAL binary version
+            latest, _ = check_for_updates(detected_version, force=True)
+            if latest and version_to_tuple(latest) > version_to_tuple(detected_version):
+                results[0] = (
+                    "LDM Version",
+                    f"v{detected_version} (v{latest} available - Run 'ldm upgrade')",
+                    "warn",
+                )
+            else:
+                results[0] = ("LDM Version", f"v{detected_version} (Latest)", True)
+
+            # Add a shadow warning to the integrity status
+            status = f"{status} (Shadowed by {VERSION})"
+            ok = "warn" if ok is True else ok
+
         results.append(("Executable Integrity", status, ok))
 
         # 1. System Info
@@ -273,68 +298,24 @@ del "%~f0"
                     )
 
                     if endpoint:
-                        endpoint_low = endpoint.lower()
-                        context_low = context.lower()
-                        system_low = platform.system().lower()
-
-                        if ".colima" in endpoint_low:
+                        if ".colima" in endpoint:
                             provider = "Colima"
-                        elif "orbstack" in endpoint_low:
+                        elif "orbstack" in endpoint:
                             provider = "OrbStack"
-                        elif (
-                            "docker-desktop" in endpoint_low
-                            or "docker-desktop" in context_low
-                        ):
-                            provider = "Docker Desktop"
-                        elif system_low == "linux" and (
-                            "docker.sock" in endpoint_low or context_low == "default"
-                        ):
-                            provider = "Native Docker"
-                        elif (
-                            "npipe://" in endpoint_low
-                            or "docker_engine" in endpoint_low
-                        ):
-                            provider = "Docker Desktop"
-                        elif "docker.sock" in endpoint_low:
+                        elif "docker.sock" in endpoint or "docker_engine" in endpoint:
                             provider = "Docker Desktop"
 
                     # Fallback to name-based if endpoint check was inconclusive
                     if provider == "Unknown":
-                        context_low = context.lower()
-                        if context_low == "colima":
+                        if context == "colima":
                             provider = "Colima"
-                        elif context_low == "orbstack":
+                        elif context == "orbstack":
                             provider = "OrbStack"
-                        elif "desktop" in context_low:
-                            provider = "Docker Desktop"
+
                     results.append(("Docker Context", context, True))
                     results.append(("Docker Provider", provider, True))
             except Exception:
                 pass
-
-            # 2.0.1 Docker Compose Check
-            from ldm_core.utils import get_compose_cmd
-
-            compose_cmd = get_compose_cmd()
-            if not compose_cmd:
-                system = platform.system().lower()
-                hint = "Install docker-compose-plugin"
-                if system == "darwin":
-                    hint = "Run 'port install docker-compose-plugin' or 'brew install docker-compose'"
-                results.append(("Docker Compose", f"Not found ({hint})", False))
-            else:
-                if "compose" in compose_cmd:
-                    results.append(("Docker Compose", "v2 (Plugin)", True))
-                else:
-                    # Found v1 standalone, which we no longer support
-                    system = platform.system().lower()
-                    hint = "Install docker-compose-plugin"
-                    if system == "darwin":
-                        hint = "Run 'port install docker-compose-plugin' or 'brew install docker-compose'"
-                    results.append(
-                        ("Docker Compose", f"v1 (❌ Unsupported - {hint})", False)
-                    )
-
             # 2.1 Docker Credentials Check
             try:
                 docker_config_path = get_actual_home() / ".docker" / "config.json"
@@ -370,21 +351,8 @@ del "%~f0"
                     mem_bytes = info.get("MemTotal", 0)
                     mem_gb = mem_bytes / (1024**3)
 
-                    # CPU Check: 4 is recommended, 2 is warning, <2 is error
-                    if cpus >= 4:
-                        results.append(("Docker CPUs", f"{cpus} Cores", True))
-                    elif cpus >= 2:
-                        results.append(("Docker CPUs", f"{cpus} Cores", "warn"))
-                    else:
-                        results.append(("Docker CPUs", f"{cpus} Cores", False))
-
-                    # Memory Check: 8GB is recommended, 4GB is warning, <4GB is error
-                    if mem_gb >= 7.5:
-                        results.append(("Docker Memory", f"{mem_gb:.1f} GB", True))
-                    elif mem_gb >= 3.8:
-                        results.append(("Docker Memory", f"{mem_gb:.1f} GB", "warn"))
-                    else:
-                        results.append(("Docker Memory", f"{mem_gb:.1f} GB", False))
+                    results.append(("Docker CPUs", f"{cpus} Cores", cpus >= 4))
+                    results.append(("Docker Memory", f"{mem_gb:.1f} GB", mem_gb >= 7.5))
                 except Exception:
                     pass
         else:
@@ -459,15 +427,7 @@ del "%~f0"
             pass
 
         # 4.2 Global Config Check
-        # Prioritize Current Working Directory (standard for sandbox managers)
-        common_dir = Path.cwd() / "common"
-        if not common_dir.exists():
-            # Fallback to binary/script location
-            exe_path = Path(sys.argv[0]).resolve()
-            ldm_root = (
-                SCRIPT_DIR if exe_path.suffix.lower() == ".py" else exe_path.parent
-            )
-            common_dir = ldm_root / "common"
+        common_dir = self.get_common_dir(project_path)
 
         if not common_dir.exists():
             results.append(
@@ -495,7 +455,44 @@ del "%~f0"
                             ("Global Config", f"Baseline (v{VERSION})", True)
                         )
                     else:
-                        results.append(("Global Config", "Custom Overrides", True))
+                        prop_status, prop_ok, prop_details = (
+                            self.validate_properties_file(pe_file)
+                        )
+                        if prop_ok is True:
+                            results.append(("Global Config", "Custom Overrides", True))
+                        else:
+                            results.append(
+                                (
+                                    "Global Config",
+                                    f"Invalid Format ({prop_status})",
+                                    prop_ok,
+                                )
+                            )
+                            if prop_details:
+                                for detail in prop_details:
+                                    print(
+                                        f"  {UI.YELLOW}⚠{UI.COLOR_OFF} [Global] {detail}"
+                                    )
+
+                # Check for Global Search Configs
+                es_main = (
+                    common_dir
+                    / "com.liferay.portal.search.elasticsearch7.configuration.ElasticsearchConfiguration.config"
+                )
+                es_conn = (
+                    common_dir
+                    / "com.liferay.portal.search.elasticsearch7.configuration.ElasticsearchConnectionConfiguration.config"
+                )
+                if not es_main.exists() or not es_conn.exists():
+                    results.append(
+                        (
+                            "Global Search Config",
+                            "Missing (Run 'ldm init-common')",
+                            "warn",
+                        )
+                    )
+                else:
+                    results.append(("Global Search Config", "REMOTE mode ready", True))
             except Exception:
                 results.append(("Global Config", "Overrides Active", True))
 
@@ -526,7 +523,56 @@ del "%~f0"
                     ["docker", "ps", "-q", "-f", f"name=^{container}$"], check=False
                 )
                 if is_running:
-                    results.append((label, "Running", True))
+                    status = "Running"
+                    ok = True
+
+                    # Deep Check: Bridge Network Connectivity (macOS)
+                    if container == "docker-socket-proxy":
+                        inspect = run_command(
+                            [
+                                "docker",
+                                "network",
+                                "inspect",
+                                "liferay-net",
+                                "-f",
+                                "{{range .Containers}}{{.Name}} {{end}}",
+                            ],
+                            check=False,
+                        )
+                        if container not in (inspect or ""):
+                            status = "Isolated (Connect with ldm infra-setup)"
+                            ok = "warn"
+
+                    # Deep Check: Search Cluster API
+                    if container == "liferay-search-global":
+                        # Perform a quick API ping
+                        try:
+                            # We use curl -I to check for a response from the ES8 cluster
+                            search_res = run_command(
+                                [
+                                    "curl",
+                                    "-s",
+                                    "-o",
+                                    "/dev/null",
+                                    "-w",
+                                    "%{http_code}",
+                                    "http://localhost:9200",
+                                ],
+                                check=False,
+                            )
+                            if search_res != "200" and search_res != "401":
+                                status = f"Unreachable (HTTP {search_res})"
+                                ok = "warn"
+                        except Exception:
+                            pass
+
+                    # Deep Check: Log Health (Generic for all infrastructure)
+                    log_status, log_ok = self._check_container_health_logs(container)
+                    if log_status:
+                        status = log_status
+                        ok = log_ok
+
+                    results.append((label, status, ok))
                 else:
                     results.append(
                         (label, "Not running (Run 'ldm infra-setup')", "warn")
@@ -537,14 +583,79 @@ del "%~f0"
 
         # 7. Project-Specific Check (Optional)
         if project_path:
-            # 7.1 Compose File Check
+            # 7.1 Metadata Health Check
+            meta = self.read_meta(project_path / PROJECT_META_FILE)
+            env_args = meta.get("env_args", [])
+            blacklisted_prefixes = [
+                "LIFERAY_ELASTICSEARCH",
+                "LIFERAY_WEB_SERVER",
+                "LIFERAY_VIRTUAL_HOSTS",
+                "LIFERAY_CLUSTER",
+                "LIFERAY_LUCENE",
+                "COM_LIFERAY_LXC_DXP",
+            ]
+            poisoned = [
+                arg
+                for arg in env_args
+                if any(arg.startswith(p) for p in blacklisted_prefixes)
+            ]
+            if poisoned:
+                results.append(
+                    (
+                        "Project Metadata",
+                        f"Poisoned ({len(poisoned)} legacy vars)",
+                        "warn",
+                    )
+                )
+            else:
+                results.append(("Project Metadata", "Healthy", True))
+
+            # 7.2 Compose File Check
             if self.require_compose(project_path, silent=True):
                 results.append(("Project Config", "docker-compose.yml OK", True))
             else:
                 results.append(("Project Config", "docker-compose.yml MISSING", False))
 
-            # 7.2 SSL Certificate Check
-            meta = self.read_meta(project_path / PROJECT_META_FILE)
+            # 7.2.1 Portal Properties Validation
+            pe_file = project_path / "files" / "portal-ext.properties"
+            if pe_file.exists():
+                prop_status, prop_ok, prop_details = self.validate_properties_file(
+                    pe_file
+                )
+                results.append(("Portal Properties", prop_status, prop_ok))
+                if prop_details:
+                    for detail in prop_details:
+                        print(f"  {UI.YELLOW}⚠{UI.COLOR_OFF} {detail}")
+            else:
+                results.append(
+                    ("Portal Properties", "portal-ext.properties MISSING", "warn")
+                )
+
+            # 7.2.2 OSGi Search Config Check
+            osgi_config_dir = project_path / "osgi" / "configs"
+            es_main_conf = (
+                osgi_config_dir
+                / "com.liferay.portal.search.elasticsearch7.configuration.ElasticsearchConfiguration.config"
+            )
+            es_conn_conf = (
+                osgi_config_dir
+                / "com.liferay.portal.search.elasticsearch7.configuration.ElasticsearchConnectionConfiguration.config"
+            )
+
+            if es_main_conf.exists() and es_conn_conf.exists():
+                results.append(("OSGi Search Config", "REMOTE mode detected", True))
+            elif es_main_conf.exists() or es_conn_conf.exists():
+                results.append(("OSGi Search Config", "Partial / Incomplete", "warn"))
+            else:
+                results.append(
+                    (
+                        "OSGi Search Config",
+                        "Missing (Liferay will start sidecar)",
+                        "warn",
+                    )
+                )
+
+            # 7.3 SSL Certificate Check
             host_name = meta.get("host_name", "localhost")
             ssl_enabled = str(meta.get("ssl", "false")).lower() == "true"
             ssl_cert_name = meta.get("ssl_cert")
@@ -587,14 +698,75 @@ del "%~f0"
 
                 # Check Traefik YAML
                 if traefik_conf.exists():
-                    results.append(("Traefik Project SSL", "Config loaded", True))
+                    conf_content = traefik_conf.read_text()
+                    expected_cert = f"certFile: /etc/traefik/certs/{host_name}.pem"
+                    expected_key = f"keyFile: /etc/traefik/certs/{host_name}-key.pem"
+
+                    if expected_cert in conf_content and expected_key in conf_content:
+                        results.append(("Traefik Project SSL", "Config OK", True))
+                    else:
+                        results.append(
+                            ("Traefik Project SSL", "Invalid Content", "warn")
+                        )
                 else:
                     results.append(("Traefik Project SSL", "Config MISSING", False))
 
-            # 7.3 DNS Check (Centralized)
+            # 7.3.1 Traefik Label Validation
+            compose_file = project_path / "docker-compose.yml"
+            if compose_file.exists():
+                try:
+                    import yaml
+
+                    with open(compose_file, "r") as f:
+                        compose_data = yaml.safe_load(f)
+
+                    liferay_service = compose_data.get("services", {}).get(
+                        "liferay", {}
+                    )
+                    labels = liferay_service.get("labels", [])
+
+                    # Convert labels list/dict to a flat list of strings for easier checking
+                    label_list = []
+                    if isinstance(labels, list):
+                        label_list = labels
+                    elif isinstance(labels, dict):
+                        label_list = [f"{k}={v}" for k, v in labels.items()]
+
+                    p_id = meta.get("container_name") or project_path.name
+                    has_net_label = any(
+                        "traefik.docker.network=liferay-net" in label
+                        for label in label_list
+                    )
+
+                    # Detect double-prefixing: search for labels containing the p_id twice in the name part
+                    double_prefixed = []
+                    for label in label_list:
+                        if "=" in label:
+                            key = label.split("=", 1)[0]
+                            if key.count(p_id) > 1:
+                                double_prefixed.append(key)
+
+                    if not has_net_label:
+                        results.append(
+                            ("Traefik Labels", "Missing Network Label", False)
+                        )
+                    elif double_prefixed:
+                        results.append(
+                            (
+                                "Traefik Labels",
+                                f"Double Prefixed ({len(double_prefixed)} labels)",
+                                "warn",
+                            )
+                        )
+                        for dp in double_prefixed:
+                            print(f"  {UI.YELLOW}⚠{UI.COLOR_OFF} {dp}")
+                    else:
+                        results.append(("Traefik Labels", "Standardized OK", True))
+                except Exception as e:
+                    results.append(("Traefik Labels", f"Check Failed ({e})", "warn"))
+
+            # 7.4 DNS Check (Centralized)
             dns_ok, unresolved = self.validate_project_dns(project_path)
-            meta = self.read_meta(project_path / PROJECT_META_FILE)
-            host_name = meta.get("host_name", "localhost")
             if host_name != "localhost":
                 if dns_ok:
                     results.append(
@@ -609,17 +781,15 @@ del "%~f0"
                         )
                     )
                     for d in unresolved:
-                        UI._print(d, UI.RED, "×")
+                        print(f"  {UI.RED}×{UI.COLOR_OFF} {d}")
 
-            # 7.3 Environment Check (Centralized)
+            # 7.5 Environment Check (Centralized)
             try:
-                # Note: verify_runtime_environment may exit if fatal,
-                # but for doctor we want a report.
-                # We skip the fatal check for now and just check if we can reach it.
                 if platform.system().lower() == "darwin":
                     results.append(("Mount Verification", "Checked on run", "warn"))
             except Exception:
                 pass
+
         # Print Results
         print(f"{'Component':<25} {'Status':<30}")
         print("-" * 60)
@@ -628,20 +798,16 @@ del "%~f0"
         for component, status, ok in results:
             if ok is True:
                 color = UI.GREEN
-                icon = "✅"
+                icon = "✅ "
             elif ok == "warn":
                 color = UI.YELLOW
-                icon = "⚠️"
+                icon = "⚠️ "
                 has_warnings = True
             else:
                 color = UI.RED
-                icon = "❌"
+                icon = "❌ "
                 all_ok = False
-            padding = UI.get_padding(icon)
-            # Redact component and status for the tabulated output
-            r_comp = UI.redact(component)
-            r_stat = UI.redact(status)
-            print(f"{r_comp:<25} {color}{icon}{padding}{r_stat}{UI.COLOR_OFF}")
+            print(f"{component:<25} {color}{icon} {status}{UI.COLOR_OFF}")
 
         if all_ok and not has_warnings:
             UI.success("Everything looks good! Your environment is ready.")
@@ -723,11 +889,15 @@ del "%~f0"
 
         roots = self.find_dxp_roots()
         active_projects = set()
+        active_hostnames = set()
         for r in roots:
             meta = self.read_meta(r["path"] / PROJECT_META_FILE)
             # Use container_name from meta, or fall back to folder name
             name = meta.get("container_name") or r["path"].name
             active_projects.add(name)
+            host = meta.get("host_name")
+            if host and host != "localhost":
+                active_hostnames.add(host)
 
         if self.verbose:
             UI.debug(
@@ -850,4 +1020,134 @@ del "%~f0"
                     f.unlink()
                 UI.success("Temporary files removed.")
 
+        # 4. Orphaned SSL Certificates
+        cert_dir = get_actual_home() / "liferay-docker-certs"
+        if cert_dir.exists():
+            orphaned_certs = []
+            # Patterns to look for: {host}.pem, {host}-key.pem, traefik-{host}.yml
+            for f in cert_dir.iterdir():
+                if not f.is_file():
+                    continue
+
+                host = None
+                if f.name.startswith("traefik-") and f.suffix == ".yml":
+                    host = f.name[8:-4]
+                elif f.name.endswith("-key.pem"):
+                    host = f.name[:-8]
+                elif f.suffix == ".pem":
+                    host = f.name[:-4]
+
+                if host and host not in active_hostnames:
+                    orphaned_certs.append(f)
+
+            if orphaned_certs:
+                UI.info(f"Found {len(orphaned_certs)} orphaned SSL artifacts:")
+                for c in orphaned_certs:
+                    print(f"  - {c.name}")
+                if (
+                    self.non_interactive
+                    or UI.ask("Remove them from global cert store?", "N").upper() == "Y"
+                ):
+                    for c in orphaned_certs:
+                        c.unlink()
+                    UI.success("Orphaned SSL artifacts removed.")
+            else:
+                UI.info("No orphaned SSL artifacts found.")
+
         UI.info("Prune complete.")
+
+    def validate_properties_file(self, file_path):
+        """Checks for structural errors in a .properties file."""
+        errors = []
+        try:
+            lines = file_path.read_text().splitlines()
+            if not lines:
+                return "Empty File", "warn", []
+
+            last_line_continued = False
+            for i, line in enumerate(lines):
+                line_num = i + 1
+                stripped = line.strip()
+
+                # If the previous line ended in '\', this line MUST be a continuation
+                if last_line_continued:
+                    if not stripped:
+                        errors.append(
+                            f"Broken continuation (L{line_num}): Backslash followed by empty line"
+                        )
+                    elif "=" in stripped and not stripped.startswith(("#", "!")):
+                        errors.append(
+                            f"Merge collision (L{line_num}): Backslash followed by new property '{stripped[:15]}...'"
+                        )
+
+                # Update state for next line
+                if not stripped or stripped.startswith(("#", "!")):
+                    last_line_continued = False
+                    continue
+
+                # Normal orphaned line check (no '=' and not a continuation)
+                if not last_line_continued and "=" not in stripped:
+                    errors.append(f"Orphaned line (L{line_num}): '{stripped[:20]}...'")
+
+                last_line_continued = stripped.endswith("\\")
+
+            # Final line check: if the last line ends in '\', it's an invalid continuation
+            if last_line_continued:
+                errors.append(
+                    "File ends with a trailing backslash (broken continuation)."
+                )
+
+            if errors:
+                return f"Inconsistent ({len(errors)} issues)", "warn", errors
+            return "Valid Structure", True, []
+        except Exception as e:
+            return f"Check Failed ({e})", "warn", []
+
+    def _check_container_health_logs(self, container_name, tail=20):
+        """Checks the last N lines of container logs for errors or warnings."""
+        try:
+            # We capture BOTH stdout and stderr
+            import subprocess
+
+            res = subprocess.run(
+                ["docker", "logs", "--tail", str(tail), container_name],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            logs = (res.stdout or "") + (res.stderr or "")
+            if not logs:
+                return None, None
+
+            lines = logs.splitlines()
+
+            # 1. Critical Errors (Hard failure keywords)
+            critical_keywords = [
+                "ERROR",
+                "ERR",
+                "FATAL",
+                "CRITICAL",
+                "Exit Code: 1",
+                "exception",
+            ]
+            for line in lines:
+                if any(k in line.upper() for k in critical_keywords):
+                    # Special case: ignore known non-fatal "operation not supported" errors in some providers
+                    if "operation not supported" in line.lower():
+                        continue
+                    return f"Critical (Error in logs: {line.strip()[:40]}...)", False
+
+            # 2. Warnings
+            warning_keywords = [
+                "WARN",
+                "WARNING",
+                "retrying",
+                "client version .* is too old",
+            ]
+            for line in lines:
+                if any(k in line.upper() for k in warning_keywords):
+                    return f"Warning (Issue in logs: {line.strip()[:40]}...)", "warn"
+
+            return None, None
+        except Exception:
+            return None, None
