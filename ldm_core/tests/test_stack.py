@@ -45,6 +45,12 @@ class MockManager(StackHandler, WorkspaceHandler):
     def migrate_layout(self, *args, **kwargs):
         pass
 
+    def detect_project_path(self, *args, **kwargs):
+        return Path("/tmp/test-project")
+
+    def scrub_legacy_meta(self, *args, **kwargs):
+        pass
+
     def write_meta(self, *args, **kwargs):
         pass
 
@@ -132,6 +138,35 @@ class TestStackScaling(unittest.TestCase):
             update_call = mock_update.call_args[0][1]
             self.assertEqual(update_call["cluster.link.enabled"], "true")
             self.assertEqual(update_call["lucene.replicate.write"], "true")
+
+
+class TestStackNetwork(unittest.TestCase):
+    def setUp(self):
+        self.manager = MockManager()
+        self.paths = self.manager.setup_paths("/tmp/test-project")
+
+    @patch("ldm_core.handlers.stack.get_compose_cmd")
+    @patch("ldm_core.handlers.stack.run_command")
+    def test_sync_stack_ensures_network(self, mock_run, mock_compose):
+        mock_compose.return_value = ["docker", "compose"]
+
+        # Minimal project meta
+        project_meta = {
+            "tag": "2025.q1.0",
+            "host_name": "localhost",
+            "ssl": "false",
+            "use_shared_search": "false",
+        }
+
+        with (
+            patch.object(self.manager, "_ensure_network") as mock_ensure,
+            patch.object(
+                self.manager, "write_docker_compose", return_value=([], False)
+            ),
+        ):
+            # Verify network is ensured regardless of configuration
+            self.manager.sync_stack(self.paths, project_meta, no_up=True)
+            mock_ensure.assert_called_once_with()
 
 
 class TestStackOrchestration(unittest.TestCase):
