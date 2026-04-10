@@ -28,6 +28,17 @@ class TestUtils(unittest.TestCase):
         self.assertFalse(version_to_tuple("1.5.4") > version_to_tuple("1.5.4"))
         self.assertFalse(version_to_tuple("1.4.9") > version_to_tuple("1.5.0"))
 
+    def test_sanitize_id(self):
+        from ldm_core.utils import sanitize_id
+
+        self.assertEqual(sanitize_id("my-project"), "my-project")
+        self.assertEqual(sanitize_id("project_123"), "project_123")
+        self.assertEqual(sanitize_id("my project!"), "myproject")
+        self.assertEqual(sanitize_id("path/to/../../etc/passwd"), "pathtoetcpasswd")
+        self.assertEqual(sanitize_id("user; drop table users"), "userdroptableusers")
+        self.assertEqual(sanitize_id(""), "")
+        self.assertEqual(sanitize_id(None), None)
+
 
 if __name__ == "__main__":
     unittest.main()

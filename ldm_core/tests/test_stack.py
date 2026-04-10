@@ -280,6 +280,40 @@ class TestStackOrchestration(unittest.TestCase):
                     self.assertEqual(args[1], 443)  # ssl_port (integer)
                     self.assertTrue(kwargs.get("use_ssl"))
 
+    @patch("ldm_core.handlers.stack.run_command")
+    @patch("shutil.rmtree")
+    def test_cmd_reset_state(self, mock_rmtree, mock_run):
+        manager = MockManager()
+        # Mock project is NOT running
+        mock_run.return_value = None
+
+        with patch.object(Path, "exists", return_value=True):
+            manager.cmd_reset("test", target="state")
+            # Verify rmtree was called for osgi/state
+            self.assertTrue(mock_rmtree.called)
+            args = mock_rmtree.call_args[0][0]
+            self.assertTrue("osgi/state" in str(args))
+
+    @patch("ldm_core.handlers.stack.open_browser")
+    def test_cmd_browser_launches_url(self, mock_open):
+        manager = MockManager()
+        with (
+            patch.object(
+                manager,
+                "read_meta",
+                return_value={
+                    "host_name": "test.local",
+                    "ssl": "true",
+                    "ssl_port": 443,
+                },
+            ),
+            patch.object(
+                manager, "detect_project_path", return_value=Path("/tmp/test")
+            ),
+        ):
+            manager.cmd_browser("test")
+            mock_open.assert_called_with("https://test.local")
+
 
 if __name__ == "__main__":
     unittest.main()

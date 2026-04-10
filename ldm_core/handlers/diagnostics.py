@@ -1347,6 +1347,54 @@ del "%~f0"
         except Exception as e:
             return f"Check Failed ({e})", "warn", []
 
+    def validate_lcp_json(self, file_path):
+        """Validates the structure and content of an LCP.json file."""
+        errors = []
+        try:
+            content = file_path.read_text()
+            data = json.loads(content)
+
+            # 1. Mandatory ID
+            if not data.get("id"):
+                errors.append("Missing mandatory 'id' field.")
+
+            # 2. Port Validation
+            ports = data.get("ports", [])
+            if not isinstance(ports, list):
+                errors.append("'ports' must be an array.")
+            else:
+                for i, p in enumerate(ports):
+                    if not isinstance(p, dict):
+                        errors.append(f"Port at index {i} must be an object.")
+                        continue
+                    if not p.get("targetPort"):
+                        errors.append(f"Port at index {i} missing 'targetPort'.")
+
+            # 3. Load Balancer / External Port Consistency
+            has_lb = "loadBalancer" in data
+            has_external_port = any(
+                p.get("external") for p in ports if isinstance(p, dict)
+            )
+
+            if has_lb and not has_external_port:
+                errors.append(
+                    "loadBalancer defined but no ports are marked as 'external: true'."
+                )
+
+            # 4. Resource Limits
+            for res in ["cpu", "memory"]:
+                val = data.get(res)
+                if val is not None and not isinstance(val, (int, float)):
+                    errors.append(f"'{res}' must be a numeric value.")
+
+            if errors:
+                return f"Inconsistent ({len(errors)} issues)", "warn", errors
+            return "Valid Structure", True, []
+        except json.JSONDecodeError as e:
+            return f"Invalid JSON ({e})", False, [str(e)]
+        except Exception as e:
+            return f"Check Failed ({e})", "warn", [str(e)]
+
     def _check_container_health_logs(self, container_name, tail=20):
         """Checks the last N lines of container logs for errors or warnings."""
         try:
