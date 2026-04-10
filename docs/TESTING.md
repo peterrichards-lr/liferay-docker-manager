@@ -50,6 +50,7 @@ LDM uses a multi-layered automated verification suite:
 | **4.2 SSL Hygiene** | Run `ldm down` | Correctly removes certificates and Traefik routing configs. |
 | **4.3 SSL Renewal** | `ldm renew-ssl` | Surgically replaces existing certificates with fresh 2-year versions. |
 | **4.4 Search Migration** | `ldm migrate-search` | Deletes internal indices and applies Global ES configs while stopped. |
+| **4.5 Project Reset** | `ldm reset state` | Successfully clears `osgi/state` folder while stopped. |
 
 ---
 
