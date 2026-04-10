@@ -151,6 +151,7 @@ def main():
         "--es7", action="store_true", help="Use Elasticsearch 7 for global search"
     )
     subparsers.add_parser("infra-down")
+    subparsers.add_parser("infra-restart")
     subparsers.add_parser("clear-cache")
     upgrade = subparsers.add_parser("upgrade")
     upgrade.add_argument(
@@ -271,6 +272,7 @@ def main():
         "renew-ssl": lambda: manager.cmd_renew_ssl(project_id),
         "infra-setup": lambda: manager.cmd_infra_setup(),
         "infra-down": lambda: manager.cmd_infra_down(),
+        "infra-restart": lambda: manager.cmd_infra_restart(),
         "clear-cache": lambda: manager.cmd_clear_cache(),
         "doctor": lambda: manager.cmd_doctor(project_id),
         "list": lambda: manager.cmd_list(),
