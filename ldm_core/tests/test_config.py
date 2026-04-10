@@ -9,6 +9,9 @@ class MockConfigManager(ConfigHandler):
         self.args = MagicMock()
         self.verbose = False
 
+    def get_common_dir(self, project_path=None):
+        return Path("/tmp/work/common")
+
 
 class TestConfigManagement(unittest.TestCase):
     def setUp(self):
@@ -18,7 +21,7 @@ class TestConfigManagement(unittest.TestCase):
             "files": Path("/tmp/test-project/files"),
         }
 
-    @patch("ldm_core.handlers.config.Path.cwd")
+    @patch("pathlib.Path.cwd")
     @patch("importlib.resources.files")
     def test_cmd_init_common(self, mock_pkg_files, mock_cwd):
         mock_cwd.return_value = Path("/tmp/work")

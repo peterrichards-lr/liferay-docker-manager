@@ -1,5 +1,4 @@
 import sys
-import platform
 
 
 # --- UI Helpers ---
@@ -16,15 +15,8 @@ class UI:
     @staticmethod
     def get_padding(icon=None):
         """Returns the OS-aware padding for icons."""
-        # macOS needs more breathing room for emojis to appear uniform with Windows/WSL
-        system = platform.system().lower()
-        padding = "   " if system == "darwin" else "  "
-
-        # Extra precision: The information icon (ℹ) is often narrow on macOS
-        if system == "darwin" and icon == "ℹ":
-            padding += " "
-
-        return padding
+        # Standardized 2-space padding for all platforms
+        return "  "
 
     @staticmethod
     def redact(text):

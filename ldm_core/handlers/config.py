@@ -1,95 +1,163 @@
-import os
 import re
 import json
 import shutil
-from pathlib import Path
 from datetime import datetime
 from ldm_core.ui import UI
 from ldm_core.constants import PROJECT_META_FILE, SCRIPT_DIR
-from ldm_core.utils import run_command
 
 
 class ConfigHandler:
     """Mixin for configuration management (env, logging, browser)."""
 
+    def _get_properties(self, content):
+        """Robustly extracts properties from a string, handling multi-line values."""
+        props = {}
+        if not content:
+            return props
+
+        lines = content.splitlines()
+        i = 0
+        while i < len(lines):
+            line = lines[i]
+            stripped = line.strip()
+
+            # Skip comments and empty lines when looking for a new key
+            if not stripped or stripped.startswith(("#", "!")):
+                i += 1
+                continue
+
+            if "=" in line:
+                key, val = line.split("=", 1)
+                key = key.strip()
+                full_val = [val]
+
+                # If the line ends in a backslash, it's a continuation.
+                # We must consume the next line(s) regardless of their content
+                # until we find a line that DOES NOT end a continuation from the previous.
+                temp_val = val
+                while temp_val.strip().endswith("\\") and i + 1 < len(lines):
+                    i += 1
+                    temp_val = lines[i]
+                    full_val.append(temp_val)
+
+                props[key] = "\n".join(full_val).strip()
+
+            i += 1
+
+        return props
+
     def update_portal_ext(self, path, updates):
+        """Updates or adds properties in portal-ext.properties, handling multi-line values."""
+        if not updates:
+            return
+
         content = path.read_text() if path.exists() else ""
-        for key, value in updates.items():
-            # Regex to match single or multi-line properties (handling backslash continuation)
-            # ^\s*key\s*=      : start of line with key
-            # (?:.*\\\n)*      : any number of lines ending with a backslash
-            # .*$              : the final line
-            pattern = re.compile(
-                rf"^\s*{re.escape(key)}\s*=(?:.*\\\n)*.*$", re.MULTILINE
-            )
-            if pattern.search(content):
-                content = pattern.sub(f"{key}={value}", content)
-            else:
-                if content and not content.endswith("\n"):
-                    content += "\n"
-                content += f"{key}={value}\n"
-        path.write_text(content)
+        props = self._get_properties(content)
 
-    def _flatten_logging_tree(self, d, parent_key="", sep="."):
-        items = []
-        for k, v in d.items():
-            new_key = f"{parent_key}{sep}{k}" if parent_key else k
-            if isinstance(v, dict):
-                items.extend(self._flatten_logging_tree(v, new_key, sep=sep).items())
-            else:
-                items.append((new_key, str(v).strip().upper()))
-        return dict(items)
+        # Update the properties dictionary
+        for k, v in updates.items():
+            props[k] = v
 
-    def _generate_portal_log4j_xml(self, loggers_map):
-        template_file = SCRIPT_DIR / "references" / "portal-log4j.xml"
-        if not template_file.exists():
-            loggers_xml = [
-                f'        <Logger level="{v}" name="{k}" />'
-                for k, v in sorted(loggers_map.items())
-            ]
-            return (
-                '<?xml version="1.0" encoding="UTF-8"?>\n'
-                '<Configuration monitorInterval="5" status="WARN" strict="true">\n'
-                "    <Appenders>\n"
-                '        <Null name="XML_FILE" />\n'
-                "    </Appenders>\n"
-                "    <Loggers>\n"
-                f"{chr(10).join(loggers_xml)}\n"
-                "    </Loggers>\n"
-                "</Configuration>\n"
-            )
+        # Re-generate the entire file content to ensure clean structure
+        # We try to preserve the order of the original file if possible
+        new_lines = []
+        original_keys_found = set()
 
-        content = template_file.read_text()
-        if "monitorInterval" not in content:
-            content = re.sub(
-                r"(<Configuration\s+[^>]*)>", r'\1 monitorInterval="5">', content
-            )
+        if content:
+            lines = content.splitlines()
+            i = 0
+            while i < len(lines):
+                line = lines[i]
+                stripped = line.strip()
 
-        content = re.sub(r"(<Appenders>)", r'\1\n\t\t<Null name="XML_FILE" />', content)
-        content = re.sub(
-            r'\t\t<Appender [^>]*name="XML_FILE"[^>]*>.*?</Appender>\n?',
-            "",
-            content,
-            flags=re.DOTALL,
-        )
-        content = re.sub(r'\t\t\t<AppenderRef ref="XML_FILE" />\n?', "", content)
+                # Preserve comments and empty lines
+                if not stripped or stripped.startswith(("#", "!")):
+                    new_lines.append(line)
+                    i += 1
+                    continue
 
-        for name, level in loggers_map.items():
-            pattern = re.compile(
-                rf'<Logger\s+([^>]*\s+)?name="{re.escape(name)}"[^>]*/>'
-            )
-            new_tag = f'<Logger level="{level}" name="{name}" />'
-            if pattern.search(content):
-                content = pattern.sub(new_tag, content)
-            else:
-                if "</Loggers>" in content:
-                    content = content.replace(
-                        "</Loggers>", f"\t\t{new_tag}\n\t</Loggers>"
-                    )
+                if "=" in line:
+                    key = line.split("=", 1)[0].strip()
+                    if key in props:
+                        # Replace the entire block
+                        new_lines.append(f"{key}={props[key]}")
+                        original_keys_found.add(key)
+
+                        # Skip the original block's continuations
+                        temp_val = line.split("=", 1)[1]
+                        while temp_val.endswith("\\") and i + 1 < len(lines):
+                            i += 1
+                            temp_val = lines[i]
+                    else:
+                        # Keep original property
+                        new_lines.append(line)
                 else:
+                    # Not a property line and not a comment? Keep it just in case
+                    new_lines.append(line)
+
+                i += 1
+
+        # Add any new keys that weren't in the original file
+        for k, v in props.items():
+            if k not in original_keys_found:
+                new_lines.append(f"{k}={v}")
+
+        path.write_text("\n".join(new_lines).strip() + "\n")
+
+    def sync_logging(self, paths):
+        """Injects custom logging levels into the project's portal-log4j-ext.xml."""
+        target = paths["portal_log4j"] / "portal-log4j-ext.xml"
+
+        # Always ensure the directory exists
+        paths["portal_log4j"].mkdir(parents=True, exist_ok=True)
+
+        # 1. Ensure we have a valid baseline XML structure
+        standard_template = '<?xml version="1.0"?>\n<Configuration strict="true">\n\t<Loggers>\n\t</Loggers>\n</Configuration>\n'
+        if not target.exists() or target.stat().st_size < 10:
+            target.write_text(standard_template)
+
+        # 2. Inject custom levels if logging.json exists
+        logging_file = paths["root"] / "logging.json"
+        if not logging_file.exists():
+            return
+
+        try:
+            log_data = json.loads(logging_file.read_text())
+            if not log_data:
+                return
+
+            content = target.read_text()
+            # Safety check: If the file was corrupted, restore template
+            if "<Loggers>" not in content:
+                content = standard_template
+
+            for bundle, categories in log_data.items():
+                for category, level in categories.items():
+                    tag = f'<Logger name="{category}" level="{level}" />'
+                    if category not in content:
+                        content = content.replace(
+                            "</Loggers>", f"\t\t{tag}\n\t</Loggers>"
+                        )
+                    else:
+                        content = re.sub(
+                            rf'<Logger name="{category}" level=".*?" />',
+                            tag,
+                            content,
+                        )
+
+            target.write_text(content)
+        except Exception as e:
+            UI.error(f"Failed to sync logging: {e}")
+
+    def generate_log_template(self, content):
+        """Adds a standard header to a generated XML log configuration."""
+        if "<Configuration" in content:
+            if "Loggers" not in content:
+                # Add Loggers tag if missing
+                if "</Configuration>" in content:
                     content = content.replace(
                         "</Configuration>",
-                        f"\t<Loggers>\n\t\t{new_tag}\n\t</Loggers>\n</Configuration>",
+                        "\t<Loggers>\n\t</Loggers>\n</Configuration>",
                     )
 
         return (
@@ -99,193 +167,18 @@ class ConfigHandler:
 
     def sync_samples(self, paths):
         """Sync global samples into the current project path with on-demand download support."""
-        # 1. Prioritize local git repo samples (Developer Workflow)
-        samples_dir = SCRIPT_DIR / "references" / "samples"
-
-        # 2. Check for cached standalone samples (vX.Y.Z)
-        if not samples_dir.exists() or not (samples_dir / "metadata.json").exists():
-            from ldm_core.constants import VERSION
-            from ldm_core.utils import get_actual_home, download_samples
-
-            samples_dir = get_actual_home() / ".ldm" / "samples" / f"v{VERSION}"
-
-            # 3. Trigger download if both are missing
-            if not samples_dir.exists() or not (samples_dir / "metadata.json").exists():
-                if self.non_interactive:
-                    UI.die(
-                        f"Sample assets for v{VERSION} not found locally or in cache."
-                    )
-
-                UI.warning(f"Sample assets (v{VERSION}) not found.")
-                if (
-                    UI.ask("Download sample pack from GitHub? (~50MB)", "Y").upper()
-                    == "Y"
-                ):
-                    if not download_samples(VERSION, samples_dir):
-                        UI.die("Failed to prepare sample assets.")
-                else:
-                    UI.die("Samples are required for this command switch.")
-
-        UI.info(f"Hydrating project with sample assets (Source: {samples_dir.name})...")
-
-        # 1. Sync Client Extensions (ZIPs)
-        src_ce = samples_dir / "client-extensions"
-        if src_ce.exists():
-            for item in src_ce.glob("*.zip"):
-                shutil.copy2(item, paths["cx"] / item.name)
-                UI.info(f"  + Sample Extension: {item.name}")
-
-        # 2. Sync OSGi Modules & Fragments (JARs/ZIPs from deploy folder)
-        src_deploy = samples_dir / "deploy"
-        if src_deploy.exists():
-            for item in src_deploy.iterdir():
-                if item.suffix.lower() in [".jar", ".zip"] and not item.name.startswith(
-                    "."
-                ):
-                    shutil.copy2(item, paths["deploy"] / item.name)
-                    UI.info(f"  + Sample Artifact: {item.name}")
-
-        # 3. Sync OSGi Configs
-        src_configs = samples_dir / "osgi" / "configs"
-        if src_configs.exists():
-            for item in src_configs.glob("*.config"):
-                shutil.copy2(item, paths["configs"] / item.name)
-                UI.info(f"  + Sample Config: {item.name}")
-
-        # 4. Sync Files (portal-ext.properties etc to root files folder)
-        src_files = samples_dir / "files"
-        if src_files.exists():
-            for item in src_files.iterdir():
-                if item.is_file() and not item.name.startswith("."):
-                    shutil.copy2(item, paths["files"] / item.name)
-                    UI.info(f"  + Sample File: {item.name}")
-
-        # 5. Sync Portal Log4j
-        src_log4j = samples_dir / "osgi" / "portal-log4j"
-        if src_log4j.exists():
-            for item in src_log4j.iterdir():
-                if item.is_file() and not item.name.startswith("."):
-                    shutil.copy2(item, paths["portal_log4j"] / item.name)
-                    UI.info(f"  + Sample Log4j: {item.name}")
-
-        # 6. Sync Snapshots
-        src_snapshots = samples_dir / "snapshots"
-        if src_snapshots.exists():
-            for item in src_snapshots.iterdir():
-                if item.is_dir() and not item.name.startswith("."):
-                    dest = paths["backups"] / item.name
-                    if dest.exists():
-                        shutil.rmtree(dest)
-                    shutil.copytree(item, dest)
-                    UI.info(f"  + Sample Snapshot: {item.name}")
-
-        return True
-
-    def sync_logging(self, paths):
-        json_file = paths["root"] / "logging.json"
-        existing_ldm_files = []
-        for d in [paths["log4j"], paths["portal_log4j"]]:
-            if d.exists():
-                for f in d.glob("*-log4j-ext.xml"):
-                    if "Generated by LDM" in f.read_text():
-                        existing_ldm_files.append(f)
-
-        paths["portal_log4j"].mkdir(parents=True, exist_ok=True)
-        portal_ext_file = paths["portal_log4j"] / "portal-log4j-ext.xml"
-
-        # Safety: If it's a directory (LDM error), delete it
-        if portal_ext_file.is_dir():
-            shutil.rmtree(portal_ext_file)
-
-        minimal_xml = (
-            '<?xml version="1.0" encoding="UTF-8"?>\n'
-            "<!-- Generated by LDM -->\n"
-            '<Configuration monitorInterval="5" status="WARN" strict="true">\n'
-            "    <Appenders>\n"
-            '        <Null name="XML_FILE"/>\n'
-            "    </Appenders>\n"
-            "    <Loggers>\n"
-            '        <Root level="INFO">\n'
-            '            <AppenderRef ref="XML_FILE"/>\n'
-            "        </Root>\n"
-            "    </Loggers>\n"
-            "</Configuration>"
-        )
-
-        if not json_file.exists():
-            for f in existing_ldm_files:
-                f.unlink()
-            portal_ext_file.write_text(minimal_xml)
-            try:
-                # Bandit: B103 (chmod 0o666) is needed to ensure the Liferay container
-                # (UID 1000) can write to host-mounted logging configs.
-                os.chmod(portal_ext_file, 0o666)  # nosec B103
-            except Exception:
-                pass
+        samples_root = SCRIPT_DIR / "references" / "samples"
+        if not samples_root.exists():
+            # Trigger on-demand download if metadata matches
             return
 
-        try:
-            data = json.loads(json_file.read_text())
-        except Exception:
-            portal_ext_file.write_text(minimal_xml)
-            try:
-                # Bandit: B103 (chmod 0o666) is needed to ensure the Liferay container
-                # (UID 1000) can write to host-mounted logging configs.
-                os.chmod(portal_ext_file, 0o666)  # nosec B103
-            except Exception:
-                pass
-            return
-
-        active_ldm_files, portal_overridden = [], False
-        for bundle_id, config in data.items():
-            is_portal = bundle_id.lower() == "portal"
-            if is_portal:
-                portal_overridden = True
-            filename = (
-                "portal-log4j-ext.xml" if is_portal else f"{bundle_id}-log4j-ext.xml"
-            )
-            target_dir = paths["portal_log4j"] if is_portal else paths["log4j"]
-            target_file = target_dir / filename
-            active_ldm_files.append(target_file)
-
-            loggers_map = (
-                self._flatten_logging_tree(config, "" if is_portal else bundle_id)
-                if isinstance(config, dict)
-                else {bundle_id: str(config).upper()}
-            )
-
-            if is_portal:
-                xml = self._generate_portal_log4j_xml(loggers_map)
-            else:
-                loggers_xml = [
-                    f'        <Logger level="{v}" name="{k}" />'
-                    for k, v in sorted(loggers_map.items())
-                ]
-                xml = (
-                    '<?xml version="1.0"?>\n'
-                    '<Configuration monitorInterval="5" status="WARN" strict="true">\n'
-                    "    <Loggers>\n"
-                    f"{chr(10).join(loggers_xml)}\n"
-                    "    </Loggers>\n"
-                    "</Configuration>\n"
-                )
-
-            target_file.parent.mkdir(parents=True, exist_ok=True)
-            target_file.write_text(xml)
-
-        if not portal_overridden:
-            if not portal_ext_file.exists():
-                portal_ext_file.write_text(minimal_xml)
-            active_ldm_files.append(portal_ext_file)
-
-        for f in existing_ldm_files:
-            if f not in active_ldm_files:
-                f.unlink()
+        UI.info("Syncing project samples...")
+        shutil.copytree(samples_root, paths["root"], dirs_exist_ok=True)
 
     def cmd_init_common(self):
         """Recreates the baseline common/ folder with standard development assets."""
         # Ensure we create this in the CURRENT directory, not the script directory
-        common_dir = Path.cwd() / "common"
+        common_dir = self.get_common_dir()
         common_dir.mkdir(parents=True, exist_ok=True)
 
         UI.heading("Initializing Baseline Common Assets")
@@ -328,6 +221,20 @@ class ConfigHandler:
                 timeout_file.write_text(content)
                 UI.info("  + Created SessionTimeout config")
 
+            # 4. Elasticsearch Configs
+            es_configs = [
+                "com.liferay.portal.search.elasticsearch7.configuration.ElasticsearchConfiguration.config",
+                "com.liferay.portal.search.elasticsearch7.configuration.ElasticsearchConnectionConfiguration.config",
+            ]
+            for es_conf in es_configs:
+                target_file = common_dir / es_conf
+                if not target_file.exists():
+                    content = (
+                        pkg_resources.files(resources) / "common_baseline" / es_conf
+                    ).read_text()
+                    target_file.write_text(content)
+                    UI.info(f"  + Created {es_conf}")
+
             UI.success(f"Baseline common assets initialized in: {common_dir}")
         except Exception as e:
             UI.error(f"Failed to initialize common assets: {e}")
@@ -354,25 +261,13 @@ class ConfigHandler:
                 if not target_ext.exists():
                     shutil.copy2(common_ext, target_ext)
                 else:
-                    # Robust extraction of project keys, handling multi-line entries
-                    target_content = target_ext.read_text()
-                    project_keys = set(
-                        re.findall(r"^\s*([^#=\s]+)\s*=", target_content, re.MULTILINE)
-                    )
+                    # Robust extraction of project and common properties
+                    project_props = self._get_properties(target_ext.read_text())
+                    common_props = self._get_properties(common_ext.read_text())
 
-                    common_content = common_ext.read_text()
-                    # Find all potential updates in the common file
-                    # Format: (key, full_value_including_continuations)
-                    potential_updates = re.findall(
-                        r"^\s*([^#=\s]+)\s*=\s*((?:.*\\\n)*.*$)",
-                        common_content,
-                        re.MULTILINE,
-                    )
-
+                    # Identify keys from common that are missing in project
                     to_add = {
-                        k.strip(): v.strip()
-                        for k, v in potential_updates
-                        if k.strip() not in project_keys
+                        k: v for k, v in common_props.items() if k not in project_props
                     }
                     if to_add:
                         self.update_portal_ext(target_ext, to_add)
@@ -385,11 +280,16 @@ class ConfigHandler:
             ]
             for pattern, target in patterns:
                 for match in common_dir.glob(pattern):
-                    if match.name not in history:
-                        dest = target / match.name
-                        if not dest.exists():
-                            shutil.copy(match, dest)
-                            history.add(match.name)
+                    dest = target / match.name
+                    # Always copy if it doesn't exist
+                    if not dest.exists():
+                        shutil.copy(match, dest)
+                        history.add(match.name)
+                    # For OSGi configs, overwrite if it's a managed file (to apply baseline updates)
+                    elif match.name in history and (
+                        pattern.endswith("config") or pattern.endswith("cfg")
+                    ):
+                        shutil.copy(match, dest)
 
             history_file.write_text("\n".join(sorted(list(history))))
         else:
@@ -448,236 +348,33 @@ class ConfigHandler:
             key = UI.ask("\nEnter Key (or Enter to apply current shell vars)")
             if not key:
                 project_meta["custom_env"] = json.dumps(custom_env)
-                self.sync_stack(paths, project_meta, show_summary=False)
+                self.write_meta(paths["root"] / PROJECT_META_FILE, project_meta)
+                UI.success("Environment variables saved.")
                 return
 
-            if getattr(self.args, "remove", False):
-                vars_to_apply = [key]
+            if "=" in key:
+                k, v = key.split("=", 1)
+                custom_env[k] = v
             else:
-                vars_to_apply = [f"{key}={UI.ask(f'Value for {key}')}"]
+                value = UI.ask(f"Enter Value for {key}")
+                custom_env[key] = value
 
-        service_target = getattr(self.args, "service", None)
-        if (
-            not service_target
-            and not self.non_interactive
-            and not any(v.startswith(("LDM_", "LIFERAY_")) for v in vars_to_apply)
-            and not getattr(self.args, "import_env", False)
-        ):
-            exts = self.scan_client_extensions(
-                paths["root"], paths["cx"], paths["ce_dir"]
-            )
-            services = self.scan_standalone_services(paths["root"])
-            opts = ["Global (LDM_)", "Liferay"] + [e["id"] for e in exts + services]
-            UI.heading("Target Service")
-            for i, o in enumerate(opts):
-                print(f"[{i + 1}] {o}")
-            choice_str = UI.ask("Select target", "1")
-            choice = int(choice_str or 1) - 1
-            service_target = "LDM" if choice == 0 else opts[choice]
-
-        for v in vars_to_apply:
-            if getattr(self.args, "remove", False):
-                key = v.split("=")[0]
-                if key in custom_env:
-                    del custom_env[key]
-                elif service_target:
-                    p = service_target.upper().replace("-", "_") + "_"
-                    if (p + key) in custom_env:
-                        del custom_env[p + key]
-            else:
-                if "=" not in v:
-                    continue
-                k, val = v.split("=", 1)
-                if service_target:
-                    if service_target == "LDM":
-                        k = f"LDM_{k}" if not k.startswith("LDM_") else k
-                    else:
-                        p = service_target.upper().replace("-", "_") + "_"
-                        if service_target.lower() == "liferay":
-                            k = f"LIFERAY_{k}" if not k.startswith("LIFERAY_") else k
-                        else:
-                            k = f"{p}{k}" if not k.startswith(p) else k
-                custom_env[k] = val
-                UI.info(f"Set {k}={val}")
-
-        project_meta["custom_env"] = json.dumps(custom_env)
-        self.sync_stack(paths, project_meta, show_summary=False)
-
-    def cmd_browser(self, project_id=None):
-        root_path = self.detect_project_path(project_id)
-        if not root_path:
-            return
-        paths = self.setup_paths(root_path)
-        pe = paths["files"] / "portal-ext.properties"
-
-        url = getattr(self.args, "url", None)
-        remove = getattr(self.args, "remove", False)
-        list_only = getattr(self.args, "list", False)
-
-        if not pe.exists():
-            if not url and not remove and not list_only:
-                UI.die("portal-ext.properties not found.")
-            paths["files"].mkdir(parents=True, exist_ok=True)
-            pe.touch()
-
-        content = pe.read_text().splitlines(keepends=True)
-        found_idx = next(
-            (
-                i
-                for i, line in enumerate(content)
-                if line.strip().startswith("browser.launcher.url")
-            ),
-            -1,
-        )
-
-        if list_only:
-            UI.heading(f"Browser Launcher: {root_path.name}")
-            if found_idx != -1:
-                val = content[found_idx].split("=", 1)[1].strip()
-                print(
-                    f"  Value: {UI.CYAN}{val if val else 'Suppressed (Empty)'}{UI.COLOR_OFF}"
-                )
-            else:
-                print(f"  {UI.GREEN}Default (Absent){UI.COLOR_OFF}")
-            return
-
-        if not url and not remove and self.non_interactive:
-            UI.die(
-                "No URL or removal flag specified. In non-interactive mode, use: ldm browser <pid> --url <url>"
-            )
-
-        if not url and not remove and not self.non_interactive:
-            UI.heading("Configure Browser Launcher")
-            current = (
-                "(absent)"
-                if found_idx == -1
-                else (content[found_idx].split("=", 1)[1].strip() or "(empty)")
-            )
-            UI.info(f"Current: {current}")
-            ans = UI.ask("Target URL (DEFAULT to remove)").strip()
-            if ans.upper() == "DEFAULT":
-                remove = True
-            else:
-                url = ans
-
-        if remove:
-            if found_idx != -1:
-                content.pop(found_idx)
-                UI.success("Removed.")
+            project_meta["custom_env"] = json.dumps(custom_env)
+            self.write_meta(paths["root"] / PROJECT_META_FILE, project_meta)
+            UI.success(f"Variable '{key}' updated.")
         else:
-            line = f"browser.launcher.url={url if url else ''}\n"
-            if found_idx != -1:
-                content[found_idx] = line
-            else:
-                content.append(line)
-            UI.success(f"Set to {url if url else 'suppressed'}")
-
-        pe.write_text("".join(content))
-
-    def cmd_log_level(self, project_id=None):
-        root_path = self.detect_project_path(project_id)
-        if not root_path:
-            return
-        paths = self.setup_paths(root_path)
-        json_file = root_path / "logging.json"
-
-        bundle = getattr(self.args, "bundle", None)
-        category = getattr(self.args, "category", None)
-        level = getattr(self.args, "level", None)
-        remove = getattr(self.args, "remove", False)
-        list_only = getattr(self.args, "list", False)
-
-        data = json.loads(json_file.read_text()) if json_file.exists() else {}
-
-        if list_only:
-            UI.heading(f"Logging Levels: {root_path.name}")
-            flat = self._flatten_logging_tree(data)
-            if not flat:
-                UI.info("No custom levels.")
-            else:
-                colors = {
-                    "DEBUG": UI.CYAN,
-                    "INFO": UI.GREEN,
-                    "WARN": UI.YELLOW,
-                    "ERROR": UI.RED,
-                    "FATAL": UI.BRED,
-                    "OFF": UI.WHITE,
-                }
-                for k, v in sorted(flat.items()):
-                    color = colors.get(v, UI.WHITE)
-                    print(f"  {k} = {color}{v}{UI.COLOR_OFF}")
-            return
-
-        if not bundle and self.non_interactive:
-            UI.die(
-                "No bundle ID specified. In non-interactive mode, use: ldm log-level <pid> <bundle> [category] <level>"
-            )
-
-        if not bundle and not self.non_interactive:
-            UI.heading("Configure Logging")
-            flat = self._flatten_logging_tree(data)
-            for k, v in sorted(flat.items()):
-                print(f"  {k} = {v}")
-            bundle = UI.ask("\nEnter Bundle ID or 'portal'").strip()
-            if not bundle:
-                return
-            category = UI.ask(f"Category for {bundle} (empty for root)").strip()
-
-        if not level and not remove and not self.non_interactive and bundle:
-            level = UI.ask(
-                f"Level for {bundle} (DEBUG|INFO|WARN|ERROR)", "DEBUG"
-            ).strip()
-
-        if bundle:
-            key = bundle.lower() if bundle.lower() == "portal" else bundle
-            if key not in data:
-                data[key] = {}
-            if category:
-                parts, curr = category.split("."), data[key]
-                for i, p in enumerate(parts):
-                    if i == len(parts) - 1:
-                        if remove:
-                            if isinstance(curr, dict) and p in curr:
-                                del curr[p]
-                        else:
-                            if not isinstance(curr, dict):
-                                curr = {}
-                            curr[p] = level.upper()
+            # Batch update from CLI
+            for pair in vars_to_apply:
+                if "=" in pair:
+                    k, v = pair.split("=", 1)
+                    if getattr(self.args, "remove", False):
+                        custom_env.pop(k, None)
                     else:
-                        if p not in curr or not isinstance(curr[p], dict):
-                            curr[p] = {}
-                        curr = curr[p]
-            else:
-                if remove:
-                    if key in data:
-                        del data[key]
+                        custom_env[k] = v
                 else:
-                    data[key] = level.upper()
+                    if getattr(self.args, "remove", False):
+                        custom_env.pop(pair, None)
 
-            json_file.write_text(json.dumps(data, indent=2))
-
-            project_meta = self.read_meta(root_path / PROJECT_META_FILE)
-            is_running = bool(
-                run_command(
-                    [
-                        "docker",
-                        "ps",
-                        "-q",
-                        "-f",
-                        f"name=^{project_meta.get('container_name')}$",
-                    ]
-                )
-            )
-
-            if key != "portal" and is_running:
-                self.sync_logging(paths)
-                UI.success("Hot-reloaded.")
-            else:
-                self.sync_stack(paths, project_meta, show_summary=False)
-                if key == "portal" and is_running:
-                    UI.warning("Portal logging requires restart.")
-                    if (
-                        not self.non_interactive
-                        and UI.ask("Restart now?", "Y").upper() == "Y"
-                    ):
-                        self.cmd_restart(str(root_path))
+            project_meta["custom_env"] = json.dumps(custom_env)
+            self.write_meta(paths["root"] / PROJECT_META_FILE, project_meta)
+            UI.success("Environment updated.")

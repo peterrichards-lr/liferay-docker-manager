@@ -83,7 +83,7 @@ class TestStackScaling(unittest.TestCase):
     @patch("ldm_core.handlers.stack.get_docker_socket_path")
     def test_generate_compose_with_scale(self, mock_socket, mock_yaml):
         mock_socket.return_value = "/var/run/docker.sock"
-        mock_yaml.side_effect = lambda x: str(x)
+        mock_yaml.side_effect = lambda x, indent=0: str(x)
 
         manager = MockManager()
         paths = manager.setup_paths("/tmp/test-project")
@@ -119,6 +119,7 @@ class TestStackScaling(unittest.TestCase):
             patch.object(Path, "read_text", return_value=""),
             patch.object(Path, "write_text"),
             patch.object(manager, "scan_client_extensions", return_value=[]),
+            patch.object(manager, "update_portal_ext") as mock_update,
         ):
             manager.write_docker_compose(paths, config)
             compose_call = mock_yaml.call_args[0][0]
@@ -127,9 +128,10 @@ class TestStackScaling(unittest.TestCase):
             # Verify state volume is NOT mounted
             volumes = compose_call["services"]["liferay"]["volumes"]
             self.assertFalse(any("/opt/liferay/osgi/state" in v for v in volumes))
-            # Verify clustering env vars
-            env = compose_call["services"]["liferay"]["environment"]
-            self.assertIn("LIFERAY_CLUSTER__LINK__ENABLED=true", env)
+            # Verify clustering properties are applied
+            update_call = mock_update.call_args[0][1]
+            self.assertEqual(update_call["cluster.link.enabled"], "true")
+            self.assertEqual(update_call["lucene.replicate.write"], "true")
 
 
 class TestStackOrchestration(unittest.TestCase):
@@ -139,7 +141,7 @@ class TestStackOrchestration(unittest.TestCase):
 
     @patch("ldm_core.handlers.stack.dict_to_yaml")
     def test_write_docker_compose_ssl_labels(self, mock_yaml):
-        mock_yaml.side_effect = lambda x: str(x)
+        mock_yaml.side_effect = lambda x, indent=0: str(x)
 
         # Scenario: SSL enabled, custom host
         config = {
@@ -178,7 +180,7 @@ class TestStackOrchestration(unittest.TestCase):
 
     @patch("ldm_core.handlers.stack.dict_to_yaml")
     def test_microservice_port_resolution(self, mock_yaml):
-        mock_yaml.side_effect = lambda x: str(x)
+        mock_yaml.side_effect = lambda x, indent=0: str(x)
 
         # Mock a microservice with a custom targetPort
         mock_exts = [
@@ -213,9 +215,9 @@ class TestStackOrchestration(unittest.TestCase):
             compose_call = mock_yaml.call_args[0][0]
 
             # Verify Traefik service label uses the targetPort
-            ms_labels = compose_call["services"]["my-ms"]["labels"]
+            ms_labels = compose_call["services"]["test-my-ms"]["labels"]
             self.assertIn(
-                "traefik.http.services.test-my-ms.loadbalancer.server.port=3001",
+                "traefik.http.services.test-my-ms-svc.loadbalancer.server.port=3001",
                 ms_labels,
             )
 

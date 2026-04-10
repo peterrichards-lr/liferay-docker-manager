@@ -102,6 +102,8 @@ def main():
             p.add_argument("-v", "--volumes", action="store_true")
             p.add_argument("-d", "--delete", action="store_true")
             p.add_argument("--infra", action="store_true")
+        if cmd == "logs":
+            p.add_argument("-f", "--follow", action="store_true")
         if cmd == "deploy":
             p.add_argument("--rebuild", action="store_true")
 
@@ -205,6 +207,7 @@ def main():
     cloud.add_argument("--restore", action="store_true")
     cloud.add_argument("--sync-env", action="store_true")
     cloud.add_argument("--logs", action="store_true")
+    cloud.add_argument("-f", "--follow", action="store_true")
 
     args = parser.parse_args()
     if not args.command:

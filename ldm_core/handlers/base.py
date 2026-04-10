@@ -102,6 +102,15 @@ class BaseHandler:
     def detect_project_path(self, project_id=None, for_init=False):
         """Resolves a project ID or path to a full filesystem path."""
         pid = project_id or getattr(self.args, "project", None)
+
+        # Noise Prevention: Warn if running from Home without a project ID
+        if not pid and Path.cwd().resolve() == Path.home().resolve():
+            UI.warning(
+                "You are running LDM from your Home directory. "
+                "For better performance and to avoid noise, it is recommended to "
+                "run LDM from a dedicated workspace folder (e.g. ~/ldm)."
+            )
+
         if pid:
             # 1. Direct path check
             p = Path(pid).resolve()
@@ -159,35 +168,61 @@ class BaseHandler:
         return (0, 0, 0)
 
     def find_dxp_roots(self, search_dir=None):
+        """Discovers LDM projects in the target directory by looking for metadata or specific structure."""
         search_dir = Path(search_dir or Path.cwd())
         roots = []
         if not search_dir.exists():
             return roots
+
+        # Security: If we are in the user's home directory, we should be extremely strict
+        # to avoid scanning thousands of unrelated developer folders.
+        is_home = search_dir.resolve() == Path.home().resolve()
+
         for item in search_dir.iterdir():
             if item.is_dir() and not item.name.startswith("."):
-                if (
-                    (item / "files").exists()
-                    or (item / "deploy").exists()
-                    or (item / PROJECT_META_FILE).exists()
-                ):
+                # A directory is a project IF:
+                # 1. It has the official LDM metadata file (preferred)
+                # 2. It has BOTH 'files' and 'deploy' folders (legacy/scaffolded)
+                # 3. If in HOME, we ONLY accept the metadata file to prevent noise.
+                has_meta = (item / PROJECT_META_FILE).exists()
+                has_structure = (item / "files").exists() and (item / "deploy").exists()
+
+                if has_meta or (not is_home and has_structure):
                     meta = self.read_meta(item / PROJECT_META_FILE)
                     version = meta.get("tag") or "unknown"
                     roots.append({"path": item, "version": version})
+
         return sorted(roots, key=lambda x: x["path"].name)
+
+    def get_common_dir(self, project_path=None):
+        """Finds the 'common' directory by prioritizing CWD, Project Parent, then Binary Location."""
+        # 1. Prioritize Current Working Directory (if it exists)
+        common_path = Path.cwd() / "common"
+        if common_path.exists():
+            return common_path
+
+        # 2. Check Project Parent (if running from within a project folder)
+        if project_path:
+            p_parent_common = Path(project_path).resolve().parent / "common"
+            if p_parent_common.exists():
+                return p_parent_common
+
+        # 3. Fallback logic
+        exe_path = Path(sys.argv[0]).resolve()
+        is_source = exe_path.suffix.lower() == ".py"
+
+        if is_source:
+            # For source installs (dev), use the repo's common folder
+            return SCRIPT_DIR / "common"
+        else:
+            # For binary installs, we always want the common folder in the CWD
+            # unless one was specifically found above. This prevents Permission Denied
+            # errors in /usr/local/bin.
+            return Path.cwd() / "common"
 
     def setup_paths(self, root_path):
         root = Path(root_path).resolve()
-
-        # Identify LDM Root for common folder
-        # Prioritize Current Working Directory
-        common_path = Path.cwd() / "common"
-        if not common_path.exists():
-            # Fallback to location of script or binary
-            exe_path = Path(sys.argv[0]).resolve()
-            ldm_root = (
-                SCRIPT_DIR if exe_path.suffix.lower() == ".py" else exe_path.parent
-            )
-            common_path = ldm_root / "common"
+        common_path = self.get_common_dir(root)
 
         return {
             "root": root,
@@ -462,6 +497,21 @@ class BaseHandler:
                             )  # nosec B603 B607
                     except Exception:
                         pass
+
+    def check_hostname(self, host_name, expected_ip="127.0.0.1"):
+        """Verifies if a hostname resolves to a local IP, providing instructions if not."""
+        if not host_name or host_name == "localhost":
+            return True
+
+        ip = self.get_resolved_ip(host_name)
+        if not ip or not (ip.startswith("127.") or ip in ["::1", "0:0:0:0:0:0:0:1"]):
+            UI.error(f"Hostname '{host_name}' does not resolve to your machine.")
+            print(
+                f"\n{UI.BYELLOW}ACTION REQUIRED:{UI.COLOR_OFF} Please add this to your {UI.WHITE}/etc/hosts{UI.COLOR_OFF} file:"
+            )
+            print(f"{UI.CYAN}{expected_ip} {host_name} *.{host_name}{UI.COLOR_OFF}\n")
+            return False
+        return True
 
     def validate_project_dns(self, project_path):
         """Validates that the project hostname and all extension subdomains resolve to the local proxy IP."""

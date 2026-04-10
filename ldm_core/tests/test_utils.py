@@ -1,8 +1,15 @@
 import unittest
-from ldm_core.utils import version_to_tuple
+from ldm_core.utils import version_to_tuple, verify_executable_checksum
 
 
 class TestUtils(unittest.TestCase):
+    def test_verify_executable_checksum(self):
+        # When running as source (pytest), it should return "Source", True, VERSION
+        status, ok, version = verify_executable_checksum("1.6.11")
+        self.assertEqual(status, "Source")
+        self.assertTrue(ok)
+        self.assertEqual(version, "1.6.11")
+
     def test_version_to_tuple(self):
         self.assertEqual(version_to_tuple("1.5.4"), (1, 5, 4))
         self.assertEqual(version_to_tuple("v1.5.4"), (1, 5, 4))

@@ -153,8 +153,11 @@ class CloudHandler:
         if getattr(self.args, "logs", False):
             service = getattr(self.args, "service", "liferay")
             UI.heading(f"Remote Logs: {cp_id} / {target_env} ({service})")
+            lcp_args = ["log", "--service", service]
+            if getattr(self.args, "follow", False):
+                lcp_args.append("--follow")
             self._run_lcp_cmd(
-                ["log", "--service", service],
+                lcp_args,
                 capture_json=False,
                 project=cp_id,
                 env=target_env,

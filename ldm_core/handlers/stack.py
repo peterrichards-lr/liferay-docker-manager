@@ -5,9 +5,9 @@ import time
 import shutil
 import platform
 import subprocess
-import socket
 import hashlib
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 from ldm_core.ui import UI
 from ldm_core.constants import (
@@ -104,32 +104,26 @@ class StackHandler:
                 continue
 
             UI.info(f"  + Renewing: {host_name}...")
+
+            # Use explicit reference from meta if possible
             cert_base = ssl_cert.replace(".pem", "") if ssl_cert else host_name
 
-            for f in [
+            # Surgical deletion to force mkcert to regenerate
+            files = [
                 cert_dir / f"{cert_base}.pem",
                 cert_dir / f"{cert_base}-key.pem",
                 cert_dir / f"traefik-{host_name}.yml",
-            ]:
+            ]
+            for f in files:
                 if f.exists():
                     f.unlink()
 
+            # Trigger regeneration
             self.setup_ssl(cert_dir, host_name)
 
         UI.success(
             "SSL renewal complete. Changes will be detected by Traefik automatically."
         )
-
-    def get_docker_socket_params(self):
-        path = get_docker_socket_path()
-        system = platform.system().lower()
-        if system in ["windows", "win32"]:
-            return ["-v", f"{path}://./pipe/docker_engine"]
-        return ["-v", f"{path}:/var/run/docker.sock:ro"]
-
-    def _ensure_network(self):
-        """Idempotent creation of the shared liferay-net network."""
-        run_command(["docker", "network", "create", "liferay-net"], check=False)
 
     def setup_infrastructure(self, resolved_ip, ssl_port, use_ssl=True):
         """Initializes global Traefik proxy and search services."""
@@ -174,46 +168,105 @@ class StackHandler:
         needs_bridge = False
         api_proxy = "docker-socket-proxy"
         if platform.system().lower() == "darwin":
-            socket_path = Path("/var/run/docker.sock")
+            # Use the dynamic socket path instead of hardcoded /var/run/docker.sock
+            socket_path = Path(get_docker_socket_path()).resolve()
             if not run_command(
                 ["docker", "ps", "-a", "-q", "-f", f"name=^{api_proxy}$"]
             ):
                 UI.info(
                     f"Starting Docker Socket Proxy bridge for macOS ({socket_path})..."
                 )
-                run_command(
-                    [
-                        "docker",
-                        "run",
-                        "-d",
-                        "--name",
-                        api_proxy,
-                        "--network",
-                        "liferay-net",
-                        "-v",
-                        f"{socket_path}:/var/run/docker.sock:ro",
-                        "-e",
-                        "DOCKER_API_VERSION=1.44",
-                        "alpine/socat",
-                        "TCP-LISTEN:2375,fork,reuseaddr",
-                        "UNIX-CONNECT:/var/run/docker.sock",
-                    ]
+
+                # Build the run command
+                bridge_cmd = [
+                    "docker",
+                    "run",
+                    "-d",
+                    "--name",
+                    api_proxy,
+                    "--network",
+                    "liferay-net",
+                    "-v",
+                    f"{socket_path}:/var/run/docker.sock:ro",
+                    "alpine/socat",
+                    "TCP-LISTEN:2375,fork,reuseaddr",
+                    "UNIX-CONNECT:/var/run/docker.sock",
+                ]
+
+                # Attempt to run, with a fallback if the socket path is rejected by the daemon
+                # (Common on some Colima versions with VirtioFS)
+                res = subprocess.run(
+                    bridge_cmd, capture_output=True, text=True, check=False
                 )
+                if res.returncode != 0 and "operation not supported" in res.stderr:
+                    UI.info(
+                        "Dynamic socket mount failed. Falling back to standard /var/run/docker.sock..."
+                    )
+
+                    # Robust Fix: Instead of hardcoded index, find and replace the mapping element
+                    fallback_mapping = "/var/run/docker.sock:/var/run/docker.sock:ro"
+                    for i, arg in enumerate(bridge_cmd):
+                        if ":/var/run/docker.sock:ro" in arg:
+                            bridge_cmd[i] = fallback_mapping
+                            break
+
+                    # Cleanup: Remove the container created by the failed attempt before retrying
+                    run_command(["docker", "rm", "-f", api_proxy], check=False)
+                    run_command(bridge_cmd)
+                elif res.returncode != 0:
+                    UI.die(f"Failed to start socket bridge: {res.stderr}")
             else:
                 if not run_command(
                     ["docker", "ps", "-q", "-f", f"name=^{api_proxy}$"], check=False
                 ):
                     UI.info("Starting existing Docker Socket Proxy bridge...")
-                    run_command(["docker", "start", api_proxy])
+                    start_res = subprocess.run(
+                        ["docker", "start", api_proxy],
+                        capture_output=True,
+                        text=True,
+                        check=False,
+                    )
+
+                    if (
+                        start_res.returncode != 0
+                        and "operation not supported" in start_res.stderr
+                    ):
+                        UI.info("Existing bridge has invalid mount path. Recreating...")
+                        run_command(["docker", "rm", "-f", api_proxy], check=False)
+                        # Re-run this method to trigger the creation logic with fallback
+                        return self.setup_infrastructure(resolved_ip, ssl_port, use_ssl)
+                    elif start_res.returncode != 0:
+                        UI.die(f"Failed to start socket bridge: {start_res.stderr}")
+
+                # Critical Fix: Ensure the bridge is actually connected to our network
+                # If it was created by a different tool or run, it might be isolated.
+                res = run_command(
+                    [
+                        "docker",
+                        "network",
+                        "inspect",
+                        "liferay-net",
+                        "-f",
+                        "{{range .Containers}}{{.Name}} {{end}}",
+                    ],
+                    check=False,
+                )
+                if api_proxy not in (res or ""):
+                    UI.info(f"Connecting {api_proxy} to liferay-net...")
+                    run_command(
+                        ["docker", "network", "connect", "liferay-net", api_proxy],
+                        check=False,
+                    )
             needs_bridge = True
 
         proxy_name = "liferay-proxy-global"
         if not run_command(["docker", "ps", "-q", "-f", f"name=^{proxy_name}$"]):
             UI.info("Initializing Global SSL Proxy (Traefik v3)...")
+
+            # Use the dynamic socket path for the endpoint on non-macOS platforms
+            socket_path = get_docker_socket_path()
             endpoint = (
-                f"tcp://{api_proxy}:2375"
-                if needs_bridge
-                else "unix:///var/run/docker.sock"
+                f"tcp://{api_proxy}:2375" if needs_bridge else f"unix://{socket_path}"
             )
             traefik_cmd = [
                 "docker",
@@ -229,6 +282,8 @@ class StackHandler:
                 f"{resolved_ip}:443:443",
                 "-v",
                 f"{global_cert_dir.as_posix()}:/etc/traefik/certs:ro",
+                "-e",
+                "TRAEFIK_PROVIDERS_DOCKER_APIVERSION=1.44",
                 "traefik:v3.0",
                 "--providers.docker=true",
                 f"--providers.docker.endpoint={endpoint}",
@@ -266,6 +321,8 @@ class StackHandler:
                 search_name,
                 "--network",
                 "liferay-net",
+                "-p",
+                "127.0.0.1:9200:9200",
                 "-e",
                 "discovery.type=single-node",
                 "-e",
@@ -299,10 +356,9 @@ class StackHandler:
                 "exec",
                 search_name,
                 "curl",
-                "-s",
                 "-X",
                 "PUT",
-                "localhost:9200/_snapshot/liferay_backup",
+                "localhost:9200/_snapshot/backup",
                 "-H",
                 "Content-Type: application/json",
                 "-d",
@@ -310,39 +366,6 @@ class StackHandler:
             ]
         )
         return True
-
-    def cmd_infra_setup(self):
-        """Manual trigger for global infrastructure setup."""
-        resolved_ip = (
-            "0.0.0.0"  # nosec B104
-            if platform.system().lower() == "darwin"
-            else "127.0.0.1"
-        )
-        UI.heading("Initializing Global Infrastructure")
-        self.setup_infrastructure(resolved_ip, 443, use_ssl=True)
-        if getattr(self.args, "search", False):
-            self.setup_global_search()
-        UI.success("Global infrastructure services are ready.")
-
-    def check_hostname(self, host_name, silent=False, expected_ip=None):
-        if not host_name or host_name == "localhost":
-            return True
-        ip = self.get_resolved_ip(host_name)
-        if not ip:
-            UI.error(f"Hostname '{host_name}' could not be resolved.")
-            target_ip = expected_ip or "127.0.0.1"
-            print(
-                f"\n   {UI.WHITE}To fix this, add the following to your hosts file:{UI.COLOR_OFF}"
-            )
-            print(f"   {UI.CYAN}{target_ip} {host_name}{UI.COLOR_OFF}\n")
-            return False
-        return True
-
-    def get_resolved_ip(self, host_name):
-        try:
-            return socket.gethostbyname(host_name)
-        except Exception:
-            return None
 
     def write_docker_compose(self, paths, config):
         container_name, image_tag, port = (
@@ -405,21 +428,52 @@ class StackHandler:
             json.dumps(custom_env, sort_keys=True).encode()
         ).hexdigest()[:12]
 
+        # Extract tag from image_tag for version-aware logic
+        tag = image_tag.split(":")[-1] if ":" in image_tag else "latest"
+
+        # Version-Aware Env Var Formatting:
+        # Newer versions (2025.Q1+ / 7.4.13-u100+) struggle with double-underscore decoding.
+        # Older versions often require it for reliable property mapping.
+        is_modern = self.parse_version(tag) >= (2025, 1, 0) or tag >= "7.4.13-u100"
+        sep = "_" if is_modern else "__"
+
+        # 5. Liferay Configuration (Properties)
+        # We write critical infrastructure settings directly to portal-ext.properties
+        # to avoid the unreliable environment variable decoding in newer DXP versions.
+        portal_ext_updates = {}
+
         liferay_env_dict = {
-            "LIFERAY_WORKSPACE__HOME__DIR": "/opt/liferay",
-            "LIFERAY_LXC__DXP__MAIN__DOMAIN": host_name,
-            "LIFERAY_LXC__DXP__DOMAINS": host_name,
+            f"LIFERAY_WORKSPACE{sep}HOME{sep}DIR": "/opt/liferay",
             "LDM_CONFIG_SIGNATURE": config_sig,
-            "LIFERAY_MODULE__FRAMEWORK__PROPERTIES__OSGI__CONSOLE": gogo_env,
             "OSGI_CONSOLE": gogo_env,
-            "LIFERAY_VIRTUAL__HOSTS__VALID__HOSTS": f"127.0.0.1,[::1],{host_name},localhost",
             "LIFERAY_JVM_OPTS": f"-Dorg.apache.catalina.SESSION_COOKIE_NAME=LFR_SESSION_ID_{host_name.replace('.', '_')}",
         }
-        if is_scaled:
+
+        if not is_modern:
+            # For older versions, we still provide these as env vars for compatibility
             liferay_env_dict.update(
                 {
-                    "LIFERAY_CLUSTER__LINK__ENABLED": "true",
-                    "LIFERAY_LUCENE__REPLICATE__WRITE": "true",
+                    f"LIFERAY_LXC{sep}DXP{sep}MAIN{sep}DOMAIN": host_name,
+                    f"LIFERAY_LXC{sep}DXP{sep}DOMAINS": host_name,
+                    f"LIFERAY_VIRTUAL{sep}HOSTS{sep}VALID{sep}HOSTS": f"127.0.0.1,[::1],{host_name},localhost",
+                }
+            )
+        if is_scaled:
+            portal_ext_updates.update(
+                {
+                    "cluster.link.enabled": "true",
+                    "lucene.replicate.write": "true",
+                }
+            )
+
+        if use_shared_search:
+            # Configure Liferay to use the global ES8 container
+            # We must explicitly disable the sidecar and point to the shared service
+            liferay_env_dict.update(
+                {
+                    "LIFERAY_ELASTICSEARCH_SIDECAR_ENABLED": "false",
+                    "LIFERAY_ELASTICSEARCH_CONNECTION_URL": "http://liferay-search-global:9200",
+                    "LIFERAY_ELASTICSEARCH_INDEX_NAME_PREFIX": f"ldm-{container_name}-",
                 }
             )
 
@@ -507,15 +561,15 @@ class StackHandler:
             }
             liferay_env_dict.update(
                 {
-                    "LIFERAY_JDBC__DEFAULT__URL": f"jdbc:{db_type}://db:{db_port}/{db_name}"
+                    f"LIFERAY_JDBC{sep}DEFAULT{sep}URL": f"jdbc:{db_type}://db:{db_port}/{db_name}"
                     + (
                         "?useUnicode=true&characterEncoding=UTF-8"
                         if db_type == "mysql"
                         else ""
                     ),
-                    "LIFERAY_JDBC__DEFAULT__USERNAME": db_user,
-                    "LIFERAY_JDBC__DEFAULT__PASSWORD": db_pass,
-                    "LIFERAY_JDBC__DEFAULT__DRIVER__CLASS__NAME": "org.postgresql.Driver"
+                    f"LIFERAY_JDBC{sep}DEFAULT{sep}USERNAME": db_user,
+                    f"LIFERAY_JDBC{sep}DEFAULT{sep}PASSWORD": db_pass,
+                    f"LIFERAY_JDBC{sep}DEFAULT{sep}DRIVER{sep}CLASS{sep}NAME": "org.postgresql.Driver"
                     if db_type == "postgresql"
                     else "com.mysql.cj.jdbc.Driver",
                 }
@@ -531,27 +585,22 @@ class StackHandler:
         if not use_shared_search:
             compose["services"]["liferay"]["ports"].append(f"{resolved_ip}:9201:9201")
 
-        # 5. SSL & Security
+        # 5. Liferay Configuration (Properties)
+        # We write critical infrastructure settings directly to portal-ext.properties
+        # to avoid the unreliable environment variable decoding in newer DXP versions.
         if use_ssl:
-            liferay_env_dict.update(
+            portal_ext_updates.update(
                 {
-                    "LIFERAY_WEB__SERVER__PROTOCOL": "https",
-                    "LIFERAY_WEB__SERVER__HTTPS__PORT": str(ssl_port),
-                    "LIFERAY_WEB__SERVER__HOST": host_name,
-                    "LIFERAY_VIRTUAL__HOSTS__VALID__HOSTS": f"localhost,127.0.0.1,127.0.0.2,[::1],[0:0:0:0:0:0:0:1],{host_name},*.{host_name}",
+                    "web.server.protocol": "https",
+                    "web.server.https.port": str(ssl_port),
+                    "web.server.host": host_name,
+                    "virtual.hosts.valid.hosts": f"localhost,127.0.0.1,127.0.0.2,[::1],[0:0:0:0:0:0:0:1],{host_name},*.{host_name}",
                 }
-            )
-            self.update_portal_ext(
-                paths["files"] / "portal-ext.properties",
-                {
-                    "virtual.hosts.valid.hosts": liferay_env_dict[
-                        "LIFERAY_VIRTUAL__HOSTS__VALID__HOSTS"
-                    ]
-                },
             )
             compose["services"]["liferay"]["labels"].extend(
                 [
                     "traefik.enable=true",
+                    "traefik.docker.network=liferay-net",
                     f"traefik.http.routers.{container_name}-main.rule=Host(`{host_name}`)",
                     f"traefik.http.routers.{container_name}-main.entrypoints=websecure",
                     f"traefik.http.routers.{container_name}-main.tls=true",
@@ -561,6 +610,17 @@ class StackHandler:
                 ]
             )
 
+        if use_shared_search:
+            # Configure Liferay to use the global ES8 container
+            # 1. We set the operation mode via env var to prevent sidecar startup during boot
+            # 2. Connection and indexing details are handled by OSGi .config files
+            liferay_env_dict.update({"LIFERAY_ELASTICSEARCH_OPERATION_MODE": "REMOTE"})
+        if portal_ext_updates:
+            self.update_portal_ext(
+                paths["files"] / "portal-ext.properties", portal_ext_updates
+            )
+
+        # Environment Variables (Non-Infrastructure only)
         def merge_into_env(source):
             if not source:
                 return
@@ -574,43 +634,47 @@ class StackHandler:
 
         merge_into_env(env_args)
         merge_into_env(self.get_host_passthrough_env(paths, "liferay"))
+
+        # FINAL SCRUB: Ensure no infrastructure settings leaked into env vars
+        # This prevents Liferay from throwing 'Unable to decode' warnings
+        infra_prefixes = [
+            "LIFERAY_WEB_SERVER",
+            "LIFERAY_ELASTICSEARCH",
+            "LIFERAY_VIRTUAL_HOSTS",
+            "LIFERAY_CLUSTER",
+            "LIFERAY_LUCENE",
+            "LIFERAY_JDBC",
+            "LIFERAY_LXC",
+            "LIFERAY_WORKSPACE",
+            "LIFERAY_CONTAINER",
+        ]
+        liferay_env_dict = {
+            k: v
+            for k, v in liferay_env_dict.items()
+            if not any(k.startswith(p) for p in infra_prefixes)
+        }
+
         compose["services"]["liferay"]["environment"] = [
             f"{k}={v}" for k, v in liferay_env_dict.items()
         ]
 
+        # 6. Client Extensions
         extensions = self.scan_client_extensions(
             paths["root"], paths["cx"], paths["ce_dir"]
         )
-        standalone_services = self.scan_standalone_services(paths["root"])
-        all_services = extensions + standalone_services
-        current_ssce_port = 8081
-
-        for ext in all_services:
-            if (
-                "path" not in ext
-                or ext.get("kind", "Deployment") != "Deployment"
-                or not ext.get("deploy", True)
-            ):
-                continue
+        for ext in extensions:
+            ext_id = ext["id"]
+            ext_name = f"{container_name}-{ext_id}"
             ext_port = 80
             if ext.get("loadBalancer") and ext["loadBalancer"].get("targetPort"):
                 ext_port = ext["loadBalancer"]["targetPort"]
             elif ext.get("ports"):
                 ext_port = ext["ports"][0].get("port", 80)
 
-            ext_id, ext_name = ext["id"], ext["name"]
             ext_env_dict = {
-                "COM_LIFERAY_LXC_DXP_DOMAINS": host_name,
-                "COM_LIFERAY_LXC_DXP_MAIN_DOMAIN": host_name,
-                "LDM_CONFIG_SIGNATURE": config_sig,
-                "LIFERAY_ROUTES_CLIENT_EXTENSION": f"/opt/liferay/routes/default/{ext_id}",
-                "LIFERAY_ROUTES_DXP": "/opt/liferay/routes/default/dxp",
+                "LIFERAY_LXC_DXP_MAIN_DOMAIN": host_name,
+                "LIFERAY_LXC_DXP_DOMAINS": host_name,
             }
-            if not use_ssl:
-                ext_url = f"http://localhost:{current_ssce_port}"
-                ext_env_dict["COM_LIFERAY_LXC_CLIENT_EXTENSION_URL"] = ext_url
-                ext["url"] = ext_url
-                current_ssce_port += 1
 
             def merge_ext_env(source):
                 if not source:
@@ -645,44 +709,109 @@ class StackHandler:
                 ext_host = f"{ext_id}.{host_name}"
                 compose["services"][ext_name]["labels"] = [
                     "traefik.enable=true",
-                    f"traefik.http.routers.{container_name}-{ext_name}.rule=Host(`{ext_host}`)",
-                    f"traefik.http.routers.{container_name}-{ext_name}.entrypoints=websecure",
-                    f"traefik.http.routers.{container_name}-{ext_name}.tls=true",
-                    f"traefik.http.routers.{container_name}-{ext_name}.tls.domains[0].main={host_name}",
-                    f"traefik.http.routers.{container_name}-{ext_name}.tls.domains[0].sans=*.{host_name}",
-                    f"traefik.http.services.{container_name}-{ext_name}.loadbalancer.server.port={ext_port}",
+                    "traefik.docker.network=liferay-net",
+                    f"traefik.http.routers.{ext_name}.rule=Host(`{ext_host}`)",
+                    f"traefik.http.routers.{ext_name}.entrypoints=websecure",
+                    f"traefik.http.routers.{ext_name}.tls=true",
+                    f"traefik.http.routers.{ext_name}.tls.domains[0].main={host_name}",
+                    f"traefik.http.routers.{ext_name}.tls.domains[0].sans=*.{host_name}",
+                    f"traefik.http.services.{ext_name}-svc.loadbalancer.server.port={ext_port}",
                 ]
-                ext["url"] = f"https://{ext_host}"
-            elif not use_ssl and "url" in ext:
-                pass
-            else:
-                ext["url"] = f"http://{ext_name}:{ext_port} (Internal)"
+
+        standalone = self.scan_standalone_services(paths["scripts"])
+        for s in standalone:
+            compose["services"][f"{container_name}-{s['name']}"] = s["config"]
 
         yaml_content = "# Generated by Liferay Docker Manager\n" + dict_to_yaml(compose)
+
         has_changed = (
             not paths["compose"].exists()
             or paths["compose"].read_text() != yaml_content
         )
         if has_changed:
             paths["compose"].write_text(yaml_content)
-            UI.success(f"Generated {paths['compose'].name}")
-        return all_services, has_changed
 
-    def cmd_scale(self, project_id, scale_args):
-        project_path = self.detect_project_path(project_id)
-        if not project_path:
-            UI.die("Project not found.")
-        meta = self.read_meta(project_path / PROJECT_META_FILE)
-        for arg in scale_args:
-            if "=" not in arg:
-                continue
-            service, count = arg.split("=", 1)
-            if not count.isdigit():
-                continue
-            meta[f"scale_{service}"] = count
-        self.write_meta(project_path / PROJECT_META_FILE, meta)
-        UI.success(f"Updated scale factors for project {project_path.name}")
-        self.cmd_run(project_id)
+        return compose["services"], has_changed
+
+    def cmd_infra_setup(self):
+        """Standalone command to initialize global infrastructure services."""
+        if not self.check_docker():
+            UI.die("Docker is not reachable.")
+
+        # Infrastructure always binds to localhost/127.0.0.1 by default
+        # EXCEPT on macOS where 0.0.0.0 is required for multi-IP loopback
+        resolved_ip = (
+            "0.0.0.0"  # nosec B104
+            if platform.system().lower() == "darwin"
+            else "127.0.0.1"
+        )
+        ssl_port = 443
+
+        UI.heading("Initializing Global Infrastructure")
+        self.setup_infrastructure(resolved_ip, ssl_port, use_ssl=True)
+
+        if getattr(self.args, "search", False):
+            self.setup_global_search()
+
+        UI.success("Global infrastructure services are ready.")
+
+    def scrub_legacy_meta(self, project_id):
+        """Removes legacy or broken metadata keys from previous versions."""
+        root = self.detect_project_path(project_id)
+        if not root:
+            return
+        meta_file = root / PROJECT_META_FILE
+        if not meta_file.exists():
+            return
+
+        meta = self.read_meta(meta_file)
+        env_args = meta.get("env_args", [])
+        custom_env = json.loads(meta.get("custom_env", "{}"))
+
+        # Keys that should NO LONGER be in environment variables (now handled by properties)
+        blacklisted_prefixes = [
+            "LIFERAY_ELASTICSEARCH",
+            "LIFERAY_WEB_SERVER",
+            "LIFERAY_VIRTUAL_HOSTS",
+            "LIFERAY_CLUSTER",
+            "LIFERAY_LUCENE",
+            "LIFERAY_JDBC",
+            "LIFERAY_LXC",
+            "LIFERAY_WORKSPACE",
+            "LIFERAY_CONTAINER",
+            "COM_LIFERAY_LXC_DXP",
+        ]
+
+        changes_made = False
+
+        if isinstance(env_args, list):
+            new_env = []
+            for arg in env_args:
+                should_keep = True
+                for prefix in blacklisted_prefixes:
+                    if arg.startswith(prefix):
+                        should_keep = False
+                        break
+                if should_keep:
+                    new_env.append(arg)
+
+            if len(new_env) != len(env_args):
+                meta["env_args"] = new_env
+                changes_made = True
+
+        if isinstance(custom_env, dict):
+            new_custom = {
+                k: v
+                for k, v in custom_env.items()
+                if not any(k.startswith(p) for p in blacklisted_prefixes)
+            }
+            if len(new_custom) != len(custom_env):
+                meta["custom_env"] = json.dumps(new_custom)
+                changes_made = True
+
+        if changes_made:
+            UI.info("Scrubbed legacy infrastructure variables from project metadata.")
+            self.write_meta(meta_file, meta)
 
     def sync_stack(
         self,
@@ -694,6 +823,8 @@ class StackHandler:
         no_up=False,
         no_wait=False,
     ):
+        p_id = project_meta.get("container_name") or paths["root"].name
+        self.scrub_legacy_meta(p_id)
         self.migrate_layout(paths)
         tag, host_name = (
             project_meta.get("tag"),
@@ -765,6 +896,15 @@ class StackHandler:
         if use_ssl:
             self.setup_infrastructure(resolved_ip, ssl_port, use_ssl=True)
 
+            # Project-specific SSL Setup
+            if host_name != "localhost":
+                actual_home = get_actual_home()
+                cert_dir = actual_home / "liferay-docker-certs"
+                self.setup_ssl(cert_dir, host_name)
+
+            # Give Traefik a few seconds to initialize and read dynamic certificates
+            time.sleep(5)
+
         scale_args = []
         for k, v in project_meta.items():
             if k.startswith("scale_") and str(v).isdigit():
@@ -789,8 +929,11 @@ class StackHandler:
             return
         p_id = project_meta.get("container_name") or paths["root"].name
         access_url = f"{'https' if use_ssl else 'http'}://{host_name}{f':{ssl_port}' if (use_ssl and ssl_port != 443) else (f':{port}' if not use_ssl else '')}"
+
+        # Use UTC timestamp for the initial waiting message
+        timestamp = datetime.now(timezone.utc).strftime("%H:%M:%S")
         UI.info(
-            f"Waiting for Liferay to start... (Monitor progress with: {UI.CYAN}ldm logs -f {p_id}{UI.COLOR_OFF})"
+            f"[{timestamp}] Waiting for Liferay to start... (Monitor progress with: {UI.CYAN}ldm logs -f {p_id}{UI.COLOR_OFF})"
         )
 
         max_timeout, start_time, is_ready, last_reminder = (
@@ -801,13 +944,23 @@ class StackHandler:
         )
         while time.time() - start_time < max_timeout:
             if time.time() - last_reminder > 60:
+                # Use UTC to match Liferay logs
+                timestamp = datetime.now(timezone.utc).strftime("%H:%M:%S")
                 UI.info(
-                    f"Still waiting... Tip: Open a new terminal and run {UI.CYAN}ldm logs -f {p_id}{UI.COLOR_OFF} to see internal progress."
+                    f"[{timestamp}] Still waiting... Tip: Open a new terminal and run {UI.CYAN}ldm logs -f {p_id}{UI.COLOR_OFF} to see internal progress."
                 )
                 last_reminder = time.time()
             try:
-                res = run_command(["curl", "-k", "-I", access_url], check=False)
-                if res and ("200" in res or "302" in res):
+                # Use a more specific path for readiness to avoid root-level redirects or 404s
+                check_url = f"{access_url}/c/portal/layout"
+                res = run_command(["curl", "-k", "-I", check_url], check=False)
+
+                if self.verbose:
+                    UI.debug(
+                        f"Health check: {check_url} -> {res.splitlines()[0] if res else 'No Response'}"
+                    )
+
+                if res and ("200" in res or "302" in res or "301" in res):
                     is_ready = True
                     break
             except Exception:
@@ -853,19 +1006,20 @@ class StackHandler:
                 if not ip or not (
                     ip.startswith("127.") or ip in ["::1", "0:0:0:0:0:0:0:1"]
                 ):
-                    status_suffix, unresolved = (
-                        f" {UI.RED}(Unresolved){UI.COLOR_OFF}",
-                        unresolved + [ext_domain],
-                    )
+                    status_suffix = f" {UI.RED}(Unresolved){UI.COLOR_OFF}"
+                    unresolved.append(ext_domain)
                 else:
                     status_suffix = f" {UI.GREEN}[OK]{UI.COLOR_OFF}"
+
             UI._print(f"  - {UI.WHITE}{e['id']:<14} {UI.CYAN}{e['url']}{status_suffix}")
+
         if unresolved:
             target_ip = self.get_resolved_ip(host_name) or "127.0.0.1"
             UI.warning("Some subdomains are not resolving to your machine.")
             print(
                 f"   Please add them to your {UI.WHITE}/etc/hosts{UI.COLOR_OFF} file:\n   {UI.CYAN}{target_ip} {' '.join(unresolved)}{UI.COLOR_OFF}\n"
             )
+
         UI.heading("Helpful Commands")
         p_id = project_meta.get("container_name") or paths["root"].name
         print(
@@ -879,6 +1033,9 @@ class StackHandler:
 
             UI.info(f"Launching browser: {access_url}/web/guest/home")
             open_browser(f"{access_url}/web/guest/home")
+            print(
+                f"\n{UI.BYELLOW}💡 Tip:{UI.COLOR_OFF} If you see SSL or connection errors, try a {UI.WHITE}full browser restart{UI.COLOR_OFF} to clear caches.\n"
+            )
 
     def cmd_run(self, is_restart=False):
         project_id = self.args.project or getattr(self.args, "project_flag", None)
@@ -903,6 +1060,10 @@ class StackHandler:
             self.args.tag or project_meta.get("tag"),
             self.args.host_name or project_meta.get("host_name") or "localhost",
         )
+        if not tag and self.non_interactive:
+            UI.die(
+                "No Liferay tag specified. In non-interactive mode, use: ldm run <pid> --tag <tag>"
+            )
 
         # 2. Tag Discovery (Restored)
         if not tag:
@@ -957,13 +1118,28 @@ class StackHandler:
             # User used --ssl or --no-ssl explicitly
             ssl_val = ssl_arg
         else:
-            # Default logic: Use saved meta, or True (SSL) if new.
+            # Default logic: Use saved meta, or determine based on hostname for new projects.
             meta_ssl = project_meta.get("ssl")
             if meta_ssl is not None:
                 ssl_val = str(meta_ssl).lower() == "true"
             else:
-                # Default to SSL for new projects
-                ssl_val = True
+                # Default to SSL ONLY if a custom host_name is provided
+                ssl_val = host_name != "localhost"
+
+        # Search Logic: Determine if we should use shared search sidecar
+        # Priority: CLI Flag > Saved Meta > Default (True for modern versions)
+        sidecar_flag = getattr(self.args, "sidecar", False)
+        if sidecar_flag:
+            use_shared_search = False
+        else:
+            meta_search = project_meta.get("use_shared_search")
+            if meta_search is not None:
+                use_shared_search = str(meta_search).lower() == "true"
+            else:
+                # Default to True for modern versions (2025.Q1+ or 7.4.13-u100+)
+                use_shared_search = (
+                    self.parse_version(tag) >= (2025, 1, 0) or tag >= "7.4.13-u100"
+                )
 
         project_meta.update(
             {
@@ -971,6 +1147,7 @@ class StackHandler:
                 "host_name": host_name,
                 "container_name": project_id,
                 "ssl": str(ssl_val).lower(),
+                "use_shared_search": str(use_shared_search).lower(),
             }
         )
         self.write_meta(root / PROJECT_META_FILE, project_meta)
@@ -1018,13 +1195,22 @@ class StackHandler:
             cmd.append(service)
             run_command(cmd, capture_output=False, cwd=str(root))
         else:
-            UI.heading(f"Deploying stack to {meta.get('container_name')}")
-            self.sync_stack(
-                paths,
-                meta,
-                rebuild=getattr(self.args, "rebuild", False),
-                show_summary=False,
+            self.sync_stack(paths, meta, rebuild=getattr(self.args, "rebuild", False))
+
+    def cmd_stop(self, project_id=None, service=None):
+        root = self.detect_project_path(project_id)
+        if not root or not self.require_compose(root, silent=True):
+            return
+        compose_base = get_compose_cmd()
+        if not compose_base:
+            UI.die(
+                "Docker Compose not found. Please run 'ldm doctor' for installation instructions."
             )
+        cmd = compose_base + ["stop", "-t", "60"]
+        if service:
+            UI.info(f"Stopping service '{service}' in {root.name}...")
+            cmd.append(service)
+        run_command(cmd, capture_output=False, cwd=str(root))
 
     def cmd_restart(self, project_id=None, service=None):
         root = self.detect_project_path(project_id)
@@ -1045,23 +1231,7 @@ class StackHandler:
         else:
             if self.require_compose(root, silent=True):
                 self.cmd_stop(str(root))
-            self.args.project = str(root)
-            self.cmd_run(is_restart=True)
-
-    def cmd_stop(self, project_id=None, service=None):
-        root = self.detect_project_path(project_id)
-        if not root or not self.require_compose(root, silent=True):
-            return
-        compose_base = get_compose_cmd()
-        if not compose_base:
-            UI.die(
-                "Docker Compose not found. Please run 'ldm doctor' for installation instructions."
-            )
-        cmd = compose_base + ["stop", "-t", "60"]
-        if service:
-            UI.info(f"Stopping service '{service}' in {root.name}...")
-            cmd.append(service)
-        run_command(cmd, capture_output=False, cwd=str(root))
+                self.cmd_run(project_id)
 
     def cmd_down(self, project_id=None, service=None):
         root = self.detect_project_path(project_id)
@@ -1110,6 +1280,8 @@ class StackHandler:
                 self.safe_rmtree(root)
 
     def cmd_infra_down(self):
+        """Stops and removes global infrastructure containers."""
+        UI.info("Stopping global infrastructure services...")
         for c in [
             "liferay-proxy-global",
             "docker-socket-proxy",
@@ -1119,7 +1291,6 @@ class StackHandler:
                 ["docker", "ps", "-a", "-q", "-f", f"name=^{c}$"], check=False
             ):
                 run_command(["docker", "rm", "-f", c], check=False)
-        run_command(["docker", "network", "rm", "liferay-net"], check=False)
         UI.success("Infrastructure cleanup complete.")
 
     def cmd_logs(self, project_id=None, service=None):
@@ -1131,7 +1302,9 @@ class StackHandler:
             UI.die(
                 "Docker Compose not found. Please run 'ldm doctor' for installation instructions."
             )
-        cmd = compose_base + ["logs", "-f"]
+        cmd = compose_base + ["logs"]
+        if getattr(self.args, "follow", False):
+            cmd.append("-f")
         if service:
             cmd.append(service)
         try:
@@ -1176,26 +1349,16 @@ class StackHandler:
         telnet_bin = shutil.which("telnet")
         if telnet_bin:
             try:
-                subprocess.run([telnet_bin, "localhost", str(port)])
+                subprocess.run(["telnet", "localhost", str(port)])
             except KeyboardInterrupt:
                 pass
         else:
-            UI.error("telnet binary not found on host.")
-            print(f"Run: {UI.CYAN}telnet localhost {port}{UI.COLOR_OFF}")
+            UI.info(
+                f"Telnet not found. You can connect manually with: {UI.CYAN}telnet localhost {port}{UI.COLOR_OFF}"
+            )
 
-    def is_port_available(self, port, ip="127.0.0.1"):
-        try:
-            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                s.settimeout(0.5)
-                s.bind((ip, int(port)))
-            return True
-        except Exception:
-            return False
-
-    def is_bindable(self, ip):
-        try:
-            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                s.bind((ip, 0))
-            return True
-        except Exception:
-            return False
+    def _ensure_network(self, network_name="liferay-net"):
+        """Ensures that the target Docker network exists."""
+        if not run_command(["docker", "network", "inspect", network_name], check=False):
+            UI.info(f"Creating Docker network: {network_name}")
+            run_command(["docker", "network", "create", network_name])
