@@ -23,6 +23,7 @@ LDM uses a multi-layered automated verification suite:
 | **1.3 DNS Alignment** | Point host to wrong IP | `ldm doctor` warns if hostname doesn't match Traefik's bound IP. |
 | **1.4 Infra Setup** | `ldm infra-setup --search` | Starts Traefik (on 0.0.0.0) and ES8 sidecar. Idempotent. |
 | **1.5 Self-Repair** | `ldm upgrade --repair -y` | Successfully re-downloads current version binary without prompts. |
+| **1.6 License Verification** | `ldm doctor` (DXP) | Correctly parses XML license from `common/` or `deploy/`. |
 
 ### Phase 2: Developer Workflow & Automation
 

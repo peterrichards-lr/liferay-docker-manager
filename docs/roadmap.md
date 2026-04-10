@@ -39,6 +39,7 @@ This document outlines potential enhancements to the Liferay Docker Manager (ldm
 
 ### **Management & Diagnostics**
 
+- **Proactive License Verification**: Automatically detects and parses Liferay XML licenses in `common/`, `deploy/`, and `osgi/modules/` folders with expiration alerts.
 - **Enhanced `ldm doctor`**: Added deep-probes for macOS bridge network integrity, Elasticsearch API reachability, project metadata health, portal properties structural validity, OSGi Search configs, and infrastructure log health.
 - **Proactive Pruning**: `ldm prune` now cleans up orphaned SSL certificates and Traefik configurations from the global cert store.
 - **Standardized UI**: 2-space icon padding for a cleaner terminal experience across all platforms.

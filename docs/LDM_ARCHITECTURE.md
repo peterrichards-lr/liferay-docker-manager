@@ -196,8 +196,9 @@ When a service is scaled via `ldm scale [project] liferay=N`:
 3. **State Isolation**: For scaled Liferay instances, the host-mapped `osgi/state` and `logs` directories are disabled to prevent file-locking conflicts between nodes (each node keeps its state and logs within its own container ephemeral layer).
 
 ```text
+```
 
-## 5. Workspace Import Engine
+### 5. Workspace Import Engine
 
 This diagram shows how `ldm import` transforms a Liferay Workspace (Standard or Cloud) into an `ldm` project.
 
@@ -238,32 +239,38 @@ graph TD
 ### Key Architectural Pillars
 
 1. **Modular Orchestration (ldm_core Package):**
-    * The tool logic is split into specialized handler mixins (`Stack`, `Workspace`, `Config`, `Snapshot`, `Diagnostics`), ensuring a maintainable and extensible codebase.
+    * The tool logic is split into specialized handler mixins (`Stack`, `Workspace`, `Config`, `Snapshot`, `Diagnostics`, `License`), ensuring a maintainable and extensible codebase.
     * Every command supports a standardized discovery priority: **Argument > Flag > CWD > Interactive Selection**.
     * **Mandatory Compose v2**: LDM strictly requires the **Docker Compose v2 Plugin** (`docker compose`). Legacy v1 standalone binaries are no longer supported due to modern library and API incompatibilities.
 
-2. **Shared Infrastructure (Global Tier):**
+2. **Proactive Security & Compliance (LicenseHandler):**
+    * **Automatic License Discovery**: Scans `common/`, `deploy/`, and `osgi/modules/` for Liferay XML licenses.
+    * **XML Parsing & Validation**: Extracts product name, owner, and expiration dates using a secure, local-only XML parser.
+    * **Fail-Fast Enforcement**: Prevents or warns about DXP/EE orchestration when a valid license is missing, while remaining silent for Portal CE projects.
+
+3. **Shared Infrastructure (Global Tier):**
     * **Traefik (`liferay-proxy-global`)**: A singleton container that handles all SSL termination and namespaced routing. It works natively on **Linux, WSL2, and Colima** by detecting the standard Docker socket. **Traefik v3** requires explicit backend network labels (`traefik.docker.network=liferay-net`) which LDM manages automatically.
     * **Elasticsearch (`liferay-search-global`)**: A shared ES8 instance that uses project-specific index prefixes, allowing multiple projects to share one search cluster efficiently.
     * **Socat Bridge (Fallback)**: An optional bridge used only on macOS when the standard `/var/run/docker.sock` is missing (primarily for Docker Desktop isolation).
 
-3. **Multi-Instance Isolation (Project Tier):**
+4. **Multi-Instance Isolation (Project Tier):**
     * **Network Stability**: All services use unique namespacing for Traefik routers and services (e.g., `[project-id]-main`), preventing routing collisions.
     * **Session Security**: Unique session cookie names are generated based on the project's virtual hostname to prevent session cross-talk.
     * **Standalone Services**: Arbitrary containers (like jBPM) placed in the `services/` folder are seamlessly orchestrated with the same routing and resource guardrails as Liferay.
 
-4. **Persistence & State Management:**
+5. **Persistence & State Management:**
     * **Orchestrated Snapshots**: Project snapshots include the database, Document Library, and the **Elasticsearch 8.x index state**, ensuring consistent recovery.
     * **Automated Healthchecks**: Converts `LCP.json` probes into native Docker healthchecks for robust orchestration.
     * **SSL**: `mkcert` provides automated, locally trusted wildcard certificates for all project subdomains.
 
-### 5. Resource Identification & Metadata
+6. **Resource Identification & Metadata:**
+    * To ensure reliable global maintenance and pruning, LDM injects specialized Docker labels into every container it creates:
 
-To ensure reliable global maintenance and pruning, LDM injects specialized Docker labels into every container it creates:
-
+```text
 | Label | Purpose | Example |
 | :--- | :--- | :--- |
 | `com.liferay.ldm.managed` | Flags the container as LDM-controlled. | `true` |
 | `com.liferay.ldm.project` | Identifies which LDM project the container belongs to. | `my-project` |
 
-The `ldm prune` command uses these labels to cross-reference active containers against the projects present on the filesystem, allowing it to safely identify and remove orphans from deleted projects.
+The ldm prune command uses these labels to cross-reference active containers against the projects present on the filesystem, allowing it to safely identify and remove orphans from deleted projects.
+```
