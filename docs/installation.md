@@ -155,6 +155,21 @@ This will create:
 - **`env-blacklist.txt`**: Standard exclusions for environment variables (OAuth2 secrets, etc.).
 - **`com.liferay...config`**: OSGi configuration to prevent session timeouts during local demos.
 
+### Global Preferences (`config`)
+
+LDM supports global user preferences stored in `~/.ldmrc`. You can manage these settings without editing files manually:
+
+```bash
+# View all current settings
+ldm config
+
+# Set a preference (e.g., enable verbose mode by default)
+ldm config verbose true
+
+# Remove a preference
+ldm config verbose --remove
+```
+
 #### 2. Mandatory Infrastructure Settings
 
 LDM is designed to be **self-healing**. Even if you do not use a `common/` folder, the tool will automatically ensure that every project's `portal-ext.properties` contains the essential settings for SSL and virtual hosting (`web.server.host`, `web.server.protocol`, etc.).

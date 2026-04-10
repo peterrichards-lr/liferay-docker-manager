@@ -10,3 +10,10 @@
 | **Windows PC** | Windows 11 | **Docker Desktop** | ![DockerDesktop](https://img.shields.io/badge/Docker_Desktop-Hardened-00C853?style=flat-square&logo=windows) | ✅ |
 | **Linux Workstation** | Fedora 43 | **Native Docker** | ![Fedora](https://img.shields.io/badge/Fedora-Hardened-success?style=flat-square&logo=linux) | ✅ |
 | **Linux Node** | Ubuntu 22.04 | **Docker Engine** | ![Linux](https://img.shields.io/badge/Linux-Native-success?style=flat-square&logo=linux) | ✅ |
+
+## Global Infrastructure
+
+| Component | Verified Versions | Notes |
+| :--- | :--- | :--- |
+| **Traefik** | `v3.6.1+` | Automatic API version negotiation enabled. |
+| **Elasticsearch** | `8.17.0`, `7.17.24` | Dual support with version-aware project sync. |

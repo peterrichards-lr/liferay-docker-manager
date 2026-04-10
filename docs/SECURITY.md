@@ -18,18 +18,25 @@ The LDM CI pipeline runs Bandit security scans. We explicitly ignore the followi
 | Code | Intent & Disclosure |
 | :--- | :--- |
 | **B104** | Hardcoded bind to all interfaces. Required for macOS loopback and Gogo shell access. |
-| **B602/B603** | Subprocess call with shell=True. Required for executing complex piped commands (e.g., docker exec ... gzip). |
 | **B108** | Hardcoded /tmp directory. Used only for transient mount verification tokens. |
 | **CVE-2026-4539** | Pygments vulnerability. Ignored as LDM only uses Pygments for local console highlighting, posing no remote risk. |
 
-## 3. Sensitive Data Masking (Log Redaction)
+## 3. Hardened Command & Data Processing
+
+Following ourcommitment to local security, the following hardening measures are implemented:
+
+- **Native Command Piping**: Database restore and snapshot operations now use native OS-level process piping (stdin/stdout) instead of `shell=True`. This eliminates the risk of shell injection while maintaining performance for large database dumps.
+- **XXE Protection**: Liferay XML license parsing uses a regex-based extraction layer instead of a standard XML parser. This provides absolute immunity to XML External Entity (XXE) attacks.
+- **Identifier Sanitization**: All project IDs, container names, and environment identifiers are strictly sanitized to allow only alphanumeric characters, preventing malicious path or command injection via project metadata.
+
+## 4. Sensitive Data Masking (Log Redaction)
 
 LDM implements a proactive redaction layer to prevent the accidental logging of sensitive information in clear-text.
 
 - **Automatic Redaction**: Common sensitive keys (e.g., `PASSWORD`, `SECRET`, `TOKEN`, `AUTH`) are automatically masked with `[REDACTED]` in all command execution logs and verbose output.
 - **Local Focus**: While LDM is a sandbox tool and developers are responsible for their local environment, this measure ensures that even when sharing logs for troubleshooting, sensitive credentials remain protected.
 
-## 4. SSL Trust (mkcert)
+## 5. SSL Trust (mkcert)
 
 LDM uses `mkcert` to provide a "Green Lock" experience. This requires installing a local Certificate Authority (CA) on your machine.
 

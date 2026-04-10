@@ -1453,6 +1453,84 @@ class StackHandler:
             if getattr(self.args, "delete", False):
                 self.safe_rmtree(root)
 
+    def cmd_reset(self, project_id=None, target="state"):
+        """Surgically resets project data folders (state, search, db)."""
+        root = self.detect_project_path(project_id)
+        if not root:
+            return
+
+        p_id = root.name
+        paths = self.setup_paths(p_id)
+
+        # 1. Ensure project is STOPPED
+        is_running = run_command(
+            ["docker", "ps", "-q", "-f", f"name=^{p_id}$"], check=False
+        )
+        if is_running:
+            UI.die(f"Project '{p_id}' is currently running. Please stop it first.")
+
+        targets = [t.strip().lower() for t in target.split(",")]
+        if "all" in targets:
+            targets = ["state", "search", "db", "global-search"]
+
+        UI.heading(f"Resetting Data for '{p_id}'")
+        cleared = []
+
+        # Target: OSGi State
+        if "state" in targets:
+            state_dir = paths["state"]
+            if state_dir.exists():
+                UI.info(f"Clearing OSGi state: {state_dir}")
+                shutil.rmtree(state_dir)
+                state_dir.mkdir(parents=True, exist_ok=True)
+                cleared.append("state")
+
+        # Target: Internal Search (Sidecar)
+        if "search" in targets:
+            indices_found = False
+            for es_dir in ["elasticsearch7", "elasticsearch8"]:
+                target_dir = paths["data"] / es_dir
+                if target_dir.exists():
+                    UI.info(f"Removing internal sidecar indices: {target_dir}")
+                    shutil.rmtree(target_dir)
+                    indices_found = True
+            if indices_found:
+                cleared.append("search")
+
+        # Target: Database (Hypersonic only)
+        if "db" in targets:
+            db_dir = paths["data"] / "hypersonic"
+            if db_dir.exists():
+                UI.info(f"Removing Hypersonic database: {db_dir}")
+                shutil.rmtree(db_dir)
+                cleared.append("db")
+
+        # Target: Global Search Indices
+        if "global-search" in targets:
+            search_name = "liferay-search-global"
+            if run_command(["docker", "ps", "-q", "-f", f"name={search_name}"]):
+                # We use the standard index prefix ldm-[project-name]-*
+                UI.info(f"Removing project indices from global search ({p_id})...")
+                run_command(
+                    [
+                        "docker",
+                        "exec",
+                        search_name,
+                        "curl",
+                        "-s",
+                        "-X",
+                        "DELETE",
+                        f"localhost:9200/ldm-{p_id}-*",
+                    ],
+                    check=False,
+                )
+                cleared.append("global-search")
+
+        if not cleared:
+            UI.info("No data found to reset for requested targets.")
+        else:
+            UI.success(f"Successfully reset: {', '.join(cleared)}")
+
     def cmd_infra_down(self):
         """Stops and removes global infrastructure containers."""
         UI.info("Stopping global infrastructure services...")
