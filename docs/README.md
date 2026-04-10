@@ -72,6 +72,15 @@ Ensure your environment is healthy before attempting to start a project:
 ldm doctor --skip-project && ldm run my-project
 ```
 
+### Automation Patterns
+
+Check if services are running before executing operations:
+
+```bash
+# Start infrastructure only if it's not already running
+ldm ps || ldm infra-setup --search
+```
+
 ### CI/CD Integration
 
 You can use LDM in automated scripts to verify infrastructure:
@@ -132,21 +141,25 @@ ldm monitor /path/to/workspace
 
 ## Command Reference
 
-### `list`
+### `list` (alias: `ls`)
 
 Display a tabulated overview of all initialized LDM sandbox environments.
 
 ```bash
 ldm list
+ldm ls
 ```
 
-### `run`
+### `run` (alias: `up`)
 
 Initialize and start a project stack.
 
 ```bash
 # Run with a specific tag and virtual hostname
 ldm run --tag 2024.q4.0 --host-name demo.local
+
+# Using the alias
+ldm up demo
 
 # Initialize with "Confidence Booster" samples
 ldm run demo --samples
@@ -204,7 +217,7 @@ ldm logs demo liferay     # Only Liferay logs for 'demo'
 ldm logs demo my-extension # Only logs for a specific client extension
 ```
 
-### `stop`, `restart`, `down`
+### `stop`, `restart`, `down` (alias: `rm`)
 
 Manage the lifecycle of a project or a specific service.
 
@@ -212,11 +225,13 @@ Manage the lifecycle of a project or a specific service.
 ldm stop [project] [service]      # Stop containers gracefully
 ldm restart [project] [service]   # Stop and then start
 ldm down [project] [service]      # Remove containers (and optionally -v volumes)
+ldm rm [project]                  # Alias for 'down'
 
 # Examples:
 ldm restart               # Full stack restart (graceful stop + run)
 ldm restart demo liferay  # Surgical restart of just the Liferay container
 ldm down --volumes        # Tear down stack and clear all database/data state
+ldm rm demo -v            # Remove 'demo' and its volumes
 ```
 
 ### `deploy`
@@ -347,7 +362,17 @@ ldm log-level
 Verify host environment health, Docker resources (CPUs/Memory), and project dependencies.
 
 ```bash
-ldm doctor
+ldm doctor          # Health check for current/selected project
+ldm doctor --all    # Batch validate every project in your workspace
+```
+
+### `status` (alias: `ps`)
+
+Lightweight summary of all active global services and running projects.
+
+```bash
+ldm status
+ldm ps
 ```
 
 ### `upgrade`
@@ -377,14 +402,15 @@ Initialize or recreate the baseline global configuration (`common/` folder) from
 ldm init-common
 ```
 
-### `infra-setup` & `infra-down`
+### `infra-setup`, `infra-down`, `infra-restart`
 
 Independently manage global infrastructure services (Traefik proxy, Search sidecar, Bridge).
 
 ```bash
 ldm infra-setup            # Start global services manually
-ldm infra-setup --search   # Also initialize the Global Search (ES8) container
+ldm infra-setup --search   # Also initialize the Global Search container
 ldm infra-down             # Stop and remove global services
+ldm infra-restart          # Reset all global services in one go
 ```
 
 > [!TIP]
@@ -426,6 +452,16 @@ Clears the local Docker Hub tag cache. LDM caches Liferay tags for 24 hours to i
 
 ```bash
 ldm clear-cache
+```
+
+### `config`
+
+View or set global LDM configuration settings (stored in `~/.ldmrc`).
+
+```bash
+ldm config                  # View all global settings
+ldm config key value        # Set a global preference
+ldm config key --remove     # Remove a preference
 ```
 
 ---
