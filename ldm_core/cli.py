@@ -227,7 +227,8 @@ def main():
     log_level.add_argument("--remove", action="store_true")
     log_level.add_argument("--list", action="store_true")
 
-    browser = subparsers.add_parser("browser")
+    # Command: browser (alias: open)
+    browser = subparsers.add_parser("browser", aliases=["open"])
     browser.add_argument("project", nargs="?")
     browser.add_argument("-p", "--project", dest="project_flag")
     browser.add_argument("-u", "--url")

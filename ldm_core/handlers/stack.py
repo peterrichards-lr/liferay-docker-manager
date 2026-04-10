@@ -23,6 +23,7 @@ from ldm_core.utils import (
     dict_to_yaml,
     get_docker_socket_path,
     get_compose_cmd,
+    open_browser,
 )
 
 
@@ -1623,6 +1624,45 @@ class StackHandler:
             UI.info(
                 f"Telnet not found. You can connect manually with: {UI.CYAN}telnet localhost {port}{UI.COLOR_OFF}"
             )
+
+    def cmd_browser(self, project_id=None):
+        """Launches the project URL in the system browser."""
+        root = None
+        if project_id:
+            root = self.detect_project_path(project_id)
+        else:
+            # Identify running projects for selection
+            running_roots = self.get_running_projects()
+            if not running_roots:
+                UI.info("No projects are currently running.")
+                # Fall back to any initialized projects if none are running
+                selection = self.select_project_interactively(
+                    heading="Select Project to Open"
+                )
+            else:
+                selection = self.select_project_interactively(
+                    roots=running_roots, heading="Running Projects"
+                )
+
+            if selection:
+                root = selection["path"]
+
+        if not root:
+            return
+
+        meta = self.read_meta(root / PROJECT_META_FILE)
+        host_name = meta.get("host_name", "localhost")
+        ssl = str(meta.get("ssl")).lower() == "true"
+        ssl_port = meta.get("ssl_port", 443)
+        port = meta.get("port", 8080)
+
+        proto = "https" if ssl else "http"
+        access_url = f"{proto}://{host_name}"
+        if (ssl and int(ssl_port) != 443) or (not ssl and int(port) != 80):
+            access_url += f":{ssl_port if ssl else port}"
+
+        UI.info(f"Launching browser: {access_url}")
+        open_browser(access_url)
 
     def _ensure_network(self, network_name="liferay-net"):
         """Ensures that the target Docker network exists."""

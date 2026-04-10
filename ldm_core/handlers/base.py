@@ -91,6 +91,31 @@ class BaseHandler:
             pass
         return None
 
+    def get_running_projects(self):
+        """Returns a list of project roots that have at least one running container."""
+        all_roots = self.find_dxp_roots()
+        running_roots = []
+        for root in all_roots:
+            p_path = root["path"]
+            meta = self.read_meta(p_path / PROJECT_META_FILE)
+            p_id = meta.get("container_name") or p_path.name
+            # Check if any container for this project is running
+            running = run_command(
+                [
+                    "docker",
+                    "ps",
+                    "-q",
+                    "--filter",
+                    f"label=com.liferay.ldm.project={p_id}",
+                    "--filter",
+                    "status=running",
+                ],
+                check=False,
+            )
+            if running:
+                running_roots.append(root)
+        return running_roots
+
     def require_compose(self, root_path, silent=False):
         """Verifies that a docker-compose.yml file exists in the project root."""
         if not root_path or not (root_path / "docker-compose.yml").exists():

@@ -382,6 +382,15 @@ ldm status
 ldm ps
 ```
 
+### `browser` (alias: `open`)
+
+Launch the project URL in your system browser. If no project is specified, LDM will present a list of currently running projects to select from.
+
+```bash
+ldm browser [project]
+ldm open [project]
+```
+
 ### `upgrade`
 
 Automatically download and install the latest version of LDM for your architecture. Includes integrity verification.
