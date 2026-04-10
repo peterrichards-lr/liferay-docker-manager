@@ -178,15 +178,15 @@ sequenceDiagram
 
 ### 5. Metadata & Property Injection
 
-To enable seamless integration with Liferay-side code (e.g. Dashboards or Gogo scripts), LDM automatically injects the following properties into `portal-ext.properties` on every run:
+To ensure maximum reliability across all Liferay versions, LDM injects critical infrastructure settings directly into the project's `portal-ext.properties` file before startup. This bypasses the unreliable environment variable decoding found in newer DXP versions.
 
-| Property | Purpose | Example |
-| :--- | :--- | :--- |
-| `liferay.docker.image` | Identifies the base image. | `liferay/dxp` |
-| `liferay.docker.tag` | Identifies the Liferay version. | `2026.q1.2-lts` |
-| `virtual.hosts.valid.hosts` | Dynamic security whitelist. | `localhost,pstest.local` |
+| Category | Properties Managed |
+| :--- | :--- |
+| **SSL / Routing** | `web.server.protocol`, `web.server.host`, `virtual.hosts.valid.hosts` |
+| **Search (ES8)** | `elasticsearch.sidecar.enabled=false`, `elasticsearch.connection.url`, `elasticsearch.index.name.prefix` |
+| **Clustering** | `cluster.link.enabled`, `lucene.replicate.write` (Active when scaled > 1) |
+| **Identity** | `liferay.docker.image`, `liferay.docker.tag` |
 
-```text
 ### 6. Multi-Node Scaling & Clustering
 
 When a service is scaled via `ldm scale [project] liferay=N`:
@@ -195,7 +195,7 @@ When a service is scaled via `ldm scale [project] liferay=N`:
 2. **Clustering Injection**: LDM automatically injects `LIFERAY_CLUSTER__LINK__ENABLED=true` and `LIFERAY_LUCENE__REPLICATE__WRITE=true` to ensure the nodes synchronize their state.
 3. **State Isolation**: For scaled Liferay instances, the host-mapped `osgi/state` and `logs` directories are disabled to prevent file-locking conflicts between nodes (each node keeps its state and logs within its own container ephemeral layer).
 
-```
+```text
 
 ## 5. Workspace Import Engine
 
@@ -243,7 +243,7 @@ graph TD
     * **Mandatory Compose v2**: LDM strictly requires the **Docker Compose v2 Plugin** (`docker compose`). Legacy v1 standalone binaries are no longer supported due to modern library and API incompatibilities.
 
 2. **Shared Infrastructure (Global Tier):**
-    * **Traefik (`liferay-proxy-global`)**: A singleton container that handles all SSL termination and namespaced routing. It works natively on **Linux, WSL2, and Colima** by detecting the standard Docker socket.
+    * **Traefik (`liferay-proxy-global`)**: A singleton container that handles all SSL termination and namespaced routing. It works natively on **Linux, WSL2, and Colima** by detecting the standard Docker socket. **Traefik v3** requires explicit backend network labels (`traefik.docker.network=liferay-net`) which LDM manages automatically.
     * **Elasticsearch (`liferay-search-global`)**: A shared ES8 instance that uses project-specific index prefixes, allowing multiple projects to share one search cluster efficiently.
     * **Socat Bridge (Fallback)**: An optional bridge used only on macOS when the standard `/var/run/docker.sock` is missing (primarily for Docker Desktop isolation).
 

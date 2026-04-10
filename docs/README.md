@@ -154,6 +154,17 @@ ldm run demo --samples
 ldm run
 ```
 
+#### SSL Defaults (New Projects)
+
+LDM uses smarter defaults for SSL based on your hostname. When a custom `--host-name` is used, SSL is enabled by default to support modern Liferay features like Client Extensions.
+
+| Command | Host Name | SSL Default | Access URL |
+| :--- | :--- | :--- | :--- |
+| `ldm run` | `localhost` | `False` | `http://localhost:8080` |
+| `ldm run --host-name my.local` | `my.local` | `True` | `https://my.local` |
+| `ldm run --no-ssl` | `localhost` | `False` | `http://localhost:8080` |
+| `ldm run --host-name my.local --no-ssl` | `my.local` | `False` | `http://my.local:8080` |
+
 ### `init-from` (Live Link)
 
 Initialize a project from a source workspace and establish a **persistent link**. This command records the workspace path in the project metadata and automatically starts the `monitor` process to sync your code changes in real-time.
@@ -437,6 +448,58 @@ colima start --cpu 4 --memory 8
 - **Quick Quit**: You can type `q` at any interactive prompt to safely abort the current command.
 - **Bypass Prompts**: Use the `-y` or `--non-interactive` flag to skip all confirmations and use default values. This is ideal for scripts and CI/CD pipelines.
 - **Tag Discovery**: When running `ldm run` without a version tag, the tool will offer to fetch the latest available tags from Docker Hub based on your release type preference (LTS, QR, etc.).
+
+---
+
+## 🛠️ Development & Building
+
+If you want to contribute to LDM or test your changes locally, follow these steps.
+
+### 1. Run from Source (Live Development)
+
+The easiest way to develop is to install LDM in "editable" mode. This allows your changes to the `ldm_core` package to take effect immediately.
+
+```bash
+# Clone the repo
+git clone https://github.com/peterrichards-lr/liferay-docker-manager.git
+cd liferay-docker-manager
+
+# Install in editable mode
+pip install -e .
+
+# Run the entry point
+python3 liferay_docker.py --help
+```
+
+### 2. Building Standalone Binaries
+
+You can build a single-file executable to test how the tool behaves as a binary.
+
+#### **Option A: Shiv (Official CI Method)**
+
+Used for macOS and Linux. Fast and lightweight, but requires `python3` to be present on the host.
+
+```bash
+# Build only
+./scripts/package-shiv.sh
+
+# Build and install to /usr/local/bin/ldm (requires sudo)
+./scripts/package-shiv.sh --install
+```
+
+#### **Option B: PyInstaller (True Standalone)**
+
+Bundles the Python interpreter inside the file. Works even on machines without Python installed.
+
+```bash
+# Build only
+./scripts/package-pyinstaller.sh
+
+# Build and install to /usr/local/bin/ldm (requires sudo)
+./scripts/package-pyinstaller.sh --install
+```
+
+The resulting binary will be found in the `dist/` folder (for PyInstaller) or the root (for Shiv).
 
 ## License
 

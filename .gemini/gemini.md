@@ -1,77 +1,62 @@
-# Liferay Docker Scripts - Project Context
+# Gemini Project Memory - Liferay Docker Manager (LDM)
 
-## Project Overview
+This file serves as the persistent state and technical knowledge base for the AI assistant working on the LDM project.
 
-This repository contains automation tools for managing Liferay DXP instances using Docker. It provides a Python-based manager (`ldm`) with shell and batch wrappers, designed for **high-velocity evaluation and demonstration**.
+## 🛠️ Core Architectural Mandates (Hardened v1.6.11)
 
-## Core Mandates & Logic "Source of Truth"
+### 1. Configuration Priority (The "Liferay Way")
 
-- **Logic Authority**: `ldm_core` package is the primary source of business logic.
-- **Platform Parity**: Full support for macOS (Silicon/Intel), Windows (Native/WSL2), and Linux (Fedora/Ubuntu).
-- **Documentation Stewardship**: All documentation (README, TESTING, etc.) MUST be updated within the same commit as code changes to ensure the project state remains 100% accurate.
-- **Idempotency**: All commands must handle existing resources gracefully.
-- **Atomic Metadata**: Updates to `.liferay-docker.meta` must be atomic (using temp files and `os.replace`) to prevent corruption.
+- **Direct Properties**: Critical infrastructure settings MUST be injected directly into `portal-ext.properties` located in the project's `files/` directory.
+- **Bypass Env Vars**: Do NOT rely on environment variables for `web.server.*`, `elasticsearch.*`, or `cluster.link.*` settings. Newer Liferay versions have unreliable decoding for these variables (causing "Unable to decode part" warnings).
+- **Multi-line Property Merging**: When updating `portal-ext.properties`, the tool MUST handle multi-line values (using backslash `\` continuations). Simple line-by-line regex will fail and corrupt the file by leaving orphan lines. Always use the atomic block-replacement logic found in `update_portal_ext`.
+- **Environment Variable Separators**:
+  - **Modern (2025.Q1+ / 7.4.13-u100+)**: Use single underscore (`_`).
+  - **Legacy**: Use double underscore (`__`).
+  - The tool must remain version-aware and switch separators automatically based on the target tag.
 
-## Engineering Standards
+### 2. Networking & Routing (Traefik v3)
 
-### 1. The "Modern-then-Legacy" Pattern
+- **Explicit Network Labels**: Every container managed by LDM MUST have the `traefik.docker.network=liferay-net` label. Without this, Traefik v3 may fail to resolve the internal backend IP, resulting in persistent 404 errors.
+- **macOS Loopback**: Infrastructure (Traefik) on macOS MUST bind to `0.0.0.0` to support multi-IP loopback for custom virtual hostnames.
+- **Bridge Reliability**: The `docker-socket-proxy` bridge on macOS must be verified for network connectivity during every `run` and `doctor` command.
 
-- **Docker Compose**: Prefer `docker compose` (v2 plugin). On legacy Intel Macs (Monterey and older), automatically fall back to `docker-compose` (v1 standalone).
-- **Fail-Fast Discovery**: LDM MUST verify that the discovered Compose command is fully functional (via `version` inspection) before returning it. If no working Compose is found, handlers must abort immediately with a helpful installation hint instead of attempting to run malformed commands.
-- **Docker Socket**: Discover active endpoints via `docker context inspect`. Prefer `/run/docker.sock` (modern Linux/WSL) over legacy `/var/run/docker.sock`.
+### 3. macOS Infrastructure (Self-Healing Bridge)
 
-### 2. Permission & Mount Hardening
+- **Dynamic Socket Discovery**: Always use `get_docker_socket_path()` to find the host socket.
+- **Mount Fallback**: If mounting the dynamic path fails with "operation not supported" (common on Colima/OrbStack), automatically fall back to the standard `/var/run/docker.sock`.
+- **Cleanup on Conflict**: If a bridge container creation fails due to a mount error, the tool must explicitly `docker rm -f` the failed record before retrying the fallback path to avoid name conflicts.
 
-- **Strict Mounts**: Tolerates restricted `chown/chmod` on macOS/sshfs and WSL mounts as long as the directory is verified functional via a token check (`.ldm_mount_check`).
-- **macOS Socket Bridge**: Uses an `alpine/socat` sidecar to bridge the home-dir socket (`~/.docker/run/docker.sock`) to a TCP endpoint for Traefik.
-- **Ghost Mount Prevention**: Proactively creates directory structures (`data/`, `deploy/`, `osgi/state/`) before bind-mounting to prevent Docker from creating them as `root`-owned folders.
+### 4. Diagnostics & Health
 
-### 3. Client Extension (CX) Lifecycle
+- **Doctor Exit Codes**: `ldm doctor` must return **Exit Code 1** if critical issues are detected to support shell pipelines (`ldm doctor && ldm run`).
+- **Infrastructure Log Scans**: `ldm doctor` proactively scans the last 20 lines of global infrastructure logs (Traefik, ES8, Proxy) for `ERROR` or `WARN` keywords to identify platform-level failures.
+- **UTC Alignment**: Health check timestamps and "Still waiting" messages MUST use **UTC** to match Liferay container logs for easy correlation.
+- **Metadata Health**: Proactively scrub project metadata (`.liferay-docker.meta`) of legacy/poisoned environment variables during the `run` sequence.
 
-Every artifact imported from a workspace MUST follow this atomic 3-step sequence:
+## 🧪 Knowledge & Troubleshooting Snippets
 
-1. **Copy**: To project root `client-extensions/` (The Build Source of Truth).
-2. **Expand**: Unzip into a subfolder to provide a valid Docker build context.
-3. **Move**: The original ZIP to `osgi/client-extensions/` for Liferay's auto-deployer.
+### Why am I seeing a 404 on macOS?
 
-### 4. Implementation Details
+- Check if `docker-socket-proxy` is connected to `liferay-net`.
+- Verify the Traefik `traefik.docker.network` label is present.
+- Ensure the Docker socket path is correctly mapped (use the self-healing bridge logic).
 
-- **LCP.json Defaults**: Default to **1 CPU** and **512MB Memory** if resource limits are absent.
-- **Common Asset Sync**: Uses a `.liferay-docker.deployed` tracking file to ensure global assets (configs, LPKGs) are only deployed once.
-- **Robust Healthchecks**: Use multi-tool probes (`curl`, then `wget`, then `nc`) for extension containers.
-- **Zsh Environment**: Scripts must follow `#!/bin/zsh` to support advanced array expansions like `${(z)status}`.
-- **Traefik v3 Labels**: Always use escaped backticks (e.g. `Host(\`${HOST_NAME}\`)`) to prevent shell interpretation.
+### Why is Liferay ignoring my Search/SSL settings?
 
-## Troubleshooting Patterns
+- Ensure the settings are in `portal-ext.properties`, NOT just environment variables.
+- Check for "Unable to decode part" warnings in the logs—this indicates an incompatible underscore format for that version.
+- **Corrupted Portal-Ext**: Check `portal-ext.properties` for duplicate or orphaned lines. This happens if the merge logic fails to handle multi-line values (backslash continuations) correctly.
 
-- **WSL2 SSL Bridge**: Copy `rootCA.pem` from WSL's `mkcert -CAROOT` to Windows and run `mkcert -install` in PowerShell to gain host-side trust.
-- **Windows File Locking**: Use a sidecar `.bat` script during `ldm upgrade` to wait for process exit before replacing the binary.
-- **Docker API Version**: Set `DOCKER_API_VERSION=1.44` for sidecars to ensure compatibility with modern (v29+) Docker engines.
-- **Python hash() randomization**: Always use `hashlib.md5()` for configuration signatures to prevent unnecessary container restarts.
+### How do I verify a local build?
 
-## Current State (April 9, 2026)
+- Use `./scripts/package-shiv.sh --install`.
+- Run `ldm doctor` and verify the timestamp in the version line.
 
-- **Version 1.6.9 Automation & Stability Release**: COMPLETED. Enforced mandatory Docker Compose v2 (Plugin), implemented Fail-Fast discovery, and finalized pipeline-ready exit codes and non-interactive support.
-- **Version 1.6.8 Nuclear Isolation Release**: COMPLETED. Definitively resolved legacy Docker Compose URI scheme crashes on Intel Macs by forcing an empty `DOCKER_CONTEXT` and raw Unix sockets.
-- **Version 1.6.7 Total Isolation Release**: COMPLETED. Refined legacy shield logic to isolate standalone binaries from modern Docker contexts.
+## 🏁 Definition of Done for Changes
 
-## Hardening History (Version Log)
-
-- **v1.6.6**: IMPLEMENTED Fail-Fast discovery, non-interactive support for all commands, and dictionary-based environment generation to ensure uniqueness.
-- **v1.6.5**: FIXED Docker Compose misidentification on Intel Macs by implementing an architecture-based exception for `x86_64`.
-- **v1.6.4**: ADDED `ldm upgrade --repair` mode to allow one-click fixing of `TAMPERED / MISMATCH` integrity errors.
-- **v1.6.2**: ADDED proactive permission checks to `upgrade` to guide users on using `sudo` or Admin rights before download.
-- **v1.6.0**: IMPLEMENTED secure self-upgrade mechanism with SHA-256 verification and atomic swaps.
-- **v1.5.9**: ADDED `ldm renew-ssl` for project-specific certificate refreshing.
-- **v1.5.8**: IMPLEMENTED "Modern-then-Legacy" Compose discovery and 15-minute startup timeouts.
-- **v1.5.7**: FIXED `TypeError` in global search setup and hardened provider detection for Native Linux.
-- **v1.5.6**: FIXED "UNC path" warnings when launching host browser from WSL terminal.
-- **v1.5.5**: FIXED semantic version comparison logic using numeric tuples instead of strings.
-- **v1.5.0**: SIGNIFICANT hardening for non-proprietary environments (Colima, WSL2). Implemented `PollingObserver` for macOS file descriptor limits.
-
-## Roadmap: v2.0.0 (The Ecosystem Phase)
-
-- **Guided Scaffolding**: Scenario-based project templates.
-- **Visual Dashboard**: Read-only web UI (`http://localhost:19000`) for stack health monitoring.
-- **High-Velocity Boot**: Pre-seeded database snapshots to reduce first-run wait to <2 minutes.
-- **AI-Assisted Orchestration**: Gemini-powered `ldm ai` command for real-time CLI troubleshooting and configuration generation.
+- [ ] Code passes `./lint.sh` (Ruff, Markdown, Bandit, Pytest).
+- [ ] All 18 unit tests pass.
+- [ ] Version-aware separator logic is maintained.
+- [ ] Explicit Traefik network labels are applied.
+- [ ] Documentation (`README.md`, `ROADMAP.md`) is updated.
+- [ ] Project Memory (`gemini.md`) is updated.

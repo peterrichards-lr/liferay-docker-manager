@@ -29,26 +29,24 @@ This document outlines potential enhancements to the Liferay Docker Manager (ldm
 
 ## ✅ Completed Improvements (v1.6.x)
 
-### **Orchestration & Automation**
+### **Orchestration & Stability (v1.6.11 Logic Audit)**
 
-- **Fail-Fast Architecture**: Proactive environment and dependency verification (Compose, Volume Mounts, SSL) before any stack operation.
-- **Strict Environment Uniqueness**: Dictionary-based environment generation to prevent "non-unique items" errors in Compose files.
-- **Pipeline-Ready Exit Codes**: Standardized return codes (0 for success, 1 for error, 130 for abort) across the entire command suite.
-- **Comprehensive Non-Interactive Support**: Added `-y / --non-interactive` support to all commands, including `prune`, `env`, `run`, and `log-level`.
-- **Intel Mac Hardening**: Specialized exception for `x86_64` macOS architecture to prefer legacy `docker-compose` when v2 plugin is misidentified.
-
-### **Infrastructure & Core**
-
-- **Universal Socket & Provider Detection**: Support for Colima, OrbStack, WSL2, and native Linux by dynamically detecting active endpoints.
-- **Secure Self-Management**: Implemented `ldm upgrade` with SHA-256 verification and `--repair` mode.
-- **Modular Package Structure**: Refactored the monolithic script into a clean Python package (`ldm_core`) with specialized handlers.
-- **Visible Infrastructure Store**: Centralized SSL certificates and routing configs in `~/liferay-docker-certs`.
-- **UI Spacing Polish**: Standardized icon spacing with double-space padding for professional terminal output.
+- **Self-Healing Infrastructure**: Restored dynamic Docker socket discovery for macOS with automated bridge recovery and fallback paths.
+- **Reliable Configuration**: Moved critical infrastructure settings (SSL, Search, Clustering) to `portal-ext.properties` to ensure compatibility with modern Liferay property decoding.
+- **Version-Aware Formatting**: Automatic switching between modern (`_`) and legacy (`__`) environment variable separators based on Liferay version.
+- **Unified UTC Logs**: Aligned all health check timestamps with Liferay container logs (UTC) for seamless debugging.
+- **Traefik v3 Optimization**: Explicit network labels (`traefik.docker.network`) to ensure reliable routing in modern environments.
 
 ### **Management & Diagnostics**
 
-- **Enhanced `ldm doctor`**: Added the `--skip-project` flag for pure environmental health checks and automated pipeline integration.
-- **Security Posture Disclosure**: Created `docs/SECURITY.md` to document intentional `0.0.0.0` bindings and security scan tradeoffs.
-- **Professional CI/CD Pipeline**: Implemented GitHub Actions for security scanning (Bandit), multi-language linting, and automated smoke testing.
-- **Standalone Distribution**: Automated packaging into architecture-specific executables distributed through GitHub Releases.
-- **Global Maintenance (`ldm prune`)**: Reliable identification and removal of orphaned containers and search snapshots.
+- **Enhanced `ldm doctor`**: Added deep-probes for macOS bridge network integrity, Elasticsearch API reachability, project metadata health, portal properties structural validity, OSGi Search configs, and infrastructure log health.
+- **Proactive Pruning**: `ldm prune` now cleans up orphaned SSL certificates and Traefik configurations from the global cert store.
+- **Standardized UI**: 2-space icon padding for a cleaner terminal experience across all platforms.
+- **Pipeline-Ready Exit Codes**: Standardized return codes (0 for success, 1 for error, 130 for abort) across the entire command suite.
+
+### **Developer Experience & Tooling**
+
+- **Local Building Scripts**: Automated `scripts/package-*.sh` utilities for generating standalone binaries with injected build timestamps.
+- **Secure Self-Management**: Implemented `ldm upgrade` with SHA-256 verification and `--repair` mode.
+- **Modular Package Structure**: Refactored the monolithic script into a clean Python package (`ldm_core`) with specialized handlers.
+- **Comprehensive Non-Interactive Support**: Added `-y / --non-interactive` support to all commands, including `prune`, `env`, `run`, and `log-level`.
