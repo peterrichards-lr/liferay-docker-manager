@@ -285,6 +285,7 @@ def main():
     # Execution map
     cmds = {
         "run": lambda: manager.cmd_run(),
+        "up": lambda: manager.cmd_run(),
         "import": lambda: manager.cmd_import(args.source),
         "init-from": lambda: manager.cmd_init_from(args.source),
         "monitor": lambda: manager.cmd_monitor(args.source),
@@ -293,6 +294,7 @@ def main():
             project_id, getattr(args, "service", None)
         ),
         "down": lambda: manager.cmd_down(project_id, getattr(args, "service", None)),
+        "rm": lambda: manager.cmd_down(project_id, getattr(args, "service", None)),
         "logs": lambda: manager.cmd_logs(project_id, getattr(args, "service", None)),
         "deploy": lambda: manager.cmd_deploy(
             project_id, getattr(args, "service", None)
@@ -314,12 +316,15 @@ def main():
         "clear-tags": lambda: manager.cmd_cache("tags"),
         "doctor": lambda: manager.cmd_doctor(project_id),
         "status": lambda: manager.cmd_status(),
+        "ps": lambda: manager.cmd_status(),
         "list": lambda: manager.cmd_list(),
+        "ls": lambda: manager.cmd_list(),
         "config": lambda: manager.cmd_config(args.key, args.value),
         "shell": lambda: manager.cmd_shell(project_id, getattr(args, "service", None)),
         "gogo": lambda: manager.cmd_gogo(project_id),
         "log-level": lambda: manager.cmd_log_level(project_id),
         "browser": lambda: manager.cmd_browser(project_id),
+        "open": lambda: manager.cmd_browser(project_id),
         "scale": lambda: manager.cmd_scale(project_id, args.service_scale),
         "cloud-fetch": lambda: manager.cmd_cloud_fetch(
             project_id, getattr(args, "env_id", None)
