@@ -280,21 +280,52 @@ class ConfigHandler:
                 ("*.cfg", paths["configs"]),
             ]
 
-            # Determine if global search is actually active before copying ES configs
-            search_running = run_command(
-                ["docker", "ps", "-q", "-f", "name=^liferay-search-global$"],
+            # Determine if global search is actually active and what version it is
+            search_inspect = run_command(
+                [
+                    "docker",
+                    "inspect",
+                    "-f",
+                    "{{.Config.Image}}",
+                    "liferay-search-global",
+                ],
                 check=False,
             )
+            search_running = search_inspect is not None
+            search_version = 8
+            if search_inspect and ":7." in search_inspect:
+                search_version = 7
 
             for pattern, target in patterns:
                 for match in common_dir.glob(pattern):
                     # Skip ES-specific configs if the global search container isn't running
-                    if "Elasticsearch" in match.name and not search_running:
-                        # If the file already exists in project, remove it to allow sidecar to work correctly
-                        dest = target / match.name
-                        if dest.exists():
-                            dest.unlink()
-                        continue
+                    if "Elasticsearch" in match.name:
+                        if not search_running:
+                            # If the file already exists in project, remove it to allow sidecar to work correctly
+                            dest = target / match.name
+                            if dest.exists():
+                                dest.unlink()
+                            continue
+
+                        # If search is running, only copy the ones matching the search version
+                        is_es7_file = "elasticsearch7" in match.name
+                        is_es8_file = "elasticsearch8" in match.name
+
+                        # Logic:
+                        # - If ES7 is running: ONLY ES7 files.
+                        # - If ES8 is running: BOTH ES7 and ES8 files (for compatibility mode).
+                        should_copy = False
+                        if search_version == 7 and is_es7_file:
+                            should_copy = True
+                        elif search_version == 8:
+                            if is_es7_file or is_es8_file:
+                                should_copy = True
+
+                        if not should_copy:
+                            dest = target / match.name
+                            if dest.exists():
+                                dest.unlink()
+                            continue
 
                     dest = target / match.name
                     # Always copy if it doesn't exist

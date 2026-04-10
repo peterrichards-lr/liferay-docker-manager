@@ -475,24 +475,53 @@ del "%~f0"
                                     )
 
                 # Check for Global Search Configs
+                # Detect which version we should be looking for based on running container
+                search_inspect = run_command(
+                    [
+                        "docker",
+                        "inspect",
+                        "-f",
+                        "{{.Config.Image}}",
+                        "liferay-search-global",
+                    ],
+                    check=False,
+                )
+                search_version = 8
+                if search_inspect and ":7." in search_inspect:
+                    search_version = 7
+
+                v_id = "elasticsearch7" if search_version == 7 else "elasticsearch8"
                 es_main = (
                     common_dir
-                    / "com.liferay.portal.search.elasticsearch7.configuration.ElasticsearchConfiguration.config"
+                    / f"com.liferay.portal.search.{v_id}.configuration.ElasticsearchConfiguration.config"
                 )
                 es_conn = (
                     common_dir
-                    / "com.liferay.portal.search.elasticsearch7.configuration.ElasticsearchConnectionConfiguration.config"
+                    / f"com.liferay.portal.search.{v_id}.configuration.ElasticsearchConnectionConfiguration.config"
                 )
+
+                # For ES8, we might also have ES7 configs for compatibility mode.
+                # Doctor should confirm at least the NATIVE configs for the search version exist.
                 if not es_main.exists() or not es_conn.exists():
                     results.append(
                         (
                             "Global Search Config",
-                            "Missing (Run 'ldm init-common')",
+                            f"Missing {v_id.upper()} (Run 'ldm init-common')",
                             "warn",
                         )
                     )
                 else:
-                    results.append(("Global Search Config", "REMOTE mode ready", True))
+                    msg = f"REMOTE mode ready ({v_id.upper()})"
+                    if search_version == 8:
+                        # Check if ES7 compat files also exist
+                        compat_main = (
+                            common_dir
+                            / "com.liferay.portal.search.elasticsearch7.configuration.ElasticsearchConfiguration.config"
+                        )
+                        if compat_main.exists():
+                            msg = "REMOTE mode ready (ES8 + ES7 Compat)"
+
+                    results.append(("Global Search Config", msg, True))
             except Exception:
                 results.append(("Global Config", "Overrides Active", True))
 
@@ -509,9 +538,13 @@ del "%~f0"
                 )
 
             # 6. Global Services Check
+            search_label = "Global Search (ES8)"
+            if search_version == 7:
+                search_label = "Global Search (ES7)"
+
             global_services = [
                 ("liferay-proxy-global", "Global SSL Proxy"),
-                ("liferay-search-global", "Global Search (ES8)"),
+                ("liferay-search-global", search_label),
             ]
 
             # The bridge is only relevant for macOS (Darwin)

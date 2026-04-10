@@ -35,6 +35,9 @@ def main():
     run.add_argument("--portal", action="store_true")
     run.add_argument("--refresh", action="store_true")
     run.add_argument("--sidecar", action="store_true")
+    run.add_argument(
+        "--es7", action="store_true", help="Use Elasticsearch 7 for global search"
+    )
     run.add_argument("--no-up", action="store_true")
     run.add_argument("--no-wait", action="store_true")
     run.add_argument("--mount-logs", action="store_true")
@@ -142,7 +145,10 @@ def main():
     infra_setup.add_argument(
         "--search",
         action="store_true",
-        help="Also initialize Global Search (ES8) container",
+        help="Also initialize Global Search container",
+    )
+    infra_setup.add_argument(
+        "--es7", action="store_true", help="Use Elasticsearch 7 for global search"
     )
     subparsers.add_parser("infra-down")
     subparsers.add_parser("clear-cache")

@@ -13,6 +13,7 @@ from ldm_core.ui import UI
 from ldm_core.constants import (
     PROJECT_META_FILE,
     ELASTICSEARCH_VERSION,
+    ELASTICSEARCH7_VERSION,
     TRAEFIK_VERSION,
     SOCAT_IMAGE,
 )
@@ -370,13 +371,32 @@ class StackHandler:
         return True
 
     def setup_global_search(self):
-        """Starts a shared Elasticsearch 8.x container."""
+        """Starts a shared Elasticsearch container (v8 by default, v7 if --es7 used)."""
         self._ensure_network()
         search_name = "liferay-search-global"
-        if run_command(["docker", "ps", "-q", "-f", f"name={search_name}"]):
-            return True
 
-        UI.info("Initializing Global Search (ES8) container...")
+        use_es7 = getattr(self.args, "es7", False)
+        target_version = ELASTICSEARCH7_VERSION if use_es7 else ELASTICSEARCH_VERSION
+        version_label = "ES7" if use_es7 else "ES8"
+
+        if run_command(["docker", "ps", "-q", "-f", f"name={search_name}"]):
+            # Check if running version matches requested version
+            inspect_res = run_command(
+                ["docker", "inspect", "-f", "{{.Config.Image}}", search_name],
+                check=False,
+            )
+            if inspect_res and f":{target_version}" not in inspect_res:
+                UI.warning(
+                    f"A different Global Search version is already running. Requested: {version_label}"
+                )
+                if UI.ask(f"Stop and recreate as {version_label}?", "N").upper() == "Y":
+                    run_command(["docker", "rm", "-f", search_name])
+                else:
+                    return True
+            else:
+                return True
+
+        UI.info(f"Initializing Global Search ({version_label}) container...")
         actual_home = get_actual_home()
         search_backup_dir = actual_home / ".liferay_docker_search_backups"
         search_backup_dir.mkdir(parents=True, exist_ok=True)
@@ -400,7 +420,7 @@ class StackHandler:
                 "ES_JAVA_OPTS=-Xms512m -Xmx512m",
                 "-v",
                 f"{search_backup_dir.as_posix()}:/usr/share/elasticsearch/backup",
-                f"docker.elastic.co/elasticsearch/elasticsearch:{ELASTICSEARCH_VERSION}",
+                f"docker.elastic.co/elasticsearch/elasticsearch:{target_version}",
             ]
         )
         # Wait for Elasticsearch to be ready (up to 60s)
