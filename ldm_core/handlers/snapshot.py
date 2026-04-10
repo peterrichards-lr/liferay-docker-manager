@@ -232,16 +232,21 @@ class SnapshotHandler:
                             if db_type == "postgresql"
                             else [
                                 "docker",
+                                "-e",
+                                "MYSQL_PWD=liferay",
                                 "exec",
                                 "-i",
                                 db_container,
                                 "mysql",
                                 "-u",
                                 "liferay",
-                                "-pliferay",
                                 "lportal",
                             ]
                         )
+
+                        import_env = os.environ.copy()
+                        if db_type == "postgresql":
+                            import_env["PGPASSWORD"] = "liferay"
 
                         import_proc = subprocess.Popen(
                             db_cmd,
@@ -249,6 +254,7 @@ class SnapshotHandler:
                             stdout=subprocess.PIPE,
                             stderr=subprocess.PIPE,
                             text=True,
+                            env=import_env,
                         )
 
                         # Allow gunzip_proc to receive a SIGPIPE if import_proc exits.
@@ -323,6 +329,8 @@ class SnapshotHandler:
                 elif "mysql" in url.lower():
                     host = self.args.my_host or "localhost"
                     port = self.args.my_port or "3306"
+                    env = os.environ.copy()
+                    env["MYSQL_PWD"] = pw
                     if (
                         run_command(
                             [
@@ -333,11 +341,11 @@ class SnapshotHandler:
                                 port,
                                 "-u",
                                 user,
-                                f"-p{pw}",
                                 "-e",
                                 "SELECT 1",
                             ],
                             check=False,
+                            env=env,
                         )
                         is None
                     ):
