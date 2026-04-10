@@ -7,19 +7,39 @@ This document outlines potential enhancements to the Liferay Docker Manager (ldm
 
 ---
 
-- Route mapping and SSL expiry countdowns.
-- Quick-access logs for each extension.
+## 🚀 Future Roadmap: v2.0.0 (The Ecosystem Phase)
 
-## 4. High-Velocity Boot (Pre-Seeded DBs)
+While the v1.x "Hardened Edition" focused on cross-platform stability, **v2.0.0** will shift focus toward developer onboarding and "Scenario-First" orchestration.
+
+### 1. Guided Onboarding & Scaffolding
+
+- **Interactive Scaffolding**: Implement `ldm init` with guided templates for common use cases (e.g., "Commerce Demo," "Headless React Integration").
+- **Documentation Injection**: Automatically generate `README.md` and `setup.md` within new projects to onboard team members to that specific project's capabilities.
+
+### 2. CLI Simplification (Namespacing)
+
+- **Namespace Grouping**: Transition from flat commands to grouped namespaces to reduce cognitive load.
+  - `ldm system renew-ssl` / `ldm system prune`
+  - `ldm infra setup` / `ldm infra down`
+- **Legacy Compatibility**: Maintain flat aliases for 1.x power users.
+
+### 3. Visual Health Dashboard
+
+- **Local Monitoring UI**: A lightweight, read-only dashboard accessible via `http://localhost:19000` to visualize:
+  - Container health using real-time SVG status indicators.
+  - Route mapping and SSL expiry countdowns.
+  - Quick-access logs for each extension.
+
+### 4. High-Velocity Boot (Pre-Seeded DBs)
 
 - **Database "Fast-Forward"**: Support for downloading pre-initialized, empty database volumes.
 - **Objective**: Reduce the "First Run" wait time from 15 minutes to under 2 minutes by bypassing the initial Liferay schema generation.
 
-## 5. Shared Scenario Packs
+### 5. Shared Scenario Packs
 
 - **Portable Scenarios**: A formal specification for bundling a Snapshot + Client Extensions + LCP Metadata into a single "Pack" for easy distribution across Sales Engineering teams.
 
-## 6. AI-Assisted Orchestration
+### 6. AI-Assisted Orchestration
 
 - **The `ldm ai` Command**: Integrate a specialized AI handler (Gemini-powered) to provide interactive help and troubleshooting.
 - **Context-Aware Support**: Automatically inject `ldm doctor` reports and project metadata into AI queries to provide zero-copy troubleshooting for SSL, networking, and deployment failures.
