@@ -153,6 +153,10 @@ def main():
         help="Re-download the current version to fix integrity issues",
     )
     subparsers.add_parser("update-check")
+    migrate_search = subparsers.add_parser("migrate-search")
+    migrate_search.add_argument("project", nargs="?")
+    migrate_search.add_argument("-p", "--project", dest="project_flag")
+
     doctor = subparsers.add_parser("doctor")
     doctor.add_argument("project", nargs="?")
     doctor.add_argument("-p", "--project", dest="project_flag")
@@ -257,6 +261,7 @@ def main():
         "snapshot": lambda: manager.cmd_snapshot(project_id),
         "restore": lambda: manager.cmd_restore(project_id),
         "init-common": lambda: manager.cmd_init_common(),
+        "migrate-search": lambda: manager.cmd_migrate_search(project_id),
         "renew-ssl": lambda: manager.cmd_renew_ssl(project_id),
         "infra-setup": lambda: manager.cmd_infra_setup(),
         "infra-down": lambda: manager.cmd_infra_down(),

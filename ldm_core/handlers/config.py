@@ -4,6 +4,7 @@ import shutil
 from datetime import datetime
 from ldm_core.ui import UI
 from ldm_core.constants import PROJECT_META_FILE, SCRIPT_DIR
+from ldm_core.utils import run_command
 
 
 class ConfigHandler:
@@ -278,8 +279,23 @@ class ConfigHandler:
                 ("*.config", paths["configs"]),
                 ("*.cfg", paths["configs"]),
             ]
+
+            # Determine if global search is actually active before copying ES configs
+            search_running = run_command(
+                ["docker", "ps", "-q", "-f", "name=^liferay-search-global$"],
+                check=False,
+            )
+
             for pattern, target in patterns:
                 for match in common_dir.glob(pattern):
+                    # Skip ES-specific configs if the global search container isn't running
+                    if "Elasticsearch" in match.name and not search_running:
+                        # If the file already exists in project, remove it to allow sidecar to work correctly
+                        dest = target / match.name
+                        if dest.exists():
+                            dest.unlink()
+                        continue
+
                     dest = target / match.name
                     # Always copy if it doesn't exist
                     if not dest.exists():

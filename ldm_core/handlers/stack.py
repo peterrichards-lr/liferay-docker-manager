@@ -1317,6 +1317,72 @@ class StackHandler:
                 self.cmd_stop(str(root))
                 self.cmd_run(project_id)
 
+    def cmd_migrate_search(self, project_id=None):
+        """Migrates a project from Sidecar to Global Elasticsearch."""
+        root = self.detect_project_path(project_id)
+        if not root:
+            return
+
+        p_id = root.name
+        paths = self.setup_paths(p_id)
+
+        # 1. Ensure Liferay is NOT running
+        is_running = run_command(
+            ["docker", "ps", "-q", "-f", f"name=^{p_id}$"], check=False
+        )
+        if is_running:
+            UI.die(
+                f"Project '{p_id}' is currently running. Please stop it first with: ldm stop {p_id}"
+            )
+
+        UI.heading(f"Migrating '{p_id}' to Global Search")
+
+        # 2. Check if Global Search is running
+        search_running = run_command(
+            ["docker", "ps", "-q", "-f", "name=^liferay-search-global$"], check=False
+        )
+        if not search_running:
+            if (
+                UI.ask(
+                    "Global Search container is not running. Start it now?", "Y"
+                ).upper()
+                == "Y"
+            ):
+                self.setup_global_search()
+            else:
+                UI.die("Migration aborted. Global Search is required.")
+
+        # 3. Clean up internal indices
+        data_dir = paths["data"]
+        indices_found = False
+        for es_dir in ["elasticsearch7", "elasticsearch8"]:
+            target = data_dir / es_dir
+            if target.exists():
+                UI.info(f"Removing internal index directory: {target}")
+                shutil.rmtree(target)
+                indices_found = True
+
+        if not indices_found:
+            UI.info("No internal sidecar indices found. (Already clean?)")
+
+        # 4. Sync configuration
+        UI.info("Applying Global Search configurations...")
+        # We force use_shared_search=True in meta
+        project_meta = self.read_meta(root / PROJECT_META_FILE)
+        project_meta["use_shared_search"] = "true"
+        self.write_meta(root / PROJECT_META_FILE, project_meta)
+
+        # sync_common_assets will now find the global search running and copy the configs
+        self.sync_common_assets(paths)
+
+        UI.success(
+            f"Migration complete! Project '{p_id}' is now configured for Global Search."
+        )
+
+        if not self.non_interactive:
+            if UI.ask("Restart project now?", "Y").upper() == "Y":
+                self.cmd_run()
+
     def cmd_down(self, project_id=None, service=None):
         root = self.detect_project_path(project_id)
         if not root:
