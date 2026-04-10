@@ -505,7 +505,7 @@ del "%~f0"
                 )
                 es_conn = (
                     common_dir
-                    / f"com.liferay.portal.search.{v_id}.configuration.ElasticsearchConnectionConfiguration.config"
+                    / f"com.liferay.portal.search.{v_id}.configuration.ElasticsearchConnectionConfiguration-REMOTE.config"
                 )
 
                 # For ES8, we might also have ES7 configs for compatibility mode.
