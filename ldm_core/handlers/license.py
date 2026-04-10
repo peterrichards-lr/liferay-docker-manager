@@ -63,10 +63,13 @@ class LicenseHandler:
             info = {
                 "product": self._get_xml_text(root, "product-name"),
                 "owner": self._get_xml_text(root, "owner"),
+                "account": self._get_xml_text(root, "account-name"),
                 "expiration": self._get_xml_text(root, "expiration-date"),
                 "type": self._get_xml_text(root, "license-type"),
-                "version": self._get_xml_text(root, "version"),
+                "version": self._get_xml_text(root, "product-version")
+                or self._get_xml_text(root, "version"),
                 "max_users": self._get_xml_text(root, "max-users"),
+                "description": self._get_xml_text(root, "description"),
             }
 
             # If we couldn't find a product name, it might not be a license we recognize

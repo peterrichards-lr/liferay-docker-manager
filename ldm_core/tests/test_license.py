@@ -34,23 +34,29 @@ class TestLicenseHandler(unittest.TestCase):
 
     def test_parse_valid_license(self):
         license_xml = """<?xml version="1.0"?>
-<license>
-    <product-name>Liferay DXP</product-name>
-    <owner>Test User</owner>
-    <expiration-date>2027-01-01</expiration-date>
-    <license-type>Production</license-type>
-    <version>7.4</version>
-    <max-users>100</max-users>
-</license>
-"""
+    <license>
+    <account-name>Liferay, Inc.</account-name>
+    <owner>Peter Richards</owner>
+    <description>Liferay, Inc. Developer Activation Keys</description>
+    <product-name>DXP Development</product-name>
+    <product-version>7.4</product-version>
+    <license-name>Digital Enterprise Development</license-name>
+    <license-type>developer</license-type>
+    <license-version>6</license-version>
+    <start-date>Monday, March 20, 2023 10:57:51 AM GMT</start-date>
+    <expiration-date>Wednesday, February 24, 2123 10:57:51 AM GMT</expiration-date>
+    </license>
+    """
         license_file = self.common_dir / "license.xml"
         license_file.write_text(license_xml)
 
         info = self.manager._parse_license_xml(license_file)
         self.assertIsNotNone(info)
-        self.assertEqual(info["product"], "Liferay DXP")
-        self.assertEqual(info["owner"], "Test User")
-        self.assertEqual(info["expiration"], "2027-01-01")
+        self.assertEqual(info["product"], "DXP Development")
+        self.assertEqual(info["owner"], "Peter Richards")
+        self.assertEqual(info["account"], "Liferay, Inc.")
+        self.assertEqual(info["version"], "7.4")
+        self.assertIn("February 24, 2123", info["expiration"])
 
     def test_parse_invalid_xml(self):
         not_license_xml = """<?xml version="1.0"?>
