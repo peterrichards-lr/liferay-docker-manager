@@ -1,9 +1,10 @@
 import unittest
 import json
 from ldm_core.handlers.workspace import WorkspaceHandler
+from ldm_core.handlers.diagnostics import DiagnosticsHandler
 
 
-class MockWorkspaceManager(WorkspaceHandler):
+class MockWorkspaceManager(WorkspaceHandler, DiagnosticsHandler):
     def __init__(self):
         self.verbose = False
 

@@ -67,6 +67,29 @@ class WorkspaceHandler:
         }
         try:
             data = json.loads(content)
+
+            # Proactive Validation
+            # Create a temporary file to use the validator (which expects a path)
+            import tempfile
+            from pathlib import Path
+
+            with tempfile.NamedTemporaryFile(
+                mode="w", suffix=".json", delete=False
+            ) as tf:
+                tf.write(content)
+                tf_path = Path(tf.name)
+
+            try:
+                status, ok, errors = self.validate_lcp_json(tf_path)
+                if not ok or ok == "warn":
+                    UI.warning(f"LCP.json Issue: {status}")
+                    if errors:
+                        for err in errors:
+                            print(f"  {UI.YELLOW}⚠{UI.COLOR_OFF} {err}")
+            finally:
+                if tf_path.exists():
+                    tf_path.unlink()
+
             info["id"] = data.get("id")
             if data.get("kind"):
                 info["kind"] = data["kind"].capitalize()
