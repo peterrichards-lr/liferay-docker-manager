@@ -801,42 +801,47 @@ del "%~f0"
 
                     if liferay_container:
                         # Perform a LIVE check inside the running container
-                        # 1. Create a fresh token
+                        # 1. Create a fresh token in a mounted subdirectory (e.g., /deploy)
+                        # We use /deploy because the project root itself is not fully mounted.
                         import uuid
 
                         token_val = f"DOCTOR_LIVE_{uuid.uuid4().hex[:8]}"
-                        token_file = project_path / ".ldm_doctor_check"
-                        token_file.write_text(token_val)
+                        deploy_dir = project_path / "deploy"
+                        token_file = deploy_dir / ".ldm_doctor_check"
 
-                        # 2. Try to read it from INSIDE the container
-                        # The project root is typically mounted at /opt/liferay (DXP/Portal)
-                        # or mapped via Compose volumes.
-                        verify_res = run_command(
-                            [
-                                "docker",
-                                "exec",
-                                liferay_container,
-                                "sh",
-                                "-c",
-                                "cat /opt/liferay/.ldm_doctor_check 2>/dev/null || cat /mnt/liferay/.ldm_doctor_check 2>/dev/null",
-                            ],
-                            check=False,
-                        )
+                        try:
+                            deploy_dir.mkdir(parents=True, exist_ok=True)
+                            token_file.write_text(token_val)
 
-                        if token_val in (verify_res or ""):
-                            results.append(("Mount Verification", "Live (OK)", True))
-                        else:
-                            results.append(
-                                (
-                                    "Mount Verification",
-                                    "BROKEN (Not visible in container)",
-                                    False,
-                                )
+                            # 2. Try to read it from INSIDE the container
+                            # In Liferay containers, 'deploy' is always at /opt/liferay/deploy
+                            verify_res = run_command(
+                                [
+                                    "docker",
+                                    "exec",
+                                    liferay_container,
+                                    "cat",
+                                    "/opt/liferay/deploy/.ldm_doctor_check",
+                                ],
+                                check=False,
                             )
 
-                        # Cleanup
-                        if token_file.exists():
-                            token_file.unlink()
+                            if token_val in (verify_res or ""):
+                                results.append(
+                                    ("Mount Verification", "Live (OK)", True)
+                                )
+                            else:
+                                results.append(
+                                    (
+                                        "Mount Verification",
+                                        "BROKEN (Not visible in container)",
+                                        False,
+                                    )
+                                )
+                        finally:
+                            # Cleanup
+                            if token_file.exists():
+                                token_file.unlink()
                     else:
                         results.append(
                             ("Mount Verification", "Verified on start", True)
