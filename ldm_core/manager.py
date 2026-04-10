@@ -1,3 +1,6 @@
+import os
+import sys
+from ldm_core.ui import UI
 from ldm_core.handlers.base import BaseHandler
 from ldm_core.handlers.stack import StackHandler
 from ldm_core.handlers.workspace import WorkspaceHandler
@@ -24,6 +27,18 @@ class LiferayManager(
         self.args = args
         self.verbose = getattr(args, "verbose", False)
         self.non_interactive = getattr(args, "non_interactive", False)
+
+        # Automatic CI and TTY detection
+        if (
+            os.getenv("CI")
+            or os.getenv("GITHUB_ACTIONS")
+            or os.getenv("GITLAB_CI")
+            or not sys.stdin.isatty()
+        ):
+            self.non_interactive = True
+
+        # Synchronize global UI state
+        UI.NON_INTERACTIVE = self.non_interactive
 
         # Ensure standard attributes exist on args
         run_attrs = [

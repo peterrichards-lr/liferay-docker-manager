@@ -12,6 +12,8 @@ class UI:
     BRED = "\033[1;31m"
     CYAN = "\033[0;36m"
 
+    NON_INTERACTIVE = False
+
     @staticmethod
     def get_padding(icon=None):
         """Returns the OS-aware padding for icons."""
@@ -99,6 +101,9 @@ class UI:
 
     @staticmethod
     def ask(prompt, default=None):
+        if UI.NON_INTERACTIVE:
+            return default
+
         prompt = prompt.strip()
         icon = "❓"
         padding = UI.get_padding(icon)
