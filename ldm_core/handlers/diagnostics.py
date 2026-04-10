@@ -253,6 +253,13 @@ del "%~f0"
 
         results.append(("Executable Integrity", status, ok))
 
+        # 0.2 Executable Path
+        try:
+            exe_path = Path(sys.argv[0]).resolve()
+            results.append(("Executable Path", str(exe_path), True))
+        except Exception:
+            pass
+
         # 1. System Info
         results.append(("Python Version", sys.version.split()[0], True))
         results.append(("Platform", platform.platform(), True))
