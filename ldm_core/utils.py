@@ -491,11 +491,18 @@ def get_docker_socket_path():
 
 def verify_executable_checksum(version):
     """Verifies the current binary against the official checksums.txt from GitHub."""
-    # If we are not running as a frozen binary (PyInstaller/Shiv), we are running from source.
-    if not getattr(sys, "frozen", False):
+    exe_path = Path(sys.argv[0]).resolve()
+
+    # Detection Logic:
+    # 1. If it ends in .py, it's definitely source.
+    # 2. If it's a frozen binary (PyInstaller), it's a binary.
+    # 3. If it's a large binary data file (Shiv), it's a binary.
+    is_source = exe_path.suffix.lower() == ".py"
+    is_frozen = getattr(sys, "frozen", False)
+
+    if is_source and not is_frozen:
         return "Source", True, version
 
-    exe_path = Path(sys.argv[0]).resolve()
     if not exe_path.exists():
         return "Source", True, version
 
@@ -503,22 +510,27 @@ def verify_executable_checksum(version):
         import hashlib
         import re
 
-        # 1. Calculate local hash
-        sha = hashlib.sha256()
+        # 1. Read content once for version extraction and hashing
         with open(exe_path, "rb") as f:
             content = f.read()
-            sha.update(content)
 
-            # 1.1 "Magic Byte" Version Extraction
-            # We look for the marker in the binary content to find the TRUE version
-            magic_match = re.search(b"LDM_MAGIC_VERSION: ([0-9.]+)", content)
-            if magic_match:
-                extracted_version = magic_match.group(1).decode()
-                # If we extracted a version that is different from what we think we are,
-                # we should use the extracted one for fetching checksums.
-                if extracted_version != version:
-                    version = extracted_version
+        # 1.1 "Magic Byte" Version Extraction
+        # We look for the marker in the binary content to find the TRUE version.
+        # If this marker exists, it's definitely a packaged binary.
+        magic_match = re.search(b"LDM_MAGIC_VERSION: ([0-9.]+)", content)
+        if not magic_match and is_source:
+            return "Source", True, version
 
+        if magic_match:
+            extracted_version = magic_match.group(1).decode()
+            # If we extracted a version that is different from what we think we are,
+            # we should use the extracted one for fetching checksums.
+            if extracted_version != version:
+                version = extracted_version
+
+        # 1.2 Calculate local hash
+        sha = hashlib.sha256()
+        sha.update(content)
         local_hash = sha.hexdigest()
 
         # 2. Fetch official checksums

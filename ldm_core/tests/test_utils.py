@@ -3,7 +3,9 @@ from ldm_core.utils import version_to_tuple, verify_executable_checksum
 
 
 class TestUtils(unittest.TestCase):
-    def test_verify_executable_checksum(self):
+    @unittest.mock.patch("sys.argv", ["ldm.py"])
+    @unittest.mock.patch("sys.frozen", False, create=True)
+    def test_verify_executable_checksum_source(self):
         # When running as source (pytest), it should return "Source", True, VERSION
         status, ok, version = verify_executable_checksum("1.6.11")
         self.assertEqual(status, "Source")
