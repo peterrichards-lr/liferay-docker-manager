@@ -4,7 +4,7 @@ import shutil
 from datetime import datetime
 from ldm_core.ui import UI
 from ldm_core.constants import PROJECT_META_FILE, SCRIPT_DIR
-from ldm_core.utils import run_command
+from ldm_core.utils import run_command, get_actual_home
 
 
 class ConfigHandler:
@@ -351,6 +351,45 @@ class ConfigHandler:
 
         if host_updates:
             self.update_portal_ext(target_ext, host_updates)
+
+    def cmd_config(self, key=None, value=None):
+        """View or set global LDM configuration."""
+        config_path = get_actual_home() / ".ldmrc"
+        config = {}
+        if config_path.exists():
+            try:
+                config = json.loads(config_path.read_text())
+            except Exception:
+                pass
+
+        if not key and not value:
+            UI.heading("Global LDM Configuration")
+            if not config:
+                UI.info("No global configuration found.")
+            else:
+                for k, v in sorted(config.items()):
+                    print(f"  {k} = {v}")
+            return
+
+        if key and value is None:
+            # Get specific key
+            val = config.get(key)
+            if val is not None:
+                print(val)
+            else:
+                UI.die(f"Configuration key '{key}' not found.")
+            return
+
+        if key and value:
+            # Set specific key
+            if getattr(self.args, "remove", False) or value.lower() == "unset":
+                config.pop(key, None)
+                UI.success(f"Configuration key '{key}' removed.")
+            else:
+                config[key] = value
+                UI.success(f"Configuration key '{key}' set to '{value}'.")
+
+            config_path.write_text(json.dumps(config, indent=4))
 
     def cmd_env(self, project_id=None):
         pid = project_id

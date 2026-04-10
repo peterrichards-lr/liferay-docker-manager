@@ -19,8 +19,8 @@ def main():
     parser.add_argument("--version", action="version", version=f"%(prog)s {VERSION}")
     subparsers = parser.add_subparsers(dest="command")
 
-    # Command: run
-    run = subparsers.add_parser("run")
+    # Command: run (alias: up)
+    run = subparsers.add_parser("run", aliases=["up"])
     run.add_argument("project", nargs="?")
     run.add_argument("-t", "--tag")
     run.add_argument("-p", "--project", dest="project_flag")
@@ -95,9 +95,12 @@ def main():
     monitor.add_argument("-p", "--project")
     monitor.add_argument("--delay", type=float, default=2.0)
 
-    # Command: stop, restart, down, logs, deploy
+    # Command: stop, restart, down (alias: rm), logs, deploy
     for cmd in ["stop", "restart", "down", "logs", "deploy"]:
-        p = subparsers.add_parser(cmd)
+        aliases = []
+        if cmd == "down":
+            aliases = ["rm"]
+        p = subparsers.add_parser(cmd, aliases=aliases)
         p.add_argument("project", nargs="?")
         p.add_argument("service", nargs="?")
         p.add_argument("-p", "--project", dest="project_flag")
@@ -175,8 +178,14 @@ def main():
     doctor.add_argument(
         "--all", action="store_true", help="Run health checks for all projects"
     )
-    subparsers.add_parser("status")
-    subparsers.add_parser("list")
+    subparsers.add_parser("status", aliases=["ps"])
+    subparsers.add_parser("list", aliases=["ls"])
+
+    # Command: config
+    config = subparsers.add_parser("config")
+    config.add_argument("key", nargs="?")
+    config.add_argument("value", nargs="?")
+    config.add_argument("--remove", action="store_true")
     subparsers.add_parser("prune")
 
     shell = subparsers.add_parser("shell")
@@ -281,6 +290,7 @@ def main():
         "doctor": lambda: manager.cmd_doctor(project_id),
         "status": lambda: manager.cmd_status(),
         "list": lambda: manager.cmd_list(),
+        "config": lambda: manager.cmd_config(args.key, args.value),
         "shell": lambda: manager.cmd_shell(project_id, getattr(args, "service", None)),
         "gogo": lambda: manager.cmd_gogo(project_id),
         "log-level": lambda: manager.cmd_log_level(project_id),

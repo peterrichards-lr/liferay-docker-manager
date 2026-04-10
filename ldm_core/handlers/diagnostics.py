@@ -106,6 +106,10 @@ class DiagnosticsHandler:
         if not active_projects:
             print(f"  {UI.WHITE}No projects are currently running.{UI.COLOR_OFF}")
 
+        if not any_infra and not active_projects:
+            sys.exit(1)
+        sys.exit(0)
+
     def cmd_update_check(self, force=True):
         UI.heading("LDM Update Check")
         latest, url = check_for_updates(VERSION, force=force)
@@ -1031,11 +1035,15 @@ del "%~f0"
             print(f"{component:<25} {color}{icon} {status}{UI.COLOR_OFF}")
 
         if all_ok and not has_warnings:
-            UI.success("Everything looks good! Your environment is ready.")
+            UI.success("\n✅  Everything looks good! Your environment is ready.")
+            sys.exit(0)
         elif all_ok and has_warnings:
-            UI.warning("Some non-critical issues were detected. Check the items above.")
+            UI.warning(
+                "\n⚠️  Some non-critical issues were detected. Check the items above."
+            )
+            sys.exit(0)
         else:
-            UI.error("Critical issues were detected. Check the items above.")
+            UI.error("\n❌  Critical issues were detected. Check the items above.")
             sys.exit(1)
 
     def cmd_list(self):
