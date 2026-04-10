@@ -387,6 +387,25 @@ ldm infra-setup --search   # Also initialize the Global Search (ES8) container
 ldm infra-down             # Stop and remove global services
 ```
 
+> [!TIP]
+> **Sidecar Fallback**: If the Global Search (ES8) container is not running, `ldm` will automatically default to Liferay's internal **Sidecar** search. It also cleans up global ES configurations in your project to ensure the Sidecar initializes correctly.
+
+### `migrate-search`
+
+Migrates a project from using the internal Sidecar search to the shared **Global Search (ES8)** container.
+
+```bash
+ldm migrate-search [project]
+```
+
+**What it does:**
+
+1. Verifies the project is stopped.
+2. Ensures the Global Search container is running (offers to start it).
+3. Deletes internal indices (`data/elasticsearch7` or `data/elasticsearch8`).
+4. Re-syncs Global ES configurations from `common/`.
+5. Offers to restart the project immediately.
+
 ### `prune`
 
 Identify and remove orphaned resources. This command scans your Docker environment for containers and global search snapshots that no longer have a matching project folder on your disk.

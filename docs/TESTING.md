@@ -49,6 +49,7 @@ LDM uses a multi-layered automated verification suite:
 | **4.1 Non-Interactive Prune** | `ldm prune -y` | Silently removes orphaned resources without confirmation. |
 | **4.2 SSL Hygiene** | Run `ldm down` | Correctly removes certificates and Traefik routing configs. |
 | **4.3 SSL Renewal** | `ldm renew-ssl` | Surgically replaces existing certificates with fresh 2-year versions. |
+| **4.4 Search Migration**| `ldm migrate-search`| Deletes internal indices and applies Global ES configs while stopped. |
 
 ---
 
