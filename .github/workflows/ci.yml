@@ -184,13 +184,7 @@ jobs:
           # Inject build metadata if it's a tag release
           if [[ $GITHUB_REF == refs/tags/* ]]; then
             TAG_NAME=${GITHUB_REF#refs/tags/}
-            python3 -c "
-import re
-path = 'ldm_core/constants.py'
-content = open(path).read()
-content = re.sub(r'BUILD_INFO = None', f'BUILD_INFO = \"Release {TAG_NAME}\"', content)
-open(path, 'w').write(content)
-"
+            python3 -c "import re; p='ldm_core/constants.py'; c=open(p).read(); open(p,'w').write(re.sub(r'BUILD_INFO = None', 'BUILD_INFO = \"Release ${TAG_NAME}\"', c))"
           fi
 
           OUTNAME="ldm-linux"
@@ -210,13 +204,7 @@ open(path, 'w').write(content)
           # Inject build metadata if it's a tag release
           if [[ $GITHUB_REF == refs/tags/* ]]; then
             TAG_NAME=${GITHUB_REF#refs/tags/}
-            python3 -c "
-import re
-path = 'ldm_core/constants.py'
-content = open(path).read()
-content = re.sub(r'BUILD_INFO = None', f'BUILD_INFO = \"Release {TAG_NAME}\"', content)
-open(path, 'w').write(content)
-"
+            python3 -c "import re; p='ldm_core/constants.py'; c=open(p).read(); open(p,'w').write(re.sub(r'BUILD_INFO = None', 'BUILD_INFO = \"Release ${TAG_NAME}\"', c))"
           fi
 
           # Bundling the resources directory into the Windows binary
