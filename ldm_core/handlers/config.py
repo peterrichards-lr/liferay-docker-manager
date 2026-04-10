@@ -301,9 +301,17 @@ class ConfigHandler:
             for pattern, target in patterns:
                 for match in common_dir.glob(pattern):
                     # Skip ES-specific configs if the global search container isn't running
-                    if "Elasticsearch" in match.name:
+                    if "elasticsearch" in match.name.lower():
                         if not search_running:
                             # If the file already exists in project, remove it to allow sidecar to work correctly
+                            dest = target / match.name
+                            if dest.exists():
+                                dest.unlink()
+                            continue
+
+                        # Cleanup: If this is a legacy config (no -REMOTE), ensure it's GONE from project
+                        # to avoid Liferay defaulting to localhost.
+                        if "-REMOTE" not in match.name and "Connection" in match.name:
                             dest = target / match.name
                             if dest.exists():
                                 dest.unlink()
