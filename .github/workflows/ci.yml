@@ -180,6 +180,13 @@ jobs:
         run: |
           pip install shiv
           pip install .
+          
+          # Inject build metadata if it's a tag release
+          if [[ $GITHUB_REF == refs/tags/* ]]; then
+            TAG_NAME=${GITHUB_REF#refs/tags/}
+            sed -i "s/BUILD_INFO = None/BUILD_INFO = \"Release $TAG_NAME\"/g" ldm_core/constants.py
+          fi
+
           OUTNAME="ldm-linux"
           if [ "${{ matrix.os }}" = "macos-latest" ]; then
             OUTNAME="ldm-macos"
@@ -193,6 +200,13 @@ jobs:
         shell: bash
         run: |
           pip install pyinstaller -r requirements.txt
+          
+          # Inject build metadata if it's a tag release
+          if [[ $GITHUB_REF == refs/tags/* ]]; then
+            TAG_NAME=${GITHUB_REF#refs/tags/}
+            sed -i "s/BUILD_INFO = None/BUILD_INFO = \"Release $TAG_NAME\"/g" ldm_core/constants.py
+          fi
+
           # Bundling the resources directory into the Windows binary
           pyinstaller --onefile --name ldm-windows --add-data "ldm_core/resources;ldm_core/resources" liferay_docker.py
           echo "BINARY_PATH=dist/ldm-windows.exe" >> $GITHUB_ENV
