@@ -436,115 +436,35 @@ del "%~f0"
                     results.append(("Docker Provider", provider, True))
             except Exception:
                 pass
+
             # 2.1 Docker Credentials Check
-            try:
-                docker_config_path = get_actual_home() / ".docker" / "config.json"
-                if docker_config_path.exists():
-                    with open(docker_config_path, "r") as f:
-                        config = json.loads(f.read())
-                        creds_store = config.get("credsStore")
-                        if creds_store:
-                            helper_bin = f"docker-credential-{creds_store}"
-                            if not shutil.which(helper_bin):
-                                results.append(
-                                    (
-                                        "Docker Creds Store",
-                                        f"Broken ({creds_store} helper missing)",
-                                        False,
-                                    )
-                                )
-                            else:
-                                results.append(
-                                    ("Docker Creds Store", f"OK ({creds_store})", True)
-                                )
-            except Exception:
-                pass
+            creds_status, creds_ok = self._check_docker_creds()
+            if creds_status:
+                results.append(("Docker Creds Store", creds_status, creds_ok))
 
             # 2.2 Docker Resources
             docker_info_raw = run_command(
                 ["docker", "info", "--format", "{{json .}}"], check=False
             )
             if docker_info_raw:
-                try:
-                    info = json.loads(docker_info_raw)
-                    cpus = info.get("NCPU", 0)
-                    mem_bytes = info.get("MemTotal", 0)
-                    mem_gb = mem_bytes / (1024**3)
-
-                    results.append(("Docker CPUs", f"{cpus} Cores", cpus >= 4))
-                    results.append(("Docker Memory", f"{mem_gb:.1f} GB", mem_gb >= 7.5))
-                except Exception:
-                    pass
+                results.extend(self._check_docker_resources(docker_info_raw))
         else:
             # Trigger the detailed error reporting from base.py
             self.check_docker()
             results.append(("Docker Engine", "Not reachable", False))
 
         # 3. mkcert Check
-        try:
-            mkcert_bin = shutil.which("mkcert")
-            if mkcert_bin:
-                ca_root = run_command([mkcert_bin, "-CAROOT"], check=False)
-                if ca_root and os.path.exists(ca_root) and os.listdir(ca_root):
-                    # Deep check for Root CA trust on macOS
-                    is_trusted = True
-                    if platform.system().lower() == "darwin":
-                        trust_check = run_command(
-                            ["security", "find-certificate", "-c", "mkcert"],
-                            check=False,
-                        )
-                        if not trust_check:
-                            is_trusted = False
-
-                    if is_trusted:
-                        results.append(("mkcert", "Installed (Root CA Trusted)", True))
-                    else:
-                        results.append(("mkcert", "Installed (NOT TRUSTED)", "warn"))
-                else:
-                    results.append(("mkcert", "Installed (Root CA NOT FOUND)", "warn"))
-            else:
-                results.append(("mkcert", "Not installed", "warn"))
-        except Exception:
-            results.append(("mkcert", "Not found in PATH", "warn"))
+        mkcert_status, mkcert_ok = self._check_mkcert()
+        results.append(("mkcert", mkcert_status, mkcert_ok))
 
         # 4. OpenSSL Check
-        try:
-            openssl_version = run_command(["openssl", "version"], check=False)
-            if openssl_version:
-                results.append(("OpenSSL", openssl_version, True))
-            else:
-                if platform.system().lower() == "windows":
-                    results.append(
-                        (
-                            "OpenSSL",
-                            "Not found (Install Git for Windows, Scoop, or Chocolatey)",
-                            False,
-                        )
-                    )
-                else:
-                    results.append(("OpenSSL", "Not found", False))
-        except Exception:
-            results.append(("OpenSSL", "Not found in PATH", False))
+        openssl_status, openssl_ok = self._check_openssl()
+        results.append(("OpenSSL", openssl_status, openssl_ok))
 
         # 4.1 Liferay Cloud Check
-        try:
-            lcp_bin = shutil.which("lcp")
-            if lcp_bin:
-                is_auth, _ = self._is_cloud_authenticated()
-                if is_auth:
-                    results.append(("Liferay Cloud Auth", "Logged In", True))
-                else:
-                    results.append(
-                        (
-                            "Liferay Cloud Auth",
-                            "Not Logged In (Run 'lcp login')",
-                            "warn",
-                        )
-                    )
-            else:
-                results.append(("Liferay Cloud Auth", "LCP CLI Not Installed", "warn"))
-        except Exception:
-            pass
+        lcp_status, lcp_ok = self._check_lcp_cli()
+        if lcp_status:
+            results.append(("Liferay Cloud Auth", lcp_status, lcp_ok))
 
         # 4.2 Global Config Check
         # If multiple projects are being checked, we resolve 'common' relative to the first project
@@ -1060,6 +980,102 @@ del "%~f0"
         else:
             UI.error("\n❌  Critical issues were detected. Check the items above.")
             sys.exit(1)
+
+    def _check_mkcert(self):
+        """Checks for mkcert installation and root CA trust."""
+        try:
+            mkcert_bin = shutil.which("mkcert")
+            if not mkcert_bin:
+                return "Not installed", "warn"
+
+            ca_root = run_command([mkcert_bin, "-CAROOT"], check=False)
+            if not (ca_root and os.path.exists(ca_root) and os.listdir(ca_root)):
+                return "Installed (Root CA NOT FOUND)", "warn"
+
+            # Deep check for Root CA trust on macOS
+            is_trusted = True
+            if platform.system().lower() == "darwin":
+                trust_check = run_command(
+                    ["security", "find-certificate", "-c", "mkcert"],
+                    check=False,
+                )
+                if not trust_check:
+                    is_trusted = False
+
+            if is_trusted:
+                return "Installed (Root CA Trusted)", True
+            else:
+                return "Installed (NOT TRUSTED)", "warn"
+        except Exception:
+            return "Not found in PATH", "warn"
+
+    def _check_openssl(self):
+        """Checks for OpenSSL installation."""
+        try:
+            openssl_version = run_command(["openssl", "version"], check=False)
+            if openssl_version:
+                return openssl_version, True
+            else:
+                if platform.system().lower() == "windows":
+                    return (
+                        "Not found (Install Git for Windows, Scoop, or Chocolatey)",
+                        False,
+                    )
+                else:
+                    return "Not found", False
+        except Exception:
+            return "Not found in PATH", False
+
+    def _check_lcp_cli(self):
+        """Checks for Liferay Cloud CLI installation and authentication."""
+        try:
+            lcp_bin = shutil.which("lcp")
+            if not lcp_bin:
+                return "LCP CLI Not Installed", "warn"
+
+            is_auth, _ = self._is_cloud_authenticated()
+            if is_auth:
+                return "Logged In", True
+            else:
+                return "Not Logged In (Run 'lcp login')", "warn"
+        except Exception:
+            return None, None
+
+    def _check_docker_creds(self):
+        """Checks for Docker credential store health."""
+        try:
+            docker_config_path = get_actual_home() / ".docker" / "config.json"
+            if not docker_config_path.exists():
+                return None, None
+
+            with open(docker_config_path, "r") as f:
+                config = json.loads(f.read())
+                creds_store = config.get("credsStore")
+                if not creds_store:
+                    return None, None
+
+                helper_bin = f"docker-credential-{creds_store}"
+                if not shutil.which(helper_bin):
+                    return f"Broken ({creds_store} helper missing)", False
+                else:
+                    return f"OK ({creds_store})", True
+        except Exception:
+            return None, None
+
+    def _check_docker_resources(self, docker_info_raw):
+        """Checks Docker host CPU and Memory resources."""
+        try:
+            info = json.loads(docker_info_raw)
+            cpus = info.get("NCPU", 0)
+            mem_bytes = info.get("MemTotal", 0)
+            mem_gb = mem_bytes / (1024**3)
+
+            results = []
+            results.append(("Docker CPUs", f"{cpus} Cores", cpus >= 4))
+            results.append(("Docker Memory", f"{mem_gb:.1f} GB", mem_gb >= 7.5))
+            return results
+        except Exception:
+            return []
 
     def cmd_list(self):
         UI.heading("LDM Sandbox Projects")
