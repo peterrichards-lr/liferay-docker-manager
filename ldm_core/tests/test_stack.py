@@ -283,6 +283,8 @@ class TestStackOrchestration(unittest.TestCase):
     @patch("ldm_core.handlers.stack.run_command")
     @patch("shutil.rmtree")
     def test_cmd_reset_state(self, mock_rmtree, mock_run):
+        import os
+
         manager = MockManager()
         # Mock project is NOT running
         mock_run.return_value = None
@@ -292,7 +294,9 @@ class TestStackOrchestration(unittest.TestCase):
             # Verify rmtree was called for osgi/state
             self.assertTrue(mock_rmtree.called)
             args = mock_rmtree.call_args[0][0]
-            self.assertTrue("osgi/state" in str(args))
+            # Normalize path for comparison
+            expected_part = os.path.join("osgi", "state")
+            self.assertTrue(expected_part in str(args))
 
     @patch("ldm_core.handlers.stack.open_browser")
     def test_cmd_browser_launches_url(self, mock_open):

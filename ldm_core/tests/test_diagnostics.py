@@ -108,8 +108,11 @@ class TestDiagnostics(unittest.TestCase):
             )
 
     def test_validate_lcp_json_missing_id(self):
-        lcp_file = Path("/tmp/LCP_bad.json")
-        lcp_file.write_text('{"ports": [{"targetPort": 8080}]}')
+        import tempfile
+
+        temp_dir = Path(tempfile.gettempdir())
+        lcp_file = temp_dir / "LCP_bad.json"
+        lcp_file.write_text('{"ports": [{"targetPort": 8080}]}', encoding="utf-8")
         try:
             status, ok, errors = self.manager.validate_lcp_json(lcp_file)
             self.assertEqual(ok, "warn")
