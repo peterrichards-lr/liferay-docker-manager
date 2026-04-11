@@ -195,25 +195,55 @@ scoop install mkcert openssl
 mkcert -install
 ```
 
-### Docker Resource Alignment (Windows/WSL2)
+### Docker Resource Alignment (Windows/WSL2/macOS)
 
-If `ldm doctor` reports insufficient memory even though you have 8GB+ installed:
+If `ldm doctor` reports insufficient memory or CPU cores:
 
-1. **Align Docker Desktop Settings**:
-    - Open the Docker Desktop Dashboard.
-    - Go to **Settings > Resources**.
-    - Ensure "Resource Saver" mode is not aggressively capping memory.
-    - Set the slider to at least **8GB**.
+1. **Align Docker Settings**:
+    - **Docker Desktop**: Go to **Settings > Resources** and ensure the slider is at least **8GB** and **4 CPUs**.
+    - **Colima**: Restart with higher limits: `colima stop && colima start --cpu 4 --memory 8`.
 
-2. **The "Nuclear" WSL2 Restart**:
-    If you've recently modified `.wslconfig`, you must force a full reload:
+2. **The "Lenient" Threshold (LDM v1.6.36+)**:
+    - LDM is now more lenient for older hardware.
+    - **2-3 CPUs** or **4GB-7.5GB RAM** will now trigger a **Warning (⚠️)** instead of a hard failure.
+    - This allows LDM to function on dual-core Intel Macs, though performance may be degraded.
 
-    ```powershell
-    # In Windows PowerShell (not inside WSL)
-    wsl --shutdown
-    ```
+## 🛠️ Troubleshooting: Version Loop & Integrity Issues
 
-    Wait 10 seconds, restart Docker Desktop, and run `ldm doctor` again.
+If `ldm doctor` reports **Executable Integrity: TAMPERED** or if you are stuck in a **"Version Loop"** (where you upgrade but the version doesn't change), follow these steps:
+
+### 1. The "Intel Hash Mismatch" (macOS Intel)
+
+Earlier versions of LDM (v1.6.32-v1.6.33) had an integrity check that was not fully architecture-aware. This often caused Intel Macs to flag official binaries as "TAMPERED" because their hash didn't match the Apple Silicon metadata.
+
+**The Fix**: Upgrade to **v1.6.36+**, which introduces architecture-specific integrity verification.
+
+### 2. Force a Repair
+
+If your binary is corrupted or misbehaving, force a re-download of the official assets:
+
+```bash
+# Force a repair of the current version
+sudo ldm upgrade --repair
+```
+
+### 3. The "Manual Reset" (Last Resort)
+
+If the tool is too broken to self-repair, manually overwrite the binary with the latest version:
+
+```bash
+# For macOS (Intel or Apple Silicon)
+sudo curl -L https://github.com/peterrichards-lr/liferay-docker-manager/releases/latest/download/ldm-macos -o /usr/local/bin/ldm
+sudo chmod +x /usr/local/bin/ldm
+```
+
+### 4. Version Shadowing
+
+If you have cloned the repository and also have the binary installed, `ldm doctor` may report a "Shadowed" version.
+
+- **Recommendation**: Use `./ldm` (local wrapper) for development and `ldm` (global binary) for daily use.
+
+---
 
 ## 🐳 Colima (Advanced macOS Setup)
 
