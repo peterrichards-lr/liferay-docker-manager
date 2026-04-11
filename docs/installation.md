@@ -253,6 +253,108 @@ If LDM reports `FATAL: VOLUME MOUNTING IS BROKEN`, it means Colima's VM can see 
 
 Unlike Docker Desktop, Colima does not "mask" file owners. LDM automatically handles this by running a **Permission Fixer** before every stack startup to ensure the `liferay` user (UID 1000) has access to your host files. **Note:** LDM is smart enough to skip the `.git` directory to preserve your repository metadata permissions.
 
+### 4. Automatic Start (macOS Service)
+
+For a seamless experience, you can set up Colima to start automatically in the background when you log in.
+
+#### Step 1: Create the Startup Script
+
+Save this script as `/usr/local/bin/colima-start-fg` and make it executable (`chmod +x`). It is architecture-aware and will automatically select the best VM and mount settings for your Mac.
+
+```bash
+#!/bin/bash
+
+# 1. Path includes Homebrew (M1/M2) and MacPorts
+export PATH="/opt/homebrew/bin:/opt/local/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:$PATH"
+
+# 2. Robust Home Directory Logic
+if [ -z "$HOME" ]; then
+    export HOME="$(eval echo ~$USER)"
+fi
+
+function shutdown() {
+  colima stop 
+  exit 0
+}
+
+trap shutdown SIGTERM 
+trap shutdown SIGINT 
+
+# 3. Detect Architecture and Set Optimized Parameters
+ARCH=$(uname -m)
+if [[ "$ARCH" == "arm64" ]]; then
+    # Apple Silicon (M1/M2/M3)
+    # Optimized for vz/virtiofs
+    START_CMD="colima start --cpu 4 --memory 8 --vm-type=vz --mount-type=virtiofs --mount $HOME:w --mount /Volumes:w"
+else
+    # Intel Mac
+    # Optimized for sshfs (virtiofs requires macOS 14+ on Intel)
+    START_CMD="colima start --cpu 2 --memory 6 --mount-type sshfs --mount $HOME:w"
+fi
+
+# 4. The Start/Monitor Loop
+while true; do
+  colima status &>/dev/null
+  if [[ $? -eq 0 ]]; then
+    break;
+  fi
+
+  # Execute the detected start command
+  $START_CMD
+  sleep 5
+done
+
+# 5. Keep alive for launchd
+tail -f /dev/null &
+wait $!
+```
+
+#### Step 2: Create the `launchd` Service
+
+Create a file named `~/Library/LaunchAgents/com.github.abiosoft.colima.plist` with the following content:
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+  <dict>
+    <key>Label</key>
+    <string>com.github.abiosoft.colima</string>
+    <key>ProgramArguments</key>
+    <array>
+      <string>/usr/local/bin/colima-start-fg</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>/tmp/colima.log</string>
+    <key>StandardErrorPath</key>
+    <string>/tmp/colima.err</string>
+  </dict>
+</plist>
+```
+
+#### Step 3: Load the Service
+
+```bash
+launchctl load ~/Library/LaunchAgents/com.github.abiosoft.colima.plist
+```
+
+---
+
+### 🪟 Windows & 🐧 Linux Auto-Start
+
+Colima is primarily a macOS tool. If you are on Windows or Linux, auto-start is handled differently:
+
+- **Windows (Docker Desktop)**: Open Settings and check **"Start Docker Desktop when you log in"**.
+- **Linux (Native/WSL2)**: Ensure the docker service is enabled via systemd:
+
+  ```bash
+  sudo systemctl enable --now docker
+  ```
+
 ---
 
 ### 🌐 DNS & Subdomain Configuration
