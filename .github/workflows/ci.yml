@@ -142,8 +142,9 @@ jobs:
   build:
     needs: [lint-and-test, smoke-test]
     strategy:
+      fail-fast: false # Ensure one arch failure doesn't block the others
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        os: [ubuntu-latest, windows-latest, macos-latest, macos-12]
     runs-on: ${{ matrix.os }}
     if: startsWith(github.ref, 'refs/tags/v')
 
@@ -153,17 +154,16 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.12" # Using 3.12 for more stable universal2 wheels
+          python-version: "3.13"
 
       - name: Install dependencies
         run: |
           pip install -r requirements.txt
-          pip install pytest pyinstaller
+          pip install pytest shiv pyinstaller
 
-      - name: Build Standalone (Linux)
-        if: matrix.os == 'ubuntu-latest'
+      - name: Build Standalone (Linux/macOS)
+        if: matrix.os != 'windows-latest'
         run: |
-          pip install shiv
           pip install .
           
           # Inject build metadata
@@ -173,26 +173,16 @@ jobs:
           fi
 
           OUTNAME="ldm-linux"
+          if [ "${{ matrix.os }}" = "macos-latest" ]; then
+            OUTNAME="ldm-macos-arm64"
+          elif [ "${{ matrix.os }}" = "macos-12" ]; then
+            OUTNAME="ldm-macos-x86_64"
+          fi
+          
+          # Use Shiv for Linux/macOS
           shiv -e ldm_core.cli:main -o $OUTNAME -p '/usr/bin/env python3' .
           chmod +x $OUTNAME
           echo "BINARY_PATH=$OUTNAME" >> $GITHUB_ENV
-
-      - name: Build Standalone (macOS Universal2)
-        if: matrix.os == 'macos-latest'
-        shell: bash
-        run: |
-          # Inject build metadata
-          if [[ $GITHUB_REF == refs/tags/* ]]; then
-            TAG_NAME=${GITHUB_REF#refs/tags/}
-            python3 -c "import re; p='ldm_core/constants.py'; c=open(p).read(); open(p,'w').write(re.sub(r'BUILD_INFO = None', 'BUILD_INFO = \"Release ${TAG_NAME}\"', c))"
-          fi
-
-          OUTNAME="ldm-macos"
-          # Building universal2 binary that works on both Intel and Apple Silicon
-          # Adding resources data to the bundle
-          pyinstaller --onefile --target-arch universal2 --name "$OUTNAME" --add-data "ldm_core/resources:ldm_core/resources" liferay_docker.py
-          chmod +x dist/$OUTNAME
-          echo "BINARY_PATH=dist/$OUTNAME" >> $GITHUB_ENV
 
       - name: Build Standalone (Windows)
         if: matrix.os == 'windows-latest'
@@ -239,8 +229,9 @@ jobs:
         shell: bash
         run: |
           cd bin-temp
-          # Simplified checksum generation for unified macOS binary
-          sha256sum ldm-linux ldm-macos ldm-windows.exe samples.zip > checksums.txt
+          # Support both architecture-specific and unified (copied) binaries
+          cp ldm-macos-arm64 ldm-macos || true
+          sha256sum ldm-linux ldm-macos ldm-macos-arm64 ldm-macos-x86_64 ldm-windows.exe samples.zip > checksums.txt || sha256sum ldm-linux ldm-windows.exe samples.zip > checksums.txt
           cat checksums.txt
 
       - name: Create GitHub Release
@@ -249,6 +240,8 @@ jobs:
           files: |
             bin-temp/ldm-linux
             bin-temp/ldm-macos
+            bin-temp/ldm-macos-arm64
+            bin-temp/ldm-macos-x86_64
             bin-temp/ldm-windows.exe
             bin-temp/samples.zip
             bin-temp/checksums.txt
