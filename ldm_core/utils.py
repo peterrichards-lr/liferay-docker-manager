@@ -541,21 +541,39 @@ def verify_executable_checksum(version):
             official_data = response.read().decode()
 
         # 3. Identify binary name in checksum file
-        # We check common release names
+        # We check common release names with architecture awareness
         system = platform.system().lower()
-        target_name = "ldm-linux"
-        if system == "darwin":
-            target_name = "ldm-macos"
-        elif system == "windows":
-            target_name = "ldm-windows.exe"
+        machine = platform.machine().lower()
 
-        for line in official_data.splitlines():
-            if target_name in line:
-                expected_hash = line.split()[0]
-                if local_hash == expected_hash:
-                    return f"Verified ({local_hash[:12]})", True, version
-                else:
-                    return f"TAMPERED / MISMATCH ({local_hash[:12]})", False, version
+        candidates = []
+        if system == "darwin":
+            if machine == "arm64":
+                candidates.append("ldm-macos-arm64")
+            else:
+                candidates.append("ldm-macos-x86_64")
+            candidates.append("ldm-macos")
+        elif system in ["win32", "windows"]:
+            candidates.append("ldm-windows.exe")
+        else:
+            candidates.append("ldm-linux")
+
+        expected_hash = None
+
+        # Try to find the most specific asset first
+        for cand in candidates:
+            for line in official_data.splitlines():
+                parts = line.split()
+                if len(parts) >= 2 and parts[1] == cand:
+                    expected_hash = parts[0]
+                    break
+            if expected_hash:
+                break
+
+        if expected_hash:
+            if local_hash == expected_hash:
+                return f"Verified ({local_hash[:12]})", True, version
+            else:
+                return f"TAMPERED / MISMATCH ({local_hash[:12]})", False, version
 
         return f"Unknown Build ({local_hash[:12]})", "warn", version
     except Exception:
@@ -603,16 +621,32 @@ def check_for_updates(current_version, force=False):
             assets = res_data.get("assets", [])
 
             system = sys.platform
-            target_asset = "ldm-linux"
-            if system == "darwin":
-                target_asset = "ldm-macos"
-            elif system in ["win32", "windows"]:
-                target_asset = "ldm-windows.exe"
+            machine = platform.machine().lower()
 
-            for asset in assets:
-                if asset.get("name") == target_asset:
-                    release_url = asset.get("browser_download_url")
+            candidates = []
+            if system == "darwin":
+                if machine == "arm64":
+                    candidates.append("ldm-macos-arm64")
+                else:
+                    candidates.append("ldm-macos-x86_64")
+                candidates.append("ldm-macos")
+            elif system in ["win32", "windows"]:
+                candidates.append("ldm-windows.exe")
+            else:
+                candidates.append("ldm-linux")
+
+            # Search for the best match in assets
+            found_url = None
+            for cand in candidates:
+                for asset in assets:
+                    if asset.get("name") == cand:
+                        found_url = asset.get("browser_download_url")
+                        break
+                if found_url:
                     break
+
+            if found_url:
+                release_url = found_url
 
             # Update cache
             cache_file.write_text(

@@ -166,9 +166,14 @@ class DiagnosticsHandler:
             if not url:
                 # Construct official asset URL for current version
                 system = platform.system().lower()
+                machine = platform.machine().lower()
                 target_asset = "ldm-linux"
                 if system == "darwin":
-                    target_asset = "ldm-macos"
+                    # Architecture-aware naming
+                    if machine == "arm64":
+                        target_asset = "ldm-macos-arm64"
+                    else:
+                        target_asset = "ldm-macos-x86_64"
                 elif system in ["win32", "windows"]:
                     target_asset = "ldm-windows.exe"
                 url = f"https://github.com/peterrichards-lr/liferay-docker-manager/releases/download/v{VERSION}/{target_asset}"
@@ -364,9 +369,13 @@ del "%~f0"
             status = f"{status} (Shadowed by {VERSION})"
             ok = "warn" if ok is True else ok
 
+        if ok is False:
+            status = f"{status} {UI.WHITE}(Run 'ldm upgrade --repair'){UI.COLOR_OFF}"
+
         results.append(("Executable Integrity", status, ok))
 
         # 0.2 Executable Path
+
         try:
             exe_path = Path(sys.argv[0]).resolve()
             results.append(("Executable Path", str(exe_path), True))
@@ -1071,8 +1080,20 @@ del "%~f0"
             mem_gb = mem_bytes / (1024**3)
 
             results = []
-            results.append(("Docker CPUs", f"{cpus} Cores", cpus >= 4))
-            results.append(("Docker Memory", f"{mem_gb:.1f} GB", mem_gb >= 7.5))
+            cpus_ok = True
+            if cpus < 2:
+                cpus_ok = False
+            elif cpus < 4:
+                cpus_ok = "warn"
+            results.append(("Docker CPUs", f"{cpus} Cores", cpus_ok))
+
+            mem_ok = True
+            if mem_gb < 4.0:
+                mem_ok = False
+            elif mem_gb < 7.5:
+                mem_ok = "warn"
+            results.append(("Docker Memory", f"{mem_gb:.1f} GB", mem_ok))
+
             return results
         except Exception:
             return []
