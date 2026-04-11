@@ -3,3 +3,4 @@ watchdog==4.0.1
 pyobjc-framework-FSEvents; sys_platform == 'darwin'
 pre-commit
 bandit
+requests==2.33.0
