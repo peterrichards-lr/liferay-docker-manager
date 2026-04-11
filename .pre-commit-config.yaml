@@ -8,6 +8,13 @@ repos:
 
   - repo: local
     hooks:
+      - id: check-version-sync
+        name: Check Version Synchronization
+        entry: python3 scripts/check_version_sync.py
+        language: system
+        files: ^pyproject\.toml$|^ldm_core/constants\.py$
+        pass_filenames: false
+
       - id: shellcheck
         name: shellcheck
         entry: shellcheck

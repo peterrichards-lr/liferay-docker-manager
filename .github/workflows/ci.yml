@@ -143,7 +143,7 @@ jobs:
     needs: [lint-and-test, smoke-test]
     strategy:
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        os: [ubuntu-latest, windows-latest, macos-latest, macos-13]
     runs-on: ${{ matrix.os }}
     if: startsWith(github.ref, 'refs/tags/v')
 
@@ -160,21 +160,6 @@ jobs:
           pip install -r requirements.txt
           pip install pytest
 
-      - name: Run Tests (Cross-Platform)
-        shell: bash
-        run: |
-          pip install -e .
-          pytest ldm_core/tests/
-
-      - name: LDM Maintenance Smoke Test
-        shell: bash
-        run: |
-          pip install -e .
-          # Verify clear-cache (Non-Docker)
-          python3 liferay_docker.py -y clear-cache
-          # Skip prune in CI as it requires a running Docker daemon
-          echo "ℹ Skipping Docker-dependent prune test in CI environment"
-
       - name: Build Standalone (Linux/macOS)
         if: matrix.os != 'windows-latest'
         run: |
@@ -189,7 +174,9 @@ jobs:
 
           OUTNAME="ldm-linux"
           if [ "${{ matrix.os }}" = "macos-latest" ]; then
-            OUTNAME="ldm-macos"
+            OUTNAME="ldm-macos-arm64"
+          elif [ "${{ matrix.os }}" = "macos-13" ]; then
+            OUTNAME="ldm-macos-x86_64"
           fi
           shiv -e ldm_core.cli:main -o $OUTNAME -p '/usr/bin/env python3' .
           chmod +x $OUTNAME
@@ -242,7 +229,10 @@ jobs:
         shell: bash
         run: |
           cd bin-temp
-          sha256sum ldm-linux ldm-macos ldm-windows.exe samples.zip > checksums.txt
+          # Generate checksums for all architecture-specific binaries
+          sha256sum ldm-linux ldm-macos-arm64 ldm-macos-x86_64 ldm-windows.exe samples.zip > checksums.txt
+          # Also create a legacy 'ldm-macos' alias for backward compatibility (symlink to arm64)
+          cp ldm-macos-arm64 ldm-macos
           cat checksums.txt
 
       - name: Create GitHub Release
@@ -251,6 +241,8 @@ jobs:
           files: |
             bin-temp/ldm-linux
             bin-temp/ldm-macos
+            bin-temp/ldm-macos-arm64
+            bin-temp/ldm-macos-x86_64
             bin-temp/ldm-windows.exe
             bin-temp/samples.zip
             bin-temp/checksums.txt
