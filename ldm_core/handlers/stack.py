@@ -380,21 +380,46 @@ class StackHandler:
         target_version = ELASTICSEARCH7_VERSION if use_es7 else ELASTICSEARCH_VERSION
         version_label = "ES7" if use_es7 else "ES8"
 
-        if run_command(["docker", "ps", "-q", "-f", f"name={search_name}"]):
+        # 1. Existence check (including stopped containers)
+        existing = run_command(
+            ["docker", "ps", "-a", "-q", "-f", f"name=^{search_name}$"], check=False
+        )
+
+        if existing:
             # Check if running version matches requested version
             inspect_res = run_command(
-                ["docker", "inspect", "-f", "{{.Config.Image}}", search_name],
+                [
+                    "docker",
+                    "inspect",
+                    "-f",
+                    "{{.Config.Image}} {{.State.Running}}",
+                    search_name,
+                ],
                 check=False,
             )
-            if inspect_res and f":{target_version}" not in inspect_res:
+            is_running = "true" in (inspect_res or "").lower()
+            is_correct_version = f":{target_version}" in (inspect_res or "")
+
+            if not is_correct_version:
                 UI.warning(
-                    f"A different Global Search version is already running. Requested: {version_label}"
+                    f"A different Global Search version is already present. Requested: {version_label}"
                 )
-                if UI.ask(f"Stop and recreate as {version_label}?", "N").upper() == "Y":
-                    run_command(["docker", "rm", "-f", search_name])
+                if (
+                    self.non_interactive
+                    or UI.ask(f"Stop and recreate as {version_label}?", "N").upper()
+                    == "Y"
+                ):
+                    run_command(["docker", "rm", "-f", search_name], check=False)
                 else:
                     return True
+            elif not is_running:
+                # Same version but stopped, easiest to just recreate to ensure fresh state/network
+                UI.info(
+                    f"Existing {version_label} container is not running. Recreating..."
+                )
+                run_command(["docker", "rm", "-f", search_name], check=False)
             else:
+                # Correct version and already running
                 return True
 
         UI.info(f"Initializing Global Search ({version_label}) container...")
