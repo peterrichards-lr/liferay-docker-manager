@@ -541,17 +541,17 @@ def verify_executable_checksum(version):
             official_data = response.read().decode()
 
         # 3. Identify binary name in checksum file
-        # We check common release names with architecture awareness
+        # We prefer the unified 'ldm-macos' (universal2) asset
         system = platform.system().lower()
         machine = platform.machine().lower()
 
         candidates = []
         if system == "darwin":
+            candidates.append("ldm-macos")  # Unified/Universal2 binary
             if machine == "arm64":
                 candidates.append("ldm-macos-arm64")
             else:
                 candidates.append("ldm-macos-x86_64")
-            candidates.append("ldm-macos")
         elif system in ["win32", "windows"]:
             candidates.append("ldm-windows.exe")
         else:
@@ -625,16 +625,15 @@ def check_for_updates(current_version, force=False):
 
             candidates = []
             if system == "darwin":
+                candidates.append("ldm-macos")  # Unified/Universal2 binary
                 if machine == "arm64":
                     candidates.append("ldm-macos-arm64")
                 else:
                     candidates.append("ldm-macos-x86_64")
-                candidates.append("ldm-macos")
             elif system in ["win32", "windows"]:
                 candidates.append("ldm-windows.exe")
             else:
                 candidates.append("ldm-linux")
-
             # Search for the best match in assets
             found_url = None
             for cand in candidates:
