@@ -1,11 +1,55 @@
 import unittest
 import json
+import tempfile
+from unittest.mock import patch, MagicMock
+from pathlib import Path
 from ldm_core.handlers.workspace import WorkspaceHandler
 
 
 class MockWorkspaceManager(WorkspaceHandler):
     def __init__(self):
         self.verbose = False
+        self.non_interactive = True
+        self.args = MagicMock()
+
+    def _check_java_version(self, *args, **kwargs):
+        return True
+
+    def _check_gradle_java_version(self, *args, **kwargs):
+        return True
+
+    def verify_runtime_environment(self, *args, **kwargs):
+        pass
+
+    def _hydrate_from_workspace(self, *args, **kwargs):
+        pass
+
+    def detect_project_path(self, project_name, for_init=False):
+        # This will be patched in the test
+        pass
+
+    def setup_paths(self, project_path):
+        root = Path(project_path)
+        return {
+            "root": root,
+            "files": root / "files",
+            "configs": root / "osgi" / "configs",
+            "ce_dir": root / "client-extensions",
+            "modules": root / "osgi" / "modules",
+            "cx": root / "osgi" / "client-extensions",
+        }
+
+    def check_mkcert(self, *args, **kwargs):
+        pass
+
+    def read_meta(self, *args, **kwargs):
+        return {}
+
+    def write_meta(self, *args, **kwargs):
+        pass
+
+    def safe_rmtree(self, *args, **kwargs):
+        pass
 
 
 class TestWorkspaceMetadata(unittest.TestCase):
@@ -75,6 +119,44 @@ class TestWorkspaceMetadata(unittest.TestCase):
         self.assertEqual(info["loadBalancer"]["targetPort"], 3001)
         self.assertEqual(info["env"]["FOO"], "BAR")
         self.assertEqual(info["env"]["BAZ"], "QUX")
+
+
+class TestWorkspaceImport(unittest.TestCase):
+    def setUp(self):
+        self.handler = MockWorkspaceManager()
+
+    @patch("ldm_core.handlers.stack.StackHandler.cmd_run")
+    @patch("ldm_core.handlers.workspace.run_command")
+    def test_cmd_import_project_id_passing(self, mock_run, mock_cmd_run):
+        # Use real temporary directories to avoid mock-related isinstance failures
+        with tempfile.TemporaryDirectory() as tmp_base:
+            base_path = Path(tmp_base)
+            source_dir = base_path / "source-workspace"
+            source_dir.mkdir()
+            (source_dir / "gradle.properties").write_text(
+                "liferay.workspace.product=portal-7.4.13-u100"
+            )
+
+            # Define where the project will be "created"
+            project_dir = base_path / "ldm-projects" / "my-dev-stack"
+
+            self.handler.args.project = "my-dev-stack"
+            self.handler.args.no_run = False
+            self.handler.args.build = False
+            self.handler.args.project_flag = None
+            self.handler.args.host_name = "localhost"
+            self.handler.args.ssl = False
+
+            with patch.object(
+                self.handler, "detect_project_path", return_value=project_dir
+            ):
+                with patch("ldm_core.handlers.workspace.UI"):
+                    self.handler.cmd_import(str(source_dir))
+
+                    # CRITICAL CHECK: self.args.project must be the short name, NOT the absolute path
+                    # This verifies the fix for the user's reported issue
+                    self.assertEqual(self.handler.args.project, "my-dev-stack")
+                    self.assertNotEqual(self.handler.args.project, str(project_dir))
 
 
 if __name__ == "__main__":

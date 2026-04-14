@@ -686,7 +686,7 @@ class WorkspaceHandler:
             self.write_meta(project_path / PROJECT_META_FILE, project_meta)
             UI.success(f"Project created at: {project_path}")
             if not getattr(self.args, "no_run", False):
-                self.args.project = str(project_path)
+                self.args.project = project_name
                 from ldm_core.handlers.stack import StackHandler
 
                 StackHandler.cmd_run(self, is_restart=True)
