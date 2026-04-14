@@ -791,6 +791,28 @@ del "%~f0"
                     )
                 )
 
+            # --- Liferay Log Health ---
+            from ldm_core.utils import sanitize_id
+
+            p_id = sanitize_id(meta.get("container_name") or p_path.name)
+            liferay_container = None
+            possible_names = [f"{p_id}-liferay", f"{p_id}-liferay-1", p_id]
+            for name in possible_names:
+                if run_command(
+                    ["docker", "ps", "-q", "-f", f"name=^{name}$"], check=False
+                ):
+                    liferay_container = name
+                    break
+
+            if liferay_container:
+                log_status, log_ok = self._check_liferay_health_logs(liferay_container)
+                results.append((f"[{p_path.name}] Liferay Logs", log_status, log_ok))
+                if log_ok is not True:
+                    add_hint(
+                        f"[{p_path.name}] Check detailed Liferay logs by running '{UI.WHITE}ldm logs {p_path.name} liferay{UI.COLOR_OFF}'.",
+                        "https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/README.md#logs",
+                    )
+
             osgi_config_dir = p_path / "osgi" / "configs"
             es_main_conf = (
                 osgi_config_dir
@@ -1007,18 +1029,6 @@ del "%~f0"
 
             try:
                 if platform.system().lower() == "darwin":
-                    from ldm_core.utils import sanitize_id
-
-                    p_id = sanitize_id(meta.get("container_name") or p_path.name)
-                    liferay_container = None
-                    possible_names = [f"{p_id}-liferay", f"{p_id}-liferay-1", p_id]
-                    for name in possible_names:
-                        if run_command(
-                            ["docker", "ps", "-q", "-f", f"name=^{name}$"], check=False
-                        ):
-                            liferay_container = name
-                            break
-
                     if liferay_container:
                         import uuid
 
@@ -1610,3 +1620,69 @@ del "%~f0"
             return None, None
         except Exception:
             return None, None
+
+    def _check_liferay_health_logs(self, container_name, tail=50):
+        """Checks the last N lines of Liferay logs for startup status and errors."""
+        try:
+            import subprocess
+            import re
+
+            res = subprocess.run(
+                ["docker", "logs", "--tail", str(tail), container_name],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            logs = (res.stdout or "") + (res.stderr or "")
+            if not logs:
+                return "Initializing...", True
+
+            lines = logs.splitlines()
+
+            # 1. Success Marker (Liferay is fully up)
+            if any("started in" in line.lower() for line in lines) or any(
+                "Liferay(TM) Portal" in line and "started" in line.lower()
+                for line in lines
+            ):
+                return "Ready", True
+
+            # 2. Critical Errors (Hard failure keywords)
+            critical_keywords = [
+                r"\bERROR\b",
+                r"\bFATAL\b",
+                r"Elasticsearch.*minimum version requirement",
+                "Table .* already exists",
+                "Exception in thread",
+            ]
+            for line in lines:
+                if any(re.search(k, line, re.IGNORECASE) for k in critical_keywords):
+                    # Filter out known non-fatal exceptions (e.g. session timeouts or expected background noise)
+                    if any(
+                        noise in line
+                        for noise in [
+                            "SessionTimeout",
+                            "GarbageCollector",
+                            "Keep-Alive",
+                        ]
+                    ):
+                        continue
+                    return f"Critical (Error: {line.strip()[:40]}...)", False
+
+            # 3. Startup Progress
+            if any("Starting Liferay" in line for line in lines):
+                return "Starting...", True
+
+            # 4. Warnings
+            warning_keywords = [
+                r"\bWARN\b",
+                r"\bWARNING\b",
+                "Missing license",
+                "slow",
+            ]
+            for line in lines:
+                if any(re.search(k, line, re.IGNORECASE) for k in warning_keywords):
+                    return f"Warning (Issue: {line.strip()[:40]}...)", "warn"
+
+            return "Running (Starting Up)", True
+        except Exception:
+            return "Running", True
