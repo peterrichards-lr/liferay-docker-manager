@@ -17,6 +17,9 @@ from ldm_core.constants import TAG_PATTERN
 def download_samples(version, destination):
     """Downloads and extracts the samples pack from GitHub."""
     url = f"https://github.com/peterrichards-lr/liferay-docker-manager/releases/download/v{version}/samples.zip"
+
+    # Ensure parent directory exists for the temp zip
+    destination.parent.mkdir(parents=True, exist_ok=True)
     temp_zip = destination.parent / f"samples_{version}.zip"
 
     try:
@@ -40,17 +43,21 @@ def download_samples(version, destination):
             extract_temp.mkdir(parents=True)
             zip_ref.extractall(extract_temp)
 
-            # Move content from temp/samples/* to destination/*
+            # Move content from temp to destination
+            # Structure might be 'samples/*' or just '*'
+            source_root = extract_temp
             inner_samples = extract_temp / "samples"
-            if inner_samples.exists():
-                for item in inner_samples.iterdir():
-                    target = destination / item.name
-                    if target.exists():
-                        if target.is_dir():
-                            shutil.rmtree(target)
-                        else:
-                            os.remove(target)
-                    shutil.move(str(item), str(target))
+            if inner_samples.exists() and inner_samples.is_dir():
+                source_root = inner_samples
+
+            for item in source_root.iterdir():
+                target = destination / item.name
+                if target.exists():
+                    if target.is_dir():
+                        shutil.rmtree(target)
+                    else:
+                        os.remove(target)
+                shutil.move(str(item), str(target))
 
             shutil.rmtree(extract_temp)
 
