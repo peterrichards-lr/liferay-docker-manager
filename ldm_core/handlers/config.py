@@ -168,10 +168,37 @@ class ConfigHandler:
 
     def sync_samples(self, paths):
         """Sync global samples into the current project path with on-demand download support."""
+        from ldm_core.utils import get_actual_home, download_samples
+        from ldm_core.constants import VERSION
+
+        # 1. Check Local (Source Checkout)
         samples_root = SCRIPT_DIR / "references" / "samples"
+
+        # 2. Check Cache (~/.ldm/samples/vVERSION)
         if not samples_root.exists():
-            # Trigger on-demand download if metadata matches
-            return
+            home = get_actual_home()
+            cache_path = home / ".ldm" / "references" / "samples" / f"v{VERSION}"
+            if cache_path.exists():
+                samples_root = cache_path
+            else:
+                # 3. Prompt & Download (Standalone Binary Mode)
+                if not self.non_interactive:
+                    UI.heading("On-Demand Sample Pack")
+                    UI.info("Sample assets are not bundled with the standalone binary.")
+                    if (
+                        UI.ask(
+                            f"Download sample pack for v{VERSION} (~50MB)?", "Y"
+                        ).upper()
+                        == "Y"
+                    ):
+                        if download_samples(VERSION, cache_path):
+                            samples_root = cache_path
+                        else:
+                            UI.die("Failed to download samples.")
+                    else:
+                        UI.die("Samples required but download declined.")
+                else:
+                    UI.die("Sample assets missing and non-interactive mode is active.")
 
         UI.info("Syncing project samples...")
         shutil.copytree(samples_root, paths["root"], dirs_exist_ok=True)
