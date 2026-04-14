@@ -494,6 +494,22 @@ del "%~f0"
                 f"Run '{UI.WHITE}mkcert -install{UI.COLOR_OFF}' to initialize the local trust store.",
                 "https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/installation.md#fixing-ssl-trust-issues-mkcert",
             )
+        else:
+            # Detect WSL
+            is_wsl = False
+            if platform.system().lower() == "linux":
+                try:
+                    with open("/proc/version", "r") as f:
+                        if "microsoft" in f.read().lower():
+                            is_wsl = True
+                except Exception:
+                    pass
+
+            if is_wsl:
+                add_hint(
+                    f"[WSL] To avoid 'Insecure' browser warnings, you must ALSO run '{UI.WHITE}mkcert -install{UI.COLOR_OFF}' on your Windows host (via PowerShell or CMD).",
+                    "https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/installation.md#wsl2-ssl-trust",
+                )
 
         # 4. OpenSSL Check
         openssl_status, openssl_ok = self._check_openssl()
@@ -1609,12 +1625,16 @@ del "%~f0"
             # 2. Warnings
             warning_keywords = [
                 r"\bWARN\b",
+                r"\bWRN\b",
                 r"\bWARNING\b",
                 "retrying",
                 "client version .* is too old",
             ]
             for line in lines:
                 if any(re.search(k, line, re.IGNORECASE) for k in warning_keywords):
+                    # Ignore benign Traefik container churn warnings
+                    if "Failed to inspect container" in line:
+                        continue
                     return f"Warning (Issue in logs: {line.strip()[:40]}...)", "warn"
 
             return None, None
@@ -1675,6 +1695,7 @@ del "%~f0"
             # 4. Warnings
             warning_keywords = [
                 r"\bWARN\b",
+                r"\bWRN\b",
                 r"\bWARNING\b",
                 "Missing license",
                 "slow",
