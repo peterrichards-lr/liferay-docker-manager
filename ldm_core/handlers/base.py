@@ -281,6 +281,7 @@ class BaseHandler:
             "cx",
             "data",
             "ce_dir",
+            "marketplace",
             "scripts",
             "routes",
             "logs",
@@ -297,6 +298,15 @@ class BaseHandler:
                     os.chmod(paths[key], 0o777)  # nosec B103
                 except Exception:
                     pass
+
+        # Specific subfolders needed by Liferay logic
+        if "marketplace" in paths:
+            override_dir = paths["marketplace"] / "override"
+            override_dir.mkdir(parents=True, exist_ok=True)
+            try:
+                os.chmod(override_dir, 0o777)  # nosec B103
+            except Exception:
+                pass
 
         # 1. Migrate legacy 'osgi/configs' if found in root (cleanup)
         legacy_configs = paths["root"] / "configs"
