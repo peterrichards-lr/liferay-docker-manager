@@ -137,32 +137,54 @@ class BaseHandler:
             )
 
         if pid:
-            # 1. Direct path check
-            p = Path(pid).resolve()
-            if (p / PROJECT_META_FILE).exists() or for_init:
+            # 1. Direct path check (Absolute or Relative)
+            p = Path(pid).expanduser().resolve()
+            if (p / PROJECT_META_FILE).exists() or (for_init and p.parent.exists()):
                 return p
 
-            # 2. Check in CWD first (important for standalone binaries)
-            p_in_cwd = Path.cwd() / pid
-            if (p_in_cwd / PROJECT_META_FILE).exists() or for_init:
-                return p_in_cwd.resolve()
+            # 2. Check in global workspace locations
+            search_dirs = [Path.cwd(), SCRIPT_DIR]
 
-            # 3. Check in SCRIPT_DIR (developer repo workflow)
-            p_in_root = SCRIPT_DIR / pid
-            if (p_in_root / PROJECT_META_FILE).exists():
-                return p_in_root.resolve()
+            # Include custom workspace if set
+            custom_workspace = os.environ.get("LDM_WORKSPACE")
+            if custom_workspace:
+                search_dirs.append(Path(custom_workspace))
 
-            # 4. Deep search by project_name in metadata
-            for search_dir in [Path.cwd(), SCRIPT_DIR]:
-                if not search_dir.exists():
+            # Common default locations
+            for common in [Path.home() / "ldm", Path("/Volumes/SanDisk/ldm")]:
+                if common.exists() and common.is_dir():
+                    search_dirs.append(common)
+
+            # --- A. Exact Match in any search dir ---
+            for s_dir in search_dirs:
+                if not s_dir.exists():
                     continue
-                for item in search_dir.iterdir():
-                    if item.is_dir() and not item.name.startswith("."):
-                        meta_file = item / PROJECT_META_FILE
-                        if meta_file.exists():
-                            meta = self.read_meta(meta_file)
-                            if meta.get("project_name") == pid:
-                                return item.resolve()
+                p_test = s_dir / pid
+                if (p_test / PROJECT_META_FILE).exists() or (
+                    for_init and s_dir.exists()
+                ):
+                    return p_test.resolve()
+
+            # --- B. Deep search by project_name in metadata ---
+            seen_dirs = set()
+            for s_dir in search_dirs:
+                abs_s_dir = s_dir.resolve()
+                if abs_s_dir in seen_dirs:
+                    continue
+                seen_dirs.add(abs_s_dir)
+
+                if not s_dir.exists():
+                    continue
+                try:
+                    for item in s_dir.iterdir():
+                        if item.is_dir() and not item.name.startswith("."):
+                            meta_file = item / PROJECT_META_FILE
+                            if meta_file.exists():
+                                meta = self.read_meta(meta_file)
+                                if meta.get("project_name") == pid:
+                                    return item.resolve()
+                except Exception:
+                    continue
 
             if not for_init:
                 UI.die(f"Project '{pid}' not found or missing {PROJECT_META_FILE}")

@@ -46,6 +46,42 @@ class TestBaseDiscovery(unittest.TestCase):
                         self.assertIn("proj_cwd", names)
                         self.assertIn("proj_other", names)
 
+    def test_detect_project_path_scenarios(self):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as base_tmp:
+            base_path = Path(base_tmp)
+            cwd_dir = base_path / "cwd"
+            workspace_dir = base_path / "ws"
+
+            for d in [cwd_dir, workspace_dir]:
+                d.mkdir()
+
+            # 1. Test Absolute Path
+            proj_abs = base_path / "abs-proj"
+            proj_abs.mkdir()
+            (proj_abs / ".liferay-docker.meta").write_text("tag=latest")
+            res = self.handler.detect_project_path(str(proj_abs))
+            self.assertEqual(res.resolve(), proj_abs.resolve())
+
+            # 2. Test Relative to CWD
+            proj_rel = cwd_dir / "rel-proj"
+            proj_rel.mkdir()
+            (proj_rel / ".liferay-docker.meta").write_text("tag=latest")
+            with patch("ldm_core.handlers.base.Path.cwd", return_value=cwd_dir):
+                res = self.handler.detect_project_path("rel-proj")
+                self.assertEqual(res.resolve(), proj_rel.resolve())
+
+            # 3. Test in LDM_WORKSPACE
+            proj_ws = workspace_dir / "ws-proj"
+            proj_ws.mkdir()
+            (proj_ws / ".liferay-docker.meta").write_text("tag=latest")
+            with patch("ldm_core.handlers.base.Path.cwd", return_value=cwd_dir):
+                with patch.dict(os.environ, {"LDM_WORKSPACE": str(workspace_dir)}):
+                    # Mock find_dxp_roots search dirs logic (it will use the env var)
+                    res = self.handler.detect_project_path("ws-proj")
+                    self.assertEqual(res.resolve(), proj_ws.resolve())
+
     @patch("ldm_core.handlers.base.os.chmod")
     def test_migrate_layout_routes_permissions(self, mock_chmod):
         # Verify that routes/default/dxp is created and 777'd
