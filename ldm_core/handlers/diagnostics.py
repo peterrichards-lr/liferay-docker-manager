@@ -343,6 +343,9 @@ del "%~f0"
                     "warn",
                 )
             )
+            UI.info(
+                f"    Doc: {UI.CYAN}https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/installation.md#troubleshooting-version-loop--integrity-issues{UI.COLOR_OFF}"
+            )
         else:
             results.append(("LDM Version", f"{v_display} (Latest)", True))
 
@@ -371,6 +374,9 @@ del "%~f0"
 
         if ok is False:
             status = f"{status} {UI.WHITE}(Run 'ldm upgrade --repair'){UI.COLOR_OFF}"
+            UI.info(
+                f"    Doc: {UI.CYAN}https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/installation.md#troubleshooting-version-loop--integrity-issues{UI.COLOR_OFF}"
+            )
 
         results.append(("Executable Integrity", status, ok))
 
@@ -466,6 +472,9 @@ del "%~f0"
                 "   ensure your user is in the 'docker' group or try:\n"
                 f"   {UI.WHITE}sudo chmod 666 /var/run/docker.sock{UI.COLOR_OFF}"
             )
+            UI.info(
+                f"    Doc: {UI.CYAN}https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/installation.md#linux--wsl-docker-permissions{UI.COLOR_OFF}"
+            )
 
         # 3. mkcert Check
         mkcert_status, mkcert_ok = self._check_mkcert()
@@ -505,6 +514,12 @@ del "%~f0"
             results.append(
                 ("Global Config", "Missing ('ldm init-common' available)", "warn")
             )
+            UI.info(
+                f"  {UI.CYAN}ℹ{UI.COLOR_OFF} Fix: Run '{UI.WHITE}ldm init-common{UI.COLOR_OFF}' to restore standard development assets."
+            )
+            UI.info(
+                f"    Doc: {UI.CYAN}https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/installation.md#global-configuration-the-common-folder{UI.COLOR_OFF}"
+            )
         else:
             try:
                 import importlib.resources as pkg_resources
@@ -539,6 +554,9 @@ del "%~f0"
                                     f"Invalid Format ({prop_status})",
                                     prop_ok,
                                 )
+                            )
+                            UI.info(
+                                f"  {UI.CYAN}ℹ{UI.COLOR_OFF} Fix: Verify the syntax in '{UI.WHITE}common/portal-ext.properties{UI.COLOR_OFF}'."
                             )
                             if prop_details:
                                 for detail in prop_details:
@@ -582,6 +600,9 @@ del "%~f0"
                             "warn",
                         )
                     )
+                    UI.info(
+                        f"  {UI.CYAN}ℹ{UI.COLOR_OFF} Fix: Run '{UI.WHITE}ldm init-common{UI.COLOR_OFF}' to restore search configuration files."
+                    )
                 else:
                     msg = f"REMOTE mode ready ({v_id.upper()})"
                     if search_version == 8:
@@ -607,6 +628,9 @@ del "%~f0"
             else:
                 results.append(
                     ("Docker Network", "missing (will be created on run)", "warn")
+                )
+                UI.info(
+                    f"    Doc: {UI.CYAN}https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/README.md#infra-setup-infra-down-infra-restart{UI.COLOR_OFF}"
                 )
 
             # 6. Global Services Check
@@ -693,6 +717,9 @@ del "%~f0"
                         results.append(
                             (label, f"Not running (Run '{cmd_hint}')", "warn")
                         )
+                        UI.info(
+                            f"    Doc: {UI.CYAN}https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/README.md#infra-setup-infra-down-infra-restart{UI.COLOR_OFF}"
+                        )
         else:
             results.append(("Docker Network", "Skipped (Engine down)", "warn"))
             results.append(("Global Infrastructure", "Skipped (Engine down)", "warn"))
@@ -727,6 +754,9 @@ del "%~f0"
                 UI.info(
                     f"  {UI.CYAN}ℹ{UI.COLOR_OFF} Fix: Run '{UI.WHITE}ldm run {p_path.name}{UI.COLOR_OFF}' to automatically clean legacy environment variables."
                 )
+                UI.info(
+                    f"    Doc: {UI.CYAN}https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/README.md#env{UI.COLOR_OFF}"
+                )
             else:
                 results.append(("Project Metadata", "Healthy", True))
 
@@ -738,6 +768,9 @@ del "%~f0"
                 UI.info(
                     f"  {UI.CYAN}ℹ{UI.COLOR_OFF} Fix: Run '{UI.WHITE}ldm run {p_path.name}{UI.COLOR_OFF}' to regenerate the missing docker-compose.yml file."
                 )
+                UI.info(
+                    f"    Doc: {UI.CYAN}https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/README.md#run-alias-up{UI.COLOR_OFF}"
+                )
 
             # 7.2.1 Portal Properties Validation
             pe_file = p_path / "files" / "portal-ext.properties"
@@ -746,6 +779,13 @@ del "%~f0"
                     pe_file
                 )
                 results.append(("Portal Properties", prop_status, prop_ok))
+                if prop_ok is not True:
+                    UI.info(
+                        f"  {UI.CYAN}ℹ{UI.COLOR_OFF} Fix: Verify the syntax in your project's '{UI.WHITE}files/portal-ext.properties{UI.COLOR_OFF}'."
+                    )
+                    UI.info(
+                        f"    Doc: {UI.CYAN}https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/LDM_ARCHITECTURE.md#5-metadata--property-injection{UI.COLOR_OFF}"
+                    )
                 if prop_details:
                     for detail in prop_details:
                         print(f"  {UI.YELLOW}⚠{UI.COLOR_OFF} {detail}")
@@ -769,6 +809,9 @@ del "%~f0"
                 results.append(("OSGi Search Config", "REMOTE mode detected", True))
             elif es_main_conf.exists() or es_conn_conf.exists():
                 results.append(("OSGi Search Config", "Partial / Incomplete", "warn"))
+                UI.info(
+                    f"  {UI.CYAN}ℹ{UI.COLOR_OFF} Fix: Ensure both Elasticsearch configuration files are present in '{UI.WHITE}osgi/configs/{UI.COLOR_OFF}'."
+                )
             else:
                 results.append(
                     (
@@ -776,6 +819,9 @@ del "%~f0"
                         "Missing (Liferay will start sidecar)",
                         "warn",
                     )
+                )
+                UI.info(
+                    f"  {UI.CYAN}ℹ{UI.COLOR_OFF} Hint: Run '{UI.WHITE}ldm migrate-search {p_path.name}{UI.COLOR_OFF}' to enable global search."
                 )
 
             # 7.2.3 License Check
@@ -787,6 +833,9 @@ del "%~f0"
             if lic_ok is not True:
                 UI.info(
                     f"  {UI.CYAN}ℹ{UI.COLOR_OFF} Fix: Place a valid DXP '.xml' license in your global '{UI.WHITE}common/{UI.COLOR_OFF}' or the project's '{UI.WHITE}deploy/{UI.COLOR_OFF}' folder."
+                )
+                UI.info(
+                    f"    Doc: {UI.CYAN}https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/LDM_ARCHITECTURE.md#key-architectural-pillars{UI.COLOR_OFF}"
                 )
             if lic_details:
                 for detail in lic_details:
@@ -946,6 +995,12 @@ del "%~f0"
                             f"{len(unresolved)} domain(s) unresolved",
                             False,
                         )
+                    )
+                    UI.info(
+                        f"  {UI.CYAN}ℹ{UI.COLOR_OFF} Fix: Add the required hostnames to your local '{UI.WHITE}/etc/hosts{UI.COLOR_OFF}' file."
+                    )
+                    UI.info(
+                        f"    Doc: {UI.CYAN}https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/installation.md#dns--subdomain-configuration{UI.COLOR_OFF}"
                     )
                     for d in unresolved:
                         print(f"  {UI.RED}×{UI.COLOR_OFF} {d}")
@@ -1149,6 +1204,13 @@ del "%~f0"
             elif cpus < 4:
                 cpus_ok = "warn"
             results.append(("Docker CPUs", f"{cpus} Cores", cpus_ok))
+            if cpus_ok is not True:
+                UI.info(
+                    f"  {UI.CYAN}ℹ{UI.COLOR_OFF} Hint: Allocate more CPU cores in your Docker provider settings."
+                )
+                UI.info(
+                    f"    Doc: {UI.CYAN}https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/installation.md#docker-resource-alignment-windowswsl2macos{UI.COLOR_OFF}"
+                )
 
             mem_ok = True
             if mem_gb < 4.0:
@@ -1156,6 +1218,13 @@ del "%~f0"
             elif mem_gb < 7.5:
                 mem_ok = "warn"
             results.append(("Docker Memory", f"{mem_gb:.1f} GB", mem_ok))
+            if mem_ok is not True:
+                UI.info(
+                    f"  {UI.CYAN}ℹ{UI.COLOR_OFF} Hint: Allocate more RAM in your Docker provider settings."
+                )
+                UI.info(
+                    f"    Doc: {UI.CYAN}https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/installation.md#docker-resource-alignment-windowswsl2macos{UI.COLOR_OFF}"
+                )
 
             return results
         except Exception:
