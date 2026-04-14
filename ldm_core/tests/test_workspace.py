@@ -1,6 +1,7 @@
 import unittest
 import json
 import tempfile
+import zipfile
 from unittest.mock import patch, MagicMock
 from pathlib import Path
 from ldm_core.handlers.base import BaseHandler
@@ -12,6 +13,9 @@ class MockWorkspaceManager(BaseHandler, WorkspaceHandler):
         self.verbose = False
         self.non_interactive = True
         self.args = MagicMock()
+        # Default host_name to localhost to avoid gethostbyname calls
+        self.args.host_name = "localhost"
+        self.args.ssl = False
 
     def _check_java_version(self, *args, **kwargs):
         return True
@@ -38,6 +42,8 @@ class MockWorkspaceManager(BaseHandler, WorkspaceHandler):
             "ce_dir": root / "client-extensions",
             "modules": root / "osgi" / "modules",
             "cx": root / "osgi" / "client-extensions",
+            "deploy": root / "deploy",
+            "marketplace": root / "osgi" / "marketplace",
         }
 
     def check_mkcert(self, *args, **kwargs):
@@ -48,6 +54,9 @@ class MockWorkspaceManager(BaseHandler, WorkspaceHandler):
 
     def write_meta(self, *args, **kwargs):
         pass
+
+    def check_hostname(self, *args, **kwargs):
+        return True
 
 
 class TestWorkspaceMetadata(unittest.TestCase):
@@ -175,6 +184,8 @@ class TestWorkspaceImport(unittest.TestCase):
             self.handler.args.no_run = True
             self.handler.args.build = False
             self.handler.non_interactive = False
+            self.handler.args.host_name = "localhost"
+            self.handler.args.ssl = False
 
             with patch.object(
                 self.handler, "detect_project_path", return_value=project_dir
@@ -186,8 +197,6 @@ class TestWorkspaceImport(unittest.TestCase):
                     self.handler.cmd_import(str(source_dir))
 
                     # Verify safe_rmtree was called (or just check if directory was recreated)
-                    # The actual implementation calls self.safe_rmtree(project_path)
-                    # and then setup_paths/mkdir recreates it.
                     # If it was cleaned, the 'old-file.txt' should be gone.
                     self.assertFalse((project_dir / "old-file.txt").exists())
                     self.assertTrue(project_dir.exists())
@@ -206,8 +215,6 @@ class TestWorkspaceImport(unittest.TestCase):
             # Create a mock CX in the source
             ce_dir = source_dir / "client-extensions"
             ce_dir.mkdir()
-            import zipfile
-
             zip_path = ce_dir / "test-ext.zip"
             with zipfile.ZipFile(zip_path, "w") as z:
                 z.writestr("LCP.json", "{}")
@@ -225,6 +232,8 @@ class TestWorkspaceImport(unittest.TestCase):
             self.handler.args.no_run = True
             self.handler.args.build = False
             self.handler.non_interactive = False
+            self.handler.args.host_name = "localhost"
+            self.handler.args.ssl = False
 
             with patch.object(
                 self.handler, "detect_project_path", return_value=project_dir
