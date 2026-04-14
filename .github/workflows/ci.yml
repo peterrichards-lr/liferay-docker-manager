@@ -286,9 +286,15 @@ jobs:
 
             ### 🚀 Installation (Direct Binary)
 
-            **macOS (Intel/Silicon):**
+            **macOS (Apple Silicon):**
             ```bash
-            sudo curl -L https://github.com/peterrichards-lr/liferay-docker-manager/releases/latest/download/ldm-macos -o /usr/local/bin/ldm
+            sudo curl -L https://github.com/peterrichards-lr/liferay-docker-manager/releases/latest/download/ldm-macos-arm64 -o /usr/local/bin/ldm
+            sudo chmod +x /usr/local/bin/ldm
+            ```
+
+            **macOS (Apple Intel):**
+            ```bash
+            sudo curl -L https://github.com/peterrichards-lr/liferay-docker-manager/releases/latest/download/ldm-macos-x86_64 -o /usr/local/bin/ldm
             sudo chmod +x /usr/local/bin/ldm
             ```
 

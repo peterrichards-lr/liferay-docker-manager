@@ -11,8 +11,11 @@ The standalone binary is a single-file executable that includes all dependencies
 Download the latest `ldm` directly using your terminal:
 
 ```bash
-# For macOS (Intel or Apple Silicon)
-sudo curl -L https://github.com/peterrichards-lr/liferay-docker-manager/releases/latest/download/ldm-macos -o /usr/local/bin/ldm
+# For macOS (Apple Silicon)
+sudo curl -L https://github.com/peterrichards-lr/liferay-docker-manager/releases/latest/download/ldm-macos-arm64 -o /usr/local/bin/ldm
+
+# For macOS (Apple Intel)
+sudo curl -L https://github.com/peterrichards-lr/liferay-docker-manager/releases/latest/download/ldm-macos-x86_64 -o /usr/local/bin/ldm
 
 # For Linux / WSL2 (Native Linux)
 sudo curl -L https://github.com/peterrichards-lr/liferay-docker-manager/releases/latest/download/ldm-linux -o /usr/local/bin/ldm
