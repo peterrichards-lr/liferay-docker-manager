@@ -213,6 +213,18 @@ class ConfigHandler:
                 pass
         return None
 
+    def get_samples_db_type(self):
+        """Extracts the database type from the samples metadata."""
+        root = self.get_samples_root()
+        meta_file = root / "metadata.json"
+        if meta_file.exists():
+            try:
+                meta = json.loads(meta_file.read_text())
+                return meta.get("db_type")
+            except Exception:
+                pass
+        return None
+
     def sync_samples(self, paths):
         """Sync global samples into the current project path with on-demand download support."""
         samples_root = self.get_samples_root()

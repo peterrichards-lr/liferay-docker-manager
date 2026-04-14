@@ -1294,6 +1294,7 @@ class StackHandler:
             self.args.tag or project_meta.get("tag"),
             self.args.host_name or project_meta.get("host_name") or "localhost",
         )
+        db_type = getattr(self.args, "db", None) or project_meta.get("db_type")
 
         # --- Samples Streamlining ---
         is_samples = getattr(self.args, "samples", False)
@@ -1323,6 +1324,10 @@ class StackHandler:
                         f"Using Liferay version defined in samples metadata: {samples_tag}"
                     )
                     tag = samples_tag
+
+            # 3. Auto-Detect DB Type
+            if not db_type:
+                db_type = self.get_samples_db_type()
 
         if not tag and self.non_interactive:
             UI.die(
@@ -1376,6 +1381,9 @@ class StackHandler:
                 tag = snap_meta.get("tag")
             if host_name == "localhost":
                 host_name = snap_meta.get("host_name") or "localhost"
+            if not db_type:
+                db_type = snap_meta.get("db_type")
+
         if host_name != "localhost" and not self.check_hostname(host_name):
             sys.exit(1)
         paths = self.setup_paths(project_id)
@@ -1419,6 +1427,7 @@ class StackHandler:
                 "container_name": project_id,
                 "ssl": str(ssl_val).lower(),
                 "use_shared_search": str(use_shared_search).lower(),
+                "db_type": db_type,
             }
         )
         self.write_meta(root / PROJECT_META_FILE, project_meta)
