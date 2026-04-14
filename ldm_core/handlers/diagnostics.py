@@ -470,10 +470,24 @@ del "%~f0"
         # 3. mkcert Check
         mkcert_status, mkcert_ok = self._check_mkcert()
         results.append(("mkcert", mkcert_status, mkcert_ok))
+        if mkcert_ok is not True:
+            UI.info(
+                f"  {UI.CYAN}ℹ{UI.COLOR_OFF} Fix: Run '{UI.WHITE}mkcert -install{UI.COLOR_OFF}' to initialize the local trust store."
+            )
+            UI.info(
+                f"    Doc: {UI.CYAN}https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/installation.md#fixing-ssl-trust-issues-mkcert{UI.COLOR_OFF}"
+            )
 
         # 4. OpenSSL Check
         openssl_status, openssl_ok = self._check_openssl()
         results.append(("OpenSSL", openssl_status, openssl_ok))
+        if openssl_ok is not True:
+            UI.info(
+                f"  {UI.CYAN}ℹ{UI.COLOR_OFF} Fix: Install OpenSSL (available via brew, macports, scoop, or apt)."
+            )
+            UI.info(
+                f"    Doc: {UI.CYAN}https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/installation.md#prerequisites{UI.COLOR_OFF}"
+            )
 
         # 4.1 Liferay Cloud Check
         lcp_status, lcp_ok = self._check_lcp_cli()
@@ -710,6 +724,9 @@ del "%~f0"
                         "warn",
                     )
                 )
+                UI.info(
+                    f"  {UI.CYAN}ℹ{UI.COLOR_OFF} Fix: Run '{UI.WHITE}ldm run {p_path.name}{UI.COLOR_OFF}' to automatically clean legacy environment variables."
+                )
             else:
                 results.append(("Project Metadata", "Healthy", True))
 
@@ -718,6 +735,9 @@ del "%~f0"
                 results.append(("Project Config", "docker-compose.yml OK", True))
             else:
                 results.append(("Project Config", "docker-compose.yml MISSING", False))
+                UI.info(
+                    f"  {UI.CYAN}ℹ{UI.COLOR_OFF} Fix: Run '{UI.WHITE}ldm run {p_path.name}{UI.COLOR_OFF}' to regenerate the missing docker-compose.yml file."
+                )
 
             # 7.2.1 Portal Properties Validation
             pe_file = p_path / "files" / "portal-ext.properties"
@@ -764,6 +784,10 @@ del "%~f0"
                 image_tag=meta.get("tag"),
             )
             results.append(("Project License", lic_status, lic_ok))
+            if lic_ok is not True:
+                UI.info(
+                    f"  {UI.CYAN}ℹ{UI.COLOR_OFF} Fix: Place a valid DXP '.xml' license in your global '{UI.WHITE}common/{UI.COLOR_OFF}' or the project's '{UI.WHITE}deploy/{UI.COLOR_OFF}' folder."
+                )
             if lic_details:
                 for detail in lic_details:
                     print(f"  {UI.CYAN}ℹ{UI.COLOR_OFF} {detail}")
@@ -808,6 +832,9 @@ del "%~f0"
                     results.append(
                         ("Project SSL Cert", "Missing (.pem or -key.pem)", False)
                     )
+                    UI.info(
+                        f"  {UI.CYAN}ℹ{UI.COLOR_OFF} Fix: Run '{UI.WHITE}ldm run {p_path.name} --force-ssl{UI.COLOR_OFF}' or '{UI.WHITE}ldm renew-ssl {p_path.name}{UI.COLOR_OFF}' to regenerate certificates."
+                    )
 
                 # Check Traefik YAML
                 if traefik_conf.exists():
@@ -821,8 +848,14 @@ del "%~f0"
                         results.append(
                             ("Traefik Project SSL", "Invalid Content", "warn")
                         )
+                        UI.info(
+                            f"  {UI.CYAN}ℹ{UI.COLOR_OFF} Fix: Run '{UI.WHITE}ldm run {p_path.name} --force-ssl{UI.COLOR_OFF}' to regenerate routing config."
+                        )
                 else:
                     results.append(("Traefik Project SSL", "Config MISSING", False))
+                    UI.info(
+                        f"  {UI.CYAN}ℹ{UI.COLOR_OFF} Fix: Run '{UI.WHITE}ldm run {p_path.name} --force-ssl{UI.COLOR_OFF}' to regenerate routing config."
+                    )
 
             # 7.3.1 Traefik Label Validation
             compose_file = p_path / "docker-compose.yml"
@@ -958,6 +991,12 @@ del "%~f0"
                                         "BROKEN (Not visible in container)",
                                         False,
                                     )
+                                )
+                                UI.info(
+                                    f"  {UI.CYAN}ℹ{UI.COLOR_OFF} Fix: Ensure your Docker provider (Colima/OrbStack) has permission to share your home directory."
+                                )
+                                UI.info(
+                                    f"    Doc: {UI.CYAN}https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/installation.md#the-ghost-mount-issue{UI.COLOR_OFF}"
                                 )
                         finally:
                             # Cleanup
