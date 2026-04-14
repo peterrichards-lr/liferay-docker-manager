@@ -461,6 +461,11 @@ del "%~f0"
             # Trigger the detailed error reporting from base.py
             self.check_docker()
             results.append(("Docker Engine", "Not reachable", False))
+            UI.info(
+                f"\n{UI.CYAN}💡 Tip:{UI.COLOR_OFF} If Docker is running but LDM cannot connect (common on Linux/Fedora),\n"
+                "   ensure your user is in the 'docker' group or try:\n"
+                f"   {UI.WHITE}sudo chmod 666 /var/run/docker.sock{UI.COLOR_OFF}"
+            )
 
         # 3. mkcert Check
         mkcert_status, mkcert_ok = self._check_mkcert()
@@ -858,6 +863,9 @@ del "%~f0"
                         results.append(
                             ("Traefik Labels", "Missing Network Label", False)
                         )
+                        UI.info(
+                            f"  {UI.CYAN}ℹ{UI.COLOR_OFF} Fix: Run '{UI.WHITE}ldm run {p_path.name}{UI.COLOR_OFF}' to regenerate config."
+                        )
                     elif double_prefixed:
                         results.append(
                             (
@@ -868,6 +876,9 @@ del "%~f0"
                         )
                         for dp in double_prefixed:
                             print(f"  {UI.YELLOW}⚠{UI.COLOR_OFF} {dp}")
+                        UI.info(
+                            f"  {UI.CYAN}ℹ{UI.COLOR_OFF} Fix: Run '{UI.WHITE}ldm run {p_path.name}{UI.COLOR_OFF}' to standardize labels."
+                        )
                     else:
                         results.append(("Traefik Labels", "Standardized OK", True))
                 except Exception as e:

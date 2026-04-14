@@ -353,21 +353,31 @@ class StackHandler:
                 f"{resolved_ip}:443:443",
                 "-v",
                 f"{global_cert_dir.as_posix()}:/etc/traefik/certs:ro",
-                "-e",
-                "DOCKER_API_VERSION=1.44",
-                f"traefik:{TRAEFIK_VERSION}",
-                "--providers.docker=true",
-                f"--providers.docker.endpoint={endpoint}",
-                "--providers.docker.exposedbydefault=false",
-                "--providers.docker.network=liferay-net",
-                "--providers.file.directory=/etc/traefik/certs",
-                "--providers.file.watch=true",
-                "--entrypoints.web.address=:80",
-                "--entrypoints.websecure.address=:443",
-                "--entrypoints.web.http.redirections.entryPoint.to=websecure",
-                "--entrypoints.web.http.redirections.entryPoint.scheme=https",
-                "--log.level=ERROR",
             ]
+
+            # Critical Fix: On Linux, we MUST mount the socket for the provider to work.
+            # On macOS, we use the TCP bridge (needs_bridge=True) so no mount is needed.
+            if not needs_bridge:
+                traefik_cmd.extend(["-v", f"{socket_path}:/var/run/docker.sock:ro"])
+
+            traefik_cmd.extend(
+                [
+                    "-e",
+                    "DOCKER_API_VERSION=1.44",
+                    f"traefik:{TRAEFIK_VERSION}",
+                    "--providers.docker=true",
+                    f"--providers.docker.endpoint={endpoint}",
+                    "--providers.docker.exposedbydefault=false",
+                    "--providers.docker.network=liferay-net",
+                    "--providers.file.directory=/etc/traefik/certs",
+                    "--providers.file.watch=true",
+                    "--entrypoints.web.address=:80",
+                    "--entrypoints.websecure.address=:443",
+                    "--entrypoints.web.http.redirections.entryPoint.to=websecure",
+                    "--entrypoints.web.http.redirections.entryPoint.scheme=https",
+                    "--log.level=ERROR",
+                ]
+            )
             run_command(traefik_cmd)
         return True
 
