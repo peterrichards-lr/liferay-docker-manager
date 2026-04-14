@@ -166,9 +166,9 @@ class ConfigHandler:
             + content
         )
 
-    def sync_samples(self, paths):
-        """Sync global samples into the current project path with on-demand download support."""
-        from ldm_core.utils import get_actual_home, download_samples
+    def get_samples_root(self):
+        """Locates or downloads the global samples directory."""
+        from ldm_core.utils import download_samples
         from ldm_core.constants import VERSION
 
         # 1. Check Local (Source Checkout)
@@ -179,7 +179,7 @@ class ConfigHandler:
             home = get_actual_home()
             cache_path = home / ".ldm" / "references" / "samples" / f"v{VERSION}"
             if cache_path.exists():
-                samples_root = cache_path
+                return cache_path
             else:
                 # 3. Prompt & Download (Standalone Binary Mode)
                 if not self.non_interactive:
@@ -192,14 +192,30 @@ class ConfigHandler:
                         == "Y"
                     ):
                         if download_samples(VERSION, cache_path):
-                            samples_root = cache_path
+                            return cache_path
                         else:
                             UI.die("Failed to download samples.")
                     else:
                         UI.die("Samples required but download declined.")
                 else:
                     UI.die("Sample assets missing and non-interactive mode is active.")
+        return samples_root
 
+    def get_samples_tag(self):
+        """Extracts the reference Liferay tag from the samples metadata."""
+        root = self.get_samples_root()
+        meta_file = root / "metadata.json"
+        if meta_file.exists():
+            try:
+                meta = json.loads(meta_file.read_text())
+                return meta.get("reference_tag")
+            except Exception:
+                pass
+        return None
+
+    def sync_samples(self, paths):
+        """Sync global samples into the current project path with on-demand download support."""
+        samples_root = self.get_samples_root()
         UI.info("Syncing project samples...")
         shutil.copytree(samples_root, paths["root"], dirs_exist_ok=True)
 
