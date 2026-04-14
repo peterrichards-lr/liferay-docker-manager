@@ -343,7 +343,7 @@ del "%~f0"
                     "warn",
                 )
             )
-            UI.info(
+            print(
                 f"    Doc: {UI.CYAN}https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/installation.md#troubleshooting-version-loop--integrity-issues{UI.COLOR_OFF}"
             )
         else:
@@ -374,7 +374,7 @@ del "%~f0"
 
         if ok is False:
             status = f"{status} {UI.WHITE}(Run 'ldm upgrade --repair'){UI.COLOR_OFF}"
-            UI.info(
+            print(
                 f"    Doc: {UI.CYAN}https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/installation.md#troubleshooting-version-loop--integrity-issues{UI.COLOR_OFF}"
             )
 
@@ -467,12 +467,12 @@ del "%~f0"
             # Trigger the detailed error reporting from base.py
             self.check_docker()
             results.append(("Docker Engine", "Not reachable", False))
-            UI.info(
+            print(
                 f"\n{UI.CYAN}💡 Tip:{UI.COLOR_OFF} If Docker is running but LDM cannot connect (common on Linux/Fedora),\n"
                 "   ensure your user is in the 'docker' group or try:\n"
                 f"   {UI.WHITE}sudo chmod 666 /var/run/docker.sock{UI.COLOR_OFF}"
             )
-            UI.info(
+            print(
                 f"    Doc: {UI.CYAN}https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/installation.md#linux--wsl-docker-permissions{UI.COLOR_OFF}"
             )
 
@@ -480,10 +480,10 @@ del "%~f0"
         mkcert_status, mkcert_ok = self._check_mkcert()
         results.append(("mkcert", mkcert_status, mkcert_ok))
         if mkcert_ok is not True:
-            UI.info(
+            print(
                 f"  {UI.CYAN}ℹ{UI.COLOR_OFF} Fix: Run '{UI.WHITE}mkcert -install{UI.COLOR_OFF}' to initialize the local trust store."
             )
-            UI.info(
+            print(
                 f"    Doc: {UI.CYAN}https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/installation.md#fixing-ssl-trust-issues-mkcert{UI.COLOR_OFF}"
             )
 
@@ -491,10 +491,10 @@ del "%~f0"
         openssl_status, openssl_ok = self._check_openssl()
         results.append(("OpenSSL", openssl_status, openssl_ok))
         if openssl_ok is not True:
-            UI.info(
+            print(
                 f"  {UI.CYAN}ℹ{UI.COLOR_OFF} Fix: Install OpenSSL (available via brew, macports, scoop, or apt)."
             )
-            UI.info(
+            print(
                 f"    Doc: {UI.CYAN}https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/installation.md#prerequisites{UI.COLOR_OFF}"
             )
 
@@ -514,10 +514,10 @@ del "%~f0"
             results.append(
                 ("Global Config", "Missing ('ldm init-common' available)", "warn")
             )
-            UI.info(
+            print(
                 f"  {UI.CYAN}ℹ{UI.COLOR_OFF} Fix: Run '{UI.WHITE}ldm init-common{UI.COLOR_OFF}' to restore standard development assets."
             )
-            UI.info(
+            print(
                 f"    Doc: {UI.CYAN}https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/installation.md#global-configuration-the-common-folder{UI.COLOR_OFF}"
             )
         else:
@@ -555,7 +555,7 @@ del "%~f0"
                                     prop_ok,
                                 )
                             )
-                            UI.info(
+                            print(
                                 f"  {UI.CYAN}ℹ{UI.COLOR_OFF} Fix: Verify the syntax in '{UI.WHITE}common/portal-ext.properties{UI.COLOR_OFF}'."
                             )
                             if prop_details:
@@ -600,7 +600,7 @@ del "%~f0"
                             "warn",
                         )
                     )
-                    UI.info(
+                    print(
                         f"  {UI.CYAN}ℹ{UI.COLOR_OFF} Fix: Run '{UI.WHITE}ldm init-common{UI.COLOR_OFF}' to restore search configuration files."
                     )
                 else:
@@ -629,7 +629,7 @@ del "%~f0"
                 results.append(
                     ("Docker Network", "missing (will be created on run)", "warn")
                 )
-                UI.info(
+                print(
                     f"    Doc: {UI.CYAN}https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/README.md#infra-setup-infra-down-infra-restart{UI.COLOR_OFF}"
                 )
 
@@ -717,7 +717,7 @@ del "%~f0"
                         results.append(
                             (label, f"Not running (Run '{cmd_hint}')", "warn")
                         )
-                        UI.info(
+                        print(
                             f"    Doc: {UI.CYAN}https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/README.md#infra-setup-infra-down-infra-restart{UI.COLOR_OFF}"
                         )
         else:
@@ -751,10 +751,10 @@ del "%~f0"
                         "warn",
                     )
                 )
-                UI.info(
+                print(
                     f"  {UI.CYAN}ℹ{UI.COLOR_OFF} Fix: Run '{UI.WHITE}ldm run {p_path.name}{UI.COLOR_OFF}' to automatically clean legacy environment variables."
                 )
-                UI.info(
+                print(
                     f"    Doc: {UI.CYAN}https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/README.md#env{UI.COLOR_OFF}"
                 )
             else:
@@ -765,10 +765,10 @@ del "%~f0"
                 results.append(("Project Config", "docker-compose.yml OK", True))
             else:
                 results.append(("Project Config", "docker-compose.yml MISSING", False))
-                UI.info(
+                print(
                     f"  {UI.CYAN}ℹ{UI.COLOR_OFF} Fix: Run '{UI.WHITE}ldm run {p_path.name}{UI.COLOR_OFF}' to regenerate the missing docker-compose.yml file."
                 )
-                UI.info(
+                print(
                     f"    Doc: {UI.CYAN}https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/README.md#run-alias-up{UI.COLOR_OFF}"
                 )
 
@@ -780,10 +780,10 @@ del "%~f0"
                 )
                 results.append(("Portal Properties", prop_status, prop_ok))
                 if prop_ok is not True:
-                    UI.info(
+                    print(
                         f"  {UI.CYAN}ℹ{UI.COLOR_OFF} Fix: Verify the syntax in your project's '{UI.WHITE}files/portal-ext.properties{UI.COLOR_OFF}'."
                     )
-                    UI.info(
+                    print(
                         f"    Doc: {UI.CYAN}https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/LDM_ARCHITECTURE.md#5-metadata--property-injection{UI.COLOR_OFF}"
                     )
                 if prop_details:
@@ -809,7 +809,7 @@ del "%~f0"
                 results.append(("OSGi Search Config", "REMOTE mode detected", True))
             elif es_main_conf.exists() or es_conn_conf.exists():
                 results.append(("OSGi Search Config", "Partial / Incomplete", "warn"))
-                UI.info(
+                print(
                     f"  {UI.CYAN}ℹ{UI.COLOR_OFF} Fix: Ensure both Elasticsearch configuration files are present in '{UI.WHITE}osgi/configs/{UI.COLOR_OFF}'."
                 )
             else:
@@ -820,7 +820,7 @@ del "%~f0"
                         "warn",
                     )
                 )
-                UI.info(
+                print(
                     f"  {UI.CYAN}ℹ{UI.COLOR_OFF} Hint: Run '{UI.WHITE}ldm migrate-search {p_path.name}{UI.COLOR_OFF}' to enable global search."
                 )
 
@@ -831,10 +831,10 @@ del "%~f0"
             )
             results.append(("Project License", lic_status, lic_ok))
             if lic_ok is not True:
-                UI.info(
+                print(
                     f"  {UI.CYAN}ℹ{UI.COLOR_OFF} Fix: Place a valid DXP '.xml' license in your global '{UI.WHITE}common/{UI.COLOR_OFF}' or the project's '{UI.WHITE}deploy/{UI.COLOR_OFF}' folder."
                 )
-                UI.info(
+                print(
                     f"    Doc: {UI.CYAN}https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/LDM_ARCHITECTURE.md#key-architectural-pillars{UI.COLOR_OFF}"
                 )
             if lic_details:
@@ -881,10 +881,10 @@ del "%~f0"
                     results.append(
                         ("Project SSL Cert", "Missing (.pem or -key.pem)", False)
                     )
-                    UI.info(
+                    print(
                         f"  {UI.CYAN}ℹ{UI.COLOR_OFF} Fix: Run '{UI.WHITE}ldm run {p_path.name} --force-ssl{UI.COLOR_OFF}' or '{UI.WHITE}ldm renew-ssl {p_path.name}{UI.COLOR_OFF}' to regenerate certificates."
                     )
-                    UI.info(
+                    print(
                         f"    Doc: {UI.CYAN}https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/installation.md#fixing-ssl-trust-issues-mkcert{UI.COLOR_OFF}"
                     )
 
@@ -900,18 +900,18 @@ del "%~f0"
                         results.append(
                             ("Traefik Project SSL", "Invalid Content", "warn")
                         )
-                        UI.info(
+                        print(
                             f"  {UI.CYAN}ℹ{UI.COLOR_OFF} Fix: Run '{UI.WHITE}ldm run {p_path.name} --force-ssl{UI.COLOR_OFF}' to regenerate routing config."
                         )
-                        UI.info(
+                        print(
                             f"    Doc: {UI.CYAN}https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/README.md#ssl-defaults-new-projects{UI.COLOR_OFF}"
                         )
                 else:
                     results.append(("Traefik Project SSL", "Config MISSING", False))
-                    UI.info(
+                    print(
                         f"  {UI.CYAN}ℹ{UI.COLOR_OFF} Fix: Run '{UI.WHITE}ldm run {p_path.name} --force-ssl{UI.COLOR_OFF}' to regenerate routing config."
                     )
-                    UI.info(
+                    print(
                         f"    Doc: {UI.CYAN}https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/README.md#ssl-defaults-new-projects{UI.COLOR_OFF}"
                     )
 
@@ -954,10 +954,10 @@ del "%~f0"
                         results.append(
                             ("Traefik Labels", "Missing Network Label", False)
                         )
-                        UI.info(
+                        print(
                             f"  {UI.CYAN}ℹ{UI.COLOR_OFF} Fix: Run '{UI.WHITE}ldm run {p_path.name}{UI.COLOR_OFF}' to regenerate config."
                         )
-                        UI.info(
+                        print(
                             f"    Doc: {UI.CYAN}https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/installation.md#dns--subdomain-configuration{UI.COLOR_OFF}"
                         )
                     elif double_prefixed:
@@ -970,10 +970,10 @@ del "%~f0"
                         )
                         for dp in double_prefixed:
                             print(f"  {UI.YELLOW}⚠{UI.COLOR_OFF} {dp}")
-                        UI.info(
+                        print(
                             f"  {UI.CYAN}ℹ{UI.COLOR_OFF} Fix: Run '{UI.WHITE}ldm run {p_path.name}{UI.COLOR_OFF}' to standardize labels."
                         )
-                        UI.info(
+                        print(
                             f"    Doc: {UI.CYAN}https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/README.md#command-reference{UI.COLOR_OFF}"
                         )
                     else:
@@ -996,10 +996,10 @@ del "%~f0"
                             False,
                         )
                     )
-                    UI.info(
+                    print(
                         f"  {UI.CYAN}ℹ{UI.COLOR_OFF} Fix: Add the required hostnames to your local '{UI.WHITE}/etc/hosts{UI.COLOR_OFF}' file."
                     )
-                    UI.info(
+                    print(
                         f"    Doc: {UI.CYAN}https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/installation.md#dns--subdomain-configuration{UI.COLOR_OFF}"
                     )
                     for d in unresolved:
@@ -1062,10 +1062,10 @@ del "%~f0"
                                         False,
                                     )
                                 )
-                                UI.info(
+                                print(
                                     f"  {UI.CYAN}ℹ{UI.COLOR_OFF} Fix: Ensure your Docker provider (Colima/OrbStack) has permission to share your home directory."
                                 )
-                                UI.info(
+                                print(
                                     f"    Doc: {UI.CYAN}https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/installation.md#the-ghost-mount-issue{UI.COLOR_OFF}"
                                 )
                         finally:
@@ -1205,10 +1205,10 @@ del "%~f0"
                 cpus_ok = "warn"
             results.append(("Docker CPUs", f"{cpus} Cores", cpus_ok))
             if cpus_ok is not True:
-                UI.info(
+                print(
                     f"  {UI.CYAN}ℹ{UI.COLOR_OFF} Hint: Allocate more CPU cores in your Docker provider settings."
                 )
-                UI.info(
+                print(
                     f"    Doc: {UI.CYAN}https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/installation.md#docker-resource-alignment-windowswsl2macos{UI.COLOR_OFF}"
                 )
 
@@ -1219,10 +1219,10 @@ del "%~f0"
                 mem_ok = "warn"
             results.append(("Docker Memory", f"{mem_gb:.1f} GB", mem_ok))
             if mem_ok is not True:
-                UI.info(
+                print(
                     f"  {UI.CYAN}ℹ{UI.COLOR_OFF} Hint: Allocate more RAM in your Docker provider settings."
                 )
-                UI.info(
+                print(
                     f"    Doc: {UI.CYAN}https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/installation.md#docker-resource-alignment-windowswsl2macos{UI.COLOR_OFF}"
                 )
 
