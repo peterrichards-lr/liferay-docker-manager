@@ -462,6 +462,8 @@ class StackHandler:
                 "-e",
                 "xpack.security.enabled=false",
                 "-e",
+                "indices.query.bool.max_clause_count=10000",
+                "-e",
                 "ES_JAVA_OPTS=-Xms512m -Xmx512m",
                 "-v",
                 f"{search_backup_dir.as_posix()}:/usr/share/elasticsearch/backup",
