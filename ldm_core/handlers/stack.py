@@ -1225,9 +1225,16 @@ class StackHandler:
 
             from ldm_core.utils import discover_latest_tag
 
+            # If user entered something other than a standard release type, treat it as a prefix
+            prefix_filter = None
+            if release_type not in ["any", "u", "lts", "qr"]:
+                prefix_filter = release_type
+                release_type = "any"
+
             latest_tag = discover_latest_tag(
                 api_url,
                 release_type=release_type,
+                prefix_filter=prefix_filter,
                 verbose=True,
                 refresh=getattr(self.args, "refresh", False),
             )
