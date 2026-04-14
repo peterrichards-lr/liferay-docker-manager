@@ -1124,8 +1124,6 @@ class StackHandler:
             },
         )
 
-        if no_up:
-            return
         UI.info("Orchestrating project stack...")
         if use_ssl:
             self.setup_infrastructure(resolved_ip, ssl_port, use_ssl=True)
@@ -1138,6 +1136,9 @@ class StackHandler:
 
             # Give Traefik a few seconds to initialize and read dynamic certificates
             time.sleep(5)
+
+        if no_up:
+            return
 
         scale_args = []
         for k, v in project_meta.items():
