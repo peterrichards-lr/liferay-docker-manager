@@ -257,6 +257,33 @@ class TestStackNetwork(unittest.TestCase):
             self.manager.sync_stack(self.paths, project_meta, no_up=True)
             mock_ensure.assert_called_once_with()
 
+    @patch("ldm_core.handlers.stack.get_compose_cmd")
+    @patch("ldm_core.handlers.stack.run_command")
+    def test_sync_stack_with_missing_meta_values(self, mock_run, mock_compose):
+        mock_compose.return_value = ["docker", "compose"]
+
+        # Scenario: meta has None values (the cause of the reported crash)
+        project_meta = {
+            "tag": "2025.q1.0",
+            "host_name": "localhost",
+            "port": None,
+            "ssl_port": None,
+            "ssl": "false",
+            "use_shared_search": "false",
+        }
+
+        with (
+            patch.object(self.manager, "_ensure_network"),
+            patch.object(
+                self.manager, "write_docker_compose", return_value=([], False)
+            ),
+        ):
+            # This should NOT raise TypeError: int() argument must be... not 'NoneType'
+            try:
+                self.manager.sync_stack(self.paths, project_meta, no_up=True)
+            except TypeError as e:
+                self.fail(f"sync_stack raised TypeError with None meta values: {e}")
+
 
 class TestStackOrchestration(unittest.TestCase):
     def setUp(self):
