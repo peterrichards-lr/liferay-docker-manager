@@ -1117,9 +1117,9 @@ class StackHandler:
                 "mount_logs": str(project_meta.get("mount_logs")).lower() == "true",
                 "gogo_port": project_meta.get("gogo_port"),
                 "db_type": project_meta.get("db_type"),
-                "db_name": project_meta.get("db_name"),
-                "db_user": project_meta.get("db_user"),
-                "db_pass": project_meta.get("db_pass"),
+                "db_name": project_meta.get("db_name") or "lportal",
+                "db_user": project_meta.get("db_user") or "liferay",
+                "db_pass": project_meta.get("db_pass") or "liferay",
                 **project_meta,
             },
         )
