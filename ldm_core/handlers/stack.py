@@ -1294,6 +1294,36 @@ class StackHandler:
             self.args.tag or project_meta.get("tag"),
             self.args.host_name or project_meta.get("host_name") or "localhost",
         )
+
+        # --- Samples Streamlining ---
+        is_samples = getattr(self.args, "samples", False)
+        if is_samples:
+            # 1. Mandate Custom Hostname
+            if host_name == "localhost":
+                if self.non_interactive:
+                    UI.die(
+                        "The --samples project requires a custom hostname (not localhost). "
+                        "Please provide one with --host-name."
+                    )
+                else:
+                    UI.warning(
+                        "The samples project requires a custom hostname to demonstrate LDM routing."
+                    )
+                    host_name = UI.ask(
+                        "Enter project Virtual Hostname", "samples.local"
+                    )
+                    if host_name == "localhost":
+                        UI.die("Localhost is not supported for the samples project.")
+
+            # 2. Auto-Detect Version (avoid prompt)
+            if not tag:
+                samples_tag = self.get_samples_tag()
+                if samples_tag:
+                    UI.info(
+                        f"Using Liferay version defined in samples metadata: {samples_tag}"
+                    )
+                    tag = samples_tag
+
         if not tag and self.non_interactive:
             UI.die(
                 "No Liferay tag specified. In non-interactive mode, use: ldm run <pid> --tag <tag>"
