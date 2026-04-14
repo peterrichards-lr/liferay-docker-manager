@@ -490,6 +490,54 @@ class StackHandler:
                 '{"type": "fs", "settings": {"location": "backup"}}',
             ]
         )
+
+        # 4. Plugin Setup (Required for Liferay Index Analyzers)
+        required_plugins = [
+            "analysis-icu",
+            "analysis-kuromoji",
+            "analysis-smartcn",
+            "analysis-stempel",
+        ]
+        installed_plugins = (
+            run_command(
+                ["docker", "exec", search_name, "bin/elasticsearch-plugin", "list"],
+                check=False,
+            )
+            or ""
+        )
+        missing_plugins = [p for p in required_plugins if p not in installed_plugins]
+
+        if missing_plugins:
+            UI.info(
+                f"Installing missing Liferay analyzers in Global Search: {', '.join(missing_plugins)}..."
+            )
+            for plugin in missing_plugins:
+                run_command(
+                    [
+                        "docker",
+                        "exec",
+                        search_name,
+                        "bin/elasticsearch-plugin",
+                        "install",
+                        plugin,
+                        "-b",
+                    ],
+                    check=False,
+                )
+
+            UI.info("Restarting Global Search to activate plugins...")
+            run_command(["docker", "restart", search_name])
+
+            # Wait for it to come back up
+            for i in range(12):
+                res = run_command(
+                    ["docker", "exec", search_name, "curl", "-s", "localhost:9200"],
+                    check=False,
+                )
+                if res and "cluster_name" in res:
+                    break
+                time.sleep(5)
+
         return True
 
     def write_docker_compose(self, paths, config):
