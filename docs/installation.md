@@ -459,9 +459,14 @@ Look for: `mkcert ✅ Installed (Root CA Trusted)`
 Most LDM commands (like `run`, `stop`, `logs`) require a project context.
 
 1. **Implicit**: If you are inside a project folder, LDM will detect it automatically.
-2. **Explicit**: You can target a project from anywhere using `ldm run <project_name>`.
+2. **Explicit**: You can target a project from anywhere using `ldm run <project_name>` or a direct path `ldm run ./my-project`.
+3. **Workspace Support**: LDM automatically searches for projects in:
+    - The current directory.
+    - `~/ldm` (default).
+    - `/Volumes/SanDisk/ldm` (for external storage users).
+    - Any directory specified in the `LDM_WORKSPACE` environment variable.
 
-If LDM cannot find a project, it will provide a helpful error message instead of crashing.
+**Pro-Tip**: Add `export LDM_WORKSPACE="/path/to/your/projects"` to your `.bashrc` or `.zshrc` to make your projects accessible from anywhere.
 
 ### Version Verification
 

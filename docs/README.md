@@ -39,7 +39,7 @@ The badges below represent our verified support for various Docker providers. En
 | Component | Verified Versions | Notes |
 | :--- | :--- | :--- |
 | **Traefik** | `v3.6.1+` | Automatic API version negotiation enabled. |
-| **Elasticsearch** | `8.19.1`, `7.17.24` | Dual support with version-aware project sync. |
+| **Elasticsearch** | `8.19.1`, `7.17.24` | Dual support with auto-plugin installation and optimized Liferay config. |
 <!-- COMPATIBILITY_END -->
 
 ---
@@ -194,6 +194,7 @@ LDM uses smarter defaults for SSL based on your hostname. When a custom `--host-
 Initialize a project from a source workspace and establish a **persistent link**. This command records the workspace path in the project metadata and automatically starts the `monitor` process to sync your code changes in real-time.
 
 ```bash
+# ldm init-from <source_path> [project_name]
 ldm init-from ~/repos/my-workspace my-project
 ```
 
@@ -202,6 +203,7 @@ ldm init-from ~/repos/my-workspace my-project
 Scaffold a new project by taking a **one-time static import** of an existing workspace. This project is detached from the source; changes to the source workspace will not be synced. Follows the same internal deployment sequence as `init-from`.
 
 ```bash
+# ldm import <source_path> [project_name]
 ldm import ~/repos/my-workspace my-static-project
 ```
 
@@ -539,14 +541,15 @@ colima start --cpu 4 --memory 8
 
 ## Interactive Mode Tips
 
-- **Smart Project Detection**: `ldm` prioritizes project detection in this order:
-    1. Positional argument (e.g., `ldm run my-project`).
-    2. CLI flag (e.g., `ldm run -p my-project`).
-    3. The current working directory (if it's an LDM project).
-    4. An interactive list of all discovered projects.
+- **Smart Project Detection**: `ldm` resolves project locations using this priority:
+    1. **Direct Path**: Absolute or relative path (e.g., `ldm logs ./my-proj` or `ldm logs /opt/ldm/proj`).
+    2. **CWD**: If the current directory is an LDM project.
+    3. **Global Workspaces**: Searches `LDM_WORKSPACE` (if set), `~/ldm`, and `/Volumes/SanDisk/ldm`.
+    4. **Deep Search**: Scans the above directories for projects matching the name in their `.liferay-docker.meta`.
 - **Quick Quit**: You can type `q` at any interactive prompt to safely abort the current command.
 - **Bypass Prompts**: Use the `-y` or `--non-interactive` flag to skip all confirmations and use default values. This is ideal for scripts and CI/CD pipelines.
-- **Tag Discovery**: When running `ldm run` without a version tag, the tool will offer to fetch the latest available tags from Docker Hub based on your release type preference (LTS, QR, etc.).
+- **Tag Prefix Search**: When running `ldm run` without a tag, you can enter a prefix (e.g., `2025.q4`) to filter the available Liferay versions from Docker Hub.
+- **Tag Discovery**: If no prefix or release type is provided, the tool fetches the latest available tags from Docker Hub.
 
 ---
 
