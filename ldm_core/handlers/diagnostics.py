@@ -208,18 +208,9 @@ class DiagnosticsHandler:
                 "Self-upgrade is only supported for standalone binaries. Please use 'git pull' for source installations."
             )
 
-        # Check for write permissions to both the parent directory and the binary itself
-        if not os.access(exe_path.parent, os.W_OK) or not os.access(exe_path, os.W_OK):
-            if platform.system().lower() == "windows":
-                UI.die(
-                    "Permission denied. Please run your terminal as an Administrator to upgrade."
-                )
-            else:
-                UI.die(
-                    f"Permission denied. Please run: {UI.CYAN}sudo ldm upgrade{UI.COLOR_OFF}"
-                )
-
         temp_new = exe_path.with_suffix(".new")
+        if temp_new.exists():
+            temp_new.unlink()
 
         # 3. Download
         UI.info(f"Downloading v{latest}...")
@@ -304,8 +295,18 @@ del "%~f0"
                 # Unix atomic rename
                 # Bandit: B103 (chmod 0o755) is necessary to make the newly downloaded binary executable.
                 os.chmod(temp_new, 0o755)  # nosec B103
-                os.replace(temp_new, exe_path)
-                UI.success(f"Successfully upgraded to v{latest}!")
+                try:
+                    os.replace(temp_new, exe_path)
+                    UI.success(f"Successfully upgraded to v{latest}!")
+                except PermissionError:
+                    UI.warning(
+                        "\nPermission denied while replacing the binary. This usually happens for files in /usr/local/bin."
+                    )
+                    UI.info(
+                        f'To complete the upgrade, please run:\n{UI.CYAN}sudo mv "{temp_new}" "{exe_path}"{UI.COLOR_OFF}'
+                    )
+                    # We don't die here, we just finish gracefully since the download is complete
+                    return
         except Exception as e:
             if temp_new.exists():
                 temp_new.unlink()

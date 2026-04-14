@@ -258,6 +258,26 @@ def main():
         parser.print_help()
         return
 
+    # Root Safety Guard: Prevent running as sudo for non-upgrade commands
+    # This protects the ~/.shiv cache from ownership issues.
+    import platform
+
+    if platform.system().lower() != "windows":
+        import os
+
+        if os.geteuid() == 0:
+            if args.command != "upgrade":
+                UI.error("Security Risk: Do not run LDM with 'sudo'.")
+                UI.info(
+                    "Running as root causes permission issues in your home directory (~/.shiv).\n"
+                    "LDM will prompt for your password only when elevated privileges are needed."
+                )
+                sys.exit(1)
+            else:
+                UI.warning(
+                    "Running upgrade as root. This may cause cache ownership issues."
+                )
+
     project_id = getattr(args, "project", None) or getattr(args, "project_flag", None)
     manager = LiferayManager(args)
 
