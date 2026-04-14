@@ -487,7 +487,7 @@ del "%~f0"
             )
 
         # 3. mkcert Check
-        mkcert_status, mkcert_ok = self._check_mkcert()
+        mkcert_status, mkcert_ok, ca_root = self._check_mkcert()
         results.append(("mkcert", mkcert_status, mkcert_ok))
         if mkcert_ok is not True:
             add_hint(
@@ -506,10 +506,18 @@ del "%~f0"
                     pass
 
             if is_wsl:
-                add_hint(
-                    f"[WSL] To avoid 'Insecure' browser warnings, you must ALSO run '{UI.WHITE}mkcert -install{UI.COLOR_OFF}' on your Windows host (via PowerShell or CMD).",
-                    "https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/installation.md#wsl2-ssl-trust",
-                )
+                # Check if CAROOT points to Windows
+                is_win_ca = ca_root and "/mnt/c/" in ca_root
+                if not is_win_ca:
+                    add_hint(
+                        f"[WSL] Your browser won't trust WSL certificates. Run '{UI.WHITE}mkcert -install{UI.COLOR_OFF}' on Windows, then in WSL set: {UI.WHITE}export CAROOT=\"/mnt/c/Users/<user>/AppData/Local/mkcert\"{UI.COLOR_OFF}",
+                        "https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/installation.md#wsl2-ssl-trust",
+                    )
+                else:
+                    add_hint(
+                        f"[WSL] To avoid 'Insecure' browser warnings, you must ALSO run '{UI.WHITE}mkcert -install{UI.COLOR_OFF}' on your Windows host (via PowerShell or CMD).",
+                        "https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/installation.md#wsl2-ssl-trust",
+                    )
 
         # 4. OpenSSL Check
         openssl_status, openssl_ok = self._check_openssl()
@@ -1134,11 +1142,11 @@ del "%~f0"
         try:
             mkcert_bin = shutil.which("mkcert")
             if not mkcert_bin:
-                return "Not installed", "warn"
+                return "Not installed", "warn", None
 
             ca_root = run_command([mkcert_bin, "-CAROOT"], check=False)
             if not (ca_root and os.path.exists(ca_root) and os.listdir(ca_root)):
-                return "Installed (Root CA NOT FOUND)", "warn"
+                return "Installed (Root CA NOT FOUND)", "warn", ca_root
 
             # Deep check for Root CA trust on macOS
             is_trusted = True
@@ -1151,11 +1159,11 @@ del "%~f0"
                     is_trusted = False
 
             if is_trusted:
-                return "Installed (Root CA Trusted)", True
+                return "Installed (Root CA Trusted)", True, ca_root
             else:
-                return "Installed (NOT TRUSTED)", "warn"
+                return "Installed (NOT TRUSTED)", "warn", ca_root
         except Exception:
-            return "Not found in PATH", "warn"
+            return "Not found in PATH", "warn", None
 
     def _check_openssl(self):
         """Checks for OpenSSL installation."""

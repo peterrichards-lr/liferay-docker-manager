@@ -50,7 +50,7 @@ class MockDiagManager(DiagnosticsHandler):
         return True, []
 
     def _check_mkcert(self, *args, **kwargs):
-        return "Installed (Root CA Trusted)", True
+        return "Installed (Root CA Trusted)", True, "/home/user/.local/share/mkcert"
 
     def _check_openssl(self, *args, **kwargs):
         return "OpenSSL 3.0.0", True
