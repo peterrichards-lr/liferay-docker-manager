@@ -194,8 +194,8 @@ LDM uses smarter defaults for SSL based on your hostname. When a custom `--host-
 Initialize a project from a source workspace and establish a **persistent link**. This command records the workspace path in the project metadata and automatically starts the `monitor` process to sync your code changes in real-time.
 
 ```bash
-# ldm init-from <source_path> [project_name]
-ldm init-from ~/repos/my-workspace my-project
+# ldm init-from <source_path> [project_name] [--host-name custom.local]
+ldm init-from ~/repos/my-workspace my-project --host-name forge.demo
 ```
 
 ### `import` (Static Snapshot)
@@ -203,9 +203,18 @@ ldm init-from ~/repos/my-workspace my-project
 Scaffold a new project by taking a **one-time static import** of an existing workspace. This project is detached from the source; changes to the source workspace will not be synced. Follows the same internal deployment sequence as `init-from`.
 
 ```bash
-# ldm import <source_path> [project_name]
+# ldm import <source_path> [project_name] [--host-name custom.local]
 ldm import ~/repos/my-workspace my-static-project
 ```
+
+#### Unified Host & SSL Rules (run, init-from, import)
+
+All project initialization commands follow these security and naming rules:
+
+1. **Interactive Hostname**: If no `--host-name` is provided, LDM will prompt you (defaulting to `localhost`).
+2. **SSL Auto-Enable**: If a custom hostname is used (anything other than `localhost`), LDM **automatically enables SSL** and routes traffic via port 443.
+3. **Explicit Control**: You can override the auto-SSL behavior using `--ssl` or `--no-ssl`.
+4. **Port Mapping**: When SSL is active, the direct port `8080` mapping is removed to ensure all traffic passes through the secure Traefik proxy.
 
 ### `monitor`
 
