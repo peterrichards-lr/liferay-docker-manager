@@ -4,16 +4,14 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "liferay-docker-manager"
-version = "1.6.44"
+version = "1.6.45"
 description = "A professional command-line orchestrator for Liferay Docker environments."
 authors = [{ name = "Peter Richards", email = "peter.richards@liferay.com" }]
 requires-python = ">=3.10"
 dependencies = [
-    "ruff==0.15.6",
     "watchdog==4.0.1",
-    "pre-commit",
-    "bandit",
-    "pip-audit"
+    "requests==2.33.0",
+    "PyYAML>=5.3.1"
 ]
 
 [project.scripts]
