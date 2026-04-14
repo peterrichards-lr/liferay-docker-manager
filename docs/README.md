@@ -547,6 +547,10 @@ colima start --cpu 4 --memory 8
     3. **Global Workspaces**: Searches `LDM_WORKSPACE` (if set), `~/ldm`, and `/Volumes/SanDisk/ldm`.
     4. **Deep Search**: Scans the above directories for projects matching the name in their `.liferay-docker.meta`.
 - **Quick Quit**: You can type `q` at any interactive prompt to safely abort the current command.
+- **Initialization Overrides**: When a project already exists, you can choose:
+  - `y` (Yes): Overwrite configs but keep existing files.
+  - `c` (Clean): Delete the entire folder and start fresh.
+  - `n` (No) or `q` (Quit): Stop the process.
 - **Bypass Prompts**: Use the `-y` or `--non-interactive` flag to skip all confirmations and use default values. This is ideal for scripts and CI/CD pipelines.
 - **Tag Prefix Search**: When running `ldm run` without a tag, you can enter a prefix (e.g., `2025.q4`) to filter the available Liferay versions from Docker Hub.
 - **Tag Discovery**: If no prefix or release type is provided, the tool fetches the latest available tags from Docker Hub.
