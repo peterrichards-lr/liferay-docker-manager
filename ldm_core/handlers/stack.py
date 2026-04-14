@@ -158,8 +158,8 @@ class StackHandler:
                 ]
             )
             if "OK" not in (verify_res or ""):
-                UI.error("\n❌ FATAL: INFRASTRUCTURE VOLUME MOUNTING IS BROKEN")
-                if platform.system() == "darwin":
+                UI.error("\nFATAL: INFRASTRUCTURE VOLUME MOUNTING IS BROKEN")
+                if platform.system().lower() == "darwin":
                     UI.info(
                         "\nThis often happens on macOS when Colima/OrbStack is not configured to share your home directory."
                     )

@@ -478,7 +478,7 @@ class BaseHandler:
                 )
 
                 if "OK" not in (verify_res or ""):
-                    UI.error("\n❌ FATAL: VOLUME MOUNTING IS BROKEN")
+                    UI.error("\nFATAL: VOLUME MOUNTING IS BROKEN")
                     UI.info(
                         f"{UI.BYELLOW}Reason:{UI.COLOR_OFF} Docker cannot see the files in: {root}"
                     )

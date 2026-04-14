@@ -228,7 +228,7 @@ def get_actual_home():
     real_user = (
         os.environ.get("SUDO_USER") or os.environ.get("USER") or getpass.getuser()
     )
-    if platform.system() == "darwin" and real_user:
+    if platform.system().lower() == "darwin" and real_user:
         home = Path(f"/Users/{real_user}")
         if home.exists():
             return home

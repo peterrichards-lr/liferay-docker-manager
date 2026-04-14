@@ -39,7 +39,7 @@ The badges below represent our verified support for various Docker providers. En
 | Component | Verified Versions | Notes |
 | :--- | :--- | :--- |
 | **Traefik** | `v3.6.1+` | Automatic API version negotiation enabled. |
-| **Elasticsearch** | `8.17.0`, `7.17.24` | Dual support with version-aware project sync. |
+| **Elasticsearch** | `8.19.1`, `7.17.24` | Dual support with version-aware project sync. |
 <!-- COMPATIBILITY_END -->
 
 ---
