@@ -419,6 +419,7 @@ class BaseHandler:
         os.replace(tmp_path, path)
 
     def safe_rmtree(self, path, root=None):
+        """Safely removes a directory tree, handling locks and permissions."""
         path = Path(path).resolve()
         if not path.exists():
             return True
@@ -427,10 +428,47 @@ class BaseHandler:
                 f"Safety violation: Attempted to delete {path} outside root {root}"
             )
             return False
+
+        system = platform.system().lower()
+
         for i in range(5):
             try:
                 shutil.rmtree(path)
                 return True
+            except PermissionError:
+                # Handle root-owned files created by Docker on Unix
+                if system != "windows" and self.check_docker(silent=True):
+                    try:
+                        # Use alpine as a 'shredder' to delete the folder Docker created
+                        parent = path.parent.resolve()
+                        name = path.name
+                        run_command(
+                            [
+                                "docker",
+                                "run",
+                                "--rm",
+                                "-v",
+                                f"{parent.as_posix()}:/target",
+                                "alpine",
+                                "rm",
+                                "-rf",
+                                f"/target/{name}",
+                            ],
+                            check=False,
+                        )
+                        if not path.exists():
+                            return True
+                    except Exception:
+                        pass
+
+                if i == 4:
+                    UI.error(f"Failed to delete {path}: Permission denied.")
+                    if system != "windows":
+                        UI.info(
+                            f'Try running: {UI.CYAN}sudo rm -rf "{path}"{UI.COLOR_OFF}'
+                        )
+                    return False
+                time.sleep(2)
             except Exception as e:
                 if i == 4:
                     UI.error(f"Failed to delete {path}: {e}")
