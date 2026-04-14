@@ -772,13 +772,17 @@ class StackHandler:
         # 5. Liferay Configuration (Properties)
         # We write critical infrastructure settings directly to portal-ext.properties
         # to avoid the unreliable environment variable decoding in newer DXP versions.
+        if host_name != "localhost":
+            portal_ext_updates["virtual.hosts.valid.hosts"] = (
+                f"localhost,127.0.0.1,127.0.0.2,[::1],[0:0:0:0:0:0:0:1],{host_name},*.{host_name}"
+            )
+
         if use_ssl:
             portal_ext_updates.update(
                 {
                     "web.server.protocol": "https",
                     "web.server.https.port": str(ssl_port),
                     "web.server.host": host_name,
-                    "virtual.hosts.valid.hosts": f"localhost,127.0.0.1,127.0.0.2,[::1],[0:0:0:0:0:0:0:1],{host_name},*.{host_name}",
                 }
             )
             compose["services"]["liferay"]["labels"].extend(
