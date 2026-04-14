@@ -142,9 +142,9 @@ jobs:
   build:
     needs: [lint-and-test, smoke-test]
     strategy:
-      fail-fast: false # Ensure one arch failure doesn't block the others
+      fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest, macos-12]
+        os: [ubuntu-latest, windows-latest, macos-latest] # No more macos-12/13
     runs-on: ${{ matrix.os }}
     if: startsWith(github.ref, 'refs/tags/v')
 
@@ -161,48 +161,77 @@ jobs:
           pip install -r requirements.txt
           pip install pytest shiv pyinstaller
 
-      - name: Build Standalone (Linux/macOS)
-        if: matrix.os != 'windows-latest'
+      - name: Build Standalone (Linux)
+        if: matrix.os == 'ubuntu-latest'
         run: |
           pip install .
-          
-          # Inject build metadata
+          if [[ $GITHUB_REF == refs/tags/* ]]; then
+            TAG_NAME=${GITHUB_REF#refs/tags/}
+            python3 -c "import re; p='ldm_core/constants.py'; c=open(p).read(); open(p,'w').write(re.sub(r'BUILD_INFO = None', 'BUILD_INFO = \"Release ${TAG_NAME}\"', c))"
+          fi
+          shiv -e ldm_core.cli:main -o ldm-linux -p '/usr/bin/env python3' .
+          chmod +x ldm-linux
+          echo "BINARY_PATH=ldm-linux" >> $GITHUB_ENV
+
+      - name: Build Standalone (macOS Multi-Arch)
+        if: matrix.os == 'macos-latest'
+        run: |
+          # Inject Build Metadata
           if [[ $GITHUB_REF == refs/tags/* ]]; then
             TAG_NAME=${GITHUB_REF#refs/tags/}
             python3 -c "import re; p='ldm_core/constants.py'; c=open(p).read(); open(p,'w').write(re.sub(r'BUILD_INFO = None', 'BUILD_INFO = \"Release ${TAG_NAME}\"', c))"
           fi
 
-          OUTNAME="ldm-linux"
-          if [ "${{ matrix.os }}" = "macos-latest" ]; then
-            OUTNAME="ldm-macos-arm64"
-          elif [ "${{ matrix.os }}" = "macos-12" ]; then
-            OUTNAME="ldm-macos-x86_64"
-          fi
+          # 1. Build ARM64 (Native)
+          shiv -e ldm_core.cli:main -o ldm-macos-arm64 -p '/usr/bin/env python3' .
           
-          # Use Shiv for Linux/macOS
-          shiv -e ldm_core.cli:main -o $OUTNAME -p '/usr/bin/env python3' .
-          chmod +x $OUTNAME
-          echo "BINARY_PATH=$OUTNAME" >> $GITHUB_ENV
+          # 2. Build x86_64 (Cross-packaged)
+          # We fetch the Intel wheels explicitly
+          mkdir x86_64_site_packages
+          pip install \
+            --platform macosx_10_9_x86_64 \
+            --only-binary=:all: \
+            --target x86_64_site_packages \
+            --python-version 3.13 \
+            --implementation cp \
+            -r requirements.txt
+          
+          # Bundle with shiv using the cross-fetched site-packages
+          shiv -e ldm_core.cli:main -o ldm-macos-x86_64 -p '/usr/bin/env python3' --no-deps --site-packages x86_64_site_packages .
+          
+          chmod +x ldm-macos-arm64 ldm-macos-x86_64
+          
+          # Create a list of files for the upload step (using wildcard in next step)
+          echo "BINARY_PATH_ARM=ldm-macos-arm64" >> $GITHUB_ENV
+          echo "BINARY_PATH_X86=ldm-macos-x86_64" >> $GITHUB_ENV
 
       - name: Build Standalone (Windows)
         if: matrix.os == 'windows-latest'
         shell: bash
         run: |
-          # Inject build metadata
           if [[ $GITHUB_REF == refs/tags/* ]]; then
             TAG_NAME=${GITHUB_REF#refs/tags/}
             python3 -c "import re; p='ldm_core/constants.py'; c=open(p).read(); open(p,'w').write(re.sub(r'BUILD_INFO = None', 'BUILD_INFO = \"Release ${TAG_NAME}\"', c))"
           fi
-
-          # Bundling the resources directory into the Windows binary
           pyinstaller --onefile --name ldm-windows --add-data "ldm_core/resources;ldm_core/resources" liferay_docker.py
           echo "BINARY_PATH=dist/ldm-windows.exe" >> $GITHUB_ENV
 
-      - name: Upload Artifacts
+      - name: Upload Artifacts (Linux/Windows)
+        if: matrix.os != 'macos-latest'
         uses: actions/upload-artifact@v4
         with:
           name: ldm-binary-${{ matrix.os }}
           path: ${{ env.BINARY_PATH }}
+          if-no-files-found: error
+
+      - name: Upload Artifacts (macOS Multi)
+        if: matrix.os == 'macos-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ldm-binary-macos
+          path: |
+            ldm-macos-arm64
+            ldm-macos-x86_64
           if-no-files-found: error
 
   release:
@@ -229,9 +258,9 @@ jobs:
         shell: bash
         run: |
           cd bin-temp
-          # Support both architecture-specific and unified (copied) binaries
-          cp ldm-macos-arm64 ldm-macos || true
-          sha256sum ldm-linux ldm-macos ldm-macos-arm64 ldm-macos-x86_64 ldm-windows.exe samples.zip > checksums.txt || sha256sum ldm-linux ldm-windows.exe samples.zip > checksums.txt
+          # Create ldm-macos alias (pointing to arm64 for now)
+          cp ldm-macos-arm64 ldm-macos
+          sha256sum ldm-linux ldm-macos ldm-macos-arm64 ldm-macos-x86_64 ldm-windows.exe samples.zip > checksums.txt
           cat checksums.txt
 
       - name: Create GitHub Release
