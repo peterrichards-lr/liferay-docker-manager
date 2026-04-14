@@ -587,11 +587,28 @@ class WorkspaceHandler:
                 else:
                     UI.warning("gradlew not found. Skipping build.")
 
-            host_name = getattr(self.args, "host_name", None) or "localhost"
-            # If user explicitly passed --ssl, use it. Otherwise, default to True if host_name is custom.
-            use_ssl = getattr(self.args, "ssl", False)
-            if not use_ssl and host_name != "localhost":
-                use_ssl = True
+            # 5. Finalize Meta (Match cmd_run rules)
+            host_name = getattr(self.args, "host_name", None)
+            if not host_name:
+                if self.non_interactive:
+                    host_name = "localhost"
+                else:
+                    host_name = UI.ask("Enter project Virtual Hostname", "localhost")
+
+            # SSL Rule: Default to True only if host_name is NOT localhost
+            ssl_arg = getattr(self.args, "ssl", None)
+            if ssl_arg is not None:
+                use_ssl = ssl_arg
+            else:
+                use_ssl = host_name != "localhost"
+
+            if (
+                use_ssl
+                and host_name != "localhost"
+                and not self.check_hostname(host_name)
+            ):
+                sys.exit(1)
+
             custom_env = {
                 k: v
                 for env_pair in (getattr(self.args, "env", None) or [])
