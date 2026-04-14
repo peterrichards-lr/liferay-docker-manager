@@ -399,8 +399,8 @@ class WorkspaceHandler:
             UI.info(f"  - Skipping existing CX: {zip_path.name}")
             return
 
-        shutil.copy2(zip_path, root_zip_path)
-
+        if zip_path.resolve() != root_zip_path.resolve():
+            shutil.copy2(zip_path, root_zip_path)
         # Step 2: Expand ZIP in root for Docker builds
         try:
             with zipfile.ZipFile(root_zip_path, "r") as zip_ref:

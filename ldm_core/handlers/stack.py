@@ -917,6 +917,35 @@ class StackHandler:
 
         return compose["services"], has_changed
 
+    def _map_probe_to_healthcheck(self, probe, target_port):
+        """Converts an LCP JSON probe definition to a Docker healthcheck."""
+        # Defaults
+        interval = probe.get("interval", 30)
+        timeout = probe.get("timeout", 10)
+        retries = probe.get("retries", 3)
+        start_period = probe.get("initialDelay", 60)
+
+        # Build command based on probe type
+        test_cmd = ["CMD", "curl", "-f", f"http://localhost:{target_port}/"]
+
+        if probe.get("httpGet"):
+            path = probe["httpGet"].get("path", "/")
+            port = probe["httpGet"].get("port", target_port)
+            test_cmd = ["CMD", "curl", "-f", f"http://localhost:{port}{path}"]
+        elif probe.get("tcpSocket"):
+            port = probe["tcpSocket"].get("port", target_port)
+            test_cmd = ["CMD-SHELL", f"nc -z localhost {port}"]
+        elif probe.get("exec"):
+            test_cmd = ["CMD"] + probe["exec"].get("command", [])
+
+        return {
+            "test": test_cmd,
+            "interval": f"{interval}s",
+            "timeout": f"{timeout}s",
+            "retries": retries,
+            "start_period": f"{start_period}s",
+        }
+
     def cmd_infra_setup(self):
         """Standalone command to initialize global infrastructure services."""
         if not self.check_docker():
