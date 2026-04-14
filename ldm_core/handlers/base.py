@@ -194,28 +194,54 @@ class BaseHandler:
 
     def find_dxp_roots(self, search_dir=None):
         """Discovers LDM projects in the target directory by looking for metadata or specific structure."""
-        search_dir = Path(search_dir or Path.cwd())
+        search_dirs = []
+        if search_dir:
+            search_dirs.append(Path(search_dir))
+        else:
+            search_dirs.append(Path.cwd())
+            # Include custom workspace if set
+            custom_workspace = os.environ.get("LDM_WORKSPACE")
+            if custom_workspace:
+                search_dirs.append(Path(custom_workspace))
+            # Common default locations
+            for common in [Path.home() / "ldm", Path("/Volumes/SanDisk/ldm")]:
+                if common.exists() and common.is_dir():
+                    search_dirs.append(common)
+
         roots = []
-        if not search_dir.exists():
-            return roots
+        seen_paths = set()
 
-        # Security: If we are in the user's home directory, we should be extremely strict
-        # to avoid scanning thousands of unrelated developer folders.
-        is_home = search_dir.resolve() == Path.home().resolve()
+        for s_dir in search_dirs:
+            if not s_dir.exists() or not s_dir.is_dir():
+                continue
 
-        for item in search_dir.iterdir():
-            if item.is_dir() and not item.name.startswith("."):
-                # A directory is a project IF:
-                # 1. It has the official LDM metadata file (preferred)
-                # 2. It has BOTH 'files' and 'deploy' folders (legacy/scaffolded)
-                # 3. If in HOME, we ONLY accept the metadata file to prevent noise.
-                has_meta = (item / PROJECT_META_FILE).exists()
-                has_structure = (item / "files").exists() and (item / "deploy").exists()
+            # Security: If we are in the user's home directory, we should be extremely strict
+            # to avoid scanning thousands of unrelated developer folders.
+            is_home = s_dir.resolve() == Path.home().resolve()
 
-                if has_meta or (not is_home and has_structure):
-                    meta = self.read_meta(item / PROJECT_META_FILE)
-                    version = meta.get("tag") or "unknown"
-                    roots.append({"path": item, "version": version})
+            try:
+                for item in s_dir.iterdir():
+                    if item.is_dir() and not item.name.startswith("."):
+                        abs_path = item.resolve()
+                        if abs_path in seen_paths:
+                            continue
+
+                        # A directory is a project IF:
+                        # 1. It has the official LDM metadata file (preferred)
+                        # 2. It has BOTH 'files' and 'deploy' folders (legacy/scaffolded)
+                        # 3. If in HOME, we ONLY accept the metadata file to prevent noise.
+                        has_meta = (item / PROJECT_META_FILE).exists()
+                        has_structure = (item / "files").exists() and (
+                            item / "deploy"
+                        ).exists()
+
+                        if has_meta or (not is_home and has_structure):
+                            meta = self.read_meta(item / PROJECT_META_FILE)
+                            version = meta.get("tag") or "unknown"
+                            roots.append({"path": item, "version": version})
+                            seen_paths.add(abs_path)
+            except Exception:
+                continue
 
         return sorted(roots, key=lambda x: x["path"].name)
 

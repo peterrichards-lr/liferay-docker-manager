@@ -48,7 +48,7 @@ class StackHandler:
             if not mkcert_bin:
                 UI.die("mkcert binary not found. Please install it to use SSL.")
 
-            run_command(
+            res = run_command(
                 [
                     mkcert_bin,
                     "-cert-file",
@@ -58,10 +58,14 @@ class StackHandler:
                     host_name,
                     f"*.{host_name}",
                 ],
-                check=True,
+                check=False,
             )
+            if not cert_file.exists():
+                UI.error(f"Failed to generate SSL certificates: {res}")
+                return False
 
         # 2. Generate Traefik Dynamic Config
+        UI.info(f"Generating Traefik dynamic config for {host_name}...")
         config_path = cert_dir / f"traefik-{host_name}.yml"
         traefik_conf = (
             "tls:\n"
@@ -69,8 +73,13 @@ class StackHandler:
             f"    - certFile: /etc/traefik/certs/{host_name}.pem\n"
             f"      keyFile: /etc/traefik/certs/{host_name}-key.pem\n"
         )
-        config_path.write_text(traefik_conf)
-        os.chmod(config_path, 0o644)
+        try:
+            config_path.write_text(traefik_conf)
+            os.chmod(config_path, 0o644)
+        except Exception as e:
+            UI.error(f"Failed to write Traefik config: {e}")
+            return False
+
         return True
 
     def cmd_renew_ssl(self, project_id=None):
@@ -375,7 +384,7 @@ class StackHandler:
                     "--entrypoints.websecure.address=:443",
                     "--entrypoints.web.http.redirections.entryPoint.to=websecure",
                     "--entrypoints.web.http.redirections.entryPoint.scheme=https",
-                    "--log.level=ERROR",
+                    f"--log.level={'DEBUG' if self.verbose else 'INFO'}",
                 ]
             )
             run_command(traefik_cmd)
