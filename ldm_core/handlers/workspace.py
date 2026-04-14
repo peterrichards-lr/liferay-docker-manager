@@ -476,14 +476,16 @@ class WorkspaceHandler:
                     UI.info(
                         f"Project '{project_name}' exists. Overwriting in non-interactive mode."
                     )
-                elif (
-                    UI.ask(
-                        f"Project '{project_name}' exists. Overwrite contents? (y/n/q)",
+                else:
+                    ans = UI.ask(
+                        f"Project '{project_name}' exists. Overwrite contents? (y/n/c/q)",
                         "N",
                     ).upper()
-                    != "Y"
-                ):
-                    UI.die("Initialization aborted.")
+                    if ans == "C":
+                        UI.info(f"Cleaning existing project directory: {project_path}")
+                        self.safe_rmtree(project_path)
+                    elif ans != "Y":
+                        UI.die("Initialization aborted.")
 
             paths = self.setup_paths(project_path)
             for p in [

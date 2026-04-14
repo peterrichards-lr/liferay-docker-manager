@@ -3,10 +3,11 @@ import json
 import tempfile
 from unittest.mock import patch, MagicMock
 from pathlib import Path
+from ldm_core.handlers.base import BaseHandler
 from ldm_core.handlers.workspace import WorkspaceHandler
 
 
-class MockWorkspaceManager(WorkspaceHandler):
+class MockWorkspaceManager(BaseHandler, WorkspaceHandler):
     def __init__(self):
         self.verbose = False
         self.non_interactive = True
@@ -46,9 +47,6 @@ class MockWorkspaceManager(WorkspaceHandler):
         return {}
 
     def write_meta(self, *args, **kwargs):
-        pass
-
-    def safe_rmtree(self, *args, **kwargs):
         pass
 
 
@@ -157,6 +155,42 @@ class TestWorkspaceImport(unittest.TestCase):
                     # This verifies the fix for the user's reported issue
                     self.assertEqual(self.handler.args.project, "my-dev-stack")
                     self.assertNotEqual(self.handler.args.project, str(project_dir))
+
+    @patch("ldm_core.handlers.stack.StackHandler.cmd_run")
+    @patch("ldm_core.handlers.workspace.run_command")
+    def test_cmd_import_clean_option(self, mock_run, mock_cmd_run):
+        with tempfile.TemporaryDirectory() as tmp_base:
+            base_path = Path(tmp_base)
+            source_dir = base_path / "source-workspace"
+            source_dir.mkdir()
+            (source_dir / "gradle.properties").write_text(
+                "liferay.workspace.product=portal-7.4.13-u100"
+            )
+
+            project_dir = base_path / "my-project"
+            project_dir.mkdir()
+            (project_dir / "old-file.txt").write_text("old")
+
+            self.handler.args.project = "my-project"
+            self.handler.args.no_run = True
+            self.handler.args.build = False
+            self.handler.non_interactive = False
+
+            with patch.object(
+                self.handler, "detect_project_path", return_value=project_dir
+            ):
+                with patch("ldm_core.handlers.workspace.UI") as mock_ui:
+                    # Simulate user selecting 'C'
+                    mock_ui.ask.return_value = "C"
+
+                    self.handler.cmd_import(str(source_dir))
+
+                    # Verify safe_rmtree was called (or just check if directory was recreated)
+                    # The actual implementation calls self.safe_rmtree(project_path)
+                    # and then setup_paths/mkdir recreates it.
+                    # If it was cleaned, the 'old-file.txt' should be gone.
+                    self.assertFalse((project_dir / "old-file.txt").exists())
+                    self.assertTrue(project_dir.exists())
 
 
 if __name__ == "__main__":
