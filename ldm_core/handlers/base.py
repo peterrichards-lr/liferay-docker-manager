@@ -334,6 +334,18 @@ class BaseHandler:
             except Exception:
                 pass
 
+        if "routes" in paths:
+            try:
+                # Ensure the base routes dir is 777
+                os.chmod(paths["routes"], 0o777)  # nosec B103
+                # Create default/dxp subfolder which Liferay specifically tries to write to
+                dxp_routes = paths["routes"] / "default" / "dxp"
+                dxp_routes.mkdir(parents=True, exist_ok=True)
+                os.chmod(paths["routes"] / "default", 0o777)  # nosec B103
+                os.chmod(dxp_routes, 0o777)  # nosec B103
+            except Exception:
+                pass
+
         # 1. Migrate legacy 'osgi/configs' if found in root (cleanup)
         legacy_configs = paths["root"] / "configs"
         if (
