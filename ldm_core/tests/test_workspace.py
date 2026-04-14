@@ -192,6 +192,52 @@ class TestWorkspaceImport(unittest.TestCase):
                     self.assertFalse((project_dir / "old-file.txt").exists())
                     self.assertTrue(project_dir.exists())
 
+    @patch("ldm_core.handlers.stack.StackHandler.cmd_run")
+    @patch("ldm_core.handlers.workspace.run_command")
+    def test_cmd_import_no_overwrite_option(self, mock_run, mock_cmd_run):
+        with tempfile.TemporaryDirectory() as tmp_base:
+            base_path = Path(tmp_base)
+            source_dir = base_path / "source-workspace"
+            source_dir.mkdir()
+            (source_dir / "gradle.properties").write_text(
+                "liferay.workspace.product=portal-7.4.13-u100"
+            )
+
+            # Create a mock CX in the source
+            ce_dir = source_dir / "client-extensions"
+            ce_dir.mkdir()
+            import zipfile
+
+            zip_path = ce_dir / "test-ext.zip"
+            with zipfile.ZipFile(zip_path, "w") as z:
+                z.writestr("LCP.json", "{}")
+
+            project_dir = base_path / "my-project"
+            project_dir.mkdir()
+
+            # Create an existing CX in the destination
+            cx_dest_dir = project_dir / "osgi" / "client-extensions"
+            cx_dest_dir.mkdir(parents=True)
+            existing_cx = cx_dest_dir / "test-ext.zip"
+            existing_cx.write_text("ORIGINAL_CONTENT")
+
+            self.handler.args.project = "my-project"
+            self.handler.args.no_run = True
+            self.handler.args.build = False
+            self.handler.non_interactive = False
+
+            with patch.object(
+                self.handler, "detect_project_path", return_value=project_dir
+            ):
+                with patch("ldm_core.handlers.workspace.UI") as mock_ui:
+                    # Simulate user selecting 'N' (Skip Existing)
+                    mock_ui.ask.return_value = "N"
+
+                    self.handler.cmd_import(str(source_dir))
+
+                    # Verify the original content was PRESERVED
+                    self.assertEqual(existing_cx.read_text(), "ORIGINAL_CONTENT")
+
 
 if __name__ == "__main__":
     unittest.main()

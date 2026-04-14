@@ -330,7 +330,7 @@ class WorkspaceHandler:
         }
         return [f"{k}={v}" for k, v in {**global_pool, **targeted}.items()]
 
-    def _hydrate_from_workspace(self, workspace_root, paths):
+    def _hydrate_from_workspace(self, workspace_root, paths, overwrite=True):
         """Initial scan and sync of artifacts from workspace to project."""
         UI.info("Scanning workspace for built artifacts...")
 
@@ -341,7 +341,7 @@ class WorkspaceHandler:
             for dist_zip in list(ce_dir.glob("*.zip")) + list(
                 ce_dir.glob("*/dist/*.zip")
             ):
-                self._sync_cx_artifact(dist_zip, paths)
+                self._sync_cx_artifact(dist_zip, paths, overwrite=overwrite)
 
         # 2. Sync Modules & Themes (JARs from build/libs)
         for folder in ["modules", "themes"]:
@@ -353,7 +353,11 @@ class WorkspaceHandler:
                         x in jar.name.lower()
                         for x in ["-sources", "-javadoc", "-tests"]
                     ):
-                        shutil.copy2(jar, paths["modules"] / jar.name)
+                        dest = paths["modules"] / jar.name
+                        if not overwrite and dest.exists():
+                            UI.info(f"  - Skipping existing module: {jar.name}")
+                            continue
+                        shutil.copy2(jar, dest)
                         UI.info(f"  + Synced {folder.capitalize()[:-1]}: {jar.name}")
 
         # 3. Sync Fragments (ZIPs)
@@ -367,21 +371,34 @@ class WorkspaceHandler:
                 try:
                     with zipfile.ZipFile(zip_file, "r") as zip_ref:
                         if "liferay-deploy-fragments.json" in zip_ref.namelist():
-                            shutil.copy2(zip_file, paths["deploy"] / zip_file.name)
+                            dest = paths["deploy"] / zip_file.name
+                            if not overwrite and dest.exists():
+                                UI.info(
+                                    f"  - Skipping existing fragment: {zip_file.name}"
+                                )
+                                continue
+                            shutil.copy2(zip_file, dest)
                             UI.info(f"  + Synced Fragment: {zip_file.name}")
                         else:
                             # If it's a ZIP in fragments but not a fragment, try syncing as CX
-                            self._sync_cx_artifact(zip_file, paths)
+                            self._sync_cx_artifact(zip_file, paths, overwrite=overwrite)
                 except Exception:
                     pass
 
-    def _sync_cx_artifact(self, zip_path, paths):
+    def _sync_cx_artifact(self, zip_path, paths, overwrite=True):
         """Internal helper for the mandatory 3-step CX sync sequence."""
         ce_source_truth = paths["root"] / "client-extensions"
         ce_source_truth.mkdir(parents=True, exist_ok=True)
 
         # Step 1: Copy ZIP to root client-extensions/
         root_zip_path = ce_source_truth / zip_path.name
+
+        # In 'no-overwrite' mode, we check if the final destination exists
+        dest_zip = paths["cx"] / zip_path.name
+        if not overwrite and dest_zip.exists():
+            UI.info(f"  - Skipping existing CX: {zip_path.name}")
+            return
+
         shutil.copy2(zip_path, root_zip_path)
 
         # Step 2: Expand ZIP in root for Docker builds
@@ -389,18 +406,32 @@ class WorkspaceHandler:
             with zipfile.ZipFile(root_zip_path, "r") as zip_ref:
                 target_folder = ce_source_truth / zip_path.stem
                 if target_folder.exists():
-                    shutil.rmtree(target_folder)
-                target_folder.mkdir(parents=True)
-                from ldm_core.utils import safe_extract
+                    if not overwrite:
+                        # If skipping, we don't clear/re-expand the build folder either
+                        pass
+                    else:
+                        shutil.rmtree(target_folder)
+                        target_folder.mkdir(parents=True)
+                        from ldm_core.utils import safe_extract
 
-                safe_extract(zip_ref, target_folder)
-                UI.info(f"  + Synced & Expanded CX: {zip_path.name}")
+                        safe_extract(zip_ref, target_folder)
+                else:
+                    target_folder.mkdir(parents=True)
+                    from ldm_core.utils import safe_extract
+
+                    safe_extract(zip_ref, target_folder)
+
+                if overwrite or not dest_zip.exists():
+                    UI.info(f"  + Synced & Expanded CX: {zip_path.name}")
         except Exception as e:
-            UI.error(f"Failed to expand {zip_path.name}: {e}")
+            UI.error(f"  ! Failed to expand CX {zip_path.name}: {e}")
 
         # Step 3: Move original ZIP to osgi/client-extensions/ for Liferay
-        dest_zip = paths["cx"] / zip_path.name
         if dest_zip.exists():
+            if not overwrite:
+                if root_zip_path.exists():
+                    os.remove(root_zip_path)
+                return
             os.remove(dest_zip)
         shutil.move(str(root_zip_path), str(dest_zip))
 
@@ -470,6 +501,7 @@ class WorkspaceHandler:
                     project_name = UI.ask("Project Name", project_name)
 
             project_path = self.detect_project_path(project_name, for_init=True)
+            overwrite = True
 
             if project_path.exists():
                 if self.non_interactive:
@@ -478,13 +510,18 @@ class WorkspaceHandler:
                     )
                 else:
                     ans = UI.ask(
-                        f"Project '{project_name}' exists. Overwrite contents? (y/n/c/q)",
-                        "N",
+                        f"Project '{project_name}' exists. Overwrite? [y]es, [n]o (skip existing), [c]lean, [q]uit",
+                        "Y",
                     ).upper()
                     if ans == "C":
                         UI.info(f"Cleaning existing project directory: {project_path}")
                         self.safe_rmtree(project_path)
-                    elif ans != "Y":
+                    elif ans == "N":
+                        overwrite = False
+                        UI.info("Proceeding in 'skip existing' mode.")
+                    elif ans == "Y":
+                        overwrite = True
+                    else:
                         UI.die("Initialization aborted.")
 
             paths = self.setup_paths(project_path)
@@ -683,7 +720,7 @@ class WorkspaceHandler:
                 if backup_dir.exists():
                     self._restore_from_cloud_layout(backup_dir, paths, project_meta)
 
-            self._hydrate_from_workspace(workspace_root, paths)
+            self._hydrate_from_workspace(workspace_root, paths, overwrite=overwrite)
 
             self.write_meta(project_path / PROJECT_META_FILE, project_meta)
             UI.success(f"Project created at: {project_path}")
