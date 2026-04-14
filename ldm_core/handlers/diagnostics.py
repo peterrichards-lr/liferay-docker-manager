@@ -835,6 +835,9 @@ del "%~f0"
                     UI.info(
                         f"  {UI.CYAN}ℹ{UI.COLOR_OFF} Fix: Run '{UI.WHITE}ldm run {p_path.name} --force-ssl{UI.COLOR_OFF}' or '{UI.WHITE}ldm renew-ssl {p_path.name}{UI.COLOR_OFF}' to regenerate certificates."
                     )
+                    UI.info(
+                        f"    Doc: {UI.CYAN}https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/installation.md#fixing-ssl-trust-issues-mkcert{UI.COLOR_OFF}"
+                    )
 
                 # Check Traefik YAML
                 if traefik_conf.exists():
@@ -851,10 +854,16 @@ del "%~f0"
                         UI.info(
                             f"  {UI.CYAN}ℹ{UI.COLOR_OFF} Fix: Run '{UI.WHITE}ldm run {p_path.name} --force-ssl{UI.COLOR_OFF}' to regenerate routing config."
                         )
+                        UI.info(
+                            f"    Doc: {UI.CYAN}https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/README.md#ssl-defaults-new-projects{UI.COLOR_OFF}"
+                        )
                 else:
                     results.append(("Traefik Project SSL", "Config MISSING", False))
                     UI.info(
                         f"  {UI.CYAN}ℹ{UI.COLOR_OFF} Fix: Run '{UI.WHITE}ldm run {p_path.name} --force-ssl{UI.COLOR_OFF}' to regenerate routing config."
+                    )
+                    UI.info(
+                        f"    Doc: {UI.CYAN}https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/README.md#ssl-defaults-new-projects{UI.COLOR_OFF}"
                     )
 
             # 7.3.1 Traefik Label Validation
@@ -899,6 +908,9 @@ del "%~f0"
                         UI.info(
                             f"  {UI.CYAN}ℹ{UI.COLOR_OFF} Fix: Run '{UI.WHITE}ldm run {p_path.name}{UI.COLOR_OFF}' to regenerate config."
                         )
+                        UI.info(
+                            f"    Doc: {UI.CYAN}https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/installation.md#dns--subdomain-configuration{UI.COLOR_OFF}"
+                        )
                     elif double_prefixed:
                         results.append(
                             (
@@ -911,6 +923,9 @@ del "%~f0"
                             print(f"  {UI.YELLOW}⚠{UI.COLOR_OFF} {dp}")
                         UI.info(
                             f"  {UI.CYAN}ℹ{UI.COLOR_OFF} Fix: Run '{UI.WHITE}ldm run {p_path.name}{UI.COLOR_OFF}' to standardize labels."
+                        )
+                        UI.info(
+                            f"    Doc: {UI.CYAN}https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/README.md#command-reference{UI.COLOR_OFF}"
                         )
                     else:
                         results.append(("Traefik Labels", "Standardized OK", True))
