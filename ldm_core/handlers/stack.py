@@ -1019,11 +1019,11 @@ class StackHandler:
         )
         resolved_ip, port = (
             self.get_resolved_ip(host_name) or "127.0.0.1",
-            int(project_meta.get("port", 8080)),
+            int(project_meta.get("port") or 8080),
         )
         use_ssl, ssl_port = (
             str(project_meta.get("ssl")).lower() == "true",
-            int(project_meta.get("ssl_port", 443)),
+            int(project_meta.get("ssl_port") or 443),
         )
         container_name, image_type = (
             project_meta.get("container_name"),

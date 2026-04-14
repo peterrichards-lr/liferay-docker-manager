@@ -580,13 +580,15 @@ class WorkspaceHandler:
             project_meta = {
                 "project_name": project_name,
                 "container_name": project_name.replace(".", "-"),
-                "port": str(getattr(self.args, "port", 8080)),
-                "ssl": str(use_ssl),
+                "port": str(getattr(self.args, "port", None) or 8080),
+                "ssl": str(use_ssl).lower(),
                 "ssl_port": "443",
                 "host_name": host_name,
                 "last_run": datetime.now().isoformat(),
-                "mount_logs": str(getattr(self.args, "mount_logs", False)).lower(),
-                "gogo_port": str(getattr(self.args, "gogo_port", "None")),
+                "mount_logs": str(
+                    getattr(self.args, "mount_logs", None) or False
+                ).lower(),
+                "gogo_port": str(getattr(self.args, "gogo_port", None) or "None"),
                 "custom_env": json.dumps(custom_env),
                 "db_type": getattr(self.args, "db", None),
                 "workspace_path": str(source) if is_init_from else None,
