@@ -1,8 +1,8 @@
 from pathlib import Path
 
 # --- Constants & Configuration ---
-# LDM_MAGIC_VERSION: 1.6.56
-VERSION = "1.6.56"
+# LDM_MAGIC_VERSION: 1.6.57
+VERSION = "1.6.57"
 
 BUILD_INFO = None
 IMAGE_NAME_DXP = "liferay/dxp"

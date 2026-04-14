@@ -1085,9 +1085,12 @@ del "%~f0"
         if hints:
             print(f"\n{UI.CYAN}--- Recommended Actions ---{UI.COLOR_OFF}")
             for h in hints:
-                print(f"  {UI.CYAN}ℹ{UI.COLOR_OFF} Fix: {h['text']}")
+                padding = UI.get_padding("ℹ")
+                print(f"{UI.CYAN}ℹ{padding}{UI.COLOR_OFF}Fix: {h['text']}")
                 if h["doc"]:
-                    print(f"    Doc: {UI.CYAN}{h['doc']}{UI.COLOR_OFF}")
+                    # Align with the start of 'Fix:'
+                    # Icon(1) + Padding(2) = 3 spaces
+                    print(f"   Doc: {UI.CYAN}{h['doc']}{UI.COLOR_OFF}")
                 print()
 
         if all_ok and not has_warnings:
