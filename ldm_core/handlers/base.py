@@ -435,9 +435,19 @@ class BaseHandler:
             try:
                 shutil.rmtree(path)
                 return True
-            except PermissionError:
-                # Handle root-owned files created by Docker on Unix
-                if system != "windows" and self.check_docker(silent=True):
+            except (PermissionError, OSError) as e:
+                # [Errno 13] is Permission Denied, [Errno 1] is Operation not permitted
+                is_perm_issue = isinstance(e, PermissionError) or (
+                    hasattr(e, "errno") and e.errno in [1, 13]
+                )
+
+                if (
+                    is_perm_issue
+                    and system != "windows"
+                    and self.check_docker(silent=True)
+                ):
+                    # Handle root-owned files created by Docker on Unix
+                    UI.info(f"Retrying deletion of {path.name} using Docker cleanup...")
                     try:
                         # Use alpine as a 'shredder' to delete the folder Docker created
                         parent = path.parent.resolve()
@@ -462,8 +472,8 @@ class BaseHandler:
                         pass
 
                 if i == 4:
-                    UI.error(f"Failed to delete {path}: Permission denied.")
-                    if system != "windows":
+                    UI.error(f"Failed to delete {path}: {e}")
+                    if system != "windows" and is_perm_issue:
                         UI.info(
                             f'Try running: {UI.CYAN}sudo rm -rf "{path}"{UI.COLOR_OFF}'
                         )
