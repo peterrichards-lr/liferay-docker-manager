@@ -328,6 +328,10 @@ del "%~f0"
                 project_paths = [p_path]
 
         results = []
+        hints = []
+
+        def add_hint(text, doc=None):
+            hints.append({"text": text, "doc": doc})
 
         # 0. Version Check
         v_display = f"v{VERSION}"
@@ -343,8 +347,9 @@ del "%~f0"
                     "warn",
                 )
             )
-            print(
-                f"    Doc: {UI.CYAN}https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/installation.md#troubleshooting-version-loop--integrity-issues{UI.COLOR_OFF}"
+            add_hint(
+                f"Upgrade LDM from v{VERSION} to v{latest} by running '{UI.WHITE}ldm upgrade{UI.COLOR_OFF}'.",
+                "https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/installation.md#troubleshooting-version-loop--integrity-issues",
             )
         else:
             results.append(("LDM Version", f"{v_display} (Latest)", True))
@@ -374,8 +379,9 @@ del "%~f0"
 
         if ok is False:
             status = f"{status} {UI.WHITE}(Run 'ldm upgrade --repair'){UI.COLOR_OFF}"
-            print(
-                f"    Doc: {UI.CYAN}https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/installation.md#troubleshooting-version-loop--integrity-issues{UI.COLOR_OFF}"
+            add_hint(
+                f"Repair your LDM installation by running '{UI.WHITE}ldm upgrade --repair{UI.COLOR_OFF}'.",
+                "https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/installation.md#troubleshooting-version-loop--integrity-issues",
             )
 
         results.append(("Executable Integrity", status, ok))
@@ -462,40 +468,40 @@ del "%~f0"
                 ["docker", "info", "--format", "{{json .}}"], check=False
             )
             if docker_info_raw:
-                results.extend(self._check_docker_resources(docker_info_raw))
+                res_results = self._check_docker_resources(docker_info_raw)
+                for comp, stat, ok in res_results:
+                    results.append((comp, stat, ok))
+                    if ok is not True:
+                        res_type = "CPU cores" if "CPU" in comp else "RAM"
+                        add_hint(
+                            f"Allocate more {res_type} in your Docker provider settings.",
+                            "https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/installation.md#docker-resource-alignment-windowswsl2macos",
+                        )
         else:
             # Trigger the detailed error reporting from base.py
             self.check_docker()
             results.append(("Docker Engine", "Not reachable", False))
-            print(
-                f"\n{UI.CYAN}💡 Tip:{UI.COLOR_OFF} If Docker is running but LDM cannot connect (common on Linux/Fedora),\n"
-                "   ensure your user is in the 'docker' group or try:\n"
-                f"   {UI.WHITE}sudo chmod 666 /var/run/docker.sock{UI.COLOR_OFF}"
-            )
-            print(
-                f"    Doc: {UI.CYAN}https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/installation.md#linux--wsl-docker-permissions{UI.COLOR_OFF}"
+            add_hint(
+                "If Docker is running but LDM cannot connect, ensure your user is in the 'docker' group.",
+                "https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/installation.md#linux--wsl-docker-permissions",
             )
 
         # 3. mkcert Check
         mkcert_status, mkcert_ok = self._check_mkcert()
         results.append(("mkcert", mkcert_status, mkcert_ok))
         if mkcert_ok is not True:
-            print(
-                f"  {UI.CYAN}ℹ{UI.COLOR_OFF} Fix: Run '{UI.WHITE}mkcert -install{UI.COLOR_OFF}' to initialize the local trust store."
-            )
-            print(
-                f"    Doc: {UI.CYAN}https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/installation.md#fixing-ssl-trust-issues-mkcert{UI.COLOR_OFF}"
+            add_hint(
+                f"Run '{UI.WHITE}mkcert -install{UI.COLOR_OFF}' to initialize the local trust store.",
+                "https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/installation.md#fixing-ssl-trust-issues-mkcert",
             )
 
         # 4. OpenSSL Check
         openssl_status, openssl_ok = self._check_openssl()
         results.append(("OpenSSL", openssl_status, openssl_ok))
         if openssl_ok is not True:
-            print(
-                f"  {UI.CYAN}ℹ{UI.COLOR_OFF} Fix: Install OpenSSL (available via brew, macports, scoop, or apt)."
-            )
-            print(
-                f"    Doc: {UI.CYAN}https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/installation.md#prerequisites{UI.COLOR_OFF}"
+            add_hint(
+                "Install OpenSSL (available via brew, macports, scoop, or apt).",
+                "https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/installation.md#prerequisites",
             )
 
         # 4.1 Liferay Cloud Check
@@ -504,8 +510,6 @@ del "%~f0"
             results.append(("Liferay Cloud Auth", lcp_status, lcp_ok))
 
         # 4.2 Global Config Check
-        # If multiple projects are being checked, we resolve 'common' relative to the first project
-        # or CWD. get_common_dir handles this internally if path is None.
         base_path = project_paths[0] if project_paths else None
         common_dir = self.get_common_dir(base_path)
         search_version = 8  # Default
@@ -514,18 +518,15 @@ del "%~f0"
             results.append(
                 ("Global Config", "Missing ('ldm init-common' available)", "warn")
             )
-            print(
-                f"  {UI.CYAN}ℹ{UI.COLOR_OFF} Fix: Run '{UI.WHITE}ldm init-common{UI.COLOR_OFF}' to restore standard development assets."
-            )
-            print(
-                f"    Doc: {UI.CYAN}https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/installation.md#global-configuration-the-common-folder{UI.COLOR_OFF}"
+            add_hint(
+                f"Run '{UI.WHITE}ldm init-common{UI.COLOR_OFF}' to restore standard development assets.",
+                "https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/installation.md#global-configuration-the-common-folder",
             )
         else:
             try:
                 import importlib.resources as pkg_resources
                 from ldm_core import resources
 
-                # Check portal-ext.properties specifically
                 pe_file = common_dir / "portal-ext.properties"
                 if not pe_file.exists():
                     results.append(
@@ -555,8 +556,8 @@ del "%~f0"
                                     prop_ok,
                                 )
                             )
-                            print(
-                                f"  {UI.CYAN}ℹ{UI.COLOR_OFF} Fix: Verify the syntax in '{UI.WHITE}common/portal-ext.properties{UI.COLOR_OFF}'."
+                            add_hint(
+                                f"Verify the syntax in '{UI.WHITE}common/portal-ext.properties{UI.COLOR_OFF}'."
                             )
                             if prop_details:
                                 for detail in prop_details:
@@ -564,8 +565,6 @@ del "%~f0"
                                         f"  {UI.YELLOW}⚠{UI.COLOR_OFF} [Global] {detail}"
                                     )
 
-                # Check for Global Search Configs
-                # Detect which version we should be looking for based on running container
                 search_inspect = run_command(
                     [
                         "docker",
@@ -590,8 +589,6 @@ del "%~f0"
                     / f"com.liferay.portal.search.{v_id}.configuration.ElasticsearchConnectionConfiguration-REMOTE.config"
                 )
 
-                # For ES8, we might also have ES7 configs for compatibility mode.
-                # Doctor should confirm at least the NATIVE configs for the search version exist.
                 if not es_main.exists() or not es_conn.exists():
                     results.append(
                         (
@@ -600,13 +597,12 @@ del "%~f0"
                             "warn",
                         )
                     )
-                    print(
-                        f"  {UI.CYAN}ℹ{UI.COLOR_OFF} Fix: Run '{UI.WHITE}ldm init-common{UI.COLOR_OFF}' to restore search configuration files."
+                    add_hint(
+                        f"Run '{UI.WHITE}ldm init-common{UI.COLOR_OFF}' to restore search configuration files."
                     )
                 else:
                     msg = f"REMOTE mode ready ({v_id.upper()})"
                     if search_version == 8:
-                        # Check if ES7 compat files also exist
                         compat_main = (
                             common_dir
                             / "com.liferay.portal.search.elasticsearch7.configuration.ElasticsearchConfiguration.config"
@@ -629,8 +625,9 @@ del "%~f0"
                 results.append(
                     ("Docker Network", "missing (will be created on run)", "warn")
                 )
-                print(
-                    f"    Doc: {UI.CYAN}https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/README.md#infra-setup-infra-down-infra-restart{UI.COLOR_OFF}"
+                add_hint(
+                    "Shared infrastructure network 'liferay-net' will be created during project startup.",
+                    "https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/README.md#infra-setup-infra-down-infra-restart",
                 )
 
             # 6. Global Services Check
@@ -643,7 +640,6 @@ del "%~f0"
                 ("liferay-search-global", search_label),
             ]
 
-            # The bridge is only relevant for macOS (Darwin)
             if platform.system().lower() == "darwin":
                 global_services.append(("docker-socket-proxy", "Docker Socket Bridge"))
 
@@ -655,7 +651,6 @@ del "%~f0"
                     status = "Running"
                     ok = True
 
-                    # Deep Check: Bridge Network Connectivity (macOS)
                     if container == "docker-socket-proxy":
                         inspect = run_command(
                             [
@@ -671,12 +666,12 @@ del "%~f0"
                         if container not in (inspect or ""):
                             status = "Isolated (Connect with ldm infra-setup)"
                             ok = "warn"
+                            add_hint(
+                                f"Run '{UI.WHITE}ldm infra-setup{UI.COLOR_OFF}' to reconnect the macOS socket bridge."
+                            )
 
-                    # Deep Check: Search Cluster API
                     if container == "liferay-search-global":
-                        # Perform a quick API ping
                         try:
-                            # We use curl -I to check for a response from the ES8 cluster
                             search_res = run_command(
                                 [
                                     "curl",
@@ -692,10 +687,12 @@ del "%~f0"
                             if search_res != "200" and search_res != "401":
                                 status = f"Unreachable (HTTP {search_res})"
                                 ok = "warn"
+                                add_hint(
+                                    f"Run '{UI.WHITE}ldm infra-restart --search{UI.COLOR_OFF}' if the search cluster is unresponsive."
+                                )
                         except Exception:
                             pass
 
-                    # Deep Check: Log Health (Generic for all infrastructure)
                     log_status, log_ok = self._check_container_health_logs(container)
                     if log_status:
                         status = log_status
@@ -717,9 +714,10 @@ del "%~f0"
                         results.append(
                             (label, f"Not running (Run '{cmd_hint}')", "warn")
                         )
-                        print(
-                            f"    Doc: {UI.CYAN}https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/README.md#infra-setup-infra-down-infra-restart{UI.COLOR_OFF}"
-                        )
+                    add_hint(
+                        f"Start shared infrastructure by running '{UI.WHITE}{cmd_hint}{UI.COLOR_OFF}'.",
+                        "https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/README.md#infra-setup-infra-down-infra-restart",
+                    )
         else:
             results.append(("Docker Network", "Skipped (Engine down)", "warn"))
             results.append(("Global Infrastructure", "Skipped (Engine down)", "warn"))
@@ -727,7 +725,6 @@ del "%~f0"
         # 7. Project-Specific Check (Optional)
         for p_path in project_paths:
             UI.heading(f"Project Health: {p_path.name}")
-            # 7.1 Metadata Health Check
             meta = self.read_meta(p_path / PROJECT_META_FILE)
             env_args = meta.get("env_args", [])
             blacklisted_prefixes = [
@@ -746,55 +743,54 @@ del "%~f0"
             if poisoned:
                 results.append(
                     (
-                        "Project Metadata",
+                        f"[{p_path.name}] Metadata",
                         f"Poisoned ({len(poisoned)} legacy vars)",
                         "warn",
                     )
                 )
-                print(
-                    f"  {UI.CYAN}ℹ{UI.COLOR_OFF} Fix: Run '{UI.WHITE}ldm run {p_path.name}{UI.COLOR_OFF}' to automatically clean legacy environment variables."
-                )
-                print(
-                    f"    Doc: {UI.CYAN}https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/README.md#env{UI.COLOR_OFF}"
+                add_hint(
+                    f"[{p_path.name}] Clean legacy environment variables by running '{UI.WHITE}ldm run {p_path.name}{UI.COLOR_OFF}'.",
+                    "https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/README.md#env",
                 )
             else:
-                results.append(("Project Metadata", "Healthy", True))
+                results.append((f"[{p_path.name}] Metadata", "Healthy", True))
 
-            # 7.2 Compose File Check
             if self.require_compose(p_path, silent=True):
-                results.append(("Project Config", "docker-compose.yml OK", True))
-            else:
-                results.append(("Project Config", "docker-compose.yml MISSING", False))
-                print(
-                    f"  {UI.CYAN}ℹ{UI.COLOR_OFF} Fix: Run '{UI.WHITE}ldm run {p_path.name}{UI.COLOR_OFF}' to regenerate the missing docker-compose.yml file."
+                results.append(
+                    (f"[{p_path.name}] Config", "docker-compose.yml OK", True)
                 )
-                print(
-                    f"    Doc: {UI.CYAN}https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/README.md#run-alias-up{UI.COLOR_OFF}"
+            else:
+                results.append(
+                    (f"[{p_path.name}] Config", "docker-compose.yml MISSING", False)
+                )
+                add_hint(
+                    f"[{p_path.name}] Regenerate missing configuration by running '{UI.WHITE}ldm run {p_path.name}{UI.COLOR_OFF}'.",
+                    "https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/README.md#run-alias-up",
                 )
 
-            # 7.2.1 Portal Properties Validation
             pe_file = p_path / "files" / "portal-ext.properties"
             if pe_file.exists():
                 prop_status, prop_ok, prop_details = self.validate_properties_file(
                     pe_file
                 )
-                results.append(("Portal Properties", prop_status, prop_ok))
+                results.append((f"[{p_path.name}] Properties", prop_status, prop_ok))
                 if prop_ok is not True:
-                    print(
-                        f"  {UI.CYAN}ℹ{UI.COLOR_OFF} Fix: Verify the syntax in your project's '{UI.WHITE}files/portal-ext.properties{UI.COLOR_OFF}'."
+                    add_hint(
+                        f"[{p_path.name}] Verify syntax in '{UI.WHITE}{p_path.name}/files/portal-ext.properties{UI.COLOR_OFF}'.",
+                        "https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/LDM_ARCHITECTURE.md#5-metadata--property-injection",
                     )
-                    print(
-                        f"    Doc: {UI.CYAN}https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/LDM_ARCHITECTURE.md#5-metadata--property-injection{UI.COLOR_OFF}"
-                    )
-                if prop_details:
-                    for detail in prop_details:
-                        print(f"  {UI.YELLOW}⚠{UI.COLOR_OFF} {detail}")
+                    if prop_details:
+                        for detail in prop_details:
+                            print(f"  {UI.YELLOW}⚠{UI.COLOR_OFF} {detail}")
             else:
                 results.append(
-                    ("Portal Properties", "portal-ext.properties MISSING", "warn")
+                    (
+                        f"[{p_path.name}] Properties",
+                        "portal-ext.properties MISSING",
+                        "warn",
+                    )
                 )
 
-            # 7.2.2 OSGi Search Config Check
             osgi_config_dir = p_path / "osgi" / "configs"
             es_main_conf = (
                 osgi_config_dir
@@ -806,42 +802,43 @@ del "%~f0"
             )
 
             if es_main_conf.exists() and es_conn_conf.exists():
-                results.append(("OSGi Search Config", "REMOTE mode detected", True))
+                results.append(
+                    (f"[{p_path.name}] OSGi Search", "REMOTE mode detected", True)
+                )
             elif es_main_conf.exists() or es_conn_conf.exists():
-                results.append(("OSGi Search Config", "Partial / Incomplete", "warn"))
-                print(
-                    f"  {UI.CYAN}ℹ{UI.COLOR_OFF} Fix: Ensure both Elasticsearch configuration files are present in '{UI.WHITE}osgi/configs/{UI.COLOR_OFF}'."
+                results.append(
+                    (f"[{p_path.name}] OSGi Search", "Partial / Incomplete", "warn")
+                )
+                add_hint(
+                    f"[{p_path.name}] Ensure both Elasticsearch configs exist in '{UI.WHITE}osgi/configs/{UI.COLOR_OFF}'."
                 )
             else:
                 results.append(
                     (
-                        "OSGi Search Config",
+                        f"[{p_path.name}] OSGi Search",
                         "Missing (Liferay will start sidecar)",
                         "warn",
                     )
                 )
-                print(
-                    f"  {UI.CYAN}ℹ{UI.COLOR_OFF} Hint: Run '{UI.WHITE}ldm migrate-search {p_path.name}{UI.COLOR_OFF}' to enable global search."
+                add_hint(
+                    f"[{p_path.name}] Enable global search by running '{UI.WHITE}ldm migrate-search {p_path.name}{UI.COLOR_OFF}'.",
+                    "https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/README.md#migrate-search",
                 )
 
-            # 7.2.3 License Check
             lic_status, lic_ok, lic_details = self.check_license_health(
                 {"common": common_dir, **self.setup_paths(p_path)},
                 image_tag=meta.get("tag"),
             )
-            results.append(("Project License", lic_status, lic_ok))
+            results.append((f"[{p_path.name}] License", lic_status, lic_ok))
             if lic_ok is not True:
-                print(
-                    f"  {UI.CYAN}ℹ{UI.COLOR_OFF} Fix: Place a valid DXP '.xml' license in your global '{UI.WHITE}common/{UI.COLOR_OFF}' or the project's '{UI.WHITE}deploy/{UI.COLOR_OFF}' folder."
-                )
-                print(
-                    f"    Doc: {UI.CYAN}https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/LDM_ARCHITECTURE.md#key-architectural-pillars{UI.COLOR_OFF}"
+                add_hint(
+                    f"[{p_path.name}] Place a valid DXP license in global '{UI.WHITE}common/{UI.COLOR_OFF}' or '{UI.WHITE}deploy/{UI.COLOR_OFF}'.",
+                    "https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/LDM_ARCHITECTURE.md#key-architectural-pillars",
                 )
             if lic_details:
                 for detail in lic_details:
                     print(f"  {UI.CYAN}ℹ{UI.COLOR_OFF} {detail}")
 
-            # 7.3 SSL Certificate Check
             host_name = meta.get("host_name", "localhost")
             ssl_enabled = str(meta.get("ssl", "false")).lower() == "true"
             ssl_cert_name = meta.get("ssl_cert")
@@ -853,10 +850,8 @@ del "%~f0"
                 key_file = cert_dir / cert_file.name.replace(".pem", "-key.pem")
                 traefik_conf = cert_dir / f"traefik-{host_name}.yml"
 
-                # Check .pem and -key.pem
                 if cert_file.exists() and key_file.exists():
                     cert_status = "Cert & Key OK"
-                    # Try to get expiry info if openssl is available
                     openssl_bin = shutil.which("openssl")
                     if openssl_bin:
                         try:
@@ -876,46 +871,46 @@ del "%~f0"
                                 cert_status = f"Valid until {expiry_date}"
                         except Exception:
                             pass
-                    results.append(("Project SSL Cert", cert_status, True))
+                    results.append((f"[{p_path.name}] SSL Cert", cert_status, True))
                 else:
                     results.append(
-                        ("Project SSL Cert", "Missing (.pem or -key.pem)", False)
+                        (
+                            f"[{p_path.name}] SSL Cert",
+                            "Missing (.pem or -key.pem)",
+                            False,
+                        )
                     )
-                    print(
-                        f"  {UI.CYAN}ℹ{UI.COLOR_OFF} Fix: Run '{UI.WHITE}ldm run {p_path.name} --force-ssl{UI.COLOR_OFF}' or '{UI.WHITE}ldm renew-ssl {p_path.name}{UI.COLOR_OFF}' to regenerate certificates."
-                    )
-                    print(
-                        f"    Doc: {UI.CYAN}https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/installation.md#fixing-ssl-trust-issues-mkcert{UI.COLOR_OFF}"
+                    add_hint(
+                        f"[{p_path.name}] Regenerate SSL certificates by running '{UI.WHITE}ldm run {p_path.name} --force-ssl{UI.COLOR_OFF}'.",
+                        "https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/installation.md#fixing-ssl-trust-issues-mkcert",
                     )
 
-                # Check Traefik YAML
                 if traefik_conf.exists():
                     conf_content = traefik_conf.read_text()
                     expected_cert = f"certFile: /etc/traefik/certs/{host_name}.pem"
                     expected_key = f"keyFile: /etc/traefik/certs/{host_name}-key.pem"
 
                     if expected_cert in conf_content and expected_key in conf_content:
-                        results.append(("Traefik Project SSL", "Config OK", True))
+                        results.append(
+                            (f"[{p_path.name}] Traefik SSL", "Config OK", True)
+                        )
                     else:
                         results.append(
-                            ("Traefik Project SSL", "Invalid Content", "warn")
+                            (f"[{p_path.name}] Traefik SSL", "Invalid Content", "warn")
                         )
-                        print(
-                            f"  {UI.CYAN}ℹ{UI.COLOR_OFF} Fix: Run '{UI.WHITE}ldm run {p_path.name} --force-ssl{UI.COLOR_OFF}' to regenerate routing config."
-                        )
-                        print(
-                            f"    Doc: {UI.CYAN}https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/README.md#ssl-defaults-new-projects{UI.COLOR_OFF}"
+                        add_hint(
+                            f"[{p_path.name}] Regenerate Traefik routing by running '{UI.WHITE}ldm run {p_path.name} --force-ssl{UI.COLOR_OFF}'.",
+                            "https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/README.md#ssl-defaults-new-projects",
                         )
                 else:
-                    results.append(("Traefik Project SSL", "Config MISSING", False))
-                    print(
-                        f"  {UI.CYAN}ℹ{UI.COLOR_OFF} Fix: Run '{UI.WHITE}ldm run {p_path.name} --force-ssl{UI.COLOR_OFF}' to regenerate routing config."
+                    results.append(
+                        (f"[{p_path.name}] Traefik SSL", "Config MISSING", False)
                     )
-                    print(
-                        f"    Doc: {UI.CYAN}https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/README.md#ssl-defaults-new-projects{UI.COLOR_OFF}"
+                    add_hint(
+                        f"[{p_path.name}] Regenerate Traefik routing by running '{UI.WHITE}ldm run {p_path.name} --force-ssl{UI.COLOR_OFF}'.",
+                        "https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/README.md#ssl-defaults-new-projects",
                     )
 
-            # 7.3.1 Traefik Label Validation
             compose_file = p_path / "docker-compose.yml"
             if compose_file.exists():
                 try:
@@ -928,8 +923,6 @@ del "%~f0"
                         "liferay", {}
                     )
                     labels = liferay_service.get("labels", [])
-
-                    # Convert labels list/dict to a flat list of strings for easier checking
                     label_list = []
                     if isinstance(labels, list):
                         label_list = labels
@@ -941,8 +934,6 @@ del "%~f0"
                         "traefik.docker.network=liferay-net" in label
                         for label in label_list
                     )
-
-                    # Detect double-prefixing: search for labels containing the p_id twice in the name part
                     double_prefixed = []
                     for label in label_list:
                         if "=" in label:
@@ -952,68 +943,73 @@ del "%~f0"
 
                     if not has_net_label:
                         results.append(
-                            ("Traefik Labels", "Missing Network Label", False)
+                            (
+                                f"[{p_path.name}] Traefik Labels",
+                                "Missing Net Label",
+                                False,
+                            )
                         )
-                        print(
-                            f"  {UI.CYAN}ℹ{UI.COLOR_OFF} Fix: Run '{UI.WHITE}ldm run {p_path.name}{UI.COLOR_OFF}' to regenerate config."
-                        )
-                        print(
-                            f"    Doc: {UI.CYAN}https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/installation.md#dns--subdomain-configuration{UI.COLOR_OFF}"
+                        add_hint(
+                            f"[{p_path.name}] Fix Traefik labels by running '{UI.WHITE}ldm run {p_path.name}{UI.COLOR_OFF}'.",
+                            "https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/installation.md#dns--subdomain-configuration",
                         )
                     elif double_prefixed:
                         results.append(
                             (
-                                "Traefik Labels",
+                                f"[{p_path.name}] Traefik Labels",
                                 f"Double Prefixed ({len(double_prefixed)} labels)",
                                 "warn",
                             )
                         )
                         for dp in double_prefixed:
                             print(f"  {UI.YELLOW}⚠{UI.COLOR_OFF} {dp}")
-                        print(
-                            f"  {UI.CYAN}ℹ{UI.COLOR_OFF} Fix: Run '{UI.WHITE}ldm run {p_path.name}{UI.COLOR_OFF}' to standardize labels."
-                        )
-                        print(
-                            f"    Doc: {UI.CYAN}https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/README.md#command-reference{UI.COLOR_OFF}"
+                        add_hint(
+                            f"[{p_path.name}] Standardize Traefik labels by running '{UI.WHITE}ldm run {p_path.name}{UI.COLOR_OFF}'.",
+                            "https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/README.md#command-reference",
                         )
                     else:
-                        results.append(("Traefik Labels", "Standardized OK", True))
+                        results.append(
+                            (f"[{p_path.name}] Traefik Labels", "Standardized OK", True)
+                        )
                 except Exception as e:
-                    results.append(("Traefik Labels", f"Check Failed ({e})", "warn"))
+                    results.append(
+                        (
+                            f"[{p_path.name}] Traefik Labels",
+                            f"Check Failed ({e})",
+                            "warn",
+                        )
+                    )
 
-            # 7.4 DNS Check (Centralized)
             dns_ok, unresolved = self.validate_project_dns(p_path)
             if host_name != "localhost":
                 if dns_ok:
                     results.append(
-                        (f"Project DNS ({host_name})", "All domains resolve", True)
+                        (
+                            f"[{p_path.name}] DNS ({host_name})",
+                            "All domains resolve",
+                            True,
+                        )
                     )
                 else:
                     results.append(
                         (
-                            f"Project DNS ({host_name})",
+                            f"[{p_path.name}] DNS ({host_name})",
                             f"{len(unresolved)} domain(s) unresolved",
                             False,
                         )
                     )
-                    print(
-                        f"  {UI.CYAN}ℹ{UI.COLOR_OFF} Fix: Add the required hostnames to your local '{UI.WHITE}/etc/hosts{UI.COLOR_OFF}' file."
-                    )
-                    print(
-                        f"    Doc: {UI.CYAN}https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/installation.md#dns--subdomain-configuration{UI.COLOR_OFF}"
+                    add_hint(
+                        f"[{p_path.name}] Add the required hostnames to your local '{UI.WHITE}/etc/hosts{UI.COLOR_OFF}' file.",
+                        "https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/installation.md#dns--subdomain-configuration",
                     )
                     for d in unresolved:
                         print(f"  {UI.RED}×{UI.COLOR_OFF} {d}")
 
-            # 7.5 Environment Check (Centralized)
             try:
                 if platform.system().lower() == "darwin":
-                    # Determine if the Liferay container is running for this project
                     from ldm_core.utils import sanitize_id
 
                     p_id = sanitize_id(meta.get("container_name") or p_path.name)
-
-                    # Try LDM-standard name first, then fall back to Compose's default
                     liferay_container = None
                     possible_names = [f"{p_id}-liferay", f"{p_id}-liferay-1", p_id]
                     for name in possible_names:
@@ -1024,9 +1020,6 @@ del "%~f0"
                             break
 
                     if liferay_container:
-                        # Perform a LIVE check inside the running container
-                        # 1. Create a fresh token in a mounted subdirectory (e.g., /deploy)
-                        # We use /deploy because the project root itself is not fully mounted.
                         import uuid
 
                         token_val = f"DOCTOR_LIVE_{uuid.uuid4().hex[:8]}"
@@ -1036,9 +1029,6 @@ del "%~f0"
                         try:
                             deploy_dir.mkdir(parents=True, exist_ok=True)
                             token_file.write_text(token_val)
-
-                            # 2. Try to read it from INSIDE the container
-                            # In Liferay containers, 'deploy' is always at /opt/liferay/deploy
                             verify_res = run_command(
                                 [
                                     "docker",
@@ -1052,36 +1042,29 @@ del "%~f0"
 
                             if token_val in (verify_res or ""):
                                 results.append(
-                                    ("Mount Verification", "Live (OK)", True)
+                                    (f"[{p_path.name}] Mounts", "Live (OK)", True)
                                 )
                             else:
                                 results.append(
-                                    (
-                                        "Mount Verification",
-                                        "BROKEN (Not visible in container)",
-                                        False,
-                                    )
+                                    (f"[{p_path.name}] Mounts", "BROKEN", False)
                                 )
-                                print(
-                                    f"  {UI.CYAN}ℹ{UI.COLOR_OFF} Fix: Ensure your Docker provider (Colima/OrbStack) has permission to share your home directory."
-                                )
-                                print(
-                                    f"    Doc: {UI.CYAN}https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/installation.md#the-ghost-mount-issue{UI.COLOR_OFF}"
+                                add_hint(
+                                    f"[{p_path.name}] Ensure Docker has permission to share your home directory.",
+                                    "https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/installation.md#the-ghost-mount-issue",
                                 )
                         finally:
-                            # Cleanup
                             if token_file.exists():
                                 token_file.unlink()
                     else:
                         results.append(
-                            ("Mount Verification", "Verified on start", True)
+                            (f"[{p_path.name}] Mounts", "Verified on start", True)
                         )
             except Exception:
                 pass
 
-        # Print Results
-        print(f"{'Component':<25} {'Status':<30}")
-        print("-" * 60)
+        # Print Results Table
+        print(f"\n{'Component':<35} {'Status':<30}")
+        print("-" * 75)
 
         all_ok, has_warnings = True, False
         for component, status, ok in results:
@@ -1096,7 +1079,16 @@ del "%~f0"
                 color = UI.RED
                 icon = "❌ "
                 all_ok = False
-            print(f"{component:<25} {color}{icon} {status}{UI.COLOR_OFF}")
+            print(f"{component:<35} {color}{icon} {status}{UI.COLOR_OFF}")
+
+        # Print Actionable Hints at the end
+        if hints:
+            print(f"\n{UI.CYAN}--- Recommended Actions ---{UI.COLOR_OFF}")
+            for h in hints:
+                print(f"  {UI.CYAN}ℹ{UI.COLOR_OFF} Fix: {h['text']}")
+                if h["doc"]:
+                    print(f"    Doc: {UI.CYAN}{h['doc']}{UI.COLOR_OFF}")
+                print()
 
         if all_ok and not has_warnings:
             UI.success("Everything looks good! Your environment is ready.")
