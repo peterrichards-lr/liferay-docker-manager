@@ -179,8 +179,9 @@ class WorkspaceHandler:
                 target_folder = ce_source_truth / item.stem
                 root_zip_copy = ce_source_truth / item.name
 
-                # Copy to root first to expand
-                shutil.copy2(item, root_zip_copy)
+                # Copy to root first to expand (if not already there)
+                if item.resolve() != root_zip_copy.resolve():
+                    shutil.copy2(item, root_zip_copy)
 
                 with zipfile.ZipFile(root_zip_copy, "r") as zip_ref:
                     ext_info = self._scan_extension_metadata(zip_ref=zip_ref)
@@ -203,9 +204,10 @@ class WorkspaceHandler:
 
                         # Move the original ZIP from root to OSGI for Liferay's scanner
                         dest_zip = osgi_cx_dir / item.name
-                        if dest_zip.exists():
-                            os.remove(dest_zip)
-                        shutil.move(str(root_zip_copy), str(dest_zip))
+                        if root_zip_copy.resolve() != dest_zip.resolve():
+                            if dest_zip.exists():
+                                os.remove(dest_zip)
+                            shutil.move(str(root_zip_copy), str(dest_zip))
 
                         extensions.append(
                             {
