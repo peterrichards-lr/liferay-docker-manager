@@ -121,6 +121,44 @@ class TestDiagnostics(unittest.TestCase):
             if lcp_file.exists():
                 lcp_file.unlink()
 
+    @patch("subprocess.run")
+    def test_check_liferay_health_logs(self, mock_run):
+        # 1. Success case
+        mock_run.return_value = MagicMock(
+            stdout="Liferay(TM) Portal 7.4 started in 120s", stderr="", returncode=0
+        )
+        status, ok = self.manager._check_liferay_health_logs("test-container")
+        self.assertEqual(status, "Ready")
+        self.assertTrue(ok)
+
+        # 2. Critical Error case (ES Version)
+        mock_run.return_value = MagicMock(
+            stdout="ERROR: Elasticsearch node does not meet the minimum version requirement of 8.19",
+            stderr="",
+            returncode=0,
+        )
+        status, ok = self.manager._check_liferay_health_logs("test-container")
+        self.assertTrue("Critical" in status)
+        self.assertFalse(ok)
+
+        # 3. Starting case
+        mock_run.return_value = MagicMock(
+            stdout="Starting Liferay Digital Experience Platform...",
+            stderr="",
+            returncode=0,
+        )
+        status, ok = self.manager._check_liferay_health_logs("test-container")
+        self.assertEqual(status, "Starting...")
+        self.assertTrue(ok)
+
+        # 4. Warning case
+        mock_run.return_value = MagicMock(
+            stdout="WARN: Some slow background task", stderr="", returncode=0
+        )
+        status, ok = self.manager._check_liferay_health_logs("test-container")
+        self.assertTrue("Warning" in status)
+        self.assertEqual(ok, "warn")
+
     @patch("ldm_core.handlers.diagnostics.verify_executable_checksum")
     @patch("ldm_core.handlers.diagnostics.check_for_updates")
     @patch("ldm_core.handlers.diagnostics.platform.platform")

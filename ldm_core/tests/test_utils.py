@@ -1,10 +1,12 @@
 import unittest
+from unittest.mock import patch
+from pathlib import Path
 from ldm_core.utils import version_to_tuple, verify_executable_checksum
 
 
 class TestUtils(unittest.TestCase):
-    @unittest.mock.patch("sys.argv", ["ldm.py"])
-    @unittest.mock.patch("sys.frozen", False, create=True)
+    @patch("sys.argv", ["ldm.py"])
+    @patch("sys.frozen", False, create=True)
     def test_verify_executable_checksum_source(self):
         # When running as source (pytest), it should return "Source", True, VERSION
         status, ok, version = verify_executable_checksum("1.6.11")
@@ -38,6 +40,19 @@ class TestUtils(unittest.TestCase):
         self.assertEqual(sanitize_id("user; drop table users"), "userdroptableusers")
         self.assertEqual(sanitize_id(""), "")
         self.assertEqual(sanitize_id(None), None)
+
+    @patch("ldm_core.utils.platform.system")
+    @patch("ldm_core.utils.os.environ.get")
+    def test_get_actual_home_case_insensitive(self, mock_env, mock_system):
+        from ldm_core.utils import get_actual_home
+
+        # Mock macOS with capitalized "Darwin"
+        mock_system.return_value = "Darwin"
+        mock_env.return_value = "tester"
+
+        with patch.object(Path, "exists", return_value=True):
+            home = get_actual_home()
+            self.assertEqual(str(home), "/Users/tester")
 
 
 if __name__ == "__main__":

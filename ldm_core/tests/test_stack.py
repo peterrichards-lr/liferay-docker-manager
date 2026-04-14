@@ -85,6 +85,94 @@ class MockManager(StackHandler, WorkspaceHandler, LicenseHandler):
         }
 
 
+class TestStackInfrastructure(unittest.TestCase):
+    def setUp(self):
+        self.manager = StackHandler()
+        self.manager.args = MagicMock()
+        self.manager.verbose = False
+        self.manager.non_interactive = True
+
+    @patch("ldm_core.handlers.stack.run_command")
+    @patch("ldm_core.handlers.stack.get_actual_home")
+    @patch("time.sleep")
+    def test_setup_global_search_installs_plugins(
+        self, mock_sleep, mock_home, mock_run
+    ):
+        mock_home.return_value = Path("/tmp/home")
+
+        # 1. Existence check: No container
+        # 2. Inspect: (skipped since no container)
+        # 3. docker run: (starts ES)
+        # 4. elasticsearch ready check: returns "cluster_name"
+        # 5. snapshot PUT
+        # 6. elasticsearch-plugin list: returns empty string (no plugins)
+        # 7. elasticsearch-plugin install (4 calls)
+        # 8. docker restart
+        # 9. wait for ready (returns "cluster_name")
+
+        mock_run.side_effect = [
+            None,  # existence check
+            "container_id",  # docker run
+            '{"cluster_name": "test"}',  # ready check
+            "snapshot_ok",  # snapshot PUT
+            "",  # plugin list (missing all)
+            "install_icu",
+            "install_kuro",
+            "install_smart",
+            "install_stempel",
+            "restart_ok",
+            '{"cluster_name": "test"}',  # ready check after restart
+        ]
+
+        with patch.object(self.manager, "_ensure_network"):
+            self.manager.setup_global_search()
+
+            # Verify plugin installation was attempted
+            install_calls = [
+                c
+                for c in mock_run.call_args_list
+                if "elasticsearch-plugin" in str(c) and "install" in str(c)
+            ]
+            self.assertEqual(len(install_calls), 4)
+
+            # Verify optimized config was in the 'docker run' call
+            run_call = [
+                c for c in mock_run.call_args_list if "run" in str(c) and "-d" in str(c)
+            ][0]
+            cmd_args = run_call[0][0]
+            self.assertIn("indices.query.bool.max_clause_count=10000", cmd_args)
+
+    @patch("ldm_core.handlers.stack.run_command")
+    @patch("shutil.which")
+    def test_setup_ssl_generates_config(self, mock_which, mock_run):
+        mock_which.return_value = "/usr/bin/mkcert"
+
+        # We'll use a temp directory for certs
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            cert_dir = Path(tmp_dir)
+            host_name = "test.local"
+
+            # Mock mkcert creating the files
+            def mock_mkcert(*args, **kwargs):
+                (cert_dir / f"{host_name}.pem").write_text("CERT")
+                (cert_dir / f"{host_name}-key.pem").write_text("KEY")
+                return "OK"
+
+            mock_run.side_effect = mock_mkcert
+
+            res = self.manager.setup_ssl(cert_dir, host_name)
+
+            self.assertTrue(res)
+            # Verify Traefik config was created
+            config_file = cert_dir / f"traefik-{host_name}.yml"
+            self.assertTrue(config_file.exists())
+            self.assertIn(
+                f"certFile: /etc/traefik/certs/{host_name}.pem", config_file.read_text()
+            )
+
+
 class TestStackScaling(unittest.TestCase):
     @patch("ldm_core.handlers.stack.dict_to_yaml")
     @patch("ldm_core.handlers.stack.get_docker_socket_path")

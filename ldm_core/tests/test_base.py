@@ -14,6 +14,58 @@ class MockBaseManager(BaseHandler, WorkspaceHandler):
         self.non_interactive = True
 
 
+class TestBaseDiscovery(unittest.TestCase):
+    def setUp(self):
+        self.handler = MockBaseManager()
+
+    def test_find_dxp_roots_multi_dir(self):
+        import tempfile
+
+        # Create a temporary environment
+        with tempfile.TemporaryDirectory() as base_tmp:
+            base_path = Path(base_tmp)
+            cwd_dir = base_path / "cwd"
+            other_dir = base_path / "other"
+
+            for d in [cwd_dir, other_dir]:
+                d.mkdir()
+                # Create a project in each
+                proj = d / f"proj_{d.name}"
+                proj.mkdir()
+                (proj / ".liferay-docker.meta").write_text("tag=latest")
+
+            with patch("ldm_core.handlers.base.Path.cwd", return_value=cwd_dir):
+                with patch.dict(os.environ, {"LDM_WORKSPACE": str(other_dir)}):
+                    with patch(
+                        "ldm_core.handlers.base.Path.home",
+                        return_value=base_path / "nonexistent",
+                    ):
+                        roots = self.handler.find_dxp_roots()
+
+                        names = [r["path"].name for r in roots]
+                        self.assertIn("proj_cwd", names)
+                        self.assertIn("proj_other", names)
+
+    @patch("ldm_core.handlers.base.os.chmod")
+    def test_migrate_layout_routes_permissions(self, mock_chmod):
+        # Verify that routes/default/dxp is created and 777'd
+        root = Path("/tmp/proj")
+        paths = {
+            "root": root,
+            "routes": root / "osgi" / "routes",
+            "marketplace": root / "osgi" / "marketplace",
+        }
+
+        with patch.object(Path, "mkdir"):
+            with patch.object(Path, "exists", return_value=False):
+                self.handler.migrate_layout(paths)
+
+                # Check if chmod was called with 0o777 for routes
+                # 0o777 is 511 in decimal
+                chmod_calls = [str(c) for c in mock_chmod.call_args_list]
+                self.assertTrue(any("511" in call for call in chmod_calls))
+
+
 class TestBaseHardening(unittest.TestCase):
     def setUp(self):
         self.handler = MockBaseManager()
