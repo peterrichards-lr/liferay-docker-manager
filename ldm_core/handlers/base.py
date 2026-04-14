@@ -359,11 +359,18 @@ class BaseHandler:
         if "routes" in paths:
             try:
                 # Ensure the base routes dir is 777
-                os.chmod(paths["routes"], 0o777)  # nosec B103
+                routes_dir = paths["routes"]
+                routes_dir.mkdir(parents=True, exist_ok=True)
+                os.chmod(routes_dir, 0o777)  # nosec B103
+
                 # Create default/dxp subfolder which Liferay specifically tries to write to
-                dxp_routes = paths["routes"] / "default" / "dxp"
+                # We must ensure EVERY level is writable by the container (UID 1000)
+                default_dir = routes_dir / "default"
+                default_dir.mkdir(parents=True, exist_ok=True)
+                os.chmod(default_dir, 0o777)  # nosec B103
+
+                dxp_routes = default_dir / "dxp"
                 dxp_routes.mkdir(parents=True, exist_ok=True)
-                os.chmod(paths["routes"] / "default", 0o777)  # nosec B103
                 os.chmod(dxp_routes, 0o777)  # nosec B103
             except Exception:
                 pass
