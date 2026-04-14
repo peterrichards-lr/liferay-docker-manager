@@ -486,7 +486,7 @@ class BaseHandler:
                 time.sleep(2)
         return False
 
-    def check_docker(self):
+    def check_docker(self, silent=False):
         try:
             # We use subprocess directly to capture the raw error message if it fails
             docker_bin = shutil.which("docker")
@@ -502,13 +502,13 @@ class BaseHandler:
             if res.returncode == 0:
                 return True
 
-            if res.stderr:
+            if res.stderr and not silent:
                 # Extract the first line of the error to avoid overwhelming the user
                 err = res.stderr.splitlines()[0]
                 UI.error(f"Docker Error: {err}")
             return False
         except Exception as e:
-            if self.verbose:
+            if self.verbose and not silent:
                 UI.error(f"Docker Exception: {e}")
             return False
 
