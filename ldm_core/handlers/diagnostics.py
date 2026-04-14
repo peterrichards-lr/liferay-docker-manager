@@ -487,7 +487,7 @@ del "%~f0"
             )
 
         # 3. mkcert Check
-        mkcert_status, mkcert_ok, ca_root = self._check_mkcert()
+        mkcert_status, mkcert_ok, ca_root = self.check_mkcert()
         results.append(("mkcert", mkcert_status, mkcert_ok))
         if mkcert_ok is not True:
             add_hint(
@@ -1137,7 +1137,7 @@ del "%~f0"
             UI.error("Critical issues were detected. Check the items above.")
             sys.exit(1)
 
-    def _check_mkcert(self):
+    def check_mkcert(self):
         """Checks for mkcert installation and root CA trust."""
         try:
             mkcert_bin = shutil.which("mkcert")

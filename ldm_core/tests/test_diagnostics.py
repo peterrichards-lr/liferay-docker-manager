@@ -49,7 +49,7 @@ class MockDiagManager(DiagnosticsHandler):
     def validate_project_dns(self, *args, **kwargs):
         return True, []
 
-    def _check_mkcert(self, *args, **kwargs):
+    def check_mkcert(self, *args, **kwargs):
         return "Installed (Root CA Trusted)", True, "/home/user/.local/share/mkcert"
 
     def _check_openssl(self, *args, **kwargs):
