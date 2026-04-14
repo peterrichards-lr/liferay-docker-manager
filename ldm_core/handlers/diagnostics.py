@@ -979,15 +979,13 @@ del "%~f0"
             print(f"{component:<25} {color}{icon} {status}{UI.COLOR_OFF}")
 
         if all_ok and not has_warnings:
-            UI.success("\n✅  Everything looks good! Your environment is ready.")
+            UI.success("Everything looks good! Your environment is ready.")
             sys.exit(0)
         elif all_ok and has_warnings:
-            UI.warning(
-                "\n⚠️  Some non-critical issues were detected. Check the items above."
-            )
+            UI.warning("Some non-critical issues were detected. Check the items above.")
             sys.exit(0)
         else:
-            UI.error("\n❌  Critical issues were detected. Check the items above.")
+            UI.error("Critical issues were detected. Check the items above.")
             sys.exit(1)
 
     def _check_mkcert(self):
