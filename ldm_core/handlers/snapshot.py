@@ -458,6 +458,12 @@ class SnapshotHandler:
         if not choice:
             backups = self.cmd_snapshots(paths)
             if not backups:
+                if auto_index is not None or backup_dir is not None:
+                    # Internal call path (run --samples or --snapshot)
+                    UI.warning(
+                        "No snapshots available. Proceeding with vanilla startup."
+                    )
+                    return
                 UI.die("No snapshots available.")
 
             if auto_index is not None:
