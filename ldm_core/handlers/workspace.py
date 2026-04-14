@@ -180,7 +180,16 @@ class WorkspaceHandler:
                 root_zip_copy = ce_source_truth / item.name
 
                 # Copy to root first to expand (if not already there)
-                if item.resolve() != root_zip_copy.resolve():
+                is_same = False
+                try:
+                    if item.resolve() == root_zip_copy.resolve() or os.path.samefile(
+                        item, root_zip_copy
+                    ):
+                        is_same = True
+                except Exception:
+                    pass
+
+                if not is_same:
                     shutil.copy2(item, root_zip_copy)
 
                 with zipfile.ZipFile(root_zip_copy, "r") as zip_ref:
@@ -204,7 +213,17 @@ class WorkspaceHandler:
 
                         # Move the original ZIP from root to OSGI for Liferay's scanner
                         dest_zip = osgi_cx_dir / item.name
-                        if root_zip_copy.resolve() != dest_zip.resolve():
+                        is_same_dest = False
+                        try:
+                            if (
+                                root_zip_copy.resolve() == dest_zip.resolve()
+                                or os.path.samefile(root_zip_copy, dest_zip)
+                            ):
+                                is_same_dest = True
+                        except Exception:
+                            pass
+
+                        if not is_same_dest:
                             if dest_zip.exists():
                                 os.remove(dest_zip)
                             shutil.move(str(root_zip_copy), str(dest_zip))
@@ -568,8 +587,11 @@ class WorkspaceHandler:
                 else:
                     UI.warning("gradlew not found. Skipping build.")
 
-            host_name = getattr(self.args, "host_name", "localhost")
-            use_ssl = getattr(self.args, "ssl", host_name != "localhost")
+            host_name = getattr(self.args, "host_name", None) or "localhost"
+            # If user explicitly passed --ssl, use it. Otherwise, default to True if host_name is custom.
+            use_ssl = getattr(self.args, "ssl", False)
+            if not use_ssl and host_name != "localhost":
+                use_ssl = True
             custom_env = {
                 k: v
                 for env_pair in (getattr(self.args, "env", None) or [])
