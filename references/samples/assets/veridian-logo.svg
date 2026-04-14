@@ -1,0 +1,25 @@
+<svg width="400" height="200" viewBox="0 0 400 200" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="leaf_grad_civic" x1="160" y1="40" x2="220" y2="90" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#00C853"/> <stop offset="100%" stop-color="#008E3A"/>
+    </linearGradient>
+  </defs>
+
+  <!-- The Emerald Spire / Archway -->
+  <g transform="translate(160, 20)">
+    <!-- Navy Spire Archway -->
+    <path d="M10 100 C 10 20, 70 20, 70 100" stroke="#1A237E" stroke-width="8" fill="none" />
+    <path d="M0 100 L 20 100 L 20 110 L 0 110 Z" fill="#1A237E" />
+    <path d="M60 100 L 80 100 L 80 110 L 60 110 Z" fill="#1A237E" />
+    
+    <!-- Nested Leaf -->
+    <path d="M40 90C40 90 60 95 75 80C80 75 82 65 80 55C65 55 55 65 40 90Z" fill="url(#leaf_grad_civic)" />
+    <path d="M40 90C55 83 70 80 80 55" stroke="white" stroke-width="1.5" stroke-opacity="0.4"/>
+  </g>
+
+  <text x="200" y="150" text-anchor="middle" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-weight="700" font-size="36" letter-spacing="1">
+    <tspan fill="#1A237E">CITY OF VERIDIAN</tspan>
+  </text>
+  
+  <text x="200" y="175" text-anchor="middle" font-family="Arial" font-size="10" fill="#78909C" letter-spacing="4">MUNICIPAL SERVICES</text>
+</svg>

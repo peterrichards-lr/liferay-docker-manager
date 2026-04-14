@@ -1,0 +1,26 @@
+<svg width="400" height="200" viewBox="0 0 400 200" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="leaf_grad" x1="160" y1="40" x2="220" y2="90" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#00C853"/> <stop offset="100%" stop-color="#008E3A"/>
+    </linearGradient>
+    <linearGradient id="pulse_grad" x1="60" y1="60" x2="150" y2="60" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#1A237E"/> <stop offset="100%" stop-color="#00C853"/> </linearGradient>
+  </defs>
+
+  <g transform="translate(60, 20)">
+    <path d="M15 70H35L42 50L52 90L65 20L78 100L88 70H105" stroke="url(#pulse_grad)" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+
+    <rect x="110" y="45" width="12" height="35" rx="2" fill="#1A237E" />
+    <rect x="125" y="30" width="12" height="50" rx="2" fill="#00B0FF" />
+    <rect x="140" y="20" width="12" height="60" rx="2" fill="#0D47A1" />
+
+    <path d="M125 85C125 85 155 95 185 75C195 68 200 55 195 40C175 40 155 55 125 85Z" fill="url(#leaf_grad)" />
+    <path d="M125 85C145 75 170 70 195 40" stroke="white" stroke-width="1.5" stroke-opacity="0.4"/>
+  </g>
+
+  <text x="200" y="150" text-anchor="middle" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-weight="700" font-size="44" letter-spacing="-1">
+    <tspan fill="#00C853">Eco</tspan><tspan fill="#1A237E">Pulse</tspan>
+  </text>
+  
+  <text x="200" y="175" text-anchor="middle" font-family="Arial" font-size="12" fill="#78909C" letter-spacing="3">SMART CITY SYSTEMS</text>
+</svg>
