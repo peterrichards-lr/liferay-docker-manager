@@ -190,7 +190,7 @@ jobs:
           # We fetch the Intel wheels explicitly
           mkdir x86_64_site_packages
           pip install \
-            --platform macosx_10_9_x86_64 \
+            --platform macosx_11_0_x86_64 \
             --only-binary=:all: \
             --target x86_64_site_packages \
             --python-version 3.13 \
