@@ -10,7 +10,7 @@ from pathlib import Path
 from datetime import datetime
 from ldm_core.ui import UI
 from ldm_core.constants import PROJECT_META_FILE, SCRIPT_DIR
-from ldm_core.utils import run_command, is_within_root
+from ldm_core.utils import run_command, is_within_root, find_dxp_roots, read_meta
 
 
 class BaseHandler:
@@ -183,7 +183,7 @@ class BaseHandler:
                                 meta = self.read_meta(meta_file)
                                 if meta.get("project_name") == pid:
                                     return item.resolve()
-                except Exception:
+                except Exception:  # nosec B112
                     continue
 
             if not for_init:
@@ -216,56 +216,9 @@ class BaseHandler:
 
     def find_dxp_roots(self, search_dir=None):
         """Discovers LDM projects in the target directory by looking for metadata or specific structure."""
-        search_dirs = []
-        if search_dir:
-            search_dirs.append(Path(search_dir))
-        else:
-            search_dirs.append(Path.cwd())
-            # Include custom workspace if set
-            custom_workspace = os.environ.get("LDM_WORKSPACE")
-            if custom_workspace:
-                search_dirs.append(Path(custom_workspace))
-            # Common default locations
-            for common in [Path.home() / "ldm", Path("/Volumes/SanDisk/ldm")]:
-                if common.exists() and common.is_dir():
-                    search_dirs.append(common)
+        # This logic is shared with the CLI autocompleter via utils.py
 
-        roots = []
-        seen_paths = set()
-
-        for s_dir in search_dirs:
-            if not s_dir.exists() or not s_dir.is_dir():
-                continue
-
-            # Security: If we are in the user's home directory, we should be extremely strict
-            # to avoid scanning thousands of unrelated developer folders.
-            is_home = s_dir.resolve() == Path.home().resolve()
-
-            try:
-                for item in s_dir.iterdir():
-                    if item.is_dir() and not item.name.startswith("."):
-                        abs_path = item.resolve()
-                        if abs_path in seen_paths:
-                            continue
-
-                        # A directory is a project IF:
-                        # 1. It has the official LDM metadata file (preferred)
-                        # 2. It has BOTH 'files' and 'deploy' folders (legacy/scaffolded)
-                        # 3. If in HOME, we ONLY accept the metadata file to prevent noise.
-                        has_meta = (item / PROJECT_META_FILE).exists()
-                        has_structure = (item / "files").exists() and (
-                            item / "deploy"
-                        ).exists()
-
-                        if has_meta or (not is_home and has_structure):
-                            meta = self.read_meta(item / PROJECT_META_FILE)
-                            version = meta.get("tag") or "unknown"
-                            roots.append({"path": item, "version": version})
-                            seen_paths.add(abs_path)
-            except Exception:
-                continue
-
-        return sorted(roots, key=lambda x: x["path"].name)
+        return find_dxp_roots(search_dir)
 
     def get_common_dir(self, project_path=None):
         """Finds the 'common' directory by prioritizing CWD, Project Parent, then Binary Location."""
@@ -390,23 +343,9 @@ class BaseHandler:
             shutil.rmtree(legacy_configs)
 
     def read_meta(self, path):
-        meta = {}
-        if not path.exists():
-            return meta
-        with open(path, "r") as f:
-            for line in f:
-                line = line.strip()
-                if line and not line.startswith("#") and "=" in line:
-                    k, v = line.split("=", 1)
-                    k, v = k.strip(), v.strip()
-                    if v == "None":
-                        v = None
-                    elif v == "True":
-                        v = True
-                    elif v == "False":
-                        v = False
-                    meta[k] = v
-        return meta
+        # This logic is shared with the CLI autocompleter via utils.py
+
+        return read_meta(path)
 
     def write_meta(self, path, meta):
         path = Path(path)
@@ -732,3 +671,34 @@ class BaseHandler:
                     unresolved.append(ext_domain)
 
         return len(unresolved) == 0, unresolved
+
+    def cmd_completion(self, shell="zsh"):
+        """Displays instructions for enabling shell autocompletion."""
+        UI.heading(f"Shell Autocompletion ({shell})")
+
+        if shell == "bash":
+            print(
+                f"\n{UI.WHITE}Add this to your {UI.CYAN}~/.bashrc{UI.COLOR_OFF}{UI.WHITE}:{UI.COLOR_OFF}"
+            )
+            print(f'\n{UI.CYAN}eval "$(register-python-argcomplete ldm)"{UI.COLOR_OFF}')
+        elif shell == "zsh":
+            print(
+                f"\n{UI.WHITE}Add this to your {UI.CYAN}~/.zshrc{UI.COLOR_OFF}{UI.WHITE}:{UI.COLOR_OFF}"
+            )
+            print("\n# Load bashcompinit for argcomplete support")
+            print("autoload -U +X compinit && compinit")
+            print("autoload -U +X bashcompinit && bashcompinit")
+            print(f'\neval "$(register-python-argcomplete ldm)"{UI.COLOR_OFF}')
+        elif shell == "fish":
+            print(
+                f"\n{UI.WHITE}Add this to your {UI.CYAN}~/.config/fish/config.fish{UI.COLOR_OFF}{UI.WHITE}:{UI.COLOR_OFF}"
+            )
+            print(f"\n{UI.CYAN}register-python-argcomplete --shell fish ldm | source")
+
+        print(
+            f"\n{UI.BYELLOW}Note:{UI.COLOR_OFF} You may need to restart your shell or run {UI.CYAN}source ~/.{shell}rc{UI.COLOR_OFF}"
+        )
+        print(
+            "for the changes to take effect. If 'register-python-argcomplete' is not found,\n"
+            "it will be installed automatically the next time you run any LDM command."
+        )

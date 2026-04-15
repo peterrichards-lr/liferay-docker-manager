@@ -1258,7 +1258,7 @@ class StackHandler:
         UI.heading("Helpful Commands")
         p_id = project_meta.get("container_name") or paths["root"].name
         print(
-            f"  View Logs:      {UI.CYAN}ldm logs -f {p_id}{UI.COLOR_OFF}\n  Stop Project:   {UI.CYAN}ldm stop {p_id}{UI.COLOR_OFF}\n  Container Shell:{UI.CYAN}ldm shell {p_id}{UI.COLOR_OFF}\n  Hot Deploy:     {UI.CYAN}ldm deploy {p_id}{UI.COLOR_OFF}"
+            f"  Open Browser:   {UI.CYAN}ldm browser {p_id}{UI.COLOR_OFF}\n  View Logs:      {UI.CYAN}ldm logs -f {p_id}{UI.COLOR_OFF}\n  Stop Project:   {UI.CYAN}ldm stop {p_id}{UI.COLOR_OFF}\n  Container Shell:{UI.CYAN}ldm shell {p_id}{UI.COLOR_OFF}\n  Hot Deploy:     {UI.CYAN}ldm deploy {p_id}{UI.COLOR_OFF}"
         )
         if (
             is_ready

@@ -42,8 +42,8 @@ if [ ! -d "$TARGET_DIR" ]; then
     exit 1
 fi
 
-if [ ! -f "$TARGET_DIR/.liferay-docker.json" ]; then
-    echo -e "${YELLOW}⚠️  Warning: Target directory does not appear to be an LDM project (missing .liferay-docker.json).${NC}"
+if [ ! -f "$TARGET_DIR/.liferay-docker.meta" ]; then
+    echo -e "${YELLOW}⚠️  Warning: Target directory does not appear to be an LDM project (missing .liferay-docker.meta).${NC}"
     read -p "Are you sure you want to deploy samples to $TARGET_DIR? (y/n) " -n 1 -r
     echo ""
     if [[ ! $REPLY =~ ^[Yy]$ ]]; then
