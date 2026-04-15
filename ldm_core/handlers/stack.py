@@ -630,7 +630,7 @@ class StackHandler:
             f"LIFERAY_WORKSPACE{sep}HOME{sep}DIR": "/opt/liferay",
             "LDM_CONFIG_SIGNATURE": config_sig,
             "OSGI_CONSOLE": gogo_env,
-            "LIFERAY_JVM_OPTS": f"-Dorg.apache.catalina.SESSION_COOKIE_NAME=LFR_SESSION_ID_{host_name.replace('.', '_')}",
+            "LIFERAY_JVM_OPTS": f"-Dorg.apache.catalina.SESSION_COOKIE_NAME=LFR_SESSION_ID_{host_name.replace('.', '_')} -XX:TieredStopAtLevel=1",
         }
 
         if not is_modern:
@@ -743,17 +743,17 @@ class StackHandler:
             compose["services"]["liferay"]["depends_on"] = {
                 "db": {"condition": "service_healthy"}
             }
-            liferay_env_dict.update(
+            portal_ext_updates.update(
                 {
-                    f"LIFERAY_JDBC{sep}DEFAULT{sep}URL": f"jdbc:{db_type}://db:{db_port}/{db_name}"
+                    "jdbc.default.url": f"jdbc:{db_type}://db:{db_port}/{db_name}"
                     + (
                         "?useUnicode=true&characterEncoding=UTF-8"
                         if db_type == "mysql"
                         else ""
                     ),
-                    f"LIFERAY_JDBC{sep}DEFAULT{sep}USERNAME": db_user,
-                    f"LIFERAY_JDBC{sep}DEFAULT{sep}PASSWORD": db_pass,
-                    f"LIFERAY_JDBC{sep}DEFAULT{sep}DRIVER{sep}CLASS{sep}NAME": "org.postgresql.Driver"
+                    "jdbc.default.username": db_user,
+                    "jdbc.default.password": db_pass,
+                    "jdbc.default.driverClassName": "org.postgresql.Driver"
                     if db_type == "postgresql"
                     else "com.mysql.cj.jdbc.Driver",
                 }
@@ -1258,7 +1258,7 @@ class StackHandler:
         UI.heading("Helpful Commands")
         p_id = project_meta.get("container_name") or paths["root"].name
         print(
-            f"  View Logs:      {UI.CYAN}ldm logs -f {p_id}{UI.COLOR_OFF}\n  Stop Project:   {UI.CYAN}ldm stop {p_id}{UI.COLOR_OFF}\n  Container Shell:{UI.CYAN}ldm shell {p_id}{UI.COLOR_OFF}\n  Hot Deploy:     {UI.CYAN}ldm deploy {p_id}{UI.COLOR_OFF}"
+            f"  Open Browser:   {UI.CYAN}ldm browser {p_id}{UI.COLOR_OFF}\n  View Logs:      {UI.CYAN}ldm logs -f {p_id}{UI.COLOR_OFF}\n  Stop Project:   {UI.CYAN}ldm stop {p_id}{UI.COLOR_OFF}\n  Container Shell:{UI.CYAN}ldm shell {p_id}{UI.COLOR_OFF}\n  Hot Deploy:     {UI.CYAN}ldm deploy {p_id}{UI.COLOR_OFF}"
         )
         if (
             is_ready

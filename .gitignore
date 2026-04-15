@@ -18,4 +18,5 @@ dist/
 ldm-local
 ldm-macos
 ldm-linux
-ldm-windows.exe
+ldm-windows.exesamplestest/
+samplestest/

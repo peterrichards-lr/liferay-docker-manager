@@ -1,6 +1,8 @@
+import os
 import re
 import json
 import shutil
+from pathlib import Path
 from datetime import datetime
 from ldm_core.ui import UI
 from ldm_core.constants import PROJECT_META_FILE, SCRIPT_DIR
@@ -171,17 +173,27 @@ class ConfigHandler:
         from ldm_core.utils import download_samples
         from ldm_core.constants import VERSION
 
-        # 1. Check Local (Source Checkout)
-        samples_root = SCRIPT_DIR / "references" / "samples"
+        # 1. Priority: Environment Variable (Development Override)
+        env_path = os.environ.get("LDM_SAMPLES_PATH")
+        if env_path:
+            p = Path(env_path).resolve()
+            if p.exists():
+                return p
 
-        # 2. Check Cache (~/.ldm/samples/vVERSION)
+        # 2. Check Local (Source Checkout)
+        # We check relative to SCRIPT_DIR and also CWD for convenience during dev
+        samples_root = SCRIPT_DIR / "references" / "samples"
+        if not samples_root.exists():
+            samples_root = Path.cwd() / "references" / "samples"
+
+        # 3. Check Cache (~/.ldm/references/samples/vVERSION)
         if not samples_root.exists():
             home = get_actual_home()
             cache_path = home / ".ldm" / "references" / "samples" / f"v{VERSION}"
             if cache_path.exists():
                 return cache_path
             else:
-                # 3. Prompt & Download (Standalone Binary Mode)
+                # 4. Prompt & Download (Standalone Binary Mode)
                 if not self.non_interactive:
                     UI.heading("On-Demand Sample Pack")
                     UI.info("Sample assets are not bundled with the standalone binary.")

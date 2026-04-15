@@ -6,6 +6,18 @@ from ldm_core.manager import LiferayManager
 from ldm_core.constants import VERSION
 from ldm_core.utils import check_for_updates
 
+try:
+    import argcomplete
+except ImportError:
+    argcomplete = None
+
+
+def project_completer(prefix, **kwargs):
+    from ldm_core.utils import find_dxp_roots
+
+    roots = find_dxp_roots()
+    return [r["path"].name for r in roots if r["path"].name.startswith(prefix)]
+
 
 def main():
     # Suppress watchdog warning on macOS when fsevents is missing (kqueue is a fine fallback)
@@ -235,6 +247,12 @@ def main():
     browser.add_argument("--remove", action="store_true")
     browser.add_argument("--list", action="store_true")
 
+    # Command: completion
+    completion = subparsers.add_parser("completion")
+    completion.add_argument(
+        "shell", choices=["bash", "zsh", "fish"], default="zsh", nargs="?"
+    )
+
     scale = subparsers.add_parser("scale")
     scale.add_argument("project", nargs="?")
     scale.add_argument("service_scale", nargs="+")
@@ -252,6 +270,15 @@ def main():
     cloud.add_argument("--sync-env", action="store_true")
     cloud.add_argument("--logs", action="store_true")
     cloud.add_argument("-f", "--follow", action="store_true")
+
+    if argcomplete:
+        # Automatically attach the project completer to all project-related arguments
+        # across all subparsers.
+        for sub in subparsers.choices.values():
+            for action in sub._actions:
+                if action.dest in ["project", "project_flag"]:
+                    action.completer = project_completer
+        argcomplete.autocomplete(parser)
 
     args = parser.parse_args()
     if not args.command:
@@ -349,6 +376,7 @@ def main():
         "cloud-fetch": lambda: manager.cmd_cloud_fetch(
             project_id, getattr(args, "env_id", None)
         ),
+        "completion": lambda: manager.cmd_completion(args.shell),
         "prune": lambda: manager.cmd_prune(),
         "upgrade": lambda: manager.cmd_upgrade(),
         "update-check": lambda: manager.cmd_update_check(force=True),

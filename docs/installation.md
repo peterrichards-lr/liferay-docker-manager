@@ -248,6 +248,51 @@ If you have cloned the repository and also have the binary installed, `ldm docto
 
 ---
 
+## 3. Shell Autocompletion
+
+LDM supports full **TAB completion** for all commands and project names. This significantly improves productivity by allowing you to quickly cycle through projects when running `stop`, `logs`, or `run`.
+
+### Quick Setup
+
+To enable autocompletion, run the following command and follow the instructions for your shell:
+
+```bash
+ldm completion
+```
+
+### Zsh (Default macOS)
+
+Add these lines to your `~/.zshrc`:
+
+```zsh
+# Load bashcompinit for argcomplete support
+autoload -U +X compinit && compinit
+autoload -U +X bashcompinit && bashcompinit
+
+# Enable LDM completion
+eval "$(register-python-argcomplete ldm)"
+```
+
+### Bash
+
+Add this to your `~/.bashrc`:
+
+```bash
+# Enable LDM completion
+eval "$(register-python-argcomplete ldm)"
+```
+
+### Fish
+
+Add this to your `~/.config/fish/config.fish`:
+
+```fish
+# Enable LDM completion
+register-python-argcomplete --shell fish ldm | source
+```
+
+---
+
 ## 🐳 Colima (Advanced macOS Setup)
 
 Colima is a lightweight, open-source alternative to Docker Desktop. While highly performant on Apple Silicon, it is much stricter regarding file sharing and permissions.

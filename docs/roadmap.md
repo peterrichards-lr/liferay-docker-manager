@@ -45,6 +45,12 @@ While the v1.x "Hardened Edition" focused on cross-platform stability, **v2.0.0*
 - **Context-Aware Support**: Automatically inject `ldm doctor` reports and project metadata into AI queries to provide zero-copy troubleshooting for SSL, networking, and deployment failures.
 - **Recipe Generation**: Ask the AI to generate complex `portal-ext.properties` or `LCP.json` configurations based on natural language descriptions.
 
+### 7. Strategic Hardening & Fleet Management
+
+- **Snapshot Integrity Verification**: Implement SHA-256 checksumming for Project Snapshots to guarantee data validity when shared across teams.
+- **Bulk Stack Management**: Introduce workspace-wide commands (e.g., `ldm stop --all`, `ldm status --workspace`) for bird's-eye fleet control.
+- **Auto-Healing DNS**: Add an optional `--fix-dns` flag to `ldm doctor` that automatically appends missing subdomains to `/etc/hosts` using standard OS elevation.
+
 ---
 
 ## ✅ Completed Improvements (v1.6.x)

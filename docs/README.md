@@ -54,6 +54,7 @@ The badges below represent our verified support for various Docker providers. En
 - **Proactive License Verification**: Automatically detects Liferay XML licenses in `common/`, `deploy/`, or `osgi/modules/` folders. Warns you before boot if a DXP license is missing or expired.
 - **Fail-Fast Design**: Proactive environment checking. LDM verifies Docker reachability, volume mounts, resource allocations (CPU/RAM), and **Compose functionality** before execution, providing clean, actionable error messages instead of tracebacks.
 - **Architecture-Aware**: The tool detects your OS automatically to fetch the correct optimized binary during self-updates.
+- **Shell Autocompletion**: TAB completion for commands and project names across Bash, Zsh, and Fish.
 
 ---
 
@@ -412,6 +413,19 @@ Automatically download and install the latest version of LDM for your architectu
 ```bash
 ldm upgrade             # Standard upgrade to latest
 ldm upgrade --repair    # Re-download current version to fix integrity issues
+```
+
+### `completion`
+
+Configure shell autocompletion for `ldm`. Supports **Bash**, **Zsh**, and **Fish**.
+
+```bash
+ldm completion [shell]
+
+# Examples:
+ldm completion zsh      # Get setup instructions for Zsh (default)
+ldm completion bash     # Get setup instructions for Bash
+ldm completion fish     # Get setup instructions for Fish
 ```
 
 ### `renew-ssl`

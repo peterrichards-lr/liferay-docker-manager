@@ -25,10 +25,16 @@ usage() {
 
 # 1. Validate Arguments
 if [ -z "$1" ]; then
-    usage
+    # Auto-detect if we are inside a project
+    if [ -f ".liferay-docker.meta" ]; then
+        TARGET_DIR="$(pwd)"
+        echo -e "ℹ  No target specified. Auto-detected project at: ${CYAN}$TARGET_DIR${NC}"
+    else
+        usage
+    fi
+else
+    TARGET_DIR="$(cd "$1" 2>/dev/null && pwd || echo "$1")"
 fi
-
-TARGET_DIR="$(cd "$1" 2>/dev/null && pwd || echo "$1")"
 
 # 2. Validate Source
 if [ ! -d "$SAMPLES_DIR" ]; then
@@ -42,8 +48,8 @@ if [ ! -d "$TARGET_DIR" ]; then
     exit 1
 fi
 
-if [ ! -f "$TARGET_DIR/.liferay-docker.json" ]; then
-    echo -e "${YELLOW}⚠️  Warning: Target directory does not appear to be an LDM project (missing .liferay-docker.json).${NC}"
+if [ ! -f "$TARGET_DIR/.liferay-docker.meta" ]; then
+    echo -e "${YELLOW}⚠️  Warning: Target directory does not appear to be an LDM project (missing .liferay-docker.meta).${NC}"
     read -p "Are you sure you want to deploy samples to $TARGET_DIR? (y/n) " -n 1 -r
     echo ""
     if [[ ! $REPLY =~ ^[Yy]$ ]]; then
@@ -54,10 +60,15 @@ fi
 
 echo -e "🚀 Deploying samples from ${GREEN}$SAMPLES_DIR${NC} to ${GREEN}$TARGET_DIR${NC}..."
 
-# 4. Perform the Copy
-# We use -R to recursively copy and -v for visibility
-# We don't use -a to avoid preserving permissions that might not match the target environment (e.g. if in a VM)
-cp -Rv "$SAMPLES_DIR/"* "$TARGET_DIR/"
+# 4. Perform the Sync
+# We use rsync if available for cleaner syncing (handles deletions/updates better)
+if command -v rsync &>/dev/null; then
+    rsync -av --exclude=".gitkeep" "$SAMPLES_DIR/" "$TARGET_DIR/"
+else
+    # Fallback to cp if rsync is not present
+    cp -Rv "$SAMPLES_DIR/"* "$TARGET_DIR/"
+fi
 
 echo -e "\n${GREEN}✅ Successfully deployed samples to $TARGET_DIR${NC}"
-echo "You can now run 'ldm run' (or your local liferay_docker.py) in that directory."
+echo -e "To apply changes to a running project, run: ${CYAN}ldm deploy ${TARGET_DIR##*/}${NC}"
+echo "This will trigger a re-scan and rebuild of any changed client extensions."

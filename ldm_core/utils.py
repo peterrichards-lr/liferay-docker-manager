@@ -311,15 +311,30 @@ def discover_latest_tag(
         print("Initial tag discovery (this may take a some seconds)...")
     start_time = time.time()
 
-    url = api_url
-    if release_type == "lts":
-        url += "&name=-lts"
-    elif release_type == "u":
-        url += "&name=-u"
+    # Strategy:
+    # 1. If we have a prefix, we use '-last_updated' + name filter. This is fast and correct
+    #    because all results share the prefix.
+    # 2. If no prefix, we use '-last_updated' but fetch the first 3 pages (600 tags).
+    #    The true latest release is almost certainly in the last 600 updates.
+    #    We then sort these by version name locally.
+
+    url = api_url.replace("ordering=name", "ordering=-last_updated")
+
+    api_filter = prefix_filter
+    if not api_filter:
+        if release_type == "lts":
+            api_filter = "-lts"
+        elif release_type == "u":
+            api_filter = "-u"
+
+    if api_filter:
+        url += f"&name={api_filter}"
 
     tags = []
     page = 0
-    while url:
+    max_pages = 1 if prefix_filter else 3  # Depth for global search
+
+    while url and page < max_pages:
         page += 1
         if verbose:
             sys.stdout.write(f"\rFetching page {page}...")
@@ -331,8 +346,17 @@ def discover_latest_tag(
 
         for result in data.get("results", []):
             name = result["name"]
+
+            # 1. Local prefix check
             if prefix_filter and not name.startswith(prefix_filter):
                 continue
+
+            # 2. Local release type check
+            if release_type == "lts" and "-lts" not in name:
+                continue
+            if release_type == "u" and "-u" not in name:
+                if "-u" not in name:
+                    continue
 
             is_valid = bool(re.match(TAG_PATTERN, name))
             if is_valid:
@@ -416,6 +440,80 @@ def is_within_root(path, root):
         return root in path.parents or path == root
     except Exception:
         return False
+
+
+def read_meta(path):
+    """Reads LDM project metadata from a file."""
+    meta = {}
+    path = Path(path)
+    if not path.exists():
+        return meta
+    with open(path, "r") as f:
+        for line in f:
+            line = line.strip()
+            if line and not line.startswith("#") and "=" in line:
+                k, v = line.split("=", 1)
+                k, v = k.strip(), v.strip()
+                if v == "None":
+                    v = None
+                elif v == "True":
+                    v = True
+                elif v == "False":
+                    v = False
+                meta[k] = v
+    return meta
+
+
+def find_dxp_roots(search_dir=None):
+    """Discovers LDM projects in the target directory by looking for metadata or specific structure."""
+    from ldm_core.constants import PROJECT_META_FILE
+
+    search_dirs = []
+    if search_dir:
+        search_dirs.append(Path(search_dir))
+    else:
+        search_dirs.append(Path.cwd())
+        # Include custom workspace if set
+        custom_workspace = os.environ.get("LDM_WORKSPACE")
+        if custom_workspace:
+            search_dirs.append(Path(custom_workspace))
+
+        # Common default locations
+        actual_home = get_actual_home()
+        for common in [actual_home / "ldm", Path("/Volumes/SanDisk/ldm")]:
+            if common.exists() and common.is_dir():
+                search_dirs.append(common)
+
+    roots = []
+    seen_paths = set()
+
+    for s_dir in search_dirs:
+        if not s_dir.exists() or not s_dir.is_dir():
+            continue
+
+        is_home = s_dir.resolve() == actual_home.resolve()
+
+        try:
+            for item in s_dir.iterdir():
+                if item.is_dir() and not item.name.startswith("."):
+                    abs_path = item.resolve()
+                    if abs_path in seen_paths:
+                        continue
+
+                    has_meta = (item / PROJECT_META_FILE).exists()
+                    has_structure = (item / "files").exists() and (
+                        item / "deploy"
+                    ).exists()
+
+                    if has_meta or (not is_home and has_structure):
+                        meta = read_meta(item / PROJECT_META_FILE)
+                        version = meta.get("tag") or "unknown"
+                        roots.append({"path": item, "version": version})
+                        seen_paths.add(abs_path)
+        except Exception:  # nosec B112
+            continue
+
+    return sorted(roots, key=lambda x: x["path"].name)
 
 
 def safe_extract(archive, target_path):
