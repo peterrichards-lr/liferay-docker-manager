@@ -112,16 +112,13 @@ class TestDiagnostics(unittest.TestCase):
                 any("Search (ES)" in str(call) for call in mock_print.call_args_list)
             )
 
-    def test_validate_lcp_json_missing_id(self):
-        import tempfile
-
-        temp_dir = Path(tempfile.gettempdir())
-        lcp_file = temp_dir / "LCP_bad.json"
-        lcp_file.write_text('{"ports": [{"targetPort": 8080}]}', encoding="utf-8")
+    def test_validate_lcp_json_valid(self):
+        lcp_file = Path("/tmp/LCP.json")
+        lcp_file.write_text('{"id": "test-ext", "ports": [{"targetPort": 8080}]}')
         try:
             status, ok, errors = self.manager.validate_lcp_json(lcp_file)
-            self.assertEqual(ok, "warn")
-            self.assertTrue(any("Missing mandatory 'id'" in e for e in errors))
+            self.assertTrue(ok)
+            self.assertEqual(status, "Valid Structure")
         finally:
             if lcp_file.exists():
                 lcp_file.unlink()
@@ -225,6 +222,28 @@ class TestDiagnostics(unittest.TestCase):
         status, ok, errors = self.manager.validate_properties_file(self.test_file)
         self.assertEqual(ok, "warn")
         self.assertTrue(any("Orphaned line" in e for e in errors))
+
+    def test_validate_lcp_json_missing_id(self):
+        lcp_file = Path("/tmp/LCP.json")
+        lcp_file.write_text('{"ports": [{"targetPort": 8080}]}')
+        try:
+            status, ok, errors = self.manager.validate_lcp_json(lcp_file)
+            self.assertEqual(ok, "warn")
+            self.assertTrue(any("Missing mandatory 'id'" in e for e in errors))
+        finally:
+            if lcp_file.exists():
+                lcp_file.unlink()
+
+    def test_validate_lcp_json_invalid_port(self):
+        lcp_file = Path("/tmp/LCP.json")
+        lcp_file.write_text('{"id": "test", "ports": [{"noPort": 1}]}')
+        try:
+            status, ok, errors = self.manager.validate_lcp_json(lcp_file)
+            self.assertEqual(ok, "warn")
+            self.assertTrue(any("missing 'targetPort'" in e for e in errors))
+        finally:
+            if lcp_file.exists():
+                lcp_file.unlink()
 
 
 if __name__ == "__main__":

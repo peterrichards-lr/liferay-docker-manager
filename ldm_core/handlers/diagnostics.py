@@ -103,6 +103,32 @@ class DiagnosticsHandler:
                     f"  {UI.GREEN}●{UI.COLOR_OFF} {p_id:<25} {r['version']:<15} {url}"
                 )
 
+                # List active extensions
+                extensions = meta.get("extensions", [])
+                if extensions:
+                    for ext in extensions:
+                        ext_id = ext.get("id")
+                        # Check if this extension is running
+                        ext_running = run_command(
+                            [
+                                "docker",
+                                "ps",
+                                "-q",
+                                "--filter",
+                                f"label=com.liferay.ldm.project={p_id}",
+                                "--filter",
+                                f"label=com.docker.compose.service={ext_id}",
+                                "--filter",
+                                "status=running",
+                            ],
+                            check=False,
+                        )
+                        if ext_running:
+                            ext_url = ext.get("url", "N/A")
+                            print(
+                                f"    {UI.WHITE}└─{UI.COLOR_OFF} {ext_id:<23} {ext_url}"
+                            )
+
         if not active_projects:
             print(f"  {UI.WHITE}No projects are currently running.{UI.COLOR_OFF}")
 
@@ -872,6 +898,18 @@ del "%~f0"
                     "https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/README.md#migrate-search",
                 )
 
+            # 7.2.3 LCP.json Validation (Extensions)
+            for lcp_file in p_path.rglob("LCP.json"):
+                # Avoid validating LCP.json in the project root if it's not a service
+                # (Standard Liferay Cloud workspaces have a root LCP.json)
+                rel_path = lcp_file.relative_to(p_path)
+                lcp_status, lcp_ok, lcp_errors = self.validate_lcp_json(lcp_file)
+                results.append((f"Extension Config ({rel_path})", lcp_status, lcp_ok))
+                if lcp_errors:
+                    for err in lcp_errors:
+                        print(f"  {UI.YELLOW}⚠{UI.COLOR_OFF} {err}")
+
+            # 7.2.4 License Check
             lic_status, lic_ok, lic_details = self.check_license_health(
                 {"common": common_dir, **self.setup_paths(p_path)},
                 image_tag=meta.get("tag"),
@@ -914,11 +952,53 @@ del "%~f0"
                                 check=False,
                             )
                             if expiry_res and "notAfter=" in expiry_res:
-                                expiry_date = expiry_res.split("=", 1)[1].strip()
-                                cert_status = f"Valid until {expiry_date}"
+                                expiry_str = expiry_res.split("=", 1)[1].strip()
+
+                                # Parse OpenSSL date: "Feb 24 10:57:51 2123 GMT"
+                                try:
+                                    from datetime import datetime
+
+                                    # We try multiple common OpenSSL formats
+                                    formats = [
+                                        "%b %d %H:%M:%S %Y %Z",
+                                        "%b %d %H:%M:%S %Y",
+                                    ]
+                                    expiry_dt = None
+                                    for fmt in formats:
+                                        try:
+                                            # Strip potential double spaces (sometimes seen in openssl output)
+                                            clean_expiry = " ".join(expiry_str.split())
+                                            expiry_dt = datetime.strptime(
+                                                clean_expiry, fmt
+                                            )
+                                            break
+                                        except Exception:  # nosec B112
+                                            continue
+
+                                    if expiry_dt:
+                                        now = datetime.now()
+                                        diff = expiry_dt - now
+                                        days = diff.days
+
+                                        if days < 0:
+                                            cert_status = (
+                                                f"EXPIRED ({abs(days)} days ago)"
+                                            )
+                                            ok = False
+                                        elif days < 30:
+                                            cert_status = (
+                                                f"Expires in {days} days! (Renew soon)"
+                                            )
+                                            ok = "warn"
+                                        else:
+                                            cert_status = (
+                                                f"Valid ({days} days remaining)"
+                                            )
+                                except Exception:
+                                    cert_status = f"Valid until {expiry_str}"
                         except Exception:
                             pass
-                    results.append((f"[{p_path.name}] SSL Cert", cert_status, True))
+                    results.append((f"[{p_path.name}] SSL Cert", cert_status, ok))
                 else:
                     results.append(
                         (
