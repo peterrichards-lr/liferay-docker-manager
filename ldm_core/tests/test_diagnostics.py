@@ -38,6 +38,9 @@ class MockDiagManager(DiagnosticsHandler):
         return None, True
 
     def validate_properties_file(self, *args, **kwargs):
+        # Fallback to real implementation for property validation tests
+        if hasattr(self, "_use_real_validate"):
+            return super().validate_properties_file(*args, **kwargs)
         return "OK", True, []
 
     def check_license_health(self, *args, **kwargs):
@@ -64,13 +67,15 @@ class MockDiagManager(DiagnosticsHandler):
     def _check_docker_resources(self, *args, **kwargs):
         return [("Docker CPUs", "4 Cores", True), ("Docker Memory", "8.0 GB", True)]
 
-    def _check_lcp_cli(self, *args, **kwargs):
-        return "Logged In", True
-
 
 class TestDiagnostics(unittest.TestCase):
     def setUp(self):
         self.manager = MockDiagManager()
+        self.test_file = Path("/tmp/test.properties")
+
+    def tearDown(self):
+        if self.test_file.exists():
+            self.test_file.unlink()
 
     @patch("ldm_core.handlers.diagnostics.run_command")
     def test_cmd_status_running(self, mock_run):
@@ -190,6 +195,36 @@ class TestDiagnostics(unittest.TestCase):
                     self.manager.cmd_doctor()
                 except SystemExit as e:
                     self.assertEqual(e.code, 0)
+
+    def test_validate_properties_valid(self):
+        self.manager._use_real_validate = True
+        self.test_file.write_text("key1=value1\nkey2=value2")
+        status, ok, errors = self.manager.validate_properties_file(self.test_file)
+        self.assertTrue(ok)
+        self.assertEqual(status, "Valid Structure")
+        self.assertEqual(len(errors), 0)
+
+    def test_validate_properties_duplicates(self):
+        self.manager._use_real_validate = True
+        self.test_file.write_text("key1=value1\nkey1=value2\nkey2=v3")
+        status, ok, errors = self.manager.validate_properties_file(self.test_file)
+        self.assertEqual(ok, "warn")
+        self.assertTrue(any("Duplicate key 'key1'" in e for e in errors))
+
+    def test_validate_properties_broken_continuation(self):
+        self.manager._use_real_validate = True
+        # Line ends in backslash but next line is empty
+        self.test_file.write_text("key1=value1\\\n\nkey2=value2")
+        status, ok, errors = self.manager.validate_properties_file(self.test_file)
+        self.assertEqual(ok, "warn")
+        self.assertTrue(any("Broken continuation" in e for e in errors))
+
+    def test_validate_properties_orphaned_line(self):
+        self.manager._use_real_validate = True
+        self.test_file.write_text("key1=value1\norphaned line here")
+        status, ok, errors = self.manager.validate_properties_file(self.test_file)
+        self.assertEqual(ok, "warn")
+        self.assertTrue(any("Orphaned line" in e for e in errors))
 
 
 if __name__ == "__main__":

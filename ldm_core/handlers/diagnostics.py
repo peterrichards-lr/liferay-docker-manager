@@ -1500,7 +1500,7 @@ del "%~f0"
         UI.info("Prune complete.")
 
     def validate_properties_file(self, file_path):
-        """Checks for structural errors in a .properties file."""
+        """Checks for structural errors and duplicate keys in a .properties file."""
         errors = []
         try:
             lines = file_path.read_text().splitlines()
@@ -1508,6 +1508,7 @@ del "%~f0"
                 return "Empty File", "warn", []
 
             last_line_continued = False
+            keys_found = {}  # key -> [line_numbers]
             for i, line in enumerate(lines):
                 line_num = i + 1
                 stripped = line.strip()
@@ -1519,6 +1520,7 @@ del "%~f0"
                             f"Broken continuation (L{line_num}): Backslash followed by empty line"
                         )
                     elif "=" in stripped and not stripped.startswith(("#", "!")):
+                        # Check if this looks like a new property starting too early
                         errors.append(
                             f"Merge collision (L{line_num}): Backslash followed by new property '{stripped[:15]}...'"
                         )
@@ -1532,7 +1534,23 @@ del "%~f0"
                 if not last_line_continued and "=" not in stripped:
                     errors.append(f"Orphaned line (L{line_num}): '{stripped[:20]}...'")
 
+                # Duplicate Key Detection
+                if not last_line_continued and "=" in stripped:
+                    key = stripped.split("=", 1)[0].strip()
+                    if key:
+                        if key in keys_found:
+                            keys_found[key].append(line_num)
+                        else:
+                            keys_found[key] = [line_num]
+
                 last_line_continued = stripped.endswith("\\")
+
+            # Report Duplicates
+            for key, occurrences in keys_found.items():
+                if len(occurrences) > 1:
+                    errors.append(
+                        f"Duplicate key '{key}' found on lines: {', '.join(map(str, occurrences))}"
+                    )
 
             # Final line check: if the last line ends in '\', it's an invalid continuation
             if last_line_continued:

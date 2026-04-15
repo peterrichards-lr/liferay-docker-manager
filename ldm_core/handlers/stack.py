@@ -1118,6 +1118,25 @@ class StackHandler:
 
         self.sync_logging(paths)
 
+        # 7. Project Properties Validation
+        pe_file = paths["files"] / "portal-ext.properties"
+        if pe_file.exists():
+            prop_status, prop_ok, prop_details = self.validate_properties_file(pe_file)
+            if not prop_ok or prop_ok == "warn":
+                UI.warning(f"Project Properties: {prop_status}")
+                if prop_details:
+                    for detail in prop_details:
+                        print(f"  {UI.YELLOW}⚠{UI.COLOR_OFF} {detail}")
+
+                if not self.non_interactive:
+                    if (
+                        UI.ask(
+                            "Structure issues detected. Continue anyway?", "Y"
+                        ).upper()
+                        != "Y"
+                    ):
+                        UI.die("Aborted by user.")
+
         all_services, has_changed = self.write_docker_compose(
             paths,
             {
