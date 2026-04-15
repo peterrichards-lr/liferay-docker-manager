@@ -71,6 +71,7 @@ class TestConfigManagement(unittest.TestCase):
             patch.object(Path, "exists", return_value=True),
             patch.object(Path, "read_text", return_value='{"verbose": "true"}'),
             patch.object(Path, "write_text") as mock_write,
+            patch("os.replace"),
         ):
             # 1. Test Get
             with patch("builtins.print") as mock_print:

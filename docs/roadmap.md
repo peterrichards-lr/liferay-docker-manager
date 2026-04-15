@@ -53,6 +53,18 @@ While the v1.x "Hardened Edition" focused on cross-platform stability, **v2.0.0*
 
 ---
 
+## ✅ Completed Improvements (v1.7.x)
+
+### **Hardening & UX Refinements (v1.7.0)**
+
+- **Atomic Configuration Writes**: All file operations (metadata, properties, compose) use a safe write-to-tmp-then-rename pattern to prevent corruption.
+- **Pre-Flight Port Conflict Detection**: Proactively verifies host port availability (80, 443, 9200, etc.) before orchestration to provide clear error messages.
+- **Metadata Schema Validation**: Automatic integrity checks for `.liferay-docker.meta` files with user-friendly warnings for missing keys.
+- **Fuzzy Project Selection**: The interactive project menu now supports real-time filtering—just start typing to narrow down large project lists.
+- **Multi-Service Log Tailing**: Added support for concurrently streaming logs from multiple containers (e.g., `ldm logs liferay my-extension`).
+- **Interactive Configuration Editor**: New `ldm edit` command to instantly modify project metadata or portal properties in your preferred `$EDITOR`.
+- **Non-Blocking Update Checks**: Update discovery now runs in a daemonized background thread, eliminating startup network latency.
+
 ## ✅ Completed Improvements (v1.6.x)
 
 ### **Orchestration & Stability (v1.6.11 Logic Audit)**

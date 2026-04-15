@@ -92,11 +92,12 @@ class TestStackInfrastructure(unittest.TestCase):
         self.manager.verbose = False
         self.manager.non_interactive = True
 
+    @patch("ldm_core.utils.check_port", return_value=False)
     @patch("ldm_core.handlers.stack.run_command")
     @patch("ldm_core.handlers.stack.get_actual_home")
     @patch("time.sleep")
     def test_setup_global_search_installs_plugins(
-        self, mock_sleep, mock_home, mock_run
+        self, mock_sleep, mock_home, mock_run, mock_check_port
     ):
         mock_home.return_value = Path("/tmp/home")
 
@@ -195,6 +196,7 @@ class TestStackScaling(unittest.TestCase):
             patch.object(Path, "exists", return_value=True),
             patch.object(Path, "read_text", return_value=""),
             patch.object(Path, "write_text"),
+            patch("os.replace"),
             patch.object(manager, "scan_client_extensions", return_value=[]),
         ):
             manager.write_docker_compose(paths, config)
@@ -213,6 +215,7 @@ class TestStackScaling(unittest.TestCase):
             patch.object(Path, "exists", return_value=True),
             patch.object(Path, "read_text", return_value=""),
             patch.object(Path, "write_text"),
+            patch("os.replace"),
             patch.object(manager, "scan_client_extensions", return_value=[]),
             patch.object(manager, "update_portal_ext") as mock_update,
         ):
@@ -250,7 +253,7 @@ class TestStackNetwork(unittest.TestCase):
         with (
             patch.object(self.manager, "_ensure_network") as mock_ensure,
             patch.object(
-                self.manager, "write_docker_compose", return_value=([], False)
+                self.manager, "write_docker_compose", return_value=({}, False)
             ),
         ):
             # Verify network is ensured regardless of configuration
@@ -275,7 +278,7 @@ class TestStackNetwork(unittest.TestCase):
         with (
             patch.object(self.manager, "_ensure_network"),
             patch.object(
-                self.manager, "write_docker_compose", return_value=([], False)
+                self.manager, "write_docker_compose", return_value=({}, False)
             ),
         ):
             # This should NOT raise TypeError: int() argument must be... not 'NoneType'
@@ -308,6 +311,7 @@ class TestStackOrchestration(unittest.TestCase):
             patch.object(Path, "exists", return_value=True),
             patch.object(Path, "read_text", return_value=""),
             patch.object(Path, "write_text"),
+            patch("os.replace"),
             patch.object(self.manager, "scan_client_extensions", return_value=[]),
         ):
             self.manager.write_docker_compose(self.paths, config)
@@ -358,6 +362,7 @@ class TestStackOrchestration(unittest.TestCase):
             patch.object(Path, "exists", return_value=True),
             patch.object(Path, "read_text", return_value=""),
             patch.object(Path, "write_text"),
+            patch("os.replace"),
             patch.object(
                 self.manager, "scan_client_extensions", return_value=mock_exts
             ),

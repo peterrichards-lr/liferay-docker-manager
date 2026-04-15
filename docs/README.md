@@ -53,8 +53,11 @@ The badges below represent our verified support for various Docker providers. En
 - **Zero-Config SSL**: Automated HTTPS using `mkcert` and a global Traefik proxy. Works on Docker Desktop, **Colima**, and **WSL2**.
 - **Proactive License Verification**: Automatically detects Liferay XML licenses in `common/`, `deploy/`, or `osgi/modules/` folders. Warns you before boot if a DXP license is missing or expired.
 - **Fail-Fast Design**: Proactive environment checking. LDM verifies Docker reachability, volume mounts, resource allocations (CPU/RAM), and **Compose functionality** before execution, providing clean, actionable error messages instead of tracebacks.
+- **Port Conflict Detection**: Proactively verifies that required host ports (80, 443, 9200, etc.) are available before starting, preventing cryptic Docker errors.
+- **Atomic Configuration**: All project metadata and property updates use safe atomic writes to prevent file corruption during interruptions.
 - **Architecture-Aware**: The tool detects your OS automatically to fetch the correct optimized binary during self-updates.
 - **Shell Autocompletion**: TAB completion for commands and project names across Bash, Zsh, and Fish.
+- **Fuzzy Interactive Selection**: Quickly filter through dozens of projects by typing a few characters in any interactive menu.
 
 ---
 
@@ -144,6 +147,9 @@ ldm import /path/to/workspace my-static-project
 # 4. THE RECOVERY FLOW: Re-create a deleted project from a snapshot folder
 ldm run my-recovered-project --snapshot ~/Desktop/old-baseline-snapshot
 
+# 5. THE SURGICAL FLOW: Instantly edit project metadata
+ldm edit my-project
+
 # Monitor an existing project (manually)
 ldm monitor /path/to/workspace
 ```
@@ -227,16 +233,16 @@ ldm monitor [project_name] --delay 2.0
 
 ### `logs`
 
-View real-time logs. Supports filtering by project and specific service.
+View real-time logs. Supports filtering by project and multiple specific services.
 
 ```bash
-ldm logs [project] [service]
+ldm logs [project] [service1] [service2] ...
 
 # Examples:
 ldm logs                  # All logs for current project
 ldm logs demo             # All logs for 'demo' project
 ldm logs demo liferay     # Only Liferay logs for 'demo'
-ldm logs demo my-extension # Only logs for a specific client extension
+ldm logs demo liferay my-ext # Multi-service tailing
 ```
 
 ### `stop`, `restart`, `down` (alias: `rm`)
@@ -341,6 +347,15 @@ Manage persistent environment variables in project metadata.
 ldm env [project] KEY=VALUE
 ldm env [project] --remove KEY
 ldm env                   # Interactive manager (view and edit all)
+```
+
+### `edit`
+
+Rapidly modify project configuration files in your system's `$EDITOR` (defaults to `vi` or `notepad`).
+
+```bash
+ldm edit [project]              # Edit .liferay-docker.meta
+ldm edit [project] --target properties # Edit portal-ext.properties
 ```
 
 ### `cloud-fetch` (Fetch Cloud State)
@@ -564,6 +579,7 @@ colima start --cpu 4 --memory 8
 
 ## Interactive Mode Tips
 
+- **Fuzzy Search Selection**: In any project selection menu, you can simply start typing to filter the list. The menu will update in real-time to match project names or version tags.
 - **Smart Project Detection**: `ldm` resolves project locations using this priority:
     1. **Direct Path**: Absolute or relative path (e.g., `ldm logs ./my-proj` or `ldm logs /opt/ldm/proj`).
     2. **CWD**: If the current directory is an LDM project.

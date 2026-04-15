@@ -1,5 +1,5 @@
 watchdog==4.0.2
 pyobjc-framework-FSEvents; sys_platform == 'darwin'
 requests==2.33.0
-PyYAML>=5.3.1
+PyYAML==6.0.2
 argcomplete==3.2.1

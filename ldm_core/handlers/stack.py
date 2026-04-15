@@ -341,6 +341,17 @@ class StackHandler:
                 return True
 
         if not existing_proxy:
+            from ldm_core.utils import check_port
+
+            if check_port(80):
+                UI.die(
+                    "Port 80 is already in use by another process. Cannot start Global Proxy."
+                )
+            if check_port(443):
+                UI.die(
+                    "Port 443 is already in use by another process. Cannot start Global Proxy."
+                )
+
             UI.info(f"Initializing Global SSL Proxy (Traefik {TRAEFIK_VERSION})...")
 
             # Use the dynamic socket path for the endpoint on non-macOS platforms
@@ -440,6 +451,13 @@ class StackHandler:
             else:
                 # Correct version and already running
                 return True
+
+        from ldm_core.utils import check_port
+
+        if check_port(9200):
+            UI.die(
+                "Port 9200 is already in use by another process. Cannot start Global Search."
+            )
 
         UI.info(f"Initializing Global Search ({version_label}) container...")
         actual_home = get_actual_home()
@@ -917,7 +935,9 @@ class StackHandler:
             or paths["compose"].read_text() != yaml_content
         )
         if has_changed:
-            paths["compose"].write_text(yaml_content)
+            from ldm_core.utils import safe_write_text
+
+            safe_write_text(paths["compose"], yaml_content)
 
         return compose["services"], has_changed
 
@@ -1123,6 +1143,19 @@ class StackHandler:
                 **project_meta,
             },
         )
+
+        from ldm_core.utils import check_port
+
+        for svc_name, svc_def in all_services.items():
+            for port_mapping in svc_def.get("ports", []):
+                parts = port_mapping.split(":")
+                if len(parts) >= 2:
+                    host_port = parts[-2]
+                    if host_port.isdigit() and check_port(host_port):
+                        UI.die(
+                            f"Port {host_port} (required by '{svc_name}') is already in use by another process.\n"
+                            f"Please resolve the conflict or choose a different port."
+                        )
 
         UI.info("Orchestrating project stack...")
         if use_ssl:
@@ -1748,7 +1781,10 @@ class StackHandler:
         if getattr(self.args, "follow", False):
             cmd.append("-f")
         if service:
-            cmd.append(service)
+            if isinstance(service, list):
+                cmd.extend(service)
+            else:
+                cmd.append(service)
         try:
             run_command(cmd, capture_output=False, cwd=str(root))
         except KeyboardInterrupt:

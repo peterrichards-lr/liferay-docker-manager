@@ -105,7 +105,9 @@ class ConfigHandler:
             if k not in original_keys_found:
                 new_lines.append(f"{k}={v}")
 
-        path.write_text("\n".join(new_lines).strip() + "\n")
+        from ldm_core.utils import safe_write_text
+
+        safe_write_text(path, "\n".join(new_lines).strip() + "\n")
 
     def sync_logging(self, paths):
         """Injects custom logging levels into the project's portal-log4j-ext.xml."""
@@ -116,8 +118,10 @@ class ConfigHandler:
 
         # 1. Ensure we have a valid baseline XML structure
         standard_template = '<?xml version="1.0"?>\n<Configuration strict="true">\n\t<Loggers>\n\t</Loggers>\n</Configuration>\n'
+        from ldm_core.utils import safe_write_text
+
         if not target.exists() or target.stat().st_size < 10:
-            target.write_text(standard_template)
+            safe_write_text(target, standard_template)
 
         # 2. Inject custom levels if logging.json exists
         logging_file = paths["root"] / "logging.json"
@@ -148,7 +152,7 @@ class ConfigHandler:
                             content,
                         )
 
-            target.write_text(content)
+            safe_write_text(target, content)
         except Exception as e:
             UI.error(f"Failed to sync logging: {e}")
 
@@ -464,7 +468,36 @@ class ConfigHandler:
                 config[key] = value
                 UI.success(f"Configuration key '{key}' set to '{value}'.")
 
-            config_path.write_text(json.dumps(config, indent=4))
+            from ldm_core.utils import safe_write_text
+
+            safe_write_text(config_path, json.dumps(config, indent=4))
+
+    def cmd_edit(self, project_id=None, target="meta"):
+        root_path = self.detect_project_path(project_id)
+        if not root_path:
+            return
+
+        from ldm_core.constants import PROJECT_META_FILE
+        import subprocess
+        import platform
+
+        if target == "meta":
+            file_to_edit = root_path / PROJECT_META_FILE
+        else:
+            file_to_edit = root_path / "files" / "portal-ext.properties"
+            (root_path / "files").mkdir(exist_ok=True)
+            if not file_to_edit.exists():
+                from ldm_core.utils import safe_write_text
+
+                safe_write_text(file_to_edit, "")
+
+        editor = os.environ.get(
+            "EDITOR", "vi" if platform.system() != "Windows" else "notepad"
+        )
+        try:
+            subprocess.run([editor, str(file_to_edit)])
+        except Exception as e:
+            UI.error(f"Failed to open editor '{editor}': {e}")
 
     def cmd_env(self, project_id=None):
         pid = project_id

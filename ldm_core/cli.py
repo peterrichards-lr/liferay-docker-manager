@@ -114,7 +114,12 @@ def main():
             aliases = ["rm"]
         p = subparsers.add_parser(cmd, aliases=aliases)
         p.add_argument("project", nargs="?")
-        p.add_argument("service", nargs="?")
+
+        if cmd == "logs":
+            p.add_argument("service", nargs="*")
+        else:
+            p.add_argument("service", nargs="?")
+
         p.add_argument("-p", "--project", dest="project_flag")
         if cmd == "down":
             p.add_argument("-v", "--volumes", action="store_true")
@@ -247,6 +252,17 @@ def main():
     browser.add_argument("--remove", action="store_true")
     browser.add_argument("--list", action="store_true")
 
+    # Command: edit
+    edit_cmd = subparsers.add_parser("edit")
+    edit_cmd.add_argument("project", nargs="?")
+    edit_cmd.add_argument("-p", "--project", dest="project_flag")
+    edit_cmd.add_argument(
+        "--target",
+        choices=["meta", "properties"],
+        default="meta",
+        help="Which file to edit (default: meta)",
+    )
+
     # Command: completion
     completion = subparsers.add_parser("completion")
     completion.add_argument(
@@ -376,6 +392,7 @@ def main():
         "cloud-fetch": lambda: manager.cmd_cloud_fetch(
             project_id, getattr(args, "env_id", None)
         ),
+        "edit": lambda: manager.cmd_edit(project_id, args.target),
         "completion": lambda: manager.cmd_completion(args.shell),
         "prune": lambda: manager.cmd_prune(),
         "upgrade": lambda: manager.cmd_upgrade(),
@@ -383,6 +400,19 @@ def main():
     }
 
     if args.command in cmds:
+        import threading
+
+        update_info = {}
+
+        def run_update_check():
+            latest, url = check_for_updates(VERSION)
+            update_info["latest"] = latest
+
+        update_thread = None
+        if args.command not in ["upgrade", "update-check"]:
+            update_thread = threading.Thread(target=run_update_check, daemon=True)
+            update_thread.start()
+
         try:
             cmds[args.command]()
         except KeyboardInterrupt:
@@ -396,10 +426,9 @@ def main():
                 traceback.print_exc()
             sys.exit(1)
 
-        # Passive update check (silent, respects cache)
-        # Suppress if we just ran upgrade or update-check to avoid redundant notifications
-        if args.command not in ["upgrade", "update-check"]:
-            latest, url = check_for_updates(VERSION)
+        if update_thread:
+            update_thread.join(timeout=0.05)
+            latest = update_info.get("latest")
             if latest:
                 from ldm_core.utils import version_to_tuple
 

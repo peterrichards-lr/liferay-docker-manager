@@ -228,6 +228,22 @@ def get_json(url):
         return None
 
 
+def safe_write_text(path, content, encoding="utf-8"):
+    """Atomically writes text to a file using a temporary file and rename."""
+    path = Path(path).resolve()
+    tmp_path = path.with_suffix(".tmp" + path.suffix)
+    try:
+        tmp_path.write_text(content, encoding=encoding)
+        os.replace(tmp_path, path)
+    except Exception as e:
+        if tmp_path.exists():
+            try:
+                tmp_path.unlink()
+            except OSError:
+                pass
+        raise e
+
+
 def get_actual_home():
     """Returns the home directory of the real user, even when running with sudo."""
     import getpass
@@ -433,6 +449,21 @@ def dict_to_yaml(d, indent=0):
     return "\n".join(lines)
 
 
+def check_port(port):
+    """Checks if a TCP port is currently in use on the host."""
+    import socket
+
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.settimeout(0.5)
+            # Try to connect to localhost on the given port
+            if s.connect_ex(("127.0.0.1", int(port))) == 0:
+                return True
+    except Exception:
+        pass
+    return False
+
+
 def is_within_root(path, root):
     try:
         path = Path(path).resolve()
@@ -456,11 +487,18 @@ def read_meta(path):
                 k, v = k.strip(), v.strip()
                 if v == "None":
                     v = None
-                elif v == "True":
+                elif v == "True" or v == "true":
                     v = True
-                elif v == "False":
+                elif v == "False" or v == "false":
                     v = False
                 meta[k] = v
+
+    # Schema Validation
+    required_keys = ["container_name", "tag"]
+    missing = [k for k in required_keys if k not in meta]
+    if missing:
+        UI.warning(f"Metadata in {path} is missing required keys: {', '.join(missing)}")
+
     return meta
 
 
