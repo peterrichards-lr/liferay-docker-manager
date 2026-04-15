@@ -59,8 +59,10 @@ While the v1.x "Hardened Edition" focused on cross-platform stability, **v2.0.0*
 
 - **Atomic Configuration Writes**: All file operations (metadata, properties, compose) use a safe write-to-tmp-then-rename pattern to prevent corruption.
 - **Pre-Flight Port Conflict Detection**: Proactively verifies host port availability (80, 443, 9200, etc.) before orchestration to provide clear error messages.
-- **Metadata Schema Validation**: Automatic integrity checks for `.liferay-docker.meta` files with user-friendly warnings for missing keys.
+- **Configuration Robustness**: Implemented duplicate key detection for `.properties` files and deep structural validation for `LCP.json` (Client Extensions).
+- **Detailed Mount Diagnostics**: Enhanced volume verification to specifically identify and troubleshoot **Read-Only** vs. **Broken** mounts on macOS/Colima.
 - **Fuzzy Project Selection**: The interactive project menu now supports real-time filtering—just start typing to narrow down large project lists.
+- **Enhanced Status Visibility**: `ldm status` now displays nested routes and URLs for all active Client Extensions.
 - **Multi-Service Log Tailing**: Added support for concurrently streaming logs from multiple containers (e.g., `ldm logs liferay my-extension`).
 - **Interactive Configuration Editor**: New `ldm edit` command to instantly modify project metadata or portal properties in your preferred `$EDITOR`.
 - **Non-Blocking Update Checks**: Update discovery now runs in a daemonized background thread, eliminating startup network latency.

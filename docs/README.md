@@ -53,7 +53,9 @@ The badges below represent our verified support for various Docker providers. En
 - **Zero-Config SSL**: Automated HTTPS using `mkcert` and a global Traefik proxy. Works on Docker Desktop, **Colima**, and **WSL2**.
 - **Proactive License Verification**: Automatically detects Liferay XML licenses in `common/`, `deploy/`, or `osgi/modules/` folders. Warns you before boot if a DXP license is missing or expired.
 - **Fail-Fast Design**: Proactive environment checking. LDM verifies Docker reachability, volume mounts, resource allocations (CPU/RAM), and **Compose functionality** before execution, providing clean, actionable error messages instead of tracebacks.
+- **Deep Mount Diagnostics**: Automatically detects and distinguishes between **broken** and **read-only** volume mounts (common in Colima), providing precise recovery commands.
 - **Port Conflict Detection**: Proactively verifies that required host ports (80, 443, 9200, etc.) are available before starting, preventing cryptic Docker errors.
+- **Proactive Configuration Validation**: Deep-scans `portal-ext.properties` and `LCP.json` for structural errors and duplicate keys before orchestration begins.
 - **Atomic Configuration**: All project metadata and property updates use safe atomic writes to prevent file corruption during interruptions.
 - **Architecture-Aware**: The tool detects your OS automatically to fetch the correct optimized binary during self-updates.
 - **Shell Autocompletion**: TAB completion for commands and project names across Bash, Zsh, and Fish.
