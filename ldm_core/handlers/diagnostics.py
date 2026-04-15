@@ -19,7 +19,7 @@ from ldm_core.utils import (
 class DiagnosticsHandler:
     """Mixin for diagnostic and maintenance commands."""
 
-    def cmd_status(self):
+    def cmd_status(self, all_projects=False):
         """Displays a summary of active global services and projects."""
         UI.heading("LDM Service Status")
 
@@ -62,7 +62,11 @@ class DiagnosticsHandler:
         print()
 
         # 2. Project Status
-        print(f"{UI.WHITE}Active Projects:{UI.COLOR_OFF}")
+        if all_projects:
+            print(f"{UI.WHITE}All Managed Projects:{UI.COLOR_OFF}")
+        else:
+            print(f"{UI.WHITE}Active Projects:{UI.COLOR_OFF}")
+
         roots = self.find_dxp_roots()
         active_projects = False
 
@@ -128,6 +132,11 @@ class DiagnosticsHandler:
                             print(
                                 f"    {UI.WHITE}└─{UI.COLOR_OFF} {ext_id:<23} {ext_url}"
                             )
+            elif all_projects:
+                print(
+                    f"  {UI.WHITE}○{UI.COLOR_OFF} {p_id:<25} {r['version']:<15} {UI.WHITE}Stopped{UI.COLOR_OFF}"
+                )
+                active_projects = True
 
         if not active_projects:
             print(f"  {UI.WHITE}No projects are currently running.{UI.COLOR_OFF}")
@@ -338,12 +347,12 @@ del "%~f0"
                 temp_new.unlink()
             UI.die("Failed to apply update.", e)
 
-    def cmd_doctor(self, project_id=None):
+    def cmd_doctor(self, project_id=None, all_projects=False):
         UI.heading("LDM Doctor - Environmental Health Check")
 
         # 0. Early Project Resolve (Optional skip allowed)
         skip_project = getattr(self.args, "skip_project", False)
-        check_all = getattr(self.args, "all", False)
+        check_all = all_projects or getattr(self.args, "all", False)
 
         project_paths = []
         if check_all:
@@ -1118,19 +1127,38 @@ del "%~f0"
                         )
                     )
                 else:
-                    results.append(
-                        (
-                            f"[{p_path.name}] DNS ({host_name})",
-                            f"{len(unresolved)} domain(s) unresolved",
-                            False,
+                    fix_hosts = getattr(self.args, "fix_hosts", False)
+                    if fix_hosts:
+                        if self._apply_hosts_fix(unresolved):
+                            results.append(
+                                (
+                                    f"[{p_path.name}] DNS ({host_name})",
+                                    "Fixed (Appended to hosts)",
+                                    True,
+                                )
+                            )
+                        else:
+                            results.append(
+                                (
+                                    f"[{p_path.name}] DNS ({host_name})",
+                                    "Fix failed (Permission denied?)",
+                                    False,
+                                )
+                            )
+                    else:
+                        results.append(
+                            (
+                                f"[{p_path.name}] DNS ({host_name})",
+                                f"{len(unresolved)} domain(s) unresolved",
+                                False,
+                            )
                         )
-                    )
-                    add_hint(
-                        f"[{p_path.name}] Add the required hostnames to your local '{UI.WHITE}/etc/hosts{UI.COLOR_OFF}' file.",
-                        "https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/installation.md#dns--subdomain-configuration",
-                    )
-                    for d in unresolved:
-                        print(f"  {UI.RED}×{UI.COLOR_OFF} {d}")
+                        add_hint(
+                            f"[{p_path.name}] Add missing hostnames to your local hosts file or run '{UI.WHITE}ldm doctor --fix-hosts{UI.COLOR_OFF}'.",
+                            "https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/installation.md#dns--subdomain-configuration",
+                        )
+                        for d in unresolved:
+                            print(f"  {UI.RED}×{UI.COLOR_OFF} {d}")
 
             try:
                 if platform.system().lower() == "darwin":
@@ -1814,3 +1842,49 @@ del "%~f0"
             return "Running (Starting Up)", True
         except Exception:
             return "Running", True
+
+    def _apply_hosts_fix(self, unresolved_domains):
+        """Attempts to append missing host entries to the system hosts file."""
+        if not unresolved_domains:
+            return True
+
+        import platform
+        import subprocess
+
+        # Standard LDM expected IP for local development
+        target_ip = "127.0.0.1"
+        new_entries = []
+        for d in sorted(list(set(unresolved_domains))):
+            new_entries.append(f"{target_ip} {d} *.{d}")
+
+        content_to_add = "\n# Added by Liferay Docker Manager (LDM)\n"
+        content_to_add += "\n".join(new_entries) + "\n"
+
+        is_windows = platform.system().lower() == "windows"
+        hosts_path = (
+            r"C:\Windows\System32\drivers\etc\hosts" if is_windows else "/etc/hosts"
+        )
+
+        try:
+            UI.info(f"Requesting permission to update {hosts_path}...")
+            if is_windows:
+                # Use PowerShell to append with elevation
+                cmd = [
+                    "powershell",
+                    "-Command",
+                    f"Start-Process powershell -Verb RunAs -ArgumentList \"Add-Content -Path {hosts_path} -Value '{content_to_add}'\"",
+                ]
+                subprocess.run(cmd, check=True)
+            else:
+                # Use sudo tee to append
+                cmd = ["sudo", "tee", "-a", hosts_path]
+                process = subprocess.Popen(
+                    cmd, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL
+                )
+                process.communicate(input=content_to_add.encode())
+                if process.returncode != 0:
+                    return False
+            return True
+        except Exception as e:
+            UI.error(f"Failed to update hosts file: {e}")
+            return False

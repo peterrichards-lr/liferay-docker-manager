@@ -53,6 +53,15 @@ While the v1.x "Hardened Edition" focused on cross-platform stability, **v2.0.0*
 
 ---
 
+## ✅ Completed Improvements (v1.8.x)
+
+### **Fleet Management & DNS Automation (v1.8.0)**
+
+- **Bulk Lifecycle Commands**: Introduced `--all` support for `stop`, `restart`, `down`, and `logs` to manage your entire local fleet in one command.
+- **Global Fleet Status**: `ldm status --all` now displays an overview of all managed projects, including stopped ones, providing a bird's-eye view of your workspaces.
+- **Auto-Healing DNS**: Added `ldm doctor --fix-hosts` to automatically detect and append missing virtual host entries to your system's `/etc/hosts` file (supports macOS, Linux, and Windows).
+- **Consolidated SSL Renewal**: `ldm renew-ssl --all` for rapid, workspace-wide certificate refreshes.
+
 ## ✅ Completed Improvements (v1.7.x)
 
 ### **Hardening & UX Refinements (v1.7.0)**

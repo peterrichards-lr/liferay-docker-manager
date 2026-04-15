@@ -869,6 +869,9 @@ class StackHandler:
             paths["root"], paths["cx"], paths["ce_dir"]
         )
         for ext in extensions:
+            if not ext.get("is_service"):
+                continue
+
             ext_id = ext["id"]
             ext_name = f"{container_name}-{ext_id}"
             ext_port = 80
@@ -1530,7 +1533,17 @@ class StackHandler:
         else:
             self.sync_stack(paths, meta, rebuild=getattr(self.args, "rebuild", False))
 
-    def cmd_stop(self, project_id=None, service=None):
+    def cmd_stop(self, project_id=None, service=None, all_projects=False):
+        if all_projects:
+            roots = self.get_running_projects()
+            if not roots:
+                UI.info("No running projects found.")
+                return
+            UI.heading("Stopping All Running Projects")
+            for r in roots:
+                self.cmd_stop(project_id=r["path"].name, service=service)
+            return
+
         root = self.detect_project_path(project_id)
         if not root or not self.require_compose(root, silent=True):
             return
@@ -1545,7 +1558,17 @@ class StackHandler:
             cmd.append(service)
         run_command(cmd, capture_output=False, cwd=str(root))
 
-    def cmd_restart(self, project_id=None, service=None):
+    def cmd_restart(self, project_id=None, service=None, all_projects=False):
+        if all_projects:
+            roots = self.get_running_projects()
+            if not roots:
+                UI.info("No running projects found.")
+                return
+            UI.heading("Restarting All Running Projects")
+            for r in roots:
+                self.cmd_restart(project_id=r["path"].name, service=service)
+            return
+
         root = self.detect_project_path(project_id)
         if not root:
             return
@@ -1634,7 +1657,17 @@ class StackHandler:
             if UI.ask("Restart project now?", "Y").upper() == "Y":
                 self.cmd_run()
 
-    def cmd_down(self, project_id=None, service=None):
+    def cmd_down(self, project_id=None, service=None, all_projects=False):
+        if all_projects:
+            roots = self.get_running_projects()
+            if not roots:
+                UI.info("No running projects found.")
+                return
+            UI.heading("Removing All Running Projects")
+            for r in roots:
+                self.cmd_down(project_id=r["path"].name, service=service)
+            return
+
         root = self.detect_project_path(project_id)
         if not root:
             if getattr(self.args, "infra", False):
@@ -1787,7 +1820,23 @@ class StackHandler:
         self.cmd_infra_down()
         self.cmd_infra_setup()
 
-    def cmd_logs(self, project_id=None, service=None):
+    def cmd_logs(self, project_id=None, service=None, all_projects=False):
+        if all_projects:
+            roots = self.get_running_projects()
+            if not roots:
+                UI.info("No running projects found.")
+                return
+            if getattr(self.args, "follow", False):
+                UI.warning(
+                    "Ignoring '--follow' for bulk logs to prevent interleaved stream."
+                )
+
+            UI.heading("Logs for All Running Projects")
+            for r in roots:
+                print(f"\n{UI.WHITE}=== Project: {r['path'].name} ==={UI.COLOR_OFF}")
+                self.cmd_logs(project_id=r["path"].name, service=service)
+            return
+
         root = self.detect_project_path(project_id)
         if not root:
             return

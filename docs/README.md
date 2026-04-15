@@ -241,6 +241,7 @@ ldm logs [project] [service1] [service2] ...
 # Examples:
 ldm logs                  # All logs for current project
 ldm logs demo             # All logs for 'demo' project
+ldm logs --all            # Dump recent logs for all running projects
 ldm logs demo liferay     # Only Liferay logs for 'demo'
 ldm logs demo liferay my-ext # Multi-service tailing
 ```
@@ -256,6 +257,8 @@ ldm down [project] [service]      # Remove containers (and optionally -v volumes
 ldm rm [project]                  # Alias for 'down'
 
 # Examples:
+ldm stop --all            # Stop all running projects in the workspace
+ldm restart --all         # Restart all running projects
 ldm restart               # Full stack restart (graceful stop + run)
 ldm restart demo liferay  # Surgical restart of just the Liferay container
 ldm down --volumes        # Tear down stack and clear all database/data state
@@ -401,6 +404,7 @@ Verify host environment health, Docker resources (CPUs/Memory), and project depe
 ```bash
 ldm doctor          # Health check for current/selected project
 ldm doctor --all    # Batch validate every project in your workspace
+ldm doctor --fix-hosts # Automatically add missing domains to /etc/hosts (requires sudo)
 ```
 
 ### `status` (alias: `ps`)
@@ -408,7 +412,8 @@ ldm doctor --all    # Batch validate every project in your workspace
 Lightweight summary of all active global services and running projects.
 
 ```bash
-ldm status
+ldm status          # Show active global services and running projects
+ldm status --all    # Show all managed projects (including stopped ones)
 ldm ps
 ```
 

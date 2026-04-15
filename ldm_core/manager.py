@@ -98,7 +98,9 @@ class LiferayManager(
             "volumes",
             "delete",
             "infra",
+            "all_projects",
+            "fix_hosts",
         ]
         for attr in run_attrs:
-            if not hasattr(self.args, attr):
-                setattr(self.args, attr, None)
+            if not hasattr(args, attr):
+                setattr(args, attr, None)

@@ -223,10 +223,13 @@ class WorkspaceHandler:
                         Path(f).name in ["client-extension.yaml", "LCP.json"]
                         for f in namelist
                     ):
-                        if (
+                        is_service = (
                             any(Path(f).name == "Dockerfile" for f in namelist)
                             and ext_info.get("kind") != "Job"
-                        ):
+                            and ext_info.get("deploy", True) is not False
+                        )
+
+                        if is_service:
                             if target_folder.exists():
                                 self.safe_rmtree(target_folder)
                             target_folder.mkdir(parents=True)
@@ -249,13 +252,14 @@ class WorkspaceHandler:
                         if not is_same_dest:
                             if dest_zip.exists():
                                 os.remove(dest_zip)
-                            shutil.move(str(root_zip_copy), str(dest_zip))
+                            shutil.copy2(root_zip_copy, dest_zip)
 
                         extensions.append(
                             {
                                 "name": item.stem.lower().replace("_", "-"),
                                 "id": ext_info.get("id") or item.stem,
                                 "path": target_folder,  # Build from root/client-extensions/
+                                "is_service": is_service,
                                 "port": next(
                                     (
                                         p.get("port")
@@ -279,6 +283,9 @@ class WorkspaceHandler:
             ext_info = self._scan_extension_metadata(folder_path=item)
             if ext_info["type"] or (item / "LCP.json").exists():
                 found_ids.add(item.name)
+                is_service = (item / "Dockerfile").exists() and ext_info.get(
+                    "kind"
+                ) != "Job"
                 port = next(
                     (
                         p.get("port")
@@ -292,6 +299,7 @@ class WorkspaceHandler:
                     "name": item.name.lower().replace("_", "-"),
                     "port": port,
                     "path": item,  # Already in source of truth
+                    "is_service": is_service,
                     **ext_info,
                 }
                 existing = next((e for e in extensions if e["id"] == entry["id"]), None)

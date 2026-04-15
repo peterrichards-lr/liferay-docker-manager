@@ -129,6 +129,10 @@ def main():
             p.add_argument("-f", "--follow", action="store_true")
         if cmd == "deploy":
             p.add_argument("--rebuild", action="store_true")
+        if cmd in ["stop", "restart", "down", "logs"]:
+            p.add_argument(
+                "--all", action="store_true", help="Apply to all running projects"
+            )
 
     # Command: env
     env = subparsers.add_parser("env")
@@ -214,7 +218,14 @@ def main():
     doctor.add_argument(
         "--all", action="store_true", help="Run health checks for all projects"
     )
-    subparsers.add_parser("status", aliases=["ps"])
+    doctor.add_argument(
+        "--fix-hosts",
+        action="store_true",
+        help="Automatically fix missing entries in /etc/hosts",
+    )
+
+    status = subparsers.add_parser("status", aliases=["ps"])
+    status.add_argument("--all", action="store_true", help="Show all managed projects")
     subparsers.add_parser("list", aliases=["ls"])
 
     # Command: config
@@ -352,13 +363,21 @@ def main():
         "import": lambda: manager.cmd_import(args.source),
         "init-from": lambda: manager.cmd_init_from(args.source),
         "monitor": lambda: manager.cmd_monitor(args.source),
-        "stop": lambda: manager.cmd_stop(project_id, getattr(args, "service", None)),
-        "restart": lambda: manager.cmd_restart(
-            project_id, getattr(args, "service", None)
+        "stop": lambda: manager.cmd_stop(
+            project_id, getattr(args, "service", None), all_projects=args.all
         ),
-        "down": lambda: manager.cmd_down(project_id, getattr(args, "service", None)),
-        "rm": lambda: manager.cmd_down(project_id, getattr(args, "service", None)),
-        "logs": lambda: manager.cmd_logs(project_id, getattr(args, "service", None)),
+        "restart": lambda: manager.cmd_restart(
+            project_id, getattr(args, "service", None), all_projects=args.all
+        ),
+        "down": lambda: manager.cmd_down(
+            project_id, getattr(args, "service", None), all_projects=args.all
+        ),
+        "rm": lambda: manager.cmd_down(
+            project_id, getattr(args, "service", None), all_projects=args.all
+        ),
+        "logs": lambda: manager.cmd_logs(
+            project_id, getattr(args, "service", None), all_projects=args.all
+        ),
         "deploy": lambda: manager.cmd_deploy(
             project_id, getattr(args, "service", None)
         ),
@@ -377,9 +396,9 @@ def main():
         "cache": lambda: manager.cmd_cache(getattr(args, "target", "tags")),
         "clear-cache": lambda: manager.cmd_cache("tags"),
         "clear-tags": lambda: manager.cmd_cache("tags"),
-        "doctor": lambda: manager.cmd_doctor(project_id),
-        "status": lambda: manager.cmd_status(),
-        "ps": lambda: manager.cmd_status(),
+        "doctor": lambda: manager.cmd_doctor(project_id, all_projects=args.all),
+        "status": lambda: manager.cmd_status(all_projects=args.all),
+        "ps": lambda: manager.cmd_status(all_projects=args.all),
         "list": lambda: manager.cmd_list(),
         "ls": lambda: manager.cmd_list(),
         "config": lambda: manager.cmd_config(args.key, args.value),
