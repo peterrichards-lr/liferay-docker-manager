@@ -1947,7 +1947,60 @@ class StackHandler:
         self.cmd_infra_down()
         self.cmd_infra_setup()
 
-    def cmd_logs(self, project_id=None, service=None, all_projects=False):
+    def cmd_logs(self, project_id=None, service=None, all_projects=False, infra=False):
+        if infra:
+            infra_map = {
+                "proxy": "liferay-proxy-global",
+                "traefik": "liferay-proxy-global",
+                "es": "liferay-search-global",
+                "search": "liferay-search-global",
+                "bridge": "docker-socket-proxy",
+                "socket": "docker-socket-proxy",
+            }
+
+            targets = []
+            if service:
+                # If service is a list (from CLI), check each item
+                services = service if isinstance(service, list) else [service]
+                for s in services:
+                    s_lower = s.lower()
+                    if s_lower in infra_map:
+                        targets.append(infra_map[s_lower])
+                    else:
+                        # Direct container name fallback
+                        targets.append(s)
+            else:
+                # Show all infra logs
+                targets = list(set(infra_map.values()))
+
+            if not targets:
+                UI.info("No infrastructure services found matching your request.")
+                return
+
+            follow = getattr(self.args, "follow", False)
+            UI.heading(f"Infrastructure Logs {'(Following)' if follow else ''}")
+
+            # For global infra, we use direct docker logs since they aren't in a single compose file
+            for t in targets:
+                # Check if running
+                if not run_command(
+                    ["docker", "ps", "-q", "-f", f"name=^{t}$"], check=False
+                ):
+                    UI.warning(f"Service '{t}' is not running.")
+                    continue
+
+                cmd = ["docker", "logs"]
+                if follow:
+                    cmd.append("-f")
+                cmd.append(t)
+
+                try:
+                    UI.info(f"Showing logs for: {t}")
+                    run_command(cmd, capture_output=False)
+                except KeyboardInterrupt:
+                    break
+            return
+
         if all_projects:
             roots = self.get_running_projects()
             if not roots:

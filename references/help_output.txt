@@ -1,7 +1,7 @@
 usage: liferay_docker.py [-h] [-v] [-y] [--version]
                          {run,up,import,init-from,monitor,stop,restart,down,rm,logs,deploy,env,snapshot,restore,init-common,reset,renew-ssl,infra-setup,infra-down,infra-restart,cache,clear-cache,clear-tags,upgrade,update-check,migrate-search,doctor,status,ps,list,ls,config,prune,shell,gogo,log-level,browser,open,edit,completion,scale,cloud-fetch} ...
 
-Liferay Docker Manager (ldm) v2.0.0
+Liferay Docker Manager (ldm) v2.0.2
 
 positional arguments:
   {run,up,import,init-from,monitor,stop,restart,down,rm,logs,deploy,env,snapshot,restore,init-common,reset,renew-ssl,infra-setup,infra-down,infra-restart,cache,clear-cache,clear-tags,upgrade,update-check,migrate-search,doctor,status,ps,list,ls,config,prune,shell,gogo,log-level,browser,open,edit,completion,scale,cloud-fetch}
@@ -57,6 +57,19 @@ options:
   --env ENV
   --samples             Initialize with sample client extensions
   --snapshot SNAPSHOT   Initialize project from an external snapshot folder
+usage: liferay_docker.py logs [-h] [-p PROJECT_FLAG] [-f] [--infra] [--all]
+                              [project] [service ...]
+
+positional arguments:
+  project
+  service
+
+options:
+  -h, --help            show this help message and exit
+  -p, --project PROJECT_FLAG
+  -f, --follow
+  --infra               View logs for global infrastructure
+  --all                 Apply to all running projects
 usage: liferay_docker.py import [-h] [-p PROJECT_FLAG]
                                 [--target-env TARGET_ENV] [--no-run]
                                 [--backup-dir BACKUP_DIR] [--build]

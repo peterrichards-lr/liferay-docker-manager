@@ -252,7 +252,7 @@ ldm monitor [project_name] --delay 2.0
 
 ### `logs`
 
-View real-time logs. Supports filtering by project and multiple specific services.
+View real-time logs. Supports filtering by project, specific services, or global infrastructure components.
 
 ```bash
 ldm logs [project] [service1] [service2] ...
@@ -261,6 +261,9 @@ ldm logs [project] [service1] [service2] ...
 ldm logs                  # All logs for current project
 ldm logs demo             # All logs for 'demo' project
 ldm logs --all            # Dump recent logs for all running projects
+ldm logs --infra          # Show logs for all global infrastructure (ES, Proxy, etc.)
+ldm logs --infra es       # Show logs only for Global Elasticsearch
+ldm logs --infra proxy    # Show logs only for Global SSL Proxy
 ldm logs demo liferay     # Only Liferay logs for 'demo'
 ldm logs demo liferay my-ext # Multi-service tailing
 ```

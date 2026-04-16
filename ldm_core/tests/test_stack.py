@@ -421,6 +421,33 @@ class TestStackOrchestration(unittest.TestCase):
             )
             self.assertIsNone(catalina_opts_env)
 
+    @patch("ldm_core.handlers.stack.run_command")
+    def test_cmd_logs_infra(self, mock_run):
+        # Mock docker ps -q returning a container ID (service is running)
+        mock_run.return_value = "abc123"
+
+        # Test showing all infra logs
+        self.manager.cmd_logs(infra=True)
+
+        # Verify it checks if containers are running
+        # It should check for proxy, search, and socket bridge (on darwin)
+        checked_containers = [
+            call[0][0][4] for call in mock_run.call_args_list if "ps" in call[0][0]
+        ]
+        self.assertIn("name=^liferay-proxy-global$", checked_containers)
+        self.assertIn("name=^liferay-search-global$", checked_containers)
+
+        # Test filtering for a specific infra service
+        mock_run.reset_mock()
+        self.manager.cmd_logs(infra=True, service="es")
+
+        # Verify it specifically targeted the search container
+        checked_containers = [
+            call[0][0][4] for call in mock_run.call_args_list if "ps" in call[0][0]
+        ]
+        self.assertEqual(len(checked_containers), 1)
+        self.assertIn("name=^liferay-search-global$", checked_containers)
+
     def test_cmd_infra_setup(self):
         with patch.object(self.manager, "check_docker", return_value=True):
             with patch.object(

@@ -152,6 +152,11 @@ def main():
             p.add_argument("--infra", action="store_true")
         if cmd == "logs":
             p.add_argument("-f", "--follow", action="store_true")
+            p.add_argument(
+                "--infra",
+                action="store_true",
+                help="View logs for global infrastructure",
+            )
         if cmd == "deploy":
             p.add_argument("--rebuild", action="store_true")
         if cmd in ["stop", "restart", "down", "logs"]:
@@ -410,7 +415,10 @@ def main():
             project_id, getattr(args, "service", None), all_projects=args.all
         ),
         "logs": lambda: manager.cmd_logs(
-            project_id, getattr(args, "service", None), all_projects=args.all
+            project_id,
+            getattr(args, "service", None),
+            all_projects=args.all,
+            infra=getattr(args, "infra", False),
         ),
         "deploy": lambda: manager.cmd_deploy(
             project_id, getattr(args, "service", None)
