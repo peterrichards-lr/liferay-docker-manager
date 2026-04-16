@@ -344,6 +344,7 @@ class TestStackOrchestration(unittest.TestCase):
                 "name": "my-ms",
                 "kind": "Deployment",
                 "deploy": True,
+                "is_service": True,
                 "has_load_balancer": True,
                 "loadBalancer": {"targetPort": 3001},
                 "path": Path("/tmp/ms"),

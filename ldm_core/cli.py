@@ -323,9 +323,14 @@ def main():
             if args.command != "upgrade":
                 UI.error("Security Risk: Do not run LDM with 'sudo'.")
                 UI.info(
-                    "Running as root causes permission issues in your home directory (~/.shiv).\n"
-                    "LDM will prompt for your password only when elevated privileges are needed."
+                    "Running as root causes cache ownership issues in your home directory (~/.shiv).\n"
+                    "LDM will prompt for your password only when elevated privileges are needed (e.g. hosts file updates)."
                 )
+                if platform.system().lower() == "linux":
+                    UI.info(
+                        f"\nIf you are using sudo because of Docker permissions, please run:\n"
+                        f"{UI.CYAN}sudo usermod -aG docker $USER{UI.COLOR_OFF} and restart your terminal session."
+                    )
                 sys.exit(1)
             else:
                 UI.warning(
@@ -352,6 +357,10 @@ def main():
         "scale",
         "log-level",
         "cloud-fetch",
+        "status",
+        "ps",
+        "list",
+        "ls",
     ]
     if args.command in docker_required and not manager.check_docker():
         UI.die("Docker not accessible.")

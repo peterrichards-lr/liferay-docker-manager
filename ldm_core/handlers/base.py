@@ -478,7 +478,28 @@ class BaseHandler:
             if res.stderr and not silent:
                 # Extract the first line of the error to avoid overwhelming the user
                 err = res.stderr.splitlines()[0]
-                UI.error(f"Docker Error: {err}")
+                if "permission denied" in err.lower():
+                    UI.error("Docker Permission Denied")
+                    UI.info(
+                        "Your user does not have permission to access the Docker socket.\n"
+                        f"Please run: {UI.CYAN}sudo usermod -aG docker $USER{UI.COLOR_OFF}"
+                    )
+                    # Detect WSL and provide specific session reset advice
+                    if platform.system().lower() == "linux":
+                        try:
+                            with open("/proc/version", "r") as f:
+                                if "microsoft" in f.read().lower():
+                                    UI.info(
+                                        f"After running the command above, {UI.WHITE}restart your WSL terminal{UI.COLOR_OFF} for changes to take effect."
+                                    )
+                                else:
+                                    UI.info(
+                                        "After running the command above, log out and log back in for changes to take effect."
+                                    )
+                        except Exception:
+                            pass
+                else:
+                    UI.error(f"Docker Error: {err}")
             return False
         except Exception as e:
             if self.verbose and not silent:

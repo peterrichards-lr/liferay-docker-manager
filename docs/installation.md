@@ -462,6 +462,25 @@ You must add each domain and subdomain to your system's `hosts` file.
 
 ---
 
+### 🐧 Docker Permissions (WSL & Linux)
+
+If you see a "Permission Denied" error or LDM keeps asking for `sudo`, your user likely doesn't have permission to access the Docker socket. **Do not run LDM with sudo.** Instead, add your user to the `docker` group:
+
+1. **Add the group**:
+
+   ```bash
+   sudo usermod -aG docker $USER
+   ```
+
+2. **Apply the changes**:
+   - **WSL Users**: Completely restart your WSL terminal.
+   - **Native Linux Users**: Log out and log back in.
+
+3. **Verify**:
+   Run `docker ps`. If it works without `sudo`, LDM will also work.
+
+---
+
 ### 🔐 Fixing SSL Trust Issues (mkcert)
 
 If your browser (Chrome, Edge, etc.) shows "Your connection is not private" or a red warning even though LDM is running with SSL, follow these steps to fix the trust relationship:
