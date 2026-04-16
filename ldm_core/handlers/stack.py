@@ -598,6 +598,10 @@ class StackHandler:
             config.get("gogo_port"),
             config.get("jvm_args"),
         )
+        no_vol_cache = str(config.get("no_vol_cache", "false")).lower() == "true"
+        no_jvm_verify = str(config.get("no_jvm_verify", "false")).lower() == "true"
+        no_tld_skip = str(config.get("no_tld_skip", "false")).lower() == "true"
+
         db_type, db_name, db_user, db_pass = (
             config.get("db_type"),
             config.get("db_name"),
@@ -610,9 +614,9 @@ class StackHandler:
             if k.startswith("scale_") and str(v).isdigit()
         }
 
-        vol_suffix = (
-            ":cached" if platform.system().lower() in ["darwin", "windows"] else ""
-        )
+        vol_suffix = ""
+        if not no_vol_cache and platform.system().lower() in ["darwin", "windows"]:
+            vol_suffix = ":cached"
 
         liferay_volumes = [
             f"{paths['files'].as_posix()}:/mnt/liferay/files{vol_suffix}",
@@ -663,12 +667,18 @@ class StackHandler:
         # - XX:TieredStopAtLevel=1: Speeds up JIT
         # - XX:-BytecodeVerificationLocal: Skips verification for local dev classes
         # - tomcat.util.scan.StandardJarScanFilter.jarsToSkip: Skips expensive TLD scans
-        jvm_opts = (
-            f"-Dorg.apache.catalina.SESSION_COOKIE_NAME=LFR_SESSION_ID_{host_name.replace('.', '_')} "
-            "-XX:TieredStopAtLevel=1 "
-            "-XX:-BytecodeVerificationLocal "
-            "-Dtomcat.util.scan.StandardJarScanFilter.jarsToSkip=*.jar"
-        )
+        jvm_opts_list = [
+            f"-Dorg.apache.catalina.SESSION_COOKIE_NAME=LFR_SESSION_ID_{host_name.replace('.', '_')}",
+            "-XX:TieredStopAtLevel=1",
+        ]
+        if not no_jvm_verify:
+            jvm_opts_list.append("-XX:-BytecodeVerificationLocal")
+        if not no_tld_skip:
+            jvm_opts_list.append(
+                "-Dtomcat.util.scan.StandardJarScanFilter.jarsToSkip=*.jar"
+            )
+
+        jvm_opts = " ".join(jvm_opts_list)
         if jvm_args:
             jvm_opts += f" {jvm_args}"
 
@@ -1441,6 +1451,20 @@ class StackHandler:
         db_type = getattr(self.args, "db", None) or project_meta.get("db_type")
         jvm_args = getattr(self.args, "jvm_args", None) or project_meta.get("jvm_args")
 
+        # Performance Overrides (Default to enabled/False unless specified)
+        no_vol_cache = (
+            getattr(self.args, "no_vol_cache", False)
+            or str(project_meta.get("no_vol_cache", "false")).lower() == "true"
+        )
+        no_jvm_verify = (
+            getattr(self.args, "no_jvm_verify", False)
+            or str(project_meta.get("no_jvm_verify", "false")).lower() == "true"
+        )
+        no_tld_skip = (
+            getattr(self.args, "no_tld_skip", False)
+            or str(project_meta.get("no_tld_skip", "false")).lower() == "true"
+        )
+
         # If no JVM args provided or saved, calculate smart defaults
         if not jvm_args:
             jvm_args = self.get_default_jvm_args()
@@ -1581,6 +1605,9 @@ class StackHandler:
                 "use_shared_search": str(use_shared_search).lower(),
                 "db_type": db_type,
                 "jvm_args": jvm_args,
+                "no_vol_cache": str(no_vol_cache).lower(),
+                "no_jvm_verify": str(no_jvm_verify).lower(),
+                "no_tld_skip": str(no_tld_skip).lower(),
             }
         )
         self.write_meta(root / PROJECT_META_FILE, project_meta)

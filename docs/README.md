@@ -196,6 +196,25 @@ LDM uses smarter defaults for SSL based on your hostname. When a custom `--host-
 | `ldm run --no-ssl` | `localhost` | `False` | `http://localhost:8080` |
 | `ldm run --host-name my.local --no-ssl` | `my.local` | `False` | `http://my.local:8080` |
 
+#### ⚡️ Performance Tuning (Startup Optimizations)
+
+LDM includes several "Quick Win" optimizations to significantly reduce Liferay startup time. These are **enabled by default** but can be disabled via CLI flags or project configuration.
+
+| Feature | CLI Flag to Disable | Description |
+| :--- | :--- | :--- |
+| **Volume Caching** | `--no-vol-cache` | Uses `:cached` on macOS/Windows to speed up read-heavy I/O. |
+| **JVM Verification** | `--no-jvm-verify` | Skips bytecode verification for faster class loading. |
+| **TLD Scan Skip** | `--no-tld-skip` | Bypasses expensive Tomcat TLD scanning for all JARs. |
+
+**Example:**
+
+```bash
+# Disable all optimizations for a specific run
+ldm run my-project --no-vol-cache --no-jvm-verify --no-tld-skip
+```
+
+---
+
 ### `init-from` (Live Link)
 
 Initialize a project from a source workspace and establish a **persistent link**. This command records the workspace path in the project metadata and automatically starts the `monitor` process to sync your code changes in real-time.
