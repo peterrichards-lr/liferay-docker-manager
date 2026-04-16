@@ -841,23 +841,25 @@ class StackHandler:
                 paths["files"] / "portal-ext.properties", portal_ext_updates
             )
 
-        # Environment Variables (Non-Infrastructure only)
-        def merge_into_env(source):
+        # Environment Variables (User and Host passthrough)
+        user_env_dict = {}
+
+        def merge_into_user_env(source):
             if not source:
                 return
             if isinstance(source, list):
                 for item in source:
                     if "=" in item:
                         k, v = item.split("=", 1)
-                        liferay_env_dict[k] = v
+                        user_env_dict[k] = v
             elif isinstance(source, dict):
-                liferay_env_dict.update(source)
+                user_env_dict.update(source)
 
-        merge_into_env(env_args)
-        merge_into_env(self.get_host_passthrough_env(paths, "liferay"))
+        merge_into_user_env(env_args)
+        merge_into_user_env(self.get_host_passthrough_env(paths, "liferay"))
 
-        # FINAL SCRUB: Ensure no infrastructure settings leaked into env vars
-        # This prevents Liferay from throwing 'Unable to decode' warnings
+        # SCRUB USER ENV: Ensure no infrastructure settings leaked from user/host
+        # This prevents Liferay from throwing 'Unable to decode' warnings for conflicting settings
         infra_prefixes = [
             "LIFERAY_WEB_SERVER",
             "LIFERAY_ELASTICSEARCH",
@@ -869,11 +871,15 @@ class StackHandler:
             "LIFERAY_WORKSPACE",
             "LIFERAY_CONTAINER",
         ]
-        liferay_env_dict = {
-            k: v
-            for k, v in liferay_env_dict.items()
-            if not any(k.startswith(p) for p in infra_prefixes)
-        }
+        for k in list(user_env_dict.keys()):
+            if any(k.startswith(p) for p in infra_prefixes):
+                # We only remove it if it's NOT already in liferay_env_dict (which means LDM set it)
+                if k not in liferay_env_dict:
+                    user_env_dict.pop(k)
+
+        # Final merge: User settings (scrubbed) win over LDM defaults if they collide
+        # but LDM settings are protected from the generic prefix scrub.
+        liferay_env_dict.update(user_env_dict)
 
         compose["services"]["liferay"]["environment"] = [
             f"{k}={v}" for k, v in liferay_env_dict.items()
