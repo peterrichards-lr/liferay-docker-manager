@@ -1751,19 +1751,30 @@ del "%~f0"
                 r"\bexception\b",
             ]
             for line in lines:
+                line_lower = line.lower()
                 if any(re.search(k, line, re.IGNORECASE) for k in critical_keywords):
-                    # Special case: ignore known non-fatal "operation not supported" errors in some providers
-                    if "operation not supported" in line.lower():
+                    # --- NOISE REDUCTION FILTERS ---
+                    # 1. Ignore "error" strings within WARN level messages (common in JSON logs)
+                    if "warn" in line.upper() and "error" in line_lower:
                         continue
-                    # Ignore benign AWS/S3 credential discovery failures (common in ES8)
+                    # 2. Ignore known non-fatal "operation not supported" errors
+                    if "operation not supported" in line_lower:
+                        continue
+                    # 3. Ignore benign AWS/S3 credential discovery failures (common in ES8)
                     if (
                         "failed to obtain region from default provider chain"
-                        in line.lower()
+                        in line_lower
                     ):
                         continue
                     if (
                         "software.amazon.awssdk.core.exception.SdkClientException"
-                        in line.lower()
+                        in line_lower
+                    ):
+                        continue
+                    # 4. Ignore transient ES boot state errors
+                    if (
+                        "clusterblockexception" in line_lower
+                        and "state not recovered" in line_lower
                     ):
                         continue
 
@@ -1784,6 +1795,9 @@ del "%~f0"
                         continue
                     # Ignore benign SLF4J warnings
                     if "SLF4J:" in line:
+                        continue
+                    # Ignore ES deprecation warnings (very noisy in logs)
+                    if "deprecation.elasticsearch" in line.lower():
                         continue
 
                     return f"Warning (Issue in logs: {line.strip()[:40]}...)", "warn"
