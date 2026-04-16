@@ -59,6 +59,9 @@ class MockWorkspaceManager(BaseHandler, WorkspaceHandler, DiagnosticsHandler):
     def check_hostname(self, *args, **kwargs):
         return True
 
+    def cmd_run(self, *args, **kwargs):
+        pass
+
 
 class TestWorkspaceMetadata(unittest.TestCase):
     def setUp(self):

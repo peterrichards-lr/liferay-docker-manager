@@ -811,10 +811,7 @@ class WorkspaceHandler:
             self.write_meta(project_path / PROJECT_META_FILE, project_meta)
             UI.success(f"Project created at: {project_path}")
             if not getattr(self.args, "no_run", False):
-                self.args.project = project_name
-                from ldm_core.handlers.stack import StackHandler
-
-                StackHandler.cmd_run(self, is_restart=True)
+                self.cmd_run(project_id=project_name, is_restart=True)
         finally:
             if temp_extract_dir:
                 self.safe_rmtree(temp_extract_dir)

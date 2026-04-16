@@ -33,7 +33,7 @@ class StackHandler:
 
     def setup_ssl(self, cert_dir, host_name):
         """Generates certificates and Traefik config for a project."""
-        if not host_name or host_name == "localhost":
+        if not host_name:
             return False
 
         # Ensure directory exists
@@ -49,6 +49,13 @@ class StackHandler:
             if not mkcert_bin:
                 UI.die("mkcert binary not found. Please install it to use SSL.")
 
+            # Smarter Host Selection
+            hosts = [host_name]
+            if host_name == "localhost":
+                hosts.append("127.0.0.1")
+            else:
+                hosts.append(f"*.{host_name}")
+
             res = run_command(
                 [
                     mkcert_bin,
@@ -56,9 +63,8 @@ class StackHandler:
                     str(cert_file),
                     "-key-file",
                     str(key_file),
-                    host_name,
-                    f"*.{host_name}",
-                ],
+                ]
+                + hosts,
                 check=False,
             )
             if not cert_file.exists():
@@ -1550,6 +1556,7 @@ class StackHandler:
                 "host_name": host_name,
                 "container_name": project_id,
                 "ssl": str(ssl_val).lower(),
+                "ssl_port": str(project_meta.get("ssl_port", 443)),
                 "use_shared_search": str(use_shared_search).lower(),
                 "db_type": db_type,
                 "jvm_args": jvm_args,
