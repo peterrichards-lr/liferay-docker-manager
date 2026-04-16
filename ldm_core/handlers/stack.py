@@ -663,8 +663,7 @@ class StackHandler:
             f"LIFERAY_WORKSPACE{sep}HOME{sep}DIR": "/opt/liferay",
             "LDM_CONFIG_SIGNATURE": config_sig,
             "OSGI_CONSOLE": gogo_env,
-            "LIFERAY_JVM_OPTS": jvm_opts,
-            "CATALINA_OPTS": jvm_opts,
+            "LIFERAY_JVM_OPTS": jvm_opts.replace(" ", "\\ "),
         }
 
         if not is_modern:

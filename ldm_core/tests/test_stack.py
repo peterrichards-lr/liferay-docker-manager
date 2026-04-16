@@ -411,16 +411,15 @@ class TestStackOrchestration(unittest.TestCase):
                 (e for e in liferay_env if e.startswith("LIFERAY_JVM_OPTS=")), None
             )
             self.assertIsNotNone(jvm_opts_env)
-            self.assertIn("-Xms4g -Xmx4g", jvm_opts_env)
+            # The spaces should be escaped with backslashes
+            self.assertIn("-Xms4g\\ -Xmx4g", jvm_opts_env)
             self.assertIn("-XX:TieredStopAtLevel=1", jvm_opts_env)
 
-            # Check CATALINA_OPTS
+            # CATALINA_OPTS should be gone
             catalina_opts_env = next(
                 (e for e in liferay_env if e.startswith("CATALINA_OPTS=")), None
             )
-            self.assertIsNotNone(catalina_opts_env)
-            self.assertIn("-Xms4g -Xmx4g", catalina_opts_env)
-            self.assertIn("-XX:TieredStopAtLevel=1", catalina_opts_env)
+            self.assertIsNone(catalina_opts_env)
 
     def test_cmd_infra_setup(self):
         with patch.object(self.manager, "check_docker", return_value=True):
