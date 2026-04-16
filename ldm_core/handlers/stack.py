@@ -1348,6 +1348,10 @@ class StackHandler:
                     "Project not found and no name provided to initialize. Specify a project ID in non-interactive mode."
                 )
             UI.die("Project not found and no name provided to initialize.")
+
+        # Synchronize project_id with the resolved root name
+        project_id = root.name
+
         project_meta = self.read_meta(root / PROJECT_META_FILE)
         tag, host_name = (
             self.args.tag or project_meta.get("tag"),
