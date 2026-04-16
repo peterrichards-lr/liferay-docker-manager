@@ -1755,6 +1755,18 @@ del "%~f0"
                     # Special case: ignore known non-fatal "operation not supported" errors in some providers
                     if "operation not supported" in line.lower():
                         continue
+                    # Ignore benign AWS/S3 credential discovery failures (common in ES8)
+                    if (
+                        "failed to obtain region from default provider chain"
+                        in line.lower()
+                    ):
+                        continue
+                    if (
+                        "software.amazon.awssdk.core.exception.SdkClientException"
+                        in line.lower()
+                    ):
+                        continue
+
                     return f"Critical (Error in logs: {line.strip()[:40]}...)", False
 
             # 2. Warnings
@@ -1770,6 +1782,10 @@ del "%~f0"
                     # Ignore benign Traefik container churn warnings
                     if "Failed to inspect container" in line:
                         continue
+                    # Ignore benign SLF4J warnings
+                    if "SLF4J:" in line:
+                        continue
+
                     return f"Warning (Issue in logs: {line.strip()[:40]}...)", "warn"
 
             return None, None
