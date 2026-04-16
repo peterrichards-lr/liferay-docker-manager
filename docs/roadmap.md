@@ -30,10 +30,15 @@ While the v1.x "Hardened Edition" focused on cross-platform stability, **v2.0.0*
   - Route mapping and SSL expiry countdowns.
   - Quick-access logs for each extension.
 
-### 4. High-Velocity Boot (Pre-Seeded DBs)
+### 4. High-Performance Boot
 
-- **Database "Fast-Forward"**: Support for downloading pre-initialized, empty database volumes.
-- **Objective**: Reduce the "First Run" wait time from 15 minutes to under 2 minutes by bypassing the initial Liferay schema generation.
+- **Database "Fast-Forward"**: Support for downloading pre-initialized, empty database volumes. (Objective: Reduce the "First Run" wait time from 15 minutes to under 2 minutes).
+- **OSGi State Persistence**: Optionally persist `osgi/state` to skip bundle resolution on subsequent starts.
+- **TLD Scanning Optimization**: Skip Tomcat TLD scanning for known non-UI JARs.
+- **Smart Bundle Blacklisting**: Performance-tuned baseline to disable non-essential development services.
+- **Volume Consistency Tuning**: Use `:cached` or `:delegated` mounts on macOS/Windows for improved I/O.
+- **Pre-computed Search Indexes**: Persistent global search volumes to avoid full re-indexing on first boot.
+- **JVM Dev-Mode Tuning**: Optional flags like `-Xverify:none` for faster class loading.
 
 ### 5. Shared Scenario Packs
 
