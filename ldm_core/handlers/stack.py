@@ -7,6 +7,7 @@ import platform
 import subprocess
 import hashlib
 import sys
+import math
 from datetime import datetime, timezone
 from pathlib import Path
 from ldm_core.ui import UI
@@ -1335,6 +1336,39 @@ class StackHandler:
                 f"\n{UI.BYELLOW}💡 Tip:{UI.COLOR_OFF} If you see SSL or connection errors, try a {UI.WHITE}full browser restart{UI.COLOR_OFF} to clear caches.\n"
             )
 
+    def get_default_jvm_args(self):
+        """Calculates recommended JVM arguments based on available Docker RAM."""
+        try:
+            # 1. Get Docker total memory
+            docker_info_raw = run_command(
+                ["docker", "info", "--format", "{{json .}}"], check=False
+            )
+            if not docker_info_raw:
+                return "-Xms4g -Xmx12g"
+
+            info = json.loads(docker_info_raw)
+            mem_bytes = info.get("MemTotal", 0)
+            if mem_bytes <= 0:
+                return "-Xms4g -Xmx12g"
+
+            mem_gb = mem_bytes / (1024**3)
+
+            # 2. Calculation Logic (25% min / 75% max)
+            # We cap the max to leave room for the host and other containers
+            # A good rule for Liferay: Max = 75% of total, Min = 25% of total
+            # But we also set sensible minimum floor (2g)
+            max_heap_gb = max(4, math.floor(mem_gb * 0.75))
+            min_heap_gb = max(2, math.floor(mem_gb * 0.25))
+
+            # Apply an upper ceiling to avoid over-allocation on very large hosts
+            # 32GB is usually plenty for a single Liferay instance.
+            max_heap_gb = min(max_heap_gb, 32)
+            min_heap_gb = min(min_heap_gb, 8)
+
+            return f"-Xms{min_heap_gb}g -Xmx{max_heap_gb}g"
+        except Exception:
+            return "-Xms4g -Xmx12g"
+
     def cmd_run(self, project_id=None, is_restart=False):
         # Prioritize the passed project_id (from cmd_restart) over CLI args
         project_id = (
@@ -1367,6 +1401,12 @@ class StackHandler:
         )
         db_type = getattr(self.args, "db", None) or project_meta.get("db_type")
         jvm_args = getattr(self.args, "jvm_args", None) or project_meta.get("jvm_args")
+
+        # If no JVM args provided or saved, calculate smart defaults
+        if not jvm_args:
+            jvm_args = self.get_default_jvm_args()
+            if self.verbose:
+                UI.info(f"Using auto-calculated JVM arguments: {jvm_args}")
 
         # --- Samples Streamlining ---
         is_samples = getattr(self.args, "samples", False)

@@ -46,6 +46,9 @@ class MockManager(StackHandler, WorkspaceHandler, LicenseHandler):
     def migrate_layout(self, *args, **kwargs):
         pass
 
+    def get_default_jvm_args(self, *args, **kwargs):
+        return "-Xms4g -Xmx12g"
+
     def detect_project_path(self, *args, **kwargs):
         return Path("/tmp/test-project")
 
