@@ -664,6 +664,7 @@ class StackHandler:
             "LDM_CONFIG_SIGNATURE": config_sig,
             "OSGI_CONSOLE": gogo_env,
             "LIFERAY_JVM_OPTS": jvm_opts,
+            "CATALINA_OPTS": jvm_opts,
         }
 
         if not is_modern:
@@ -1380,12 +1381,14 @@ class StackHandler:
             new_size_mb = max(1536, math.floor((max_heap_gb * 1024) * 0.33))
 
             return (
-                f"-Xms{min_heap_gb}g -Xmx{max_heap_gb}g "
+                f"-Xms{min_heap_gb * 1024}m -Xmx{max_heap_gb * 1024}m "
                 f"-XX:MaxMetaspaceSize={metaspace} -XX:MetaspaceSize={metaspace} "
                 f"-XX:NewSize={new_size_mb}m -XX:MaxNewSize={new_size_mb}m"
             )
         except Exception:
-            return "-Xms4g -Xmx12g -XX:MaxMetaspaceSize=768m -XX:MetaspaceSize=768m"
+            return (
+                "-Xms4096m -Xmx12288m -XX:MaxMetaspaceSize=768m -XX:MetaspaceSize=768m"
+            )
 
     def cmd_run(self, project_id=None, is_restart=False):
         # Prioritize the passed project_id (from cmd_restart) over CLI args

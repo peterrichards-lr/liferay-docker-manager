@@ -47,7 +47,7 @@ class MockManager(StackHandler, WorkspaceHandler, LicenseHandler):
         pass
 
     def get_default_jvm_args(self, *args, **kwargs):
-        return "-Xms4g -Xmx12g"
+        return "-Xms4096m -Xmx12288m -XX:MaxMetaspaceSize=768m -XX:MetaspaceSize=768m"
 
     def detect_project_path(self, *args, **kwargs):
         return Path("/tmp/test-project")
@@ -405,12 +405,22 @@ class TestStackOrchestration(unittest.TestCase):
 
             # Verify JVM args are present in environment
             liferay_env = compose_call["services"]["liferay"]["environment"]
+
+            # Check LIFERAY_JVM_OPTS
             jvm_opts_env = next(
                 (e for e in liferay_env if e.startswith("LIFERAY_JVM_OPTS=")), None
             )
             self.assertIsNotNone(jvm_opts_env)
             self.assertIn("-Xms4g -Xmx4g", jvm_opts_env)
             self.assertIn("-XX:TieredStopAtLevel=1", jvm_opts_env)
+
+            # Check CATALINA_OPTS
+            catalina_opts_env = next(
+                (e for e in liferay_env if e.startswith("CATALINA_OPTS=")), None
+            )
+            self.assertIsNotNone(catalina_opts_env)
+            self.assertIn("-Xms4g -Xmx4g", catalina_opts_env)
+            self.assertIn("-XX:TieredStopAtLevel=1", catalina_opts_env)
 
     def test_cmd_infra_setup(self):
         with patch.object(self.manager, "check_docker", return_value=True):
