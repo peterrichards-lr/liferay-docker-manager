@@ -1344,30 +1344,42 @@ class StackHandler:
                 ["docker", "info", "--format", "{{json .}}"], check=False
             )
             if not docker_info_raw:
-                return "-Xms4g -Xmx12g"
+                # Absolute fallback if Docker isn't responding
+                return "-Xms4g -Xmx12g -XX:MaxMetadataSize=768m -XX:MetaspaceSize=768m"
 
             info = json.loads(docker_info_raw)
             mem_bytes = info.get("MemTotal", 0)
             if mem_bytes <= 0:
-                return "-Xms4g -Xmx12g"
+                return "-Xms4g -Xmx12g -XX:MaxMetadataSize=768m -XX:MetaspaceSize=768m"
 
             mem_gb = mem_bytes / (1024**3)
 
-            # 2. Calculation Logic (25% min / 75% max)
-            # We cap the max to leave room for the host and other containers
-            # A good rule for Liferay: Max = 75% of total, Min = 25% of total
-            # But we also set sensible minimum floor (2g)
+            # 2. Calculation Logic
+            # Goal: Default to 4g/12g if resources allow (requires ~16GB Docker RAM)
+            # Otherwise, scale to 25% min / 75% max.
             max_heap_gb = max(4, math.floor(mem_gb * 0.75))
             min_heap_gb = max(2, math.floor(mem_gb * 0.25))
 
-            # Apply an upper ceiling to avoid over-allocation on very large hosts
-            # 32GB is usually plenty for a single Liferay instance.
-            max_heap_gb = min(max_heap_gb, 32)
-            min_heap_gb = min(min_heap_gb, 8)
+            # Apply upper ceilings (Liferay rarely needs >32GB heap in dev)
+            max_heap_gb = min(max_heap_gb, 12 if mem_gb < 24 else 32)
+            min_heap_gb = min(min_heap_gb, 4)
 
-            return f"-Xms{min_heap_gb}g -Xmx{max_heap_gb}g"
+            # Metaspace Tuning
+            metaspace = "768m"
+            if mem_gb > 16:
+                metaspace = "1024m"
+
+            # NewSize Tuning (Generally 1/3 to 1/2 of heap)
+            # We'll use 1536m as a floor (your snippet) or 25% of max heap
+            new_size_mb = max(1536, math.floor((max_heap_gb * 1024) * 0.33))
+
+            return (
+                f"-Xms{min_heap_gb}g -Xmx{max_heap_gb}g "
+                f"-XX:MaxMetaspaceSize={metaspace} -XX:MetaspaceSize={metaspace} "
+                f"-XX:NewSize={new_size_mb}m -XX:MaxNewSize={new_size_mb}m"
+            )
         except Exception:
-            return "-Xms4g -Xmx12g"
+            return "-Xms4g -Xmx12g -XX:MaxMetaspaceSize=768m -XX:MetaspaceSize=768m"
 
     def cmd_run(self, project_id=None, is_restart=False):
         # Prioritize the passed project_id (from cmd_restart) over CLI args
