@@ -1327,9 +1327,12 @@ class StackHandler:
                 f"\n{UI.BYELLOW}💡 Tip:{UI.COLOR_OFF} If you see SSL or connection errors, try a {UI.WHITE}full browser restart{UI.COLOR_OFF} to clear caches.\n"
             )
 
-    def cmd_run(self, is_restart=False):
-        project_id = self.args.project or getattr(self.args, "project_flag", None)
-        if getattr(self.args, "select", False):
+    def cmd_run(self, project_id=None, is_restart=False):
+        # Prioritize the passed project_id (from cmd_restart) over CLI args
+        project_id = (
+            project_id or self.args.project or getattr(self.args, "project_flag", None)
+        )
+        if getattr(self.args, "select", False) and not project_id:
             if self.non_interactive:
                 UI.die(
                     "Project selection is not supported in non-interactive mode. Please specify a project ID."
@@ -1587,7 +1590,9 @@ class StackHandler:
         else:
             if self.require_compose(root, silent=True):
                 self.cmd_stop(str(root))
-                self.cmd_run(project_id)
+                # Pass the resolved root.name to cmd_run to avoid double-selection
+                # or NoneType errors if it was initially None.
+                self.cmd_run(root.name)
 
     def cmd_migrate_search(self, project_id=None):
         """Migrates a project from Sidecar to Global Elasticsearch."""
