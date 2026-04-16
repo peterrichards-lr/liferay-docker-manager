@@ -81,6 +81,7 @@ class LiferayManager(
             "no_wait",
             "mount_logs",
             "gogo_port",
+            "jvm_args",
             "samples",
             "service_scale",
             "bundle",

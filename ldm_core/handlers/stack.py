@@ -586,7 +586,11 @@ class StackHandler:
             config.get("custom_env", {}),
             config.get("use_shared_search", False),
         )
-        mount_logs, gogo_port = config.get("mount_logs", False), config.get("gogo_port")
+        mount_logs, gogo_port, jvm_args = (
+            config.get("mount_logs", False),
+            config.get("gogo_port"),
+            config.get("jvm_args"),
+        )
         db_type, db_name, db_user, db_pass = (
             config.get("db_type"),
             config.get("db_name"),
@@ -644,11 +648,15 @@ class StackHandler:
         # to avoid the unreliable environment variable decoding in newer DXP versions.
         portal_ext_updates = {}
 
+        jvm_opts = f"-Dorg.apache.catalina.SESSION_COOKIE_NAME=LFR_SESSION_ID_{host_name.replace('.', '_')} -XX:TieredStopAtLevel=1"
+        if jvm_args:
+            jvm_opts += f" {jvm_args}"
+
         liferay_env_dict = {
             f"LIFERAY_WORKSPACE{sep}HOME{sep}DIR": "/opt/liferay",
             "LDM_CONFIG_SIGNATURE": config_sig,
             "OSGI_CONSOLE": gogo_env,
-            "LIFERAY_JVM_OPTS": f"-Dorg.apache.catalina.SESSION_COOKIE_NAME=LFR_SESSION_ID_{host_name.replace('.', '_')} -XX:TieredStopAtLevel=1",
+            "LIFERAY_JVM_OPTS": jvm_opts,
         }
 
         if not is_modern:
@@ -1358,6 +1366,7 @@ class StackHandler:
             self.args.host_name or project_meta.get("host_name") or "localhost",
         )
         db_type = getattr(self.args, "db", None) or project_meta.get("db_type")
+        jvm_args = getattr(self.args, "jvm_args", None) or project_meta.get("jvm_args")
 
         # --- Samples Streamlining ---
         is_samples = getattr(self.args, "samples", False)
@@ -1491,6 +1500,7 @@ class StackHandler:
                 "ssl": str(ssl_val).lower(),
                 "use_shared_search": str(use_shared_search).lower(),
                 "db_type": db_type,
+                "jvm_args": jvm_args,
             }
         )
         self.write_meta(root / PROJECT_META_FILE, project_meta)

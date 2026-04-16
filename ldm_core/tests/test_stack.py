@@ -378,6 +378,37 @@ class TestStackOrchestration(unittest.TestCase):
                 ms_labels,
             )
 
+    @patch("ldm_core.handlers.stack.dict_to_yaml")
+    def test_jvm_args_override(self, mock_yaml):
+        mock_yaml.side_effect = lambda x, indent=0: str(x)
+
+        config = {
+            "container_name": "test",
+            "image_tag": "liferay/dxp:latest",
+            "port": 8080,
+            "host_name": "localhost",
+            "jvm_args": "-Xms4g -Xmx4g",
+        }
+
+        with (
+            patch.object(Path, "exists", return_value=True),
+            patch.object(Path, "read_text", return_value=""),
+            patch.object(Path, "write_text"),
+            patch("os.replace"),
+            patch.object(self.manager, "scan_client_extensions", return_value=[]),
+        ):
+            self.manager.write_docker_compose(self.paths, config)
+            compose_call = mock_yaml.call_args[0][0]
+
+            # Verify JVM args are present in environment
+            liferay_env = compose_call["services"]["liferay"]["environment"]
+            jvm_opts_env = next(
+                (e for e in liferay_env if e.startswith("LIFERAY_JVM_OPTS=")), None
+            )
+            self.assertIsNotNone(jvm_opts_env)
+            self.assertIn("-Xms4g -Xmx4g", jvm_opts_env)
+            self.assertIn("-XX:TieredStopAtLevel=1", jvm_opts_env)
+
     def test_cmd_infra_setup(self):
         with patch.object(self.manager, "check_docker", return_value=True):
             with patch.object(

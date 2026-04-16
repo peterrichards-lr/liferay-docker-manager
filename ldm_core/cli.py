@@ -54,6 +54,7 @@ def main():
     run.add_argument("--no-wait", action="store_true")
     run.add_argument("--mount-logs", action="store_true")
     run.add_argument("--gogo-port", type=int)
+    run.add_argument("--jvm-args", help="Override Liferay JVM arguments")
     run.add_argument("-f", "--follow", action="store_true")
     run.add_argument("--env", action="append")
     run.add_argument(
@@ -82,6 +83,7 @@ def main():
     imp.add_argument("--db", choices=["postgresql", "mysql", "hypersonic"])
     imp.add_argument("--mount-logs", action="store_true")
     imp.add_argument("--gogo-port", type=int)
+    imp.add_argument("--jvm-args", help="Override Liferay JVM arguments")
     imp.add_argument("--env", action="append")
 
     # Command: init-from
@@ -98,6 +100,7 @@ def main():
     init_from.add_argument("--db", choices=["postgresql", "mysql", "hypersonic"])
     init_from.add_argument("--mount-logs", action="store_true")
     init_from.add_argument("--gogo-port", type=int)
+    init_from.add_argument("--jvm-args", help="Override Liferay JVM arguments")
     init_from.add_argument("--env", action="append")
     init_from.add_argument("--delay", type=float, default=2.0)
 
