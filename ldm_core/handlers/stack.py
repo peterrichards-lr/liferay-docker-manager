@@ -610,19 +610,23 @@ class StackHandler:
             if k.startswith("scale_") and str(v).isdigit()
         }
 
+        vol_suffix = (
+            ":cached" if platform.system().lower() in ["darwin", "windows"] else ""
+        )
+
         liferay_volumes = [
-            f"{paths['files'].as_posix()}:/mnt/liferay/files",
-            f"{paths['scripts'].as_posix()}:/mnt/liferay/scripts",
-            f"{paths['configs'].as_posix()}:/opt/liferay/osgi/configs",
-            f"{paths['modules'].as_posix()}:/opt/liferay/osgi/modules",
-            f"{paths['marketplace'].as_posix()}:/opt/liferay/osgi/marketplace",
-            f"{paths['cx'].as_posix()}:/opt/liferay/osgi/client-extensions",
-            f"{paths['routes'].as_posix()}:/opt/liferay/routes",
-            f"{paths['log4j'].as_posix()}:/opt/liferay/osgi/log4j",
-            f"{paths['portal_log4j'].as_posix()}/portal-log4j-ext.xml:/opt/liferay/tomcat/webapps/ROOT/WEB-INF/classes/META-INF/portal-log4j-ext.xml",
+            f"{paths['files'].as_posix()}:/mnt/liferay/files{vol_suffix}",
+            f"{paths['scripts'].as_posix()}:/mnt/liferay/scripts{vol_suffix}",
+            f"{paths['configs'].as_posix()}:/opt/liferay/osgi/configs{vol_suffix}",
+            f"{paths['modules'].as_posix()}:/opt/liferay/osgi/modules{vol_suffix}",
+            f"{paths['marketplace'].as_posix()}:/opt/liferay/osgi/marketplace{vol_suffix}",
+            f"{paths['cx'].as_posix()}:/opt/liferay/osgi/client-extensions{vol_suffix}",
+            f"{paths['routes'].as_posix()}:/opt/liferay/routes{vol_suffix}",
+            f"{paths['log4j'].as_posix()}:/opt/liferay/osgi/log4j{vol_suffix}",
+            f"{paths['portal_log4j'].as_posix()}/portal-log4j-ext.xml:/opt/liferay/tomcat/webapps/ROOT/WEB-INF/classes/META-INF/portal-log4j-ext.xml{vol_suffix}",
             f"{paths['data'].as_posix()}:/opt/liferay/data",
             f"{paths['deploy'].as_posix()}:/opt/liferay/deploy",
-            f"{paths['files'].as_posix()}/portal-ext.properties:/opt/liferay/portal-ext.properties",
+            f"{paths['files'].as_posix()}/portal-ext.properties:/opt/liferay/portal-ext.properties{vol_suffix}",
         ]
         is_scaled = scale_map.get("liferay", 1) > 1
         if not is_scaled:
@@ -655,7 +659,16 @@ class StackHandler:
         # to avoid the unreliable environment variable decoding in newer DXP versions.
         portal_ext_updates = {}
 
-        jvm_opts = f"-Dorg.apache.catalina.SESSION_COOKIE_NAME=LFR_SESSION_ID_{host_name.replace('.', '_')} -XX:TieredStopAtLevel=1"
+        # Optimized JVM Options for high-velocity startup
+        # - XX:TieredStopAtLevel=1: Speeds up JIT
+        # - XX:-BytecodeVerificationLocal: Skips verification for local dev classes
+        # - tomcat.util.scan.StandardJarScanFilter.jarsToSkip: Skips expensive TLD scans
+        jvm_opts = (
+            f"-Dorg.apache.catalina.SESSION_COOKIE_NAME=LFR_SESSION_ID_{host_name.replace('.', '_')} "
+            "-XX:TieredStopAtLevel=1 "
+            "-XX:-BytecodeVerificationLocal "
+            "-Dtomcat.util.scan.StandardJarScanFilter.jarsToSkip=*.jar"
+        )
         if jvm_args:
             jvm_opts += f" {jvm_args}"
 
