@@ -669,6 +669,7 @@ class StackHandler:
         # - tomcat.util.scan.StandardJarScanFilter.jarsToSkip: Skips expensive TLD scans
         jvm_opts_list = [
             f"-Dorg.apache.catalina.SESSION_COOKIE_NAME=LFR_SESSION_ID_{host_name.replace('.', '_')}",
+            "-XX:+UnlockDiagnosticVMOptions",
             "-XX:TieredStopAtLevel=1",
         ]
         if not no_jvm_verify:
