@@ -1,7 +1,7 @@
 usage: liferay_docker.py [-h] [-v] [-y] [--version]
                          {run,up,import,init-from,monitor,stop,restart,down,rm,logs,deploy,env,snapshot,restore,init-common,reset,renew-ssl,infra-setup,infra-down,infra-restart,cache,clear-cache,clear-tags,upgrade,update-check,migrate-search,doctor,status,ps,list,ls,config,prune,shell,gogo,log-level,browser,open,edit,completion,scale,cloud-fetch} ...
 
-Liferay Docker Manager (ldm) v1.9.7
+Liferay Docker Manager (ldm) v2.0.0
 
 positional arguments:
   {run,up,import,init-from,monitor,stop,restart,down,rm,logs,deploy,env,snapshot,restore,init-common,reset,renew-ssl,infra-setup,infra-down,infra-restart,cache,clear-cache,clear-tags,upgrade,update-check,migrate-search,doctor,status,ps,list,ls,config,prune,shell,gogo,log-level,browser,open,edit,completion,scale,cloud-fetch}
@@ -11,3 +11,122 @@ options:
   -v, --verbose
   -y, --non-interactive
   --version             show program's version number and exit
+usage: liferay_docker.py run [-h] [-t TAG] [--tag-prefix TAG_PREFIX]
+                             [-p PROJECT_FLAG] [-c CONTAINER]
+                             [--host-name HOST_NAME] [--ssl] [--no-ssl]
+                             [--force-ssl] [--port PORT]
+                             [--db {postgresql,mysql,hypersonic}]
+                             [--release-type {any,u,lts,qr}] [--portal]
+                             [--refresh] [--sidecar] [--es7] [--no-up]
+                             [--no-wait] [--mount-logs]
+                             [--gogo-port GOGO_PORT] [--jvm-args JVM_ARGS]
+                             [--no-vol-cache] [--no-jvm-verify]
+                             [--no-tld-skip] [-f] [--env ENV] [--samples]
+                             [--snapshot SNAPSHOT]
+                             [project]
+
+positional arguments:
+  project
+
+options:
+  -h, --help            show this help message and exit
+  -t, --tag TAG
+  --tag-prefix TAG_PREFIX
+  -p, --project PROJECT_FLAG
+  -c, --container CONTAINER
+  --host-name HOST_NAME
+  --ssl
+  --no-ssl
+  --force-ssl
+  --port PORT
+  --db {postgresql,mysql,hypersonic}
+  --release-type {any,u,lts,qr}
+  --portal
+  --refresh
+  --sidecar
+  --es7                 Use Elasticsearch 7 for global search
+  --no-up
+  --no-wait
+  --mount-logs
+  --gogo-port GOGO_PORT
+  --jvm-args JVM_ARGS   Override Liferay JVM arguments
+  --no-vol-cache        Disable :cached volumes on macOS/Windows
+  --no-jvm-verify       Disable JVM bytecode verification skip
+  --no-tld-skip         Disable Tomcat TLD scanning skip
+  -f, --follow
+  --env ENV
+  --samples             Initialize with sample client extensions
+  --snapshot SNAPSHOT   Initialize project from an external snapshot folder
+usage: liferay_docker.py import [-h] [-p PROJECT_FLAG]
+                                [--target-env TARGET_ENV] [--no-run]
+                                [--backup-dir BACKUP_DIR] [--build]
+                                [--host-name HOST_NAME] [--ssl] [--no-ssl]
+                                [--port PORT]
+                                [--db {postgresql,mysql,hypersonic}]
+                                [--mount-logs] [--gogo-port GOGO_PORT]
+                                [--jvm-args JVM_ARGS]
+                                [--tag-prefix TAG_PREFIX] [--no-vol-cache]
+                                [--no-jvm-verify] [--no-tld-skip] [--env ENV]
+                                source [project]
+
+positional arguments:
+  source
+  project
+
+options:
+  -h, --help            show this help message and exit
+  -p, --project PROJECT_FLAG
+  --target-env TARGET_ENV
+  --no-run
+  --backup-dir BACKUP_DIR
+  --build
+  --host-name HOST_NAME
+  --ssl
+  --no-ssl
+  --port PORT
+  --db {postgresql,mysql,hypersonic}
+  --mount-logs
+  --gogo-port GOGO_PORT
+  --jvm-args JVM_ARGS   Override Liferay JVM arguments
+  --tag-prefix TAG_PREFIX
+                        Prefix for Liferay tag discovery
+  --no-vol-cache
+  --no-jvm-verify
+  --no-tld-skip
+  --env ENV
+usage: liferay_docker.py init-from [-h] [-p PROJECT_FLAG]
+                                   [--target-env TARGET_ENV] [--build]
+                                   [--host-name HOST_NAME] [--ssl] [--no-ssl]
+                                   [--port PORT]
+                                   [--db {postgresql,mysql,hypersonic}]
+                                   [--mount-logs] [--gogo-port GOGO_PORT]
+                                   [--jvm-args JVM_ARGS]
+                                   [--tag-prefix TAG_PREFIX] [--no-vol-cache]
+                                   [--no-jvm-verify] [--no-tld-skip]
+                                   [--env ENV] [--delay DELAY]
+                                   source [project]
+
+positional arguments:
+  source
+  project
+
+options:
+  -h, --help            show this help message and exit
+  -p, --project PROJECT_FLAG
+  --target-env TARGET_ENV
+  --build
+  --host-name HOST_NAME
+  --ssl
+  --no-ssl
+  --port PORT
+  --db {postgresql,mysql,hypersonic}
+  --mount-logs
+  --gogo-port GOGO_PORT
+  --jvm-args JVM_ARGS   Override Liferay JVM arguments
+  --tag-prefix TAG_PREFIX
+                        Prefix for Liferay tag discovery
+  --no-vol-cache
+  --no-jvm-verify
+  --no-tld-skip
+  --env ENV
+  --delay DELAY

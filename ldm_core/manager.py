@@ -43,6 +43,7 @@ class LiferayManager(
         # Ensure standard attributes exist on args
         run_attrs = [
             "tag",
+            "tag_prefix",
             "project",
             "container",
             "follow",

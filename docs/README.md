@@ -616,7 +616,7 @@ colima start --cpu 4 --memory 8
   - `c` (Clean): Delete the entire project folder and start fresh.
   - `q` (Quit): Abort the process entirely.
 - **Bypass Prompts**: Use the `-y` or `--non-interactive` flag to skip all confirmations and use default values. This is ideal for scripts and CI/CD pipelines.
-- **Tag Prefix Search**: When running `ldm run` without a tag, you can enter a prefix (e.g., `2025.q4`) to filter the available Liferay versions from Docker Hub.
+- **Tag Prefix Search**: When running `ldm run` without a tag, you can enter a prefix (e.g., `2025.q4`) to filter the available Liferay versions from Docker Hub. Alternatively, use the `--tag-prefix` switch to bypass the prompt entirely.
 - **Tag Discovery**: If no prefix or release type is provided, the tool fetches the latest available tags from Docker Hub.
 
 ---
