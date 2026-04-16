@@ -50,7 +50,7 @@ class WorkspaceHandler:
             pass
         return None
 
-    def _parse_lcp_json(self, content):
+    def _parse_lcp_json(self, content, context_name=None):
         info = {
             "id": None,
             "kind": None,
@@ -82,7 +82,10 @@ class WorkspaceHandler:
             try:
                 status, ok, errors = self.validate_lcp_json(tf_path)
                 if not ok or ok == "warn":
-                    UI.warning(f"LCP.json Issue: {status}")
+                    header = "LCP.json Issue"
+                    if context_name:
+                        header = f"LCP.json Issue ({context_name})"
+                    UI.warning(f"{header}: {status}")
                     if errors:
                         for err in errors:
                             print(f"  {UI.YELLOW}⚠{UI.COLOR_OFF} {err}")
@@ -158,7 +161,12 @@ class WorkspaceHandler:
                         )
                     )
                 elif name == "LCP.json":
-                    merge_info(self._parse_lcp_json(zip_ref.read(f).decode("utf-8")))
+                    ctx = Path(zip_ref.filename).name
+                    merge_info(
+                        self._parse_lcp_json(
+                            zip_ref.read(f).decode("utf-8"), context_name=ctx
+                        )
+                    )
                 elif name == "client-extension-config.json" or f.endswith(
                     ".client-extension-config.json"
                 ):
@@ -173,7 +181,11 @@ class WorkspaceHandler:
                 merge_info(self._parse_client_extension_yaml(yaml_file.read_text()))
             lcp_file = folder_path / "LCP.json"
             if lcp_file.exists():
-                merge_info(self._parse_lcp_json(lcp_file.read_text()))
+                merge_info(
+                    self._parse_lcp_json(
+                        lcp_file.read_text(), context_name=folder_path.name
+                    )
+                )
             cfg_file = next(folder_path.glob("*client-extension-config.json"), None)
             if cfg_file:
                 erc = self._parse_client_extension_config_json(cfg_file.read_text())
