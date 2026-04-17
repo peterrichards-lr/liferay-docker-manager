@@ -74,7 +74,7 @@ jobs:
         run: |
           SAFE_TAG=$(echo "${{ matrix.tag }}" | tr '.' '_')
           PROJECT_ID="seeded-${SAFE_TAG}-${{ matrix.db_type }}"
-          ldm snapshot "$PROJECT_ID" --name "Seed: ${{ matrix.tag }} (${{ matrix.db_type }})"
+          sudo ldm snapshot "$PROJECT_ID" --name "Seed: ${{ matrix.tag }} (${{ matrix.db_type }})"
           
       - name: Package Seeded State
         id: package
@@ -111,6 +111,8 @@ jobs:
           tag_name: ${{ steps.ldm_version.outputs.version }}
           files: ${{ steps.package.outputs.path }}
           prerelease: false
+          make_latest: true
+          generate_release_notes: true
           body: "Auto-generated seeded states for Liferay Docker Manager ${{ steps.ldm_version.outputs.version }}."
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
