@@ -829,6 +829,7 @@ class StackHandler(BaseHandler):
                     "mysqld",
                     "--character-set-server=utf8mb4",
                     "--collation-server=utf8mb4_unicode_ci",
+                    "--character-set-filesystem=utf8mb4",
                     "--lower_case_table_names=1",
                 ],
                 "environment": {

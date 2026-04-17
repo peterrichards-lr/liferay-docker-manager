@@ -137,8 +137,11 @@ class SnapshotHandler(BaseHandler):
                 f_path = paths["root"] / f
                 if f_path.exists():
                     try:
+                        # Re-verify specific path permissions before adding
+                        if self.verbose:
+                            UI.info(f"Adding {f} to archive...")
                         tar.add(f_path, arcname=f)
-                    except PermissionError as e:
+                    except (PermissionError, OSError) as e:
                         UI.warning(f"Skipping {f} due to permission error: {e}")
 
             # If we have a search snapshot, bundle the global backup repo into the archive
