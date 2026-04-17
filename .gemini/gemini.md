@@ -35,6 +35,13 @@ This file serves as the persistent state and technical knowledge base for the AI
 - **UTC Alignment**: Health check timestamps and "Still waiting" messages MUST use **UTC** to match Liferay container logs for easy correlation.
 - **Metadata Health**: Proactively scrub project metadata (`.liferay-docker.meta`) of legacy/poisoned environment variables during the `run` sequence.
 
+### 5. Liferay Standards & Performance
+
+- **JVM Mandatory Flags**: All Liferay instances MUST include `-Dfile.encoding=UTF8` and `-Duser.timezone=GMT`. These are foundational for data consistency and internationalization.
+- **Database character set**: MySQL/MariaDB databases MUST be created with `utf8mb4` character set and `utf8mb4_unicode_ci` collation. Liferay 2025.Q1+ strictly validates this on boot.
+- **Table Case Sensitivity**: MySQL MUST be configured with `lower_case_table_names=1` to ensure cross-platform compatibility of database migrations and snapshots.
+- **JIT Optimization**: For development speed, LDM proactively adds `-XX:TieredStopAtLevel=1` if the heap is explicitly set, significantly reducing boot times.
+
 ## 🧪 Knowledge & Troubleshooting Snippets
 
 ### Why am I seeing a 404 on macOS?

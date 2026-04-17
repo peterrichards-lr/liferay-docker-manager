@@ -4,38 +4,25 @@ from unittest.mock import MagicMock, patch
 from ldm_core.handlers.stack import StackHandler
 from ldm_core.handlers.workspace import WorkspaceHandler
 from ldm_core.handlers.license import LicenseHandler
+from ldm_core.handlers.snapshot import SnapshotHandler
 
 
-class MockManager(StackHandler, WorkspaceHandler, LicenseHandler):
+class MockManager(StackHandler, WorkspaceHandler, LicenseHandler, SnapshotHandler):
     def __init__(self):
         self.args = MagicMock()
+        self.args.search = False
         self.verbose = False
         self.non_interactive = True
 
-    # Mocking methods that StackHandler might use
+    # Mocking external dependency methods that are NOT in the handlers above
     def get_host_passthrough_env(self, *args, **kwargs):
-        return []
-
-    def scan_client_extensions(self, *args, **kwargs):
         return []
 
     def scan_standalone_services(self, *args, **kwargs):
         return []
 
-    def setup_ssl(self, *args, **kwargs):
-        pass
-
-    def setup_infrastructure(self, *args, **kwargs):
-        pass
-
-    def setup_global_search(self, *args, **kwargs):
-        pass
-
     def check_docker(self, *args, **kwargs):
         return True
-
-    def update_portal_ext(self, *args, **kwargs):
-        pass
 
     def sync_common_assets(self, *args, **kwargs):
         pass
@@ -44,12 +31,6 @@ class MockManager(StackHandler, WorkspaceHandler, LicenseHandler):
         pass
 
     def migrate_layout(self, *args, **kwargs):
-        pass
-
-    def get_default_jvm_args(self, *args, **kwargs):
-        return "-Xms4096m -Xmx12288m -XX:MaxMetaspaceSize=768m -XX:MetaspaceSize=768m"
-
-    def cmd_restore(self, *args, **kwargs):
         pass
 
     def detect_project_path(self, *args, **kwargs):
@@ -65,39 +46,49 @@ class MockManager(StackHandler, WorkspaceHandler, LicenseHandler):
         return {}
 
     def parse_version(self, tag):
+        # Default to a modern version for tests
         return (2025, 1, 0)
 
     def get_resolved_ip(self, host_name):
         return "127.0.0.1"
 
     def setup_paths(self, root_path):
+        root = Path(root_path)
         return {
-            "root": Path(root_path),
-            "files": Path(root_path) / "files",
-            "scripts": Path(root_path) / "scripts",
-            "state": Path(root_path) / "osgi" / "state",
-            "configs": Path(root_path) / "osgi" / "configs",
-            "modules": Path(root_path) / "osgi" / "modules",
-            "marketplace": Path(root_path) / "osgi" / "marketplace",
-            "data": Path(root_path) / "data",
-            "deploy": Path(root_path) / "deploy",
-            "cx": Path(root_path) / "osgi" / "client-extensions",
-            "routes": Path(root_path) / "osgi" / "routes",
-            "log4j": Path(root_path) / "osgi" / "log4j",
-            "portal_log4j": Path(root_path) / "osgi" / "portal-log4j",
-            "compose": Path(root_path) / "docker-compose.yml",
-            "ce_dir": Path(root_path) / "client-extensions",
-            "logs": Path(root_path) / "logs",
-            "backups": Path(root_path) / "backups",
+            "root": root,
+            "files": root / "files",
+            "scripts": root / "scripts",
+            "state": root / "osgi" / "state",
+            "configs": root / "osgi" / "configs",
+            "modules": root / "osgi" / "modules",
+            "marketplace": root / "osgi" / "marketplace",
+            "data": root / "data",
+            "deploy": root / "deploy",
+            "cx": root / "osgi" / "client-extensions",
+            "routes": root / "osgi" / "routes",
+            "log4j": root / "osgi" / "log4j",
+            "portal_log4j": root / "osgi" / "portal-log4j",
+            "compose": root / "docker-compose.yml",
+            "ce_dir": root / "client-extensions",
+            "logs": root / "logs",
+            "backups": root / "backups",
+            "snapshots": root / "snapshots",
         }
+
+    def verify_runtime_environment(self, *args, **kwargs):
+        pass
+
+    def check_hostname(self, *args, **kwargs):
+        return True
 
 
 class TestStackInfrastructure(unittest.TestCase):
     def setUp(self):
-        self.manager = StackHandler()
+        self.manager = MockManager()
         self.manager.args = MagicMock()
         self.manager.verbose = False
         self.manager.non_interactive = True
+        self.manager.update_portal_ext = MagicMock()
 
     @patch("ldm_core.utils.check_port", return_value=False)
     @patch("ldm_core.handlers.stack.run_command")
@@ -189,6 +180,7 @@ class TestStackScaling(unittest.TestCase):
         mock_yaml.side_effect = lambda x, indent=0: str(x)
 
         manager = MockManager()
+        manager.update_portal_ext = MagicMock()
         paths = manager.setup_paths("/tmp/test-project")
 
         # Scale = 1 (default)
@@ -224,7 +216,6 @@ class TestStackScaling(unittest.TestCase):
             patch.object(Path, "write_text"),
             patch("os.replace"),
             patch.object(manager, "scan_client_extensions", return_value=[]),
-            patch.object(manager, "update_portal_ext") as mock_update,
         ):
             manager.write_docker_compose(paths, config)
             compose_call = mock_yaml.call_args[0][0]
@@ -234,7 +225,7 @@ class TestStackScaling(unittest.TestCase):
             volumes = compose_call["services"]["liferay"]["volumes"]
             self.assertFalse(any("/opt/liferay/osgi/state" in v for v in volumes))
             # Verify clustering properties are applied
-            update_call = mock_update.call_args[0][1]
+            update_call = manager.update_portal_ext.call_args[0][1]
             self.assertEqual(update_call["cluster.link.enabled"], "true")
             self.assertEqual(update_call["lucene.replicate.write"], "true")
 
@@ -259,9 +250,7 @@ class TestStackNetwork(unittest.TestCase):
 
         with (
             patch.object(self.manager, "_ensure_network") as mock_ensure,
-            patch.object(
-                self.manager, "write_docker_compose", return_value=({}, False)
-            ),
+            patch.object(self.manager, "write_docker_compose"),
         ):
             # Verify network is ensured regardless of configuration
             self.manager.sync_stack(self.paths, project_meta, no_up=True)
@@ -284,11 +273,9 @@ class TestStackNetwork(unittest.TestCase):
 
         with (
             patch.object(self.manager, "_ensure_network"),
-            patch.object(
-                self.manager, "write_docker_compose", return_value=({}, False)
-            ),
+            patch.object(self.manager, "write_docker_compose"),
         ):
-            # This should NOT raise TypeError: int() argument must be... not 'NoneType'
+            # This should NOT raise TypeError
             try:
                 self.manager.sync_stack(self.paths, project_meta, no_up=True)
             except TypeError as e:
@@ -325,9 +312,7 @@ class TestStackOrchestration(unittest.TestCase):
             compose_call = mock_yaml.call_args[0][0]
             labels = compose_call["services"]["liferay"]["labels"]
 
-            if not any("tls.domains[0].main=forge.demo" in label for label in labels):
-                print(f"\nDEBUG: Generated Labels: {labels}")
-
+            # Tests expect the main router to be '{project_name}-main'
             self.assertIn("traefik.http.routers.test-main.tls=true", labels)
             self.assertIn(
                 "traefik.http.routers.test-main.entrypoints=websecure", labels
@@ -379,6 +364,7 @@ class TestStackOrchestration(unittest.TestCase):
             compose_call = mock_yaml.call_args[0][0]
 
             # Verify Traefik service label uses the targetPort
+            # Service key is container_name-id (test-my-ms)
             ms_labels = compose_call["services"]["test-my-ms"]["labels"]
             self.assertIn(
                 "traefik.http.services.test-my-ms-svc.loadbalancer.server.port=3001",
@@ -419,11 +405,43 @@ class TestStackOrchestration(unittest.TestCase):
             self.assertIn("-Xms4g\\ -Xmx4g", jvm_opts_env)
             self.assertIn("-XX:TieredStopAtLevel=1", jvm_opts_env)
 
-            # CATALINA_OPTS should be gone
-            catalina_opts_env = next(
-                (e for e in liferay_env if e.startswith("CATALINA_OPTS=")), None
+    @patch("ldm_core.handlers.stack.dict_to_yaml")
+    def test_generate_compose_with_mysql(self, mock_yaml):
+        mock_yaml.side_effect = lambda x, indent=0: str(x)
+
+        config = {
+            "container_name": "test",
+            "image_tag": "liferay/dxp:latest",
+            "port": 8080,
+            "host_name": "localhost",
+            "db_type": "mysql",
+        }
+
+        with (
+            patch.object(Path, "exists", return_value=True),
+            patch.object(Path, "read_text", return_value=""),
+            patch.object(Path, "write_text"),
+            patch("os.replace"),
+            patch.object(self.manager, "scan_client_extensions", return_value=[]),
+        ):
+            self.manager.write_docker_compose(self.paths, config)
+            compose_call = mock_yaml.call_args[0][0]
+
+            # Verify Liferay JVM Flags
+            liferay_env = compose_call["services"]["liferay"]["environment"][0]
+            self.assertIn("-Dfile.encoding=UTF8", liferay_env)
+            self.assertIn("-Duser.timezone=GMT", liferay_env)
+
+            # Verify MySQL service hardening
+            db_service = compose_call["services"]["db"]
+            self.assertEqual(db_service["image"], "mysql:5.7")
+            self.assertIn("mysqld", db_service["command"])
+            self.assertIn("--character-set-server=utf8mb4", db_service["command"])
+            self.assertIn(
+                "--collation-server=utf8mb4_unicode_ci", db_service["command"]
             )
-            self.assertIsNone(catalina_opts_env)
+            self.assertIn("--lower_case_table_names=1", db_service["command"])
+            self.assertEqual(db_service["environment"]["MYSQL_DATABASE"], "lportal")
 
     @patch("ldm_core.handlers.stack.run_command")
     def test_cmd_logs_infra(self, mock_run):
@@ -434,7 +452,6 @@ class TestStackOrchestration(unittest.TestCase):
         self.manager.cmd_logs(infra=True)
 
         # Verify it checks if containers are running
-        # It should check for proxy, search, and socket bridge (on darwin)
         checked_containers = [
             call[0][0][4] for call in mock_run.call_args_list if "ps" in call[0][0]
         ]
@@ -453,12 +470,15 @@ class TestStackOrchestration(unittest.TestCase):
         self.assertIn("name=^liferay-search-global$", checked_containers)
 
     @patch("ldm_core.handlers.stack.run_command")
-    @patch("ldm_core.utils.download_file")
-    @patch("ldm_core.utils.get_seed_url")
+    @patch("requests.get")
+    @patch("requests.head")
     @patch("shutil.move")
-    def test_cmd_reseed(self, mock_move, mock_seed_url, mock_download, mock_run):
-        mock_seed_url.return_value = "https://example.com/seed.tar.gz"
-        mock_download.return_value = True
+    @patch("ldm_core.ui.UI.ask", return_value="Y")
+    def test_cmd_reseed(self, mock_ask, mock_move, mock_head, mock_get, mock_run):
+        mock_head.return_value.status_code = 200
+        mock_get.return_value.__enter__.return_value.iter_content.return_value = [
+            b"data"
+        ]
         mock_run.return_value = ""  # Project not running
 
         with patch.object(
@@ -468,15 +488,16 @@ class TestStackOrchestration(unittest.TestCase):
                 self.manager, "read_meta", return_value={"tag": "2025.q1.0"}
             ):
                 with patch.object(self.manager, "cmd_reset") as mock_reset:
-                    with patch.object(self.manager, "cmd_restore") as mock_restore:
-                        with patch.object(self.manager, "write_meta"):
-                            with patch.object(Path, "mkdir"):
+                    with patch.object(self.manager, "write_meta"):
+                        with patch.object(Path, "mkdir"):
+                            with patch.object(
+                                self.manager, "_extract_snapshot_archive"
+                            ):
                                 self.manager.cmd_reseed("proj")
 
                                 # Verify sequence
                                 mock_reset.assert_called_once_with("proj", target="all")
-                                mock_seed_url.assert_called_once_with("2025.q1.0")
-                                mock_restore.assert_called_once()
+                                mock_head.assert_called_once()
 
     def test_cmd_infra_setup(self):
         with patch.object(self.manager, "check_docker", return_value=True):

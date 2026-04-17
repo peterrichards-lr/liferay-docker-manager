@@ -7,7 +7,7 @@ from ldm_core.handlers.base import BaseHandler
 from ldm_core.handlers.workspace import WorkspaceHandler
 
 
-class MockBaseManager(BaseHandler, WorkspaceHandler):
+class MockBaseManager(WorkspaceHandler):
     def __init__(self):
         self.args = MagicMock()
         self.verbose = False

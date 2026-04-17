@@ -11,12 +11,16 @@ import sys
 from pathlib import Path
 from datetime import datetime
 from ldm_core.ui import UI
+from ldm_core.handlers.base import BaseHandler
 from ldm_core.constants import PROJECT_META_FILE, SCRIPT_DIR
 from ldm_core.utils import run_command, load_env_blacklist, is_env_var_blacklisted
 
 
-class WorkspaceHandler:
+class WorkspaceHandler(BaseHandler):
     """Mixin for workspace management (import, monitor, scanning)."""
+
+    def __init__(self, args=None):
+        super().__init__(args)
 
     def _parse_client_extension_yaml(self, content):
         info = {"type": None, "oauth_erc": None}

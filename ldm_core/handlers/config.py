@@ -5,12 +5,16 @@ import shutil
 from pathlib import Path
 from datetime import datetime
 from ldm_core.ui import UI
+from ldm_core.handlers.base import BaseHandler
 from ldm_core.constants import PROJECT_META_FILE, SCRIPT_DIR
 from ldm_core.utils import run_command, get_actual_home
 
 
-class ConfigHandler:
+class ConfigHandler(BaseHandler):
     """Mixin for configuration management (env, logging, browser)."""
+
+    def __init__(self, args=None):
+        super().__init__(args)
 
     def _get_properties(self, content):
         """Robustly extracts properties from a string, handling multi-line values."""
