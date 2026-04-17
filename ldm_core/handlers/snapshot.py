@@ -466,20 +466,17 @@ class SnapshotHandler:
             if self._wait_for_search_snapshot(search_snapshot_name):
                 UI.success("Search snapshot completed.")
                 # Copy ES snapshot files to the backup dir so they are portable
-                from ldm_core.utils import get_actual_home
+                try:
+                    from ldm_core.utils import get_actual_home
 
-                es_backup_source = (
-                    get_actual_home() / ".ldm" / "infra" / "search" / "backup"
-                )
-                if es_backup_source.exists():
-                    snap_es_dir = paths["backups"] / timestamp / "search"
-                    snap_es_dir.mkdir(parents=True, exist_ok=True)
-                    # We only need the files related to this snapshot
-                    # However, ES snapshots are incremental and shared.
-                    # For a truly portable seed, we might need more, but for now
-                    # we'll copy the whole backup repo if it's small, or just reference it.
-                    # BETTER: For SEEDING, we want a standalone archive.
-                    # Let's just include the search folder in the main tar if it's a seed.
+                    es_backup_source = (
+                        get_actual_home() / ".ldm" / "infra" / "search" / "backup"
+                    )
+                    if es_backup_source.exists():
+                        snap_es_dir = paths["backups"] / timestamp / "search"
+                        snap_es_dir.mkdir(parents=True, exist_ok=True)
+                except Exception as e:
+                    UI.warning(f"Could not copy search snapshots: {e}")
             else:
                 UI.warning(
                     "Search snapshot failed or timed out. Project snapshot will proceed without it."
@@ -487,17 +484,21 @@ class SnapshotHandler:
                 search_snapshot_name = None
 
         # --- ARCHIVE ---
-        snap_dir = paths["backups"] / timestamp
-
         # Final permission sync before archiving (Fixes late-created Docker file issues)
+        # We call this again to ensure even files created by search snapshot are unlocked.
         self.verify_runtime_environment(paths)
 
+        snap_dir = paths["backups"] / timestamp
         snap_dir.mkdir(parents=True, exist_ok=True)
 
         with tarfile.open(snap_dir / "files.tar.gz", "w:gz") as tar:
             for f in ["files", "scripts", "osgi", "data", "deploy", "routes"]:
-                if (paths["root"] / f).exists():
-                    tar.add(paths["root"] / f, arcname=f)
+                f_path = paths["root"] / f
+                if f_path.exists():
+                    try:
+                        tar.add(f_path, arcname=f)
+                    except PermissionError as e:
+                        UI.warning(f"Skipping {f} due to permission error: {e}")
 
             # If we have a search snapshot, bundle the global backup repo into the archive
             if search_snapshot_name:

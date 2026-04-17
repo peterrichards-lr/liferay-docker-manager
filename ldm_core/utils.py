@@ -257,7 +257,6 @@ def run_command(
             UI.error(f"Command failed (Exit {e.returncode}): {cmd_str}")
             if e.stderr:
                 print(f"{UI.WHITE}Error Details:{UI.COLOR_OFF} {e.stderr.strip()}")
-
             sys.exit(e.returncode)
         return None
     except KeyboardInterrupt:

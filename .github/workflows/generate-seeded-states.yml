@@ -91,12 +91,13 @@ jobs:
           fi
 
           # Find the latest snapshot folder
-          SNAP_DIR=$(ls -td ~/ldm/$PROJECT_ID/backups/*/ | head -1)
+          # LDM uses 'snapshots/' folder, and project is in repo root
+          SNAP_DIR=$(ls -td $PROJECT_ID/snapshots/*/ | head -1)
           cd "$SNAP_DIR"
           # Rename using the new convention: seeded-{tag}-{db}-{search}.tar.gz
-          FILENAME="seeded-${{ matrix.tag }}-${{ matrix.db_type }}-${SEARCH_MODE}.tar.gz"
+          FILENAME="seeded-${{ matrix.tag }}-${{ matrix.db }}-${SEARCH_MODE}.tar.gz"
           mv files.tar.gz "$FILENAME"
-          echo "path=$SNAP_DIR/$FILENAME" >> $GITHUB_OUTPUT
+          echo "path=$SNAP_DIR$FILENAME" >> $GITHUB_OUTPUT
 
       - name: Upload to Release
         uses: softprops/action-gh-release@v2

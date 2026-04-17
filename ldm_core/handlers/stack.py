@@ -1509,11 +1509,6 @@ class StackHandler:
             if not db_type:
                 db_type = self.get_samples_db_type()
 
-        if not tag and self.non_interactive:
-            UI.die(
-                "No Liferay tag specified. In non-interactive mode, use: ldm run <pid> --tag <tag>"
-            )
-
         # 2. Tag Discovery (Restored)
         if not tag:
             if self.non_interactive:

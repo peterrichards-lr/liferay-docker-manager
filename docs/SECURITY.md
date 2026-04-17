@@ -17,6 +17,7 @@ The LDM CI pipeline runs Bandit security scans. We explicitly ignore the followi
 
 | Code | Intent & Disclosure |
 | :--- | :--- |
+| **B103** | Permissive 777 permissions. Used in `migrate_layout` to ensure host-side compatibility for legacy projects. **Mitigation**: All calls are wrapped in `try...except` and LDM prioritizes a Docker-based recursive reclamation fix for ownership. |
 | **B104** | Hardcoded bind to all interfaces. Required for macOS loopback and Gogo shell access. |
 | **B108** | Hardcoded /tmp directory. Used only for transient mount verification tokens. |
 | **CVE-2026-4539** | Pygments vulnerability. Ignored as LDM only uses Pygments for local console highlighting, posing no remote risk. |
