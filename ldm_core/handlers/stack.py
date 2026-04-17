@@ -809,8 +809,19 @@ class StackHandler(BaseHandler):
                 "networks": ["liferay-net"],
             }
         elif db_type == "mysql" or db_type == "mariadb":
+            # Use MySQL 8.0 for modern Liferay (2024+)
+            is_modern = False
+            try:
+                major_ver = int(tag.split(".")[0])
+                if major_ver >= 2024:
+                    is_modern = True
+            except (ValueError, IndexError):
+                pass
+
             services["db"] = {
-                "image": "mysql:5.7" if db_type == "mysql" else "mariadb:10.6",
+                "image": ("mysql:8.0" if is_modern else "mysql:5.7")
+                if db_type == "mysql"
+                else "mariadb:10.6",
                 "command": [
                     "mysqld",
                     "--character-set-server=utf8mb4",

@@ -443,6 +443,32 @@ class TestStackOrchestration(unittest.TestCase):
             self.assertIn("--lower_case_table_names=1", db_service["command"])
             self.assertEqual(db_service["environment"]["MYSQL_DATABASE"], "lportal")
 
+    @patch("ldm_core.handlers.stack.dict_to_yaml")
+    def test_generate_compose_with_mysql_8(self, mock_yaml):
+        mock_yaml.side_effect = lambda x, indent=0: str(x)
+
+        config = {
+            "container_name": "test",
+            "tag": "2026.q1.4",
+            "port": 8080,
+            "host_name": "localhost",
+            "db_type": "mysql",
+        }
+
+        with (
+            patch.object(Path, "exists", return_value=True),
+            patch.object(Path, "read_text", return_value=""),
+            patch.object(Path, "write_text"),
+            patch("os.replace"),
+            patch.object(self.manager, "scan_client_extensions", return_value=[]),
+        ):
+            self.manager.write_docker_compose(self.paths, config)
+            compose_call = mock_yaml.call_args[0][0]
+
+            # Verify MySQL 8.0 is selected for 2026 version
+            db_service = compose_call["services"]["db"]
+            self.assertEqual(db_service["image"], "mysql:8.0")
+
     @patch("ldm_core.handlers.stack.run_command")
     def test_cmd_logs_infra(self, mock_run):
         # Mock docker ps -q returning a container ID (service is running)
