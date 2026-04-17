@@ -32,7 +32,10 @@ def download_file(url, destination):
 
 def get_seed_url(tag, db="postgresql", search="shared"):
     """Checks GitHub for a seeded state asset matching the given Liferay configuration."""
-    api_url = "https://api.github.com/repos/peterrichards-lr/liferay-docker-manager/releases/tags/seeded-states"
+    from ldm_core.constants import VERSION
+
+    tag_name = f"v{VERSION}"
+    api_url = f"https://api.github.com/repos/peterrichards-lr/liferay-docker-manager/releases/tags/{tag_name}"
     try:
         req = Request(api_url, headers={"User-Agent": "ldm-cli"})
         with urlopen(req, timeout=15) as response:  # nosec B310

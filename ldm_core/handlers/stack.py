@@ -141,10 +141,13 @@ class StackHandler(BaseHandler):
 
     def _fetch_seed(self, tag, db_type, search_mode, paths):
         """Discovers and downloads a pre-warmed seed from GitHub Releases."""
+        from ldm_core.constants import VERSION
+
+        tag_name = f"v{VERSION}"
         seed_filename = f"seeded-{tag}-{db_type}-{search_mode}.tar.gz"
-        # Standard GitHub Release URL for the seeded-states tag
+        # Standard GitHub Release URL for the version tag
         repo_url = "https://github.com/peterrichards-lr/liferay-docker-manager"
-        download_url = f"{repo_url}/releases/download/seeded-states/{seed_filename}"
+        download_url = f"{repo_url}/releases/download/{tag_name}/{seed_filename}"
 
         UI.info(f"Checking for pre-warmed seed: {UI.CYAN}{seed_filename}{UI.COLOR_OFF}")
 

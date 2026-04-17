@@ -99,12 +99,18 @@ jobs:
           mv files.tar.gz "$FILENAME"
           echo "path=$SNAP_DIR$FILENAME" >> $GITHUB_OUTPUT
 
+      - name: Get LDM Version
+        id: ldm_version
+        run: |
+          VERSION=$(python3 -c "from ldm_core.constants import VERSION; print(VERSION)")
+          echo "version=v$VERSION" >> $GITHUB_OUTPUT
+
       - name: Upload to Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: seeded-states
+          tag_name: ${{ steps.ldm_version.outputs.version }}
           files: ${{ steps.package.outputs.path }}
-          prerelease: true
-          body: "Auto-generated seeded states for Liferay Docker Manager."
+          prerelease: false
+          body: "Auto-generated seeded states for Liferay Docker Manager ${{ steps.ldm_version.outputs.version }}."
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
