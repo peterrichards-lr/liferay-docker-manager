@@ -49,6 +49,9 @@ class MockManager(StackHandler, WorkspaceHandler, LicenseHandler):
     def get_default_jvm_args(self, *args, **kwargs):
         return "-Xms4096m -Xmx12288m -XX:MaxMetaspaceSize=768m -XX:MetaspaceSize=768m"
 
+    def cmd_restore(self, *args, **kwargs):
+        pass
+
     def detect_project_path(self, *args, **kwargs):
         return Path("/tmp/test-project")
 
@@ -85,6 +88,7 @@ class MockManager(StackHandler, WorkspaceHandler, LicenseHandler):
             "compose": Path(root_path) / "docker-compose.yml",
             "ce_dir": Path(root_path) / "client-extensions",
             "logs": Path(root_path) / "logs",
+            "backups": Path(root_path) / "backups",
         }
 
 
@@ -447,6 +451,32 @@ class TestStackOrchestration(unittest.TestCase):
         ]
         self.assertEqual(len(checked_containers), 1)
         self.assertIn("name=^liferay-search-global$", checked_containers)
+
+    @patch("ldm_core.handlers.stack.run_command")
+    @patch("ldm_core.utils.download_file")
+    @patch("ldm_core.utils.get_seed_url")
+    @patch("shutil.move")
+    def test_cmd_reseed(self, mock_move, mock_seed_url, mock_download, mock_run):
+        mock_seed_url.return_value = "https://example.com/seed.tar.gz"
+        mock_download.return_value = True
+        mock_run.return_value = ""  # Project not running
+
+        with patch.object(
+            self.manager, "detect_project_path", return_value=Path("/tmp/proj")
+        ):
+            with patch.object(
+                self.manager, "read_meta", return_value={"tag": "2025.q1.0"}
+            ):
+                with patch.object(self.manager, "cmd_reset") as mock_reset:
+                    with patch.object(self.manager, "cmd_restore") as mock_restore:
+                        with patch.object(self.manager, "write_meta"):
+                            with patch.object(Path, "mkdir"):
+                                self.manager.cmd_reseed("proj")
+
+                                # Verify sequence
+                                mock_reset.assert_called_once_with("proj", target="all")
+                                mock_seed_url.assert_called_once_with("2025.q1.0")
+                                mock_restore.assert_called_once()
 
     def test_cmd_infra_setup(self):
         with patch.object(self.manager, "check_docker", return_value=True):

@@ -329,7 +329,10 @@ del "%~f0"
             else:
                 # Unix atomic rename
                 # Bandit: B103 (chmod 0o755) is necessary to make the newly downloaded binary executable.
-                os.chmod(temp_new, 0o755)  # nosec B103
+                try:
+                    os.chmod(temp_new, 0o755)  # nosec B103
+                except Exception:
+                    pass
                 try:
                     os.replace(temp_new, exe_path)
                     UI.success(f"Successfully upgraded to v{latest}!")
@@ -569,7 +572,27 @@ del "%~f0"
         if lcp_status:
             results.append(("Liferay Cloud Auth", lcp_status, lcp_ok))
 
-        # 4.2 Global Config Check
+        # 4.2 Project Health (if specific project is being checked)
+        if project_paths and len(project_paths) == 1:
+            p_path = project_paths[0]
+            meta = self.read_meta(p_path / PROJECT_META_FILE)
+            if meta:
+                is_seeded = str(meta.get("seeded", "false")).lower() == "true"
+                s_version = meta.get("seed_version")
+                if is_seeded:
+                    results.append(
+                        (
+                            "Project Initialization",
+                            f"✅ Seeded (v{s_version if s_version else 'unknown'})",
+                            True,
+                        )
+                    )
+                else:
+                    results.append(
+                        ("Project Initialization", "Vanilla (Not Seeded)", "warn")
+                    )
+
+        # 4.3 Global Config Check
         base_path = project_paths[0] if project_paths else None
         common_dir = self.get_common_dir(base_path)
         search_version = 8  # Default
@@ -1431,8 +1454,12 @@ del "%~f0"
             )
             url = f"{proto}://{host}{access_port}"
 
+            # Seeded Indicator
+            seeded = str(meta.get("seeded", "false")).lower() == "true"
+            seeded_indicator = f" {UI.GREEN}🌱{UI.COLOR_OFF}" if seeded else ""
+
             print(
-                f"{name:<25} {version:<15} {status_color}{status:<12}{UI.COLOR_OFF} {UI.CYAN}{url}{UI.COLOR_OFF}"
+                f"{name + seeded_indicator:<35} {version:<15} {status_color}{status:<12}{UI.COLOR_OFF} {UI.CYAN}{url}{UI.COLOR_OFF}"
             )
 
     def cmd_prune(self):

@@ -13,6 +13,7 @@ from pathlib import Path
 from ldm_core.ui import UI
 from ldm_core.constants import (
     PROJECT_META_FILE,
+    META_VERSION,
     ELASTICSEARCH_VERSION,
     ELASTICSEARCH7_VERSION,
     TRAEFIK_VERSION,
@@ -84,8 +85,8 @@ class StackHandler:
             config_path.write_text(traefik_conf)
             os.chmod(config_path, 0o644)
         except Exception as e:
-            UI.error(f"Failed to write Traefik config: {e}")
-            return False
+            if self.verbose:
+                UI.warning(f"Could not update Traefik config permissions: {e}")
 
         return True
 
@@ -1444,7 +1445,10 @@ class StackHandler:
         # Synchronize project_id with the resolved root name
         project_id = root.name
 
+        is_new_project = not (root / PROJECT_META_FILE).exists()
         project_meta = self.read_meta(root / PROJECT_META_FILE)
+
+        # 1. Resolve Core Config
         tag, host_name = (
             self.args.tag or project_meta.get("tag"),
             self.args.host_name or project_meta.get("host_name") or "localhost",
@@ -1562,8 +1566,86 @@ class StackHandler:
 
         if host_name != "localhost" and not self.check_hostname(host_name):
             sys.exit(1)
+
+        # Search Logic: Determine if we should use shared search sidecar
+        # Priority: CLI Flag > Saved Meta > Default (True for modern versions)
+        sidecar_flag = getattr(self.args, "sidecar", False)
+        if sidecar_flag:
+            use_shared_search = False
+        else:
+            meta_search = project_meta.get("use_shared_search")
+            if meta_search is not None:
+                use_shared_search = str(meta_search).lower() == "true"
+            else:
+                # Default to True for modern versions (2025.Q1+ or 7.4.13-u100+)
+                use_shared_search = (
+                    self.parse_version(tag) >= (2025, 1, 0) or tag >= "7.4.13-u100"
+                )
+
         paths = self.setup_paths(project_id)
         self.verify_runtime_environment(paths)
+
+        # Seeding Logic (v2.1.0+)
+        # If this is a new project and not explicitly disabled, try to find a seed.
+        if (
+            is_new_project
+            and not getattr(self.args, "no_seed", False)
+            and not external_snapshot
+            and not getattr(self.args, "samples", False)
+        ):
+            from ldm_core.utils import download_file, get_seed_url
+
+            # Build config strings for seed lookup
+            db_val = db_type or "hypersonic"
+            search_val = "shared" if use_shared_search else "sidecar"
+
+            seed_url = get_seed_url(tag, db=db_val, search=search_val)
+            if seed_url:
+                if (
+                    UI.ask(
+                        f"Found a pre-initialized 'seed' state for {tag} ({db_val}/{search_val}). Apply it to start faster?",
+                        "Y",
+                    ).upper()
+                    == "Y"
+                ):
+                    UI.info(f"Downloading seeded state for {tag}...")
+                    seed_path = (
+                        paths["backups"]
+                        / "seeds"
+                        / f"seeded-{tag}-{db_val}-{search_val}.tar.gz"
+                    )
+                    seed_path.parent.mkdir(parents=True, exist_ok=True)
+
+                    if download_file(seed_url, seed_path):
+                        UI.info("Applying seeded state...")
+                        # We need a meta file for cmd_restore to work
+                        seed_snap_dir = seed_path.parent / f"seed-{tag}"
+                        seed_snap_dir.mkdir(parents=True, exist_ok=True)
+                        shutil.move(seed_path, seed_snap_dir / "files.tar.gz")
+
+                        self.write_meta(
+                            seed_snap_dir / "meta",
+                            {
+                                "meta_version": META_VERSION,
+                                "name": f"Seeded State {tag}",
+                                "tag": tag,
+                                "container": project_id,
+                                "search_snapshot": f"seeded-{tag}",
+                                "db_type": db_val,
+                                "search_mode": search_val,
+                            },
+                        )
+
+                        # Restore using the standard snapshot logic
+                        self.cmd_restore(project_id, backup_dir=str(seed_snap_dir))
+
+                        # Re-read meta after restore to ensure we have the seeded base
+                        project_meta = self.read_meta(root / PROJECT_META_FILE)
+                        project_meta["seeded"] = "true"
+                        project_meta["seed_version"] = tag
+                        project_meta["seed_config"] = f"{db_val}/{search_val}"
+                        self.write_meta(root / PROJECT_META_FILE, project_meta)
+
         if getattr(self.args, "samples", False):
             self.sync_samples(paths)
 
@@ -1580,21 +1662,6 @@ class StackHandler:
             else:
                 # Default to SSL ONLY if a custom host_name is provided
                 ssl_val = host_name != "localhost"
-
-        # Search Logic: Determine if we should use shared search sidecar
-        # Priority: CLI Flag > Saved Meta > Default (True for modern versions)
-        sidecar_flag = getattr(self.args, "sidecar", False)
-        if sidecar_flag:
-            use_shared_search = False
-        else:
-            meta_search = project_meta.get("use_shared_search")
-            if meta_search is not None:
-                use_shared_search = str(meta_search).lower() == "true"
-            else:
-                # Default to True for modern versions (2025.Q1+ or 7.4.13-u100+)
-                use_shared_search = (
-                    self.parse_version(tag) >= (2025, 1, 0) or tag >= "7.4.13-u100"
-                )
 
         project_meta.update(
             {
@@ -1840,6 +1907,81 @@ class StackHandler:
             if getattr(self.args, "delete", False):
                 self.safe_rmtree(root)
 
+    def cmd_reseed(self, project_id=None):
+        """Resets a project and re-applies its original Liferay seed."""
+        root = self.detect_project_path(project_id)
+        if not root:
+            return
+
+        p_id = root.name
+        project_meta = self.read_meta(root / PROJECT_META_FILE)
+        tag = project_meta.get("tag")
+
+        if not tag:
+            UI.die(f"Project '{p_id}' has no Liferay tag recorded. Cannot re-seed.")
+
+        # Ensure project is STOPPED
+        is_running = run_command(
+            ["docker", "ps", "-q", "-f", f"name=^{p_id}$"], check=False
+        )
+        if is_running:
+            UI.info(f"Stopping project '{p_id}'...")
+            self.cmd_stop(p_id)
+
+        if not self.non_interactive:
+            if (
+                UI.ask(
+                    f"This will wipe ALL data for '{p_id}' and restore the vanilla seed for {tag}. Proceed?",
+                    "N",
+                ).upper()
+                != "Y"
+            ):
+                UI.die("Operation cancelled.")
+
+        # 1. Surgical Reset
+        self.cmd_reset(p_id, target="all")
+
+        # 2. Re-apply Seed logic (stolen from cmd_run)
+        from ldm_core.utils import get_seed_url, download_file
+
+        seed_url = get_seed_url(tag)
+        if not seed_url:
+            UI.die(f"No seed found for version {tag}. Manual reset complete.")
+
+        UI.info(f"Downloading seeded state for {tag}...")
+        paths = self.setup_paths(root)
+        seed_path = paths["backups"] / "seeds" / f"seeded-{tag}.tar.gz"
+        seed_path.parent.mkdir(parents=True, exist_ok=True)
+
+        if download_file(seed_url, seed_path):
+            UI.info("Re-applying seeded state...")
+            seed_snap_dir = seed_path.parent / f"seed-{tag}"
+            seed_snap_dir.mkdir(parents=True, exist_ok=True)
+            shutil.move(seed_path, seed_snap_dir / "files.tar.gz")
+
+            self.write_meta(
+                seed_snap_dir / "meta",
+                {
+                    "meta_version": META_VERSION,
+                    "name": f"Seeded State {tag}",
+                    "tag": tag,
+                    "container": p_id,
+                    "search_snapshot": f"seeded-{tag}",
+                },
+            )
+
+            # Restore using the standard snapshot logic
+            self.cmd_restore(p_id, backup_dir=str(seed_snap_dir))
+
+            # Update meta
+            project_meta = self.read_meta(root / PROJECT_META_FILE)
+            project_meta["seeded"] = "true"
+            project_meta["seed_version"] = tag
+            self.write_meta(root / PROJECT_META_FILE, project_meta)
+            UI.success(f"Project '{p_id}' successfully re-seeded to {tag}.")
+        else:
+            UI.error("Failed to download seed. Manual reset was successful.")
+
     def cmd_reset(self, project_id=None, target="state"):
         """Surgically resets project data folders (state, search, db)."""
         root = self.detect_project_path(project_id)
@@ -1884,13 +2026,22 @@ class StackHandler:
             if indices_found:
                 cleared.append("search")
 
-        # Target: Database (Hypersonic only)
+        # Target: Database (Hypersonic and Standard DB Data)
         if "db" in targets:
+            # 1. Hypersonic
             db_dir = paths["data"] / "hypersonic"
             if db_dir.exists():
                 UI.info(f"Removing Hypersonic database: {db_dir}")
                 shutil.rmtree(db_dir)
-                cleared.append("db")
+                cleared.append("db (hypersonic)")
+
+            # 2. Standard DB (PostgreSQL / MySQL)
+            db_data = paths["data"] / "db"
+            if db_data.exists():
+                UI.info(f"Removing Database data volume: {db_data}")
+                self.safe_rmtree(db_data)
+                db_data.mkdir(parents=True, exist_ok=True)
+                cleared.append("db (data volume)")
 
         # Target: Global Search Indices
         if "global-search" in targets:

@@ -1,0 +1,109 @@
+name: Generate Seeded States
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 0 * * 0' # Weekly on Sunday
+
+permissions:
+  contents: write
+
+jobs:
+  get-tags:
+    runs-on: ubuntu-latest
+    outputs:
+      tags: ${{ steps.set-tags.outputs.tags }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: set-tags
+        run: |
+          TAGS=$(python3 scripts/get_release_tags.py)
+          echo "tags=$TAGS" >> $GITHUB_OUTPUT
+
+  generate-seeds:
+    needs: get-tags
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        tag: ${{ fromJson(needs.get-tags.outputs.tags) }}
+        db_type: [postgresql, mysql, hypersonic]
+      fail-fast: false
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install LDM
+        run: pip install -e .
+
+      - name: Initialize Common Assets
+        run: ldm init-common
+
+      - name: Start Liferay
+        run: |
+          # Construct a safe project name (dots -> underscores) for the filesystem
+          SAFE_TAG=$(echo "${{ matrix.tag }}" | tr '.' '_')
+          PROJECT_ID="seeded-${SAFE_TAG}-${{ matrix.db_type }}"
+
+          # Use a dedicated project name. Q1 versions prioritize Shared Search in LDM.
+          ldm -y run "$PROJECT_ID" --tag ${{ matrix.tag }} --db ${{ matrix.db_type }} --no-wait
+          
+      - name: Wait for Liferay Health
+        run: |
+          SAFE_TAG=$(echo "${{ matrix.tag }}" | tr '.' '_')
+          PROJECT_ID="seeded-${SAFE_TAG}-${{ matrix.db_type }}"
+          echo "Waiting for Liferay to be healthy (this can take 5-10 minutes)..."
+          MAX_RETRIES=60
+          COUNT=0
+          until [ "$(docker inspect -f '{{.State.Health.Status}}' $PROJECT_ID)" == "healthy" ]; do
+            if [ $COUNT -ge $MAX_RETRIES ]; then
+              echo "Timeout waiting for Liferay"
+              docker logs $PROJECT_ID --tail 100
+              exit 1
+            fi
+            printf "."
+            sleep 10
+            COUNT=$((COUNT+1))
+          done
+          echo "Liferay is healthy!"
+
+      - name: Capture Snapshot
+        run: |
+          SAFE_TAG=$(echo "${{ matrix.tag }}" | tr '.' '_')
+          PROJECT_ID="seeded-${SAFE_TAG}-${{ matrix.db_type }}"
+          ldm snapshot "$PROJECT_ID" --name "Seed: ${{ matrix.tag }} (${{ matrix.db_type }})"
+          
+      - name: Package Seeded State
+        id: package
+        run: |
+          SAFE_TAG=$(echo "${{ matrix.tag }}" | tr '.' '_')
+          PROJECT_ID="seeded-${SAFE_TAG}-${{ matrix.db_type }}"
+          
+          # Determine search mode based on LDM defaults
+          # (LDM uses Shared Search for modern tags, sidecar for older)
+          # We'll normalize this in the filename.
+          SEARCH_MODE="shared"
+          if [[ "${{ matrix.tag }}" < "2025.q1" ]]; then
+             SEARCH_MODE="sidecar"
+          fi
+
+          # Find the latest snapshot folder
+          SNAP_DIR=$(ls -td ~/ldm/$PROJECT_ID/backups/*/ | head -1)
+          cd "$SNAP_DIR"
+          # Rename using the new convention: seeded-{tag}-{db}-{search}.tar.gz
+          FILENAME="seeded-${{ matrix.tag }}-${{ matrix.db_type }}-${SEARCH_MODE}.tar.gz"
+          mv files.tar.gz "$FILENAME"
+          echo "path=$SNAP_DIR/$FILENAME" >> $GITHUB_OUTPUT
+
+      - name: Upload to Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: seeded-states
+          files: ${{ steps.package.outputs.path }}
+          prerelease: true
+          body: "Auto-generated seeded states for Liferay Docker Manager."
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

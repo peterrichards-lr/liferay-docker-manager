@@ -69,6 +69,9 @@ def main():
     run.add_argument(
         "--no-tld-skip", action="store_true", help="Disable Tomcat TLD scanning skip"
     )
+    run.add_argument(
+        "--no-seed", action="store_true", help="Disable automatic project seeding"
+    )
     run.add_argument("-f", "--follow", action="store_true")
     run.add_argument("--env", action="append")
     run.add_argument(
@@ -102,6 +105,7 @@ def main():
     imp.add_argument("--no-vol-cache", action="store_true")
     imp.add_argument("--no-jvm-verify", action="store_true")
     imp.add_argument("--no-tld-skip", action="store_true")
+    imp.add_argument("--no-seed", action="store_true")
     imp.add_argument("--env", action="append")
 
     # Command: init-from
@@ -123,6 +127,7 @@ def main():
     init_from.add_argument("--no-vol-cache", action="store_true")
     init_from.add_argument("--no-jvm-verify", action="store_true")
     init_from.add_argument("--no-tld-skip", action="store_true")
+    init_from.add_argument("--no-seed", action="store_true")
     init_from.add_argument("--env", action="append")
     init_from.add_argument("--delay", type=float, default=2.0)
 
@@ -197,6 +202,10 @@ def main():
         help="Target to reset: state, search, db, global-search, or all (default: state)",
     )
     reset.add_argument("-p", "--project", dest="project_flag")
+
+    reseed = subparsers.add_parser("re-seed")
+    reseed.add_argument("project", nargs="?")
+    reseed.add_argument("-p", "--project", dest="project_flag")
 
     renew_ssl = subparsers.add_parser("renew-ssl")
     renew_ssl.add_argument("project", nargs="?")
@@ -430,6 +439,7 @@ def main():
         "reset": lambda: manager.cmd_reset(
             project_id, getattr(args, "target", "state")
         ),
+        "re-seed": lambda: manager.cmd_reseed(project_id),
         "migrate-search": lambda: manager.cmd_migrate_search(project_id),
         "renew-ssl": lambda: manager.cmd_renew_ssl(project_id),
         "infra-setup": lambda: manager.cmd_infra_setup(),

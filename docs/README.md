@@ -198,20 +198,23 @@ LDM uses smarter defaults for SSL based on your hostname. When a custom `--host-
 
 #### ⚡️ Performance Tuning (Startup Optimizations)
 
-LDM includes several "Quick Win" optimizations to significantly reduce Liferay startup time. These are **enabled by default** but can be disabled via CLI flags or project configuration.
+... [Previous content kept] ...
 
-| Feature | CLI Flag to Disable | Description |
-| :--- | :--- | :--- |
-| **Volume Caching** | `--no-vol-cache` | Uses `:cached` on macOS/Windows to speed up read-heavy I/O. |
-| **JVM Verification** | `--no-jvm-verify` | Skips bytecode verification for faster class loading. |
-| **TLD Scan Skip** | `--no-tld-skip` | Bypasses expensive Tomcat TLD scanning for all JARs. |
+#### 🌱 Seeding (Instant Boot)
 
-**Example:**
+For new projects, LDM automatically attempts to download a **Seeded State** matching your specific configuration (Liferay version, Database type, and Search mode).
 
-```bash
-# Disable all optimizations for a specific run
-ldm run my-project --no-vol-cache --no-jvm-verify --no-tld-skip
-```
+- **Database**: Pre-initialized schema for Postgres, MySQL, or HSQL.
+- **OSGi Cache**: Pre-resolved bundle state to skip the resolution phase.
+- **Search Index**: Pre-warmed Elasticsearch indices.
+
+| Option | Effect |
+| :--- | :--- |
+| **`--no-seed`** | Disable automatic seeding and start with a completely fresh, un-initialized project. |
+| **`ldm re-seed`** | Wipe all data for an existing project and re-apply the vanilla seed for that version. |
+
+**How Seed Selection Works:**
+LDM prioritizes an **exact match** for your environment (e.g., `mysql` + `sidecar`). If an exact match isn't available on GitHub, it falls back to the **High-Performance Baseline** (`postgresql` + `shared`).
 
 ---
 
@@ -282,10 +285,40 @@ ldm rm [project]                  # Alias for 'down'
 ldm stop --all            # Stop all running projects in the workspace
 ldm restart --all         # Restart all running projects
 ldm restart               # Full stack restart (graceful stop + run)
-ldm restart demo liferay  # Surgical restart of just the Liferay container
 ldm down --volumes        # Tear down stack and clear all database/data state
-ldm rm demo -v            # Remove 'demo' and its volumes
 ```
+
+### `reset`, `re-seed`
+
+Surgically reset or completely restore a project to its original vanilla state.
+
+```bash
+ldm reset [project] [target]      # Clear specific data (state|db|search|all)
+ldm re-seed [project]             # Wipe ALL data and re-apply vanilla seed
+```
+
+**Examples:**
+
+```bash
+ldm reset demo state              # Clear only the OSGi bundle state
+ldm reset demo db                 # Clear only the database data
+ldm re-seed demo                  # Total project reset to Day Zero (Seeded)
+```
+
+---
+
+### `status`
+
+View the status of all projects in the current workspace.
+
+```bash
+ldm status
+```
+
+> [!TIP]
+> Projects marked with a 🌱 (seedling) emoji were initialized from a **Seeded State**, meaning they started with a pre-calculated database and OSGi cache for near-instant boot times.
+
+---
 
 ### `deploy`
 

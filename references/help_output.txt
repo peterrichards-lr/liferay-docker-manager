@@ -1,10 +1,10 @@
 usage: liferay_docker.py [-h] [-v] [-y] [--version]
-                         {run,up,import,init-from,monitor,stop,restart,down,rm,logs,deploy,env,snapshot,restore,init-common,reset,renew-ssl,infra-setup,infra-down,infra-restart,cache,clear-cache,clear-tags,upgrade,update-check,migrate-search,doctor,status,ps,list,ls,config,prune,shell,gogo,log-level,browser,open,edit,completion,scale,cloud-fetch} ...
+                         {run,up,import,init-from,monitor,stop,restart,down,rm,logs,deploy,env,snapshot,restore,init-common,reset,re-seed,renew-ssl,infra-setup,infra-down,infra-restart,cache,clear-cache,clear-tags,upgrade,update-check,migrate-search,doctor,status,ps,list,ls,config,prune,shell,gogo,log-level,browser,open,edit,completion,scale,cloud-fetch} ...
 
-Liferay Docker Manager (ldm) v2.0.2
+Liferay Docker Manager (ldm) v2.1.1
 
 positional arguments:
-  {run,up,import,init-from,monitor,stop,restart,down,rm,logs,deploy,env,snapshot,restore,init-common,reset,renew-ssl,infra-setup,infra-down,infra-restart,cache,clear-cache,clear-tags,upgrade,update-check,migrate-search,doctor,status,ps,list,ls,config,prune,shell,gogo,log-level,browser,open,edit,completion,scale,cloud-fetch}
+  {run,up,import,init-from,monitor,stop,restart,down,rm,logs,deploy,env,snapshot,restore,init-common,reset,re-seed,renew-ssl,infra-setup,infra-down,infra-restart,cache,clear-cache,clear-tags,upgrade,update-check,migrate-search,doctor,status,ps,list,ls,config,prune,shell,gogo,log-level,browser,open,edit,completion,scale,cloud-fetch}
 
 options:
   -h, --help            show this help message and exit
@@ -21,8 +21,8 @@ usage: liferay_docker.py run [-h] [-t TAG] [--tag-prefix TAG_PREFIX]
                              [--no-wait] [--mount-logs]
                              [--gogo-port GOGO_PORT] [--jvm-args JVM_ARGS]
                              [--no-vol-cache] [--no-jvm-verify]
-                             [--no-tld-skip] [-f] [--env ENV] [--samples]
-                             [--snapshot SNAPSHOT]
+                             [--no-tld-skip] [--no-seed] [-f] [--env ENV]
+                             [--samples] [--snapshot SNAPSHOT]
                              [project]
 
 positional arguments:
@@ -53,93 +53,39 @@ options:
   --no-vol-cache        Disable :cached volumes on macOS/Windows
   --no-jvm-verify       Disable JVM bytecode verification skip
   --no-tld-skip         Disable Tomcat TLD scanning skip
+  --no-seed             Disable automatic project seeding
   -f, --follow
   --env ENV
   --samples             Initialize with sample client extensions
   --snapshot SNAPSHOT   Initialize project from an external snapshot folder
-usage: liferay_docker.py logs [-h] [-p PROJECT_FLAG] [-f] [--infra] [--all]
-                              [project] [service ...]
+usage: liferay_docker.py reset [-h] [-p PROJECT_FLAG] [project] [target]
 
 positional arguments:
   project
-  service
+  target                Target to reset: state, search, db, global-search, or
+                        all (default: state)
 
 options:
   -h, --help            show this help message and exit
   -p, --project PROJECT_FLAG
-  -f, --follow
-  --infra               View logs for global infrastructure
-  --all                 Apply to all running projects
-usage: liferay_docker.py import [-h] [-p PROJECT_FLAG]
-                                [--target-env TARGET_ENV] [--no-run]
-                                [--backup-dir BACKUP_DIR] [--build]
-                                [--host-name HOST_NAME] [--ssl] [--no-ssl]
-                                [--port PORT]
-                                [--db {postgresql,mysql,hypersonic}]
-                                [--mount-logs] [--gogo-port GOGO_PORT]
-                                [--jvm-args JVM_ARGS]
-                                [--tag-prefix TAG_PREFIX] [--no-vol-cache]
-                                [--no-jvm-verify] [--no-tld-skip] [--env ENV]
-                                source [project]
+usage: liferay_docker.py re-seed [-h] [-p PROJECT_FLAG] [project]
 
 positional arguments:
-  source
   project
 
 options:
   -h, --help            show this help message and exit
   -p, --project PROJECT_FLAG
-  --target-env TARGET_ENV
-  --no-run
-  --backup-dir BACKUP_DIR
-  --build
-  --host-name HOST_NAME
-  --ssl
-  --no-ssl
-  --port PORT
-  --db {postgresql,mysql,hypersonic}
-  --mount-logs
-  --gogo-port GOGO_PORT
-  --jvm-args JVM_ARGS   Override Liferay JVM arguments
-  --tag-prefix TAG_PREFIX
-                        Prefix for Liferay tag discovery
-  --no-vol-cache
-  --no-jvm-verify
-  --no-tld-skip
-  --env ENV
-usage: liferay_docker.py init-from [-h] [-p PROJECT_FLAG]
-                                   [--target-env TARGET_ENV] [--build]
-                                   [--host-name HOST_NAME] [--ssl] [--no-ssl]
-                                   [--port PORT]
-                                   [--db {postgresql,mysql,hypersonic}]
-                                   [--mount-logs] [--gogo-port GOGO_PORT]
-                                   [--jvm-args JVM_ARGS]
-                                   [--tag-prefix TAG_PREFIX] [--no-vol-cache]
-                                   [--no-jvm-verify] [--no-tld-skip]
-                                   [--env ENV] [--delay DELAY]
-                                   source [project]
+usage: liferay_docker.py doctor [-h] [-p PROJECT_FLAG] [--skip-project]
+                                [--all] [--fix-hosts]
+                                [project]
 
 positional arguments:
-  source
   project
 
 options:
   -h, --help            show this help message and exit
   -p, --project PROJECT_FLAG
-  --target-env TARGET_ENV
-  --build
-  --host-name HOST_NAME
-  --ssl
-  --no-ssl
-  --port PORT
-  --db {postgresql,mysql,hypersonic}
-  --mount-logs
-  --gogo-port GOGO_PORT
-  --jvm-args JVM_ARGS   Override Liferay JVM arguments
-  --tag-prefix TAG_PREFIX
-                        Prefix for Liferay tag discovery
-  --no-vol-cache
-  --no-jvm-verify
-  --no-tld-skip
-  --env ENV
-  --delay DELAY
+  --skip-project        Skip project-specific health checks
+  --all                 Run health checks for all projects
+  --fix-hosts           Automatically fix missing entries in /etc/hosts

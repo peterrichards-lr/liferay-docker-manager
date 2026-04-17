@@ -14,6 +14,54 @@ from ldm_core.ui import UI
 from ldm_core.constants import TAG_PATTERN
 
 
+def download_file(url, destination):
+    """Downloads a file from a URL to a destination path."""
+    try:
+        if not url.startswith("https://"):
+            raise ValueError(f"Invalid URL scheme: {url}")
+
+        req = Request(url, headers={"User-Agent": "ldm-cli"})
+        with urlopen(req, timeout=30) as response:  # nosec B310
+            with open(destination, "wb") as f:
+                shutil.copyfileobj(response, f)
+        return True
+    except Exception as e:
+        UI.error(f"Download failed: {e}")
+        return False
+
+
+def get_seed_url(tag, db="postgresql", search="shared"):
+    """Checks GitHub for a seeded state asset matching the given Liferay configuration."""
+    api_url = "https://api.github.com/repos/peterrichards-lr/liferay-docker-manager/releases/tags/seeded-states"
+    try:
+        req = Request(api_url, headers={"User-Agent": "ldm-cli"})
+        with urlopen(req, timeout=15) as response:  # nosec B310
+            data = json.loads(response.read().decode())
+            assets = data.get("assets", [])
+
+            # Primary target: Exact match
+            target_name = f"seeded-{tag}-{db}-{search}.tar.gz"
+            for asset in assets:
+                if asset["name"] == target_name:
+                    return asset["browser_download_url"]
+
+            # Fallback 1: High-perf default (Postgres + Shared)
+            if db != "postgresql" or search != "shared":
+                fallback_name = f"seeded-{tag}-postgresql-shared.tar.gz"
+                for asset in assets:
+                    if asset["name"] == fallback_name:
+                        return asset["browser_download_url"]
+
+            # Fallback 2: Legacy monolithic name (v2.1.2 style)
+            legacy_name = f"seeded-{tag}.tar.gz"
+            for asset in assets:
+                if asset["name"] == legacy_name:
+                    return asset["browser_download_url"]
+    except Exception:
+        pass
+    return None
+
+
 def download_samples(version, destination):
     """Downloads and extracts the samples pack from GitHub."""
     url = f"https://github.com/peterrichards-lr/liferay-docker-manager/releases/download/v{version}/samples.zip"
@@ -92,13 +140,13 @@ def load_env_blacklist(path):
 def sanitize_id(identifier):
     """
     Sanitizes a string to be used as a safe identifier (e.g. project ID, container name).
-    Allows only alphanumeric characters, dashes, and underscores.
+    Allows only alphanumeric characters, dashes, underscores, and dots.
     """
     if not identifier:
         return identifier
     import re
 
-    return re.sub(r"[^a-zA-Z0-9\-_]", "", str(identifier))
+    return re.sub(r"[^a-zA-Z0-9\-_.]", "", str(identifier))
 
 
 def is_env_var_blacklisted(key, blacklist):
@@ -145,7 +193,9 @@ def _sanitize_shell_command(cmd):
     return cmd
 
 
-def run_command(cmd, shell=False, capture_output=True, check=True, env=None, cwd=None):
+def run_command(
+    cmd, shell=False, capture_output=True, check=True, env=None, cwd=None, verbose=False
+):
     if env is None:
         env = os.environ.copy()
     else:
@@ -170,7 +220,7 @@ def run_command(cmd, shell=False, capture_output=True, check=True, env=None, cwd
 
     # Redact sensitive info for logging/display
     display_cmd = UI.redact(" ".join(cmd) if isinstance(cmd, list) else cmd)
-    if "-v" in sys.argv or "--verbose" in sys.argv:
+    if verbose:
         UI.debug(f"Executing: {display_cmd}")
 
     try:

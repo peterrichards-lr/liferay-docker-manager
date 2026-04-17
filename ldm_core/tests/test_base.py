@@ -139,8 +139,12 @@ class TestBaseHardening(unittest.TestCase):
     @patch("ldm_core.handlers.base.BaseHandler.get_resolved_ip")
     @patch("ldm_core.handlers.base.BaseHandler.read_meta")
     @patch("ldm_core.handlers.workspace.WorkspaceHandler.scan_client_extensions")
-    def test_validate_project_dns_filtering(self, mock_scan, mock_meta, mock_resolve):
+    @patch("ldm_core.handlers.base.BaseHandler.detect_project_path")
+    def test_validate_project_dns_filtering(
+        self, mock_detect, mock_scan, mock_meta, mock_resolve
+    ):
         # Setup: forge.demo with 3 extensions
+        mock_detect.return_value = Path(".")
         mock_meta.return_value = {"host_name": "forge.demo"}
         mock_resolve.return_value = "127.0.0.1"  # All resolve initially
 
@@ -171,7 +175,8 @@ class TestBaseHardening(unittest.TestCase):
             "setup_paths",
             return_value={"root": Path("."), "cx": Path("."), "ce_dir": Path(".")},
         ):
-            ok, unresolved = self.handler.validate_project_dns(".")
+            with patch.object(Path, "exists", return_value=True):
+                ok, unresolved = self.handler.validate_project_dns(".")
 
         # Verify: Only "active-ext" should have been checked
         self.assertTrue(ok)
@@ -183,7 +188,13 @@ class TestBaseHardening(unittest.TestCase):
             return "127.0.0.1"
 
         mock_resolve.side_effect = resolve_side_effect
-        ok, unresolved = self.handler.validate_project_dns(".")
+        with patch.object(
+            BaseHandler,
+            "setup_paths",
+            return_value={"root": Path("."), "cx": Path("."), "ce_dir": Path(".")},
+        ):
+            with patch.object(Path, "exists", return_value=True):
+                ok, unresolved = self.handler.validate_project_dns(".")
 
         self.assertFalse(ok)
         self.assertEqual(len(unresolved), 1)

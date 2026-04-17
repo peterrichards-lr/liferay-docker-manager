@@ -613,7 +613,10 @@ class WorkspaceHandler:
                         UI.die("Gradle requires JDK 21.")
                     if platform.system() != "Windows":
                         # Bandit: B103 (chmod 0o755) is safe for gradlew.
-                        os.chmod(gradlew, 0o755)  # nosec B103
+                        try:
+                            os.chmod(gradlew, 0o755)  # nosec B103
+                        except Exception:
+                            pass
                     try:
                         UI.info(f"Executing clean build in {gradlew.parent}...")
                         run_command(

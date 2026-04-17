@@ -232,10 +232,10 @@ class SnapshotHandler:
                             if db_type == "postgresql"
                             else [
                                 "docker",
-                                "-e",
-                                "MYSQL_PWD=liferay",
                                 "exec",
                                 "-i",
+                                "-e",
+                                "MYSQL_PWD=liferay",
                                 db_container,
                                 "mysql",
                                 "-u",
@@ -287,6 +287,10 @@ class SnapshotHandler:
         if not root_path:
             return
         paths = self.setup_paths(root_path)
+
+        # Ensure directories exist and permissions are synchronized (Fixes CI [Errno 13])
+        self.verify_runtime_environment(paths)
+
         project_meta = self.read_meta(paths["root"] / PROJECT_META_FILE)
         container_name = project_meta.get("container_name") or paths[
             "root"
@@ -300,56 +304,108 @@ class SnapshotHandler:
                     jdbc.get("jdbc.default.username", ""),
                     jdbc.get("jdbc.default.password", ""),
                 )
+                db_container = f"{container_name}-db"
+                db_running = run_command(
+                    ["docker", "ps", "-q", "-f", f"name=^{db_container}$"], check=False
+                )
+
                 if "postgresql" in url.lower():
-                    host = self.args.pg_host or "localhost"
-                    port = self.args.pg_port or "5432"
-                    env = os.environ.copy()
-                    env["PGPASSWORD"] = pw
-                    if (
-                        run_command(
-                            [
-                                "psql",
-                                "-h",
-                                host,
-                                "-p",
-                                port,
-                                "-U",
-                                user,
-                                "-d",
-                                "postgres",
-                                "-c",
-                                "SELECT 1",
-                            ],
-                            check=False,
-                            env=env,
-                        )
-                        is None
-                    ):
-                        UI.die(f"PostgreSQL not reachable on {host}:{port}.")
+                    if db_running:
+                        # Use docker exec for reachability check (CI friendly)
+                        if (
+                            run_command(
+                                [
+                                    "docker",
+                                    "exec",
+                                    db_container,
+                                    "pg_isready",
+                                    "-U",
+                                    user,
+                                    "-d",
+                                    "postgres",
+                                ],
+                                check=False,
+                            )
+                            is None
+                        ):
+                            UI.die(
+                                f"PostgreSQL container '{db_container}' is not accepting connections."
+                            )
+                    else:
+                        # Fallback to host-side check (Local dev)
+                        host = self.args.pg_host or "localhost"
+                        port = self.args.pg_port or "5432"
+                        env = os.environ.copy()
+                        env["PGPASSWORD"] = pw
+                        if (
+                            run_command(
+                                [
+                                    "psql",
+                                    "-h",
+                                    host,
+                                    "-p",
+                                    port,
+                                    "-U",
+                                    user,
+                                    "-d",
+                                    "postgres",
+                                    "-c",
+                                    "SELECT 1",
+                                ],
+                                check=False,
+                                env=env,
+                            )
+                            is None
+                        ):
+                            UI.die(f"PostgreSQL not reachable on {host}:{port}.")
                 elif "mysql" in url.lower():
-                    host = self.args.my_host or "localhost"
-                    port = self.args.my_port or "3306"
-                    env = os.environ.copy()
-                    env["MYSQL_PWD"] = pw
-                    if (
-                        run_command(
-                            [
-                                "mysql",
-                                "-h",
-                                host,
-                                "-P",
-                                port,
-                                "-u",
-                                user,
-                                "-e",
-                                "SELECT 1",
-                            ],
-                            check=False,
-                            env=env,
-                        )
-                        is None
-                    ):
-                        UI.die(f"MySQL not reachable on {host}:{port}.")
+                    if db_running:
+                        # Use docker exec for reachability check (CI friendly)
+                        if (
+                            run_command(
+                                [
+                                    "docker",
+                                    "exec",
+                                    "-e",
+                                    f"MYSQL_PWD={pw}",
+                                    db_container,
+                                    "mysqladmin",
+                                    "ping",
+                                    "-u",
+                                    user,
+                                ],
+                                check=False,
+                            )
+                            is None
+                        ):
+                            UI.die(
+                                f"MySQL container '{db_container}' is not accepting connections."
+                            )
+                    else:
+                        # Fallback to host-side check (Local dev)
+                        host = self.args.my_host or "localhost"
+                        port = self.args.my_port or "3306"
+                        env = os.environ.copy()
+                        env["MYSQL_PWD"] = pw
+                        if (
+                            run_command(
+                                [
+                                    "mysql",
+                                    "-h",
+                                    host,
+                                    "-P",
+                                    port,
+                                    "-u",
+                                    user,
+                                    "-e",
+                                    "SELECT 1",
+                                ],
+                                check=False,
+                                env=env,
+                            )
+                            is None
+                        ):
+                            UI.die(f"MySQL not reachable on {host}:{port}.")
 
         is_running = run_command(
             ["docker", "ps", "-q", "-f", f"name=^{container_name}$"]
@@ -409,6 +465,21 @@ class SnapshotHandler:
 
             if self._wait_for_search_snapshot(search_snapshot_name):
                 UI.success("Search snapshot completed.")
+                # Copy ES snapshot files to the backup dir so they are portable
+                from ldm_core.utils import get_actual_home
+
+                es_backup_source = (
+                    get_actual_home() / ".ldm" / "infra" / "search" / "backup"
+                )
+                if es_backup_source.exists():
+                    snap_es_dir = paths["backups"] / timestamp / "search"
+                    snap_es_dir.mkdir(parents=True, exist_ok=True)
+                    # We only need the files related to this snapshot
+                    # However, ES snapshots are incremental and shared.
+                    # For a truly portable seed, we might need more, but for now
+                    # we'll copy the whole backup repo if it's small, or just reference it.
+                    # BETTER: For SEEDING, we want a standalone archive.
+                    # Let's just include the search folder in the main tar if it's a seed.
             else:
                 UI.warning(
                     "Search snapshot failed or timed out. Project snapshot will proceed without it."
@@ -417,12 +488,26 @@ class SnapshotHandler:
 
         # --- ARCHIVE ---
         snap_dir = paths["backups"] / timestamp
-        snap_dir.mkdir(parents=True)
+
+        # Final permission sync before archiving (Fixes late-created Docker file issues)
+        self.verify_runtime_environment(paths)
+
+        snap_dir.mkdir(parents=True, exist_ok=True)
 
         with tarfile.open(snap_dir / "files.tar.gz", "w:gz") as tar:
             for f in ["files", "scripts", "osgi", "data", "deploy", "routes"]:
                 if (paths["root"] / f).exists():
                     tar.add(paths["root"] / f, arcname=f)
+
+            # If we have a search snapshot, bundle the global backup repo into the archive
+            if search_snapshot_name:
+                from ldm_core.utils import get_actual_home
+
+                es_backup_source = (
+                    get_actual_home() / ".ldm" / "infra" / "search" / "backup"
+                )
+                if es_backup_source.exists():
+                    tar.add(es_backup_source, arcname="search_backup")
 
         self.write_meta(
             snap_dir / "meta",
@@ -437,11 +522,12 @@ class SnapshotHandler:
         UI.success(f"Snapshot saved: {snap_dir}")
 
     def cmd_restore(self, project_id=None, auto_index=None, backup_dir=None):
-        root_path = self.detect_project_path(project_id)
+        root_path = self.detect_project_path(project_id, for_init=True)
         if not root_path:
             return
         paths = self.setup_paths(root_path)
-        project_meta = self.read_meta(paths["root"] / PROJECT_META_FILE)
+        # For new projects (seeding), meta might not exist yet
+        project_meta = self.read_meta(paths["root"] / PROJECT_META_FILE) or {}
 
         # 0. Support for --list (Non-interactive overview)
         if getattr(self.args, "list", False):
@@ -502,9 +588,52 @@ class SnapshotHandler:
         files_tar = choice / "files.tar.gz"
         if files_tar.exists():
             with tarfile.open(files_tar, "r:gz") as tar:
-                from ldm_core.utils import safe_extract
+                from ldm_core.utils import is_within_root
 
-                safe_extract(tar, paths["root"])
+                # 1. Extract standard project files
+                target_root = paths["root"].resolve()
+                members = []
+                for m in tar.getmembers():
+                    if m.name.startswith("search_backup"):
+                        continue
+
+                    # Security: Validate path to prevent Zip Slip / Path Traversal
+                    member_path = (target_root / m.name).resolve()
+                    if not is_within_root(member_path, target_root):
+                        UI.error(f"Security: Skipping unsafe member: {m.name}")
+                        continue
+                    members.append(m)
+
+                tar.extractall(path=target_root, members=members)  # nosec B202
+
+                # 2. Extract search_backup if present
+                search_member = next(
+                    (m for m in tar.getmembers() if m.name == "search_backup"), None
+                )
+                if search_member:
+                    from ldm_core.utils import get_actual_home
+
+                    es_infra_backup = (
+                        get_actual_home() / ".ldm" / "infra" / "search" / "backup"
+                    )
+                    es_infra_backup.mkdir(parents=True, exist_ok=True)
+                    es_infra_root = es_infra_backup.resolve()
+
+                    for m in tar.getmembers():
+                        if m.name.startswith("search_backup/"):
+                            # Security: Validate path
+                            rel_name = m.name.replace("search_backup/", "", 1)
+                            member_path = (es_infra_root / rel_name).resolve()
+
+                            if not is_within_root(member_path, es_infra_root):
+                                UI.error(
+                                    f"Security: Skipping unsafe ES member: {m.name}"
+                                )
+                                continue
+
+                            # Temporarily adjust member name for extraction into the target dir
+                            m.name = rel_name
+                            tar.extract(m, path=es_infra_root)  # nosec B202
         else:
             UI.die(f"Standard snapshot files not found in {choice}")
 
