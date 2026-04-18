@@ -847,8 +847,7 @@ class StackHandler(BaseHandler):
             "networks": {"liferay-net": {"external": True}},
         }
 
-        with open(paths["compose"], "w") as f:
-            f.write(dict_to_yaml(compose))
+        paths["compose"].write_text(dict_to_yaml(compose))
 
     def cmd_reset(self, project_id=None, target="state"):
         """Resets parts of the project state (state, data, logs, all)."""
