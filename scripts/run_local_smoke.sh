@@ -1,37 +1,44 @@
 #!/bin/bash
 set -e
 
-# LDM Local Smoke Test Wrapper
-# Sets up a clean virtual environment and executes the smoke test suite.
+# Local Smoke Test for Liferay Docker Manager
+# Replicates the CI smoke test logic
 
-UI_YELLOW='\033[1;33m'
-UI_GREEN='\033[0;32m'
-UI_OFF='\033[0m'
+echo "=== Starting Local Smoke Test ==="
 
-VENV_DIR=".smoke_venv"
+# Cleanup old project if exists
+rm -rf smoke-project
 
-echo -e "${UI_YELLOW}=== Setting up LDM Smoke Test Environment ===${UI_OFF}"
+# Create a mock project
+echo "Creating mock project..."
+mkdir -p smoke-project/files
+touch smoke-project/files/portal-ext.properties
+{
+  echo "tag=7.4.13-u100"
+  echo "container_name=smoke-test"
+  echo "image_tag=alpine"
+  echo "port=8081"
+} > smoke-project/.liferay-docker.meta
 
-# 1. Create/Refresh Virtual Environment
-if [ -d "$VENV_DIR" ]; then
-    echo "ℹ  Refreshing existing virtual environment..."
+# 1. Generate Compose
+echo "Generating docker-compose.yml..."
+python3 liferay_docker.py -y run smoke-project --no-up --sidecar --no-wait
+
+# 2. Patch Healthcheck (since we use alpine, it won't respond on 8081)
+echo "Patching healthcheck for alpine compatibility..."
+if [[ "$OSTYPE" == "darwin"* ]]; then
+  sed -i '' 's/curl -f http:\/\/localhost:8081\/c\/portal\/layout/true/g' smoke-project/docker-compose.yml
 else
-    echo "ℹ  Creating virtual environment in $VENV_DIR..."
-    python3 -m venv "$VENV_DIR"
+  sed -i 's/curl -f http:\/\/localhost:8081\/c\/portal\/layout/true/g' smoke-project/docker-compose.yml
 fi
 
-# 2. Activate and Install
-# shellcheck disable=SC1091
-source "$VENV_DIR/bin/activate"
+# 3. Verify it starts and exits quickly with --no-wait
+echo "Running LDM run with --no-wait..."
+python3 liferay_docker.py -y run smoke-project --no-wait
 
-echo "ℹ  Upgrading pip and installing dependencies..."
-pip install --upgrade pip > /dev/null
-pip install -r requirements.txt > /dev/null
-pip install -e . > /dev/null
+# 4. Cleanup
+echo "Tearing down smoke test stack..."
+python3 liferay_docker.py -y down smoke-project
+rm -rf smoke-project
 
-# 3. Run the Smoke Tests
-# Note: We use the venv's python and pip
-./scripts/run_smoke_tests.sh
-
-echo -e "\n${UI_GREEN}✅ Smoke test wrapper completed.${UI_OFF}"
-echo -e "To deactivate the environment, run: ${UI_YELLOW}deactivate${UI_OFF}"
+echo "✅ Smoke test passed!"

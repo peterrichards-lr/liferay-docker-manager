@@ -663,14 +663,49 @@ class StackHandler(BaseHandler):
                 cmd.append(service)
             run_command(cmd, cwd=str(root))
 
-    def cmd_down(self, project_id=None):
-        """Tears down project containers and volumes."""
-        root = self.detect_project_path(project_id)
-        if not root:
+    def cmd_restart(self, project_id=None, service=None, all_projects=False):
+        """Restarts project containers."""
+        targets = []
+        if all_projects:
+            targets = [r["path"] for r in self.get_running_projects()]
+        else:
+            root = self.detect_project_path(project_id)
+            if root:
+                targets = [root]
+
+        if not targets:
+            UI.info("No projects found to restart.")
             return
+
         compose_base = get_compose_cmd()
-        UI.warning(f"Tearing down stack: {root.name}")
-        run_command(compose_base + ["down", "-v", "--remove-orphans"], cwd=str(root))
+        for root in targets:
+            UI.info(f"Restarting project: {root.name}...")
+            cmd = compose_base + ["restart"]
+            if service:
+                cmd.append(service)
+            run_command(cmd, cwd=str(root))
+
+    def cmd_down(self, project_id=None, service=None, all_projects=False):
+        """Tears down project containers and volumes."""
+        targets = []
+        if all_projects:
+            targets = [r["path"] for r in self.get_running_projects()]
+        else:
+            root = self.detect_project_path(project_id)
+            if root:
+                targets = [root]
+
+        if not targets:
+            UI.info("No projects found to tear down.")
+            return
+
+        compose_base = get_compose_cmd()
+        for root in targets:
+            UI.warning(f"Tearing down stack: {root.name}")
+            cmd = compose_base + ["down", "-v", "--remove-orphans"]
+            if service:
+                cmd.append(service)
+            run_command(cmd, cwd=str(root))
 
     def cmd_deploy(self, project_id=None, service=None):
         root = self.detect_project_path(project_id)
@@ -711,9 +746,14 @@ class StackHandler(BaseHandler):
             jvm_opts += " -XX:TieredStopAtLevel=1"
         jvm_opts = jvm_opts.replace(" ", "\\ ")
 
+        image = meta.get("image_tag")
+        if not image:
+            image = f"liferay/portal:{tag}" if "u" in tag else f"liferay/dxp:{tag}"
+
+        port = meta.get("port", 8080)
         liferay_service = {
-            "image": f"liferay/portal:{tag}" if "u" in tag else f"liferay/dxp:{tag}",
-            "ports": ["8080:8080"],
+            "image": image,
+            "ports": [f"{port}:8080"],
             "environment": [
                 f"LIFERAY_JVM_OPTS={jvm_opts}",
             ],
