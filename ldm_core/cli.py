@@ -359,7 +359,13 @@ def main():
         import os
 
         if os.geteuid() == 0:
-            allow_root = os.environ.get("LDM_ALLOW_ROOT", "false").lower() == "true"
+            from ldm_core.constants import SCRIPT_DIR
+
+            allow_root_file = SCRIPT_DIR / ".ldm_allow_root"
+            allow_root = (
+                os.environ.get("LDM_ALLOW_ROOT", "false").lower() == "true"
+                or allow_root_file.exists()
+            )
             if args.command != "upgrade" and not allow_root:
                 UI.error("Security Risk: Do not run LDM with 'sudo'.")
                 UI.info(

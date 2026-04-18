@@ -74,7 +74,10 @@ jobs:
         run: |
           SAFE_TAG=$(echo "${{ matrix.tag }}" | tr '.' '_')
           PROJECT_ID="seeded-${SAFE_TAG}-${{ matrix.db_type }}"
-          sudo LDM_ALLOW_ROOT=true $(which python3) liferay_docker.py snapshot "$PROJECT_ID" --name "Seed: ${{ matrix.tag }} (${{ matrix.db_type }})"
+          # Create marker file to allow root execution (bypasses sudo env scrubbing)
+          touch .ldm_allow_root
+          sudo $(which python3) liferay_docker.py snapshot "$PROJECT_ID" --name "Seed: ${{ matrix.tag }} (${{ matrix.db_type }})"
+          rm .ldm_allow_root
           
       - name: Package Seeded State
         id: package
