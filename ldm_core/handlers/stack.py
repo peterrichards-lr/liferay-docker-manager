@@ -396,6 +396,17 @@ class StackHandler(BaseHandler):
         config_handler.sync_common_assets(paths, version=project_meta.get("tag"))
         config_handler.sync_logging(paths)
 
+        # Proactively inject JDBC properties for MySQL/MariaDB to ensure UTF-8 coverage
+        db_type = project_meta.get("db_type", "hypersonic")
+        if db_type in ["mysql", "mariadb"]:
+            jdbc_props = {
+                "jdbc.default.driverClassName": "com.mysql.cj.jdbc.Driver",
+                "jdbc.default.url": "jdbc:mysql://db:3306/lportal?characterEncoding=UTF-8&dontTrackOpenResources=true&holdResultsOpenOverStatementClose=true&serverTimezone=GMT&useFastDateParsing=false&useUnicode=true",
+                "jdbc.default.username": "lportal",
+                "jdbc.default.password": "test",
+            }
+            self.update_portal_ext(paths, jdbc_props)
+
         # 3. Generate Compose Command
         self.write_docker_compose(paths, project_meta)
         cmd = compose_base + ["up", "-d", "--remove-orphans"]
