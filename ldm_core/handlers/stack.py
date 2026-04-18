@@ -409,6 +409,27 @@ class StackHandler(BaseHandler):
 
         # 3. Generate Compose Command
         self.write_docker_compose(paths, project_meta)
+
+        # Pre-flight: Validate Compose Syntax
+        UI.debug("Validating generated docker-compose.yml syntax...")
+        run_command(
+            get_compose_cmd() + ["config", "--quiet"],
+            cwd=str(paths["root"]),
+            check=True,
+        )
+
+        # Pre-flight: Port Availability
+        port_val = project_meta.get("port", 8080)
+        port = int(port_val) if port_val is not None else 8080
+        if not no_up:
+            import socket
+
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                if s.connect_ex(("localhost", port)) == 0:
+                    UI.die(
+                        f"Port {port} is already in use. Please change the port in metadata or stop the conflicting service."
+                    )
+
         cmd = compose_base + ["up", "-d", "--remove-orphans"]
         if rebuild:
             cmd.append("--build")

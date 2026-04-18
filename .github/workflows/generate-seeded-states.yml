@@ -82,22 +82,36 @@ jobs:
           SAFE_TAG=$(echo "${{ matrix.tag }}" | tr '.' '_')
           PROJECT_ID="seeded-${SAFE_TAG}-${{ matrix.db_type }}"
           
-          # Determine search mode based on LDM defaults
-          # (LDM uses Shared Search for modern tags, sidecar for older)
-          # We'll normalize this in the filename.
+          # Determine search mode
           SEARCH_MODE="shared"
           if [[ "${{ matrix.tag }}" < "2025.q1" ]]; then
              SEARCH_MODE="sidecar"
           fi
 
-          # Find the latest snapshot folder
-          # LDM uses 'snapshots/' folder, and project is in repo root
           SNAP_DIR=$(ls -td $PROJECT_ID/snapshots/*/ | head -1)
           cd "$SNAP_DIR"
-          # Rename using the new convention: seeded-{tag}-{db}-{search}.tar.gz
           FILENAME="seeded-${{ matrix.tag }}-${{ matrix.db_type }}-${SEARCH_MODE}.tar.gz"
           mv files.tar.gz "$FILENAME"
           echo "path=$SNAP_DIR$FILENAME" >> $GITHUB_OUTPUT
+          echo "filename=$FILENAME" >> $GITHUB_OUTPUT
+
+      - name: Upload Workspace Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.package.outputs.filename }}
+          path: ${{ steps.package.outputs.path }}
+          retention-days: 1
+
+  publish-release:
+    needs: generate-seeds
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: all-seeds
+          pattern: seeded-*
 
       - name: Get LDM Version
         id: ldm_version
@@ -109,7 +123,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.ldm_version.outputs.version }}
-          files: ${{ steps.package.outputs.path }}
+          files: all-seeds/**/*
           prerelease: false
           make_latest: true
           generate_release_notes: true
