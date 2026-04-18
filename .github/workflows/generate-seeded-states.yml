@@ -85,6 +85,9 @@ jobs:
           SAFE_TAG=$(echo "${{ matrix.tag }}" | tr '.' '_')
           PROJECT_ID="seeded-${SAFE_TAG}-${{ matrix.db_type }}"
           
+          # Reclaim ownership from root (since snapshot was run via sudo)
+          sudo chown -R $USER:$USER $PROJECT_ID
+          
           # Determine search mode
           SEARCH_MODE="shared"
           if [[ "${{ matrix.tag }}" < "2025.q1" ]]; then
