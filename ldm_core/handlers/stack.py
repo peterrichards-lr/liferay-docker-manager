@@ -401,8 +401,6 @@ class StackHandler(BaseHandler):
         cmd = compose_base + ["up", "-d", "--remove-orphans"]
         if rebuild:
             cmd.append("--build")
-        if no_wait:
-            cmd.append("--no-wait")
 
         if show_summary:
             UI.heading(f"Stack Orchestration: {project_meta.get('container_name')}")
