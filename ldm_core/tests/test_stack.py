@@ -5,9 +5,12 @@ from ldm_core.handlers.stack import StackHandler
 from ldm_core.handlers.workspace import WorkspaceHandler
 from ldm_core.handlers.license import LicenseHandler
 from ldm_core.handlers.snapshot import SnapshotHandler
+from ldm_core.handlers.base import BaseHandler
 
 
-class MockManager(StackHandler, WorkspaceHandler, LicenseHandler, SnapshotHandler):
+class MockManager(
+    StackHandler, WorkspaceHandler, LicenseHandler, SnapshotHandler, BaseHandler
+):
     def __init__(self):
         self.args = MagicMock()
         self.args.search = False

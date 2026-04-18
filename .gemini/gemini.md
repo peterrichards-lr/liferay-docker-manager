@@ -64,7 +64,8 @@ This file serves as the persistent state and technical knowledge base for the AI
 ## 🏁 Definition of Done for Changes
 
 - [ ] Code passes `./lint.sh` (Ruff, Markdown, Bandit, Pytest).
-- [ ] All 25 unit tests pass.
+- [ ] All unit tests pass locally (`pytest ldm_core/tests/`).
+- [ ] `ldm-doctor.sh` check passes (if infra changes were made).
 - [ ] Version-aware separator logic is maintained.
 - [ ] Explicit Traefik network labels are applied.
 - [ ] Documentation (`README.md`, `ROADMAP.md`) is updated.

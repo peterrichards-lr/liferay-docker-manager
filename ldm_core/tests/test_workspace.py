@@ -6,9 +6,10 @@ from unittest.mock import patch, MagicMock
 from pathlib import Path
 from ldm_core.handlers.workspace import WorkspaceHandler
 from ldm_core.handlers.diagnostics import DiagnosticsHandler
+from ldm_core.handlers.base import BaseHandler
 
 
-class MockWorkspaceManager(WorkspaceHandler, DiagnosticsHandler):
+class MockWorkspaceManager(WorkspaceHandler, DiagnosticsHandler, BaseHandler):
     def __init__(self):
         self.verbose = False
         self.non_interactive = True

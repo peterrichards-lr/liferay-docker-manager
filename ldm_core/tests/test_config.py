@@ -3,9 +3,10 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 from ldm_core.handlers.config import ConfigHandler
 from ldm_core.handlers.diagnostics import DiagnosticsHandler
+from ldm_core.handlers.base import BaseHandler
 
 
-class MockConfigManager(ConfigHandler, DiagnosticsHandler):
+class MockConfigManager(ConfigHandler, DiagnosticsHandler, BaseHandler):
     def __init__(self):
         self.args = MagicMock()
         self.verbose = False

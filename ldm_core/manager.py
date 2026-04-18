@@ -12,7 +12,6 @@ from ldm_core.handlers.license import LicenseHandler
 
 
 class LiferayManager(
-    BaseHandler,
     StackHandler,
     WorkspaceHandler,
     SnapshotHandler,
@@ -20,6 +19,7 @@ class LiferayManager(
     DiagnosticsHandler,
     CloudHandler,
     LicenseHandler,
+    BaseHandler,
 ):
     """Orchestrator class for LDM, composed of multiple functional mixins."""
 
