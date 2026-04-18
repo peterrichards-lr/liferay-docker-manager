@@ -406,7 +406,7 @@ class BaseHandler:
                 docker_cmd = (
                     f"mkdir -p /workspace/{rel_root}/data /workspace/{rel_root}/deploy /workspace/{rel_root}/files "
                     f"/workspace/{rel_root}/osgi/state /workspace/{rel_root}/osgi/configs /workspace/{rel_root}/osgi/modules "
-                    f"/workspace/{rel_root}/snapshots 2>/dev/null || true; "
+                    f"/workspace/{rel_root}/routes /workspace/{rel_root}/snapshots 2>/dev/null || true; "
                     f"chown -R {current_uid}:{current_gid} /workspace/{rel_root} 2>/dev/null || true; "
                     f"chmod -R 777 /workspace/{rel_root} 2>/dev/null || true; "
                     f"chmod 777 /workspace/{rel_root} 2>/dev/null || true; "

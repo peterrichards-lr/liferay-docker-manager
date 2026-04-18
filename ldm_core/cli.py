@@ -359,7 +359,8 @@ def main():
         import os
 
         if os.geteuid() == 0:
-            if args.command != "upgrade":
+            allow_root = os.environ.get("LDM_ALLOW_ROOT", "false").lower() == "true"
+            if args.command != "upgrade" and not allow_root:
                 UI.error("Security Risk: Do not run LDM with 'sudo'.")
                 UI.info(
                     "Running as root causes cache ownership issues in your home directory (~/.shiv).\n"
