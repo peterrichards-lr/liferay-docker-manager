@@ -71,12 +71,10 @@ jobs:
           echo "Liferay is healthy!"
 
       - name: Capture Snapshot
-        env:
-          LDM_ALLOW_ROOT: "true"
         run: |
           SAFE_TAG=$(echo "${{ matrix.tag }}" | tr '.' '_')
           PROJECT_ID="seeded-${SAFE_TAG}-${{ matrix.db_type }}"
-          sudo $(which python3) liferay_docker.py snapshot "$PROJECT_ID" --name "Seed: ${{ matrix.tag }} (${{ matrix.db_type }})"
+          sudo LDM_ALLOW_ROOT=true $(which python3) liferay_docker.py snapshot "$PROJECT_ID" --name "Seed: ${{ matrix.tag }} (${{ matrix.db_type }})"
           
       - name: Package Seeded State
         id: package
