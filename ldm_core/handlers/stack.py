@@ -728,9 +728,17 @@ class StackHandler(BaseHandler):
         for root in targets:
             UI.warning(f"Tearing down stack: {root.name}")
             cmd = compose_base + ["down", "-v", "--remove-orphans"]
-            if service:
+
+            # If a specific service was requested (and it's NOT the special 'delete' command)
+            if service and service != "delete":
                 cmd.append(service)
+
             run_command(cmd, cwd=str(root))
+
+            # Special 'delete' logic: Wipe the project directory from disk
+            if service == "delete":
+                UI.warning(f"Permanently deleting project directory: {root.name}")
+                shutil.rmtree(root, ignore_errors=True)
 
     def cmd_deploy(self, project_id=None, service=None):
         root = self.detect_project_path(project_id)
