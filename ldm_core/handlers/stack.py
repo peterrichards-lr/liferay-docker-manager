@@ -812,19 +812,31 @@ class StackHandler(BaseHandler):
             url = "jdbc:mariadb://db:3306/lportal?characterEncoding=UTF-8&dontTrackOpenResources=true&holdResultsOpenOverStatementClose=true&serverTimezone=GMT&useFastDateParsing=false&useUnicode=true&useSSL=false&allowPublicKeyRetrieval=true"
 
             dialect = (
-                "org.hibernate.dialect.MySQL8Dialect"
+                "com.liferay.portal.dao.db.hibernate.MySQL8Dialect"
                 if db_type == "mysql"
                 else "org.hibernate.dialect.MariaDB103Dialect"
             )
 
+            # Liferay Docker environment variables REQUIRE _PERIOD_ delimiters to map correctly
             liferay_env.extend(
                 [
-                    f"LIFERAY_JDBC_DEFAULT_DRIVER_CLASS_NAME={driver}",
-                    f"LIFERAY_JDBC_DEFAULT_URL={url}",
-                    "LIFERAY_JDBC_DEFAULT_USERNAME=lportal",
-                    "LIFERAY_JDBC_DEFAULT_PASSWORD=test",
-                    f"LIFERAY_HIBERNATE_DIALECT={dialect}",
+                    f"LIFERAY_JDBC_PERIOD_DEFAULT_PERIOD_DRIVER_CLASS_NAME={driver}",
+                    f"LIFERAY_JDBC_PERIOD_DEFAULT_PERIOD_URL={url}",
+                    "LIFERAY_JDBC_PERIOD_DEFAULT_PERIOD_USERNAME=lportal",
+                    "LIFERAY_JDBC_PERIOD_DEFAULT_PERIOD_PASSWORD=test",
+                    f"LIFERAY_HIBERNATE_PERIOD_DIALECT={dialect}",
+                    "LIFERAY_HSQL_PERIOD_ENABLED=false",
                 ]
+            )
+
+            # Double-coverage in portal-ext.properties
+            self.update_portal_ext(
+                paths,
+                {
+                    "jdbc.default.enabled": "true",
+                    "jdbc.default.db.type": db_type,
+                    "hibernate.dialect": dialect,
+                },
             )
 
         liferay_service = {
