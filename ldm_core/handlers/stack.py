@@ -396,21 +396,6 @@ class StackHandler(BaseHandler):
         config_handler.sync_common_assets(paths, version=project_meta.get("tag"))
         config_handler.sync_logging(paths)
 
-        # Proactively inject JDBC properties for MySQL/MariaDB to ensure UTF-8 coverage
-        db_type = project_meta.get("db_type", "hypersonic")
-        if db_type in ["mysql", "mariadb"]:
-            jdbc_props = {
-                "jdbc.default.driverClassName": "com.mysql.cj.jdbc.Driver",
-                "jdbc.default.url": "jdbc:mysql://db:3306/lportal?characterEncoding=UTF-8&dontTrackOpenResources=true&holdResultsOpenOverStatementClose=true&serverTimezone=GMT&useFastDateParsing=false&useUnicode=true&useSSL=false&allowPublicKeyRetrieval=true",
-                "jdbc.default.username": "lportal",
-                "jdbc.default.password": "test",
-                "jdbc.default.enabled": "true",
-                "hibernate.dialect": "com.liferay.portal.dao.db.hibernate.MySQL8Dialect"
-                if db_type == "mysql"
-                else "org.hibernate.dialect.MariaDB103Dialect",
-            }
-            self.update_portal_ext(paths, jdbc_props)
-
         # 3. Generate Compose Command
         self.write_docker_compose(paths, project_meta)
 
@@ -787,6 +772,9 @@ class StackHandler(BaseHandler):
             "java.base/sun.net.www.protocol.https=ALL-UNNAMED",
             "java.base/sun.nio.ch=ALL-UNNAMED",
             "java.base/sun.security.action=ALL-UNNAMED",
+            "java.base/sun.security.ssl=ALL-UNNAMED",
+            "java.base/sun.security.util=ALL-UNNAMED",
+            "java.base/sun.security.x509=ALL-UNNAMED",
             "java.base/sun.util.calendar=ALL-UNNAMED",
             "java.security.sasl/conf=ALL-UNNAMED",
             "java.management/sun.management=ALL-UNNAMED",
@@ -809,13 +797,46 @@ class StackHandler(BaseHandler):
             image = f"liferay/portal:{tag}" if "u" in tag else f"liferay/dxp:{tag}"
 
         port = meta.get("port", 8080)
+
+        # Hardened JDBC Environment Variables (Prioritized by Liferay Docker Entrypoint)
+        db_type = meta.get("db_type", "hypersonic")
+        liferay_env = [
+            f"LIFERAY_JVM_OPTS={jvm_opts}",
+            "LIFERAY_HOME=/opt/liferay",
+        ]
+
+        if db_type in ["mysql", "mariadb"]:
+            driver = "com.mysql.cj.jdbc.Driver"
+            url = "jdbc:mysql://db:3306/lportal?characterEncoding=UTF-8&dontTrackOpenResources=true&holdResultsOpenOverStatementClose=true&serverTimezone=GMT&useFastDateParsing=false&useUnicode=true&useSSL=false&allowPublicKeyRetrieval=true"
+            dialect = (
+                "com.liferay.portal.dao.db.hibernate.MySQL8Dialect"
+                if db_type == "mysql"
+                else "org.hibernate.dialect.MariaDB103Dialect"
+            )
+
+            liferay_env.extend(
+                [
+                    f"LIFERAY_JDBC_DEFAULT_DRIVER_CLASS_NAME={driver}",
+                    f"LIFERAY_JDBC_DEFAULT_URL={url}",
+                    "LIFERAY_JDBC_DEFAULT_USERNAME=lportal",
+                    "LIFERAY_JDBC_DEFAULT_PASSWORD=test",
+                ]
+            )
+
+            # Inject type hint and dialect into portal-ext as well for double-coverage
+            self.update_portal_ext(
+                paths,
+                {
+                    "jdbc.default.enabled": "true",
+                    "jdbc.default.db.type": db_type,
+                    "hibernate.dialect": dialect,
+                },
+            )
+
         liferay_service = {
             "image": image,
             "ports": [f"{port}:8080"],
-            "environment": [
-                f"LIFERAY_JVM_OPTS={jvm_opts}",
-                "LIFERAY_HOME=/opt/liferay",
-            ],
+            "environment": liferay_env,
             "volumes": [
                 f"{paths['deploy']}:/mnt/liferay/deploy",
                 f"{paths['files']}:/mnt/liferay/files",
