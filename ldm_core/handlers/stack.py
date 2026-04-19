@@ -401,7 +401,7 @@ class StackHandler(BaseHandler):
         if db_type in ["mysql", "mariadb"]:
             jdbc_props = {
                 "jdbc.default.driverClassName": "com.mysql.cj.jdbc.Driver",
-                "jdbc.default.url": "jdbc:mysql://db:3306/lportal?characterEncoding=UTF-8&dontTrackOpenResources=true&holdResultsOpenOverStatementClose=true&serverTimezone=GMT&useFastDateParsing=false&useUnicode=true",
+                "jdbc.default.url": "jdbc:mysql://db:3306/lportal?characterEncoding=UTF-8&dontTrackOpenResources=true&holdResultsOpenOverStatementClose=true&serverTimezone=GMT&useFastDateParsing=false&useUnicode=true&useSSL=false&allowPublicKeyRetrieval=true",
                 "jdbc.default.username": "lportal",
                 "jdbc.default.password": "test",
                 "jdbc.default.enabled": "true",
