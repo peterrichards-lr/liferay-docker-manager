@@ -204,8 +204,10 @@ LDM uses smarter defaults for SSL based on your hostname. When a custom `--host-
 LDM automatically hardens modern environments (DXP 2024+ and modern Quarterly Releases) to ensure stable startup:
 
 - **JVM Module Exports**: Automatically injects mandatory `--add-opens` flags for JDK 17+ (covering `java.net`, `java.lang.reflect`, `security`, and more).
-- **Hardened MySQL 8.0**:
+- **Hardened MySQL 8.4 (LTS)**:
+  - Standardized on the **MariaDB JDBC Driver** and `MariaDB103Dialect` to mirror **Liferay Cloud (LXC)** environments.
   - Forces `mysql_native_password` authentication for CI compatibility.
+  - Includes performance-optimized connection parameters (e.g., `rewriteBatchedStatements`, `prepStmtCacheSize`).
   - Explicitly sets `hibernate.dialect` and `jdbc.default.db.type` to prevent boot-time auto-detection failures.
   - Prioritizes `LIFERAY_JDBC_DEFAULT_*` environment variables for reliable handshake initialization.
 - **Proactive Boot Sequencing**: Configures `depends_on` with healthchecks to ensure Liferay only starts once the database is fully ready to accept connections.
@@ -218,7 +220,7 @@ LDM automatically hardens modern environments (DXP 2024+ and modern Quarterly Re
 
 For new projects, LDM automatically attempts to download a **Seeded State** matching your specific configuration (Liferay version, Database type, and Search mode).
 
-- **Database**: Pre-initialized schema for Postgres, MySQL, or HSQL.
+- **Database**: Pre-initialized schema for Postgres, MySQL (8.4), or HSQL.
 - **OSGi Cache**: Pre-resolved bundle state to skip the resolution phase.
 - **Search Index**: Pre-warmed Elasticsearch indices.
 
@@ -509,13 +511,16 @@ ldm upgrade --repair    # Re-download current version to fix integrity issues
 Configure shell autocompletion for `ldm`. Supports **Bash**, **Zsh**, and **Fish**.
 
 ```bash
-ldm completion [shell]
-
-# Examples:
-ldm completion zsh      # Get setup instructions for Zsh (default)
-ldm completion bash     # Get setup instructions for Bash
-ldm completion fish     # Get setup instructions for Fish
+ldm completion
 ```
+
+**Setup Summary:**
+
+1. Run `ldm completion` to get the command for your shell.
+2. Add the provided command to your shell profile (`.zshrc`, `.bashrc`, or `config.fish`).
+3. Restart your terminal.
+
+This enables TAB completion for all commands and project names.
 
 ### `renew-ssl`
 

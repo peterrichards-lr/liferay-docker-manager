@@ -19,6 +19,8 @@ jobs:
         run: |
           TAGS=$(python3 scripts/get_release_tags.py)
           echo "tags=$TAGS" >> $GITHUB_OUTPUT
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   generate-seeds:
     needs: get-tags
@@ -94,9 +96,12 @@ jobs:
              SEARCH_MODE="sidecar"
           fi
 
+          # Get Seed Logic Version from constants
+          SEED_VER=$(python3 -c "from ldm_core.constants import SEED_VERSION; print(SEED_VERSION)")
+
           SNAP_DIR=$(ls -td $PROJECT_ID/snapshots/*/ | head -1)
           cd "$SNAP_DIR"
-          FILENAME="seeded-${{ matrix.tag }}-${{ matrix.db_type }}-${SEARCH_MODE}.tar.gz"
+          FILENAME="seeded-${{ matrix.tag }}-${{ matrix.db_type }}-${SEARCH_MODE}-v${SEED_VER}.tar.gz"
           mv files.tar.gz "$FILENAME"
           echo "path=$SNAP_DIR$FILENAME" >> $GITHUB_OUTPUT
           echo "filename=$FILENAME" >> $GITHUB_OUTPUT
@@ -128,11 +133,11 @@ jobs:
       - name: Upload to Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ steps.ldm_version.outputs.version }}
+          tag_name: seeded-states
           files: all-seeds/**/*
           prerelease: false
-          make_latest: true
-          generate_release_notes: true
-          body: "Auto-generated seeded states for Liferay Docker Manager ${{ steps.ldm_version.outputs.version }}."
+          make_latest: false
+          generate_release_notes: false
+          body: "Last updated on ${{ github.event.repository.updated_at }}. These seeds are maintained for the latest 4 Quarters and 2 LTS lines."
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

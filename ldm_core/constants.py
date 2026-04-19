@@ -19,6 +19,11 @@ ELASTICSEARCH7_VERSION = "7.17.24"
 TRAEFIK_VERSION = "v3.6.1"
 SOCAT_IMAGE = "alpine/socat"
 
+# --- Seeded State Configuration ---
+# Increment this version whenever the logic for generating seeds changes
+# (e.g. DB schema changes, driver updates, or hardening logic).
+SEED_VERSION = "1"
+
 # --- Sample Extension Hashes (SHA-256) ---
 SAMPLE_HASHES = {
     "client-extensions": {

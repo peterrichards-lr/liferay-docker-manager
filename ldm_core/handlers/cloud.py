@@ -64,6 +64,10 @@ class CloudHandler:
         if env:
             cmd.extend(["--environment", env])
 
+        # The LCP CLI version used by the user does not support --json
+        # We disable it globally to prevent "Unknown argument: json" errors
+        capture_json = False
+
         if capture_json:
             cmd.extend(["--json"])
 
@@ -73,8 +77,8 @@ class CloudHandler:
                 return json.loads(res.stdout)
             else:
                 # For streaming or direct output
-                subprocess.run(cmd, check=True)
-                return True
+                res = subprocess.run(cmd, capture_output=True, text=True, check=True)
+                return res.stdout
         except subprocess.CalledProcessError as e:
             UI.error(f"LCP command failed: {e.stderr or e.stdout}")
             return None
@@ -106,40 +110,7 @@ class CloudHandler:
             UI.heading(f"Available Liferay Cloud Environments (Project: {cp_id})")
             data = self._run_lcp_cmd(["list"])
             if data:
-                found = False
-                for item in data:
-                    p_name = item.get("name") or item.get("project", "Unknown")
-                    p_id = item.get("id") or item.get("projectId")
-
-                    # If we have a cloud_project_id, filter by it
-                    if cp_id and p_id != cp_id and p_name != cp_id:
-                        continue
-
-                    found = True
-                    if "environments" in item:
-                        # Hierarchical format
-                        UI.info(f"Project: {p_name} ({p_id})")
-                        for env in item.get("environments", []):
-                            print(
-                                f"  - {UI.CYAN}{env.get('id')}{UI.COLOR_OFF} ({env.get('name')})"
-                            )
-                    else:
-                        # Flat format (Project-Env as a single line)
-                        status = item.get("status", "")
-                        status_color = (
-                            UI.GREEN if "running" in status.lower() else UI.WHITE
-                        )
-                        print(
-                            f"  - {UI.CYAN}{p_id:<30}{UI.COLOR_OFF} [{status_color}{status}{UI.COLOR_OFF}]"
-                        )
-
-                if not found:
-                    UI.warning(
-                        f"No environments found matching LCP project ID '{cp_id}'."
-                    )
-                    UI.info(
-                        "Run 'ldm cloud-fetch --list-envs' to see all available projects."
-                    )
+                print(data)  # Since it's plain text now, just print it
             return
 
         if getattr(self.args, "list_backups", False):

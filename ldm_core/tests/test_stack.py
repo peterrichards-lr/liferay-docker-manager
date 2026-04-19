@@ -288,6 +288,7 @@ class TestStackNetwork(unittest.TestCase):
 class TestStackOrchestration(unittest.TestCase):
     def setUp(self):
         self.manager = MockManager()
+        self.manager.update_portal_ext = MagicMock()
         self.paths = self.manager.setup_paths("/tmp/test-project")
 
     @patch("ldm_core.handlers.stack.dict_to_yaml")
@@ -444,10 +445,23 @@ class TestStackOrchestration(unittest.TestCase):
                 "--collation-server=utf8mb4_unicode_ci", db_service["command"]
             )
             self.assertIn("--lower_case_table_names=1", db_service["command"])
+            self.assertIn("--skip-name-resolve", db_service["command"])
+            self.assertIn(
+                "--default-authentication-plugin=mysql_native_password",
+                db_service["command"],
+            )
             self.assertEqual(db_service["environment"]["MYSQL_DATABASE"], "lportal")
+            self.assertEqual(db_service["healthcheck"]["start_period"], "60s")
+
+            # Verify MariaDB dialect is used even for legacy MySQL (Standardized on MariaDB driver)
+            update_call = self.manager.update_portal_ext.call_args[0][1]
+            self.assertEqual(
+                update_call["hibernate.dialect"],
+                "org.hibernate.dialect.MariaDB103Dialect",
+            )
 
     @patch("ldm_core.handlers.stack.dict_to_yaml")
-    def test_generate_compose_with_mysql_8(self, mock_yaml):
+    def test_generate_compose_with_mysql_modern(self, mock_yaml):
         mock_yaml.side_effect = lambda x, indent=0: str(x)
 
         config = {
@@ -468,9 +482,58 @@ class TestStackOrchestration(unittest.TestCase):
             self.manager.write_docker_compose(self.paths, config)
             compose_call = mock_yaml.call_args[0][0]
 
-            # Verify MySQL 8.0 is selected for 2026 version
+            # Verify MySQL 8.4 is selected for 2026 version
             db_service = compose_call["services"]["db"]
-            self.assertEqual(db_service["image"], "mysql:8.0")
+            self.assertEqual(db_service["image"], "mysql:8.4")
+            self.assertIn("--mysql-native-password=ON", db_service["command"])
+            self.assertIn("--skip-name-resolve", db_service["command"])
+            self.assertNotIn(
+                "--default-authentication-plugin=mysql_native_password",
+                db_service["command"],
+            )
+
+            # Verify Cloud-aligned MariaDB dialect is used
+            update_call = self.manager.update_portal_ext.call_args[0][1]
+            self.assertEqual(
+                update_call["hibernate.dialect"],
+                "org.hibernate.dialect.MariaDB103Dialect",
+            )
+            self.assertEqual(db_service["healthcheck"]["start_period"], "60s")
+
+    @patch("ldm_core.handlers.stack.dict_to_yaml")
+    def test_generate_compose_with_custom_env(self, mock_yaml):
+        mock_yaml.side_effect = lambda x, indent=0: str(x)
+
+        config = {
+            "container_name": "test",
+            "tag": "2026.q1.4",
+            "port": 8080,
+            "host_name": "localhost",
+            "db_type": "mysql",
+            "custom_env": "LIFERAY_JDBC_PERIOD_URL=jdbc:mysql://remote:3306/lportal,LIFERAY_CUSTOM_VAR=val",
+        }
+
+        with (
+            patch.object(Path, "exists", return_value=True),
+            patch.object(Path, "read_text", return_value=""),
+            patch.object(Path, "write_text"),
+            patch("os.replace"),
+            patch.object(self.manager, "scan_client_extensions", return_value=[]),
+        ):
+            self.manager.write_docker_compose(self.paths, config)
+            compose_call = mock_yaml.call_args[0][0]
+
+            # Verify Custom Env Vars are present in environment
+            liferay_env = compose_call["services"]["liferay"]["environment"]
+            self.assertIn(
+                "LIFERAY_JDBC_PERIOD_URL=jdbc:mysql://remote:3306/lportal", liferay_env
+            )
+            self.assertIn("LIFERAY_CUSTOM_VAR=val", liferay_env)
+
+            # Verify update_portal_ext was NOT called for JDBC (because we have JDBC env vars)
+            # The only calls should be for clustering if scale > 1 (not here)
+            # Actually, MockManager's write_docker_compose calls self.update_portal_ext
+            self.manager.update_portal_ext.assert_not_called()
 
     @patch("ldm_core.handlers.stack.run_command")
     def test_cmd_logs_infra(self, mock_run):
@@ -527,6 +590,30 @@ class TestStackOrchestration(unittest.TestCase):
                                 # Verify sequence
                                 mock_reset.assert_called_once_with("proj", target="all")
                                 mock_head.assert_called_once()
+
+    @patch("requests.head")
+    @patch("requests.get")
+    def test_fetch_seed_url_construction(self, mock_get, mock_head):
+        from ldm_core.constants import SEED_VERSION
+
+        mock_head.return_value.status_code = 404  # Stop after construction check
+
+        manager = MockManager()
+        paths = manager.setup_paths("/tmp/proj")
+
+        # Test URL construction
+        tag = "2025.q1.0"
+        db_type = "mysql"
+        search_mode = "shared"
+
+        manager._fetch_seed(tag, db_type, search_mode, paths)
+
+        # Verify the constructed URL in the head request
+        call_url = mock_head.call_args[0][0]
+        self.assertIn("seeded-states", call_url)
+        self.assertIn(
+            f"seeded-{tag}-{db_type}-{search_mode}-v{SEED_VERSION}.tar.gz", call_url
+        )
 
     def test_cmd_infra_setup(self):
         with patch.object(self.manager, "check_docker", return_value=True):

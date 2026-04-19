@@ -201,5 +201,99 @@ class TestBaseHardening(unittest.TestCase):
         self.assertEqual(unresolved[0], "active-ext.forge.demo")
 
 
+class TestBaseCompletion(unittest.TestCase):
+    def setUp(self):
+        self.handler = MockBaseManager()
+
+    @patch("sys.stdout", new_callable=MagicMock)
+    @patch("ldm_core.handlers.base.os.environ", {"SHELL": "/bin/zsh"})
+    def test_cmd_completion_zsh_instructions(self, mock_stdout):
+        # No argument: should show instructions
+        self.handler.cmd_completion(target_shell=None)
+        output = "".join(call.args[0] for call in mock_stdout.write.call_args_list)
+        self.assertIn('eval "$(ldm completion zsh)"', output)
+        self.assertIn("=== LDM Shell Completion ===", output)
+
+    @patch("sys.stdout", new_callable=MagicMock)
+    @patch("ldm_core.handlers.base.os.environ", {"SHELL": "/bin/bash"})
+    def test_cmd_completion_bash_instructions(self, mock_stdout):
+        # No argument: should show instructions
+        self.handler.cmd_completion(target_shell=None)
+        output = "".join(call.args[0] for call in mock_stdout.write.call_args_list)
+        self.assertIn('eval "$(ldm completion bash)"', output)
+
+    @patch("sys.stdout", new_callable=MagicMock)
+    @patch("ldm_core.handlers.base.os.environ", {"SHELL": "/usr/bin/fish"})
+    def test_cmd_completion_fish_instructions(self, mock_stdout):
+        # No argument: should show instructions
+        self.handler.cmd_completion(target_shell=None)
+        output = "".join(call.args[0] for call in mock_stdout.write.call_args_list)
+        self.assertIn("ldm completion fish | source", output)
+
+    @patch("sys.stdout", new_callable=MagicMock)
+    @patch("ldm_core.handlers.base.os.environ", {"SHELL": "powershell.exe"})
+    def test_cmd_completion_powershell_instructions(self, mock_stdout):
+        # No argument: should show instructions
+        self.handler.cmd_completion(target_shell=None)
+        output = "".join(call.args[0] for call in mock_stdout.write.call_args_list)
+        self.assertIn(
+            "ldm completion powershell | Out-String | Invoke-Expression", output
+        )
+
+    @patch("sys.stdout", new_callable=MagicMock)
+    def test_cmd_completion_powershell_code(self, mock_stdout):
+        # Specific argument: should show the bridge script
+        self.handler.cmd_completion(target_shell="powershell")
+        output = "".join(call.args[0] for call in mock_stdout.write.call_args_list)
+        self.assertIn("Register-ArgumentCompleter", output)
+        self.assertIn("$env:COMP_LINE", output)
+        self.assertNotIn("=== LDM Shell Completion ===", output)
+
+    @patch("sys.stdout", new_callable=MagicMock)
+    def test_cmd_completion_zsh_code(self, mock_stdout):
+        # Specific argument: should show raw code
+        with patch("argcomplete.shellcode", return_value="# ZSH CODE"):
+            self.handler.cmd_completion(target_shell="zsh")
+            output = "".join(call.args[0] for call in mock_stdout.write.call_args_list)
+            self.assertIn("# ZSH CODE", output)
+            self.assertNotIn("=== LDM Shell Completion ===", output)
+
+    @patch("sys.stdout", new_callable=MagicMock)
+    @patch("sys.stderr", new_callable=MagicMock)
+    def test_cmd_completion_generation_suppresses_ui(self, mock_stderr, mock_stdout):
+        # Verify that providing a shell argument DOES NOT print UI headings to stdout
+        with patch("argcomplete.shellcode", return_value="# CODE"):
+            self.handler.cmd_completion(target_shell="bash")
+            output = "".join(call.args[0] for call in mock_stdout.write.call_args_list)
+            self.assertEqual("# CODE\n", output)
+            self.assertNotIn("=== LDM Shell Completion ===", output)
+
+    @patch("sys.stdout", new_callable=MagicMock)
+    @patch("sys.stderr", new_callable=MagicMock)
+    def test_cmd_completion_generation_zsh_boilerplate(self, mock_stderr, mock_stdout):
+        # Verify that providing zsh includes the necessary boilerplate
+        with patch("argcomplete.shellcode", return_value="# CODE"):
+            self.handler.cmd_completion(target_shell="zsh")
+            output = "".join(call.args[0] for call in mock_stdout.write.call_args_list)
+            self.assertIn("compinit", output)
+            self.assertIn("# CODE", output)
+
+    @patch("sys.stdout", new_callable=MagicMock)
+    @patch("sys.stderr", new_callable=MagicMock)
+    def test_cmd_completion_error_goes_to_stderr(self, mock_stderr, mock_stdout):
+        # Verify that a failure in shellcode generation doesn't dump instructions to stdout
+        with patch("argcomplete.shellcode", side_effect=Exception("Failed")):
+            self.handler.cmd_completion(target_shell="zsh")
+            stdout_val = "".join(
+                call.args[0] for call in mock_stdout.write.call_args_list
+            )
+            stderr_val = "".join(
+                call.args[0] for call in mock_stderr.write.call_args_list
+            )
+
+            self.assertEqual("", stdout_val)
+            self.assertIn("Error generating completion: Failed", stderr_val)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -154,6 +154,34 @@ class SnapshotHandler(BaseHandler):
                 if es_infra_backup.exists():
                     tar.add(es_infra_backup, arcname="search_backup")
 
+        # Capture custom environment variables from docker-compose.yml
+        custom_env = []
+        compose_path = paths["root"] / "docker-compose.yml"
+        if compose_path.exists():
+            try:
+                from ldm_core.utils import yaml_to_dict
+
+                compose_data = yaml_to_dict(compose_path.read_text())
+                liferay_service = compose_data.get("services", {}).get("liferay", {})
+                env_vars = liferay_service.get("environment", [])
+                if isinstance(env_vars, list):
+                    # Filter for LIFERAY_ variables that aren't the standard ones managed by LDM
+                    # Standard ones: LIFERAY_JVM_OPTS, LIFERAY_HOME, LIFERAY_HSQL_PERIOD_ENABLED
+                    standard_vars = [
+                        "LIFERAY_JVM_OPTS",
+                        "LIFERAY_HOME",
+                        "LIFERAY_HSQL_PERIOD_ENABLED",
+                    ]
+                    for var in env_vars:
+                        if "=" in var:
+                            key = var.split("=", 1)[0]
+                            if key.startswith("LIFERAY_") and key not in standard_vars:
+                                custom_env.append(var)
+            except Exception as e:
+                UI.warning(
+                    f"Could not parse docker-compose.yml for environment variables: {e}"
+                )
+
         # Save metadata
         meta = {
             "name": name,
@@ -162,6 +190,7 @@ class SnapshotHandler(BaseHandler):
             "db_type": project_meta.get("db_type"),
             "host_name": project_meta.get("host_name"),
             "search_snapshot": search_snapshot_name,
+            "custom_env": ",".join(custom_env) if custom_env else None,
         }
         self.write_meta(snap_dir / "meta", meta)
 
@@ -241,6 +270,12 @@ class SnapshotHandler(BaseHandler):
         snap_meta = self.read_meta(choice / "meta")
         search_snapshot_name = snap_meta.get("search_snapshot")
         search_name = "liferay-search-global"
+
+        # Restore custom environment variables to project metadata
+        custom_env = snap_meta.get("custom_env")
+        if custom_env:
+            project_meta["custom_env"] = custom_env
+            self.write_meta(paths["root"] / PROJECT_META_FILE, project_meta)
 
         if search_snapshot_name and search_snapshot_name != "None":
             if run_command(["docker", "ps", "-q", "-f", f"name={search_name}"]):

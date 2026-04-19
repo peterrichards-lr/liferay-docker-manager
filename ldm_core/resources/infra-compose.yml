@@ -1,0 +1,28 @@
+version: "3.8"
+
+services:
+  traefik:
+    image: traefik:v3.6.1
+    container_name: liferay-proxy-global
+    restart: always
+    command:
+      - "--api.insecure=true"
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.websecure.address=:443"
+      - "--providers.file.directory=/etc/traefik/certs"
+      - "--providers.file.watch=true"
+    ports:
+      - "80:80"
+      - "443:443"
+      - "18080:8080"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ${LDM_CERTS_DIR}:/etc/traefik/certs:ro
+    networks:
+      - liferay-net
+
+networks:
+  liferay-net:
+    external: true

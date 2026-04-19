@@ -141,11 +141,12 @@ class StackHandler(BaseHandler):
 
     def _fetch_seed(self, tag, db_type, search_mode, paths):
         """Discovers and downloads a pre-warmed seed from GitHub Releases."""
-        from ldm_core.constants import VERSION
+        from ldm_core.constants import SEED_VERSION
 
-        tag_name = f"v{VERSION}"
-        seed_filename = f"seeded-{tag}-{db_type}-{search_mode}.tar.gz"
-        # Standard GitHub Release URL for the version tag
+        # Seed states are maintained under a dedicated 'seeded-states' tag
+        tag_name = "seeded-states"
+        seed_filename = f"seeded-{tag}-{db_type}-{search_mode}-v{SEED_VERSION}.tar.gz"
+        # Standard GitHub Release URL
         repo_url = "https://github.com/peterrichards-lr/liferay-docker-manager"
         download_url = f"{repo_url}/releases/download/{tag_name}/{seed_filename}"
 
@@ -240,6 +241,21 @@ class StackHandler(BaseHandler):
         """Ensures a safe Docker socket proxy is running for Traefik."""
         if not run_command(["docker", "ps", "-q", "-f", "name=liferay-docker-proxy"]):
             UI.info("Starting Docker socket bridge...")
+            socket_path = get_docker_socket_path()
+
+            # Hardening for Colima/Lima:
+            # Colima often uses a path like ~/.colima/default/docker.sock on the host.
+            # However, mounting this host path directly into a container often fails
+            # with 'operation not supported' because the VM's filesystem (VirtioFS)
+            # doesn't allow creating/mounting sockets from the host.
+            # In Colima environments, the VM already has the socket at /var/run/docker.sock.
+            if (
+                "colima" in str(socket_path).lower()
+                or ".lima" in str(socket_path).lower()
+            ):
+                UI.debug("Colima/Lima detected. Using standard internal socket path.")
+                socket_path = "/var/run/docker.sock"
+
             run_command(
                 [
                     "docker",
@@ -250,7 +266,7 @@ class StackHandler(BaseHandler):
                     "--network",
                     "liferay-net",
                     "-v",
-                    f"{get_docker_socket_path()}:/var/run/docker.sock:ro",
+                    f"{socket_path}:/var/run/docker.sock:ro",
                     "tecnativa/docker-socket-proxy",
                 ]
             )
@@ -718,12 +734,18 @@ class StackHandler(BaseHandler):
             if service and service != "delete":
                 cmd.append(service)
 
-            run_command(cmd, cwd=str(root))
+            # Harden: Check if docker-compose.yml exists before trying to run down
+            if (root / "docker-compose.yml").exists():
+                run_command(cmd, cwd=str(root))
+            else:
+                UI.debug(
+                    f"No docker-compose.yml found in {root}. Skipping docker-compose down."
+                )
 
             # Special 'delete' logic: Wipe the project directory from disk
             if service == "delete":
                 UI.warning(f"Permanently deleting project directory: {root.name}")
-                shutil.rmtree(root, ignore_errors=True)
+                self.safe_rmtree(root)
 
     def cmd_deploy(self, project_id=None, service=None):
         root = self.detect_project_path(project_id)
@@ -805,39 +827,69 @@ class StackHandler(BaseHandler):
             "LIFERAY_HOME=/opt/liferay",
         ]
 
+        # Add custom environment variables from metadata
+        custom_env_str = meta.get("custom_env", "")
+        custom_env_list = custom_env_str.split(",") if custom_env_str else []
+        has_jdbc_env = False
+        for env in custom_env_list:
+            if env and "=" in env:
+                liferay_env.append(env)
+                if env.startswith("LIFERAY_JDBC_PERIOD_"):
+                    has_jdbc_env = True
+
         if db_type in ["mysql", "mariadb"]:
             # Standard Liferay Docker images ship with MariaDB driver (LGPL) but NOT MySQL driver (GPL).
-            # The MariaDB driver is fully compatible with MySQL servers.
+            # The MariaDB driver is fully compatible with MySQL servers and is used by Liferay Cloud (LXC).
             driver = "org.mariadb.jdbc.Driver"
-            url = "jdbc:mariadb://db:3306/lportal?characterEncoding=UTF-8&dontTrackOpenResources=true&holdResultsOpenOverStatementClose=true&serverTimezone=GMT&useFastDateParsing=false&useUnicode=true&useSSL=false&allowPublicKeyRetrieval=true"
 
-            dialect = (
-                "com.liferay.portal.dao.db.hibernate.MySQL8Dialect"
-                if db_type == "mysql"
-                else "org.hibernate.dialect.MariaDB103Dialect"
+            # Cloud-optimized URL for MariaDB connector connecting to MySQL/MariaDB
+            # Includes performance parameters: rewriteBatchedStatements, prepStmtCacheSize, etc.
+            url = (
+                "jdbc:mariadb://db:3306/lportal?"
+                "characterEncoding=UTF-8"
+                "&dontTrackOpenResources=true"
+                "&holdResultsOpenOverStatementClose=true"
+                "&serverTimezone=GMT"
+                "&useFastDateParsing=false"
+                "&useUnicode=true"
+                "&useSSL=false"
+                "&allowPublicKeyRetrieval=true"
+                "&rewriteBatchedStatements=true"
+                "&prepStmtCacheSize=1000"
+                "&prepStmtCacheSqlLimit=2048"
+                "&useLocalSessionState=true"
+                "&useLocalTransactionState=true"
+                "&permitMysqlScheme=true"
             )
 
-            # Liferay Docker environment variables REQUIRE _PERIOD_ delimiters to map correctly
-            liferay_env.extend(
-                [
-                    f"LIFERAY_JDBC_PERIOD_DEFAULT_PERIOD_DRIVER_CLASS_NAME={driver}",
-                    f"LIFERAY_JDBC_PERIOD_DEFAULT_PERIOD_URL={url}",
-                    "LIFERAY_JDBC_PERIOD_DEFAULT_PERIOD_USERNAME=lportal",
-                    "LIFERAY_JDBC_PERIOD_DEFAULT_PERIOD_PASSWORD=test",
-                    f"LIFERAY_HIBERNATE_PERIOD_DIALECT={dialect}",
-                    "LIFERAY_HSQL_PERIOD_ENABLED=false",
-                ]
-            )
+            # Mirror LXC: Use MariaDB dialect for both MariaDB and MySQL 8.x
+            # (Matches Liferay's auto-detection when using MariaDB driver)
+            dialect = "org.hibernate.dialect.MariaDB103Dialect"
 
-            # Double-coverage in portal-ext.properties
-            self.update_portal_ext(
-                paths,
-                {
-                    "jdbc.default.enabled": "true",
-                    "jdbc.default.db.type": db_type,
-                    "hibernate.dialect": dialect,
-                },
-            )
+            # Move all database configuration to portal-ext.properties
+            # This avoids problematic environment variable decoding in the Docker entrypoint.
+            # CRITICAL: If the user has manually provided JDBC environment variables,
+            # we should NOT write the standard JDBC properties to portal-ext.properties
+            # to avoid unpredictable behavior where both are present.
+            if not has_jdbc_env:
+                self.update_portal_ext(
+                    paths,
+                    {
+                        "jdbc.default.enabled": "true",
+                        "jdbc.default.driverClassName": driver,
+                        "jdbc.default.url": url,
+                        "jdbc.default.username": "lportal",
+                        "jdbc.default.password": "test",
+                        "hibernate.dialect": dialect,
+                    },
+                )
+            else:
+                UI.warning(
+                    "Custom JDBC environment variables detected. Skipping standard LDM portal-ext.properties DB config to avoid conflicts."
+                )
+
+            # We explicitly DISABLE the HSQL fallback via env var (safe and unambiguous)
+            liferay_env.append("LIFERAY_HSQL_PERIOD_ENABLED=false")
 
         liferay_service = {
             "image": image,
@@ -948,7 +1000,7 @@ class StackHandler(BaseHandler):
                 "networks": ["liferay-net"],
             }
         elif db_type == "mysql" or db_type == "mariadb":
-            # Use MySQL 8.0 for modern Liferay (2024+)
+            # Use MySQL 8.4 (LTS) for modern Liferay (2024+)
             is_modern = False
             try:
                 major_ver = int(tag.split(".")[0])
@@ -957,8 +1009,19 @@ class StackHandler(BaseHandler):
             except (ValueError, IndexError):
                 pass
 
+            # Determine MySQL authentication flags based on version
+            # MySQL 8.4 (LTS) removed --default-authentication-plugin and disabled native password by default
+            auth_flags = []
+            if db_type == "mysql":
+                if is_modern:
+                    auth_flags = ["--mysql-native-password=ON"]
+                else:
+                    auth_flags = [
+                        "--default-authentication-plugin=mysql_native_password"
+                    ]
+
             services["db"] = {
-                "image": ("mysql:8.0" if is_modern else "mysql:5.7")
+                "image": ("mysql:8.4" if is_modern else "mysql:5.7")
                 if db_type == "mysql"
                 else "mariadb:10.6",
                 "command": [
@@ -967,14 +1030,16 @@ class StackHandler(BaseHandler):
                     "--collation-server=utf8mb4_unicode_ci",
                     "--character-set-filesystem=utf8mb4",
                     "--lower_case_table_names=1",
-                    "--default-authentication-plugin=mysql_native_password",
                     "--bind-address=0.0.0.0",
-                ],
+                    "--skip-name-resolve",
+                ]
+                + auth_flags,
                 "environment": {
                     "MYSQL_ROOT_PASSWORD": "test",
                     "MYSQL_USER": "lportal",
                     "MYSQL_PASSWORD": "test",
                     "MYSQL_DATABASE": "lportal",
+                    "MYSQL_TCP_PORT": "3306",
                 },
                 "healthcheck": {
                     "test": [
@@ -982,14 +1047,14 @@ class StackHandler(BaseHandler):
                         "mysqladmin",
                         "ping",
                         "-h",
-                        "localhost",
+                        "127.0.0.1",
                         "-uroot",
                         "-ptest",
                     ],
                     "interval": "10s",
                     "timeout": "5s",
                     "retries": 10,
-                    "start_period": "30s",
+                    "start_period": "60s",
                 },
                 "networks": ["liferay-net"],
             }

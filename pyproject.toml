@@ -12,7 +12,7 @@ dependencies = [
     "watchdog==4.0.2",
     "requests==2.33.0",
     "PyYAML==6.0.2",
-    "argcomplete==3.2.1",
+    "argcomplete==3.5.3",
     "pyobjc-framework-FSEvents; sys_platform == 'darwin'"
 ]
 
@@ -23,7 +23,7 @@ ldm = "ldm_core.cli:main"
 include-package-data = true
 
 [tool.setuptools.package-data]
-ldm_core = ["resources/common_baseline/*"]
+ldm_core = ["resources/common_baseline/*", "resources/infra-compose.yml"]
 
 [tool.setuptools.packages.find]
 where = ["."]

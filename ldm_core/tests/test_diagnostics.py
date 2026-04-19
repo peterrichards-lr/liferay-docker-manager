@@ -248,3 +248,40 @@ class TestDiagnostics(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestDiagnosticsCompletion(unittest.TestCase):
+    def setUp(self):
+        self.manager = DiagnosticsHandler()
+        self.test_home = Path("/tmp/home-test")
+        self.test_home.mkdir(parents=True, exist_ok=True)
+
+    def tearDown(self):
+        import shutil
+
+        if self.test_home.exists():
+            shutil.rmtree(self.test_home)
+
+    @patch("ldm_core.handlers.diagnostics.get_actual_home")
+    def test_is_completion_enabled_detects_marker(self, mock_home):
+        mock_home.return_value = self.test_home
+
+        with patch.dict(
+            "ldm_core.handlers.diagnostics.os.environ", {"SHELL": "/bin/zsh"}
+        ):
+            zshrc = self.test_home / ".zshrc"
+
+            # Case 1: File doesn't exist
+            self.assertFalse(self.manager.is_completion_enabled())
+
+            # Case 2: File exists but no marker
+            zshrc.write_text("# No completion here")
+            self.assertFalse(self.manager.is_completion_enabled())
+
+            # Case 3: Marker present (new style)
+            zshrc.write_text('eval "$(ldm completion zsh)"')
+            self.assertTrue(self.manager.is_completion_enabled())
+
+            # Case 4: Marker present (legacy style)
+            zshrc.write_text('eval "$(register-python-argcomplete ldm)"')
+            self.assertTrue(self.manager.is_completion_enabled())

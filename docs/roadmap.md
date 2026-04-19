@@ -32,13 +32,9 @@ While the v1.x "Hardened Edition" focused on cross-platform stability, **v2.0.0*
 
 ### 4. High-Performance Boot
 
-- **Database "Fast-Forward"**: Support for downloading pre-initialized, empty database volumes. (Objective: Reduce the "First Run" wait time from 15 minutes to under 2 minutes).
 - **OSGi State Persistence**: Optionally persist `osgi/state` to skip bundle resolution on subsequent starts.
-- **TLD Scanning Optimization**: Skip Tomcat TLD scanning for known non-UI JARs.
 - **Smart Bundle Blacklisting**: Performance-tuned baseline to disable non-essential development services.
-- **Volume Consistency Tuning**: Use `:cached` or `:delegated` mounts on macOS/Windows for improved I/O.
 - **Pre-computed Search Indexes**: Persistent global search volumes to avoid full re-indexing on first boot.
-- **JVM Dev-Mode Tuning**: Optional flags like `-Xverify:none` for faster class loading.
 
 ### 5. Shared Scenario Packs
 
@@ -57,6 +53,19 @@ While the v1.x "Hardened Edition" focused on cross-platform stability, **v2.0.0*
 - **Auto-Healing DNS**: Add an optional `--fix-dns` flag to `ldm doctor` that automatically appends missing subdomains to `/etc/hosts` using standard OS elevation.
 
 ---
+
+## ✅ Completed Improvements (v2.1.x)
+
+### **High-Performance Boot & Hardening (v2.1.0)**
+
+- **Database "Fast-Forward"**: Added support for downloading pre-initialized, version-matched "Seed" volumes (Database + Search Index) from GitHub. Reduces first-run wait times significantly.
+- **Resilient Tag Discovery**: Upgraded the discovery engine to support both HTML (`releases.liferay.com`) and JSON (Docker Hub) listings, ensuring stability against upstream API changes.
+- **TLD Scanning Optimization**: Automatically skips Tomcat TLD scanning for known non-UI JARs to accelerate boot times.
+- **Volume Consistency Tuning**: Native support for `:cached` and `:delegated` mounts on macOS and Windows to improve disk I/O performance.
+- **JVM Dev-Mode Tuning**: Optional `--no-jvm-verify` flag to disable bytecode verification for faster class loading in demo environments.
+- **Shell Completion (Python 3.13)**: Resolved critical `argcomplete` compatibility issues and optimized Zsh initialization for faster terminal performance.
+- **Cloud-Fetch Hardening**: Improved LCP CLI integration to support legacy versions lacking JSON output.
+- **DNS Self-Healing**: Restored `check_hostname` logic to provide proactive validation and instructions for local `/etc/hosts` alignment.
 
 ## ✅ Completed Improvements (v1.8.x)
 

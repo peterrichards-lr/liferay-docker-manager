@@ -55,6 +55,35 @@ class TestUtils(unittest.TestCase):
             home = get_actual_home()
             self.assertEqual(str(home), "/Users/tester")
 
+    @patch("ldm_core.utils.get_raw")
+    @patch("ldm_core.utils.get_actual_home")
+    def test_discover_latest_tag_html_and_json(self, mock_home, mock_get_raw):
+        from ldm_core.utils import discover_latest_tag
+
+        mock_home.return_value = Path("/tmp")
+
+        # 1. Test JSON (Docker Hub Style)
+        json_data = (
+            '{"results": [{"name": "2025.q1.0"}, {"name": "2025.q1.1"}], "next": null}'
+        )
+        mock_get_raw.return_value = json_data
+        tag = discover_latest_tag("https://hub.docker.com/v2/...", refresh=True)
+        self.assertEqual(tag, "2025.q1.1")
+
+        # 2. Test HTML (releases.liferay.com Style)
+        html_data = """
+        <html><body>
+        <ul>
+            <li><a href="/dxp/7.4.13-u100">7.4.13-u100</a></li>
+            <li><a href="/dxp/2026.q1.4-lts">2026.q1.4-lts</a></li>
+            <li><a href="/dxp/not-a-tag">not-a-tag</a></li>
+        </ul>
+        </body></html>
+        """
+        mock_get_raw.return_value = html_data
+        tag = discover_latest_tag("https://releases.liferay.com/dxp", refresh=True)
+        self.assertEqual(tag, "2026.q1.4-lts")
+
 
 if __name__ == "__main__":
     unittest.main()

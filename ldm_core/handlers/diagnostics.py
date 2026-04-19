@@ -250,12 +250,22 @@ class DiagnosticsHandler:
         # 3. Download
         UI.info(f"Downloading v{latest}...")
         try:
-            from urllib.request import Request, urlopen
+            import requests
 
-            req = Request(url, headers={"User-Agent": "ldm-cli"})
-            with urlopen(req, timeout=30) as response:  # nosec B310
-                with open(temp_new, "wb") as f:
-                    shutil.copyfileobj(response, f)
+            response = requests.get(
+                url, headers={"User-Agent": "ldm-cli"}, timeout=30, stream=True
+            )
+            response.raise_for_status()
+            with open(temp_new, "wb") as f:
+                for chunk in response.iter_content(chunk_size=8192):
+                    f.write(chunk)
+        except requests.exceptions.HTTPError as e:
+            if e.response.status_code == 404:
+                UI.die(
+                    "A release build may be in progress. Please try again later. (HTTP 404: File not found)"
+                )
+            else:
+                UI.die("Download failed.", e)
         except Exception as e:
             UI.die("Download failed.", e)
 
@@ -276,9 +286,13 @@ class DiagnosticsHandler:
         # Fetch official checksums.txt
         checksum_url = f"https://github.com/peterrichards-lr/liferay-docker-manager/releases/download/v{latest}/checksums.txt"
         try:
-            req_check = Request(checksum_url, headers={"User-Agent": "ldm-cli"})
-            with urlopen(req_check, timeout=10) as resp:  # nosec B310
-                official_data = resp.read().decode()
+            import requests
+
+            response = requests.get(
+                checksum_url, headers={"User-Agent": "ldm-cli"}, timeout=10
+            )
+            if response.status_code == 200:
+                official_data = response.text
 
                 system = platform.system().lower()
                 target_name = "ldm-linux"
@@ -299,6 +313,12 @@ class DiagnosticsHandler:
                     UI.die(
                         "Integrity verification failed! The downloaded binary does not match the official hash."
                     )
+            elif response.status_code == 404:
+                UI.die(
+                    "A release build may be in progress. Please try again later. (HTTP 404: Failed to fetch checksums)"
+                )
+            else:
+                UI.die(f"Failed to fetch checksums (HTTP {response.status_code})")
         except Exception as e:
             UI.warning(
                 f"Could not verify hash remotely ({e}). Proceeding with caution..."
@@ -345,10 +365,59 @@ del "%~f0"
                     )
                     # We don't die here, we just finish gracefully since the download is complete
                     return
+
         except Exception as e:
             if temp_new.exists():
                 temp_new.unlink()
             UI.die("Failed to apply update.", e)
+
+        # 7. Post-Upgrade: Shell Completion Check
+        UI.info("\nChecking shell completion status...")
+        if not self.is_completion_enabled():
+            UI.warning("Shell completion is not enabled for 'ldm' in this session.")
+            UI.info("To enable tab-completion for commands and projects, run:")
+            print(f"\n    {UI.CYAN}ldm completion{UI.COLOR_OFF}\n")
+        else:
+            UI.success("Shell completion is active.")
+
+    def is_completion_enabled(self):
+        """Checks if completion setup is present in the user's shell profile."""
+        home = get_actual_home()
+        # Use SHELL if available, otherwise fallback to empty string
+        raw_shell = os.environ.get("SHELL", "").lower()
+
+        # Get just the binary name (e.g. /bin/zsh -> zsh)
+        shell = raw_shell.split("/")[-1]
+        if shell.endswith(".exe"):
+            shell = shell[:-4]
+
+        # Define profile files based on shell
+        profiles = []
+        if "zsh" in shell:
+            profiles = [home / ".zshrc"]
+        elif "bash" in shell:
+            profiles = [home / ".bashrc", home / ".bash_profile", home / ".profile"]
+        elif "fish" in shell:
+            profiles = [home / ".config/fish/config.fish"]
+        elif "powershell" in shell or "pwsh" in shell:
+            profiles = [
+                home / "Documents/PowerShell/Microsoft.PowerShell_profile.ps1",
+                home / "Documents/WindowsPowerShell/Microsoft.PowerShell_profile.ps1",
+            ]
+
+        # Look for the setup strings
+        markers = ["ldm completion", "register-python-argcomplete ldm"]
+
+        for profile in profiles:
+            if profile.exists():
+                try:
+                    content = profile.read_text()
+                    if any(marker in content for marker in markers):
+                        return True
+                except Exception:
+                    continue
+
+        return False
 
     def cmd_doctor(self, project_id=None, all_projects=False):
         UI.heading("LDM Doctor - Environmental Health Check")
@@ -436,6 +505,20 @@ del "%~f0"
         # 1. System Info
         results.append(("Python Version", sys.version.split()[0], True))
         results.append(("Platform", platform.platform(), True))
+
+        # 1.1 Shell Completion Check
+        if self.is_completion_enabled():
+            results.append(("Shell Completion", "Enabled (Active)", True))
+        else:
+            shell = os.environ.get("SHELL", "").split("/")[-1]
+            if shell in ["bash", "zsh", "fish"]:
+                results.append(("Shell Completion", f"Not Enabled ({shell})", "warn"))
+                add_hint(
+                    f"Enable tab-completion for {shell} by running '{UI.WHITE}ldm completion{UI.COLOR_OFF}'.",
+                    "https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/installation.md#3-shell-autocompletion",
+                )
+            else:
+                results.append(("Shell Completion", f"Unsupported ({shell})", "warn"))
 
         # 2. Docker Check
         # Perform a silent check first to avoid double error reporting in the UI

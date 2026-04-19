@@ -20,11 +20,16 @@ The LDM CI pipeline runs Bandit security scans. We explicitly ignore the followi
 | **B103** | Permissive 777 permissions. Used in `migrate_layout` to ensure host-side compatibility for legacy projects. **Mitigation**: All calls are wrapped in `try...except` and LDM prioritizes a Docker-based recursive reclamation fix for ownership. |
 | **B104** | Hardcoded bind to all interfaces. Required for macOS loopback and Gogo shell access. |
 | **B108** | Hardcoded /tmp directory. Used only for transient mount verification tokens. |
+| **B112** | `try...except continue` patterns. Used in loops (e.g., tag discovery, project scanning) where a single failure should not abort the entire operation. |
+| **B202** | Tar `extractall` operations. Used for snapshots and samples. **Mitigation**: LDM uses a mandatory `is_within_root` validation before every extraction to prevent Zip Slip / Path Traversal attacks. |
+| **B324** | Use of MD5 hashing. Used in `cloud-fetch` for ETag verification and non-cryptographic file integrity checks. |
+| **B602 / B603** | Subprocess execution with shell or without absolute paths. Used for complex piping during database snapshots and Windows bridge logic. **Mitigation**: Commands are hardcoded or constructed from strictly sanitized internal identifiers. |
+| **B604** | Function call with `shell=True`. Used in `is_completion_enabled` and `cmd_completion` to interact with shell builtins and generate completion scripts. **Mitigation**: All command strings are hardcoded and contain no user-supplied input. |
 | **CVE-2026-4539** | Pygments vulnerability. Ignored as LDM only uses Pygments for local console highlighting, posing no remote risk. |
 
 ## 3. Hardened Command & Data Processing
 
-Following ourcommitment to local security, the following hardening measures are implemented:
+Following our commitment to local security, the following hardening measures are implemented:
 
 - **Native Command Piping**: Database restore and snapshot operations now use native OS-level process piping (stdin/stdout) instead of `shell=True`. This eliminates the risk of shell injection while maintaining performance for large database dumps.
 - **XXE Protection**: Liferay XML license parsing uses a regex-based extraction layer instead of a standard XML parser. This provides absolute immunity to XML External Entity (XXE) attacks.
