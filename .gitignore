@@ -20,3 +20,4 @@ ldm-macos
 ldm-linux
 ldm-windows.exesamplestest/
 samplestest/
+seeded-*/

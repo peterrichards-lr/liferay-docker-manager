@@ -811,24 +811,20 @@ class StackHandler(BaseHandler):
             driver = "org.mariadb.jdbc.Driver"
             url = "jdbc:mariadb://db:3306/lportal?characterEncoding=UTF-8&dontTrackOpenResources=true&holdResultsOpenOverStatementClose=true&serverTimezone=GMT&useFastDateParsing=false&useUnicode=true&useSSL=false&allowPublicKeyRetrieval=true"
 
+            dialect = (
+                "org.hibernate.dialect.MySQL8Dialect"
+                if db_type == "mysql"
+                else "org.hibernate.dialect.MariaDB103Dialect"
+            )
+
             liferay_env.extend(
                 [
                     f"LIFERAY_JDBC_DEFAULT_DRIVER_CLASS_NAME={driver}",
                     f"LIFERAY_JDBC_DEFAULT_URL={url}",
                     "LIFERAY_JDBC_DEFAULT_USERNAME=lportal",
                     "LIFERAY_JDBC_DEFAULT_PASSWORD=test",
-                    f"LIFERAY_JDBC_DEFAULT_DB_TYPE={db_type}",
+                    f"LIFERAY_HIBERNATE_DIALECT={dialect}",
                 ]
-            )
-
-            # Inject type hint into portal-ext as well for double-coverage,
-            # but REMOVE the explicit hibernate.dialect to allow auto-resolution.
-            self.update_portal_ext(
-                paths,
-                {
-                    "jdbc.default.enabled": "true",
-                    "jdbc.default.db.type": db_type,
-                },
             )
 
         liferay_service = {
