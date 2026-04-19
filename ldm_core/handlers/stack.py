@@ -806,11 +806,13 @@ class StackHandler(BaseHandler):
             "ports": [f"{port}:8080"],
             "environment": [
                 f"LIFERAY_JVM_OPTS={jvm_opts}",
+                "LIFERAY_HOME=/opt/liferay",
             ],
             "volumes": [
                 f"{paths['deploy']}:/mnt/liferay/deploy",
                 f"{paths['files']}:/mnt/liferay/files",
                 f"{paths['data']}:/storage/liferay/data",
+                f"{paths['logs']}:/opt/liferay/logs",
             ],
             "networks": ["liferay-net"],
         }
