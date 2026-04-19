@@ -762,6 +762,19 @@ class StackHandler(BaseHandler):
         if "-Duser.timezone" not in jvm_opts:
             jvm_opts += " -Duser.timezone=GMT"
 
+        # JDK 17+ Mandatory Module Exports (Required for DXP 2024+)
+        mandatory_opens = [
+            "java.base/java.lang=ALL-UNNAMED",
+            "java.base/java.net=ALL-UNNAMED",
+            "java.base/java.util=ALL-UNNAMED",
+            "java.base/sun.net.www.protocol.http=ALL-UNNAMED",
+            "java.base/sun.net.www.protocol.https=ALL-UNNAMED",
+        ]
+        for opt in mandatory_opens:
+            flag = f"--add-opens={opt}"
+            if flag not in jvm_opts:
+                jvm_opts += f" {flag}"
+
         # Add JIT optimization from tests if present
         if "-Xms" in jvm_opts and "-XX:TieredStopAtLevel=1" not in jvm_opts:
             jvm_opts += " -XX:TieredStopAtLevel=1"
