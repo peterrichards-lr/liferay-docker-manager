@@ -769,15 +769,20 @@ class StackHandler(BaseHandler):
         # JDK 17+ Mandatory Module Exports (Required for DXP 2024+)
         mandatory_opens = [
             "java.base/java.lang=ALL-UNNAMED",
+            "java.base/java.lang.reflect=ALL-UNNAMED",
             "java.base/java.net=ALL-UNNAMED",
             "java.base/java.util=ALL-UNNAMED",
+            "java.base/java.util.concurrent=ALL-UNNAMED",
             "java.base/java.text=ALL-UNNAMED",
             "java.base/java.time=ALL-UNNAMED",
             "java.base/sun.net.www.protocol.http=ALL-UNNAMED",
             "java.base/sun.net.www.protocol.https=ALL-UNNAMED",
+            "java.base/sun.nio.ch=ALL-UNNAMED",
             "java.base/sun.security.action=ALL-UNNAMED",
             "java.base/sun.util.calendar=ALL-UNNAMED",
             "java.security.sasl/conf=ALL-UNNAMED",
+            "java.management/sun.management=ALL-UNNAMED",
+            "jdk.management/com.sun.management.internal=ALL-UNNAMED",
         ]
         for opt in mandatory_opens:
             flag = f"--add-opens={opt}"
@@ -787,7 +792,9 @@ class StackHandler(BaseHandler):
         # Add JIT optimization from tests if present
         if "-Xms" in jvm_opts and "-XX:TieredStopAtLevel=1" not in jvm_opts:
             jvm_opts += " -XX:TieredStopAtLevel=1"
-        jvm_opts = jvm_opts.replace(" ", "\\ ")
+
+        # Ensure string is clean for Compose
+        jvm_opts = jvm_opts.strip()
 
         image = meta.get("image_tag")
         if not image:

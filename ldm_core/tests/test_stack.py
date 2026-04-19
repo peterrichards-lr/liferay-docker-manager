@@ -404,8 +404,8 @@ class TestStackOrchestration(unittest.TestCase):
                 (e for e in liferay_env if e.startswith("LIFERAY_JVM_OPTS=")), None
             )
             self.assertIsNotNone(jvm_opts_env)
-            # The spaces should be escaped with backslashes
-            self.assertIn("-Xms4g\\ -Xmx4g", jvm_opts_env)
+            # The spaces should be standard spaces for shell expansion
+            self.assertIn("-Xms4g -Xmx4g", jvm_opts_env)
             self.assertIn("-XX:TieredStopAtLevel=1", jvm_opts_env)
 
     @patch("ldm_core.handlers.stack.dict_to_yaml")
