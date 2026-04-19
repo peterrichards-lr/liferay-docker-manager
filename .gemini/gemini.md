@@ -42,6 +42,10 @@ This file serves as the persistent state and technical knowledge base for the AI
 - **Table Case Sensitivity**: MySQL MUST be configured with `lower_case_table_names=1` to ensure cross-platform compatibility of database migrations and snapshots.
 - **JIT Optimization**: For development speed, LDM proactively adds `-XX:TieredStopAtLevel=1` if the heap is explicitly set, significantly reducing boot times.
 
+### 6. Security & Compliance
+
+- **Nosec Disclosure**: Any use of `# nosec` in the codebase MUST be documented in `docs/SECURITY.md` with a clear explanation of the intent, disclosure of the risk, and description of the mitigation. This ensures transparency regarding intentional security trade-offs made for local development functionality.
+
 ## 🧪 Knowledge & Troubleshooting Snippets
 
 ### Why am I seeing a 404 on macOS?
@@ -65,8 +69,9 @@ This file serves as the persistent state and technical knowledge base for the AI
 
 - [ ] Code passes `./lint.sh` (Ruff, Markdown, Bandit, Pytest).
 - [ ] All unit tests pass locally (`pytest ldm_core/tests/`).
+- [ ] All `# nosec` usages are documented in `docs/SECURITY.md`.
 - [ ] `ldm-doctor.sh` check passes (if infra changes were made).
 - [ ] Version-aware separator logic is maintained.
 - [ ] Explicit Traefik network labels are applied.
-- [ ] Documentation (`README.md`, `ROADMAP.md`) is updated.
+- [ ] Documentation (`README.md`, `ROADMAP.md`, `SECURITY.md`) is updated.
 - [ ] Project Memory (`gemini.md`) is updated.

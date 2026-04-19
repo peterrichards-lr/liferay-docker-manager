@@ -8,8 +8,7 @@ import re
 import shutil
 import zipfile
 from pathlib import Path
-from urllib.request import urlopen, Request
-from urllib.error import URLError, HTTPError
+import requests
 from ldm_core.ui import UI
 from ldm_core.constants import TAG_PATTERN
 
@@ -20,10 +19,13 @@ def download_file(url, destination):
         if not url.startswith("https://"):
             raise ValueError(f"Invalid URL scheme: {url}")
 
-        req = Request(url, headers={"User-Agent": "ldm-cli"})
-        with urlopen(req, timeout=30) as response:  # nosec B310
-            with open(destination, "wb") as f:
-                shutil.copyfileobj(response, f)
+        response = requests.get(
+            url, headers={"User-Agent": "ldm-cli"}, timeout=30, stream=True
+        )
+        response.raise_for_status()
+        with open(destination, "wb") as f:
+            for chunk in response.iter_content(chunk_size=8192):
+                f.write(chunk)
         return True
     except Exception as e:
         UI.error(f"Download failed: {e}")
@@ -32,36 +34,54 @@ def download_file(url, destination):
 
 def get_seed_url(tag, db="postgresql", search="shared"):
     """Checks GitHub for a seeded state asset matching the given Liferay configuration."""
-    from ldm_core.constants import VERSION
+    from ldm_core.constants import SEED_VERSION, VERSION
 
     tag_name = f"v{VERSION}"
-    api_url = f"https://api.github.com/repos/peterrichards-lr/liferay-docker-manager/releases/tags/{tag_name}"
-    try:
-        req = Request(api_url, headers={"User-Agent": "ldm-cli"})
-        with urlopen(req, timeout=15) as response:  # nosec B310
-            data = json.loads(response.read().decode())
-            assets = data.get("assets", [])
 
-            # Primary target: Exact match
-            target_name = f"seeded-{tag}-{db}-{search}.tar.gz"
-            for asset in assets:
-                if asset["name"] == target_name:
-                    return asset["browser_download_url"]
+    # Construct asset names with the seed logic version
+    target_name = f"seeded-{tag}-{db}-{search}-v{SEED_VERSION}.tar.gz"
+    fallback_postgresql = f"seeded-{tag}-postgresql-shared-v{SEED_VERSION}.tar.gz"
 
-            # Fallback 1: High-perf default (Postgres + Shared)
-            if db != "postgresql" or search != "shared":
-                fallback_name = f"seeded-{tag}-postgresql-shared.tar.gz"
+    # Legacy asset names for backward compatibility
+    legacy_patterns = [
+        f"seeded-{tag}-{db}-{search}.tar.gz",
+        f"seeded-{tag}-postgresql-shared.tar.gz",
+        f"seeded-{tag}.tar.gz",
+    ]
+
+    # List of releases to check in priority order:
+    # 1. Current LDM version (ensures logic-matched seeds)
+    # 2. Permanent 'seeded-states' release (Living repository of seeds)
+    target_tags = [tag_name, "seeded-states"]
+
+    for t in target_tags:
+        api_url = f"https://api.github.com/repos/peterrichards-lr/liferay-docker-manager/releases/tags/{t}"
+        try:
+            response = requests.get(
+                api_url, headers={"User-Agent": "ldm-cli"}, timeout=10
+            )
+            if response.status_code == 200:
+                data = response.json()
+                assets = data.get("assets", [])
+
+                # Priority 1: Exact match with SEED_VERSION
                 for asset in assets:
-                    if asset["name"] == fallback_name:
+                    if asset["name"] == target_name:
                         return asset["browser_download_url"]
 
-            # Fallback 2: Legacy monolithic name (v2.1.2 style)
-            legacy_name = f"seeded-{tag}.tar.gz"
-            for asset in assets:
-                if asset["name"] == legacy_name:
-                    return asset["browser_download_url"]
-    except Exception:
-        pass
+                # Priority 2: High-perf default (Postgres + Shared) with SEED_VERSION
+                if db != "postgresql" or search != "shared":
+                    for asset in assets:
+                        if asset["name"] == fallback_postgresql:
+                            return asset["browser_download_url"]
+
+                # Priority 3: Legacy patterns (No SEED_VERSION)
+                for pattern in legacy_patterns:
+                    for asset in assets:
+                        if asset["name"] == pattern:
+                            return asset["browser_download_url"]
+        except Exception:
+            continue
     return None
 
 
@@ -78,10 +98,13 @@ def download_samples(version, destination):
         if not url.startswith("https://"):
             raise ValueError(f"Invalid URL scheme: {url}")
 
-        req = Request(url, headers={"User-Agent": "ldm-cli"})
-        with urlopen(req, timeout=15) as response:  # nosec B310
-            with open(temp_zip, "wb") as f:
-                shutil.copyfileobj(response, f)
+        response = requests.get(
+            url, headers={"User-Agent": "ldm-cli"}, timeout=15, stream=True
+        )
+        response.raise_for_status()
+        with open(temp_zip, "wb") as f:
+            for chunk in response.iter_content(chunk_size=8192):
+                f.write(chunk)
 
         UI.info("Extracting samples...")
         destination.mkdir(parents=True, exist_ok=True)
@@ -187,7 +210,16 @@ def _sanitize_shell_command(cmd):
 
     # 2. Pattern Verification: If shell=True is used, it MUST match LDM usage patterns
     # (Docker operations, Compression, or Windows bridge)
-    safe_patterns = ["docker", "gzip", "cmd.exe", "cat", "pg_dump", "mysql", "mariadb"]
+    safe_patterns = [
+        "docker",
+        "gzip",
+        "cmd.exe",
+        "cat",
+        "pg_dump",
+        "mysql",
+        "mariadb",
+        "complete",
+    ]
     is_safe = any(pattern in cmd.lower() for pattern in safe_patterns)
 
     if not is_safe:
@@ -271,10 +303,9 @@ def get_json(url):
         if not url.startswith(("http://", "https://")):
             raise ValueError(f"Invalid URL scheme: {url}")
 
-        # Bandit: B310 (urllib-urlopen) is safe as we are fetching from trusted Liferay APIs.
-        req = Request(url, headers={"User-Agent": "Mozilla/5.0"})
-        with urlopen(req) as response:  # nosec B310
-            return json.loads(response.read().decode())
+        response = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=15)
+        response.raise_for_status()
+        return response.json()
     except Exception as e:
         UI.error(f"Failed to fetch data: {e}")
         return None
@@ -390,10 +421,8 @@ def discover_latest_tag(
 
     api_filter = prefix_filter
     if not api_filter:
-        if release_type == "lts":
-            api_filter = "-lts"
-        elif release_type == "u":
-            api_filter = "-u"
+        if release_type == "lts" or release_type == "u":
+            api_filter = f"-{release_type}"
 
     if api_filter:
         url += f"&name={api_filter}"
@@ -423,8 +452,7 @@ def discover_latest_tag(
             if release_type == "lts" and "-lts" not in name:
                 continue
             if release_type == "u" and "-u" not in name:
-                if "-u" not in name:
-                    continue
+                continue
 
             is_valid = bool(re.match(TAG_PATTERN, name))
             if is_valid:
@@ -459,6 +487,17 @@ def discover_latest_tag(
         pass
 
     return latest_tag if latest_tag != "" else None
+
+
+def yaml_to_dict(content):
+    """Parses YAML content using PyYAML."""
+    import yaml
+
+    try:
+        return yaml.safe_load(content) or {}
+    except Exception as e:
+        UI.warning(f"Could not parse YAML content: {e}")
+        return {}
 
 
 def dict_to_yaml(d, indent=0):
@@ -603,7 +642,7 @@ def find_dxp_roots(search_dir=None):
         except Exception:  # nosec B112
             continue
 
-    return sorted(roots, key=lambda x: x["path"].name)
+    return sorted(roots, key=lambda x: x["path"])
 
 
 def safe_extract(archive, target_path):
@@ -730,10 +769,13 @@ def verify_executable_checksum(version):
 
         # 2. Fetch official checksums
         url = f"https://github.com/peterrichards-lr/liferay-docker-manager/releases/download/v{version}/checksums.txt"
-        req = Request(url, headers={"User-Agent": "ldm-cli"})
         official_data = ""
-        with urlopen(req, timeout=5) as response:  # nosec B310
-            official_data = response.read().decode()
+        try:
+            response = requests.get(url, headers={"User-Agent": "ldm-cli"}, timeout=5)
+            if response.status_code == 200:
+                official_data = response.text
+        except Exception:
+            pass
 
         # 3. Identify binary name in checksum file
         # We prefer the unified 'ldm-macos' (universal2) asset
@@ -806,9 +848,9 @@ def check_for_updates(current_version, force=False):
         if not url.startswith("https://"):
             raise ValueError(f"Invalid URL scheme: {url}")
 
-        req = Request(url, headers={"User-Agent": "ldm-cli"})
-        with urlopen(req, timeout=3) as response:  # nosec B310
-            res_data = json.loads(response.read().decode())
+        response = requests.get(url, headers={"User-Agent": "ldm-cli"}, timeout=5)
+        if response.status_code == 200:
+            res_data = response.json()
             latest_version = res_data.get("tag_name", "").lstrip("v")
 
             # Architecture-aware asset resolution
@@ -854,8 +896,7 @@ def check_for_updates(current_version, force=False):
             )
 
             return latest_version, release_url
-    except (HTTPError, URLError, TimeoutError, json.JSONDecodeError):
+    except Exception:
         # Fail gracefully for background checks
         return None, None
-    except Exception:
-        return None, None
+    return None, None

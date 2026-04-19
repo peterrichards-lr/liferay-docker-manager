@@ -11,6 +11,7 @@ The standalone binary is a single-file executable that includes all dependencies
 Download the latest `ldm` directly using your terminal:
 
 ```bash
+
 # For macOS (Apple Silicon)
 sudo curl -L https://github.com/peterrichards-lr/liferay-docker-manager/releases/latest/download/ldm-macos-arm64 -o /usr/local/bin/ldm
 
@@ -64,6 +65,7 @@ Clone this repository and use the provided wrapper script for your platform. The
 ### macOS / Linux / WSL2
 
 ```bash
+
 git clone https://github.com/peterrichards-lr/liferay-docker-manager.git
 cd liferay-docker-manager
 ./ldm --help
@@ -97,6 +99,7 @@ cd liferay-docker-manager
 **Using [Homebrew](https://brew.sh/):**
 
 ```bash
+
 # Install Docker CLI and SSL tools
 brew install docker docker-compose mkcert nss openssl
 mkcert -install
@@ -105,6 +108,7 @@ mkcert -install
 **Using [MacPorts](https://www.macports.org/):**
 
 ```bash
+
 # Install Docker CLI and SSL tools
 sudo port install docker docker-compose mkcert nss openssl
 mkcert -install
@@ -115,6 +119,7 @@ mkcert -install
 ...
 
 ```bash
+
 sudo apt update && sudo apt install mkcert libnss3-tools openssl
 mkcert -install
 ```
@@ -126,6 +131,7 @@ If `ldm doctor` reports **Docker Engine: Not reachable** or you see **Permission
 Run these commands to grant access:
 
 ```bash
+
 # 1. Add your user to the docker group
 sudo usermod -aG docker $USER
 
@@ -149,6 +155,7 @@ LDM allows you to synchronize files (e.g., OSGi configs, licenses, LPKG modules)
 LDM bundles a "Gold Standard" development baseline internally. To initialize or recreate this baseline in your global `common/` folder, run:
 
 ```bash
+
 ldm init-common
 ```
 
@@ -163,6 +170,7 @@ This will create:
 LDM supports global user preferences stored in `~/.ldmrc`. You can manage these settings without editing files manually:
 
 ```bash
+
 # View all current settings
 ldm config
 
@@ -226,6 +234,7 @@ Earlier versions of LDM (v1.6.32-v1.6.33) had an integrity check that was not fu
 If your binary is corrupted or misbehaving, force a re-download of the official assets:
 
 ```bash
+
 # Force a repair of the current version
 sudo ldm upgrade --repair
 ```
@@ -235,6 +244,7 @@ sudo ldm upgrade --repair
 If the tool is too broken to self-repair, manually overwrite the binary with the latest version:
 
 ```bash
+
 # For macOS (Intel or Apple Silicon)
 sudo curl -L https://github.com/peterrichards-lr/liferay-docker-manager/releases/latest/download/ldm-macos -o /usr/local/bin/ldm
 sudo chmod +x /usr/local/bin/ldm
@@ -252,44 +262,49 @@ If you have cloned the repository and also have the binary installed, `ldm docto
 
 LDM supports full **TAB completion** for all commands and project names. This significantly improves productivity by allowing you to quickly cycle through projects when running `stop`, `logs`, or `run`.
 
-### Quick Setup
+### Step 1: Install argcomplete (Source Installs Only)
 
-To enable autocompletion, run the following command and follow the instructions for your shell:
+If you are using the Standalone Binary, `argcomplete` is already bundled. If you are using a Python Source installation (`pip install -e .`), ensure the library is installed:
+
+```bash
+pip install argcomplete
+```
+
+### Step 2: Enable Completion for your Shell
+
+Run the following command to see the specific instruction for your active shell:
 
 ```bash
 ldm completion
 ```
 
-### Zsh (Default macOS)
+#### **For Zsh (macOS Default)**
 
-Add these lines to your `~/.zshrc`:
+Add this to your `~/.zshrc`:
 
-```zsh
-# Load bashcompinit for argcomplete support
-autoload -U +X compinit && compinit
-autoload -U +X bashcompinit && bashcompinit
-
-# Enable LDM completion
-eval "$(register-python-argcomplete ldm)"
+```bash
+eval "$(ldm completion zsh)"
 ```
 
-### Bash
+#### **For Bash**
 
 Add this to your `~/.bashrc`:
 
 ```bash
-# Enable LDM completion
-eval "$(register-python-argcomplete ldm)"
+eval "$(ldm completion bash)"
 ```
 
-### Fish
+#### **For Fish**
 
 Add this to your `~/.config/fish/config.fish`:
 
 ```fish
-# Enable LDM completion
-register-python-argcomplete --shell fish ldm | source
+ldm completion fish | source
 ```
+
+### Step 3: Restart your Terminal
+
+After adding the line to your profile, restart your terminal or source the file (e.g., `source ~/.zshrc`) for the changes to take effect.
 
 ---
 
@@ -307,6 +322,7 @@ Colima is a lightweight, open-source alternative to Docker Desktop. While highly
 For the best compatibility with Liferay and SSCE build processes, we recommend using the macOS Virtualization Framework (`vz`) with **VirtioFS**.
 
 ```bash
+
 # Optimized for M1/M2/M3 (16GB+ RAM)
 colima start --cpu 4 --memory 8 --vm-type=vz --mount-type=virtiofs --mount /Users/$(whoami):w --mount /Volumes:w
 ```
@@ -316,6 +332,7 @@ colima start --cpu 4 --memory 8 --vm-type=vz --mount-type=virtiofs --mount /User
 If you are running on an older Intel Mac (e.g. Early 2015 with 8GB RAM), use these settings to ensure Liferay has enough host memory to function:
 
 ```bash
+
 # Optimized for Dual-Core Intel (8GB RAM)
 # Note: uses sshfs as virtiofs requires macOS 14+ on Intel
 colima start --cpus 2 --memory 6 --mount-type sshfs --mount /Users/$(whoami):w
@@ -340,6 +357,7 @@ For a seamless experience, you can set up Colima to start automatically in the b
 Save this script as `/usr/local/bin/colima-start-fg` and make it executable (`chmod +x`). It is architecture-aware and will automatically select the best VM and mount settings for your Mac.
 
 ```bash
+
 #!/bin/bash
 
 # 1. Path includes Homebrew (M1/M2) and MacPorts
@@ -417,6 +435,7 @@ Create a file named `~/Library/LaunchAgents/com.github.abiosoft.colima.plist` wi
 #### Step 3: Load the Service
 
 ```bash
+
 launchctl load ~/Library/LaunchAgents/com.github.abiosoft.colima.plist
 ```
 
@@ -430,6 +449,7 @@ Colima is primarily a macOS tool. If you are on Windows or Linux, auto-start is 
 - **Linux (Native/WSL2)**: Ensure the docker service is enabled via systemd:
 
   ```bash
+
   sudo systemctl enable --now docker
   ```
 
@@ -446,6 +466,7 @@ You must add each domain and subdomain to your system's `hosts` file.
 - **macOS / Linux**: Edit `/etc/hosts` using sudo:
 
   ```bash
+
   sudo nano /etc/hosts
   ```
 
@@ -469,6 +490,7 @@ If you see a "Permission Denied" error or LDM keeps asking for `sudo`, your user
 1. **Add the group**:
 
    ```bash
+
    sudo usermod -aG docker $USER
    ```
 
@@ -490,6 +512,7 @@ If your browser (Chrome, Edge, etc.) shows "Your connection is not private" or a
 The most common cause is that the `mkcert` Root CA has not been added to your system's trust store. Run this in your terminal:
 
 ```bash
+
 mkcert -install
 ```
 
@@ -509,6 +532,7 @@ Chrome and other Chromium-based browsers often cache certificate trust.
 Run `ldm doctor` to verify that your system sees the Root CA as trusted:
 
 ```bash
+
 ldm doctor
 ```
 

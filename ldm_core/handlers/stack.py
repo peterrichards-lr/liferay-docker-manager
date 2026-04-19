@@ -805,39 +805,69 @@ class StackHandler(BaseHandler):
             "LIFERAY_HOME=/opt/liferay",
         ]
 
+        # Add custom environment variables from metadata
+        custom_env_str = meta.get("custom_env", "")
+        custom_env_list = custom_env_str.split(",") if custom_env_str else []
+        has_jdbc_env = False
+        for env in custom_env_list:
+            if env and "=" in env:
+                liferay_env.append(env)
+                if env.startswith("LIFERAY_JDBC_PERIOD_"):
+                    has_jdbc_env = True
+
         if db_type in ["mysql", "mariadb"]:
             # Standard Liferay Docker images ship with MariaDB driver (LGPL) but NOT MySQL driver (GPL).
-            # The MariaDB driver is fully compatible with MySQL servers.
+            # The MariaDB driver is fully compatible with MySQL servers and is used by Liferay Cloud (LXC).
             driver = "org.mariadb.jdbc.Driver"
-            url = "jdbc:mariadb://db:3306/lportal?characterEncoding=UTF-8&dontTrackOpenResources=true&holdResultsOpenOverStatementClose=true&serverTimezone=GMT&useFastDateParsing=false&useUnicode=true&useSSL=false&allowPublicKeyRetrieval=true"
 
-            dialect = (
-                "com.liferay.portal.dao.db.hibernate.MySQL8Dialect"
-                if db_type == "mysql"
-                else "org.hibernate.dialect.MariaDB103Dialect"
+            # Cloud-optimized URL for MariaDB connector connecting to MySQL/MariaDB
+            # Includes performance parameters: rewriteBatchedStatements, prepStmtCacheSize, etc.
+            url = (
+                "jdbc:mariadb://db:3306/lportal?"
+                "characterEncoding=UTF-8"
+                "&dontTrackOpenResources=true"
+                "&holdResultsOpenOverStatementClose=true"
+                "&serverTimezone=GMT"
+                "&useFastDateParsing=false"
+                "&useUnicode=true"
+                "&useSSL=false"
+                "&allowPublicKeyRetrieval=true"
+                "&rewriteBatchedStatements=true"
+                "&prepStmtCacheSize=1000"
+                "&prepStmtCacheSqlLimit=2048"
+                "&useLocalSessionState=true"
+                "&useLocalTransactionState=true"
+                "&permitMysqlScheme=true"
             )
 
-            # Liferay Docker environment variables REQUIRE _PERIOD_ delimiters to map correctly
-            liferay_env.extend(
-                [
-                    f"LIFERAY_JDBC_PERIOD_DEFAULT_PERIOD_DRIVER_CLASS_NAME={driver}",
-                    f"LIFERAY_JDBC_PERIOD_DEFAULT_PERIOD_URL={url}",
-                    "LIFERAY_JDBC_PERIOD_DEFAULT_PERIOD_USERNAME=lportal",
-                    "LIFERAY_JDBC_PERIOD_DEFAULT_PERIOD_PASSWORD=test",
-                    f"LIFERAY_HIBERNATE_PERIOD_DIALECT={dialect}",
-                    "LIFERAY_HSQL_PERIOD_ENABLED=false",
-                ]
-            )
+            # Mirror LXC: Use MariaDB dialect for both MariaDB and MySQL 8.x
+            # (Matches Liferay's auto-detection when using MariaDB driver)
+            dialect = "org.hibernate.dialect.MariaDB103Dialect"
 
-            # Double-coverage in portal-ext.properties
-            self.update_portal_ext(
-                paths,
-                {
-                    "jdbc.default.enabled": "true",
-                    "jdbc.default.db.type": db_type,
-                    "hibernate.dialect": dialect,
-                },
-            )
+            # Move all database configuration to portal-ext.properties
+            # This avoids problematic environment variable decoding in the Docker entrypoint.
+            # CRITICAL: If the user has manually provided JDBC environment variables,
+            # we should NOT write the standard JDBC properties to portal-ext.properties
+            # to avoid unpredictable behavior where both are present.
+            if not has_jdbc_env:
+                self.update_portal_ext(
+                    paths,
+                    {
+                        "jdbc.default.enabled": "true",
+                        "jdbc.default.driverClassName": driver,
+                        "jdbc.default.url": url,
+                        "jdbc.default.username": "lportal",
+                        "jdbc.default.password": "test",
+                        "hibernate.dialect": dialect,
+                    },
+                )
+            else:
+                UI.warning(
+                    "Custom JDBC environment variables detected. Skipping standard LDM portal-ext.properties DB config to avoid conflicts."
+                )
+
+            # We explicitly DISABLE the HSQL fallback via env var (safe and unambiguous)
+            liferay_env.append("LIFERAY_HSQL_PERIOD_ENABLED=false")
 
         liferay_service = {
             "image": image,
@@ -948,7 +978,7 @@ class StackHandler(BaseHandler):
                 "networks": ["liferay-net"],
             }
         elif db_type == "mysql" or db_type == "mariadb":
-            # Use MySQL 8.0 for modern Liferay (2024+)
+            # Use MySQL 8.4 (LTS) for modern Liferay (2024+)
             is_modern = False
             try:
                 major_ver = int(tag.split(".")[0])
@@ -957,8 +987,19 @@ class StackHandler(BaseHandler):
             except (ValueError, IndexError):
                 pass
 
+            # Determine MySQL authentication flags based on version
+            # MySQL 8.4 (LTS) removed --default-authentication-plugin and disabled native password by default
+            auth_flags = []
+            if db_type == "mysql":
+                if is_modern:
+                    auth_flags = ["--mysql-native-password=ON"]
+                else:
+                    auth_flags = [
+                        "--default-authentication-plugin=mysql_native_password"
+                    ]
+
             services["db"] = {
-                "image": ("mysql:8.0" if is_modern else "mysql:5.7")
+                "image": ("mysql:8.4" if is_modern else "mysql:5.7")
                 if db_type == "mysql"
                 else "mariadb:10.6",
                 "command": [
@@ -967,14 +1008,16 @@ class StackHandler(BaseHandler):
                     "--collation-server=utf8mb4_unicode_ci",
                     "--character-set-filesystem=utf8mb4",
                     "--lower_case_table_names=1",
-                    "--default-authentication-plugin=mysql_native_password",
                     "--bind-address=0.0.0.0",
-                ],
+                    "--skip-name-resolve",
+                ]
+                + auth_flags,
                 "environment": {
                     "MYSQL_ROOT_PASSWORD": "test",
                     "MYSQL_USER": "lportal",
                     "MYSQL_PASSWORD": "test",
                     "MYSQL_DATABASE": "lportal",
+                    "MYSQL_TCP_PORT": "3306",
                 },
                 "healthcheck": {
                     "test": [
@@ -982,14 +1025,14 @@ class StackHandler(BaseHandler):
                         "mysqladmin",
                         "ping",
                         "-h",
-                        "localhost",
+                        "127.0.0.1",
                         "-uroot",
                         "-ptest",
                     ],
                     "interval": "10s",
                     "timeout": "5s",
                     "retries": 10,
-                    "start_period": "30s",
+                    "start_period": "60s",
                 },
                 "networks": ["liferay-net"],
             }

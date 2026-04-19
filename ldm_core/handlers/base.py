@@ -676,31 +676,101 @@ class BaseHandler:
 
         return " ".join(sorted(list(mounts)))
 
-    def setup_shell_completion(self):
-        """Displays instructions for enabling shell completion."""
-        shell = os.environ.get("SHELL", "").split("/")[-1]
-        UI.heading("LDM Shell Completion")
+    def cmd_completion(self, target_shell=None):
+        """Displays instructions or outputs shellcode for enabling completion."""
+        # Detect active shell if not provided
+        active_shell = os.environ.get("SHELL", "").split("/")[-1].lower()
+        if active_shell.endswith(".exe"):
+            active_shell = active_shell[:-4]
 
-        if shell not in ["bash", "zsh"]:
+        # Normalize pwsh to powershell for internal logic
+        if active_shell == "pwsh":
+            active_shell = "powershell"
+
+        # If target_shell is specifically requested via CLI (e.g. 'ldm completion zsh')
+        # we MUST only output shellcode to stdout to avoid breaking 'eval'.
+        if target_shell:
+            target_shell = target_shell.lower()
+            try:
+                import argcomplete
+
+                if target_shell == "zsh":
+                    # We use the internal argcomplete shellcode generator
+                    code = argcomplete.shellcode(["ldm"], shell="zsh")  # nosec B604
+                    # Zsh requires bashcompinit to support the 'complete' command used by argcomplete
+                    print("# LDM Zsh Completion Initialization")
+                    print("autoload -U +X compinit && compinit")
+                    print("autoload -U +X bashcompinit && bashcompinit")
+                    print(code)
+                    return
+                elif target_shell == "bash":
+                    print(
+                        argcomplete.shellcode(["ldm"], shell="bash")  # nosec B604
+                    )
+                    return
+                elif target_shell == "fish":
+                    print(
+                        argcomplete.shellcode(["ldm"], shell="fish")  # nosec B604
+                    )
+                    return
+                elif target_shell == "powershell":
+                    # PowerShell doesn't have native argcomplete support, so we provide a bridge script
+                    print("# LDM PowerShell Completion Bridge")
+                    print(
+                        "if (-not (Get-Command ldm -ErrorAction SilentlyContinue)) { return }"
+                    )
+                    print("$scriptblock = {")
+                    print(
+                        "    param($commandName, $wordToComplete, $cursorPosition, $commandAst, $fakeBoundParameters)"
+                    )
+                    print("    $env:COMP_LINE = $commandAst.ToString()")
+                    print("    $env:COMP_POINT = $cursorPosition")
+                    print("    $env:_ARGCOMPLETE = 1")
+                    print("    $results = & ldm 2>$null")
+                    print("    $results | ForEach-Object {")
+                    print(
+                        "        [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_)"
+                    )
+                    print("    }")
+                    print(
+                        "    Remove-Item Env:COMP_LINE, Env:COMP_POINT, Env:_ARGCOMPLETE"
+                    )
+                    print("}")
+                    print(
+                        "Register-ArgumentCompleter -Native -CommandName ldm -ScriptBlock $scriptblock"
+                    )
+                    return
+            except Exception as e:
+                # If generation fails, we print the error to stderr so eval ignores it
+                print(f"Error generating completion: {e}", file=sys.stderr)
+                return
+
+        UI.heading("LDM Shell Completion")
+        shell = active_shell
+        if shell not in ["bash", "zsh", "fish", "powershell"]:
             UI.info(
-                f"Completion is currently optimized for bash and zsh. (Found: {shell})"
+                f"Completion is currently optimized for bash, zsh, fish, and powershell. (Found: {shell})"
             )
             return
 
-        cmd = "register-python-argcomplete ldm"
         UI.info(
-            f"To enable tab-completion for {shell}, add this to your startup profile:"
+            f"To enable tab-completion for {UI.BYELLOW}{shell}{UI.COLOR_OFF}, add this to your startup profile:"
         )
 
         if shell == "zsh":
-            print(f'\n    eval "$({cmd})"\n')
-        else:
-            print("\n    activate-global-python-argcomplete\n")
+            print('\n    eval "$(ldm completion zsh)"\n')
+            profile = ".zshrc"
+        elif shell == "bash":
+            print('\n    eval "$(ldm completion bash)"\n')
+            profile = ".bashrc"
+        elif shell == "fish":
+            print("\n    ldm completion fish | source\n")
+            profile = "config.fish"
+        elif shell == "powershell":
+            print("\n    ldm completion powershell | Out-String | Invoke-Expression\n")
+            profile = "Microsoft.PowerShell_profile.ps1"
 
         UI.info(
-            f"You may need to restart your terminal or source your profile ({UI.CYAN}.{shell}rc{UI.COLOR_OFF})"
+            f"You may need to restart your terminal or source your profile ({UI.CYAN}~/{profile}{UI.COLOR_OFF})"
         )
-        print(
-            "for the changes to take effect. If 'register-python-argcomplete' is not found,\n"
-            "it will be installed automatically the next time you run any LDM command."
-        )
+        print("for the changes to take effect.")

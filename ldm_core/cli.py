@@ -316,7 +316,7 @@ def main():
     # Command: completion
     completion = subparsers.add_parser("completion")
     completion.add_argument(
-        "shell", choices=["bash", "zsh", "fish"], default="zsh", nargs="?"
+        "shell", choices=["bash", "zsh", "fish", "powershell"], nargs="?"
     )
 
     scale = subparsers.add_parser("scale")
