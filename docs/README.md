@@ -175,6 +175,9 @@ Initialize and start a project stack.
 # Run with a specific tag and virtual hostname
 ldm run --tag 2024.q4.0 --host-name demo.local
 
+# Run on a custom port
+ldm run my-project --port 8081
+
 # Using the alias
 ldm up demo
 
@@ -195,6 +198,17 @@ LDM uses smarter defaults for SSL based on your hostname. When a custom `--host-
 | `ldm run --host-name my.local` | `my.local` | `True` | `https://my.local` |
 | `ldm run --no-ssl` | `localhost` | `False` | `http://localhost:8080` |
 | `ldm run --host-name my.local --no-ssl` | `my.local` | `False` | `http://my.local:8080` |
+
+#### 🛡️ Modern Liferay & JDK 17+ Standards
+
+LDM automatically hardens modern environments (DXP 2024+ and modern Quarterly Releases) to ensure stable startup:
+
+- **JVM Module Exports**: Automatically injects mandatory `--add-opens` flags for JDK 17+ (covering `java.net`, `java.lang.reflect`, `security`, and more).
+- **Hardened MySQL 8.0**:
+  - Forces `mysql_native_password` authentication for CI compatibility.
+  - Explicitly sets `hibernate.dialect` and `jdbc.default.db.type` to prevent boot-time auto-detection failures.
+  - Prioritizes `LIFERAY_JDBC_DEFAULT_*` environment variables for reliable handshake initialization.
+- **Proactive Boot Sequencing**: Configures `depends_on` with healthchecks to ensure Liferay only starts once the database is fully ready to accept connections.
 
 #### ⚡️ Performance Tuning (Startup Optimizations)
 

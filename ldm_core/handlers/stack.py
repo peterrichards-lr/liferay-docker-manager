@@ -806,8 +806,10 @@ class StackHandler(BaseHandler):
         ]
 
         if db_type in ["mysql", "mariadb"]:
-            driver = "com.mysql.cj.jdbc.Driver"
-            url = "jdbc:mysql://db:3306/lportal?characterEncoding=UTF-8&dontTrackOpenResources=true&holdResultsOpenOverStatementClose=true&serverTimezone=GMT&useFastDateParsing=false&useUnicode=true&useSSL=false&allowPublicKeyRetrieval=true"
+            # Standard Liferay Docker images ship with MariaDB driver (LGPL) but NOT MySQL driver (GPL).
+            # The MariaDB driver is fully compatible with MySQL servers.
+            driver = "org.mariadb.jdbc.Driver"
+            url = "jdbc:mariadb://db:3306/lportal?characterEncoding=UTF-8&dontTrackOpenResources=true&holdResultsOpenOverStatementClose=true&serverTimezone=GMT&useFastDateParsing=false&useUnicode=true&useSSL=false&allowPublicKeyRetrieval=true"
             dialect = (
                 "com.liferay.portal.dao.db.hibernate.MySQL8Dialect"
                 if db_type == "mysql"
