@@ -974,35 +974,57 @@ class StackHandler(BaseHandler):
         self.setup_infrastructure(resolved_ip, 443, use_ssl=True)
         UI.success("Infrastructure setup complete.")
 
-    def cmd_logs(self, project_id=None, infra=False, service=None):
+    def cmd_logs(
+        self,
+        project_id=None,
+        service=None,
+        all_projects=False,
+        infra=False,
+        follow=False,
+    ):
         """Shows logs for a project or global infrastructure."""
         if infra:
             UI.info("Showing infrastructure logs...")
             # We must check if containers are running as per test requirements
             containers = []
-            if not service or service == "proxy":
+            if not service or "proxy" in service:
                 containers.append("liferay-proxy-global")
-            if not service or service == "es":
+            if not service or "es" in service:
                 containers.append("liferay-search-global")
 
             for container in containers:
                 run_command(["docker", "ps", "-q", "-f", f"name=^{container}$"])
 
-            run_command(
-                get_compose_cmd()
-                + [
-                    "-f",
-                    str(SCRIPT_DIR / "resources" / "infra-compose.yml"),
-                    "logs",
-                    "-f",
-                ]
-            )
+            cmd = get_compose_cmd() + [
+                "-f",
+                str(SCRIPT_DIR / "resources" / "infra-compose.yml"),
+                "logs",
+            ]
+            if follow:
+                cmd.append("-f")
+            run_command(cmd)
         else:
-            root = self.detect_project_path(project_id)
-            if root:
-                cmd = get_compose_cmd() + ["logs", "-f"]
+            targets = []
+            if all_projects:
+                targets = [r["path"] for r in self.get_running_projects()]
+            else:
+                root = self.detect_project_path(project_id)
+                if root:
+                    targets = [root]
+
+            if not targets:
+                UI.info("No running projects found to show logs.")
+                return
+
+            for root in targets:
+                cmd = get_compose_cmd() + ["logs"]
+                if follow:
+                    cmd.append("-f")
                 if service:
-                    cmd.append(service)
+                    if isinstance(service, list):
+                        cmd.extend(service)
+                    else:
+                        cmd.append(service)
                 run_command(cmd, cwd=str(root))
 
     def cmd_reseed(self, project_id=None):

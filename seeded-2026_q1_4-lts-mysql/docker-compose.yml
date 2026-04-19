@@ -1,0 +1,34 @@
+version: "3.8"
+services:
+  liferay:
+    image: "liferay/dxp:2026.q1.4-lts"
+    ports:
+      - "8080:8080"
+    environment:
+      - "LIFERAY_JVM_OPTS=-Xms2048m\ -Xmx5120m\ -XX:MaxMetaspaceSize=768m\ -XX:MetaspaceSize=768m\ -XX:NewSize=1689m\ -XX:MaxNewSize=1689m\ -Dfile.encoding=UTF8\ -Duser.timezone=GMT\ --add-opens=java.base/java.lang=ALL-UNNAMED\ --add-opens=java.base/java.net=ALL-UNNAMED\ --add-opens=java.base/java.util=ALL-UNNAMED\ --add-opens=java.base/sun.net.www.protocol.http=ALL-UNNAMED\ --add-opens=java.base/sun.net.www.protocol.https=ALL-UNNAMED\ -XX:TieredStopAtLevel=1"
+    volumes:
+      - "/Volumes/SanDisk/repos/liferay-docker-manager/seeded-2026_q1_4-lts-mysql/deploy:/mnt/liferay/deploy"
+      - "/Volumes/SanDisk/repos/liferay-docker-manager/seeded-2026_q1_4-lts-mysql/files:/mnt/liferay/files"
+      - "/Volumes/SanDisk/repos/liferay-docker-manager/seeded-2026_q1_4-lts-mysql/data:/storage/liferay/data"
+      - "/Volumes/SanDisk/repos/liferay-docker-manager/seeded-2026_q1_4-lts-mysql/osgi/state:/opt/liferay/osgi/state"
+    networks:
+      - "liferay-net"
+    container_name: "seeded-2026_q1_4-lts-mysql"
+  db:
+    image: "mysql:8.0"
+    command:
+      - "mysqld"
+      - "--character-set-server=utf8mb4"
+      - "--collation-server=utf8mb4_unicode_ci"
+      - "--character-set-filesystem=utf8mb4"
+      - "--lower_case_table_names=1"
+    environment:
+      MYSQL_ROOT_PASSWORD: "test"
+      MYSQL_USER: "lportal"
+      MYSQL_PASSWORD: "test"
+      MYSQL_DATABASE: "lportal"
+    networks:
+      - "liferay-net"
+networks:
+  liferay-net:
+    external: true
