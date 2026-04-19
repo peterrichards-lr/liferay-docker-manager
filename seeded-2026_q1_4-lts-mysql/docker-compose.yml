@@ -5,11 +5,13 @@ services:
     ports:
       - "8080:8080"
     environment:
-      - "LIFERAY_JVM_OPTS=-Xms2048m\ -Xmx5120m\ -XX:MaxMetaspaceSize=768m\ -XX:MetaspaceSize=768m\ -XX:NewSize=1689m\ -XX:MaxNewSize=1689m\ -Dfile.encoding=UTF8\ -Duser.timezone=GMT\ --add-opens=java.base/java.lang=ALL-UNNAMED\ --add-opens=java.base/java.net=ALL-UNNAMED\ --add-opens=java.base/java.util=ALL-UNNAMED\ --add-opens=java.base/java.text=ALL-UNNAMED\ --add-opens=java.base/java.time=ALL-UNNAMED\ --add-opens=java.base/sun.net.www.protocol.http=ALL-UNNAMED\ --add-opens=java.base/sun.net.www.protocol.https=ALL-UNNAMED\ --add-opens=java.base/sun.security.action=ALL-UNNAMED\ --add-opens=java.base/sun.util.calendar=ALL-UNNAMED\ --add-opens=java.security.sasl/conf=ALL-UNNAMED\ -XX:TieredStopAtLevel=1"
+      - "LIFERAY_JVM_OPTS=-Xms2048m -Xmx5120m -XX:MaxMetaspaceSize=768m -XX:MetaspaceSize=768m -XX:NewSize=1689m -XX:MaxNewSize=1689m -Dfile.encoding=UTF8 -Duser.timezone=GMT --add-opens=java.base/java.lang=ALL-UNNAMED --add-opens=java.base/java.lang.reflect=ALL-UNNAMED --add-opens=java.base/java.net=ALL-UNNAMED --add-opens=java.base/java.util=ALL-UNNAMED --add-opens=java.base/java.util.concurrent=ALL-UNNAMED --add-opens=java.base/java.text=ALL-UNNAMED --add-opens=java.base/java.time=ALL-UNNAMED --add-opens=java.base/sun.net.www.protocol.http=ALL-UNNAMED --add-opens=java.base/sun.net.www.protocol.https=ALL-UNNAMED --add-opens=java.base/sun.nio.ch=ALL-UNNAMED --add-opens=java.base/sun.security.action=ALL-UNNAMED --add-opens=java.base/sun.util.calendar=ALL-UNNAMED --add-opens=java.security.sasl/conf=ALL-UNNAMED --add-opens=java.management/sun.management=ALL-UNNAMED --add-opens=jdk.management/com.sun.management.internal=ALL-UNNAMED -XX:TieredStopAtLevel=1"
+      - "LIFERAY_HOME=/opt/liferay"
     volumes:
       - "/Volumes/SanDisk/repos/liferay-docker-manager/seeded-2026_q1_4-lts-mysql/deploy:/mnt/liferay/deploy"
       - "/Volumes/SanDisk/repos/liferay-docker-manager/seeded-2026_q1_4-lts-mysql/files:/mnt/liferay/files"
       - "/Volumes/SanDisk/repos/liferay-docker-manager/seeded-2026_q1_4-lts-mysql/data:/storage/liferay/data"
+      - "/Volumes/SanDisk/repos/liferay-docker-manager/seeded-2026_q1_4-lts-mysql/logs:/opt/liferay/logs"
       - "/Volumes/SanDisk/repos/liferay-docker-manager/seeded-2026_q1_4-lts-mysql/osgi/state:/opt/liferay/osgi/state"
     networks:
       - "liferay-net"

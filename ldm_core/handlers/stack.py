@@ -941,6 +941,7 @@ class StackHandler(BaseHandler):
                     "--character-set-filesystem=utf8mb4",
                     "--lower_case_table_names=1",
                     "--default-authentication-plugin=mysql_native_password",
+                    "--bind-address=0.0.0.0",
                 ],
                 "environment": {
                     "MYSQL_ROOT_PASSWORD": "test",
@@ -948,8 +949,25 @@ class StackHandler(BaseHandler):
                     "MYSQL_PASSWORD": "test",
                     "MYSQL_DATABASE": "lportal",
                 },
+                "healthcheck": {
+                    "test": [
+                        "CMD",
+                        "mysqladmin",
+                        "ping",
+                        "-h",
+                        "localhost",
+                        "-uroot",
+                        "-ptest",
+                    ],
+                    "interval": "10s",
+                    "timeout": "5s",
+                    "retries": 10,
+                    "start_period": "30s",
+                },
                 "networks": ["liferay-net"],
             }
+            # Ensure Liferay waits for DB
+            liferay_service["depends_on"] = {"db": {"condition": "service_healthy"}}
 
         compose = {
             "version": "3.8",
