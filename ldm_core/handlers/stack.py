@@ -771,8 +771,13 @@ class StackHandler(BaseHandler):
             "java.base/java.lang=ALL-UNNAMED",
             "java.base/java.net=ALL-UNNAMED",
             "java.base/java.util=ALL-UNNAMED",
+            "java.base/java.text=ALL-UNNAMED",
+            "java.base/java.time=ALL-UNNAMED",
             "java.base/sun.net.www.protocol.http=ALL-UNNAMED",
             "java.base/sun.net.www.protocol.https=ALL-UNNAMED",
+            "java.base/sun.security.action=ALL-UNNAMED",
+            "java.base/sun.util.calendar=ALL-UNNAMED",
+            "java.security.sasl/conf=ALL-UNNAMED",
         ]
         for opt in mandatory_opens:
             flag = f"--add-opens={opt}"
@@ -918,6 +923,7 @@ class StackHandler(BaseHandler):
                     "--collation-server=utf8mb4_unicode_ci",
                     "--character-set-filesystem=utf8mb4",
                     "--lower_case_table_names=1",
+                    "--default-authentication-plugin=mysql_native_password",
                 ],
                 "environment": {
                     "MYSQL_ROOT_PASSWORD": "test",
