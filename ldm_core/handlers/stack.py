@@ -404,6 +404,10 @@ class StackHandler(BaseHandler):
                 "jdbc.default.url": "jdbc:mysql://db:3306/lportal?characterEncoding=UTF-8&dontTrackOpenResources=true&holdResultsOpenOverStatementClose=true&serverTimezone=GMT&useFastDateParsing=false&useUnicode=true",
                 "jdbc.default.username": "lportal",
                 "jdbc.default.password": "test",
+                "jdbc.default.enabled": "true",
+                "hibernate.dialect": "com.liferay.portal.dao.db.hibernate.MySQL8Dialect"
+                if db_type == "mysql"
+                else "org.hibernate.dialect.MariaDB103Dialect",
             }
             self.update_portal_ext(paths, jdbc_props)
 
