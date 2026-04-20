@@ -1214,7 +1214,6 @@ class StackHandler(BaseHandler):
             liferay_service["depends_on"] = {"db": {"condition": "service_healthy"}}
 
         compose = {
-            "version": "3.8",
             "services": services,
             "networks": {"liferay-net": {"external": True}},
         }
