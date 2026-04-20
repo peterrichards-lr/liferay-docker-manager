@@ -53,6 +53,19 @@ LDM uses a multi-layered automated verification suite:
 | **4.4 Search Migration** | `ldm migrate-search` | Deletes internal indices and applies Global ES configs while stopped. |
 | **4.5 Project Reset** | `ldm reset state` | Successfully clears `osgi/state` folder while stopped. |
 
+### Phase 5: High-Risk Integrations (v2.1+)
+
+These features involve complex state changes or rely on external APIs that may change unexpectedly. They require explicit end-to-end verification during major release cycles.
+
+| Test Case | Steps | Expected Outcome |
+| :--- | :--- | :--- |
+| **5.1 Cloud Env Sync** | `ldm cloud-fetch demo uat --sync-env` | Correctly fetches and applies `LCP.json` env vars despite `lcp` CLI plain-text formatting. |
+| **5.2 Cloud DB Hydration** | `ldm cloud-fetch demo uat --download` | Safely downloads and extracts DB backups into `snapshots/` without path traversal issues. |
+| **5.3 Multi-Node Lock Avoidance** | `ldm scale demo liferay=2` | Correctly disables host-mapped `osgi/state` and injects cluster-link properties. |
+| **5.4 Search Migration Resilience** | `ldm migrate-search demo` | Liferay successfully rebuilds its index on the shared ES8 container on the next boot without falling back to the sidecar. |
+| **5.5 Auto-Healing DNS (Elevation)** | `ldm doctor --fix-hosts` | Successfully prompts for `sudo` (or UAC on Windows) and appends missing subdomains without duplicating lines. |
+| **5.6 Windows Deep Deletion** | `ldm rm demo --delete` (Native Windows) | Successfully wipes the project folder, even if it contains deeply nested `node_modules` or Docker-locked volumes. |
+
 ---
 
 ## 🛡️ Supported Environments

@@ -10,7 +10,7 @@ from datetime import datetime
 from pathlib import Path
 from ldm_core.ui import UI
 from ldm_core.handlers.base import BaseHandler
-from ldm_core.constants import PROJECT_META_FILE, SCRIPT_DIR
+from ldm_core.constants import PROJECT_META_FILE
 from ldm_core.utils import (
     get_actual_home,
     get_compose_cmd,
@@ -286,10 +286,11 @@ class StackHandler(BaseHandler):
             self.setup_global_search()
 
         UI.info("Checking infrastructure stack (Traefik SSL Proxy)...")
-        infra_compose = SCRIPT_DIR / "ldm_core" / "resources" / "infra-compose.yml"
-        if not infra_compose.exists():
-            # Source development path
-            infra_compose = SCRIPT_DIR / "resources" / "infra-compose.yml"
+        infra_compose = self.get_resource_path("infra-compose.yml")
+        if not infra_compose:
+            UI.die(
+                "Infrastructure compose file 'infra-compose.yml' not found in resources."
+            )
 
         # Start infrastructure
         env = os.environ.copy()
@@ -877,8 +878,8 @@ class StackHandler(BaseHandler):
         """Tears down project containers and volumes."""
         if infra:
             UI.warning("Tearing down global infrastructure (Traefik)...")
-            infra_compose = SCRIPT_DIR / "resources" / "infra-compose.yml"
-            if infra_compose.exists():
+            infra_compose = self.get_resource_path("infra-compose.yml")
+            if infra_compose:
                 self.run_command(
                     get_compose_cmd() + ["-f", str(infra_compose), "down", "-v"],
                     capture_output=False,
@@ -1303,9 +1304,13 @@ class StackHandler(BaseHandler):
             for container in containers:
                 self.run_command(["docker", "ps", "-q", "-f", f"name=^{container}$"])
 
+            infra_compose = self.get_resource_path("infra-compose.yml")
+            if not infra_compose:
+                UI.die("Infrastructure compose file 'infra-compose.yml' not found.")
+
             cmd = get_compose_cmd() + [
                 "-f",
-                str(SCRIPT_DIR / "resources" / "infra-compose.yml"),
+                str(infra_compose),
                 "logs",
             ]
             if follow:
