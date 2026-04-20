@@ -529,14 +529,14 @@ Chrome and other Chromium-based browsers often cache certificate trust.
 
 #### 3. Verify with `ldm doctor`
 
-Run `ldm doctor` to verify that your system sees the Root CA as trusted:
+Run `ldm doctor` to verify that your system sees the Root CA as trusted and that all required tools (`telnet`, `nc`, `lcp`, `docker compose`) are correctly installed and reachable:
 
 ```bash
 
 ldm doctor
 ```
 
-Look for: `mkcert ✅ Installed (Root CA Trusted)`
+Look for: `mkcert ✅ Installed (Root CA Trusted)` and ensure other tools show as `✅ Installed`.
 
 ---
 

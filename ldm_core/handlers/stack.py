@@ -1325,6 +1325,9 @@ class StackHandler(BaseHandler):
                 return
 
             for root in targets:
+                if self.verbose:
+                    UI.debug(f"Processing logs for project: {root.name} in {root}")
+
                 if follow:
                     # 1. Wait for directory (Host-side files)
                     log_dir = root / "logs"

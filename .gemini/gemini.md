@@ -67,11 +67,21 @@ This file serves as the persistent state and technical knowledge base for the AI
 
 ## 🏁 Definition of Done for Changes
 
+### Commit Requirements
+
+- **Pre-commit Compliance**: All commits REQUIRE the local pre-commit hooks to pass (`ruff`, `pytest`, `bandit`, `markdownlint`, `version-sync`). NEVER bypass these checks.
+- **Documentation Synchronization**: All functional changes MUST be reflected in relevant documentation (`README.md`, `ROADMAP.md`, `SECURITY.md`, `LDM_ARCHITECTURE.md`).
+- **Memory Persistence**: The `.gemini/gemini.md` file MUST be updated before proposing any changes to serve as the persistent state for the assistant.
+- **Semantic Commits**: All commits must include a clear, suitable summary and a detailed description of the changes made and why.
+- **History Management**: For bug fixes and refinements, prioritize squashing git history and retagging/re-releasing the current version (while LDM is in early-access staging) to maintain a high-signal commit history.
+
+### Technical Checklist
+
 - [ ] Code passes `./lint.sh` (Ruff, Markdown, Bandit, Pytest).
 - [ ] All unit tests pass locally (`pytest ldm_core/tests/`).
 - [ ] All `# nosec` usages are documented in `docs/SECURITY.md`.
 - [ ] `ldm-doctor.sh` check passes (if infra changes were made).
 - [ ] Version-aware separator logic is maintained.
 - [ ] Explicit Traefik network labels are applied.
-- [ ] Documentation (`README.md`, `ROADMAP.md`, `SECURITY.md`) is updated.
+- [ ] Documentation is fully updated.
 - [ ] Project Memory (`gemini.md`) is updated.
