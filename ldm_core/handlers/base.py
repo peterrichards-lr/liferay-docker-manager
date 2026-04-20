@@ -686,6 +686,20 @@ class BaseHandler:
 
         return " ".join(sorted(list(mounts)))
 
+    def get_resource_path(self, filename):
+        """Resiliently locates internal resource files (supports source vs bundled)."""
+        # 1. Check bundled package structure (site-packages/ldm_core/resources)
+        path = SCRIPT_DIR / "ldm_core" / "resources" / filename
+        if path.exists():
+            return path
+
+        # 2. Check source development structure (root/resources)
+        path = SCRIPT_DIR / "resources" / filename
+        if path.exists():
+            return path
+
+        return None
+
     def cmd_completion(self, target_shell=None):
         """Displays instructions or outputs shellcode for enabling completion."""
         # Detect active shell if not provided
@@ -785,3 +799,43 @@ class BaseHandler:
             f"You may need to restart your terminal or source your profile ({UI.CYAN}~/{profile}{UI.COLOR_OFF})"
         )
         print("for the changes to take effect.")
+
+    def cmd_man(self):
+        """Displays the ldm manual page."""
+        man_path = self.get_resource_path("ldm.1")
+        if not man_path:
+            UI.die("Manual page 'ldm.1' not found in resources.")
+
+        # On macOS/Linux, we can use 'man -l' to view a local file
+        # Fallback to 'less' if 'man' is not found or fails
+        try:
+            import subprocess
+
+            if platform.system().lower() != "windows":
+                # Check if man supports -l (macOS and most Linux)
+                res = subprocess.run(
+                    ["man", "--help"], capture_output=True, text=True, check=False
+                )
+                if "-l" in res.stdout or "-l" in res.stderr:
+                    subprocess.run(["man", "-l", str(man_path)])
+                else:
+                    # Fallback to less with roff processing if possible, or raw text
+                    # We can use mandoc or groff if available
+                    if shutil.which("mandoc"):
+                        subprocess.run(
+                            f"mandoc -Tutf8 {man_path} | less -R",
+                            shell=True,  # nosec B602 B604
+                        )
+                    elif shutil.which("groff"):
+                        subprocess.run(
+                            f"groff -man -Tascii {man_path} | less -R",
+                            shell=True,  # nosec B602 B604
+                        )
+                    else:
+                        subprocess.run(["less", str(man_path)])
+            else:
+                # Windows fallback to notepad or similar
+                subprocess.run(["notepad", str(man_path)])
+        except Exception as e:
+            UI.error(f"Failed to display manual: {e}")
+            UI.info(f"You can view the raw manual file at: {man_path}")

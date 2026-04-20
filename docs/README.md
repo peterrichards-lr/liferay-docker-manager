@@ -522,6 +522,14 @@ ldm completion
 
 This enables TAB completion for all commands and project names.
 
+### `man`
+
+Display the comprehensive manual page for LDM. This provides an offline reference for all commands, options, and architecture details.
+
+```bash
+ldm man
+```
+
 ### `renew-ssl`
 
 Refresh project-specific SSL certificates immediately.
