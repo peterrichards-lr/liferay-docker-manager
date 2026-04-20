@@ -187,6 +187,9 @@ class TestDiagnostics(unittest.TestCase):
                 patch.object(Path, "read_text", return_value=""),
                 patch.object(Path, "home", return_value=Path("/tmp/home")),
                 patch("ldm_core.handlers.diagnostics.run_command", return_value="200"),
+                patch(
+                    "ldm_core.utils.get_compose_cmd", return_value=["docker", "compose"]
+                ),
             ):
                 try:
                     self.manager.cmd_doctor()
