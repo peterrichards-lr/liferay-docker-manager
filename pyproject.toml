@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "liferay-docker-manager"
-version = "2.1.19"
+version = "2.1.20"
 description = "A professional command-line orchestrator for Liferay Docker environments."
 authors = [{ name = "Peter Richards", email = "peter.richards@liferay.com" }]
 requires-python = ">=3.10"
@@ -23,7 +23,7 @@ ldm = "ldm_core.cli:main"
 include-package-data = true
 
 [tool.setuptools.package-data]
-ldm_core = ["resources/common_baseline/*", "resources/infra-compose.yml"]
+ldm_core = ["resources/common_baseline/*", "resources/infra-compose.yml", "resources/ldm.1"]
 
 [tool.setuptools.packages.find]
 where = ["."]

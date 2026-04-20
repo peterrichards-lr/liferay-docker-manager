@@ -56,8 +56,9 @@ While the v1.x "Hardened Edition" focused on cross-platform stability, **v2.0.0*
 
 ## ✅ Completed Improvements (v2.1.x)
 
-### **High-Performance Boot & Hardening (v2.1.19)**
+### **High-Performance Boot & Hardening (v2.1.20)**
 
+- **Local Manual (`ldm man`)**: Introduced a comprehensive offline manual page accessible directly from the CLI, providing a robust reference for all commands and architecture.
 - **Database "Fast-Forward"**: Added support for downloading pre-initialized, version-matched "Seed" volumes (Database + Search Index) from GitHub. Reduces first-run wait times significantly.
 - **Resilient Tag Discovery**: Upgraded the discovery engine to support both HTML (`releases.liferay.com`) and JSON (Docker Hub) listings, ensuring stability against upstream API changes.
 - **Proactive Dependency Checks**: `ldm doctor` now verifies the presence and accessibility of essential local tools (`telnet`, `nc`, `lcp`, `docker compose`) to ensure a smooth developer onboarding experience.

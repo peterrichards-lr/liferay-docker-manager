@@ -785,3 +785,31 @@ class BaseHandler:
             f"You may need to restart your terminal or source your profile ({UI.CYAN}~/{profile}{UI.COLOR_OFF})"
         )
         print("for the changes to take effect.")
+
+    def cmd_man(self):
+        """Displays the ldm manual page."""
+        man_path = SCRIPT_DIR / "resources" / "ldm.1"
+        if not man_path.exists():
+            UI.die(f"Manual page not found at: {man_path}")
+
+        # On macOS/Linux, we can use 'man -l' to view a local file
+        # Fallback to 'less' if 'man' is not found or fails
+        try:
+            import subprocess
+
+            if platform.system().lower() != "windows":
+                # Check if man supports -l
+                res = subprocess.run(
+                    ["man", "--help"], capture_output=True, text=True, check=False
+                )
+                if "-l" in res.stdout or "-l" in res.stderr:
+                    subprocess.run(["man", "-l", str(man_path)])
+                else:
+                    # Fallback to standard man if -l not supported (some older versions)
+                    subprocess.run(["man", str(man_path)])
+            else:
+                # Windows fallback to notepad or similar
+                subprocess.run(["notepad", str(man_path)])
+        except Exception as e:
+            UI.error(f"Failed to display manual: {e}")
+            UI.info(f"You can view the raw manual file at: {man_path}")
