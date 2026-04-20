@@ -17,14 +17,14 @@ The LDM CI pipeline runs Bandit security scans. We explicitly ignore the followi
 
 | Code | Intent & Disclosure |
 | :--- | :--- |
-| **B103** | Permissive 777 permissions. Used in `migrate_layout` to ensure host-side compatibility for legacy projects. **Mitigation**: All calls are wrapped in `try...except` and LDM prioritizes a Docker-based recursive reclamation fix for ownership. |
+| **B103** | Permissive 777 permissions. Used in `migrate_layout` for legacy projects and `cmd_upgrade` to ensure the newly downloaded binary is executable. **Mitigation**: All calls are wrapped in `try...except` and LDM prioritizes standard user ownership. |
 | **B104** | Hardcoded bind to all interfaces. Required for macOS loopback, Gogo shell access, and infrastructure setup. |
 | **B108** | Hardcoded /tmp directory. Used only for transient mount verification tokens. |
 | **B112** | `try...except continue` patterns. Used in loops (e.g., tag discovery, project scanning) where a single failure should not abort the entire operation. |
 | **B202** | Tar `extractall` operations. Used for snapshots and samples. **Mitigation**: LDM uses a mandatory `is_within_root` validation before every extraction to prevent Zip Slip / Path Traversal attacks. |
 | **B324** | Use of MD5 hashing. Used in `cloud-fetch` for ETag verification and non-cryptographic file integrity checks. |
-| **B602 / B603** | Subprocess execution with shell or without absolute paths. Used for complex piping during database snapshots and Windows bridge logic. **Mitigation**: Commands are hardcoded or constructed from strictly sanitized internal identifiers. |
-| **B604** | Function call with `shell=True`. Used in `is_completion_enabled` and `cmd_completion` to interact with shell builtins and generate completion scripts. **Mitigation**: All command strings are hardcoded and contain no user-supplied input. |
+| **B602 / B603** | Subprocess execution with shell or without absolute paths. Used for complex piping during database snapshots, Windows bridge logic, and rendering the local man page (`cmd_man`). **Mitigation**: Commands are hardcoded or constructed from strictly sanitized internal identifiers. |
+| **B604** | Function call with `shell=True`. Used in `is_completion_enabled`, `cmd_completion`, and `cmd_man` to interact with shell builtins and render the local man page. **Mitigation**: All command strings are hardcoded and contain no user-supplied input. |
 | **B605** | Start process with a shell. Used in `cmd_log_level` to pipe Gogo shell commands via `nc` for dynamic log adjustment. **Mitigation**: The command string is hardcoded and only sanitized level/category strings are interpolated. |
 | **CVE-2026-4539** | Pygments vulnerability. Ignored as LDM only uses Pygments for local console highlighting, posing no remote risk. |
 
@@ -49,6 +49,17 @@ LDM uses `mkcert` to provide a "Green Lock" experience. This requires installing
 
 - **Risk**: If your private CA key is compromised, an attacker could spoof websites on your local machine.
 - **Mitigation**: LDM stores certificates in `~/liferay-docker-certs`. Ensure this directory is kept private.
+
+## 6. Sudo & Internalized Elevation
+
+To protect the integrity of the application cache (`~/.shiv`) and ensure consistent file ownership, **LDM prohibits being run with the `sudo` prefix.**
+
+The tool utilizes a "Just-in-Time" elevation strategy. It runs as your standard user and only invokes `sudo` internally for specific system-level operations:
+
+- **`ldm doctor --fix-hosts`**: Requests elevation to append entries to `/etc/hosts`.
+- **`ldm upgrade`**: Requests elevation to replace the binary in system paths like `/usr/local/bin` if required.
+
+This ensures that all project data and temporary files remain owned by your local user, preventing permission-related lockouts.
 
 ---
 

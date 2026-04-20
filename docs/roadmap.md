@@ -7,9 +7,9 @@ This document outlines potential enhancements to the Liferay Docker Manager (ldm
 
 ---
 
-## 🚀 Future Roadmap: v2.0.0 (The Ecosystem Phase)
+## 🚀 Future Roadmap: v2.2.0 (The Ecosystem Phase)
 
-While the v1.x "Hardened Edition" focused on cross-platform stability, **v2.0.0** will shift focus toward developer onboarding and "Scenario-First" orchestration.
+While the v1.x "Hardened Edition" focused on cross-platform stability, **v2.2.0** will shift focus toward developer onboarding and "Scenario-First" orchestration.
 
 ### 1. Guided Onboarding & Scaffolding
 
@@ -49,15 +49,20 @@ While the v1.x "Hardened Edition" focused on cross-platform stability, **v2.0.0*
 ### 7. Strategic Hardening & Fleet Management
 
 - **Snapshot Integrity Verification**: Implement SHA-256 checksumming for Project Snapshots to guarantee data validity when shared across teams.
-- **Bulk Stack Management**: Introduce workspace-wide commands (e.g., `ldm stop --all`, `ldm status --workspace`) for bird's-eye fleet control.
-- **Auto-Healing DNS**: Add an optional `--fix-dns` flag to `ldm doctor` that automatically appends missing subdomains to `/etc/hosts` using standard OS elevation.
 
 ---
 
 ## ✅ Completed Improvements (v2.1.x)
 
-### **High-Performance Boot & Hardening (v2.1.19)**
+### **High-Performance Boot & Hardening (v2.1.26)**
 
+- **Sudo Troubleshooting**: Added a dedicated troubleshooting section in the documentation for `sudo` and `root` issues, specifically addressing cache ownership corruption in `~/.shiv`. The CLI error message now provides a direct link to this guide.
+- **Zero-Failure Upgrades**: Hardened the self-upgrade engine to use system temporary directories for downloads.
+...
+- **Native Manual Entry**: Fully integrated with the system `man` command. You can now add a stable LDM manpath to your shell profile to support native `man ldm` usage across binary upgrades.
+...
+- **Unified Resource Discovery**: Implemented a resilient path resolution system to ensure internal assets (Manuals, Infrastructure Compose files) are correctly located in both source and bundled (Shiv/PyInstaller) environments.
+...
 - **Database "Fast-Forward"**: Added support for downloading pre-initialized, version-matched "Seed" volumes (Database + Search Index) from GitHub. Reduces first-run wait times significantly.
 - **Resilient Tag Discovery**: Upgraded the discovery engine to support both HTML (`releases.liferay.com`) and JSON (Docker Hub) listings, ensuring stability against upstream API changes.
 - **Proactive Dependency Checks**: `ldm doctor` now verifies the presence and accessibility of essential local tools (`telnet`, `nc`, `lcp`, `docker compose`) to ensure a smooth developer onboarding experience.
