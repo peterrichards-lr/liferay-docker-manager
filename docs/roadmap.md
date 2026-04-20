@@ -54,10 +54,10 @@ While the v1.x "Hardened Edition" focused on cross-platform stability, **v2.2.0*
 
 ## ✅ Completed Improvements (v2.1.x)
 
-### **High-Performance Boot & Hardening (v2.1.29)**
+### **High-Performance Boot & Hardening (v2.1.30)**
 
-- **Clean CLI Usage**: Explicitly set the program name in the argument parser to ensure clean usage strings (e.g., `usage: ldm ...`) across all platforms and bundled environments, eliminating messy Python interpreter paths.
-- **Refined Root Troubleshooting**: Improved the sudo troubleshooting guide to explicitly address the "Already Logged in as Root" scenario.
+- **Self-Upgrade Scoping**: Fixed an `UnboundLocalError` in the self-upgrade engine that occurred on Unix platforms when internal `sudo` elevation was requested. The `subprocess` module is now correctly scoped for all platforms.
+- **Clean CLI Usage**: Explicitly set the program name in the argument parser to ensure clean usage strings.
 ...
 - **Sudo Troubleshooting**: Added a dedicated troubleshooting section in the documentation for `sudo` and `root` issues.
 ...

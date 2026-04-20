@@ -333,6 +333,8 @@ class DiagnosticsHandler:
 
         # 5. Atomic Swap
         UI.info("Applying update...")
+        import subprocess
+
         try:
             if platform.system().lower() == "windows":
                 # Windows replacement logic via temporary batch file
@@ -347,7 +349,6 @@ del "%~f0"
                 UI.success(
                     "Update staged. LDM will restart in a new window to complete."
                 )
-                import subprocess
 
                 # Bandit: B602 (shell=True) is necessary here to launch the independent Windows batch updater.
                 # The path is internally generated and sanitized.
