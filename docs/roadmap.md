@@ -56,7 +56,7 @@ While the v1.x "Hardened Edition" focused on cross-platform stability, **v2.0.0*
 
 ## ✅ Completed Improvements (v2.1.x)
 
-### **High-Performance Boot & Hardening (v2.1.6)**
+### **High-Performance Boot & Hardening (v2.1.7)**
 
 - **Database "Fast-Forward"**: Added support for downloading pre-initialized, version-matched "Seed" volumes (Database + Search Index) from GitHub. Reduces first-run wait times significantly.
 - **Resilient Tag Discovery**: Upgraded the discovery engine to support both HTML (`releases.liferay.com`) and JSON (Docker Hub) listings, ensuring stability against upstream API changes.

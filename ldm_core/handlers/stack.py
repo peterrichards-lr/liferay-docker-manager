@@ -1193,6 +1193,8 @@ class StackHandler(BaseHandler):
         host_name = meta.get("host_name", "localhost")
         ssl = str(meta.get("ssl", "false")).lower() == "true"
         url = f"https://{host_name}" if ssl else f"http://{host_name}:8080"
+        from ldm_core.utils import open_browser
+
         open_browser(url)
 
     def cmd_infra_setup(self):

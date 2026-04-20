@@ -387,7 +387,7 @@ del "%~f0"
         raw_shell = os.environ.get("SHELL", "").lower()
 
         # Get just the binary name (e.g. /bin/zsh -> zsh)
-        shell = raw_shell.split("/")[-1]
+        shell = raw_shell.split("/")[-1] if "/" in raw_shell else raw_shell
         if shell.endswith(".exe"):
             shell = shell[:-4]
 
