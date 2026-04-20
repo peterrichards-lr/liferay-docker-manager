@@ -580,6 +580,18 @@ del "%~f0"
             except Exception:
                 pass
 
+            # 2.0.1 Docker Compose Check
+            from ldm_core.utils import get_compose_cmd
+
+            compose_bin = get_compose_cmd()
+            if compose_bin:
+                results.append(("Docker Compose", "Plugin v2 Detected", True))
+            else:
+                results.append(("Docker Compose", "Plugin NOT FOUND", False))
+                add_hint(
+                    "LDM requires the Docker Compose V2 plugin. Please install it via your Docker provider settings."
+                )
+
             # 2.1 Docker Credentials Check
             creds_status, creds_ok = self._check_docker_creds()
             if creds_status:
@@ -650,7 +662,47 @@ del "%~f0"
                 "https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/installation.md#prerequisites",
             )
 
-        # 4.1 Liferay Cloud Check
+        # 4.1 Required Tools Check
+        telnet_bin = shutil.which("telnet")
+        nc_bin = shutil.which("nc")
+        lcp_bin = shutil.which("lcp")
+
+        results.append(
+            (
+                "Tool: telnet",
+                "Installed" if telnet_bin else "Missing (Gogo Shell disabled)",
+                True if telnet_bin else "warn",
+            )
+        )
+        if not telnet_bin:
+            add_hint(
+                "Install telnet for Gogo Shell support (e.g. 'brew install telnet' or 'apt-get install telnet')."
+            )
+
+        results.append(
+            (
+                "Tool: netcat (nc)",
+                "Installed" if nc_bin else "Missing (Log Level sync disabled)",
+                True if nc_bin else "warn",
+            )
+        )
+        if not nc_bin:
+            add_hint("Install netcat for log-level synchronization.")
+
+        results.append(
+            (
+                "Tool: lcp cli",
+                "Installed" if lcp_bin else "Missing (Cloud Fetch disabled)",
+                True if lcp_bin else "warn",
+            )
+        )
+        if not lcp_bin:
+            add_hint(
+                "Install Liferay Cloud CLI for 'cloud-fetch' support.",
+                "https://customer.liferay.com/downloads/-/download/liferay-cloud-cli",
+            )
+
+        # 4.2 Liferay Cloud Check
         lcp_status, lcp_ok = self._check_lcp_cli()
         if lcp_status:
             results.append(("Liferay Cloud Auth", lcp_status, lcp_ok))

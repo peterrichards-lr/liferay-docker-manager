@@ -259,7 +259,7 @@ class StackHandler(BaseHandler):
             # 4. Cleanup
             tmp_path.unlink()
             UI.success(
-                "Project bootstrapped from seed. First boot will be near-instant."
+                f"Project bootstrapped from seed. {UI.WHITE}(Saved ~15m of initialization time){UI.COLOR_OFF}"
             )
             return True
 
@@ -621,6 +621,11 @@ class StackHandler(BaseHandler):
                     UI.info(f"Launching browser: {access_url}/web/guest/home")
                     open_browser(f"{access_url}/web/guest/home")
                 return True
+
+            elapsed = time.time() - start_time
+            if int(elapsed) > 0 and int(elapsed) % 30 == 0:
+                print(f" (Still waiting... {int(elapsed)}s)", end="", flush=True)
+
             print(".", end="", flush=True)
             time.sleep(10)
         UI.error("\nTimed out waiting for Liferay to become healthy.")
@@ -1214,7 +1219,6 @@ class StackHandler(BaseHandler):
             liferay_service["depends_on"] = {"db": {"condition": "service_healthy"}}
 
         compose = {
-            "version": "3.8",
             "services": services,
             "networks": {"liferay-net": {"external": True}},
         }
