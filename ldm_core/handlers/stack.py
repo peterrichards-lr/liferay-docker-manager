@@ -486,7 +486,8 @@ class StackHandler(BaseHandler):
             self.setup_infrastructure(resolved_ip, ssl_port, use_ssl=ssl_enabled)
 
             if self.verbose:
-                UI.debug(f"Infrastructure setup took: {time.time() - infra_start:.2f}s")
+                duration_str = UI.format_duration(time.time() - infra_start)
+                UI.debug(f"Infrastructure setup took: {duration_str}")
 
             if ssl_enabled:
                 ssl_start = time.time()
@@ -494,9 +495,8 @@ class StackHandler(BaseHandler):
                 cert_dir = actual_home / "liferay-docker-certs"
                 self.setup_ssl(cert_dir, host_name)
                 if self.verbose:
-                    UI.debug(
-                        f"SSL certificate generation took: {time.time() - ssl_start:.2f}s"
-                    )
+                    duration_str = UI.format_duration(time.time() - ssl_start)
+                    UI.debug(f"SSL certificate generation took: {duration_str}")
 
         # 2. Asset Synchronization
         from ldm_core.handlers.config import ConfigHandler
@@ -558,9 +558,8 @@ class StackHandler(BaseHandler):
         # 4. Execute
         if not no_up:
             if self.verbose and total_start:
-                UI.debug(
-                    f"Time to orchestration start: {time.time() - total_start:.2f}s"
-                )
+                duration_str = UI.format_duration(time.time() - total_start)
+                UI.debug(f"Time to orchestration start: {duration_str}")
 
             self.run_command(cmd, cwd=str(paths["root"]), capture_output=not follow)
 
@@ -592,7 +591,8 @@ class StackHandler(BaseHandler):
                     if total_start
                     else time.time() - start_time
                 )
-                UI.success(f"Liferay is ready! (Total time: {total_duration:.1f}s)")
+                duration_str = UI.format_duration(total_duration)
+                UI.success(f"Liferay is ready! (Total time: {duration_str})")
                 access_url = (
                     f"https://{host_name}"
                     if host_name != "localhost"
@@ -623,10 +623,11 @@ class StackHandler(BaseHandler):
                 return True
 
             elapsed = time.time() - start_time
-            if int(elapsed) % 30 == 0:
+            if int(elapsed) > 0 and int(elapsed) % 30 == 0:
                 timestamp = datetime.now().strftime("%H:%M:%S")
+                duration_str = UI.format_duration(elapsed)
                 print(
-                    f"[{timestamp}] Still waiting for Liferay to become healthy... ({int(elapsed)}s)"
+                    f"[{timestamp}] Still waiting for Liferay to become healthy... ({duration_str})"
                 )
 
             time.sleep(10)
@@ -756,9 +757,8 @@ class StackHandler(BaseHandler):
                 seed_start = time.time()
                 if self._fetch_seed(tag, db_type or "hypersonic", search_mode, paths):
                     if self.verbose:
-                        UI.debug(
-                            f"Seed fetch & extraction took: {time.time() - seed_start:.2f}s"
-                        )
+                        duration_str = UI.format_duration(time.time() - seed_start)
+                        UI.debug(f"Seed fetch & extraction took: {duration_str}")
                     project_meta = self.read_meta(root / PROJECT_META_FILE)
                     is_new_project = False
 
