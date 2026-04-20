@@ -246,7 +246,7 @@ class BaseHandler:
         # Aggregate from all known workspace locations
         all_roots = []
         seen_paths = set()
-        search_dirs = [Path.cwd(), Path.home() / "ldm"]
+        search_dirs = [Path.cwd(), Path.home() / "ldm", Path("/Volumes/SanDisk/ldm")]
 
         custom_workspace = os.environ.get("LDM_WORKSPACE")
         if custom_workspace:
