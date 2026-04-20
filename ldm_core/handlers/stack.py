@@ -155,21 +155,71 @@ class StackHandler(BaseHandler):
         import requests
         import tempfile
 
+        headers = {}
+        token = os.environ.get("GITHUB_TOKEN")
+        if token:
+            headers["Authorization"] = f"token {token}"
+
         try:
-            # 1. Verify existence
+            # 1. Verify existence via standard URL
             head_res = requests.head(download_url, allow_redirects=True, timeout=10)
+
+            # If 404, the release might be a DRAFT. Try finding it via API.
             if head_res.status_code != 200:
-                if self.verbose:
-                    UI.info(
-                        f"No seed found at {download_url} (HTTP {head_res.status_code})"
+                UI.debug(
+                    f"Direct download failed (HTTP {head_res.status_code}). Checking API for Draft releases..."
+                )
+                api_url = "https://api.github.com/repos/peterrichards-lr/liferay-docker-manager/releases"
+                api_res = requests.get(api_url, headers=headers, timeout=10)
+                if api_res.status_code == 200:
+                    releases = api_res.json()
+                    # Find the release by tag or name
+                    target_release = next(
+                        (
+                            r
+                            for r in releases
+                            if r.get("tag_name") == tag_name
+                            or r.get("name") == tag_name
+                        ),
+                        None,
                     )
-                return False
+                    if target_release:
+                        # Find the asset
+                        asset = next(
+                            (
+                                a
+                                for a in target_release.get("assets", [])
+                                if a.get("name") == seed_filename
+                            ),
+                            None,
+                        )
+                        if asset:
+                            download_url = asset.get("browser_download_url")
+                            UI.debug(
+                                f"Found asset in {'Draft ' if target_release.get('draft') else ''}release via API."
+                            )
+                        else:
+                            if self.verbose:
+                                UI.info(
+                                    f"Asset '{seed_filename}' not found in release '{tag_name}'."
+                                )
+                            return False
+                    else:
+                        if self.verbose:
+                            UI.info(f"Release '{tag_name}' not found via API.")
+                        return False
+                else:
+                    if self.verbose:
+                        UI.info(f"API check failed (HTTP {api_res.status_code})")
+                    return False
 
             UI.info("  + Seed found! Bootstrapping project...")
 
             # 2. Download to temp file
             with tempfile.NamedTemporaryFile(suffix=".tar.gz", delete=False) as tmp:
-                with requests.get(download_url, stream=True, timeout=30) as r:
+                with requests.get(
+                    download_url, stream=True, timeout=30, headers=headers
+                ) as r:
                     r.raise_for_status()
                     for chunk in r.iter_content(chunk_size=8192):
                         tmp.write(chunk)
