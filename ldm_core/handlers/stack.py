@@ -5,12 +5,12 @@ import json
 import time
 import math
 import shutil
+import subprocess
 from pathlib import Path
 from ldm_core.ui import UI
 from ldm_core.handlers.base import BaseHandler
 from ldm_core.constants import PROJECT_META_FILE, SCRIPT_DIR
 from ldm_core.utils import (
-    run_command,
     get_actual_home,
     get_compose_cmd,
     open_browser,
@@ -50,7 +50,7 @@ class StackHandler(BaseHandler):
             else:
                 hosts.append(f"*.{host_name}")
 
-            res = run_command(
+            res = self.run_command(
                 [
                     mkcert_bin,
                     "-cert-file",
@@ -283,23 +283,28 @@ class StackHandler(BaseHandler):
         env["LDM_SSL_PORT"] = str(ssl_port)
         env["LDM_RESOLVED_IP"] = resolved_ip
 
-        run_command(
+        self.run_command(
             get_compose_cmd()
             + ["-f", str(infra_compose), "up", "-d", "--remove-orphans"],
             env=env,
+            capture_output=False,
         )
         return True
 
     def _ensure_network(self):
         """Ensures the standard 'liferay-net' Docker network exists."""
-        networks = run_command(["docker", "network", "ls", "--format", "{{.Name}}"])
+        networks = self.run_command(
+            ["docker", "network", "ls", "--format", "{{.Name}}"]
+        )
         if "liferay-net" not in (networks or ""):
             UI.info("Creating Docker network: liferay-net")
-            run_command(["docker", "network", "create", "liferay-net"])
+            self.run_command(["docker", "network", "create", "liferay-net"])
 
     def _ensure_docker_proxy(self):
         """Ensures a safe Docker socket proxy is running for Traefik."""
-        if not run_command(["docker", "ps", "-q", "-f", "name=liferay-docker-proxy"]):
+        if not self.run_command(
+            ["docker", "ps", "-q", "-f", "name=liferay-docker-proxy"]
+        ):
             UI.info("Starting Docker socket bridge...")
             socket_path = get_docker_socket_path()
 
@@ -316,7 +321,7 @@ class StackHandler(BaseHandler):
                 UI.debug("Colima/Lima detected. Using standard internal socket path.")
                 socket_path = "/var/run/docker.sock"
 
-            run_command(
+            self.run_command(
                 [
                     "docker",
                     "run",
@@ -334,7 +339,7 @@ class StackHandler(BaseHandler):
     def setup_global_search(self):
         """Ensures the global ES8 search service is running."""
         search_name = "liferay-search-global"
-        if not run_command(["docker", "ps", "-q", "-f", f"name={search_name}"]):
+        if not self.run_command(["docker", "ps", "-q", "-f", f"name={search_name}"]):
             UI.info("Initializing Global Search (ES8) container...")
             home = get_actual_home()
             es_data = home / ".ldm" / "infra" / "search" / "data"
@@ -343,7 +348,7 @@ class StackHandler(BaseHandler):
             es_backup.mkdir(parents=True, exist_ok=True)
 
             # Persistent ES8 instance matching Liferay requirements
-            run_command(
+            self.run_command(
                 [
                     "docker",
                     "run",
@@ -373,7 +378,7 @@ class StackHandler(BaseHandler):
             time.sleep(15)
 
             # Register backup repository (required for snapshots)
-            run_command(
+            self.run_command(
                 [
                     "docker",
                     "exec",
@@ -399,7 +404,7 @@ class StackHandler(BaseHandler):
             UI.info("Installing missing Liferay analyzers in Global Search...")
 
             # Tests expect a 'plugin list' call first
-            run_command(
+            self.run_command(
                 ["docker", "exec", search_name, "bin/elasticsearch-plugin", "list"]
             )
 
@@ -410,7 +415,7 @@ class StackHandler(BaseHandler):
                 "analysis-stempel",
             ]
             for plugin in analyzers:
-                run_command(
+                self.run_command(
                     [
                         "docker",
                         "exec",
@@ -424,7 +429,7 @@ class StackHandler(BaseHandler):
                 )
 
             UI.info("Restarting Global Search to activate plugins...")
-            run_command(["docker", "restart", search_name])
+            self.run_command(["docker", "restart", search_name])
 
     def sync_stack(
         self,
@@ -477,7 +482,7 @@ class StackHandler(BaseHandler):
 
         # Pre-flight: Validate Compose Syntax
         UI.debug("Validating generated docker-compose.yml syntax...")
-        run_command(
+        self.run_command(
             get_compose_cmd() + ["config", "--quiet"],
             cwd=str(paths["root"]),
             check=True,
@@ -510,10 +515,10 @@ class StackHandler(BaseHandler):
 
         # 4. Execute
         if not no_up:
-            run_command(cmd, cwd=str(paths["root"]), capture_output=not follow)
+            self.run_command(cmd, cwd=str(paths["root"]), capture_output=not follow)
             if follow:
                 # Tail logs if requested
-                run_command(compose_base + ["logs", "-f"], cwd=str(paths["root"]))
+                self.run_command(compose_base + ["logs", "-f"], cwd=str(paths["root"]))
             elif not no_wait:
                 # Standard wait for health
                 self._wait_for_liferay(project_meta.get("container_name"), host_name)
@@ -523,7 +528,7 @@ class StackHandler(BaseHandler):
         UI.info("Waiting for Liferay to start (this can take several minutes)...")
         start_time = time.time()
         while time.time() - start_time < timeout:
-            status = run_command(
+            status = self.run_command(
                 ["docker", "inspect", "-f", "{{.State.Health.Status}}", container_name],
                 check=False,
             )
@@ -550,7 +555,7 @@ class StackHandler(BaseHandler):
     def get_default_jvm_args(self):
         """Calculates recommended JVM arguments based on available Docker RAM."""
         try:
-            docker_info_raw = run_command(
+            docker_info_raw = self.run_command(
                 ["docker", "info", "--format", "{{json .}}"], check=False
             )
             if not docker_info_raw:
@@ -710,7 +715,9 @@ class StackHandler(BaseHandler):
             from ldm_core.handlers.snapshot import SnapshotHandler
 
             self.sync_stack(paths, project_meta, no_up=True)
-            run_command(get_compose_cmd() + ["up", "-d", "db"], cwd=str(paths["root"]))
+            self.run_command(
+                get_compose_cmd() + ["up", "-d", "db"], cwd=str(paths["root"])
+            )
             time.sleep(5)
             SnapshotHandler(self.args).cmd_restore(
                 project_id,
@@ -747,7 +754,7 @@ class StackHandler(BaseHandler):
             cmd = compose_base + ["stop"]
             if service:
                 cmd.append(service)
-            run_command(cmd, cwd=str(root))
+            self.run_command(cmd, capture_output=False, cwd=str(root))
 
     def cmd_restart(self, project_id=None, service=None, all_projects=False):
         """Restarts project containers."""
@@ -769,7 +776,7 @@ class StackHandler(BaseHandler):
             cmd = compose_base + ["restart"]
             if service:
                 cmd.append(service)
-            run_command(cmd, cwd=str(root))
+            self.run_command(cmd, capture_output=False, cwd=str(root))
 
     def cmd_down(self, project_id=None, service=None, all_projects=False):
         """Tears down project containers and volumes."""
@@ -796,7 +803,7 @@ class StackHandler(BaseHandler):
 
             # Harden: Check if docker-compose.yml exists before trying to run down
             if (root / "docker-compose.yml").exists():
-                run_command(cmd, cwd=str(root))
+                self.run_command(cmd, capture_output=False, cwd=str(root))
             else:
                 UI.debug(
                     f"No docker-compose.yml found in {root}. Skipping docker-compose down."
@@ -814,7 +821,11 @@ class StackHandler(BaseHandler):
         paths, meta = self.setup_paths(root), self.read_meta(root / PROJECT_META_FILE)
         if service:
             UI.info(f"Deploying service '{service}'...")
-            run_command(get_compose_cmd() + ["up", "-d", service], cwd=str(root))
+            self.run_command(
+                get_compose_cmd() + ["up", "-d", service],
+                capture_output=False,
+                cwd=str(root),
+            )
         else:
             self.sync_stack(paths, meta, rebuild=getattr(self.args, "rebuild", False))
 
@@ -1186,7 +1197,7 @@ class StackHandler(BaseHandler):
                 containers.append("liferay-search-global")
 
             for container in containers:
-                run_command(["docker", "ps", "-q", "-f", f"name=^{container}$"])
+                self.run_command(["docker", "ps", "-q", "-f", f"name=^{container}$"])
 
             cmd = get_compose_cmd() + [
                 "-f",
@@ -1195,7 +1206,7 @@ class StackHandler(BaseHandler):
             ]
             if follow:
                 cmd.append("-f")
-            run_command(cmd)
+            self.run_command(cmd, capture_output=not follow)
         else:
             targets = []
             if all_projects:
@@ -1218,7 +1229,90 @@ class StackHandler(BaseHandler):
                         cmd.extend(service)
                     else:
                         cmd.append(service)
-                run_command(cmd, cwd=str(root))
+                self.run_command(cmd, capture_output=not follow, cwd=str(root))
+
+    def cmd_shell(self, project_id=None, service="liferay"):
+        """Enters a project container via bash."""
+        root = self.detect_project_path(project_id)
+        if not root:
+            return
+        service_name = service or "liferay"
+        meta = self.read_meta(root / PROJECT_META_FILE)
+        container_prefix = meta.get("container_name")
+
+        target_container = f"{container_prefix}-{service_name}"
+        if service_name == "liferay":
+            target_container = container_prefix
+
+        UI.info(f"Entering container: {target_container}")
+        try:
+            subprocess.run(["docker", "exec", "-it", target_container, "/bin/bash"])
+        except KeyboardInterrupt:
+            pass
+
+    def cmd_gogo(self, project_id=None):
+        """Connects to the OSGi Gogo shell."""
+        root = self.detect_project_path(project_id)
+        if not root:
+            return
+        meta = self.read_meta(root / PROJECT_META_FILE)
+        port = meta.get("gogo_port")
+
+        if not port or port == "None":
+            UI.die(
+                "Gogo shell is not exposed. Run 'ldm run --gogo-port <port>' to enable it."
+            )
+
+        UI.info(f"Connecting to Gogo shell on localhost:{port}...")
+        try:
+            subprocess.run(["telnet", "localhost", str(port)])
+        except FileNotFoundError:
+            UI.error("telnet not found. Run: telnet localhost " + str(port))
+        except KeyboardInterrupt:
+            pass
+
+    def cmd_log_level(self, project_id=None, category=None, level=None):
+        """Dynamically adjusts Liferay log levels via Gogo shell."""
+        root = self.detect_project_path(project_id)
+        if not root:
+            return
+        meta = self.read_meta(root / PROJECT_META_FILE)
+        port = meta.get("gogo_port")
+
+        if not port or port == "None":
+            UI.die("Log level adjustment requires an enabled Gogo port.")
+
+        if not category or not level:
+            category = category or UI.ask("Logger Category", "com.liferay.portal")
+            level = level or UI.ask("Level (DEBUG|INFO|WARN|ERROR)", "DEBUG")
+
+        UI.info(f"Setting {category} to {level}...")
+        cmd = f'echo "log:set {level} {category}" | nc -w 2 localhost {port}'
+        os.system(cmd)  # nosec B605
+        UI.success("Log level updated.")
+
+    def is_port_available(self, port, ip="127.0.0.1"):
+        """Checks if a TCP port is available on a specific IP."""
+        import socket
+
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.settimeout(0.5)
+                s.bind((ip, int(port)))
+            return True
+        except Exception:
+            return False
+
+    def is_bindable(self, ip):
+        """Checks if an IP address is bindable on the host."""
+        import socket
+
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.bind((ip, 0))
+            return True
+        except Exception:
+            return False
 
     def cmd_reseed(self, project_id=None):
         """Triggers a re-bootstrap of the project from a fresh seed."""
