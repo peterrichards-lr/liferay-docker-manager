@@ -56,11 +56,13 @@ While the v1.x "Hardened Edition" focused on cross-platform stability, **v2.0.0*
 
 ## ✅ Completed Improvements (v2.1.x)
 
-### **High-Performance Boot & Hardening (v2.1.16)**
+### **High-Performance Boot & Hardening (v2.1.18)**
 
 - **Database "Fast-Forward"**: Added support for downloading pre-initialized, version-matched "Seed" volumes (Database + Search Index) from GitHub. Reduces first-run wait times significantly.
 - **Resilient Tag Discovery**: Upgraded the discovery engine to support both HTML (`releases.liferay.com`) and JSON (Docker Hub) listings, ensuring stability against upstream API changes.
+- **Project Discovery Hardening**: Refined the filesystem scanner to prevent over-eager identification of home directory subfolders as LDM projects. Only folders with explicit metadata or known LDM structures are now matched.
 - **Inclusive Fleet Scope**: Fixed the `--all` switch for `rm`, `stop`, `restart`, and `logs` to use filesystem-based discovery.
+...
 - **Reliable Cleanup**: Resolved a bug where the `--delete` flag was ignored during `ldm rm`. The flag is now correctly passed through the CLI layer, ensuring project directories are wiped when requested.
 - **Smart Log Tailing**: `ldm logs -f` now proactively polls and waits for both the host-side log directory AND the Docker container to exist before streaming, enabling zero-failure tailing during project startup.
 ...

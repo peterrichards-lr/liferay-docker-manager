@@ -246,7 +246,7 @@ class BaseHandler:
         # Aggregate from all known workspace locations
         all_roots = []
         seen_paths = set()
-        search_dirs = [Path.cwd(), Path.home() / "ldm"]
+        search_dirs = [Path.cwd(), Path.home() / "ldm", Path("/Volumes/SanDisk/ldm")]
 
         custom_workspace = os.environ.get("LDM_WORKSPACE")
         if custom_workspace:
@@ -270,7 +270,7 @@ class BaseHandler:
         if not d_path.exists() or not d_path.is_dir():
             return roots
 
-        is_home = d_path.resolve() == Path.home().resolve()
+        is_ldm_root = d_path.name == "ldm"
 
         try:
             for item in d_path.iterdir():
@@ -281,7 +281,13 @@ class BaseHandler:
                             item / "deploy"
                         ).exists()
 
-                        if has_meta or (not is_home and has_structure):
+                        # Logic:
+                        # 1. If it has .meta, it's a project.
+                        # 2. If it's in a known LDM root (like ~/ldm or /Volumes/SanDisk/ldm),
+                        #    we allow structure-based discovery.
+                        # 3. Otherwise (e.g. scanning Home directly), we REQUIRE .meta
+                        #    to avoid picking up every folder in ~/
+                        if has_meta or (is_ldm_root and has_structure):
                             meta = self.read_meta(item / PROJECT_META_FILE)
                             version = meta.get("tag") or "unknown"
                             roots.append({"path": item, "version": version})
