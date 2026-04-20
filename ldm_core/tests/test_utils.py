@@ -84,6 +84,28 @@ class TestUtils(unittest.TestCase):
         tag = discover_latest_tag("https://releases.liferay.com/dxp", refresh=True)
         self.assertEqual(tag, "2026.q1.4-lts")
 
+    @patch("ldm_core.utils.get_raw")
+    @patch("ldm_core.utils.get_actual_home")
+    def test_discover_latest_tag_resilience(self, mock_home, mock_get_raw):
+        from ldm_core.utils import discover_latest_tag
+
+        mock_home.return_value = Path("/tmp")
+
+        # 1. Test HTML Resilience (No tags found in HTML)
+        mock_get_raw.return_value = "<html><body>No tags here</body></html>"
+        tag = discover_latest_tag("https://releases.liferay.com/dxp", refresh=True)
+        self.assertIsNone(tag)
+
+        # 2. Test JSON Resilience (Malformed JSON)
+        mock_get_raw.return_value = '{"results": ['  # Broken JSON
+        tag = discover_latest_tag("https://hub.docker.com/v2/...", refresh=True)
+        self.assertIsNone(tag)
+
+        # 3. Test HTML Success after failure (Verify it still works when HTML is valid)
+        mock_get_raw.return_value = '<li><a href="/dxp/2026.q1.5">2026.q1.5</a></li>'
+        tag = discover_latest_tag("https://releases.liferay.com/dxp", refresh=True)
+        self.assertEqual(tag, "2026.q1.5")
+
 
 if __name__ == "__main__":
     unittest.main()

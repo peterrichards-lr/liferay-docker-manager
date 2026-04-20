@@ -1,9 +1,10 @@
 import argparse
 import sys
 import warnings
+import platform
 from ldm_core.ui import UI
 from ldm_core.manager import LiferayManager
-from ldm_core.constants import VERSION
+from ldm_core.constants import VERSION, SCRIPT_DIR
 from ldm_core.utils import check_for_updates
 
 try:
@@ -19,20 +20,31 @@ def project_completer(prefix, **kwargs):
     return [r["path"].name for r in roots if r["path"].name.startswith(prefix)]
 
 
-def main():
-    # Suppress watchdog warning on macOS when fsevents is missing (kqueue is a fine fallback)
-    warnings.filterwarnings("ignore", message="Failed to import fsevents")
+def get_parser():
+    # Define a parent parser for common arguments shared by all subparsers
+    # This allows flags like -v and -y to be placed both before AND after subcommands
+    base_parent = argparse.ArgumentParser(add_help=False)
+    base_parent.add_argument("-v", "--verbose", action="store_true")
+    base_parent.add_argument("-y", "--non-interactive", action="store_true")
+
+    # For subparsers, we want the global flags but we SUPPRESS the default (False)
+    # so they don't overwrite the value set by the main parser if provided before the command.
+    base_sub_parent = argparse.ArgumentParser(
+        add_help=False, argument_default=argparse.SUPPRESS
+    )
+    base_sub_parent.add_argument("-v", "--verbose", action="store_true")
+    base_sub_parent.add_argument("-y", "--non-interactive", action="store_true")
 
     parser = argparse.ArgumentParser(
-        prog="ldm", description=f"Liferay Docker Manager (ldm) v{VERSION}"
+        prog="ldm",
+        description=f"Liferay Docker Manager (ldm) v{VERSION}",
+        parents=[base_sub_parent],
     )
-    parser.add_argument("-v", "--verbose", action="store_true")
-    parser.add_argument("-y", "--non-interactive", action="store_true")
     parser.add_argument("--version", action="version", version=f"%(prog)s {VERSION}")
     subparsers = parser.add_subparsers(dest="command")
 
     # Command: run (alias: up)
-    run = subparsers.add_parser("run", aliases=["up"])
+    run = subparsers.add_parser("run", aliases=["up"], parents=[base_sub_parent])
     run.add_argument("project", nargs="?")
     run.add_argument("-t", "--tag")
     run.add_argument("--tag-prefix")
@@ -85,7 +97,7 @@ def main():
     )
 
     # Command: import
-    imp = subparsers.add_parser("import")
+    imp = subparsers.add_parser("import", parents=[base_sub_parent])
     imp.add_argument("source")
     imp.add_argument("project", nargs="?")
     imp.add_argument("-p", "--project", dest="project_flag")
@@ -109,7 +121,7 @@ def main():
     imp.add_argument("--env", action="append")
 
     # Command: init-from
-    init_from = subparsers.add_parser("init-from")
+    init_from = subparsers.add_parser("init-from", parents=[base_sub_parent])
     init_from.add_argument("source")
     init_from.add_argument("project", nargs="?")
     init_from.add_argument("-p", "--project", dest="project_flag")
@@ -132,7 +144,7 @@ def main():
     init_from.add_argument("--delay", type=float, default=2.0)
 
     # Command: monitor
-    monitor = subparsers.add_parser("monitor")
+    monitor = subparsers.add_parser("monitor", parents=[base_sub_parent])
     monitor.add_argument("source", nargs="?")
     monitor.add_argument("-p", "--project")
     monitor.add_argument("--delay", type=float, default=2.0)
@@ -142,7 +154,7 @@ def main():
         aliases = []
         if cmd == "down":
             aliases = ["rm"]
-        p = subparsers.add_parser(cmd, aliases=aliases)
+        p = subparsers.add_parser(cmd, aliases=aliases, parents=[base_sub_parent])
         p.add_argument("project", nargs="?")
 
         if cmd == "logs":
@@ -152,7 +164,7 @@ def main():
 
         p.add_argument("-p", "--project", dest="project_flag")
         if cmd == "down":
-            p.add_argument("-v", "--volumes", action="store_true")
+            p.add_argument("-V", "--volumes", action="store_true")
             p.add_argument("-d", "--delete", action="store_true")
             p.add_argument("--infra", action="store_true")
         if cmd == "logs":
@@ -170,7 +182,7 @@ def main():
             )
 
     # Command: env
-    env = subparsers.add_parser("env")
+    env = subparsers.add_parser("env", parents=[base_sub_parent])
     env.add_argument("vars", nargs="*")
     env.add_argument("-p", "--project", dest="project_flag")
     env.add_argument("-s", "--service")
@@ -178,13 +190,13 @@ def main():
     env.add_argument("--import", action="store_true", dest="import_env")
 
     # Command: snapshot, restore
-    snap = subparsers.add_parser("snapshot")
+    snap = subparsers.add_parser("snapshot", parents=[base_sub_parent])
     snap.add_argument("project", nargs="?")
     snap.add_argument("-p", "--project", dest="project_flag")
     snap.add_argument("-n", "--name")
     snap.add_argument("--files-only", action="store_true")
 
-    rest = subparsers.add_parser("restore")
+    rest = subparsers.add_parser("restore", parents=[base_sub_parent])
     rest.add_argument("project", nargs="?")
     rest.add_argument("-p", "--project", dest="project_flag")
     rest.add_argument("-i", "--index", type=int)
@@ -192,8 +204,8 @@ def main():
     rest.add_argument("--backup-dir")
 
     # Simple Commands
-    subparsers.add_parser("init-common")
-    reset = subparsers.add_parser("reset")
+    subparsers.add_parser("init-common", parents=[base_sub_parent])
+    reset = subparsers.add_parser("reset", parents=[base_sub_parent])
     reset.add_argument("project", nargs="?")
     reset.add_argument(
         "target",
@@ -203,18 +215,18 @@ def main():
     )
     reset.add_argument("-p", "--project", dest="project_flag")
 
-    reseed = subparsers.add_parser("re-seed")
+    reseed = subparsers.add_parser("re-seed", parents=[base_sub_parent])
     reseed.add_argument("project", nargs="?")
     reseed.add_argument("-p", "--project", dest="project_flag")
 
-    renew_ssl = subparsers.add_parser("renew-ssl")
+    renew_ssl = subparsers.add_parser("renew-ssl", parents=[base_sub_parent])
     renew_ssl.add_argument("project", nargs="?")
     renew_ssl.add_argument("-p", "--project", dest="project_flag")
     renew_ssl.add_argument(
         "--all", action="store_true", help="Renew SSL for all projects"
     )
 
-    infra_setup = subparsers.add_parser("infra-setup")
+    infra_setup = subparsers.add_parser("infra-setup", parents=[base_sub_parent])
     infra_setup.add_argument(
         "--search",
         action="store_true",
@@ -223,11 +235,13 @@ def main():
     infra_setup.add_argument(
         "--es7", action="store_true", help="Use Elasticsearch 7 for global search"
     )
-    subparsers.add_parser("infra-down")
-    subparsers.add_parser("infra-restart")
+    subparsers.add_parser("infra-down", parents=[base_sub_parent])
+    subparsers.add_parser("infra-restart", parents=[base_sub_parent])
 
     # Cache management
-    cache = subparsers.add_parser("cache", aliases=["clear-cache", "clear-tags"])
+    cache = subparsers.add_parser(
+        "cache", aliases=["clear-cache", "clear-tags"], parents=[base_sub_parent]
+    )
     cache.add_argument(
         "target",
         nargs="?",
@@ -235,18 +249,18 @@ def main():
         help="Target to clear: tags, all (default: tags)",
     )
 
-    upgrade = subparsers.add_parser("upgrade")
+    upgrade = subparsers.add_parser("upgrade", parents=[base_sub_parent])
     upgrade.add_argument(
         "--repair",
         action="store_true",
         help="Re-download the current version to fix integrity issues",
     )
-    subparsers.add_parser("update-check")
-    migrate_search = subparsers.add_parser("migrate-search")
+    subparsers.add_parser("update-check", parents=[base_sub_parent])
+    migrate_search = subparsers.add_parser("migrate-search", parents=[base_sub_parent])
     migrate_search.add_argument("project", nargs="?")
     migrate_search.add_argument("-p", "--project", dest="project_flag")
 
-    doctor = subparsers.add_parser("doctor")
+    doctor = subparsers.add_parser("doctor", parents=[base_sub_parent])
     doctor.add_argument("project", nargs="?")
     doctor.add_argument("-p", "--project", dest="project_flag")
     doctor.add_argument(
@@ -263,27 +277,27 @@ def main():
         help="Automatically fix missing entries in /etc/hosts",
     )
 
-    status = subparsers.add_parser("status", aliases=["ps"])
+    status = subparsers.add_parser("status", aliases=["ps"], parents=[base_sub_parent])
     status.add_argument("--all", action="store_true", help="Show all managed projects")
-    subparsers.add_parser("list", aliases=["ls"])
+    subparsers.add_parser("list", aliases=["ls"], parents=[base_sub_parent])
 
     # Command: config
-    config = subparsers.add_parser("config")
+    config = subparsers.add_parser("config", parents=[base_sub_parent])
     config.add_argument("key", nargs="?")
     config.add_argument("value", nargs="?")
     config.add_argument("--remove", action="store_true")
-    subparsers.add_parser("prune")
+    subparsers.add_parser("prune", parents=[base_sub_parent])
 
-    shell = subparsers.add_parser("shell")
+    shell = subparsers.add_parser("shell", parents=[base_sub_parent])
     shell.add_argument("project", nargs="?")
     shell.add_argument("service", nargs="?")
     shell.add_argument("-p", "--project", dest="project_flag")
 
-    gogo = subparsers.add_parser("gogo")
+    gogo = subparsers.add_parser("gogo", parents=[base_sub_parent])
     gogo.add_argument("project", nargs="?")
     gogo.add_argument("-p", "--project", dest="project_flag")
 
-    log_level = subparsers.add_parser("log-level")
+    log_level = subparsers.add_parser("log-level", parents=[base_sub_parent])
     log_level.add_argument("project", nargs="?")
     log_level.add_argument("-p", "--project", dest="project_flag")
     log_level.add_argument("-b", "--bundle")
@@ -295,7 +309,9 @@ def main():
     log_level.add_argument("--list", action="store_true")
 
     # Command: browser (alias: open)
-    browser = subparsers.add_parser("browser", aliases=["open"])
+    browser = subparsers.add_parser(
+        "browser", aliases=["open"], parents=[base_sub_parent]
+    )
     browser.add_argument("project", nargs="?")
     browser.add_argument("-p", "--project", dest="project_flag")
     browser.add_argument("-u", "--url")
@@ -303,7 +319,7 @@ def main():
     browser.add_argument("--list", action="store_true")
 
     # Command: edit
-    edit_cmd = subparsers.add_parser("edit")
+    edit_cmd = subparsers.add_parser("edit", parents=[base_sub_parent])
     edit_cmd.add_argument("project", nargs="?")
     edit_cmd.add_argument("-p", "--project", dest="project_flag")
     edit_cmd.add_argument(
@@ -314,20 +330,20 @@ def main():
     )
 
     # Command: completion
-    completion = subparsers.add_parser("completion")
+    completion = subparsers.add_parser("completion", parents=[base_sub_parent])
     completion.add_argument(
         "shell", choices=["bash", "zsh", "fish", "powershell"], nargs="?"
     )
 
     # Command: man
-    subparsers.add_parser("man")
+    subparsers.add_parser("man", parents=[base_sub_parent])
 
-    scale = subparsers.add_parser("scale")
+    scale = subparsers.add_parser("scale", parents=[base_sub_parent])
     scale.add_argument("project", nargs="?")
     scale.add_argument("service_scale", nargs="+")
     scale.add_argument("-p", "--project", dest="project_flag")
 
-    cloud = subparsers.add_parser("cloud-fetch")
+    cloud = subparsers.add_parser("cloud-fetch", parents=[base_sub_parent])
     cloud.add_argument("project", nargs="?")
     cloud.add_argument("env_id", nargs="?")
     cloud.add_argument("service", nargs="?")
@@ -340,6 +356,15 @@ def main():
     cloud.add_argument("--logs", action="store_true")
     cloud.add_argument("-f", "--follow", action="store_true")
 
+    return parser, subparsers
+
+
+def main():
+    # Suppress watchdog warning on macOS when fsevents is missing (kqueue is a fine fallback)
+    warnings.filterwarnings("ignore", message="Failed to import fsevents")
+
+    parser, subparsers = get_parser()
+
     if argcomplete:
         # Automatically attach the project completer to all project-related arguments
         # across all subparsers.
@@ -349,6 +374,7 @@ def main():
                     action.completer = project_completer
         argcomplete.autocomplete(parser)
 
+    # Use parse_args (intermixed is not supported by subparsers)
     args = parser.parse_args()
     if not args.command:
         parser.print_help()
@@ -356,14 +382,10 @@ def main():
 
     # Root Safety Guard: Prevent running as sudo for non-upgrade commands
     # This protects the ~/.shiv cache from ownership issues.
-    import platform
-
     if platform.system().lower() != "windows":
         import os
 
         if os.geteuid() == 0:
-            from ldm_core.constants import SCRIPT_DIR
-
             allow_root_file = SCRIPT_DIR / ".ldm_allow_root"
             allow_root = (
                 os.environ.get("LDM_ALLOW_ROOT", "false").lower() == "true"
@@ -387,6 +409,11 @@ def main():
 
     project_id = getattr(args, "project", None) or getattr(args, "project_flag", None)
     manager = LiferayManager(args)
+
+    # Use a simpler project name detection for the docker_required check
+    # to avoid failing if the detected root doesn't have a name yet (initialization case)
+    detected_root = manager.detect_project_path(project_id)
+    p_name = project_id or (detected_root.name if detected_root else None)
 
     docker_required = [
         "run",
@@ -421,66 +448,62 @@ def main():
         "init-from": lambda: manager.cmd_init_from(args.source),
         "monitor": lambda: manager.cmd_monitor(args.source),
         "stop": lambda: manager.cmd_stop(
-            project_id, getattr(args, "service", None), all_projects=args.all
+            p_name, getattr(args, "service", None), all_projects=args.all
         ),
         "restart": lambda: manager.cmd_restart(
-            project_id, getattr(args, "service", None), all_projects=args.all
+            p_name, getattr(args, "service", None), all_projects=args.all
         ),
         "down": lambda: manager.cmd_down(
-            project_id,
+            p_name,
             getattr(args, "service", None),
             all_projects=args.all,
             delete=getattr(args, "delete", False),
             infra=getattr(args, "infra", False),
         ),
         "rm": lambda: manager.cmd_down(
-            project_id,
+            p_name,
             getattr(args, "service", None),
             all_projects=args.all,
             delete=getattr(args, "delete", False),
             infra=getattr(args, "infra", False),
         ),
         "logs": lambda: manager.cmd_logs(
-            project_id,
+            p_name,
             getattr(args, "service", None),
             all_projects=args.all,
             infra=getattr(args, "infra", False),
         ),
-        "deploy": lambda: manager.cmd_deploy(
-            project_id, getattr(args, "service", None)
-        ),
-        "env": lambda: manager.cmd_env(project_id),
-        "snapshot": lambda: manager.cmd_snapshot(project_id),
-        "restore": lambda: manager.cmd_restore(project_id),
+        "deploy": lambda: manager.cmd_deploy(p_name, getattr(args, "service", None)),
+        "env": lambda: manager.cmd_env(p_name),
+        "snapshot": lambda: manager.cmd_snapshot(p_name),
+        "restore": lambda: manager.cmd_restore(p_name),
         "init-common": lambda: manager.cmd_init_common(),
-        "reset": lambda: manager.cmd_reset(
-            project_id, getattr(args, "target", "state")
-        ),
-        "re-seed": lambda: manager.cmd_reseed(project_id),
-        "migrate-search": lambda: manager.cmd_migrate_search(project_id),
-        "renew-ssl": lambda: manager.cmd_renew_ssl(project_id),
+        "reset": lambda: manager.cmd_reset(p_name, getattr(args, "target", "state")),
+        "re-seed": lambda: manager.cmd_reseed(p_name),
+        "migrate-search": lambda: manager.cmd_migrate_search(p_name),
+        "renew-ssl": lambda: manager.cmd_renew_ssl(p_name),
         "infra-setup": lambda: manager.cmd_infra_setup(),
         "infra-down": lambda: manager.cmd_infra_down(),
         "infra-restart": lambda: manager.cmd_infra_restart(),
         "cache": lambda: manager.cmd_cache(getattr(args, "target", "tags")),
         "clear-cache": lambda: manager.cmd_cache("tags"),
         "clear-tags": lambda: manager.cmd_cache("tags"),
-        "doctor": lambda: manager.cmd_doctor(project_id, all_projects=args.all),
+        "doctor": lambda: manager.cmd_doctor(p_name, all_projects=args.all),
         "status": lambda: manager.cmd_status(all_projects=args.all),
         "ps": lambda: manager.cmd_status(all_projects=args.all),
         "list": lambda: manager.cmd_list(),
         "ls": lambda: manager.cmd_list(),
         "config": lambda: manager.cmd_config(args.key, args.value),
-        "shell": lambda: manager.cmd_shell(project_id, getattr(args, "service", None)),
-        "gogo": lambda: manager.cmd_gogo(project_id),
-        "log-level": lambda: manager.cmd_log_level(project_id),
-        "browser": lambda: manager.cmd_browser(project_id),
-        "open": lambda: manager.cmd_browser(project_id),
-        "scale": lambda: manager.cmd_scale(project_id, args.service_scale),
+        "shell": lambda: manager.cmd_shell(p_name, getattr(args, "service", None)),
+        "gogo": lambda: manager.cmd_gogo(p_name),
+        "log-level": lambda: manager.cmd_log_level(p_name),
+        "browser": lambda: manager.cmd_browser(p_name),
+        "open": lambda: manager.cmd_browser(p_name),
+        "scale": lambda: manager.cmd_scale(p_name, args.service_scale),
         "cloud-fetch": lambda: manager.cmd_cloud_fetch(
-            project_id, getattr(args, "env_id", None)
+            p_name, getattr(args, "env_id", None)
         ),
-        "edit": lambda: manager.cmd_edit(project_id, args.target),
+        "edit": lambda: manager.cmd_edit(p_name, args.target),
         "completion": lambda: manager.cmd_completion(args.shell),
         "man": lambda: manager.cmd_man(),
         "prune": lambda: manager.cmd_prune(),

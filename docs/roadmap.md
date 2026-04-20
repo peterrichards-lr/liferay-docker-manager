@@ -54,10 +54,12 @@ While the v1.x "Hardened Edition" focused on cross-platform stability, **v2.2.0*
 
 ## ✅ Completed Improvements (v2.1.x)
 
-### **High-Performance Boot & Hardening (v2.1.30)**
+### **High-Performance Boot & Hardening (v2.1.32)**
 
-- **Self-Upgrade Scoping**: Fixed an `UnboundLocalError` in the self-upgrade engine that occurred on Unix platforms when internal `sudo` elevation was requested. The `subprocess` module is now correctly scoped for all platforms.
-- **Clean CLI Usage**: Explicitly set the program name in the argument parser to ensure clean usage strings.
+- **Automated Test Expansion**: Significant expansion of the automated verification suite, increasing coverage to 36+ test cases. This includes new unit tests for CLI intermixed flags, No-Sudo security guard logic, resilient tag discovery fallbacks, and sensitive data redaction.
+- **Flexible Command Flags**: Re-engineered the CLI parser to allow global flags (like `-v` and `-y`) to be placed both before and after subcommands.
+...
+- **Self-Upgrade Scoping**: Fixed an `UnboundLocalError` in the self-upgrade engine.
 ...
 - **Sudo Troubleshooting**: Added a dedicated troubleshooting section in the documentation for `sudo` and `root` issues.
 ...
