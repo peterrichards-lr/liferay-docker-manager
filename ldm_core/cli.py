@@ -23,16 +23,22 @@ def main():
     # Suppress watchdog warning on macOS when fsevents is missing (kqueue is a fine fallback)
     warnings.filterwarnings("ignore", message="Failed to import fsevents")
 
+    # Define a parent parser for common arguments shared by all subparsers
+    # This allows flags like -v and -y to be placed both before AND after subcommands
+    base_parent = argparse.ArgumentParser(add_help=False)
+    base_parent.add_argument("-v", "--verbose", action="store_true")
+    base_parent.add_argument("-y", "--non-interactive", action="store_true")
+
     parser = argparse.ArgumentParser(
-        prog="ldm", description=f"Liferay Docker Manager (ldm) v{VERSION}"
+        prog="ldm",
+        description=f"Liferay Docker Manager (ldm) v{VERSION}",
+        parents=[base_parent],
     )
-    parser.add_argument("-v", "--verbose", action="store_true")
-    parser.add_argument("-y", "--non-interactive", action="store_true")
     parser.add_argument("--version", action="version", version=f"%(prog)s {VERSION}")
     subparsers = parser.add_subparsers(dest="command")
 
     # Command: run (alias: up)
-    run = subparsers.add_parser("run", aliases=["up"])
+    run = subparsers.add_parser("run", aliases=["up"], parents=[base_parent])
     run.add_argument("project", nargs="?")
     run.add_argument("-t", "--tag")
     run.add_argument("--tag-prefix")
@@ -85,7 +91,7 @@ def main():
     )
 
     # Command: import
-    imp = subparsers.add_parser("import")
+    imp = subparsers.add_parser("import", parents=[base_parent])
     imp.add_argument("source")
     imp.add_argument("project", nargs="?")
     imp.add_argument("-p", "--project", dest="project_flag")
@@ -109,7 +115,7 @@ def main():
     imp.add_argument("--env", action="append")
 
     # Command: init-from
-    init_from = subparsers.add_parser("init-from")
+    init_from = subparsers.add_parser("init-from", parents=[base_parent])
     init_from.add_argument("source")
     init_from.add_argument("project", nargs="?")
     init_from.add_argument("-p", "--project", dest="project_flag")
@@ -132,7 +138,7 @@ def main():
     init_from.add_argument("--delay", type=float, default=2.0)
 
     # Command: monitor
-    monitor = subparsers.add_parser("monitor")
+    monitor = subparsers.add_parser("monitor", parents=[base_parent])
     monitor.add_argument("source", nargs="?")
     monitor.add_argument("-p", "--project")
     monitor.add_argument("--delay", type=float, default=2.0)
@@ -142,7 +148,7 @@ def main():
         aliases = []
         if cmd == "down":
             aliases = ["rm"]
-        p = subparsers.add_parser(cmd, aliases=aliases)
+        p = subparsers.add_parser(cmd, aliases=aliases, parents=[base_parent])
         p.add_argument("project", nargs="?")
 
         if cmd == "logs":
@@ -170,7 +176,7 @@ def main():
             )
 
     # Command: env
-    env = subparsers.add_parser("env")
+    env = subparsers.add_parser("env", parents=[base_parent])
     env.add_argument("vars", nargs="*")
     env.add_argument("-p", "--project", dest="project_flag")
     env.add_argument("-s", "--service")
@@ -178,13 +184,13 @@ def main():
     env.add_argument("--import", action="store_true", dest="import_env")
 
     # Command: snapshot, restore
-    snap = subparsers.add_parser("snapshot")
+    snap = subparsers.add_parser("snapshot", parents=[base_parent])
     snap.add_argument("project", nargs="?")
     snap.add_argument("-p", "--project", dest="project_flag")
     snap.add_argument("-n", "--name")
     snap.add_argument("--files-only", action="store_true")
 
-    rest = subparsers.add_parser("restore")
+    rest = subparsers.add_parser("restore", parents=[base_parent])
     rest.add_argument("project", nargs="?")
     rest.add_argument("-p", "--project", dest="project_flag")
     rest.add_argument("-i", "--index", type=int)
@@ -192,8 +198,8 @@ def main():
     rest.add_argument("--backup-dir")
 
     # Simple Commands
-    subparsers.add_parser("init-common")
-    reset = subparsers.add_parser("reset")
+    subparsers.add_parser("init-common", parents=[base_parent])
+    reset = subparsers.add_parser("reset", parents=[base_parent])
     reset.add_argument("project", nargs="?")
     reset.add_argument(
         "target",
@@ -203,18 +209,18 @@ def main():
     )
     reset.add_argument("-p", "--project", dest="project_flag")
 
-    reseed = subparsers.add_parser("re-seed")
+    reseed = subparsers.add_parser("re-seed", parents=[base_parent])
     reseed.add_argument("project", nargs="?")
     reseed.add_argument("-p", "--project", dest="project_flag")
 
-    renew_ssl = subparsers.add_parser("renew-ssl")
+    renew_ssl = subparsers.add_parser("renew-ssl", parents=[base_parent])
     renew_ssl.add_argument("project", nargs="?")
     renew_ssl.add_argument("-p", "--project", dest="project_flag")
     renew_ssl.add_argument(
         "--all", action="store_true", help="Renew SSL for all projects"
     )
 
-    infra_setup = subparsers.add_parser("infra-setup")
+    infra_setup = subparsers.add_parser("infra-setup", parents=[base_parent])
     infra_setup.add_argument(
         "--search",
         action="store_true",
@@ -223,11 +229,13 @@ def main():
     infra_setup.add_argument(
         "--es7", action="store_true", help="Use Elasticsearch 7 for global search"
     )
-    subparsers.add_parser("infra-down")
-    subparsers.add_parser("infra-restart")
+    subparsers.add_parser("infra-down", parents=[base_parent])
+    subparsers.add_parser("infra-restart", parents=[base_parent])
 
     # Cache management
-    cache = subparsers.add_parser("cache", aliases=["clear-cache", "clear-tags"])
+    cache = subparsers.add_parser(
+        "cache", aliases=["clear-cache", "clear-tags"], parents=[base_parent]
+    )
     cache.add_argument(
         "target",
         nargs="?",
@@ -235,18 +243,18 @@ def main():
         help="Target to clear: tags, all (default: tags)",
     )
 
-    upgrade = subparsers.add_parser("upgrade")
+    upgrade = subparsers.add_parser("upgrade", parents=[base_parent])
     upgrade.add_argument(
         "--repair",
         action="store_true",
         help="Re-download the current version to fix integrity issues",
     )
-    subparsers.add_parser("update-check")
-    migrate_search = subparsers.add_parser("migrate-search")
+    subparsers.add_parser("update-check", parents=[base_parent])
+    migrate_search = subparsers.add_parser("migrate-search", parents=[base_parent])
     migrate_search.add_argument("project", nargs="?")
     migrate_search.add_argument("-p", "--project", dest="project_flag")
 
-    doctor = subparsers.add_parser("doctor")
+    doctor = subparsers.add_parser("doctor", parents=[base_parent])
     doctor.add_argument("project", nargs="?")
     doctor.add_argument("-p", "--project", dest="project_flag")
     doctor.add_argument(
@@ -263,27 +271,27 @@ def main():
         help="Automatically fix missing entries in /etc/hosts",
     )
 
-    status = subparsers.add_parser("status", aliases=["ps"])
+    status = subparsers.add_parser("status", aliases=["ps"], parents=[base_parent])
     status.add_argument("--all", action="store_true", help="Show all managed projects")
-    subparsers.add_parser("list", aliases=["ls"])
+    subparsers.add_parser("list", aliases=["ls"], parents=[base_parent])
 
     # Command: config
-    config = subparsers.add_parser("config")
+    config = subparsers.add_parser("config", parents=[base_parent])
     config.add_argument("key", nargs="?")
     config.add_argument("value", nargs="?")
     config.add_argument("--remove", action="store_true")
-    subparsers.add_parser("prune")
+    subparsers.add_parser("prune", parents=[base_parent])
 
-    shell = subparsers.add_parser("shell")
+    shell = subparsers.add_parser("shell", parents=[base_parent])
     shell.add_argument("project", nargs="?")
     shell.add_argument("service", nargs="?")
     shell.add_argument("-p", "--project", dest="project_flag")
 
-    gogo = subparsers.add_parser("gogo")
+    gogo = subparsers.add_parser("gogo", parents=[base_parent])
     gogo.add_argument("project", nargs="?")
     gogo.add_argument("-p", "--project", dest="project_flag")
 
-    log_level = subparsers.add_parser("log-level")
+    log_level = subparsers.add_parser("log-level", parents=[base_parent])
     log_level.add_argument("project", nargs="?")
     log_level.add_argument("-p", "--project", dest="project_flag")
     log_level.add_argument("-b", "--bundle")
@@ -295,7 +303,7 @@ def main():
     log_level.add_argument("--list", action="store_true")
 
     # Command: browser (alias: open)
-    browser = subparsers.add_parser("browser", aliases=["open"])
+    browser = subparsers.add_parser("browser", aliases=["open"], parents=[base_parent])
     browser.add_argument("project", nargs="?")
     browser.add_argument("-p", "--project", dest="project_flag")
     browser.add_argument("-u", "--url")
@@ -303,7 +311,7 @@ def main():
     browser.add_argument("--list", action="store_true")
 
     # Command: edit
-    edit_cmd = subparsers.add_parser("edit")
+    edit_cmd = subparsers.add_parser("edit", parents=[base_parent])
     edit_cmd.add_argument("project", nargs="?")
     edit_cmd.add_argument("-p", "--project", dest="project_flag")
     edit_cmd.add_argument(
@@ -314,20 +322,20 @@ def main():
     )
 
     # Command: completion
-    completion = subparsers.add_parser("completion")
+    completion = subparsers.add_parser("completion", parents=[base_parent])
     completion.add_argument(
         "shell", choices=["bash", "zsh", "fish", "powershell"], nargs="?"
     )
 
     # Command: man
-    subparsers.add_parser("man")
+    subparsers.add_parser("man", parents=[base_parent])
 
-    scale = subparsers.add_parser("scale")
+    scale = subparsers.add_parser("scale", parents=[base_parent])
     scale.add_argument("project", nargs="?")
     scale.add_argument("service_scale", nargs="+")
     scale.add_argument("-p", "--project", dest="project_flag")
 
-    cloud = subparsers.add_parser("cloud-fetch")
+    cloud = subparsers.add_parser("cloud-fetch", parents=[base_parent])
     cloud.add_argument("project", nargs="?")
     cloud.add_argument("env_id", nargs="?")
     cloud.add_argument("service", nargs="?")
