@@ -453,6 +453,7 @@ class StackHandler(BaseHandler):
         no_up=False,
         no_wait=False,
         show_summary=True,
+        total_start=None,
     ):
         """Orchestrates the docker-compose operations for a project."""
         compose_base = get_compose_cmd()
@@ -476,12 +477,25 @@ class StackHandler(BaseHandler):
         # IMPORTANT: Tests expect _ensure_network to be called!
         self._ensure_network()
         if ssl_enabled or getattr(self.args, "search", False):
+            if self.verbose:
+                UI.info("Checking infrastructure stack (Traefik SSL Proxy)...")
+
+            infra_start = time.time()
             resolved_ip = self.get_resolved_ip(host_name) or "127.0.0.1"
             self.setup_infrastructure(resolved_ip, ssl_port, use_ssl=ssl_enabled)
+
+            if self.verbose:
+                UI.debug(f"Infrastructure setup took: {time.time() - infra_start:.2f}s")
+
             if ssl_enabled:
+                ssl_start = time.time()
                 actual_home = get_actual_home()
                 cert_dir = actual_home / "liferay-docker-certs"
                 self.setup_ssl(cert_dir, host_name)
+                if self.verbose:
+                    UI.debug(
+                        f"SSL certificate generation took: {time.time() - ssl_start:.2f}s"
+                    )
 
         # 2. Asset Synchronization
         from ldm_core.handlers.config import ConfigHandler
@@ -520,23 +534,49 @@ class StackHandler(BaseHandler):
         if show_summary:
             UI.heading(f"Stack Orchestration: {project_meta.get('container_name')}")
             UI.info(f"  + Liferay: {UI.CYAN}{project_meta.get('tag')}{UI.COLOR_OFF}")
+            UI.info(
+                f"  + DB Type: {UI.CYAN}{project_meta.get('db_type', 'hypersonic')}{UI.COLOR_OFF}"
+            )
+
+            search_mode = (
+                "Shared (ES8)"
+                if str(project_meta.get("use_shared_search", "false")).lower() == "true"
+                else "Sidecar (Internal)"
+            )
+            UI.info(f"  + Search:  {UI.CYAN}{search_mode}{UI.COLOR_OFF}")
+
             UI.info(f"  + Host:    {UI.BOLD}{host_name}{UI.COLOR_OFF}")
             if ssl_enabled:
                 UI.info(
                     f"  + SSL:     {UI.GREEN}Active (Port {ssl_port}){UI.COLOR_OFF}"
                 )
+            UI.info(
+                f"  + Port:    {UI.CYAN}8080 -> {project_meta.get('port', 8080)}{UI.COLOR_OFF}"
+            )
 
         # 4. Execute
         if not no_up:
+            if self.verbose and total_start:
+                UI.debug(
+                    f"Time to orchestration start: {time.time() - total_start:.2f}s"
+                )
+
             self.run_command(cmd, cwd=str(paths["root"]), capture_output=not follow)
+
             if follow:
                 # Tail logs if requested
                 self.run_command(compose_base + ["logs", "-f"], cwd=str(paths["root"]))
             elif not no_wait:
                 # Standard wait for health
-                self._wait_for_liferay(project_meta.get("container_name"), host_name)
+                self._wait_for_liferay(
+                    project_meta.get("container_name"),
+                    host_name,
+                    total_start=total_start,
+                )
 
-    def _wait_for_liferay(self, container_name, host_name, timeout=600):
+    def _wait_for_liferay(
+        self, container_name, host_name, timeout=600, total_start=None
+    ):
         """Wait for the Liferay container to become healthy."""
         UI.info("Waiting for Liferay to start (this can take several minutes)...")
         start_time = time.time()
@@ -547,7 +587,12 @@ class StackHandler(BaseHandler):
             )
             if status == "healthy":
                 print()  # New line after progress dots
-                UI.success("Liferay is ready!")
+                total_duration = (
+                    time.time() - total_start
+                    if total_start
+                    else time.time() - start_time
+                )
+                UI.success(f"Liferay is ready! (Total time: {total_duration:.1f}s)")
                 access_url = (
                     f"https://{host_name}"
                     if host_name != "localhost"
@@ -615,6 +660,7 @@ class StackHandler(BaseHandler):
             )
 
     def cmd_run(self, project_id=None, is_restart=False):
+        total_start = time.time()
         project_id = (
             project_id or self.args.project or getattr(self.args, "project_flag", None)
         )
@@ -700,7 +746,12 @@ class StackHandler(BaseHandler):
             )
 
             if not getattr(self.args, "no_seed", False):
+                seed_start = time.time()
                 if self._fetch_seed(tag, db_type or "hypersonic", search_mode, paths):
+                    if self.verbose:
+                        UI.debug(
+                            f"Seed fetch & extraction took: {time.time() - seed_start:.2f}s"
+                        )
                     project_meta = self.read_meta(root / PROJECT_META_FILE)
                     is_new_project = False
 
@@ -761,6 +812,7 @@ class StackHandler(BaseHandler):
             rebuild=getattr(self.args, "rebuild", False),
             no_up=getattr(self.args, "no_up", False),
             no_wait=getattr(self.args, "no_wait", False),
+            total_start=total_start,
         )
 
     def cmd_stop(self, project_id=None, service=None, all_projects=False):
@@ -1193,6 +1245,8 @@ class StackHandler(BaseHandler):
         host_name = meta.get("host_name", "localhost")
         ssl = str(meta.get("ssl", "false")).lower() == "true"
         url = f"https://{host_name}" if ssl else f"http://{host_name}:8080"
+        from ldm_core.utils import open_browser
+
         open_browser(url)
 
     def cmd_infra_setup(self):

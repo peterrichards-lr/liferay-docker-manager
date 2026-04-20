@@ -94,8 +94,8 @@ class TestStackInfrastructure(unittest.TestCase):
         self.manager.update_portal_ext = MagicMock()
 
     @patch("ldm_core.utils.check_port", return_value=False)
-    @patch("ldm_core.handlers.stack.run_command")
-    @patch("ldm_core.handlers.stack.get_actual_home")
+    @patch("ldm_core.utils.run_command")
+    @patch("ldm_core.utils.get_actual_home")
     @patch("time.sleep")
     def test_setup_global_search_installs_plugins(
         self, mock_sleep, mock_home, mock_run, mock_check_port
@@ -144,7 +144,7 @@ class TestStackInfrastructure(unittest.TestCase):
             cmd_args = run_call[0][0]
             self.assertIn("indices.query.bool.max_clause_count=10000", cmd_args)
 
-    @patch("ldm_core.handlers.stack.run_command")
+    @patch("ldm_core.utils.run_command")
     @patch("shutil.which")
     def test_setup_ssl_generates_config(self, mock_which, mock_run):
         mock_which.return_value = "/usr/bin/mkcert"
@@ -176,11 +176,9 @@ class TestStackInfrastructure(unittest.TestCase):
 
 
 class TestStackScaling(unittest.TestCase):
-    @patch("ldm_core.handlers.stack.dict_to_yaml")
     @patch("ldm_core.handlers.stack.get_docker_socket_path")
-    def test_generate_compose_with_scale(self, mock_socket, mock_yaml):
+    def test_generate_compose_with_scale(self, mock_socket):
         mock_socket.return_value = "/var/run/docker.sock"
-        mock_yaml.side_effect = lambda x, indent=0: str(x)
 
         manager = MockManager()
         manager.update_portal_ext = MagicMock()
@@ -197,18 +195,20 @@ class TestStackScaling(unittest.TestCase):
         with (
             patch.object(Path, "exists", return_value=True),
             patch.object(Path, "read_text", return_value=""),
-            patch.object(Path, "write_text"),
+            patch.object(Path, "write_text") as mock_write,
             patch("os.replace"),
             patch.object(manager, "scan_client_extensions", return_value=[]),
         ):
             manager.write_docker_compose(paths, config)
             # Verify container_name is set
-            compose_call = mock_yaml.call_args[0][0]
+            import yaml
+
+            compose_data = yaml.safe_load(mock_write.call_args[0][0])
             self.assertEqual(
-                compose_call["services"]["liferay"]["container_name"], "test-project"
+                compose_data["services"]["liferay"]["container_name"], "test-project"
             )
             # Verify state volume is mounted
-            volumes = compose_call["services"]["liferay"]["volumes"]
+            volumes = compose_data["services"]["liferay"]["volumes"]
             self.assertTrue(any("/opt/liferay/osgi/state" in v for v in volumes))
 
         # Scale = 2
@@ -216,16 +216,16 @@ class TestStackScaling(unittest.TestCase):
         with (
             patch.object(Path, "exists", return_value=True),
             patch.object(Path, "read_text", return_value=""),
-            patch.object(Path, "write_text"),
+            patch.object(Path, "write_text") as mock_write,
             patch("os.replace"),
             patch.object(manager, "scan_client_extensions", return_value=[]),
         ):
             manager.write_docker_compose(paths, config)
-            compose_call = mock_yaml.call_args[0][0]
-            # Verify container_name is NOT set
-            self.assertNotIn("container_name", compose_call["services"]["liferay"])
-            # Verify state volume is NOT mounted
-            volumes = compose_call["services"]["liferay"]["volumes"]
+            compose_data = yaml.safe_load(mock_write.call_args[0][0])
+            # In scaling mode, container_name should be ABSENT to let Docker handle indexing
+            self.assertNotIn("container_name", compose_data["services"]["liferay"])
+            # In scaling mode, state volume should be DISABLED
+            volumes = compose_data["services"]["liferay"]["volumes"]
             self.assertFalse(any("/opt/liferay/osgi/state" in v for v in volumes))
             # Verify clustering properties are applied
             update_call = manager.update_portal_ext.call_args[0][1]
@@ -238,8 +238,8 @@ class TestStackNetwork(unittest.TestCase):
         self.manager = MockManager()
         self.paths = self.manager.setup_paths("/tmp/test-project")
 
-    @patch("ldm_core.handlers.stack.get_compose_cmd")
-    @patch("ldm_core.handlers.stack.run_command")
+    @patch("ldm_core.utils.get_compose_cmd")
+    @patch("ldm_core.utils.run_command")
     def test_sync_stack_ensures_network(self, mock_run, mock_compose):
         mock_compose.return_value = ["docker", "compose"]
 
@@ -259,8 +259,8 @@ class TestStackNetwork(unittest.TestCase):
             self.manager.sync_stack(self.paths, project_meta, no_up=True)
             mock_ensure.assert_called_once_with()
 
-    @patch("ldm_core.handlers.stack.get_compose_cmd")
-    @patch("ldm_core.handlers.stack.run_command")
+    @patch("ldm_core.utils.get_compose_cmd")
+    @patch("ldm_core.utils.run_command")
     def test_sync_stack_with_missing_meta_values(self, mock_run, mock_compose):
         mock_compose.return_value = ["docker", "compose"]
 
@@ -291,9 +291,8 @@ class TestStackOrchestration(unittest.TestCase):
         self.manager.update_portal_ext = MagicMock()
         self.paths = self.manager.setup_paths("/tmp/test-project")
 
-    @patch("ldm_core.handlers.stack.dict_to_yaml")
-    def test_write_docker_compose_ssl_labels(self, mock_yaml):
-        mock_yaml.side_effect = lambda x, indent=0: str(x)
+    def test_write_docker_compose_ssl_labels(self):
+        import yaml
 
         # Scenario: SSL enabled, custom host
         config = {
@@ -308,13 +307,13 @@ class TestStackOrchestration(unittest.TestCase):
         with (
             patch.object(Path, "exists", return_value=True),
             patch.object(Path, "read_text", return_value=""),
-            patch.object(Path, "write_text"),
+            patch.object(Path, "write_text") as mock_write,
             patch("os.replace"),
             patch.object(self.manager, "scan_client_extensions", return_value=[]),
         ):
             self.manager.write_docker_compose(self.paths, config)
-            compose_call = mock_yaml.call_args[0][0]
-            labels = compose_call["services"]["liferay"]["labels"]
+            compose_data = yaml.safe_load(mock_write.call_args[0][0])
+            labels = compose_data["services"]["liferay"]["labels"]
 
             # Tests expect the main router to be '{project_name}-main'
             self.assertIn("traefik.http.routers.test-main.tls=true", labels)
@@ -329,9 +328,8 @@ class TestStackOrchestration(unittest.TestCase):
                 any("tls.domains[0].sans=*.forge.demo" in label for label in labels)
             )
 
-    @patch("ldm_core.handlers.stack.dict_to_yaml")
-    def test_microservice_port_resolution(self, mock_yaml):
-        mock_yaml.side_effect = lambda x, indent=0: str(x)
+    def test_microservice_port_resolution(self):
+        import yaml
 
         # Mock a microservice with a custom targetPort
         mock_exts = [
@@ -358,26 +356,25 @@ class TestStackOrchestration(unittest.TestCase):
         with (
             patch.object(Path, "exists", return_value=True),
             patch.object(Path, "read_text", return_value=""),
-            patch.object(Path, "write_text"),
+            patch.object(Path, "write_text") as mock_write,
             patch("os.replace"),
             patch.object(
                 self.manager, "scan_client_extensions", return_value=mock_exts
             ),
         ):
             self.manager.write_docker_compose(self.paths, config)
-            compose_call = mock_yaml.call_args[0][0]
+            compose_data = yaml.safe_load(mock_write.call_args[0][0])
 
             # Verify Traefik service label uses the targetPort
             # Service key is container_name-id (test-my-ms)
-            ms_labels = compose_call["services"]["test-my-ms"]["labels"]
+            ms_labels = compose_data["services"]["test-my-ms"]["labels"]
             self.assertIn(
                 "traefik.http.services.test-my-ms-svc.loadbalancer.server.port=3001",
                 ms_labels,
             )
 
-    @patch("ldm_core.handlers.stack.dict_to_yaml")
-    def test_jvm_args_override(self, mock_yaml):
-        mock_yaml.side_effect = lambda x, indent=0: str(x)
+    def test_jvm_args_override(self):
+        import yaml
 
         config = {
             "container_name": "test",
@@ -390,15 +387,15 @@ class TestStackOrchestration(unittest.TestCase):
         with (
             patch.object(Path, "exists", return_value=True),
             patch.object(Path, "read_text", return_value=""),
-            patch.object(Path, "write_text"),
+            patch.object(Path, "write_text") as mock_write,
             patch("os.replace"),
             patch.object(self.manager, "scan_client_extensions", return_value=[]),
         ):
             self.manager.write_docker_compose(self.paths, config)
-            compose_call = mock_yaml.call_args[0][0]
+            compose_data = yaml.safe_load(mock_write.call_args[0][0])
 
             # Verify JVM args are present in environment
-            liferay_env = compose_call["services"]["liferay"]["environment"]
+            liferay_env = compose_data["services"]["liferay"]["environment"]
 
             # Check LIFERAY_JVM_OPTS
             jvm_opts_env = next(
@@ -409,9 +406,8 @@ class TestStackOrchestration(unittest.TestCase):
             self.assertIn("-Xms4g -Xmx4g", jvm_opts_env)
             self.assertIn("-XX:TieredStopAtLevel=1", jvm_opts_env)
 
-    @patch("ldm_core.handlers.stack.dict_to_yaml")
-    def test_generate_compose_with_mysql(self, mock_yaml):
-        mock_yaml.side_effect = lambda x, indent=0: str(x)
+    def test_generate_compose_with_mysql(self):
+        import yaml
 
         config = {
             "container_name": "test",
@@ -424,20 +420,20 @@ class TestStackOrchestration(unittest.TestCase):
         with (
             patch.object(Path, "exists", return_value=True),
             patch.object(Path, "read_text", return_value=""),
-            patch.object(Path, "write_text"),
+            patch.object(Path, "write_text") as mock_write,
             patch("os.replace"),
             patch.object(self.manager, "scan_client_extensions", return_value=[]),
         ):
             self.manager.write_docker_compose(self.paths, config)
-            compose_call = mock_yaml.call_args[0][0]
+            compose_data = yaml.safe_load(mock_write.call_args[0][0])
 
             # Verify Liferay JVM Flags
-            liferay_env = compose_call["services"]["liferay"]["environment"][0]
+            liferay_env = compose_data["services"]["liferay"]["environment"][0]
             self.assertIn("-Dfile.encoding=UTF8", liferay_env)
             self.assertIn("-Duser.timezone=GMT", liferay_env)
 
             # Verify MySQL service hardening
-            db_service = compose_call["services"]["db"]
+            db_service = compose_data["services"]["db"]
             self.assertEqual(db_service["image"], "mysql:5.7")
             self.assertIn("mysqld", db_service["command"])
             self.assertIn("--character-set-server=utf8mb4", db_service["command"])
@@ -460,9 +456,8 @@ class TestStackOrchestration(unittest.TestCase):
                 "org.hibernate.dialect.MariaDB103Dialect",
             )
 
-    @patch("ldm_core.handlers.stack.dict_to_yaml")
-    def test_generate_compose_with_mysql_modern(self, mock_yaml):
-        mock_yaml.side_effect = lambda x, indent=0: str(x)
+    def test_generate_compose_with_mysql_modern(self):
+        import yaml
 
         config = {
             "container_name": "test",
@@ -475,15 +470,15 @@ class TestStackOrchestration(unittest.TestCase):
         with (
             patch.object(Path, "exists", return_value=True),
             patch.object(Path, "read_text", return_value=""),
-            patch.object(Path, "write_text"),
+            patch.object(Path, "write_text") as mock_write,
             patch("os.replace"),
             patch.object(self.manager, "scan_client_extensions", return_value=[]),
         ):
             self.manager.write_docker_compose(self.paths, config)
-            compose_call = mock_yaml.call_args[0][0]
+            compose_data = yaml.safe_load(mock_write.call_args[0][0])
 
             # Verify MySQL 8.4 is selected for 2026 version
-            db_service = compose_call["services"]["db"]
+            db_service = compose_data["services"]["db"]
             self.assertEqual(db_service["image"], "mysql:8.4")
             self.assertIn("--mysql-native-password=ON", db_service["command"])
             self.assertIn("--skip-name-resolve", db_service["command"])
@@ -500,9 +495,8 @@ class TestStackOrchestration(unittest.TestCase):
             )
             self.assertEqual(db_service["healthcheck"]["start_period"], "60s")
 
-    @patch("ldm_core.handlers.stack.dict_to_yaml")
-    def test_generate_compose_with_custom_env(self, mock_yaml):
-        mock_yaml.side_effect = lambda x, indent=0: str(x)
+    def test_generate_compose_with_custom_env(self):
+        import yaml
 
         config = {
             "container_name": "test",
@@ -516,15 +510,15 @@ class TestStackOrchestration(unittest.TestCase):
         with (
             patch.object(Path, "exists", return_value=True),
             patch.object(Path, "read_text", return_value=""),
-            patch.object(Path, "write_text"),
+            patch.object(Path, "write_text") as mock_write,
             patch("os.replace"),
             patch.object(self.manager, "scan_client_extensions", return_value=[]),
         ):
             self.manager.write_docker_compose(self.paths, config)
-            compose_call = mock_yaml.call_args[0][0]
+            compose_data = yaml.safe_load(mock_write.call_args[0][0])
 
             # Verify Custom Env Vars are present in environment
-            liferay_env = compose_call["services"]["liferay"]["environment"]
+            liferay_env = compose_data["services"]["liferay"]["environment"]
             self.assertIn(
                 "LIFERAY_JDBC_PERIOD_URL=jdbc:mysql://remote:3306/lportal", liferay_env
             )
@@ -535,7 +529,7 @@ class TestStackOrchestration(unittest.TestCase):
             # Actually, MockManager's write_docker_compose calls self.update_portal_ext
             self.manager.update_portal_ext.assert_not_called()
 
-    @patch("ldm_core.handlers.stack.run_command")
+    @patch("ldm_core.utils.run_command")
     def test_cmd_logs_infra(self, mock_run):
         # Mock docker ps -q returning a container ID (service is running)
         mock_run.return_value = "abc123"
@@ -561,7 +555,7 @@ class TestStackOrchestration(unittest.TestCase):
         self.assertEqual(len(checked_containers), 1)
         self.assertIn("name=^liferay-search-global$", checked_containers)
 
-    @patch("ldm_core.handlers.stack.run_command")
+    @patch("ldm_core.utils.run_command")
     @patch("requests.get")
     @patch("requests.head")
     @patch("shutil.move")
@@ -638,7 +632,7 @@ class TestStackOrchestration(unittest.TestCase):
                     self.assertEqual(args[1], 443)  # ssl_port (integer)
                     self.assertTrue(kwargs.get("use_ssl"))
 
-    @patch("ldm_core.handlers.stack.run_command")
+    @patch("ldm_core.utils.run_command")
     @patch("shutil.rmtree")
     def test_cmd_reset_state(self, mock_rmtree, mock_run):
         import os
@@ -656,7 +650,7 @@ class TestStackOrchestration(unittest.TestCase):
             expected_part = os.path.join("osgi", "state")
             self.assertTrue(expected_part in str(args))
 
-    @patch("ldm_core.handlers.stack.open_browser")
+    @patch("ldm_core.utils.open_browser")
     def test_cmd_browser_launches_url(self, mock_open):
         manager = MockManager()
         with (
