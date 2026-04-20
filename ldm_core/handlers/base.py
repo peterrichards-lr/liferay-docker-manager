@@ -8,6 +8,7 @@ from pathlib import Path
 from datetime import datetime
 from ldm_core.ui import UI
 from ldm_core.constants import PROJECT_META_FILE, SCRIPT_DIR
+from ldm_core.utils import get_actual_home
 
 
 class BaseHandler:
@@ -706,8 +707,6 @@ class BaseHandler:
             return
 
         try:
-            from ldm_core.utils import get_actual_home
-
             man_source = self.get_resource_path("ldm.1")
             if not man_source:
                 return

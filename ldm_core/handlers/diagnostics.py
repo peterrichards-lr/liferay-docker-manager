@@ -297,24 +297,24 @@ class DiagnosticsHandler:
             if response.status_code == 200:
                 official_data = response.text
 
-                system = platform.system().lower()
-                target_name = "ldm-linux"
-                if system == "darwin":
-                    target_name = "ldm-macos"
-                elif system == "windows":
-                    target_name = "ldm-windows.exe"
+                # Extract filename from URL to match exact hash in checksums.txt
+                target_name = url.split("/")[-1]
 
                 verified = False
                 for line in official_data.splitlines():
-                    if target_name in line and new_hash == line.split()[0]:
-                        verified = True
-                        break
+                    parts = line.split()
+                    if len(parts) >= 2:
+                        hash_val = parts[0]
+                        file_name = parts[1]
+                        if file_name == target_name and new_hash == hash_val:
+                            verified = True
+                            break
 
                 if not verified:
                     if temp_new.exists():
                         temp_new.unlink()
                     UI.die(
-                        "Integrity verification failed! The downloaded binary does not match the official hash."
+                        f"Integrity verification failed! The hash for '{target_name}' does not match the official record."
                     )
             elif response.status_code == 404:
                 if temp_new.exists():
