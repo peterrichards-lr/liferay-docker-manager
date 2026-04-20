@@ -133,3 +133,20 @@ class UI:
                 return f"{size:.1f} {unit}"
             size /= 1024
         return f"{size:.1f} PB"
+
+    @staticmethod
+    def format_duration(seconds):
+        """Formats seconds into a human-readable duration (e.g. 1m 30s)."""
+        seconds = int(seconds)
+        if seconds < 60:
+            return f"{seconds}s"
+
+        minutes = seconds // 60
+        remaining_seconds = seconds % 60
+
+        if minutes < 60:
+            return f"{minutes}m {remaining_seconds}s"
+
+        hours = minutes // 60
+        remaining_minutes = minutes % 60
+        return f"{hours}h {remaining_minutes}m {remaining_seconds}s"

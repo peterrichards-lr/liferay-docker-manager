@@ -56,12 +56,14 @@ While the v1.x "Hardened Edition" focused on cross-platform stability, **v2.0.0*
 
 ## ✅ Completed Improvements (v2.1.x)
 
-### **High-Performance Boot & Hardening (v2.1.13)**
+### **High-Performance Boot & Hardening (v2.1.15)**
 
 - **Database "Fast-Forward"**: Added support for downloading pre-initialized, version-matched "Seed" volumes (Database + Search Index) from GitHub. Reduces first-run wait times significantly.
 - **Resilient Tag Discovery**: Upgraded the discovery engine to support both HTML (`releases.liferay.com`) and JSON (Docker Hub) listings, ensuring stability against upstream API changes.
+- **Inclusive Fleet Scope**: Fixed the `--all` switch for `rm`, `stop`, `restart`, and `logs` to use filesystem-based discovery. This ensures that stopped, failed, or partially initialized projects are correctly targeted for bulk operations.
 - **Smart Log Tailing**: `ldm logs -f` now proactively polls and waits for both the host-side log directory AND the Docker container to exist before streaming, enabling zero-failure tailing during project startup.
 - **TLD Scanning Optimization**: Automatically skips Tomcat TLD scanning for known non-UI JARs to accelerate boot times.
+...
 - **Volume Consistency Tuning**: Native support for `:cached` and `:delegated` mounts on macOS and Windows to improve disk I/O performance.
 ...
 - **JVM Dev-Mode Tuning**: Optional `--no-jvm-verify` flag to disable bytecode verification for faster class loading in demo environments.
