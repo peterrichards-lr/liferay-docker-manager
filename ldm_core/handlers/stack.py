@@ -486,7 +486,8 @@ class StackHandler(BaseHandler):
             self.setup_infrastructure(resolved_ip, ssl_port, use_ssl=ssl_enabled)
 
             if self.verbose:
-                UI.debug(f"Infrastructure setup took: {time.time() - infra_start:.2f}s")
+                duration_str = UI.format_duration(time.time() - infra_start)
+                UI.debug(f"Infrastructure setup took: {duration_str}")
 
             if ssl_enabled:
                 ssl_start = time.time()
@@ -494,9 +495,8 @@ class StackHandler(BaseHandler):
                 cert_dir = actual_home / "liferay-docker-certs"
                 self.setup_ssl(cert_dir, host_name)
                 if self.verbose:
-                    UI.debug(
-                        f"SSL certificate generation took: {time.time() - ssl_start:.2f}s"
-                    )
+                    duration_str = UI.format_duration(time.time() - ssl_start)
+                    UI.debug(f"SSL certificate generation took: {duration_str}")
 
         # 2. Asset Synchronization
         from ldm_core.handlers.config import ConfigHandler
@@ -558,9 +558,8 @@ class StackHandler(BaseHandler):
         # 4. Execute
         if not no_up:
             if self.verbose and total_start:
-                UI.debug(
-                    f"Time to orchestration start: {time.time() - total_start:.2f}s"
-                )
+                duration_str = UI.format_duration(time.time() - total_start)
+                UI.debug(f"Time to orchestration start: {duration_str}")
 
             self.run_command(cmd, cwd=str(paths["root"]), capture_output=not follow)
 
@@ -592,7 +591,8 @@ class StackHandler(BaseHandler):
                     if total_start
                     else time.time() - start_time
                 )
-                UI.success(f"Liferay is ready! (Total time: {total_duration:.1f}s)")
+                duration_str = UI.format_duration(total_duration)
+                UI.success(f"Liferay is ready! (Total time: {duration_str})")
                 access_url = (
                     f"https://{host_name}"
                     if host_name != "localhost"
@@ -623,10 +623,11 @@ class StackHandler(BaseHandler):
                 return True
 
             elapsed = time.time() - start_time
-            if int(elapsed) % 30 == 0:
+            if int(elapsed) > 0 and int(elapsed) % 30 == 0:
                 timestamp = datetime.now().strftime("%H:%M:%S")
+                duration_str = UI.format_duration(elapsed)
                 print(
-                    f"[{timestamp}] Still waiting for Liferay to become healthy... ({int(elapsed)}s)"
+                    f"[{timestamp}] Still waiting for Liferay to become healthy... ({duration_str})"
                 )
 
             time.sleep(10)
@@ -756,9 +757,8 @@ class StackHandler(BaseHandler):
                 seed_start = time.time()
                 if self._fetch_seed(tag, db_type or "hypersonic", search_mode, paths):
                     if self.verbose:
-                        UI.debug(
-                            f"Seed fetch & extraction took: {time.time() - seed_start:.2f}s"
-                        )
+                        duration_str = UI.format_duration(time.time() - seed_start)
+                        UI.debug(f"Seed fetch & extraction took: {duration_str}")
                     project_meta = self.read_meta(root / PROJECT_META_FILE)
                     is_new_project = False
 
@@ -826,14 +826,14 @@ class StackHandler(BaseHandler):
         """Stops project containers."""
         targets = []
         if all_projects:
-            targets = [r["path"] for r in self.get_running_projects()]
+            targets = [r["path"] for r in self.find_dxp_roots()]
         else:
             root = self.detect_project_path(project_id)
             if root:
                 targets = [root]
 
         if not targets:
-            UI.info("No running projects found to stop.")
+            UI.info("No projects found to stop.")
             return
 
         compose_base = get_compose_cmd()
@@ -848,7 +848,7 @@ class StackHandler(BaseHandler):
         """Restarts project containers."""
         targets = []
         if all_projects:
-            targets = [r["path"] for r in self.get_running_projects()]
+            targets = [r["path"] for r in self.find_dxp_roots()]
         else:
             root = self.detect_project_path(project_id)
             if root:
@@ -866,17 +866,33 @@ class StackHandler(BaseHandler):
                 cmd.append(service)
             self.run_command(cmd, capture_output=False, cwd=str(root))
 
-    def cmd_down(self, project_id=None, service=None, all_projects=False):
+    def cmd_down(
+        self,
+        project_id=None,
+        service=None,
+        all_projects=False,
+        delete=False,
+        infra=False,
+    ):
         """Tears down project containers and volumes."""
+        if infra:
+            UI.warning("Tearing down global infrastructure (Traefik)...")
+            infra_compose = SCRIPT_DIR / "resources" / "infra-compose.yml"
+            if infra_compose.exists():
+                self.run_command(
+                    get_compose_cmd() + ["-f", str(infra_compose), "down", "-v"],
+                    capture_output=False,
+                )
+
         targets = []
         if all_projects:
-            targets = [r["path"] for r in self.get_running_projects()]
+            targets = [r["path"] for r in self.find_dxp_roots()]
         else:
             root = self.detect_project_path(project_id)
             if root:
                 targets = [root]
 
-        if not targets:
+        if not targets and not infra:
             UI.info("No projects found to tear down.")
             return
 
@@ -885,8 +901,7 @@ class StackHandler(BaseHandler):
             UI.warning(f"Tearing down stack: {root.name}")
             cmd = compose_base + ["down", "-v", "--remove-orphans"]
 
-            # If a specific service was requested (and it's NOT the special 'delete' command)
-            if service and service != "delete":
+            if service:
                 cmd.append(service)
 
             # Harden: Check if docker-compose.yml exists before trying to run down
@@ -897,8 +912,8 @@ class StackHandler(BaseHandler):
                     f"No docker-compose.yml found in {root}. Skipping docker-compose down."
                 )
 
-            # Special 'delete' logic: Wipe the project directory from disk
-            if service == "delete":
+            # Delete logic: Wipe the project directory from disk
+            if delete:
                 UI.warning(f"Permanently deleting project directory: {root.name}")
                 self.safe_rmtree(root)
 
@@ -1299,7 +1314,7 @@ class StackHandler(BaseHandler):
         else:
             targets = []
             if all_projects:
-                targets = [r["path"] for r in self.get_running_projects()]
+                targets = [r["path"] for r in self.find_dxp_roots()]
             else:
                 root = self.detect_project_path(project_id)
                 if root:

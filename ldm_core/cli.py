@@ -425,10 +425,18 @@ def main():
             project_id, getattr(args, "service", None), all_projects=args.all
         ),
         "down": lambda: manager.cmd_down(
-            project_id, getattr(args, "service", None), all_projects=args.all
+            project_id,
+            getattr(args, "service", None),
+            all_projects=args.all,
+            delete=getattr(args, "delete", False),
+            infra=getattr(args, "infra", False),
         ),
         "rm": lambda: manager.cmd_down(
-            project_id, getattr(args, "service", None), all_projects=args.all
+            project_id,
+            getattr(args, "service", None),
+            all_projects=args.all,
+            delete=getattr(args, "delete", False),
+            infra=getattr(args, "infra", False),
         ),
         "logs": lambda: manager.cmd_logs(
             project_id,
