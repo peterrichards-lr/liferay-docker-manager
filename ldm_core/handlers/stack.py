@@ -259,7 +259,7 @@ class StackHandler(BaseHandler):
             # 4. Cleanup
             tmp_path.unlink()
             UI.success(
-                "Project bootstrapped from seed. First boot will be near-instant."
+                f"Project bootstrapped from seed. {UI.WHITE}(Saved ~15m of initialization time){UI.COLOR_OFF}"
             )
             return True
 
@@ -621,6 +621,11 @@ class StackHandler(BaseHandler):
                     UI.info(f"Launching browser: {access_url}/web/guest/home")
                     open_browser(f"{access_url}/web/guest/home")
                 return True
+
+            elapsed = time.time() - start_time
+            if int(elapsed) > 0 and int(elapsed) % 30 == 0:
+                print(f" (Still waiting... {int(elapsed)}s)", end="", flush=True)
+
             print(".", end="", flush=True)
             time.sleep(10)
         UI.error("\nTimed out waiting for Liferay to become healthy.")
@@ -1214,7 +1219,6 @@ class StackHandler(BaseHandler):
             liferay_service["depends_on"] = {"db": {"condition": "service_healthy"}}
 
         compose = {
-            "version": "3.8",
             "services": services,
             "networks": {"liferay-net": {"external": True}},
         }
@@ -1305,12 +1309,32 @@ class StackHandler(BaseHandler):
 
             for root in targets:
                 if follow:
+                    # 1. Wait for directory (Host-side files)
                     log_dir = root / "logs"
                     if not log_dir.exists():
                         UI.info(f"Waiting for logs directory in {root.name}...")
                         start_wait = time.time()
                         while not log_dir.exists() and time.time() - start_wait < 30:
                             time.sleep(1)
+
+                    # 2. Wait for container (Docker-side entity)
+                    # Use container_name from meta if available, else folder name
+                    meta = self.read_meta(root / PROJECT_META_FILE)
+                    c_name = meta.get("container_name") or root.name
+                    UI.info(f"Waiting for container {UI.CYAN}{c_name}{UI.COLOR_OFF}...")
+                    start_wait = time.time()
+                    found = False
+                    while time.time() - start_wait < 60:
+                        if self.run_command(
+                            ["docker", "ps", "-a", "-q", "-f", f"name=^{c_name}$"]
+                        ):
+                            found = True
+                            break
+                        time.sleep(2)
+
+                    if not found:
+                        UI.error(f"Container {c_name} did not appear within 60s.")
+                        continue
 
                 cmd = get_compose_cmd() + ["logs"]
                 if follow:

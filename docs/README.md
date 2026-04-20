@@ -470,7 +470,7 @@ ldm log-level
 
 ### `doctor`
 
-Verify host environment health, Docker resources (CPUs/Memory), and project dependencies.
+Verify host environment health, Docker resources (CPUs/Memory), and project dependencies. Now includes checks for required tools: `mkcert`, `telnet`, `nc`, `lcp`, and the Docker Compose V2 plugin.
 
 ```bash
 ldm doctor          # Health check for current/selected project
