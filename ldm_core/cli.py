@@ -24,7 +24,7 @@ def main():
     warnings.filterwarnings("ignore", message="Failed to import fsevents")
 
     parser = argparse.ArgumentParser(
-        description=f"Liferay Docker Manager (ldm) v{VERSION}"
+        prog="ldm", description=f"Liferay Docker Manager (ldm) v{VERSION}"
     )
     parser.add_argument("-v", "--verbose", action="store_true")
     parser.add_argument("-y", "--non-interactive", action="store_true")

@@ -54,9 +54,10 @@ While the v1.x "Hardened Edition" focused on cross-platform stability, **v2.2.0*
 
 ## ✅ Completed Improvements (v2.1.x)
 
-### **High-Performance Boot & Hardening (v2.1.28)**
+### **High-Performance Boot & Hardening (v2.1.29)**
 
-- **Refined Root Troubleshooting**: Improved the sudo troubleshooting guide to explicitly address the "Already Logged in as Root" scenario (common in some Linux environments). The guide now provides clear instructions for exiting root shells and reclaiming standard user cache ownership.
+- **Clean CLI Usage**: Explicitly set the program name in the argument parser to ensure clean usage strings (e.g., `usage: ldm ...`) across all platforms and bundled environments, eliminating messy Python interpreter paths.
+- **Refined Root Troubleshooting**: Improved the sudo troubleshooting guide to explicitly address the "Already Logged in as Root" scenario.
 ...
 - **Sudo Troubleshooting**: Added a dedicated troubleshooting section in the documentation for `sudo` and `root` issues.
 ...
