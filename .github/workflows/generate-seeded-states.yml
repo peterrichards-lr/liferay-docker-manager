@@ -136,6 +136,7 @@ jobs:
           tag_name: seeded-states
           files: all-seeds/**/*
           prerelease: false
+          draft: false
           make_latest: false
           generate_release_notes: false
           body: "Last updated on ${{ github.event.repository.updated_at }}. These seeds are maintained for the latest 4 Quarters and 2 LTS lines."
