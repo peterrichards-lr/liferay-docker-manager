@@ -357,14 +357,21 @@ del "%~f0"
                     os.replace(temp_new, exe_path)
                     UI.success(f"Successfully upgraded to v{latest}!")
                 except PermissionError:
-                    UI.warning(
-                        "\nPermission denied while replacing the binary. This usually happens for files in /usr/local/bin."
-                    )
                     UI.info(
-                        f'To complete the upgrade, please run:\n{UI.CYAN}sudo mv "{temp_new}" "{exe_path}"{UI.COLOR_OFF}'
+                        "\nRequesting permission to replace the binary in system path..."
                     )
-                    # We don't die here, we just finish gracefully since the download is complete
-                    return
+                    try:
+                        # Use sudo to move the file
+                        subprocess.run(
+                            ["sudo", "mv", str(temp_new), str(exe_path)], check=True
+                        )
+                        UI.success(f"Successfully upgraded to v{latest}!")
+                    except Exception as e:
+                        UI.error(f"Failed to replace binary even with sudo: {e}")
+                        UI.info(
+                            f'Please run manually: {UI.CYAN}sudo mv "{temp_new}" "{exe_path}"{UI.COLOR_OFF}'
+                        )
+                        return
 
         except Exception as e:
             if temp_new.exists():

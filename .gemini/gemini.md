@@ -73,6 +73,7 @@ This file serves as the persistent state and technical knowledge base for the AI
 - **Documentation Synchronization**: All functional changes MUST be reflected in relevant documentation (`README.md`, `ROADMAP.md`, `SECURITY.md`, `LDM_ARCHITECTURE.md`).
 - **Memory Persistence**: The `.gemini/gemini.md` file MUST be updated before proposing any changes to serve as the persistent state for the assistant.
 - **Semantic Commits**: All commits must include a clear, suitable summary and a detailed description of the changes made and why.
+- **Sudo-Free Operation**: LDM MUST NOT be run with the `sudo` prefix. All commands that require elevated privileges (e.g., host file updates, binary replacement) MUST request elevation internally via `sudo` or equivalent OS mechanisms to protect the integrity of the user's cache (`~/.shiv`).
 - **History Management**: For bug fixes and refinements, prioritize squashing git history and retagging/re-releasing the current version (while LDM is in early-access staging) to maintain a high-signal commit history.
 
 ### Technical Checklist

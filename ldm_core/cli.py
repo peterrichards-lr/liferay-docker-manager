@@ -319,6 +319,9 @@ def main():
         "shell", choices=["bash", "zsh", "fish", "powershell"], nargs="?"
     )
 
+    # Command: man
+    subparsers.add_parser("man")
+
     scale = subparsers.add_parser("scale")
     scale.add_argument("project", nargs="?")
     scale.add_argument("service_scale", nargs="+")
@@ -366,7 +369,7 @@ def main():
                 os.environ.get("LDM_ALLOW_ROOT", "false").lower() == "true"
                 or allow_root_file.exists()
             )
-            if args.command != "upgrade" and not allow_root:
+            if not allow_root:
                 UI.error("Security Risk: Do not run LDM with 'sudo'.")
                 UI.info(
                     "Running as root causes cache ownership issues in your home directory (~/.shiv).\n"
@@ -378,10 +381,6 @@ def main():
                         f"{UI.CYAN}sudo usermod -aG docker $USER{UI.COLOR_OFF} and restart your terminal session."
                     )
                 sys.exit(1)
-            else:
-                UI.warning(
-                    "Running upgrade as root. This may cause cache ownership issues."
-                )
 
     project_id = getattr(args, "project", None) or getattr(args, "project_flag", None)
     manager = LiferayManager(args)
@@ -480,6 +479,7 @@ def main():
         ),
         "edit": lambda: manager.cmd_edit(project_id, args.target),
         "completion": lambda: manager.cmd_completion(args.shell),
+        "man": lambda: manager.cmd_man(),
         "prune": lambda: manager.cmd_prune(),
         "upgrade": lambda: manager.cmd_upgrade(),
         "update-check": lambda: manager.cmd_update_check(force=True),

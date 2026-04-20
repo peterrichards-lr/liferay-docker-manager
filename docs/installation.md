@@ -236,7 +236,7 @@ If your binary is corrupted or misbehaving, force a re-download of the official 
 ```bash
 
 # Force a repair of the current version
-sudo ldm upgrade --repair
+ldm upgrade --repair
 ```
 
 ### 3. The "Manual Reset" (Last Resort)
