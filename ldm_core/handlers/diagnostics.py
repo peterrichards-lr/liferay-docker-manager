@@ -243,9 +243,12 @@ class DiagnosticsHandler:
                 "Self-upgrade is only supported for standalone binaries. Please use 'git pull' for source installations."
             )
 
-        temp_new = exe_path.with_suffix(".new")
-        if temp_new.exists():
-            temp_new.unlink()
+        import tempfile
+
+        # Download to a system temporary directory that is always writable
+        tmp_fd, tmp_path_str = tempfile.mkstemp(prefix="ldm-upgrade-")
+        temp_new = Path(tmp_path_str)
+        os.close(tmp_fd)
 
         # 3. Download
         UI.info(f"Downloading v{latest}...")
@@ -260,6 +263,8 @@ class DiagnosticsHandler:
                 for chunk in response.iter_content(chunk_size=8192):
                     f.write(chunk)
         except requests.exceptions.HTTPError as e:
+            if temp_new.exists():
+                temp_new.unlink()
             if e.response.status_code == 404:
                 UI.die(
                     "A release build may be in progress. Please try again later. (HTTP 404: File not found)"
@@ -267,14 +272,12 @@ class DiagnosticsHandler:
             else:
                 UI.die("Download failed.", e)
         except Exception as e:
+            if temp_new.exists():
+                temp_new.unlink()
             UI.die("Download failed.", e)
 
         # 4. Verify Integrity
         UI.info("Verifying integrity...")
-        status, ok, _ = verify_executable_checksum(
-            latest
-        )  # Verify the NEW binary version
-        # Note: verify_executable_checksum uses sys.argv[0], so we need a manual check for the .new file
         import hashlib
 
         sha = hashlib.sha256()
@@ -314,10 +317,14 @@ class DiagnosticsHandler:
                         "Integrity verification failed! The downloaded binary does not match the official hash."
                     )
             elif response.status_code == 404:
+                if temp_new.exists():
+                    temp_new.unlink()
                 UI.die(
                     "A release build may be in progress. Please try again later. (HTTP 404: Failed to fetch checksums)"
                 )
             else:
+                if temp_new.exists():
+                    temp_new.unlink()
                 UI.die(f"Failed to fetch checksums (HTTP {response.status_code})")
         except Exception as e:
             UI.warning(
@@ -354,17 +361,25 @@ del "%~f0"
                 except Exception:
                     pass
                 try:
+                    # Attempt local rename first (if install dir is writable)
                     os.replace(temp_new, exe_path)
                     UI.success(f"Successfully upgraded to v{latest}!")
                 except PermissionError:
-                    UI.warning(
-                        "\nPermission denied while replacing the binary. This usually happens for files in /usr/local/bin."
-                    )
                     UI.info(
-                        f'To complete the upgrade, please run:\n{UI.CYAN}sudo mv "{temp_new}" "{exe_path}"{UI.COLOR_OFF}'
+                        "\nRequesting permission to replace the binary in system path..."
                     )
-                    # We don't die here, we just finish gracefully since the download is complete
-                    return
+                    try:
+                        # Use sudo to move the file from /tmp to system path
+                        subprocess.run(
+                            ["sudo", "mv", str(temp_new), str(exe_path)], check=True
+                        )
+                        UI.success(f"Successfully upgraded to v{latest}!")
+                    except Exception as e:
+                        UI.error(f"Failed to replace binary even with sudo: {e}")
+                        UI.info(
+                            f'Please run manually: {UI.CYAN}sudo mv "{temp_new}" "{exe_path}"{UI.COLOR_OFF}'
+                        )
+                        return
 
         except Exception as e:
             if temp_new.exists():

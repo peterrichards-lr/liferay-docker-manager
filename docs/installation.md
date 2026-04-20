@@ -236,7 +236,7 @@ If your binary is corrupted or misbehaving, force a re-download of the official 
 ```bash
 
 # Force a repair of the current version
-sudo ldm upgrade --repair
+ldm upgrade --repair
 ```
 
 ### 3. The "Manual Reset" (Last Resort)
@@ -255,6 +255,36 @@ sudo chmod +x /usr/local/bin/ldm
 If you have cloned the repository and also have the binary installed, `ldm doctor` may report a "Shadowed" version.
 
 - **Recommendation**: Use `./ldm` (local wrapper) for development and `ldm` (global binary) for daily use.
+
+## 🛠️ Troubleshooting: Sudo & Root Issues
+
+LDM strictly prohibits being run with `sudo` or as the `root` user (except for internal, just-in-time elevation).
+
+### 1. "Security Risk: Do not run LDM with sudo"
+
+If you see this error, it means LDM has detected that it is running with root privileges.
+
+**The Cause**: LDM has detected that you are running with root privileges. This happens if you prefix a command with `sudo` **or if you are already logged in as the root user** (e.g., your terminal prompt shows `root@...`).
+
+Standalone LDM binaries use a cache directory in your home folder (`~/.shiv`). Running as root causes this cache to become owned by root, which prevents the tool from functioning correctly when run as a standard user later.
+
+**The Fix**:
+
+1. **Never use the sudo prefix**: Run `ldm <command>` directly as a standard user.
+2. **Exit Root Shells**: If you are logged in as root, type `exit` to return to your standard user before running LDM.
+3. **Fix Cache Ownership**: If you have already run with sudo and are now seeing "Permission Denied" errors, wipe the cache:
+
+   ```bash
+   sudo rm -rf ~/.shiv
+   ```
+
+4. **Fix Docker Permissions**: If you were using `sudo` because of Docker errors, add your user to the `docker` group instead:
+
+   ```bash
+   sudo usermod -aG docker $USER
+   ```
+
+   *Note: You must log out and back in for this to take effect.*
 
 ---
 
