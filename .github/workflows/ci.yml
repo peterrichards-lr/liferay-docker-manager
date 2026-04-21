@@ -6,6 +6,7 @@ on:
     tags: ["v*"] # Trigger on tags like v1.0.0
   pull_request:
     branches: ["master"]
+  workflow_dispatch: # Allow manual triggers
 
 permissions:
   contents: read
@@ -244,6 +245,22 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Fetch all history for commit message checks
+
+      - name: Check for Release Keyword
+        id: check_release
+        shell: bash
+        run: |
+          # Check if the commit message contains [release]
+          MSG=$(git log -1 --pretty=%B)
+          if echo "$MSG" | grep -qi "\[release\]"; then
+            echo "is_release=true" >> $GITHUB_OUTPUT
+            echo "Release keyword found. Creating a FULL release."
+          else
+            echo "is_release=false" >> $GITHUB_OUTPUT
+            echo "Release keyword NOT found. Creating a PRE-RELEASE."
+          fi
 
       - name: Download All Artifacts
         uses: actions/download-artifact@v4
@@ -278,13 +295,15 @@ jobs:
             bin-temp/samples.zip
             bin-temp/checksums.txt
             bin-temp/LICENSE
-          make_latest: true
+          make_latest: ${{ steps.check_release.outputs.is_release == 'true' }}
           fail_on_unmatched_files: true
           generate_release_notes: true
           body: |
-            ## Liferay Docker Manager (LDM) ${{ github.ref_name }} - Hardened Edition
+            ## Liferay Docker Manager (LDM) ${{ github.ref_name }}
 
-            This release continues our commitment to environmental hardening for macOS, Windows, and Linux.
+            ${{ steps.check_release.outputs.is_release == 'true' && '🚀 **OFFICIAL RELEASE**' || '🧪 **PRE-RELEASE / TEST BUILD**' }}
+
+            This version continues our commitment to environmental hardening for macOS, Windows, and Linux.
 
             ### 🚀 Installation (Direct Binary)
 
@@ -319,4 +338,4 @@ jobs:
             - **Infrastructure Management**: Control global proxy state via `ldm infra-setup`.
             - **Architecture-Aware**: Automatic detection of OS for updates and checksums.
           draft: false
-          prerelease: false
+          prerelease: ${{ steps.check_release.outputs.is_release != 'true' }}

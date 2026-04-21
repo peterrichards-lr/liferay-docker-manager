@@ -34,20 +34,20 @@ While the v2.3.x release solidified the core architecture, **v2.4.0** will focus
 
 ---
 
-## ✅ Completed Improvements (v2.3.1 - Hardening, Reliability & UX Restoration)
+## ✅ Completed Improvements (v2.3.6 - Release Control & Final Hardening)
 
-### **Core Stability & Verification**
+### **CI/CD & Delivery Control**
 
-- **Architectural Contract Verification**: Introduced a mock-free test suite (`test_architectural_contracts.py`) to verify that refactoring never silently drops mandatory Docker labels or domain trust settings.
-- **Positional Disambiguation**: Implemented a powerful heuristic to distinguish between project names and service names (e.g., `ldm logs liferay` now correctly identifies the service even inside project folders).
-- **Hardened Status Reporting**: Restored the `com.liferay.ldm.project` label to all Liferay services, ensuring `ldm status` correctly identifies and reports active projects.
+- **Explicit Release Gating**: Re-engineered the GitHub Release workflow to support intentional full releases. All version tags now default to **Pre-release** status unless the commit message explicitly includes the `[release]` keyword.
+- **Manual Workflow Triggers**: Added `workflow_dispatch` support to the CI pipeline for on-demand build and verification runs.
+- **E2E Verification Suite**: Established a comprehensive end-to-end verification script (`scripts/verify_e2e_refactor.sh`) that validates global infrastructure, project orchestration, and CLI disambiguation in a live Docker environment.
 
-### **UX & Reliability Refinements**
+### **Core Stability & UX Restoration**
 
-- **Domain Trust Recovery**: Re-implemented proactive `portal-ext.properties` updates for `web.server.display.node.name` and `redirect.url.ips.allowed` when using custom hostnames.
-- **Improved Log Feedback**: Added `--no-wait` flag to `ldm logs` and implemented real-time user feedback while waiting for containers to become available.
-- **Automation Hardening**: Verified and hardened all commands to bypass interactive prompts in non-interactive (`-y`) mode, preventing hangs in CI/CD environments.
-- **Infrastructure Reliability**: Fixed missing environment variables (`LDM_CERTS_DIR`) during infrastructure teardown and log viewing.
+- **Architectural Contract Verification**: Introduced a mock-free test suite to ensure mandatory Docker labels and domain trust settings are never dropped during refactoring.
+- **Refined Project Disambiguation**: Standardized project name resolution across all CLI commands to correctly distinguish between project IDs and service names (e.g., `liferay`, `db`, `proxy`).
+- **Improved Log Feedback**: Added `--no-wait` flag to `ldm logs` and implemented real-time user feedback while waiting for containers.
+- **Automation Hardening**: Ensured all commands correctly bypass interactive prompts in non-interactive (`-y`) mode.
 
 ---
 
