@@ -841,6 +841,7 @@ class StackHandler(BaseHandler):
 
         project_meta.update(
             {
+                "project_name": project_id,
                 "tag": tag,
                 "host_name": host_name,
                 "container_name": project_id,

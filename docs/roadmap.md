@@ -52,6 +52,12 @@ While the v1.x "Hardened Edition" focused on cross-platform stability, **v2.2.0*
 
 ---
 
+## ✅ Completed Improvements (v2.2.5)
+
+- **Hotfix: Project Naming Integrity**: Fixed a bug where projects bootstrapped from a Seeded State would sometimes inherit generic container names (e.g., `seeded-...`) from the source snapshot metadata. The orchestrator now explicitly enforces the user's chosen project name across both metadata and Docker Compose configurations.
+
+---
+
 ## ✅ Completed Improvements (v2.2.4)
 
 - **Hotfix: Infrastructure Teardown Reliability**: Fixed a bug where `ldm rm --infra` would fail due to missing environment variables (`LDM_CERTS_DIR`). Refactored infrastructure orchestration to ensure consistent environment injection during both setup and teardown phases.
