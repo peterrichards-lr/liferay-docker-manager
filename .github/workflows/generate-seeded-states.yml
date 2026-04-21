@@ -5,9 +5,6 @@ on:
   schedule:
     - cron: '0 0 * * 0' # Weekly on Sunday
 
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-
 permissions:
   contents: write
 
@@ -17,7 +14,7 @@ jobs:
     outputs:
       tags: ${{ steps.set-tags.outputs.tags }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - id: set-tags
         run: |
           TAGS=$(python3 scripts/get_release_tags.py)
@@ -34,10 +31,10 @@ jobs:
         db_type: [postgresql, mysql, hypersonic]
       fail-fast: false
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: '3.12'
 

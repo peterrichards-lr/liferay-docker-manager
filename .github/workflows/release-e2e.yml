@@ -5,9 +5,6 @@ on:
     tags: ["v*"] # Only run when a tag is pushed
   workflow_dispatch: # Allow manual trigger for ad-hoc verification
 
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-
 jobs:
   e2e-verification:
     # Only run if the commit message explicitly includes [release]
@@ -15,10 +12,10 @@ jobs:
     runs-on: ubuntu-latest
     
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.12"
           cache: "pip"
