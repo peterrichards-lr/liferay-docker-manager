@@ -420,7 +420,7 @@ def main():
 
     # Use a simpler project name detection for the docker_required check
     # to avoid failing if the detected root doesn't have a name yet (initialization case)
-    detected_root = manager.detect_project_path(project_id)
+    detected_root = manager.detect_project_path(project_id, for_init=True)
     p_name = project_id or (detected_root.name if detected_root else None)
 
     docker_required = [

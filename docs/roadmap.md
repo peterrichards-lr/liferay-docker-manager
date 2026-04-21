@@ -52,6 +52,13 @@ While the v1.x "Hardened Edition" focused on cross-platform stability, **v2.2.0*
 
 ---
 
+## ✅ Completed Improvements (v2.2.1)
+
+- **Hotfix: CLI Initialization Regression**: Fixed a critical bug where `ldm run` on a non-existent project would fail during the pre-flight check because the project path could not be "detected." The path resolution engine now correctly allows initialization for new projects.
+- **Improved Test Coverage**: Added a new verification suite for the CLI entry point to prevent future regressions in project discovery and initialization logic.
+
+---
+
 ## ✅ Completed Improvements (v2.2.0 - The Ecosystem Phase)
 
 ### **Ecosystem Planning & Orchestration**
