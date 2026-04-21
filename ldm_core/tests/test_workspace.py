@@ -56,6 +56,9 @@ class MockWorkspaceManager(WorkspaceHandler, DiagnosticsHandler, BaseHandler):
     def write_meta(self, *args, **kwargs):
         pass
 
+    def _ensure_seeded(self, *args, **kwargs):
+        return False
+
     def check_hostname(self, *args, **kwargs):
         return True
 

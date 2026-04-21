@@ -724,6 +724,26 @@ class StackHandler(BaseHandler):
                 "-Xms4096m -Xmx12288m -XX:MaxMetaspaceSize=768m -XX:MetaspaceSize=768m"
             )
 
+    def _ensure_seeded(self, tag, db_type, paths):
+        """Helper to ensure a project is bootstrapped from a seed if available and appropriate."""
+        if getattr(self.args, "no_seed", False):
+            return False
+
+        sidecar_flag = getattr(self.args, "sidecar", False)
+        search_mode = (
+            "sidecar"
+            if sidecar_flag or self.parse_version(tag) < (2025, 1, 0)
+            else "shared"
+        )
+
+        seed_start = time.time()
+        if self._fetch_seed(tag, db_type or "hypersonic", search_mode, paths):
+            if self.verbose:
+                duration_str = UI.format_duration(time.time() - seed_start)
+                UI.debug(f"Seed fetch & extraction took: {duration_str}")
+            return True
+        return False
+
     def cmd_run(self, project_id=None, is_restart=False):
         total_start = time.time()
         project_id = (
@@ -802,22 +822,10 @@ class StackHandler(BaseHandler):
         paths = self.setup_paths(root)
 
         # Seed Bootstrap (New Projects)
-        if is_new_project and not external_snapshot and not is_samples:
-            sidecar_flag = getattr(self.args, "sidecar", False)
-            search_mode = (
-                "sidecar"
-                if sidecar_flag or self.parse_version(tag) < (2025, 1, 0)
-                else "shared"
-            )
-
-            if not getattr(self.args, "no_seed", False):
-                seed_start = time.time()
-                if self._fetch_seed(tag, db_type or "hypersonic", search_mode, paths):
-                    if self.verbose:
-                        duration_str = UI.format_duration(time.time() - seed_start)
-                        UI.debug(f"Seed fetch & extraction took: {duration_str}")
-                    project_meta = self.read_meta(root / PROJECT_META_FILE)
-                    is_new_project = False
+        if is_new_project:
+            if self._ensure_seeded(tag, db_type, paths):
+                project_meta = self.read_meta(root / PROJECT_META_FILE)
+                is_new_project = False
 
         if host_name != "localhost" and not self.check_hostname(host_name):
             sys.exit(1)
