@@ -18,6 +18,7 @@ dist/
 ldm-local
 ldm-macos
 ldm-linux
-ldm-windows.exesamplestest/
+ldm-windows.exe
 samplestest/
 seeded-*/
+test-*/
