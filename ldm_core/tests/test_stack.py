@@ -770,6 +770,9 @@ class TestStackOrchestration(unittest.TestCase):
 
     def test_write_docker_compose_isolates_port_by_ip(self):
         manager = MockManager()
+        manager.args.ssl = (
+            False  # KEY: Explicitly disable SSL in CLI args for this test
+        )
         # Mock hostname resolving to a dedicated loopback IP
         with patch.object(manager, "get_resolved_ip", return_value="127.0.0.10"):
             root = Path("/tmp/proj")
@@ -777,6 +780,7 @@ class TestStackOrchestration(unittest.TestCase):
             meta = {
                 "tag": "2025.q1.0",
                 "host_name": "liferay-a.local",
+                "ssl": "false",  # KEY: Must disable SSL to trigger direct port binding
                 "port": 8080,
             }
 

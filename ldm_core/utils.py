@@ -87,12 +87,10 @@ def get_seed_url(tag, db="postgresql", search="shared"):
 
 def download_samples(version, destination):
     """Downloads and extracts the samples pack from GitHub."""
-    base_url = (
-        "https://github.com/peterrichards-lr/liferay-docker-manager/releases/download"
-    )
+    repo_url = "https://github.com/peterrichards-lr/liferay-docker-manager"
     urls = [
-        f"{base_url}/v{version}/samples.zip",
-        f"{base_url}/latest/download/samples.zip",
+        f"{repo_url}/releases/download/v{version}/samples.zip",
+        f"{repo_url}/releases/latest/download/samples.zip",
     ]
 
     # Ensure parent directory exists for the temp zip

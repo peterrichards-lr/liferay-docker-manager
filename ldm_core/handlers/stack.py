@@ -413,12 +413,10 @@ class StackHandler(BaseHandler):
         host_name = project_meta.get("host_name", "localhost")
 
         # Harden SSL detection (handle both 'ssl' and 'use_ssl' from tests/meta)
-        # MUST NOT enable SSL for localhost/loopback as it bypasses proxy infrastructure
+        # MUST NOT enable SSL for literal localhost as it bypasses proxy infrastructure.
+        # Custom domains (e.g. samples.local) pointing to 127.* SHOULD support SSL/Proxy.
         resolved_ip = self.get_resolved_ip(host_name)
-        # Loopback ONLY if it explicitly says localhost or resolves to 127.*
-        is_loopback = host_name == "localhost" or (
-            resolved_ip is not None and resolved_ip.startswith("127.")
-        )
+        is_literal_localhost = host_name == "localhost"
 
         # Priority: 1. CLI Arg, 2. Meta 'ssl', 3. Meta 'use_ssl', 4. Default (True for custom)
         ssl_arg = getattr(self.args, "ssl", None)
@@ -429,10 +427,10 @@ class StackHandler(BaseHandler):
         elif meta_ssl is not None:
             ssl_enabled = str(meta_ssl).lower() == "true"
         else:
-            ssl_enabled = not is_loopback
+            ssl_enabled = not is_literal_localhost
 
-        # Enforce no SSL for loopback
-        if is_loopback:
+        # Enforce no SSL for literal localhost
+        if is_literal_localhost:
             ssl_enabled = False
         ssl_port_val = project_meta.get("ssl_port", 443)
         ssl_port = int(ssl_port_val) if ssl_port_val is not None else 443
@@ -767,10 +765,7 @@ class StackHandler(BaseHandler):
         # Build Meta
         # FAIL FAST: Calculate SSL early for pre-flight check
         resolved_ip = self.get_resolved_ip(host_name)
-        is_loopback = host_name == "localhost" or (
-            resolved_ip is not None and resolved_ip.startswith("127.")
-        )
-
+        is_literal_localhost = host_name == "localhost"
         ssl_arg = getattr(self.args, "ssl", None)
         meta_ssl = project_meta.get("ssl", project_meta.get("use_ssl"))
 
@@ -779,9 +774,9 @@ class StackHandler(BaseHandler):
         elif meta_ssl is not None:
             ssl_val = str(meta_ssl).lower() == "true"
         else:
-            ssl_val = not is_loopback
+            ssl_val = not is_literal_localhost
 
-        if is_loopback:
+        if is_literal_localhost:
             ssl_val = False
 
         project_meta.update(
@@ -1065,10 +1060,7 @@ class StackHandler(BaseHandler):
 
         # Determine Port Binding (Instance Isolation)
         resolved_ip = self.get_resolved_ip(host_name)
-        # Loopback ONLY if it explicitly says localhost or resolves to 127.*
-        is_loopback = host_name == "localhost" or (
-            resolved_ip is not None and resolved_ip.startswith("127.")
-        )
+        is_literal_localhost = host_name == "localhost"
 
         # Priority: 1. CLI Arg, 2. Meta 'ssl', 3. Meta 'use_ssl', 4. Default (True for custom)
         ssl_arg = getattr(self.args, "ssl", None)
@@ -1079,10 +1071,10 @@ class StackHandler(BaseHandler):
         elif meta_ssl is not None:
             ssl_active = str(meta_ssl).lower() == "true"
         else:
-            ssl_active = not is_loopback
+            ssl_active = not is_literal_localhost
 
-        # Enforce no SSL for loopback
-        if is_loopback:
+        # Enforce no SSL for literal localhost
+        if is_literal_localhost:
             ssl_active = False
 
         port_list = []
