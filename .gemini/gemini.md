@@ -46,12 +46,13 @@ This file serves as the persistent state and technical knowledge base for the AI
 
 ### 1. Release Gating ([release] keyword)
 
-- **Explicit Releases**: The GitHub Release workflow is gated. Version tags (`v*`) trigger a **Pre-release** by default.
+- **Explicit Releases**: The GitHub Release workflow is gated. Version tags (`v*`) trigger a **Pre-release** build.
 - **Full Release**: To trigger a full GitHub release and update the 'latest' pointer, the commit message MUST contain the **`[release]`** keyword.
 
 ### 2. Verification Requirements
 
-- **E2E Testing**: Significant changes to orchestration or infrastructure MUST be verified using `bash scripts/verify_e2e_refactor.sh`. This script performs live-Docker verification of global infra, project labels, and status reporting.
+- **E2E Testing**: Significant changes to orchestration or infrastructure MUST be verified using `bash scripts/verify_e2e_refactor.sh`.
+- **Automated Release E2E**: Commits containing `[release]` automatically trigger the **LDM Release E2E** workflow, which performs live-Docker verification of global infra, project labels, and status reporting on a clean GitHub runner.
 
 ## 🏁 Definition of Done for Changes
 
