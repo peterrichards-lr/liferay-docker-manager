@@ -323,18 +323,17 @@ class StackHandler(BaseHandler):
 
     def _ensure_docker_proxy(self):
         """Ensures a safe Docker socket proxy is running for Traefik."""
-        if not self.run_command(
-            ["docker", "ps", "-q", "-f", "name=liferay-docker-proxy"]
-        ):
+        container_name = "liferay-docker-proxy"
+        # Check if it exists at all (running or stopped)
+        exists = self.run_command(
+            ["docker", "ps", "-a", "-q", "-f", f"name={container_name}"]
+        )
+
+        if not exists:
             UI.info("Starting Docker socket bridge...")
             socket_path = get_docker_socket_path()
 
             # Hardening for Colima/Lima:
-            # Colima often uses a path like ~/.colima/default/docker.sock on the host.
-            # However, mounting this host path directly into a container often fails
-            # with 'operation not supported' because the VM's filesystem (VirtioFS)
-            # doesn't allow creating/mounting sockets from the host.
-            # In Colima environments, the VM already has the socket at /var/run/docker.sock.
             if (
                 "colima" in str(socket_path).lower()
                 or ".lima" in str(socket_path).lower()
@@ -348,7 +347,7 @@ class StackHandler(BaseHandler):
                     "run",
                     "-d",
                     "--name",
-                    "liferay-docker-proxy",
+                    container_name,
                     "--network",
                     "liferay-net",
                     "-v",
@@ -356,11 +355,23 @@ class StackHandler(BaseHandler):
                     "tecnativa/docker-socket-proxy",
                 ]
             )
+        else:
+            # If it exists, make sure it is running
+            running = self.run_command(
+                ["docker", "ps", "-q", "-f", f"name={container_name}"]
+            )
+            if not running:
+                UI.info("Starting existing Docker socket bridge...")
+                self.run_command(["docker", "start", container_name])
 
     def setup_global_search(self):
         """Ensures the global ES8 search service is running."""
         search_name = "liferay-search-global"
-        if not self.run_command(["docker", "ps", "-q", "-f", f"name={search_name}"]):
+        exists = self.run_command(
+            ["docker", "ps", "-a", "-q", "-f", f"name={search_name}"]
+        )
+
+        if not exists:
             UI.info("Initializing Global Search (ES8) container...")
             home = get_actual_home()
             es_data = home / ".ldm" / "infra" / "search" / "data"
@@ -451,6 +462,14 @@ class StackHandler(BaseHandler):
 
             UI.info("Restarting Global Search to activate plugins...")
             self.run_command(["docker", "restart", search_name])
+        else:
+            # Check if it is running
+            running = self.run_command(
+                ["docker", "ps", "-q", "-f", f"name={search_name}"]
+            )
+            if not running:
+                UI.info(f"Starting existing {search_name} container...")
+                self.run_command(["docker", "start", search_name])
 
     def sync_stack(
         self,

@@ -52,6 +52,12 @@ While the v1.x "Hardened Edition" focused on cross-platform stability, **v2.2.0*
 
 ---
 
+## ✅ Completed Improvements (v2.2.3)
+
+- **Hotfix: Infrastructure Idempotency**: Fixed a Docker conflict error where LDM would fail if infrastructure containers (Traefik Proxy, Global Search) existed in a stopped state. The orchestrator now correctly identifies stopped containers and starts them instead of attempting to recreate them.
+
+---
+
 ## ✅ Completed Improvements (v2.2.2)
 
 - **Hotfix: OSGi State Snapshot Integrity**: Resolved a silent failure in the snapshot engine where the `osgi/state` directory was sometimes omitted from the final archive due to internal path resolution differences. This ensures that Seeded States (v2) correctly include the pre-resolved bundle state.
