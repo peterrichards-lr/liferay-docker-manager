@@ -398,10 +398,17 @@ class StackHandler(BaseHandler):
         if not no_up:
             import socket
 
+            # Check availability on the resolved IP (Instance Isolation)
+            check_ip = self.get_resolved_ip(host_name) or "127.0.0.1"
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                if s.connect_ex(("localhost", port)) == 0:
+                if s.connect_ex((check_ip, port)) == 0:
+                    target = (
+                        f"{host_name}:{port}"
+                        if check_ip != "127.0.0.1"
+                        else f"localhost:{port}"
+                    )
                     UI.die(
-                        f"Port {port} is already in use. Please change the port in metadata or stop the conflicting service."
+                        f"Port {target} is already in use. Please change the port in metadata or stop the conflicting service."
                     )
 
         cmd = compose_base + ["up", "-d", "--remove-orphans"]
@@ -949,9 +956,16 @@ class StackHandler(BaseHandler):
             # We explicitly DISABLE the HSQL fallback via env var (safe and unambiguous)
             liferay_env.append("LIFERAY_HSQL_PERIOD_ENABLED=false")
 
+        # Determine Port Binding (Instance Isolation)
+        # Use the resolved IP if it's not localhost to allow multiple instances on 8080
+        resolved_ip = self.get_resolved_ip(host_name) or "127.0.0.1"
+        port_binding = f"{port}:8080"
+        if resolved_ip != "127.0.0.1":
+            port_binding = f"{resolved_ip}:{port}:8080"
+
         liferay_service = {
             "image": image,
-            "ports": [f"{port}:8080"],
+            "ports": [port_binding],
             "environment": liferay_env,
             "labels": [f"com.liferay.ldm.project={project_name}"],
             "volumes": [

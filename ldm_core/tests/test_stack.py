@@ -728,6 +728,25 @@ class TestStackOrchestration(unittest.TestCase):
             manager.cmd_browser("test")
             mock_open.assert_called_with("https://test.local")
 
+    def test_write_docker_compose_isolates_port_by_ip(self):
+        manager = MockManager()
+        # Mock hostname resolving to a dedicated loopback IP
+        with patch.object(manager, "get_resolved_ip", return_value="127.0.0.10"):
+            root = Path("/tmp/proj")
+            paths = manager.setup_paths(root)
+            meta = {
+                "tag": "2025.q1.0",
+                "host_name": "liferay-a.local",
+                "port": 8080,
+            }
+
+            with patch.object(Path, "write_text") as mock_write:
+                manager.write_docker_compose(paths, meta)
+
+                # Verify the written YAML contains the IP-prefixed port
+                written_yaml = mock_write.call_args[0][0]
+                self.assertIn("127.0.0.10:8080:8080", written_yaml)
+
 
 if __name__ == "__main__":
     unittest.main()
