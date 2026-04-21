@@ -591,12 +591,45 @@ class StackHandler(BaseHandler):
                 f"  + Port:    {UI.CYAN}8080 -> {project_meta.get('port', 8080)}{UI.COLOR_OFF}"
             )
 
-        # 6. Execute
+        # 6. Execute (Hardened Startup Sequence)
         if not no_up:
             if self.verbose and total_start:
                 duration_str = UI.format_duration(time.time() - total_start)
                 UI.debug(f"Time to orchestration start: {duration_str}")
 
+            # 6A. Start dependencies first (DB, Search, etc.)
+            db_type = project_meta.get("db_type", "hypersonic")
+            deps = []
+            if db_type != "hypersonic":
+                deps.append("db")
+            if not use_shared_search:
+                deps.append("search")
+
+            if deps:
+                UI.info(
+                    f"Starting dependencies: {UI.CYAN}{', '.join(deps)}{UI.COLOR_OFF}..."
+                )
+                self.run_command(
+                    compose_base + ["up", "-d"] + deps,
+                    cwd=str(paths["root"]),
+                    check=True,
+                )
+
+                # Wait for dependencies to be healthy
+                for dep in deps:
+                    UI.info(f"Waiting for {UI.CYAN}{dep}{UI.COLOR_OFF} to be ready...")
+                    start_wait = time.time()
+                    while time.time() - start_wait < 60:
+                        # Docker Compose V2 naming: {project_id}-{service}-1
+                        status = self.get_container_status(f"{project_id}-{dep}-1")
+                        if status == "healthy" or status == "running":
+                            # Give the service a tiny buffer to actually bind its port
+                            time.sleep(2)
+                            break
+                        time.sleep(2)
+
+            # 6B. Start Liferay and remaining services
+            UI.info(f"Starting {UI.BOLD}{project_id}{UI.COLOR_OFF} stack...")
             self.run_command(cmd, cwd=str(paths["root"]), capture_output=not follow)
 
             if follow:
@@ -1145,6 +1178,25 @@ class StackHandler(BaseHandler):
                 )
 
             # We explicitly DISABLE the HSQL fallback via env var (safe and unambiguous)
+            liferay_env.append("LIFERAY_HSQL_PERIOD_ENABLED=false")
+
+        elif db_type == "postgresql":
+            driver = "org.postgresql.Driver"
+            url = "jdbc:postgresql://db:5432/lportal"
+            dialect = "org.hibernate.dialect.PostgreSQL10Dialect"
+
+            if not has_jdbc_env:
+                self.update_portal_ext(
+                    paths,
+                    {
+                        "jdbc.default.enabled": "true",
+                        "jdbc.default.driverClassName": driver,
+                        "jdbc.default.url": url,
+                        "jdbc.default.username": "lportal",
+                        "jdbc.default.password": "test",
+                        "hibernate.dialect": dialect,
+                    },
+                )
             liferay_env.append("LIFERAY_HSQL_PERIOD_ENABLED=false")
 
         # Determine Port Binding (Instance Isolation)
