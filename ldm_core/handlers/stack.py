@@ -309,7 +309,7 @@ class StackHandler(BaseHandler):
             return True
         return False
 
-    def _pre_flight_checks(self, host_name, port):
+    def _pre_flight_checks(self, host_name, port, ssl_enabled=False):
         """Verifies environment readiness before expensive operations."""
         if not self.check_docker():
             UI.die("Docker is not running or not accessible.")
@@ -320,11 +320,34 @@ class StackHandler(BaseHandler):
         import socket
 
         check_ip = self.get_resolved_ip(host_name) or "127.0.0.1"
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            if s.connect_ex((check_ip, port)) == 0:
-                UI.die(
-                    f"Port {check_ip}:{port} is already in use. Please change the port in metadata or stop the conflicting service."
-                )
+
+        # Port Logic:
+        # 1. If SSL is active for a custom hostname, we DON'T bind 8080 to the host.
+        #    Traefik handles it. No check needed.
+        if ssl_enabled and host_name != "localhost":
+            return port
+
+        # 2. If it's localhost, we FAIL FAST but attempt to increment if possible.
+        #    (Or just report the conflict early)
+        orig_port = port
+        while True:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                if s.connect_ex((check_ip, port)) != 0:
+                    # Port is free
+                    break
+
+                # Port is busy
+                if host_name == "localhost":
+                    port += 1
+                    if port > orig_port + 10:
+                        UI.die(
+                            f"Port range {orig_port}-{port - 1} is already in use on localhost. Please stop conflicting services."
+                        )
+                else:
+                    UI.die(
+                        f"Port {check_ip}:{port} is already in use. Please change the port in metadata or stop the conflicting service."
+                    )
+        return port
 
     def sync_stack(
         self,
@@ -403,6 +426,7 @@ class StackHandler(BaseHandler):
         config_handler.sync_logging(paths)
 
         # 5. Generate Configuration
+        # FAIL FAST checked this already, but we pass final port back to meta
         self.write_docker_compose(paths, project_meta)
 
         # Pre-flight: Validate Compose Syntax
@@ -604,9 +628,17 @@ class StackHandler(BaseHandler):
         port_val = project_meta.get("port", 8080)
         port = int(port_val) if port_val is not None else 8080
 
-        # FAIL FAST: Pre-flight checks before expensive operations
+        # FAIL FAST: Calculate SSL early for pre-flight check
+        resolved_ip = self.get_resolved_ip(host_name) or "127.0.0.1"
+        is_loopback = resolved_ip.startswith("127.") or host_name == "localhost"
+        ssl_arg = getattr(self.args, "ssl", None)
+        ssl_val = ssl_arg if ssl_arg is not None else (not is_loopback)
+
         if not getattr(self.args, "no_up", False):
-            self._pre_flight_checks(host_name, port)
+            port = self._pre_flight_checks(host_name, port, ssl_enabled=ssl_val)
+
+        # Update meta with final port (important if incremented)
+        project_meta["port"] = port
 
         # Performance Overrides
         no_vol_cache = (
@@ -963,15 +995,27 @@ class StackHandler(BaseHandler):
             liferay_env.append("LIFERAY_HSQL_PERIOD_ENABLED=false")
 
         # Determine Port Binding (Instance Isolation)
-        # We ALWAYS bind to the specific resolved IP.
-        # Binding to just 'port:8080' would result in '0.0.0.0:port',
-        # which would conflict with other isolated loopback instances.
         resolved_ip = self.get_resolved_ip(host_name) or "127.0.0.1"
-        port_binding = f"{resolved_ip}:{port}:8080"
+        is_loopback = resolved_ip.startswith("127.") or host_name == "localhost"
+
+        # Correct SSL detection for composing (Matches early sync_stack logic)
+        ssl_active = (
+            str(meta.get("ssl", meta.get("use_ssl", "false"))).lower() == "true"
+            and not is_loopback
+        )
+
+        port_list = []
+        # PORT BINDING RULE:
+        # 1. If it's localhost, we ALWAYS bind (no proxy involved)
+        # 2. If it's a custom domain AND SSL is disabled, we MUST bind (user needs a way in)
+        # 3. If it's a custom domain AND SSL is enabled, we DON'T bind (Traefik proxy only)
+        if host_name == "localhost" or not ssl_active:
+            # We ALWAYS bind to the specific resolved IP to avoid 0.0.0.0 conflicts.
+            port_list.append(f"{resolved_ip}:{port}:8080")
 
         liferay_service = {
             "image": image,
-            "ports": [port_binding],
+            "ports": port_list,
             "environment": liferay_env,
             "labels": [f"com.liferay.ldm.project={project_name}"],
             "volumes": [
