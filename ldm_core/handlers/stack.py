@@ -309,6 +309,23 @@ class StackHandler(BaseHandler):
             return True
         return False
 
+    def _pre_flight_checks(self, host_name, port):
+        """Verifies environment readiness before expensive operations."""
+        if not self.check_docker():
+            UI.die("Docker is not running or not accessible.")
+
+        if host_name != "localhost" and not self.check_hostname(host_name):
+            sys.exit(1)
+
+        import socket
+
+        check_ip = self.get_resolved_ip(host_name) or "127.0.0.1"
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            if s.connect_ex((check_ip, port)) == 0:
+                UI.die(
+                    f"Port {check_ip}:{port} is already in use. Please change the port in metadata or stop the conflicting service."
+                )
+
     def sync_stack(
         self,
         paths,
@@ -395,20 +412,6 @@ class StackHandler(BaseHandler):
             cwd=str(paths["root"]),
             check=True,
         )
-
-        # Pre-flight: Port Availability
-        port_val = project_meta.get("port", 8080)
-        port = int(port_val) if port_val is not None else 8080
-        if not no_up:
-            import socket
-
-            # Check availability on the resolved IP (Instance Isolation)
-            check_ip = self.get_resolved_ip(host_name) or "127.0.0.1"
-            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                if s.connect_ex((check_ip, port)) == 0:
-                    UI.die(
-                        f"Port {check_ip}:{port} is already in use. Please change the port in metadata or stop the conflicting service."
-                    )
 
         cmd = compose_base + ["up", "-d", "--remove-orphans"]
         if rebuild:
@@ -598,6 +601,12 @@ class StackHandler(BaseHandler):
         host_name = self.args.host_name or project_meta.get("host_name") or "localhost"
         db_type = getattr(self.args, "db", None) or project_meta.get("db_type")
         jvm_args = getattr(self.args, "jvm_args", None) or project_meta.get("jvm_args")
+        port_val = project_meta.get("port", 8080)
+        port = int(port_val) if port_val is not None else 8080
+
+        # FAIL FAST: Pre-flight checks before expensive operations
+        if not getattr(self.args, "no_up", False):
+            self._pre_flight_checks(host_name, port)
 
         # Performance Overrides
         no_vol_cache = (
@@ -656,9 +665,6 @@ class StackHandler(BaseHandler):
             if self._ensure_seeded(tag, db_type, paths):
                 project_meta = self.read_meta(root / PROJECT_META_FILE)
                 is_new_project = False
-
-        if host_name != "localhost" and not self.check_hostname(host_name):
-            sys.exit(1)
 
         use_shared_search = (
             str(project_meta.get("use_shared_search", "false")).lower() == "true"
