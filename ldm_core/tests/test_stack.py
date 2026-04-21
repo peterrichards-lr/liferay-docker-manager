@@ -475,6 +475,19 @@ class TestStackOrchestration(unittest.TestCase):
             self.assertTrue(
                 any("org.hibernate.dialect.MariaDB103Dialect" in e for e in passed_env)
             )
+            # Verify Hardened Search Environment Variables
+            self.assertTrue(
+                any(
+                    "LIFERAY_ELASTICSEARCH_SIDECAR_ENABLED=false" in e
+                    for e in passed_env
+                )
+            )
+            self.assertTrue(
+                any(
+                    "LIFERAY_ELASTICSEARCH_INDEX_NAME_PREFIX=ldm-test-" in e
+                    for e in passed_env
+                )
+            )
 
     def test_generate_compose_with_mysql_modern(self):
         import yaml
@@ -511,6 +524,19 @@ class TestStackOrchestration(unittest.TestCase):
             passed_env = compose_data["services"]["liferay"]["environment"]
             self.assertTrue(
                 any("org.hibernate.dialect.MariaDB103Dialect" in e for e in passed_env)
+            )
+            # Verify Hardened Search Environment Variables
+            self.assertTrue(
+                any(
+                    "LIFERAY_ELASTICSEARCH_SIDECAR_ENABLED=false" in e
+                    for e in passed_env
+                )
+            )
+            self.assertTrue(
+                any(
+                    "LIFERAY_ELASTICSEARCH_INDEX_NAME_PREFIX=ldm-test-" in e
+                    for e in passed_env
+                )
             )
             self.assertEqual(db_service["healthcheck"]["start_period"], "60s")
 
