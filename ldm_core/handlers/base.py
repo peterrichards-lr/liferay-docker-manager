@@ -100,6 +100,34 @@ class BaseHandler:
             return False
         return True
 
+    def get_container_status(self, container_name):
+        """Returns the health or status of a container."""
+        try:
+            # First try to get health status
+            health = self.run_command(
+                [
+                    "docker",
+                    "inspect",
+                    "-f",
+                    "{{.State.Health.Status}}",
+                    container_name,
+                ],
+                check=False,
+            )
+            if health and health.strip():
+                return health.strip().lower()
+
+            # Fallback to general state
+            status = self.run_command(
+                ["docker", "inspect", "-f", "{{.State.Status}}", container_name],
+                check=False,
+            )
+            if status and status.strip():
+                return status.strip().lower()
+        except Exception:
+            pass
+        return "unknown"
+
     def select_project_interactively(self, roots=None, heading="Select Project"):
         """Prompts the user to select a project from a list."""
         if self.non_interactive:
