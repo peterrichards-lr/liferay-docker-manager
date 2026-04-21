@@ -188,7 +188,7 @@ To ensure maximum reliability across all Liferay versions and to align with **Li
 | **Database (MySQL/MariaDB)** | **Standardized on MariaDB JDBC Driver** (`org.mariadb.jdbc.Driver`) and `MariaDB103Dialect` for all 2025+ and 2026.Q1 LTS builds. Includes performance parameters in the connection URL to mirror Cloud optimizations. |
 | **Conflict Avoidance** | If custom `LIFERAY_JDBC_PERIOD_` environment variables are detected in metadata, LDM **skips** writing JDBC properties to `portal-ext.properties` to ensure the user's manual config takes precedence. |
 | **SSL / Routing** | `web.server.protocol`, `web.server.host`, `virtual.hosts.valid.hosts`, `web.server.display.node.name`, `redirect.url.ips.allowed` |
-| **Search (ES8)** | `elasticsearch.sidecar.enabled=false`, `elasticsearch.connection.url`, `elasticsearch.index.name.prefix` |
+| **Search (ES8)** | **Managed via Environment Variables & OSGi .config Substitution.** LDM enforces `LIFERAY_ELASTICSEARCH_SIDECAR_ENABLED=false` and unique `indexNamePrefix` dynamically to prevent collisions and skip Sidecar startup. |
 | **Clustering** | `cluster.link.enabled`, `lucene.replicate.write` (Active when scaled > 1) |
 | **Identity** | `liferay.docker.image`, `liferay.docker.tag` |
 

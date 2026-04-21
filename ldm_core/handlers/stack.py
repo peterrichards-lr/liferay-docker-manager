@@ -490,6 +490,10 @@ class StackHandler(BaseHandler):
                 "Docker Compose not found. Please run 'ldm doctor' for installation instructions."
             )
 
+        # 0. Initialize environment list (Hardening)
+        # Standard variables always present
+        liferay_env = ["LIFERAY_HOME=/opt/liferay"]
+
         # 1. Environment and Infrastructure
         project_id = project_meta.get("container_name")
         host_name = project_meta.get("host_name", "localhost")
@@ -498,14 +502,18 @@ class StackHandler(BaseHandler):
         ssl_port_val = project_meta.get("ssl_port", 443)
         ssl_port = int(ssl_port_val) if ssl_port_val is not None else 443
 
-        # 2. Proactive Domain Alignment
+        # Search Configuration (Hardened Environment Injection)
+        use_shared_search = (
+            str(project_meta.get("use_shared_search", "true")).lower() == "true"
+        )
+
+        # 2. Proactive Domain Alignment (Hardened Env Injection)
         if host_name != "localhost":
-            self.update_portal_ext(
-                paths,
-                {
-                    "web.server.display.node.name": "true",
-                    "redirect.url.ips.allowed": "127.0.0.1,0.0.0.0/0",
-                },
+            liferay_env.extend(
+                [
+                    "LIFERAY_WEB_PERIOD_SERVER_PERIOD_DISPLAY_PERIOD_NODE_PERIOD_NAME=true",
+                    "LIFERAY_REDIRECT_PERIOD_URL_PERIOD_IPS_PERIOD_ALLOWED=127.0.0.1,0.0.0.0/0",
+                ]
             )
 
         # 3. Infrastructure Sync
@@ -540,21 +548,8 @@ class StackHandler(BaseHandler):
         config_handler.sync_logging(paths)
 
         # 5. Generate Configuration
-        # Restore Shared Search Default
-        use_shared_search = (
-            str(project_meta.get("use_shared_search", "true")).lower() == "true"
-        )
-        if use_shared_search:
-            self.update_portal_ext(
-                paths,
-                {
-                    "elasticsearch.sidecar.enabled": "false",
-                    "elasticsearch.connection.url": "http://liferay-search-global:9200",
-                    "elasticsearch.index.name.prefix": f"ldm-{project_id}-",
-                },
-            )
-
-        self.write_docker_compose(paths, project_meta)
+        # FAIL FAST checked this already, but we pass final port back to meta
+        self.write_docker_compose(paths, project_meta, liferay_env=liferay_env)
 
         # Pre-flight: Validate Compose Syntax
         UI.debug("Validating generated docker-compose.yml syntax...")
@@ -1046,7 +1041,7 @@ class StackHandler(BaseHandler):
         else:
             self.sync_stack(paths, meta, rebuild=getattr(self.args, "rebuild", False))
 
-    def write_docker_compose(self, paths, meta):
+    def write_docker_compose(self, paths, meta, liferay_env=None):
         """Generates the docker-compose.yml file for the project."""
         tag = str(meta.get("tag") or "latest")
         db_type = meta.get("db_type", "hypersonic")
@@ -1111,10 +1106,28 @@ class StackHandler(BaseHandler):
 
         # Hardened JDBC Environment Variables (Prioritized by Liferay Docker Entrypoint)
         db_type = meta.get("db_type", "hypersonic")
-        liferay_env = [
-            f"LIFERAY_JVM_OPTS={jvm_opts}",
-            "LIFERAY_HOME=/opt/liferay",
-        ]
+
+        # Ensure we don't reset environment if already partially built in sync_stack
+        if liferay_env is None:
+            liferay_env = ["LIFERAY_HOME=/opt/liferay"]
+
+        # Add JVM Options (Must be a single string for the entrypoint)
+        liferay_env.append(f"LIFERAY_JVM_OPTS={jvm_opts}")
+
+        # Search Configuration (Hardened Environment Injection)
+        use_shared_search = str(meta.get("use_shared_search", "true")).lower() == "true"
+        if use_shared_search:
+            # Enforce Shared ES via Environment Variables (High Priority)
+            liferay_env.extend(
+                [
+                    "LIFERAY_ELASTICSEARCH_SIDECAR_ENABLED=false",
+                    "LIFERAY_ELASTICSEARCH_CONNECTION_URL=http://liferay-search-global:9200",
+                    f"LIFERAY_ELASTICSEARCH_INDEX_NAME_PREFIX=ldm-{project_name}-",
+                ]
+            )
+        else:
+            # Sidecar explicit enable
+            liferay_env.append("LIFERAY_ELASTICSEARCH_SIDECAR_ENABLED=true")
 
         # Add custom environment variables from metadata
         custom_env_str = meta.get("custom_env", "")
@@ -1128,11 +1141,7 @@ class StackHandler(BaseHandler):
 
         if db_type in ["mysql", "mariadb"]:
             # Standard Liferay Docker images ship with MariaDB driver (LGPL) but NOT MySQL driver (GPL).
-            # The MariaDB driver is fully compatible with MySQL servers and is used by Liferay Cloud (LXC).
             driver = "org.mariadb.jdbc.Driver"
-
-            # Cloud-optimized URL for MariaDB connector connecting to MySQL/MariaDB
-            # Includes performance parameters: rewriteBatchedStatements, prepStmtCacheSize, etc.
             url = (
                 "jdbc:mariadb://db:3306/lportal?"
                 "characterEncoding=UTF-8"
@@ -1150,31 +1159,18 @@ class StackHandler(BaseHandler):
                 "&useLocalTransactionState=true"
                 "&permitMysqlScheme=true"
             )
-
-            # Mirror LXC: Use MariaDB dialect for both MariaDB and MySQL 8.x
-            # (Matches Liferay's auto-detection when using MariaDB driver)
             dialect = "org.hibernate.dialect.MariaDB103Dialect"
 
-            # Move all database configuration to portal-ext.properties
-            # This avoids problematic environment variable decoding in the Docker entrypoint.
-            # CRITICAL: If the user has manually provided JDBC environment variables,
-            # we should NOT write the standard JDBC properties to portal-ext.properties
-            # to avoid unpredictable behavior where both are present.
             if not has_jdbc_env:
-                self.update_portal_ext(
-                    paths,
-                    {
-                        "jdbc.default.enabled": "true",
-                        "jdbc.default.driverClassName": driver,
-                        "jdbc.default.url": url,
-                        "jdbc.default.username": "lportal",
-                        "jdbc.default.password": "test",
-                        "hibernate.dialect": dialect,
-                    },
-                )
-            else:
-                UI.warning(
-                    "Custom JDBC environment variables detected. Skipping standard LDM portal-ext.properties DB config to avoid conflicts."
+                liferay_env.extend(
+                    [
+                        "LIFERAY_JDBC_PERIOD_DEFAULT_PERIOD_ENABLED=true",
+                        f"LIFERAY_JDBC_PERIOD_DEFAULT_PERIOD_DRIVER_CLASS_NAME={driver}",
+                        f"LIFERAY_JDBC_PERIOD_DEFAULT_PERIOD_URL={url}",
+                        "LIFERAY_JDBC_PERIOD_DEFAULT_PERIOD_USERNAME=lportal",
+                        "LIFERAY_JDBC_PERIOD_DEFAULT_PERIOD_PASSWORD=test",
+                        f"LIFERAY_HIBERNATE_PERIOD_DIALECT={dialect}",
+                    ]
                 )
 
             # We explicitly DISABLE the HSQL fallback via env var (safe and unambiguous)
@@ -1186,16 +1182,15 @@ class StackHandler(BaseHandler):
             dialect = "org.hibernate.dialect.PostgreSQL10Dialect"
 
             if not has_jdbc_env:
-                self.update_portal_ext(
-                    paths,
-                    {
-                        "jdbc.default.enabled": "true",
-                        "jdbc.default.driverClassName": driver,
-                        "jdbc.default.url": url,
-                        "jdbc.default.username": "lportal",
-                        "jdbc.default.password": "test",
-                        "hibernate.dialect": dialect,
-                    },
+                liferay_env.extend(
+                    [
+                        "LIFERAY_JDBC_PERIOD_DEFAULT_PERIOD_ENABLED=true",
+                        f"LIFERAY_JDBC_PERIOD_DEFAULT_PERIOD_DRIVER_CLASS_NAME={driver}",
+                        f"LIFERAY_JDBC_PERIOD_DEFAULT_PERIOD_URL={url}",
+                        "LIFERAY_JDBC_PERIOD_DEFAULT_PERIOD_USERNAME=lportal",
+                        "LIFERAY_JDBC_PERIOD_DEFAULT_PERIOD_PASSWORD=test",
+                        f"LIFERAY_HIBERNATE_PERIOD_DIALECT={dialect}",
+                    ]
                 )
             liferay_env.append("LIFERAY_HSQL_PERIOD_ENABLED=false")
 
@@ -1249,13 +1244,12 @@ class StackHandler(BaseHandler):
             )
             liferay_service["volumes"].append(f"{paths['logs']}:/opt/liferay/logs")
         else:
-            # Handle clustering setup for scaling
-            self.update_portal_ext(
-                paths,
-                {
-                    "cluster.link.enabled": "true",
-                    "lucene.replicate.write": "true",
-                },
+            # Handle clustering setup for scaling (Hardened Env Injection)
+            liferay_env.extend(
+                [
+                    "LIFERAY_CLUSTER_PERIOD_LINK_PERIOD_ENABLED=true",
+                    "LIFERAY_LUCENE_PERIOD_REPLICATE_PERIOD_WRITE=true",
+                ]
             )
 
         # SSL Labels

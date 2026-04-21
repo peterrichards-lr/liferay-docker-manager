@@ -419,6 +419,37 @@ class ConfigHandler(BaseHandler):
                             continue
 
                     dest = target / match.name
+
+                    # 80/20 DESIGN: Static Template + Dynamic Substitution
+                    if "elasticsearch" in match.name.lower() and match.name.endswith(
+                        ".config"
+                    ):
+                        content = match.read_text()
+
+                        # Inject index prefix dynamically based on project
+                        # Liferay ES configuration uses standard property keys in .config files
+                        project_id = paths["root"].name
+                        prefix = f"ldm-{project_id}-"
+
+                        # Add or update indexNamePrefix
+                        if 'indexNamePrefix="' in content:
+                            import re
+
+                            content = re.sub(
+                                r'indexNamePrefix="[^"]*"',
+                                f'indexNamePrefix="{prefix}"',
+                                content,
+                            )
+                        else:
+                            content += f'\nindexNamePrefix="{prefix}"'
+
+                        # Write the substituted config
+                        if not dest.exists() or dest.read_text() != content:
+                            dest.write_text(content)
+                            if not dest.exists():
+                                history.add(match.name)
+                        continue
+
                     # Always copy if it doesn't exist
                     if not dest.exists():
                         shutil.copy(match, dest)

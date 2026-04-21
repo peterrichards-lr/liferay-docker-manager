@@ -236,10 +236,20 @@ class TestStackScaling(unittest.TestCase):
             volumes = compose_data["services"]["liferay"]["volumes"]
             self.assertFalse(any("/opt/liferay/osgi/state" in v for v in volumes))
             self.assertFalse(any("/opt/liferay/logs" in v for v in volumes))
-            # Verify clustering properties are applied
-            update_call = manager.update_portal_ext.call_args[0][1]
-            self.assertEqual(update_call["cluster.link.enabled"], "true")
-            self.assertEqual(update_call["lucene.replicate.write"], "true")
+            # Verify clustering properties are applied via environment variables
+            passed_env = compose_data["services"]["liferay"]["environment"]
+            self.assertTrue(
+                any(
+                    "LIFERAY_CLUSTER_PERIOD_LINK_PERIOD_ENABLED=true" in e
+                    for e in passed_env
+                )
+            )
+            self.assertTrue(
+                any(
+                    "LIFERAY_LUCENE_PERIOD_REPLICATE_PERIOD_WRITE=true" in e
+                    for e in passed_env
+                )
+            )
 
 
 class TestStackNetwork(unittest.TestCase):
@@ -437,9 +447,10 @@ class TestStackOrchestration(unittest.TestCase):
             compose_data = yaml.safe_load(mock_write.call_args[0][0])
 
             # Verify Liferay JVM Flags
-            liferay_env = compose_data["services"]["liferay"]["environment"][0]
-            self.assertIn("-Dfile.encoding=UTF8", liferay_env)
-            self.assertIn("-Duser.timezone=GMT", liferay_env)
+            passed_env = compose_data["services"]["liferay"]["environment"]
+            jvm_opts = next((e for e in passed_env if "LIFERAY_JVM_OPTS=" in e), "")
+            self.assertIn("-Dfile.encoding=UTF8", jvm_opts)
+            self.assertIn("-Duser.timezone=GMT", jvm_opts)
 
             # Verify MySQL service hardening
             db_service = compose_data["services"]["db"]
@@ -459,10 +470,10 @@ class TestStackOrchestration(unittest.TestCase):
             self.assertEqual(db_service["healthcheck"]["start_period"], "60s")
 
             # Verify MariaDB dialect is used even for legacy MySQL (Standardized on MariaDB driver)
-            update_call = self.manager.update_portal_ext.call_args[0][1]
-            self.assertEqual(
-                update_call["hibernate.dialect"],
-                "org.hibernate.dialect.MariaDB103Dialect",
+            passed_env = compose_data["services"]["liferay"]["environment"]
+            self.assertTrue(any("org.mariadb.jdbc.Driver" in e for e in passed_env))
+            self.assertTrue(
+                any("org.hibernate.dialect.MariaDB103Dialect" in e for e in passed_env)
             )
 
     def test_generate_compose_with_mysql_modern(self):
@@ -496,11 +507,10 @@ class TestStackOrchestration(unittest.TestCase):
                 db_service["command"],
             )
 
-            # Verify Cloud-aligned MariaDB dialect is used
-            update_call = self.manager.update_portal_ext.call_args[0][1]
-            self.assertEqual(
-                update_call["hibernate.dialect"],
-                "org.hibernate.dialect.MariaDB103Dialect",
+            # Verify Cloud-aligned MariaDB dialect is used via environment variables
+            passed_env = compose_data["services"]["liferay"]["environment"]
+            self.assertTrue(
+                any("org.hibernate.dialect.MariaDB103Dialect" in e for e in passed_env)
             )
             self.assertEqual(db_service["healthcheck"]["start_period"], "60s")
 

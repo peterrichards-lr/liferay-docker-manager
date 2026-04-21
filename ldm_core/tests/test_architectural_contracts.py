@@ -65,27 +65,35 @@ class TestArchitecturalContracts(unittest.TestCase):
         }
 
         # Trigger the sync logic (which handles domain alignment)
-        # Mocking run_command to avoid actually starting docker
         from unittest.mock import patch
 
         with patch.object(self.manager, "run_command"):
             with patch.object(self.manager, "setup_infrastructure"):
-                self.manager.sync_stack(paths, meta, no_up=True)
+                with patch.object(self.manager, "write_docker_compose") as mock_write:
+                    self.manager.sync_stack(paths, meta, no_up=True)
 
-        pe_path = paths["files"] / "portal-ext.properties"
-        self.assertTrue(pe_path.exists())
-        content = pe_path.read_text()
+                    # Verify that environment variables were passed to write_docker_compose
+                    # It might be in call_args.args[2] or call_args.kwargs['liferay_env']
+                    args, kwargs = mock_write.call_args
+                    passed_env = kwargs.get("liferay_env") or args[2]
 
-        self.assertIn(
-            "web.server.display.node.name=true",
-            content,
-            "Mandate Loss: Liferay is not configured to display node name for custom domains.",
-        )
-        self.assertIn(
-            "redirect.url.ips.allowed=127.0.0.1,0.0.0.0/0",
-            content,
-            "Mandate Loss: Liferay is not configured to allow redirects from the proxy.",
-        )
+                    # Verify domain alignment env vars are present
+                    self.assertTrue(
+                        any(
+                            "LIFERAY_WEB_PERIOD_SERVER_PERIOD_DISPLAY_PERIOD_NODE_PERIOD_NAME=true"
+                            in e
+                            for e in passed_env
+                        ),
+                        "Mandate Loss: Liferay is not configured to display node name for custom domains.",
+                    )
+                    self.assertTrue(
+                        any(
+                            "LIFERAY_REDIRECT_PERIOD_URL_PERIOD_IPS_PERIOD_ALLOWED="
+                            in e
+                            for e in passed_env
+                        ),
+                        "Mandate Loss: Liferay is not configured to allow redirects from the proxy.",
+                    )
 
 
 if __name__ == "__main__":
