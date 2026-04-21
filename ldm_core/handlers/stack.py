@@ -232,10 +232,9 @@ class StackHandler(BaseHandler):
             UI.info(f"Seed found!{size_str}")
 
             if not self.non_interactive:
-                confirm = UI.ask(
-                    "Bootstrap project from this pre-warmed seed? (Saves ~15m)", "y"
-                )
-                if str(confirm).lower() != "y":
+                if not UI.confirm(
+                    "Bootstrap project from this pre-warmed seed? (Saves ~15m)", "Y"
+                ):
                     UI.info("User declined seed. Initializing clean project...")
                     return False
 
@@ -1403,14 +1402,12 @@ class StackHandler(BaseHandler):
         if not tag:
             UI.die("Project missing tag metadata. Cannot reseed.")
 
-        if (
-            UI.ask(
-                f"Reseed {root.name} from {tag} ({db_type}/{search_mode})? ALL LOCAL DATA WILL BE LOST.",
-                "N",
-            ).upper()
-            == "Y"
+        if UI.confirm(
+            f"Reseed {root.name} from {tag} ({db_type}/{search_mode})? ALL LOCAL DATA WILL BE LOST.",
+            "N",
         ):
-            self.cmd_reset(project_id, target="all")
+            self.cmd_reset(root.name, target="all")
+
             paths = self.setup_paths(root)
             if self._fetch_seed(tag, db_type, search_mode, paths):
                 UI.success("Reseed complete.")

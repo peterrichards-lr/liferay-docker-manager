@@ -205,18 +205,14 @@ class ConfigHandler(BaseHandler):
                 if not self.non_interactive:
                     UI.heading("On-Demand Sample Pack")
                     UI.info("Sample assets are not bundled with the standalone binary.")
-                    if (
-                        UI.ask(
-                            f"Download sample pack for v{VERSION} (~50MB)?", "Y"
-                        ).upper()
-                        == "Y"
-                    ):
+                    if UI.confirm(f"Download sample pack for v{VERSION} (~50MB)?", "Y"):
                         if download_samples(VERSION, cache_path):
-                            return cache_path
+                            UI.success("Sample pack ready.")
                         else:
-                            UI.die("Failed to download samples.")
+                            UI.die("Failed to download sample pack.")
                     else:
-                        UI.die("Samples required but download declined.")
+                        UI.die("Sample pack required for --samples mode.")
+
                 else:
                     UI.die("Sample assets missing and non-interactive mode is active.")
         return samples_root

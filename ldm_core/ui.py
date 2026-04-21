@@ -127,6 +127,12 @@ class UI:
             sys.exit(130)
 
     @staticmethod
+    def confirm(prompt, default="Y"):
+        """Standardized Yes/No confirmation prompt."""
+        res = UI.ask(prompt, default)
+        return str(res).lower() == "y"
+
+    @staticmethod
     def format_size(size):
         for unit in ["B", "KB", "MB", "GB", "TB"]:
             if size < 1024:

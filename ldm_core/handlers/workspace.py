@@ -632,7 +632,7 @@ class WorkspaceHandler(BaseHandler):
                         UI.error(f"Build failed: {e}")
                         if self.non_interactive:
                             UI.die("Build failed in non-interactive mode. Aborting.")
-                        if UI.ask("Continue anyway? (y/n/q)", "N").upper() != "Y":
+                        if not UI.confirm("Continue anyway? (y/n/q)", "N"):
                             sys.exit(1)
                 else:
                     UI.warning("gradlew not found. Skipping build.")

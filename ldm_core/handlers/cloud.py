@@ -41,7 +41,7 @@ class CloudHandler:
             UI.die("Not logged into Liferay Cloud. Please run 'lcp login' first.")
 
         UI.warning("You are not logged into Liferay Cloud.")
-        if UI.ask("Run 'lcp login' now?", "Y").upper() == "Y":
+        if UI.confirm("Run 'lcp login' now?", "Y"):
             lcp_bin = shutil.which("lcp")
             try:
                 # lcp login is interactive and may open a browser

@@ -655,7 +655,7 @@ class TestStackOrchestration(unittest.TestCase):
         result = manager._fetch_seed("tag", "db", "search", paths)
         self.assertFalse(result)
         mock_ask.assert_called_with(
-            "Bootstrap project from this pre-warmed seed? (Saves ~15m)", "y"
+            "Bootstrap project from this pre-warmed seed? (Saves ~15m)", "Y"
         )
 
         # 2. User says Yes (but we'll stop there by mocking GET failure or similar)
