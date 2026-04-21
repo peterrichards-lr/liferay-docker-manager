@@ -177,6 +177,17 @@ def get_parser():
         if cmd == "logs":
             p.add_argument("-f", "--follow", action="store_true")
             p.add_argument(
+                "--tail",
+                type=str,
+                default="100",
+                help="Number of lines to show from the end of the logs (default: 100)",
+            )
+            p.add_argument(
+                "--no-wait",
+                action="store_true",
+                help="Do not wait for container to be available",
+            )
+            p.add_argument(
                 "--infra",
                 action="store_true",
                 help="View logs for global infrastructure",
@@ -416,7 +427,6 @@ def main():
                     )
                 sys.exit(1)
 
-    project_id = getattr(args, "project", None) or getattr(args, "project_flag", None)
     manager = LiferayManager(args)
 
     # Disambiguation Heuristic:
@@ -424,29 +434,20 @@ def main():
     # We detect if the first positional arg is actually a service name.
     if args.command in ["logs", "stop", "restart", "down", "rm", "deploy"]:
         service_id = getattr(args, "project", None)
-        if service_id in ["liferay", "db", "search", "proxy", "elasticsearch"]:
-            # Verify it's NOT a project name (by suppressing prompts/errors)
-            from unittest.mock import patch
-
-            with patch.object(UI, "die"):
-                test_root = manager.detect_project_path(service_id)
-
-            if not test_root:
-                # It's a service! Shift arguments.
-                if args.command == "logs":
-                    # logs takes nargs='*'
-                    args.service = [service_id] + (getattr(args, "service", []) or [])
-                else:
-                    # others take nargs='?'
-                    args.service = service_id
-                args.project = None
-                project_id = None
+        # Standard Liferay services
+        known_services = ["liferay", "db", "search", "proxy", "elasticsearch"]
+        if service_id in known_services:
+            # Shift arguments: service_id is definitely a service
+            if args.command == "logs":
+                # logs takes nargs='*'
+                args.service = [service_id] + (getattr(args, "service", []) or [])
+            else:
+                # others take nargs='?'
+                args.service = service_id
+            args.project = None
 
     # Use a simpler project name detection for the docker_required check
     # to avoid failing if the detected root doesn't have a name yet (initialization case)
-    detected_root = manager.detect_project_path(project_id, for_init=True)
-    p_name = project_id or (detected_root.name if detected_root else None)
-
     docker_required = [
         "run",
         "init-from",
@@ -474,71 +475,93 @@ def main():
 
     # Execution map
     cmds = {
-        "run": lambda: manager.cmd_run(),
-        "up": lambda: manager.cmd_run(),
+        "run": lambda: manager.cmd_run(getattr(args, "project", None)),
+        "up": lambda: manager.cmd_run(getattr(args, "project", None)),
         "import": lambda: manager.cmd_import(args.source),
         "init-from": lambda: manager.cmd_init_from(args.source),
         "monitor": lambda: manager.cmd_monitor(args.source),
         "stop": lambda: manager.cmd_stop(
-            p_name, getattr(args, "service", None), all_projects=args.all
+            getattr(args, "project", None),
+            getattr(args, "service", None),
+            all_projects=args.all,
         ),
         "restart": lambda: manager.cmd_restart(
-            p_name, getattr(args, "service", None), all_projects=args.all
+            getattr(args, "project", None),
+            getattr(args, "service", None),
+            all_projects=args.all,
         ),
         "down": lambda: manager.cmd_down(
-            None if getattr(args, "infra", False) else p_name,
+            getattr(args, "project", None),
             getattr(args, "service", None),
             all_projects=args.all,
             delete=getattr(args, "delete", False),
             infra=getattr(args, "infra", False),
         ),
         "rm": lambda: manager.cmd_down(
-            None if getattr(args, "infra", False) else p_name,
+            getattr(args, "project", None),
             getattr(args, "service", None),
             all_projects=args.all,
             delete=getattr(args, "delete", False),
             infra=getattr(args, "infra", False),
         ),
         "logs": lambda: manager.cmd_logs(
-            None if getattr(args, "infra", False) else p_name,
+            getattr(args, "project", None),
             getattr(args, "service", None),
             all_projects=args.all,
             infra=getattr(args, "infra", False),
             follow=getattr(args, "follow", False),
+            no_wait=getattr(args, "no_wait", False),
+            tail=getattr(args, "tail", "100"),
         ),
-        "deploy": lambda: manager.cmd_deploy(p_name, getattr(args, "service", None)),
-        "env": lambda: manager.cmd_env(p_name),
-        "snapshot": lambda: manager.cmd_snapshot(p_name),
-        "restore": lambda: manager.cmd_restore(p_name),
+        "deploy": lambda: manager.cmd_deploy(
+            getattr(args, "project", None), getattr(args, "service", None)
+        ),
+        "env": lambda: manager.cmd_env(getattr(args, "project", None)),
+        "snapshot": lambda: manager.cmd_snapshot(getattr(args, "project", None)),
+        "restore": lambda: manager.cmd_restore(getattr(args, "project", None)),
         "init-common": lambda: manager.cmd_init_common(),
-        "reset": lambda: manager.cmd_reset(p_name, getattr(args, "target", "state")),
-        "re-seed": lambda: manager.cmd_reseed(p_name),
-        "migrate-search": lambda: manager.cmd_migrate_search(p_name),
-        "renew-ssl": lambda: manager.cmd_renew_ssl(p_name),
+        "reset": lambda: manager.cmd_reset(
+            getattr(args, "project", None), getattr(args, "target", "state")
+        ),
+        "re-seed": lambda: manager.cmd_reseed(getattr(args, "project", None)),
+        "migrate-search": lambda: manager.cmd_migrate_search(
+            getattr(args, "project", None)
+        ),
+        "renew-ssl": lambda: manager.cmd_renew_ssl(getattr(args, "project", None)),
         "infra-setup": lambda: manager.cmd_infra_setup(),
         "infra-down": lambda: manager.cmd_infra_down(),
         "infra-restart": lambda: manager.cmd_infra_restart(),
         "cache": lambda: manager.cmd_cache(getattr(args, "target", "tags")),
         "clear-cache": lambda: manager.cmd_cache("tags"),
         "clear-tags": lambda: manager.cmd_cache("tags"),
-        "doctor": lambda: manager.cmd_doctor(p_name, all_projects=args.all),
-        "status": lambda: manager.cmd_status(p_name, all_projects=args.all),
-        "ps": lambda: manager.cmd_status(p_name, all_projects=args.all),
+        "doctor": lambda: manager.cmd_doctor(
+            getattr(args, "project", None), all_projects=args.all
+        ),
+        "status": lambda: manager.cmd_status(
+            getattr(args, "project", None), all_projects=args.all
+        ),
+        "ps": lambda: manager.cmd_status(
+            getattr(args, "project", None), all_projects=args.all
+        ),
         "list": lambda: manager.cmd_list(),
         "ls": lambda: manager.cmd_list(),
         "config": lambda: manager.cmd_config(args.key, args.value),
-        "shell": lambda: manager.cmd_shell(p_name, getattr(args, "service", None)),
-        "gogo": lambda: manager.cmd_gogo(p_name),
-        "log-level": lambda: manager.cmd_log_level(p_name),
-        "browser": lambda: manager.cmd_browser(p_name),
-        "open": lambda: manager.cmd_browser(p_name),
-        "scale": lambda: manager.cmd_scale(p_name, args.service_scale),
+        "shell": lambda: manager.cmd_shell(
+            getattr(args, "project", None), getattr(args, "service", None)
+        ),
+        "gogo": lambda: manager.cmd_gogo(getattr(args, "project", None)),
+        "log-level": lambda: manager.cmd_log_level(getattr(args, "project", None)),
+        "browser": lambda: manager.cmd_browser(getattr(args, "project", None)),
+        "open": lambda: manager.cmd_browser(getattr(args, "project", None)),
+        "scale": lambda: manager.cmd_scale(
+            getattr(args, "project", None), args.service_scale
+        ),
         "cloud-fetch": lambda: manager.cmd_cloud_fetch(
-            p_name,
+            getattr(args, "project", None),
             getattr(args, "env_id", None),
             follow=getattr(args, "follow", False),
         ),
-        "edit": lambda: manager.cmd_edit(p_name, args.target),
+        "edit": lambda: manager.cmd_edit(getattr(args, "project", None), args.target),
         "completion": lambda: manager.cmd_completion(args.shell),
         "man": lambda: manager.cmd_man(),
         "prune": lambda: manager.cmd_prune(),

@@ -2,7 +2,7 @@ name: LDM Release E2E
 
 on:
   push:
-    branches: ["master"]
+    tags: ["v*"] # Only run when a tag is pushed
   workflow_dispatch: # Allow manual trigger for ad-hoc verification
 
 jobs:
@@ -25,6 +25,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
           pip install -r requirements-dev.txt
+          pip install -e . # Ensure local package is prioritized
 
       - name: Run Live Docker E2E Suite
         shell: bash

@@ -8,7 +8,7 @@ class TestCLIEntrypoint(unittest.TestCase):
     @patch("ldm_core.cli.get_parser")
     @patch("ldm_core.cli.check_for_updates")
     @patch("sys.exit")
-    def test_run_command_calls_detect_project_path_with_for_init(
+    def test_run_command_delegates_to_manager(
         self, mock_exit, mock_update, mock_get_parser, mock_manager_class
     ):
         # Setup mock parser to return 'run' command
@@ -26,18 +26,13 @@ class TestCLIEntrypoint(unittest.TestCase):
         # Setup mock manager
         mock_manager = mock_manager_class.return_value
         mock_manager.check_docker.return_value = True
-        mock_manager.detect_project_path.return_value = None  # Project doesn't exist
 
         # Run main
         with patch("sys.argv", ["ldm", "run", "new-project"]):
             main()
 
-        # Verify detect_project_path was called with for_init=True
-        mock_manager.detect_project_path.assert_called_once_with(
-            "new-project", for_init=True
-        )
-        # Verify cmd_run was called
-        mock_manager.cmd_run.assert_called_once()
+        # Verify cmd_run was called with the project arg
+        mock_manager.cmd_run.assert_called_once_with("new-project")
 
 
 if __name__ == "__main__":

@@ -66,12 +66,18 @@ echo "✅ Project detected correctly in ldm status."
 
 # 4. Verify CLI Disambiguation (Logs)
 echo "--- Step 4: CLI Disambiguation (Logs) ---"
-# Should not fail with 'unrecognized arguments' or project not found if we use the service name
-# Use --no-wait to avoid hanging on the missing alpine container logs
+# Test: Logs with explicit project and service
 LOG_OUT=$($PYTHON_CMD -y logs e2e-refactor-project liferay --no-wait 2>&1 || true)
 if echo "$LOG_OUT" | grep -q "unrecognized arguments"; then
-    echo "❌ ERROR: CLI disambiguation failed for logs command (project/service mixup)"
-    echo "Full output: $LOG_OUT"
+    echo "❌ ERROR: CLI parser rejected --no-wait flag"
+    exit 1
+fi
+
+# Test: Service-only logs (Disambiguation Heuristic)
+# This should correctly identify 'liferay' as a service even if it exists as a folder
+LOG_OUT_SERVICE=$($PYTHON_CMD -y logs liferay --no-wait 2>&1 || true)
+if echo "$LOG_OUT_SERVICE" | grep -q "Project 'liferay' not found"; then
+    echo "❌ ERROR: CLI disambiguation failed (identified service as missing project)"
     exit 1
 fi
 

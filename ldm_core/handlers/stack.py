@@ -1159,6 +1159,7 @@ class StackHandler(BaseHandler):
         all_projects=False,
         infra=False,
         follow=False,
+        no_wait=False,
     ):
         """Shows logs for a project or global infrastructure."""
         if infra:
@@ -1204,23 +1205,30 @@ class StackHandler(BaseHandler):
                 if self.verbose:
                     UI.debug(f"Processing logs for project: {root.name} in {root}")
 
-                if follow:
-                    # 1. Wait for directory (Host-side files)
-                    log_dir = root / "logs"
-                    if not log_dir.exists():
-                        UI.info(f"Waiting for logs directory in {root.name}...")
-                        start_wait = time.time()
-                        while not log_dir.exists() and time.time() - start_wait < 30:
-                            time.sleep(1)
+                # Use container_name from meta if available, else folder name
+                meta = self.read_meta(root / PROJECT_META_FILE)
+                c_name = meta.get("container_name") or root.name
 
-                    # 2. Wait for container (Docker-side entity)
-                    # Use container_name from meta if available, else folder name
-                    meta = self.read_meta(root / PROJECT_META_FILE)
-                    c_name = meta.get("container_name") or root.name
+                # Default: Wait for container unless no_wait is set
+                res = self.run_command(
+                    ["docker", "ps", "-a", "-q", "-f", f"name=^{c_name}$"],
+                    check=False,
+                )
+
+                if not res:
+                    if no_wait:
+                        UI.error(f"Container '{c_name}' does not exist. Skipping.")
+                        continue
+
+                    # Waiting with feedback
                     UI.info(f"Waiting for container {UI.CYAN}{c_name}{UI.COLOR_OFF}...")
                     start_wait = time.time()
                     found = False
                     while time.time() - start_wait < 60:
+                        elapsed = int(time.time() - start_wait)
+                        if elapsed > 0 and elapsed % 10 == 0:
+                            UI.info(f"  ... still waiting for '{c_name}' ({elapsed}s)")
+
                         if self.run_command(
                             ["docker", "ps", "-a", "-q", "-f", f"name=^{c_name}$"]
                         ):
@@ -1229,8 +1237,23 @@ class StackHandler(BaseHandler):
                         time.sleep(2)
 
                     if not found:
-                        UI.error(f"Container {c_name} did not appear within 60s.")
+                        UI.error(f"Container '{c_name}' did not appear within 60s.")
                         continue
+
+                # Wait for directory (Host-side files) if follow is requested
+                if follow:
+                    log_dir = root / "logs"
+                    if not log_dir.exists():
+                        if no_wait:
+                            UI.error(
+                                f"Logs directory missing in {root.name}. Skipping."
+                            )
+                            continue
+
+                        UI.info(f"Waiting for logs directory in {root.name}...")
+                        start_wait = time.time()
+                        while not log_dir.exists() and time.time() - start_wait < 30:
+                            time.sleep(1)
 
                 cmd = get_compose_cmd() + ["logs"]
                 if follow:
