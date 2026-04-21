@@ -26,6 +26,27 @@ class TestCLILogic(unittest.TestCase):
         self.assertTrue(args.non_interactive)
         self.assertTrue(args.verbose)
 
+    def test_status_project_arg(self):
+        # Test: ldm status forge
+        args = self.parser.parse_args(["status", "forge"])
+        self.assertEqual(args.command, "status")
+        self.assertEqual(args.project, "forge")
+
+    def test_cli_disambiguation_logs(self):
+        # Test: ldm logs liferay
+        # Without a project specified, argparse puts 'liferay' in 'project'
+        args = self.parser.parse_args(["logs", "liferay"])
+        self.assertEqual(args.command, "logs")
+        self.assertEqual(args.project, "liferay")
+        self.assertEqual(args.service, [])
+
+    def test_cli_disambiguation_stop(self):
+        # Test: ldm stop db
+        args = self.parser.parse_args(["stop", "db"])
+        self.assertEqual(args.command, "stop")
+        self.assertEqual(args.project, "db")
+        self.assertIsNone(args.service)
+
     def test_version_flag(self):
         # argparse handles --version by exiting, so we test that it's defined
         with self.assertRaises(SystemExit):

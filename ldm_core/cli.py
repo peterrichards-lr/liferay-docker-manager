@@ -286,6 +286,7 @@ def get_parser():
     )
 
     status = subparsers.add_parser("status", aliases=["ps"], parents=[base_sub_parent])
+    status.add_argument("project", nargs="?")
     status.add_argument("--all", action="store_true", help="Show all managed projects")
     subparsers.add_parser("list", aliases=["ls"], parents=[base_sub_parent])
 
@@ -418,6 +419,29 @@ def main():
     project_id = getattr(args, "project", None) or getattr(args, "project_flag", None)
     manager = LiferayManager(args)
 
+    # Disambiguation Heuristic:
+    # If the user provides 'ldm logs liferay', argparse puts 'liferay' in project.
+    # We detect if the first positional arg is actually a service name.
+    if args.command in ["logs", "stop", "restart", "down", "rm", "deploy"]:
+        service_id = getattr(args, "project", None)
+        if service_id in ["liferay", "db", "search", "proxy", "elasticsearch"]:
+            # Verify it's NOT a project name (by suppressing prompts/errors)
+            from unittest.mock import patch
+
+            with patch.object(UI, "die"):
+                test_root = manager.detect_project_path(service_id)
+
+            if not test_root:
+                # It's a service! Shift arguments.
+                if args.command == "logs":
+                    # logs takes nargs='*'
+                    args.service = [service_id] + (getattr(args, "service", []) or [])
+                else:
+                    # others take nargs='?'
+                    args.service = service_id
+                args.project = None
+                project_id = None
+
     # Use a simpler project name detection for the docker_required check
     # to avoid failing if the detected root doesn't have a name yet (initialization case)
     detected_root = manager.detect_project_path(project_id, for_init=True)
@@ -462,24 +486,25 @@ def main():
             p_name, getattr(args, "service", None), all_projects=args.all
         ),
         "down": lambda: manager.cmd_down(
-            p_name,
+            None if getattr(args, "infra", False) else p_name,
             getattr(args, "service", None),
             all_projects=args.all,
             delete=getattr(args, "delete", False),
             infra=getattr(args, "infra", False),
         ),
         "rm": lambda: manager.cmd_down(
-            p_name,
+            None if getattr(args, "infra", False) else p_name,
             getattr(args, "service", None),
             all_projects=args.all,
             delete=getattr(args, "delete", False),
             infra=getattr(args, "infra", False),
         ),
         "logs": lambda: manager.cmd_logs(
-            p_name,
+            None if getattr(args, "infra", False) else p_name,
             getattr(args, "service", None),
             all_projects=args.all,
             infra=getattr(args, "infra", False),
+            follow=getattr(args, "follow", False),
         ),
         "deploy": lambda: manager.cmd_deploy(p_name, getattr(args, "service", None)),
         "env": lambda: manager.cmd_env(p_name),
@@ -497,8 +522,8 @@ def main():
         "clear-cache": lambda: manager.cmd_cache("tags"),
         "clear-tags": lambda: manager.cmd_cache("tags"),
         "doctor": lambda: manager.cmd_doctor(p_name, all_projects=args.all),
-        "status": lambda: manager.cmd_status(all_projects=args.all),
-        "ps": lambda: manager.cmd_status(all_projects=args.all),
+        "status": lambda: manager.cmd_status(p_name, all_projects=args.all),
+        "ps": lambda: manager.cmd_status(p_name, all_projects=args.all),
         "list": lambda: manager.cmd_list(),
         "ls": lambda: manager.cmd_list(),
         "config": lambda: manager.cmd_config(args.key, args.value),
@@ -509,7 +534,9 @@ def main():
         "open": lambda: manager.cmd_browser(p_name),
         "scale": lambda: manager.cmd_scale(p_name, args.service_scale),
         "cloud-fetch": lambda: manager.cmd_cloud_fetch(
-            p_name, getattr(args, "env_id", None)
+            p_name,
+            getattr(args, "env_id", None),
+            follow=getattr(args, "follow", False),
         ),
         "edit": lambda: manager.cmd_edit(p_name, args.target),
         "completion": lambda: manager.cmd_completion(args.shell),

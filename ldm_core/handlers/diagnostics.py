@@ -19,7 +19,7 @@ from ldm_core.utils import (
 class DiagnosticsHandler:
     """Mixin for diagnostic and maintenance commands."""
 
-    def cmd_status(self, all_projects=False):
+    def cmd_status(self, project_id=None, all_projects=False):
         """Displays a summary of active global services and projects."""
         UI.heading("LDM Service Status")
 
@@ -28,7 +28,7 @@ class DiagnosticsHandler:
         infra = [
             ("liferay-proxy-global", "SSL Proxy (Traefik)"),
             ("liferay-search-global", "Search (ES)"),
-            ("docker-socket-proxy", "macOS Socket Bridge"),
+            ("liferay-docker-proxy", "macOS Socket Bridge"),
         ]
 
         any_infra = False
@@ -64,10 +64,23 @@ class DiagnosticsHandler:
         # 2. Project Status
         if all_projects:
             print(f"{UI.WHITE}All Managed Projects:{UI.COLOR_OFF}")
+        elif project_id:
+            print(f"{UI.WHITE}Project Status: {project_id}{UI.COLOR_OFF}")
         else:
             print(f"{UI.WHITE}Active Projects:{UI.COLOR_OFF}")
 
-        roots = self.find_dxp_roots()
+        roots = []
+        if project_id:
+            root_path = self.detect_project_path(project_id)
+            if root_path:
+                # We need to match find_dxp_roots structure
+                roots = [{"path": root_path, "version": "unknown"}]
+                meta = self.read_meta(root_path / PROJECT_META_FILE)
+                if meta.get("tag"):
+                    roots[0]["version"] = meta["tag"]
+        else:
+            roots = self.find_dxp_roots()
+
         active_projects = False
 
         for r in roots:

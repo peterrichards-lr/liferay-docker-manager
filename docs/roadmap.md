@@ -34,6 +34,23 @@ While the v2.3.x release solidified the core architecture, **v2.4.0** will focus
 
 ---
 
+## ✅ Completed Improvements (v2.3.1 - Hardening, Reliability & UX Restoration)
+
+### **Core Stability & Verification**
+
+- **Architectural Contract Verification**: Introduced a mock-free test suite (`test_architectural_contracts.py`) to verify that refactoring never silently drops mandatory Docker labels or domain trust settings.
+- **Positional Disambiguation**: Implemented a powerful heuristic to distinguish between project names and service names (e.g., `ldm logs liferay` now correctly identifies the service even inside project folders).
+- **Hardened Status Reporting**: Restored the `com.liferay.ldm.project` label to all Liferay services, ensuring `ldm status` correctly identifies and reports active projects.
+
+### **UX & Reliability Refinements**
+
+- **Domain Trust Recovery**: Re-implemented proactive `portal-ext.properties` updates for `web.server.display.node.name` and `redirect.url.ips.allowed` when using custom hostnames.
+- **Improved Log Feedback**: Added `--no-wait` flag to `ldm logs` and implemented real-time user feedback while waiting for containers to become available.
+- **Automation Hardening**: Verified and hardened all commands to bypass interactive prompts in non-interactive (`-y`) mode, preventing hangs in CI/CD environments.
+- **Infrastructure Reliability**: Fixed missing environment variables (`LDM_CERTS_DIR`) during infrastructure teardown and log viewing.
+
+---
+
 ## ✅ Completed Improvements (v2.3.0 - Workspace-Aware Seeding & Refactoring)
 
 ### **High-Velocity Orchestration**
@@ -45,7 +62,7 @@ While the v2.3.x release solidified the core architecture, **v2.4.0** will focus
 
 - **Infrastructure Extraction**: Extracted global service orchestration (Traefik, Search, Proxy) into a dedicated `InfraHandler` mixin, decoupling global infra from project-specific logic.
 - **Centralized Utilities**: Consolidated metadata handling and project discovery into `ldm_core/utils.py`, ensuring a single source of truth for the entire application.
-- **Expanded Verification Suite**: Added dedicated unit tests for the new Infrastructure and Utility modules, increasing total coverage to 89 verified test cases and fixing several latent edge-case bugs (e.g., `UnboundLocalError` in project discovery).
+- **Expanded Verification Suite**: Added dedicated unit tests for the new Infrastructure and Utility modules, increasing total coverage to 95 verified test cases.
 
 ---
 

@@ -305,7 +305,7 @@ class StackHandler(BaseHandler):
         show_summary=True,
         total_start=None,
     ):
-        """Orchestrates the docker-compose operations for a project."""
+        """Orchestrates stack configuration and startup."""
         compose_base = get_compose_cmd()
         if not compose_base:
             UI.die(
@@ -313,6 +313,7 @@ class StackHandler(BaseHandler):
             )
 
         # 1. Environment and Infrastructure
+        project_id = project_meta.get("container_name")
         host_name = project_meta.get("host_name", "localhost")
 
         # Harden SSL detection (handle both 'ssl' and 'use_ssl' from tests/meta)
@@ -323,7 +324,17 @@ class StackHandler(BaseHandler):
         ssl_port_val = project_meta.get("ssl_port", 443)
         ssl_port = int(ssl_port_val) if ssl_port_val is not None else 443
 
-        # Infrastructure Sync
+        # 2. Proactive Domain Alignment
+        if host_name != "localhost":
+            self.update_portal_ext(
+                paths,
+                {
+                    "web.server.display.node.name": "true",
+                    "redirect.url.ips.allowed": "127.0.0.1,0.0.0.0/0",
+                },
+            )
+
+        # 3. Infrastructure Sync
         # IMPORTANT: Tests expect _ensure_network to be called!
         self._ensure_network()
         if ssl_enabled or getattr(self.args, "search", False):
@@ -347,14 +358,14 @@ class StackHandler(BaseHandler):
                     duration_str = UI.format_duration(time.time() - ssl_start)
                     UI.debug(f"SSL certificate generation took: {duration_str}")
 
-        # 2. Asset Synchronization
+        # 4. Asset Synchronization
         from ldm_core.handlers.config import ConfigHandler
 
         config_handler = ConfigHandler(self.args)
         config_handler.sync_common_assets(paths, version=project_meta.get("tag"))
         config_handler.sync_logging(paths)
 
-        # 3. Generate Compose Command
+        # 5. Generate Configuration
         self.write_docker_compose(paths, project_meta)
 
         # Pre-flight: Validate Compose Syntax
@@ -382,7 +393,7 @@ class StackHandler(BaseHandler):
             cmd.append("--build")
 
         if show_summary:
-            UI.heading(f"Stack Orchestration: {project_meta.get('container_name')}")
+            UI.heading(f"Stack Orchestration: {project_id}")
             UI.info(f"  + Liferay: {UI.CYAN}{project_meta.get('tag')}{UI.COLOR_OFF}")
             UI.info(
                 f"  + DB Type: {UI.CYAN}{project_meta.get('db_type', 'hypersonic')}{UI.COLOR_OFF}"
@@ -404,7 +415,7 @@ class StackHandler(BaseHandler):
                 f"  + Port:    {UI.CYAN}8080 -> {project_meta.get('port', 8080)}{UI.COLOR_OFF}"
             )
 
-        # 4. Execute
+        # 6. Execute
         if not no_up:
             if self.verbose and total_start:
                 duration_str = UI.format_duration(time.time() - total_start)
@@ -415,21 +426,24 @@ class StackHandler(BaseHandler):
             if follow:
                 # Tail logs if requested
                 self.run_command(compose_base + ["logs", "-f"], cwd=str(paths["root"]))
+                return True
             elif not no_wait:
                 # Standard wait for health
-                self._wait_for_liferay(
-                    project_meta.get("container_name"),
-                    host_name,
-                    total_start=total_start,
-                )
+                return self._wait_for_ready(project_meta, host_name, total_start)
 
-    def _wait_for_liferay(
-        self, container_name, host_name, timeout=600, total_start=None
-    ):
-        """Wait for the Liferay container to become healthy."""
-        UI.info("Waiting for Liferay to start (this can take several minutes)...")
+        if no_wait:
+            UI.success(f"Project '{project_id}' started in background.")
+            return True
+
+        return True
+
+    def _wait_for_ready(self, project_meta, host_name, total_start=None):
+        """Wait for Liferay to become healthy and provide access information."""
+        container_name = project_meta.get("container_name")
         start_time = time.time()
-        while time.time() - start_time < timeout:
+        UI.info(f"Waiting for Liferay to become healthy ({container_name})...")
+
+        while time.time() - start_time < 600:  # 10 minute timeout
             status = self.run_command(
                 ["docker", "inspect", "-f", "{{.State.Health.Status}}", container_name],
                 check=False,
@@ -466,6 +480,7 @@ class StackHandler(BaseHandler):
                 )
                 print()
 
+                # Browser Launch
                 if getattr(self.args, "browser", False):
                     UI.info(f"Launching browser: {access_url}/web/guest/home")
                     open_browser(f"{access_url}/web/guest/home")
@@ -478,8 +493,8 @@ class StackHandler(BaseHandler):
                 print(
                     f"[{timestamp}] Still waiting for Liferay to become healthy... ({duration_str})"
                 )
-
             time.sleep(10)
+
         UI.error("\nTimed out waiting for Liferay to become healthy.")
         return False
 
@@ -790,6 +805,7 @@ class StackHandler(BaseHandler):
         db_type = meta.get("db_type", "hypersonic")
         use_shared_search = str(meta.get("use_shared_search", "true")).lower() == "true"
         host_name = meta.get("host_name", "localhost")
+        project_name = meta.get("container_name") or paths["root"].name
 
         # Harden SSL detection for both meta/config keys
         ssl_enabled = (
@@ -921,6 +937,7 @@ class StackHandler(BaseHandler):
             "image": image,
             "ports": [f"{port}:8080"],
             "environment": liferay_env,
+            "labels": [f"com.liferay.ldm.project={project_name}"],
             "volumes": [
                 f"{paths['deploy']}:/mnt/liferay/deploy",
                 f"{paths['files']}:/mnt/liferay/files",
@@ -953,16 +970,17 @@ class StackHandler(BaseHandler):
         if ssl_enabled:
             # Tests expect the main router to be '{project_name}-main'
             traefik_id = f"{project_name}-main"
-            labels = [
-                "traefik.enable=true",
-                f"traefik.http.routers.{traefik_id}.rule=Host(`{host_name}`)",
-                f"traefik.http.routers.{traefik_id}.tls=true",
-                f"traefik.http.routers.{traefik_id}.entrypoints=websecure",
-                f"traefik.http.routers.{traefik_id}.tls.domains[0].main={host_name}",
-                f"traefik.http.routers.{traefik_id}.tls.domains[0].sans=*.{host_name}",
-                f"traefik.http.services.{traefik_id}.loadbalancer.server.port=8080",
-            ]
-            liferay_service["labels"] = labels
+            liferay_service["labels"].extend(
+                [
+                    "traefik.enable=true",
+                    f"traefik.http.routers.{traefik_id}.rule=Host(`{host_name}`)",
+                    f"traefik.http.routers.{traefik_id}.tls=true",
+                    f"traefik.http.routers.{traefik_id}.entrypoints=websecure",
+                    f"traefik.http.routers.{traefik_id}.tls.domains[0].main={host_name}",
+                    f"traefik.http.routers.{traefik_id}.tls.domains[0].sans=*.{host_name}",
+                    f"traefik.http.services.{traefik_id}.loadbalancer.server.port=8080",
+                ]
+            )
 
         services = {"liferay": liferay_service}
 
@@ -1166,7 +1184,9 @@ class StackHandler(BaseHandler):
             ]
             if follow:
                 cmd.append("-f")
-            self.run_command(cmd, capture_output=not follow)
+
+            env = self._get_infra_env()
+            self.run_command(cmd, env=env, capture_output=not follow)
         else:
             targets = []
             if all_projects:

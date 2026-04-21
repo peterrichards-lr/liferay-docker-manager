@@ -99,7 +99,7 @@ class CloudHandler:
                         return tag
         return None
 
-    def cmd_cloud_fetch(self, project_id=None, env_id=None):
+    def cmd_cloud_fetch(self, project_id=None, env_id=None, follow=False):
         """Orchestrates the cloud-fetch command logic."""
         self.ensure_cloud_auth()
 

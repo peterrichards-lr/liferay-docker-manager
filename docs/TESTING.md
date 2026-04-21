@@ -11,6 +11,15 @@ LDM uses a multi-layered automated verification suite:
 2. **Security Scans (Bandit):** Automated detection of common security issues like hardcoded paths or insecure subprocess calls.
 3. **CI Smoke Tests:** GitHub Actions that verify the tool can initialize, run the `doctor`, and perform mock upgrades in a clean environment.
 4. **Filesystem Mocks**: We use `unittest.mock` to simulate cross-platform filesystem scenarios (e.g., native manual symlink creation, project discovery on external volumes) without modifying the host system.
+5. **Contract-Based Verification**: A dedicated suite (`test_architectural_contracts.py`) that verifies the *output* of LDM handlers (YAML, properties) against architectural mandates without using mocks.
+
+### 🏗️ Architectural Mandates
+
+All refactoring and feature development must preserve the following LDM contracts:
+
+- **Metadata DNA**: Every Liferay container MUST have the `com.liferay.ldm.project` label.
+- **Domain Trust**: Custom hostnames MUST trigger proactive `portal-ext` updates for node naming and redirect IPs.
+- **Persistence**: `osgi/state` must remain host-mapped for single-node instances to preserve seeding benefits.
 
 > [!NOTE]
 > **Automation Limitations**: Operations requiring `sudo` (e.g., `fix-hosts`, atomic binary swaps) or live authenticated connections (Cloud Fetch) are difficult to automate in standard CI runners and are prioritized for manual sign-off on physical lab hardware.

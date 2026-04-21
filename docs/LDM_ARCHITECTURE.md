@@ -69,6 +69,7 @@ graph LR
         H_Files[files/]
         H_Deploy[deploy/]
         H_OSGi[osgi/]
+        H_State[osgi/state/]
         H_Data[data/]
         H_Routes[routes/]
         H_Logs[logs/]
@@ -85,6 +86,7 @@ graph LR
         C_Configs["/opt/liferay/osgi/configs"]
         C_Modules["/opt/liferay/osgi/modules"]
         C_CX["/opt/liferay/osgi/client-extensions"]
+        C_State["/opt/liferay/osgi/state"]
         C_Data["/opt/liferay/data"]
         C_Routes["/opt/liferay/routes"]
         C_Logs["/opt/liferay/logs"]
@@ -97,6 +99,7 @@ graph LR
     H_OSGi --- C_Configs
     H_OSGi --- C_Modules
     H_OSGi --- C_CX
+    H_State --- C_State
     H_Data --- C_Data
     H_Routes --- C_Routes
     H_Logs --- C_Logs
@@ -184,7 +187,7 @@ To ensure maximum reliability across all Liferay versions and to align with **Li
 | :--- | :--- |
 | **Database (MySQL/MariaDB)** | **Standardized on MariaDB JDBC Driver** (`org.mariadb.jdbc.Driver`) and `MariaDB103Dialect` for all 2025+ and 2026.Q1 LTS builds. Includes performance parameters in the connection URL to mirror Cloud optimizations. |
 | **Conflict Avoidance** | If custom `LIFERAY_JDBC_PERIOD_` environment variables are detected in metadata, LDM **skips** writing JDBC properties to `portal-ext.properties` to ensure the user's manual config takes precedence. |
-| **SSL / Routing** | `web.server.protocol`, `web.server.host`, `virtual.hosts.valid.hosts` |
+| **SSL / Routing** | `web.server.protocol`, `web.server.host`, `virtual.hosts.valid.hosts`, `web.server.display.node.name`, `redirect.url.ips.allowed` |
 | **Search (ES8)** | `elasticsearch.sidecar.enabled=false`, `elasticsearch.connection.url`, `elasticsearch.index.name.prefix` |
 | **Clustering** | `cluster.link.enabled`, `lucene.replicate.write` (Active when scaled > 1) |
 | **Identity** | `liferay.docker.image`, `liferay.docker.tag` |
@@ -194,7 +197,7 @@ To ensure maximum reliability across all Liferay versions and to align with **Li
 LDM handles project state surgically to ensure snapshots are portable and complete.
 
 - **Orchestrated Snapshots**: Project snapshots include the database, Document Library, and the **Elasticsearch 8.x index state**.
-- **Pre-warmed Bootstrap Seeds**: To eliminate the ~15 minute initialization time for new projects, LDM automatically fetches pre-initialized "Seed" volumes (Database + Search Index) from a dedicated GitHub repository. These seeds are version-matched to the requested Liferay tag.
+- **Pre-warmed Bootstrap Seeds**: To eliminate the ~15 minute initialization time for new projects, LDM automatically fetches pre-initialized "Seed" volumes (Database + Search Index + **OSGi State**) from a dedicated GitHub repository. These seeds are version-matched to the requested Liferay tag.
 - **Environment Capture**: During `ldm snapshot`, the tool automatically parses the project's `docker-compose.yml` to capture custom `LIFERAY_` environment variables. These are stored in the snapshot metadata and restored during `ldm restore`, ensuring that manual tweaks are never lost during rollback.
 - **Automated Healthchecks**: Converts `LCP.json` probes into native Docker healthchecks for robust orchestration.
 - **SSL**: `mkcert` provides automated, locally trusted wildcard certificates for all project subdomains.
@@ -251,7 +254,7 @@ graph TD
 ### Key Architectural Pillars
 
 1. **Modular Orchestration (ldm_core Package):**
-    - The tool logic is split into specialized handler mixins (`Stack`, `Workspace`, `Config`, `Snapshot`, `Diagnostics`, `License`), ensuring a maintainable and extensible codebase.
+    - The tool logic is split into specialized handler mixins (`Stack`, `Workspace`, `Config`, `Snapshot`, `Diagnostics`, `License`, `Infra`), ensuring a maintainable and extensible codebase.
     - Every command supports a standardized discovery priority: **Argument > Flag > CWD > Interactive Selection**.
     - **Resilient Tag Discovery**: The discovery engine uses a dual-mode parser supporting both the Docker Hub API (JSON) and the Liferay Release Server (HTML), ensuring the tool remains functional even when primary upstream APIs change.
     - **Mandatory Compose v2**: LDM strictly requires the **Docker Compose v2 Plugin** (`docker compose`). Legacy v1 standalone binaries are no longer supported due to modern library and API incompatibilities.
