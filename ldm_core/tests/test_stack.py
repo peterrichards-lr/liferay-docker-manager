@@ -1,4 +1,5 @@
 import unittest
+import yaml
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 import tempfile
@@ -310,8 +311,57 @@ class TestStackOrchestration(unittest.TestCase):
         self.manager.update_portal_ext = MagicMock()
         self.paths = self.manager.setup_paths("/tmp/test-project")
 
+    @patch("time.time")
+    @patch("time.sleep")
+    @patch("ldm_core.utils.get_compose_cmd")
+    def test_sync_stack_readiness_timeout(self, mock_compose, mock_sleep, mock_time):
+        """Verifies that the Service Readiness Gate correctly times out if a dependency hangs."""
+        mock_compose.return_value = ["docker", "compose"]
+
+        # Setup mock paths and meta
+        paths = {
+            "root": Path("/tmp/proj"),
+            "deploy": Path("/tmp/proj/deploy"),
+            "files": Path("/tmp/proj/files"),
+            "logs": Path("/tmp/proj/logs"),
+            "state": Path("/tmp/proj/osgi/state"),
+            "configs": Path("/tmp/proj/osgi/configs"),
+            "portal_log4j": Path("/tmp/proj/osgi/portal-log4j"),
+            "data": Path("/tmp/proj/data"),
+            "cx": Path("/tmp/proj/client-extensions"),
+            "ce_dir": Path("/tmp/proj/osgi/client-extensions"),
+            "compose": Path("/tmp/proj/docker-compose.yml"),
+            "history": Path("/tmp/proj/.ldm_history"),
+        }
+        meta = {
+            "container_name": "timeout-test",
+            "tag": "2025.q1.0",
+            "db_type": "postgresql",  # Trigger readiness gate
+            "host_name": "localhost",
+            "use_shared_search": "true",
+        }
+
+        # Mock time to increment by 20s per call to trigger timeout quickly
+        self.t = 1000
+
+        def mock_time_inc():
+            self.t += 20
+            return self.t
+
+        mock_time.side_effect = mock_time_inc
+
+        with patch.object(
+            self.manager, "get_container_status", return_value="starting"
+        ):
+            with patch.object(self.manager, "run_command"):
+                # Trigger sync with no-wait to avoid second loop complexity
+                self.manager.sync_stack(paths, meta, no_up=False, no_wait=True)
+
+                # Verify that get_container_status was called multiple times before timeout
+                status_mock = self.manager.get_container_status
+                self.assertGreater(status_mock.call_count, 1)
+
     def test_write_docker_compose_ssl_labels(self):
-        import yaml
 
         # Scenario: SSL enabled, custom host
         config = {

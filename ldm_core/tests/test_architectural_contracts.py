@@ -95,6 +95,77 @@ class TestArchitecturalContracts(unittest.TestCase):
                         "Mandate Loss: Liferay is not configured to allow redirects from the proxy.",
                     )
 
+    def test_redline_database_in_properties_mandate(self):
+        """Redline 1: ALL Database/JDBC settings MUST live in portal-ext.properties for case-integrity."""
+        paths = self.manager.setup_paths(self.project_path)
+        meta = {
+            "container_name": "redline-db",
+            "tag": "2026.q1.4",
+            "db_type": "mysql",
+            "host_name": "localhost",
+        }
+
+        # Trigger sync
+        from unittest.mock import patch
+
+        with patch.object(self.manager, "run_command"):
+            with patch.object(self.manager, "setup_infrastructure"):
+                self.manager.sync_stack(paths, meta, no_up=True)
+
+        # 1. POSITIVE: Verify it IS in portal-ext.properties
+        pe_content = (paths["files"] / "portal-ext.properties").read_text()
+        self.assertIn(
+            "jdbc.default.driverClassName=org.mariadb.jdbc.Driver", pe_content
+        )
+        self.assertIn(
+            "hibernate.dialect=org.hibernate.dialect.MariaDB103Dialect", pe_content
+        )
+
+        # 2. NEGATIVE: Verify it is NOT in environment variables
+        compose_content = yaml.safe_load(paths["compose"].read_text())
+        liferay_env = compose_content["services"]["liferay"].get("environment", [])
+
+        for env in liferay_env:
+            self.assertFalse(
+                "LIFERAY_JDBC_PERIOD_" in env and "DRIVER_CLASS_NAME" in env,
+                "REDLINE VIOLATION: Database driver found in environment variables. MUST be in portal-ext.properties.",
+            )
+
+    def test_redline_search_in_env_mandate(self):
+        """Redline 2: ALL Search/Elasticsearch settings MUST live in Env Vars or .config, NEVER portal-ext."""
+        paths = self.manager.setup_paths(self.project_path)
+        meta = {
+            "container_name": "redline-search",
+            "tag": "2026.q1.4",
+            "use_shared_search": "true",
+            "host_name": "localhost",
+        }
+
+        # Trigger sync
+        from unittest.mock import patch
+
+        with patch.object(self.manager, "run_command"):
+            with patch.object(self.manager, "setup_infrastructure"):
+                self.manager.sync_stack(paths, meta, no_up=True)
+
+        # 1. POSITIVE: Verify it IS in environment variables
+        compose_content = yaml.safe_load(paths["compose"].read_text())
+        liferay_env = compose_content["services"]["liferay"].get("environment", [])
+        self.assertTrue(
+            any(
+                "LIFERAY_ELASTICSEARCH_SIDECAR_ENABLED=false" in e for e in liferay_env
+            ),
+            "REDLINE FAILURE: Sidecar disable variable missing from environment.",
+        )
+
+        # 2. NEGATIVE: Verify it is NOT in portal-ext.properties
+        pe_content = (paths["files"] / "portal-ext.properties").read_text()
+        self.assertNotIn(
+            "elasticsearch.sidecar.enabled",
+            pe_content,
+            "REDLINE VIOLATION: Search settings found in portal-ext.properties. MUST be in Env Vars or .config.",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
