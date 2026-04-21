@@ -192,6 +192,16 @@ class DiagnosticsHandler:
                 os.remove(tag_cache)
                 cleared.append("Docker tag cache")
 
+        if target in ["seeds", "all"]:
+            cache_dir = home / ".ldm" / "seeds"
+            if cache_dir.exists():
+                count = len(list(cache_dir.glob("*.tar.gz")))
+                if count > 0:
+                    import shutil
+
+                    shutil.rmtree(cache_dir)
+                    cleared.append(f"Pre-warmed seeds ({count} files)")
+
         if not cleared:
             UI.info("No caches found to clear.")
         else:

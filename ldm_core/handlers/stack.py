@@ -160,110 +160,136 @@ class StackHandler(BaseHandler):
         if token:
             headers["Authorization"] = f"token {token}"
 
-        try:
-            # 1. Verify existence via standard URL
-            head_res = requests.head(download_url, allow_redirects=True, timeout=10)
+        # --- 1. Check Cache (FAIL FAST) ---
+        actual_home = get_actual_home()
+        cache_dir = actual_home / ".ldm" / "seeds"
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        cached_seed = cache_dir / seed_filename
 
-            # If 404, the release might be a DRAFT. Try finding it via API.
-            if head_res.status_code != 200:
-                UI.debug(
-                    f"Direct download failed (HTTP {head_res.status_code}). Checking API for '{tag_name}'..."
-                )
-                # Try direct tag API which can reveal draft information if authenticated
-                api_url = f"https://api.github.com/repos/peterrichards-lr/liferay-docker-manager/releases/tags/{tag_name}"
-                api_res = requests.get(api_url, headers=headers, timeout=10)
+        if cached_seed.exists():
+            UI.info(f"Using cached seed: {seed_filename}")
+            tmp_path = cached_seed
+        else:
+            try:
+                # --- 2. Network Discovery ---
+                # Verify existence via standard URL
+                head_res = requests.head(download_url, allow_redirects=True, timeout=10)
 
-                # Fallback to list API if tag lookup fails
-                if api_res.status_code != 200:
-                    UI.debug("Tag API failed. Falling back to releases list...")
-                    api_url = "https://api.github.com/repos/peterrichards-lr/liferay-docker-manager/releases"
+                # If 404, the release might be a DRAFT. Try finding it via API.
+                if head_res.status_code != 200:
+                    UI.debug(
+                        f"Direct download failed (HTTP {head_res.status_code}). Checking API for '{tag_name}'..."
+                    )
+                    # Try direct tag API which can reveal draft information if authenticated
+                    api_url = f"https://api.github.com/repos/peterrichards-lr/liferay-docker-manager/releases/tags/{tag_name}"
                     api_res = requests.get(api_url, headers=headers, timeout=10)
 
-                if api_res.status_code == 200:
-                    data = api_res.json()
-                    releases = data if isinstance(data, list) else [data]
+                    # Fallback to list API if tag lookup fails
+                    if api_res.status_code != 200:
+                        UI.debug("Tag API failed. Falling back to releases list...")
+                        api_url = "https://api.github.com/repos/peterrichards-lr/liferay-docker-manager/releases"
+                        api_res = requests.get(api_url, headers=headers, timeout=10)
 
-                    # Find the release by tag or name
-                    target_release = next(
-                        (
-                            r
-                            for r in releases
-                            if r.get("tag_name") == tag_name
-                            or r.get("name") == tag_name
-                        ),
-                        None,
-                    )
-                    if target_release:
-                        # Find the asset
-                        asset = next(
+                    if api_res.status_code == 200:
+                        data = api_res.json()
+                        releases = data if isinstance(data, list) else [data]
+
+                        # Find the release by tag or name
+                        target_release = next(
                             (
-                                a
-                                for a in target_release.get("assets", [])
-                                if a.get("name") == seed_filename
+                                r
+                                for r in releases
+                                if r.get("tag_name") == tag_name
+                                or r.get("name") == tag_name
                             ),
                             None,
                         )
-                        if asset:
-                            download_url = asset.get("browser_download_url")
-                            UI.debug(
-                                f"Found asset in {'Draft ' if target_release.get('draft') else ''}release via API."
+                        if target_release:
+                            # Find the asset
+                            asset = next(
+                                (
+                                    a
+                                    for a in target_release.get("assets", [])
+                                    if a.get("name") == seed_filename
+                                ),
+                                None,
                             )
+                            if asset:
+                                download_url = asset.get("browser_download_url")
+                                UI.debug(
+                                    f"Found asset in {'Draft ' if target_release.get('draft') else ''}release via API."
+                                )
+                            else:
+                                if self.verbose:
+                                    UI.info(
+                                        f"Asset '{seed_filename}' not found in release '{tag_name}'."
+                                    )
+                                return False
                         else:
                             if self.verbose:
-                                UI.info(
-                                    f"Asset '{seed_filename}' not found in release '{tag_name}'."
-                                )
+                                UI.info(f"Release '{tag_name}' not found via API.")
                             return False
                     else:
                         if self.verbose:
-                            UI.info(f"Release '{tag_name}' not found via API.")
+                            UI.info(f"API check failed (HTTP {api_res.status_code})")
                         return False
-                else:
-                    if self.verbose:
-                        UI.info(f"API check failed (HTTP {api_res.status_code})")
-                    return False
 
-            # Get size for confirmation
-            total_size = int(head_res.headers.get("content-length", 0))
-            if not total_size and "asset" in locals() and asset:
-                total_size = asset.get("size", 0)
+                # Get size for confirmation
+                total_size = int(head_res.headers.get("content-length", 0))
+                if not total_size and "asset" in locals() and asset:
+                    total_size = asset.get("size", 0)
 
-            size_str = f" ({UI.format_size(total_size)})" if total_size else ""
-            UI.info(f"Seed found!{size_str}")
+                size_str = f" ({UI.format_size(total_size)})" if total_size else ""
+                UI.info(f"Seed found!{size_str}")
 
-            if not self.non_interactive:
-                if not UI.confirm(
-                    "Bootstrap project from this pre-warmed seed? (Saves ~15m)", "Y"
-                ):
-                    UI.info("User declined seed. Initializing clean project...")
-                    return False
+                if not self.non_interactive:
+                    if not UI.confirm(
+                        "Bootstrap project from this pre-warmed seed? (Saves ~15m)", "Y"
+                    ):
+                        UI.info("User declined seed. Initializing clean project...")
+                        return False
 
-            UI.info("Bootstrapping project...")
+                UI.info("Bootstrapping project...")
 
-            # 2. Download to temp file
-            with tempfile.NamedTemporaryFile(suffix=".tar.gz", delete=False) as tmp:
-                with requests.get(
-                    download_url, stream=True, timeout=30, headers=headers
-                ) as r:
-                    r.raise_for_status()
-                    total_size = int(r.headers.get("content-length", 0))
-                    downloaded = 0
-                    for chunk in r.iter_content(chunk_size=8192):
-                        tmp.write(chunk)
-                        downloaded += len(chunk)
+                # --- 3. Download ---
+                with tempfile.NamedTemporaryFile(suffix=".tar.gz", delete=False) as tmp:
+                    with requests.get(
+                        download_url, stream=True, timeout=30, headers=headers
+                    ) as r:
+                        r.raise_for_status()
+                        total_size = int(r.headers.get("content-length", 0))
+                        downloaded = 0
+                        for chunk in r.iter_content(chunk_size=8192):
+                            tmp.write(chunk)
+                            downloaded += len(chunk)
+                            if total_size > 0:
+                                percent = int(100 * downloaded / total_size)
+                                sys.stdout.write(
+                                    f"\rDownloading: [{percent}%] {UI.format_size(downloaded)} / {UI.format_size(total_size)}"
+                                )
+                                sys.stdout.flush()
+
                         if total_size > 0:
-                            percent = int(100 * downloaded / total_size)
-                            sys.stdout.write(
-                                f"\rDownloading: [{percent}%] {UI.format_size(downloaded)} / {UI.format_size(total_size)}"
-                            )
-                            sys.stdout.flush()
+                            print()  # New line after progress bar
 
-                    if total_size > 0:
-                        print()  # New line after progress bar
+                    tmp_path = Path(tmp.name)
 
-                tmp_path = Path(tmp.name)
+                # Save to cache
+                try:
+                    import shutil
 
-            # 3. Extract using refactored SnapshotHandler logic
+                    shutil.copy2(tmp_path, cached_seed)
+                    UI.debug(f"Seed saved to cache: {seed_filename}")
+                except Exception as e:
+                    UI.warning(f"Failed to cache seed: {e}")
+
+            except Exception as e:
+                if self.verbose:
+                    UI.warning(f"Failed to fetch seed: {e}")
+                return False
+
+        # --- 4. Extract & Finalize ---
+        try:
             from ldm_core.handlers.snapshot import SnapshotHandler
 
             handler = SnapshotHandler(self.args)
@@ -275,8 +301,9 @@ class StackHandler(BaseHandler):
 
             handler._extract_snapshot_archive(tmp_path, paths)
 
-            # 4. Cleanup
-            tmp_path.unlink()
+            # 5. Cleanup
+            if tmp_path != cached_seed:
+                tmp_path.unlink()
             success_msg = f"Project bootstrapped from seed. {UI.WHITE}(Saved ~15m of initialization time){UI.COLOR_OFF}"
             if not getattr(self.args, "no_osgi_seed", False):
                 success_msg = f"Project bootstrapped from seed (including OSGi state). {UI.WHITE}(Saved ~15m of initialization time){UI.COLOR_OFF}"
@@ -324,6 +351,12 @@ class StackHandler(BaseHandler):
             )
 
         import socket
+        import random
+
+        # Jitter: If interactive, wait a tiny random amount to reduce collision probability
+        # in concurrent 'ldm run' scenarios.
+        if not self.non_interactive:
+            time.sleep(random.uniform(0.1, 0.5))
 
         check_ip = self.get_resolved_ip(host_name) or "127.0.0.1"
 
@@ -429,7 +462,7 @@ class StackHandler(BaseHandler):
                 duration_str = UI.format_duration(time.time() - infra_start)
                 UI.debug(f"Infrastructure setup took: {duration_str}")
 
-            if ssl_enabled:
+            if ssl_enabled and not no_up:
                 ssl_start = time.time()
                 actual_home = get_actual_home()
                 cert_dir = actual_home / "liferay-docker-certs"

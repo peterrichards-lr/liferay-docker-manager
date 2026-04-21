@@ -1,6 +1,7 @@
 import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
+import tempfile
 from ldm_core.handlers.stack import StackHandler
 from ldm_core.handlers.workspace import WorkspaceHandler
 from ldm_core.handlers.license import LicenseHandler
@@ -612,11 +613,15 @@ class TestStackOrchestration(unittest.TestCase):
                             with patch.object(
                                 self.manager, "_extract_snapshot_archive"
                             ):
-                                self.manager.cmd_reseed("proj")
+                                # KEY: Ensure cache doesn't exist so we trigger the mocked HEAD/GET
+                                with patch.object(Path, "exists", return_value=False):
+                                    self.manager.cmd_reseed("proj")
 
-                                # Verify sequence
-                                mock_reset.assert_called_once_with("proj", target="all")
-                                mock_head.assert_called_once()
+                                    # Verify sequence
+                                    mock_reset.assert_called_once_with(
+                                        "proj", target="all"
+                                    )
+                                    mock_head.assert_called_once()
 
     @patch("requests.head")
     @patch("requests.get")
@@ -668,6 +673,39 @@ class TestStackOrchestration(unittest.TestCase):
             self.assertFalse(result)
             # Verify it proceeded past confirmation to the download attempt
             self.assertTrue(mock_get.called)
+
+    @patch("ldm_core.handlers.stack.get_actual_home")
+    @patch("requests.head")
+    def test_fetch_seed_uses_cache(self, mock_head, mock_home):
+        from ldm_core.constants import SEED_VERSION
+
+        manager = MockManager()
+        paths = manager.setup_paths("/tmp/proj")
+
+        # Mock home to a temp dir
+        with tempfile.TemporaryDirectory() as tmp_home:
+            tmp_home_path = Path(tmp_home)
+            mock_home.return_value = tmp_home_path
+
+            seed_filename = f"seeded-tag-db-search-v{SEED_VERSION}.tar.gz"
+            cache_dir = tmp_home_path / ".ldm" / "seeds"
+            cache_dir.mkdir(parents=True)
+            cached_file = cache_dir / seed_filename
+            cached_file.touch()
+
+            # Mock SnapshotHandler to avoid real extraction
+            with patch("ldm_core.handlers.snapshot.SnapshotHandler") as mock_handler:
+                # Run fetch
+                result = manager._fetch_seed("tag", "db", "search", paths)
+
+                # Verify result
+                self.assertTrue(result)
+                # Verify SnapshotHandler was called with the CACHED file path
+                mock_handler.return_value._extract_snapshot_archive.assert_called_once()
+                call_args = (
+                    mock_handler.return_value._extract_snapshot_archive.call_args[0]
+                )
+                self.assertEqual(call_args[0], cached_file)
 
     def test_cmd_infra_setup(self):
         with patch.object(self.manager, "check_docker", return_value=True):
