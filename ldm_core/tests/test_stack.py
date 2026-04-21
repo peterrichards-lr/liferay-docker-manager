@@ -747,6 +747,25 @@ class TestStackOrchestration(unittest.TestCase):
                 written_yaml = mock_write.call_args[0][0]
                 self.assertIn("127.0.0.10:8080:8080", written_yaml)
 
+    def test_write_docker_compose_isolates_localhost(self):
+        manager = MockManager()
+        # Mock hostname resolving to standard localhost
+        with patch.object(manager, "get_resolved_ip", return_value="127.0.0.1"):
+            root = Path("/tmp/proj")
+            paths = manager.setup_paths(root)
+            meta = {
+                "tag": "2025.q1.0",
+                "host_name": "localhost",
+                "port": 8080,
+            }
+
+            with patch.object(Path, "write_text") as mock_write:
+                manager.write_docker_compose(paths, meta)
+
+                # Verify it binds specifically to 127.0.0.1, NOT 0.0.0.0
+                written_yaml = mock_write.call_args[0][0]
+                self.assertIn("127.0.0.1:8080:8080", written_yaml)
+
 
 if __name__ == "__main__":
     unittest.main()
