@@ -52,6 +52,12 @@ While the v1.x "Hardened Edition" focused on cross-platform stability, **v2.2.0*
 
 ---
 
+## ✅ Completed Improvements (v2.2.4)
+
+- **Hotfix: Infrastructure Teardown Reliability**: Fixed a bug where `ldm rm --infra` would fail due to missing environment variables (`LDM_CERTS_DIR`). Refactored infrastructure orchestration to ensure consistent environment injection during both setup and teardown phases.
+
+---
+
 ## ✅ Completed Improvements (v2.2.3)
 
 - **Hotfix: Infrastructure Idempotency**: Fixed a Docker conflict error where LDM would fail if infrastructure containers (Traefik Proxy, Global Search) existed in a stopped state. The orchestrator now correctly identifies stopped containers and starts them instead of attempting to recreate them.

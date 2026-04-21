@@ -281,9 +281,6 @@ class StackHandler(BaseHandler):
         if not use_ssl:
             return True
 
-        actual_home = get_actual_home()
-        cert_dir = actual_home / "liferay-docker-certs"
-
         # Docker bridge proxy check (Traefik needs to talk to Docker socket securely)
         self._ensure_docker_proxy()
 
@@ -299,10 +296,7 @@ class StackHandler(BaseHandler):
             )
 
         # Start infrastructure
-        env = os.environ.copy()
-        env["LDM_CERTS_DIR"] = str(cert_dir)
-        env["LDM_SSL_PORT"] = str(ssl_port)
-        env["LDM_RESOLVED_IP"] = resolved_ip
+        env = self._get_infra_env(resolved_ip, ssl_port)
 
         self.run_command(
             get_compose_cmd()
@@ -311,6 +305,43 @@ class StackHandler(BaseHandler):
             capture_output=False,
         )
         return True
+
+    def _get_infra_env(self, resolved_ip="127.0.0.1", ssl_port=443):
+        """Generates the standard environment variables for the infrastructure stack."""
+        from ldm_core.utils import get_actual_home
+
+        actual_home = get_actual_home()
+        cert_dir = actual_home / "liferay-docker-certs"
+
+        env = os.environ.copy()
+        env["LDM_CERTS_DIR"] = str(cert_dir)
+        env["LDM_SSL_PORT"] = str(ssl_port)
+        env["LDM_RESOLVED_IP"] = resolved_ip
+        return env
+
+    def cmd_infra_down(self):
+        """Tears down the global infrastructure (Traefik, Proxy)."""
+        UI.warning("Tearing down global infrastructure (Traefik)...")
+        infra_compose = self.get_resource_path("infra-compose.yml")
+        if not infra_compose:
+            UI.die("Infrastructure compose file 'infra-compose.yml' not found.")
+
+        # Down requires the same env as UP to resolve volume paths correctly
+        env = self._get_infra_env()
+        self.run_command(
+            get_compose_cmd() + ["-f", str(infra_compose), "down", "-v"],
+            env=env,
+            capture_output=False,
+        )
+
+        # Also stop the docker socket proxy
+        self.run_command(
+            ["docker", "stop", "liferay-docker-proxy"], check=False, capture_output=True
+        )
+        self.run_command(
+            ["docker", "rm", "liferay-docker-proxy"], check=False, capture_output=True
+        )
+        UI.success("Infrastructure teardown complete.")
 
     def _ensure_network(self):
         """Ensures the standard 'liferay-net' Docker network exists."""
@@ -902,13 +933,7 @@ class StackHandler(BaseHandler):
     ):
         """Tears down project containers and volumes."""
         if infra:
-            UI.warning("Tearing down global infrastructure (Traefik)...")
-            infra_compose = self.get_resource_path("infra-compose.yml")
-            if infra_compose:
-                self.run_command(
-                    get_compose_cmd() + ["-f", str(infra_compose), "down", "-v"],
-                    capture_output=False,
-                )
+            self.cmd_infra_down()
 
         targets = []
         if all_projects:
