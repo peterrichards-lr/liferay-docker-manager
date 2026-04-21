@@ -661,6 +661,7 @@ def find_dxp_roots(search_dir=None):
     """Discovers LDM projects in the target directory by looking for metadata or specific structure."""
     from ldm_core.constants import PROJECT_META_FILE
 
+    actual_home = get_actual_home()
     search_dirs = []
     if search_dir:
         search_dirs.append(Path(search_dir))
@@ -672,7 +673,6 @@ def find_dxp_roots(search_dir=None):
             search_dirs.append(Path(custom_workspace))
 
         # Common default locations
-        actual_home = get_actual_home()
         for common in [actual_home / "ldm", Path("/Volumes/SanDisk/ldm")]:
             if common.exists() and common.is_dir():
                 search_dirs.append(common)

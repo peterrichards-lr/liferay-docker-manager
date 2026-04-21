@@ -84,6 +84,15 @@ While the v1.x "Hardened Edition" focused on cross-platform stability, **v2.2.0*
 
 ---
 
+## ✅ Completed Improvements (v2.3.2)
+
+- **Expanded Test Coverage**:
+  - **Infrastructure Suite**: Added `ldm_core/tests/test_infra.py` to verify global service orchestration (Traefik, Proxy, Search).
+  - **Utility Verification**: Enhanced `ldm_core/tests/test_utils.py` to cover centralized project discovery and metadata handling.
+  - **Refactor Validation**: Verified architectural changes against 89 total unit tests, ensuring zero regressions during the modularization process.
+
+---
+
 ## ✅ Completed Improvements (v2.3.1)
 
 - **Architectural Cleanup & Refactoring**:
