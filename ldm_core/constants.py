@@ -1,8 +1,8 @@
 from pathlib import Path
 
 # --- Constants & Configuration ---
-# LDM_MAGIC_VERSION: 2.3.31
-VERSION = "2.3.31"
+# LDM_MAGIC_VERSION: 2.3.32
+VERSION = "2.3.32"
 
 
 BUILD_INFO = None
@@ -72,6 +72,9 @@ RUN_ATTRS = [
     "seed_config",
     "samples",
     "service_scale",
+    "env_type",
+    "cpu_limit",
+    "mem_limit",
     "bundle",
     "category",
     "level",

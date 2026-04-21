@@ -336,7 +336,7 @@ class StackHandler(BaseHandler):
             return True
         return False
 
-    def _pre_flight_checks(self, host_name, port, ssl_enabled=False):
+    def _pre_flight_checks(self, host_name, port, ssl_enabled=False, meta=None):
         """Verifies environment readiness before expensive operations."""
         if not self.check_docker():
             UI.die(
@@ -350,9 +350,23 @@ class StackHandler(BaseHandler):
 
             mem = psutil.virtual_memory()
             free_gb = mem.available / (1024**3)
-            if free_gb < 8.0:
+
+            # Use specific limit from meta or default to 8GB
+            limit_str = (meta or {}).get("mem_limit")
+            required_gb = 8.0
+            if limit_str:
+                # Handle formats like '12g' or '12G'
+                try:
+                    if str(limit_str).lower().endswith("g"):
+                        required_gb = float(str(limit_str)[:-1])
+                    elif str(limit_str).lower().endswith("m"):
+                        required_gb = float(str(limit_str)[:-1]) / 1024
+                except ValueError:
+                    pass
+
+            if free_gb < required_gb:
                 UI.warning(
-                    f"Low system memory available: {free_gb:.1f} GB. Liferay may fail to start or be killed by the OS."
+                    f"Low system memory available: {free_gb:.1f} GB. Required (from meta or default): {required_gb:.1f} GB. Liferay may fail to start or be killed by the OS."
                 )
         except (ImportError, Exception):
             # Optional check, ignore if psutil missing or fails
@@ -698,13 +712,12 @@ class StackHandler(BaseHandler):
         port = int(port_val) if port_val is not None else 8080
 
         # FAIL FAST: Calculate SSL early for pre-flight check
-        resolved_ip = self.get_resolved_ip(host_name) or "127.0.0.1"
-        is_loopback = resolved_ip.startswith("127.") or host_name == "localhost"
-        ssl_arg = getattr(self.args, "ssl", None)
-        ssl_val = ssl_arg if ssl_arg is not None else (not is_loopback)
+        ssl_val = self._is_ssl_active(host_name, project_meta)
 
         if not getattr(self.args, "no_up", False):
-            port = self._pre_flight_checks(host_name, port, ssl_enabled=ssl_val)
+            port = self._pre_flight_checks(
+                host_name, port, ssl_enabled=ssl_val, meta=project_meta
+            )
 
         # Update meta with final port (important if incremented)
         project_meta["port"] = port
@@ -721,6 +734,17 @@ class StackHandler(BaseHandler):
         no_tld_skip = (
             getattr(self.args, "no_tld_skip", False)
             or str(project_meta.get("no_tld_skip", "false")).lower() == "true"
+        )
+
+        # Stack Composition Fields
+        env_type = getattr(self.args, "env_type", None) or project_meta.get(
+            "env_type", "dev"
+        )
+        cpu_limit = getattr(self.args, "cpu_limit", None) or project_meta.get(
+            "cpu_limit"
+        )
+        mem_limit = getattr(self.args, "mem_limit", None) or project_meta.get(
+            "mem_limit"
         )
 
         if not jvm_args:
@@ -798,6 +822,9 @@ class StackHandler(BaseHandler):
                 "no_vol_cache": str(no_vol_cache).lower(),
                 "no_jvm_verify": str(no_jvm_verify).lower(),
                 "no_tld_skip": str(no_tld_skip).lower(),
+                "env_type": env_type,
+                "cpu_limit": cpu_limit,
+                "mem_limit": mem_limit,
             }
         )
         self.write_meta(root / PROJECT_META_FILE, project_meta)
@@ -1090,6 +1117,20 @@ class StackHandler(BaseHandler):
             ],
             "networks": ["liferay-net"],
         }
+
+        # Resource Limits (Project Stack Hardening)
+        cpu_limit = meta.get("cpu_limit")
+        mem_limit = meta.get("mem_limit")
+        if cpu_limit or mem_limit:
+            liferay_service["deploy"] = {"resources": {"limits": {}}}
+            if cpu_limit:
+                liferay_service["deploy"]["resources"]["limits"]["cpus"] = str(
+                    cpu_limit
+                )
+            if mem_limit:
+                liferay_service["deploy"]["resources"]["limits"]["memory"] = str(
+                    mem_limit
+                )
 
         # Conditional logs and state volume (Tests verify scale == 2 disables these)
         project_name = meta.get("container_name") or paths["root"].name
