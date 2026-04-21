@@ -48,8 +48,13 @@ Improve the overall stability, reliability, and user productivity of LDM through
 - **Issue**: Checking for updates on every command adds ~500ms of latency to the startup.
 - **Solution**: Detach the update check into a background thread/process. If an update is found, notify the user at the *end* of the current command execution rather than at the beginning.
 
-## 4. Implementation Priority
-
-1. **High**: Atomic Writes, Port Conflict Detection (Hardness).
-2. **Medium**: Non-Blocking Update Checks, `ldm edit` command (UX).
-3. **Low**: Metadata Schema, Fuzzy Selection.
+| Feature | Status | Release |
+| :--- | :--- | :--- |
+| Pre-Flight Port Detection (with IP isolation) | ✅ Completed | v2.3.9 |
+| Metadata Schema Validation | ✅ Completed | v2.3.11 |
+| Atomic Configuration Writes | ✅ Completed | v2.3.11 |
+| Dependency Version Locking | ✅ Completed | v2.3.6 |
+| Fuzzy Project Selection | ✅ Completed | v2.3.11 |
+| Interactive Config Editor (`ldm edit`) | ✅ Completed | v2.3.6 |
+| Multi-Service Log Tailing | ✅ Completed | v2.3.10 |
+| Non-Blocking Update Checks | ✅ Completed | v2.3.7 |

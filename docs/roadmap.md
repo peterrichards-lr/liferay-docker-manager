@@ -46,7 +46,10 @@ While the v2.3.x release solidified the core architecture, **v2.4.0** will focus
 
 - **Architectural Contract Verification**: Introduced a mock-free test suite to ensure mandatory Docker labels and domain trust settings are never dropped during refactoring.
 - **Refined Project Disambiguation**: Standardized project name resolution across all CLI commands to correctly distinguish between project IDs and service names (e.g., `liferay`, `db`, `proxy`).
-- **Improved Log Feedback**: Added `--no-wait` flag to `ldm logs` and implemented real-time user feedback while waiting for containers.
+- **Instance Isolation & Port Probing**: Implemented IP-specific port binding and enhanced pre-flight checks to allow multiple Liferay instances to coexist via loopback IPs.
+- **Improved Log Feedback**: Added `--no-wait` and `--tail` support to `ldm logs` and implemented multi-service tailing.
+- **Hardened Data Integrity**: Implemented Atomic ("Safe") Writes for all configuration files and added schema validation for project metadata.
+- **Productivity Boosts**: Integrated Fuzzy Project Selection into interactive prompts and added the `ldm edit` command for rapid configuration management.
 - **Automation Hardening**: Ensured all commands correctly bypass interactive prompts in non-interactive (`-y`) mode.
 
 ---

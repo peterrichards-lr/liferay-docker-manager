@@ -109,24 +109,55 @@ class BaseHandler:
         if not project_roots:
             return None
 
-        UI.heading(heading)
-        for i, r in enumerate(project_roots):
-            print(f"[{i + 1}] {r['path'].name} [{UI.CYAN}{r['version']}{UI.COLOR_OFF}]")
+        # Fuzzy selection loop
+        filter_str = ""
+        while True:
+            UI.heading(heading)
+            filtered = [
+                r
+                for r in project_roots
+                if not filter_str or filter_str.lower() in r["path"].name.lower()
+            ]
 
-        choice = UI.ask("Select project index, 's' to skip, or 'q' to quit", "1")
-        if choice.lower() == "q":
-            sys.exit(0)
+            if not filtered:
+                UI.warning(
+                    f"No projects match '{filter_str}'. Clear filter (Enter) or 'q' to quit."
+                )
+                filter_str = ""
+                continue
 
-        if choice.lower() == "s":
-            return None
+            for i, r in enumerate(filtered):
+                print(
+                    f"[{i + 1}] {r['path'].name} [{UI.CYAN}{r['version']}{UI.COLOR_OFF}]"
+                )
 
-        try:
-            idx = int(choice) - 1
-            if 0 <= idx < len(project_roots):
-                return project_roots[idx]
-        except (ValueError, IndexError):
-            pass
-        return None
+            prompt = "\nSelect index, type to filter"
+            if filter_str:
+                prompt += f" (Current: {UI.CYAN}{filter_str}{UI.COLOR_OFF})"
+            prompt += ", 's' to skip, or 'q' to quit"
+
+            choice = UI.ask(prompt, "1" if len(filtered) == 1 else None)
+
+            if not choice:
+                if filter_str:
+                    filter_str = ""
+                    continue
+                return None
+
+            if str(choice).lower() == "q":
+                sys.exit(0)
+            if str(choice).lower() == "s":
+                return None
+
+            # If choice is numeric, it's an index selection
+            if str(choice).isdigit():
+                idx = int(choice) - 1
+                if 0 <= idx < len(filtered):
+                    return filtered[idx]
+                UI.error(f"Invalid index: {choice}")
+            else:
+                # Treat as filter string
+                filter_str = str(choice)
 
     def detect_project_path(self, project_id=None, for_init=False):
         """Resolves a project ID or path to a full filesystem path."""

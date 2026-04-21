@@ -626,8 +626,9 @@ def read_meta(path):
     except Exception as e:
         UI.warning(f"Could not read metadata at {path}: {e}")
 
-    # Schema Validation
-    required_keys = ["container_name", "tag"]
+    # Schema Validation (Hardening)
+    # Ensure mandatory fields are present and valid to prevent runtime crashes
+    required_keys = ["container_name", "tag", "db_type"]
     missing = [k for k in required_keys if k not in meta]
     if missing:
         # Don't warn for internal meta files or temporary ones
@@ -635,6 +636,13 @@ def read_meta(path):
             UI.warning(
                 f"Metadata in {path} is missing required keys: {', '.join(missing)}"
             )
+
+    # Type/Value validation for critical fields
+    if meta.get("port") and not str(meta["port"]).isdigit():
+        UI.warning(
+            f"Invalid port value in {path}: {meta['port']}. Falling back to 8080."
+        )
+        meta["port"] = 8080
 
     return meta
 
