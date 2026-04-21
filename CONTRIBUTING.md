@@ -56,6 +56,20 @@ We prefer [Conventional Commits](https://www.conventionalcommits.org/):
 - `docs: ...` for documentation changes.
 - `test: ...` for adding tests.
 
+### 🚀 Release Management
+
+LDM uses an explicit gating mechanism for GitHub Releases:
+
+- **Tags**: Pushing a tag (e.g., `v2.4.0`) automatically triggers a **Pre-release** build.
+- **Production Release**: To trigger a full production release, the commit message MUST contain the **`[release]`** keyword.
+
+## ✅ Quality Assurance Standards
+
+All significant changes to the orchestration or infrastructure handlers MUST be verified against our live-Docker suite:
+
+1. **Architectural Contracts**: Run `python3 ldm_core/tests/test_architectural_contracts.py` to ensure mandatory labels and properties are preserved.
+2. **E2E Verification**: Execute `bash scripts/verify_e2e_refactor.sh` on a machine with a running Docker engine to verify global infra and project lifecycle.
+
 ## ⚖️ License
 
 By contributing, you agree that your contributions will be licensed under its **MIT License**.

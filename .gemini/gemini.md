@@ -2,87 +2,73 @@
 
 This file serves as the persistent state and technical knowledge base for the AI assistant working on the LDM project.
 
-## 🛠️ Core Architectural Mandates (Hardened v1.6.35)
+## 🛠️ Core Architectural Mandates (Hardened v2.3.6)
 
 ### 1. Configuration Priority (The "Liferay Way")
 
 - **Direct Properties**: Critical infrastructure settings MUST be injected directly into `portal-ext.properties` located in the project's `files/` directory.
-- **Bypass Env Vars**: Do NOT rely on environment variables for `web.server.*`, `elasticsearch.*`, or `cluster.link.*` settings. Newer Liferay versions have unreliable decoding for these variables (causing "Unable to decode part" warnings).
-- **Multi-line Property Merging**: When updating `portal-ext.properties`, the tool MUST handle multi-line values (using backslash `\` continuations). Simple line-by-line regex will fail and corrupt the file by leaving orphan lines. Always use the atomic block-replacement logic found in `update_portal_ext`.
+- **Bypass Env Vars**: Do NOT rely on environment variables for `web.server.*`, `elasticsearch.*`, or `cluster.link.*` settings.
+- **Multi-line Property Merging**: When updating `portal-ext.properties`, the tool MUST handle multi-line values (using backslash `\` continuations).
 - **Environment Variable Separators**:
   - **Modern (2025.Q1+ / 7.4.13-u100+)**: Use single underscore (`_`).
   - **Legacy**: Use double underscore (`__`).
-  - The tool must remain version-aware and switch separators automatically based on the target tag.
+  - The tool must remain version-aware and switch separators automatically.
 
 ### 2. Networking & Routing (Traefik v3)
 
-- **Explicit Network Labels**: Every container managed by LDM MUST have the `traefik.docker.network=liferay-net` label. Without this, Traefik v3 may fail to resolve the internal backend IP, resulting in persistent 404 errors.
-- **API Version Negotiation**: Traefik MUST be at least **v3.6.1** to support automatic API version negotiation. Older versions (v3.0-v3.5) are hardcoded to Docker API v1.24 and will fail on modern Docker engines (v29+) with "client version 1.24 is too old" errors.
-- **macOS Loopback**: Infrastructure (Traefik) on macOS MUST bind to `0.0.0.0` to support multi-IP loopback for custom virtual hostnames.
-- **Bridge Reliability**: The `docker-socket-proxy` bridge on macOS must be verified for network connectivity during every `run` and `doctor` command.
+- **Explicit Network Labels**: Every container managed by LDM MUST have the `traefik.docker.network=liferay-net` label.
+- **Metadata DNA**: Every Liferay container MUST have the `com.liferay.ldm.project` label. This is essential for `ldm status` and `ldm prune`.
+- **macOS Loopback**: Infrastructure (Traefik) on macOS MUST bind to `0.0.0.0` to support multi-IP loopback.
 
-### 3. macOS Infrastructure (Self-Healing Bridge)
+### 3. Shared Infrastructure & Extraction
 
-- **Dynamic Socket Discovery**: Always use `get_docker_socket_path()` to find the host socket.
-- **Mount Fallback**: If mounting the dynamic path fails with "operation not supported" (common on Colima/OrbStack), automatically fall back to the standard `/var/run/docker.sock`.
-- **Cleanup on Conflict**: If a bridge container creation fails due to a mount error, the tool must explicitly `docker rm -f` the failed record before retrying the fallback path to avoid name conflicts.
+- **Infra Isolation**: Global services (Traefik, Proxy, Global Search) MUST be managed by the `InfraHandler` mixin. Do not leak global orchestration logic into project-specific handlers.
+- **Idempotency**: Infrastructure setup MUST be idempotent. Always check for existing (including stopped) containers using `docker ps -a` before attempting creation.
 
 ### 4. Diagnostics & Health
 
-- **License Verification**: LDM MUST proactively check for valid Liferay XML licenses in `common/`, `deploy/`, and `osgi/modules/` folders. It must warn the user if a license is missing for DXP/EE images but remain silent for Portal CE images.
-- **Doctor Exit Codes**: `ldm doctor` must return **Exit Code 1** if critical issues are detected to support shell pipelines (`ldm doctor && ldm run`).
-- **Infrastructure Log Scans**: `ldm doctor` proactively scans the last 20 lines of global infrastructure logs (Traefik, ES8, Proxy) for `ERROR` or `WARN` keywords to identify platform-level failures.
-- **UTC Alignment**: Health check timestamps and "Still waiting" messages MUST use **UTC** to match Liferay container logs for easy correlation.
-- **Metadata Health**: Proactively scrub project metadata (`.liferay-docker.meta`) of legacy/poisoned environment variables during the `run` sequence.
+- **License Verification**: LDM MUST proactively check for valid Liferay XML licenses in `common/`, `deploy/`, and `osgi/modules/` folders.
+- **Doctor Exit Codes**: `ldm doctor` must return **Exit Code 1** if critical issues are detected.
+- **UTC Alignment**: Health check timestamps MUST use **UTC** to match Liferay container logs.
 
-### 5. Liferay Standards & Performance
+### 5. Performance & Seeding (v2)
 
-- **JVM Mandatory Flags**: All Liferay instances MUST include `-Dfile.encoding=UTF8` and `-Duser.timezone=GMT`. These are foundational for data consistency and internationalization.
-- **Database character set**: MySQL/MariaDB databases MUST be created with `utf8mb4` character set and `utf8mb4_unicode_ci` collation. Liferay 2025.Q1+ strictly validates this on boot.
-- **Table Case Sensitivity**: MySQL MUST be configured with `lower_case_table_names=1` to ensure cross-platform compatibility of database migrations and snapshots.
-- **JIT Optimization**: For development speed, LDM proactively adds `-XX:TieredStopAtLevel=1` if the heap is explicitly set, significantly reducing boot times.
+- **Bootstrap Seeds**: LDM uses version-matched seeds (Database + Search Index + **OSGi State**). Any changes to the seeding engine MUST increment `SEED_VERSION` in `constants.py`.
+- **Seeding Control**: The `--no-osgi-seed` flag MUST be respected to allow opt-out of state bootstrapping.
+- **Workspace-Aware Seeding**: Seeding MUST be triggered automatically during `import`, `init-from`, and `cloud-fetch` if the Liferay version can be detected early.
 
 ### 6. Security & Compliance
 
-- **Nosec Disclosure**: Any use of `# nosec` in the codebase MUST be documented in `docs/SECURITY.md` with a clear explanation of the intent, disclosure of the risk, and description of the mitigation. This ensures transparency regarding intentional security trade-offs made for local development functionality.
+- **Nosec Disclosure**: Any use of `# nosec` in the codebase MUST be documented in `docs/SECURITY.md`.
+- **Contract Verification**: Refactoring MUST be verified against `ldm_core/tests/test_architectural_contracts.py` to ensure no silent loss of mandatory labels or properties.
 
-## 🧪 Knowledge & Troubleshooting Snippets
+## 🚀 Release & Workflow Management
 
-### Why am I seeing a 404 on macOS?
+### 1. Release Gating ([release] keyword)
 
-- Check if `docker-socket-proxy` is connected to `liferay-net`.
-- Verify the Traefik `traefik.docker.network` label is present.
-- Ensure the Docker socket path is correctly mapped (use the self-healing bridge logic).
+- **Explicit Releases**: The GitHub Release workflow is gated. Version tags (`v*`) trigger a **Pre-release** by default.
+- **Full Release**: To trigger a full GitHub release and update the 'latest' pointer, the commit message MUST contain the **`[release]`** keyword.
 
-### Why is Liferay ignoring my Search/SSL settings?
+### 2. Verification Requirements
 
-- Ensure the settings are in `portal-ext.properties`, NOT just environment variables.
-- Check for "Unable to decode part" warnings in the logs—this indicates an incompatible underscore format for that version.
-- **Corrupted Portal-Ext**: Check `portal-ext.properties` for duplicate or orphaned lines. This happens if the merge logic fails to handle multi-line values (backslash continuations) correctly.
-
-### How do I verify a local build?
-
-- Use `./scripts/package-shiv.sh --install`.
-- Run `ldm doctor` and verify the timestamp in the version line.
+- **E2E Testing**: Significant changes to orchestration or infrastructure MUST be verified using `bash scripts/verify_e2e_refactor.sh`. This script performs live-Docker verification of global infra, project labels, and status reporting.
 
 ## 🏁 Definition of Done for Changes
 
 ### Commit Requirements
 
-- **Pre-commit Compliance**: All commits REQUIRE the local pre-commit hooks to pass (`ruff`, `pytest`, `bandit`, `markdownlint`, `version-sync`). NEVER bypass these checks.
-- **Documentation Synchronization**: All functional changes MUST be reflected in relevant documentation (`README.md`, `ROADMAP.md`, `SECURITY.md`, `LDM_ARCHITECTURE.md`).
-- **Memory Persistence**: The `.gemini/gemini.md` file MUST be updated before proposing any changes to serve as the persistent state for the assistant.
-- **Semantic Commits**: All commits must include a clear, suitable summary and a detailed description of the changes made and why.
-- **Sudo-Free Operation**: LDM MUST NOT be run with the `sudo` prefix. All commands that require elevated privileges (e.g., host file updates, binary replacement) MUST request elevation internally via `sudo` or equivalent OS mechanisms to protect the integrity of the user's cache (`~/.shiv`).
-- **History Management**: For bug fixes and refinements, prioritize squashing git history and retagging/re-releasing the current version (while LDM is in early-access staging) to maintain a high-signal commit history.
+- **Pre-commit Compliance**: All commits REQUIRE the local pre-commit hooks to pass (`ruff`, `pytest`, `bandit`, `markdownlint`, `version-sync`).
+- **Documentation Synchronization**: All functional changes MUST be reflected in `README.md`, `ROADMAP.md`, `SECURITY.md`, and `LDM_ARCHITECTURE.md`.
+- **Memory Persistence**: This `gemini.md` file MUST be updated before proposing any changes.
+- **Semantic Commits**: All commits must include a clear summary and detailed description.
+- **Release Keyword**: Include `[release]` in the commit message only when a full production release is intended.
 
 ### Technical Checklist
 
-- [ ] Code passes `./lint.sh` (Ruff, Markdown, Bandit, Pytest).
-- [ ] All unit tests pass locally (`pytest ldm_core/tests/`).
-- [ ] All `# nosec` usages are documented in `docs/SECURITY.md`.
-- [ ] `ldm-doctor.sh` check passes (if infra changes were made).
-- [ ] Version-aware separator logic is maintained.
-- [ ] Explicit Traefik network labels are applied.
+- [ ] Code passes `./lint.sh`.
+- [ ] All unit tests pass (`pytest`).
+- [ ] Architectural contracts verified (`python3 ldm_core/tests/test_architectural_contracts.py`).
+- [ ] E2E suite verified (`bash scripts/verify_e2e_refactor.sh`).
+- [ ] SEED_VERSION incremented (if seeding logic changed).
+- [ ] Project labels (`com.liferay.ldm.project`) are applied.
 - [ ] Documentation is fully updated.
-- [ ] Project Memory (`gemini.md`) is updated.
