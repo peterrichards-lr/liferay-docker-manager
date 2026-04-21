@@ -14,6 +14,7 @@ class UI:
     BOLD = "\033[1m"
 
     NON_INTERACTIVE = False
+    VERBOSE = False
 
     @staticmethod
     def get_padding(icon=None):
@@ -100,7 +101,8 @@ class UI:
     @staticmethod
     def debug(msg):
         """Prints info only if verbose mode is enabled."""
-        UI._print(msg, UI.WHITE, "⚙️")
+        if UI.VERBOSE:
+            UI._print(msg, UI.WHITE, "⚙️")
 
     @staticmethod
     def ask(prompt, default=None):

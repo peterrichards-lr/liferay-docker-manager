@@ -42,6 +42,7 @@ class LiferayManager(
 
         # Synchronize global UI state
         UI.NON_INTERACTIVE = self.non_interactive
+        UI.VERBOSE = self.verbose
 
         # Ensure standard attributes exist on args
         for attr in RUN_ATTRS:
