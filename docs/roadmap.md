@@ -52,6 +52,13 @@ While the v1.x "Hardened Edition" focused on cross-platform stability, **v2.2.0*
 
 ---
 
+## ✅ Completed Improvements (v2.2.2)
+
+- **Hotfix: OSGi State Snapshot Integrity**: Resolved a silent failure in the snapshot engine where the `osgi/state` directory was sometimes omitted from the final archive due to internal path resolution differences. This ensures that Seeded States (v2) correctly include the pre-resolved bundle state.
+- **Orchestration Standard Alignment**: Synchronized the project manager's attribute list to ensure consistent multi-node scaling behavior across all CLI handlers.
+
+---
+
 ## ✅ Completed Improvements (v2.2.1)
 
 - **Hotfix: CLI Initialization Regression**: Fixed a critical bug where `ldm run` on a non-existent project would fail during the pre-flight check because the project path could not be "detected." The path resolution engine now correctly allows initialization for new projects.

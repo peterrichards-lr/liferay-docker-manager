@@ -144,6 +144,20 @@ class SnapshotHandler(BaseHandler):
                     except (PermissionError, OSError) as e:
                         UI.warning(f"Skipping {f} due to permission error: {e}")
 
+            # Explicitly ensure osgi/state is included if it was missed by the generic 'osgi' add
+            # (Happens if osgi/ exists but state was empty or handled as a separate mount point)
+            osgi_state = paths["state"]
+            if osgi_state.exists() and osgi_state.is_dir():
+                try:
+                    # Check if it's already in the tar to avoid duplicates
+                    tar_names = [m.name for m in tar.getmembers()]
+                    if "osgi/state" not in tar_names:
+                        if self.verbose:
+                            UI.info("Adding missing osgi/state to archive...")
+                        tar.add(osgi_state, arcname="osgi/state")
+                except Exception:
+                    pass
+
             # If we have a search snapshot, bundle the global backup repo into the archive
             if search_snapshot_name:
                 from ldm_core.utils import get_actual_home

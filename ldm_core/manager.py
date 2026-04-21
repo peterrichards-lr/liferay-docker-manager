@@ -109,6 +109,7 @@ class LiferayManager(
             "infra",
             "all_projects",
             "fix_hosts",
+            "scale",
         ]
         for attr in run_attrs:
             if not hasattr(args, attr):
