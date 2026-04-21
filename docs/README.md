@@ -225,8 +225,8 @@ LDM automatically hardens modern environments (DXP 2024+ and modern Quarterly Re
   - Standardized on the **MariaDB JDBC Driver** and `MariaDB103Dialect` to mirror **Liferay Cloud (LXC)** environments.
   - Forces `mysql_native_password` authentication for CI compatibility.
   - Includes performance-optimized connection parameters (e.g., `rewriteBatchedStatements`, `prepStmtCacheSize`).
-  - Explicitly sets `hibernate.dialect` and `jdbc.default.db.type` to prevent boot-time auto-detection failures.
-  - Prioritizes `LIFERAY_JDBC_DEFAULT_*` environment variables for reliable handshake initialization.
+  - **Redline Configuration**: Explicitly sets `hibernate.dialect` and `jdbc.default.*` properties in `portal-ext.properties` to ensure reliable interpretation of mixed-case keys (like `driverClassName`).
+  - Prioritizes `LIFERAY_JDBC_DEFAULT_*` environment variables ONLY for runtime user overrides; LDM baseline always uses `portal-ext.properties`.
 - **Proactive Boot Sequencing**: Configures `depends_on` with healthchecks to ensure Liferay only starts once the database is fully ready to accept connections.
 
 #### ⚡️ Performance Tuning (Startup Optimizations)

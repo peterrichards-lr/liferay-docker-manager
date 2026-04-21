@@ -380,16 +380,34 @@ class StackHandler(BaseHandler):
 
         # --- Registry-Aware Conflict Detection ---
         # Scan all projects in workspace for potential collisions in .meta
-        current_path = Path(meta.get("root", "")).resolve() if meta else None
+        # Priority: skip self if it's the SAME folder or the SAME project ID
+        current_project_id = (meta or {}).get("project_name") or (meta or {}).get(
+            "container_name"
+        )
+        current_path = (
+            Path(meta.get("root", "")).resolve()
+            if (meta and meta.get("root"))
+            else Path.cwd().resolve()
+        )
+
         all_projects = self.find_dxp_roots()
         for p in all_projects:
             p_path = p["path"].resolve()
-            if current_path and p_path == current_path:
+
+            # Skip self check (Exact Path match)
+            if p_path == current_path:
                 continue
 
             from ldm_core.utils import read_meta
 
             p_meta = read_meta(p_path / PROJECT_META_FILE)
+
+            # Skip self check (Project ID match from meta)
+            # Use 'project_name' or 'container_name' consistently
+            p_id = p_meta.get("project_name") or p_meta.get("container_name")
+            if current_project_id and p_id == current_project_id:
+                continue
+
             p_host = p_meta.get("host_name")
             p_port = p_meta.get("port")
 
@@ -792,8 +810,9 @@ class StackHandler(BaseHandler):
         port = int(port_val) if port_val is not None else 8080
 
         # FAIL FAST: Pre-flight checks before expensive operations
-        # Inject root path for registry-aware skip-self logic
+        # Inject root path and project ID for registry-aware skip-self logic
         project_meta["root"] = str(root.resolve())
+        project_meta["project_name"] = project_id
 
         # FAIL FAST: Calculate SSL early for pre-flight check
         ssl_val = self._is_ssl_active(host_name, project_meta)

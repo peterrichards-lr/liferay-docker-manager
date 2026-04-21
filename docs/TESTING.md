@@ -18,7 +18,9 @@ LDM uses a multi-layered automated verification suite:
 All refactoring and feature development must preserve the following LDM contracts:
 
 - **Metadata DNA**: Every Liferay container MUST have the `com.liferay.ldm.project` label.
-- **Domain Trust**: Custom hostnames MUST trigger proactive `portal-ext` updates for node naming and redirect IPs.
+- **Domain Trust**: Custom hostnames MUST trigger proactive **Environment Variable** injection for node naming and redirect IPs.
+- **Search Hardening**: Sidecar ES MUST be disabled via high-priority Environment Variables when Shared Search is active.
+- **Database Reliability**: JDBC and Hibernate settings MUST be managed via `portal-ext.properties` to ensure mixed-case key integrity.
 - **Persistence**: `osgi/state` must remain host-mapped for single-node instances to preserve seeding benefits.
 
 > [!NOTE]
@@ -79,7 +81,7 @@ These features involve complex state changes or rely on external APIs that may c
 | :--- | :--- | :--- |
 | **5.1 Cloud Env Sync** | `ldm cloud-fetch demo uat --sync-env` | Correctly fetches and applies `LCP.json` env vars despite `lcp` CLI plain-text formatting. |
 | **5.2 Cloud DB Hydration** | `ldm cloud-fetch demo uat --download` | Safely downloads and extracts DB backups into `snapshots/` without path traversal issues. |
-| **5.3 Multi-Node Lock Avoidance** | `ldm scale demo liferay=2` | Correctly disables host-mapped `osgi/state` and injects cluster-link properties. |
+| **5.3 Multi-Node Lock Avoidance** | `ldm scale demo liferay=2` | Correctly disables host-mapped `osgi/state` and injects cluster-link environment variables. |
 | **5.4 Search Migration Resilience** | `ldm migrate-search demo` | Liferay successfully rebuilds its index on the shared ES8 container on the next boot without falling back to the sidecar. |
 | **5.5 Auto-Healing DNS (Elevation)** | `ldm doctor --fix-hosts` | Successfully prompts for `sudo` (or UAC on Windows) and appends missing subdomains without duplicating lines. |
 | **5.6 Windows Deep Deletion** | `ldm rm demo --delete` (Native Windows) | Successfully wipes the project folder, even if it contains deeply nested `node_modules` or Docker-locked volumes. |

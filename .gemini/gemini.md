@@ -6,8 +6,10 @@ This file serves as the persistent state and technical knowledge base for the AI
 
 ### 1. Configuration Priority (The "Liferay Way")
 
-- **Direct Properties**: Critical infrastructure settings MUST be injected directly into `portal-ext.properties` located in the project's `files/` directory.
-- **Bypass Env Vars**: Do NOT rely on environment variables for `web.server.*`, `elasticsearch.*`, or `cluster.link.*` settings.
+- **Database Configuration (Redline)**: All database-related settings (JDBC URL, Driver, Dialect, Credentials) MUST be injected into `portal-ext.properties` in the project's `files/` directory. This ensures mixed-case keys like `driverClassName` are correctly interpreted by Liferay.
+- **Search & Elasticsearch (Redline)**: Search configuration MUST be managed via high-priority **Environment Variables** (e.g., `LIFERAY_ELASTICSEARCH_...`) and **OSGi `.config` substitution**. Do NOT inject search settings into `portal-ext.properties`.
+- **80/20 Rule for .config**: Use static `.config` templates from `common/` for connectivity, and perform dynamic project-specific substitution (e.g., `indexNamePrefix`) during synchronization.
+- **Domain & Infrastructure**: `web.server.*` and `cluster.link.*` settings MUST be injected via Environment Variables to keep the on-disk `portal-ext.properties` focused on application-level overrides.
 - **Multi-line Property Merging**: When updating `portal-ext.properties`, the tool MUST handle multi-line values (using backslash `\` continuations).
 - **Environment Variable Separators**:
   - **Modern (2025.Q1+ / 7.4.13-u100+)**: Use single underscore (`_`).

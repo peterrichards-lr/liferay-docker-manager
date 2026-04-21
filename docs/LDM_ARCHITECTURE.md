@@ -181,16 +181,20 @@ sequenceDiagram
 
 ### 5. Metadata & Property Injection
 
-To ensure maximum reliability across all Liferay versions and to align with **Liferay Cloud (LXC)** standards, LDM injects critical infrastructure settings directly into the project's `portal-ext.properties` file before startup.
+To ensure maximum reliability and to follow how Liferay expects infrastructure to be configured, LDM uses a tiered configuration strategy.
+
+- **Redline 1 (Database)**: JDBC and Hibernate settings MUST live in `portal-ext.properties` to ensure mixed-case property keys are correctly parsed.
+- **Redline 2 (Search/Infra)**: Search, SSL, and Clustering MUST live in high-priority **Environment Variables** or **OSGi `.config`** files to ensure isolation and skip Sidecar startup.
 
 | Category | Properties Managed / Standardized |
 | :--- | :--- |
-| **Database (MySQL/MariaDB)** | **Standardized on MariaDB JDBC Driver** (`org.mariadb.jdbc.Driver`) and `MariaDB103Dialect` for all 2025+ and 2026.Q1 LTS builds. Includes performance parameters in the connection URL to mirror Cloud optimizations. |
+| **Database (MySQL/MariaDB)** | **Managed via `portal-ext.properties`**. Standardized on MariaDB JDBC Driver (`org.mariadb.jdbc.Driver`) and `MariaDB103Dialect` for all 2025+ and 2026.Q1 LTS builds. Includes performance connection URL optimizations. |
+| **Database (PostgreSQL)** | **Managed via `portal-ext.properties`**. Standardized on `org.postgresql.Driver` and `PostgreSQL10Dialect`. |
 | **Conflict Avoidance** | If custom `LIFERAY_JDBC_PERIOD_` environment variables are detected in metadata, LDM **skips** writing JDBC properties to `portal-ext.properties` to ensure the user's manual config takes precedence. |
-| **SSL / Routing** | `web.server.protocol`, `web.server.host`, `virtual.hosts.valid.hosts`, `web.server.display.node.name`, `redirect.url.ips.allowed` |
+| **SSL / Routing** | **Managed via Environment Variables**. Enforces `web.server.*` and `redirect.url.*` settings for proxy alignment. |
 | **Search (ES8)** | **Managed via Environment Variables & OSGi .config Substitution.** LDM enforces `LIFERAY_ELASTICSEARCH_SIDECAR_ENABLED=false` and unique `indexNamePrefix` dynamically to prevent collisions and skip Sidecar startup. |
-| **Clustering** | `cluster.link.enabled`, `lucene.replicate.write` (Active when scaled > 1) |
-| **Identity** | `liferay.docker.image`, `liferay.docker.tag` |
+| **Clustering** | **Managed via Environment Variables**. Automatically injects `cluster.link.enabled` and `lucene.replicate.write` when scaled > 1. |
+| **Identity** | `liferay.docker.image`, `liferay.docker.tag` (Labels & Env) |
 
 ### 6. Persistence & State Management
 
