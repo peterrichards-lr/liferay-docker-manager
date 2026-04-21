@@ -344,6 +344,20 @@ class StackHandler(BaseHandler):
                 tip=f"Ensure Docker Desktop or Colima is started. Try running {UI.CYAN}docker info{UI.COLOR_OFF} to verify.",
             )
 
+        # Resource check (Hardening for OOM issues)
+        try:
+            import psutil
+
+            mem = psutil.virtual_memory()
+            free_gb = mem.available / (1024**3)
+            if free_gb < 8.0:
+                UI.warning(
+                    f"Low system memory available: {free_gb:.1f} GB. Liferay may fail to start or be killed by the OS."
+                )
+        except (ImportError, Exception):
+            # Optional check, ignore if psutil missing or fails
+            pass
+
         if host_name != "localhost" and not self.check_hostname(host_name):
             UI.die(
                 f"Hostname {UI.BOLD}{host_name}{UI.COLOR_OFF} does not resolve to this machine.",
@@ -390,6 +404,29 @@ class StackHandler(BaseHandler):
                     )
         return port
 
+    def _is_ssl_active(self, host_name, meta):
+        """Determines if SSL/Proxy routing should be enabled for a project."""
+        # MUST NOT enable SSL for literal localhost as it bypasses proxy infrastructure.
+        # Custom domains (e.g. samples.local) pointing to 127.* SHOULD support SSL/Proxy.
+        is_literal_localhost = host_name == "localhost"
+
+        # Priority: 1. CLI Arg, 2. Meta 'ssl', 3. Meta 'use_ssl', 4. Default (True for custom)
+        ssl_arg = getattr(self.args, "ssl", None)
+        meta_ssl = meta.get("ssl", meta.get("use_ssl"))
+
+        if ssl_arg is not None:
+            active = ssl_arg
+        elif meta_ssl is not None:
+            active = str(meta_ssl).lower() == "true"
+        else:
+            active = not is_literal_localhost
+
+        # Enforce no SSL for literal localhost
+        if is_literal_localhost:
+            return False
+
+        return active
+
     def sync_stack(
         self,
         paths,
@@ -412,26 +449,7 @@ class StackHandler(BaseHandler):
         project_id = project_meta.get("container_name")
         host_name = project_meta.get("host_name", "localhost")
 
-        # Harden SSL detection (handle both 'ssl' and 'use_ssl' from tests/meta)
-        # MUST NOT enable SSL for literal localhost as it bypasses proxy infrastructure.
-        # Custom domains (e.g. samples.local) pointing to 127.* SHOULD support SSL/Proxy.
-        resolved_ip = self.get_resolved_ip(host_name)
-        is_literal_localhost = host_name == "localhost"
-
-        # Priority: 1. CLI Arg, 2. Meta 'ssl', 3. Meta 'use_ssl', 4. Default (True for custom)
-        ssl_arg = getattr(self.args, "ssl", None)
-        meta_ssl = project_meta.get("ssl", project_meta.get("use_ssl"))
-
-        if ssl_arg is not None:
-            ssl_enabled = ssl_arg
-        elif meta_ssl is not None:
-            ssl_enabled = str(meta_ssl).lower() == "true"
-        else:
-            ssl_enabled = not is_literal_localhost
-
-        # Enforce no SSL for literal localhost
-        if is_literal_localhost:
-            ssl_enabled = False
+        ssl_enabled = self._is_ssl_active(host_name, project_meta)
         ssl_port_val = project_meta.get("ssl_port", 443)
         ssl_port = int(ssl_port_val) if ssl_port_val is not None else 443
 
@@ -764,20 +782,7 @@ class StackHandler(BaseHandler):
 
         # Build Meta
         # FAIL FAST: Calculate SSL early for pre-flight check
-        resolved_ip = self.get_resolved_ip(host_name)
-        is_literal_localhost = host_name == "localhost"
-        ssl_arg = getattr(self.args, "ssl", None)
-        meta_ssl = project_meta.get("ssl", project_meta.get("use_ssl"))
-
-        if ssl_arg is not None:
-            ssl_val = ssl_arg
-        elif meta_ssl is not None:
-            ssl_val = str(meta_ssl).lower() == "true"
-        else:
-            ssl_val = not is_literal_localhost
-
-        if is_literal_localhost:
-            ssl_val = False
+        ssl_val = self._is_ssl_active(host_name, project_meta)
 
         project_meta.update(
             {
@@ -787,6 +792,7 @@ class StackHandler(BaseHandler):
                 "container_name": project_id,
                 "ssl": str(ssl_val).lower(),
                 "db_type": db_type or "hypersonic",
+                "port": port,
                 "jvm_args": jvm_args,
                 "use_shared_search": str(use_shared_search).lower(),
                 "no_vol_cache": str(no_vol_cache).lower(),
@@ -1060,22 +1066,7 @@ class StackHandler(BaseHandler):
 
         # Determine Port Binding (Instance Isolation)
         resolved_ip = self.get_resolved_ip(host_name)
-        is_literal_localhost = host_name == "localhost"
-
-        # Priority: 1. CLI Arg, 2. Meta 'ssl', 3. Meta 'use_ssl', 4. Default (True for custom)
-        ssl_arg = getattr(self.args, "ssl", None)
-        meta_ssl = meta.get("ssl", meta.get("use_ssl"))
-
-        if ssl_arg is not None:
-            ssl_active = ssl_arg
-        elif meta_ssl is not None:
-            ssl_active = str(meta_ssl).lower() == "true"
-        else:
-            ssl_active = not is_literal_localhost
-
-        # Enforce no SSL for literal localhost
-        if is_literal_localhost:
-            ssl_active = False
+        ssl_active = self._is_ssl_active(host_name, meta)
 
         port_list = []
         # PORT BINDING RULE:
