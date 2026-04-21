@@ -161,8 +161,32 @@ fi
 docker rm -f test-isolation-a test-isolation-b 2>/dev/null || true
 rm -rf test-isolation-a test-isolation-b
 
-# 6. Verify Infra Teardown
-echo "--- Step 6: Infra Teardown ---"
+# 6. Verify Proxy-Only Routing for SSL Custom Domains
+echo "--- Step 6: Proxy-Only SSL Routing Verification ---"
+rm -rf test-ssl-proxy
+mkdir -p test-ssl-proxy/files
+{
+  echo "tag=2026.q1.4-lts"
+  echo "container_name=test-ssl-proxy"
+  echo "host_name=my-custom-domain.com"
+  echo "ssl=true"
+  echo "port=8085"
+  echo "db_type=hypersonic"
+} > test-ssl-proxy/.liferay-docker.meta
+
+# Run in no-up mode to check generated config. 
+$PYTHON_CMD -y run test-ssl-proxy --no-up --no-tld-skip --no-jvm-verify
+
+if grep -q "8085:8080" test-ssl-proxy/docker-compose.yml; then
+    echo "❌ ERROR: SSL custom domain exposed port 8085 to host. Should be proxy-only."
+    grep "8085:8080" test-ssl-proxy/docker-compose.yml
+    exit 1
+fi
+echo "✅ Success: SSL custom domain has no direct host port mapping."
+rm -rf test-ssl-proxy
+
+# 7. Verify Infra Teardown
+echo "--- Step 7: Infra Teardown ---"
 $PYTHON_CMD -y down test-e2e-refactor-project --infra
 if docker ps -a | grep -q "liferay-docker-proxy"; then
     echo "❌ ERROR: Infra teardown failed to remove liferay-docker-proxy"

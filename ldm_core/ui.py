@@ -75,7 +75,7 @@ class UI:
         UI._print(msg, UI.YELLOW, "⚠️")
 
     @staticmethod
-    def error(msg, details=None):
+    def error(msg, details=None, tip=None):
         UI._print(msg, UI.BRED, "❌", file=sys.stderr)
         if details:
             # Redact details before printing
@@ -83,10 +83,12 @@ class UI:
             print(
                 f"{UI.WHITE}Details:{UI.COLOR_OFF}  {redacted_details}", file=sys.stderr
             )
+        if tip:
+            print(f"{UI.CYAN}💡 Tip:{UI.COLOR_OFF}      {tip}", file=sys.stderr)
 
     @staticmethod
-    def die(msg, details=None):
-        UI.error(msg, details)
+    def die(msg, details=None, tip=None):
+        UI.error(msg, details, tip)
         sys.exit(1)
 
     @staticmethod

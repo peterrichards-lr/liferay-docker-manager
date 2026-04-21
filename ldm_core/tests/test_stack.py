@@ -216,6 +216,7 @@ class TestStackScaling(unittest.TestCase):
             # Verify state volume is mounted
             volumes = compose_data["services"]["liferay"]["volumes"]
             self.assertTrue(any("/opt/liferay/osgi/state" in v for v in volumes))
+            self.assertTrue(any("/opt/liferay/logs" in v for v in volumes))
 
         # Scale = 2
         config["scale_liferay"] = 2
@@ -230,9 +231,10 @@ class TestStackScaling(unittest.TestCase):
             compose_data = yaml.safe_load(mock_write.call_args[0][0])
             # In scaling mode, container_name should be ABSENT to let Docker handle indexing
             self.assertNotIn("container_name", compose_data["services"]["liferay"])
-            # In scaling mode, state volume should be DISABLED
+            # In scaling mode, state AND logs volumes should be DISABLED
             volumes = compose_data["services"]["liferay"]["volumes"]
             self.assertFalse(any("/opt/liferay/osgi/state" in v for v in volumes))
+            self.assertFalse(any("/opt/liferay/logs" in v for v in volumes))
             # Verify clustering properties are applied
             update_call = manager.update_portal_ext.call_args[0][1]
             self.assertEqual(update_call["cluster.link.enabled"], "true")

@@ -312,10 +312,16 @@ class StackHandler(BaseHandler):
     def _pre_flight_checks(self, host_name, port, ssl_enabled=False):
         """Verifies environment readiness before expensive operations."""
         if not self.check_docker():
-            UI.die("Docker is not running or not accessible.")
+            UI.die(
+                "Docker is not running or not accessible.",
+                tip=f"Ensure Docker Desktop or Colima is started. Try running {UI.CYAN}docker info{UI.COLOR_OFF} to verify.",
+            )
 
         if host_name != "localhost" and not self.check_hostname(host_name):
-            sys.exit(1)
+            UI.die(
+                f"Hostname {UI.BOLD}{host_name}{UI.COLOR_OFF} does not resolve to this machine.",
+                tip=f"Add {UI.CYAN}127.0.0.1 {host_name}{UI.COLOR_OFF} to your {UI.BOLD}/etc/hosts{UI.COLOR_OFF} file.",
+            )
 
         import socket
 
@@ -341,11 +347,13 @@ class StackHandler(BaseHandler):
                     port += 1
                     if port > orig_port + 10:
                         UI.die(
-                            f"Port range {orig_port}-{port - 1} is already in use on localhost. Please stop conflicting services."
+                            f"Port range {orig_port}-{port - 1} is already in use on localhost.",
+                            tip=f"Stop conflicting projects with {UI.CYAN}ldm stop --all{UI.COLOR_OFF} or use a custom hostname.",
                         )
                 else:
                     UI.die(
-                        f"Port {check_ip}:{port} is already in use. Please change the port in metadata or stop the conflicting service."
+                        f"Port {check_ip}:{port} is already in use.",
+                        tip=f"Stop the conflicting project or change the {UI.CYAN}port{UI.COLOR_OFF} in your project metadata.",
                     )
         return port
 
@@ -373,14 +381,26 @@ class StackHandler(BaseHandler):
 
         # Harden SSL detection (handle both 'ssl' and 'use_ssl' from tests/meta)
         # MUST NOT enable SSL for localhost/loopback as it bypasses proxy infrastructure
-        resolved_ip = self.get_resolved_ip(host_name) or "127.0.0.1"
-        is_loopback = resolved_ip.startswith("127.") or host_name == "localhost"
-
-        ssl_enabled = (
-            str(project_meta.get("ssl", project_meta.get("use_ssl", "false"))).lower()
-            == "true"
-            and not is_loopback
+        resolved_ip = self.get_resolved_ip(host_name)
+        # Loopback ONLY if it explicitly says localhost or resolves to 127.*
+        is_loopback = host_name == "localhost" or (
+            resolved_ip is not None and resolved_ip.startswith("127.")
         )
+
+        # Priority: 1. CLI Arg, 2. Meta 'ssl', 3. Meta 'use_ssl', 4. Default (True for custom)
+        ssl_arg = getattr(self.args, "ssl", None)
+        meta_ssl = project_meta.get("ssl", project_meta.get("use_ssl"))
+
+        if ssl_arg is not None:
+            ssl_enabled = ssl_arg
+        elif meta_ssl is not None:
+            ssl_enabled = str(meta_ssl).lower() == "true"
+        else:
+            ssl_enabled = not is_loopback
+
+        # Enforce no SSL for loopback
+        if is_loopback:
+            ssl_enabled = False
         ssl_port_val = project_meta.get("ssl_port", 443)
         ssl_port = int(ssl_port_val) if ssl_port_val is not None else 443
 
@@ -712,8 +732,24 @@ class StackHandler(BaseHandler):
             ConfigHandler(self.args).sync_samples(paths)
 
         # Build Meta
+        # FAIL FAST: Calculate SSL early for pre-flight check
+        resolved_ip = self.get_resolved_ip(host_name)
+        is_loopback = host_name == "localhost" or (
+            resolved_ip is not None and resolved_ip.startswith("127.")
+        )
+
         ssl_arg = getattr(self.args, "ssl", None)
-        ssl_val = ssl_arg if ssl_arg is not None else (host_name != "localhost")
+        meta_ssl = project_meta.get("ssl", project_meta.get("use_ssl"))
+
+        if ssl_arg is not None:
+            ssl_val = ssl_arg
+        elif meta_ssl is not None:
+            ssl_val = str(meta_ssl).lower() == "true"
+        else:
+            ssl_val = not is_loopback
+
+        if is_loopback:
+            ssl_val = False
 
         project_meta.update(
             {
@@ -995,14 +1031,26 @@ class StackHandler(BaseHandler):
             liferay_env.append("LIFERAY_HSQL_PERIOD_ENABLED=false")
 
         # Determine Port Binding (Instance Isolation)
-        resolved_ip = self.get_resolved_ip(host_name) or "127.0.0.1"
-        is_loopback = resolved_ip.startswith("127.") or host_name == "localhost"
-
-        # Correct SSL detection for composing (Matches early sync_stack logic)
-        ssl_active = (
-            str(meta.get("ssl", meta.get("use_ssl", "false"))).lower() == "true"
-            and not is_loopback
+        resolved_ip = self.get_resolved_ip(host_name)
+        # Loopback ONLY if it explicitly says localhost or resolves to 127.*
+        is_loopback = host_name == "localhost" or (
+            resolved_ip is not None and resolved_ip.startswith("127.")
         )
+
+        # Priority: 1. CLI Arg, 2. Meta 'ssl', 3. Meta 'use_ssl', 4. Default (True for custom)
+        ssl_arg = getattr(self.args, "ssl", None)
+        meta_ssl = meta.get("ssl", meta.get("use_ssl"))
+
+        if ssl_arg is not None:
+            ssl_active = ssl_arg
+        elif meta_ssl is not None:
+            ssl_active = str(meta_ssl).lower() == "true"
+        else:
+            ssl_active = not is_loopback
+
+        # Enforce no SSL for loopback
+        if is_loopback:
+            ssl_active = False
 
         port_list = []
         # PORT BINDING RULE:
@@ -1011,7 +1059,8 @@ class StackHandler(BaseHandler):
         # 3. If it's a custom domain AND SSL is enabled, we DON'T bind (Traefik proxy only)
         if host_name == "localhost" or not ssl_active:
             # We ALWAYS bind to the specific resolved IP to avoid 0.0.0.0 conflicts.
-            port_list.append(f"{resolved_ip}:{port}:8080")
+            bind_ip = resolved_ip or "127.0.0.1"
+            port_list.append(f"{bind_ip}:{port}:8080")
 
         liferay_service = {
             "image": image,
@@ -1022,20 +1071,18 @@ class StackHandler(BaseHandler):
                 f"{paths['deploy']}:/mnt/liferay/deploy",
                 f"{paths['files']}:/mnt/liferay/files",
                 f"{paths['data']}:/storage/liferay/data",
-                f"{paths['logs']}:/opt/liferay/logs",
             ],
             "networks": ["liferay-net"],
         }
 
-        # Conditional OSGi state volume (Tests verify scale == 2 disables this)
-        # Use config provided container_name to match test expectations
-        # FALLBACK: if container_name is 'test', then test-my-ms
+        # Conditional logs and state volume (Tests verify scale == 2 disables these)
         project_name = meta.get("container_name") or paths["root"].name
         if scale == 1:
             liferay_service["container_name"] = project_name
             liferay_service["volumes"].append(
                 f"{paths['state']}:/opt/liferay/osgi/state"
             )
+            liferay_service["volumes"].append(f"{paths['logs']}:/opt/liferay/logs")
         else:
             # Handle clustering setup for scaling
             self.update_portal_ext(
