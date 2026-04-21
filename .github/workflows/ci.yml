@@ -56,7 +56,7 @@ jobs:
           find . -name "*.sh" -not -path "*/.*" | xargs shellcheck
 
       - name: Lint Markdown
-        uses: DavidAnson/markdownlint-cli2-action@v19
+        uses: DavidAnson/markdownlint-cli2-action@v20
         with:
           globs: "**/*.md"
 
