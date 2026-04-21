@@ -107,6 +107,7 @@ create_isolation_project() {
       echo "image_tag=alpine"
       echo "port=$port"
       echo "db_type=hypersonic"
+      echo "ssl=false"
     } > "$dir/.liferay-docker.meta"
 }
 

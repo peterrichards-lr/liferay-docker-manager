@@ -333,9 +333,14 @@ class StackHandler(BaseHandler):
         host_name = project_meta.get("host_name", "localhost")
 
         # Harden SSL detection (handle both 'ssl' and 'use_ssl' from tests/meta)
+        # MUST NOT enable SSL for localhost/loopback as it bypasses proxy infrastructure
+        resolved_ip = self.get_resolved_ip(host_name) or "127.0.0.1"
+        is_loopback = resolved_ip.startswith("127.") or host_name == "localhost"
+
         ssl_enabled = (
             str(project_meta.get("ssl", project_meta.get("use_ssl", "false"))).lower()
             == "true"
+            and not is_loopback
         )
         ssl_port_val = project_meta.get("ssl_port", 443)
         ssl_port = int(ssl_port_val) if ssl_port_val is not None else 443
@@ -647,6 +652,7 @@ class StackHandler(BaseHandler):
         paths = self.setup_paths(root)
 
         # Seed Bootstrap (New Projects)
+
         if is_new_project:
             if self._ensure_seeded(tag, db_type, paths):
                 project_meta = self.read_meta(root / PROJECT_META_FILE)
