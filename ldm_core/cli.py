@@ -265,7 +265,7 @@ def get_parser():
         "target",
         nargs="?",
         default="tags",
-        help="Target to clear: tags, seeds, all (default: tags)",
+        help="Target to clear: tags, seeds, samples, all (default: tags)",
     )
 
     upgrade = subparsers.add_parser("upgrade", parents=[base_sub_parent])

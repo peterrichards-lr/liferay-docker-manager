@@ -202,6 +202,14 @@ class DiagnosticsHandler:
                     shutil.rmtree(cache_dir)
                     cleared.append(f"Pre-warmed seeds ({count} files)")
 
+        if target in ["samples", "all"]:
+            cache_dir = home / ".ldm" / "references" / "samples"
+            if cache_dir.exists():
+                import shutil
+
+                shutil.rmtree(cache_dir)
+                cleared.append("Sample pack cache")
+
         if not cleared:
             UI.info("No caches found to clear.")
         else:

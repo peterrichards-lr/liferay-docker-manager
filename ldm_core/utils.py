@@ -87,25 +87,50 @@ def get_seed_url(tag, db="postgresql", search="shared"):
 
 def download_samples(version, destination):
     """Downloads and extracts the samples pack from GitHub."""
-    url = f"https://github.com/peterrichards-lr/liferay-docker-manager/releases/download/v{version}/samples.zip"
+    base_url = (
+        "https://github.com/peterrichards-lr/liferay-docker-manager/releases/download"
+    )
+    urls = [
+        f"{base_url}/v{version}/samples.zip",
+        f"{base_url}/latest/download/samples.zip",
+    ]
 
     # Ensure parent directory exists for the temp zip
     destination.parent.mkdir(parents=True, exist_ok=True)
     temp_zip = destination.parent / f"samples_{version}.zip"
 
+    success = False
+    last_error = None
+
+    for url in urls:
+        try:
+            if success:
+                break
+
+            UI.debug(f"Attempting to download samples from: {url}")
+            response = requests.get(
+                url, headers={"User-Agent": "ldm-cli"}, timeout=15, stream=True
+            )
+            if response.status_code != 200:
+                UI.debug(f"Download failed with status {response.status_code}")
+                continue
+
+            with open(temp_zip, "wb") as f:
+                for chunk in response.iter_content(chunk_size=8192):
+                    f.write(chunk)
+
+            success = True
+        except Exception as e:
+            last_error = e
+            continue
+
+    if not success:
+        UI.error(f"Failed to download samples: {last_error or 'Asset not found'}")
+        if temp_zip.exists():
+            os.remove(temp_zip)
+        return False
+
     try:
-        UI.info(f"Downloading sample pack v{version}...")
-        if not url.startswith("https://"):
-            raise ValueError(f"Invalid URL scheme: {url}")
-
-        response = requests.get(
-            url, headers={"User-Agent": "ldm-cli"}, timeout=15, stream=True
-        )
-        response.raise_for_status()
-        with open(temp_zip, "wb") as f:
-            for chunk in response.iter_content(chunk_size=8192):
-                f.write(chunk)
-
         UI.info("Extracting samples...")
         destination.mkdir(parents=True, exist_ok=True)
         with zipfile.ZipFile(temp_zip, "r") as zip_ref:
@@ -118,7 +143,6 @@ def download_samples(version, destination):
             zip_ref.extractall(extract_temp)
 
             # Move content from temp to destination
-            # Structure might be 'samples/*' or just '*'
             source_root = extract_temp
             inner_samples = extract_temp / "samples"
             if inner_samples.exists() and inner_samples.is_dir():
@@ -141,7 +165,7 @@ def download_samples(version, destination):
         UI.success("Sample pack ready.")
         return True
     except Exception as e:
-        UI.error(f"Failed to download samples: {e}")
+        UI.error(f"Failed to extract samples: {e}")
         if temp_zip.exists():
             os.remove(temp_zip)
         return False
