@@ -223,7 +223,23 @@ class StackHandler(BaseHandler):
                         UI.info(f"API check failed (HTTP {api_res.status_code})")
                     return False
 
-            UI.info("Seed found! Bootstrapping project...")
+            # Get size for confirmation
+            total_size = int(head_res.headers.get("content-length", 0))
+            if not total_size and "asset" in locals() and asset:
+                total_size = asset.get("size", 0)
+
+            size_str = f" ({UI.format_size(total_size)})" if total_size else ""
+            UI.info(f"Seed found!{size_str}")
+
+            if not self.non_interactive:
+                confirm = UI.ask(
+                    "Bootstrap project from this pre-warmed seed? (Saves ~15m)", "y"
+                )
+                if str(confirm).lower() != "y":
+                    UI.info("User declined seed. Initializing clean project...")
+                    return False
+
+            UI.info("Bootstrapping project...")
 
             # 2. Download to temp file
             with tempfile.NamedTemporaryFile(suffix=".tar.gz", delete=False) as tmp:

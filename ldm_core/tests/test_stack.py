@@ -640,6 +640,33 @@ class TestStackOrchestration(unittest.TestCase):
             f"seeded-{tag}-{db_type}-{search_mode}-v{SEED_VERSION}.tar.gz", call_url
         )
 
+    @patch("requests.head")
+    @patch("ldm_core.ui.UI.ask")
+    def test_fetch_seed_interactive_confirmation(self, mock_ask, mock_head):
+        manager = MockManager()
+        manager.non_interactive = False  # Enable interactive mode
+        paths = manager.setup_paths("/tmp/proj")
+
+        mock_head.return_value.status_code = 200
+        mock_head.return_value.headers = {"content-length": "1048576"}  # 1MB
+
+        # 1. User says No
+        mock_ask.return_value = "n"
+        result = manager._fetch_seed("tag", "db", "search", paths)
+        self.assertFalse(result)
+        mock_ask.assert_called_with(
+            "Bootstrap project from this pre-warmed seed? (Saves ~15m)", "y"
+        )
+
+        # 2. User says Yes (but we'll stop there by mocking GET failure or similar)
+        mock_ask.return_value = "y"
+        with patch("requests.get") as mock_get:
+            mock_get.side_effect = Exception("Stop here")
+            result = manager._fetch_seed("tag", "db", "search", paths)
+            self.assertFalse(result)
+            # Verify it proceeded past confirmation to the download attempt
+            self.assertTrue(mock_get.called)
+
     def test_cmd_infra_setup(self):
         with patch.object(self.manager, "check_docker", return_value=True):
             with patch.object(
