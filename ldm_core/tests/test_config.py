@@ -11,6 +11,9 @@ class MockConfigManager(ConfigHandler, DiagnosticsHandler, BaseHandler):
         self.args = MagicMock()
         self.verbose = False
 
+    def parse_version(self, tag):
+        return (7, 4, 13)
+
     def get_common_dir(self, project_path=None):
         return Path("/tmp/work/common")
 
@@ -62,6 +65,55 @@ class TestConfigManagement(unittest.TestCase):
 
                 # Even if common/ doesn't exist, host_updates should be applied
                 mock_update.assert_called_with(target_ext, host_updates)
+
+    @patch("shutil.copy")
+    @patch("ldm_core.handlers.config.run_command")
+    def test_sync_common_assets_es_substitution(self, mock_run, mock_copy):
+        """Verifies that ES .config files are dynamically namespaced during sync."""
+        common_dir = Path("/tmp/work/common")
+        es_config_name = "com.liferay.portal.search.elasticsearch7.configuration.ElasticsearchConfiguration.config"
+        es_config_path = common_dir / es_config_name
+        target_dir = self.paths["root"] / "osgi" / "configs"
+
+        self.paths["configs"] = target_dir
+        self.paths["deploy"] = self.paths["root"] / "deploy"
+        self.paths["common"] = common_dir
+
+        mock_config_content = 'operationMode="REMOTE"\nproductionModeEnabled=B"true"'
+        # Mock that ES8 is running
+        mock_run.return_value = "elasticsearch:8.11.1"
+
+        with patch.object(self.manager, "get_common_dir", return_value=common_dir):
+            # 1. Satisfy 'if common_dir and common_dir.exists()'
+            with patch.object(Path, "exists", return_value=True):
+                # 2. Robust mock for read_text that returns content based on caller or index
+                def mock_read_text_logic(*args, **kwargs):
+                    return mock_config_content
+
+                with patch.object(Path, "read_text", side_effect=mock_read_text_logic):
+                    # 3. Satisfy globbing and file writing
+                    with patch.object(Path, "glob", return_value=[es_config_path]):
+                        with patch.object(Path, "write_text") as mock_write:
+                            with patch(
+                                "os.replace"
+                            ):  # Prevent FileNotFoundError in safe_write_text
+                                # Trigger sync
+                                self.manager.sync_common_assets(self.paths)
+
+                                # If substitution was applied, it should be in one of the write_text calls
+                                found_substitution = False
+                                for call in mock_write.call_args_list:
+                                    if (
+                                        'indexNamePrefix="ldm-test-project-"'
+                                        in call[0][0]
+                                    ):
+                                        found_substitution = True
+                                        break
+
+                                self.assertTrue(
+                                    found_substitution,
+                                    "Elasticsearch substitution was not applied to the config file.",
+                                )
 
     @patch("ldm_core.handlers.config.get_actual_home")
     def test_cmd_config_get_set(self, mock_home):
