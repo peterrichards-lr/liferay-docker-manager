@@ -181,15 +181,19 @@ class BaseHandler:
                 if p.is_dir():
                     return p
 
-            search_dirs = [
-                Path.cwd(),
-                Path.home() / "ldm",
-                SCRIPT_DIR,
-                Path("/Volumes/SanDisk/ldm"),
-            ]
+            # Discovery Search paths
+            search_dirs = []
             custom_workspace = os.environ.get("LDM_WORKSPACE")
+
             if custom_workspace:
                 search_dirs.append(Path(custom_workspace).expanduser().resolve())
+            else:
+                search_dirs = [
+                    Path.cwd(),
+                    Path.home() / "ldm",
+                    SCRIPT_DIR,
+                    Path("/Volumes/SanDisk/ldm"),
+                ]
 
             for s_dir in search_dirs:
                 if not s_dir.exists():

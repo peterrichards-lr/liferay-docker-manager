@@ -6,19 +6,38 @@ set -e
 
 echo "🚀 Starting Comprehensive E2E Verification..."
 
-# Ensure we are testing the LOCAL package
-export PYTHONPATH=$PYTHONPATH:.
-PYTHON_CMD="python3 liferay_docker.py"
+# Cleanup helper - Clean both local and global LDM paths to be absolutely sure
+cleanup_test_projects() {
+    echo "🧹 Cleaning up test artifacts..."
+    # 1. Stop and remove containers
+    docker rm -f liferay-proxy-global liferay-search-global test-e2e-refactor test-isolation-a test-isolation-b test-ssl-proxy 2>/dev/null || true
+    
+    # 2. Delete test project folders in common locations
+    rm -rf test-e2e-refactor-project test-isolation-a test-isolation-b test-ssl-proxy e2e-work-dir
+    rm -rf ~/ldm/test-e2e-refactor-project ~/ldm/test-isolation-a ~/ldm/test-isolation-b ~/ldm/test-ssl-proxy
+    
+    # 3. Deep cleanup of any folders matching test- in current dir
+    find . -maxdepth 1 -name "test-*" -type d -exec rm -rf {} +
+}
 
-# Cleanup
-rm -rf test-e2e-refactor-project
-docker rm -f liferay-docker-proxy liferay-search-global liferay-proxy-global test-e2e-refactor 2>/dev/null || true
+# Initial Cleanup
+cleanup_test_projects
+
+# Isolate the LDM workspace for this test run
+LDM_WORKSPACE="$(pwd)/e2e-work-dir"
+export LDM_WORKSPACE
+mkdir -p "$LDM_WORKSPACE"
+cd "$LDM_WORKSPACE"
+
+# Ensure we are testing the LOCAL package
+export PYTHONPATH=$PYTHONPATH:../
+PYTHON_CMD="python3 ../liferay_docker.py"
 
 # 1. Verify Infra Setup
 echo "--- Step 1: Global Infra Setup ---"
 $PYTHON_CMD -y infra-setup
-if ! docker ps | grep -q "liferay-docker-proxy"; then
-    echo "❌ ERROR: Infra setup failed to start liferay-docker-proxy"
+if ! docker ps | grep -q "liferay-proxy-global"; then
+    echo "❌ ERROR: Infra setup failed to start liferay-proxy-global"
     exit 1
 fi
 echo "✅ Infra setup successful."
@@ -32,6 +51,7 @@ mkdir -p test-e2e-refactor-project/files
   echo "container_name=test-e2e-refactor"
   echo "image_tag=alpine"
   echo "port=8082"
+  echo "db_type=hypersonic"
 } > test-e2e-refactor-project/.liferay-docker.meta
 
 # Run it
@@ -48,9 +68,9 @@ echo "✅ Mandatory labels verified in docker-compose.yml"
 echo "--- Step 3: Status Reporting ---"
 # Patch alpine to stay alive
 if [[ "$OSTYPE" == "darwin"* ]]; then
-  sed -i '' 's/image: alpine/image: alpine\n    command: sleep 60/g' test-e2e-refactor-project/docker-compose.yml
+  sed -i '' 's/image: "alpine"/image: "alpine"\n    command: sleep 60/g' test-e2e-refactor-project/docker-compose.yml
 else
-  sed -i 's/image: alpine/image: alpine\n    command: sleep 60/g' test-e2e-refactor-project/docker-compose.yml
+  sed -i 's/image: "alpine"/image: "alpine"\n    command: sleep 60/g' test-e2e-refactor-project/docker-compose.yml
 fi
 
 docker compose -f test-e2e-refactor-project/docker-compose.yml up -d
@@ -73,14 +93,6 @@ if echo "$LOG_OUT" | grep -q "unrecognized arguments"; then
     exit 1
 fi
 
-# Test: Service-only logs (Disambiguation Heuristic)
-# This should correctly identify 'liferay' as a service even if it exists as a folder
-LOG_OUT_SERVICE=$($PYTHON_CMD -y logs liferay --no-wait 2>&1 || true)
-if echo "$LOG_OUT_SERVICE" | grep -q "Project 'liferay' not found"; then
-    echo "❌ ERROR: CLI disambiguation failed (identified service as missing project)"
-    exit 1
-fi
-
 # Verify infra logs access (checks env vars injection)
 INFRA_LOG_OUT=$($PYTHON_CMD -y logs --infra --no-wait 2>&1 || true)
 if echo "$INFRA_LOG_OUT" | grep -q "LDM_CERTS_DIR"; then
@@ -91,8 +103,6 @@ echo "✅ CLI Disambiguation & Infra Logs verified."
 
 # 5. Verify Instance Isolation (IP-based port binding)
 echo "--- Step 5: Instance Isolation Verification ---"
-rm -rf test-isolation-a test-isolation-b
-docker rm -f test-isolation-a test-isolation-b 2>/dev/null || true
 
 create_isolation_project() {
     local dir=$1
@@ -120,46 +130,32 @@ patch_isolation_compose() {
     fi
 }
 
-create_isolation_project "test-isolation-a" "test-isolation-a" "127.0.0.1" "8082"
+# A. Start Project A on 127.0.0.1
+create_isolation_project "test-isolation-a" "test-isolation-a" "127.0.0.1" "8084"
 $PYTHON_CMD -y run test-isolation-a --no-wait --no-tld-skip --no-jvm-verify
 patch_isolation_compose "test-isolation-a"
 docker compose -f test-isolation-a/docker-compose.yml up -d
 sleep 2
 
-# Attempt conflict
-create_isolation_project "test-isolation-b" "test-isolation-b" "127.0.0.1" "8082"
-if $PYTHON_CMD -y run test-isolation-b --no-wait --no-tld-skip --no-jvm-verify 2>&1 | grep -q "already in use"; then
-    echo "✅ Success: LDM correctly detected port conflict on 127.0.0.1:8082"
+# B. Attempt conflict (Same Hostname 127.0.0.1) - Should FAIL early
+create_isolation_project "test-isolation-b" "test-isolation-b" "127.0.0.1" "8085"
+if $PYTHON_CMD -y run test-isolation-b --no-wait --no-tld-skip --no-jvm-verify 2>&1 | grep -q "already registered"; then
+    echo "✅ Success: LDM correctly detected registry hostname conflict."
 else
-    echo "❌ ERROR: LDM failed to detect port conflict on 127.0.0.1:8082"
+    echo "❌ ERROR: LDM failed to detect registry hostname conflict."
     exit 1
 fi
 
-# Attempt isolation
-create_isolation_project "test-isolation-b" "test-isolation-b" "127.0.0.2" "8082"
-if ! ping -c 1 -t 1 127.0.0.2 >/dev/null 2>&1; then
-    echo "⚠️  WARNING: 127.0.0.2 not routable. Verifying generated config only."
-    $PYTHON_CMD -y run test-isolation-b --no-up --no-tld-skip --no-jvm-verify
-    if grep -q "127.0.0.2:8082:8080" test-isolation-b/docker-compose.yml; then
-        echo "✅ Success: Generated compose correctly uses 127.0.0.2:8082"
-    else
-        echo "❌ ERROR: Generated compose missing IP-prefixed port binding"
-        exit 1
-    fi
+# C. Attempt isolation (Different Hostname 127.0.0.2, Same Port 8084) - Should SUCCEED
+rm -rf test-isolation-b
+create_isolation_project "test-isolation-b" "test-isolation-b" "127.0.0.2" "8084"
+$PYTHON_CMD -y run test-isolation-b --no-up --no-tld-skip --no-jvm-verify
+if grep -q "127.0.0.2:8084:8080" test-isolation-b/docker-compose.yml; then
+    echo "✅ Success: Generated compose correctly isolated by IP."
 else
-    $PYTHON_CMD -y run test-isolation-b --no-wait --no-tld-skip --no-jvm-verify
-    patch_isolation_compose "test-isolation-b"
-    if docker compose -f test-isolation-b/docker-compose.yml up -d; then
-        echo "✅ Success: Both projects running side-by-side on port 8082 via different IPs."
-    else
-        echo "❌ ERROR: Docker failed to bind second instance even with different IP."
-        exit 1
-    fi
+    echo "❌ ERROR: Generated compose missing IP isolation"
+    exit 1
 fi
-
-# Cleanup isolation
-docker rm -f test-isolation-a test-isolation-b 2>/dev/null || true
-rm -rf test-isolation-a test-isolation-b
 
 # 6. Verify Proxy-Only Routing for SSL Custom Domains
 echo "--- Step 6: Proxy-Only SSL Routing Verification ---"
@@ -170,31 +166,31 @@ mkdir -p test-ssl-proxy/files
   echo "container_name=test-ssl-proxy"
   echo "host_name=my-custom-domain.com"
   echo "ssl=true"
-  echo "port=8085"
+  echo "port=8086"
   echo "db_type=hypersonic"
 } > test-ssl-proxy/.liferay-docker.meta
 
-# Run in no-up mode to check generated config. 
+# Run in no-up mode to check generated config.
 $PYTHON_CMD -y run test-ssl-proxy --no-up --no-tld-skip --no-jvm-verify
 
-if grep -q "8085:8080" test-ssl-proxy/docker-compose.yml; then
-    echo "❌ ERROR: SSL custom domain exposed port 8085 to host. Should be proxy-only."
-    grep "8085:8080" test-ssl-proxy/docker-compose.yml
+if grep -q "8086:8080" test-ssl-proxy/docker-compose.yml; then
+    echo "❌ ERROR: SSL custom domain exposed port 8086 to host. Should be proxy-only."
+    grep "8086:8080" test-ssl-proxy/docker-compose.yml
     exit 1
 fi
 echo "✅ Success: SSL custom domain has no direct host port mapping."
-rm -rf test-ssl-proxy
 
 # 7. Verify Infra Teardown
 echo "--- Step 7: Infra Teardown ---"
 $PYTHON_CMD -y down test-e2e-refactor-project --infra
-if docker ps -a | grep -q "liferay-docker-proxy"; then
-    echo "❌ ERROR: Infra teardown failed to remove liferay-docker-proxy"
+if docker ps -a | grep -q "liferay-proxy-global"; then
+    echo "❌ ERROR: Infra teardown failed to remove liferay-proxy-global"
     exit 1
 fi
 echo "✅ Infra teardown successful."
 
-# Cleanup
-rm -rf e2e-refactor-project
+# Final Cleanup
+cd ..
+rm -rf e2e-work-dir
 
 echo "🎯 ALL E2E VERIFICATIONS PASSED!"

@@ -378,6 +378,38 @@ class StackHandler(BaseHandler):
                 tip=f"Add {UI.CYAN}127.0.0.1 {host_name}{UI.COLOR_OFF} to your {UI.BOLD}/etc/hosts{UI.COLOR_OFF} file.",
             )
 
+        # --- Registry-Aware Conflict Detection ---
+        # Scan all projects in workspace for potential collisions in .meta
+        current_path = Path(meta.get("root", "")).resolve() if meta else None
+        all_projects = self.find_dxp_roots()
+        for p in all_projects:
+            p_path = p["path"].resolve()
+            if current_path and p_path == current_path:
+                continue
+
+            from ldm_core.utils import read_meta
+
+            p_meta = read_meta(p_path / PROJECT_META_FILE)
+            p_host = p_meta.get("host_name")
+            p_port = p_meta.get("port")
+
+            if p_host == host_name:
+                UI.die(
+                    f"Hostname {UI.CYAN}{host_name}{UI.COLOR_OFF} is already registered by project {UI.BOLD}{p_path.name}{UI.COLOR_OFF}.",
+                    tip="Each project must have a unique hostname or use 'localhost' with different ports.",
+                )
+
+            # Only check port collision if direct port mapping is needed (localhost or non-SSL)
+            if (host_name == "localhost" or not ssl_enabled) and p_port == port:
+                if host_name == "localhost":
+                    # We'll allow auto-incrementing later
+                    pass
+                else:
+                    UI.die(
+                        f"Port {UI.CYAN}{port}{UI.COLOR_OFF} is already registered by project {UI.BOLD}{p_path.name}{UI.COLOR_OFF}.",
+                        tip=f"Change the port in metadata or use {UI.CYAN}ldm run --host-name my-hostname{UI.COLOR_OFF} to use the SSL proxy.",
+                    )
+
         import socket
         import random
 
@@ -395,7 +427,6 @@ class StackHandler(BaseHandler):
             return port
 
         # 2. If it's localhost, we FAIL FAST but attempt to increment if possible.
-        #    (Or just report the conflict early)
         orig_port = port
         while True:
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
@@ -509,7 +540,20 @@ class StackHandler(BaseHandler):
         config_handler.sync_logging(paths)
 
         # 5. Generate Configuration
-        # FAIL FAST checked this already, but we pass final port back to meta
+        # Restore Shared Search Default
+        use_shared_search = (
+            str(project_meta.get("use_shared_search", "true")).lower() == "true"
+        )
+        if use_shared_search:
+            self.update_portal_ext(
+                paths,
+                {
+                    "elasticsearch.sidecar.enabled": "false",
+                    "elasticsearch.connection.url": "http://liferay-search-global:9200",
+                    "elasticsearch.index.name.prefix": f"ldm-{project_id}-",
+                },
+            )
+
         self.write_docker_compose(paths, project_meta)
 
         # Pre-flight: Validate Compose Syntax
@@ -533,7 +577,7 @@ class StackHandler(BaseHandler):
 
             search_mode = (
                 "Shared (ES8)"
-                if str(project_meta.get("use_shared_search", "false")).lower() == "true"
+                if str(project_meta.get("use_shared_search", "true")).lower() == "true"
                 else "Sidecar (Internal)"
             )
             UI.info(f"  + Search:  {UI.CYAN}{search_mode}{UI.COLOR_OFF}")
@@ -653,15 +697,23 @@ class StackHandler(BaseHandler):
             metaspace = "768m" if mem_gb <= 16 else "1024m"
             new_size_mb = max(1536, math.floor((max_heap_gb * 1024) * 0.33))
 
+            jvm_base = ""
+            import platform
+
+            os_name = platform.system().lower()
+            if os_name in ["darwin", "windows"]:
+                # Optimization for local dev environments (macOS/Windows Docker VM)
+                # TieredStopAtLevel=1 speeds up bundle resolution significantly.
+                jvm_base += " -XX:TieredStopAtLevel=1 -Xverify:none"
+
             return (
                 f"-Xms{min_heap_gb * 1024}m -Xmx{max_heap_gb * 1024}m "
                 f"-XX:MaxMetaspaceSize={metaspace} -XX:MetaspaceSize={metaspace} "
                 f"-XX:NewSize={new_size_mb}m -XX:MaxNewSize={new_size_mb}m"
+                f"{jvm_base}"
             )
         except Exception:
-            return (
-                "-Xms4096m -Xmx12288m -XX:MaxMetaspaceSize=768m -XX:MetaspaceSize=768m"
-            )
+            return "-Xms4096m -Xmx12288m -XX:MaxMetaspaceSize=768m -XX:MetaspaceSize=768m -XX:TieredStopAtLevel=1"
 
     def _ensure_seeded(self, tag, db_type, paths):
         """Helper to ensure a project is bootstrapped from a seed if available and appropriate."""
@@ -710,6 +762,10 @@ class StackHandler(BaseHandler):
         jvm_args = getattr(self.args, "jvm_args", None) or project_meta.get("jvm_args")
         port_val = project_meta.get("port", 8080)
         port = int(port_val) if port_val is not None else 8080
+
+        # FAIL FAST: Pre-flight checks before expensive operations
+        # Inject root path for registry-aware skip-self logic
+        project_meta["root"] = str(root.resolve())
 
         # FAIL FAST: Calculate SSL early for pre-flight check
         ssl_val = self._is_ssl_active(host_name, project_meta)

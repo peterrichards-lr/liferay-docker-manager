@@ -43,8 +43,10 @@ class TestBaseDiscovery(unittest.TestCase):
                         roots = self.handler.find_dxp_roots()
 
                         names = [r["path"].name for r in roots]
-                        self.assertIn("proj_cwd", names)
+                        # In the new Hardened LDM, LDM_WORKSPACE is EXCLUSIVE.
+                        # It should find projects in 'other' but NOT 'cwd'.
                         self.assertIn("proj_other", names)
+                        self.assertNotIn("proj_cwd", names)
 
     def test_detect_project_path_scenarios(self):
         import tempfile

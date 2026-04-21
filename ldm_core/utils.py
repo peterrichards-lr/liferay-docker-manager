@@ -693,14 +693,21 @@ def find_dxp_roots(search_dir=None):
 
     actual_home = get_actual_home()
     search_dirs = []
+
+    # Check for LDM_WORKSPACE environment variable
+    custom_workspace = os.environ.get("LDM_WORKSPACE")
+
+    # Priority 1: Specific directory provided
     if search_dir:
         search_dirs.append(Path(search_dir))
+    # Priority 2: Isolated workspace (Exclusive search)
+    elif custom_workspace:
+        # IMPORTANT: If LDM_WORKSPACE is set, we ONLY search that directory
+        # to support true isolation in tests and dev environments.
+        search_dirs = [Path(custom_workspace).expanduser().resolve()]
+    # Priority 3: Default discovery logic (Multiple paths)
     else:
         search_dirs.append(Path.cwd())
-        # Include custom workspace if set
-        custom_workspace = os.environ.get("LDM_WORKSPACE")
-        if custom_workspace:
-            search_dirs.append(Path(custom_workspace))
 
         # Common default locations
         for common in [actual_home / "ldm", Path("/Volumes/SanDisk/ldm")]:
