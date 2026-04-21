@@ -562,6 +562,31 @@ class TestStackOrchestration(unittest.TestCase):
         self.assertIn("name=^liferay-search-global$", checked_containers)
 
     @patch("ldm_core.utils.run_command")
+    def test_cmd_logs_passes_tail(self, mock_run):
+        # Mock container existing
+        mock_run.return_value = "abc123"
+
+        # 1. Test infra logs with tail
+        self.manager.cmd_logs(infra=True, tail="50")
+        infra_logs_call = [
+            call[0][0] for call in mock_run.call_args_list if "logs" in call[0][0]
+        ][0]
+        self.assertIn("--tail", infra_logs_call)
+        self.assertIn("50", infra_logs_call)
+
+        # 2. Test project logs with tail
+        mock_run.reset_mock()
+        with patch.object(
+            self.manager, "detect_project_path", return_value=Path("/tmp/proj")
+        ):
+            self.manager.cmd_logs(project_id="forge", tail="200")
+            project_logs_call = [
+                call[0][0] for call in mock_run.call_args_list if "logs" in call[0][0]
+            ][0]
+            self.assertIn("--tail", project_logs_call)
+            self.assertIn("200", project_logs_call)
+
+    @patch("ldm_core.utils.run_command")
     @patch("requests.get")
     @patch("requests.head")
     @patch("shutil.move")

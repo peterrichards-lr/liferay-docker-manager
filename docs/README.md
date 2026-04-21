@@ -296,6 +296,7 @@ ldm logs [project] [service1] [service2] ...
 # Examples:
 ldm logs                  # All logs for current project
 ldm logs demo             # All logs for 'demo' project
+ldm logs --tail 250       # Show last 250 lines (default: 100)
 ldm logs --all            # Dump recent logs for all running projects
 ldm logs --infra          # Show logs for all global infrastructure (ES, Proxy, etc.)
 ldm logs --infra es       # Show logs only for Global Elasticsearch

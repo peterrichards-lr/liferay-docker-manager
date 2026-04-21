@@ -1160,6 +1160,7 @@ class StackHandler(BaseHandler):
         infra=False,
         follow=False,
         no_wait=False,
+        tail="100",
     ):
         """Shows logs for a project or global infrastructure."""
         if infra:
@@ -1185,6 +1186,9 @@ class StackHandler(BaseHandler):
             ]
             if follow:
                 cmd.append("-f")
+
+            if tail:
+                cmd.extend(["--tail", str(tail)])
 
             env = self._get_infra_env()
             self.run_command(cmd, env=env, capture_output=not follow)
@@ -1258,6 +1262,10 @@ class StackHandler(BaseHandler):
                 cmd = get_compose_cmd() + ["logs"]
                 if follow:
                     cmd.append("-f")
+
+                if tail:
+                    cmd.extend(["--tail", str(tail)])
+
                 if service:
                     if isinstance(service, list):
                         cmd.extend(service)

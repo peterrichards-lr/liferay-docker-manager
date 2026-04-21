@@ -579,7 +579,7 @@ def main():
             update_info["latest"] = latest
 
         update_thread = None
-        if args.command not in ["upgrade", "update-check"]:
+        if args.command not in ["upgrade", "update-check", "completion"]:
             update_thread = threading.Thread(target=run_update_check, daemon=True)
             update_thread.start()
 
@@ -596,7 +596,7 @@ def main():
                 traceback.print_exc()
             sys.exit(1)
 
-        if update_thread:
+        if update_thread and args.command != "completion":
             update_thread.join(timeout=0.05)
             latest = update_info.get("latest")
             if latest:

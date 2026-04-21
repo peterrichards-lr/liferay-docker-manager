@@ -31,6 +31,9 @@ class TestCLIDisambiguation(unittest.TestCase):
         mock_parser.parse_args.return_value = mock_args
         mock_get_parser.return_value = (mock_parser, MagicMock())
 
+        # Setup mock update check
+        mock_update.return_value = (None, None)
+
         # Setup mock manager
         mock_manager = mock_manager_class.return_value
         mock_manager.check_docker.return_value = True
