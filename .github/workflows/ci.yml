@@ -171,10 +171,9 @@ jobs:
         run: |
           pip install .
           if [[ $GITHUB_REF == refs/tags/* ]]; then
-            TAG_NAME=${GITHUB_REF#refs/tags/}
-            # Remove 'v' prefix if present for the VERSION constant
-            VERSION_VAL=${TAG_NAME#v}
-            python3 -c "import re; p='ldm_core/constants.py'; c=open(p).read(); c=re.sub(r'BUILD_INFO = None', f'BUILD_INFO = \"Release {TAG_NAME}\"', c); open(p,'w').write(re.sub(r'VERSION = \".*?\"', f'VERSION = \"{VERSION_VAL}\"', c))"
+            export TAG_NAME=${GITHUB_REF#refs/tags/}
+            export VERSION_VAL=${TAG_NAME#v}
+            python3 -c "import re, os; p='ldm_core/constants.py'; c=open(p).read(); c=re.sub(r'BUILD_INFO = None', f'BUILD_INFO = \"Release {os.environ[\"TAG_NAME\"]}\"', c); open(p,'w').write(re.sub(r'VERSION = \".*?\"', f'VERSION = \"{os.environ[\"VERSION_VAL\"]}\"', c))"
           fi
           shiv -e ldm_core.cli:main -o ldm-linux -p '/usr/bin/env python3' .
           chmod +x ldm-linux
@@ -185,10 +184,9 @@ jobs:
         run: |
           # Inject Build Metadata
           if [[ $GITHUB_REF == refs/tags/* ]]; then
-            TAG_NAME=${GITHUB_REF#refs/tags/}
-            # Remove 'v' prefix if present for the VERSION constant
-            VERSION_VAL=${TAG_NAME#v}
-            python3 -c "import re; p='ldm_core/constants.py'; c=open(p).read(); c=re.sub(r'BUILD_INFO = None', f'BUILD_INFO = \"Release {TAG_NAME}\"', c); open(p,'w').write(re.sub(r'VERSION = \".*?\"', f'VERSION = \"{VERSION_VAL}\"', c))"
+            export TAG_NAME=${GITHUB_REF#refs/tags/}
+            export VERSION_VAL=${TAG_NAME#v}
+            python3 -c "import re, os; p='ldm_core/constants.py'; c=open(p).read(); c=re.sub(r'BUILD_INFO = None', f'BUILD_INFO = \"Release {os.environ[\"TAG_NAME\"]}\"', c); open(p,'w').write(re.sub(r'VERSION = \".*?\"', f'VERSION = \"{os.environ[\"VERSION_VAL\"]}\"', c))"
           fi
 
           # 1. Build ARM64 (Native)
@@ -219,10 +217,9 @@ jobs:
         shell: bash
         run: |
           if [[ $GITHUB_REF == refs/tags/* ]]; then
-            TAG_NAME=${GITHUB_REF#refs/tags/}
-            # Remove 'v' prefix if present for the VERSION constant
-            VERSION_VAL=${TAG_NAME#v}
-            python3 -c "import re; p='ldm_core/constants.py'; c=open(p).read(); c=re.sub(r'BUILD_INFO = None', f'BUILD_INFO = \"Release {TAG_NAME}\"', c); open(p,'w').write(re.sub(r'VERSION = \".*?\"', f'VERSION = \"{VERSION_VAL}\"', c))"
+            export TAG_NAME=${GITHUB_REF#refs/tags/}
+            export VERSION_VAL=${TAG_NAME#v}
+            python3 -c "import re, os; p='ldm_core/constants.py'; c=open(p).read(); c=re.sub(r'BUILD_INFO = None', f'BUILD_INFO = \"Release {os.environ[\"TAG_NAME\"]}\"', c); open(p,'w').write(re.sub(r'VERSION = \".*?\"', f'VERSION = \"{os.environ[\"VERSION_VAL\"]}\"', c))"
           fi
           pyinstaller --onefile --name ldm-windows --add-data "ldm_core/resources;ldm_core/resources" liferay_docker.py
           echo "BINARY_PATH=dist/ldm-windows.exe" >> $GITHUB_ENV
