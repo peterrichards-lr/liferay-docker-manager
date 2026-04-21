@@ -85,18 +85,18 @@ class TestDiagnostics(unittest.TestCase):
         ]
 
         # Mock responses for:
-        # 1. proxy existence check
+        # 1. proxy existence check (liferay-proxy-global)
         # 2. proxy inspect
-        # 3. search existence check
+        # 3. search existence check (liferay-search-global)
         # 4. search inspect
-        # 5. bridge existence check
+        # 5. socket bridge existence check (docker-socket-proxy)
         # 6. project container filter check
         mock_run.side_effect = [
-            "id123",
+            "id-proxy",
             "running traefik:latest",
-            "id456",
+            "id-search",
             "running search:latest",
-            None,
+            None,  # No bridge
             "proj_container_id",
             "running",  # project container status
         ]
@@ -187,6 +187,9 @@ class TestDiagnostics(unittest.TestCase):
                 patch.object(Path, "read_text", return_value=""),
                 patch.object(Path, "home", return_value=Path("/tmp/home")),
                 patch("ldm_core.handlers.diagnostics.run_command", return_value="200"),
+                patch(
+                    "ldm_core.utils.get_compose_cmd", return_value=["docker", "compose"]
+                ),
             ):
                 try:
                     self.manager.cmd_doctor()
@@ -272,6 +275,7 @@ class TestDiagnosticsCompletion(unittest.TestCase):
             zshrc = self.test_home / ".zshrc"
 
             # Case 1: File doesn't exist
+            # print(f"DEBUG: Shell={os.environ.get('SHELL')}, Home={self.test_home}, exists={zshrc.exists()}")
             self.assertFalse(self.manager.is_completion_enabled())
 
             # Case 2: File exists but no marker

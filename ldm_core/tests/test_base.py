@@ -200,6 +200,40 @@ class TestBaseHardening(unittest.TestCase):
         self.assertEqual(len(unresolved), 1)
         self.assertEqual(unresolved[0], "active-ext.forge.demo")
 
+    @patch("ldm_core.handlers.base.platform.system")
+    @patch("ldm_core.handlers.base.get_actual_home")
+    @patch("ldm_core.handlers.base.BaseHandler.get_resource_path")
+    @patch("pathlib.Path.mkdir")
+    @patch("pathlib.Path.symlink_to")
+    @patch("pathlib.Path.unlink")
+    @patch("pathlib.Path.exists")
+    @patch("pathlib.Path.is_symlink")
+    def test_refresh_man_symlink(
+        self,
+        mock_is_symlink,
+        mock_exists,
+        mock_unlink,
+        mock_symlink,
+        mock_mkdir,
+        mock_res_path,
+        mock_home,
+        mock_system,
+    ):
+        # Setup mocks for Linux scenario
+        mock_system.return_value = "Linux"
+        mock_home.return_value = Path("/tmp/home")
+        mock_res_path.return_value = Path("/app/resources/ldm.1")
+        mock_is_symlink.return_value = True
+        mock_exists.return_value = True
+
+        # Run the logic
+        self.handler._refresh_man_symlink()
+
+        # Verify interactions
+        mock_mkdir.assert_called()
+        mock_unlink.assert_called()
+        mock_symlink.assert_called_with(Path("/app/resources/ldm.1"))
+
 
 class TestBaseCompletion(unittest.TestCase):
     def setUp(self):

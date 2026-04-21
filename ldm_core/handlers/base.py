@@ -8,6 +8,7 @@ from pathlib import Path
 from datetime import datetime
 from ldm_core.ui import UI
 from ldm_core.constants import PROJECT_META_FILE, SCRIPT_DIR
+from ldm_core.utils import get_actual_home
 
 
 class BaseHandler:
@@ -125,31 +126,6 @@ class BaseHandler:
             capture_output=capture_output,
             verbose=self.verbose,
         )
-
-    def get_running_projects(self):
-        """Returns a list of project roots that have at least one running container."""
-        all_roots = self.find_dxp_roots()
-        running_roots = []
-        for root in all_roots:
-            p_path = root["path"]
-            meta = self.read_meta(p_path / PROJECT_META_FILE)
-            p_id = meta.get("container_name") or p_path.name
-            # Check if any container for this project is running
-            running = self.run_command(
-                [
-                    "docker",
-                    "ps",
-                    "-q",
-                    "--filter",
-                    f"label=com.liferay.ldm.project={p_id}",
-                    "--filter",
-                    "status=running",
-                ],
-                check=False,
-            )
-            if running:
-                running_roots.append(root)
-        return running_roots
 
     def require_compose(self, root_path, silent=False):
         """Verifies that a docker-compose.yml file exists in the project root."""
@@ -271,7 +247,7 @@ class BaseHandler:
         # Aggregate from all known workspace locations
         all_roots = []
         seen_paths = set()
-        search_dirs = [Path.cwd(), Path.home() / "ldm"]
+        search_dirs = [Path.cwd(), Path.home() / "ldm", Path("/Volumes/SanDisk/ldm")]
 
         custom_workspace = os.environ.get("LDM_WORKSPACE")
         if custom_workspace:
@@ -295,7 +271,7 @@ class BaseHandler:
         if not d_path.exists() or not d_path.is_dir():
             return roots
 
-        is_home = d_path.resolve() == Path.home().resolve()
+        is_ldm_root = d_path.name == "ldm"
 
         try:
             for item in d_path.iterdir():
@@ -306,7 +282,13 @@ class BaseHandler:
                             item / "deploy"
                         ).exists()
 
-                        if has_meta or (not is_home and has_structure):
+                        # Logic:
+                        # 1. If it has .meta, it's a project.
+                        # 2. If it's in a known LDM root (like ~/ldm or /Volumes/SanDisk/ldm),
+                        #    we allow structure-based discovery.
+                        # 3. Otherwise (e.g. scanning Home directly), we REQUIRE .meta
+                        #    to avoid picking up every folder in ~/
+                        if has_meta or (is_ldm_root and has_structure):
                             meta = self.read_meta(item / PROJECT_META_FILE)
                             version = meta.get("tag") or "unknown"
                             roots.append({"path": item, "version": version})
@@ -705,6 +687,43 @@ class BaseHandler:
 
         return " ".join(sorted(list(mounts)))
 
+    def get_resource_path(self, filename):
+        """Resiliently locates internal resource files (supports source vs bundled)."""
+        # 1. Check bundled package structure (site-packages/ldm_core/resources)
+        path = SCRIPT_DIR / "ldm_core" / "resources" / filename
+        if path.exists():
+            return path
+
+        # 2. Check source development structure (root/resources)
+        path = SCRIPT_DIR / "resources" / filename
+        if path.exists():
+            return path
+
+        return None
+
+    def _refresh_man_symlink(self):
+        """Ensures a stable symlink for the man page exists in ~/.ldm/man/man1/."""
+        if platform.system().lower() == "windows":
+            return
+
+        try:
+            man_source = self.get_resource_path("ldm.1")
+            if not man_source:
+                return
+
+            home = get_actual_home()
+            man_dir = home / ".ldm" / "man" / "man1"
+            man_dir.mkdir(parents=True, exist_ok=True)
+            man_link = man_dir / "ldm.1"
+
+            if man_link.is_symlink() or man_link.exists():
+                man_link.unlink()
+
+            man_link.symlink_to(man_source)
+        except Exception:
+            # Silent fail for symlink refresh
+            pass
+
     def cmd_completion(self, target_shell=None):
         """Displays instructions or outputs shellcode for enabling completion."""
         # Detect active shell if not provided
@@ -715,6 +734,9 @@ class BaseHandler:
         # Normalize pwsh to powershell for internal logic
         if active_shell == "pwsh":
             active_shell = "powershell"
+
+        # Refresh man symlink so 'man ldm' setup is always ready
+        self._refresh_man_symlink()
 
         # If target_shell is specifically requested via CLI (e.g. 'ldm completion zsh')
         # we MUST only output shellcode to stdout to avoid breaking 'eval'.
@@ -801,6 +823,52 @@ class BaseHandler:
             profile = "Microsoft.PowerShell_profile.ps1"
 
         UI.info(
+            f"To support native {UI.BOLD}man ldm{UI.COLOR_OFF}, add this to the same file:"
+        )
+        print('\n    export MANPATH="$MANPATH:$HOME/.ldm/man"\n')
+
+        UI.info(
             f"You may need to restart your terminal or source your profile ({UI.CYAN}~/{profile}{UI.COLOR_OFF})"
         )
         print("for the changes to take effect.")
+
+    def cmd_man(self):
+        """Displays the ldm manual page."""
+        self._refresh_man_symlink()
+        man_path = self.get_resource_path("ldm.1")
+        if not man_path:
+            UI.die("Manual page 'ldm.1' not found in resources.")
+
+        # On macOS/Linux, we can use 'man -l' to view a local file
+        # Fallback to 'less' if 'man' is not found or fails
+        try:
+            import subprocess
+
+            if platform.system().lower() != "windows":
+                # Check if man supports -l (macOS and most Linux)
+                res = subprocess.run(
+                    ["man", "--help"], capture_output=True, text=True, check=False
+                )
+                if "-l" in res.stdout or "-l" in res.stderr:
+                    subprocess.run(["man", "-l", str(man_path)])
+                else:
+                    # Fallback to less with roff processing if possible, or raw text
+                    # We can use mandoc or groff if available
+                    if shutil.which("mandoc"):
+                        subprocess.run(
+                            f"mandoc -Tutf8 {man_path} | less -R",
+                            shell=True,  # nosec B602 B604
+                        )
+                    elif shutil.which("groff"):
+                        subprocess.run(
+                            f"groff -man -Tascii {man_path} | less -R",
+                            shell=True,  # nosec B602 B604
+                        )
+                    else:
+                        subprocess.run(["less", str(man_path)])
+            else:
+                # Windows fallback to notepad or similar
+                subprocess.run(["notepad", str(man_path)])
+        except Exception as e:
+            UI.error(f"Failed to display manual: {e}")
+            UI.info(f"You can view the raw manual file at: {man_path}")

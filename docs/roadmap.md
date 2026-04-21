@@ -7,9 +7,9 @@ This document outlines potential enhancements to the Liferay Docker Manager (ldm
 
 ---
 
-## 🚀 Future Roadmap: v2.0.0 (The Ecosystem Phase)
+## 🚀 Future Roadmap: v2.2.0 (The Ecosystem Phase)
 
-While the v1.x "Hardened Edition" focused on cross-platform stability, **v2.0.0** will shift focus toward developer onboarding and "Scenario-First" orchestration.
+While the v1.x "Hardened Edition" focused on cross-platform stability, **v2.2.0** will shift focus toward developer onboarding and "Scenario-First" orchestration.
 
 ### 1. Guided Onboarding & Scaffolding
 
@@ -49,17 +49,79 @@ While the v1.x "Hardened Edition" focused on cross-platform stability, **v2.0.0*
 ### 7. Strategic Hardening & Fleet Management
 
 - **Snapshot Integrity Verification**: Implement SHA-256 checksumming for Project Snapshots to guarantee data validity when shared across teams.
-- **Bulk Stack Management**: Introduce workspace-wide commands (e.g., `ldm stop --all`, `ldm status --workspace`) for bird's-eye fleet control.
-- **Auto-Healing DNS**: Add an optional `--fix-dns` flag to `ldm doctor` that automatically appends missing subdomains to `/etc/hosts` using standard OS elevation.
+
+---
+
+## ✅ Completed Improvements (v2.2.5)
+
+- **Hotfix: Project Naming Integrity**: Fixed a bug where projects bootstrapped from a Seeded State would sometimes inherit generic container names (e.g., `seeded-...`) from the source snapshot metadata. The orchestrator now explicitly enforces the user's chosen project name across both metadata and Docker Compose configurations.
+
+---
+
+## ✅ Completed Improvements (v2.2.4)
+
+- **Hotfix: Infrastructure Teardown Reliability**: Fixed a bug where `ldm rm --infra` would fail due to missing environment variables (`LDM_CERTS_DIR`). Refactored infrastructure orchestration to ensure consistent environment injection during both setup and teardown phases.
+
+---
+
+## ✅ Completed Improvements (v2.2.3)
+
+- **Hotfix: Infrastructure Idempotency**: Fixed a Docker conflict error where LDM would fail if infrastructure containers (Traefik Proxy, Global Search) existed in a stopped state. The orchestrator now correctly identifies stopped containers and starts them instead of attempting to recreate them.
+
+---
+
+## ✅ Completed Improvements (v2.2.2)
+
+- **Hotfix: OSGi State Snapshot Integrity**: Resolved a silent failure in the snapshot engine where the `osgi/state` directory was sometimes omitted from the final archive due to internal path resolution differences. This ensures that Seeded States (v2) correctly include the pre-resolved bundle state.
+- **Orchestration Standard Alignment**: Synchronized the project manager's attribute list to ensure consistent multi-node scaling behavior across all CLI handlers.
+
+---
+
+## ✅ Completed Improvements (v2.2.1)
+
+- **Hotfix: CLI Initialization Regression**: Fixed a critical bug where `ldm run` on a non-existent project would fail during the pre-flight check because the project path could not be "detected." The path resolution engine now correctly allows initialization for new projects.
+- **Improved Test Coverage**: Added a new verification suite for the CLI entry point to prevent future regressions in project discovery and initialization logic.
+
+---
+
+## ✅ Completed Improvements (v2.2.0 - The Ecosystem Phase)
+
+### **Ecosystem Planning & Orchestration**
+
+- **Track-Based Implementation**: Established a formal [Conductor Registry](../conductor/index.md) for v2.2.0 features, providing detailed implementation plans for Guided Onboarding, Visual Dashboards, and AI Orchestration.
+- **Deep OSGi Seeding**: Integrated `osgi/state` folder into the core seeding engine (v2 Seeds). LDM now pre-resolves bundle dependencies during the seeding phase, reducing secondary boot times by an additional 2-3 minutes.
+- **Selective Seeding Control**: Introduced the `--no-osgi-seed` flag to allow developers to opt-out of state seeding when performing low-level bundle development or debugging resolution issues.
+- **Seed Logic v2**: Upgraded the seed discovery engine to support version-matched archives containing both data and OSGi state.
 
 ---
 
 ## ✅ Completed Improvements (v2.1.x)
 
-### **High-Performance Boot & Hardening (v2.1.0)**
+### **High-Performance Boot & Hardening (v2.1.33)**
 
+- **Architecture-Aware Verification**: Hardened the self-upgrade integrity check to be architecture-aware. The verification engine now extracts the exact filename from the download URL to ensure precise SHA-256 matching against official records, eliminating mismatch errors on multi-arch platforms like macOS.
+- **Automated Test Expansion**: Significant expansion of the automated verification suite, increasing coverage to 36+ test cases.
+...
+- **Flexible Command Flags**: Re-engineered the CLI parser to allow global flags (like `-v` and `-y`) to be placed both before and after subcommands.
+...
+- **Self-Upgrade Scoping**: Fixed an `UnboundLocalError` in the self-upgrade engine.
+...
+- **Sudo Troubleshooting**: Added a dedicated troubleshooting section in the documentation for `sudo` and `root` issues.
+...
+- **Zero-Failure Upgrades**: Hardened the self-upgrade engine to use system temporary directories for downloads.
+...
+- **Native Manual Entry**: Fully integrated with the system `man` command. You can now add a stable LDM manpath to your shell profile to support native `man ldm` usage across binary upgrades.
+...
+- **Unified Resource Discovery**: Implemented a resilient path resolution system to ensure internal assets (Manuals, Infrastructure Compose files) are correctly located in both source and bundled (Shiv/PyInstaller) environments.
+...
 - **Database "Fast-Forward"**: Added support for downloading pre-initialized, version-matched "Seed" volumes (Database + Search Index) from GitHub. Reduces first-run wait times significantly.
 - **Resilient Tag Discovery**: Upgraded the discovery engine to support both HTML (`releases.liferay.com`) and JSON (Docker Hub) listings, ensuring stability against upstream API changes.
+- **Proactive Dependency Checks**: `ldm doctor` now verifies the presence and accessibility of essential local tools (`telnet`, `nc`, `lcp`, `docker compose`) to ensure a smooth developer onboarding experience.
+- **Architectural Mandates**: Formalized the core design principles and commit requirements in `.gemini/gemini.md` to ensure technical integrity and documentation synchronization across the project lifecycle.
+- **Project Discovery Hardening**: Refined the filesystem scanner to prevent over-eager identification of home directory subfolders as LDM projects. Only folders with explicit metadata or known LDM structures are now matched.
+- **Inclusive Fleet Scope**: Fixed the `--all` switch for `rm`, `stop`, `restart`, and `logs` to use filesystem-based discovery.
+- **Reliable Cleanup**: Resolved a bug where the `--delete` flag was ignored during `ldm rm`. The flag is now correctly passed through the CLI layer, ensuring project directories are wiped when requested.
+- **Smart Log Tailing**: `ldm logs -f` now proactively polls and waits for both the host-side log directory AND the Docker container to exist before streaming, enabling zero-failure tailing during project startup.
 - **TLD Scanning Optimization**: Automatically skips Tomcat TLD scanning for known non-UI JARs to accelerate boot times.
 - **Volume Consistency Tuning**: Native support for `:cached` and `:delegated` mounts on macOS and Windows to improve disk I/O performance.
 - **JVM Dev-Mode Tuning**: Optional `--no-jvm-verify` flag to disable bytecode verification for faster class loading in demo environments.

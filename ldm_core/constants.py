@@ -1,8 +1,8 @@
 from pathlib import Path
 
 # --- Constants & Configuration ---
-# LDM_MAGIC_VERSION: 2.1.0
-VERSION = "2.1.0"
+# LDM_MAGIC_VERSION: 2.2.5
+VERSION = "2.2.5"
 
 BUILD_INFO = None
 IMAGE_NAME_DXP = "liferay/dxp"
@@ -22,7 +22,7 @@ SOCAT_IMAGE = "alpine/socat"
 # --- Seeded State Configuration ---
 # Increment this version whenever the logic for generating seeds changes
 # (e.g. DB schema changes, driver updates, or hardening logic).
-SEED_VERSION = "1"
+SEED_VERSION = "2"
 
 # --- Sample Extension Hashes (SHA-256) ---
 SAMPLE_HASHES = {

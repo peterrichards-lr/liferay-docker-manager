@@ -115,11 +115,12 @@ jobs:
 
   publish-release:
     needs: generate-seeds
-    runs-on: ubuntu-latest
+    if: success()
+    runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
       - name: Download all artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v4.1.7
         with:
           path: all-seeds
           pattern: seeded-*
@@ -136,6 +137,7 @@ jobs:
           tag_name: seeded-states
           files: all-seeds/**/*
           prerelease: false
+          draft: false
           make_latest: false
           generate_release_notes: false
           body: "Last updated on ${{ github.event.repository.updated_at }}. These seeds are maintained for the latest 4 Quarters and 2 LTS lines."

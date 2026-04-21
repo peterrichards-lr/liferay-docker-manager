@@ -1,0 +1,101 @@
+.TH LDM 1 "April 2026" "2.1.19" "Liferay Docker Manager Manual"
+.SH NAME
+ldm \- Liferay Docker Manager orchestrator
+.SH SYNOPSIS
+.B ldm
+[\fIOPTIONS\fR] \fICOMMAND\fR [\fIARGS\fR...]
+.SH DESCRIPTION
+\fBldm\fR is a professional command-line orchestrator for Liferay Portal and DXP environments. It simplifies the creation, management, and synchronization of Liferay instances using Docker Compose, providing near-instant boot times via pre-warmed seeds and seamless integration with Liferay Workspace and Client Extensions.
+
+.SH CORE COMMANDS
+.TP
+\fBlist\fR (alias: \fBls\fR)
+Display an overview of all initialized LDM sandbox environments.
+.TP
+\fBrun\fR [\fIPROJECT\fR] (alias: \fBup\fR)
+Initialize and start a project stack. Automatically detects context if run inside a project folder.
+.TP
+\fBstop\fR [\fIPROJECT\fR] [\fISERVICE\fR]
+Stop project containers gracefully. Use \fB--all\fR to stop all projects.
+.TP
+\fBrestart\fR [\fIPROJECT\fR] [\fISERVICE\fR]
+Restart containers. Supports \fB--all\fR.
+.TP
+\fBdown\fR [\fIPROJECT\fR] (alias: \fBrm\fR)
+Remove project containers. Use \fB--volumes\fR to also remove data. Use \fB--delete\fR to wipe the project folder.
+.TP
+\fBstatus\fR (alias: \fBps\fR)
+Show status of global infrastructure and projects. Use \fB--all\fR to see stopped projects.
+
+.SH DEVELOPMENT COMMANDS
+.TP
+\fBinit-from\fR \fISOURCE_PATH\fR [\fINAME\fR]
+Initialize a project linked to a source workspace with real-time sync.
+.TP
+\fBimport\fR \fISOURCE_PATH\fR [\fINAME\fR]
+One-time static import of a Liferay workspace.
+.TP
+\fBmonitor\fR [\fIPROJECT\fR]
+Start/restart the background sync process for linked projects.
+.TP
+\fBdeploy\fR [\fIPROJECT\fR] [\fISERVICE\fR]
+Hot-deploy artifacts or rebuild extension images.
+
+.SH DIAGNOSTICS & MAINTENANCE
+.TP
+\fBdoctor\fR
+Verify host health, Docker resources, and project dependencies.
+.TP
+\fBlogs\fR [\fIPROJECT\fR] [\fISERVICE...\fR]
+View real-time logs. Supports \fB-f\fR (follow) and \fB--infra\fR for system logs.
+.TP
+\fBupgrade\fR
+Automatically update \fBldm\fR to the latest version.
+.TP
+\fBcompletion\fR
+Configure shell TAB completion (Bash, Zsh, Fish).
+
+.SH OPTIONS
+.TP
+\fB\-v\fR, \fB\-\-verbose\fR
+Enable detailed debug logging and granular timing info.
+.TP
+\fB\-y\fR, \fB\-\-non\-interactive\fR
+Bypass all prompts and use default values.
+.TP
+\fB\-\-tag\fR \fITAG\fR
+Specify Liferay image tag (e.g. 2025.q1.4-lts).
+.TP
+\fB\-\-host\-name\fR \fIHOST\fR
+Set virtual hostname (defaults to localhost).
+.TP
+\fB\-\-db\fR \fI{mysql|postgresql|hypersonic}\fR
+Select database type.
+
+.SH FILES
+.TP
+\fB.liferay-docker.meta\fR
+Project metadata stored in the project root.
+.TP
+\fBportal-ext.properties\fR
+Liferay configuration in the \fBfiles/\fR subdirectory.
+.TP
+\fB~/.ldmrc\fR
+Global LDM configuration and preferences.
+
+.SH EXAMPLES
+.TP
+\fBldm run my-site --samples\fR
+Quick-start a project with example extensions.
+.TP
+\fBldm logs -f forge\fR
+Follow real-time logs for the 'forge' project.
+.TP
+\fBldm doctor --fix-hosts\fR
+Verify environment and fix missing host entries.
+
+.SH AUTHOR
+Peter Richards <peter.richards@liferay.com>
+
+.SH SEE ALSO
+.B docker(1), docker-compose(1)

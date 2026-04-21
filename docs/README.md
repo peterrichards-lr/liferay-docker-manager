@@ -154,6 +154,23 @@ ldm edit my-project
 ldm monitor /path/to/workspace
 ```
 
+## 🛡️ Sudo & Elevation Policy
+
+To protect the integrity of the application cache (`~/.shiv`) and ensure consistent file permissions, **never run LDM with the `sudo` prefix.**
+
+LDM is designed to run as a standard user and will **automatically request elevation** (prompting for your password) only for specific tasks that require it:
+
+- **`ldm doctor --fix-hosts`**: Requires elevation to append entries to `/etc/hosts`.
+- **`ldm upgrade`**: May require elevation to replace the binary in system paths like `/usr/local/bin`.
+
+If you are using `sudo` because of Docker "Permission Denied" errors, do not use `sudo ldm`. Instead, add your user to the `docker` group:
+
+```bash
+sudo usermod -aG docker $USER
+```
+
+Then restart your terminal session.
+
 ---
 
 ## Command Reference
@@ -470,12 +487,12 @@ ldm log-level
 
 ### `doctor`
 
-Verify host environment health, Docker resources (CPUs/Memory), and project dependencies.
+Verify host environment health, Docker resources (CPUs/Memory), and project dependencies. Now includes checks for required tools: `mkcert`, `telnet`, `nc`, `lcp`, and the Docker Compose V2 plugin.
 
 ```bash
 ldm doctor          # Health check for current/selected project
 ldm doctor --all    # Batch validate every project in your workspace
-ldm doctor --fix-hosts # Automatically add missing domains to /etc/hosts (requires sudo)
+ldm doctor --fix-hosts # Automatically add missing domains to /etc/hosts (will prompt for sudo)
 ```
 
 ### `status` (alias: `ps`)
@@ -521,6 +538,22 @@ ldm completion
 3. Restart your terminal.
 
 This enables TAB completion for all commands and project names.
+
+### `man`
+
+Display the comprehensive manual page for LDM. This provides an offline reference for all commands, options, and architecture details.
+
+```bash
+ldm man
+```
+
+#### Native Integration (`man ldm`)
+
+To support the native system `man ldm` command, add this to your shell profile (`.zshrc` or `.bashrc`):
+
+```bash
+export MANPATH="$MANPATH:$HOME/.ldm/man"
+```
 
 ### `renew-ssl`
 
