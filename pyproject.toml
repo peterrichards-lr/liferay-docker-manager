@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "liferay-docker-manager"
-version = "2.1.33"
+version = "2.2.0"
 description = "A professional command-line orchestrator for Liferay Docker environments."
 authors = [{ name = "Peter Richards", email = "peter.richards@liferay.com" }]
 requires-python = ">=3.10"

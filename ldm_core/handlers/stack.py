@@ -255,13 +255,19 @@ class StackHandler(BaseHandler):
             handler = SnapshotHandler(self.args)
             # Ensure project root exists and is unlocked
             self.verify_runtime_environment(paths)
+
+            if getattr(self.args, "no_osgi_seed", False):
+                UI.debug("User opted out of OSGi state seeding.")
+
             handler._extract_snapshot_archive(tmp_path, paths)
 
             # 4. Cleanup
             tmp_path.unlink()
-            UI.success(
-                f"Project bootstrapped from seed. {UI.WHITE}(Saved ~15m of initialization time){UI.COLOR_OFF}"
-            )
+            success_msg = f"Project bootstrapped from seed. {UI.WHITE}(Saved ~15m of initialization time){UI.COLOR_OFF}"
+            if not getattr(self.args, "no_osgi_seed", False):
+                success_msg = f"Project bootstrapped from seed (including OSGi state). {UI.WHITE}(Saved ~15m of initialization time){UI.COLOR_OFF}"
+
+            UI.success(success_msg)
             return True
 
         except Exception as e:

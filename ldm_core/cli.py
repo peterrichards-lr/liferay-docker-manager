@@ -84,6 +84,11 @@ def get_parser():
     run.add_argument(
         "--no-seed", action="store_true", help="Disable automatic project seeding"
     )
+    run.add_argument(
+        "--no-osgi-seed",
+        action="store_true",
+        help="Skip seeding the OSGi state folder (use when re-calculating bundles)",
+    )
     run.add_argument("-f", "--follow", action="store_true")
     run.add_argument("--env", action="append")
     run.add_argument(
@@ -118,6 +123,7 @@ def get_parser():
     imp.add_argument("--no-jvm-verify", action="store_true")
     imp.add_argument("--no-tld-skip", action="store_true")
     imp.add_argument("--no-seed", action="store_true")
+    imp.add_argument("--no-osgi-seed", action="store_true")
     imp.add_argument("--env", action="append")
 
     # Command: init-from
@@ -140,6 +146,7 @@ def get_parser():
     init_from.add_argument("--no-jvm-verify", action="store_true")
     init_from.add_argument("--no-tld-skip", action="store_true")
     init_from.add_argument("--no-seed", action="store_true")
+    init_from.add_argument("--no-osgi-seed", action="store_true")
     init_from.add_argument("--env", action="append")
     init_from.add_argument("--delay", type=float, default=2.0)
 
@@ -218,6 +225,7 @@ def get_parser():
     reseed = subparsers.add_parser("re-seed", parents=[base_sub_parent])
     reseed.add_argument("project", nargs="?")
     reseed.add_argument("-p", "--project", dest="project_flag")
+    reseed.add_argument("--no-osgi-seed", action="store_true")
 
     renew_ssl = subparsers.add_parser("renew-ssl", parents=[base_sub_parent])
     renew_ssl.add_argument("project", nargs="?")

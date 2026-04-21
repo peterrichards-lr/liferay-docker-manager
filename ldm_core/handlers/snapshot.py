@@ -324,6 +324,8 @@ class SnapshotHandler(BaseHandler):
 
     def _extract_snapshot_archive(self, files_tar, paths):
         """Extracts a snapshot tarball into the project root with security checks."""
+        no_osgi = getattr(self.args, "no_osgi_seed", False)
+
         with tarfile.open(files_tar, "r:gz") as tar:
             from ldm_core.utils import is_within_root
 
@@ -332,6 +334,10 @@ class SnapshotHandler(BaseHandler):
             members = []
             for m in tar.getmembers():
                 if m.name.startswith("search_backup"):
+                    continue
+
+                # OSGi State Handling: Only extract if not opted-out
+                if m.name.startswith("osgi/state") and no_osgi:
                     continue
 
                 # Security: Validate path to prevent Zip Slip / Path Traversal

@@ -52,6 +52,17 @@ While the v1.x "Hardened Edition" focused on cross-platform stability, **v2.2.0*
 
 ---
 
+## ✅ Completed Improvements (v2.2.0 - The Ecosystem Phase)
+
+### **Ecosystem Planning & Orchestration**
+
+- **Track-Based Implementation**: Established a formal [Conductor Registry](../conductor/index.md) for v2.2.0 features, providing detailed implementation plans for Guided Onboarding, Visual Dashboards, and AI Orchestration.
+- **Deep OSGi Seeding**: Integrated `osgi/state` folder into the core seeding engine (v2 Seeds). LDM now pre-resolves bundle dependencies during the seeding phase, reducing secondary boot times by an additional 2-3 minutes.
+- **Selective Seeding Control**: Introduced the `--no-osgi-seed` flag to allow developers to opt-out of state seeding when performing low-level bundle development or debugging resolution issues.
+- **Seed Logic v2**: Upgraded the seed discovery engine to support version-matched archives containing both data and OSGi state.
+
+---
+
 ## ✅ Completed Improvements (v2.1.x)
 
 ### **High-Performance Boot & Hardening (v2.1.33)**
