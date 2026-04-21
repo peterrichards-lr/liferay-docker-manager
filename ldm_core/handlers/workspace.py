@@ -696,6 +696,18 @@ class WorkspaceHandler(BaseHandler):
                         project_meta["tag"] = tag
                         self.args.tag = tag
                         UI.info(f"Extracted version: {tag}")
+
+                        # Seeded Start: Boost performance if tag is known
+                        if not project_path.exists() or overwrite:
+                            db_type_for_seed = (
+                                getattr(self.args, "db", None) or "hypersonic"
+                            )
+                            if self._ensure_seeded(tag, db_type_for_seed, paths):
+                                # Refresh meta from seed before merging workspace changes
+                                seed_meta = self.read_meta(
+                                    project_path / PROJECT_META_FILE
+                                )
+                                project_meta.update(seed_meta)
                         break
 
             if is_cloud:

@@ -86,14 +86,28 @@ class CloudHandler:
             UI.error(f"LCP error: {e}")
             return None
 
+    def _get_cloud_liferay_version(self, cp_id, target_env):
+        """Attempts to detect the Liferay version from the cloud environment configuration."""
+        data = self._run_lcp_cmd(["service", "list"], project=cp_id, env=target_env)
+        if data:
+            # Look for liferay service
+            for service in data:
+                if service.get("id") == "liferay":
+                    image = service.get("image")
+                    if image and ":" in image:
+                        tag = image.split(":")[1]
+                        return tag
+        return None
+
     def cmd_cloud_fetch(self, project_id=None, env_id=None):
         """Orchestrates the cloud-fetch command logic."""
         self.ensure_cloud_auth()
 
-        root_path = self.detect_project_path(project_id)
+        root_path = self.detect_project_path(project_id, for_init=True)
         if not root_path:
             return
 
+        is_new_project = not (root_path / PROJECT_META_FILE).exists()
         from ldm_core.utils import sanitize_id
 
         project_meta = self.read_meta(root_path / PROJECT_META_FILE)
@@ -189,6 +203,18 @@ class CloudHandler:
             self._verify_cloud_backup_checksums(snapshot_dir, latest)
 
             if getattr(self.args, "restore", False):
+                # Seeded Start: Boost performance for new project restorations
+                if is_new_project:
+                    tag_for_seed = self._get_cloud_liferay_version(cp_id, target_env)
+                    if tag_for_seed:
+                        paths = self.setup_paths(root_path)
+                        # We use the db type from args or default to mysql (Liferay Cloud standard)
+                        db_type_for_seed = getattr(self.args, "db", None) or "mysql"
+                        if self._ensure_seeded(tag_for_seed, db_type_for_seed, paths):
+                            # Refresh meta from seed before merging restoration changes
+                            seed_meta = self.read_meta(root_path / PROJECT_META_FILE)
+                            project_meta.update(seed_meta)
+
                 UI.info("Triggering local restore...")
                 self.cmd_restore(project_id=project_id, backup_dir=snapshot_dir)
             return

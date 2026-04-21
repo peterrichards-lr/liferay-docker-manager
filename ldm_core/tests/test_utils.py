@@ -106,6 +106,66 @@ class TestUtils(unittest.TestCase):
         tag = discover_latest_tag("https://releases.liferay.com/dxp", refresh=True)
         self.assertEqual(tag, "2026.q1.5")
 
+    def test_metadata_flat_file(self):
+        from ldm_core.utils import read_meta, write_meta
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            meta_path = Path(tmp_dir) / ".meta"
+            data = {"tag": "2025.q1.0", "container_name": "my-test", "key": "value"}
+
+            # Write and Read
+            write_meta(meta_path, data)
+            read_data = read_meta(meta_path)
+
+            self.assertEqual(read_data["tag"], "2025.q1.0")
+            self.assertEqual(read_data["container_name"], "my-test")
+            self.assertEqual(read_data["key"], "value")
+
+    def test_metadata_json(self):
+        from ldm_core.utils import read_meta
+        import tempfile
+        import json
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            meta_path = Path(tmp_dir) / ".meta"
+            data = {"tag": "2025.q1.0", "container_name": "my-test", "json_key": True}
+            meta_path.write_text(json.dumps(data))
+
+            read_data = read_meta(meta_path)
+            self.assertEqual(read_data["tag"], "2025.q1.0")
+            self.assertTrue(read_data["json_key"])
+
+    @patch("ldm_core.utils.get_actual_home")
+    def test_find_dxp_roots(self, mock_home):
+        from ldm_core.utils import find_dxp_roots
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            mock_home.return_value = tmp_path / "home"
+
+            # Create a project with structure
+            project1 = tmp_path / "project1"
+            project1.mkdir()
+            (project1 / "files").mkdir()
+            (project1 / "deploy").mkdir()
+
+            # Create a project with .meta
+            project2 = tmp_path / "project2"
+            project2.mkdir()
+            (project2 / ".liferay-docker.meta").write_text(
+                "tag=2025.q1.0\ncontainer_name=p2"
+            )
+
+            # Search in tmp_dir
+            roots = find_dxp_roots(search_dir=tmp_path)
+
+            self.assertEqual(len(roots), 2)
+            root_names = [r["path"].name for r in roots]
+            self.assertIn("project1", root_names)
+            self.assertIn("project2", root_names)
+
 
 if __name__ == "__main__":
     unittest.main()
