@@ -1162,15 +1162,16 @@ class StackHandler(BaseHandler):
             dialect = "org.hibernate.dialect.MariaDB103Dialect"
 
             if not has_jdbc_env:
-                liferay_env.extend(
-                    [
-                        "LIFERAY_JDBC_PERIOD_DEFAULT_PERIOD_ENABLED=true",
-                        f"LIFERAY_JDBC_PERIOD_DEFAULT_PERIOD_DRIVER_CLASS_NAME={driver}",
-                        f"LIFERAY_JDBC_PERIOD_DEFAULT_PERIOD_URL={url}",
-                        "LIFERAY_JDBC_PERIOD_DEFAULT_PERIOD_USERNAME=lportal",
-                        "LIFERAY_JDBC_PERIOD_DEFAULT_PERIOD_PASSWORD=test",
-                        f"LIFERAY_HIBERNATE_PERIOD_DIALECT={dialect}",
-                    ]
+                self.update_portal_ext(
+                    paths,
+                    {
+                        "jdbc.default.enabled": "true",
+                        "jdbc.default.driverClassName": driver,
+                        "jdbc.default.url": url,
+                        "jdbc.default.username": "lportal",
+                        "jdbc.default.password": "test",
+                        "hibernate.dialect": dialect,
+                    },
                 )
 
             # We explicitly DISABLE the HSQL fallback via env var (safe and unambiguous)
@@ -1182,15 +1183,16 @@ class StackHandler(BaseHandler):
             dialect = "org.hibernate.dialect.PostgreSQL10Dialect"
 
             if not has_jdbc_env:
-                liferay_env.extend(
-                    [
-                        "LIFERAY_JDBC_PERIOD_DEFAULT_PERIOD_ENABLED=true",
-                        f"LIFERAY_JDBC_PERIOD_DEFAULT_PERIOD_DRIVER_CLASS_NAME={driver}",
-                        f"LIFERAY_JDBC_PERIOD_DEFAULT_PERIOD_URL={url}",
-                        "LIFERAY_JDBC_PERIOD_DEFAULT_PERIOD_USERNAME=lportal",
-                        "LIFERAY_JDBC_PERIOD_DEFAULT_PERIOD_PASSWORD=test",
-                        f"LIFERAY_HIBERNATE_PERIOD_DIALECT={dialect}",
-                    ]
+                self.update_portal_ext(
+                    paths,
+                    {
+                        "jdbc.default.enabled": "true",
+                        "jdbc.default.driverClassName": driver,
+                        "jdbc.default.url": url,
+                        "jdbc.default.username": "lportal",
+                        "jdbc.default.password": "test",
+                        "hibernate.dialect": dialect,
+                    },
                 )
             liferay_env.append("LIFERAY_HSQL_PERIOD_ENABLED=false")
 

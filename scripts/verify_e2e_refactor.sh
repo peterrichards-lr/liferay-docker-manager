@@ -202,9 +202,15 @@ sed 's/db_type=hypersonic/db_type=postgresql/' test-log-verify/.liferay-docker.m
 # Run with --no-wait so we can poll the logs ourselves
 $PYTHON_CMD -y run test-log-verify --no-wait --no-tld-skip --no-jvm-verify
 
-# Verify the environment injection in compose first
-if ! grep -q "LIFERAY_JDBC_PERIOD_DEFAULT_PERIOD_DRIVER_CLASS_NAME=org.postgresql.Driver" test-log-verify/docker-compose.yml; then
-    echo "❌ ERROR: Environment injection failed for PostgreSQL driver"
+# Verify the property injection in portal-ext.properties (Reliable Mixed-Case Path)
+if ! grep -q "jdbc.default.driverClassName=org.postgresql.Driver" test-log-verify/files/portal-ext.properties; then
+    echo "❌ ERROR: Property injection failed for PostgreSQL driver in portal-ext.properties"
+    exit 1
+fi
+
+# Verify the environment injection for search (Remains in env vars)
+if ! grep -q "LIFERAY_ELASTICSEARCH_SIDECAR_ENABLED=false" test-log-verify/docker-compose.yml; then
+    echo "❌ ERROR: Environment injection failed to disable Sidecar ES"
     exit 1
 fi
 

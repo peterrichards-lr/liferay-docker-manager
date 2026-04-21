@@ -469,13 +469,18 @@ class TestStackOrchestration(unittest.TestCase):
             self.assertEqual(db_service["environment"]["MYSQL_DATABASE"], "lportal")
             self.assertEqual(db_service["healthcheck"]["start_period"], "60s")
 
-            # Verify MariaDB dialect is used even for legacy MySQL (Standardized on MariaDB driver)
-            passed_env = compose_data["services"]["liferay"]["environment"]
-            self.assertTrue(any("org.mariadb.jdbc.Driver" in e for e in passed_env))
-            self.assertTrue(
-                any("org.hibernate.dialect.MariaDB103Dialect" in e for e in passed_env)
+            # Verify Database configuration in portal-ext.properties
+            update_call = self.manager.update_portal_ext.call_args[0][1]
+            self.assertEqual(
+                update_call["jdbc.default.driverClassName"], "org.mariadb.jdbc.Driver"
             )
+            self.assertEqual(
+                update_call["hibernate.dialect"],
+                "org.hibernate.dialect.MariaDB103Dialect",
+            )
+
             # Verify Hardened Search Environment Variables
+            passed_env = compose_data["services"]["liferay"]["environment"]
             self.assertTrue(
                 any(
                     "LIFERAY_ELASTICSEARCH_SIDECAR_ENABLED=false" in e
@@ -520,12 +525,15 @@ class TestStackOrchestration(unittest.TestCase):
                 db_service["command"],
             )
 
-            # Verify Cloud-aligned MariaDB dialect is used via environment variables
-            passed_env = compose_data["services"]["liferay"]["environment"]
-            self.assertTrue(
-                any("org.hibernate.dialect.MariaDB103Dialect" in e for e in passed_env)
+            # Verify Cloud-aligned MariaDB dialect is used via portal-ext.properties
+            update_call = self.manager.update_portal_ext.call_args[0][1]
+            self.assertEqual(
+                update_call["hibernate.dialect"],
+                "org.hibernate.dialect.MariaDB103Dialect",
             )
+
             # Verify Hardened Search Environment Variables
+            passed_env = compose_data["services"]["liferay"]["environment"]
             self.assertTrue(
                 any(
                     "LIFERAY_ELASTICSEARCH_SIDECAR_ENABLED=false" in e
