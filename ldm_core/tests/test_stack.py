@@ -6,10 +6,16 @@ from ldm_core.handlers.workspace import WorkspaceHandler
 from ldm_core.handlers.license import LicenseHandler
 from ldm_core.handlers.snapshot import SnapshotHandler
 from ldm_core.handlers.base import BaseHandler
+from ldm_core.handlers.infra import InfraHandler
 
 
 class MockManager(
-    StackHandler, WorkspaceHandler, LicenseHandler, SnapshotHandler, BaseHandler
+    StackHandler,
+    WorkspaceHandler,
+    LicenseHandler,
+    SnapshotHandler,
+    InfraHandler,
+    BaseHandler,
 ):
     def __init__(self):
         self.args = MagicMock()
@@ -176,7 +182,7 @@ class TestStackInfrastructure(unittest.TestCase):
 
 
 class TestStackScaling(unittest.TestCase):
-    @patch("ldm_core.handlers.stack.get_docker_socket_path")
+    @patch("ldm_core.handlers.infra.get_docker_socket_path")
     def test_generate_compose_with_scale(self, mock_socket):
         mock_socket.return_value = "/var/run/docker.sock"
 

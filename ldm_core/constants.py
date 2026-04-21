@@ -1,8 +1,8 @@
 from pathlib import Path
 
 # --- Constants & Configuration ---
-# LDM_MAGIC_VERSION: 2.3.0
-VERSION = "2.3.0"
+# LDM_MAGIC_VERSION: 2.3.1
+VERSION = "2.3.1"
 
 BUILD_INFO = None
 IMAGE_NAME_DXP = "liferay/dxp"
@@ -18,6 +18,79 @@ ELASTICSEARCH_VERSION = "8.19.1"
 ELASTICSEARCH7_VERSION = "7.17.24"
 TRAEFIK_VERSION = "v3.6.1"
 SOCAT_IMAGE = "alpine/socat"
+
+# --- Orchestration Configuration ---
+RUN_ATTRS = [
+    "tag",
+    "tag_prefix",
+    "project",
+    "container",
+    "follow",
+    "release_type",
+    "db",
+    "jdbc_username",
+    "jdbc_password",
+    "recreate_db",
+    "port",
+    "host_network",
+    "host_name",
+    "disable_zip64",
+    "delete_state",
+    "remove_after",
+    "portal",
+    "refresh",
+    "ssl",
+    "force_ssl",
+    "timeout",
+    "rebuild",
+    "env",
+    "vars",
+    "service",
+    "remove",
+    "import_env",
+    "no_stop",
+    "pg_host",
+    "pg_port",
+    "my_host",
+    "my_port",
+    "files_only",
+    "index",
+    "checkpoint",
+    "sidecar",
+    "no_up",
+    "no_wait",
+    "mount_logs",
+    "gogo_port",
+    "jvm_args",
+    "no_vol_cache",
+    "no_jvm_verify",
+    "no_tld_skip",
+    "no_seed",
+    "seeded",
+    "seed_version",
+    "seed_config",
+    "samples",
+    "service_scale",
+    "bundle",
+    "category",
+    "level",
+    "list",
+    "url",
+    "env_id",
+    "list_envs",
+    "list_backups",
+    "download",
+    "restore",
+    "sync_env",
+    "logs",
+    "volumes",
+    "delete",
+    "infra",
+    "all_projects",
+    "fix_hosts",
+    "scale",
+    "no_osgi_seed",
+]
 
 # --- Seeded State Configuration ---
 # Increment this version whenever the logic for generating seeds changes

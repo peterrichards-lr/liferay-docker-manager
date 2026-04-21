@@ -84,6 +84,16 @@ While the v1.x "Hardened Edition" focused on cross-platform stability, **v2.2.0*
 
 ---
 
+## ✅ Completed Improvements (v2.3.1)
+
+- **Architectural Cleanup & Refactoring**:
+  - **Centralized Metadata Handling**: Consolidated metadata reading/writing into `ldm_core/utils.py` with full support for JSON and Flat-file formats.
+  - **Unified Project Discovery**: Moved project scanning and path detection to a single source of truth in `utils.py`.
+  - **Infrastructure Manager Extraction**: Extracted global service orchestration (Traefik, Global Search) into a dedicated `InfraHandler` mixin, decoupling it from project-specific stack logic.
+  - **Optimized Orchestrator**: Simplified `LiferayManager` initialization and consolidated argument attribute management into `ldm_core/constants.py`.
+
+---
+
 ## ✅ Completed Improvements (v2.3.0 - The Ecosystem Phase)
 
 ### **Ecosystem Planning & Orchestration**

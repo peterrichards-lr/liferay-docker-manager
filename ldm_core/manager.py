@@ -9,6 +9,8 @@ from ldm_core.handlers.config import ConfigHandler
 from ldm_core.handlers.diagnostics import DiagnosticsHandler
 from ldm_core.handlers.cloud import CloudHandler
 from ldm_core.handlers.license import LicenseHandler
+from ldm_core.handlers.infra import InfraHandler
+from ldm_core.constants import RUN_ATTRS
 
 
 class LiferayManager(
@@ -19,6 +21,7 @@ class LiferayManager(
     DiagnosticsHandler,
     CloudHandler,
     LicenseHandler,
+    InfraHandler,
     BaseHandler,
 ):
     """Orchestrator class for LDM, composed of multiple functional mixins."""
@@ -41,76 +44,6 @@ class LiferayManager(
         UI.NON_INTERACTIVE = self.non_interactive
 
         # Ensure standard attributes exist on args
-        run_attrs = [
-            "tag",
-            "tag_prefix",
-            "project",
-            "container",
-            "follow",
-            "release_type",
-            "db",
-            "jdbc_username",
-            "jdbc_password",
-            "recreate_db",
-            "port",
-            "host_network",
-            "host_name",
-            "disable_zip64",
-            "delete_state",
-            "remove_after",
-            "portal",
-            "refresh",
-            "ssl",
-            "force_ssl",
-            "timeout",
-            "rebuild",
-            "env",
-            "vars",
-            "service",
-            "remove",
-            "import_env",
-            "no_stop",
-            "pg_host",
-            "pg_port",
-            "my_host",
-            "my_port",
-            "files_only",
-            "index",
-            "checkpoint",
-            "sidecar",
-            "no_up",
-            "no_wait",
-            "mount_logs",
-            "gogo_port",
-            "jvm_args",
-            "no_vol_cache",
-            "no_jvm_verify",
-            "no_tld_skip",
-            "no_seed",
-            "seeded",
-            "seed_version",
-            "seed_config",
-            "samples",
-            "service_scale",
-            "bundle",
-            "category",
-            "level",
-            "list",
-            "url",
-            "env_id",
-            "list_envs",
-            "list_backups",
-            "download",
-            "restore",
-            "sync_env",
-            "logs",
-            "volumes",
-            "delete",
-            "infra",
-            "all_projects",
-            "fix_hosts",
-            "scale",
-        ]
-        for attr in run_attrs:
+        for attr in RUN_ATTRS:
             if not hasattr(args, attr):
                 setattr(args, attr, None)
