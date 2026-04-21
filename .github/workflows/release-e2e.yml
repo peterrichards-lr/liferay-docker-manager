@@ -5,6 +5,9 @@ on:
     tags: ["v*"] # Only run when a tag is pushed
   workflow_dispatch: # Allow manual trigger for ad-hoc verification
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   e2e-verification:
     # Only run if the commit message explicitly includes [release]
