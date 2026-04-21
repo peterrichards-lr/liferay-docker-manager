@@ -316,50 +316,51 @@ class TestStackOrchestration(unittest.TestCase):
     @patch("ldm_core.utils.get_compose_cmd")
     def test_sync_stack_readiness_timeout(self, mock_compose, mock_sleep, mock_time):
         """Verifies that the Service Readiness Gate correctly times out if a dependency hangs."""
+        import tempfile
+        from pathlib import Path
+
         mock_compose.return_value = ["docker", "compose"]
 
-        # Setup mock paths and meta
-        paths = {
-            "root": Path("/tmp/proj"),
-            "deploy": Path("/tmp/proj/deploy"),
-            "files": Path("/tmp/proj/files"),
-            "logs": Path("/tmp/proj/logs"),
-            "state": Path("/tmp/proj/osgi/state"),
-            "configs": Path("/tmp/proj/osgi/configs"),
-            "portal_log4j": Path("/tmp/proj/osgi/portal-log4j"),
-            "data": Path("/tmp/proj/data"),
-            "cx": Path("/tmp/proj/client-extensions"),
-            "ce_dir": Path("/tmp/proj/osgi/client-extensions"),
-            "compose": Path("/tmp/proj/docker-compose.yml"),
-            "history": Path("/tmp/proj/.ldm_history"),
-        }
-        meta = {
-            "container_name": "timeout-test",
-            "tag": "2025.q1.0",
-            "db_type": "postgresql",  # Trigger readiness gate
-            "host_name": "localhost",
-            "use_shared_search": "true",
-        }
+        with tempfile.TemporaryDirectory() as base_tmp:
+            base = Path(base_tmp)
+            # Create required structure for hardened startup
+            (base / "files").mkdir()
+            (base / "osgi" / "configs").mkdir(parents=True)
+            (base / "osgi" / "client-extensions").mkdir(parents=True)
+            (base / "osgi" / "portal-log4j").mkdir(parents=True)
+            (base / "client-extensions").mkdir()
+            (base / "data").mkdir()
+            (base / "deploy").mkdir()
+            (base / "logs").mkdir()
 
-        # Mock time to increment by 20s per call to trigger timeout quickly
-        self.t = 1000
+            paths = self.manager.setup_paths(base)
+            meta = {
+                "container_name": "timeout-test",
+                "tag": "2025.q1.0",
+                "db_type": "postgresql",  # Trigger readiness gate
+                "host_name": "localhost",
+                "use_shared_search": "true",
+            }
 
-        def mock_time_inc():
-            self.t += 20
-            return self.t
+            # Mock time to increment by 20s per call to trigger timeout quickly
+            self.t = 1000
 
-        mock_time.side_effect = mock_time_inc
+            def mock_time_inc():
+                self.t += 20
+                return self.t
 
-        with patch.object(
-            self.manager, "get_container_status", return_value="starting"
-        ):
-            with patch.object(self.manager, "run_command"):
-                # Trigger sync with no-wait to avoid second loop complexity
-                self.manager.sync_stack(paths, meta, no_up=False, no_wait=True)
+            mock_time.side_effect = mock_time_inc
 
-                # Verify that get_container_status was called multiple times before timeout
-                status_mock = self.manager.get_container_status
-                self.assertGreater(status_mock.call_count, 1)
+            with patch.object(
+                self.manager, "get_container_status", return_value="starting"
+            ):
+                with patch.object(self.manager, "run_command"):
+                    # Trigger sync with no-wait to avoid second loop complexity
+                    self.manager.sync_stack(paths, meta, no_up=False, no_wait=True)
+
+                    # Verify that get_container_status was called multiple times before timeout
+                    status_mock = self.manager.get_container_status
+                    self.assertGreater(status_mock.call_count, 1)
 
     def test_write_docker_compose_ssl_labels(self):
 
