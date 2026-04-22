@@ -489,10 +489,9 @@ class RuntimeHandler:
         compose_base = get_compose_cmd()
         for root in targets:
             UI.warning(f"Tearing down stack: {root.name}")
+            # DOWN always tears down the whole project to ensure networks and orphans are handled.
+            # If the user wants to stop a specific service, they should use 'ldm stop [svc]'.
             cmd = compose_base + ["down", "-v", "--remove-orphans"]
-
-            if service:
-                cmd.append(service)
 
             if (root / "docker-compose.yml").exists():
                 self.run_command(cmd, capture_output=False, cwd=str(root))
