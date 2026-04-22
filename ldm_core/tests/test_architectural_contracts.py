@@ -16,11 +16,11 @@ class TestArchitecturalContracts(unittest.TestCase):
     """
 
     def test_handler_constructor_contract(self):
-        """Contract: Every specialized handler class MUST accept an 'args' object in its constructor."""
+        """Contract: Every specialized handler class MUST accept an 'args' object and store UI flags."""
         handler_package = ldm_core.handlers
 
         class MockArgs:
-            verbose = False
+            verbose = True
             non_interactive = True
 
         mock_args = MockArgs()
@@ -39,16 +39,29 @@ class TestArchitecturalContracts(unittest.TestCase):
                 # We only care about classes defined in the handler modules themselves (not imports)
                 if obj.__module__ == module_name and name.endswith("Handler"):
                     try:
-                        # Attempt instantiation with args
+                        # 1. Verification: Instantiation
                         instance = obj(mock_args)
                         self.assertIsNotNone(
                             instance, f"Failed to instantiate {name} in {module_name}"
                         )
-                        # Verify common attributes were set (Mandate: Consistency)
+
+                        # 2. Verification: Attribute Storage (Mandate: Consistency)
+                        for attr in ["args", "verbose", "non_interactive"]:
+                            self.assertTrue(
+                                hasattr(instance, attr),
+                                f"Architectural Violation: Handler '{name}' in {module_name} is missing mandatory attribute '{attr}'.",
+                            )
+
+                        # 3. Verification: Value Integrity
                         self.assertTrue(
-                            hasattr(instance, "args"),
-                            f"Handler {name} did not store 'args' attribute.",
+                            instance.verbose,
+                            f"Handler '{name}' did not correctly capture 'verbose' flag.",
                         )
+                        self.assertTrue(
+                            instance.non_interactive,
+                            f"Handler '{name}' did not correctly capture 'non_interactive' flag.",
+                        )
+
                     except TypeError as e:
                         self.fail(
                             f"Handler Constructor Contract Violation: {module_name}.{name} failed instantiation with args. Error: {e}"
