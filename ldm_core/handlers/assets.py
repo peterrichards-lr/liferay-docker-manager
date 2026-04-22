@@ -5,19 +5,19 @@ import zipfile
 import shutil
 import requests
 from ldm_core.ui import UI
+from ldm_core.handlers.base import BaseHandler
 from ldm_core.utils import get_actual_home
+
 
 # Reference for reliable mocking in tests
 exists_fn = os.path.exists
 
 
-class AssetHandler:
+class AssetHandler(BaseHandler):
     """Specialized handler for 'Offline First' asset management (Seeds, Samples)."""
 
     def __init__(self, args=None):
-        self.args = args
-        self.verbose = getattr(args, "verbose", False)
-        self.non_interactive = getattr(args, "non_interactive", False)
+        super().__init__(args)
 
     def _fetch_seed(self, tag, db_type, search_mode, paths):
         """Discovers and downloads a pre-warmed seed from GitHub Releases with Offline-First logic."""

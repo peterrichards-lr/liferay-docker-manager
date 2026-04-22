@@ -2,16 +2,15 @@ import json
 import shutil
 import subprocess
 from ldm_core.ui import UI
+from ldm_core.handlers.base import BaseHandler
 from ldm_core.constants import PROJECT_META_FILE
 
 
-class CloudHandler:
+class CloudHandler(BaseHandler):
     """Mixin for Liferay Cloud (LCP) integration."""
 
     def __init__(self, args=None):
-        self.args = args
-        self.verbose = getattr(args, "verbose", False)
-        self.non_interactive = getattr(args, "non_interactive", False)
+        super().__init__(args)
 
     def _is_cloud_authenticated(self):
         """Checks if the user is currently logged into Liferay Cloud."""

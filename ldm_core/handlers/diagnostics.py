@@ -7,6 +7,7 @@ import subprocess
 from pathlib import Path
 from ldm_core.ui import UI
 from ldm_core.constants import SCRIPT_DIR, VERSION, BUILD_INFO
+from ldm_core.handlers.base import BaseHandler
 from ldm_core.utils import (
     run_command,
     get_actual_home,
@@ -17,13 +18,11 @@ from ldm_core.utils import (
 )
 
 
-class DiagnosticsHandler:
+class DiagnosticsHandler(BaseHandler):
     """Mixin for diagnostic and maintenance commands."""
 
     def __init__(self, args=None):
-        self.args = args
-        self.verbose = getattr(args, "verbose", False)
-        self.non_interactive = getattr(args, "non_interactive", False)
+        super().__init__(args)
 
     def cmd_status(self, project_id=None, all_projects=False):
         """Displays a summary of active global services and projects."""

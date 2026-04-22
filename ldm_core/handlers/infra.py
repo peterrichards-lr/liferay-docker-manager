@@ -3,6 +3,7 @@ import time
 import json
 import shutil
 from ldm_core.ui import UI
+from ldm_core.handlers.base import BaseHandler
 from ldm_core.utils import (
     get_actual_home,
     get_compose_cmd,
@@ -10,13 +11,11 @@ from ldm_core.utils import (
 )
 
 
-class InfraHandler:
+class InfraHandler(BaseHandler):
     """Mixin for global infrastructure management (Traefik, Global Search)."""
 
     def __init__(self, args=None):
-        self.args = args
-        self.verbose = getattr(args, "verbose", False)
-        self.non_interactive = getattr(args, "non_interactive", False)
+        super().__init__(args)
 
     def cmd_infra_setup(self):
         """Sets up the global infrastructure (Traefik, Search)."""

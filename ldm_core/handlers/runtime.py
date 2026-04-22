@@ -4,16 +4,15 @@ import subprocess
 from datetime import datetime
 from pathlib import Path
 from ldm_core.ui import UI
+from ldm_core.handlers.base import BaseHandler
 from ldm_core.utils import get_actual_home, get_compose_cmd, open_browser
 
 
-class RuntimeHandler:
+class RuntimeHandler(BaseHandler):
     """Specialized handler for container lifecycle and orchestration."""
 
     def __init__(self, args=None):
-        self.args = args
-        self.verbose = getattr(args, "verbose", False)
-        self.non_interactive = getattr(args, "non_interactive", False)
+        super().__init__(args)
 
     def cmd_run(self, project_id=None, is_restart=False):
         """Main entry point for starting or updating a project stack."""
