@@ -15,6 +15,9 @@ class ConfigHandler(BaseHandler):
 
     def __init__(self, args=None):
         super().__init__(args)
+        self.args = args
+        self.verbose = getattr(args, "verbose", False)
+        self.non_interactive = getattr(args, "non_interactive", False)
 
     def _get_properties(self, content):
         """Robustly extracts properties from a string, handling multi-line values."""

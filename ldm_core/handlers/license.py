@@ -1,6 +1,11 @@
 class LicenseHandler:
     """Mixin for Liferay license detection and parsing."""
 
+    def __init__(self, args=None):
+        self.args = args
+        self.verbose = getattr(args, "verbose", False)
+        self.non_interactive = getattr(args, "non_interactive", False)
+
     def find_license(self, paths):
         """
         Locates Liferay license XML files in common, deploy, and osgi/modules folders.

@@ -9,6 +9,12 @@ from ldm_core.utils import run_command, get_compose_cmd
 
 
 class SnapshotHandler(BaseHandler):
+    def __init__(self, args=None):
+        super().__init__(args)
+        self.args = args
+        self.verbose = getattr(args, "verbose", False)
+        self.non_interactive = getattr(args, "non_interactive", False)
+
     def cmd_snapshots(self, paths=None):
         """Lists snapshots for a project."""
         if not paths:

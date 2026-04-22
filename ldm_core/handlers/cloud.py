@@ -8,6 +8,11 @@ from ldm_core.constants import PROJECT_META_FILE
 class CloudHandler:
     """Mixin for Liferay Cloud (LCP) integration."""
 
+    def __init__(self, args=None):
+        self.args = args
+        self.verbose = getattr(args, "verbose", False)
+        self.non_interactive = getattr(args, "non_interactive", False)
+
     def _is_cloud_authenticated(self):
         """Checks if the user is currently logged into Liferay Cloud."""
         lcp_bin = shutil.which("lcp")

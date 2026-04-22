@@ -13,6 +13,11 @@ from ldm_core.utils import (
 class InfraHandler:
     """Mixin for global infrastructure management (Traefik, Global Search)."""
 
+    def __init__(self, args=None):
+        self.args = args
+        self.verbose = getattr(args, "verbose", False)
+        self.non_interactive = getattr(args, "non_interactive", False)
+
     def cmd_infra_setup(self):
         """Sets up the global infrastructure (Traefik, Search)."""
         import sys

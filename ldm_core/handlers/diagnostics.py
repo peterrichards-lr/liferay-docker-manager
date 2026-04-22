@@ -19,6 +19,11 @@ from ldm_core.utils import (
 class DiagnosticsHandler:
     """Mixin for diagnostic and maintenance commands."""
 
+    def __init__(self, args=None):
+        self.args = args
+        self.verbose = getattr(args, "verbose", False)
+        self.non_interactive = getattr(args, "non_interactive", False)
+
     def cmd_status(self, project_id=None, all_projects=False):
         """Displays a summary of active global services and projects."""
         UI.heading("LDM Service Status")

@@ -1,8 +1,12 @@
 import unittest
 import yaml
+import pkgutil
+import inspect
+import importlib
 from pathlib import Path
 import tempfile
 from ldm_core.manager import LiferayManager
+import ldm_core.handlers
 
 
 class TestArchitecturalContracts(unittest.TestCase):
@@ -10,6 +14,45 @@ class TestArchitecturalContracts(unittest.TestCase):
     Verification suite to ensure core LDM architectural mandates are preserved.
     These tests verify the OUTPUT of the orchestration engine (Compose, Portal-Ext).
     """
+
+    def test_handler_constructor_contract(self):
+        """Contract: Every specialized handler class MUST accept an 'args' object in its constructor."""
+        handler_package = ldm_core.handlers
+
+        class MockArgs:
+            verbose = False
+            non_interactive = True
+
+        mock_args = MockArgs()
+
+        # Iterate through all modules in the handlers package
+        for loader, module_name, is_pkg in pkgutil.walk_packages(
+            handler_package.__path__, handler_package.__name__ + "."
+        ):
+            if is_pkg:
+                continue
+
+            module = importlib.import_module(module_name)
+
+            # Find all classes defined in this module
+            for name, obj in inspect.getmembers(module, inspect.isclass):
+                # We only care about classes defined in the handler modules themselves (not imports)
+                if obj.__module__ == module_name and name.endswith("Handler"):
+                    try:
+                        # Attempt instantiation with args
+                        instance = obj(mock_args)
+                        self.assertIsNotNone(
+                            instance, f"Failed to instantiate {name} in {module_name}"
+                        )
+                        # Verify common attributes were set (Mandate: Consistency)
+                        self.assertTrue(
+                            hasattr(instance, "args"),
+                            f"Handler {name} did not store 'args' attribute.",
+                        )
+                    except TypeError as e:
+                        self.fail(
+                            f"Handler Constructor Contract Violation: {module_name}.{name} failed instantiation with args. Error: {e}"
+                        )
 
     def setUp(self):
         self.tmp_dir = tempfile.TemporaryDirectory()
