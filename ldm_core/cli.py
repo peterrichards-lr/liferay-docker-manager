@@ -265,7 +265,15 @@ def get_parser():
         "--es7", action="store_true", help="Use Elasticsearch 7 for global search"
     )
     subparsers.add_parser("infra-down", parents=[base_sub_parent])
-    subparsers.add_parser("infra-restart", parents=[base_sub_parent])
+    infra_restart = subparsers.add_parser("infra-restart", parents=[base_sub_parent])
+    infra_restart.add_argument(
+        "--search",
+        action="store_true",
+        help="Also restart Global Search container",
+    )
+    infra_restart.add_argument(
+        "--es7", action="store_true", help="Use Elasticsearch 7 for global search"
+    )
 
     # Cache management
     cache = subparsers.add_parser(

@@ -970,3 +970,11 @@ def calculate_sha256(file_path):
         for chunk in iter(lambda: f.read(4096), b""):
             sha.update(chunk)
     return sha.hexdigest()
+
+
+def strip_ansi(text):
+    """Removes ANSI escape sequences (colors) from a string."""
+    if not text:
+        return ""
+    ansi_escape = re.compile(r"\x1B(?:[@-Z\-_]|\[[0-?]*[ -/]*[@-~])")
+    return ansi_escape.sub("", text)

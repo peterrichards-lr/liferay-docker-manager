@@ -13,6 +13,7 @@ from ldm_core.utils import (
     check_for_updates,
     version_to_tuple,
     verify_executable_checksum,
+    strip_ansi,
 )
 
 
@@ -944,6 +945,9 @@ del "%~f0"
                         try:
                             search_res = run_command(
                                 [
+                                    "docker",
+                                    "exec",
+                                    "liferay-search-global",
                                     "curl",
                                     "-s",
                                     "-o",
@@ -1941,7 +1945,9 @@ del "%~f0"
             if not logs:
                 return None, None
 
-            lines = logs.splitlines()
+            # Strip ANSI color codes before analysis to ensure reliable string matching
+            clean_logs = strip_ansi(logs)
+            lines = clean_logs.splitlines()
 
             import re
 
@@ -2005,15 +2011,32 @@ del "%~f0"
                     if "deprecation.elasticsearch" in line.lower():
                         continue
                     # Ignore benign HAProxy missing timeout warnings (Docker Socket Bridge)
-                    if "missing timeouts for backend 'docker-events'" in line:
+                    if "missing timeouts" in line and "docker-events" in line:
                         continue
-                    # Ignore benign ES8 initialization status/info lines caught by regex
-                    if "@timestamp" in line and (
-                        '"level":"INFO"' in line or '"level":"WARN"' in line
+                    if line.strip().startswith("|") and any(
+                        x in line for x in ["timeout", "problem", "invalid"]
                     ):
-                        # Elasticsearch JSON logs are very verbose; only flag if it's explicitly "ERROR"
-                        if '"level":"ERROR"' not in line:
-                            continue
+                        continue
+
+                    # Ignore benign ES8 initialization status/info lines caught by regex
+                    # Handles both "level": "INFO" (with space) and ECS "log.level": "INFO"
+                    if "@timestamp" in line:
+                        if re.search(
+                            r'("(log\.)?level")\s*:\s*"(INFO|WARN)"',
+                            line,
+                            re.IGNORECASE,
+                        ):
+                            # ES8 Watermark filtering (Legitimate for clusters, but noisy in single-node dev)
+                            if "flood stage disk watermark" in line.lower():
+                                continue
+                            # ES8 backup/repository registration warnings (handled by infra-setup)
+                            if any(
+                                x in line.lower()
+                                for x in ["liferay_backup", "path.repo"]
+                            ):
+                                continue
+                            if "ERROR" not in line.upper():
+                                continue
 
                     return f"Warning (Issue in logs: {line.strip()[:40]}...)", "warn"
 

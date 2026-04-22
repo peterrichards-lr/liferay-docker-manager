@@ -141,6 +141,12 @@ tls:
             )
         UI.success("Infrastructure teardown complete.")
 
+    def cmd_infra_restart(self):
+        """Restarts the global infrastructure services."""
+        UI.info("Restarting Global Infrastructure...")
+        self.cmd_infra_down()
+        self.cmd_infra_setup()
+
     def _ensure_network(self):
         """Ensures the standard 'liferay-net' Docker network exists."""
         networks = self.run_command(

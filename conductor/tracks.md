@@ -1,11 +1,11 @@
-# Tracks Registry (v2.2.0 - The Ecosystem Phase)
+# Tracks Registry (v2.5.0 - The Ecosystem Phase Continued)
 
-This registry tracks the status and priority of independent development tracks for LDM v2.2.0.
+This registry tracks the status and priority of independent development tracks for LDM v2.5.0.
 
 | Track ID | Track Name | Priority | Status | Plan |
 | :--- | :--- | :--- | :--- | :--- |
 | `stack-refactor` | StackHandler Modularization | **High** | ✅ Completed | [Plan](./tracks/stack-refactor/plan.md) |
-| `guided-onboarding` | Guided Onboarding (`ldm init`) | High | 📝 Planned | [Plan](./guided-onboarding-plan.md) |
+| `guided-onboarding` | Guided Onboarding (`ldm init`) | High | 🔄 In Progress | [Plan](./tracks/guided-onboarding/plan.md) |
 | `visual-dashboard` | Visual Health Dashboard | Medium | 📝 Planned | [Plan](./visual-dashboard-plan.md) |
 | `osgi-performance` | OSGi State Persistence | **High** | 📝 Planned | [Plan](./osgi-performance-plan.md) |
 | `scenario-packs` | Shared Scenario Packs | High | 📝 Planned | [Plan](./scenario-packs-plan.md) |
