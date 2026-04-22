@@ -30,68 +30,86 @@ All refactoring and feature development must preserve the following LDM contract
 
 ## 📋 Functional Validation Checklist (v2.4.0+)
 
-### Phase 1: Environment & Diagnostics
+This checklist is ordered sequentially to minimize environment setup overhead. Follow the phases in order.
 
-| Test Case | Steps | Expected Outcome |
-| :--- | :--- | :--- |
-| **1.1 LDM Doctor** | Run `ldm doctor` | Correctly identifies Docker CPUs/RAM. Reports "Global Config" status as v2.4.0 Baseline. |
-| **1.2 Pipeline Exit Code** | `ldm doctor --skip-project; echo $?` | Returns `0` if healthy, `1` if critical issues found. |
-| **1.3 DNS Alignment** | Point host to wrong IP | `ldm doctor` warns if hostname doesn't match Traefik's bound IP. |
-| **1.4 Infra Setup** | `ldm infra-setup --search` | Starts Traefik (on 0.0.0.0) and ES8 sidecar. Idempotent. |
-| **1.5 Self-Repair** | `ldm upgrade --repair -y` | Successfully re-downloads current version binary without prompts. |
-| **1.6 License Verification** | `ldm doctor` (DXP) | Correctly parses XML license from `common/` or `deploy/`. |
-| **1.7 Shell Completion** | `ldm completion zsh` | Generates a valid completion script. TAB completion works for subcommands. |
+### Phase 1: Tool & Security Readiness
 
-### Phase 2: Developer Workflow & Automation
+*Verifies the tool's integrity and basic help systems before any infrastructure is touched.*
 
-| Test Case | Steps | Expected Outcome |
-| :--- | :--- | :--- |
-| **2.1 Non-Interactive Run** | `ldm run [id] -y --tag [tag]` | Starts project without any interactive prompts. |
-| **2.2 Non-Interactive Env** | `ldm env [id] TEST=VAL -y` | Sets environment variable and **automatically updates `docker-compose.yml`**. |
-| **2.3 Ghost Mounts** | Run on new project | LDM proactively creates essential directories before bind-mounting. |
-| **2.4 WSL Browser** | `ldm run` in WSL | Automatically opens the Windows host browser without "UNC path" warnings. |
-| **2.5 Intermixed Flags** | `ldm prune -y` | Global flags are recognized correctly when placed after subcommands. |
+| ID | Test Case | Steps | Expected Outcome |
+| :--- | :--- | :--- | :--- |
+| 1.1 | **No-Sudo Guard** | `sudo ldm run` | Command is blocked with a security warning. |
+| 1.2 | **Exit Code Integrity**| `ldm doctor --skip-project; echo $?` | Returns `0` if healthy, `1` if critical issues found. |
+| 1.3 | **Shell Completion** | `ldm completion zsh` | Generates a valid script. TAB completion works. |
+| 1.4 | **Native Manual** | `man ldm` | System manual page opens correctly via `~/.ldm/man`. |
+| 1.5 | **Self-Repair** | `ldm upgrade --repair -y` | Successfully re-downloads current version binary. |
 
-### Phase 3: Orchestration & Integrity
+### Phase 2: Global Infrastructure
 
-| Test Case | Steps | Expected Outcome |
-| :--- | :--- | :--- |
-| **3.1 Project Collision** | `ldm run [name]` in two dirs | LDM blocks execution and identifies the existing project path. |
-| **3.2 Hostname Collision** | `ldm run --host-name [name]` | LDM blocks if another project is already using that Virtual Hostname. |
-| **3.3 Env Sync** | `ldm env [id] KEY=VAL` | Verify `docker-compose.yml` is updated immediately without requiring a full `run`. |
-| **3.4 Memory Units** | `ldm run --mem-limit 2048` | Generated `docker-compose.yml` uses `2048M` (verifies `ComposerHandler` hardening). |
-| **3.5 Fail-Fast Logic** | Remove docker-compose | LDM commands stop immediately with helpful installation hints. |
+*Verifies the shared Traefik and Elasticsearch components.*
 
-### Phase 4: Maintenance & Recovery
+| ID | Test Case | Steps | Expected Outcome |
+| :--- | :--- | :--- | :--- |
+| 2.1 | **Infra Setup** | `ldm infra-setup --search` | Starts Traefik and ES8. Idempotent. |
+| 2.2 | **DNS Alignment** | Point host to wrong IP | `ldm doctor` warns if hostname doesn't match Traefik IP. |
+| 2.3 | **Auto-Healing DNS** | `ldm doctor --fix-hosts` | Prompts for elevation and appends missing domains. |
 
-| Test Case | Steps | Expected Outcome |
-| :--- | :--- | :--- |
-| **4.1 SHA-256 Verification** | `ldm restore [project]` | LDM verifies the `.sha256` file before extracting the snapshot. |
-| **4.2 Corruption Guard** | Modify snapshot file | `ldm restore` fails with an integrity warning. |
-| **4.3 Non-Interactive Prune** | `ldm prune -y` | Silently removes orphaned resources (containers/snapshots) without confirmation. |
-| **4.4 Registry Cleanup** | `ldm down [id] --delete` | Project is removed from the global registry (`ldm ls` no longer shows it). |
-| **4.5 Project Reset** | `ldm reset state` | Successfully clears `osgi/state` folder while stopped. |
+### Phase 3: Project Lifecycle (Init & Seeding)
 
-### Phase 5: High-Risk Integrations (v2.1+)
+*Verifies project creation, seeding, and collision detection.*
 
-These features involve complex state changes or rely on external APIs that may change unexpectedly. They require explicit end-to-end verification during major release cycles.
+| ID | Test Case | Steps | Expected Outcome |
+| :--- | :--- | :--- | :--- |
+| 3.1 | **Non-Interactive Run**| `ldm run [id] -y --tag [tag]`| Starts project from seed without any prompts. |
+| 3.2 | **Project Collision** | `ldm run [id]` in new dir | Blocks execution; identifies original project path. |
+| 3.3 | **Hostname Collision**| `ldm run --host-name [used]`| Blocks if another project uses that Virtual Hostname. |
+| 3.4 | **Ghost Mounts** | Check project folders | Essential dirs (`osgi/state`, `data`) created before mount. |
+| 3.5 | **Memory Units** | `ldm run --mem-limit 2048` | `docker-compose.yml` uses `2048M` (v2.4.0 Mandate). |
+| 3.6 | **License Discovery** | `ldm doctor` | Correctly identifies XML license in project `deploy/`. |
 
-| Test Case | Steps | Expected Outcome |
-| :--- | :--- | :--- |
-| **5.1 Cloud Env Sync** | `ldm cloud-fetch demo uat --sync-env` | Correctly fetches and applies `LCP.json` env vars despite `lcp` CLI plain-text formatting. |
-| **5.2 Cloud DB Hydration** | `ldm cloud-fetch demo uat --download` | Safely downloads and extracts DB backups into `snapshots/` without path traversal issues. |
-| **5.3 Multi-Node Lock Avoidance** | `ldm scale demo liferay=2` | Correctly disables host-mapped `osgi/state` and injects cluster-link environment variables. |
-| **5.4 Search Migration Resilience** | `ldm migrate-search demo` | Liferay successfully rebuilds its index on the shared ES8 container on the next boot without falling back to the sidecar. |
-| **5.5 Auto-Healing DNS (Elevation)** | `ldm doctor --fix-hosts` | Successfully prompts for `sudo` (or UAC on Windows) and appends missing subdomains without duplicating lines. |
-| **5.6 Windows Deep Deletion** | `ldm rm demo --delete` (Native Windows) | Successfully wipes the project folder, even if it contains deeply nested `node_modules` or Docker-locked volumes. |
+### Phase 4: Runtime Configuration & UX
 
-### Phase 6: Security & Policy Enforcement
+*Verifies managing a running project and the user experience.*
 
-| Test Case | Steps | Expected Outcome |
-| :--- | :--- | :--- |
-| **6.1 No-Sudo Guard** | `sudo ldm run` | Command is blocked with a security warning and a link to troubleshooting. |
-| **6.2 Double-Root Detection** | Login as `root`, run `ldm` | Correctly identifies already-elevated shell and blocks execution to protect `~/.shiv`. |
-| **6.3 Redaction Check** | `ldm -v run` (with secrets) | Verify that `LIFERAY_DB_PASSWORD` or similar are masked with `[REDACTED]` in the debug output. |
+| ID | Test Case | Steps | Expected Outcome |
+| :--- | :--- | :--- | :--- |
+| 4.1 | **Env Sync** | `ldm env [id] KEY=VAL` | `docker-compose.yml` updated immediately. |
+| 4.2 | **Redaction Check** | `ldm -v run` (with secrets) | `LIFERAY_DB_PASSWORD` masked as `[REDACTED]`. |
+| 4.3 | **WSL Browser** | `ldm run` in WSL | Opens Windows host browser without UNC warnings. |
+| 4.4 | **Intermixed Flags** | `ldm ps -y` | Global flags recognized after subcommands. |
+| 4.5 | **Fail-Fast Logic** | Delete `docker-compose.yml`| LDM stops immediately with helpful recovery hint. |
+
+### Phase 5: Data Integrity & Recovery
+
+*Verifies snapshots, restoration, and the new SHA-256 mandates.*
+
+| ID | Test Case | Steps | Expected Outcome |
+| :--- | :--- | :--- | :--- |
+| 5.1 | **SHA-256 Generation** | `ldm snapshot [id]` | `.sha256` file created alongside the archive. |
+| 5.2 | **SHA-256 Verification**| `ldm restore [id]` | LDM verifies checksum before extraction. |
+| 5.3 | **Corruption Guard** | Modify snapshot archive | `ldm restore` fails with integrity error. |
+| 5.4 | **Project Reset** | `ldm reset state` | Clears `osgi/state` folder while stopped. |
+
+### Phase 6: Advanced Integrations
+
+*Verifies complex scaling and external sync.*
+
+| ID | Test Case | Steps | Expected Outcome |
+| :--- | :--- | :--- | :--- |
+| 6.1 | **Multi-Node Scaling** | `ldm scale [id] liferay=2`| Disables host-mapping; injects cluster-link env. |
+| 6.2 | **Search Migration** | `ldm migrate-search` | Deletes local indices; applies Global ES config. |
+| 6.3 | **Cloud Env Sync** | `ldm cloud-fetch uat` | Correctly fetches and merges `LCP.json` env vars. |
+
+### Phase 7: Cleanup & Pruning
+
+*Verifies teardown and filesystem hygiene.*
+
+| ID | Test Case | Steps | Expected Outcome |
+| :--- | :--- | :--- | :--- |
+| 7.1 | **Registry Cleanup** | `ldm down [id] --delete` | Project removed from registry (`ldm ls` is clean). |
+| 7.2 | **SSL Hygiene** | Check Traefik configs | Routing config removed after project teardown. |
+| 7.3 | **Non-Interactive Prune**| `ldm prune -y` | Silently removes orphaned containers/snapshots. |
+| 7.4 | **Self-Healing Registry**| Delete project folder manually | `ldm ls` detects dead path and prunes registry. |
 
 ---
 
