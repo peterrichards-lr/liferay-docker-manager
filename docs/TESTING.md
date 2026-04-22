@@ -28,50 +28,49 @@ All refactoring and feature development must preserve the following LDM contract
 
 ---
 
-## 📋 Functional Validation Checklist (v2.1.31+)
+## 📋 Functional Validation Checklist (v2.4.0+)
 
 ### Phase 1: Environment & Diagnostics
 
 | Test Case | Steps | Expected Outcome |
 | :--- | :--- | :--- |
-| **1.1 LDM Doctor** | Run `ldm doctor` | Correctly identifies Docker CPUs/RAM. Reports "Global Config" status. |
+| **1.1 LDM Doctor** | Run `ldm doctor` | Correctly identifies Docker CPUs/RAM. Reports "Global Config" status as v2.4.0 Baseline. |
 | **1.2 Pipeline Exit Code** | `ldm doctor --skip-project; echo $?` | Returns `0` if healthy, `1` if critical issues found. |
 | **1.3 DNS Alignment** | Point host to wrong IP | `ldm doctor` warns if hostname doesn't match Traefik's bound IP. |
 | **1.4 Infra Setup** | `ldm infra-setup --search` | Starts Traefik (on 0.0.0.0) and ES8 sidecar. Idempotent. |
 | **1.5 Self-Repair** | `ldm upgrade --repair -y` | Successfully re-downloads current version binary without prompts. |
 | **1.6 License Verification** | `ldm doctor` (DXP) | Correctly parses XML license from `common/` or `deploy/`. |
 | **1.7 Shell Completion** | `ldm completion zsh` | Generates a valid completion script. TAB completion works for subcommands. |
-| **1.8 Native Manual** | `man ldm` (after setup) | System manual page opens correctly via `~/.ldm/man` path. |
 
 ### Phase 2: Developer Workflow & Automation
 
 | Test Case | Steps | Expected Outcome |
 | :--- | :--- | :--- |
 | **2.1 Non-Interactive Run** | `ldm run [id] -y --tag [tag]` | Starts project without any interactive prompts. |
-| **2.2 Non-Interactive Env** | `ldm env [id] TEST=VAL -y` | Sets environment variable without service selection prompts. |
+| **2.2 Non-Interactive Env** | `ldm env [id] TEST=VAL -y` | Sets environment variable and **automatically updates `docker-compose.yml`**. |
 | **2.3 Ghost Mounts** | Run on new project | LDM proactively creates essential directories before bind-mounting. |
 | **2.4 WSL Browser** | `ldm run` in WSL | Automatically opens the Windows host browser without "UNC path" warnings. |
 | **2.5 Intermixed Flags** | `ldm prune -y` | Global flags are recognized correctly when placed after subcommands. |
 
-### Phase 3: Orchestration Stability
+### Phase 3: Orchestration & Integrity
 
 | Test Case | Steps | Expected Outcome |
 | :--- | :--- | :--- |
-| **3.1 Intel Mac Discovery** | `ldm run` on x86_64 Mac | Correctly prefers legacy `docker-compose` if v2 plugin is broken. |
-| **3.2 Env Uniqueness** | Add redundant vars | Generated `docker-compose.yml` contains only unique environment keys. |
-| **3.3 Fail-Fast Logic** | Remove docker-compose | LDM commands stop immediately with helpful installation hints. |
-| **3.4 Resilient Tags** | Block releases.liferay.com | LDM correctly falls back to Docker Hub JSON API for tag discovery. |
+| **3.1 Project Collision** | `ldm run [name]` in two dirs | LDM blocks execution and identifies the existing project path. |
+| **3.2 Hostname Collision** | `ldm run --host-name [name]` | LDM blocks if another project is already using that Virtual Hostname. |
+| **3.3 Env Sync** | `ldm env [id] KEY=VAL` | Verify `docker-compose.yml` is updated immediately without requiring a full `run`. |
+| **3.4 Memory Units** | `ldm run --mem-limit 2048` | Generated `docker-compose.yml` uses `2048M` (verifies `ComposerHandler` hardening). |
+| **3.5 Fail-Fast Logic** | Remove docker-compose | LDM commands stop immediately with helpful installation hints. |
 
-### Phase 4: Maintenance & Hygiene
+### Phase 4: Maintenance & Recovery
 
 | Test Case | Steps | Expected Outcome |
 | :--- | :--- | :--- |
-| **4.1 Non-Interactive Prune** | `ldm prune -y` | Silently removes orphaned resources without confirmation. |
-| **4.2 SSL Hygiene** | Run `ldm down` | Correctly removes certificates and Traefik routing configs. |
-| **4.3 SSL Renewal** | `ldm renew-ssl` | Surgically replaces existing certificates with fresh 2-year versions. |
-| **4.4 Search Migration** | `ldm migrate-search` | Deletes internal indices and applies Global ES configs while stopped. |
+| **4.1 SHA-256 Verification** | `ldm restore [project]` | LDM verifies the `.sha256` file before extracting the snapshot. |
+| **4.2 Corruption Guard** | Modify snapshot file | `ldm restore` fails with an integrity warning. |
+| **4.3 Non-Interactive Prune** | `ldm prune -y` | Silently removes orphaned resources (containers/snapshots) without confirmation. |
+| **4.4 Registry Cleanup** | `ldm down [id] --delete` | Project is removed from the global registry (`ldm ls` no longer shows it). |
 | **4.5 Project Reset** | `ldm reset state` | Successfully clears `osgi/state` folder while stopped. |
-| **4.6 Zero-Failure Upgrade** | `ldm upgrade --repair` | Downloads asset to `/tmp` first; prompts for internal `sudo` only for final move. |
 
 ### Phase 5: High-Risk Integrations (v2.1+)
 
