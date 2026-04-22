@@ -118,3 +118,4 @@ SAMPLE_HASHES = {
         # Reserved for pre-configured demonstration states
     },
 }
+# BUILD_TRIGGER: Wed Apr 22 11:49:52 BST 2026
