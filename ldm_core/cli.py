@@ -126,6 +126,16 @@ def get_parser():
     imp.add_argument("--no-osgi-seed", action="store_true")
     imp.add_argument("--env", action="append")
 
+    # Command: init
+    init = subparsers.add_parser("init", parents=[base_sub_parent])
+    init.add_argument("project", nargs="?")
+    init.add_argument("-t", "--tag", help="Liferay Tag (e.g. 2025.q1.0)")
+    init.add_argument("--host-name", help="Virtual Hostname")
+    init.add_argument("--db", choices=["postgresql", "mysql", "hypersonic"])
+    init.add_argument(
+        "--samples", action="store_true", help="Initialize with sample extensions"
+    )
+
     # Command: init-from
     init_from = subparsers.add_parser("init-from", parents=[base_sub_parent])
     init_from.add_argument("source")
@@ -479,7 +489,8 @@ def main():
         "up": lambda: manager.cmd_run(getattr(args, "project", None)),
         "import": lambda: manager.cmd_import(args.source),
         "init-from": lambda: manager.cmd_init_from(args.source),
-        "monitor": lambda: manager.cmd_monitor(args.source),
+        "monitor": lambda: manager.cmd_monitor(args.source, args.delay),
+        "init": lambda: manager.cmd_init(getattr(args, "project", None)),
         "stop": lambda: manager.cmd_stop(
             getattr(args, "project", None),
             getattr(args, "service", None),

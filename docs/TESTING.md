@@ -60,12 +60,13 @@ This checklist is ordered sequentially to minimize environment setup overhead. F
 
 | ID | Test Case | Steps | Expected Outcome |
 | :--- | :--- | :--- | :--- |
-| 3.1 | **Non-Interactive Run**| `ldm run [id] -y --tag [tag]`| Starts project from seed without any prompts. |
-| 3.2 | **Project Collision** | `ldm run [id]` in new dir | Blocks execution; identifies original project path. |
-| 3.3 | **Hostname Collision**| `ldm run --host-name [used]`| Blocks if another project uses that Virtual Hostname. |
-| 3.4 | **Ghost Mounts** | Check project folders | Essential dirs (`osgi/state`, `data`) created before mount. |
-| 3.5 | **Memory Units** | `ldm run --mem-limit 2048` | `docker-compose.yml` uses `2048M` (v2.4.0 Mandate). |
-| 3.6 | **License Discovery** | `ldm doctor` | Correctly identifies XML license in project `deploy/`. |
+| 3.1 | **Explicit Init** | `ldm init test-init -y --tag [tag]` | Scaffolds folders/metadata; no pre-flight checks. |
+| 3.2 | **Non-Interactive Run**| `ldm run [id] -y` | Starts project from seed without any prompts. |
+| 3.3 | **Project Collision** | `ldm init [id]` in new dir | Blocks execution; identifies original project path. |
+| 3.4 | **Hostname Collision**| `ldm run --host-name [used]`| Blocks if another project uses that Virtual Hostname. |
+| 3.5 | **Ghost Mounts** | Check project folders | Essential dirs (`osgi/state`, `data`) created before mount. |
+| 3.6 | **Memory Units** | `ldm run --mem-limit 2048` | `docker-compose.yml` uses `2048M` (v2.4.0 Mandate). |
+| 3.7 | **License Discovery** | `ldm doctor` | Correctly identifies XML license in project `deploy/`. |
 
 ### Phase 4: Runtime Configuration & UX
 

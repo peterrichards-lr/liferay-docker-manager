@@ -22,6 +22,20 @@ class WorkspaceHandler(BaseHandler):
     def __init__(self, args=None):
         super().__init__(args)
 
+    def cmd_init(self, project_id=None):
+        """Scaffolds a project without starting it."""
+        # We reuse the logic from cmd_run but force no-up
+        from ldm_core.handlers.runtime import RuntimeHandler
+
+        # Set the no_up flag on args to ensure it doesn't try to start
+        setattr(self.args, "no_up", True)
+
+        UI.info(f"Initializing project shell: {project_id or 'interactively'}")
+        RuntimeHandler(self.args).cmd_run(project_id)
+        UI.success(
+            "Initialization complete. You can now run 'ldm doctor' or 'ldm run'."
+        )
+
     def _parse_client_extension_yaml(self, content):
         info = {"type": None, "oauth_erc": None}
         type_match = re.search(r"^\s*type:\s*(\w+)", content, re.MULTILINE)
