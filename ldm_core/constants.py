@@ -1,8 +1,8 @@
 from pathlib import Path
 
 # --- Constants & Configuration ---
-# LDM_MAGIC_VERSION: 2.4.3
-VERSION = "2.4.3"
+# LDM_MAGIC_VERSION: 2.4.4
+VERSION = "2.4.4"
 
 
 BUILD_INFO = None
@@ -10,6 +10,9 @@ IMAGE_NAME_DXP = "liferay/dxp"
 IMAGE_NAME_PORTAL = "liferay/portal"
 API_BASE_DXP = "https://hub.docker.com/v2/repositories/liferay/dxp/tags?page_size=200&ordering=name"
 API_BASE_PORTAL = "https://hub.docker.com/v2/repositories/liferay/portal/tags?page_size=200&ordering=name"
+LIFERAY_PRODUCT_INFO_URL = (
+    "https://releases-cdn.liferay.com/tools/workspace/.product_info.json"
+)
 META_VERSION = "2"
 MIN_META_VERSION = 2
 PROJECT_META_FILE = "meta"

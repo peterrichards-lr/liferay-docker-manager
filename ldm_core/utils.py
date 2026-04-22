@@ -363,12 +363,22 @@ def discover_latest_tag(
     start_time = time.time()
 
     # Strategy:
-    # 1. If we have a prefix, we use '-last_updated' + name filter. This is fast and correct
-    #    because all results share the prefix.
-    # 2. If no prefix, we use '-last_updated' but fetch the first 3 pages (600 tags).
-    #    The true latest release is almost certainly in the last 600 updates.
-    #    We then sort these by version name locally.
+    # 1. Fetch from Liferay Product Info (CDN) as a robust secondary/fast source
+    from ldm_core.constants import LIFERAY_PRODUCT_INFO_URL
 
+    cdn_tags = []
+    try:
+        raw_cdn = get_raw(LIFERAY_PRODUCT_INFO_URL)
+        if raw_cdn:
+            cdn_data = json.loads(raw_cdn)
+            for entry in cdn_data.values():
+                image = entry.get("liferayDockerImage")
+                if image and ":" in image:
+                    cdn_tags.append(image.split(":", 1)[1])
+    except Exception:
+        pass
+
+    # 2. Fetch from Primary API (Docker Hub or releases.liferay.com)
     url = api_url.replace("ordering=name", "ordering=-last_updated")
 
     api_filter = prefix_filter
@@ -431,6 +441,9 @@ def discover_latest_tag(
                 tags.append(name)
 
         url = next_url
+
+    # Merge and deduplicate with CDN tags
+    tags = list(set(tags + cdn_tags))
 
     duration = time.time() - start_time
     if verbose:

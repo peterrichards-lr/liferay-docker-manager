@@ -991,6 +991,35 @@ del "%~f0"
                         f"Start shared infrastructure by running '{UI.WHITE}{cmd_hint}{UI.COLOR_OFF}'.",
                         "https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/README.md#infra-setup-infra-down-infra-restart",
                     )
+
+            # 7. Tag Discovery Check
+            from ldm_core.constants import API_BASE_DXP
+            from ldm_core.utils import discover_latest_tag
+
+            try:
+                # Use a cached/quick check for doctor
+                latest_tag = discover_latest_tag(API_BASE_DXP, verbose=False)
+                if latest_tag:
+                    results.append(
+                        (
+                            "Liferay Docker Tags",
+                            f"Available (Latest: {latest_tag})",
+                            True,
+                        )
+                    )
+                else:
+                    results.append(
+                        (
+                            "Liferay Docker Tags",
+                            "Unavailable (Discovery failed)",
+                            "warn",
+                        )
+                    )
+                    add_hint("Docker Hub API might be rate-limited or unreachable.")
+            except Exception as e:
+                results.append(
+                    ("Liferay Docker Tags", f"Error ({str(e)[:30]}...)", "warn")
+                )
         else:
             results.append(("Docker Network", "Skipped (Engine down)", "warn"))
             results.append(("Global Infrastructure", "Skipped (Engine down)", "warn"))
