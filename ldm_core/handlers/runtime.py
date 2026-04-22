@@ -106,15 +106,15 @@ class RuntimeHandler(BaseHandler):
                 UI.die("No Liferay tag specified.")
 
             # Interactive Tag Discovery Sequence
-            # Ask for release type or prefix
-            rt = UI.ask_choices(
-                "Select Liferay Release Type", ["u", "qr", "any", "prefix"], "u"
-            )
+            # Combined prompt for release type or specific version prefix
+            ans = UI.ask("Release type (any|u|lts|qr) or prefix", "any")
 
+            rt = "any"
             prefix = None
-            if rt == "prefix":
-                prefix = UI.ask("Enter Version Prefix (e.g. 2025.q1)")
-                rt = "any"
+            if ans in ["any", "u", "lts", "qr"]:
+                rt = ans
+            else:
+                prefix = ans
 
             from ldm_core.constants import API_BASE_DXP
             from ldm_core.utils import discover_latest_tag
