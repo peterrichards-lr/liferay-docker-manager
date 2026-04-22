@@ -131,8 +131,6 @@ class RuntimeHandler:
 
             ConfigHandler(self.args).sync_samples(paths)
 
-        ssl_val = self._is_ssl_active(host_name, project_meta)
-
         project_meta.update(
             {
                 "project_name": project_id,
