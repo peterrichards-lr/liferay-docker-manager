@@ -46,7 +46,7 @@ This checklist is ordered sequentially to minimize environment setup overhead. F
 | ID | Test Case | Steps | Validation Pointers | Expected Outcome |
 | :--- | :--- | :--- | :--- | :--- |
 | 2.1 | **Infra Setup** | `ldm infra-setup --search` | Monitor `docker ps` to see new global containers. | Starts Traefik and ES8. Idempotent. |
-| 2.2 | **DNS Alignment** | Point host to wrong IP | Edit `/etc/hosts` and point a test domain to `10.0.0.99`. | `ldm doctor` warns about IP mismatch. |
+| 2.2 | **DNS Alignment** | Point host to wrong IP | **Requires a project.** Run `ldm init test-dns --host-name broken.local`. Edit `/etc/hosts` and point `broken.local` to `10.0.0.99`. | `ldm doctor` warns about IP mismatch. |
 | 2.3 | **Auto-Healing DNS** | `ldm doctor --fix-hosts` | Run this while the sabotage from 2.2 is active. | Prompts for sudo; fixes the entry. |
 
 ### Phase 3: Project Lifecycle (Init & Seeding)
