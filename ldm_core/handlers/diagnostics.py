@@ -2004,6 +2004,16 @@ del "%~f0"
                     # Ignore ES deprecation warnings (very noisy in logs)
                     if "deprecation.elasticsearch" in line.lower():
                         continue
+                    # Ignore benign HAProxy missing timeout warnings (Docker Socket Bridge)
+                    if "missing timeouts for backend 'docker-events'" in line:
+                        continue
+                    # Ignore benign ES8 initialization status/info lines caught by regex
+                    if "@timestamp" in line and (
+                        '"level":"INFO"' in line or '"level":"WARN"' in line
+                    ):
+                        # Elasticsearch JSON logs are very verbose; only flag if it's explicitly "ERROR"
+                        if '"level":"ERROR"' not in line:
+                            continue
 
                     return f"Warning (Issue in logs: {line.strip()[:40]}...)", "warn"
 
