@@ -911,7 +911,7 @@ del "%~f0"
             ]
 
             if platform.system().lower() == "darwin":
-                global_services.append(("docker-socket-proxy", "Docker Socket Bridge"))
+                global_services.append(("liferay-docker-proxy", "Docker Socket Bridge"))
 
             for container, label in global_services:
                 is_running = run_command(
@@ -921,7 +921,7 @@ del "%~f0"
                     status = "Running"
                     ok = True
 
-                    if container == "docker-socket-proxy":
+                    if container == "liferay-docker-proxy":
                         inspect = run_command(
                             [
                                 "docker",
