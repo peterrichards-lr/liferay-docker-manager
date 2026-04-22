@@ -178,10 +178,11 @@ class TestBaseHardening(unittest.TestCase):
             return_value={"root": Path("."), "cx": Path("."), "ce_dir": Path(".")},
         ):
             with patch.object(Path, "exists", return_value=True):
-                ok, unresolved = self.handler.validate_project_dns(".")
+                ok, unresolved, non_local = self.handler.validate_project_dns(".")
 
         # Verify: Only "active-ext" should have been checked
         self.assertTrue(ok)
+        self.assertEqual(len(non_local), 0)
 
         # Now mock failure for the active one
         def resolve_side_effect(host):
@@ -196,7 +197,7 @@ class TestBaseHardening(unittest.TestCase):
             return_value={"root": Path("."), "cx": Path("."), "ce_dir": Path(".")},
         ):
             with patch.object(Path, "exists", return_value=True):
-                ok, unresolved = self.handler.validate_project_dns(".")
+                ok, unresolved, non_local = self.handler.validate_project_dns(".")
 
         self.assertFalse(ok)
         self.assertEqual(len(unresolved), 1)

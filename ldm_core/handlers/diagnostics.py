@@ -1358,7 +1358,11 @@ del "%~f0"
                         )
                     )
 
-            dns_ok, unresolved = self.validate_project_dns(p_path)
+            dns_res = self.validate_project_dns(p_path)
+            dns_ok = dns_res[0]
+            unresolved = dns_res[1]
+            non_local = dns_res[2]
+
             if host_name != "localhost":
                 if dns_ok:
                     results.append(
@@ -1367,6 +1371,20 @@ del "%~f0"
                             "All domains resolve",
                             True,
                         )
+                    )
+                elif non_local and not unresolved:
+                    # Resolves but to an unexpected IP (e.g. 10.0.0.99)
+                    ip_list = [f"{h}={ip}" for h, ip in non_local]
+                    results.append(
+                        (
+                            f"[{p_path.name}] DNS ({host_name})",
+                            f"Non-local IP ({', '.join(ip_list)})",
+                            "warn",
+                        )
+                    )
+                    add_hint(
+                        f"[{p_path.name}] Hostname resolves to an external IP. Ensure your hosts file points to 127.0.0.1 for local dev.",
+                        "https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/installation.md#dns--subdomain-configuration",
                     )
                 else:
                     fix_hosts = getattr(self.args, "fix_hosts", False)

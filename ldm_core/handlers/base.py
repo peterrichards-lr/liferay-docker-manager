@@ -847,17 +847,44 @@ class BaseHandler:
         """Verifies that the project's hostname and all active client extensions resolve correctly."""
         root = self.detect_project_path(project_id)
         if not root:
-            return False, []
+            return False, [], []
 
         paths = self.setup_paths(root)
         meta = self.read_meta(root)
         host_name = meta.get("host_name", "localhost")
         if host_name == "localhost":
-            return True, []
+            return True, [], []
 
         unresolved = []
-        if not self.get_resolved_ip(host_name):
-            unresolved.append(host_name)
+        non_local = []
+
+        # Get host's own primary IP for local check
+        import socket
+
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            s.settimeout(0)
+            try:
+                # does not even have to be reachable
+                s.connect(("10.254.254.254", 1))
+                host_ip = s.getsockname()[0]
+            except Exception:
+                host_ip = "127.0.0.1"
+            finally:
+                s.close()
+        except Exception:
+            host_ip = "127.0.0.1"
+
+        local_ips = ["127.0.0.1", "0.0.0.0", host_ip]  # nosec B104
+
+        def check_host(h):
+            ip = self.get_resolved_ip(h)
+            if not ip:
+                unresolved.append(h)
+            elif ip not in local_ips:
+                non_local.append((h, ip))
+
+        check_host(host_name)
 
         if paths["cx"].exists():
             from ldm_core.handlers.workspace import WorkspaceHandler
@@ -870,10 +897,9 @@ class BaseHandler:
             for ext in extensions:
                 if ext.get("deploy") and ext.get("has_load_balancer"):
                     ext_host = f"{ext['id']}.{host_name}"
-                    if not self.get_resolved_ip(ext_host):
-                        unresolved.append(ext_host)
+                    check_host(ext_host)
 
-        return len(unresolved) == 0, unresolved
+        return len(unresolved) == 0 and len(non_local) == 0, unresolved, non_local
 
     def safe_rmtree(self, path):
         """Securely deletes a directory tree, handling potential Docker/Root permission issues."""

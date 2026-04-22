@@ -133,7 +133,12 @@ class RuntimeHandler(BaseHandler):
 
         if is_new_project:
             if self._ensure_seeded(tag, db_type, paths):
+                from ldm_core.constants import SEED_VERSION
+
                 project_meta = self.read_meta(paths["root"])
+                project_meta["seeded"] = "true"
+                project_meta["seed_version"] = str(SEED_VERSION)
+                self.write_meta(paths["root"], project_meta)
                 is_new_project = False
 
         use_shared_search = (

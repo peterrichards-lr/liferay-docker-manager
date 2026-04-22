@@ -462,16 +462,17 @@ def discover_latest_tag(
         tags.sort(key=natural_sort_key)
         latest_tag = tags[-1]
 
-    try:
-        cache = {}
-        if cache_path.exists():
-            with open(cache_path, "r") as f:
-                cache = json.load(f)
-        cache[cache_key] = {"tag": latest_tag, "timestamp": time.time()}
-        with open(cache_path, "w") as f:
-            json.dump(cache, f)
-    except Exception:
-        pass
+    if latest_tag:
+        try:
+            cache = {}
+            if cache_path.exists():
+                with open(cache_path, "r") as f:
+                    cache = json.load(f)
+            cache[cache_key] = {"tag": latest_tag, "timestamp": time.time()}
+            with open(cache_path, "w") as f:
+                json.dump(cache, f)
+        except Exception:
+            pass
 
     return latest_tag if latest_tag != "" else None
 
