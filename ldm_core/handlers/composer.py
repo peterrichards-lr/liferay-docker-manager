@@ -8,6 +8,11 @@ from ldm_core.utils import dict_to_yaml
 class ComposerHandler:
     """Specialized handler for Stack Composition and Metadata translation."""
 
+    def __init__(self, args=None):
+        self.args = args
+        self.verbose = getattr(args, "verbose", False)
+        self.non_interactive = getattr(args, "non_interactive", False)
+
     def get_default_jvm_args(self):
         """Calculates recommended JVM arguments based on available Docker RAM."""
         try:

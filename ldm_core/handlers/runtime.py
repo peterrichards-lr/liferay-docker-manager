@@ -10,6 +10,11 @@ from ldm_core.utils import get_actual_home, get_compose_cmd, open_browser
 class RuntimeHandler:
     """Specialized handler for container lifecycle and orchestration."""
 
+    def __init__(self, args=None):
+        self.args = args
+        self.verbose = getattr(args, "verbose", False)
+        self.non_interactive = getattr(args, "non_interactive", False)
+
     def cmd_run(self, project_id=None, is_restart=False):
         """Main entry point for starting or updating a project stack."""
         total_start = time.time()

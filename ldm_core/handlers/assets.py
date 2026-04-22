@@ -14,6 +14,11 @@ exists_fn = os.path.exists
 class AssetHandler:
     """Specialized handler for 'Offline First' asset management (Seeds, Samples)."""
 
+    def __init__(self, args=None):
+        self.args = args
+        self.verbose = getattr(args, "verbose", False)
+        self.non_interactive = getattr(args, "non_interactive", False)
+
     def _fetch_seed(self, tag, db_type, search_mode, paths):
         """Discovers and downloads a pre-warmed seed from GitHub Releases with Offline-First logic."""
         from ldm_core.constants import SEED_VERSION

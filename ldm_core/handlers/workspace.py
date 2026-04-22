@@ -21,6 +21,9 @@ class WorkspaceHandler(BaseHandler):
 
     def __init__(self, args=None):
         super().__init__(args)
+        self.args = args
+        self.verbose = getattr(args, "verbose", False)
+        self.non_interactive = getattr(args, "non_interactive", False)
 
     def cmd_init(self, project_id=None):
         """Scaffolds a project without starting it."""
