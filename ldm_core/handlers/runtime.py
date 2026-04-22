@@ -104,10 +104,24 @@ class RuntimeHandler(BaseHandler):
         if not tag:
             if self.non_interactive:
                 UI.die("No Liferay tag specified.")
-            from ldm_core.utils import discover_latest_tag
-            from ldm_core.constants import API_BASE_DXP
 
-            latest_tag = discover_latest_tag(API_BASE_DXP, verbose=True)
+            # Interactive Tag Discovery Sequence
+            # Ask for release type or prefix
+            rt = UI.ask_choices(
+                "Select Liferay Release Type", ["u", "qr", "any", "prefix"], "u"
+            )
+
+            prefix = None
+            if rt == "prefix":
+                prefix = UI.ask("Enter Version Prefix (e.g. 2025.q1)")
+                rt = "any"
+
+            from ldm_core.constants import API_BASE_DXP
+            from ldm_core.utils import discover_latest_tag
+
+            latest_tag = discover_latest_tag(
+                API_BASE_DXP, release_type=rt, prefix_filter=prefix, verbose=True
+            )
             tag = UI.ask("Enter Liferay Tag", latest_tag)
 
         external_snapshot = getattr(self.args, "snapshot", None)

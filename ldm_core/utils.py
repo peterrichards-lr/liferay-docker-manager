@@ -383,7 +383,7 @@ def discover_latest_tag(
 
     api_filter = prefix_filter
     if not api_filter:
-        if release_type == "lts" or release_type == "u":
+        if release_type in ["lts", "u", "qr"]:
             api_filter = f"-{release_type}"
 
     if api_filter:
@@ -434,6 +434,8 @@ def discover_latest_tag(
             if release_type == "lts" and "-lts" not in name:
                 continue
             if release_type == "u" and "-u" not in name:
+                continue
+            if release_type == "qr" and "-qr" not in name:
                 continue
 
             is_valid = bool(re.match(TAG_PATTERN, name))

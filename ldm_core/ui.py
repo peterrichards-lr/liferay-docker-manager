@@ -105,6 +105,33 @@ class UI:
             UI._print(msg, UI.WHITE, "⚙️")
 
     @staticmethod
+    def ask_choices(prompt, choices, default=None):
+        """Prompts the user to select from a list of predefined choices."""
+        if UI.NON_INTERACTIVE:
+            return default
+
+        # Create a display string for choices, highlighting the default
+        choice_display = []
+        for c in choices:
+            if c == default:
+                choice_display.append(f"{UI.GREEN}{c}{UI.COLOR_OFF}")
+            else:
+                choice_display.append(c)
+
+        choice_str = "/".join(choice_display)
+        full_prompt = f"{prompt} ({choice_str})"
+
+        while True:
+            res = UI.ask(full_prompt, default)
+            if not res and default:
+                return default
+            if res in choices:
+                return res
+            UI.warning(
+                f"Invalid choice: {UI.CYAN}{res}{UI.COLOR_OFF}. Please select from: {', '.join(choices)}"
+            )
+
+    @staticmethod
     def ask(prompt, default=None):
         if UI.NON_INTERACTIVE:
             return default
