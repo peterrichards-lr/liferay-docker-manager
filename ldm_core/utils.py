@@ -34,9 +34,9 @@ def download_file(url, destination):
 
 def get_seed_url(tag, db="postgresql", search="shared"):
     """Checks GitHub for a seeded state asset matching the given Liferay configuration."""
-    from ldm_core.constants import SEED_VERSION, VERSION
+    from ldm_core.constants import SEED_VERSION
 
-    tag_name = f"v{VERSION}"
+    tag_name = "seeded-states"
 
     # Construct asset names with the seed logic version
     target_name = f"seeded-{tag}-{db}-{search}-v{SEED_VERSION}.tar.gz"

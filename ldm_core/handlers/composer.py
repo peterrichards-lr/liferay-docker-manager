@@ -1,6 +1,7 @@
 import json
 import math
 import platform
+import re
 from ldm_core.utils import dict_to_yaml
 
 
@@ -123,7 +124,19 @@ class ComposerHandler:
 
         image = meta.get("image_tag")
         if not image:
-            image = f"liferay/portal:{tag}" if "u" in tag else f"liferay/dxp:{tag}"
+            # Smart Image Mapping
+            # 1. If it contains 'u', it's always Portal
+            if "u" in tag:
+                image = f"liferay/portal:{tag}"
+            # 2. If it has a known suffix, use it as is (DXP)
+            elif any(s in tag for s in ["-lts", "-qr", "-ga"]):
+                image = f"liferay/dxp:{tag}"
+            # 3. Modern Quarterly Tags (e.g. 2026.q1.4) without suffix default to LTS
+            elif re.match(r"^\d{4}\.q[1-4]\.\d+$", tag):
+                image = f"liferay/dxp:{tag}-lts"
+            # 4. Default Fallback
+            else:
+                image = f"liferay/dxp:{tag}"
 
         # Determine Environment Variable Separator (Mandate 1.1)
         # Modern (2025.Q1+ or 7.4.13-u100+): Single underscore (_)
