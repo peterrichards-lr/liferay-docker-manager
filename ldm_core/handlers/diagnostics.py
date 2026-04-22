@@ -6,7 +6,7 @@ import json
 import subprocess
 from pathlib import Path
 from ldm_core.ui import UI
-from ldm_core.constants import PROJECT_META_FILE, SCRIPT_DIR, VERSION, BUILD_INFO
+from ldm_core.constants import SCRIPT_DIR, VERSION, BUILD_INFO
 from ldm_core.utils import (
     run_command,
     get_actual_home,
@@ -75,7 +75,7 @@ class DiagnosticsHandler:
             if root_path:
                 # We need to match find_dxp_roots structure
                 roots = [{"path": root_path, "version": "unknown"}]
-                meta = self.read_meta(root_path / PROJECT_META_FILE)
+                meta = self.read_meta(root_path)
                 if meta.get("tag"):
                     roots[0]["version"] = meta["tag"]
         else:
@@ -85,7 +85,7 @@ class DiagnosticsHandler:
 
         for r in roots:
             path = r["path"]
-            meta = self.read_meta(path / PROJECT_META_FILE)
+            meta = self.read_meta(path)
             p_id = meta.get("container_name") or path.name
 
             # Check if any container for this project is running
@@ -757,7 +757,7 @@ del "%~f0"
         # 4.2 Project Health (if specific project is being checked)
         if project_paths and len(project_paths) == 1:
             p_path = project_paths[0]
-            meta = self.read_meta(p_path / PROJECT_META_FILE)
+            meta = self.read_meta(p_path)
             if meta:
                 is_seeded = str(meta.get("seeded", "false")).lower() == "true"
                 s_version = meta.get("seed_version")
@@ -990,7 +990,7 @@ del "%~f0"
         # 7. Project-Specific Check (Optional)
         for p_path in project_paths:
             UI.heading(f"Project Health: {p_path.name}")
-            meta = self.read_meta(p_path / PROJECT_META_FILE)
+            meta = self.read_meta(p_path)
             env_args = meta.get("env_args", [])
             blacklisted_prefixes = [
                 "LIFERAY_ELASTICSEARCH",
@@ -1587,7 +1587,7 @@ del "%~f0"
 
         for r in roots:
             path = r["path"]
-            meta = self.read_meta(path / PROJECT_META_FILE)
+            meta = self.read_meta(path)
             name = meta.get("container_name") or path.name
             version = r["version"]
 
@@ -1651,7 +1651,7 @@ del "%~f0"
         active_projects = set()
         active_hostnames = set()
         for r in roots:
-            meta = self.read_meta(r["path"] / PROJECT_META_FILE)
+            meta = self.read_meta(r["path"])
             # Use container_name from meta, or fall back to folder name
             name = meta.get("container_name") or r["path"].name
             active_projects.add(name)

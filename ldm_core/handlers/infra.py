@@ -1,6 +1,7 @@
 import os
 import time
 import json
+import shutil
 from ldm_core.ui import UI
 from ldm_core.utils import (
     get_actual_home,
@@ -11,6 +12,20 @@ from ldm_core.utils import (
 
 class InfraHandler:
     """Mixin for global infrastructure management (Traefik, Global Search)."""
+
+    def cmd_infra_setup(self):
+        """Sets up the global infrastructure (Traefik, Search)."""
+        import sys
+
+        if not self.check_docker():
+            UI.die("Docker is not running.")
+        resolved_ip = (
+            "0.0.0.0"  # nosec B104
+            if sys.platform == "darwin"
+            else self.get_resolved_ip("localhost")
+        )
+        self.setup_infrastructure(resolved_ip, 443, use_ssl=True)
+        UI.success("Infrastructure setup complete.")
 
     def setup_infrastructure(self, resolved_ip, ssl_port, use_ssl=True):
         """Initializes global Traefik proxy and search services."""
@@ -45,6 +60,8 @@ class InfraHandler:
 
     def _get_infra_env(self, resolved_ip="127.0.0.1", ssl_port=443):
         """Generates the standard environment variables for the infrastructure stack."""
+        from ldm_core.utils import get_actual_home
+
         actual_home = get_actual_home()
         cert_dir = actual_home / "liferay-docker-certs"
 
@@ -53,6 +70,46 @@ class InfraHandler:
         env["LDM_SSL_PORT"] = str(ssl_port)
         env["LDM_RESOLVED_IP"] = resolved_ip
         return env
+
+    def setup_ssl(self, cert_dir, host_name):
+        """Ensures valid locally-trusted wildcard certificates exist for the host."""
+        if not shutil.which("mkcert"):
+            UI.warning(
+                "mkcert not found. SSL proxy will use default self-signed certs."
+            )
+            return False
+
+        cert_dir.mkdir(parents=True, exist_ok=True)
+        cert_file = cert_dir / f"{host_name}.pem"
+        key_file = cert_dir / f"{host_name}-key.pem"
+
+        if not cert_file.exists():
+            UI.info(
+                f"Generating SSL certificates for {UI.CYAN}{host_name}{UI.COLOR_OFF}..."
+            )
+            self.run_command(
+                [
+                    "mkcert",
+                    "-cert-file",
+                    str(cert_file),
+                    "-key-file",
+                    str(key_file),
+                    host_name,
+                    f"*.{host_name}",
+                ],
+                cwd=str(cert_dir),
+            )
+
+        # Generate Traefik Dynamic Config for this host
+        config_content = f"""
+tls:
+  certificates:
+    - certFile: /etc/traefik/certs/{host_name}.pem
+      keyFile: /etc/traefik/certs/{host_name}-key.pem
+"""
+        config_file = cert_dir / f"traefik-{host_name}.yml"
+        config_file.write_text(config_content)
+        return True
 
     def cmd_infra_down(self):
         """Tears down the global infrastructure (Traefik, Proxy)."""

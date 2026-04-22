@@ -5,7 +5,6 @@ from pathlib import Path
 from datetime import datetime
 from ldm_core.ui import UI
 from ldm_core.handlers.base import BaseHandler
-from ldm_core.constants import PROJECT_META_FILE
 from ldm_core.utils import run_command, get_compose_cmd
 
 
@@ -33,6 +32,10 @@ class SnapshotHandler(BaseHandler):
             UI.info("No snapshots found.")
             return []
 
+        # Ensure paths is a dictionary for subscripting
+        if not isinstance(paths, dict):
+            paths = self.setup_paths(paths)
+
         UI.heading(f"Snapshots for {paths['root'].name}")
         for i, b in enumerate(backups):
             meta = self.read_meta(b / "meta")
@@ -51,7 +54,7 @@ class SnapshotHandler(BaseHandler):
         if not root:
             return
         paths = self.setup_paths(root)
-        project_meta = self.read_meta(root / PROJECT_META_FILE)
+        project_meta = self.read_meta(root)
 
         # Reclaim permissions on potential root-owned files before starting
         self.verify_runtime_environment(paths)
@@ -206,7 +209,7 @@ class SnapshotHandler(BaseHandler):
             "search_snapshot": search_snapshot_name,
             "custom_env": ",".join(custom_env) if custom_env else None,
         }
-        self.write_meta(snap_dir / "meta", meta)
+        self.write_meta(snap_dir, meta)
 
         UI.success(f"Snapshot saved: {snap_dir}")
 
@@ -216,7 +219,7 @@ class SnapshotHandler(BaseHandler):
             return
         paths = self.setup_paths(root_path)
         # For new projects (seeding), meta might not exist yet
-        project_meta = self.read_meta(paths["root"] / PROJECT_META_FILE) or {}
+        project_meta = self.read_meta(paths["root"]) or {}
 
         # 0. Support for --list (Non-interactive overview)
         if getattr(self.args, "list", False):
@@ -289,7 +292,7 @@ class SnapshotHandler(BaseHandler):
         custom_env = snap_meta.get("custom_env")
         if custom_env:
             project_meta["custom_env"] = custom_env
-            self.write_meta(paths["root"] / PROJECT_META_FILE, project_meta)
+            self.write_meta(paths["root"], project_meta)
 
         if search_snapshot_name and search_snapshot_name != "None":
             if run_command(["docker", "ps", "-q", "-f", f"name={search_name}"]):
@@ -338,6 +341,10 @@ class SnapshotHandler(BaseHandler):
 
     def _extract_snapshot_archive(self, files_tar, paths):
         """Extracts a snapshot tarball into the project root with security checks."""
+        # Ensure paths is a dictionary for subscripting
+        if not isinstance(paths, dict):
+            paths = self.setup_paths(paths)
+
         no_osgi = getattr(self.args, "no_osgi_seed", False)
 
         with tarfile.open(files_tar, "r:gz") as tar:

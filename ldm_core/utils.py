@@ -6,7 +6,6 @@ import time
 import subprocess
 import re
 import shutil
-import zipfile
 from pathlib import Path
 import requests
 from ldm_core.ui import UI
@@ -83,104 +82,6 @@ def get_seed_url(tag, db="postgresql", search="shared"):
         except Exception:
             continue
     return None
-
-
-def download_samples(version, destination):
-    """Downloads and extracts the samples pack from GitHub with Offline-First logic."""
-    repo_url = "https://github.com/peterrichards-lr/liferay-docker-manager"
-
-    actual_home = get_actual_home()
-    cache_dir = actual_home / ".ldm" / "references" / "samples"
-    cache_dir.mkdir(parents=True, exist_ok=True)
-
-    # We cache by version to ensure parity
-    cached_zip = cache_dir / f"samples_{version}.zip"
-
-    # --- 1. Check Cache ---
-    if cached_zip.exists():
-        UI.info(f"Using cached samples: {cached_zip.name}")
-        temp_zip = cached_zip
-    else:
-        # --- 2. Atomic Download & Cache ---
-        urls = [
-            f"{repo_url}/releases/download/v{version}/samples.zip",
-            f"{repo_url}/releases/latest/download/samples.zip",
-        ]
-
-        temp_zip = cache_dir / f"samples_{version}.zip.download"
-        success = False
-        last_error = None
-
-        for url in urls:
-            try:
-                if success:
-                    break
-
-                UI.debug(f"Attempting to download samples from: {url}")
-                response = requests.get(
-                    url, headers={"User-Agent": "ldm-cli"}, timeout=15, stream=True
-                )
-                if response.status_code != 200:
-                    continue
-
-                with open(temp_zip, "wb") as f:
-                    for chunk in response.iter_content(chunk_size=8192):
-                        f.write(chunk)
-
-                success = True
-            except Exception as e:
-                last_error = e
-                continue
-
-        if not success:
-            UI.warning(
-                f"LDM is working offline or samples are unreachable ({last_error or '404'})"
-            )
-            UI.error(
-                "The '--samples' workflow requires a download if assets are not cached."
-            )
-            if temp_zip.exists():
-                temp_zip.unlink()
-            return False
-
-        # Atomic move to cache
-        os.replace(temp_zip, cached_zip)
-        temp_zip = cached_zip
-        UI.success(f"Samples cached: {cached_zip.name}")
-
-    # --- 3. Extract ---
-    try:
-        UI.info("Extracting samples...")
-        destination.mkdir(parents=True, exist_ok=True)
-        with zipfile.ZipFile(temp_zip, "r") as zip_ref:
-            extract_temp = cache_dir / f"temp_extract_{version}"
-            if extract_temp.exists():
-                shutil.rmtree(extract_temp)
-            extract_temp.mkdir(parents=True)
-            zip_ref.extractall(extract_temp)
-
-            # Move content from temp to destination
-            source_root = extract_temp
-            inner_samples = extract_temp / "samples"
-            if inner_samples.exists() and inner_samples.is_dir():
-                source_root = inner_samples
-
-            for item in source_root.iterdir():
-                target = destination / item.name
-                if target.exists():
-                    if target.is_dir():
-                        shutil.rmtree(target)
-                    else:
-                        os.remove(target)
-                shutil.move(str(item), str(target))
-
-            shutil.rmtree(extract_temp)
-
-        UI.success("Sample pack ready.")
-        return True
-    except Exception as e:
-        UI.error(f"Failed to extract samples: {e}")
-        return False
 
 
 def load_env_blacklist(path):
@@ -744,13 +645,20 @@ def find_dxp_roots(search_dir=None):
                     if abs_path in seen_paths:
                         continue
 
-                    has_meta = (item / PROJECT_META_FILE).exists()
+                    # Support multiple metadata filenames
+                    meta_file = None
+                    for f in [PROJECT_META_FILE, ".liferay-docker.meta", ".ldm.meta"]:
+                        if (item / f).exists():
+                            meta_file = item / f
+                            break
+
+                    has_meta = meta_file is not None
                     has_structure = (item / "files").exists() and (
                         item / "deploy"
                     ).exists()
 
                     if has_meta or (not is_home and has_structure):
-                        meta = read_meta(item / PROJECT_META_FILE)
+                        meta = read_meta(meta_file) if has_meta else {}
                         version = meta.get("tag") or "unknown"
                         roots.append({"path": item, "version": version})
                         seen_paths.add(abs_path)

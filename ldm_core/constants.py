@@ -1,8 +1,8 @@
 from pathlib import Path
 
 # --- Constants & Configuration ---
-# LDM_MAGIC_VERSION: 2.3.37
-VERSION = "2.3.37"
+# LDM_MAGIC_VERSION: 2.4.0
+VERSION = "2.4.0"
 
 
 BUILD_INFO = None
@@ -12,7 +12,8 @@ API_BASE_DXP = "https://hub.docker.com/v2/repositories/liferay/dxp/tags?page_siz
 API_BASE_PORTAL = "https://hub.docker.com/v2/repositories/liferay/portal/tags?page_size=200&ordering=name"
 META_VERSION = "2"
 MIN_META_VERSION = 2
-PROJECT_META_FILE = ".liferay-docker.meta"
+PROJECT_META_FILE = "meta"
+REGISTRY_FILE = "registry.json"
 TAG_PATTERN = r"^\d{4}\.q[1-4]\.\d+(-u\d+|-lts)?$"
 SCRIPT_DIR = Path(__file__).parent.parent.resolve()
 ELASTICSEARCH_VERSION = "8.19.1"

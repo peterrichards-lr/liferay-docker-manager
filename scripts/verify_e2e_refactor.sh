@@ -52,10 +52,10 @@ mkdir -p test-e2e-refactor-project/files
   echo "image_tag=alpine"
   echo "port=8082"
   echo "db_type=hypersonic"
-} > test-e2e-refactor-project/.liferay-docker.meta
+} > test-e2e-refactor-project/meta
 
 # Run it
-$PYTHON_CMD -y run test-e2e-refactor-project --no-wait --no-tld-skip --no-jvm-verify
+$PYTHON_CMD -y run test-e2e-refactor-project --tag 2026.q1.4-lts --no-wait --no-tld-skip --no-jvm-verify
 
 # Verify labels in compose
 if ! grep -q "com.liferay.ldm.project=test-e2e-refactor" test-e2e-refactor-project/docker-compose.yml; then
@@ -118,7 +118,7 @@ create_isolation_project() {
       echo "port=$port"
       echo "db_type=hypersonic"
       echo "ssl=false"
-    } > "$dir/.liferay-docker.meta"
+    } > "$dir/meta"
 }
 
 patch_isolation_compose() {
@@ -168,10 +168,10 @@ mkdir -p test-ssl-proxy/files
   echo "ssl=true"
   echo "port=8086"
   echo "db_type=hypersonic"
-} > test-ssl-proxy/.liferay-docker.meta
+} > test-ssl-proxy/meta
 
 # Run in no-up mode to check generated config.
-$PYTHON_CMD -y run test-ssl-proxy --no-up --no-tld-skip --no-jvm-verify
+$PYTHON_CMD -y run test-ssl-proxy --tag 2026.q1.4-lts --no-up --no-tld-skip --no-jvm-verify
 
 if grep -q "8086:8080" test-ssl-proxy/docker-compose.yml; then
     echo "❌ ERROR: SSL custom domain exposed port 8086 to host. Should be proxy-only."
@@ -197,10 +197,10 @@ $PYTHON_CMD -y infra-setup
 create_isolation_project "test-log-verify" "test-log-verify" "localhost" "8088"
 # Update meta to use PostgreSQL and ensure Shared Search is ON (default)
 # OS-Agnostic sed: Avoid -i '' which fails on Linux
-sed 's/db_type=hypersonic/db_type=postgresql/' test-log-verify/.liferay-docker.meta > meta.tmp && mv meta.tmp test-log-verify/.liferay-docker.meta
+sed 's/db_type=hypersonic/db_type=postgresql/' test-log-verify/meta > meta.tmp && mv meta.tmp test-log-verify/meta
 
 # Run with --no-wait so we can poll the logs ourselves
-$PYTHON_CMD -y run test-log-verify --no-wait --no-tld-skip --no-jvm-verify
+$PYTHON_CMD -y run test-log-verify --tag 2026.q1.4-lts --no-wait --no-tld-skip --no-jvm-verify
 
 # Verify the property injection in portal-ext.properties (Reliable Mixed-Case Path)
 if ! grep -q "jdbc.default.driverClassName=org.postgresql.Driver" test-log-verify/files/portal-ext.properties; then

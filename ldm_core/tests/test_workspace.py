@@ -4,12 +4,22 @@ import tempfile
 import zipfile
 from unittest.mock import patch, MagicMock
 from pathlib import Path
+from ldm_core.handlers.composer import ComposerHandler
+from ldm_core.handlers.runtime import RuntimeHandler
+from ldm_core.handlers.assets import AssetHandler
 from ldm_core.handlers.workspace import WorkspaceHandler
 from ldm_core.handlers.diagnostics import DiagnosticsHandler
 from ldm_core.handlers.base import BaseHandler
 
 
-class MockWorkspaceManager(WorkspaceHandler, DiagnosticsHandler, BaseHandler):
+class MockWorkspaceManager(
+    ComposerHandler,
+    RuntimeHandler,
+    AssetHandler,
+    WorkspaceHandler,
+    DiagnosticsHandler,
+    BaseHandler,
+):
     def __init__(self):
         self.verbose = False
         self.non_interactive = True
@@ -139,7 +149,7 @@ class TestWorkspaceImport(unittest.TestCase):
     def setUp(self):
         self.handler = MockWorkspaceManager()
 
-    @patch("ldm_core.handlers.stack.StackHandler.cmd_run")
+    @patch("ldm_core.handlers.runtime.RuntimeHandler.cmd_run")
     @patch("ldm_core.handlers.workspace.run_command")
     def test_cmd_import_project_id_passing(self, mock_run, mock_cmd_run):
         # Use real temporary directories to avoid mock-related isinstance failures
@@ -172,7 +182,7 @@ class TestWorkspaceImport(unittest.TestCase):
                     self.assertEqual(self.handler.args.project, "my-dev-stack")
                     self.assertNotEqual(self.handler.args.project, str(project_dir))
 
-    @patch("ldm_core.handlers.stack.StackHandler.cmd_run")
+    @patch("ldm_core.handlers.runtime.RuntimeHandler.cmd_run")
     @patch("ldm_core.handlers.workspace.run_command")
     def test_cmd_import_clean_option(self, mock_run, mock_cmd_run):
         with tempfile.TemporaryDirectory() as tmp_base:
@@ -208,7 +218,7 @@ class TestWorkspaceImport(unittest.TestCase):
                     self.assertFalse((project_dir / "old-file.txt").exists())
                     self.assertTrue(project_dir.exists())
 
-    @patch("ldm_core.handlers.stack.StackHandler.cmd_run")
+    @patch("ldm_core.handlers.runtime.RuntimeHandler.cmd_run")
     @patch("ldm_core.handlers.workspace.run_command")
     def test_cmd_import_no_overwrite_option(self, mock_run, mock_cmd_run):
         with tempfile.TemporaryDirectory() as tmp_base:

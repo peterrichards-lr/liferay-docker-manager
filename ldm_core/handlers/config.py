@@ -7,7 +7,7 @@ from datetime import datetime
 from ldm_core.ui import UI
 from ldm_core.handlers.base import BaseHandler
 from ldm_core.constants import PROJECT_META_FILE, SCRIPT_DIR
-from ldm_core.utils import run_command, get_actual_home
+from ldm_core.utils import run_command, get_actual_home, safe_write_text
 
 
 class ConfigHandler(BaseHandler):
@@ -53,12 +53,19 @@ class ConfigHandler(BaseHandler):
 
         return props
 
-    def update_portal_ext(self, path, updates):
+    def update_portal_ext(self, paths, updates):
         """Updates or adds properties in portal-ext.properties, handling multi-line values."""
         if not updates:
             return
 
-        content = path.read_text() if path.exists() else ""
+        if isinstance(paths, dict):
+            pe_path = paths["files"] / "portal-ext.properties"
+        else:
+            pe_path = Path(paths)
+            if pe_path.is_dir():
+                pe_path = pe_path / "portal-ext.properties"
+
+        content = pe_path.read_text() if pe_path.exists() else ""
         props = self._get_properties(content)
 
         # Update the properties dictionary
@@ -109,9 +116,7 @@ class ConfigHandler(BaseHandler):
             if k not in original_keys_found:
                 new_lines.append(f"{k}={v}")
 
-        from ldm_core.utils import safe_write_text
-
-        safe_write_text(path, "\n".join(new_lines).strip() + "\n")
+        safe_write_text(pe_path, "\n".join(new_lines).strip() + "\n")
 
     def sync_logging(self, paths):
         """Injects custom logging levels into the project's portal-log4j-ext.xml."""
@@ -122,7 +127,6 @@ class ConfigHandler(BaseHandler):
 
         # 1. Ensure we have a valid baseline XML structure
         standard_template = '<?xml version="1.0"?>\n<Configuration strict="true">\n\t<Loggers>\n\t</Loggers>\n</Configuration>\n'
-        from ldm_core.utils import safe_write_text
 
         if not target.exists() or target.stat().st_size < 10:
             safe_write_text(target, standard_template)
@@ -328,6 +332,10 @@ class ConfigHandler(BaseHandler):
                 traceback.print_exc()
 
     def sync_common_assets(self, paths, host_updates=None, version=None):
+        # Safety: If passed a direct path (common error in refactored handlers), initialize paths dict
+        if not isinstance(paths, dict):
+            paths = self.setup_paths(paths)
+
         # Use the binary-aware 'common' path from setup_paths
         common_dir = paths.get("common")
         target_ext = paths["files"] / "portal-ext.properties"
@@ -518,7 +526,6 @@ class ConfigHandler(BaseHandler):
         if not root_path:
             return
 
-        from ldm_core.constants import PROJECT_META_FILE
         import subprocess
         import platform
 
@@ -552,7 +559,7 @@ class ConfigHandler(BaseHandler):
         if not root_path:
             return
         paths = self.setup_paths(root_path)
-        project_meta = self.read_meta(paths["root"] / PROJECT_META_FILE)
+        project_meta = self.read_meta(paths["root"])
         custom_env = json.loads(project_meta.get("custom_env", "{}"))
 
         if getattr(self.args, "import_env", False):
@@ -585,7 +592,8 @@ class ConfigHandler(BaseHandler):
             key = UI.ask("\nEnter Key (or Enter to apply current shell vars)")
             if not key:
                 project_meta["custom_env"] = json.dumps(custom_env)
-                self.write_meta(paths["root"] / PROJECT_META_FILE, project_meta)
+                self.write_meta(paths["root"], project_meta)
+                self.sync_stack(paths, project_meta, no_up=True)
                 UI.success("Environment variables saved.")
                 return
 
@@ -597,7 +605,8 @@ class ConfigHandler(BaseHandler):
                 custom_env[key] = value
 
             project_meta["custom_env"] = json.dumps(custom_env)
-            self.write_meta(paths["root"] / PROJECT_META_FILE, project_meta)
+            self.write_meta(paths["root"], project_meta)
+            self.sync_stack(paths, project_meta, no_up=True)
             UI.success(f"Variable '{key}' updated.")
         else:
             # Batch update from CLI
@@ -613,5 +622,6 @@ class ConfigHandler(BaseHandler):
                         custom_env.pop(pair, None)
 
             project_meta["custom_env"] = json.dumps(custom_env)
-            self.write_meta(paths["root"] / PROJECT_META_FILE, project_meta)
+            self.write_meta(paths["root"], project_meta)
+            self.sync_stack(paths, project_meta, no_up=True)
             UI.success("Environment updated.")

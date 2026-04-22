@@ -1,12 +1,14 @@
 import os
 import re
 import sys
+import json
+import time
 import platform
 import subprocess
 import shutil
 from pathlib import Path
 from ldm_core.ui import UI
-from ldm_core.constants import PROJECT_META_FILE, SCRIPT_DIR
+from ldm_core.constants import SCRIPT_DIR
 from ldm_core.utils import get_actual_home
 
 
@@ -17,6 +19,202 @@ class BaseHandler:
         self.args = args
         self.non_interactive = getattr(args, "non_interactive", False)
         self.verbose = getattr(args, "verbose", False)
+
+    def _pre_flight_checks(self, host_name, port, ssl_enabled=False, meta=None):
+        """Runs critical safety checks before starting containers."""
+        root = Path(meta.get("root"))
+        # 1. RAM Check
+        mem_limit = meta.get("mem_limit") if meta else None
+        self.check_ram(mem_limit=mem_limit)
+
+        # 2. Hostname Check
+        if host_name != "localhost":
+            if not self.check_hostname(host_name):
+                if self.non_interactive:
+                    UI.die(f"Hostname resolution failed for '{host_name}'.")
+                UI.warning(f"Hostname '{host_name}' does not resolve to an IP.")
+                UI.info("LDM can try to fix this by adding an entry to /etc/hosts.")
+                if UI.confirm("Add host entry? (Requires sudo)", "Y"):
+                    self.run_command(["sudo", "ldm", "fix-hosts", host_name])
+
+        # 3. Port Check
+        resolved_ip = (
+            self.get_resolved_ip(host_name) if host_name != "localhost" else "127.0.0.1"
+        )
+        if not self.check_port(resolved_ip, port):
+            if self.non_interactive:
+                UI.die(f"Port {port} is already in use on {resolved_ip}.")
+            new_port = self.find_available_port(resolved_ip, port)
+            UI.warning(f"Port {port} is in use. Using {new_port} instead.")
+            port = new_port
+
+        # 4. Registry Conflict Check
+        project_name = meta.get("project_name") if meta else None
+        if project_name and root:
+            self.check_registry_collisions(project_name, root, host_name=host_name)
+
+        return port
+
+    def check_ram(self, mem_limit=None):
+        """Verifies if the host has enough RAM allocated to Docker."""
+        try:
+            res = self.run_command(
+                ["docker", "info", "--format", "{{.MemTotal}}"], check=False
+            )
+            if not res:
+                return
+            mem_total = int(res)
+            # Default to 8GB if no limit specified
+            min_required = 8 * 1024 * 1024 * 1024
+            if mem_limit:
+                # Convert 12g to bytes
+                if "g" in mem_limit.lower():
+                    min_required = (
+                        int(mem_limit.lower().replace("g", "")) * 1024 * 1024 * 1024
+                    )
+                elif "m" in mem_limit.lower():
+                    min_required = int(mem_limit.lower().replace("m", "")) * 1024 * 1024
+
+            if mem_total < min_required:
+                UI.warning(
+                    f"Docker has less than {UI.format_size(min_required)} RAM allocated."
+                )
+                UI.info(
+                    "Liferay might be slow or unstable. Increase RAM in Docker Desktop settings."
+                )
+        except Exception:
+            pass
+
+    def check_port(self, ip, port):
+        """Checks if a port is available on a specific IP."""
+        import socket
+
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.settimeout(1)
+            try:
+                s.bind((ip, int(port)))
+                return True
+            except (socket.error, OverflowError):
+                return False
+
+    def find_available_port(self, ip, start_port):
+        """Finds the next available port starting from a given number."""
+        port = int(start_port)
+        while not self.check_port(ip, port):
+            port += 1
+            if port > 65535:
+                UI.die("No available ports found.")
+        return port
+
+    def check_registry_collisions(self, project_name, project_root, host_name=None):
+        """Checks if another project with the same name or hostname exists at a different path."""
+        from ldm_core.constants import REGISTRY_FILE
+        from ldm_core.utils import get_actual_home
+
+        actual_home = get_actual_home()
+        registry_path = actual_home / ".ldm" / REGISTRY_FILE
+        if not registry_path.exists():
+            return
+
+        try:
+            # Robust path resolution
+            if isinstance(project_root, dict):
+                current_root_path = Path(project_root.get("root", ".")).resolve()
+            else:
+                current_root_path = Path(project_root).resolve()
+
+            registry = json.loads(registry_path.read_text())
+
+            # 1. Check Project Name
+            existing_path = registry.get(project_name)
+            if existing_path:
+                if isinstance(existing_path, dict):
+                    existing_path = existing_path.get("path")
+
+                abs_existing = str(Path(existing_path).resolve())
+                abs_current = str(current_root_path)
+
+                if abs_existing != abs_current:
+                    UI.die(
+                        f"Project collision: '{project_name}' is already registered at:\n"
+                        f"  {UI.CYAN}{existing_path}{UI.COLOR_OFF}\n"
+                        f"Current path:\n"
+                        f"  {UI.CYAN}{abs_current}{UI.COLOR_OFF}\n\n"
+                        f"Run {UI.BOLD}ldm down --delete{UI.COLOR_OFF} in the original folder to remove it."
+                    )
+
+            # 2. Check Hostname (if provided and not localhost)
+            if host_name and host_name != "localhost":
+                for name, data in registry.items():
+                    if name == project_name:
+                        continue
+
+                    existing_host = None
+                    existing_path = None
+                    if isinstance(data, dict):
+                        existing_host = data.get("host")
+                        existing_path = data.get("path")
+
+                    if existing_host == host_name:
+                        abs_existing = str(Path(existing_path).resolve())
+                        abs_current = str(current_root_path)
+
+                        if abs_existing != abs_current:
+                            UI.die(
+                                f"Hostname collision: '{host_name}' is already registered for project '{name}' at:\n"
+                                f"  {UI.CYAN}{existing_path}{UI.COLOR_OFF}\n\n"
+                                f"Each project must have a unique Virtual Hostname."
+                            )
+        except Exception:
+            pass
+
+    def register_project(self, project_name, project_root, host_name=None):
+        """Registers a project in the global registry."""
+        from ldm_core.constants import REGISTRY_FILE
+        from ldm_core.utils import get_actual_home, safe_write_text
+
+        actual_home = get_actual_home()
+        ldm_dir = actual_home / ".ldm"
+        ldm_dir.mkdir(parents=True, exist_ok=True)
+        registry_path = ldm_dir / REGISTRY_FILE
+
+        registry = {}
+        if registry_path.exists():
+            try:
+                registry = json.loads(registry_path.read_text())
+            except Exception:
+                pass
+
+        # We store both path and host for better collision detection
+        registry[project_name] = {
+            "path": str(Path(project_root).resolve()),
+            "host": host_name,
+            "last_seen": time.time(),
+        }
+
+        try:
+            safe_write_text(registry_path, json.dumps(registry, indent=4))
+        except Exception as e:
+            UI.warning(f"Failed to update registry: {e}")
+
+    def unregister_project(self, project_name):
+        """Removes a project from the global registry."""
+        from ldm_core.constants import REGISTRY_FILE
+        from ldm_core.utils import get_actual_home, safe_write_text
+
+        actual_home = get_actual_home()
+        registry_path = actual_home / ".ldm" / REGISTRY_FILE
+
+        if not registry_path.exists():
+            return
+
+        try:
+            registry = json.loads(registry_path.read_text())
+            if project_name in registry:
+                del registry[project_name]
+                safe_write_text(registry_path, json.dumps(registry, indent=4))
+        except Exception:
+            pass
 
     def _check_java_version(self, expected="21"):
         """Verifies the system Java version."""
@@ -69,19 +267,53 @@ class BaseHandler:
             return False
 
     def read_meta(self, path):
-        """Reads project metadata from a flat file or JSON via utils."""
+        """Reads project metadata, supporting both modern and legacy filenames."""
         from ldm_core.utils import read_meta
+        import os
 
+        # If passed a dict, return it (already loaded)
+        if isinstance(path, dict):
+            return path
+        # If passed a directory (as string or Path), look for metadata files
+        try:
+            p_str = str(path)
+            if os.path.isdir(p_str):
+                for f in ["meta", ".liferay-docker.meta", ".ldm.meta"]:
+                    f_path = os.path.join(p_str, f)
+                    if os.path.exists(f_path):
+                        return read_meta(Path(f_path))
+                return {}
+        except Exception:
+            pass
         return read_meta(path)
 
     def write_meta(self, path, meta):
-        """Writes project metadata via utils."""
+        """Writes project metadata, preserving the existing filename if possible."""
         from ldm_core.utils import write_meta
 
-        write_meta(path, meta)
+        # If passed a dict as path, skip (logic error in caller)
+        if isinstance(path, dict):
+            return
+        target = path
+        try:
+            p = Path(path)
+            if p.is_dir():
+                # Default to modern 'meta' unless legacy exists
+                target = p / "meta"
+                if (p / ".liferay-docker.meta").exists():
+                    target = p / ".liferay-docker.meta"
+        except Exception:
+            pass
+        write_meta(target, meta)
 
     def run_command(self, cmd, check=True, cwd=None, env=None, capture_output=True):
         from ldm_core.utils import run_command
+
+        # Safety: If cwd is a dictionary (common error in refactored handlers), extract root
+        if isinstance(cwd, dict):
+            cwd = str(cwd.get("root", "."))
+        elif hasattr(cwd, "resolve"):  # Path-like
+            cwd = str(cwd)
 
         return run_command(
             cmd,
@@ -202,7 +434,12 @@ class BaseHandler:
             p = Path(pid).expanduser().resolve()
             # Safety: exists() can raise PermissionError if the dir is 0700 root-owned
             try:
-                if (p / PROJECT_META_FILE).exists() or (for_init and p.parent.exists()):
+                # Support multiple metadata filenames
+                has_meta = any(
+                    (p / f).exists()
+                    for f in ["meta", ".liferay-docker.meta", ".ldm.meta"]
+                )
+                if has_meta or (for_init and p.parent.exists()):
                     return p
             except PermissionError:
                 # If we get permission denied, but the path exists, it's definitely the project
@@ -228,9 +465,12 @@ class BaseHandler:
                     continue
                 p_test = s_dir / pid
                 try:
-                    if (p_test / PROJECT_META_FILE).exists() or (
-                        for_init and s_dir.exists()
-                    ):
+                    # Support multiple metadata filenames
+                    has_meta = any(
+                        (p_test / f).exists()
+                        for f in ["meta", ".liferay-docker.meta", ".ldm.meta"]
+                    )
+                    if has_meta or (for_init and s_dir.exists()):
                         return p_test
                 except PermissionError:
                     if p_test.is_dir():
@@ -242,10 +482,16 @@ class BaseHandler:
                 try:
                     for item in s_dir.iterdir():
                         if item.is_dir() and not item.name.startswith("."):
-                            meta_file = item / PROJECT_META_FILE
+                            # Support multiple metadata filenames
+                            meta_file = None
+                            for f in ["meta", ".liferay-docker.meta", ".ldm.meta"]:
+                                if (item / f).exists():
+                                    meta_file = item / f
+                                    break
+
                             try:
-                                if meta_file.exists():
-                                    meta = self.read_meta(meta_file)
+                                if meta_file:
+                                    meta = self.read_meta(item)
                                     if meta.get("project_name") == pid:
                                         return item.resolve()
                             except PermissionError:
@@ -254,13 +500,19 @@ class BaseHandler:
                     continue
 
             if not for_init:
-                UI.die(f"Project '{pid}' not found or missing {PROJECT_META_FILE}")
+                UI.die(
+                    f"Project '{pid}' not found or missing metadata ('meta' or '.liferay-docker.meta')"
+                )
 
         cwd = Path.cwd()
+        # Check for multiple metadata filenames
+        has_meta = any(
+            (cwd / f).exists() for f in ["meta", ".liferay-docker.meta", ".ldm.meta"]
+        )
         if (
             (cwd / "files" / "portal-ext.properties").exists()
             or (cwd / "deploy").exists()
-            or (cwd / PROJECT_META_FILE).exists()
+            or has_meta
         ):
             return cwd
 
@@ -282,6 +534,10 @@ class BaseHandler:
 
     def get_common_dir(self, project_path=None):
         """Finds the 'common' directory by prioritizing CWD, Project Parent, then Binary Location."""
+        # Safety: If passed a dict, extract root
+        if isinstance(project_path, dict):
+            project_path = project_path.get("root", ".")
+
         common_path = Path.cwd() / "common"
         if common_path.exists():
             return common_path
@@ -301,6 +557,12 @@ class BaseHandler:
 
     def setup_paths(self, project_path):
         """Initializes a standard path dictionary for a project."""
+        # Safety: If passed a dict (common error in refactored handlers), extract root
+        if isinstance(project_path, dict):
+            project_path = project_path.get("root", ".")
+        elif hasattr(project_path, "resolve"):  # Path-like
+            project_path = str(project_path)
+
         root = Path(project_path).resolve()
         common_path = self.get_common_dir(root)
         return {
@@ -326,6 +588,10 @@ class BaseHandler:
 
     def verify_runtime_environment(self, paths):
         """Verifies volume mounts and synchronizes permissions across the project root."""
+        # Safety: If passed a direct path (common error in refactored handlers), initialize paths dict
+        if not isinstance(paths, dict):
+            paths = self.setup_paths(paths)
+
         root = paths["root"]
         system_type = platform.system().lower()
 
@@ -506,6 +772,10 @@ class BaseHandler:
 
     def migrate_layout(self, paths):
         """Ensures modern project directory structure and permissions."""
+        # Safety: If passed a direct path (common error in refactored handlers), initialize paths dict
+        if not isinstance(paths, dict):
+            paths = self.setup_paths(paths)
+
         essential_paths = [
             "data",
             "deploy",
@@ -580,7 +850,7 @@ class BaseHandler:
             return False, []
 
         paths = self.setup_paths(root)
-        meta = self.read_meta(root / PROJECT_META_FILE)
+        meta = self.read_meta(root)
         host_name = meta.get("host_name", "localhost")
         if host_name == "localhost":
             return True, []

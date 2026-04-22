@@ -110,7 +110,7 @@ class CloudHandler:
         is_new_project = not (root_path / PROJECT_META_FILE).exists()
         from ldm_core.utils import sanitize_id
 
-        project_meta = self.read_meta(root_path / PROJECT_META_FILE)
+        project_meta = self.read_meta(root_path)
         cp_id = sanitize_id(
             project_meta.get("cloud_project_id")
             or project_meta.get("project_id")
@@ -162,7 +162,7 @@ class CloudHandler:
                         custom_env[k] = v
                         UI.info(f"  Synced {k}")
                 project_meta["custom_env"] = json.dumps(custom_env)
-                self.write_meta(root_path / PROJECT_META_FILE, project_meta)
+                self.write_meta(root_path, project_meta)
                 UI.success("Metadata updated.")
             return
 
@@ -212,7 +212,7 @@ class CloudHandler:
                         db_type_for_seed = getattr(self.args, "db", None) or "mysql"
                         if self._ensure_seeded(tag_for_seed, db_type_for_seed, paths):
                             # Refresh meta from seed before merging restoration changes
-                            seed_meta = self.read_meta(root_path / PROJECT_META_FILE)
+                            seed_meta = self.read_meta(root_path)
                             project_meta.update(seed_meta)
 
                 UI.info("Triggering local restore...")

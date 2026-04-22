@@ -4,6 +4,7 @@ This registry tracks the status and priority of independent development tracks f
 
 | Track ID | Track Name | Priority | Status | Plan |
 | :--- | :--- | :--- | :--- | :--- |
+| `stack-refactor` | StackHandler Modularization | **High** | ✅ Completed | [Plan](./tracks/stack-refactor/plan.md) |
 | `guided-onboarding` | Guided Onboarding (`ldm init`) | High | 📝 Planned | [Plan](./guided-onboarding-plan.md) |
 | `visual-dashboard` | Visual Health Dashboard | Medium | 📝 Planned | [Plan](./visual-dashboard-plan.md) |
 | `osgi-performance` | OSGi State Persistence | **High** | 📝 Planned | [Plan](./osgi-performance-plan.md) |

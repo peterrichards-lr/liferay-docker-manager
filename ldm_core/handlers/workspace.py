@@ -12,7 +12,7 @@ from pathlib import Path
 from datetime import datetime
 from ldm_core.ui import UI
 from ldm_core.handlers.base import BaseHandler
-from ldm_core.constants import PROJECT_META_FILE, SCRIPT_DIR
+from ldm_core.constants import SCRIPT_DIR
 from ldm_core.utils import run_command, load_env_blacklist, is_env_var_blacklisted
 
 
@@ -704,9 +704,7 @@ class WorkspaceHandler(BaseHandler):
                             )
                             if self._ensure_seeded(tag, db_type_for_seed, paths):
                                 # Refresh meta from seed before merging workspace changes
-                                seed_meta = self.read_meta(
-                                    project_path / PROJECT_META_FILE
-                                )
+                                seed_meta = self.read_meta(project_path)
                                 project_meta.update(seed_meta)
                         break
 
@@ -827,7 +825,7 @@ class WorkspaceHandler(BaseHandler):
 
             self._hydrate_from_workspace(workspace_root, paths, overwrite=overwrite)
 
-            self.write_meta(project_path / PROJECT_META_FILE, project_meta)
+            self.write_meta(project_path, project_meta)
             UI.success(f"Project created at: {project_path}")
             if not getattr(self.args, "no_run", False):
                 self.cmd_run(project_id=project_name, is_restart=True)
@@ -851,7 +849,7 @@ class WorkspaceHandler(BaseHandler):
             )
 
         paths = self.setup_paths(project_id)
-        project_meta = self.read_meta(paths["root"] / PROJECT_META_FILE)
+        project_meta = self.read_meta(paths["root"])
 
         if not source_path:
             source_path = project_meta.get("workspace_path")
