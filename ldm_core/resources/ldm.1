@@ -1,11 +1,24 @@
-.TH LDM 1 "April 2026" "2.1.19" "Liferay Docker Manager Manual"
+.TH LDM 1 "April 2026" "2.3.44" "Liferay Docker Manager Manual"
 .SH NAME
-ldm \- Liferay Docker Manager orchestrator
+ldm \- Liferay Docker Manager orchestrator (Hardened Edition)
 .SH SYNOPSIS
 .B ldm
 [\fIOPTIONS\fR] \fICOMMAND\fR [\fIARGS\fR...]
 .SH DESCRIPTION
 \fBldm\fR is a professional command-line orchestrator for Liferay Portal and DXP environments. It simplifies the creation, management, and synchronization of Liferay instances using Docker Compose, providing near-instant boot times via pre-warmed seeds and seamless integration with Liferay Workspace and Client Extensions.
+
+The tool uses a tiered configuration strategy to ensure maximum reliability and adheres to "Offline First" principles for all asset management.
+
+.SH CONFIGURATION REDLINES
+.TP
+\fBDatabase\fR
+All JDBC and Hibernate settings are injected into \fBportal-ext.properties\fR to preserve mixed-case property key integrity (e.g. driverClassName).
+.TP
+\fBSearch & Infrastructure\fR
+Search (ES8), SSL, and Clustering settings are managed via high-priority \fBEnvironment Variables\fR and \fBOSGi .config\fR substitution to ensure project isolation and Sidecar suppression.
+
+.SH OFFLINE FIRST DESIGN
+LDM maintains a local cache of all downloaded assets (seeds, samples, configuration templates) in \fB~/.ldm/references\fR. If a project is started without an internet connection, LDM automatically reverts to its cached assets. If an asset is missing and unreachable, the tool flags the offline state and continues with a "Vanilla" (non-seeded) workflow.
 
 .SH CORE COMMANDS
 .TP

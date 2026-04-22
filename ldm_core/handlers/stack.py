@@ -140,7 +140,7 @@ class StackHandler(BaseHandler):
         )
 
     def _fetch_seed(self, tag, db_type, search_mode, paths):
-        """Discovers and downloads a pre-warmed seed from GitHub Releases."""
+        """Discovers and downloads a pre-warmed seed from GitHub Releases with Offline-First logic."""
         from ldm_core.constants import SEED_VERSION
 
         # Seed states are maintained under a dedicated 'seeded-states' tag
@@ -153,7 +153,6 @@ class StackHandler(BaseHandler):
         UI.info(f"Checking for pre-warmed seed: {UI.CYAN}{seed_filename}{UI.COLOR_OFF}")
 
         import requests
-        import tempfile
 
         headers = {}
         token = os.environ.get("GITHUB_TOKEN")
@@ -166,6 +165,7 @@ class StackHandler(BaseHandler):
         cache_dir.mkdir(parents=True, exist_ok=True)
         cached_seed = cache_dir / seed_filename
 
+        tmp_path = None
         if cached_seed.exists():
             UI.info(f"Using cached seed: {seed_filename}")
             tmp_path = cached_seed
@@ -178,23 +178,18 @@ class StackHandler(BaseHandler):
                 # If 404, the release might be a DRAFT. Try finding it via API.
                 if head_res.status_code != 200:
                     UI.debug(
-                        f"Direct download failed (HTTP {head_res.status_code}). Checking API for '{tag_name}'..."
+                        f"Direct download failed (HTTP {head_res.status_code}). Checking API..."
                     )
-                    # Try direct tag API which can reveal draft information if authenticated
                     api_url = f"https://api.github.com/repos/peterrichards-lr/liferay-docker-manager/releases/tags/{tag_name}"
                     api_res = requests.get(api_url, headers=headers, timeout=10)
 
-                    # Fallback to list API if tag lookup fails
                     if api_res.status_code != 200:
-                        UI.debug("Tag API failed. Falling back to releases list...")
                         api_url = "https://api.github.com/repos/peterrichards-lr/liferay-docker-manager/releases"
                         api_res = requests.get(api_url, headers=headers, timeout=10)
 
                     if api_res.status_code == 200:
                         data = api_res.json()
                         releases = data if isinstance(data, list) else [data]
-
-                        # Find the release by tag or name
                         target_release = next(
                             (
                                 r
@@ -205,7 +200,6 @@ class StackHandler(BaseHandler):
                             None,
                         )
                         if target_release:
-                            # Find the asset
                             asset = next(
                                 (
                                     a
@@ -216,29 +210,18 @@ class StackHandler(BaseHandler):
                             )
                             if asset:
                                 download_url = asset.get("browser_download_url")
-                                UI.debug(
-                                    f"Found asset in {'Draft ' if target_release.get('draft') else ''}release via API."
-                                )
                             else:
-                                if self.verbose:
-                                    UI.info(
-                                        f"Asset '{seed_filename}' not found in release '{tag_name}'."
-                                    )
-                                return False
+                                UI.warning(
+                                    f"Asset '{seed_filename}' not found in release."
+                                )
+                                return True  # Continue vanilla
                         else:
-                            if self.verbose:
-                                UI.info(f"Release '{tag_name}' not found via API.")
-                            return False
+                            return True  # Continue vanilla
                     else:
-                        if self.verbose:
-                            UI.info(f"API check failed (HTTP {api_res.status_code})")
-                        return False
+                        return True  # Continue vanilla
 
                 # Get size for confirmation
                 total_size = int(head_res.headers.get("content-length", 0))
-                if not total_size and "asset" in locals() and asset:
-                    total_size = asset.get("size", 0)
-
                 size_str = f" ({UI.format_size(total_size)})" if total_size else ""
                 UI.info(f"Seed found!{size_str}")
 
@@ -247,74 +230,72 @@ class StackHandler(BaseHandler):
                         "Bootstrap project from this pre-warmed seed? (Saves ~15m)", "Y"
                     ):
                         UI.info("User declined seed. Initializing clean project...")
-                        return False
+                        return True  # Return true to continue clean
 
-                UI.info("Bootstrapping project...")
-
-                # --- 3. Download ---
-                with tempfile.NamedTemporaryFile(suffix=".tar.gz", delete=False) as tmp:
-                    with requests.get(
-                        download_url, stream=True, timeout=30, headers=headers
-                    ) as r:
-                        r.raise_for_status()
-                        total_size = int(r.headers.get("content-length", 0))
-                        downloaded = 0
-                        for chunk in r.iter_content(chunk_size=8192):
-                            tmp.write(chunk)
-                            downloaded += len(chunk)
-                            if total_size > 0:
-                                percent = int(100 * downloaded / total_size)
-                                sys.stdout.write(
-                                    f"\rDownloading: [{percent}%] {UI.format_size(downloaded)} / {UI.format_size(total_size)}"
-                                )
-                                sys.stdout.flush()
-
-                        if total_size > 0:
-                            print()  # New line after progress bar
-
-                    tmp_path = Path(tmp.name)
-
-                # Save to cache
+                # --- 3. Atomic Download & Cache ---
+                temp_download = cache_dir / f"{seed_filename}.download"
                 try:
-                    import shutil
+                    response = requests.get(
+                        download_url, headers=headers, stream=True, timeout=30
+                    )
+                    response.raise_for_status()
+                    total_size = int(response.headers.get("content-length", 0))
 
-                    shutil.copy2(tmp_path, cached_seed)
-                    UI.debug(f"Seed saved to cache: {seed_filename}")
+                    downloaded = 0
+                    with open(temp_download, "wb") as f:
+                        for chunk in response.iter_content(
+                            chunk_size=8192 * 1024
+                        ):  # 8MB chunks
+                            if chunk:
+                                f.write(chunk)
+                                downloaded += len(chunk)
+                                if total_size:
+                                    percent = int((downloaded / total_size) * 100)
+                                    sys.stdout.write(
+                                        f"\rDownloading: [{percent}%] {UI.format_size(downloaded)} / {UI.format_size(total_size)}"
+                                    )
+                                    sys.stdout.flush()
+                    print()
+                    os.replace(temp_download, cached_seed)
+                    tmp_path = cached_seed
+                    UI.success(f"Seed cached: {seed_filename}")
                 except Exception as e:
-                    UI.warning(f"Failed to cache seed: {e}")
-
+                    if temp_download.exists():
+                        temp_download.unlink()
+                    UI.warning(f"Seed download failed: {e}")
+                    return True  # Revert to vanilla
             except Exception as e:
-                if self.verbose:
-                    UI.warning(f"Failed to fetch seed: {e}")
-                return False
+                UI.warning(f"LDM is working offline or seed is unreachable ({e})")
+                UI.info("Continuing with offline/vanilla initialization...")
+                return True  # Revert to vanilla
 
         # --- 4. Extract & Finalize ---
+        if not tmp_path or not tmp_path.exists():
+            return True
+
         try:
             from ldm_core.handlers.snapshot import SnapshotHandler
 
             handler = SnapshotHandler(self.args)
-            # Ensure project root exists and is unlocked
             self.verify_runtime_environment(paths)
 
             if getattr(self.args, "no_osgi_seed", False):
                 UI.debug("User opted out of OSGi state seeding.")
 
+            UI.info("Bootstrapping project from seed...")
             handler._extract_snapshot_archive(tmp_path, paths)
 
-            # 5. Cleanup
-            if tmp_path != cached_seed:
-                tmp_path.unlink()
-            success_msg = f"Project bootstrapped from seed. {UI.WHITE}(Saved ~15m of initialization time){UI.COLOR_OFF}"
+            success_msg = "Project bootstrapped from seed."
             if not getattr(self.args, "no_osgi_seed", False):
-                success_msg = f"Project bootstrapped from seed (including OSGi state). {UI.WHITE}(Saved ~15m of initialization time){UI.COLOR_OFF}"
-
-            UI.success(success_msg)
+                success_msg = "Project bootstrapped from seed (including OSGi state)."
+            UI.success(
+                f"{success_msg} {UI.WHITE}(Saved ~15m of initialization time){UI.COLOR_OFF}"
+            )
             return True
-
         except Exception as e:
-            if self.verbose:
-                UI.warning(f"Failed to fetch seed: {e}")
-            return False
+            UI.warning(f"Failed to extract bootstrap seed: {e}")
+            UI.info("Continuing with fresh/vanilla initialization...")
+            return True
 
     def _ensure_seeded(self, tag, db_type, paths):
         """Helper to ensure a project is bootstrapped from a seed if available and appropriate."""

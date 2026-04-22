@@ -200,6 +200,12 @@ To ensure maximum reliability and to follow how Liferay expects infrastructure t
 
 LDM handles project state surgically to ensure snapshots are portable and complete.
 
+- **Offline-First Design (Mandate)**: LDM is designed to be functional without an active internet connection. It uses a tiered asset discovery strategy:
+  1. **Local Cache**: Always checks `~/.ldm/references` first for seeds, samples, or configuration templates.
+  2. **Atomic Download**: If an asset is missing and a connection is available, LDM performs an atomic download and caches it for future use.
+  3. **Graceful Fallback**: If the asset is missing and unreachable, LDM flags the offline state and reverts to the standard "Vanilla" (non-seeded) workflow.
+  4. **Samples Exception**: The `--samples` workflow requires assets to be present. If missing and unreachable, LDM informs the user and stops gracefully to avoid broken environments.
+
 - **Orchestrated Snapshots**: Project snapshots include the database, Document Library, and the **Elasticsearch 8.x index state**.
 - **Pre-warmed Bootstrap Seeds**: To eliminate the ~15 minute initialization time for new projects, LDM automatically fetches pre-initialized "Seed" volumes (Database + Search Index + **OSGi State**) from a dedicated GitHub repository. These seeds are version-matched to the requested Liferay tag.
 - **Environment Capture**: During `ldm snapshot`, the tool automatically parses the project's `docker-compose.yml` to capture custom `LIFERAY_` environment variables. These are stored in the snapshot metadata and restored during `ldm restore`, ensuring that manual tweaks are never lost during rollback.

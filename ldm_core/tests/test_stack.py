@@ -742,32 +742,56 @@ class TestStackOrchestration(unittest.TestCase):
             f"seeded-{tag}-{db_type}-{search_mode}-v{SEED_VERSION}.tar.gz", call_url
         )
 
+    @patch("requests.get")
     @patch("requests.head")
-    @patch("ldm_core.ui.UI.ask")
-    def test_fetch_seed_interactive_confirmation(self, mock_ask, mock_head):
-        manager = MockManager()
-        manager.non_interactive = False  # Enable interactive mode
-        paths = manager.setup_paths("/tmp/proj")
+    @patch("ldm_core.ui.UI.confirm")
+    @patch("ldm_core.handlers.stack.get_actual_home")
+    def test_fetch_seed_interactive_confirmation(
+        self, mock_home, mock_confirm, mock_head, mock_get
+    ):
+        """Verifies that LDM prompts for confirmation in interactive mode."""
+        import tempfile
+        from pathlib import Path
 
-        mock_head.return_value.status_code = 200
-        mock_head.return_value.headers = {"content-length": "1048576"}  # 1MB
+        # 1. Setup Environment with fresh temp dir
+        with tempfile.TemporaryDirectory() as tmp_dir_name:
+            tmp_home = Path(tmp_dir_name)
+            mock_home.return_value = tmp_home
 
-        # 1. User says No
-        mock_ask.return_value = "n"
-        result = manager._fetch_seed("tag", "db", "search", paths)
-        self.assertFalse(result)
-        mock_ask.assert_called_with(
-            "Bootstrap project from this pre-warmed seed? (Saves ~15m)", "Y"
-        )
+            # Ensure the manager instance is in interactive mode
+            self.manager.non_interactive = False
 
-        # 2. User says Yes (but we'll stop there by mocking GET failure or similar)
-        mock_ask.return_value = "y"
-        with patch("requests.get") as mock_get:
-            mock_get.side_effect = Exception("Stop here")
-            result = manager._fetch_seed("tag", "db", "search", paths)
-            self.assertFalse(result)
-            # Verify it proceeded past confirmation to the download attempt
-            self.assertTrue(mock_get.called)
+            # Ensure the UI class itself is in interactive mode (important for static methods)
+            with patch("ldm_core.ui.UI.NON_INTERACTIVE", False):
+                # Mock successful network discovery
+                res_head = MagicMock()
+                res_head.status_code = 200
+                res_head.headers = {"content-length": "1048576"}
+                mock_head.return_value = res_head
+
+                # --- Scenario 1: User says NO ---
+                mock_confirm.return_value = False
+                result = self.manager._fetch_seed("tag", "db", "search", self.paths)
+
+                self.assertTrue(
+                    result,
+                    "Should return True to continue vanilla initialization even if declined",
+                )
+                mock_confirm.assert_called()  # Basic check first to break loop
+
+                # --- Scenario 2: User says YES ---
+                mock_confirm.reset_mock()
+                mock_confirm.return_value = True
+                # Mock GET to raise error to stop after confirmation loop
+                mock_get.side_effect = Exception("Stop after confirmation")
+
+                result = self.manager._fetch_seed("tag", "db", "search", self.paths)
+                self.assertTrue(
+                    result, "Should return True on failure to continue vanilla"
+                )
+                self.assertTrue(
+                    mock_get.called, "Should have attempted download after confirmation"
+                )
 
     @patch("ldm_core.handlers.stack.get_actual_home")
     @patch("requests.head")

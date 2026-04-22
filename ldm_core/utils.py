@@ -86,55 +86,74 @@ def get_seed_url(tag, db="postgresql", search="shared"):
 
 
 def download_samples(version, destination):
-    """Downloads and extracts the samples pack from GitHub."""
+    """Downloads and extracts the samples pack from GitHub with Offline-First logic."""
     repo_url = "https://github.com/peterrichards-lr/liferay-docker-manager"
-    urls = [
-        f"{repo_url}/releases/download/v{version}/samples.zip",
-        f"{repo_url}/releases/latest/download/samples.zip",
-    ]
 
-    # Ensure parent directory exists for the temp zip
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    temp_zip = destination.parent / f"samples_{version}.zip"
+    actual_home = get_actual_home()
+    cache_dir = actual_home / ".ldm" / "references" / "samples"
+    cache_dir.mkdir(parents=True, exist_ok=True)
 
-    success = False
-    last_error = None
+    # We cache by version to ensure parity
+    cached_zip = cache_dir / f"samples_{version}.zip"
 
-    for url in urls:
-        try:
-            if success:
-                break
+    # --- 1. Check Cache ---
+    if cached_zip.exists():
+        UI.info(f"Using cached samples: {cached_zip.name}")
+        temp_zip = cached_zip
+    else:
+        # --- 2. Atomic Download & Cache ---
+        urls = [
+            f"{repo_url}/releases/download/v{version}/samples.zip",
+            f"{repo_url}/releases/latest/download/samples.zip",
+        ]
 
-            UI.debug(f"Attempting to download samples from: {url}")
-            response = requests.get(
-                url, headers={"User-Agent": "ldm-cli"}, timeout=15, stream=True
-            )
-            if response.status_code != 200:
-                UI.debug(f"Download failed with status {response.status_code}")
+        temp_zip = cache_dir / f"samples_{version}.zip.download"
+        success = False
+        last_error = None
+
+        for url in urls:
+            try:
+                if success:
+                    break
+
+                UI.debug(f"Attempting to download samples from: {url}")
+                response = requests.get(
+                    url, headers={"User-Agent": "ldm-cli"}, timeout=15, stream=True
+                )
+                if response.status_code != 200:
+                    continue
+
+                with open(temp_zip, "wb") as f:
+                    for chunk in response.iter_content(chunk_size=8192):
+                        f.write(chunk)
+
+                success = True
+            except Exception as e:
+                last_error = e
                 continue
 
-            with open(temp_zip, "wb") as f:
-                for chunk in response.iter_content(chunk_size=8192):
-                    f.write(chunk)
+        if not success:
+            UI.warning(
+                f"LDM is working offline or samples are unreachable ({last_error or '404'})"
+            )
+            UI.error(
+                "The '--samples' workflow requires a download if assets are not cached."
+            )
+            if temp_zip.exists():
+                temp_zip.unlink()
+            return False
 
-            success = True
-        except Exception as e:
-            last_error = e
-            continue
+        # Atomic move to cache
+        os.replace(temp_zip, cached_zip)
+        temp_zip = cached_zip
+        UI.success(f"Samples cached: {cached_zip.name}")
 
-    if not success:
-        UI.error(f"Failed to download samples: {last_error or 'Asset not found'}")
-        if temp_zip.exists():
-            os.remove(temp_zip)
-        return False
-
+    # --- 3. Extract ---
     try:
         UI.info("Extracting samples...")
         destination.mkdir(parents=True, exist_ok=True)
         with zipfile.ZipFile(temp_zip, "r") as zip_ref:
-            # We assume the zip contains a 'samples/' folder at the root
-            # We extract to a temporary dir and then move content to destination
-            extract_temp = destination.parent / f"temp_samples_{version}"
+            extract_temp = cache_dir / f"temp_extract_{version}"
             if extract_temp.exists():
                 shutil.rmtree(extract_temp)
             extract_temp.mkdir(parents=True)
@@ -157,15 +176,10 @@ def download_samples(version, destination):
 
             shutil.rmtree(extract_temp)
 
-        if temp_zip.exists():
-            os.remove(temp_zip)
-
         UI.success("Sample pack ready.")
         return True
     except Exception as e:
         UI.error(f"Failed to extract samples: {e}")
-        if temp_zip.exists():
-            os.remove(temp_zip)
         return False
 
 
