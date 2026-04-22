@@ -206,6 +206,7 @@ LDM handles project state surgically to ensure snapshots are portable and comple
   3. **Graceful Fallback**: If the asset is missing and unreachable, LDM flags the offline state and reverts to the standard "Vanilla" (non-seeded) workflow.
   4. **Samples Exception**: The `--samples` workflow requires assets to be present. If missing and unreachable, LDM informs the user and stops gracefully to avoid broken environments.
 
+- **Integrity Verification**: As of v2.4.0, all snapshots and pre-warmed seeds include **SHA-256 checksums**. LDM automatically verifies these checksums during `restore` and `import` to ensure data integrity and detect corruption.
 - **Orchestrated Snapshots**: Project snapshots include the database, Document Library, and the **Elasticsearch 8.x index state**.
 - **Pre-warmed Bootstrap Seeds**: To eliminate the ~15 minute initialization time for new projects, LDM automatically fetches pre-initialized "Seed" volumes (Database + Search Index + **OSGi State**) from a dedicated GitHub repository. These seeds are version-matched to the requested Liferay tag.
 - **Environment Capture**: During `ldm snapshot`, the tool automatically parses the project's `docker-compose.yml` to capture custom `LIFERAY_` environment variables. These are stored in the snapshot metadata and restored during `ldm restore`, ensuring that manual tweaks are never lost during rollback.
@@ -264,7 +265,11 @@ graph TD
 ### Key Architectural Pillars
 
 1. **Modular Orchestration (ldm_core Package):**
-    - The tool logic is split into specialized handler mixins (`Stack`, `Workspace`, `Config`, `Snapshot`, `Diagnostics`, `License`, `Infra`), ensuring a maintainable and extensible codebase.
+    - The tool logic is decomposed into focused, specialized handlers (`ComposerHandler`, `RuntimeHandler`, `AssetHandler`, `WorkspaceHandler`, `SnapshotHandler`, `ConfigHandler`, `DiagnosticsHandler`, `CloudHandler`, `LicenseHandler`, `InfraHandler`), ensuring a maintainable and extensible codebase.
+    - **Stack Composition (`ComposerHandler`)**: Pure logic for generating the `docker-compose.yml` and translating metadata into infrastructure. Enforces resource limits (e.g., adding `M` suffix to memory limits for Docker compatibility).
+    - **Container Lifecycle (`RuntimeHandler`)**: Manages the synchronization, health, and state of the container stack.
+    - **Offline-First Engine (`AssetHandler`)**: Orchestrates the discovery, caching, and hydration of seeds and samples.
+    - **Project Registry**: Centralizes project and hostname collision detection to prevent infrastructure conflicts across the filesystem.
     - Every command supports a standardized discovery priority: **Argument > Flag > CWD > Interactive Selection**.
     - **Resilient Tag Discovery**: The discovery engine uses a dual-mode parser supporting both the Docker Hub API (JSON) and the Liferay Release Server (HTML), ensuring the tool remains functional even when primary upstream APIs change.
     - **Mandatory Compose v2**: LDM strictly requires the **Docker Compose v2 Plugin** (`docker compose`). Legacy v1 standalone binaries are no longer supported due to modern library and API incompatibilities.

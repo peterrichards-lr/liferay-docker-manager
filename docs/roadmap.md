@@ -7,9 +7,9 @@ This document outlines potential enhancements to the Liferay Docker Manager (ldm
 
 ---
 
-## 🚀 Future Roadmap: v2.4.0 (The Ecosystem Phase Continued)
+## 🚀 Future Roadmap: v2.5.0 (The Ecosystem Phase Continued)
 
-While the v2.3.x release solidified the core architecture, **v2.4.0** will focus on implementing the remaining Ecosystem features.
+While the v2.4.0 release solidified the modular architecture, **v2.5.0** will focus on implementing the remaining Ecosystem features.
 
 ### 1. Guided Onboarding & Scaffolding
 
@@ -31,6 +31,22 @@ While the v2.3.x release solidified the core architecture, **v2.4.0** will focus
 ### 5. AI-Assisted Orchestration
 
 - **The `ldm ai` Command**: Integrate a specialized AI handler (Gemini-powered) for troubleshooting.
+
+---
+
+## ✅ Completed Improvements (v2.4.0 - StackHandler Modularization)
+
+### **Architectural Modularity**
+
+- **Specialized Handlers**: Decomposed the monolithic 1,700+ line `StackHandler` into focused, testable components: `ComposerHandler` (generation), `RuntimeHandler` (lifecycle), and `AssetHandler` (discovery/offline-first).
+- **Improved Testability**: Enabled mocking of specific subsystems (e.g., Orchestration vs. Assets) without requiring the entire manager instance.
+
+### **Integrity & Compliance**
+
+- **Project Registry Restoration**: Re-implemented the global project registry to provide robust name and hostname collision detection across the entire filesystem.
+- **SHA-256 Integrity Verification**: Introduced mandatory checksumming for all snapshots and pre-warmed seeds to ensure data validity during `restore` and `import` operations.
+- **Memory Limit Hardening**: Updated `ComposerHandler` to automatically enforce Megabyte (`M`) units for Docker resource limits, ensuring cross-platform compatibility.
+- **Synchronized Environment Updates**: The `ldm env` command now triggers an automatic `docker-compose.yml` synchronization, ensuring environment changes are immediately reflected in the infrastructure layer.
 
 ---
 
