@@ -125,6 +125,17 @@ class ComposerHandler:
         if not image:
             image = f"liferay/portal:{tag}" if "u" in tag else f"liferay/dxp:{tag}"
 
+        # Determine Environment Variable Separator (Mandate 1.1)
+        # Modern (2025.Q1+ or 7.4.13-u100+): Single underscore (_)
+        # Legacy: Double underscore (__)
+        separator = "__"
+        v_parts = self.parse_version(tag)
+        if v_parts:
+            if v_parts[0] >= 2025:
+                separator = "_"
+            elif v_parts[0] == 7 and len(v_parts) >= 4 and v_parts[3] >= 100:
+                separator = "_"
+
         port = meta.get("port", 8080)
 
         if liferay_env is None:
@@ -135,13 +146,15 @@ class ComposerHandler:
         if use_shared_search:
             liferay_env.extend(
                 [
-                    "LIFERAY_ELASTICSEARCH_SIDECAR_ENABLED=false",
-                    "LIFERAY_ELASTICSEARCH_CONNECTION_URL=http://liferay-search-global:9200",
-                    f"LIFERAY_ELASTICSEARCH_INDEX_NAME_PREFIX=ldm-{project_name}-",
+                    f"LIFERAY_ELASTICSEARCH{separator}SIDECAR{separator}ENABLED=false",
+                    f"LIFERAY_ELASTICSEARCH{separator}CONNECTION{separator}URL=http://liferay-search-global:9200",
+                    f"LIFERAY_ELASTICSEARCH{separator}INDEX{separator}NAME{separator}PREFIX=ldm-{project_name}-",
                 ]
             )
         else:
-            liferay_env.append("LIFERAY_ELASTICSEARCH_SIDECAR_ENABLED=true")
+            liferay_env.append(
+                f"LIFERAY_ELASTICSEARCH{separator}SIDECAR{separator}ENABLED=true"
+            )
 
         # Add custom environment variables from metadata
         custom_env_str = meta.get("custom_env", "{}")
@@ -263,8 +276,8 @@ class ComposerHandler:
         else:
             liferay_env.extend(
                 [
-                    "LIFERAY_CLUSTER_PERIOD_LINK_PERIOD_ENABLED=true",
-                    "LIFERAY_LUCENE_PERIOD_REPLICATE_PERIOD_WRITE=true",
+                    f"LIFERAY_CLUSTER{separator}LINK{separator}ENABLED=true",
+                    f"LIFERAY_LUCENE{separator}REPLICATE{separator}WRITE=true",
                 ]
             )
 

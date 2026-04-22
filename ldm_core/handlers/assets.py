@@ -44,7 +44,7 @@ class AssetHandler:
                 f"Project seed not found in cache. Download pre-warmed {tag} seed?",
                 "Y",
             ):
-                return True
+                return False
 
             try:
                 head_res = requests.head(download_url, allow_redirects=True, timeout=10)
@@ -115,13 +115,13 @@ class AssetHandler:
                     if temp_download.exists():
                         temp_download.unlink()
                     UI.warning(f"Seed download failed: {e}")
-                    return True
+                    return False
             except Exception as e:
                 UI.warning(f"LDM is working offline or seed is unreachable ({e})")
-                return True
+                return False
 
         if not tmp_path or not tmp_path.exists():
-            return True
+            return False
 
         try:
             from ldm_core.handlers.snapshot import SnapshotHandler

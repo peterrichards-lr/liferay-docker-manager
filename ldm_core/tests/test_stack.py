@@ -230,9 +230,8 @@ class TestStackScaling(unittest.TestCase):
 
             # SCALE MANDATE: Clustering env vars must be present
             env = liferay_service.get("environment", [])
-            self.assertTrue(
-                any("LIFERAY_CLUSTER_PERIOD_LINK_PERIOD_ENABLED=true" in e for e in env)
-            )
+            # 2025.Q1+ uses single underscore
+            self.assertTrue(any("LIFERAY_CLUSTER_LINK_ENABLED=true" in e for e in env))
 
 
 class TestStackOrchestration(unittest.TestCase):
@@ -376,7 +375,7 @@ class TestStackOrchestration(unittest.TestCase):
                 # 1. User says NO
                 mock_confirm.return_value = False
                 result = self.manager._fetch_seed("tag", "db", "search", self.paths)
-                self.assertTrue(result)
+                self.assertFalse(result)
                 mock_confirm.assert_called()
 
                 # 2. User says YES
@@ -384,7 +383,7 @@ class TestStackOrchestration(unittest.TestCase):
                 mock_confirm.return_value = True
                 mock_get.side_effect = Exception("Stop")
                 result = self.manager._fetch_seed("tag", "db", "search", self.paths)
-                self.assertTrue(result)
+                self.assertFalse(result)
                 self.assertTrue(mock_get.called)
 
     def test_cmd_browser_launches_url(self):

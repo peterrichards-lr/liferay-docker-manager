@@ -134,8 +134,9 @@ class SnapshotHandler(BaseHandler):
 
         snap_dir = paths["backups"] / timestamp
         snap_dir.mkdir(parents=True, exist_ok=True)
+        files_tar = snap_dir / "files.tar.gz"
 
-        with tarfile.open(snap_dir / "files.tar.gz", "w:gz") as tar:
+        with tarfile.open(files_tar, "w:gz") as tar:
             for f in ["files", "scripts", "osgi", "data", "deploy", "routes"]:
                 f_path = paths["root"] / f
                 if f_path.exists():
@@ -211,6 +212,13 @@ class SnapshotHandler(BaseHandler):
         }
         self.write_meta(snap_dir, meta)
 
+        # 4. Generate SHA-256 Checksum
+        from ldm_core.utils import calculate_sha256
+
+        if files_tar.exists():
+            sha = calculate_sha256(files_tar)
+            (snap_dir / "files.tar.gz.sha256").write_text(sha)
+
         UI.success(f"Snapshot saved: {snap_dir}")
 
     def cmd_restore(self, project_id=None, auto_index=None, backup_dir=None):
@@ -279,6 +287,27 @@ class SnapshotHandler(BaseHandler):
 
         files_tar = choice / "files.tar.gz"
         if files_tar.exists():
+            # Verify Integrity (Mandate 6.2)
+            sha_file = choice / "files.tar.gz.sha256"
+            if sha_file.exists():
+                UI.info("Verifying snapshot integrity...")
+                from ldm_core.utils import calculate_sha256
+
+                actual_sha = calculate_sha256(files_tar)
+                expected_sha = sha_file.read_text().strip()
+                if actual_sha != expected_sha:
+                    UI.die(
+                        f"Integrity check failed for snapshot: {choice.name}\n"
+                        f"Expected: {expected_sha}\n"
+                        f"Actual:   {actual_sha}\n"
+                        f"The snapshot file may be corrupted or tampered with."
+                    )
+                UI.success("Snapshot integrity verified.")
+            else:
+                UI.warning(
+                    "Snapshot does not have an integrity checksum. Proceeding anyway."
+                )
+
             self._extract_snapshot_archive(files_tar, paths)
         else:
             UI.die(f"Standard snapshot files not found in {choice}")

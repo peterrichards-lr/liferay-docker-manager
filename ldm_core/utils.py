@@ -6,6 +6,7 @@ import time
 import subprocess
 import re
 import shutil
+import hashlib
 from pathlib import Path
 import requests
 from ldm_core.ui import UI
@@ -604,7 +605,7 @@ def write_meta(path, meta):
 
 def find_dxp_roots(search_dir=None):
     """Discovers LDM projects in the target directory by looking for metadata or specific structure."""
-    from ldm_core.constants import PROJECT_META_FILE
+    from ldm_core.constants import PROJECT_META_FILE, REGISTRY_FILE
 
     actual_home = get_actual_home()
     search_dirs = []
@@ -631,6 +632,43 @@ def find_dxp_roots(search_dir=None):
 
     roots = []
     seen_paths = set()
+
+    # Priority 4: Global Registry (Pruning & Inclusion)
+    registry_path = actual_home / ".ldm" / REGISTRY_FILE
+    if registry_path.exists():
+        try:
+            registry = json.loads(registry_path.read_text())
+            dirty = False
+            for name, data in list(registry.items()):
+                path_str = data.get("path") if isinstance(data, dict) else data
+                if path_str:
+                    item = Path(path_str)
+                    if item.exists() and item.is_dir():
+                        abs_path = item.resolve()
+                        if abs_path not in seen_paths:
+                            # Verify it's still a valid project before adding
+                            meta_file = item / PROJECT_META_FILE
+                            if not meta_file.exists():
+                                meta_file = item / ".liferay-docker.meta"
+
+                            if meta_file.exists():
+                                meta = read_meta(meta_file)
+                                roots.append(
+                                    {
+                                        "path": item,
+                                        "version": meta.get("tag") or "unknown",
+                                    }
+                                )
+                                seen_paths.add(abs_path)
+                    else:
+                        # Path no longer exists, prune it
+                        del registry[name]
+                        dirty = True
+
+            if dirty:
+                safe_write_text(registry_path, json.dumps(registry, indent=4))
+        except Exception:  # nosec B110
+            pass
 
     for s_dir in search_dirs:
         if not s_dir.exists() or not s_dir.is_dir():
@@ -923,3 +961,12 @@ def check_for_updates(current_version, force=False):
         # Fail gracefully for background checks
         return None, None
     return None, None
+
+
+def calculate_sha256(file_path):
+    """Calculates the SHA-256 hash of a file."""
+    sha = hashlib.sha256()
+    with open(file_path, "rb") as f:
+        for chunk in iter(lambda: f.read(4096), b""):
+            sha.update(chunk)
+    return sha.hexdigest()

@@ -1,4 +1,5 @@
 import unittest
+import requests
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 from ldm_core.handlers.assets import AssetHandler
@@ -74,6 +75,26 @@ class TestAssets(unittest.TestCase):
                 self.assertTrue(res)
                 # Verify moves were attempted
                 self.assertTrue(mock_move.called)
+
+    @patch("ldm_core.handlers.assets.requests.head")
+    def test_fetch_seed_offline_fallback(self, mock_head):
+        """Verifies that the tool falls back to vanilla if discovery fails (offline)."""
+        # Scenario: Network timeout during HEAD request
+        mock_head.side_effect = requests.exceptions.Timeout("Connection timed out")
+
+        with (
+            patch(
+                "ldm_core.handlers.assets.get_actual_home", return_value=self.tmp_dir
+            ),
+            patch("os.path.exists", return_value=False),
+            patch("ldm_core.ui.UI.warning") as mock_warn,
+        ):
+            # Should NOT raise, but should return False and log warning
+            res = self.assets._fetch_seed("tag", "db", "search", {"root": self.tmp_dir})
+            self.assertFalse(res)
+            # Verify user was informed about the offline state
+            warn_calls = [call[0][0] for call in mock_warn.call_args_list]
+            self.assertTrue(any("offline" in msg.lower() for msg in warn_calls))
 
 
 if __name__ == "__main__":
