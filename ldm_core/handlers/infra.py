@@ -126,13 +126,14 @@ tls:
             capture_output=False,
         )
 
-        # Also stop the docker socket proxy
-        self.run_command(
-            ["docker", "stop", "liferay-docker-proxy"], check=False, capture_output=True
-        )
-        self.run_command(
-            ["docker", "rm", "liferay-docker-proxy"], check=False, capture_output=True
-        )
+        # Also stop the docker socket proxy and global search
+        for container in ["liferay-docker-proxy", "liferay-search-global"]:
+            self.run_command(
+                ["docker", "stop", container], check=False, capture_output=True
+            )
+            self.run_command(
+                ["docker", "rm", container], check=False, capture_output=True
+            )
         UI.success("Infrastructure teardown complete.")
 
     def _ensure_network(self):
