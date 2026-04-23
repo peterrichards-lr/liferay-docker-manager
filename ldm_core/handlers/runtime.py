@@ -109,18 +109,19 @@ class RuntimeHandler(BaseHandler):
             from ldm_core.constants import API_BASE_DXP
             from ldm_core.utils import discover_latest_tag
 
-            rt = getattr(self.args, "release_type", "any")
+            rt = getattr(self.args, "release_type", None) or "lts"
             prefix = getattr(self.args, "tag_prefix", None)
 
             if not tag_latest:
                 # Interactive Tag Discovery Sequence
                 # Combined prompt for release type or specific version prefix
-                ans = UI.ask("Release type (any|u|lts|qr) or prefix", "any")
+                ans = UI.ask("Release type (any|u|lts|qr) or prefix", "lts")
 
                 if ans in ["any", "u", "lts", "qr"]:
                     rt = ans
                 else:
                     prefix = ans
+                    rt = "any"
 
                 latest_tag = discover_latest_tag(
                     API_BASE_DXP, release_type=rt, prefix_filter=prefix, verbose=True

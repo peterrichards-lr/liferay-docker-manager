@@ -355,7 +355,8 @@ def discover_latest_tag(
                     entry = cache[cache_key]
                     if time.time() - entry.get("timestamp", 0) < 86400:
                         val = entry.get("tag")
-                        return val if val != "" else ""
+                        if val:
+                            return val
         except Exception:
             pass
 

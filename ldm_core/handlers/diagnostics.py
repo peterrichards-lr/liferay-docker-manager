@@ -989,7 +989,9 @@ del "%~f0"
 
             try:
                 # Use a cached/quick check for doctor
-                latest_tag = discover_latest_tag(API_BASE_DXP, verbose=False)
+                latest_tag = discover_latest_tag(
+                    API_BASE_DXP, release_type="lts", verbose=False
+                )
                 if latest_tag:
                     results.append(
                         (
