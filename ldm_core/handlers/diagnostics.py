@@ -1394,7 +1394,7 @@ del "%~f0"
                         )
                     )
                     add_hint(
-                        f"[{p_path.name}] Hostname resolves to an external IP. Run '{UI.WHITE}ldm doctor --fix-hosts{UI.COLOR_OFF}' to point it to 127.0.0.1.",
+                        f"[{p_path.name}] Hostname resolves to an external IP. Point it to 127.0.0.1 in your local hosts file or run '{UI.WHITE}ldm doctor --fix-hosts{UI.COLOR_OFF}'.",
                         "https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/installation.md#dns--subdomain-configuration",
                     )
                 else:
