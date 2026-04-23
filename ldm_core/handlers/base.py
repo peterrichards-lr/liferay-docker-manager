@@ -442,8 +442,13 @@ class BaseHandler:
                 if has_meta:
                     return p
                 # If for_init, we allow the path as long as it doesn't exist as a file
-                if for_init and p.parent.exists() and not p.is_file():
-                    return p
+                if for_init:
+                    if p.is_file():
+                        UI.die(
+                            f"Cannot initialize project: '{p}' already exists and is a file."
+                        )
+                    if p.parent.exists():
+                        return p
             except PermissionError:
                 # If we get permission denied, but the path exists, it's definitely the project
                 if p.is_dir():
@@ -459,9 +464,14 @@ class BaseHandler:
                 search_dirs = [
                     Path.cwd(),
                     Path.home() / "ldm",
-                    SCRIPT_DIR,
-                    Path("/Volumes/SanDisk/ldm"),
                 ]
+                # Only fallback to SCRIPT_DIR if we are NOT initializing a new project
+                if not for_init:
+                    search_dirs.append(SCRIPT_DIR)
+
+                # MacOS specific fallback
+                if Path("/Volumes/SanDisk/ldm").exists():
+                    search_dirs.append(Path("/Volumes/SanDisk/ldm"))
 
             for s_dir in search_dirs:
                 if not s_dir.exists():

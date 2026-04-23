@@ -138,6 +138,27 @@ class TestBaseHardening(unittest.TestCase):
             self.assertIn("--mount /Users/$(whoami):w", flags)
             self.assertIn("--mount /Volumes/SanDisk:w", flags)
 
+    def test_detect_project_path_hardening(self):
+        # Case: A file exists with the project name, but no directory
+        # This used to cause a crash in ldm init
+        import tempfile
+        import os
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Create a file that looks like a project name
+            fake_project_file = Path(tmpdir) / "some-file-project"
+            fake_project_file.touch()
+
+            # Temporarily change CWD so relative paths hit the tmpdir
+            old_cwd = os.getcwd()
+            os.chdir(tmpdir)
+            try:
+                # Should exit via UI.die if it's a file and for_init is True
+                with self.assertRaises(SystemExit):
+                    self.handler.detect_project_path("some-file-project", for_init=True)
+            finally:
+                os.chdir(old_cwd)
+
     @patch("ldm_core.handlers.base.BaseHandler.get_resolved_ip")
     @patch("ldm_core.handlers.base.BaseHandler.read_meta")
     @patch("ldm_core.handlers.workspace.WorkspaceHandler.scan_client_extensions")

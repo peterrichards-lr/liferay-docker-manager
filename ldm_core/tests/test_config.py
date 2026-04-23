@@ -30,6 +30,9 @@ class TestConfigManagement(unittest.TestCase):
         self.paths = {
             "root": Path("/tmp/test-project"),
             "files": Path("/tmp/test-project/files"),
+            "common": Path("/tmp/work/common"),
+            "deploy": Path("/tmp/test-project/deploy"),
+            "configs": Path("/tmp/test-project/osgi/configs"),
         }
 
     @patch("pathlib.Path.cwd")
@@ -65,6 +68,29 @@ class TestConfigManagement(unittest.TestCase):
 
                 # Even if common/ doesn't exist, host_updates should be applied
                 mock_update.assert_called_with(target_ext, host_updates)
+
+    @patch("ldm_core.handlers.config.shutil.copy2")
+    @patch("pathlib.Path.mkdir")
+    def test_sync_common_assets_dir_creation(self, mock_mkdir, mock_copy):
+        # Setup: Target files/ dir does NOT exist, common/ DOES exist
+        common_dir = Path("/tmp/common")
+        self.paths["common"] = common_dir
+
+        def exists_side_effect(self_obj):
+            path_str = str(self_obj)
+            if "/tmp/common" in path_str:
+                return True
+            return False
+
+        with patch.object(
+            Path, "exists", autospec=True, side_effect=exists_side_effect
+        ):
+            with patch.object(self.manager, "get_common_dir", return_value=common_dir):
+                self.manager.sync_common_assets(self.paths)
+
+                # Verify that mkdir was called for the parent of target portal-ext
+                self.assertTrue(mock_mkdir.called)
+                self.assertTrue(mock_copy.called)
 
     @patch("shutil.copy")
     @patch("ldm_core.handlers.config.run_command")

@@ -22,7 +22,26 @@ class MockRuntime(RuntimeHandler, BaseHandler):
             "root": root,
             "compose": root / "docker-compose.yml",
             "logs": root / "logs",
+            "files": root / "files",
         }
+
+    def _ensure_seeded(self, *args, **kwargs):
+        return False
+
+    def write_meta(self, *args, **kwargs):
+        pass
+
+    def _is_ssl_active(self, *args, **kwargs):
+        return False
+
+    def _ensure_network(self, *args, **kwargs):
+        pass
+
+    def setup_infrastructure(self, *args, **kwargs):
+        pass
+
+    def write_docker_compose(self, *args, **kwargs):
+        pass
 
 
 class TestRuntime(unittest.TestCase):
@@ -74,6 +93,56 @@ class TestRuntime(unittest.TestCase):
                 ]  # Start at 0, next call at 700 (> 600 timeout)
                 result = self.runtime._wait_for_ready({}, "localhost")
                 self.assertFalse(result)
+
+    @patch("socket.gethostbyname")
+    def test_cmd_run_seeding_persistence(self, mock_gethost):
+        mock_gethost.return_value = "127.0.0.1"
+        # Case: New project initialization with seeding
+        root = Path("test-project")
+        all_paths = {
+            "root": root,
+            "data": root / "data",
+            "deploy": root / "deploy",
+            "files": root / "files",
+            "state": root / "osgi" / "state",
+            "cx": root / "osgi" / "client-extensions",
+            "configs": root / "osgi" / "configs",
+            "modules": root / "osgi" / "modules",
+            "backups": root / "snapshots",
+            "portal_log4j": root / "osgi" / "log4j",
+            "common": Path("/tmp/common"),
+        }
+
+        with (
+            patch.object(self.runtime, "detect_project_path") as mock_detect,
+            patch.object(self.runtime, "setup_paths") as mock_setup,
+            patch.object(self.runtime, "read_meta") as mock_read,
+            patch.object(self.runtime, "_ensure_seeded") as mock_seed,
+            patch.object(self.runtime, "write_meta") as mock_write,
+            patch.object(self.runtime, "verify_runtime_environment"),
+            patch.object(self.runtime, "run_command"),
+        ):
+            mock_detect.return_value = root
+            mock_setup.return_value = all_paths
+            mock_read.return_value = {
+                "host_name": "localhost",
+                "container_name": "test-project",
+            }
+            mock_seed.return_value = True  # Seed successfully downloaded
+
+            # Force no_up to avoid full stack sync
+            self.runtime.args.no_up = True
+            self.runtime.args.host_name = None
+            self.runtime.args.tag = "2026.q1.4-lts"
+            self.runtime.args.samples = False
+
+            self.runtime.cmd_run("test-project")
+
+            # Verify that write_meta was called with the seeded status
+            self.assertTrue(mock_write.called)
+            written_meta = mock_write.call_args[0][1]
+            self.assertEqual(str(written_meta.get("seeded")).lower(), "true")
+            self.assertIn("seed_version", written_meta)
 
 
 if __name__ == "__main__":
