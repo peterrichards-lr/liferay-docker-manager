@@ -194,6 +194,12 @@ Initialize and start a project stack.
 # Run with a specific tag and virtual hostname
 ldm run --tag 2024.q4.0 --host-name demo.local
 
+# Automatically grab the latest Quarterly Release
+ldm run demo --tag-latest --release-type qr
+
+# Disable Omni-Admin Captchas for automated testing
+ldm run demo --tag-latest --no-captcha
+
 # Run on a custom port
 ldm run my-project --port 8081
 
@@ -260,6 +266,9 @@ Initialize a project from a source workspace and establish a **persistent link**
 ```bash
 # ldm init-from <source_path> [project_name] [--host-name custom.local]
 ldm init-from ~/repos/my-workspace my-project --host-name forge.demo
+
+# Initialize with the latest tag and disable CAPTCHAs for CI testing
+ldm init-from ~/repos/my-workspace my-ci-project -y --tag-latest --no-captcha
 ```
 
 ### `import` (Static Snapshot)
@@ -269,6 +278,9 @@ Scaffold a new project by taking a **one-time static import** of an existing wor
 ```bash
 # ldm import <source_path> [project_name] [--host-name custom.local]
 ldm import ~/repos/my-workspace my-static-project
+
+# Import using a specific release type filter
+ldm import ~/repos/my-workspace my-static-project --tag-latest --release-type qr
 ```
 
 #### Unified Host & SSL Rules (run, init-from, import)
@@ -585,6 +597,7 @@ ldm infra-setup            # Start global services manually
 ldm infra-setup --search   # Also initialize the Global Search container
 ldm infra-down             # Stop and remove global services
 ldm infra-restart          # Reset all global services in one go
+ldm infra-restart --search # Restart and also initialize/restart Global Search
 ```
 
 > [!TIP]
@@ -709,6 +722,8 @@ colima start --cpu 4 --memory 8
 - **Bypass Prompts**: Use the `-y` or `--non-interactive` flag to skip all confirmations and use default values. This is ideal for scripts and CI/CD pipelines.
 - **Tag Prefix Search**: When running `ldm run` without a tag, you can enter a prefix (e.g., `2025.q4`) to filter the available Liferay versions from Docker Hub. Alternatively, use the `--tag-prefix` switch to bypass the prompt entirely.
 - **Tag Discovery**: If no prefix or release type is provided, the tool fetches the latest available tags from Docker Hub.
+- **Automated Latest Tags**: In automated environments, use `--tag-latest` (with `ldm init` or `ldm run`) to automatically discover and use the most recent stable tag, bypassing all interactive prompts.
+- **Omni-Admin Captcha**: During testing or CI workflows, you can use the `--no-captcha` flag during initialization to automatically disable Liferay's mandatory Omni-Admin CAPTCHA checks.
 
 ---
 
