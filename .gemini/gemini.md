@@ -55,6 +55,13 @@ This file serves as the persistent state and technical knowledge base for the AI
 - **Nosec Disclosure**: Any use of `# nosec` in the codebase MUST be documented in `docs/SECURITY.md`.
 - **Contract Verification**: Refactoring MUST be verified against `ldm_core/tests/test_architectural_contracts.py` to ensure no silent loss of mandatory labels or properties.
 
+### 8. Robustness & State Management (Hardened v2.4.9)
+
+- **Strict Path Resolution**: Project path detection (`detect_project_path`) MUST explicitly verify that target paths are not files to prevent initialization crashes (`NotADirectoryError`).
+- **State Persistence**: Project metadata (e.g., the `seeded` flag) MUST be written to disk immediately after state-changing operations (like seed downloads) to prevent desynchronization between memory and disk.
+- **Fail-Fast Initialization**: If `ldm init` encounters an existing file with the target project name, it MUST fail fast and exit rather than silently falling back to incorrect directories.
+- **Regression Testing**: All critical bug fixes MUST be accompanied by targeted regression tests (utilizing `unittest.mock` and `pytest`) to ensure the issue is permanently resolved and cannot silently regress during future refactoring.
+
 ## 🚀 Release & Workflow Management
 
 ### 1. Release Gating ([release] keyword)
