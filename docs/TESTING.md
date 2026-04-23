@@ -46,8 +46,9 @@ This checklist is ordered sequentially to minimize environment setup overhead. F
 | ID | Test Case | Steps | Validation Pointers | Expected Outcome |
 | :--- | :--- | :--- | :--- | :--- |
 | 2.1 | **Infra Setup** | `ldm infra-setup --search` | Monitor `docker ps` to see new global containers. | Starts Traefik and ES8. Idempotent. |
-| 2.2 | **DNS Alignment** | Point host to wrong IP | **Requires a project.** Run `ldm init test-dns --host-name broken.local`. Edit `/etc/hosts` and point `broken.local` to `10.0.0.99`. | `ldm doctor` warns about IP mismatch. |
-| 2.3 | **Auto-Healing DNS** | `ldm doctor --fix-hosts` | Run this while the sabotage from 2.2 is active. | Prompts for sudo; fixes the entry. |
+| 2.2 | **Infra Restart** | `ldm infra-restart --search` | Monitor `docker ps` uptime. | Restarts Traefik and ES8 cleanly. |
+| 2.3 | **DNS Alignment** | Point host to wrong IP | **Requires a project.** Run `ldm init test-dns --host-name broken.local -y --tag-latest`. Edit `/etc/hosts` and point `broken.local` to `10.0.0.99`. | `ldm doctor` warns about IP mismatch. |
+| 2.4 | **Auto-Healing DNS** | `ldm doctor --fix-hosts` | Run this while the sabotage from 2.3 is active. | Prompts for sudo; fixes the entry. |
 
 ### Phase 3: Project Lifecycle (Init & Seeding)
 
@@ -56,13 +57,14 @@ This checklist is ordered sequentially to minimize environment setup overhead. F
 | ID | Test Case | Steps | Validation Pointers | Expected Outcome |
 | :--- | :--- | :--- | :--- | :--- |
 | 3.1 | **Explicit Init** | `ldm init test-init -y --tag-latest` | Verify a new folder `test-init` is created. | Scaffolds folders/metadata immediately. |
-| 3.1b| **Missing Tag Guard**| `ldm init test-fail -y` | Run without `--tag-latest` or `-t`. | Fails gracefully with "No Liferay tag specified." |
-| 3.2 | **Non-Interactive Run**| `ldm run test-init -y` | Use the project created in 3.1. | Starts project from seed without prompts. |
-| 3.3 | **Project Collision** | `ldm init test-init` | Run this in a *different* directory than 3.1. | Blocks; identifies original path. |
-| 3.4 | **Hostname Collision**| `ldm run --host-name test-init.local`| Use a hostname already assigned to another project. | Blocks execution due to registry conflict. |
-| 3.5 | **Ghost Mounts** | `ls -R test-init/osgi` | Check for `state/` and `configs/` folders. | Dirs created by LDM before Docker mounts. |
-| 3.6 | **Memory Units** | `grep "memory:" test-init/docker-compose.yml` | Set `--mem-limit 2048` during run. | YAML uses `2048M` (Mandatory unit). |
-| 3.7 | **License Discovery** | `ldm doctor test-init` | Drop any `.xml` file into `test-init/deploy/`. | Doctor identifies the XML as a license. |
+| 3.2 | **Missing Tag Guard**| `ldm run test-fail -y` | Run without `--tag-latest` or `-t`. | Fails gracefully with "No Liferay tag specified." |
+| 3.3 | **Fresh Project Run**| `ldm run test-run -y --tag-latest` | Starts a fresh project without prior init. | Starts project from seed without prompts. |
+| 3.4 | **Project Collision** | `ldm init test-init` | Run this in a *different* directory than 3.1. | Blocks; identifies original path. |
+| 3.5 | **Hostname Collision**| `ldm run --host-name test-init.local`| Use a hostname already assigned to another project. | Blocks execution due to registry conflict. |
+| 3.6 | **Captcha Switch** | `ldm init test-captcha -y --tag-latest --no-captcha`| Check `osgi/configs/com.liferay.captcha...config`. | Generates config to disable Omni-Admin CAPTCHA. |
+| 3.7 | **Ghost Mounts** | `ls -R test-init/osgi` | Check for `state/` and `configs/` folders. | Dirs created by LDM before Docker mounts. |
+| 3.8 | **Memory Units** | `grep "memory:" test-init/docker-compose.yml` | Set `--mem-limit 2048` during run. | YAML uses `2048M` (Mandatory unit). |
+| 3.9 | **License Discovery** | `ldm doctor test-init` | Drop any `.xml` file into `test-init/deploy/`. | Doctor identifies the XML as a license. |
 
 ### Phase 4: Runtime Configuration & UX
 
