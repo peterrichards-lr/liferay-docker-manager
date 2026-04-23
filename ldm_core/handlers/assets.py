@@ -86,11 +86,16 @@ class AssetHandler(BaseHandler):
                             if asset:
                                 download_url = asset.get("browser_download_url")
                             else:
-                                return True
+                                UI.warning(f"No seed found for tag: {tag_name}")
+                                return False
                         else:
-                            return True
+                            UI.warning(f"Release not found for tag: {tag_name}")
+                            return False
                     else:
-                        return True
+                        UI.warning(
+                            f"Failed to fetch release info: HTTP {api_res.status_code}"
+                        )
+                        return False
 
                 temp_download = cache_dir / f"{seed_filename}.download"
                 try:

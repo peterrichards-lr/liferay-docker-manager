@@ -294,17 +294,23 @@ class BaseHandler:
         # If passed a dict as path, skip (logic error in caller)
         if isinstance(path, dict):
             return
-        target = path
+
         try:
             p = Path(path)
-            if p.is_dir():
-                # Default to modern 'meta' unless legacy exists
+            # Ensure we are targeting a file inside the directory
+            if p.suffix not in [".meta", ""]:
+                # Assuming it's already a file path
+                target = p
+            else:
                 target = p / "meta"
                 if (p / ".liferay-docker.meta").exists():
                     target = p / ".liferay-docker.meta"
+
+            # Ensure the parent directory exists
+            target.parent.mkdir(parents=True, exist_ok=True)
+            write_meta(target, meta)
         except Exception:
             pass
-        write_meta(target, meta)
 
     def run_command(self, cmd, check=True, cwd=None, env=None, capture_output=True):
         from ldm_core.utils import run_command
