@@ -334,10 +334,28 @@ class ConfigHandler(BaseHandler):
 
                 traceback.print_exc()
 
-    def sync_common_assets(self, paths, host_updates=None, version=None):
+    def sync_common_assets(
+        self, paths, host_updates=None, version=None, project_meta=None
+    ):
         # Safety: If passed a direct path (common error in refactored handlers), initialize paths dict
         if not isinstance(paths, dict):
             paths = self.setup_paths(paths)
+
+        # Handle Captcha Configuration
+        if project_meta:
+            no_captcha = str(project_meta.get("no_captcha", "false")).lower() == "true"
+            if no_captcha:
+                if host_updates is None:
+                    host_updates = {}
+                host_updates["captcha.enforce.disabled"] = "true"
+
+                captcha_cfg = (
+                    paths["configs"]
+                    / "com.liferay.captcha.configuration.CaptchaConfiguration.config"
+                )
+                if not captcha_cfg.exists():
+                    captcha_cfg.parent.mkdir(parents=True, exist_ok=True)
+                    captcha_cfg.write_text('maxChallenges="-1"\n')
 
         # Use the binary-aware 'common' path from setup_paths
         common_dir = paths.get("common")

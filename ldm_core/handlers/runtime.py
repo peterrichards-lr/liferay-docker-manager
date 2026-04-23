@@ -154,6 +154,11 @@ class RuntimeHandler(BaseHandler):
 
             ConfigHandler(self.args).sync_samples(paths)
 
+        no_captcha = (
+            getattr(self.args, "no_captcha", False)
+            or str(project_meta.get("no_captcha", "false")).lower() == "true"
+        )
+
         project_meta.update(
             {
                 "project_name": project_id,
@@ -168,6 +173,7 @@ class RuntimeHandler(BaseHandler):
                 "no_vol_cache": str(no_vol_cache).lower(),
                 "no_jvm_verify": str(no_jvm_verify).lower(),
                 "no_tld_skip": str(no_tld_skip).lower(),
+                "no_captcha": str(no_captcha).lower(),
                 "env_type": env_type,
                 "cpu_limit": cpu_limit,
                 "mem_limit": mem_limit,
@@ -355,7 +361,9 @@ class RuntimeHandler(BaseHandler):
         from ldm_core.handlers.config import ConfigHandler
 
         config_handler = ConfigHandler(self.args)
-        config_handler.sync_common_assets(paths, version=project_meta.get("tag"))
+        config_handler.sync_common_assets(
+            paths, version=project_meta.get("tag"), project_meta=project_meta
+        )
         config_handler.sync_logging(paths)
 
         self.write_docker_compose(paths, project_meta, liferay_env=liferay_env)

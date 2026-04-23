@@ -89,6 +89,11 @@ def get_parser():
         action="store_true",
         help="Skip seeding the OSGi state folder (use when re-calculating bundles)",
     )
+    run.add_argument(
+        "--no-captcha",
+        action="store_true",
+        help="Disable CAPTCHA enforcement for Omni-Admin actions (testing only)",
+    )
     run.add_argument("-f", "--follow", action="store_true")
     run.add_argument("--env", action="append")
     run.add_argument(
@@ -124,6 +129,7 @@ def get_parser():
     imp.add_argument("--no-tld-skip", action="store_true")
     imp.add_argument("--no-seed", action="store_true")
     imp.add_argument("--no-osgi-seed", action="store_true")
+    imp.add_argument("--no-captcha", action="store_true")
     imp.add_argument("--env", action="append")
 
     # Command: init
@@ -134,6 +140,11 @@ def get_parser():
     init.add_argument("--db", choices=["postgresql", "mysql", "hypersonic"])
     init.add_argument(
         "--samples", action="store_true", help="Initialize with sample extensions"
+    )
+    init.add_argument(
+        "--no-captcha",
+        action="store_true",
+        help="Disable CAPTCHA for Omni-Admin actions",
     )
 
     # Command: init-from
@@ -157,6 +168,7 @@ def get_parser():
     init_from.add_argument("--no-tld-skip", action="store_true")
     init_from.add_argument("--no-seed", action="store_true")
     init_from.add_argument("--no-osgi-seed", action="store_true")
+    init_from.add_argument("--no-captcha", action="store_true")
     init_from.add_argument("--env", action="append")
     init_from.add_argument("--delay", type=float, default=2.0)
 
