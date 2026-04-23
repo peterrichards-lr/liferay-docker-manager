@@ -65,6 +65,7 @@ This checklist is ordered sequentially to minimize environment setup overhead. F
 | 3.7 | **Ghost Mounts** | `ls -R test-init/osgi` | Check for `state/` and `configs/` folders. | Dirs created by LDM before Docker mounts. |
 | 3.8 | **Memory Units** | `grep "memory:" test-init/docker-compose.yml` | Set `--mem-limit 2048` during run. | YAML uses `2048M` (Mandatory unit). |
 | 3.9 | **License Discovery** | `ldm doctor test-init` | Drop any `.xml` file into `test-init/deploy/`. | Doctor identifies the XML as a license. |
+| 3.10| **Sample Hydration** | `ldm init test-samples --samples -y --tag-latest` | Check `test-samples/client-extensions/` for ZIP files. | Scaffolds project and populates sample assets. |
 
 ### Phase 4: Runtime Configuration & UX
 
