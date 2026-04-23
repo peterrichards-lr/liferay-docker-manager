@@ -225,35 +225,26 @@ class DiagnosticsHandler(BaseHandler):
         UI.heading("LDM Self-Upgrade")
         is_repair = getattr(self.args, "repair", False)
 
-        # 1. Check for updates
-        latest, url = check_for_updates(VERSION, force=True)
-
-        # In repair mode, if we are already latest, we use the current VERSION as target
-        if is_repair and (
-            not latest or version_to_tuple(latest) <= version_to_tuple(VERSION)
-        ):
+        if is_repair:
             latest = VERSION
-            # Fetch URL for current version if latest check didn't provide one
-            if not url:
-                # Construct official asset URL for current version
-                system = platform.system().lower()
-                machine = platform.machine().lower()
-                target_asset = "ldm-linux"
-                if system == "darwin":
-                    # Architecture-aware naming
-                    if machine == "arm64":
-                        target_asset = "ldm-macos-arm64"
-                    else:
-                        target_asset = "ldm-macos-x86_64"
-                elif system in ["win32", "windows"]:
-                    target_asset = "ldm-windows.exe"
-                url = f"https://github.com/peterrichards-lr/liferay-docker-manager/releases/download/v{VERSION}/{target_asset}"
-
-        if not latest or (
-            version_to_tuple(latest) <= version_to_tuple(VERSION) and not is_repair
-        ):
-            UI.success(f"LDM is already up to date (v{VERSION}).")
-            return
+            system = platform.system().lower()
+            machine = platform.machine().lower()
+            target_asset = "ldm-linux"
+            if system == "darwin":
+                # Architecture-aware naming
+                if machine == "arm64":
+                    target_asset = "ldm-macos-arm64"
+                else:
+                    target_asset = "ldm-macos-x86_64"
+            elif system in ["win32", "windows"]:
+                target_asset = "ldm-windows.exe"
+            url = f"https://github.com/peterrichards-lr/liferay-docker-manager/releases/download/v{VERSION}/{target_asset}"
+        else:
+            # 1. Check for updates
+            latest, url = check_for_updates(VERSION, force=True)
+            if not latest or version_to_tuple(latest) <= version_to_tuple(VERSION):
+                UI.success(f"LDM is already up to date (v{VERSION}).")
+                return
 
         if is_repair:
             UI.info(f"Repairing current version: v{latest}")
