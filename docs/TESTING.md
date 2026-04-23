@@ -55,7 +55,8 @@ This checklist is ordered sequentially to minimize environment setup overhead. F
 
 | ID | Test Case | Steps | Validation Pointers | Expected Outcome |
 | :--- | :--- | :--- | :--- | :--- |
-| 3.1 | **Explicit Init** | `ldm init test-init -y` | Verify a new folder `test-init` is created. | Scaffolds folders/metadata immediately. |
+| 3.1 | **Explicit Init** | `ldm init test-init -y --tag-latest` | Verify a new folder `test-init` is created. | Scaffolds folders/metadata immediately. |
+| 3.1b| **Missing Tag Guard**| `ldm init test-fail -y` | Run without `--tag-latest` or `-t`. | Fails gracefully with "No Liferay tag specified." |
 | 3.2 | **Non-Interactive Run**| `ldm run test-init -y` | Use the project created in 3.1. | Starts project from seed without prompts. |
 | 3.3 | **Project Collision** | `ldm init test-init` | Run this in a *different* directory than 3.1. | Blocks; identifies original path. |
 | 3.4 | **Hostname Collision**| `ldm run --host-name test-init.local`| Use a hostname already assigned to another project. | Blocks execution due to registry conflict. |
