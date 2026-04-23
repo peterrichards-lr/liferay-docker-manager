@@ -93,6 +93,13 @@ class TestInfraHandler(unittest.TestCase):
 
         mock_run.assert_any_call(["docker", "start", "liferay-search-global"])
 
+    @patch.object(InfraHandler, "cmd_infra_down")
+    @patch.object(InfraHandler, "cmd_infra_setup")
+    def test_cmd_infra_restart(self, mock_setup, mock_down):
+        self.manager.cmd_infra_restart()
+        self.assertTrue(mock_down.called)
+        self.assertTrue(mock_setup.called)
+
 
 if __name__ == "__main__":
     unittest.main()

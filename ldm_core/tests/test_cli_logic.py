@@ -52,6 +52,23 @@ class TestCLILogic(unittest.TestCase):
         with self.assertRaises(SystemExit):
             self.parser.parse_args(["--version"])
 
+    def test_new_cli_flags(self):
+        # Test: ldm run --tag-latest --no-captcha demo
+        args = self.parser.parse_args(["run", "--tag-latest", "--no-captcha", "demo"])
+        self.assertTrue(args.tag_latest)
+        self.assertTrue(args.no_captcha)
+        self.assertEqual(args.project, "demo")
+
+        # Test: ldm init-from source --tag-latest
+        args = self.parser.parse_args(["init-from", "source_path", "--tag-latest"])
+        self.assertTrue(args.tag_latest)
+        self.assertEqual(args.source, "source_path")
+
+        # Test: ldm infra-restart --search
+        args = self.parser.parse_args(["infra-restart", "--search"])
+        self.assertEqual(args.command, "infra-restart")
+        self.assertTrue(args.search)
+
 
 if __name__ == "__main__":
     unittest.main()
