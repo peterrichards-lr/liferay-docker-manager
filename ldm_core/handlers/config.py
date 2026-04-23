@@ -354,6 +354,7 @@ class ConfigHandler(BaseHandler):
             common_ext = common_dir / "portal-ext.properties"
             if common_ext.exists():
                 if not target_ext.exists():
+                    target_ext.parent.mkdir(parents=True, exist_ok=True)
                     shutil.copy2(common_ext, target_ext)
                 else:
                     # Robust extraction of project and common properties

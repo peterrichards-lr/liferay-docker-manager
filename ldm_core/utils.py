@@ -22,6 +22,7 @@ def download_file(url, destination):
         response = requests.get(
             url, headers={"User-Agent": "ldm-cli"}, timeout=30, stream=True
         )
+
         response.raise_for_status()
         with open(destination, "wb") as f:
             for chunk in response.iter_content(chunk_size=8192):
@@ -255,7 +256,7 @@ def get_raw(url):
         if not url.startswith(("http://", "https://")):
             raise ValueError(f"Invalid URL scheme: {url}")
 
-        response = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=15)
+        response = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=30)
         response.raise_for_status()
         return response.text
     except Exception as e:

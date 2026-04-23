@@ -439,7 +439,10 @@ class BaseHandler:
                     (p / f).exists()
                     for f in ["meta", ".liferay-docker.meta", ".ldm.meta"]
                 )
-                if has_meta or (for_init and p.parent.exists()):
+                if has_meta:
+                    return p
+                # If for_init, we allow the path as long as it doesn't exist as a file
+                if for_init and p.parent.exists() and not p.is_file():
                     return p
             except PermissionError:
                 # If we get permission denied, but the path exists, it's definitely the project
@@ -470,7 +473,9 @@ class BaseHandler:
                         (p_test / f).exists()
                         for f in ["meta", ".liferay-docker.meta", ".ldm.meta"]
                     )
-                    if has_meta or (for_init and s_dir.exists()):
+                    if has_meta:
+                        return p_test
+                    if for_init and s_dir.exists() and not p_test.is_file():
                         return p_test
                 except PermissionError:
                     if p_test.is_dir():
