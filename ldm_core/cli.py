@@ -47,6 +47,11 @@ def get_parser():
     run = subparsers.add_parser("run", aliases=["up"], parents=[base_sub_parent])
     run.add_argument("project", nargs="?")
     run.add_argument("-t", "--tag")
+    run.add_argument(
+        "--tag-latest",
+        action="store_true",
+        help="Automatically use the latest Liferay tag",
+    )
     run.add_argument("--tag-prefix")
     run.add_argument("-p", "--project", dest="project_flag")
     run.add_argument("-c", "--container")
@@ -123,6 +128,11 @@ def get_parser():
     imp.add_argument("--mount-logs", action="store_true")
     imp.add_argument("--gogo-port", type=int)
     imp.add_argument("--jvm-args", help="Override Liferay JVM arguments")
+    imp.add_argument(
+        "--tag-latest",
+        action="store_true",
+        help="Automatically use the latest Liferay tag",
+    )
     imp.add_argument("--tag-prefix", help="Prefix for Liferay tag discovery")
     imp.add_argument("--no-vol-cache", action="store_true")
     imp.add_argument("--no-jvm-verify", action="store_true")
@@ -136,6 +146,11 @@ def get_parser():
     init = subparsers.add_parser("init", parents=[base_sub_parent])
     init.add_argument("project", nargs="?")
     init.add_argument("-t", "--tag", help="Liferay Tag (e.g. 2025.q1.0)")
+    init.add_argument(
+        "--tag-latest",
+        action="store_true",
+        help="Automatically use the latest Liferay tag",
+    )
     init.add_argument("--host-name", help="Virtual Hostname")
     init.add_argument("--db", choices=["postgresql", "mysql", "hypersonic"])
     init.add_argument(
@@ -162,6 +177,11 @@ def get_parser():
     init_from.add_argument("--mount-logs", action="store_true")
     init_from.add_argument("--gogo-port", type=int)
     init_from.add_argument("--jvm-args", help="Override Liferay JVM arguments")
+    init_from.add_argument(
+        "--tag-latest",
+        action="store_true",
+        help="Automatically use the latest Liferay tag",
+    )
     init_from.add_argument("--tag-prefix", help="Prefix for Liferay tag discovery")
     init_from.add_argument("--no-vol-cache", action="store_true")
     init_from.add_argument("--no-jvm-verify", action="store_true")

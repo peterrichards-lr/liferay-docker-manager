@@ -102,27 +102,45 @@ class RuntimeHandler(BaseHandler):
                 db_type = config_handler.get_samples_db_type()
 
         if not tag:
-            if self.non_interactive:
+            tag_latest = getattr(self.args, "tag_latest", False)
+            if self.non_interactive and not tag_latest:
                 UI.die("No Liferay tag specified.")
-
-            # Interactive Tag Discovery Sequence
-            # Combined prompt for release type or specific version prefix
-            ans = UI.ask("Release type (any|u|lts|qr) or prefix", "any")
-
-            rt = "any"
-            prefix = None
-            if ans in ["any", "u", "lts", "qr"]:
-                rt = ans
-            else:
-                prefix = ans
 
             from ldm_core.constants import API_BASE_DXP
             from ldm_core.utils import discover_latest_tag
 
-            latest_tag = discover_latest_tag(
-                API_BASE_DXP, release_type=rt, prefix_filter=prefix, verbose=True
-            )
-            tag = UI.ask("Enter Liferay Tag", latest_tag)
+            rt = getattr(self.args, "release_type", "any")
+            prefix = getattr(self.args, "tag_prefix", None)
+
+            if not tag_latest:
+                # Interactive Tag Discovery Sequence
+                # Combined prompt for release type or specific version prefix
+                ans = UI.ask("Release type (any|u|lts|qr) or prefix", "any")
+
+                if ans in ["any", "u", "lts", "qr"]:
+                    rt = ans
+                else:
+                    prefix = ans
+
+                latest_tag = discover_latest_tag(
+                    API_BASE_DXP, release_type=rt, prefix_filter=prefix, verbose=True
+                )
+                tag = UI.ask("Enter Liferay Tag", latest_tag)
+            else:
+                if self.verbose:
+                    UI.info("Automatically discovering latest Liferay tag...")
+                tag = discover_latest_tag(
+                    API_BASE_DXP,
+                    release_type=rt,
+                    prefix_filter=prefix,
+                    verbose=self.verbose,
+                )
+                if not tag:
+                    UI.die(
+                        "Failed to discover latest Liferay tag. Please specify one explicitly with -t."
+                    )
+                if self.verbose:
+                    UI.success(f"Using tag: {tag}")
 
         external_snapshot = getattr(self.args, "snapshot", None)
         if external_snapshot:
