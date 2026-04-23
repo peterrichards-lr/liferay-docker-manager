@@ -71,7 +71,9 @@ class TestConfigManagement(unittest.TestCase):
 
     @patch("ldm_core.handlers.config.shutil.copy2")
     @patch("pathlib.Path.mkdir")
-    def test_sync_common_assets_dir_creation(self, mock_mkdir, mock_copy):
+    @patch("pathlib.Path.write_text")
+    def test_sync_common_assets_dir_creation(self, mock_write, mock_mkdir, mock_copy):
+
         # Setup: Target files/ dir does NOT exist, common/ DOES exist
         common_dir = Path("/tmp/common")
         self.paths["common"] = common_dir
