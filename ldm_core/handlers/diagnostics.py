@@ -1355,7 +1355,10 @@ del "%~f0"
             non_local = dns_res[2]
 
             if host_name != "localhost":
-                if dns_ok:
+                fix_hosts = getattr(self.args, "fix_hosts", False)
+                needs_fix = unresolved + [h for h, ip in non_local]
+
+                if dns_ok and not non_local:
                     results.append(
                         (
                             f"[{p_path.name}] DNS ({host_name})",
@@ -1363,6 +1366,23 @@ del "%~f0"
                             True,
                         )
                     )
+                elif fix_hosts and needs_fix:
+                    if self._apply_hosts_fix(needs_fix):
+                        results.append(
+                            (
+                                f"[{p_path.name}] DNS ({host_name})",
+                                "Fixed (Appended to hosts)",
+                                True,
+                            )
+                        )
+                    else:
+                        results.append(
+                            (
+                                f"[{p_path.name}] DNS ({host_name})",
+                                "Fix failed (Permission denied?)",
+                                False,
+                            )
+                        )
                 elif non_local and not unresolved:
                     # Resolves but to an unexpected IP (e.g. 10.0.0.99)
                     ip_list = [f"{h}={ip}" for h, ip in non_local]
@@ -1374,42 +1394,23 @@ del "%~f0"
                         )
                     )
                     add_hint(
-                        f"[{p_path.name}] Hostname resolves to an external IP. Ensure your hosts file points to 127.0.0.1 for local dev.",
+                        f"[{p_path.name}] Hostname resolves to an external IP. Run '{UI.WHITE}ldm doctor --fix-hosts{UI.COLOR_OFF}' to point it to 127.0.0.1.",
                         "https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/installation.md#dns--subdomain-configuration",
                     )
                 else:
-                    fix_hosts = getattr(self.args, "fix_hosts", False)
-                    if fix_hosts:
-                        if self._apply_hosts_fix(unresolved):
-                            results.append(
-                                (
-                                    f"[{p_path.name}] DNS ({host_name})",
-                                    "Fixed (Appended to hosts)",
-                                    True,
-                                )
-                            )
-                        else:
-                            results.append(
-                                (
-                                    f"[{p_path.name}] DNS ({host_name})",
-                                    "Fix failed (Permission denied?)",
-                                    False,
-                                )
-                            )
-                    else:
-                        results.append(
-                            (
-                                f"[{p_path.name}] DNS ({host_name})",
-                                f"{len(unresolved)} domain(s) unresolved",
-                                False,
-                            )
+                    results.append(
+                        (
+                            f"[{p_path.name}] DNS ({host_name})",
+                            f"{len(unresolved)} domain(s) unresolved",
+                            False,
                         )
-                        add_hint(
-                            f"[{p_path.name}] Add missing hostnames to your local hosts file or run '{UI.WHITE}ldm doctor --fix-hosts{UI.COLOR_OFF}'.",
-                            "https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/installation.md#dns--subdomain-configuration",
-                        )
-                        for d in unresolved:
-                            print(f"  {UI.RED}×{UI.COLOR_OFF} {d}")
+                    )
+                    add_hint(
+                        f"[{p_path.name}] Add missing hostnames to your local hosts file or run '{UI.WHITE}ldm doctor --fix-hosts{UI.COLOR_OFF}'.",
+                        "https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/installation.md#dns--subdomain-configuration",
+                    )
+                    for d in unresolved:
+                        print(f"  {UI.RED}×{UI.COLOR_OFF} {d}")
 
             try:
                 if platform.system().lower() == "darwin":
