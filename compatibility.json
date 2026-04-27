@@ -7,7 +7,11 @@
         "mysql": "8.4.0",
         "postgresql": "16.2",
         "mariadb": "11.3",
-        "java": "21"
+        "java": "21",
+        "jdbc_driver_mysql": "org.mariadb.jdbc.Driver",
+        "jdbc_dialect_mysql": "org.hibernate.dialect.MariaDB103Dialect",
+        "jdbc_driver_postgresql": "org.postgresql.Driver",
+        "jdbc_dialect_postgresql": "org.hibernate.dialect.PostgreSQL10Dialect"
       }
     },
     {
@@ -17,7 +21,11 @@
         "mysql": "8.0.36",
         "postgresql": "15.6",
         "mariadb": "10.11",
-        "java": "17"
+        "java": "17",
+        "jdbc_driver_mysql": "org.mariadb.jdbc.Driver",
+        "jdbc_dialect_mysql": "org.hibernate.dialect.MariaDB103Dialect",
+        "jdbc_driver_postgresql": "org.postgresql.Driver",
+        "jdbc_dialect_postgresql": "org.hibernate.dialect.PostgreSQL10Dialect"
       }
     },
     {
@@ -27,7 +35,11 @@
         "mysql": "8.0.32",
         "postgresql": "13.10",
         "mariadb": "10.6",
-        "java": "11"
+        "java": "11",
+        "jdbc_driver_mysql": "com.mysql.cj.jdbc.Driver",
+        "jdbc_dialect_mysql": "org.hibernate.dialect.MySQL8Dialect",
+        "jdbc_driver_postgresql": "org.postgresql.Driver",
+        "jdbc_dialect_postgresql": "org.hibernate.dialect.PostgreSQL10Dialect"
       }
     }
   ]

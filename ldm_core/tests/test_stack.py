@@ -320,11 +320,43 @@ class TestStackOrchestration(unittest.TestCase):
             db_service = compose_data["services"]["db"]
 
             self.assertEqual(liferay_service["image"], "liferay/portal:7.4.13-u100")
-            self.assertEqual(db_service["image"], "mysql:5.7")
+            self.assertEqual(db_service["image"], "mysql:8.0.32")
+
             self.assertIn(
                 "--default-authentication-plugin=mysql_native_password",
                 db_service["command"],
             )
+
+    def test_wait_for_ready_logs_monitoring(self):
+        """Verifies that the health check loop proactively scans logs for ERRORs."""
+
+        self.t = 0
+
+        def mock_time():
+            self.t += 31  # Increment by 31s each call
+            return self.t
+
+        with (
+            patch("time.time", side_effect=mock_time),
+            patch("time.sleep"),
+            patch.object(self.manager, "run_command") as mock_run,
+            patch("ldm_core.ui.UI.warning") as mock_warn,
+        ):
+            # Sequence:
+            # 1. run_command (logs) -> returns ERROR
+            # 2. run_command (inspect) -> returns healthy (to exit loop)
+            mock_run.side_effect = [
+                "ERROR: Database connection failed",  # logs output
+                "healthy",  # inspect output
+            ]
+
+            with patch("ldm_core.handlers.runtime.datetime") as mock_dt:
+                mock_dt.now().strftime.return_value = "12:00:00"
+                self.manager._wait_for_ready(
+                    {"container_name": "test-container"}, "test-host", 0
+                )
+
+            mock_warn.assert_any_call("LDM detected 1 error(s) in the logs.")
 
     def test_fetch_seed_url_construction(self):
         from ldm_core.constants import SEED_VERSION
