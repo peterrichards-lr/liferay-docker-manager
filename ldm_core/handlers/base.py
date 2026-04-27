@@ -76,12 +76,10 @@ class BaseHandler:
 
         new_entries = []
         for d in sorted(list(set(unresolved_domains))):
-            # Windows DNS Client DOES NOT support wildcards in the hosts file.
-            # We only add them for macOS/Linux.
-            if is_windows:
-                new_entries.append(f"{target_ip} {d}")
-            else:
-                new_entries.append(f"{target_ip} {d} *.{d}")
+            # Standardize on explicit host entries.
+            # Wildcards (*.domain) are not supported by Windows DNS Client
+            # and are avoided globally for consistency.
+            new_entries.append(f"{target_ip} {d}")
 
         content_to_add = "\n# Added by Liferay Docker Manager (LDM)\n"
         content_to_add += "\n".join(new_entries) + "\n"
@@ -91,18 +89,33 @@ class BaseHandler:
         )
 
         try:
-            UI.info(f"Requesting permission to update {hosts_path}...")
-            if is_windows:
-                # Use PowerShell to append with elevation and explicit UTF8 encoding (No BOM)
-                # Note: powershell 5.1 requires 'UTF8' for no BOM, while 7+ defaults to it.
+            if is_windows or is_wsl:
+                # Target the Windows hosts file
+                win_hosts = r"C:\Windows\System32\drivers\etc\hosts"
+                UI.info(
+                    f"Requesting permission to update Windows hosts file: {win_hosts}..."
+                )
+
+                # Command construction:
+                # 1. Use powershell (or powershell.exe in WSL)
+                # 2. Use 'Start-Process -Verb RunAs' to trigger the UAC prompt
+                # 3. Add-Content with explicit UTF8 (No BOM) for Windows DNS compatibility
+                exe = "powershell.exe" if is_wsl else "powershell"
                 cmd = [
-                    "powershell",
+                    exe,
                     "-Command",
-                    f"Start-Process powershell -Verb RunAs -ArgumentList \"Add-Content -Path {hosts_path} -Value '{content_to_add}' -Encoding UTF8\"",
+                    f"Start-Process powershell -Verb RunAs -ArgumentList \"Add-Content -Path {win_hosts} -Value '{content_to_add}' -Encoding UTF8\"",
                 ]
                 subprocess.run(cmd, check=True)
+
+                if is_wsl:
+                    UI.success("Windows hosts file updated via WSL interop.")
+                    UI.info(
+                        "WSL will sync this change automatically (on next restart or via DNS cache)."
+                    )
             else:
-                # Use sudo tee to append
+                # Standard Linux / macOS (non-WSL)
+                UI.info(f"Requesting permission to update {hosts_path}...")
                 cmd = ["sudo", "tee", "-a", hosts_path]
                 process = subprocess.Popen(
                     cmd, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL
@@ -111,15 +124,6 @@ class BaseHandler:
 
                 if process.returncode != 0:
                     return False
-
-                # WSL Specific: If we just updated /etc/hosts inside WSL, we should remind the user
-                # that their Windows browser might still need the host entry.
-                if is_wsl:
-                    UI.warning("WSL /etc/hosts updated.")
-                    UI.info("Your Windows browser may also require this host entry.")
-                    UI.info(
-                        f"Run {UI.CYAN}ldm fix-hosts{UI.COLOR_OFF} from a standard Windows terminal to update both."
-                    )
 
             return True
         except Exception as e:
