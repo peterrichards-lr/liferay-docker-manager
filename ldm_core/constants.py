@@ -1,8 +1,8 @@
 from pathlib import Path
 
 # --- Constants & Configuration ---
-# LDM_MAGIC_VERSION: 2.4.26-beta.16
-VERSION = "2.4.26-beta.16"
+# LDM_MAGIC_VERSION: 2.4.26-beta.17
+VERSION = "2.4.26-beta.17"
 
 
 BUILD_INFO = "Release v2.4.26-beta.13"
@@ -13,17 +13,17 @@ API_BASE_PORTAL = "https://hub.docker.com/v2/repositories/liferay/portal/tags?pa
 LIFERAY_PRODUCT_INFO_URL = (
     "https://releases-cdn.liferay.com/tools/workspace/.product_info.json"
 )
-META_VERSION = "2.4.26-beta.16"
+META_VERSION = "2.4.26-beta.17"
 MIN_META_VERSION = 2
 PROJECT_META_FILE = "meta"
 REGISTRY_FILE = "registry.json"
 TAG_PATTERN = r"^\d{4}\.q[1-4]\.\d+(-u\d+|-lts)?$"
 SCRIPT_DIR = Path(__file__).parent.parent.resolve()
-ELASTICSEARCH_VERSION = "2.4.26-beta.16"
-ELASTICSEARCH7_VERSION = "2.4.26-beta.16"
-TRAEFIK_VERSION = "2.4.26-beta.16"
+ELASTICSEARCH_VERSION = "2.4.26-beta.17"
+ELASTICSEARCH7_VERSION = "2.4.26-beta.17"
+TRAEFIK_VERSION = "2.4.26-beta.17"
 SOCAT_IMAGE = "alpine/socat"
-SEED_VERSION = "2.4.26-beta.16"
+SEED_VERSION = "2.4.26-beta.17"
 
 # --- Orchestration Configuration ---
 RUN_ATTRS = [
