@@ -17,7 +17,9 @@ We love new ideas! Please use the Feature Request template when opening a new is
 
 ### Pull Requests
 
-1. **Fork the repo** and create your branch from `master`.
+1. **Branching Strategy**:
+   - **`master`**: Strictly for environmental hardening, stable maintenance, and verified hotfixes.
+   - **Roadmap / Features**: Large roadmap items, complex features, or experimental refactors MUST use dedicated branches (e.g., `roadmap/feature-name`).
 2. If you are working on a stability or hardening task, please align with our **Hardening Workflow**.
 3. **Pass the Lint Check**: Before submitting, you MUST run the local linting script:
 
@@ -56,12 +58,15 @@ We prefer [Conventional Commits](https://www.conventionalcommits.org/):
 - `docs: ...` for documentation changes.
 - `test: ...` for adding tests.
 
+**Logical Squashing**: Avoid creating a commit for every minor bugfix. Group related fixes and features into single, descriptive commits to maintain a high-signal history.
+
 ### 🚀 Release Management
 
 LDM uses an explicit gating mechanism for GitHub Releases:
 
-- **Tags**: Pushing a tag (e.g., `v2.4.0`) automatically triggers a **Pre-release** build.
-- **Production Release**: To trigger a full production release, the commit message MUST contain the **`[release]`** keyword.
+- **Tags**: Pushing a tag (e.g., `v2.4.0`) automatically triggers a build.
+- **Stable Release**: To trigger a full production release, the commit message MUST contain the **`[release]`** keyword.
+- **Beta / Pre-release**: To trigger a pre-release (beta) build, the commit message MUST contain the **`[pre-release]`** keyword.
 
 ## ✅ Quality Assurance Standards
 

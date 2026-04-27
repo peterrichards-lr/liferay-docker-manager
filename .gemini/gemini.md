@@ -44,12 +44,24 @@
 - **Dependency Awareness**: Before deployment, list the required order of execution (e.g., 1. OAuth2 CX, 2. Batch CX for Objects, 3. Frontend Custom Element).
 - **Manual Trigger**: Always end a feature cycle by asking: "The code is ready and tested. Would you like me to provide the specific build/deploy commands for this extension now?"
 
+## 8. Git Management & Branching Strategy
+
+- **Logical Squashing**: Avoid creating a commit for every minor bugfix. Group related fixes and features into single, descriptive commits.
+- **Release Automation**:
+  - Use `[release]` in the commit summary to trigger a stable GitHub Release.
+  - Use `[pre-release]` in the commit summary to trigger a Beta/Test build.
+  - Ensure version tags (e.g., `v2.4.26` or `v2.4.26-beta.1`) match the `VERSION` in `ldm_core/constants.py`.
+- **Branching Separation**:
+  - **`master` / `main`**: Strictly for environmental hardening, stable maintenance, and verified hotfixes.
+  - **Roadmap Items**: All large roadmap items, complex features, or experimental refactors MUST be developed in dedicated feature branches (e.g., `roadmap/feature-name`).
+  - Merge roadmap branches to `master` only after full verification and peer approval.
+
 ## Gemini Added Memories
 
 - I must update gemini.md before proposing any changes to serve as a persistent state, allowing me to resume my work if an interruption occurs.
-- **Task: Initialize Beta Release Cycle**
-  - [x] **Bug (Search)**: Standardized on `_PERIOD_` for search environment variables.
-  - [x] **Bug (Precedence)**: Fixed `version_to_tuple` to correctly compare beta vs stable releases.
-  - [x] **Bug (CI)**: Fixed download URL redundancy in GitHub Release notes.
-  - [x] **Release**: Initialized v2.4.26-beta.2.
+- **Task: System Hardening & Release Management**
+  - [x] **Git History**: Purged `image.png` from entire repository history using `filter-branch`.
+  - [x] **Hardening**: Implemented Tool Path Integrity check in `ldm doctor`.
+  - [x] **Hardening**: Implemented self-healing permission fixer for SSL certificates.
+  - [x] **Documentation**: Updated Rules of Engagement with Git and Branching strategy.
 --- End of Context from: /users/peterrichards/.gemini/gemini.md ---

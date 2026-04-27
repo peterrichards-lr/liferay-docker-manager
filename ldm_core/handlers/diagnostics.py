@@ -504,13 +504,21 @@ del "%~f0"
         check_all = all_projects or getattr(self.args, "all", False)
 
         project_paths = []
+        requires_ssl = False
         if check_all:
             roots = self.find_dxp_roots()
             project_paths = [r["path"] for r in roots]
+            for r in roots:
+                p_meta = self.read_meta(r["path"])
+                if str(p_meta.get("ssl", "false")).lower() == "true":
+                    requires_ssl = True
         elif not skip_project:
             p_path = self.detect_project_path(project_id)
             if p_path:
                 project_paths = [p_path]
+                p_meta = self.read_meta(p_path)
+                if str(p_meta.get("ssl", "false")).lower() == "true":
+                    requires_ssl = True
 
         results = []
         hints = []
@@ -699,12 +707,30 @@ del "%~f0"
 
         # 3. mkcert Check
         mkcert_status, mkcert_ok, ca_root = self.check_mkcert()
+
+        # Escalate to error if project requires SSL
+        if mkcert_ok == "warn" and requires_ssl:
+            mkcert_ok = False
+
         results.append(("mkcert", mkcert_status, mkcert_ok))
         if mkcert_ok is not True:
-            add_hint(
-                f"Run '{UI.WHITE}mkcert -install{UI.COLOR_OFF}' to initialize the local trust store.",
-                "https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/installation.md#fixing-ssl-trust-issues-mkcert",
-            )
+            if mkcert_status == "Not installed":
+                add_hint(
+                    "Install 'mkcert' to enable local SSL (brew install mkcert / scoop install mkcert / apt install mkcert).",
+                    "https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/installation.md#prerequisites",
+                )
+            elif "Permission Denied" in mkcert_status:
+                from ldm_core.utils import get_actual_home
+
+                cert_dir = get_actual_home() / "liferay-docker-certs"
+                add_hint(
+                    f"Fix permissions: {UI.WHITE}sudo chown -R $USER {cert_dir.parent}{UI.COLOR_OFF}"
+                )
+            else:
+                add_hint(
+                    f"Run '{UI.WHITE}mkcert -install{UI.COLOR_OFF}' to initialize the local trust store.",
+                    "https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/installation.md#fixing-ssl-trust-issues-mkcert",
+                )
         else:
             # Detect WSL
             is_wsl = False
@@ -739,7 +765,34 @@ del "%~f0"
                 "https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/installation.md#prerequisites",
             )
 
-        # 4.1 Required Tools Check
+        # 4.1 Required Tools & Path Integrity
+        tool_list = [
+            ("docker", shutil.which("docker")),
+            ("mkcert", shutil.which("mkcert")),
+            ("openssl", shutil.which("openssl")),
+            ("telnet", shutil.which("telnet")),
+            ("nc", shutil.which("nc")),
+            ("lcp", shutil.which("lcp")),
+        ]
+
+        # Add Docker Compose (detect if it's the plugin or standalone)
+        from ldm_core.utils import get_compose_cmd
+
+        compose_bin = get_compose_cmd()
+        if compose_bin:
+            tool_list.append(("docker compose", " ".join(compose_bin)))
+
+        for tool_name, tool_path in tool_list:
+            if tool_path:
+                results.append((f"Path: {tool_name}", str(tool_path), True))
+            else:
+                # Some are optional/warn only
+                if tool_name in ["telnet", "lcp", "mkcert"]:
+                    results.append((f"Path: {tool_name}", "Not Found", "warn"))
+                else:
+                    results.append((f"Path: {tool_name}", "Not Found", False))
+
+        # 4.2 Legacy Compatibility Checks (Maintain existing summary lines)
         telnet_bin = shutil.which("telnet")
         nc_bin = shutil.which("nc")
         lcp_bin = shutil.which("lcp")
@@ -1540,7 +1593,9 @@ del "%~f0"
             sys.exit(1)
 
     def check_mkcert(self):
-        """Checks for mkcert installation and root CA trust."""
+        """Checks for mkcert installation, root CA trust, and write permissions."""
+        from ldm_core.utils import get_actual_home
+
         try:
             mkcert_bin = shutil.which("mkcert")
             if not mkcert_bin:
@@ -1549,6 +1604,22 @@ del "%~f0"
             ca_root = run_command([mkcert_bin, "-CAROOT"], check=False)
             if not (ca_root and os.path.exists(ca_root) and os.listdir(ca_root)):
                 return "Installed (Root CA NOT FOUND)", "warn", ca_root
+
+            # Permission Check for global certs folder
+            cert_dir = get_actual_home() / "liferay-docker-certs"
+            if cert_dir.exists():
+                if not os.access(cert_dir, os.W_OK):
+                    return (
+                        "Installed (Permission Denied to Certs Folder)",
+                        "warn",
+                        ca_root,
+                    )
+            elif not os.access(cert_dir.parent, os.W_OK):
+                return (
+                    "Installed (Permission Denied to Home Directory)",
+                    "warn",
+                    ca_root,
+                )
 
             # Deep check for Root CA trust on macOS
             is_trusted = True

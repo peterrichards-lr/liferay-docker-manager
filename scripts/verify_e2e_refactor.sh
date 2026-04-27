@@ -209,8 +209,8 @@ if ! grep -q "jdbc.default.driverClassName=org.postgresql.Driver" test-log-verif
 fi
 
 # Verify the environment injection for search (Remains in env vars)
-# Note: Liferay reliably decodes using _PERIOD_
-if ! grep -q "LIFERAY_SEARCH_PERIOD_ELASTICSEARCH_PERIOD_PRODUCTION_PERIOD_MODE_PERIOD_ENABLED=true" test-log-verify/docker-compose.yml; then
+# Note: Liferay reliably decodes using __ for OSGi structural mapping
+if ! grep -q "LIFERAY_ELASTICSEARCH__PRODUCTION__MODE__ENABLED=true" test-log-verify/docker-compose.yml; then
     echo "❌ ERROR: Environment injection failed to disable Sidecar ES"
     exit 1
 fi
