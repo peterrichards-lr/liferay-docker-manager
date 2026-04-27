@@ -47,6 +47,9 @@
 ## 8. Git Management & Branching Strategy
 
 - **Logical Squashing**: Avoid creating a commit for every minor bugfix. Group related fixes and features into single, descriptive commits.
+- **Version Management**: Use the `ldm version` command (available in dev environments) to manage project versions.
+  - `ldm version --bump beta` increments the pre-release number.
+  - `ldm version --promote` converts a beta release to stable.
 - **Release Automation**:
   - Use `[release]` in the commit summary to trigger a stable GitHub Release.
   - Use `[pre-release]` in the commit summary to trigger a Beta/Test build.
@@ -64,4 +67,5 @@
   - [x] **Hardening**: Implemented Tool Path Integrity check in `ldm doctor`.
   - [x] **Hardening**: Implemented self-healing permission fixer for SSL certificates.
   - [x] **Documentation**: Updated Rules of Engagement with Git and Branching strategy.
+  - [x] **Roadmap**: Implemented and documented automated version management utility in `roadmap/version-manager`.
 --- End of Context from: /users/peterrichards/.gemini/gemini.md ---
