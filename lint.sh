@@ -35,9 +35,9 @@ fi
 info "Linting Markdown files..."
 if command -v markdownlint-cli2 &>/dev/null; then
 	if [[ $CHECK_ONLY -eq 1 ]]; then
-		markdownlint-cli2 "**/*.md" || EXIT_CODE=1
+		markdownlint-cli2 "**/*.md" "!node_modules" "!.venv" "!.smoke_venv" "!.github" || EXIT_CODE=1
 	else
-		markdownlint-cli2 "**/*.md" --fix || EXIT_CODE=1
+		markdownlint-cli2 "**/*.md" "!node_modules" "!.venv" "!.smoke_venv" "!.github" --fix || EXIT_CODE=1
 	fi
 	[[ $EXIT_CODE -eq 0 ]] && success "Markdown linting complete."
 else

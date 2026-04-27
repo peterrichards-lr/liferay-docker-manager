@@ -510,7 +510,7 @@ del "%~f0"
                     content = profile.read_text()
                     if any(marker in content for marker in markers):
                         return True
-                except Exception:
+                except Exception:  # nosec B112
                     continue
 
         return False

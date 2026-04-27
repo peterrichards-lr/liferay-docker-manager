@@ -223,7 +223,7 @@ class ComposerHandler(BaseHandler):
                         "jdbc.default.driverClassName": driver,
                         "jdbc.default.url": url,
                         "jdbc.default.username": "lportal",
-                        "jdbc.default.password": "test",
+                        "jdbc.default.password": "test",  # nosec B105
                         "hibernate.dialect": dialect,
                     },
                 )
@@ -249,7 +249,7 @@ class ComposerHandler(BaseHandler):
                         "jdbc.default.driverClassName": driver,
                         "jdbc.default.url": url,
                         "jdbc.default.username": "lportal",
-                        "jdbc.default.password": "test",
+                        "jdbc.default.password": "test",  # nosec B105
                         "hibernate.dialect": dialect,
                     },
                 )
@@ -381,7 +381,7 @@ class ComposerHandler(BaseHandler):
             services["db"] = {
                 "image": f"postgres:{pg_ver}",
                 "environment": {
-                    "POSTGRES_PASSWORD": "test",
+                    "POSTGRES_PASSWORD": "test",  # nosec B105
                     "POSTGRES_USER": "lportal",
                     "POSTGRES_DB": "lportal",
                 },
@@ -429,9 +429,9 @@ class ComposerHandler(BaseHandler):
                 ]
                 + auth_flags,
                 "environment": {
-                    "MYSQL_ROOT_PASSWORD": "test",
+                    "MYSQL_ROOT_PASSWORD": "test",  # nosec B105
                     "MYSQL_USER": "lportal",
-                    "MYSQL_PASSWORD": "test",
+                    "MYSQL_PASSWORD": "test",  # nosec B105
                     "MYSQL_DATABASE": "lportal",
                     "MYSQL_TCP_PORT": "3306",
                 },
