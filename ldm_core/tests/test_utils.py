@@ -15,20 +15,29 @@ class TestUtils(unittest.TestCase):
         self.assertEqual(version, "1.6.11")
 
     def test_version_to_tuple(self):
-        self.assertEqual(version_to_tuple("1.5.4"), (1, 5, 4))
-        self.assertEqual(version_to_tuple("v1.5.4"), (1, 5, 4))
-        self.assertEqual(version_to_tuple("1.5"), (1, 5, 0))
-        self.assertEqual(version_to_tuple("2"), (2, 0, 0))
-        self.assertEqual(version_to_tuple(""), (0, 0, 0))
-        self.assertEqual(version_to_tuple(None), (0, 0, 0))
-        self.assertEqual(version_to_tuple("invalid"), (0, 0, 0))
+        # 1. Stable versions (use 999 sentinel for precedence)
+        self.assertEqual(version_to_tuple("2.4.25"), (2, 4, 25, 999))
+        self.assertEqual(version_to_tuple("v2.4.25"), (2, 4, 25, 999))
+        self.assertEqual(version_to_tuple("2.4"), (2, 4, 0, 999))
+        self.assertEqual(version_to_tuple("2"), (2, 0, 0, 999))
 
-    def test_version_comparison(self):
-        self.assertTrue(version_to_tuple("1.5.5") > version_to_tuple("1.5.4"))
+        # 2. Beta / Pre-release versions
+        self.assertEqual(version_to_tuple("2.4.26-beta.1"), (2, 4, 26, 1))
+        self.assertEqual(version_to_tuple("2.4.26-beta.2"), (2, 4, 26, 2))
+
+        # 3. Comparison checks
+        self.assertTrue(version_to_tuple("2.4.26-beta.1") > version_to_tuple("2.4.25"))
+        self.assertTrue(version_to_tuple("2.4.26") > version_to_tuple("2.4.26-beta.1"))
+        self.assertTrue(
+            version_to_tuple("2.4.26-beta.2") > version_to_tuple("2.4.26-beta.1")
+        )
         self.assertTrue(version_to_tuple("1.6.0") > version_to_tuple("1.5.9"))
-        self.assertTrue(version_to_tuple("2.0.0") > version_to_tuple("1.9.9"))
-        self.assertFalse(version_to_tuple("1.5.4") > version_to_tuple("1.5.4"))
-        self.assertFalse(version_to_tuple("1.4.9") > version_to_tuple("1.5.0"))
+        self.assertFalse(version_to_tuple("2.4.25") > version_to_tuple("2.4.25"))
+
+        # 4. Edge cases / Invalid
+        self.assertEqual(version_to_tuple(""), (0, 0, 0, 0))
+        self.assertEqual(version_to_tuple(None), (0, 0, 0, 0))
+        self.assertEqual(version_to_tuple("invalid"), (0, 0, 0, 0))
 
     def test_sanitize_id(self):
         from ldm_core.utils import sanitize_id
@@ -107,6 +116,7 @@ class TestUtils(unittest.TestCase):
         self.assertEqual(tag, "2026.q1.5")
 
     def test_metadata_flat_file(self):
+
         from ldm_core.utils import read_meta, write_meta
         import tempfile
 

@@ -11,6 +11,7 @@ class UI:
     RED = "\033[0;31m"
     BRED = "\033[1;31m"
     CYAN = "\033[0;36m"
+    BLUE = "\033[0;34m"
     BOLD = "\033[1m"
 
     NON_INTERACTIVE = False
@@ -62,6 +63,13 @@ class UI:
             # Replace problematic characters with safe ASCII equivalents
             safe_out = out.encode("ascii", "replace").decode("ascii")
             print(safe_out, file=file)
+
+    @staticmethod
+    def get_beta_label(version):
+        """Returns a stylized BETA tag if the version contains a hyphen (pre-release)."""
+        if "-" in version:
+            return f" {UI.BLUE}{UI.BOLD}[BETA]{UI.COLOR_OFF}"
+        return ""
 
     @staticmethod
     def info(msg):
