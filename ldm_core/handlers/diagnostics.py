@@ -1143,13 +1143,18 @@ del "%~f0"
                     )
 
             osgi_config_dir = p_path / "osgi" / "configs"
+
+            # Smart Detection based on Liferay Version
+            is_es8 = self.parse_version(meta.get("tag")) >= (2024, 1, 0)
+            es_ver = "8" if is_es8 else "7"
+
             es_main_conf = (
                 osgi_config_dir
-                / "com.liferay.portal.search.elasticsearch7.configuration.ElasticsearchConfiguration.config"
+                / f"com.liferay.portal.search.elasticsearch{es_ver}.configuration.ElasticsearchConfiguration.config"
             )
             es_conn_conf = (
                 osgi_config_dir
-                / "com.liferay.portal.search.elasticsearch7.configuration.ElasticsearchConnectionConfiguration.config"
+                / f"com.liferay.portal.search.elasticsearch{es_ver}.configuration.ElasticsearchConnectionConfiguration.config"
             )
 
             if es_main_conf.exists() and es_conn_conf.exists():
