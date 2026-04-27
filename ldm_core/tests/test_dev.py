@@ -48,13 +48,60 @@ class TestDevHandler(unittest.TestCase):
                 mock_apply.assert_called_with("2.4.26")
 
     @patch("ldm_core.handlers.dev.Path.cwd")
-    def test_bump_patch_from_beta(self, mock_cwd):
+    def test_ensure_dev_env_blocks(self, mock_cwd):
+        # Create a directory without .git
+        with tempfile.TemporaryDirectory() as empty_dir:
+            mock_cwd.return_value = Path(empty_dir)
+            with self.assertRaises(SystemExit):
+                with patch("ldm_core.ui.UI.die") as mock_die:
+                    mock_die.side_effect = SystemExit
+                    self.handler._ensure_dev_env()
+
+    @patch("ldm_core.handlers.dev.Path.cwd")
+    def test_bump_major_minor(self, mock_cwd):
+        mock_cwd.return_value = self.base
+        with patch("ldm_core.ui.UI.confirm", return_value=True):
+            with patch.object(self.handler, "_apply_version_update") as mock_apply:
+                self.handler.cmd_version(bump_type="major")
+                mock_apply.assert_called_with("3.0.0")
+
+                self.handler.cmd_version(bump_type="minor")
+                mock_apply.assert_called_with("2.5.0")
+
+    @patch("ldm_core.handlers.dev.Path.cwd")
+    def test_apply_version_update_writes_files(self, mock_cwd):
         mock_cwd.return_value = self.base
 
-        with patch("ldm_core.ui.UI.confirm", return_value=True):
-            # Test 2.4.26-beta.4 -> 2.4.26
-            # Note: cmd_version logic for patch currently does major.minor.patch+1
-            # based on base_version. So 2.4.26-beta.4 -> 2.4.27
-            with patch.object(self.handler, "_apply_version_update") as mock_apply:
-                self.handler.cmd_version(bump_type="patch")
-                mock_apply.assert_called_with("2.4.27")
+        # Setup files
+        constants_path = self.base / "ldm_core" / "constants.py"
+        constants_path.parent.mkdir(parents=True, exist_ok=True)
+        constants_path.write_text(
+            'VERSION = "2.4.26-beta.4"\n# LDM_MAGIC_VERSION: 2.4.26-beta.4'
+        )
+
+        pyproject_path = self.base / "pyproject.toml"
+        pyproject_path.write_text('version = "2.4.26-beta.4"')
+
+        self.handler._apply_version_update("2.4.26")
+
+        self.assertIn('VERSION = "2.4.26"', constants_path.read_text())
+        self.assertIn("LDM_MAGIC_VERSION: 2.4.26", constants_path.read_text())
+        self.assertIn('version = "2.4.26"', pyproject_path.read_text())
+
+    @patch("ldm_core.handlers.dev.Path.cwd")
+    def test_promote_blocks_stable(self, mock_cwd):
+        mock_cwd.return_value = self.base
+        # Setup stable version
+        with patch("ldm_core.handlers.dev.VERSION", "2.4.26"):
+            with self.assertRaises(SystemExit):
+                with patch("ldm_core.ui.UI.die") as mock_die:
+                    mock_die.side_effect = SystemExit
+                    self.handler.cmd_version(promote=True)
+
+    @patch("ldm_core.handlers.dev.Path.cwd")
+    def test_version_no_args(self, mock_cwd):
+        mock_cwd.return_value = self.base
+        # Should just print current version and return
+        with patch.object(self.handler, "_apply_version_update") as mock_apply:
+            self.handler.cmd_version()
+            mock_apply.assert_not_called()

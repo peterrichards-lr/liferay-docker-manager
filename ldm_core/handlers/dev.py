@@ -79,7 +79,7 @@ class DevHandler(BaseHandler):
             f"Target Version:  {UI.GREEN}v{new_version}{UI.COLOR_OFF}{UI.get_beta_label(new_version)}"
         )
 
-        if not UI.confirm(f"Update all source files to v{new_version}?", "N"):
+        if not UI.confirm(f"Update all source files to v{new_version}?", "Y"):
             UI.info("Aborted.")
             return
 

@@ -38,6 +38,9 @@ This checklist is ordered sequentially to minimize environment setup overhead. F
 | 1.3 | **Shell Completion** | `ldm completion zsh` | Verify the output contains completion functions. | Generates a valid script. |
 | 1.4 | **Native Manual** | `man ldm` | Requires `ldm init-common` to have run once. | Manual page opens correctly. |
 | 1.5 | **Self-Repair** | `ldm upgrade --repair -y` | Simulated by running on a source-install (will show "Source" warning). | Successfully reaches preparation phase. |
+| 1.6 | **Version Management** | `LDM_DEV_MODE=true ldm version --bump beta -y` | Requires source clone. Verify `constants.py` and `pyproject.toml` are updated. | Increments beta version atomically. |
+| 1.7 | **Version Promotion** | `LDM_DEV_MODE=true ldm version --promote -y` | Run after 1.6. Verify beta suffix is removed. | Prompts for promotion; results in stable version. |
+| 1.8 | **Dev Guardrails** | `ldm version --bump patch` | Run from a non-git directory or without `LDM_DEV_MODE`. | Blocks execution with safety warning. |
 
 ### Phase 2: Global Infrastructure
 

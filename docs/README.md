@@ -558,6 +558,21 @@ ldm update-check        # Check for stable updates
 ldm update-check --beta # Check for beta/pre-release versions
 ```
 
+### `version` (Developer Utility)
+
+Manage LDM project versioning across all source files. This command is restricted to development environments (git clones) and requires the `LDM_DEV_MODE=true` environment variable.
+
+```bash
+# Display current version
+ldm version
+
+# Increment the version (major, minor, patch, or beta)
+ldm version --bump beta
+
+# Promote a beta version to stable (remains in current major.minor.patch)
+ldm version --promote
+```
+
 ### `completion`
 
 Configure shell autocompletion for `ldm`. Supports **Bash**, **Zsh**, and **Fish**.
