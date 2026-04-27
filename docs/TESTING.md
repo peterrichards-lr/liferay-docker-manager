@@ -48,7 +48,8 @@ This checklist is ordered sequentially to minimize environment setup overhead. F
 | 2.1 | **Infra Setup** | `ldm infra-setup --search` | Monitor `docker ps` to see new global containers. | Starts Traefik and ES8. Idempotent. |
 | 2.2 | **Infra Restart** | `ldm infra-restart --search` | Monitor `docker ps` uptime. | Restarts Traefik and ES8 cleanly. |
 | 2.3 | **DNS Alignment** | Point host to wrong IP | **Requires a project.** Run `ldm init test-dns --host-name broken.local -y --tag-latest`. Edit `/etc/hosts` and point `broken.local` to `10.0.0.99`. | `ldm doctor` warns about IP mismatch. |
-| 2.4 | **Auto-Healing DNS** | `ldm doctor --fix-hosts` | Run this while the sabotage from 2.3 is active. | Prompts for sudo; fixes the entry. |
+| 2.4 | **Auto-Healing DNS** | `ldm fix-hosts broken.local` | Run this while the sabotage from 2.3 is active. | Prompts for sudo; fixes the entry. |
+| 2.5 | **Doctor DNS Fix** | `ldm doctor --fix-hosts` | Repeat sabotage from 2.3, then run doctor. | Batch fixes all missing entries. |
 
 ### Phase 3: Project Lifecycle (Init & Seeding)
 

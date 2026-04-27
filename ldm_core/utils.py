@@ -908,9 +908,10 @@ def version_to_tuple(v):
         return (0, 0, 0)
 
 
-def check_for_updates(current_version, force=False):
+def check_for_updates(current_version, force=False, pre_release=False):
     """Checks GitHub for the latest release of LDM."""
-    cache_file = Path.home() / ".ldm_update_cache"
+    cache_suffix = "_pre" if pre_release else ""
+    cache_file = Path.home() / f".ldm_update_cache{cache_suffix}"
     cache_duration = 86400  # 24 hours
     now = time.time()
 
@@ -923,13 +924,27 @@ def check_for_updates(current_version, force=False):
             pass
 
     try:
-        url = "https://api.github.com/repos/peterrichards-lr/liferay-docker-manager/releases/latest"
+        if pre_release:
+            # All releases including pre-releases (ordered by newest first)
+            url = "https://api.github.com/repos/peterrichards-lr/liferay-docker-manager/releases"
+        else:
+            # Latest stable release only
+            url = "https://api.github.com/repos/peterrichards-lr/liferay-docker-manager/releases/latest"
+
         if not url.startswith("https://"):
             raise ValueError(f"Invalid URL scheme: {url}")
 
         response = requests.get(url, headers={"User-Agent": "ldm-cli"}, timeout=5)
         if response.status_code == 200:
             res_data = response.json()
+
+            # If pre_release, we get a list of releases
+            if isinstance(res_data, list):
+                if not res_data:
+                    return None, None
+                # Take the most recent (first in list)
+                res_data = res_data[0]
+
             latest_version = res_data.get("tag_name", "").lstrip("v")
 
             # Architecture-aware asset resolution

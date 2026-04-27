@@ -220,10 +220,25 @@ class DiagnosticsHandler(BaseHandler):
         else:
             UI.success(f"Successfully cleared: {', '.join(cleared)}")
 
+    def _get_manual_upgrade_cmd(self, url, exe_path):
+        """Generates a platform-appropriate manual download and install command."""
+        system = platform.system().lower()
+        if system in ["win32", "windows"]:
+            return f'Invoke-WebRequest -Uri "{url}" -OutFile "{exe_path}"'
+        else:
+            # Check if parent directory is writable to decide on sudo
+            try:
+                parent_writable = os.access(exe_path.parent, os.W_OK)
+            except Exception:
+                parent_writable = False
+            prefix = "sudo " if not parent_writable else ""
+            return f'{prefix}curl -L "{url}" -o "{exe_path}" && {prefix}chmod +x "{exe_path}"'
+
     def cmd_upgrade(self):
         """Self-upgrade the LDM binary to the latest version."""
         UI.heading("LDM Self-Upgrade")
         is_repair = getattr(self.args, "repair", False)
+        pre_release = getattr(self.args, "pre_release", False)
 
         if is_repair:
             latest = VERSION
@@ -241,9 +256,12 @@ class DiagnosticsHandler(BaseHandler):
             url = f"https://github.com/peterrichards-lr/liferay-docker-manager/releases/download/v{VERSION}/{target_asset}"
         else:
             # 1. Check for updates
-            latest, url = check_for_updates(VERSION, force=True)
+            latest, url = check_for_updates(
+                VERSION, force=True, pre_release=pre_release
+            )
             if not latest or version_to_tuple(latest) <= version_to_tuple(VERSION):
-                UI.success(f"LDM is already up to date (v{VERSION}).")
+                tier = " (stable)" if not pre_release else " (pre-release)"
+                UI.success(f"LDM is already up to date v{VERSION}{tier}.")
                 return
 
         if is_repair:
@@ -301,7 +319,12 @@ class DiagnosticsHandler(BaseHandler):
         except Exception as e:
             if temp_new.exists():
                 temp_new.unlink()
-            UI.die("Download failed.", e)
+            manual_cmd = self._get_manual_upgrade_cmd(url, exe_path)
+            UI.error(f"Download failed: {e}")
+            UI.info(
+                f"You can upgrade manually by running:\n\n    {UI.CYAN}{manual_cmd}{UI.COLOR_OFF}\n"
+            )
+            sys.exit(1)
 
         # 4. Verify Integrity
         UI.info("Verifying integrity...")
@@ -340,9 +363,12 @@ class DiagnosticsHandler(BaseHandler):
                 if not verified:
                     if temp_new.exists():
                         temp_new.unlink()
-                    UI.die(
-                        f"Integrity verification failed! The hash for '{target_name}' does not match the official record."
+                    manual_cmd = self._get_manual_upgrade_cmd(url, exe_path)
+                    UI.error("Integrity verification failed! The hash does not match.")
+                    UI.info(
+                        f"If you trust this build, install manually:\n\n    {UI.CYAN}{manual_cmd}{UI.COLOR_OFF}\n"
                     )
+                    sys.exit(1)
             elif response.status_code == 404:
                 if temp_new.exists():
                     temp_new.unlink()
@@ -397,22 +423,30 @@ del "%~f0"
                         "\nRequesting permission to replace the binary in system path..."
                     )
                     try:
-                        # Use sudo to move the file from /tmp to system path
+                        # Use sudo to copy the file from /tmp to system path
+                        # We use cp + rm instead of mv to avoid 'Invalid cross-device link' errors
+                        # on systems where /tmp is a different filesystem (like Fedora/tmpfs).
                         subprocess.run(
-                            ["sudo", "mv", str(temp_new), str(exe_path)], check=True
+                            ["sudo", "cp", str(temp_new), str(exe_path)], check=True
                         )
+                        subprocess.run(["sudo", "rm", str(temp_new)], check=True)
                         UI.success(f"Successfully upgraded to v{latest}!")
                     except Exception as e:
                         UI.error(f"Failed to replace binary even with sudo: {e}")
                         UI.info(
-                            f'Please run manually: {UI.CYAN}sudo mv "{temp_new}" "{exe_path}"{UI.COLOR_OFF}'
+                            f'Please run manually: {UI.CYAN}sudo cp "{temp_new}" "{exe_path}" && sudo rm "{temp_new}"{UI.COLOR_OFF}'
                         )
                         return
 
         except Exception as e:
             if temp_new.exists():
                 temp_new.unlink()
-            UI.die("Failed to apply update.", e)
+            manual_cmd = self._get_manual_upgrade_cmd(url, exe_path)
+            UI.error(f"Failed to apply update: {e}")
+            UI.info(
+                f"Please try the manual installation command:\n\n    {UI.CYAN}{manual_cmd}{UI.COLOR_OFF}\n"
+            )
+            sys.exit(1)
 
         # 7. Post-Upgrade: Shell Completion Check
         UI.info("\nChecking shell completion status...")
@@ -2150,49 +2184,3 @@ del "%~f0"
             return "Running (Starting Up)", True
         except Exception:
             return "Running", True
-
-    def _apply_hosts_fix(self, unresolved_domains):
-        """Attempts to append missing host entries to the system hosts file."""
-        if not unresolved_domains:
-            return True
-
-        import platform
-        import subprocess
-
-        # Standard LDM expected IP for local development
-        target_ip = "127.0.0.1"
-        new_entries = []
-        for d in sorted(list(set(unresolved_domains))):
-            new_entries.append(f"{target_ip} {d} *.{d}")
-
-        content_to_add = "\n# Added by Liferay Docker Manager (LDM)\n"
-        content_to_add += "\n".join(new_entries) + "\n"
-
-        is_windows = platform.system().lower() == "windows"
-        hosts_path = (
-            r"C:\Windows\System32\drivers\etc\hosts" if is_windows else "/etc/hosts"
-        )
-
-        try:
-            UI.info(f"Requesting permission to update {hosts_path}...")
-            if is_windows:
-                # Use PowerShell to append with elevation
-                cmd = [
-                    "powershell",
-                    "-Command",
-                    f"Start-Process powershell -Verb RunAs -ArgumentList \"Add-Content -Path {hosts_path} -Value '{content_to_add}'\"",
-                ]
-                subprocess.run(cmd, check=True)
-            else:
-                # Use sudo tee to append
-                cmd = ["sudo", "tee", "-a", hosts_path]
-                process = subprocess.Popen(
-                    cmd, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL
-                )
-                process.communicate(input=content_to_add.encode())
-                if process.returncode != 0:
-                    return False
-            return True
-        except Exception as e:
-            UI.error(f"Failed to update hosts file: {e}")
-            return False

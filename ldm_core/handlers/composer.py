@@ -142,17 +142,6 @@ class ComposerHandler(BaseHandler):
             else:
                 image = f"liferay/dxp:{tag}"
 
-        # Determine Environment Variable Separator (Mandate 1.1)
-        # Modern (2025.Q1+ or 7.4.13-u100+): Single underscore (_)
-        # Legacy: Double underscore (__)
-        separator = "__"
-        v_parts = self.parse_version(tag)
-        if v_parts:
-            if v_parts[0] >= 2025:
-                separator = "_"
-            elif v_parts[0] == 7 and len(v_parts) >= 4 and v_parts[3] >= 100:
-                separator = "_"
-
         port = meta.get("port", 8080)
 
         if liferay_env is None:
@@ -163,16 +152,15 @@ class ComposerHandler(BaseHandler):
         if use_shared_search:
             liferay_env.extend(
                 [
-                    f"LIFERAY_ELASTICSEARCH{separator}SIDECAR{separator}ENABLED=false",
-                    f"LIFERAY_ELASTICSEARCH{separator}CONNECTION{separator}URL=http://liferay-search-global:9200",
-                    f"LIFERAY_ELASTICSEARCH{separator}INDEX{separator}NAME{separator}PREFIX=ldm-{project_name}-",
+                    "LIFERAY_SEARCH_PERIOD_ELASTICSEARCH_PERIOD_PRODUCTION_PERIOD_MODE_PERIOD_ENABLED=true",
+                    "LIFERAY_ELASTICSEARCH_PERIOD_CONNECTION_PERIOD_URL=http://liferay-search-global:9200",
+                    f"LIFERAY_ELASTICSEARCH_PERIOD_INDEX_PERIOD_NAME_PERIOD_PREFIX=ldm-{project_name}-",
                 ]
             )
         else:
             liferay_env.append(
-                f"LIFERAY_ELASTICSEARCH{separator}SIDECAR{separator}ENABLED=true"
+                "LIFERAY_SEARCH_PERIOD_ELASTICSEARCH_PERIOD_PRODUCTION_PERIOD_MODE_PERIOD_ENABLED=false"
             )
-
         # Add custom environment variables from metadata
         custom_env_str = meta.get("custom_env", "{}")
         try:
@@ -256,6 +244,16 @@ class ComposerHandler(BaseHandler):
         if host_name == "localhost" or not ssl_active:
             bind_ip = resolved_ip or "127.0.0.1"
             port_list.append(f"{bind_ip}:{port}:8080")
+        elif ssl_active:
+            # Inject mandatory web server properties for SSL alignment
+            self.update_portal_ext(
+                paths,
+                {
+                    "web.server.host": host_name,
+                    "web.server.https.port": "443",
+                    "web.server.protocol": "https",
+                },
+            )
 
         liferay_service = {
             "image": image,
@@ -293,8 +291,8 @@ class ComposerHandler(BaseHandler):
         else:
             liferay_env.extend(
                 [
-                    f"LIFERAY_CLUSTER{separator}LINK{separator}ENABLED=true",
-                    f"LIFERAY_LUCENE{separator}REPLICATE{separator}WRITE=true",
+                    "LIFERAY_CLUSTER_PERIOD_LINK_PERIOD_ENABLED=true",
+                    "LIFERAY_LUCENE_PERIOD_REPLICATE_PERIOD_WRITE=true",
                 ]
             )
 

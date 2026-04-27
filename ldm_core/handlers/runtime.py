@@ -417,9 +417,13 @@ class RuntimeHandler(BaseHandler):
                 UI.info(
                     f"  + SSL:     {UI.GREEN}Active (Port {ssl_port}){UI.COLOR_OFF}"
                 )
-            UI.info(
-                f"  + Port:    {UI.CYAN}8080 -> {project_meta.get('port', 8080)}{UI.COLOR_OFF}"
-            )
+                UI.info(
+                    f"  + Port:    {UI.YELLOW}Disabled (SSL Proxy Active){UI.COLOR_OFF}"
+                )
+            else:
+                UI.info(
+                    f"  + Port:    {UI.CYAN}8080 -> {project_meta.get('port', 8080)}{UI.COLOR_OFF}"
+                )
 
         if not no_up:
             if self.verbose and total_start:

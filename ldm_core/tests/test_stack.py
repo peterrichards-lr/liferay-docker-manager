@@ -230,8 +230,10 @@ class TestStackScaling(unittest.TestCase):
 
             # SCALE MANDATE: Clustering env vars must be present
             env = liferay_service.get("environment", [])
-            # 2025.Q1+ uses single underscore
-            self.assertTrue(any("LIFERAY_CLUSTER_LINK_ENABLED=true" in e for e in env))
+            # Liferay correctly decodes using _PERIOD_
+            self.assertTrue(
+                any("LIFERAY_CLUSTER_PERIOD_LINK_PERIOD_ENABLED=true" in e for e in env)
+            )
 
 
 class TestStackOrchestration(unittest.TestCase):

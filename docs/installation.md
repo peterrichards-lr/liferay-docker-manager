@@ -256,15 +256,38 @@ If you have cloned the repository and also have the binary installed, `ldm docto
 
 - **Recommendation**: Use `./ldm` (local wrapper) for development and `ldm` (global binary) for daily use.
 
+### 3. Manual Recovery (Binary Replacement)
+
+If the automatic upgrade fails (due to network issues or permission constraints), you can always perform a manual replacement of the binary.
+
+#### macOS / Linux / WSL2
+
+```bash
+# Replace <tag> and <asset> with appropriate values (e.g. v2.4.25 and ldm-linux)
+sudo curl -L https://github.com/peterrichards-lr/liferay-docker-manager/releases/download/<tag>/<asset> -o /usr/local/bin/ldm
+sudo chmod +x /usr/local/bin/ldm
+```
+
+#### Windows
+
+```powershell
+Invoke-WebRequest -Uri "https://github.com/peterrichards-lr/liferay-docker-manager/releases/download/<tag>/ldm-windows.exe" -OutFile "$HOME\bin\ldm.exe"
+```
+
+### 4. Manual Beta Installation
+
+To install a specific beta or pre-release version manually, replace `<tag>` in the URLs above with the specific version string (e.g., `v2.4.26-beta.1`).
+
+Stable releases are always available via the `/releases/latest/download/` path, while pre-releases must be accessed via their specific tag path: `/releases/download/<tag>/`.
+
 ## 🛠️ Troubleshooting: Sudo & Root Issues
 
 LDM strictly prohibits being run with `sudo` or as the `root` user (except for internal, just-in-time elevation).
 
-### 1. "Security Risk: Do not run LDM with sudo"
+LDM runs as your standard user and only invokes `sudo` internally for specific system-level operations:
 
-If you see this error, it means LDM has detected that it is running with root privileges.
-
-**The Cause**: LDM has detected that you are running with root privileges. This happens if you prefix a command with `sudo` **or if you are already logged in as the root user** (e.g., your terminal prompt shows `root@...`).
+- **`ldm fix-hosts`**: Requests elevation to append entries to `/etc/hosts`.
+- **`ldm upgrade`**: Requests elevation to replace the binary in system paths like `/usr/local/bin`. Uses a `cp` + `rm` pattern to handle cross-device links during replacement.
 
 Standalone LDM binaries use a cache directory in your home folder (`~/.shiv`). Running as root causes this cache to become owned by root, which prevents the tool from functioning correctly when run as a standard user later.
 

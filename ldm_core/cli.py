@@ -324,10 +324,23 @@ def get_parser():
         action="store_true",
         help="Re-download the current version to fix integrity issues",
     )
-    subparsers.add_parser("update-check", parents=[base_sub_parent])
-    migrate_search = subparsers.add_parser("migrate-search", parents=[base_sub_parent])
-    migrate_search.add_argument("project", nargs="?")
-    migrate_search.add_argument("-p", "--project", dest="project_flag")
+    upgrade.add_argument(
+        "--pre-release",
+        "--beta",
+        dest="pre_release",
+        action="store_true",
+        help="Include pre-release (beta) versions during upgrade",
+    )
+
+    update_check = subparsers.add_parser("update-check", parents=[base_sub_parent])
+    update_check.add_argument(
+        "--pre-release",
+        "--beta",
+        dest="pre_release",
+        action="store_true",
+        help="Include pre-release (beta) versions during check",
+    )
+    subparsers.add_parser("migrate-search", parents=[base_sub_parent])
 
     doctor = subparsers.add_parser("doctor", parents=[base_sub_parent])
     doctor.add_argument("project", nargs="?")
@@ -345,6 +358,10 @@ def get_parser():
         action="store_true",
         help="Automatically fix missing entries in /etc/hosts",
     )
+
+    # Command: fix-hosts (Legacy support/Direct access)
+    fh = subparsers.add_parser("fix-hosts", parents=[base_sub_parent])
+    fh.add_argument("host_name", nargs="?")
 
     status = subparsers.add_parser("status", aliases=["ps"], parents=[base_sub_parent])
     status.add_argument("project", nargs="?")
@@ -588,6 +605,9 @@ def main():
         "doctor": lambda: manager.cmd_doctor(
             getattr(args, "project", None), all_projects=args.all
         ),
+        "fix-hosts": lambda: manager._apply_hosts_fix(
+            [args.host_name] if getattr(args, "host_name", None) else []
+        ),
         "status": lambda: manager.cmd_status(
             getattr(args, "project", None), all_projects=args.all
         ),
@@ -617,7 +637,7 @@ def main():
         "man": lambda: manager.cmd_man(),
         "prune": lambda: manager.cmd_prune(),
         "upgrade": lambda: manager.cmd_upgrade(),
-        "update-check": lambda: manager.cmd_update_check(force=True),
+        "update-check": lambda: manager.cmd_upgrade(),
     }
 
     if args.command in cmds:

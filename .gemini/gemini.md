@@ -1,95 +1,56 @@
-# Gemini Project Memory - Liferay Docker Manager (LDM)
+# Gemini Rules of Engagement
 
-This file serves as the persistent state and technical knowledge base for the AI assistant working on the LDM project.
+--- Context from: /users/peterrichards/.gemini/gemini.md ---
 
-## 🛠️ Core Architectural Mandates (Hardened v2.3.6)
+## 1. Permission, Scope & Workflow
 
-### 1. Configuration Priority (The "Liferay Way")
+- **NO multi-file edits** in a single turn without a pre-approved written plan.
+- **Atomic Changes**: Break down complex tasks into small, logical units. Do not move to "Step 2" until "Step 1" is verified.
+- **Visual Confirmation**: Always use the VS Code Diff view to present changes before applying them.
+- **Logic-First Planning**: For any function or logic block >10 lines, output a `<plan>` tag with the step-by-step algorithm. Wait for a "Proceed" command before writing code.
 
-- **Database Configuration (Redline)**: All database-related settings (JDBC URL, Driver, Dialect, Credentials) MUST be injected into `portal-ext.properties` in the project's `files/` directory. This ensures mixed-case keys like `driverClassName` are correctly interpreted by Liferay.
-- **Search & Elasticsearch (Redline)**: Search configuration MUST be managed via high-priority **Environment Variables** (e.g., `LIFERAY_ELASTICSEARCH_...`) and **OSGi `.config` substitution**. Do NOT inject search settings into `portal-ext.properties`.
-- **80/20 Rule for .config**: Use static `.config` templates from `common/` for connectivity, and perform dynamic project-specific substitution (e.g., `indexNamePrefix`) during synchronization.
-- **Domain & Infrastructure**: `web.server.*` and `cluster.link.*` settings MUST be injected via Environment Variables to keep the on-disk `portal-ext.properties` focused on application-level overrides.
-- **Multi-line Property Merging**: When updating `portal-ext.properties`, the tool MUST handle multi-line values (using backslash `\` continuations).
-- **Environment Variable Separators**:
-  - **Modern (2025.Q1+ / 7.4.13-u100+)**: Use single underscore (`_`).
-  - **Legacy**: Use double underscore (`__`).
-  - The tool must remain version-aware and switch separators automatically.
+## 2. Code Quality, Architecture & Deduplication
 
-### 2. Networking & Routing (Traefik v3)
+- **Prioritize DRY (Don't Repeat Yourself)**: Before creating a new function/helper, search the `@codebase` for existing utilities.
+- **Refactor over Duplicate**: If redundant code is found, suggest a refactor into a shared service or utility rather than creating a new one.
+- **Predictive Failure**: For every implementation, list two potential failure points (edge cases or performance) and how they were handled.
+- **Predictable Layers**: Ensure logic stays within its designated layer (e.g., UI vs. Business Logic vs. Data) as defined in `spec.md`.
 
-- **Explicit Network Labels**: Every container managed by LDM MUST have the `traefik.docker.network=liferay-net` label.
-- **Metadata DNA**: Every Liferay container MUST have the `com.liferay.ldm.project` label. This is essential for `ldm status` and `ldm prune`.
-- **macOS Loopback**: Infrastructure (Traefik) on macOS MUST bind to `0.0.0.0` to support multi-IP loopback.
+## 3. Testing & Hard-Gates
 
-### 3. Shared Infrastructure & Extraction
+- **Unit Test Requirement**: All new logic must have corresponding unit tests.
+- **The Deployment Gate**: You must never suggest a deployment command until you have explicitly asked me to confirm that all unit tests are passing.
+- **Test-Driven Alignment**: Propose test cases *before* providing the implementation.
 
-- **Infra Isolation**: Global services (Traefik, Proxy, Global Search) MUST be managed by the `InfraHandler` mixin. Do not leak global orchestration logic into project-specific handlers.
-- **Idempotency**: Infrastructure setup MUST be idempotent. Always check for existing (including stopped) containers using `docker ps -a` before attempting creation.
+## 4. Collaborative Learning
 
-### 4. Diagnostics & Health
+- **Root Cause Analysis**: Explain the "Why" and "How" of every fix.
+- **Architectural Check-in**: Confirm alignment with my mental model.
 
-- **License Verification**: LDM MUST proactively check for valid Liferay XML licenses in `common/`, `deploy/`, and `osgi/modules/` folders.
-- **Doctor Exit Codes**: `ldm doctor` must return **Exit Code 1** if critical issues are detected.
-- **UTC Alignment**: Health check timestamps MUST use **UTC** to match Liferay container logs.
+## 5. Liferay Client Extension (CX) Standards
 
-### 5. Performance & Seeding (v2)
+- **YAML Integrity**: Cross-reference all code with `client-extension.yaml`.
+- **Oauth2 & Context**: Use `Liferay.authToken`. No hardcoded credentials.
+- **Workspace Awareness**: Respect `[workspace-root]/client-extensions/`.
 
-- **Bootstrap Seeds**: LDM uses version-matched seeds (Database + Search Index + **OSGi State**). Any changes to the seeding engine MUST increment `SEED_VERSION` in `constants.py`.
-- **Seeding Control**: The `--no-osgi-seed` flag MUST be respected to allow opt-out of state bootstrapping.
-- **Workspace-Aware Seeding**: Seeding MUST be triggered automatically during `import`, `init-from`, and `cloud-fetch` if the Liferay version can be detected early.
+## 6. Post-Completion "Definition of Done"
 
-### 6. Offline First & Asset Caching (Redline)
+- **Test Protocol**: Provide 3-5 manual/automated steps to verify in a live Liferay instance.
+- **Redundancy Scan**: After a feature is complete, scan for any newly introduced duplicate code.
 
-- **Cache-First Priority**: LDM MUST maintain a working offline experience. Any asset it downloads (seeds, samples, configuration templates) MUST be cached locally in `~/.ldm/references`.
-- **Graceful Degradation**: If LDM detects it is offline:
-  1. It MUST check the local cache for the required asset.
-  2. If the asset is in the cache, use it immediately.
-  3. If the asset is NOT in the cache and cannot be downloaded, LDM MUST flag the offline state to the user and **continue** with the offline/vanilla workflow without throwing errors.
-- **Samples Exception**: The `--samples` workflow is the only exception. If samples are not cached and cannot be downloaded, LDM MUST inform the user that it is unable to proceed with the sample initialization and then stop gracefully.
-- **No Blocking Errors**: Missing non-essential downloads (like seeds) MUST NOT prevent the tool from functioning; it should simply revert to the fresh-install logic.
+## 7. Strategic Deployment Control
 
-### 7. Security & Compliance
+- **No Automatic Deploy**: Do not run or suggest `deploy` tasks as part of a general "build" command.
+- **Dependency Awareness**: Before deployment, list the required order of execution (e.g., 1. OAuth2 CX, 2. Batch CX for Objects, 3. Frontend Custom Element).
+- **Manual Trigger**: Always end a feature cycle by asking: "The code is ready and tested. Would you like me to provide the specific build/deploy commands for this extension now?"
 
-- **Doctor Log Refinement**: Enhanced `_check_container_health_logs` to handle ECS-formatted Elasticsearch logs and suppressed benign "flood stage disk watermark" warnings.
-- **Nosec Disclosure**: Any use of `# nosec` in the codebase MUST be documented in `docs/SECURITY.md`.
-- **Contract Verification**: Refactoring MUST be verified against `ldm_core/tests/test_architectural_contracts.py` to ensure no silent loss of mandatory labels or properties.
+## Gemini Added Memories
 
-### 8. Robustness & State Management (Hardened v2.4.9)
+- I must update gemini.md before proposing any changes to serve as a persistent state, allowing me to resume my work if an interruption occurs.
+- **Task: Fix LDM Runtime and Composition Issues**
+  - [x] **Issue 1 (Env Vars)**: Liferay env vars require double underscores (`__`) even in 2025+ versions. (Fixed in ComposerHandler)
+  - [x] **Issue 2 (SSL Properties)**: `portal-ext.properties` is missing `web.server.*` configuration when SSL is enabled. (Fixed in ComposerHandler)
+  - [x] **Issue 3 (Permissions)**: Fixed `Permission Denied` on `logs/` by adding it to the permission fixer. (Fixed in BaseHandler)
+  - [x] **Issue 4 (Port Suppression)**: Port 8080 mapping suppressed and UI updated to reflect status. (Fixed in ComposerHandler & RuntimeHandler)
 
-- **Strict Path Resolution**: Project path detection (`detect_project_path`) MUST explicitly verify that target paths are not files to prevent initialization crashes (`NotADirectoryError`).
-- **State Persistence**: Project metadata (e.g., the `seeded` flag) MUST be written to disk immediately after state-changing operations (like seed downloads) to prevent desynchronization between memory and disk.
-- **Fail-Fast Initialization**: If `ldm init` encounters an existing file with the target project name, it MUST fail fast and exit rather than silently falling back to incorrect directories.
-- **Regression Testing**: All critical bug fixes MUST be accompanied by targeted regression tests (utilizing `unittest.mock` and `pytest`) to ensure the issue is permanently resolved and cannot silently regress during future refactoring.
-
-## 🚀 Release & Workflow Management
-
-### 1. Release Gating ([release] keyword)
-
-- **Explicit Releases**: The GitHub Release workflow is gated. Version tags (`v*`) trigger a **Pre-release** build.
-- **Full Release**: To trigger a full GitHub release and update the 'latest' pointer, the commit message MUST contain the **`[release]`** keyword.
-
-### 2. Verification Requirements
-
-- **E2E Testing**: Significant changes to orchestration or infrastructure MUST be verified using `bash scripts/verify_e2e_refactor.sh`.
-- **Automated Release E2E**: Commits containing `[release]` automatically trigger the **LDM Release E2E** workflow, which performs live-Docker verification of global infra, project labels, and status reporting on a clean GitHub runner.
-
-## 🏁 Definition of Done for Changes
-
-### Commit Requirements
-
-- **Pre-commit Compliance**: All commits REQUIRE the local pre-commit hooks to pass (`ruff`, `pytest`, `bandit`, `markdownlint`, `version-sync`).
-- **Documentation Synchronization**: All functional changes MUST be reflected in `README.md`, `ROADMAP.md`, `SECURITY.md`, and `LDM_ARCHITECTURE.md`.
-- **Memory Persistence**: This `gemini.md` file MUST be updated before proposing any changes.
-- **Semantic Commits**: All commits must include a clear summary and detailed description.
-- **Release Keyword**: Include `[release]` in the commit message only when a full production release is intended.
-
-### Technical Checklist
-
-- [ ] Code passes `./lint.sh`.
-- [ ] All unit tests pass (`pytest`).
-- [ ] Architectural contracts verified (`python3 ldm_core/tests/test_architectural_contracts.py`).
-- [ ] E2E suite verified (`bash scripts/verify_e2e_refactor.sh`).
-- [ ] SEED_VERSION incremented (if seeding logic changed).
-- [ ] Project labels (`com.liferay.ldm.project`) are applied.
-- [ ] Documentation is fully updated.
+--- End of Context from: /users/peterrichards/.gemini/gemini.md ---
