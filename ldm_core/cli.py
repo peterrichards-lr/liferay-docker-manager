@@ -216,6 +216,11 @@ def get_parser():
             p.add_argument("-V", "--volumes", action="store_true")
             p.add_argument("-d", "--delete", action="store_true")
             p.add_argument("--infra", action="store_true")
+            p.add_argument(
+                "--clean-hosts",
+                action="store_true",
+                help="Remove project entries from hosts file",
+            )
         if cmd == "logs":
             p.add_argument("-f", "--follow", action="store_true")
             p.add_argument(
@@ -373,7 +378,12 @@ def get_parser():
     config.add_argument("key", nargs="?")
     config.add_argument("value", nargs="?")
     config.add_argument("--remove", action="store_true")
-    subparsers.add_parser("prune", parents=[base_sub_parent])
+    prune = subparsers.add_parser("prune", parents=[base_sub_parent])
+    prune.add_argument(
+        "--clean-hosts",
+        action="store_true",
+        help="Remove all LDM-tagged entries from hosts file",
+    )
 
     shell = subparsers.add_parser("shell", parents=[base_sub_parent])
     shell.add_argument("project", nargs="?")
@@ -589,6 +599,7 @@ def main():
             all_projects=args.all,
             delete=getattr(args, "delete", False),
             infra=getattr(args, "infra", False),
+            clean_hosts=getattr(args, "clean_hosts", False),
         ),
         "rm": lambda: manager.cmd_down(
             getattr(args, "project", None),
@@ -596,6 +607,7 @@ def main():
             all_projects=args.all,
             delete=getattr(args, "delete", False),
             infra=getattr(args, "infra", False),
+            clean_hosts=getattr(args, "clean_hosts", False),
         ),
         "logs": lambda: manager.cmd_logs(
             getattr(args, "project", None),

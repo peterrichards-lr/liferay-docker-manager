@@ -41,6 +41,7 @@ This checklist is ordered sequentially to minimize environment setup overhead. F
 | 1.6 | **Version Management** | `LDM_DEV_MODE=true ldm version --bump beta -y` | Requires source clone. Verify `constants.py` and `pyproject.toml` are updated. | Increments beta version atomically. |
 | 1.7 | **Version Promotion** | `LDM_DEV_MODE=true ldm version --promote -y` | Run after 1.6. Verify beta suffix is removed. | Prompts for promotion; results in stable version. |
 | 1.8 | **Dev Guardrails** | `ldm version --bump patch` | Run from a non-git directory or without `LDM_DEV_MODE`. | Blocks execution with safety warning. |
+| 1.9 | **Safety Hatch** | `ldm upgrade` | Run while on a beta version. | Prompts to switch back to stable tier. |
 
 ### Phase 2: Global Infrastructure
 
@@ -53,6 +54,8 @@ This checklist is ordered sequentially to minimize environment setup overhead. F
 | 2.3 | **DNS Alignment** | Point host to wrong IP | **Requires a project.** Run `ldm init test-dns --host-name broken.local -y --tag-latest`. Edit `/etc/hosts` and point `broken.local` to `10.0.0.99`. | `ldm doctor` warns about IP mismatch. |
 | 2.4 | **Auto-Healing DNS** | `ldm fix-hosts broken.local` | Run this while the sabotage from 2.3 is active. | Prompts for sudo; fixes the entry. |
 | 2.5 | **Doctor DNS Fix** | `ldm doctor --fix-hosts` | Repeat sabotage from 2.3, then run doctor. | Batch fixes all missing entries. |
+| 2.6 | **DNS Cleanup (Surgical)**| `ldm rm test-dns --clean-hosts` | Run after 2.1. Check hosts file for remaining entries. | Removes specific project entries. |
+| 2.7 | **DNS Cleanup (Global)** | `ldm prune --clean-hosts` | Run after 7.4. Check hosts file. | Removes ALL LDM-managed entries. |
 
 ### Phase 3: Project Lifecycle (Init & Seeding)
 

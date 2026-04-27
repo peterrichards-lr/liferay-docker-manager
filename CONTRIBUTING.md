@@ -20,6 +20,7 @@ We love new ideas! Please use the Feature Request template when opening a new is
 1. **Branching Strategy**:
    - **`master`**: Strictly for environmental hardening, stable maintenance, and verified hotfixes.
    - **Roadmap / Features**: Large roadmap items, complex features, or experimental refactors MUST use dedicated branches (e.g., `roadmap/feature-name`).
+   - **Cleanup**: Delete your feature branch immediately after it has been merged into `master`.
 2. If you are working on a stability or hardening task, please align with our **Hardening Workflow**.
 3. **Pass the Lint Check**: Before submitting, you MUST run the local linting script:
 

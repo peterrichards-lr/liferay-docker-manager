@@ -58,6 +58,7 @@
   - **`master` / `main`**: Strictly for environmental hardening, stable maintenance, and verified hotfixes.
   - **Roadmap Items**: All large roadmap items, complex features, or experimental refactors MUST be developed in dedicated feature branches (e.g., `roadmap/feature-name`).
   - Merge roadmap branches to `master` only after full verification and peer approval.
+  - **Cleanup**: Delete feature branches immediately after a successful merge to `master`.
 
 ## Gemini Added Memories
 
@@ -68,4 +69,6 @@
   - [x] **Hardening**: Implemented self-healing permission fixer for SSL certificates.
   - [x] **Documentation**: Updated Rules of Engagement with Git and Branching strategy.
   - [x] **Roadmap**: Implemented and documented automated version management utility in `roadmap/version-manager`.
+  - [x] **Cleanup**: Formalized branch deletion after merge in all docs.
+
 --- End of Context from: /users/peterrichards/.gemini/gemini.md ---
