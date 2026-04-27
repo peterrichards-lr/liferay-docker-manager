@@ -71,6 +71,12 @@ jobs:
           # Fail CI if sync script made changes - this ensures docs were synced BEFORE commit
           git diff --exit-code docs/*.md
 
+      - name: Verify Version Sync
+        shell: bash
+        run: |
+          export LDM_DEV_MODE=true
+          ldm version --check
+
       - name: Run unit tests
         shell: bash
         run: |
@@ -173,7 +179,8 @@ jobs:
           if [[ $GITHUB_REF == refs/tags/* ]]; then
             export TAG_NAME=${GITHUB_REF#refs/tags/}
             export VERSION_VAL=${TAG_NAME#v}
-            python3 -c "import re, os; p='ldm_core/constants.py'; c=open(p).read(); c=re.sub(r'BUILD_INFO = None', f'BUILD_INFO = \"Release {os.environ[\"TAG_NAME\"]}\"', c); open(p,'w').write(re.sub(r'VERSION = \".*?\"', f'VERSION = \"{os.environ[\"VERSION_VAL\"]}\"', c))"
+            export LDM_DEV_MODE=true
+            ldm version --set "$VERSION_VAL" --build-info "Release $TAG_NAME"
           fi
           shiv -e ldm_core.cli:main -o ldm-linux -p '/usr/bin/env python3' .
           chmod +x ldm-linux
@@ -186,10 +193,11 @@ jobs:
           if [[ $GITHUB_REF == refs/tags/* ]]; then
             export TAG_NAME=${GITHUB_REF#refs/tags/}
             export VERSION_VAL=${TAG_NAME#v}
-            python3 -c "import re, os; p='ldm_core/constants.py'; c=open(p).read(); c=re.sub(r'BUILD_INFO = None', f'BUILD_INFO = \"Release {os.environ[\"TAG_NAME\"]}\"', c); open(p,'w').write(re.sub(r'VERSION = \".*?\"', f'VERSION = \"{os.environ[\"VERSION_VAL\"]}\"', c))"
+            export LDM_DEV_MODE=true
+            ldm version --set "$VERSION_VAL" --build-info "Release $TAG_NAME"
           fi
-
           # 1. Build ARM64 (Native)
+
           shiv -e ldm_core.cli:main -o ldm-macos-arm64 -p '/usr/bin/env python3' .
           
           # 2. Build x86_64 (Cross-packaged)
@@ -219,7 +227,8 @@ jobs:
           if [[ $GITHUB_REF == refs/tags/* ]]; then
             export TAG_NAME=${GITHUB_REF#refs/tags/}
             export VERSION_VAL=${TAG_NAME#v}
-            python3 -c "import re, os; p='ldm_core/constants.py'; c=open(p).read(); c=re.sub(r'BUILD_INFO = None', f'BUILD_INFO = \"Release {os.environ[\"TAG_NAME\"]}\"', c); open(p,'w').write(re.sub(r'VERSION = \".*?\"', f'VERSION = \"{os.environ[\"VERSION_VAL\"]}\"', c))"
+            export LDM_DEV_MODE=true
+            ldm version --set "$VERSION_VAL" --build-info "Release $TAG_NAME"
           fi
           pyinstaller --onefile --name ldm-windows --add-data "ldm_core/resources;ldm_core/resources" liferay_docker.py
           echo "BINARY_PATH=dist/ldm-windows.exe" >> $GITHUB_ENV

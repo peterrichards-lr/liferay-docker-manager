@@ -26,16 +26,46 @@ class DevHandler(BaseHandler):
             if not UI.confirm("Continue in Developer Mode?", "N"):
                 sys.exit(0)
 
-    def cmd_version(self, bump_type=None, promote=False):
+    def cmd_version(
+        self,
+        bump_type=None,
+        promote=False,
+        set_version=None,
+        build_info=None,
+        check=False,
+        print_only=False,
+    ):
         """Manages LDM versioning and release tiers."""
+        if print_only:
+            print(VERSION)
+            return
+
         self._ensure_dev_env()
 
         current_version = VERSION
-        UI.info(
-            f"Current Version: {UI.CYAN}v{current_version}{UI.COLOR_OFF}{UI.get_beta_label(current_version)}"
-        )
+
+        if check:
+            UI.info("Checking version synchronization...")
+            p_toml = Path.cwd() / "pyproject.toml"
+            if p_toml.exists():
+                match = re.search(r'version = "(.*?)"', p_toml.read_text())
+                if match and match.group(1) != current_version:
+                    UI.die(
+                        f"Version Mismatch: constants.py ({current_version}) != pyproject.toml ({match.group(1)})"
+                    )
+            UI.success("Versions are synchronized.")
+            return
+
+        if set_version:
+            new_version = set_version.lstrip("v")
+            UI.info(f"Setting version to: {UI.GREEN}v{new_version}{UI.COLOR_OFF}")
+            self._apply_version_update(new_version, build_info)
+            return
 
         if not bump_type and not promote:
+            UI.info(
+                f"Current Version: {UI.CYAN}v{current_version}{UI.COLOR_OFF}{UI.get_beta_label(current_version)}"
+            )
             return
 
         # 1. Parse Version
@@ -67,7 +97,8 @@ class DevHandler(BaseHandler):
         elif bump_type == "beta":
             if pre_release and "beta" in pre_release:
                 # Increment beta number
-                beta_num = int(re.search(r"\d+", pre_release).group())
+                beta_match = re.search(r"(\d+)", pre_release)
+                beta_num = int(beta_match.group(1)) if beta_match else 0
                 new_version = f"{base_version}-beta.{beta_num + 1}"
             else:
                 # Start new beta cycle for next patch
@@ -83,9 +114,9 @@ class DevHandler(BaseHandler):
             UI.info("Aborted.")
             return
 
-        self._apply_version_update(new_version)
+        self._apply_version_update(new_version, build_info)
 
-    def _apply_version_update(self, new_version):
+    def _apply_version_update(self, new_version, build_info=None):
         """Atomicly updates all files containing the version string."""
         files_to_update = {
             "ldm_core/constants.py": [
@@ -94,6 +125,11 @@ class DevHandler(BaseHandler):
             ],
             "pyproject.toml": [(r'version = ".*?"', f'version = "{new_version}"')],
         }
+
+        if build_info:
+            files_to_update["ldm_core/constants.py"].append(
+                (r"BUILD_INFO = .*", f'BUILD_INFO = "{build_info}"')
+            )
 
         # Setup Signal Handling for Atomicity
         def signal_handler(sig, frame):

@@ -451,6 +451,18 @@ def get_parser():
         help="Increment the version logically",
     )
     version_cmd.add_argument(
+        "--set", dest="set_version", help="Directly set the version string"
+    )
+    version_cmd.add_argument(
+        "--build-info", help="Inject build metadata into the source"
+    )
+    version_cmd.add_argument(
+        "--check", action="store_true", help="Verify version synchronization"
+    )
+    version_cmd.add_argument(
+        "--print", action="store_true", help="Output current version string only"
+    )
+    version_cmd.add_argument(
         "--promote",
         action="store_true",
         help="Promote the current beta to a stable release",
@@ -652,7 +664,12 @@ def main():
         "upgrade": lambda: manager.cmd_upgrade(),
         "update-check": lambda: manager.cmd_upgrade(),
         "version": lambda: manager.cmd_version(
-            bump_type=args.bump, promote=args.promote
+            bump_type=args.bump,
+            promote=args.promote,
+            set_version=args.set_version,
+            build_info=args.build_info,
+            check=args.check,
+            print_only=args.print,
         ),
     }
 
