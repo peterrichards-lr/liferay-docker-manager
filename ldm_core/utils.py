@@ -1060,3 +1060,64 @@ def strip_ansi(text):
         return ""
     ansi_escape = re.compile(r"\x1B(?:[@-Z\-_]|\[[0-?]*[ -/]*[@-~])")
     return ansi_escape.sub("", text)
+
+
+def fetch_compatibility_metadata(force=False):
+    """Fetches and caches the project compatibility matrix from GitHub."""
+    cache_dir = get_actual_home() / ".ldm" / "cache"
+    cache_file = cache_dir / "compatibility.json"
+    cache_duration = 86400  # 24 hours
+
+    if not force and cache_file.exists():
+        # Check file age
+        if time.time() - cache_file.stat().st_mtime < cache_duration:
+            try:
+                return json.loads(cache_file.read_text())
+            except Exception:
+                pass
+
+    url = "https://raw.githubusercontent.com/peterrichards-lr/liferay-docker-manager/master/compatibility.json"
+    cache_dir.mkdir(parents=True, exist_ok=True)
+
+    if download_file(url, cache_file):
+        try:
+            return json.loads(cache_file.read_text())
+        except Exception:
+            return {}
+    return {}
+
+
+def resolve_dependency_version(liferay_tag, dependency_name):
+    """Resolves the best matching version for a dependency based on the Liferay tag."""
+    matrix = fetch_compatibility_metadata()
+    if not matrix or "mappings" not in matrix:
+        # Fallback to hardcoded constants if metadata fails
+        from ldm_core.constants import ELASTICSEARCH_VERSION, ELASTICSEARCH7_VERSION
+
+        if dependency_name == "elasticsearch":
+            v_tuple = version_to_tuple(liferay_tag)
+            return (
+                ELASTICSEARCH_VERSION
+                if v_tuple >= (2024, 1, 0)
+                else ELASTICSEARCH7_VERSION
+            )
+        return None
+
+    # Sort mappings by tag precedence (highest first)
+    # This allows us to find the first >= match in descending order
+    def get_range_val(entry):
+        r = entry.get("tag_range", "").replace(">=", "")
+        return version_to_tuple(r)
+
+    mappings = sorted(matrix["mappings"], key=get_range_val, reverse=True)
+
+    tag_tuple = version_to_tuple(liferay_tag)
+
+    for entry in mappings:
+        range_str = entry.get("tag_range", "")
+        if range_str.startswith(">="):
+            range_val = range_str.replace(">=", "")
+            if tag_tuple >= version_to_tuple(range_val):
+                return entry.get("dependencies", {}).get(dependency_name)
+
+    return None

@@ -1,0 +1,34 @@
+{
+  "mappings": [
+    {
+      "tag_range": ">=2026.q1.1",
+      "dependencies": {
+        "elasticsearch": "8.19.1",
+        "mysql": "8.4.0",
+        "postgresql": "16.2",
+        "mariadb": "11.3",
+        "java": "21"
+      }
+    },
+    {
+      "tag_range": ">=2025.q1.0",
+      "dependencies": {
+        "elasticsearch": "8.17.3",
+        "mysql": "8.0.36",
+        "postgresql": "15.6",
+        "mariadb": "10.11",
+        "java": "17"
+      }
+    },
+    {
+      "tag_range": ">=7.4.13-u100",
+      "dependencies": {
+        "elasticsearch": "7.17.24",
+        "mysql": "8.0.32",
+        "postgresql": "13.10",
+        "mariadb": "10.6",
+        "java": "11"
+      }
+    }
+  ]
+}
