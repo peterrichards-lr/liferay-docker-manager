@@ -258,7 +258,19 @@ class RuntimeHandler(BaseHandler):
         start_time = time.time()
         UI.info(f"Waiting for Liferay to become healthy ({container_name})...")
 
+        last_notified_time = 0
         while time.time() - start_time < 600:  # 10 minute timeout
+            elapsed = time.time() - start_time
+            # Notify every 30 seconds (Robust timestamp check)
+            # Move notification BEFORE blocking call for guaranteed feedback
+            if elapsed - last_notified_time >= 30:
+                timestamp = datetime.now().strftime("%H:%M:%S")
+                duration_str = UI.format_duration(elapsed)
+                UI.info(
+                    f"[{timestamp}] Still waiting for Liferay to become healthy... ({duration_str})"
+                )
+                last_notified_time = elapsed
+
             status = self.run_command(
                 ["docker", "inspect", "-f", "{{.State.Health.Status}}", container_name],
                 check=False,
@@ -300,14 +312,7 @@ class RuntimeHandler(BaseHandler):
                     open_browser(f"{access_url}/web/guest/home")
                 return True
 
-            elapsed = time.time() - start_time
-            if int(elapsed) > 0 and int(elapsed) % 30 == 0:
-                timestamp = datetime.now().strftime("%H:%M:%S")
-                duration_str = UI.format_duration(elapsed)
-                print(
-                    f"[{timestamp}] Still waiting for Liferay to become healthy... ({duration_str})"
-                )
-            time.sleep(10)
+            time.sleep(5)  # Shorter sleep for more responsive status checks
 
         UI.error("\nTimed out waiting for Liferay to become healthy.")
         return False

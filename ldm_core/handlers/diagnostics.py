@@ -256,9 +256,15 @@ class DiagnosticsHandler(BaseHandler):
             url = f"https://github.com/peterrichards-lr/liferay-docker-manager/releases/download/v{VERSION}/{target_asset}"
         else:
             # 1. Check for updates
+            # Force is True for manual upgrade requests to ensure we bypass cache
             latest, url = check_for_updates(
                 VERSION, force=True, pre_release=pre_release
             )
+
+            if not latest:
+                UI.error("Failed to check for updates.")
+                UI.info("Please check your internet connection or try again later.")
+                return
 
             is_beta = "-" in VERSION
             if is_beta and not pre_release:
@@ -271,7 +277,7 @@ class DiagnosticsHandler(BaseHandler):
                 )
                 if not UI.confirm("Switch back to the stable release tier?", "N"):
                     return
-            elif not latest or version_to_tuple(latest) <= version_to_tuple(VERSION):
+            elif version_to_tuple(latest) <= version_to_tuple(VERSION):
                 tier = " (stable)" if not pre_release else " (pre-release)"
                 UI.success(f"LDM is already up to date v{VERSION}{tier}.")
                 return

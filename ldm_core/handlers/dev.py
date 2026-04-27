@@ -21,7 +21,7 @@ class DevHandler(BaseHandler):
                 "Action restricted: This command can only be run from the root of a git clone."
             )
 
-        if os.getenv("LDM_DEV_MODE") != "true" and not self.args.yes:
+        if os.getenv("LDM_DEV_MODE") != "true" and not getattr(self.args, "yes", False):
             UI.warning("Internal Developer Utility detected.")
             if not UI.confirm("Continue in Developer Mode?", "N"):
                 sys.exit(0)
@@ -130,6 +130,40 @@ class DevHandler(BaseHandler):
             files_to_update["ldm_core/constants.py"].append(
                 (r"BUILD_INFO = .*", f'BUILD_INFO = "{build_info}"')
             )
+
+        # CHANGELOG Management
+        changelog_path = Path.cwd() / "CHANGELOG.md"
+        if changelog_path.exists():
+            from datetime import datetime
+
+            today = datetime.now().strftime("%Y-%m-%d")
+            content = changelog_path.read_text()
+            header = f"## [v{new_version}] - {today}"
+
+            if header not in content:
+                UI.info("Prepending version header to CHANGELOG.md...")
+                # Insert after the initial boilerplate (first few lines)
+                lines = content.splitlines()
+                insert_idx = 0
+                for i, line in enumerate(lines):
+                    if line.startswith("## [v"):
+                        insert_idx = i
+                        break
+
+                if insert_idx == 0:
+                    # Fallback: append after the intro text
+                    new_block = f"\n{header}\n\n### Added\n\n- \n"
+                    content = content.replace(
+                        "Semantic Versioning](https://semver.org/spec/v2.0.0.html).",
+                        f"Semantic Versioning](https://semver.org/spec/v2.0.0.html).\n{new_block}",
+                    )
+                else:
+                    new_block = f"{header}\n\n### Added\n\n- \n\n"
+                    lines.insert(insert_idx, new_block)
+                    content = "\n".join(lines)
+
+                changelog_path.write_text(content)
+                UI.success("Updated CHANGELOG.md")
 
         # Setup Signal Handling for Atomicity
         def signal_handler(sig, frame):

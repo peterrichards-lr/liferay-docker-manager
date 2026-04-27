@@ -57,12 +57,12 @@ class UI:
 
         try:
             # Try printing with the current encoding
-            print(out, file=file)
+            print(out, file=file, flush=True)
         except UnicodeEncodeError:
             # Fallback for old Windows consoles (CP1252)
             # Replace problematic characters with safe ASCII equivalents
             safe_out = out.encode("ascii", "replace").decode("ascii")
-            print(safe_out, file=file)
+            print(safe_out, file=file, flush=True)
 
     @staticmethod
     def get_beta_label(version):

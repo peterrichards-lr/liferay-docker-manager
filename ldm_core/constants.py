@@ -1,11 +1,11 @@
 from pathlib import Path
 
 # --- Constants & Configuration ---
-# LDM_MAGIC_VERSION: 2.4.26-beta.9
-VERSION = "2.4.26-beta.9"
+# LDM_MAGIC_VERSION: 2.4.26-beta.16
+VERSION = "2.4.26-beta.16"
 
 
-BUILD_INFO = None
+BUILD_INFO = "Release v2.4.26-beta.13"
 IMAGE_NAME_DXP = "liferay/dxp"
 IMAGE_NAME_PORTAL = "liferay/portal"
 API_BASE_DXP = "https://hub.docker.com/v2/repositories/liferay/dxp/tags?page_size=200&ordering=name"
@@ -13,17 +13,17 @@ API_BASE_PORTAL = "https://hub.docker.com/v2/repositories/liferay/portal/tags?pa
 LIFERAY_PRODUCT_INFO_URL = (
     "https://releases-cdn.liferay.com/tools/workspace/.product_info.json"
 )
-META_VERSION = "2"
+META_VERSION = "2.4.26-beta.16"
 MIN_META_VERSION = 2
 PROJECT_META_FILE = "meta"
 REGISTRY_FILE = "registry.json"
 TAG_PATTERN = r"^\d{4}\.q[1-4]\.\d+(-u\d+|-lts)?$"
 SCRIPT_DIR = Path(__file__).parent.parent.resolve()
-ELASTICSEARCH_VERSION = "8.19.1"
-ELASTICSEARCH7_VERSION = "7.17.24"
-TRAEFIK_VERSION = "v3.6.1"
+ELASTICSEARCH_VERSION = "2.4.26-beta.16"
+ELASTICSEARCH7_VERSION = "2.4.26-beta.16"
+TRAEFIK_VERSION = "2.4.26-beta.16"
 SOCAT_IMAGE = "alpine/socat"
-SEED_VERSION = "2"
+SEED_VERSION = "2.4.26-beta.16"
 
 # --- Orchestration Configuration ---
 RUN_ATTRS = [
