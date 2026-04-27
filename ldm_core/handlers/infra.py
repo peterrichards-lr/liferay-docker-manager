@@ -64,8 +64,6 @@ class InfraHandler(BaseHandler):
 
     def _get_infra_env(self, resolved_ip="127.0.0.1", ssl_port=443):
         """Generates the standard environment variables for the infrastructure stack."""
-        from ldm_core.utils import get_actual_home
-
         actual_home = get_actual_home()
         cert_dir = actual_home / "liferay-docker-certs"
 

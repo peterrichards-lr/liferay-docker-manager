@@ -720,8 +720,6 @@ del "%~f0"
                     "https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/installation.md#prerequisites",
                 )
             elif "Permission Denied" in mkcert_status:
-                from ldm_core.utils import get_actual_home
-
                 cert_dir = get_actual_home() / "liferay-docker-certs"
                 add_hint(
                     f"Fix permissions: {UI.WHITE}sudo chown -R $USER {cert_dir.parent}{UI.COLOR_OFF}"
@@ -1594,8 +1592,6 @@ del "%~f0"
 
     def check_mkcert(self):
         """Checks for mkcert installation, root CA trust, and write permissions."""
-        from ldm_core.utils import get_actual_home
-
         try:
             mkcert_bin = shutil.which("mkcert")
             if not mkcert_bin:
