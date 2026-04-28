@@ -90,31 +90,6 @@ def get_report_metadata(report_path):
 
     provider = provider_match.group(1).strip() if provider_match else "Unknown"
 
-    # --- FALLBACK MAPPINGS (for historical report restoration) ---
-    if timestamp_str == "Tue 28 Apr 12:25:38 BST 2026":
-        platform_str = "linux-gnu (wsl)"
-        provider = "Native WSL2"
-    elif (
-        timestamp_str == "Tue 28 Apr 2026 12:48:13 BST"
-        or timestamp_str == "Tue 28 Apr 2026 12:28:09 BST"
-    ):
-        # Use common Intel/Silicon mapping based on what we know of these files
-        if "597605e2" in report_path.name or "e134c19d" in report_path.name:
-            platform_str = "darwin25 (arm64)"
-        else:
-            platform_str = "darwin21 (x86_64)"
-        provider = "Colima"
-    elif (
-        timestamp_str == "Tue 28 Apr 2026 15:18:10 BST"
-        or timestamp_str == "Tue 28 Apr 2026 15:18:49 BST"
-    ):
-        # marilenas host - known Apple Silicon OrbStack
-        platform_str = "darwin25 (arm64)"
-        provider = "OrbStack"
-    elif timestamp_str == "Tue 28 Apr 10:07:43 BST 2026":
-        platform_str = "linux (native)"
-        provider = "Native Docker"
-
     # Standardize provider names
     p_prov_low = provider.lower()
     if "colima" in p_prov_low:
@@ -141,24 +116,29 @@ def get_report_metadata(report_path):
     is_windows_native = "win32" in p_low or "windows" in p_low
 
     if "mac" in p_low or "darwin" in p_low:
-        # 1. Resolve numerical version
+        # Resolve numerical version using both darwin and macos tags
         v_num = 0
-        ver_match = re.search(r"darwin[-]?(\d+)", p_low)
-        if ver_match:
-            darwin_v = int(ver_match.group(1))
-            # Mapping: Darwin 20->11, 21->12, 22->13, 23->14, 24->15, 25->15(Sequoia), 26->26(Tahoe)
-            if darwin_v >= 26:
-                v_num = 26
-            elif darwin_v >= 24:
-                v_num = 15
-            else:
-                v_num = darwin_v - 9
-        else:
-            ver_match = re.search(r"macos[-]?(\d+)", p_low)
-            if ver_match:
-                v_num = int(ver_match.group(1))
 
-        # 2. Map to marketing name
+        # Check macos-XX tag first (most reliable if present)
+        macos_match = re.search(r"macos[-]?(\d+)", p_low)
+        if macos_match:
+            v_num = int(macos_match.group(1))
+        else:
+            # Fallback to Darwin mapping
+            darwin_match = re.search(r"darwin[-]?(\d+)", p_low)
+            if darwin_match:
+                darwin_v = int(darwin_match.group(1))
+                if darwin_v >= 26:
+                    v_num = 26
+                elif darwin_v >= 25:
+                    # Darwin 25 often reports as macOS 26 in user environments
+                    v_num = 26 if "macos-26" in p_low else 15
+                elif darwin_v >= 24:
+                    v_num = 15
+                else:
+                    v_num = darwin_v - 9
+
+        # Map to marketing name
         real_names = {
             11: "Big Sur",
             12: "Monterey",
@@ -175,7 +155,7 @@ def get_report_metadata(report_path):
         else:
             host_os = "macOS 11+"
 
-        # 3. Resolve Architecture
+        # Resolve Architecture
         if "arm64" in p_low or "aarch64" in p_low:
             arch = "Apple Silicon"
         elif "x86_64" in p_low or "amd64" in p_low or "i386" in p_low:
@@ -233,7 +213,7 @@ def sync_reports():
         UI.info("No reports found to sync.")
         return
 
-    # 1. Process and rename all reports
+    # 1. Process and normalize all reports
     all_metas = []
     for report in reports:
         if report.name == ".gitkeep":
@@ -242,68 +222,85 @@ def sync_reports():
         try:
             meta = get_report_metadata(report)
             if meta["arch"] == "Unknown" or meta["provider"] == "Unknown":
-                UI.warning(
-                    f"Skipping unknown environment in {report.name} (Arch: {meta['arch']}, Provider: {meta['provider']})"
-                )
+                UI.warning(f"Skipping unknown environment in {report.name}")
                 continue
 
-            # Rename if necessary to match the identified slug
-            expected_slug = f"verify-{meta['internal_slug']}-{meta['status_slug']}"
-            name_parts = report.stem.split("-")
-            name_hash = (
-                name_parts[-1]
-                if (len(name_parts) >= 6 and report.name.startswith("verify-"))
-                else hashlib.sha256(report.name.encode()).hexdigest()[:8]
-            )
-
-            new_name = f"{expected_slug}-{name_hash}.txt"
-            new_path = report.parent / new_name
-
-            if report.name != new_name:
-                UI.info(f"Renaming/Updating: {report.name} -> {new_name}")
-                if not report.name.startswith("verify-"):
-                    # Anonymize raw reports
-                    clean_content = anonymize_content(meta["content"])
-                    new_path.write_text(clean_content)
-                    if report.exists():
-                        report.unlink()
-                else:
-                    # Just rename processed reports if slug changed
-                    report.rename(new_path)
-                report = new_path
-
-            meta["path"] = report
+            meta["report_path"] = report
             all_metas.append(meta)
 
         except Exception as e:
             UI.error(f"Failed to process {report.name}: {e}")
 
-    # 2. Select the LATEST report for each (arch, os_major, provider)
-    latest_per_env = {}
+    # 2. Cleanup and Renaming Logic
+    # Policy: Keep all "fail" reports + the SINGLE LATEST "pass" report per environment
+    latest_pass_per_env = {}
+    to_delete = []
+
+    # First pass: Identify latest successful report for each env
     for meta in all_metas:
-        # Group by (arch, major_os, provider) to avoid Monterey vs non-Monterey duplicates
-        os_major_match = re.search(r"macOS (\d+)", meta["os"])
-        if os_major_match:
-            os_key = f"macOS {os_major_match.group(1)}"
-        else:
-            os_key = meta["os"]
+        if meta["status_slug"] == "pass":
+            key = (meta["arch"], meta["os"], meta["provider"])
+            if (
+                key not in latest_pass_per_env
+                or meta["timestamp"] > latest_pass_per_env[key]["timestamp"]
+            ):
+                # If we're replacing an existing "latest", mark the old one for deletion
+                if key in latest_pass_per_env:
+                    to_delete.append(latest_pass_per_env[key]["report_path"])
+                latest_pass_per_env[key] = meta
+            else:
+                # This one is older than what we have, delete it
+                to_delete.append(meta["report_path"])
 
-        key = (meta["arch"], os_key, meta["provider"])
+    # Delete redundant passes
+    for path in to_delete:
+        UI.info(f"Removing redundant pass report: {path.name}")
+        path.unlink()
 
-        if key not in latest_per_env:
-            latest_per_env[key] = meta
-        else:
-            current_best = latest_per_env[key]
-            # Priority: Take newest.
-            if meta["timestamp"] > current_best["timestamp"]:
-                latest_per_env[key] = meta
-            elif meta["timestamp"] == current_best["timestamp"]:
-                if len(meta["os"].split()) > len(current_best["os"].split()):
-                    latest_per_env[key] = meta
+    # Re-scan remaining reports to get accurate metadata list after deletion
+    reports = list(results_dir.glob("*.txt"))
+    final_metas = []
+    for report in reports:
+        if report.name == ".gitkeep":
+            continue
+        meta = get_report_metadata(report)
 
-    # 3. Update COMPATIBILITY_TABLE.md
-    content = source_file.read_text()
+        # Standardize Filename based on new slug
+        expected_name = f"verify-{meta['internal_slug']}-{meta['status_slug']}"
+        name_parts = report.stem.split("-")
+        name_hash = (
+            name_parts[-1]
+            if (len(name_parts) >= 6 and report.name.startswith("verify-"))
+            else hashlib.sha256(report.name.encode()).hexdigest()[:8]
+        )
+        new_name = f"{expected_name}-{name_hash}.txt"
+        new_path = report.parent / new_name
 
+        if report.name != new_name:
+            UI.info(f"Renaming: {report.name} -> {new_name}")
+            if not report.name.startswith("verify-"):
+                clean_content = anonymize_content(meta["content"])
+                new_path.write_text(clean_content)
+                report.unlink()
+            else:
+                report.rename(new_path)
+            report = new_path
+
+        meta["path"] = report
+        final_metas.append(meta)
+
+    # 3. Select latest per env for TABLE generation (including failures)
+    # If an environment has a newer failure than a pass, we show the failure in the table
+    latest_for_table = {}
+    for meta in final_metas:
+        key = (meta["arch"], meta["os"], meta["provider"])
+        if (
+            key not in latest_for_table
+            or meta["timestamp"] > latest_for_table[key]["timestamp"]
+        ):
+            latest_for_table[key] = meta
+
+    # 4. Update COMPATIBILITY_TABLE.md
     def get_badge(provider, host_os):
         logo = (
             "apple"
@@ -316,34 +313,26 @@ def sync_reports():
             "Docker Desktop": f"![DockerDesktop](https://img.shields.io/badge/Docker_Desktop-Hardened-00C853?style=flat-square&logo={logo})",
             "Native WSL2": f"![WSL2](https://img.shields.io/badge/WSL2-Hardened-blue?style=flat-square&logo={logo})",
             "Native Docker": f"![Linux](https://img.shields.io/badge/Linux-Native-success?style=flat-square&logo={logo})",
-            "Docker Engine": f"![Linux](https://img.shields.io/badge/Linux-Native-success?style=flat-square&logo={logo})",
         }
         return mapping.get(provider, f"`{provider}`")
 
-    # Generate the new table content
     table_header = (
         "| Architecture | Host OS | Docker Provider | Hardening | Verified | Report |"
     )
     table_sep = "| :--- | :--- | :--- | :--- | :--- | :--- |"
-
     rows = []
-    for key in sorted(latest_per_env.keys()):
-        meta = latest_per_env[key]
-
-        # Explicitly skip any row that still has Unknown in key components
-        if "Unknown" in [meta["arch"], meta["os"], meta["provider"]]:
-            continue
-
+    for key in sorted(latest_for_table.keys()):
+        meta = latest_for_table[key]
         badge = get_badge(meta["provider"], meta["os"])
-        verified_icon = "✅" if meta["passed"] else "❌"
-        report_link = f"[{meta['path'].name}](../references/verification-results/{meta['path'].name})"
+        icon = "✅" if meta["passed"] else "❌"
+        link = f"[{meta['path'].name}](../references/verification-results/{meta['path'].name})"
         rows.append(
-            f"| **{meta['arch']}** | {meta['os']} | **{meta['provider']}** | {badge} | {verified_icon} | {report_link} |"
+            f"| **{meta['arch']}** | {meta['os']} | **{meta['provider']}** | {badge} | {icon} | {link} |"
         )
 
     new_table = f"{table_header}\n{table_sep}\n" + "\n".join(rows)
 
-    # Change title and only replace the FIRST table within the markers
+    content = source_file.read_text()
     content = content.replace(
         "# Compatibility Table (Source)", "# Compatibility Table (Standalone Binaries)"
     )
@@ -361,12 +350,11 @@ def sync_reports():
 """
 
     new_block = f"<!-- COMPATIBILITY_START -->\n{new_table}\n{infra_block}\n<!-- COMPATIBILITY_END -->"
+    source_file.write_text(marker_regex.sub(new_block, content))
+    UI.success(
+        f"Updated COMPATIBILITY_TABLE.md. Total unique environments: {len(latest_for_table)}"
+    )
 
-    new_content = marker_regex.sub(new_block, content)
-    source_file.write_text(new_content)
-    UI.success(f"Updated {source_file.name} with {len(latest_per_env)} latest reports.")
-
-    # Final Sync to README/TESTING
     try:
         from scripts.sync_docs import sync_table
 
