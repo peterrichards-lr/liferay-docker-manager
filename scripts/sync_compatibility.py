@@ -156,15 +156,14 @@ def get_report_metadata(report_path):
                     13: "Ventura",
                     14: "Sonoma",
                     15: "Sequoia",
-                    16: "16",
-                    17: "17",
                 }
-                name = names.get(v_macos, str(v_macos))
+                name = names.get(v_macos, "")
                 host_os = f"macOS {v_macos} {name}".strip()
             else:
                 host_os = f"macOS {v_num}"
         else:
             host_os = "macOS 11+"
+
         if "arm64" in p_low or "aarch64" in p_low:
             arch = "Apple Silicon"
         elif "x86_64" in p_low or "amd64" in p_low or "i386" in p_low:
