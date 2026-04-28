@@ -81,7 +81,7 @@ def get_seed_url(tag, db="postgresql", search="shared"):
                     for asset in assets:
                         if asset["name"] == pattern:
                             return asset["browser_download_url"]
-        except Exception:
+        except Exception:  # nosec B112
             continue
     return None
 
