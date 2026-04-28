@@ -878,12 +878,16 @@ del "%~f0"
             )
 
         # 4.1 Core Orchestration Tools & Path Integrity
+        nc_bin = shutil.which("nc")
+        ncat_bin = shutil.which("ncat")
+        active_nc = nc_bin or ncat_bin
+
         tool_list = [
             ("docker", shutil.which("docker")),
             ("mkcert", shutil.which("mkcert")),
             ("openssl", shutil.which("openssl")),
             ("telnet", shutil.which("telnet")),
-            ("nc", shutil.which("nc")),
+            ("nc/ncat", active_nc),
             ("lcp", shutil.which("lcp")),
         ]
 
@@ -899,7 +903,7 @@ del "%~f0"
                 results.append((f"Path: {tool_name}", str(tool_path), True))
             else:
                 # Some are optional/warn only
-                if tool_name in ["telnet", "lcp", "mkcert"]:
+                if tool_name in ["telnet", "lcp", "mkcert", "nc/ncat"]:
                     results.append((f"Path: {tool_name}", "Not Found", "warn"))
                 else:
                     results.append((f"Path: {tool_name}", "Not Found", False))
