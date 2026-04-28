@@ -58,6 +58,19 @@ jobs:
           sudo apt-get install -y shellcheck
           find . -name "*.sh" -not -path "*/.*" | xargs shellcheck
 
+      - name: Lint PowerShell scripts (PSScriptAnalyzer)
+        shell: pwsh
+        run: |
+          # Use official PowerShell linter
+          if (-not (Get-Module -ListAvailable PSScriptAnalyzer)) {
+              Install-Module -Name PSScriptAnalyzer -Force -Scope CurrentUser
+          }
+          $results = Invoke-ScriptAnalyzer -Path ./scripts -Recurse | Where-Object Severity -eq "Error"
+          if ($results) {
+              $results | Format-Table
+              exit 1
+          }
+
       - name: Lint Markdown
         uses: DavidAnson/markdownlint-cli2-action@v20
         with:
@@ -202,13 +215,7 @@ jobs:
           # 2. Build x86_64 (Cross-packaged)
           # We fetch the Intel wheels explicitly
           mkdir x86_64_site_packages
-          pip install \
-            --platform macosx_11_0_x86_64 \
-            --only-binary=:all: \
-            --target x86_64_site_packages \
-            --python-version 3.13 \
-            --implementation cp \
-            -r requirements.txt
+          pip install             --platform macosx_11_0_x86_64             --only-binary=:all:             --target x86_64_site_packages             --python-version 3.13             --implementation cp             -r requirements.txt
           
           # Bundle with shiv using the cross-fetched site-packages
           shiv -e ldm_core.cli:main -o ldm-macos-x86_64 -p '/usr/bin/env python3' --no-deps --site-packages x86_64_site_packages .
@@ -266,23 +273,14 @@ jobs:
         id: check_release
         shell: bash
         run: |
-          # Detect logic:
-          # 1. If tag has a hyphen (e.g. v2.4.25-beta) -> Pre-release
-          # 2. If commit has [beta] or [pre-release] -> Pre-release
-          # 3. If commit has [release] AND tag has NO hyphen -> Full Release
-          
+          # Check if the commit message contains [release]
           MSG=$(git log -1 --pretty=%B)
-          TAG_NAME=${GITHUB_REF_NAME}
-          
-          if [[ "$TAG_NAME" == *-* ]] || echo "$MSG" | grep -qiE "\[beta\]|\[pre-release\]"; then
-            echo "is_release=false" >> $GITHUB_OUTPUT
-            echo "Pre-release detected (Tag: $TAG_NAME, Msg: $MSG)"
-          elif echo "$MSG" | grep -qi "\[release\]"; then
+          if echo "$MSG" | grep -qi "\[release\]"; then
             echo "is_release=true" >> $GITHUB_OUTPUT
-            echo "Full release detected."
+            echo "Release keyword found. Creating a FULL release."
           else
             echo "is_release=false" >> $GITHUB_OUTPUT
-            echo "Defaulting to pre-release for safety."
+            echo "Release keyword NOT found. Creating a PRE-RELEASE."
           fi
 
       - name: Download All Artifacts
