@@ -24,7 +24,11 @@ This file serves as the persistent state and technical knowledge base for the AI
 - **Predictive Failure**: For every implementation, list two potential failure points (edge cases or performance) and how they were handled.
 - **Predictable Layers**: Ensure logic stays within its designated layer (e.g., UI vs. Business Logic vs. Data) as defined in `spec.md`.
 - **Script Parity**: All cross-platform utility, verification, and wrapper scripts (e.g., `.sh` vs `.ps1` or `.bat`) MUST be kept in perfect functional parity. Any hardening check or logic update applied to one must be immediately synchronized to the others.
+<<<<<<< HEAD
 >>>>>>> fbe7738 (feat: implement environment slugs for automated verification reporting [pre-release])
+=======
+- **Doctor Logic Synchronization**: Any environment-specific fix or workaround (e.g., volume mount permissions, socket detection) MUST be accompanied by a corresponding check in `ldm doctor` to ensure the tool proactively detects and suggests the fix.
+>>>>>>> a2d9eae (docs: codify script versioning, doctor sync, and report context standards in gemini.md)
 
 - **Explicit Network Labels**: Every container managed by LDM MUST have the `traefik.docker.network=liferay-net` label.
 - **Metadata DNA**: Every Liferay container MUST have the `com.liferay.ldm.project` label. This is essential for `ldm status` and `ldm prune`.
@@ -54,7 +58,13 @@ This file serves as the persistent state and technical knowledge base for the AI
 - **Seeding Control**: The `--no-osgi-seed` flag MUST be respected to allow opt-out of state bootstrapping.
 - **Workspace-Aware Seeding**: Seeding MUST be triggered automatically during `import`, `init-from`, and `cloud-fetch` if the Liferay version can be detected early.
 
+<<<<<<< HEAD
 ### 6. Offline First & Asset Caching (Redline)
+=======
+- **Test Protocol**: Provide 3-5 manual/automated steps to verify in a live Liferay instance.
+- **Redundancy Scan**: After a feature is complete, scan for any newly introduced duplicate code.
+- **Mandatory Report Context**: Verification reports MUST include the full output of `ldm doctor --skip-project` at the beginning of the file to ensure complete environmental traceability.
+>>>>>>> a2d9eae (docs: codify script versioning, doctor sync, and report context standards in gemini.md)
 
 - **Cache-First Priority**: LDM MUST maintain a working offline experience. Any asset it downloads (seeds, samples, configuration templates) MUST be cached locally in `~/.ldm/references`.
 - **Graceful Degradation**: If LDM detects it is offline:
@@ -74,6 +84,13 @@ This file serves as the persistent state and technical knowledge base for the AI
 ## 8. Git Management & Branching Strategy
 
 - **Logical Squashing**: Avoid creating a commit for every minor bugfix. Group related fixes and features into single, descriptive commits.
+<<<<<<< HEAD
+=======
+- **Version Management**: Use the `ldm version` command (available in dev environments) to manage project versions.
+  - `ldm version --bump beta` increments the pre-release number.
+  - `ldm version --promote` converts a beta release to stable.
+- **Script-Only Changes**: Do not increment the project version (`VERSION`) for changes limited to `scripts/`, `docs/`, or `.github/` unless they accompany a core logic change in `ldm_core/`.
+>>>>>>> a2d9eae (docs: codify script versioning, doctor sync, and report context standards in gemini.md)
 - **Release Automation**:
   - Use `[release]` in the commit summary to trigger a stable GitHub Release.
   - Use `[pre-release]` in the commit summary to trigger a Beta/Test build.
