@@ -145,6 +145,15 @@ def get_parser():
     # Command: init
     init = subparsers.add_parser("init", parents=[base_sub_parent])
     init.add_argument("project", nargs="?")
+    init.add_argument(
+        "--template", default="basic", help="Project template to use (default: basic)"
+    )
+    init.add_argument(
+        "-i",
+        "--interactive",
+        action="store_true",
+        help="Interactive project initialization",
+    )
     init.add_argument("-t", "--tag", help="Liferay Tag (e.g. 2025.q1.0)")
     init.add_argument(
         "--tag-latest",

@@ -833,6 +833,22 @@ pause
                         provider = "Docker Desktop"
 
                 results.append(("Docker Provider", provider, True))
+
+                # Check for symlinked socket in WSL (Docker Desktop override)
+                if is_wsl:
+                    socket_path = Path("/var/run/docker.sock")
+                    if socket_path.is_symlink():
+                        target = socket_path.resolve()
+                        results.append(
+                            ("Docker Socket", f"Symlinked to {target.name}", "warn")
+                        )
+                        add_hint(
+                            "WSL: Your Docker socket is symlinked, likely by Docker Desktop 'WSL Integration'.",
+                            "https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/installation.md#wsl2-mixed-environments",
+                        )
+                        add_hint(
+                            "To use 'Native' Docker in this distro, disable 'WSL Integration' in Docker Desktop settings and delete the symlink."
+                        )
             except Exception:
                 pass
 
@@ -886,6 +902,70 @@ pause
 
         # 3. mkcert Check
         mkcert_status, mkcert_ok, ca_root = self.check_mkcert()
+
+        # 4. Volume Write Test (Proactive detection of RO mounts)
+        if docker_version and project_paths:
+            # Test the first project found
+            test_path = project_paths[0]
+            try:
+                # We spin up a tiny container and try to touch a file as UID 1000 (Liferay user)
+                # This catches the 'VOLUME MOUNT IS READ-ONLY' issue seen in Colima/WSL
+                from ldm_core.utils import get_actual_home
+
+                rel_path = test_path.relative_to(get_actual_home())
+
+                res = self.run_command(
+                    [
+                        "docker",
+                        "run",
+                        "--rm",
+                        "-v",
+                        f"{test_path}:/test-mount",
+                        "alpine",
+                        "sh",
+                        "-c",
+                        "touch /test-mount/.ldm-write-test && rm /test-mount/.ldm-write-test",
+                    ],
+                    check=False,
+                )
+
+                if "Permission denied" in str(res) or "Read-only file system" in str(
+                    res
+                ):
+                    results.append(("Volume Permissions", "❌ Read-Only", False))
+                    add_hint(
+                        "Your Docker volume mounts are read-only for the 'liferay' user (UID 1000).",
+                        "https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/installation.md#troubleshooting-read-only-mounts",
+                    )
+                    if provider == "Colima":
+                        # Check for custom LaunchAgent setup
+                        if (
+                            Path(get_actual_home())
+                            / "Library/LaunchAgents/com.github.abiosoft.colima.plist"
+                        ).exists():
+                            add_hint(
+                                "Detected custom Colima LaunchAgent. Please update your '/usr/local/bin/colima-start-fg' script."
+                            )
+                            add_hint(
+                                'Change to: colima start --mount-type virtiofs --mount "$HOME:w"'
+                            )
+                        else:
+                            add_hint(
+                                "Colima Fix (Standard): 'colima stop' then 'colima start --mount [HOME]:w'"
+                            )
+                            add_hint(
+                                "Colima Fix (Advanced): 'colima stop' then 'colima start --mount [HOME]:w --vm-type=vz --mount-type=virtiofs'",
+                                "https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/installation.md#colima-performance-tuning",
+                            )
+                        add_hint(
+                            "Recommended: Upgrade Colima to the latest version ('brew upgrade colima') for better macOS integration."
+                        )
+
+                else:
+                    results.append(("Volume Permissions", "✅ Writable", True))
+            except Exception:
+                # Skip if we can't perform the test (e.g. path outside home)
+                pass
 
         # Escalate to error if project requires SSL
         if mkcert_ok == "warn" and requires_ssl:

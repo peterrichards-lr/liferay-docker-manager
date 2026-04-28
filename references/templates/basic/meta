@@ -1,0 +1,4 @@
+tag=2026.q1.4-lts
+image_tag=alpine
+db_type=hypersonic
+ssl=false

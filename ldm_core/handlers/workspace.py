@@ -26,15 +26,87 @@ class WorkspaceHandler(BaseHandler):
         self.non_interactive = getattr(args, "non_interactive", False)
 
     def cmd_init(self, project_id=None):
-        """Scaffolds a project without starting it."""
-        # Set the no_up flag on args to ensure it doesn't try to start
-        setattr(self.args, "no_up", True)
+        """Scaffolds a new project from a template."""
+        template_name = getattr(self.args, "template", "basic")
+        is_interactive = getattr(self.args, "interactive", False)
 
-        UI.info(f"Initializing project shell: {project_id or 'interactively'}")
-        self.cmd_run(project_id)
-        UI.success(
-            "Initialization complete. You can now run 'ldm doctor' or 'ldm run'."
-        )
+        UI.heading(f"LDM Project Initialization ({template_name})")
+
+        # 1. Resolve Target Path
+        if not project_id:
+            if is_interactive:
+                project_id = UI.ask("Enter project name", "my-liferay-project")
+            else:
+                UI.die("Project name is required. Use 'ldm init <name>'.")
+
+        root = Path.cwd() / project_id
+        if root.exists():
+            if not UI.confirm(
+                f"Directory '{project_id}' already exists. Overwrite missing assets?",
+                "N",
+            ):
+                return
+        else:
+            root.mkdir(parents=True)
+
+        # 2. Resolve Template Source
+        template_root = SCRIPT_DIR / "references" / "templates" / template_name
+        if not template_root.exists():
+            UI.die(f"Template '{template_name}' not found in {template_root}")
+
+        # 3. Collect Metadata
+        meta = {}
+        # Load defaults from template if they exist
+        template_meta_path = template_root / "meta"
+        if template_meta_path.exists():
+            for line in template_meta_path.read_text().splitlines():
+                if "=" in line:
+                    k, v = line.split("=", 1)
+                    meta[k.strip()] = v.strip()
+
+        if is_interactive:
+            meta["tag"] = UI.ask("Liferay Tag", meta.get("tag", "2026.q1.4-lts"))
+            meta["db_type"] = UI.ask(
+                "Database Type (hypersonic, postgresql, mysql)",
+                meta.get("db_type", "hypersonic"),
+            )
+            meta["port"] = UI.ask("Port", meta.get("port", "8082"))
+            meta["host_name"] = UI.ask("Virtual Hostname", "localhost")
+        else:
+            # Apply CLI overrides if provided
+            if getattr(self.args, "tag", None):
+                meta["tag"] = self.args.tag
+            if getattr(self.args, "db", None):
+                meta["db_type"] = self.args.db
+            if getattr(self.args, "host_name", None):
+                meta["host_name"] = self.args.host_name
+
+        # Ensure container_name matches project_id by default
+        if "container_name" not in meta:
+            meta["container_name"] = project_id
+
+        # 4. Provision Assets
+        UI.info(f"Provisioning project assets in {root}...")
+        for item in template_root.iterdir():
+            if item.name == "meta":
+                continue
+            dest = root / item.name
+            if item.is_dir():
+                if not dest.exists():
+                    shutil.copytree(item, dest)
+            else:
+                if not dest.exists():
+                    shutil.copy2(item, dest)
+
+        # 5. Write Meta
+        meta_content = "\n".join([f"{k}={v}" for k, v in meta.items()])
+        (root / "meta").write_text(meta_content)
+
+        UI.success(f"Project '{project_id}' initialized successfully.")
+        UI.info("Next steps:")
+        print(f"  1. cd {project_id}")
+        print("  2. ldm doctor")
+        print("  3. ldm run .")
 
     def _parse_client_extension_yaml(self, content):
         info = {"type": None, "oauth_erc": None}

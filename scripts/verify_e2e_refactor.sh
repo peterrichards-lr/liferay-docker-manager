@@ -207,6 +207,14 @@ echo "ℹ  Provisioning test project 'ldm-smoke-test' from template..." | tee -a
 cp -r "$TEMPLATE_SRC" "$LDM_WORKSPACE/ldm-smoke-test"
 cd "$LDM_WORKSPACE/ldm-smoke-test"
 
+# Explicit check for the meta file to answer user question
+if [ -f "meta" ]; then
+    echo "✅ Project metadata verified (meta)." | tee -a "$RESULTS_FILE_TMP"
+else
+    echo "❌ ERROR: Project metadata file (meta) was not copied correctly!" | tee -a "$RESULTS_FILE_TMP"
+    exit 1
+fi
+
 log_and_run "Running LDM Project" "$LDM_CMD" -y run . --no-wait --no-tld-skip --no-jvm-verify
 
 # 4. Snapshot & Restore Verification
