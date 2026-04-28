@@ -89,6 +89,7 @@
   - [x] **Reporting**: Improved macOS version detection (mapping Darwin major to macOS major) and updated compatibility table header.
   - [x] **Fix**: Restored Apple Silicon/Intel detection in `ldm doctor --slug`.
   - [x] **Fix**: Improved `verify_e2e_refactor.sh` robustness (ignore "not found" during cleanup).
-  - [x] **Release**: Tagged as `v2.4.26-beta.49`.
+  - [x] **Fix**: Improved Windows self-upgrade cleanup to avoid "batch file cannot be found" error.
+  - [x] **Release**: Tagged as `v2.4.26-beta.50`.
 
 --- End of Context from: /users/peterrichards/.gemini/gemini.md ---
