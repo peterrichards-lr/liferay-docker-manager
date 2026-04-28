@@ -96,8 +96,10 @@ This file serves as the persistent state and technical knowledge base for the AI
 - [ ] Documentation is fully updated.
 =======
 - I must update gemini.md before proposing any changes to serve as a persistent state, allowing me to resume my work if an interruption occurs.
-- **Task: Fix Search Orchestration for Modern Liferay**
-  - [x] **Root Cause**: `__` separator triggers `EnvPropertiesUtil` decoding warnings and is ignored.
-  - [ ] **Fix**: Standardize on `_PERIOD_` for search environment variables and enable `production.mode`.
+- **Task: Initialize Beta Release Cycle**
+  - [x] **Bug (Search)**: Standardized on `_PERIOD_` for search environment variables.
+  - [x] **Bug (Precedence)**: Fixed `version_to_tuple` to correctly compare beta vs stable releases.
+  - [x] **Bug (CI)**: Fixed download URL redundancy in GitHub Release notes.
+  - [x] **Release**: Initialized v2.4.26-beta.2.
 --- End of Context from: /users/peterrichards/.gemini/gemini.md ---
 >>>>>>> 695ef4a (docs: update gemini.md session state)
