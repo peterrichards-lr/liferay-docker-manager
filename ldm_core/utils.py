@@ -955,13 +955,51 @@ def check_for_updates(current_version, force=False):
             pass
 
     try:
+<<<<<<< HEAD
         url = "https://api.github.com/repos/peterrichards-lr/liferay-docker-manager/releases/latest"
+=======
+        headers = {"User-Agent": "ldm-cli"}
+        if force:
+            headers["Cache-Control"] = "no-cache"
+
+        if pre_release:
+            # Get more releases to ensure we find the latest SemVer even with re-tagging
+            url = "https://api.github.com/repos/peterrichards-lr/liferay-docker-manager/releases?per_page=100"
+        else:
+            # Latest stable release only
+            url = "https://api.github.com/repos/peterrichards-lr/liferay-docker-manager/releases/latest"
+
+>>>>>>> 671652d (feat: implement DNS cleanup and harden health check responsiveness [pre-release])
         if not url.startswith("https://"):
             raise ValueError(f"Invalid URL scheme: {url}")
 
-        response = requests.get(url, headers={"User-Agent": "ldm-cli"}, timeout=5)
+        response = requests.get(url, headers=headers, timeout=5)
         if response.status_code == 200:
             res_data = response.json()
+<<<<<<< HEAD
+=======
+
+            # If pre_release, we get a list of releases. We must find the highest SemVer.
+            if isinstance(res_data, list):
+                if not res_data:
+                    return None, None
+
+                # Find the highest version in the list
+                highest_data = None
+                highest_version_tuple = (0, 0, 0, 0)
+
+                for release in res_data:
+                    v_str = release.get("tag_name", "").lstrip("v")
+                    v_tuple = version_to_tuple(v_str)
+                    if v_tuple > highest_version_tuple:
+                        highest_version_tuple = v_tuple
+                        highest_data = release
+
+                if not highest_data:
+                    return None, None
+                res_data = highest_data
+
+>>>>>>> 671652d (feat: implement DNS cleanup and harden health check responsiveness [pre-release])
             latest_version = res_data.get("tag_name", "").lstrip("v")
 
             # Architecture-aware asset resolution

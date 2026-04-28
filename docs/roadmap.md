@@ -40,6 +40,10 @@ While the v2.4.0 release solidified the modular architecture, **v2.5.0** will fo
 
 - **Specialized Handlers**: Decomposed the monolithic 1,700+ line `StackHandler` into focused, testable components: `ComposerHandler` (generation), `RuntimeHandler` (lifecycle), and `AssetHandler` (discovery/offline-first).
 - **Improved Testability**: Enabled mocking of specific subsystems (e.g., Orchestration vs. Assets) without requiring the entire manager instance.
+<<<<<<< HEAD
+=======
+- **Automated Version Management**: Introduced the `ldm version` command for logical version bumping (`--bump beta|patch|minor|major`) and release tier promotion (`--promote`). This ensures synchronization across all source files, automatically maintains `CHANGELOG.md` headers, and includes atomic writes with safety guardrails for development environments.
+>>>>>>> 671652d (feat: implement DNS cleanup and harden health check responsiveness [pre-release])
 
 ### **Integrity & Compliance**
 
