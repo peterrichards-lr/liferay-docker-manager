@@ -459,6 +459,9 @@ class SnapshotHandler(BaseHandler):
                 es_infra_backup.mkdir(parents=True, exist_ok=True)
                 es_infra_root = es_infra_backup.resolve()
 
+                # Reclaim permissions before extracting (Fixes [Errno 13] in CI/Linux)
+                self._reclaim_permissions(es_infra_backup)
+
                 for m in tar.getmembers():
                     if m.name.startswith("search_backup/"):
                         # Security: Validate path
