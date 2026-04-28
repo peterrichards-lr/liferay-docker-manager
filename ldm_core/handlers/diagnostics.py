@@ -803,12 +803,12 @@ pause
                         else:
                             provider = "Native WSL2"
                 elif platform.system().lower() == "darwin":
-                    if context == "colima":
-                        provider = "Colima"
-                    elif context == "orbstack":
+                    if context == "orbstack":
                         provider = "OrbStack"
-                    elif context in ["desktop-linux", "default"]:
-                        provider = "Docker Desktop"
+                    else:
+                        # On Mac, 'colima' or 'default' (standard socket) is treated as Colima
+                        # for LDM's compatibility tracking purposes.
+                        provider = "Colima"
 
                 results.append(("Docker Provider", provider, True))
 
