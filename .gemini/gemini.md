@@ -196,8 +196,13 @@ This file serves as the persistent state and technical knowledge base for the AI
 >>>>>>> 8d61a20 (ui: improve project selection with path hints for duplicates [pre-release])
 =======
   - [x] **Fix**: Improved netcat detection on Windows by supporting `ncat` and consolidating path reporting.
+<<<<<<< HEAD
   - [x] **Release**: Tagged as `v2.4.26-beta.45`.
 >>>>>>> e316462 (fix: improve netcat detection on Windows (ncat support) [pre-release])
+=======
+  - [x] **Fix**: Targeted cleanup in `verify_e2e_refactor.sh` to prevent accidental deletion of unrelated projects and report files.
+  - [x] **Release**: Tagged as `v2.4.26-beta.46`.
+>>>>>>> dd16bf1 (fix: targeted cleanup and report preservation in verify script)
 
 >>>>>>> 8b0a863 (feat: implement DNS cleanup and stable tier safety hatch [pre-release])
 --- End of Context from: /users/peterrichards/.gemini/gemini.md ---
