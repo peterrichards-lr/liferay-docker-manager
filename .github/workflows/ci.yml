@@ -62,11 +62,14 @@ jobs:
         shell: pwsh
         run: |
           # Use official PowerShell linter
-          # On GitHub runners, the module might need to be installed if not present
           if (-not (Get-Module -ListAvailable PSScriptAnalyzer)) {
               Install-Module -Name PSScriptAnalyzer -Force -Scope CurrentUser
           }
-          Invoke-ScriptAnalyzer -Path ./scripts -Recurse | Where-Object Severity -eq "Error"
+          $results = Invoke-ScriptAnalyzer -Path ./scripts -Recurse | Where-Object Severity -eq "Error"
+          if ($results) {
+              $results | Format-Table
+              exit 1
+          }
 
       - name: Lint Markdown
         uses: DavidAnson/markdownlint-cli2-action@v20
