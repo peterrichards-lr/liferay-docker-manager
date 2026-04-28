@@ -82,6 +82,10 @@
   - [x] **UI**: Improved project selection UI to disambiguate projects with same name by showing paths.
   - [x] **Fix**: Improved netcat detection on Windows by supporting `ncat` and consolidating path reporting.
   - [x] **Fix**: Targeted cleanup in `verify_e2e_refactor.sh` to prevent accidental deletion of unrelated projects and report files.
-  - [x] **Release**: Tagged as `v2.4.26-beta.46`.
+  - [x] **Reporting**: Refined `sync_compatibility.py` to eliminate "Unknown" entries and improved fallback detection for Apple Silicon/Intel.
+  - [x] **Reporting**: Improved macOS version detection (mapping Darwin major to macOS major) and updated compatibility table header.
+  - [x] **Fix**: Restored Apple Silicon/Intel detection in `ldm doctor --slug`.
+  - [x] **Fix**: Improved `verify_e2e_refactor.sh` robustness (ignore "not found" during cleanup).
+  - [x] **Release**: Tagged as `v2.4.26-beta.49`.
 
 --- End of Context from: /users/peterrichards/.gemini/gemini.md ---
