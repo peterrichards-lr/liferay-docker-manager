@@ -186,7 +186,16 @@ class ComposerHandler(BaseHandler):
                 has_jdbc_env = True
 
         if db_type in ["mysql", "mariadb"]:
-            driver = "org.mariadb.jdbc.Driver"
+            # Standardize on optimized driver/dialect from compatibility matrix
+            driver = (
+                resolve_dependency_version(tag, "jdbc_driver_mysql")
+                or "org.mariadb.jdbc.Driver"
+            )
+            dialect = (
+                resolve_dependency_version(tag, "jdbc_dialect_mysql")
+                or "org.hibernate.dialect.MariaDB103Dialect"
+            )
+
             url = (
                 "jdbc:mariadb://db:3306/lportal?"
                 "characterEncoding=UTF-8"
@@ -222,9 +231,15 @@ class ComposerHandler(BaseHandler):
             liferay_env.append("LIFERAY_HSQL_PERIOD_ENABLED=false")
 
         elif db_type == "postgresql":
-            driver = "org.postgresql.Driver"
+            driver = (
+                resolve_dependency_version(tag, "jdbc_driver_postgresql")
+                or "org.postgresql.Driver"
+            )
             url = "jdbc:postgresql://db:5432/lportal"
-            dialect = "org.hibernate.dialect.PostgreSQL10Dialect"
+            dialect = (
+                resolve_dependency_version(tag, "jdbc_dialect_postgresql")
+                or "org.hibernate.dialect.PostgreSQL10Dialect"
+            )
 
             if not has_jdbc_env:
                 self.update_portal_ext(
@@ -390,13 +405,19 @@ class ComposerHandler(BaseHandler):
                         "--default-authentication-plugin=mysql_native_password"
                     ]
 
+            target_mysql = resolve_dependency_version(tag, "mysql")
+            target_mariadb = resolve_dependency_version(tag, "mariadb")
+
             services["db"] = {
                 "image": (
-                    resolve_dependency_version(tag, "mysql")
-                    or ("mysql:8.4" if is_modern else "mysql:5.7")
+                    f"mysql:{target_mysql}"
+                    if target_mysql
+                    else ("mysql:8.4" if is_modern else "mysql:5.7")
                 )
                 if db_type == "mysql"
-                else (resolve_dependency_version(tag, "mariadb") or "mariadb:10.6"),
+                else (
+                    f"mariadb:{target_mariadb}" if target_mariadb else "mariadb:10.6"
+                ),
                 "command": [
                     "mysqld",
                     "--character-set-server=utf8mb4",

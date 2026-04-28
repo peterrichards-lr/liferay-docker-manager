@@ -269,6 +269,37 @@ class RuntimeHandler(BaseHandler):
                 UI.info(
                     f"[{timestamp}] Still waiting for Liferay to become healthy... ({duration_str})"
                 )
+
+                # Proactive Log Monitoring: Look for ERRORS
+                try:
+                    logs = self.run_command(
+                        ["docker", "logs", "--tail", "100", container_name],
+                        check=False,
+                        capture_output=True,
+                    )
+                    if logs:
+                        error_lines = [
+                            line.strip()
+                            for line in logs.splitlines()
+                            if "ERROR" in line.upper()
+                            or "FATAL" in line.upper()
+                            or "CRITICAL" in line.upper()
+                        ]
+                        if error_lines:
+                            UI.warning(
+                                f"LDM detected {len(error_lines)} error(s) in the logs."
+                            )
+                            # Display the most recent unique error
+                            last_unique_error = list(dict.fromkeys(error_lines))[-1]
+                            UI.info(
+                                f"Recent log error: {UI.YELLOW}{last_unique_error[:120]}...{UI.COLOR_OFF}"
+                            )
+                            UI.info(
+                                f"Check full logs: {UI.WHITE}ldm logs -f {container_name}{UI.COLOR_OFF}"
+                            )
+                except Exception:
+                    pass
+
                 last_notified_time = elapsed
 
             status = self.run_command(
