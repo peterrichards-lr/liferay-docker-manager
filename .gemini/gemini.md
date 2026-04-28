@@ -88,6 +88,7 @@
   - [x] **Fix**: Improved `verify_e2e_refactor.sh` to explicitly mention project template source and handle cleanup "not found" silently.
   - [x] **Reporting**: Improved macOS version detection (mapping Darwin major to macOS major with marketing names like Monterey, Ventura, etc.).
   - [x] **Fix**: Improved `verify_e2e_refactor.sh` to handle cleanup "not found" silently and avoid terminal noise.
-  - [x] **Release**: Tagged as `v2.4.26-beta.55`.
+  - [x] **Fix**: Added specific WSL troubleshooting hints for Docker connection failures and improved Native WSL2 vs Desktop detection.
+  - [x] **Release**: Tagged as `v2.4.26-beta.56`.
 
 --- End of Context from: /users/peterrichards/.gemini/gemini.md ---
