@@ -141,35 +141,46 @@ def get_report_metadata(report_path):
     is_windows_native = "win32" in p_low or "windows" in p_low
 
     if "mac" in p_low or "darwin" in p_low:
-        # Improved mapping: darwin21 = macOS 12 Monterey, etc.
+        # 1. Resolve numerical version
+        v_num = 0
         ver_match = re.search(r"darwin[-]?(\d+)", p_low)
-        if not ver_match:
-            ver_match = re.search(r"macos[-]?(\d+)", p_low)
-
         if ver_match:
-            v_num = int(ver_match.group(1))
-            if v_num >= 20:
-                v_macos = v_num - 9
-                names = {
-                    11: "Big Sur",
-                    12: "Monterey",
-                    13: "Ventura",
-                    14: "Sonoma",
-                    15: "Sequoia",
-                }
-                name = names.get(v_macos, "")
-                host_os = f"macOS {v_macos} {name}".strip()
+            darwin_v = int(ver_match.group(1))
+            # Mapping: Darwin 20->11, 21->12, 22->13, 23->14, 24->15, 25->15(Sequoia), 26->26(Tahoe)
+            if darwin_v >= 26:
+                v_num = 26
+            elif darwin_v >= 24:
+                v_num = 15
             else:
-                host_os = f"macOS {v_num}"
+                v_num = darwin_v - 9
+        else:
+            ver_match = re.search(r"macos[-]?(\d+)", p_low)
+            if ver_match:
+                v_num = int(ver_match.group(1))
+
+        # 2. Map to marketing name
+        real_names = {
+            11: "Big Sur",
+            12: "Monterey",
+            13: "Ventura",
+            14: "Sonoma",
+            15: "Sequoia",
+            26: "Tahoe",
+        }
+        name = real_names.get(v_num, "")
+        if name:
+            host_os = f"macOS {v_num} {name}"
+        elif v_num > 0:
+            host_os = f"macOS {v_num}"
         else:
             host_os = "macOS 11+"
 
+        # 3. Resolve Architecture
         if "arm64" in p_low or "aarch64" in p_low:
             arch = "Apple Silicon"
         elif "x86_64" in p_low or "amd64" in p_low or "i386" in p_low:
             arch = "Apple Intel"
         else:
-            # Fallback
             if "arm64" in content.lower() or "darwin25" in p_low:
                 arch = "Apple Silicon"
             elif "x86_64" in content.lower() or "darwin21" in p_low:
@@ -267,15 +278,28 @@ def sync_reports():
         except Exception as e:
             UI.error(f"Failed to process {report.name}: {e}")
 
-    # 2. Select the LATEST report for each (arch, os, provider)
+    # 2. Select the LATEST report for each (arch, os_major, provider)
     latest_per_env = {}
     for meta in all_metas:
-        key = (meta["arch"], meta["os"], meta["provider"])
-        if (
-            key not in latest_per_env
-            or meta["timestamp"] > latest_per_env[key]["timestamp"]
-        ):
+        # Group by (arch, major_os, provider) to avoid Monterey vs non-Monterey duplicates
+        os_major_match = re.search(r"macOS (\d+)", meta["os"])
+        if os_major_match:
+            os_key = f"macOS {os_major_match.group(1)}"
+        else:
+            os_key = meta["os"]
+
+        key = (meta["arch"], os_key, meta["provider"])
+
+        if key not in latest_per_env:
             latest_per_env[key] = meta
+        else:
+            current_best = latest_per_env[key]
+            # Priority: Take newest.
+            if meta["timestamp"] > current_best["timestamp"]:
+                latest_per_env[key] = meta
+            elif meta["timestamp"] == current_best["timestamp"]:
+                if len(meta["os"].split()) > len(current_best["os"].split()):
+                    latest_per_env[key] = meta
 
     # 3. Update COMPATIBILITY_TABLE.md
     content = source_file.read_text()

@@ -149,9 +149,9 @@ This file serves as the persistent state and technical knowledge base for the AI
 =======
 - **Task: Cross-Platform Stabilization & Reporting**
   - [x] **Hardening**: Implemented self-healing permissions for macOS/Colima.
-  - [x] **Hardening**: Improved verification scripts to fail immediately on error.
-  - [x] **Reporting**: Added `ldm doctor --slug` for machine-readable environment strings.
+  - [x] **Reporting**: Improved macOS version detection and naming (Monterey, Sequoia, Tahoe).
   - [x] **Reporting**: Automated report naming based on environment slug and status.
+<<<<<<< HEAD
   - [x] **Sync**: Refined `sync_compatibility.py` to be non-destructive (LATEST only with historical preservation).
   - [x] **Restoration**: Recovered historical verification results by running the refined sync script.
   - [x] **Rules**: Added Script Parity and Pre-Change Persistence mandates.
@@ -243,6 +243,13 @@ This file serves as the persistent state and technical knowledge base for the AI
   - [x] **Fix**: Added specific WSL troubleshooting hints for Docker connection failures and improved Native WSL2 vs Desktop detection.
   - [x] **Release**: Tagged as `v2.4.26-beta.56`.
 >>>>>>> c5d1430 (fix: improve WSL Docker troubleshooting and provider detection [pre-release])
+=======
+  - [x] **Sync**: Refined `sync_compatibility.py` with robust normalization and deduplication.
+  - [x] **Fix**: Improved Windows self-upgrade and WSL troubleshooting (Docker socket detection).
+  - [x] **Fix**: Implemented proactive Volume Write Test in `ldm doctor`.
+  - [x] **Fix**: Added Colima LaunchAgent detection and tailored hints.
+  - [x] **Release**: Tagged as `v2.4.26-beta.63`.
+>>>>>>> 756c1ee (fix: stabilize environmental detection and improve macOS naming [pre-release])
 
 >>>>>>> 8b0a863 (feat: implement DNS cleanup and stable tier safety hatch [pre-release])
 --- End of Context from: /users/peterrichards/.gemini/gemini.md ---
