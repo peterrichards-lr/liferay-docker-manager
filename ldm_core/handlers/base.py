@@ -62,6 +62,10 @@ class BaseHandler:
         resolved_ip = (
             self.get_resolved_ip(host_name) if host_name != "localhost" else "127.0.0.1"
         )
+        # Handle cases where resolution fails (e.g. immediately after hosts update)
+        if not resolved_ip:
+            resolved_ip = "127.0.0.1"
+
         if not self.check_port(resolved_ip, port):
             if self.non_interactive:
                 UI.die(f"Port {port} is already in use on {resolved_ip}.")

@@ -24,12 +24,16 @@ class TestUtils(unittest.TestCase):
         # 2. Beta / Pre-release versions
         self.assertEqual(version_to_tuple("2.4.26-beta.1"), (2, 4, 26, 1))
         self.assertEqual(version_to_tuple("2.4.26-beta.2"), (2, 4, 26, 2))
+        self.assertEqual(version_to_tuple("2.4.26-beta.10"), (2, 4, 26, 10))
 
         # 3. Comparison checks
         self.assertTrue(version_to_tuple("2.4.26-beta.1") > version_to_tuple("2.4.25"))
         self.assertTrue(version_to_tuple("2.4.26") > version_to_tuple("2.4.26-beta.1"))
         self.assertTrue(
             version_to_tuple("2.4.26-beta.2") > version_to_tuple("2.4.26-beta.1")
+        )
+        self.assertTrue(
+            version_to_tuple("2.4.26-beta.10") > version_to_tuple("2.4.26-beta.9")
         )
         self.assertTrue(version_to_tuple("1.6.0") > version_to_tuple("1.5.9"))
         self.assertFalse(version_to_tuple("2.4.25") > version_to_tuple("2.4.25"))
