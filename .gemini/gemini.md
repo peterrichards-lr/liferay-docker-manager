@@ -72,6 +72,7 @@
   - [x] **Fix**: Implemented proactive Volume Write Test in `ldm doctor`.
   - [x] **Fix**: Added Colima LaunchAgent detection and tailored hints.
   - [x] **Fix**: Corrected `mkcert` download URL and added `--fail` to `curl` in `.github/workflows/ci.yml`.
-  - [x] **Release**: Tagged as `v2.4.26-beta.64`.
+  - [x] **Docs**: Updated `TESTING.md` with an "Automation" column to distinguish between E2E, CI, and Manual tests.
+  - [x] **Release**: Tagged as `v2.4.26-beta.65`.
 
 --- End of Context from: /users/peterrichards/.gemini/gemini.md ---
