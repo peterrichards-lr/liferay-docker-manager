@@ -426,7 +426,7 @@ echo move /y "{temp_new}" "{exe_path}"
 pause
 
 :CLEANUP
-del "%~f0"
+(goto) 2>nul & del "%~f0"
 """
                 bat_path.write_text(bat_content)
                 UI.success(

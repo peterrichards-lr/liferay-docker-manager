@@ -209,8 +209,13 @@ This file serves as the persistent state and technical knowledge base for the AI
   - [x] **Reporting**: Improved macOS version detection (mapping Darwin major to macOS major) and updated compatibility table header.
   - [x] **Fix**: Restored Apple Silicon/Intel detection in `ldm doctor --slug`.
   - [x] **Fix**: Improved `verify_e2e_refactor.sh` robustness (ignore "not found" during cleanup).
+<<<<<<< HEAD
   - [x] **Release**: Tagged as `v2.4.26-beta.49`.
 >>>>>>> 1cbf92b (fix: restore Mac arch detection and improve verify script robustness [pre-release])
+=======
+  - [x] **Fix**: Improved Windows self-upgrade cleanup to avoid "batch file cannot be found" error.
+  - [x] **Release**: Tagged as `v2.4.26-beta.50`.
+>>>>>>> 2c9c613 (fix: improve Windows self-upgrade cleanup logic [pre-release])
 
 >>>>>>> 8b0a863 (feat: implement DNS cleanup and stable tier safety hatch [pre-release])
 --- End of Context from: /users/peterrichards/.gemini/gemini.md ---
