@@ -109,6 +109,10 @@ Set-Location $LDM_WORKSPACE
 function Log-AndRun($msg, $cmd) {
     echo ">> $msg" | tee -a $ResultsFile
     Invoke-Expression $cmd 2>&1 | tee -a $ResultsFile
+    if ($LASTEXITCODE -ne 0) {
+        echo "❌ ERROR: Command failed with exit code $LASTEXITCODE" | tee -a $ResultsFile
+        throw "Command failed: $cmd"
+    }
 }
 
 try {
