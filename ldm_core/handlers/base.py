@@ -20,6 +20,17 @@ class BaseHandler:
         self.non_interactive = getattr(args, "non_interactive", False)
         self.verbose = getattr(args, "verbose", False)
 
+    def is_wsl(self):
+        """Checks if the current environment is WSL."""
+        if platform.system().lower() == "linux":
+            try:
+                with open("/proc/version", "r") as f:
+                    if "microsoft" in f.read().lower():
+                        return True
+            except Exception:
+                pass
+        return False
+
     def _pre_flight_checks(self, host_name, port, ssl_enabled=False, meta=None):
         """Runs critical safety checks before starting containers."""
         root = Path(meta.get("root"))
@@ -29,6 +40,16 @@ class BaseHandler:
 
         # 2. Hostname Check
         if host_name != "localhost":
+            # Windows/WSL .local warning
+            if host_name.endswith(".local") and (
+                platform.system().lower() == "windows" or self.is_wsl()
+            ):
+                UI.warning(f"Hostname '{host_name}' uses the '.local' TLD.")
+                UI.info(
+                    "On Windows, '.local' is reserved for mDNS and may ignore your hosts file."
+                )
+                UI.info("Recommended: Use '.test' or '.internal' instead.")
+
             if not self.check_hostname(host_name):
                 if self.non_interactive:
                     UI.die(f"Hostname resolution failed for '{host_name}'.")
