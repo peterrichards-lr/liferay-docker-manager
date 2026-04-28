@@ -65,30 +65,12 @@
 - I must update gemini.md before proposing any changes to serve as a persistent state, allowing me to resume my work if an interruption occurs.
 - **Task: Cross-Platform Stabilization & Reporting**
   - [x] **Hardening**: Implemented self-healing permissions for macOS/Colima.
-  - [x] **Hardening**: Improved verification scripts to fail immediately on error.
-  - [x] **Reporting**: Added `ldm doctor --slug` for machine-readable environment strings.
+  - [x] **Reporting**: Improved macOS version detection and naming (Monterey, Sequoia, Tahoe).
   - [x] **Reporting**: Automated report naming based on environment slug and status.
-  - [x] **Sync**: Refined `sync_compatibility.py` to be non-destructive (LATEST only with historical preservation).
-  - [x] **Restoration**: Recovered historical verification results by running the refined sync script.
-  - [x] **Rules**: Added Script Parity and Pre-Change Persistence mandates.
-  - [x] **Release**: Tagged as `v2.4.26-beta.37`.
-  - [x] **Fix**: Improved Windows self-upgrade robustness (retry loop + process termination).
-  - [x] **Fix**: Resolved Linux cross-device link error (Errno 18) using shutil.move.
-  - [x] **Fix**: Hardened `verify_e2e_refactor.sh` (macOS md5, FATAL detection, report preservation).
-  - [x] **Fix**: Resolved search backup permission error during restore (Errno 13).
-  - [x] **Fix**: Corrected macOS detection in `ldm doctor --slug`.
-  - [x] **Verification**: Verified stable on local Apple Silicon machine (Ubuntu + macOS logic).
-  - [x] **Release**: Tagged as `v2.4.26-beta.43`.
-  - [x] **UI**: Improved project selection UI to disambiguate projects with same name by showing paths.
-  - [x] **Fix**: Improved netcat detection on Windows by supporting `ncat` and consolidating path reporting.
-  - [x] **Fix**: Targeted cleanup in `verify_e2e_refactor.sh` to prevent accidental deletion of unrelated projects and report files.
-  - [x] **Reporting**: Refined `sync_compatibility.py` to eliminate "Unknown" entries and improved fallback detection for Apple Silicon/Intel.
-  - [x] **Reporting**: Improved macOS version detection (mapping Darwin major to macOS major) and updated compatibility table header.
-  - [x] **Reporting**: Updated compatibility table title to indicate "Standalone Binaries".
-  - [x] **Fix**: Improved `verify_e2e_refactor.sh` to explicitly mention project template source and handle cleanup "not found" silently.
-  - [x] **Reporting**: Improved macOS version detection (mapping Darwin major to macOS major with marketing names like Monterey, Ventura, etc.).
-  - [x] **Fix**: Improved `verify_e2e_refactor.sh` to handle cleanup "not found" silently and avoid terminal noise.
-  - [x] **Fix**: Added specific WSL troubleshooting hints for Docker connection failures and improved Native WSL2 vs Desktop detection.
-  - [x] **Release**: Tagged as `v2.4.26-beta.56`.
+  - [x] **Sync**: Refined `sync_compatibility.py` with robust normalization and deduplication.
+  - [x] **Fix**: Improved Windows self-upgrade and WSL troubleshooting (Docker socket detection).
+  - [x] **Fix**: Implemented proactive Volume Write Test in `ldm doctor`.
+  - [x] **Fix**: Added Colima LaunchAgent detection and tailored hints.
+  - [x] **Release**: Tagged as `v2.4.26-beta.63`.
 
 --- End of Context from: /users/peterrichards/.gemini/gemini.md ---
