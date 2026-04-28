@@ -207,6 +207,7 @@ This file serves as the persistent state and technical knowledge base for the AI
 =======
   - [x] **Reporting**: Refined `sync_compatibility.py` to eliminate "Unknown" entries and improved fallback detection for Apple Silicon/Intel.
   - [x] **Reporting**: Improved macOS version detection (mapping Darwin major to macOS major) and updated compatibility table header.
+<<<<<<< HEAD
   - [x] **Fix**: Restored Apple Silicon/Intel detection in `ldm doctor --slug`.
   - [x] **Fix**: Improved `verify_e2e_refactor.sh` robustness (ignore "not found" during cleanup).
 <<<<<<< HEAD
@@ -216,6 +217,11 @@ This file serves as the persistent state and technical knowledge base for the AI
   - [x] **Fix**: Improved Windows self-upgrade cleanup to avoid "batch file cannot be found" error.
   - [x] **Release**: Tagged as `v2.4.26-beta.50`.
 >>>>>>> 2c9c613 (fix: improve Windows self-upgrade cleanup logic [pre-release])
+=======
+  - [x] **Reporting**: Updated compatibility table title to indicate "Standalone Binaries".
+  - [x] **Fix**: Improved `verify_e2e_refactor.sh` to explicitly mention project template source and handle cleanup "not found" silently.
+  - [x] **Release**: Tagged as `v2.4.26-beta.51`.
+>>>>>>> 8331e77 (fix: improve verify script template error and update table title)
 
 >>>>>>> 8b0a863 (feat: implement DNS cleanup and stable tier safety hatch [pre-release])
 --- End of Context from: /users/peterrichards/.gemini/gemini.md ---

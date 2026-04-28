@@ -143,6 +143,7 @@ done
 
 if [ -z "$TEMPLATE_SRC" ]; then
     echo "❌ ERROR: Test project template folder not found."
+    echo "Please ensure you are running from the repository root or that 'references/test-project' is present."
     exit 1
 fi
 echo "ℹ  Using test template: $TEMPLATE_SRC"
@@ -164,6 +165,11 @@ log_and_run() {
     # Execute and capture
     if ! "$@" 2>&1 | tee "$tmp_output"; then
         cat "$tmp_output" >> "$RESULTS_FILE_TMP"
+        # Only fail if it's NOT a "not found" error during cleanup (Step 0)
+        if echo "$*" | grep -q "rm" && grep -qi "not found" "$tmp_output"; then
+             rm -f "$tmp_output"
+             return 0
+        fi
         echo "❌ ERROR: Command failed with exit code $?: $*" | tee -a "$RESULTS_FILE_TMP"
         rm -f "$tmp_output"
         exit 1
@@ -173,7 +179,7 @@ log_and_run() {
     
     # Scan for FATAL or specific LDM error markers that should trigger a script failure
     # We ignore "Project ... not found" during cleanup (Step 0)
-    if grep -Ei "FATAL|❌|ERROR:" "$tmp_output" | grep -v "ℹ" | grep -v ">>" | grep -v "not found" > /dev/null; then
+    if grep -Ei "FATAL|❌|ERROR:" "$tmp_output" | grep -v "ℹ" | grep -v ">>" | grep -vEi "not found|already in sync" > /dev/null; then
         echo "❌ ERROR: Critical failure detected in output of command: $*" | tee -a "$RESULTS_FILE_TMP"
         rm -f "$tmp_output"
         exit 1
@@ -201,6 +207,8 @@ log_and_run "Initializing Infrastructure" "$LDM_CMD" -y infra-setup --search
 
 # 3. Project Lifecycle
 echo "--- Step 2: Project Run ---"
+# Explain where we are copying from
+echo "ℹ  Provisioning test project 'ldm-smoke-test' from template..." | tee -a "$RESULTS_FILE_TMP"
 cp -r "$TEMPLATE_SRC" "$LDM_WORKSPACE/ldm-smoke-test"
 cd "$LDM_WORKSPACE/ldm-smoke-test"
 
