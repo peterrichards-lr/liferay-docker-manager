@@ -83,9 +83,13 @@ This file serves as the persistent state and technical knowledge base for the AI
 =======
 ## 8. Git Management & Branching Strategy
 
+<<<<<<< HEAD
 - **Logical Squashing**: Avoid creating a commit for every minor bugfix. Group related fixes and features into single, descriptive commits.
 <<<<<<< HEAD
 =======
+=======
+- **Logical Squashing**: Avoid creating a commit for every minor bugfix or repeated attempts to fix the same issue. All turns and iterations required to reach a verified state for a single technical objective MUST be squashed into a single, descriptive commit.
+>>>>>>> 9a0071d (docs: refine commit squashing rule in gemini.md)
 - **Version Management**: Use the `ldm version` command (available in dev environments) to manage project versions.
   - `ldm version --bump beta` increments the pre-release number.
   - `ldm version --promote` converts a beta release to stable.
