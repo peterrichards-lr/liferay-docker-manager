@@ -191,8 +191,13 @@ This file serves as the persistent state and technical knowledge base for the AI
 >>>>>>> 2a7d95f (fix: resolve search restore permissions and macOS detection (Verified Stable))
 =======
   - [x] **UI**: Improved project selection UI to disambiguate projects with same name by showing paths.
+<<<<<<< HEAD
   - [x] **Release**: Tagged as `v2.4.26-beta.44`.
 >>>>>>> 8d61a20 (ui: improve project selection with path hints for duplicates [pre-release])
+=======
+  - [x] **Fix**: Improved netcat detection on Windows by supporting `ncat` and consolidating path reporting.
+  - [x] **Release**: Tagged as `v2.4.26-beta.45`.
+>>>>>>> e316462 (fix: improve netcat detection on Windows (ncat support) [pre-release])
 
 >>>>>>> 8b0a863 (feat: implement DNS cleanup and stable tier safety hatch [pre-release])
 --- End of Context from: /users/peterrichards/.gemini/gemini.md ---
