@@ -558,10 +558,38 @@ class BaseHandler:
                 filter_str = ""
                 continue
 
+            # Check for duplicate names to decide if we need to show paths
+            names = [r["path"].name for r in filtered]
+            from collections import Counter
+
+            counts = Counter(names)
+
             for i, r in enumerate(filtered):
-                print(
-                    f"[{i + 1}] {r['path'].name} [{UI.CYAN}{r['version']}{UI.COLOR_OFF}]"
-                )
+                name = r["path"].name
+                version = r["version"]
+                path_obj = r["path"]
+
+                display_line = f"[{i + 1}] {name} [{UI.CYAN}{version}{UI.COLOR_OFF}]"
+
+                # If there are duplicates, or if we want to always show a hint of where it is
+                if counts[name] > 1:
+                    # Try to make path relative to home or CWD
+                    from ldm_core.utils import get_actual_home
+
+                    home = get_actual_home()
+                    try:
+                        if path_obj.is_relative_to(home):
+                            display_path = f"~/{path_obj.relative_to(home)}"
+                        elif path_obj.is_relative_to(Path.cwd()):
+                            display_path = f"./{path_obj.relative_to(Path.cwd())}"
+                        else:
+                            display_path = str(path_obj)
+                    except Exception:
+                        display_path = str(path_obj)
+
+                    display_line = f"[{i + 1}] {name} {UI.DIM}({display_path}){UI.COLOR_OFF} [{UI.CYAN}{version}{UI.COLOR_OFF}]"
+
+                print(display_line)
 
             prompt = "\nSelect index, type to filter"
             if filter_str:
