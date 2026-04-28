@@ -164,6 +164,7 @@ class ComposerHandler(BaseHandler):
             liferay_env.extend(
                 [
 <<<<<<< HEAD
+<<<<<<< HEAD
                     f"LIFERAY_ELASTICSEARCH{separator}SIDECAR{separator}ENABLED=false",
                     f"LIFERAY_ELASTICSEARCH{separator}CONNECTION{separator}URL=http://liferay-search-global:9200",
                     f"LIFERAY_ELASTICSEARCH{separator}INDEX{separator}NAME{separator}PREFIX=ldm-{project_name}-",
@@ -183,6 +184,21 @@ class ComposerHandler(BaseHandler):
         else:
             liferay_env.append("LIFERAY_ELASTICSEARCH__PRODUCTION__MODE__ENABLED=false")
 >>>>>>> bb0c7fb (feat: harden environmental diagnostics and formalize project management [pre-release])
+=======
+                    "LIFERAY_ELASTICSEARCH_PERIOD_PRODUCTION_PERIOD_MODE_PERIOD_ENABLED=true",
+                    "LIFERAY_ELASTICSEARCH_PERIOD_SIDECAR_PERIOD_ENABLED=false",
+                    "LIFERAY_ELASTICSEARCH_PERIOD_CONNECTION_PERIOD_URL=http://liferay-search-global:9200",
+                    f"LIFERAY_ELASTICSEARCH_PERIOD_INDEX_PERIOD_NAME_PERIOD_PREFIX=ldm-{project_name}-",
+                ]
+            )
+        else:
+            liferay_env.extend(
+                [
+                    "LIFERAY_ELASTICSEARCH_PERIOD_PRODUCTION_PERIOD_MODE_PERIOD_ENABLED=false",
+                    "LIFERAY_ELASTICSEARCH_PERIOD_SIDECAR_PERIOD_ENABLED=true",
+                ]
+            )
+>>>>>>> 3eafd46 (fix: resolve search version mismatch and standardize environment naming [pre-release])
         # Add custom environment variables from metadata
         custom_env_str = meta.get("custom_env", "{}")
         try:

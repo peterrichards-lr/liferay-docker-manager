@@ -993,6 +993,35 @@ del "%~f0"
                     status = "Running"
                     ok = True
 
+                    # Version check for Global Search
+                    if container == "liferay-search-global":
+                        from ldm_core.constants import (
+                            ELASTICSEARCH_VERSION,
+                            ELASTICSEARCH7_VERSION,
+                        )
+
+                        target_ver = (
+                            ELASTICSEARCH_VERSION
+                            if search_version == 8
+                            else ELASTICSEARCH7_VERSION
+                        )
+                        running_ver = run_command(
+                            [
+                                "docker",
+                                "inspect",
+                                "-f",
+                                "{{.Config.Image}}",
+                                container,
+                            ],
+                            check=False,
+                        )
+                        if running_ver and target_ver not in running_ver:
+                            status = f"Running (OUTDATED: {running_ver.split(':')[-1]})"
+                            ok = False
+                            add_hint(
+                                f"Your Global Search container is outdated. Please run '{UI.WHITE}ldm infra-restart --search{UI.COLOR_OFF}'."
+                            )
+
                     if container == "liferay-docker-proxy":
                         inspect = run_command(
                             [

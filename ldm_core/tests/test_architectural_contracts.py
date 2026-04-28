@@ -210,9 +210,14 @@ class TestArchitecturalContracts(unittest.TestCase):
         self.assertTrue(
             any(
 <<<<<<< HEAD
+<<<<<<< HEAD
                 "LIFERAY_ELASTICSEARCH_SIDECAR_ENABLED=false" in e for e in liferay_env
 =======
                 "LIFERAY_ELASTICSEARCH__PRODUCTION__MODE__ENABLED=true" in e
+=======
+                "LIFERAY_ELASTICSEARCH_PERIOD_PRODUCTION_PERIOD_MODE_PERIOD_ENABLED=true"
+                in e
+>>>>>>> 3eafd46 (fix: resolve search version mismatch and standardize environment naming [pre-release])
                 for e in liferay_env
 >>>>>>> bb0c7fb (feat: harden environmental diagnostics and formalize project management [pre-release])
             ),
