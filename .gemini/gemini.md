@@ -83,6 +83,7 @@ This file serves as the persistent state and technical knowledge base for the AI
   - **Roadmap Items**: All large roadmap items, complex features, or experimental refactors MUST be developed in dedicated feature branches (e.g., `roadmap/feature-name`).
   - Merge roadmap branches to `master` only after full verification and peer approval.
   - **Cleanup**: Delete feature branches immediately after a successful merge to `master`.
+- **Pre-Change State Persistence**: Before performing ANY file modification (code, documentation, or configuration), I MUST update the `Gemini Added Memories` section of this file with a detailed `<plan>` or task summary to ensure state is persisted in case of an interruption.
 
 ## Gemini Added Memories
 >>>>>>> bb0c7fb (feat: harden environmental diagnostics and formalize project management [pre-release])
@@ -128,6 +129,7 @@ This file serves as the persistent state and technical knowledge base for the AI
 - [ ] Documentation is fully updated.
 =======
 - I must update gemini.md before proposing any changes to serve as a persistent state, allowing me to resume my work if an interruption occurs.
+<<<<<<< HEAD
 - **Task: Verification Process & E2E Validation**
   - [x] **Step 1**: Run `bash scripts/verify_e2e_refactor.sh` to identify current failure points.
   - [x] **Step 2**: Analyze `references/verification-results/` for regression data.
@@ -144,6 +146,17 @@ This file serves as the persistent state and technical knowledge base for the AI
 =======
   - [x] **Roadmap**: Implemented and documented automated version management utility in `roadmap/version-manager`.
   - [x] **Cleanup**: Formalized branch deletion after merge in all docs.
+=======
+- **Task: Cross-Platform Stabilization & Reporting**
+  - [x] **Hardening**: Implemented self-healing permissions for macOS/Colima.
+  - [x] **Hardening**: Improved verification scripts to fail immediately on error.
+  - [x] **Reporting**: Added `ldm doctor --slug` for machine-readable environment strings.
+  - [x] **Reporting**: Automated report naming based on environment slug and status.
+  - [x] **Sync**: Refined `sync_compatibility.py` to be non-destructive (LATEST only with historical preservation).
+  - [x] **Restoration**: Recovered historical verification results by running the refined sync script.
+  - [x] **Rules**: Added Script Parity and Pre-Change Persistence mandates.
+  - [x] **Release**: Tagged as `v2.4.26-beta.37`.
+>>>>>>> 1ddd76e (feat: stabilize cross-platform reporting and refine compatibility sync)
 
 >>>>>>> 8b0a863 (feat: implement DNS cleanup and stable tier safety hatch [pre-release])
 --- End of Context from: /users/peterrichards/.gemini/gemini.md ---
