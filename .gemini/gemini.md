@@ -152,6 +152,7 @@ This file serves as the persistent state and technical knowledge base for the AI
   - [x] **Reporting**: Improved macOS version detection and naming (Monterey, Sequoia, Tahoe).
   - [x] **Reporting**: Automated report naming based on environment slug and status.
 <<<<<<< HEAD
+<<<<<<< HEAD
   - [x] **Sync**: Refined `sync_compatibility.py` to be non-destructive (LATEST only with historical preservation).
   - [x] **Restoration**: Recovered historical verification results by running the refined sync script.
   - [x] **Rules**: Added Script Parity and Pre-Change Persistence mandates.
@@ -245,6 +246,9 @@ This file serves as the persistent state and technical knowledge base for the AI
 >>>>>>> c5d1430 (fix: improve WSL Docker troubleshooting and provider detection [pre-release])
 =======
   - [x] **Sync**: Refined `sync_compatibility.py` with robust normalization and deduplication.
+=======
+  - [x] **Sync**: Refined `sync_compatibility.py` with robust normalization, Tahoe/Sequoia mapping, and "Failure + Latest Pass" cleanup policy.
+>>>>>>> 712a3cd (fix: implement pass-only cleanup policy and Tahoe mapping)
   - [x] **Fix**: Improved Windows self-upgrade and WSL troubleshooting (Docker socket detection).
   - [x] **Fix**: Implemented proactive Volume Write Test in `ldm doctor`.
   - [x] **Fix**: Added Colima LaunchAgent detection and tailored hints.
@@ -268,10 +272,15 @@ This file serves as the persistent state and technical knowledge base for the AI
 >>>>>>> 1b15b0e (fix: resolve CI segmentation fault by isolating version check)
 =======
   - [x] **Fix**: Isolated CI version synchronization check to resolve segmentation fault (exit 139).
+  - [x] **Fix**: Hardened Windows verification script (`.ps1`) and fixed console encoding.
   - [x] **Docs**: Updated `TESTING.md` with functional grouping (Automated vs Manual).
   - [x] **Docs**: Updated `LDM_ARCHITECTURE.md` to reflect proactive health checks and provider detection.
+<<<<<<< HEAD
   - [x] **Release**: Tagged as `v2.4.26-beta.67`.
 >>>>>>> f6ed162 (docs: restructure TESTING.md and update architecture doc)
+=======
+  - [x] **Release**: Tagged as `v2.4.26-beta.69`.
+>>>>>>> 712a3cd (fix: implement pass-only cleanup policy and Tahoe mapping)
 
 >>>>>>> 8b0a863 (feat: implement DNS cleanup and stable tier safety hatch [pre-release])
 --- End of Context from: /users/peterrichards/.gemini/gemini.md ---
