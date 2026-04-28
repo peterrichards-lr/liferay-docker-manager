@@ -35,7 +35,7 @@ class BaseHandler:
                 UI.warning(f"Hostname '{host_name}' does not resolve to an IP.")
                 UI.info("LDM can try to fix this by adding an entry to /etc/hosts.")
                 if UI.confirm("Add host entry? (Requires sudo)", "Y"):
-                    self.run_command(["sudo", "ldm", "fix-hosts", host_name])
+                    self._apply_hosts_fix([host_name])
 
         # 3. Port Check
         resolved_ip = (
@@ -54,6 +54,49 @@ class BaseHandler:
             self.check_registry_collisions(project_name, root, host_name=host_name)
 
         return port
+
+    def _apply_hosts_fix(self, unresolved_domains):
+        """Attempts to append missing host entries to the system hosts file."""
+        if not unresolved_domains:
+            return True
+
+        # Standard LDM expected IP for local development
+        target_ip = "127.0.0.1"
+        new_entries = []
+        for d in sorted(list(set(unresolved_domains))):
+            new_entries.append(f"{target_ip} {d} *.{d}")
+
+        content_to_add = "\n# Added by Liferay Docker Manager (LDM)\n"
+        content_to_add += "\n".join(new_entries) + "\n"
+
+        is_windows = platform.system().lower() == "windows"
+        hosts_path = (
+            r"C:\Windows\System32\drivers\etc\hosts" if is_windows else "/etc/hosts"
+        )
+
+        try:
+            UI.info(f"Requesting permission to update {hosts_path}...")
+            if is_windows:
+                # Use PowerShell to append with elevation
+                cmd = [
+                    "powershell",
+                    "-Command",
+                    f"Start-Process powershell -Verb RunAs -ArgumentList \"Add-Content -Path {hosts_path} -Value '{content_to_add}'\"",
+                ]
+                subprocess.run(cmd, check=True)
+            else:
+                # Use sudo tee to append
+                cmd = ["sudo", "tee", "-a", hosts_path]
+                process = subprocess.Popen(
+                    cmd, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL
+                )
+                process.communicate(input=content_to_add.encode())
+                if process.returncode != 0:
+                    return False
+            return True
+        except Exception as e:
+            UI.error(f"Failed to update hosts file: {e}")
+            return False
 
     def check_ram(self, mem_limit=None):
         """Verifies if the host has enough RAM allocated to Docker."""
@@ -653,8 +696,8 @@ class BaseHandler:
                 # We specifically ensure the root directory (/workspace/{rel_root}) is chowned/chmodded
                 docker_cmd = (
                     f"mkdir -p /workspace/{rel_root}/data /workspace/{rel_root}/deploy /workspace/{rel_root}/files "
-                    f"/workspace/{rel_root}/osgi/state /workspace/{rel_root}/osgi/configs /workspace/{rel_root}/osgi/modules "
-                    f"/workspace/{rel_root}/routes /workspace/{rel_root}/snapshots 2>/dev/null || true; "
+                    f"/workspace/{rel_root}/logs /workspace/{rel_root}/osgi/state /workspace/{rel_root}/osgi/configs "
+                    f"/workspace/{rel_root}/osgi/modules /workspace/{rel_root}/routes /workspace/{rel_root}/snapshots 2>/dev/null || true; "
                     f"chown -R {current_uid}:{current_gid} /workspace/{rel_root} 2>/dev/null || true; "
                     f"chmod -R 777 /workspace/{rel_root} 2>/dev/null || true; "
                     f"chmod 777 /workspace/{rel_root} 2>/dev/null || true; "

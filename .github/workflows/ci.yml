@@ -258,14 +258,23 @@ jobs:
         id: check_release
         shell: bash
         run: |
-          # Check if the commit message contains [release]
+          # Detect logic:
+          # 1. If tag has a hyphen (e.g. v2.4.25-beta) -> Pre-release
+          # 2. If commit has [beta] or [pre-release] -> Pre-release
+          # 3. If commit has [release] AND tag has NO hyphen -> Full Release
+          
           MSG=$(git log -1 --pretty=%B)
-          if echo "$MSG" | grep -qi "\[release\]"; then
+          TAG_NAME=${GITHUB_REF_NAME}
+          
+          if [[ "$TAG_NAME" == *-* ]] || echo "$MSG" | grep -qiE "\[beta\]|\[pre-release\]"; then
+            echo "is_release=false" >> $GITHUB_OUTPUT
+            echo "Pre-release detected (Tag: $TAG_NAME, Msg: $MSG)"
+          elif echo "$MSG" | grep -qi "\[release\]"; then
             echo "is_release=true" >> $GITHUB_OUTPUT
-            echo "Release keyword found. Creating a FULL release."
+            echo "Full release detected."
           else
             echo "is_release=false" >> $GITHUB_OUTPUT
-            echo "Release keyword NOT found. Creating a PRE-RELEASE."
+            echo "Defaulting to pre-release for safety."
           fi
 
       - name: Download All Artifacts
@@ -315,26 +324,26 @@ jobs:
 
             **macOS (Apple Silicon):**
             ```bash
-            sudo curl -L https://github.com/peterrichards-lr/liferay-docker-manager/releases/latest/download/ldm-macos-arm64 -o /usr/local/bin/ldm
+            sudo curl -L https://github.com/peterrichards-lr/liferay-docker-manager/releases/${{ steps.check_release.outputs.is_release == 'true' && 'latest' || format('download/{0}', github.ref_name) }}/download/ldm-macos-arm64 -o /usr/local/bin/ldm
             sudo chmod +x /usr/local/bin/ldm
             ```
 
             **macOS (Apple Intel):**
             ```bash
-            sudo curl -L https://github.com/peterrichards-lr/liferay-docker-manager/releases/latest/download/ldm-macos-x86_64 -o /usr/local/bin/ldm
+            sudo curl -L https://github.com/peterrichards-lr/liferay-docker-manager/releases/${{ steps.check_release.outputs.is_release == 'true' && 'latest' || format('download/{0}', github.ref_name) }}/download/ldm-macos-x86_64 -o /usr/local/bin/ldm
             sudo chmod +x /usr/local/bin/ldm
             ```
 
             **Linux / WSL2:**
             ```bash
-            sudo curl -L https://github.com/peterrichards-lr/liferay-docker-manager/releases/latest/download/ldm-linux -o /usr/local/bin/ldm
+            sudo curl -L https://github.com/peterrichards-lr/liferay-docker-manager/releases/${{ steps.check_release.outputs.is_release == 'true' && 'latest' || format('download/{0}', github.ref_name) }}/download/ldm-linux -o /usr/local/bin/ldm
             sudo chmod +x /usr/local/bin/ldm
             ```
 
             **Windows (PowerShell):**
             ```powershell
             New-Item -ItemType Directory -Force -Path "$HOME\bin"
-            Invoke-WebRequest -Uri "https://github.com/peterrichards-lr/liferay-docker-manager/releases/latest/download/ldm-windows.exe" -OutFile "$HOME\bin\ldm.exe"
+            Invoke-WebRequest -Uri "https://github.com/peterrichards-lr/liferay-docker-manager/releases/${{ steps.check_release.outputs.is_release == 'true' && 'latest' || format('download/{0}', github.ref_name) }}/download/ldm-windows.exe" -OutFile "$HOME\bin\ldm.exe"
             ```
 
             ### 🛠 Standard Hardening Features

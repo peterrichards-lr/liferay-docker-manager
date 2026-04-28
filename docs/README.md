@@ -162,8 +162,8 @@ To protect the integrity of the application cache (`~/.shiv`) and ensure consist
 
 LDM is designed to run as a standard user and will **automatically request elevation** (prompting for your password) only for specific tasks that require it:
 
-- **`ldm doctor --fix-hosts`**: Requires elevation to append entries to `/etc/hosts`.
-- **`ldm upgrade`**: May require elevation to replace the binary in system paths like `/usr/local/bin`.
+- **`ldm fix-hosts`**: Requires elevation to append entries to `/etc/hosts`. Can be called manually or triggered automatically during `ldm run`.
+- **`ldm upgrade`**: Automatically handles cross-device file systems (e.g. Fedora /tmpfs) by using a `cp` + `rm` pattern for system binary replacement. Requires elevation to replace the binary in system paths like `/usr/local/bin`.
 
 If you are using `sudo` because of Docker "Permission Denied" errors, do not use `sudo ldm`. Instead, add your user to the `docker` group:
 
@@ -510,6 +510,18 @@ ldm doctor --all    # Batch validate every project in your workspace
 ldm doctor --fix-hosts # Automatically add missing domains to /etc/hosts (will prompt for sudo)
 ```
 
+### `fix-hosts`
+
+Manually append missing project hostnames to your system's `/etc/hosts` file. This command is automatically triggered by `ldm run` if a resolution failure is detected, but can also be called surgically.
+
+```bash
+# Add a specific hostname
+ldm fix-hosts my-project.local
+
+# Run a full fix via doctor
+ldm doctor --fix-hosts
+```
+
 ### `status` (alias: `ps`)
 
 Lightweight summary of all active global services and running projects.
@@ -527,15 +539,23 @@ Launch the project URL in your system browser. If no project is specified, LDM w
 ```bash
 ldm browser [project]
 ldm open [project]
-```
-
 ### `upgrade`
 
-Automatically download and install the latest version of LDM for your architecture. Includes integrity verification.
+Automatically download and install the latest version of LDM for your architecture. Includes integrity verification. If the automatic process fails, LDM will provide a manual `curl` or `PowerShell` command to complete the installation.
 
 ```bash
-ldm upgrade             # Standard upgrade to latest
+ldm upgrade             # Standard upgrade to latest stable
+ldm upgrade --beta      # Upgrade to the latest pre-release/beta
 ldm upgrade --repair    # Re-download current version to fix integrity issues
+```
+
+### `update-check`
+
+Check for available updates without installing them.
+
+```bash
+ldm update-check        # Check for stable updates
+ldm update-check --beta # Check for beta/pre-release versions
 ```
 
 ### `completion`
