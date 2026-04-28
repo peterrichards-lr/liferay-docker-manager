@@ -13,15 +13,15 @@ API_BASE_PORTAL = "https://hub.docker.com/v2/repositories/liferay/portal/tags?pa
 LIFERAY_PRODUCT_INFO_URL = (
     "https://releases-cdn.liferay.com/tools/workspace/.product_info.json"
 )
-META_VERSION = "2.4.26-beta.31"
+META_VERSION = "2"
 MIN_META_VERSION = 2
 PROJECT_META_FILE = "meta"
 REGISTRY_FILE = "registry.json"
 TAG_PATTERN = r"^\d{4}\.q[1-4]\.\d+(-u\d+|-lts)?$"
 SCRIPT_DIR = Path(__file__).parent.parent.resolve()
-ELASTICSEARCH_VERSION = "2.4.26-beta.31"
-ELASTICSEARCH7_VERSION = "2.4.26-beta.31"
-TRAEFIK_VERSION = "2.4.26-beta.31"
+ELASTICSEARCH_VERSION = "8.19.1"
+ELASTICSEARCH7_VERSION = "7.17.24"
+TRAEFIK_VERSION = "v3.6.1"
 SOCAT_IMAGE = "alpine/socat"
 
 # --- Orchestration Configuration ---
@@ -103,7 +103,7 @@ RUN_ATTRS = [
 # --- Seeded State Configuration ---
 # Increment this version whenever the logic for generating seeds changes
 # (e.g. DB schema changes, driver updates, or hardening logic).
-SEED_VERSION = "2.4.26-beta.31"
+SEED_VERSION = "2"
 
 # --- Sample Extension Hashes (SHA-256) ---
 SAMPLE_HASHES = {
@@ -121,4 +121,3 @@ SAMPLE_HASHES = {
         # Reserved for pre-configured demonstration states
     },
 }
-# BUILD_TRIGGER: Wed Apr 22 11:49:52 BST 2026
