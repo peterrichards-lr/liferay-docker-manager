@@ -315,26 +315,42 @@ jobs:
 
             **macOS (Apple Silicon):**
             ```bash
+<<<<<<< HEAD
             sudo curl -L https://github.com/peterrichards-lr/liferay-docker-manager/releases/latest/download/ldm-macos-arm64 -o /usr/local/bin/ldm
+=======
+            sudo curl -L https://github.com/peterrichards-lr/liferay-docker-manager/releases/${{ steps.check_release.outputs.is_release == 'true' && 'latest/download' || format('download/{0}', github.ref_name) }}/ldm-macos-arm64 -o /usr/local/bin/ldm
+>>>>>>> 1d52a87 (feat: initiate beta release cycle [pre-release])
             sudo chmod +x /usr/local/bin/ldm
             ```
 
             **macOS (Apple Intel):**
             ```bash
+<<<<<<< HEAD
             sudo curl -L https://github.com/peterrichards-lr/liferay-docker-manager/releases/latest/download/ldm-macos-x86_64 -o /usr/local/bin/ldm
+=======
+            sudo curl -L https://github.com/peterrichards-lr/liferay-docker-manager/releases/${{ steps.check_release.outputs.is_release == 'true' && 'latest/download' || format('download/{0}', github.ref_name) }}/ldm-macos-x86_64 -o /usr/local/bin/ldm
+>>>>>>> 1d52a87 (feat: initiate beta release cycle [pre-release])
             sudo chmod +x /usr/local/bin/ldm
             ```
 
             **Linux / WSL2:**
             ```bash
+<<<<<<< HEAD
             sudo curl -L https://github.com/peterrichards-lr/liferay-docker-manager/releases/latest/download/ldm-linux -o /usr/local/bin/ldm
+=======
+            sudo curl -L https://github.com/peterrichards-lr/liferay-docker-manager/releases/${{ steps.check_release.outputs.is_release == 'true' && 'latest/download' || format('download/{0}', github.ref_name) }}/ldm-linux -o /usr/local/bin/ldm
+>>>>>>> 1d52a87 (feat: initiate beta release cycle [pre-release])
             sudo chmod +x /usr/local/bin/ldm
             ```
 
             **Windows (PowerShell):**
             ```powershell
             New-Item -ItemType Directory -Force -Path "$HOME\bin"
+<<<<<<< HEAD
             Invoke-WebRequest -Uri "https://github.com/peterrichards-lr/liferay-docker-manager/releases/latest/download/ldm-windows.exe" -OutFile "$HOME\bin\ldm.exe"
+=======
+            Invoke-WebRequest -Uri "https://github.com/peterrichards-lr/liferay-docker-manager/releases/${{ steps.check_release.outputs.is_release == 'true' && 'latest/download' || format('download/{0}', github.ref_name) }}/ldm-windows.exe" -OutFile "$HOME\bin\ldm.exe"
+>>>>>>> 1d52a87 (feat: initiate beta release cycle [pre-release])
             ```
 
             ### 🛠 Standard Hardening Features

@@ -897,15 +897,47 @@ def verify_executable_checksum(version):
 
 
 def version_to_tuple(v):
-    """Converts a version string (e.g. '1.5.4') to a numeric tuple for comparison."""
+    """Converts a SemVer-style version string to a numeric tuple for comparison.
+    Ensures that stable releases (e.g. 2.4.26) rank higher than pre-releases
+    (e.g. 2.4.26-beta.1) of the same base version.
+    """
     if not v:
-        return (0, 0, 0)
-    # Strip leading 'v' if present
+        return (0, 0, 0, 0)
+
+    # Strip leading 'v'
     v = v.lstrip("v")
-    try:
-        return tuple(map(int, (v.split(".") + ["0", "0"])[:3]))
-    except (ValueError, TypeError):
-        return (0, 0, 0)
+
+    import re
+
+    # Safety: Return zeroed tuple if no numbers are present
+    if not re.search(r"\d", v):
+        return (0, 0, 0, 0)
+
+    # Split base version from pre-release suffix
+
+    parts = v.split("-", 1)
+    base_part = parts[0]
+    pre_part = parts[1] if len(parts) > 1 else None
+
+    # Extract base numbers (major.minor.patch)
+    base_nums = [int(n) for n in re.findall(r"\d+", base_part)]
+    while len(base_nums) < 3:
+        base_nums.append(0)
+
+    if pre_part is None:
+        # Stable Release Logic
+        # If there's already a 4th numeric part (e.g. 1.2.3.4), use it.
+        if len(base_nums) >= 4:
+            return tuple(base_nums[:4])
+        # Otherwise, use a high sentinel (999) so stable > any beta.
+        return (base_nums[0], base_nums[1], base_nums[2], 999)
+    else:
+        # Pre-release Logic
+        # Extract the first number from the pre-release string (e.g. 'beta.1' -> 1)
+        pre_nums = [int(n) for n in re.findall(r"\d+", pre_part)]
+        beta_num = pre_nums[0] if pre_nums else 0
+        # Use the actual number, which is naturally < 999
+        return (base_nums[0], base_nums[1], base_nums[2], beta_num)
 
 
 def check_for_updates(current_version, force=False):

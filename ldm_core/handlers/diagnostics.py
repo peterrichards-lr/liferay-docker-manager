@@ -485,7 +485,7 @@ del "%~f0"
             hints.append({"text": text, "doc": doc})
 
         # 0. Version Check
-        v_display = f"v{VERSION}"
+        v_display = f"v{VERSION}{UI.get_beta_label(VERSION)}"
         if BUILD_INFO:
             v_display += f" ({BUILD_INFO})"
 
