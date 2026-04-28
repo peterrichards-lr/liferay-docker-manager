@@ -62,21 +62,22 @@
 
 ## Gemini Added Memories
 
-- I must update gemini.md before proposing any changes to serve as a persistent state, allowing me to resume my work if an interruption occurs.
-- **Task: Cross-Platform Stabilization & Reporting**
-  - [x] **Hardening**: Implemented self-healing permissions for macOS/Colima.
-  - [x] **Reporting**: Improved macOS version detection and naming (Monterey, Sequoia, Tahoe).
-  - [x] **Reporting**: Automated report naming based on environment slug and status.
-  - [x] **Sync**: Refined `sync_compatibility.py` with robust normalization, Tahoe/Sequoia mapping, and "Failure + Latest Pass" cleanup policy.
-  - [x] **Fix**: Improved Windows self-upgrade and WSL troubleshooting (Docker socket detection).
-  - [x] **Fix**: Implemented proactive Volume Write Test in `ldm doctor`.
-  - [x] **Fix**: Added Colima LaunchAgent detection and tailored hints.
-  - [x] **Fix**: Corrected `mkcert` download URL and added `--fail` to `curl` in `.github/workflows/ci.yml`.
-  - [x] **Fix**: Isolated CI version synchronization check to resolve segmentation fault (exit 139).
-  - [x] **Fix**: Hardened Windows verification script (`.ps1`) and fixed console encoding.
-  - [x] **Fix**: Implemented report archival strategy (moving old reports to `history/` subdirectory).
-  - [x] **Docs**: Updated `TESTING.md` with functional grouping (Automated vs Manual).
-  - [x] **Docs**: Updated `LDM_ARCHITECTURE.md` to reflect proactive health checks and provider detection.
-  - [x] **Release**: Tagged as `v2.4.26-beta.70`.
+- **Status: History Linearized & Build Stabilized (v2.4.26-beta.31)**
+  - [x] **History**: Successfully linearized and professionally re-indexed beta history (v2.4.26-beta.1 through v2.4.26-beta.30).
+  - [x] **Cleanup**: Purged massive git conflict marker pollution across core logic files caused by faulty reconstruction logic.
+  - [x] **Fix (Infra)**: Restored critical infrastructure constants (`ELASTICSEARCH_VERSION`, `TRAEFIK_VERSION`) in `ldm_core/constants.py` that were accidentally overwritten, resolving E2E image pull failures.
+  - [x] **Fix (Core)**: Restored missing `DevHandler` functional mixin to `LiferayManager`, re-enabling `cmd_version` and resolving binary build failures.
+  - [x] **Environment**: Restored `.pre-commit-config.yaml` and verified that local linting hooks are active and passing.
+  - [x] **Release**: Consolidated all improvements and fixes into clean **`v2.4.26-beta.31 [pre-release]`**.
+  - [x] **Remote**: Master branch and tags force-pushed to origin for a clean, accurate baseline.
+
+- **Next Focus: Targeted Environment Verification**
+  - [ ] **Verification**: Execute full E2E verification of `v2.4.26-beta.31` across all target tiers:
+    - macOS Monterey (Intel)
+    - macOS Sequoia/Tahoe (Apple Silicon)
+    - Windows 11 / WSL2
+    - Linux Native (Workstation)
+  - [ ] **Stabilization**: Collect verification reports and address any residual environment-specific edge cases.
+  - [ ] **Promotion**: Move to stable release once all verification tiers are green.
 
 --- End of Context from: /users/peterrichards/.gemini/gemini.md ---
