@@ -359,6 +359,11 @@ def get_parser():
         help="Skip project-specific health checks",
     )
     doctor.add_argument(
+        "--slug",
+        action="store_true",
+        help="Output a machine-readable environment identifier",
+    )
+    doctor.add_argument(
         "--all", action="store_true", help="Run health checks for all projects"
     )
     doctor.add_argument(

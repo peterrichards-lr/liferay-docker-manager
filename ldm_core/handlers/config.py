@@ -2,6 +2,7 @@ import os
 import re
 import json
 import shutil
+import platform
 from pathlib import Path
 from datetime import datetime
 from ldm_core.ui import UI
@@ -503,6 +504,99 @@ class ConfigHandler(BaseHandler):
 
         if host_updates:
             self.update_portal_ext(target_ext, host_updates)
+
+    def cmd_log_level(self, project_id=None):
+        """Manage Liferay internal logging levels via Gogo shell and logging.json."""
+        root = self.detect_project_path(project_id)
+        if not root:
+            return
+
+        meta = self.read_meta(root)
+        port = meta.get("gogo_port")
+        if not port or port == "None":
+            UI.die(
+                "Log-level sync requires Gogo shell to be exposed. "
+                "Run 'ldm run --gogo-port <port>' to enable it."
+            )
+
+        # 1. Determine action from args
+        bundle = getattr(self.args, "bundle", None)
+        category = getattr(self.args, "category", None)
+        level = getattr(self.args, "level", None)
+        remove = getattr(self.args, "remove", False)
+        list_levels = getattr(self.args, "list", False)
+
+        if list_levels:
+            logging_json = root / "logging.json"
+            if not logging_json.exists():
+                UI.info("No custom log levels defined.")
+                return
+            UI.heading(f"Log Levels for {root.name}")
+            print(logging_json.read_text())
+            return
+
+        if not bundle or not category:
+            UI.die("Log-level requires --bundle and --category.")
+
+        # 2. Build Gogo Command
+        # Format: log:set <level> <category>
+        # Liferay Gogo shell 'log:set' often requires the level first
+        if remove:
+            # Revert to default (usually INFO)
+            gogo_cmd = f"log:set INFO {category}\n"
+        else:
+            if not level:
+                UI.die("Log-level requires --level.")
+            gogo_cmd = f"log:set {level} {category}\n"
+
+        # 3. Send to Gogo Shell via nc or ncat
+        nc_bin = shutil.which("nc")
+        ncat_bin = shutil.which("ncat")
+        active_nc = nc_bin or ncat_bin
+
+        if not active_nc:
+            UI.error("Neither 'nc' nor 'ncat' was found.")
+            if platform.system().lower() == "windows":
+                UI.info("Tip: Run 'winget install Insecure.Nmap' to get 'ncat'.")
+            UI.die("Cannot sync log levels without netcat-compatible tool.")
+
+        UI.info(f"Syncing log level to {root.name} (localhost:{port})...")
+        try:
+            # We use a shell piping pattern to feed the command to netcat
+            # echo "log:set ..." | nc localhost <port>
+            import subprocess
+
+            ps = subprocess.Popen(["echo", gogo_cmd], stdout=subprocess.PIPE)
+            subprocess.check_call(
+                [active_nc, "localhost", str(port)], stdin=ps.stdout, timeout=5
+            )
+            ps.wait()
+
+            # 4. Persistence: Update logging.json
+            logging_json = root / "logging.json"
+            log_data = {}
+            if logging_json.exists():
+                try:
+                    log_data = json.loads(logging_json.read_text())
+                except Exception:
+                    pass
+
+            if remove:
+                if bundle in log_data and category in log_data[bundle]:
+                    del log_data[bundle][category]
+                    if not log_data[bundle]:
+                        del log_data[bundle]
+            else:
+                if bundle not in log_data:
+                    log_data[bundle] = {}
+                log_data[bundle][category] = level
+
+            safe_write_text(logging_json, json.dumps(log_data, indent=4))
+            UI.success("Log level updated and persisted.")
+
+        except Exception as e:
+            UI.error(f"Failed to communicate with Gogo shell: {e}")
+            UI.info("Ensure the container is running and the Gogo port is accessible.")
 
     def cmd_config(self, key=None, value=None):
         """View or set global LDM configuration."""

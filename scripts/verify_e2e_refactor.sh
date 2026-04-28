@@ -52,8 +52,15 @@ cleanup_test_projects() {
         capture_logs_on_failure
         echo ""
         echo "!!! VERIFICATION FAILED !!!"
-        echo "--- Dumping Results File ($RESULTS_FILE) ---"
-        cat "$RESULTS_FILE"
+        
+        # Final Rename based on environment slug
+        ENV_SLUG=$("$LDM_CMD" doctor --slug | tr -d '\r')
+        SHORT_HASH=$(echo "$TIMESTAMP" | sha256sum | cut -c1-8)
+        FINAL_NAME="verify-${ENV_SLUG}-fail-${SHORT_HASH}.txt"
+        mv "$RESULTS_FILE" "$(pwd)/$FINAL_NAME"
+
+        echo "--- Dumping Results File ($FINAL_NAME) ---"
+        cat "$FINAL_NAME"
         echo "--- End of Results Dump ---"
     fi
 
@@ -171,4 +178,11 @@ echo "✅ Teardown successful." | tee -a "$RESULTS_FILE"
 
 echo "" >>"$RESULTS_FILE"
 echo "🎯 ALL E2E VERIFICATIONS PASSED!" | tee -a "$RESULTS_FILE"
-echo "Full results available in: $RESULTS_FILE"
+
+# Final Rename based on environment slug
+ENV_SLUG=$("$LDM_CMD" doctor --slug | tr -d '\r')
+SHORT_HASH=$(echo "$TIMESTAMP" | md5sum | cut -c1-8)
+FINAL_NAME="verify-${ENV_SLUG}-pass-${SHORT_HASH}.txt"
+mv "$RESULTS_FILE" "$(pwd)/$FINAL_NAME"
+
+echo "Full results available in: $FINAL_NAME"

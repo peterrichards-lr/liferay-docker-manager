@@ -94,6 +94,30 @@ cd liferay-docker-manager
 - **Python**: 3.10+ (only if running from source)
 - **SSL Tools**: `mkcert` and `openssl` are required for HTTPS support.
 
+### 🪟 Windows Setup & Tools
+
+Windows does not include the networking tools required for LDM log-level synchronization and Gogo shell access by default. Run the following in an **Administrator PowerShell**:
+
+1. **Install Netcat (Ncat)**:
+
+   ```powershell
+   winget install Insecure.Nmap
+   ```
+
+2. **Enable Telnet Client**:
+
+   ```powershell
+   Enable-WindowsOptionalFeature -Online -FeatureName TelnetClient
+   ```
+
+3. **Install SSL Tools** (via [Chocolatey](https://chocolatey.org/) or [Scoop](https://scoop.sh/)):
+
+   ```powershell
+   choco install mkcert openssl
+   # OR
+   scoop install mkcert openssl
+   ```
+
 ### 🍎 Install SSL Tools (macOS)
 
 **Using [Homebrew](https://brew.sh/):**
