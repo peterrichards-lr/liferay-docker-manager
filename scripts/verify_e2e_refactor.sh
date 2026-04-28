@@ -23,7 +23,8 @@ HOSTNAME=$(hostname)
 TIMESTAMP=$(date +%Y%m%d-%H%M%S)
 
 # IMPORTANT: Keep RESULTS_FILE_TMP in ORIGINAL_PWD so it isn't deleted by work-dir cleanup
-RESULTS_FILE_TMP="${ORIGINAL_PWD}/ldm-verify-in-progress-${TIMESTAMP}.txt"
+# Use a specific prefix to avoid glob matches with other files
+RESULTS_FILE_TMP="${ORIGINAL_PWD}/.ldm-verify-tmp-${TIMESTAMP}.txt"
 
 {
     echo "=== LDM BINARY VERIFICATION REPORT ==="
@@ -53,7 +54,6 @@ get_hash() {
 capture_logs_on_failure() {
     echo "" >>"$RESULTS_FILE_TMP"
     echo "--- FAILURE DEBUG LOGS ---" >>"$RESULTS_FILE_TMP"
-    # We only log relevant containers for this test
     for container in liferay-proxy-global liferay-search-global ldm-smoke-test ldm-smoke-test-db-1; do
         if docker ps -a | grep -q "$container"; then
             echo ">> Logs for $container:" >>"$RESULTS_FILE_TMP"
@@ -87,10 +87,10 @@ cleanup_test_projects() {
     
     local short_hash
     short_hash=$(get_hash "$TIMESTAMP")
-    
     local final_name="verify-${env_slug}-${status}-${short_hash}.txt"
     local final_path="${ORIGINAL_PWD}/${final_name}"
 
+    # Move report to final location BEFORE deleting the work dir
     if [ -f "$RESULTS_FILE_TMP" ]; then
         mv "$RESULTS_FILE_TMP" "$final_path"
         echo ""
@@ -98,22 +98,16 @@ cleanup_test_projects() {
         echo "✅ Verification Complete ($status)"
         echo "📊 Results: $final_name"
         echo "================================================================"
-        
-        if [ $EXIT_CODE -ne 0 ]; then
-            echo "--- Dumping failure report content ---"
-            cat "$final_path"
-            echo "--- End of report dump ---"
-        fi
     fi
 
     echo "🧹 Cleaning up test artifacts..."
-    # TARGETED cleanup: only remove what we created
+    # SURGICAL cleanup: only remove what we created
     # 1. Infrastructure containers
     docker rm -f liferay-proxy-global liferay-search-global liferay-docker-proxy smoke-test-app 2>/dev/null || true
     
     # 2. Project stack via LDM (this handles volumes and registry cleanup)
-    # We use -y to avoid confirmation prompts
-    "$LDM_CMD" -y rm ldm-smoke-test --delete 2>/dev/null || true
+    # We ensure LDM_WORKSPACE is set to the isolated work dir so it doesn't touch other projects
+    LDM_WORKSPACE="${ORIGINAL_PWD}/e2e-work-dir" "$LDM_CMD" -y rm ldm-smoke-test --delete >/dev/null 2>&1 || true
     
     # 3. Isolated work directory
     if [ -d "${ORIGINAL_PWD}/e2e-work-dir" ]; then
@@ -165,11 +159,6 @@ log_and_run() {
     # Execute and capture
     if ! "$@" 2>&1 | tee "$tmp_output"; then
         cat "$tmp_output" >> "$RESULTS_FILE_TMP"
-        # Only fail if it's NOT a "not found" error during cleanup (Step 0)
-        if echo "$*" | grep -q "rm" && grep -qi "not found" "$tmp_output"; then
-             rm -f "$tmp_output"
-             return 0
-        fi
         echo "❌ ERROR: Command failed with exit code $?: $*" | tee -a "$RESULTS_FILE_TMP"
         rm -f "$tmp_output"
         exit 1
@@ -178,7 +167,7 @@ log_and_run() {
     cat "$tmp_output" >> "$RESULTS_FILE_TMP"
     
     # Scan for FATAL or specific LDM error markers that should trigger a script failure
-    # We ignore "Project ... not found" during cleanup (Step 0)
+    # We ignore standard "not found" or "already in sync" messages
     if grep -Ei "FATAL|❌|ERROR:" "$tmp_output" | grep -v "ℹ" | grep -v ">>" | grep -vEi "not found|already in sync" > /dev/null; then
         echo "❌ ERROR: Critical failure detected in output of command: $*" | tee -a "$RESULTS_FILE_TMP"
         rm -f "$tmp_output"
@@ -196,10 +185,12 @@ echo "--- Capturing Environment State ---" | tee -a "$RESULTS_FILE_TMP"
     echo "--- Test Execution Log ---"
 } >>"$RESULTS_FILE_TMP" 2>&1
 
-# 1. Prepare a Clean Slate (TARGETED)
+# 1. Prepare a Clean Slate (SURGICAL)
 echo "--- Step 0: Targeted Cleanup ---" | tee -a "$RESULTS_FILE_TMP"
-# We don't fail if the project isn't found here
-log_and_run "Removing test resources" "$LDM_CMD" -y rm ldm-smoke-test --delete --infra
+# Silence "not found" errors to keep output clean
+"$LDM_CMD" -y rm ldm-smoke-test --delete --infra >/dev/null 2>&1 || true
+docker rm -f liferay-proxy-global liferay-search-global liferay-docker-proxy 2>/dev/null || true
+echo "✅ Clean slate established." | tee -a "$RESULTS_FILE_TMP"
 
 # 2. Global Infra Setup
 echo "--- Step 1: Global Infra Setup ---"
@@ -207,7 +198,6 @@ log_and_run "Initializing Infrastructure" "$LDM_CMD" -y infra-setup --search
 
 # 3. Project Lifecycle
 echo "--- Step 2: Project Run ---"
-# Explain where we are copying from
 echo "ℹ  Provisioning test project 'ldm-smoke-test' from template..." | tee -a "$RESULTS_FILE_TMP"
 cp -r "$TEMPLATE_SRC" "$LDM_WORKSPACE/ldm-smoke-test"
 cd "$LDM_WORKSPACE/ldm-smoke-test"
