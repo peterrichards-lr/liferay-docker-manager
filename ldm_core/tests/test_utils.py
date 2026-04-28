@@ -125,7 +125,7 @@ class TestUtils(unittest.TestCase):
         import tempfile
 
         with tempfile.TemporaryDirectory() as tmp_dir:
-            meta_path = Path(tmp_dir) / ".meta"
+            meta_path = Path(tmp_dir) / "project.meta"
             data = {"tag": "2025.q1.0", "container_name": "my-test", "key": "value"}
 
             # Write and Read

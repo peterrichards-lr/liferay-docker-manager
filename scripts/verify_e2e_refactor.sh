@@ -133,6 +133,13 @@ if ! docker ps | grep -q "liferay-search-global"; then
     exit 1
 fi
 
+# Verify search backup repository is registered
+if ! docker exec liferay-search-global curl -s localhost:9200/_snapshot/liferay_backup | grep -q "liferay_backup"; then
+    echo "❌ ERROR: Global Search backup repository not registered" | tee -a "$RESULTS_FILE"
+    exit 1
+fi
+echo "✅ Global Search backup repository verified." | tee -a "$RESULTS_FILE"
+
 # 2. Project Lifecycle
 echo "--- Step 2: Project Run ---"
 cp -r "$TEMPLATE_SRC" "$LDM_WORKSPACE/ldm-smoke-test"

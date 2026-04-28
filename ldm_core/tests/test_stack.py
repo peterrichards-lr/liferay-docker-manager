@@ -151,14 +151,18 @@ class TestStackInfrastructure(unittest.TestCase):
             mock_run.side_effect = [
                 "",  # 1. ps -a name=liferay-search-global
                 "",  # 2. docker run ...
-                '{"cluster_name": "liferay-cluster"}',  # 3. health check (readiness)
-                "OK",  # 4. PUT snapshot
-                "",  # 5. elasticsearch-plugin list
-                "OK",  # 6. install 1
-                "OK",  # 7. install 2
-                "OK",  # 8. install 3
-                "OK",  # 9. install 4
-                "OK",  # 10. docker restart
+                "reclaimed_data",  # 3. _reclaim_permissions (data)
+                "reclaimed_backup",  # 4. _reclaim_permissions (backup)
+                '{"cluster_name": "liferay-cluster"}',  # 5. health check (readiness)
+                "OK",  # 6. PUT snapshot
+                "",  # 7. elasticsearch-plugin list
+                "OK",  # 8. install 1
+                "OK",  # 9. install 2
+                "OK",  # 10. install 3
+                "OK",  # 11. install 4
+                "OK",  # 12. docker restart
+                '{"cluster_name": "liferay-cluster"}',  # 13. health check after restart
+                "OK",  # 14. repo registration check (end of method)
             ]
 
             self.manager.setup_global_search()
@@ -330,8 +334,10 @@ class TestStackOrchestration(unittest.TestCase):
         tag = "2025.q1.0"
         db_type = "mysql"
         search_mode = "shared"
+        self.manager.non_interactive = True
 
         with (
+            patch("ldm_core.ui.UI.NON_INTERACTIVE", True),
             patch(
                 "ldm_core.handlers.assets.get_actual_home",
                 return_value=Path("/tmp/home"),

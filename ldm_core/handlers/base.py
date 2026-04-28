@@ -782,6 +782,47 @@ class BaseHandler:
             "compose": root / "docker-compose.yml",
         }
 
+    def _reclaim_permissions(self, path):
+        """Forces ownership and permissions of a directory via Docker (Linux/macOS)."""
+        system_type = platform.system().lower()
+        if system_type not in ["darwin", "linux"]:
+            return True
+
+        if not path.exists():
+            return True
+
+        parent = path.parent.resolve()
+        rel_target = path.name
+        current_uid = os.getuid() if hasattr(os, "getuid") else 1000
+        current_gid = os.getgid() if hasattr(os, "getgid") else 1000
+
+        docker_cmd = (
+            f"chown -R {current_uid}:{current_gid} /workspace/{rel_target} 2>/dev/null || true; "
+            f"chmod -R 777 /workspace/{rel_target} 2>/dev/null || true; "
+        )
+
+        try:
+            self.run_command(
+                [
+                    "docker",
+                    "run",
+                    "--rm",
+                    "-v",
+                    f"{parent.as_posix()}:/workspace",
+                    "alpine",
+                    "sh",
+                    "-c",
+                    docker_cmd,
+                ],
+                check=False,
+                capture_output=True,
+            )
+            return True
+        except Exception as e:
+            if self.verbose:
+                UI.debug(f"Failed to reclaim permissions for {path}: {e}")
+            return False
+
     def verify_runtime_environment(self, paths):
         """Verifies volume mounts and synchronizes permissions across the project root."""
         # Safety: If passed a direct path (common error in refactored handlers), initialize paths dict
@@ -814,37 +855,35 @@ class BaseHandler:
                     UI.debug(f"Could not create mount-check token (ignoring): {e}")
                 token_val = "SKIP"  # nosec B105
 
-            current_uid = os.getuid() if hasattr(os, "getuid") else 1000
-            current_gid = os.getgid() if hasattr(os, "getgid") else 1000
-
             try:
                 # HARDENING: Mount the parent directory to ensure we can definitely
                 # fix permissions and ownership for the project root directory itself.
-                # Mount propagation can sometimes block chown on the mount point itself.
                 parent = root.parent.resolve()
                 rel_root = root.name
 
-                # Aggressive sub-directory creation and reclamation
-                # We specifically ensure the root directory (/workspace/{rel_root}) is chowned/chmodded
+                # Aggressive sub-directory creation
                 docker_cmd = (
                     f"mkdir -p /workspace/{rel_root}/data /workspace/{rel_root}/deploy /workspace/{rel_root}/files "
+<<<<<<< HEAD
                     f"/workspace/{rel_root}/osgi/state /workspace/{rel_root}/osgi/configs /workspace/{rel_root}/osgi/modules "
                     f"/workspace/{rel_root}/routes /workspace/{rel_root}/snapshots 2>/dev/null || true; "
                     f"chown -R {current_uid}:{current_gid} /workspace/{rel_root} 2>/dev/null || true; "
                     f"chmod -R 777 /workspace/{rel_root} 2>/dev/null || true; "
                     f"chmod 777 /workspace/{rel_root} 2>/dev/null || true; "
+=======
+                    f"/workspace/{rel_root}/logs /workspace/{rel_root}/osgi/state /workspace/{rel_root}/osgi/configs "
+                    f"/workspace/{rel_root}/osgi/modules /workspace/{rel_root}/routes /workspace/{rel_root}/snapshots 2>/dev/null || true; "
+>>>>>>> 24fb006 (fix: resolve E2E verification regressions, infra permissions, and stabilize unit tests [pre-release])
                 )
 
                 if token_val != "SKIP":  # nosec B105
-                    docker_cmd = (
+                    docker_cmd += (
                         f'if [ "$(cat /workspace/{rel_root}/.ldm_mount_check 2>/dev/null)" = "{token_val}" ]; then '
-                        f"{docker_cmd}"
                         f"if touch /workspace/{rel_root}/.ldm_write_test 2>/dev/null; then echo 'OK'; else echo 'NO_WRITE'; fi; "
                         f"else echo 'FAIL'; fi"
                     )
                 else:
-                    # In SKIP mode, we just do our best and assume success if the command finishes
-                    docker_cmd = f"{docker_cmd} echo 'OK'"
+                    docker_cmd += " echo 'OK'"
 
                 verify_res = self.run_command(
                     [
@@ -861,6 +900,7 @@ class BaseHandler:
                 )
 
                 if "OK" not in (verify_res or ""):
+                    # ... (rest of error handling) ...
                     if "NO_WRITE" in (verify_res or ""):
                         UI.error("\n❌ FATAL: VOLUME MOUNT IS READ-ONLY")
                         UI.info(
@@ -892,6 +932,9 @@ class BaseHandler:
 
                 if system_type == "darwin" and self.verbose:
                     UI.success("Volume mounts verified and permissions synchronized.")
+
+                # Final reclamation to ensure the root and all its new subdirs are accessible
+                self._reclaim_permissions(root)
             except Exception as e:
                 if self.verbose:
                     UI.warning(f"Could not verify mounts automatically: {e}")
