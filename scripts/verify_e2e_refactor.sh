@@ -172,7 +172,8 @@ log_and_run() {
     cat "$tmp_output" >> "$RESULTS_FILE_TMP"
     
     # Scan for FATAL or specific LDM error markers that should trigger a script failure
-    if grep -Ei "FATAL|❌|ERROR:" "$tmp_output" | grep -v "ℹ" | grep -v ">>" > /dev/null; then
+    # We ignore "Project ... not found" during cleanup (Step 0)
+    if grep -Ei "FATAL|❌|ERROR:" "$tmp_output" | grep -v "ℹ" | grep -v ">>" | grep -v "not found" > /dev/null; then
         echo "❌ ERROR: Critical failure detected in output of command: $*" | tee -a "$RESULTS_FILE_TMP"
         rm -f "$tmp_output"
         exit 1
@@ -191,6 +192,7 @@ echo "--- Capturing Environment State ---" | tee -a "$RESULTS_FILE_TMP"
 
 # 1. Prepare a Clean Slate (TARGETED)
 echo "--- Step 0: Targeted Cleanup ---" | tee -a "$RESULTS_FILE_TMP"
+# We don't fail if the project isn't found here
 log_and_run "Removing test resources" "$LDM_CMD" -y rm ldm-smoke-test --delete --infra
 
 # 2. Global Infra Setup
