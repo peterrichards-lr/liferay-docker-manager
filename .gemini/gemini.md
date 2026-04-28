@@ -273,14 +273,19 @@ This file serves as the persistent state and technical knowledge base for the AI
 =======
   - [x] **Fix**: Isolated CI version synchronization check to resolve segmentation fault (exit 139).
   - [x] **Fix**: Hardened Windows verification script (`.ps1`) and fixed console encoding.
+  - [x] **Fix**: Implemented report archival strategy (moving old reports to `history/` subdirectory).
   - [x] **Docs**: Updated `TESTING.md` with functional grouping (Automated vs Manual).
   - [x] **Docs**: Updated `LDM_ARCHITECTURE.md` to reflect proactive health checks and provider detection.
+<<<<<<< HEAD
 <<<<<<< HEAD
   - [x] **Release**: Tagged as `v2.4.26-beta.67`.
 >>>>>>> f6ed162 (docs: restructure TESTING.md and update architecture doc)
 =======
   - [x] **Release**: Tagged as `v2.4.26-beta.69`.
 >>>>>>> 712a3cd (fix: implement pass-only cleanup policy and Tahoe mapping)
+=======
+  - [x] **Release**: Tagged as `v2.4.26-beta.70`.
+>>>>>>> 553eaec (fix: implement report archival strategy and clean up compatibility table)
 
 >>>>>>> 8b0a863 (feat: implement DNS cleanup and stable tier safety hatch [pre-release])
 --- End of Context from: /users/peterrichards/.gemini/gemini.md ---
