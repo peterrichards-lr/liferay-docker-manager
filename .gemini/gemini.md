@@ -87,9 +87,8 @@
   - [x] **Fix**: Targeted cleanup in `verify_e2e_refactor.sh` to prevent accidental deletion of unrelated projects and report files.
   - [x] **Reporting**: Refined `sync_compatibility.py` to eliminate "Unknown" entries and improved fallback detection for Apple Silicon/Intel.
   - [x] **Reporting**: Improved macOS version detection (mapping Darwin major to macOS major) and updated compatibility table header.
-  - [x] **Fix**: Restored Apple Silicon/Intel detection in `ldm doctor --slug`.
-  - [x] **Fix**: Improved `verify_e2e_refactor.sh` robustness (ignore "not found" during cleanup).
-  - [x] **Fix**: Improved Windows self-upgrade cleanup to avoid "batch file cannot be found" error.
-  - [x] **Release**: Tagged as `v2.4.26-beta.50`.
+  - [x] **Reporting**: Updated compatibility table title to indicate "Standalone Binaries".
+  - [x] **Fix**: Improved `verify_e2e_refactor.sh` to explicitly mention project template source and handle cleanup "not found" silently.
+  - [x] **Release**: Tagged as `v2.4.26-beta.51`.
 
 --- End of Context from: /users/peterrichards/.gemini/gemini.md ---
