@@ -187,9 +187,14 @@ echo "--- Capturing Environment State ---" | tee -a "$RESULTS_FILE_TMP"
 
 # 1. Prepare a Clean Slate (SURGICAL)
 echo "--- Step 0: Targeted Cleanup ---" | tee -a "$RESULTS_FILE_TMP"
-# Silence "not found" errors to keep output clean
-"$LDM_CMD" -y rm ldm-smoke-test --delete --infra >/dev/null 2>&1 || true
-docker rm -f liferay-proxy-global liferay-search-global liferay-docker-proxy 2>/dev/null || true
+# We completely silence this step to avoid confusing "not found" messages in the terminal,
+# but we still log the attempt to the results file for completeness.
+{
+    echo ">> Preparing clean slate (removing project and infra if they exist)"
+    "$LDM_CMD" -y rm ldm-smoke-test --delete --infra
+    docker rm -f liferay-proxy-global liferay-search-global liferay-docker-proxy
+} >>"$RESULTS_FILE_TMP" 2>&1 || true
+
 echo "✅ Clean slate established." | tee -a "$RESULTS_FILE_TMP"
 
 # 2. Global Infra Setup
