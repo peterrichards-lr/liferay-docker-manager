@@ -672,6 +672,16 @@ pause
         def add_hint(text, doc=None):
             hints.append({"text": text, "doc": doc})
 
+        # Detect WSL early for troubleshooting logic
+        is_wsl = False
+        if platform.system().lower() == "linux":
+            try:
+                with open("/proc/version", "r") as f:
+                    if "microsoft" in f.read().lower():
+                        is_wsl = True
+            except Exception:
+                pass
+
         # 0. Version Check
         v_display = f"v{VERSION}{UI.get_beta_label(VERSION)}"
         if BUILD_INFO:
@@ -773,11 +783,34 @@ pause
 
             # 2.0 Docker Context & Provider Check
             try:
-                context = run_command(["docker", "context", "show"], check=False)
+                context = (
+                    self.run_command(["docker", "context", "show"], check=False) or ""
+                ).strip()
                 if context:
-                    context = context.strip()
                     results.append(("Docker Context", context, True))
-                    results.append(("Docker Provider", provider, True))
+
+                # Identify Provider
+                if is_wsl:
+                    if context in ["desktop-linux", "docker-desktop"]:
+                        provider = "Docker Desktop"
+                    elif context == "default":
+                        # If default, check if endpoint is local or redirected
+                        inspect = self.run_command(
+                            ["docker", "context", "inspect", "default"], check=False
+                        )
+                        if "docker-desktop" in str(inspect).lower():
+                            provider = "Docker Desktop"
+                        else:
+                            provider = "Native WSL2"
+                elif platform.system().lower() == "darwin":
+                    if context == "colima":
+                        provider = "Colima"
+                    elif context == "orbstack":
+                        provider = "OrbStack"
+                    elif context in ["desktop-linux", "default"]:
+                        provider = "Docker Desktop"
+
+                results.append(("Docker Provider", provider, True))
             except Exception:
                 pass
 
@@ -820,6 +853,14 @@ pause
                 "If Docker is running but LDM cannot connect, ensure your user is in the 'docker' group.",
                 "https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/installation.md#linux--wsl-docker-permissions",
             )
+            if is_wsl:
+                add_hint(
+                    "WSL: To use Native Docker, run: 'sudo service docker start'",
+                    "https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/installation.md#wsl2-native-docker",
+                )
+                add_hint(
+                    "WSL: To use Docker Desktop, ensure 'WSL Integration' is enabled in the Docker Desktop dashboard."
+                )
 
         # 3. mkcert Check
         mkcert_status, mkcert_ok, ca_root = self.check_mkcert()
