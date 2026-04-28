@@ -58,6 +58,12 @@ else
 	error "shfmt not found. Install with: brew install shfmt"
 fi
 
+# 3.1 PowerShell (PSScriptAnalyzer)
+if command -v pwsh &>/dev/null; then
+	info "Linting PowerShell scripts (PSScriptAnalyzer)..."
+	pwsh -Command "if (Get-Module -ListAvailable PSScriptAnalyzer) { Invoke-ScriptAnalyzer -Path '$SCRIPT_DIR/scripts' -Recurse | Where-Object Severity -eq 'Error' } else { Write-Warning 'PSScriptAnalyzer module not found.' }" || EXIT_CODE=1
+fi
+
 # 4. Security (Bandit)
 info "Running Security Scan (Bandit)..."
 if [ -d "$VENV_PATH" ]; then

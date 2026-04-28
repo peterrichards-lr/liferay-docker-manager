@@ -278,6 +278,7 @@ This file serves as the persistent state and technical knowledge base for the AI
   - [x] **Fix**: Isolated CI version synchronization check to resolve segmentation fault (exit 139).
   - [x] **Fix**: Hardened Windows verification script (`.ps1`) and fixed console encoding.
   - [x] **Fix**: Resolved syntax error in `verify_e2e_refactor.ps1` caused by omission placeholders.
+<<<<<<< HEAD
   - [x] **Docs**: Updated `TESTING.md` with functional grouping (Automated vs Manual).
   - [x] **Docs**: Updated `LDM_ARCHITECTURE.md` to reflect proactive health checks and provider detection.
 <<<<<<< HEAD
@@ -294,6 +295,10 @@ This file serves as the persistent state and technical knowledge base for the AI
 =======
   - [x] **Release**: Tagged as `v2.4.26-beta.74`.
 >>>>>>> cddaea0 (fix: resolve syntax error in verify_e2e_refactor.ps1)
+=======
+  - [x] **Hardening**: Integrated `PSScriptAnalyzer` into `lint.sh` and GitHub CI to prevent PowerShell syntax regressions.
+  - [x] **Release**: Tagged as `v2.4.26-beta.75`.
+>>>>>>> f20a63f (fix: integrate PSScriptAnalyzer into CI and local linting)
 
 >>>>>>> 8b0a863 (feat: implement DNS cleanup and stable tier safety hatch [pre-release])
 --- End of Context from: /users/peterrichards/.gemini/gemini.md ---
