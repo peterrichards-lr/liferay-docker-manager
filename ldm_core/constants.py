@@ -1,8 +1,8 @@
 from pathlib import Path
 
 # --- Constants & Configuration ---
-# LDM_MAGIC_VERSION: 2.4.26-beta.22
-VERSION = "2.4.26-beta.22"
+# LDM_MAGIC_VERSION: 2.4.26-beta.23
+VERSION = "2.4.26-beta.23"
 
 
 BUILD_INFO = None
@@ -13,15 +13,15 @@ API_BASE_PORTAL = "https://hub.docker.com/v2/repositories/liferay/portal/tags?pa
 LIFERAY_PRODUCT_INFO_URL = (
     "https://releases-cdn.liferay.com/tools/workspace/.product_info.json"
 )
-META_VERSION = "2.4.26-beta.22"
+META_VERSION = "2.4.26-beta.23"
 MIN_META_VERSION = 2
 PROJECT_META_FILE = "meta"
 REGISTRY_FILE = "registry.json"
 TAG_PATTERN = r"^\d{4}\.q[1-4]\.\d+(-u\d+|-lts)?$"
 SCRIPT_DIR = Path(__file__).parent.parent.resolve()
-ELASTICSEARCH_VERSION = "2.4.26-beta.22"
-ELASTICSEARCH7_VERSION = "2.4.26-beta.22"
-TRAEFIK_VERSION = "2.4.26-beta.22"
+ELASTICSEARCH_VERSION = "2.4.26-beta.23"
+ELASTICSEARCH7_VERSION = "2.4.26-beta.23"
+TRAEFIK_VERSION = "2.4.26-beta.23"
 SOCAT_IMAGE = "alpine/socat"
 
 # --- Orchestration Configuration ---
@@ -103,7 +103,7 @@ RUN_ATTRS = [
 # --- Seeded State Configuration ---
 # Increment this version whenever the logic for generating seeds changes
 # (e.g. DB schema changes, driver updates, or hardening logic).
-SEED_VERSION = "2.4.26-beta.22"
+SEED_VERSION = "2.4.26-beta.23"
 
 # --- Sample Extension Hashes (SHA-256) ---
 SAMPLE_HASHES = {
