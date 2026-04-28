@@ -74,8 +74,7 @@ jobs:
       - name: Verify Version Sync
         shell: bash
         run: |
-          export LDM_DEV_MODE=true
-          python3 liferay_docker.py version --check
+          python3 scripts/check_version_sync.py
 
       - name: Run unit tests
         shell: bash
