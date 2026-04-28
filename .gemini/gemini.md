@@ -334,7 +334,15 @@ This file serves as the persistent state and technical knowledge base for the AI
   - [x] **Fix**: Resolved syntax error in `verify_e2e_refactor.ps1` caused by omission placeholders.
   - [x] **Hardening**: Integrated `PSScriptAnalyzer` into CI and ensured build failure on PowerShell syntax errors.
   - [x] **Release**: Tagged as `v2.4.26-beta.79`.
+<<<<<<< HEAD
 >>>>>>> f586913 (fix: resolve syntax error in verify_e2e_refactor.ps1 and harden CI linting)
+=======
+- **Key Knowledge**:
+  - **Provider Mapping**: Docker Desktop is strictly reserved for Windows 11 environments in our verification suite. On macOS, any `default` or `colima` context is mapped to **Colima** for reporting.
+  - **Archival Strategy**: `references/verification-results/` contains only the single latest report per environment; all older or redundant "Unknown" reports are moved to `history/`.
+- **Next Objective**:
+  - [ ] **Feature**: Verify Elasticsearch 8 snapshot/restore logic using the `SnapshotState` mapping context to ensure cross-platform compatibility (mapping SUCCESS, FAILED, etc. correctly).
+>>>>>>> 3d10163 (docs: add next focus and key environment knowledge to gemini.md)
 
 >>>>>>> 8b0a863 (feat: implement DNS cleanup and stable tier safety hatch [pre-release])
 --- End of Context from: /users/peterrichards/.gemini/gemini.md ---
