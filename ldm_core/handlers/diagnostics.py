@@ -760,7 +760,7 @@ del "%~f0"
                 "https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/installation.md#prerequisites",
             )
 
-        # 4.1 Required Tools & Path Integrity
+        # 4.1 Core Orchestration Tools & Path Integrity
         tool_list = [
             ("docker", shutil.which("docker")),
             ("mkcert", shutil.which("mkcert")),
@@ -768,8 +768,6 @@ del "%~f0"
             ("telnet", shutil.which("telnet")),
             ("nc", shutil.which("nc")),
             ("lcp", shutil.which("lcp")),
-            ("mysql", shutil.which("mysql")),
-            ("psql", shutil.which("psql")),
         ]
 
         # Add Docker Compose (detect if it's the plugin or standalone)
@@ -788,6 +786,24 @@ del "%~f0"
                     results.append((f"Path: {tool_name}", "Not Found", "warn"))
                 else:
                     results.append((f"Path: {tool_name}", "Not Found", False))
+
+        # 4.1.5 Optional Database Clients (Recommended for developers)
+        # Note: LDM uses 'docker exec' for snapshots, so local clients are NOT required for LDM operations.
+        for db_tool in ["mysql", "psql"]:
+            tool_path = shutil.which(db_tool)
+            if tool_path:
+                results.append((f"Client: {db_tool}", str(tool_path), True))
+            else:
+                results.append(
+                    (
+                        f"Client: {db_tool}",
+                        f"{UI.WHITE}Not installed{UI.COLOR_OFF}",
+                        "warn",
+                    )
+                )
+                add_hint(
+                    f"Optional: Install '{db_tool}' on your host to manually inspect databases from outside Docker."
+                )
 
         # 4.2 Legacy Compatibility Checks (Maintain existing summary lines)
         telnet_bin = shutil.which("telnet")
@@ -1079,7 +1095,9 @@ del "%~f0"
                         except Exception:
                             pass
 
-                    log_status, log_ok = self._check_container_health_logs(container)
+                    log_status, log_ok = self._check_container_health_logs(
+                        container, add_hint=add_hint
+                    )
                     if log_status:
                         status = log_status
                         ok = log_ok
@@ -2152,7 +2170,7 @@ del "%~f0"
         except Exception as e:
             return f"Check Failed ({e})", "warn", [str(e)]
 
-    def _check_container_health_logs(self, container_name, tail=20):
+    def _check_container_health_logs(self, container_name, add_hint=None, tail=20):
         """Checks the last N lines of container logs for errors or warnings."""
         try:
             # We capture BOTH stdout and stderr
@@ -2210,6 +2228,14 @@ del "%~f0"
                         "clusterblockexception" in line_lower
                         and "state not recovered" in line_lower
                     ):
+                        continue
+                    # 5. Detect Disk Pressure (Flood Stage)
+                    if "flood stage disk watermark" in line_lower:
+                        if add_hint:
+                            add_hint(
+                                "Elasticsearch disk pressure detected! Reclaim space or move Docker to a different drive.",
+                                "https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/TROUBLESHOOTING.md#moving-docker-to-an-external-drive-macos--colima",
+                            )
                         continue
 
                     return f"Critical (Error in logs: {line.strip()[:40]}...)", False

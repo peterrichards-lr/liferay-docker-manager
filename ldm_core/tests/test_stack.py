@@ -149,16 +149,16 @@ class TestStackInfrastructure(unittest.TestCase):
         ):
             # Existence check: No container
             mock_run.side_effect = [
-                "",  # ps -a name=liferay-search-global
-                "",  # ps name=liferay-search-global
-                "{}",  # head readiness check
-                "{}",  # head readiness check
-                "OK",  # PUT snapshot
-                "",  # elasticsearch-plugin list
-                "OK",  # install 1
-                "OK",  # install 2
-                "OK",  # install 3
-                "OK",  # install 4
+                "",  # 1. ps -a name=liferay-search-global
+                "",  # 2. docker run ...
+                '{"cluster_name": "liferay-cluster"}',  # 3. health check (readiness)
+                "OK",  # 4. PUT snapshot
+                "",  # 5. elasticsearch-plugin list
+                "OK",  # 6. install 1
+                "OK",  # 7. install 2
+                "OK",  # 8. install 3
+                "OK",  # 9. install 4
+                "OK",  # 10. docker restart
             ]
 
             self.manager.setup_global_search()

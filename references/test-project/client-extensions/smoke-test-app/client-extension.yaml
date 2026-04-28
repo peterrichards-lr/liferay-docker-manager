@@ -1,0 +1,7 @@
+assemble:
+    - from: build
+      include: "*.jar"
+      into: lib
+image: "alpine"
+name: Smoke Test Deployment
+type: microservice

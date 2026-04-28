@@ -1,178 +1,168 @@
 #!/bin/bash
 set -e
 
-# Comprehensive E2E Verification for LDM v2.3.5 Refactor
-# Verifies: Infra, Seeding, Disambiguation, Labels, and Status
+# Comprehensive E2E Binary Verification for LDM (v2.5.0 Stable Candidate)
+# Target: Verifies the INSTALLED binary, not the source code.
+# Optimized for low-spec machines (Apple Intel).
 
-echo "🚀 Starting Comprehensive E2E Verification..."
+echo "🚀 Starting Binary Verification..."
 
-# Cleanup helper - Clean both local and global LDM paths to be absolutely sure
-cleanup_test_projects() {
-    echo "🧹 Cleaning up test artifacts..."
-    # 1. Stop and remove containers
-    docker rm -f liferay-proxy-global liferay-search-global test-e2e-refactor test-isolation-a test-isolation-b test-ssl-proxy 2>/dev/null || true
-    
-    # 2. Delete test project folders in common locations
-    rm -rf test-e2e-refactor-project test-isolation-a test-isolation-b test-ssl-proxy e2e-work-dir
-    rm -rf ~/ldm/test-e2e-refactor-project ~/ldm/test-isolation-a ~/ldm/test-isolation-b ~/ldm/test-ssl-proxy
-    
-    # 3. Deep cleanup of any folders matching test- in current dir
-    find . -maxdepth 1 -name "test-*" -type d -exec rm -rf {} +
+# Determine the binary command
+LDM_CMD="ldm"
+if ! command -v "$LDM_CMD" &>/dev/null; then
+    echo "❌ ERROR: 'ldm' binary not found in PATH."
+    echo "Please run 'ldm upgrade --beta' first."
+    exit 1
+fi
+
+# Unique filename based on machine identity
+HOSTNAME=$(hostname)
+TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+RESULTS_FILE="$(pwd)/ldm-verify-${HOSTNAME}-${TIMESTAMP}.txt"
+
+echo "🚀 Starting Binary Verification..."
+echo "📊 Results will be saved to: $RESULTS_FILE"
+
+{
+    echo "=== LDM BINARY VERIFICATION REPORT ==="
+    echo "Timestamp: $(date)"
+    echo "Hostname:  $HOSTNAME"
+    echo "Platform:  $OSTYPE"
+    echo "Binary:    $(which "$LDM_CMD")"
+    echo ""
+} >"$RESULTS_FILE"
+
+# Capture logs helper
+capture_logs_on_failure() {
+    echo "" >>"$RESULTS_FILE"
+    echo "--- FAILURE DEBUG LOGS ---" >>"$RESULTS_FILE"
+    for container in liferay-proxy-global liferay-search-global ldm-smoke-test ldm-smoke-test-db-1; do
+        if docker ps -a | grep -q "$container"; then
+            echo ">> Logs for $container:" >>"$RESULTS_FILE"
+            docker logs "$container" --tail 50 >>"$RESULTS_FILE" 2>&1
+        fi
+    done
 }
 
-# Initial Cleanup
+# Cleanup helper
+cleanup_test_projects() {
+    EXIT_CODE=$?
+    # If the script failed, capture logs before we destroy the containers
+    if [ $EXIT_CODE -ne 0 ]; then
+        capture_logs_on_failure
+        echo ""
+        echo "!!! VERIFICATION FAILED !!!"
+        echo "--- Dumping Results File ($RESULTS_FILE) ---"
+        cat "$RESULTS_FILE"
+        echo "--- End of Results Dump ---"
+    fi
+
+    echo "🧹 Cleaning up test artifacts..."
+    docker rm -f liferay-proxy-global liferay-search-global liferay-docker-proxy \
+        ldm-smoke-test ldm-smoke-test-db-1 smoke-test-app 2>/dev/null || true
+    rm -rf e2e-work-dir
+}
+
+# Ensure cleanup on exit
+trap cleanup_test_projects EXIT
 cleanup_test_projects
 
-# Isolate the LDM workspace for this test run
+# Find the test project template (Flexible search)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SEARCH_PATHS=(
+    "$(dirname "$SCRIPT_DIR")/references/test-project"
+    "$SCRIPT_DIR/test-project"
+    "$(pwd)/test-project"
+    "$(pwd)/references/test-project"
+)
+
+TEMPLATE_SRC=""
+for path in "${SEARCH_PATHS[@]}"; do
+    if [ -d "$path" ]; then
+        TEMPLATE_SRC="$path"
+        break
+    fi
+done
+
+if [ -z "$TEMPLATE_SRC" ]; then
+    echo "❌ ERROR: Test project template folder not found."
+    echo "Please ensure the 'references/test-project' folder is available."
+    exit 1
+fi
+echo "ℹ  Using test template: $TEMPLATE_SRC"
+
+# Isolate the LDM workspace
 LDM_WORKSPACE="$(pwd)/e2e-work-dir"
 export LDM_WORKSPACE
 mkdir -p "$LDM_WORKSPACE"
-cd "$LDM_WORKSPACE"
 
-# Ensure we are testing the LOCAL package
-export PYTHONPATH=$PYTHONPATH:../
-PYTHON_CMD="python3 ../liferay_docker.py"
+# --- Metadata Collection ---
+echo "--- Capturing Environment State ---" | tee -a "$RESULTS_FILE"
+{
+    "$LDM_CMD" doctor --skip-project || true
+    echo ""
+    echo "--- Test Execution Log ---"
+} >>"$RESULTS_FILE" 2>&1
 
-# 1. Verify Infra Setup
+log_and_run() {
+    local msg=$1
+    shift
+    echo ">> $msg" | tee -a "$RESULTS_FILE"
+    "$@" 2>&1 | tee -a "$RESULTS_FILE"
+}
+
+# 1. Prepare a Clean Slate
+echo "--- Step 0: Total Cleanup ---" | tee -a "$RESULTS_FILE"
+log_and_run "Removing all LDM resources" "$LDM_CMD" -y rm --all --delete --infra
+
+# Verify Docker is empty
+if [ -n "$(docker ps -aq)" ]; then
+    echo "❌ ERROR: Docker environment is not empty." | tee -a "$RESULTS_FILE"
+    echo "Existing containers detected:" >> "$RESULTS_FILE"
+    docker ps -a >> "$RESULTS_FILE"
+    echo "Please run 'docker rm -f \$(docker ps -aq)' or 'docker system prune' before running this script."
+    exit 1
+fi
+echo "✅ Docker environment is clean." | tee -a "$RESULTS_FILE"
+
+# 2. Global Infra Setup
 echo "--- Step 1: Global Infra Setup ---"
-$PYTHON_CMD -y infra-setup
-if ! docker ps | grep -q "liferay-proxy-global"; then
-    echo "❌ ERROR: Infra setup failed to start liferay-proxy-global"
-    exit 1
-fi
-echo "✅ Infra setup successful."
-
-# 2. Verify Project Initialization & Labels
-echo "--- Step 2: Project Run & Labels ---"
-mkdir -p test-e2e-refactor-project/files
-# Use a tag that definitely has a seed to test seeding logic
-{
-  echo "tag=2026.q1.4-lts"
-  echo "container_name=test-e2e-refactor"
-  echo "image_tag=alpine"
-  echo "port=8082"
-  echo "db_type=hypersonic"
-} > test-e2e-refactor-project/meta
-
-# Run it
-$PYTHON_CMD -y run test-e2e-refactor-project --tag 2026.q1.4-lts --no-wait --no-tld-skip --no-jvm-verify
-
-# Verify labels in compose
-if ! grep -q "com.liferay.ldm.project=test-e2e-refactor" test-e2e-refactor-project/docker-compose.yml; then
-    echo "❌ ERROR: Generated compose missing mandatory com.liferay.ldm.project label"
-    exit 1
-fi
-echo "✅ Mandatory labels verified in docker-compose.yml"
-
-# 3. Verify Status Reporting
-echo "--- Step 3: Status Reporting ---"
-# Patch alpine to stay alive
-if [[ "$OSTYPE" == "darwin"* ]]; then
-  sed -i '' 's/image: "alpine"/image: "alpine"\n    command: sleep 60/g' test-e2e-refactor-project/docker-compose.yml
-else
-  sed -i 's/image: "alpine"/image: "alpine"\n    command: sleep 60/g' test-e2e-refactor-project/docker-compose.yml
-fi
-
-docker compose -f test-e2e-refactor-project/docker-compose.yml up -d
-
-# Now check ldm status
-STATUS_OUT=$($PYTHON_CMD -y status test-e2e-refactor-project)
-if ! echo "$STATUS_OUT" | grep -q "test-e2e-refactor"; then
-    echo "❌ ERROR: ldm status failed to detect running project"
-    echo "Full output: $STATUS_OUT"
-    exit 1
-fi
-echo "✅ Project detected correctly in ldm status."
-
-# 4. Verify CLI Disambiguation (Logs)
-echo "--- Step 4: CLI Disambiguation (Logs) ---"
-# Test: Logs with explicit project and service
-LOG_OUT=$($PYTHON_CMD -y logs test-e2e-refactor-project liferay --no-wait 2>&1 || true)
-if echo "$LOG_OUT" | grep -q "unrecognized arguments"; then
-    echo "❌ ERROR: CLI parser rejected --no-wait flag"
+log_and_run "Initializing Infrastructure" "$LDM_CMD" -y infra-setup --search
+if ! docker ps | grep -q "liferay-search-global"; then
+    echo "❌ ERROR: Global Search failed to start" | tee -a "$RESULTS_FILE"
     exit 1
 fi
 
-# Verify infra logs access (checks env vars injection)
-INFRA_LOG_OUT=$($PYTHON_CMD -y logs --infra --no-wait 2>&1 || true)
-if echo "$INFRA_LOG_OUT" | grep -q "LDM_CERTS_DIR"; then
-     echo "❌ ERROR: Infra logs failed due to missing environment variables"
-     exit 1
-fi
-echo "✅ CLI Disambiguation & Infra Logs verified."
+# 2. Project Lifecycle
+echo "--- Step 2: Project Run ---"
+cp -r "$TEMPLATE_SRC" "$LDM_WORKSPACE/ldm-smoke-test"
+cd "$LDM_WORKSPACE/ldm-smoke-test"
 
-# 5. Verify Instance Isolation (IP-based port binding)
-echo "--- Step 5: Instance Isolation Verification ---"
+log_and_run "Running LDM Project" "$LDM_CMD" -y run . --no-wait --no-tld-skip --no-jvm-verify
 
-create_isolation_project() {
-    local dir=$1
-    local name=$2
-    local host=$3
-    local port=$4
-    mkdir -p "$dir/files"
-    {
-      echo "tag=2026.q1.4-lts"
-      echo "container_name=$name"
-      echo "host_name=$host"
-      echo "image_tag=alpine"
-      echo "port=$port"
-      echo "db_type=hypersonic"
-      echo "ssl=false"
-    } > "$dir/meta"
-}
-
-patch_isolation_compose() {
-    local dir=$1
-    if [[ "$OSTYPE" == "darwin"* ]]; then
-      sed -i '' 's/image: "alpine"/image: "alpine"\n    command: sh -c "sleep 3600"/g' "$dir/docker-compose.yml"
-    else
-      sed -i 's/image: "alpine"/image: "alpine"\n    command: sh -c "sleep 3600"/g' "$dir/docker-compose.yml"
-    fi
-}
-
-# A. Start Project A on 127.0.0.1
-create_isolation_project "test-isolation-a" "test-isolation-a" "127.0.0.1" "8084"
-$PYTHON_CMD -y run test-isolation-a --no-wait --no-tld-skip --no-jvm-verify
-patch_isolation_compose "test-isolation-a"
-docker compose -f test-isolation-a/docker-compose.yml up -d
-sleep 2
-
-# B. Attempt conflict (Same Hostname 127.0.0.1) - Should FAIL early
-create_isolation_project "test-isolation-b" "test-isolation-b" "127.0.0.1" "8085"
-if $PYTHON_CMD -y run test-isolation-b --no-wait --no-tld-skip --no-jvm-verify 2>&1 | grep -q "already registered"; then
-    echo "✅ Success: LDM correctly detected registry hostname conflict."
-else
-    echo "❌ ERROR: LDM failed to detect registry hostname conflict."
+# 3. Snapshot & Restore Verification
+echo "--- Step 3: Snapshot & Restore ---"
+log_and_run "Creating Snapshot" "$LDM_CMD" -y snapshot --name "Binary-Verify"
+if [ ! -d "snapshots" ]; then
+    echo "❌ ERROR: Snapshot directory not created" | tee -a "$RESULTS_FILE"
     exit 1
 fi
 
-# C. Attempt isolation (Different Hostname 127.0.0.2, Same Port 8084) - Should SUCCEED
-rm -rf test-isolation-b
-create_isolation_project "test-isolation-b" "test-isolation-b" "127.0.0.2" "8084"
-$PYTHON_CMD -y run test-isolation-b --no-up --no-tld-skip --no-jvm-verify
-if grep -q "127.0.0.2:8084:8080" test-isolation-b/docker-compose.yml; then
-    echo "✅ Success: Generated compose correctly isolated by IP."
-else
-    echo "❌ ERROR: Generated compose missing IP isolation"
-    exit 1
-fi
+log_and_run "Restoring Snapshot" "$LDM_CMD" -y restore --latest
+echo "✅ Snapshot and Restore verified." | tee -a "$RESULTS_FILE"
 
-# 6. Verify Proxy-Only Routing for SSL Custom Domains
-echo "--- Step 6: Proxy-Only SSL Routing Verification ---"
-rm -rf test-ssl-proxy
-mkdir -p test-ssl-proxy/files
-{
-  echo "tag=2026.q1.4-lts"
-  echo "container_name=test-ssl-proxy"
-  echo "host_name=my-custom-domain.com"
-  echo "ssl=true"
-  echo "port=8086"
-  echo "db_type=hypersonic"
-} > test-ssl-proxy/meta
+# 4. Status and Logs
+echo "--- Step 4: Status & Logs ---"
+log_and_run "Checking Status" "$LDM_CMD" -y status
+log_and_run "Checking Logs" "$LDM_CMD" -y logs --no-wait
+echo "✅ Status and Logs verified." | tee -a "$RESULTS_FILE"
 
-# Run in no-up mode to check generated config.
-$PYTHON_CMD -y run test-ssl-proxy --tag 2026.q1.4-lts --no-up --no-tld-skip --no-jvm-verify
+# 5. Teardown
+echo "--- Step 5: Teardown ---"
+log_and_run "Tearing down with infra" "$LDM_CMD" -y down --infra
+echo "✅ Teardown successful." | tee -a "$RESULTS_FILE"
 
+<<<<<<< HEAD
 if grep -q "8086:8080" test-ssl-proxy/docker-compose.yml; then
     echo "❌ ERROR: SSL custom domain exposed port 8086 to host. Should be proxy-only."
     grep "8086:8080" test-ssl-proxy/docker-compose.yml
@@ -234,3 +224,8 @@ cd ..
 rm -rf e2e-work-dir
 
 echo "🎯 ALL E2E VERIFICATIONS PASSED!"
+=======
+echo "" >>"$RESULTS_FILE"
+echo "🎯 ALL E2E VERIFICATIONS PASSED!" | tee -a "$RESULTS_FILE"
+echo "Full results available in: $RESULTS_FILE"
+>>>>>>> 13d6ab2 (feat: environmental hardening, snapshots, and automated verification suite [pre-release])

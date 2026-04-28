@@ -1078,6 +1078,16 @@ def fetch_compatibility_metadata(force=False):
     cache_file = cache_dir / "compatibility.json"
     cache_duration = 86400  # 24 hours
 
+    # 1. Load bundled version as baseline
+    bundled_file = Path(__file__).parent.parent / "compatibility.json"
+    baseline = {}
+    if bundled_file.exists():
+        try:
+            baseline = json.loads(bundled_file.read_text())
+        except Exception:
+            pass
+
+    # 2. Check cache
     if not force and cache_file.exists():
         # Check file age
         if time.time() - cache_file.stat().st_mtime < cache_duration:
@@ -1086,6 +1096,7 @@ def fetch_compatibility_metadata(force=False):
             except Exception:
                 pass
 
+    # 3. Fetch from Master (Evergreen source)
     url = "https://raw.githubusercontent.com/peterrichards-lr/liferay-docker-manager/master/compatibility.json"
     cache_dir.mkdir(parents=True, exist_ok=True)
 
@@ -1093,8 +1104,8 @@ def fetch_compatibility_metadata(force=False):
         try:
             return json.loads(cache_file.read_text())
         except Exception:
-            return {}
-    return {}
+            return baseline
+    return baseline
 
 
 def resolve_dependency_version(liferay_tag, dependency_name):

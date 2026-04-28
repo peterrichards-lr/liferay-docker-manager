@@ -73,6 +73,7 @@ class SnapshotHandler(BaseHandler):
                 name = UI.ask("Snapshot Name", "Manual Snapshot")
 
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        snap_dir = paths["backups"] / timestamp
         UI.info(f"Creating snapshot: {name}...")
 
         # --- SEARCH SNAPSHOT (Orchestrated) ---
@@ -84,12 +85,12 @@ class SnapshotHandler(BaseHandler):
 
         # Check if project uses shared search and service is running
         if str(project_meta.get("use_shared_search", "false")).lower() == "true":
-            if run_command(["docker", "ps", "-q", "-f", f"name={search_name}"]):
+            if self.run_command(["docker", "ps", "-q", "-f", f"name={search_name}"]):
                 search_snapshot_name = f"{container_name}_{timestamp}"
                 UI.info(
                     f"Triggering orchestrated search snapshot: {search_snapshot_name}..."
                 )
-                run_command(
+                self.run_command(
                     [
                         "docker",
                         "exec",
@@ -106,10 +107,52 @@ class SnapshotHandler(BaseHandler):
                     ]
                 )
 
-        # --- DATABASE SNAPSHOT ---
-        # We handle DB snapshots by triggering a dump inside the container if it's running
-        # OR by capturing the data directory if it's stopped.
-        # For now, we assume the user might have stopped it, but we'll try to find a DB container.
+        # --- DATABASE SNAPSHOT (Orchestrated) ---
+        db_type = project_meta.get("db_type", "hypersonic")
+        db_snapshot_file = None
+        if db_type in ["mysql", "postgresql", "mariadb"]:
+            db_container = f"{container_name}-db"
+            # Check if DB container is running
+            if self.run_command(["docker", "ps", "-q", "-f", f"name=^{db_container}$"]):
+                db_snapshot_file = snap_dir / "database.sql"
+                UI.info(f"Triggering orchestrated database snapshot ({db_type})...")
+
+                if db_type in ["mysql", "mariadb"]:
+                    # MySQL/MariaDB Dump
+                    dump_cmd = [
+                        "docker",
+                        "exec",
+                        db_container,
+                        "mysqldump",
+                        "-u",
+                        "lportal",
+                        "-ptest",
+                        "--opt",
+                        "lportal",
+                    ]
+                else:
+                    # PostgreSQL Dump
+                    dump_cmd = [
+                        "docker",
+                        "exec",
+                        db_container,
+                        "pg_dump",
+                        "-U",
+                        "lportal",
+                        "lportal",
+                    ]
+
+                try:
+                    sql_content = self.run_command(dump_cmd, capture_output=True)
+                    if sql_content:
+                        db_snapshot_file.write_text(sql_content)
+                        UI.success("Database dump completed.")
+                    else:
+                        UI.warning("Database dump returned no content.")
+                        db_snapshot_file = None
+                except Exception as e:
+                    UI.warning(f"Database dump failed: {e}")
+                    db_snapshot_file = None
 
         # Wait for search snapshot if it was triggered
         if search_snapshot_name:
@@ -136,7 +179,6 @@ class SnapshotHandler(BaseHandler):
         # We call this again to ensure even files created by search snapshot are unlocked.
         self.verify_runtime_environment(paths)
 
-        snap_dir = paths["backups"] / timestamp
         snap_dir.mkdir(parents=True, exist_ok=True)
         files_tar = snap_dir / "files.tar.gz"
 
@@ -432,7 +474,7 @@ class SnapshotHandler(BaseHandler):
         search_name = "liferay-search-global"
         start_time = time.time()
         while time.time() - start_time < timeout:
-            res = run_command(
+            res = self.run_command(
                 [
                     "docker",
                     "exec",
@@ -454,7 +496,7 @@ class SnapshotHandler(BaseHandler):
         search_name = "liferay-search-global"
         start_time = time.time()
         while time.time() - start_time < timeout:
-            res = run_command(
+            res = self.run_command(
                 [
                     "docker",
                     "exec",
@@ -473,7 +515,7 @@ class SnapshotHandler(BaseHandler):
 
     def _delete_project_indices(self, container_name):
         search_name = "liferay-search-global"
-        run_command(
+        self.run_command(
             [
                 "docker",
                 "exec",
@@ -523,6 +565,6 @@ class SnapshotHandler(BaseHandler):
             UI.info("  + Extracting data volume...")
             target_data = paths["data"]
             target_data.mkdir(parents=True, exist_ok=True)
-            run_command(["tar", "-xzf", str(volume_tgz), "-C", str(target_data)])
+            self.run_command(["tar", "-xzf", str(volume_tgz), "-C", str(target_data)])
 
         return True

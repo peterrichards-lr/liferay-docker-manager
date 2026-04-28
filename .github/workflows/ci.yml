@@ -295,7 +295,7 @@ jobs:
           cd bin-temp
           # Create ldm-macos alias (pointing to arm64 for now)
           cp ldm-macos-arm64 ldm-macos
-          sha256sum ldm-linux ldm-macos ldm-macos-arm64 ldm-macos-x86_64 ldm-windows.exe samples.zip > checksums.txt
+          sha256sum ldm-linux ldm-macos ldm-macos-arm64 ldm-macos-x86_64 ldm-windows.exe samples.zip ../compatibility.json > checksums.txt
           cat checksums.txt
 
       - name: Create GitHub Release
@@ -310,6 +310,7 @@ jobs:
             bin-temp/samples.zip
             bin-temp/checksums.txt
             bin-temp/LICENSE
+            compatibility.json
           make_latest: ${{ steps.check_release.outputs.is_release == 'true' }}
           fail_on_unmatched_files: true
           generate_release_notes: true
