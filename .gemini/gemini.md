@@ -72,5 +72,7 @@
   - [x] **Restoration**: Recovered historical verification results by running the refined sync script.
   - [x] **Rules**: Added Script Parity and Pre-Change Persistence mandates.
   - [x] **Release**: Tagged as `v2.4.26-beta.37`.
+  - [ ] **Fix**: Improved Windows self-upgrade robustness (retry loop + process termination).
+  - [ ] **Release**: Bump to `v2.4.26-beta.38`.
 
 --- End of Context from: /users/peterrichards/.gemini/gemini.md ---

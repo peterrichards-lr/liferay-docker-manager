@@ -410,12 +410,36 @@ class DiagnosticsHandler(BaseHandler):
 
         try:
             if platform.system().lower() == "windows":
-                # Windows replacement logic via temporary batch file
+                # Windows replacement logic via temporary batch file with retry loop
+                # We need to ensure the calling process has exited before we can move the file.
                 bat_path = exe_path.with_suffix(".update.bat")
                 bat_content = f"""@echo off
-timeout /t 1 /nobreak > nul
-move /y "{temp_new}" "{exe_path}"
-start "" "{exe_path}" doctor
+setlocal enabledelayedexpansion
+set "RETRIES=0"
+set "MAX_RETRIES=10"
+
+:RETRY
+timeout /t 2 /nobreak > nul
+taskkill /F /IM ldm.exe /T >nul 2>&1
+
+move /y "{temp_new}" "{exe_path}" >nul 2>&1
+if !errorlevel! equ 0 (
+    start "" "{exe_path}" doctor
+    goto :CLEANUP
+)
+
+set /a "RETRIES+=1"
+if !RETRIES! lss !MAX_RETRIES! (
+    echo [!RETRIES!/!MAX_RETRIES!] Access denied, retrying in 2 seconds...
+    goto :RETRY
+)
+
+echo [ERROR] Failed to apply update after !MAX_RETRIES! attempts. 
+echo [ERROR] Please try running the following command manually in an elevated terminal:
+echo move /y "{temp_new}" "{exe_path}"
+pause
+
+:CLEANUP
 del "%~f0"
 """
                 bat_path.write_text(bat_content)
