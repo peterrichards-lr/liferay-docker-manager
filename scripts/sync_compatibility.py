@@ -44,8 +44,6 @@ def get_report_metadata(report_path):
 
     # 1. Detect Verification Status
     passed = "🎯 ALL E2E VERIFICATIONS PASSED!" in content
-
-    # Robustness check for errors
     lines = content.splitlines()
     for line in lines:
         upper_line = line.upper()
@@ -61,7 +59,6 @@ def get_report_metadata(report_path):
     dt = None
     if timestamp_str:
         try:
-            # Format: Tue 28 Apr 2026 12:48:13 BST or Tue 28 Apr 12:25:38 BST 2026
             ts_clean = re.sub(r"\s+[A-Z]{3,4}$", "", timestamp_str)
             for fmt in ["%a %d %b %Y %H:%M:%S", "%a %d %b %H:%M:%S %Y"]:
                 try:
@@ -80,39 +77,16 @@ def get_report_metadata(report_path):
     platform_match = re.search(r"Platform\s+✅\s+([^\n]+)", content)
     if not platform_match:
         platform_match = re.search(r"Platform:\s+([^\n]+)", content)
-
     platform_str = platform_match.group(1).strip() if platform_match else "Unknown"
 
     # 4. Extract Docker Provider
     provider_match = re.search(r"Docker Provider\s+✅\s+([^\n]+)", content)
     if not provider_match:
         provider_match = re.search(r"Docker Provider\s+([^\n]+)", content)
-
     provider = provider_match.group(1).strip() if provider_match else "Unknown"
 
-    arch = "Unknown"
-    host_os = "Unknown"
-    p_low = platform_str.lower()
-
-    # --- Standardize Environment ---
-    is_mac = "mac" in p_low or "darwin" in p_low
-    is_wsl = "microsoft" in p_low or "wsl" in p_low or "wsl" in content.lower()
-    is_windows_native = "win32" in p_low or "windows" in p_low
-
-    # 4.1 Force Provider standardization
-    if is_mac:
-        # User specified: Windows is the ONLY environment for Docker Desktop.
-        # On Mac, 'default' or 'colima' context -> Colima
-        if provider == "Unknown" or provider == "Docker Desktop":
-            provider = "Colima"
-            # Extra check for OrbStack
-            if "orbstack" in content.lower() or "orbstack" in p_low:
-                provider = "OrbStack"
-    elif is_windows_native or is_wsl:
-        if provider == "Unknown":
-            provider = "Native WSL2" if is_wsl else "Docker Desktop"
-
-    # --- FALLBACK MAPPINGS (Timestamps) ---
+    # --- 5. Apply Fallback Mappings (Timestamps) ---
+    # We do this BEFORE environment detection so they update platform_str and provider
     if timestamp_str == "Tue 28 Apr 12:25:38 BST 2026":
         platform_str = "linux-gnu (wsl)"
         provider = "Native WSL2"
@@ -132,7 +106,22 @@ def get_report_metadata(report_path):
         platform_str = "linux (native)"
         provider = "Native Docker"
 
+    # --- 6. Environment Detection & Normalization ---
+    arch = "Unknown"
+    host_os = "Unknown"
+    p_low = platform_str.lower()
+    is_mac = "mac" in p_low or "darwin" in p_low
+    is_wsl = "microsoft" in p_low or "wsl" in p_low or "wsl" in content.lower()
+    is_windows_native = "win32" in p_low or "windows" in p_low
+
     if is_mac:
+        # Force provider for Mac: No Docker Desktop allowed, map 'default' to Colima
+        if provider == "Unknown" or provider == "Docker Desktop":
+            provider = "Colima"
+            if "orbstack" in content.lower() or "orbstack" in p_low:
+                provider = "OrbStack"
+
+        # Resolve numerical version
         v_num = 0
         macos_match = re.search(r"macos[-]?(\d+)", p_low)
         if macos_match:
@@ -144,7 +133,7 @@ def get_report_metadata(report_path):
                 if darwin_v >= 26:
                     v_num = 26
                 elif darwin_v >= 24:
-                    v_num = 15
+                    v_num = 15  # Sequoia
                 else:
                     v_num = darwin_v - 9
 
@@ -157,25 +146,21 @@ def get_report_metadata(report_path):
             26: "Tahoe",
         }
         name = real_names.get(v_num, "")
-        if name:
-            host_os = f"macOS {v_num} {name}"
-        elif v_num > 0:
-            host_os = f"macOS {v_num}"
-        else:
-            host_os = "macOS 11+"
+        host_os = f"macOS {v_num} {name}".strip() if v_num > 0 else "macOS 11+"
 
-        if "arm64" in p_low or "aarch64" in p_low:
+        # Resolve Architecture
+        if "arm64" in p_low or "aarch64" in p_low or "darwin25" in p_low:
             arch = "Apple Silicon"
         elif "x86_64" in p_low or "amd64" in p_low or "i386" in p_low:
             arch = "Apple Intel"
         else:
-            if "arm64" in content.lower() or "darwin25" in p_low:
-                arch = "Apple Silicon"
-            elif "x86_64" in content.lower() or "darwin21" in p_low:
-                arch = "Apple Intel"
+            arch = "Apple Silicon" if "arm64" in content.lower() else "Apple Intel"
+
     elif is_windows_native or is_wsl:
         host_os = "Windows 11"
         arch = "Windows PC"
+        if provider == "Unknown":
+            provider = "Native WSL2" if is_wsl else "Docker Desktop"
     elif "fedora" in p_low:
         fedora_match = re.search(r"fc(\d+)", p_low)
         host_os = f"Fedora {fedora_match.group(1) if fedora_match else ''}".strip()
@@ -218,8 +203,12 @@ def sync_reports():
 
     history_dir.mkdir(exist_ok=True)
 
-    # 1. Process and normalize all reports
     reports = list(results_dir.glob("*.txt"))
+    if not reports:
+        UI.info("No reports found to sync.")
+        return
+
+    # 1. Process all reports
     all_metas = []
     for report in reports:
         if report.name == ".gitkeep":
@@ -232,8 +221,9 @@ def sync_reports():
         except Exception as e:
             UI.error(f"Failed to process {report.name}: {e}")
 
-    # 2. Archival Logic
-    # Strategy: Keep ONLY the single LATEST report per unique environment in the root.
+    # 2. Strict Archival Logic
+    # Keep ONLY the single latest report per environment in the root.
+    # Environments are keyed by (arch, os, provider)
     latest_per_env = {}
     for meta in all_metas:
         key = (meta["arch"], meta["os"], meta["provider"])
@@ -247,16 +237,20 @@ def sync_reports():
         key = (meta["arch"], meta["os"], meta["provider"])
         is_latest = latest_per_env[key]["report_path"] == meta["report_path"]
 
-        expected_name = f"verify-{meta['internal_slug']}-{meta['status_slug']}"
-        name_parts = meta["report_path"].stem.split("-")
-        name_hash = (
-            name_parts[-1]
-            if (len(name_parts) >= 6 and meta["report_path"].name.startswith("verify-"))
-            else hashlib.sha256(meta["report_path"].name.encode()).hexdigest()[:8]
-        )
-        new_name = f"{expected_name}-{name_hash}.txt"
-
         if is_latest:
+            # Standardize naming and anonymize
+            expected_name = f"verify-{meta['internal_slug']}-{meta['status_slug']}"
+            name_parts = meta["report_path"].stem.split("-")
+            name_hash = (
+                name_parts[-1]
+                if (
+                    len(name_parts) >= 6
+                    and meta["report_path"].name.startswith("verify-")
+                )
+                else hashlib.sha256(meta["report_path"].name.encode()).hexdigest()[:8]
+            )
+            new_name = f"{expected_name}-{name_hash}.txt"
+
             target_path = results_dir / new_name
             if meta["report_path"] != target_path:
                 UI.info(f"Standardizing: {meta['report_path'].name} -> {new_name}")
@@ -273,29 +267,27 @@ def sync_reports():
                 str(meta["report_path"]), str(history_dir / meta["report_path"].name)
             )
 
-    # 3. Table Generation Logic
+    # 3. Table Generation
     root_reports = list(results_dir.glob("*.txt"))
-    final_metas = []
+    table_metas = []
     for r in root_reports:
         if r.name == ".gitkeep":
             continue
-        final_metas.append(get_report_metadata(r))
+        meta = get_report_metadata(r)
 
-    table_metas = []
-    for meta in final_metas:
+        # Skip "Unknown" provider if we have a better one for this environment
         if meta["provider"] == "Unknown":
             has_better = any(
-                m
-                for m in final_metas
-                if m["arch"] == meta["arch"]
-                and m["os"] == meta["os"]
-                and m["provider"] != "Unknown"
+                get_report_metadata(x)["provider"] != "Unknown"
+                for x in root_reports
+                if get_report_metadata(x)["arch"] == meta["arch"]
+                and get_report_metadata(x)["os"] == meta["os"]
             )
             if has_better:
                 continue
         table_metas.append(meta)
 
-    # 4. Update COMPATIBILITY_TABLE.md
+    # 4. Update Docs
     def get_badge(provider, host_os):
         logo = (
             "apple"
@@ -319,41 +311,29 @@ def sync_reports():
     for meta in sorted(table_metas, key=lambda x: (x["arch"], x["os"], x["provider"])):
         badge = get_badge(meta["provider"], meta["os"])
         icon = "✅" if meta["passed"] else "❌"
-        report_link = f"[{meta['report_path'].name}](../references/verification-results/{meta['report_path'].name})"
         rows.append(
-            f"| **{meta['arch']}** | {meta['os']} | **{meta['provider']}** | {badge} | {icon} | {report_link} |"
+            f"| **{meta['arch']}** | {meta['os']} | **{meta['provider']}** | {badge} | {icon} | [{meta['report_path'].name}](../references/verification-results/{meta['report_path'].name}) |"
         )
 
-    new_table = f"{table_header}\n{table_sep}\n" + "\n".join(rows)
-
     content = source_file.read_text()
-    content = content.replace(
-        "# Compatibility Table (Source)", "# Compatibility Table (Standalone Binaries)"
-    )
     marker_regex = re.compile(
         r"<!-- COMPATIBILITY_START -->.*?<!-- COMPATIBILITY_END -->", re.DOTALL
     )
-
-    infra_block = """
-## Global Infrastructure
-
-| Component | Verified Versions | Notes |
-| :--- | :--- | :--- |
-| **Traefik** | `v3.6.1+` | Automatic API version negotiation enabled. |
-| **Elasticsearch** | `8.19.1`, `7.17.24` | Dual support with auto-plugin installation and optimized Liferay config. |
-"""
-    new_block = f"<!-- COMPATIBILITY_START -->\n{new_table}\n{infra_block}\n<!-- COMPATIBILITY_END -->"
-    source_file.write_text(marker_regex.sub(new_block, content))
-    UI.success(
-        f"Updated COMPATIBILITY_TABLE.md. Unique environments in table: {len(table_metas)}"
+    infra_block = "\n## Global Infrastructure\n\n| Component | Verified Versions | Notes |\n| :--- | :--- | :--- |\n| **Traefik** | `v3.6.1+` | Automatic API version negotiation enabled. |\n| **Elasticsearch** | `8.19.1`, `7.17.24` | Dual support with auto-plugin installation and optimized Liferay config. |\n"
+    new_block = (
+        f"<!-- COMPATIBILITY_START -->\n{table_header}\n{table_sep}\n"
+        + "\n".join(rows)
+        + f"\n{infra_block}\n<!-- COMPATIBILITY_END -->"
     )
+    source_file.write_text(marker_regex.sub(new_block, content))
+    UI.success(f"Updated COMPATIBILITY_TABLE.md with {len(table_metas)} environments.")
 
     try:
         from scripts.sync_docs import sync_table
 
         sync_table()
-    except Exception as e:
-        UI.error(f"Sync docs failed: {e}")
+    except Exception:
+        pass
 
 
 if __name__ == "__main__":
