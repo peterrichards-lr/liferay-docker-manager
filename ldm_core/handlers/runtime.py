@@ -368,8 +368,6 @@ class RuntimeHandler(BaseHandler):
 
             if ssl_enabled and not no_up:
                 ssl_start = time.time()
-                from ldm_core.utils import get_actual_home
-
                 actual_home = get_actual_home()
                 cert_dir = actual_home / "liferay-docker-certs"
                 self.setup_ssl(cert_dir, host_name)
