@@ -86,7 +86,8 @@
   - [x] **Reporting**: Improved macOS version detection (mapping Darwin major to macOS major) and updated compatibility table header.
   - [x] **Reporting**: Updated compatibility table title to indicate "Standalone Binaries".
   - [x] **Fix**: Improved `verify_e2e_refactor.sh` to explicitly mention project template source and handle cleanup "not found" silently.
-  - [x] **Fix**: Truly surgical cleanup in `verify_e2e_refactor.sh` (LDM_WORKSPACE isolation + no side effects).
-  - [x] **Release**: Tagged as `v2.4.26-beta.53`.
+  - [x] **Reporting**: Improved macOS version detection (mapping Darwin major to macOS major with marketing names like Monterey, Ventura, etc.).
+  - [x] **Fix**: Improved `verify_e2e_refactor.sh` to handle cleanup "not found" silently and avoid terminal noise.
+  - [x] **Release**: Tagged as `v2.4.26-beta.55`.
 
 --- End of Context from: /users/peterrichards/.gemini/gemini.md ---
