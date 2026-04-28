@@ -1,0 +1,206 @@
+=== LDM BINARY VERIFICATION REPORT ===
+Timestamp: Tue 28 Apr 2026 15:18:49 BST
+Hostname:  [ANONYMIZED]
+Platform:  darwin25
+Binary:    [ANONYMIZED]
+Version:   ldm 2.4.26-beta.43
+
+--- Capturing Environment State ---
+[HOME]/.shiv/ldm_4bc38e78930ce4f568fe88b04fcaeeeb918712686aca560d4f681a068f858db8/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2 only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://github.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+
+[1;33m=== LDM Doctor - Environmental Health Check ===[0m
+  [0;36mℹ[0m Hint: Allocate more RAM in your Docker provider settings.
+    Doc: [0;36mhttps://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/installation.md#docker-resource-alignment-windowswsl2macos[0m
+
+Component                           Status                        
+---------------------------------------------------------------------------
+LDM Version                         [0;32m✅  v2.4.26-beta.43 [0;34m[1m[BETA][0m (Release v2.4.26-beta.43) (Latest)[0m
+Executable Integrity                [0;32m✅  Verified (54a2c290c299)[0m
+Executable Path                     [0;32m✅  [PATH][0m
+Python Version                      [0;32m✅  3.9.6[0m
+Platform                            [0;32m✅  macOS-26.4.1-arm64-arm-64bit[0m
+Shell Completion                    [0;33m⚠️  Not Enabled (zsh)[0m
+Docker Engine                       [0;32m✅  Running (v29.4.0)[0m
+Docker Context                      [0;32m✅  orbstack[0m
+Docker Provider                     [0;32m✅  OrbStack[0m
+Docker Compose                      [0;32m✅  Plugin v2 Detected[0m
+Docker CPUs                         [0;32m✅  8 Cores[0m
+Docker Memory                       [0;33m⚠️  5.8 GB[0m
+mkcert                              [0;33m⚠️  Not installed[0m
+OpenSSL                             [0;32m✅  OpenSSL 3.6.2 7 Apr 2026 (Library: OpenSSL 3.6.2 7 Apr 2026)[0m
+Path: docker                        [0;32m✅  [PATH][0m
+Path: mkcert                        [0;33m⚠️  Not Found[0m
+Path: openssl                       [0;32m✅  [PATH][0m
+Path: telnet                        [0;33m⚠️  Not Found[0m
+Path: nc                            [0;32m✅  [PATH][0m
+Path: lcp                           [0;33m⚠️  Not Found[0m
+Path: docker compose                [0;32m✅  docker compose[0m
+Client: mysql                       [0;32m✅  [PATH][0m
+Client: psql                        [0;33m⚠️  [0;37mNot installed[0m[0m
+Tool: telnet                        [0;33m⚠️  Missing (Gogo Shell disabled)[0m
+Tool: netcat (nc/ncat)              [0;32m✅  Installed[0m
+Tool: lcp cli                       [0;33m⚠️  Missing (Cloud Fetch disabled)[0m
+Liferay Cloud Auth                  [0;33m⚠️  LCP CLI Not Installed[0m
+Global Config                       [0;33m⚠️  Missing ('ldm init-common' available)[0m
+Docker Network                      [0;33m⚠️  missing (will be created on run)[0m
+Global SSL Proxy                    [0;33m⚠️  Not running (Run 'ldm infra-setup')[0m
+Global Search (ES8)                 [0;33m⚠️  Not running (Run 'ldm infra-setup --search') [0;37m(Sidecar will be used)[0m[0m
+Docker Socket Bridge                [0;33m⚠️  Not running (Run 'ldm infra-setup')[0m
+Liferay Docker Tags                 [0;32m✅  Available (Latest: 2026.q1.5-lts)[0m
+
+[0;36m--- Recommended Actions ---[0m
+[0;36mℹ  [0mFix: Enable tab-completion for zsh by running '[0;37mldm completion[0m'.
+   Doc: [0;36mhttps://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/installation.md#3-shell-autocompletion[0m
+
+[0;36mℹ  [0mFix: Allocate more RAM in your Docker provider settings.
+   Doc: [0;36mhttps://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/installation.md#docker-resource-alignment-windowswsl2macos[0m
+
+[0;36mℹ  [0mFix: Install 'mkcert' to enable local SSL (brew install mkcert / scoop install mkcert / apt install mkcert).
+   Doc: [0;36mhttps://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/installation.md#prerequisites[0m
+
+[0;36mℹ  [0mFix: Optional: Install 'psql' on your host to manually inspect databases from outside Docker.
+
+[0;36mℹ  [0mFix: Install telnet for Gogo Shell support (e.g. 'brew install telnet' or 'apt-get install telnet').
+
+[0;36mℹ  [0mFix: Install Liferay Cloud CLI for 'cloud-fetch' support.
+   Doc: [0;36mhttps://customer.liferay.com/downloads/-/download/liferay-cloud-cli[0m
+
+[0;36mℹ  [0mFix: Run '[0;37mldm init-common[0m' to restore standard development assets.
+   Doc: [0;36mhttps://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/installation.md#global-configuration-the-common-folder[0m
+
+[0;36mℹ  [0mFix: Shared infrastructure network 'liferay-net' will be created during project startup.
+   Doc: [0;36mhttps://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/README.md#infra-setup-infra-down-infra-restart[0m
+
+[0;36mℹ  [0mFix: Start shared infrastructure by running '[0;37mldm infra-setup[0m'.
+   Doc: [0;36mhttps://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/README.md#infra-setup-infra-down-infra-restart[0m
+
+[0;36mℹ  [0mFix: Start shared infrastructure by running '[0;37mldm infra-setup --search[0m'.
+   Doc: [0;36mhttps://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/README.md#infra-setup-infra-down-infra-restart[0m
+
+[0;36mℹ  [0mFix: Start shared infrastructure by running '[0;37mldm infra-setup[0m'.
+   Doc: [0;36mhttps://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/README.md#infra-setup-infra-down-infra-restart[0m
+
+[0;33m⚠️  Some non-critical issues were detected. Check the items above.[0m
+
+--- Test Execution Log ---
+--- Step 0: Total Cleanup ---
+>> Removing all LDM resources
+[HOME]/.shiv/ldm_4bc38e78930ce4f568fe88b04fcaeeeb918712686aca560d4f681a068f858db8/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2 only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://github.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+[0;33m⚠️  Tearing down global infrastructure (Traefik)...[0m
+time="2026-04-28T15:18:50+01:00" level=warning msg="Warning: No resource found to remove for project \"resources\"."
+[0;32m✅  Infrastructure teardown complete.[0m
+>> Initializing Infrastructure
+[HOME]/.shiv/ldm_4bc38e78930ce4f568fe88b04fcaeeeb918712686aca560d4f681a068f858db8/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2 only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://github.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+[0;33mℹ  Creating Docker network: liferay-net[0m
+[0;33mℹ  Starting Docker socket bridge...[0m
+[0;33mℹ  Initializing Global Search (ES8) container...[0m
+[0;33mℹ  Waiting for Elasticsearch to become ready...[0m
+[0;33mℹ  Installing missing Liferay analyzers in Global Search...[0m
+[0;33mℹ  Restarting Global Search to activate plugins...[0m
+[0;33mℹ  Waiting for Global Search to be ready after restart...[0m
+[0;33mℹ  Checking infrastructure stack (Traefik SSL Proxy)...[0m
+ Image traefik:v3.6.1 Pulling 
+ c562cf25ba9f Pulling fs layer 0B
+ 2b3ddfe0bafb Pulling fs layer 0B
+ 6b59a28fa201 Pulling fs layer 0B
+ 79149dff6255 Pulling fs layer 0B
+ f29ef1727b21 Downloading 841.6kB
+ f29ef1727b21 Download complete 0B
+ 0c90bf4d7b39 Download complete 0B
+ c562cf25ba9f Download complete 0B
+ 79149dff6255 Downloading 4.194MB
+ 79149dff6255 Downloading 12.58MB
+ 79149dff6255 Downloading 20.97MB
+ 2b3ddfe0bafb Download complete 0B
+ 6b59a28fa201 Downloading 1.049MB
+ 6b59a28fa201 Downloading 3.146MB
+ 79149dff6255 Downloading 29.1MB
+ 6b59a28fa201 Download complete 0B
+ 79149dff6255 Downloading 37.75MB
+ 6b59a28fa201 Extracting 1B
+ 2b3ddfe0bafb Pull complete 0B
+ 6b59a28fa201 Pull complete 0B
+ 79149dff6255 Download complete 0B
+ 79149dff6255 Extracting 1B
+ 79149dff6255 Extracting 1B
+ 79149dff6255 Extracting 1B
+ 79149dff6255 Extracting 1B
+ 79149dff6255 Pull complete 0B
+ c562cf25ba9f Pull complete 0B
+ Image traefik:v3.6.1 Pulled 
+ Container liferay-proxy-global Creating 
+ Container liferay-proxy-global Created 
+ Container liferay-proxy-global Starting 
+ Container liferay-proxy-global Started 
+[0;32m✅  Infrastructure setup complete.[0m
+>> Running LDM Project
+[HOME]/.shiv/ldm_4bc38e78930ce4f568fe88b04fcaeeeb918712686aca560d4f681a068f858db8/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2 only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://github.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+[0;33m⚠️  Docker has less than 8.0 GB RAM allocated.[0m
+[0;33mℹ  Liferay might be slow or unstable. Increase RAM in Docker Desktop settings.[0m
+[0;33m⚠️  Global 'common/' folder not found. Some baseline assets may be missing.[0m
+[0;33mℹ  You can recreate the baseline by running: [0;36mldm init-common[0m[0m
+
+[1;33m=== Stack Orchestration: ldm-smoke-test ===[0m
+[0;33mℹ  + Liferay: [0;36m2026.q1.4-lts[0m[0m
+[0;33mℹ  + DB Type: [0;36mhypersonic[0m[0m
+[0;33mℹ  + Search:  [0;36mShared (ES8)[0m[0m
+[0;33mℹ  + Host:    [1mlocalhost[0m[0m
+[0;33mℹ  + Port:    [0;36m8080 -> 8082[0m[0m
+[0;33mℹ  Starting [1mldm-smoke-test[0m stack...[0m
+[0;32m✅  Project 'ldm-smoke-test' started in background.[0m
+>> Creating Snapshot
+[HOME]/.shiv/ldm_4bc38e78930ce4f568fe88b04fcaeeeb918712686aca560d4f681a068f858db8/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2 only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://github.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+[0;33mℹ  Creating snapshot: Binary-Verify...[0m
+[0;33mℹ  Triggering orchestrated search snapshot: ldm-smoke-test_20260428_152009...[0m
+[0;32m✅  Search snapshot completed.[0m
+[0;32m✅  Snapshot saved: [HOME]/ldm-verify/e2e-work-dir/ldm-smoke-test/snapshots/20260428_152009[0m
+>> Restoring Snapshot
+[HOME]/.shiv/ldm_4bc38e78930ce4f568fe88b04fcaeeeb918712686aca560d4f681a068f858db8/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2 only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://github.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+
+[1;33m=== Snapshots for ldm-smoke-test ===[0m
+[1] [0;36m20260428_152009[0m - [1mBinary-Verify[0m (36.8 KB)
+[0;33mℹ  Verifying snapshot integrity...[0m
+[0;32m✅  Snapshot integrity verified.[0m
+[0;33mℹ  Triggering orchestrated search restore: ldm-smoke-test_20260428_152009...[0m
+[0;32m✅  Search restore completed.[0m
+[0;32m✅  Restore complete.[0m
+✅ Snapshot and Restore verified.
+>> Checking Status
+[HOME]/.shiv/ldm_4bc38e78930ce4f568fe88b04fcaeeeb918712686aca560d4f681a068f858db8/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2 only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://github.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+
+[1;33m=== LDM Service Status ===[0m
+[0;37mGlobal Infrastructure:[0m
+  [0;32m●[0m SSL Proxy (Traefik)       Running    traefik:v3.6.1
+  [0;32m●[0m Search (ES)               Running    elasticsearch:8.19.1
+  [0;32m●[0m macOS Socket Bridge       Running    tecnativa/docker-socket-proxy
+
+[0;37mActive Projects:[0m
+  [0;37mNo projects are currently running.[0m
+>> Checking Logs
+[HOME]/.shiv/ldm_4bc38e78930ce4f568fe88b04fcaeeeb918712686aca560d4f681a068f858db8/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2 only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://github.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+✅ Status and Logs verified.
+>> Tearing down with infra
+[HOME]/.shiv/ldm_4bc38e78930ce4f568fe88b04fcaeeeb918712686aca560d4f681a068f858db8/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2 only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://github.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+[0;33m⚠️  Tearing down global infrastructure (Traefik)...[0m
+ Container liferay-proxy-global Stopping 
+ Container liferay-proxy-global Stopped 
+ Container liferay-proxy-global Removing 
+ Container liferay-proxy-global Removed 
+[0;32m✅  Infrastructure teardown complete.[0m
+[0;33m⚠️  Tearing down stack: ldm-smoke-test[0m
+ Container ldm-smoke-test Stopping 
+ Container ldm-smoke-test Stopped 
+ Container ldm-smoke-test Removing 
+ Container ldm-smoke-test Removed 
+✅ Teardown successful.
+
+🎯 ALL E2E VERIFICATIONS PASSED!

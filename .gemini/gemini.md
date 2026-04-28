@@ -79,5 +79,7 @@
   - [x] **Fix**: Corrected macOS detection in `ldm doctor --slug`.
   - [x] **Verification**: Verified stable on local Apple Silicon machine (Ubuntu + macOS logic).
   - [x] **Release**: Tagged as `v2.4.26-beta.43`.
+  - [x] **UI**: Improved project selection UI to disambiguate projects with same name by showing paths.
+  - [x] **Release**: Tagged as `v2.4.26-beta.44`.
 
 --- End of Context from: /users/peterrichards/.gemini/gemini.md ---

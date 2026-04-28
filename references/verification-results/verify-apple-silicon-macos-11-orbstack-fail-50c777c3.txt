@@ -1,0 +1,9 @@
+=== LDM BINARY VERIFICATION REPORT ===
+Timestamp: Tue 28 Apr 2026 15:18:10 BST
+Hostname:  [ANONYMIZED]
+Platform:  darwin25
+Binary:    [ANONYMIZED]
+Version:   ldm 2.4.26-beta.43
+
+
+--- FAILURE DEBUG LOGS ---
