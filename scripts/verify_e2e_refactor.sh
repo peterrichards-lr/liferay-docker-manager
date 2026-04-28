@@ -115,7 +115,10 @@ log_and_run() {
     local msg=$1
     shift
     echo ">> $msg" | tee -a "$RESULTS_FILE"
-    "$@" 2>&1 | tee -a "$RESULTS_FILE"
+    if ! "$@" 2>&1 | tee -a "$RESULTS_FILE"; then
+        echo "❌ ERROR: Command failed: $*" | tee -a "$RESULTS_FILE"
+        exit 1
+    fi
 }
 
 # 1. Prepare a Clean Slate
