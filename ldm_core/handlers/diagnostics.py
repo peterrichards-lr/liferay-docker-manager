@@ -563,12 +563,28 @@ pause
                 arch = "Apple Intel" if is_mac else "x86_64"
 
             if is_mac:
-                # Improved mapping: darwin21 = macOS 12, darwin24 = macOS 15, darwin25 = macOS 16, etc.
-                ver_match = re.search(r"darwin(\d+)", p_low)
+                # Improved mapping: darwin21 = macOS 12 Monterey, etc.
+                ver_match = re.search(r"darwin[-]?(\d+)", p_low)
+                if not ver_match:
+                    ver_match = re.search(r"macos[-]?(\d+)", p_low)
+
                 if ver_match:
-                    darwin_major = int(ver_match.group(1))
-                    macos_major = darwin_major - 9
-                    host_os = f"macOS {macos_major}"
+                    v_num = int(ver_match.group(1))
+                    if v_num >= 20:
+                        v_macos = v_num - 9
+                        names = {
+                            11: "Big Sur",
+                            12: "Monterey",
+                            13: "Ventura",
+                            14: "Sonoma",
+                            15: "Sequoia",
+                            16: "16",
+                            17: "17",
+                        }
+                        name = names.get(v_macos, str(v_macos))
+                        host_os = f"macOS {v_macos} {name}".strip()
+                    else:
+                        host_os = f"macOS {v_num}"
                 else:
                     host_os = "macOS 11+"
             elif "microsoft" in p_low or "windows" in p_low:

@@ -141,25 +141,30 @@ def get_report_metadata(report_path):
     is_windows_native = "win32" in p_low or "windows" in p_low
 
     if "mac" in p_low or "darwin" in p_low:
-        # Improved mapping: darwin21 = macOS 12, darwin24 = macOS 15, darwin25 = macOS 16, etc.
-        ver_match = re.search(r"darwin(\d+)", p_low)
-        if ver_match:
-            darwin_major = int(ver_match.group(1))
-            macos_major = darwin_major - 9
-            host_os = f"macOS {macos_major}"
-        else:
-            # Look for macOS-12.7.6 style or macOS-26.4.1 style
-            ver_match = re.search(r"macos-(\d+)", p_low)
-            if ver_match:
-                macos_ver = int(ver_match.group(1))
-                # If the version is >= 20, it's likely a darwin version mislabeled as macos in some reports
-                if macos_ver >= 20:
-                    host_os = f"macOS {macos_ver - 9}"
-                else:
-                    host_os = f"macOS {macos_ver}"
-            else:
-                host_os = "macOS"
+        # Improved mapping: darwin21 = macOS 12 Monterey, etc.
+        ver_match = re.search(r"darwin[-]?(\d+)", p_low)
+        if not ver_match:
+            ver_match = re.search(r"macos[-]?(\d+)", p_low)
 
+        if ver_match:
+            v_num = int(ver_match.group(1))
+            if v_num >= 20:
+                v_macos = v_num - 9
+                names = {
+                    11: "Big Sur",
+                    12: "Monterey",
+                    13: "Ventura",
+                    14: "Sonoma",
+                    15: "Sequoia",
+                    16: "16",
+                    17: "17",
+                }
+                name = names.get(v_macos, str(v_macos))
+                host_os = f"macOS {v_macos} {name}".strip()
+            else:
+                host_os = f"macOS {v_num}"
+        else:
+            host_os = "macOS 11+"
         if "arm64" in p_low or "aarch64" in p_low:
             arch = "Apple Silicon"
         elif "x86_64" in p_low or "amd64" in p_low or "i386" in p_low:
