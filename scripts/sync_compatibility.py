@@ -2,6 +2,7 @@
 import re
 import sys
 import hashlib
+import shutil
 from pathlib import Path
 from datetime import datetime
 
@@ -116,23 +117,18 @@ def get_report_metadata(report_path):
     is_windows_native = "win32" in p_low or "windows" in p_low
 
     if "mac" in p_low or "darwin" in p_low:
-        # Resolve numerical version using both darwin and macos tags
+        # Resolve numerical version
         v_num = 0
-
-        # Check macos-XX tag first (most reliable if present)
         macos_match = re.search(r"macos[-]?(\d+)", p_low)
         if macos_match:
             v_num = int(macos_match.group(1))
         else:
-            # Fallback to Darwin mapping
             darwin_match = re.search(r"darwin[-]?(\d+)", p_low)
             if darwin_match:
                 darwin_v = int(darwin_match.group(1))
+                # Map Darwin to macOS
                 if darwin_v >= 26:
                     v_num = 26
-                elif darwin_v >= 25:
-                    # Darwin 25 often reports as macOS 26 in user environments
-                    v_num = 26 if "macos-26" in p_low else 15
                 elif darwin_v >= 24:
                     v_num = 15
                 else:
@@ -196,17 +192,21 @@ def get_report_metadata(report_path):
         "internal_slug": internal_slug,
         "content": raw_content,
         "timestamp": dt,
+        "report_path": report_path,
     }
 
 
 def sync_reports():
     script_dir = Path(__file__).parent.parent
     results_dir = script_dir / "references" / "verification-results"
+    history_dir = results_dir / "history"
     source_file = script_dir / "docs" / "COMPATIBILITY_TABLE.md"
 
     if not source_file.exists():
         UI.error(f"Source file not found: {source_file}")
         return
+
+    history_dir.mkdir(exist_ok=True)
 
     reports = list(results_dir.glob("*.txt"))
     if not reports:
@@ -218,87 +218,79 @@ def sync_reports():
     for report in reports:
         if report.name == ".gitkeep":
             continue
-
         try:
             meta = get_report_metadata(report)
             if meta["arch"] == "Unknown" or meta["provider"] == "Unknown":
-                UI.warning(f"Skipping unknown environment in {report.name}")
                 continue
-
-            meta["report_path"] = report
             all_metas.append(meta)
-
         except Exception as e:
             UI.error(f"Failed to process {report.name}: {e}")
 
-    # 2. Cleanup and Renaming Logic
-    # Policy: Keep all "fail" reports + the SINGLE LATEST "pass" report per environment
-    latest_pass_per_env = {}
-    to_delete = []
-
-    # First pass: Identify latest successful report for each env
+    # 2. Archival Logic
+    # Strategy: For each environment, keep ONLY the single LATEST report in the root.
+    latest_per_env = {}
     for meta in all_metas:
-        if meta["status_slug"] == "pass":
-            key = (meta["arch"], meta["os"], meta["provider"])
-            if (
-                key not in latest_pass_per_env
-                or meta["timestamp"] > latest_pass_per_env[key]["timestamp"]
-            ):
-                # If we're replacing an existing "latest", mark the old one for deletion
-                if key in latest_pass_per_env:
-                    to_delete.append(latest_pass_per_env[key]["report_path"])
-                latest_pass_per_env[key] = meta
-            else:
-                # This one is older than what we have, delete it
-                to_delete.append(meta["report_path"])
-
-    # Delete redundant passes
-    for path in to_delete:
-        UI.info(f"Removing redundant pass report: {path.name}")
-        path.unlink()
-
-    # Re-scan remaining reports to get accurate metadata list after deletion
-    reports = list(results_dir.glob("*.txt"))
-    final_metas = []
-    for report in reports:
-        if report.name == ".gitkeep":
-            continue
-        meta = get_report_metadata(report)
-
-        # Standardize Filename based on new slug
-        expected_name = f"verify-{meta['internal_slug']}-{meta['status_slug']}"
-        name_parts = report.stem.split("-")
-        name_hash = (
-            name_parts[-1]
-            if (len(name_parts) >= 6 and report.name.startswith("verify-"))
-            else hashlib.sha256(report.name.encode()).hexdigest()[:8]
-        )
-        new_name = f"{expected_name}-{name_hash}.txt"
-        new_path = report.parent / new_name
-
-        if report.name != new_name:
-            UI.info(f"Renaming: {report.name} -> {new_name}")
-            if not report.name.startswith("verify-"):
-                clean_content = anonymize_content(meta["content"])
-                new_path.write_text(clean_content)
-                report.unlink()
-            else:
-                report.rename(new_path)
-            report = new_path
-
-        meta["path"] = report
-        final_metas.append(meta)
-
-    # 3. Select latest per env for TABLE generation (including failures)
-    # If an environment has a newer failure than a pass, we show the failure in the table
-    latest_for_table = {}
-    for meta in final_metas:
         key = (meta["arch"], meta["os"], meta["provider"])
         if (
-            key not in latest_for_table
-            or meta["timestamp"] > latest_for_table[key]["timestamp"]
+            key not in latest_per_env
+            or meta["timestamp"] > latest_per_env[key]["timestamp"]
         ):
-            latest_for_table[key] = meta
+            latest_per_env[key] = meta
+
+    for meta in all_metas:
+        key = (meta["arch"], meta["os"], meta["provider"])
+        is_latest = latest_per_env[key]["report_path"] == meta["report_path"]
+
+        expected_name = f"verify-{meta['internal_slug']}-{meta['status_slug']}"
+        name_parts = meta["report_path"].stem.split("-")
+        name_hash = (
+            name_parts[-1]
+            if (len(name_parts) >= 6 and meta["report_path"].name.startswith("verify-"))
+            else hashlib.sha256(meta["report_path"].name.encode()).hexdigest()[:8]
+        )
+        new_name = f"{expected_name}-{name_hash}.txt"
+
+        if is_latest:
+            target_path = results_dir / new_name
+            if meta["report_path"] != target_path:
+                UI.info(
+                    f"Renaming/Standardizing: {meta['report_path'].name} -> {new_name}"
+                )
+                if not meta["report_path"].name.startswith("verify-"):
+                    clean_content = anonymize_content(meta["content"])
+                    target_path.write_text(clean_content)
+                    meta["report_path"].unlink()
+                else:
+                    meta["report_path"].rename(target_path)
+                meta["report_path"] = target_path
+        else:
+            UI.info(f"Archiving old report: {meta['report_path'].name}")
+            shutil.move(
+                str(meta["report_path"]), str(history_dir / meta["report_path"].name)
+            )
+
+    # 3. Table Generation Logic
+    # Re-scan root directory for the finalized set of latest reports
+    root_reports = list(results_dir.glob("*.txt"))
+    final_metas = []
+    for r in root_reports:
+        if r.name == ".gitkeep":
+            continue
+        final_metas.append(get_report_metadata(r))
+
+    table_metas = []
+    for meta in final_metas:
+        if meta["provider"] == "Unknown":
+            has_better = any(
+                m
+                for m in final_metas
+                if m["arch"] == meta["arch"]
+                and m["os"] == meta["os"]
+                and m["provider"] != "Unknown"
+            )
+            if has_better:
+                continue
+        table_metas.append(meta)
 
     # 4. Update COMPATIBILITY_TABLE.md
     def get_badge(provider, host_os):
@@ -321,13 +313,12 @@ def sync_reports():
     )
     table_sep = "| :--- | :--- | :--- | :--- | :--- | :--- |"
     rows = []
-    for key in sorted(latest_for_table.keys()):
-        meta = latest_for_table[key]
+    for meta in sorted(table_metas, key=lambda x: (x["arch"], x["os"], x["provider"])):
         badge = get_badge(meta["provider"], meta["os"])
         icon = "✅" if meta["passed"] else "❌"
-        link = f"[{meta['path'].name}](../references/verification-results/{meta['path'].name})"
+        report_link = f"[{meta['report_path'].name}](../references/verification-results/{meta['report_path'].name})"
         rows.append(
-            f"| **{meta['arch']}** | {meta['os']} | **{meta['provider']}** | {badge} | {icon} | {link} |"
+            f"| **{meta['arch']}** | {meta['os']} | **{meta['provider']}** | {badge} | {icon} | {report_link} |"
         )
 
     new_table = f"{table_header}\n{table_sep}\n" + "\n".join(rows)
@@ -348,11 +339,10 @@ def sync_reports():
 | **Traefik** | `v3.6.1+` | Automatic API version negotiation enabled. |
 | **Elasticsearch** | `8.19.1`, `7.17.24` | Dual support with auto-plugin installation and optimized Liferay config. |
 """
-
     new_block = f"<!-- COMPATIBILITY_START -->\n{new_table}\n{infra_block}\n<!-- COMPATIBILITY_END -->"
     source_file.write_text(marker_regex.sub(new_block, content))
     UI.success(
-        f"Updated COMPATIBILITY_TABLE.md. Total unique environments: {len(latest_for_table)}"
+        f"Updated COMPATIBILITY_TABLE.md. Unique environments in table: {len(table_metas)}"
     )
 
     try:
