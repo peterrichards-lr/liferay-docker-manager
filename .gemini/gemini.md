@@ -80,6 +80,7 @@
   - [x] **Verification**: Verified stable on local Apple Silicon machine (Ubuntu + macOS logic).
   - [x] **Release**: Tagged as `v2.4.26-beta.43`.
   - [x] **UI**: Improved project selection UI to disambiguate projects with same name by showing paths.
-  - [x] **Release**: Tagged as `v2.4.26-beta.44`.
+  - [x] **Fix**: Improved netcat detection on Windows by supporting `ncat` and consolidating path reporting.
+  - [x] **Release**: Tagged as `v2.4.26-beta.45`.
 
 --- End of Context from: /users/peterrichards/.gemini/gemini.md ---
