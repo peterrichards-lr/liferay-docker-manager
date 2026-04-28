@@ -12,6 +12,7 @@ from ldm_core.handlers.diagnostics import DiagnosticsHandler
 from ldm_core.handlers.cloud import CloudHandler
 from ldm_core.handlers.license import LicenseHandler
 from ldm_core.handlers.infra import InfraHandler
+from ldm_core.handlers.dev import DevHandler
 from ldm_core.constants import RUN_ATTRS
 
 
@@ -26,6 +27,7 @@ class LiferayManager(
     CloudHandler,
     LicenseHandler,
     InfraHandler,
+    DevHandler,
     BaseHandler,
 ):
     """Orchestrator class for LDM, composed of multiple functional mixins."""
