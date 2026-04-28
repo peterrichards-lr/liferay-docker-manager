@@ -5,7 +5,7 @@ from pathlib import Path
 from datetime import datetime
 from ldm_core.ui import UI
 from ldm_core.handlers.base import BaseHandler
-from ldm_core.utils import run_command, get_compose_cmd
+from ldm_core.utils import run_command, get_compose_cmd, get_actual_home
 
 
 class SnapshotHandler(BaseHandler):
@@ -117,8 +117,6 @@ class SnapshotHandler(BaseHandler):
                 UI.success("Search snapshot completed.")
                 # Copy ES snapshot files to the backup dir so they are portable
                 try:
-                    from ldm_core.utils import get_actual_home
-
                     es_backup_source = (
                         get_actual_home() / ".ldm" / "infra" / "search" / "backup"
                     )
@@ -170,8 +168,6 @@ class SnapshotHandler(BaseHandler):
 
             # If we have a search snapshot, bundle the global backup repo into the archive
             if search_snapshot_name:
-                from ldm_core.utils import get_actual_home
-
                 es_infra_backup = (
                     get_actual_home() / ".ldm" / "infra" / "search" / "backup"
                 )
@@ -410,8 +406,6 @@ class SnapshotHandler(BaseHandler):
                 m.name.startswith("search_backup") for m in tar.getmembers()
             )
             if has_search:
-                from ldm_core.utils import get_actual_home
-
                 es_infra_backup = (
                     get_actual_home() / ".ldm" / "infra" / "search" / "backup"
                 )

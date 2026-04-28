@@ -208,7 +208,6 @@ class BaseHandler:
     def check_registry_collisions(self, project_name, project_root, host_name=None):
         """Checks if another project with the same name or hostname exists at a different path."""
         from ldm_core.constants import REGISTRY_FILE
-        from ldm_core.utils import get_actual_home
 
         actual_home = get_actual_home()
         registry_path = actual_home / ".ldm" / REGISTRY_FILE
@@ -270,7 +269,7 @@ class BaseHandler:
     def register_project(self, project_name, project_root, host_name=None):
         """Registers a project in the global registry."""
         from ldm_core.constants import REGISTRY_FILE
-        from ldm_core.utils import get_actual_home, safe_write_text
+        from ldm_core.utils import safe_write_text
 
         actual_home = get_actual_home()
         ldm_dir = actual_home / ".ldm"
@@ -299,7 +298,7 @@ class BaseHandler:
     def unregister_project(self, project_name):
         """Removes a project from the global registry."""
         from ldm_core.constants import REGISTRY_FILE
-        from ldm_core.utils import get_actual_home, safe_write_text
+        from ldm_core.utils import safe_write_text
 
         actual_home = get_actual_home()
         registry_path = actual_home / ".ldm" / REGISTRY_FILE
@@ -799,10 +798,8 @@ class BaseHandler:
                     if system_type == "darwin":
                         actual_home = Path.home()
                         try:
-                            from ldm_core.utils import get_actual_home
-
                             actual_home = get_actual_home()
-                        except ImportError:
+                        except Exception:
                             pass
 
                         cert_dir = actual_home / "liferay-docker-certs"
