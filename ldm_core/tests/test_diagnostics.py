@@ -181,12 +181,38 @@ class TestDiagnostics(unittest.TestCase):
             mock_res.stdout = "27.0.0"
             mock_subproc.return_value = mock_res
 
+            # Dynamic mock for run_command to handle various checks
+            def dynamic_run_command(*args, **kwargs):
+                cmd_str = (
+                    " ".join(args[0]) if isinstance(args[0], list) else str(args[0])
+                )
+                if "version" in cmd_str or "-v" in cmd_str:
+                    return "27.0.0"
+                if "network inspect" in cmd_str:
+                    return (
+                        "liferay-net liferay-docker-proxy"  # Include proxy in network
+                    )
+                if "ps -q" in cmd_str:
+                    return "running-id"
+                if "inspect" in cmd_str and "liferay-search-global" in cmd_str:
+                    from ldm_core.constants import ELASTICSEARCH_VERSION
+
+                    return f"elasticsearch:{ELASTICSEARCH_VERSION}"
+                if "logs --tail" in cmd_str:
+                    return "healthy"
+                return "200"
+
+            import sys
+
             with (
-                patch("builtins.print"),
+                patch("builtins.print") as mock_print,
                 patch.object(Path, "exists", return_value=True),
                 patch.object(Path, "read_text", return_value=""),
                 patch.object(Path, "home", return_value=Path("/tmp/home")),
-                patch("ldm_core.handlers.diagnostics.run_command", return_value="200"),
+                patch(
+                    "ldm_core.handlers.diagnostics.run_command",
+                    side_effect=dynamic_run_command,
+                ),
                 patch(
                     "ldm_core.utils.get_compose_cmd", return_value=["docker", "compose"]
                 ),
@@ -194,6 +220,10 @@ class TestDiagnostics(unittest.TestCase):
                 try:
                     self.manager.cmd_doctor()
                 except SystemExit as e:
+                    if e.code != 0:
+                        # Print what was printed to see the failures
+                        for call in mock_print.call_args_list:
+                            sys.stderr.write(str(call) + "\n")
                     self.assertEqual(e.code, 0)
 
     def test_validate_properties_valid(self):

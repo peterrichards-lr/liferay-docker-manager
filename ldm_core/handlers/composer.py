@@ -152,13 +152,19 @@ class ComposerHandler(BaseHandler):
         if use_shared_search:
             liferay_env.extend(
                 [
-                    "LIFERAY_ELASTICSEARCH__PRODUCTION__MODE__ENABLED=true",
-                    "LIFERAY_ELASTICSEARCH__CONNECTION__URL=http://liferay-search-global:9200",
-                    f"LIFERAY_ELASTICSEARCH__INDEX__NAME__PREFIX=ldm-{project_name}-",
+                    "LIFERAY_ELASTICSEARCH_PERIOD_PRODUCTION_PERIOD_MODE_PERIOD_ENABLED=true",
+                    "LIFERAY_ELASTICSEARCH_PERIOD_SIDECAR_PERIOD_ENABLED=false",
+                    "LIFERAY_ELASTICSEARCH_PERIOD_CONNECTION_PERIOD_URL=http://liferay-search-global:9200",
+                    f"LIFERAY_ELASTICSEARCH_PERIOD_INDEX_PERIOD_NAME_PERIOD_PREFIX=ldm-{project_name}-",
                 ]
             )
         else:
-            liferay_env.append("LIFERAY_ELASTICSEARCH__PRODUCTION__MODE__ENABLED=false")
+            liferay_env.extend(
+                [
+                    "LIFERAY_ELASTICSEARCH_PERIOD_PRODUCTION_PERIOD_MODE_PERIOD_ENABLED=false",
+                    "LIFERAY_ELASTICSEARCH_PERIOD_SIDECAR_PERIOD_ENABLED=true",
+                ]
+            )
         # Add custom environment variables from metadata
         custom_env_str = meta.get("custom_env", "{}")
         try:
