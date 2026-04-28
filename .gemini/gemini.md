@@ -72,8 +72,9 @@
   - [x] **Fix**: Implemented proactive Volume Write Test in `ldm doctor`.
   - [x] **Fix**: Added Colima LaunchAgent detection and tailored hints.
   - [x] **Fix**: Corrected `mkcert` download URL and added `--fail` to `curl` in `.github/workflows/ci.yml`.
-  - [x] **Docs**: Updated `TESTING.md` with an "Automation" column to distinguish between E2E, CI, and Manual tests.
-  - [x] **Fix**: Isolated the CI version synchronization check into a standalone script to resolve a segmentation fault (exit 139) in the main runtime.
-  - [x] **Release**: Tagged as `v2.4.26-beta.66`.
+  - [x] **Fix**: Isolated CI version synchronization check to resolve segmentation fault (exit 139).
+  - [x] **Docs**: Updated `TESTING.md` with functional grouping (Automated vs Manual).
+  - [x] **Docs**: Updated `LDM_ARCHITECTURE.md` to reflect proactive health checks and provider detection.
+  - [x] **Release**: Tagged as `v2.4.26-beta.67`.
 
 --- End of Context from: /users/peterrichards/.gemini/gemini.md ---
