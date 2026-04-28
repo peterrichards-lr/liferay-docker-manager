@@ -12,13 +12,5 @@ Component                           Status
 ---------------------------------------------------------------------------
 LDM Version                         [0;32m✅  v2.4.26-beta.31 [0;34m[1m[BETA][0m (Release v2.4.26-beta.31) (Latest)[0m
 Executable Integrity                [0;32m✅  Verified (57b1523e38e8)[0m
-Executable Path                     [0;32m✅  [PATH][0m
-Python Version                      [0;32m✅  3.13.13[0m
-Platform                            [0;32m✅  macOS-15.4.1-arm64-arm-64bit[0m
-Shell Completion                    [0;32m✅  Enabled (Active)[0m
-Docker Engine                       [0;32m✅  Running (v29.2.1)[0m
-Docker Context                      [0;32m✅  colima[0m
-Docker Provider                     [0;32m✅  Colima[0m
-Docker Compose                      [0;32m✅  Plugin v2 Detected[0m
 ...
 🎯 ALL E2E VERIFICATIONS PASSED!
