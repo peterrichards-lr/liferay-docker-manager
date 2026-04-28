@@ -300,13 +300,17 @@ def sync_reports():
                 continue
         table_metas.append(meta)
 
-    # 4. Update Docs
+    # 4. Update COMPATIBILITY_TABLE.md
     def get_badge(provider, host_os):
         logo = (
             "apple"
             if "mac" in host_os.lower()
             else ("windows" if "windows" in host_os.lower() else "linux")
         )
+        # Force windows logo for WSL2 even if host_os detection was fuzzy
+        if provider == "Native WSL2":
+            logo = "windows"
+
         mapping = {
             "Colima": f"![Colima](https://img.shields.io/badge/Colima-Hardened-FFAB00?style=flat-square&logo={logo})",
             "OrbStack": f"![OrbStack](https://img.shields.io/badge/OrbStack-Hardened-00B0FF?style=flat-square&logo={logo})",

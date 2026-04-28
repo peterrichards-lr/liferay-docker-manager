@@ -154,6 +154,7 @@ This file serves as the persistent state and technical knowledge base for the AI
 <<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
   - [x] **Sync**: Refined `sync_compatibility.py` to be non-destructive (LATEST only with historical preservation).
   - [x] **Restoration**: Recovered historical verification results by running the refined sync script.
   - [x] **Rules**: Added Script Parity and Pre-Change Persistence mandates.
@@ -253,6 +254,9 @@ This file serves as the persistent state and technical knowledge base for the AI
 =======
   - [x] **Sync**: Refined `sync_compatibility.py` with robust normalization, Tahoe/Sequoia mapping, and "Surgical Archival Strategy".
 >>>>>>> cddaea0 (fix: resolve syntax error in verify_e2e_refactor.ps1)
+=======
+  - [x] **Sync**: Refined `sync_compatibility.py` with doctor-first detection, LDM Version column, and "Surgical Archival Strategy".
+>>>>>>> 3df02e0 (docs: use Windows icon for WSL2 badge and extract LDM version)
   - [x] **Fix**: Improved Windows self-upgrade and WSL troubleshooting (Docker socket detection).
   - [x] **Fix**: Implemented proactive Volume Write Test in `ldm doctor`.
   - [x] **Fix**: Added Colima LaunchAgent detection and tailored hints.
@@ -277,6 +281,7 @@ This file serves as the persistent state and technical knowledge base for the AI
 =======
   - [x] **Fix**: Isolated CI version synchronization check to resolve segmentation fault (exit 139).
   - [x] **Fix**: Hardened Windows verification script (`.ps1`) and fixed console encoding.
+<<<<<<< HEAD
   - [x] **Fix**: Resolved syntax error in `verify_e2e_refactor.ps1` caused by omission placeholders.
 <<<<<<< HEAD
   - [x] **Docs**: Updated `TESTING.md` with functional grouping (Automated vs Manual).
@@ -299,6 +304,10 @@ This file serves as the persistent state and technical knowledge base for the AI
   - [x] **Hardening**: Integrated `PSScriptAnalyzer` into `lint.sh` and GitHub CI to prevent PowerShell syntax regressions.
   - [x] **Release**: Tagged as `v2.4.26-beta.75`.
 >>>>>>> f20a63f (fix: integrate PSScriptAnalyzer into CI and local linting)
+=======
+  - [x] **Hardening**: Integrated `PSScriptAnalyzer` into CI to prevent PowerShell syntax regressions.
+  - [x] **Release**: Tagged as `v2.4.26-beta.78`.
+>>>>>>> 3df02e0 (docs: use Windows icon for WSL2 badge and extract LDM version)
 
 >>>>>>> 8b0a863 (feat: implement DNS cleanup and stable tier safety hatch [pre-release])
 --- End of Context from: /users/peterrichards/.gemini/gemini.md ---
