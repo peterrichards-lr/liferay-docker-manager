@@ -253,8 +253,13 @@ This file serves as the persistent state and technical knowledge base for the AI
 >>>>>>> 756c1ee (fix: stabilize environmental detection and improve macOS naming [pre-release])
 =======
   - [x] **Fix**: Corrected `mkcert` download URL and added `--fail` to `curl` in `.github/workflows/ci.yml`.
+<<<<<<< HEAD
   - [x] **Release**: Tagged as `v2.4.26-beta.64`.
 >>>>>>> cdf720e (fix: correct mkcert download URL and error handling in CI)
+=======
+  - [x] **Docs**: Updated `TESTING.md` with an "Automation" column to distinguish between E2E, CI, and Manual tests.
+  - [x] **Release**: Tagged as `v2.4.26-beta.65`.
+>>>>>>> 4561e48 (docs: restructure TESTING.md into automated and manual sections)
 
 >>>>>>> 8b0a863 (feat: implement DNS cleanup and stable tier safety hatch [pre-release])
 --- End of Context from: /users/peterrichards/.gemini/gemini.md ---
