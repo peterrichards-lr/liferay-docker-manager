@@ -47,10 +47,7 @@
 ## Gemini Added Memories
 
 - I must update gemini.md before proposing any changes to serve as a persistent state, allowing me to resume my work if an interruption occurs.
-- **Task: Fix LDM Runtime and Composition Issues**
-  - [x] **Issue 1 (Env Vars)**: Liferay env vars require double underscores (`__`) even in 2025+ versions. (Fixed in ComposerHandler)
-  - [x] **Issue 2 (SSL Properties)**: `portal-ext.properties` is missing `web.server.*` configuration when SSL is enabled. (Fixed in ComposerHandler)
-  - [x] **Issue 3 (Permissions)**: Fixed `Permission Denied` on `logs/` by adding it to the permission fixer. (Fixed in BaseHandler)
-  - [x] **Issue 4 (Port Suppression)**: Port 8080 mapping suppressed and UI updated to reflect status. (Fixed in ComposerHandler & RuntimeHandler)
-
+- **Task: Fix Search Orchestration for Modern Liferay**
+  - [x] **Root Cause**: `__` separator triggers `EnvPropertiesUtil` decoding warnings and is ignored.
+  - [ ] **Fix**: Standardize on `_PERIOD_` for search environment variables and enable `production.mode`.
 --- End of Context from: /users/peterrichards/.gemini/gemini.md ---
