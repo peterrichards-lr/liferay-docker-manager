@@ -254,6 +254,7 @@ This file serves as the persistent state and technical knowledge base for the AI
 =======
   - [x] **Fix**: Corrected `mkcert` download URL and added `--fail` to `curl` in `.github/workflows/ci.yml`.
 <<<<<<< HEAD
+<<<<<<< HEAD
   - [x] **Release**: Tagged as `v2.4.26-beta.64`.
 >>>>>>> cdf720e (fix: correct mkcert download URL and error handling in CI)
 =======
@@ -265,6 +266,12 @@ This file serves as the persistent state and technical knowledge base for the AI
   - [x] **Fix**: Isolated the CI version synchronization check into a standalone script to resolve a segmentation fault (exit 139) in the main runtime.
   - [x] **Release**: Tagged as `v2.4.26-beta.66`.
 >>>>>>> 1b15b0e (fix: resolve CI segmentation fault by isolating version check)
+=======
+  - [x] **Fix**: Isolated CI version synchronization check to resolve segmentation fault (exit 139).
+  - [x] **Docs**: Updated `TESTING.md` with functional grouping (Automated vs Manual).
+  - [x] **Docs**: Updated `LDM_ARCHITECTURE.md` to reflect proactive health checks and provider detection.
+  - [x] **Release**: Tagged as `v2.4.26-beta.67`.
+>>>>>>> f6ed162 (docs: restructure TESTING.md and update architecture doc)
 
 >>>>>>> 8b0a863 (feat: implement DNS cleanup and stable tier safety hatch [pre-release])
 --- End of Context from: /users/peterrichards/.gemini/gemini.md ---
