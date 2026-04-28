@@ -248,8 +248,13 @@ This file serves as the persistent state and technical knowledge base for the AI
   - [x] **Fix**: Improved Windows self-upgrade and WSL troubleshooting (Docker socket detection).
   - [x] **Fix**: Implemented proactive Volume Write Test in `ldm doctor`.
   - [x] **Fix**: Added Colima LaunchAgent detection and tailored hints.
+<<<<<<< HEAD
   - [x] **Release**: Tagged as `v2.4.26-beta.63`.
 >>>>>>> 756c1ee (fix: stabilize environmental detection and improve macOS naming [pre-release])
+=======
+  - [x] **Fix**: Corrected `mkcert` download URL and added `--fail` to `curl` in `.github/workflows/ci.yml`.
+  - [x] **Release**: Tagged as `v2.4.26-beta.64`.
+>>>>>>> cdf720e (fix: correct mkcert download URL and error handling in CI)
 
 >>>>>>> 8b0a863 (feat: implement DNS cleanup and stable tier safety hatch [pre-release])
 --- End of Context from: /users/peterrichards/.gemini/gemini.md ---
