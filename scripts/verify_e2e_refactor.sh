@@ -7,6 +7,9 @@ set -e
 
 echo "🚀 Starting Binary Verification..."
 
+# Store the original directory for final report placement
+ORIGINAL_PWD=$(pwd)
+
 # Determine the binary command
 LDM_CMD="ldm"
 if ! command -v "$LDM_CMD" &>/dev/null; then
@@ -18,9 +21,8 @@ fi
 # Unique filename based on machine identity
 HOSTNAME=$(hostname)
 TIMESTAMP=$(date +%Y%m%d-%H%M%S)
-RESULTS_FILE="$(pwd)/ldm-verify-${HOSTNAME}-${TIMESTAMP}.txt"
+RESULTS_FILE="${ORIGINAL_PWD}/ldm-verify-${HOSTNAME}-${TIMESTAMP}.txt"
 
-echo "🚀 Starting Binary Verification..."
 echo "📊 Results will be saved to: $RESULTS_FILE"
 
 {
@@ -31,6 +33,18 @@ echo "📊 Results will be saved to: $RESULTS_FILE"
     echo "Binary:    $(which "$LDM_CMD")"
     echo ""
 } >"$RESULTS_FILE"
+
+# Cross-platform MD5 helper
+get_hash() {
+    if command -v md5sum >/dev/null 2>&1; then
+        echo "$1" | md5sum | cut -c1-8
+    elif command -v md5 >/dev/null 2>&1; then
+        echo "$1" | md5 | cut -c1-8
+    else
+        # Fallback to just the timestamp if no hash tool found
+        echo "$1" | cut -c1-8
+    fi
+}
 
 # Capture logs helper
 capture_logs_on_failure() {
@@ -46,7 +60,8 @@ capture_logs_on_failure() {
 
 # Cleanup helper
 cleanup_test_projects() {
-    EXIT_CODE=$?
+    local EXIT_CODE=$?
+    
     # If the script failed, capture logs before we destroy the containers
     if [ $EXIT_CODE -ne 0 ]; then
         capture_logs_on_failure
@@ -54,25 +69,26 @@ cleanup_test_projects() {
         echo "!!! VERIFICATION FAILED !!!"
         
         # Final Rename based on environment slug
-        ENV_SLUG=$("$LDM_CMD" doctor --slug | tr -d '\r')
-        SHORT_HASH=$(echo "$TIMESTAMP" | sha256sum | cut -c1-8)
+        ENV_SLUG=$("$LDM_CMD" doctor --slug 2>/dev/null | tr -d '\r' || echo "unknown")
+        SHORT_HASH=$(get_hash "$TIMESTAMP")
         FINAL_NAME="verify-${ENV_SLUG}-fail-${SHORT_HASH}.txt"
-        mv "$RESULTS_FILE" "$(pwd)/$FINAL_NAME"
+        
+        # Ensure we are in the original dir or use absolute path
+        mv "$RESULTS_FILE" "${ORIGINAL_PWD}/${FINAL_NAME}"
 
         echo "--- Dumping Results File ($FINAL_NAME) ---"
-        cat "$FINAL_NAME"
+        cat "${ORIGINAL_PWD}/${FINAL_NAME}"
         echo "--- End of Results Dump ---"
     fi
 
     echo "🧹 Cleaning up test artifacts..."
     docker rm -f liferay-proxy-global liferay-search-global liferay-docker-proxy \
         ldm-smoke-test ldm-smoke-test-db-1 smoke-test-app 2>/dev/null || true
-    rm -rf e2e-work-dir
+    rm -rf "${ORIGINAL_PWD}/e2e-work-dir"
 }
 
 # Ensure cleanup on exit
 trap cleanup_test_projects EXIT
-cleanup_test_projects
 
 # Find the test project template (Flexible search)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -99,7 +115,7 @@ fi
 echo "ℹ  Using test template: $TEMPLATE_SRC"
 
 # Isolate the LDM workspace
-LDM_WORKSPACE="$(pwd)/e2e-work-dir"
+LDM_WORKSPACE="${ORIGINAL_PWD}/e2e-work-dir"
 export LDM_WORKSPACE
 mkdir -p "$LDM_WORKSPACE"
 
@@ -115,10 +131,29 @@ log_and_run() {
     local msg=$1
     shift
     echo ">> $msg" | tee -a "$RESULTS_FILE"
-    if ! "$@" 2>&1 | tee -a "$RESULTS_FILE"; then
+    
+    # We use a temporary file to capture output so we can scan for FATAL
+    local tmp_output
+    tmp_output=$(mktemp)
+    
+    # Execute and capture
+    if ! "$@" 2>&1 | tee "$tmp_output"; then
+        cat "$tmp_output" >> "$RESULTS_FILE"
         echo "❌ ERROR: Command failed: $*" | tee -a "$RESULTS_FILE"
+        rm -f "$tmp_output"
         exit 1
     fi
+    
+    cat "$tmp_output" >> "$RESULTS_FILE"
+    
+    # Scan for FATAL or specific LDM error markers that should trigger a script failure
+    if grep -Ei "FATAL|❌|ERROR:" "$tmp_output" | grep -v "ℹ" | grep -v ">>" > /dev/null; then
+        echo "❌ ERROR: Critical failure detected in output of: $*" | tee -a "$RESULTS_FILE"
+        rm -f "$tmp_output"
+        exit 1
+    fi
+    
+    rm -f "$tmp_output"
 }
 
 # 1. Prepare a Clean Slate
@@ -130,7 +165,6 @@ if [ -n "$(docker ps -aq)" ]; then
     echo "❌ ERROR: Docker environment is not empty." | tee -a "$RESULTS_FILE"
     echo "Existing containers detected:" >> "$RESULTS_FILE"
     docker ps -a >> "$RESULTS_FILE"
-    echo "Please run 'docker rm -f \$(docker ps -aq)' or 'docker system prune' before running this script."
     exit 1
 fi
 echo "✅ Docker environment is clean." | tee -a "$RESULTS_FILE"
@@ -183,9 +217,9 @@ echo "" >>"$RESULTS_FILE"
 echo "🎯 ALL E2E VERIFICATIONS PASSED!" | tee -a "$RESULTS_FILE"
 
 # Final Rename based on environment slug
-ENV_SLUG=$("$LDM_CMD" doctor --slug | tr -d '\r')
-SHORT_HASH=$(echo "$TIMESTAMP" | md5sum | cut -c1-8)
+ENV_SLUG=$("$LDM_CMD" doctor --slug 2>/dev/null | tr -d '\r' || echo "unknown")
+SHORT_HASH=$(get_hash "$TIMESTAMP")
 FINAL_NAME="verify-${ENV_SLUG}-pass-${SHORT_HASH}.txt"
-mv "$RESULTS_FILE" "$(pwd)/$FINAL_NAME"
+mv "$RESULTS_FILE" "${ORIGINAL_PWD}/${FINAL_NAME}"
 
 echo "Full results available in: $FINAL_NAME"
