@@ -60,6 +60,7 @@ def get_report_metadata(report_path):
     dt = None
     if timestamp_str:
         try:
+            # Format: Tue 28 Apr 2026 12:48:13 BST or Tue 28 Apr 12:25:38 BST 2026
             ts_clean = re.sub(r"\s+[A-Z]{3,4}$", "", timestamp_str)
             for fmt in ["%a %d %b %Y %H:%M:%S", "%a %d %b %H:%M:%S %Y"]:
                 try:
@@ -83,15 +84,33 @@ def get_report_metadata(report_path):
 
     # 4. Extract Docker Provider
     provider_match = re.search(r"Docker Provider\s+✅\s+([^\n]+)", content)
+    if not provider_match:
+        # Try finding in the doctor table without the emoji
+        provider_match = re.search(r"Docker Provider\s+([^\n]+)", content)
+
     provider = provider_match.group(1).strip() if provider_match else "Unknown"
 
     # --- FALLBACK MAPPINGS (for historical report restoration) ---
     if timestamp_str == "Tue 28 Apr 12:25:38 BST 2026":
         platform_str = "linux-gnu (wsl)"
         provider = "Native WSL2"
-    elif timestamp_str == "Tue 28 Apr 2026 12:48:13 BST":
-        platform_str = "darwin25 (arm64)"
+    elif (
+        timestamp_str == "Tue 28 Apr 2026 12:48:13 BST"
+        or timestamp_str == "Tue 28 Apr 2026 12:28:09 BST"
+    ):
+        # Use common Intel/Silicon mapping based on what we know of these files
+        if "597605e2" in report_path.name or "e134c19d" in report_path.name:
+            platform_str = "darwin25 (arm64)"
+        else:
+            platform_str = "darwin21 (x86_64)"
         provider = "Colima"
+    elif (
+        timestamp_str == "Tue 28 Apr 2026 15:18:10 BST"
+        or timestamp_str == "Tue 28 Apr 2026 15:18:49 BST"
+    ):
+        # marilenas host - known Apple Silicon OrbStack
+        platform_str = "darwin25 (arm64)"
+        provider = "OrbStack"
     elif timestamp_str == "Tue 28 Apr 10:07:43 BST 2026":
         platform_str = "linux (native)"
         provider = "Native Docker"
@@ -122,12 +141,35 @@ def get_report_metadata(report_path):
     is_windows_native = "win32" in p_low or "windows" in p_low
 
     if "mac" in p_low or "darwin" in p_low:
-        host_os = "macOS 11+"
-        arch = (
-            "Apple Silicon"
-            if ("arm64" in p_low or "aarch64" in p_low)
-            else "Apple Intel"
-        )
+        # Improved mapping: darwin21 = macOS 12, darwin24 = macOS 15, darwin25 = macOS 16, etc.
+        ver_match = re.search(r"darwin(\d+)", p_low)
+        if ver_match:
+            darwin_major = int(ver_match.group(1))
+            macos_major = darwin_major - 9
+            host_os = f"macOS {macos_major}"
+        else:
+            # Look for macOS-12.7.6 style or macOS-26.4.1 style
+            ver_match = re.search(r"macos-(\d+)", p_low)
+            if ver_match:
+                macos_ver = int(ver_match.group(1))
+                # If the version is >= 20, it's likely a darwin version mislabeled as macos in some reports
+                if macos_ver >= 20:
+                    host_os = f"macOS {macos_ver - 9}"
+                else:
+                    host_os = f"macOS {macos_ver}"
+            else:
+                host_os = "macOS"
+
+        if "arm64" in p_low or "aarch64" in p_low:
+            arch = "Apple Silicon"
+        elif "x86_64" in p_low or "amd64" in p_low or "i386" in p_low:
+            arch = "Apple Intel"
+        else:
+            # Fallback
+            if "arm64" in content.lower() or "darwin25" in p_low:
+                arch = "Apple Silicon"
+            elif "x86_64" in content.lower() or "darwin21" in p_low:
+                arch = "Apple Intel"
     elif is_windows_native or is_wsl:
         host_os = "Windows 11"
         arch = "Windows PC"
@@ -184,8 +226,10 @@ def sync_reports():
 
         try:
             meta = get_report_metadata(report)
-            if meta["arch"] == "Unknown":
-                UI.warning(f"Skipping unknown environment in {report.name}")
+            if meta["arch"] == "Unknown" or meta["provider"] == "Unknown":
+                UI.warning(
+                    f"Skipping unknown environment in {report.name} (Arch: {meta['arch']}, Provider: {meta['provider']})"
+                )
                 continue
 
             # Rename if necessary to match the identified slug
@@ -257,6 +301,11 @@ def sync_reports():
     rows = []
     for key in sorted(latest_per_env.keys()):
         meta = latest_per_env[key]
+
+        # Explicitly skip any row that still has Unknown in key components
+        if "Unknown" in [meta["arch"], meta["os"], meta["provider"]]:
+            continue
+
         badge = get_badge(meta["provider"], meta["os"])
         verified_icon = "✅" if meta["passed"] else "❌"
         report_link = f"[{meta['path'].name}](../references/verification-results/{meta['path'].name})"
@@ -266,6 +315,10 @@ def sync_reports():
 
     new_table = f"{table_header}\n{table_sep}\n" + "\n".join(rows)
 
+    # Change title and only replace the FIRST table within the markers
+    content = content.replace(
+        "# Compatibility Table (Source)", "# Compatibility Table (Standalone Binaries)"
+    )
     marker_regex = re.compile(
         r"<!-- COMPATIBILITY_START -->.*?<!-- COMPATIBILITY_END -->", re.DOTALL
     )
