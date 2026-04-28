@@ -333,10 +333,15 @@ This file serves as the persistent state and technical knowledge base for the AI
 =======
   - [x] **Fix**: Resolved syntax error in `verify_e2e_refactor.ps1` caused by omission placeholders.
   - [x] **Hardening**: Integrated `PSScriptAnalyzer` into CI and ensured build failure on PowerShell syntax errors.
+<<<<<<< HEAD
   - [x] **Release**: Tagged as `v2.4.26-beta.79`.
 <<<<<<< HEAD
 >>>>>>> f586913 (fix: resolve syntax error in verify_e2e_refactor.ps1 and harden CI linting)
 =======
+=======
+  - [x] **Consolidation**: Grouped all stabilization fixes under a single release and cleaned up intermediate beta tags.
+  - [x] **Release**: Tagged as `v2.4.26-beta.64`.
+>>>>>>> 13fa024 (chore: consolidate stabilization fixes and clean up redundant beta tags)
 - **Key Knowledge**:
   - **Provider Mapping**: Docker Desktop is strictly reserved for Windows 11 environments in our verification suite. On macOS, any `default` or `colima` context is mapped to **Colima** for reporting.
   - **Archival Strategy**: `references/verification-results/` contains only the single latest report per environment; all older or redundant "Unknown" reports are moved to `history/`.
