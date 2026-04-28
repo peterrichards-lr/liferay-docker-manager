@@ -84,6 +84,7 @@
   - [x] **Release**: Tagged as `v2.4.26-beta.43`.
   - [x] **UI**: Improved project selection UI to disambiguate projects with same name by showing paths.
   - [x] **Fix**: Improved netcat detection on Windows by supporting `ncat` and consolidating path reporting.
-  - [x] **Release**: Tagged as `v2.4.26-beta.45`.
+  - [x] **Fix**: Targeted cleanup in `verify_e2e_refactor.sh` to prevent accidental deletion of unrelated projects and report files.
+  - [x] **Release**: Tagged as `v2.4.26-beta.46`.
 
 --- End of Context from: /users/peterrichards/.gemini/gemini.md ---
