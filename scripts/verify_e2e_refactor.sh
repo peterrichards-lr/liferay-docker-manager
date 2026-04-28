@@ -21,8 +21,9 @@ fi
 # Unique filename based on machine identity
 HOSTNAME=$(hostname)
 TIMESTAMP=$(date +%Y%m%d-%H%M%S)
-# Use a temporary name initially, we will rename it in the trap
-RESULTS_FILE_TMP="${ORIGINAL_PWD}/ldm-verify-in-progress.txt"
+
+# IMPORTANT: Keep RESULTS_FILE_TMP in ORIGINAL_PWD so it isn't deleted by work-dir cleanup
+RESULTS_FILE_TMP="${ORIGINAL_PWD}/ldm-verify-in-progress-${TIMESTAMP}.txt"
 
 {
     echo "=== LDM BINARY VERIFICATION REPORT ==="
@@ -52,6 +53,7 @@ get_hash() {
 capture_logs_on_failure() {
     echo "" >>"$RESULTS_FILE_TMP"
     echo "--- FAILURE DEBUG LOGS ---" >>"$RESULTS_FILE_TMP"
+    # We only log relevant containers for this test
     for container in liferay-proxy-global liferay-search-global ldm-smoke-test ldm-smoke-test-db-1; do
         if docker ps -a | grep -q "$container"; then
             echo ">> Logs for $container:" >>"$RESULTS_FILE_TMP"
@@ -105,10 +107,15 @@ cleanup_test_projects() {
     fi
 
     echo "🧹 Cleaning up test artifacts..."
-    docker rm -f liferay-proxy-global liferay-search-global liferay-docker-proxy \
-        ldm-smoke-test ldm-smoke-test-db-1 smoke-test-app 2>/dev/null || true
+    # TARGETED cleanup: only remove what we created
+    # 1. Infrastructure containers
+    docker rm -f liferay-proxy-global liferay-search-global liferay-docker-proxy smoke-test-app 2>/dev/null || true
     
-    # Delete work dir if it exists
+    # 2. Project stack via LDM (this handles volumes and registry cleanup)
+    # We use -y to avoid confirmation prompts
+    "$LDM_CMD" -y rm ldm-smoke-test --delete 2>/dev/null || true
+    
+    # 3. Isolated work directory
     if [ -d "${ORIGINAL_PWD}/e2e-work-dir" ]; then
         rm -rf "${ORIGINAL_PWD}/e2e-work-dir"
     fi
@@ -155,7 +162,6 @@ log_and_run() {
     tmp_output=$(mktemp -t ldm-verify-XXXX)
     
     # Execute and capture
-    # We don't use set -e logic inside the subshell to ensure we capture the output even on failure
     if ! "$@" 2>&1 | tee "$tmp_output"; then
         cat "$tmp_output" >> "$RESULTS_FILE_TMP"
         echo "❌ ERROR: Command failed with exit code $?: $*" | tee -a "$RESULTS_FILE_TMP"
@@ -166,7 +172,6 @@ log_and_run() {
     cat "$tmp_output" >> "$RESULTS_FILE_TMP"
     
     # Scan for FATAL or specific LDM error markers that should trigger a script failure
-    # We skip lines starting with >> (our own logs) or ℹ (LDM hints)
     if grep -Ei "FATAL|❌|ERROR:" "$tmp_output" | grep -v "ℹ" | grep -v ">>" > /dev/null; then
         echo "❌ ERROR: Critical failure detected in output of command: $*" | tee -a "$RESULTS_FILE_TMP"
         rm -f "$tmp_output"
@@ -184,9 +189,9 @@ echo "--- Capturing Environment State ---" | tee -a "$RESULTS_FILE_TMP"
     echo "--- Test Execution Log ---"
 } >>"$RESULTS_FILE_TMP" 2>&1
 
-# 1. Prepare a Clean Slate
-echo "--- Step 0: Total Cleanup ---" | tee -a "$RESULTS_FILE_TMP"
-log_and_run "Removing all LDM resources" "$LDM_CMD" -y rm --all --delete --infra
+# 1. Prepare a Clean Slate (TARGETED)
+echo "--- Step 0: Targeted Cleanup ---" | tee -a "$RESULTS_FILE_TMP"
+log_and_run "Removing test resources" "$LDM_CMD" -y rm ldm-smoke-test --delete --infra
 
 # 2. Global Infra Setup
 echo "--- Step 1: Global Infra Setup ---"
@@ -218,7 +223,7 @@ echo "✅ Status and Logs verified." | tee -a "$RESULTS_FILE_TMP"
 
 # 6. Teardown
 echo "--- Step 5: Teardown ---"
-log_and_run "Tearing down with infra" "$LDM_CMD" -y down --infra
+log_and_run "Tearing down stack" "$LDM_CMD" -y down ldm-smoke-test --infra
 echo "✅ Teardown successful." | tee -a "$RESULTS_FILE_TMP"
 
 echo "" >>"$RESULTS_FILE_TMP"
