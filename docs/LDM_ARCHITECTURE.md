@@ -207,6 +207,7 @@ LDM handles project state surgically to ensure snapshots are portable and comple
   4. **Samples Exception**: The `--samples` workflow requires assets to be present. If missing and unreachable, LDM informs the user and stops gracefully to avoid broken environments.
 
 - **Integrity Verification**: As of v2.4.0, all snapshots and pre-warmed seeds include **SHA-256 checksums**. LDM automatically verifies these checksums during `restore` and `import` to ensure data integrity and detect corruption.
+- **Proactive Volume Write Test**: As of v2.4.26, LDM performs a real-world write test during `ldm doctor`. It spins up a temporary container to attempt a `touch` operation as UID 1000 (the Liferay user), proactively identifying read-only volume mounts caused by Docker Desktop integration or Colima permission mismatches.
 - **Orchestrated Snapshots**: Project snapshots include the database, Document Library, and the **Elasticsearch 8.x index state**.
 - **Pre-warmed Bootstrap Seeds**: To eliminate the ~15 minute initialization time for new projects, LDM automatically fetches pre-initialized "Seed" volumes (Database + Search Index + **OSGi State**) from a dedicated GitHub repository. These seeds are version-matched to the requested Liferay tag.
 - **Environment Capture**: During `ldm snapshot`, the tool automatically parses the project's `docker-compose.yml` to capture custom `LIFERAY_` environment variables. These are stored in the snapshot metadata and restored during `ldm restore`, ensuring that manual tweaks are never lost during rollback.
@@ -221,46 +222,7 @@ When a service is scaled via `ldm scale [project] liferay=N`:
 2. **Clustering Injection**: LDM automatically injects `LIFERAY_CLUSTER__LINK__ENABLED=true` and `LIFERAY_LUCENE__REPLICATE__WRITE=true` to ensure the nodes synchronize their state.
 3. **State Isolation**: For scaled Liferay instances, the host-mapped `osgi/state` and `logs` directories are disabled to prevent file-locking conflicts between nodes (each node keeps its state and logs within its own container ephemeral layer).
 
-```text
-```
-
-### 8. Workspace Import Engine
-
-This diagram shows how `ldm import` transforms a Liferay Workspace (Standard or Cloud) into an `ldm` project.
-
-```mermaid
-graph TD
-    Source[Source Workspace Path] --> Detect{Detect Type}
-
-    Detect -- "Standard (gradle.properties)" --> StdRoot[Workspace Root]
-    Detect -- "Cloud (liferay/LCP.json)" --> CloudRoot[liferay/ Root]
-
-    StdRoot --> Metadata[Extract Tag from gradle.properties]
-    CloudRoot --> Metadata
-    CloudRoot --> Limits[Extract CPU/Memory from LCP.json]
-
-    Metadata --> Scaffold[Create ldm Project Structure]
-    Limits --> Scaffold
-
-    StdRoot --> Assets[Scan for Built Artifacts]
-    CloudRoot --> Assets
-
-    Assets --> CX[Client Extensions dist/*.zip]
-    Assets --> FRAG[Fragments dist/*.zip]
-
-    FRAG --> Validate{Has liferay-deploy-fragments.json?}
-    Validate -- "Yes" --> CopyCX[Copy to ce_dir/]
-    Validate -- "No" --> Reject[Report Invalid Fragment]
-    CX --> CopyCX
-
-    StdRoot --> Config[Import configs/env/ settings]
-    CloudRoot --> Config
-
-    subgraph Cloud_Only [Cloud Specific]
-        CloudSource[Original Source Path] --> ScanServices[Scan for Standalone Services]
-        ScanServices -- "Has LCP.json + Dockerfile" --> CopyService[Copy to services/]
-    end
-```
+---
 
 ### Key Architectural Pillars
 
@@ -269,6 +231,7 @@ graph TD
     - **Stack Composition (`ComposerHandler`)**: Pure logic for generating the `docker-compose.yml` and translating metadata into infrastructure. Enforces resource limits (e.g., adding `M` suffix to memory limits for Docker compatibility).
     - **Container Lifecycle (`RuntimeHandler`)**: Manages the synchronization, health, and state of the container stack.
     - **Offline-First Engine (`AssetHandler`)**: Orchestrates the discovery, caching, and hydration of seeds and samples.
+    - **Proactive Health (`DiagnosticsHandler`)**: Performs over 20 environmental health checks, including proactive volume write testing and context-aware provider detection (identifying Docker Desktop vs. Native engine).
     - **Project Registry**: Centralizes project and hostname collision detection to prevent infrastructure conflicts across the filesystem.
     - Every command supports a standardized discovery priority: **Argument > Flag > CWD > Interactive Selection**.
     - **Resilient Tag Discovery**: The discovery engine uses a dual-mode parser supporting both the Docker Hub API (JSON) and the Liferay Release Server (HTML), ensuring the tool remains functional even when primary upstream APIs change.
@@ -285,6 +248,7 @@ graph TD
         - **Self-Healing Setup**: LDM automatically installs required Liferay plugins (`analysis-icu`, `analysis-kuromoji`, `analysis-smartcn`, `analysis-stempel`) upon initialization.
         - **Performance Tuning**: Automatically configures `indices.query.bool.max_clause_count=10000` for optimal Liferay compatibility.
 
+    - **Context-Aware Provider Detection**: LDM automatically identifies the active Docker engine context (e.g., `docker-desktop` vs. `default`) on Windows/macOS to provide tailored troubleshooting hints and optimize volume mount paths.
     - **Sidecar Fallback**: If the global container is missing, LDM automatically suppresses global ES configs to allow Liferay's internal **Sidecar** to start without configuration conflicts.
     - **Socat Bridge (Fallback)**: An optional bridge used only on macOS when the standard `/var/run/docker.sock` is missing (primarily for Docker Desktop isolation).
 
@@ -292,21 +256,3 @@ graph TD
     - **Network Stability**: All services use unique namespacing for Traefik routers and services (e.g., `[project-id]-main`), preventing routing collisions.
     - **Session Security**: Unique session cookie names are generated based on the project's virtual hostname to prevent session cross-talk.
     - **Standalone Services**: Arbitrary containers (like jBPM) placed in the `services/` folder are seamlessly orchestrated with the same routing and resource guardrails as Liferay.
-
-5. Persistence & State Management:
-    - **Orchestrated Snapshots**: Project snapshots include the database, Document Library, and the **Elasticsearch 8.x index state**, ensuring consistent recovery.
-    - **Pre-warmed Bootstrap Seeds**: Integrated support for version-matched database seeds to accelerate environment setup.
-    - **Automated Healthchecks**: Converts `LCP.json` probes into native Docker healthchecks for robust orchestration.
-    - **SSL**: `mkcert` provides automated, locally trusted wildcard certificates for all project subdomains.
-
-6. **Resource Identification & Metadata:**
-    - To ensure reliable global maintenance and pruning, LDM injects specialized Docker labels into every container it creates:
-
-```text
-| Label | Purpose | Example |
-| :--- | :--- | :--- |
-| `com.liferay.ldm.managed` | Flags the container as LDM-controlled. | `true` |
-| `com.liferay.ldm.project` | Identifies which LDM project the container belongs to. | `my-project` |
-
-The ldm prune command uses these labels to cross-reference active containers against the projects present on the filesystem, allowing it to safely identify and remove orphans from deleted projects.
-```
