@@ -862,7 +862,11 @@ class BaseHandler:
                 if token_val != "SKIP":  # nosec B105
                     docker_cmd += (
                         f'if [ "$(cat /workspace/{rel_root}/.ldm_mount_check 2>/dev/null)" = "{token_val}" ]; then '
+                        f"if touch /workspace/{rel_root}/.ldm_write_test 2>/dev/null; then echo 'OK'; "
+                        # If touch fails, try an aggressive fix once before reporting failure
+                        f"else chmod 777 /workspace/{rel_root} 2>/dev/null; "
                         f"if touch /workspace/{rel_root}/.ldm_write_test 2>/dev/null; then echo 'OK'; else echo 'NO_WRITE'; fi; "
+                        f"fi; "
                         f"else echo 'FAIL'; fi"
                     )
                 else:
