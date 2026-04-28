@@ -692,7 +692,7 @@ class BaseHandler:
                                         return item.resolve()
                             except PermissionError:
                                 continue
-                except Exception:
+                except Exception:  # nosec B112
                     continue
 
             if not for_init:
@@ -812,7 +812,7 @@ class BaseHandler:
             except (PermissionError, OSError) as e:
                 if self.verbose:
                     UI.debug(f"Could not create mount-check token (ignoring): {e}")
-                token_val = "SKIP"
+                token_val = "SKIP"  # nosec B105
 
             current_uid = os.getuid() if hasattr(os, "getuid") else 1000
             current_gid = os.getgid() if hasattr(os, "getgid") else 1000
@@ -835,7 +835,7 @@ class BaseHandler:
                     f"chmod 777 /workspace/{rel_root} 2>/dev/null || true; "
                 )
 
-                if token_val != "SKIP":
+                if token_val != "SKIP":  # nosec B105
                     docker_cmd = (
                         f'if [ "$(cat /workspace/{rel_root}/.ldm_mount_check 2>/dev/null)" = "{token_val}" ]; then '
                         f"{docker_cmd}"

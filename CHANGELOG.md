@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+<<<<<<< HEAD
+=======
+## [v2.4.26-beta.20] - 2026-04-27
+
+### Added
+
+- Resolved CI linting failures and hardened test suite.
+
+## [v2.4.26-beta.19] - 2026-04-27
+
+### Added
+
+- Proactive log monitoring for errors during health checks.
+- Dynamic JDBC driver and dialect resolution based on Liferay version.
+
+>>>>>>> d37f0cb (fix: resolve CI linting failures and harden test suite [pre-release])
 ## [v2.4.26-beta.18] - 2026-04-27
 
 ### Added
