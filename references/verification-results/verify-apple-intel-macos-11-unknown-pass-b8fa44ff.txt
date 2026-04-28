@@ -1,7 +1,7 @@
 === LDM BINARY VERIFICATION REPORT ===
-Timestamp: Tue 28 Apr 12:25:38 BST 2026
+Timestamp: Tue 28 Apr 2026 12:28:09 BST
 Hostname:  [ANONYMIZED]
-Platform:  linux-gnu
+Platform:  darwin21
 Binary:    [ANONYMIZED]
 
 --- Capturing Environment State ---
@@ -11,6 +11,6 @@ Binary:    [ANONYMIZED]
 Component                           Status                        
 ---------------------------------------------------------------------------
 LDM Version                         [0;32m✅  v2.4.26-beta.31 [0;34m[1m[BETA][0m (Release v2.4.26-beta.31) (Latest)[0m
-Executable Integrity                [0;32m✅  Verified (57b1523e38e8)[0m
+Executable Integrity                [0;32m✅  Verified (acabeb3a4c98)[0m
 ...
 🎯 ALL E2E VERIFICATIONS PASSED!

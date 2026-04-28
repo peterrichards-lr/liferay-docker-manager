@@ -12,13 +12,5 @@ Component                           Status
 ---------------------------------------------------------------------------
 LDM Version                         [0;32m✅  v2.4.26-beta.30 [0;34m[1m[BETA][0m (Release v2.4.26-beta.30) (Latest)[0m
 Executable Integrity                [0;32m✅  Verified (7ad89af415a2)[0m
-Executable Path                     [0;32m✅  [PATH][0m
-Python Version                      [0;32m✅  3.14.4[0m
-Platform                            [0;32m✅  Linux-6.19.14-200.fc43.x86_64-x86_64-with-glibc2.42[0m
-Shell Completion                    [0;32m✅  Enabled (Active)[0m
-Docker Engine                       [0;32m✅  Running (v29.4.1)[0m
-Docker Context                      [0;32m✅  default[0m
-Docker Provider                     [0;32m✅  Native Docker[0m
-Docker Compose                      [0;32m✅  Plugin v2 Detected[0m
 ...
 🎯 ALL E2E VERIFICATIONS PASSED!
