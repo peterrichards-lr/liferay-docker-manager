@@ -89,6 +89,7 @@
   - [x] **Reporting**: Improved macOS version detection (mapping Darwin major to macOS major) and updated compatibility table header.
   - [x] **Reporting**: Updated compatibility table title to indicate "Standalone Binaries".
   - [x] **Fix**: Improved `verify_e2e_refactor.sh` to explicitly mention project template source and handle cleanup "not found" silently.
-  - [x] **Release**: Tagged as `v2.4.26-beta.51`.
+  - [x] **Verification**: Final sync of compatibility table with latest historical and new reports.
+  - [x] **Release**: Tagged as `v2.4.26-beta.52`.
 
 --- End of Context from: /users/peterrichards/.gemini/gemini.md ---
