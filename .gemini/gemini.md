@@ -75,6 +75,8 @@
   - [x] **Fix**: Improved Windows self-upgrade robustness (retry loop + process termination).
   - [x] **Fix**: Resolved Linux cross-device link error (Errno 18) using shutil.move.
   - [x] **Fix**: Hardened `verify_e2e_refactor.sh` (macOS md5, FATAL detection, report preservation).
-  - [x] **Release**: Tagged as `v2.4.26-beta.41`.
+  - [x] **Fix**: Resolved search backup permission error during restore (Errno 13).
+  - [x] **Fix**: Corrected macOS detection in `ldm doctor --slug`.
+  - [x] **Release**: Tagged as `v2.4.26-beta.42`.
 
 --- End of Context from: /users/peterrichards/.gemini/gemini.md ---
