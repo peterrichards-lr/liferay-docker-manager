@@ -517,6 +517,7 @@ class RuntimeHandler(BaseHandler):
         all_projects=False,
         delete=False,
         infra=False,
+        clean_hosts=False,
     ):
         """Tears down project containers and volumes."""
         if infra:
@@ -537,6 +538,18 @@ class RuntimeHandler(BaseHandler):
         compose_base = get_compose_cmd()
         for root in targets:
             UI.warning(f"Tearing down stack: {root.name}")
+
+            # DNS Cleanup (if requested)
+            if clean_hosts:
+                meta = self.read_meta(root)
+                host = meta.get("host_name")
+                if host and host != "localhost":
+                    # Collect subdomains as well (from extensions)
+                    unresolved, non_local = self.validate_project_dns(root)[1:]
+                    # We remove the primary host and any unresolved subdomains
+                    to_clean = [host] + unresolved
+                    self._remove_hosts_entries(hostnames=to_clean)
+
             # DOWN always tears down the whole project to ensure networks and orphans are handled.
             # If the user wants to stop a specific service, they should use 'ldm stop [svc]'.
             cmd = compose_base + ["down", "-v", "--remove-orphans"]

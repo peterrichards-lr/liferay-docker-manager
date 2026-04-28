@@ -77,7 +77,12 @@ class BaseHandler:
         return port
 
 <<<<<<< HEAD
+<<<<<<< HEAD
 =======
+=======
+    LDM_HOST_TAG = "# [LDM]"
+
+>>>>>>> 8b0a863 (feat: implement DNS cleanup and stable tier safety hatch [pre-release])
     def _apply_hosts_fix(self, unresolved_domains):
         """Attempts to append missing host entries to the system hosts file."""
         if not unresolved_domains:
@@ -86,23 +91,12 @@ class BaseHandler:
         # Standard LDM expected IP for local development
         target_ip = "127.0.0.1"
         is_windows = platform.system().lower() == "windows"
-
-        # Check if we are running in WSL
-        is_wsl = False
-        if platform.system().lower() == "linux":
-            try:
-                with open("/proc/version", "r") as f:
-                    if "microsoft" in f.read().lower():
-                        is_wsl = True
-            except Exception:
-                pass
+        is_wsl = self.is_wsl()
 
         new_entries = []
         for d in sorted(list(set(unresolved_domains))):
-            # Standardize on explicit host entries.
-            # Wildcards (*.domain) are not supported by Windows DNS Client
-            # and are avoided globally for consistency.
-            new_entries.append(f"{target_ip} {d}")
+            # Standardize on explicit host entries with the LDM tag for easy removal later
+            new_entries.append(f"{target_ip} {d} {self.LDM_HOST_TAG}")
 
         content_to_add = "\n# Added by Liferay Docker Manager (LDM)\n"
         content_to_add += "\n".join(new_entries) + "\n"
@@ -153,7 +147,86 @@ class BaseHandler:
             UI.error(f"Failed to update hosts file: {e}")
             return False
 
+<<<<<<< HEAD
 >>>>>>> 3e58d74 (fix: resolve Windows/WSL hosts resolution and encoding issues [pre-release])
+=======
+    def _remove_hosts_entries(self, hostnames=None, all_ldm=False):
+        """Removes LDM-tagged entries from the system hosts file."""
+        if not hostnames and not all_ldm:
+            return True
+
+        is_windows = platform.system().lower() == "windows"
+        is_wsl = self.is_wsl()
+
+        # Construction of the PowerShell/Bash removal script
+        # This script filters the hosts file for lines containing our tag (and optionally hostname)
+        if is_windows or is_wsl:
+            exe = "powershell.exe" if is_wsl else "powershell"
+            win_hosts = r"C:\Windows\System32\drivers\etc\hosts"
+
+            # PS Logic: Read file, filter out lines matching criteria, write back as UTF8 (no BOM)
+            if all_ldm:
+                filter_logic = (
+                    f'where {{ $_ -notmatch "{re.escape(self.LDM_HOST_TAG)}" }}'
+                )
+            else:
+                patterns = [
+                    f'($_ -match "{re.escape(self.LDM_HOST_TAG)}" -and $_ -match "{re.escape(h)}")'
+                    for h in hostnames
+                ]
+                filter_logic = f"where {{ -not ({' -or '.join(patterns)}) }}"
+
+            ps_cmd = (
+                f"$c = Get-Content -Path {win_hosts}; "
+                f"$c | {filter_logic} | Set-Content -Path {win_hosts} -Encoding UTF8"
+            )
+
+            try:
+                UI.info("Requesting permission to clean Windows hosts file...")
+                subprocess.run(
+                    [
+                        exe,
+                        "-Command",
+                        f"Start-Process powershell -Verb RunAs -ArgumentList '{ps_cmd}'",
+                    ],
+                    check=True,
+                )
+                return True
+            except Exception as e:
+                UI.error(f"Failed to clean Windows hosts file: {e}")
+                return False
+        else:
+            # macOS / Linux
+            hosts_path = "/etc/hosts"
+            UI.info(f"Requesting permission to clean {hosts_path}...")
+
+            try:
+                # Use sudo sed to surgically remove lines
+                cmd = [
+                    "sudo",
+                    "sed",
+                    "-i",
+                    ".bak" if platform.system().lower() == "darwin" else "",
+                ]
+
+                if all_ldm:
+                    cmd.append(f"/{re.escape(self.LDM_HOST_TAG)}/d")
+                else:
+                    for h in hostnames:
+                        # Remove lines matching the tag AND the specific hostname
+                        cmd.extend(
+                            ["-e", f"/{re.escape(self.LDM_HOST_TAG)}.*{re.escape(h)}/d"]
+                        )
+
+                cmd.append(hosts_path)
+                subprocess.run(cmd, check=True)
+                return True
+            except Exception as ex:
+                UI.error(f"Failed to clean {hosts_path}: {ex}")
+                return False
+        return True
+
+>>>>>>> 8b0a863 (feat: implement DNS cleanup and stable tier safety hatch [pre-release])
     def check_ram(self, mem_limit=None):
         """Verifies if the host has enough RAM allocated to Docker."""
         try:

@@ -241,9 +241,30 @@ class DiagnosticsHandler(BaseHandler):
             url = f"https://github.com/peterrichards-lr/liferay-docker-manager/releases/download/v{VERSION}/{target_asset}"
         else:
             # 1. Check for updates
+<<<<<<< HEAD
             latest, url = check_for_updates(VERSION, force=True)
             if not latest or version_to_tuple(latest) <= version_to_tuple(VERSION):
                 UI.success(f"LDM is already up to date (v{VERSION}).")
+=======
+            latest, url = check_for_updates(
+                VERSION, force=True, pre_release=pre_release
+            )
+
+            is_beta = "-" in VERSION
+            if is_beta and not pre_release:
+                # User is on beta but wants stable (Switching Tiers)
+                UI.info(
+                    f"You are currently on a beta build ({UI.BYELLOW}v{VERSION}{UI.COLOR_OFF})."
+                )
+                UI.info(
+                    f"The latest stable version is {UI.GREEN}v{latest}{UI.COLOR_OFF}."
+                )
+                if not UI.confirm("Switch back to the stable release tier?", "N"):
+                    return
+            elif not latest or version_to_tuple(latest) <= version_to_tuple(VERSION):
+                tier = " (stable)" if not pre_release else " (pre-release)"
+                UI.success(f"LDM is already up to date v{VERSION}{tier}.")
+>>>>>>> 8b0a863 (feat: implement DNS cleanup and stable tier safety hatch [pre-release])
                 return
 
         if is_repair:
@@ -1767,6 +1788,7 @@ del "%~f0"
 
     def cmd_prune(self):
         UI.heading("LDM Global Maintenance - Pruning Orphaned Resources")
+        clean_hosts = getattr(self.args, "clean_hosts", False)
 
         roots = self.find_dxp_roots()
         active_projects = set()
@@ -1925,6 +1947,11 @@ del "%~f0"
                     UI.success("Orphaned SSL artifacts removed.")
             else:
                 UI.info("No orphaned SSL artifacts found.")
+
+        # 5. DNS Cleanup (Explicitly requested via --clean-hosts)
+        if clean_hosts:
+            if UI.confirm("Remove ALL LDM-managed entries from your hosts file?", "N"):
+                self._remove_hosts_entries(all_ldm=True)
 
         UI.info("Prune complete.")
 
