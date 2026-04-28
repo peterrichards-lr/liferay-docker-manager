@@ -1,4 +1,5 @@
 import os
+import re
 import sys
 import platform
 import shutil
@@ -493,7 +494,103 @@ del "%~f0"
 
         return False
 
+    def _get_env_info(self):
+        """Extracts architecture, OS, and Docker provider information."""
+        arch = "Unknown"
+        host_os = "Unknown"
+        provider = "Unknown"
+
+        # 1. Architecture & OS
+        try:
+            platform_str = (
+                f"{platform.system()}-{platform.release()}-{platform.machine()}"
+            )
+            p_low = platform_str.lower()
+            if "arm64" in p_low or "aarch64" in p_low:
+                arch = "Apple Silicon" if "mac" in p_low else "ARM64"
+            elif "x86_64" in p_low or "amd64" in p_low or "i386" in p_low:
+                arch = "Apple Intel" if "mac" in p_low else "x86_64"
+
+            if "mac" in p_low:
+                host_os = "macOS 11+"
+            elif "microsoft" in p_low or "windows" in p_low:
+                host_os = "Windows 11"
+                arch = "Windows PC"
+            elif "fedora" in p_low:
+                # Capture major version if possible
+                fedora_match = re.search(r"fc(\d+)", p_low)
+                host_os = (
+                    f"Fedora {fedora_match.group(1) if fedora_match else ''}".strip()
+                )
+                arch = "Linux Workstation"
+            elif "ubuntu" in p_low:
+                ubuntu_match = re.search(r"(\d+\.\d+)", p_low)
+                host_os = (
+                    f"Ubuntu {ubuntu_match.group(1) if ubuntu_match else ''}".strip()
+                )
+                arch = "Linux Node" if "server" in p_low else "Linux Workstation"
+            elif "linux" in p_low:
+                host_os = "Linux"
+                arch = "Linux Workstation"
+        except Exception:
+            pass
+
+        # 2. Docker Provider
+        try:
+            context = run_command(["docker", "context", "show"], check=False).strip()
+            if context:
+                inspect = run_command(
+                    ["docker", "context", "inspect", context], check=False
+                )
+                if inspect:
+                    data = json.loads(inspect)[0]
+                    endpoint = (
+                        data.get("Endpoints", {}).get("docker", {}).get("Host", "")
+                    )
+                    if endpoint:
+                        if ".colima" in endpoint:
+                            provider = "Colima"
+                        elif "orbstack" in endpoint:
+                            provider = "OrbStack"
+                        elif "docker.sock" in endpoint or "docker_engine" in endpoint:
+                            # Standard socket. Determine if it's Native or Desktop.
+                            sys_type = platform.system().lower()
+                            if sys_type == "linux":
+                                # Check for WSL
+                                try:
+                                    with open("/proc/version", "r") as f:
+                                        if "microsoft" in f.read().lower():
+                                            provider = "Native WSL2"
+                                        else:
+                                            provider = "Native Docker"
+                                except Exception:
+                                    provider = "Native Docker"
+                            else:
+                                provider = "Docker Desktop"
+
+                    # Fallback to name-based
+                    if provider == "Unknown":
+                        if context == "colima":
+                            provider = "Colima"
+                        elif context == "orbstack":
+                            provider = "OrbStack"
+        except Exception:
+            pass
+
+        return arch, host_os, provider
+
     def cmd_doctor(self, project_id=None, all_projects=False):
+        """Verify host environment health and project dependencies."""
+        arch, host_os, provider = self._get_env_info()
+
+        if getattr(self.args, "slug", False):
+            # Use same slug logic as sync_compatibility.py
+            clean_arch = arch.lower().replace(" ", "-")
+            clean_os = host_os.lower().replace(" ", "-").replace("+", "")
+            clean_provider = provider.lower().replace(" ", "-")
+            print(f"{clean_arch}-{clean_os}-{clean_provider}")
+            return
+
         UI.heading("LDM Doctor - Environmental Health Check")
 
         # 0. Early Project Resolve (Optional skip allowed)
@@ -627,36 +724,6 @@ del "%~f0"
                 context = run_command(["docker", "context", "show"], check=False)
                 if context:
                     context = context.strip()
-                    provider = "Unknown"
-
-                    # Inspect the host endpoint for more accurate provider detection
-                    endpoint = run_command(
-                        [
-                            "docker",
-                            "context",
-                            "inspect",
-                            "--format",
-                            "{{.Endpoints.docker.Host}}",
-                            context,
-                        ],
-                        check=False,
-                    )
-
-                    if endpoint:
-                        if ".colima" in endpoint:
-                            provider = "Colima"
-                        elif "orbstack" in endpoint:
-                            provider = "OrbStack"
-                        elif "docker.sock" in endpoint or "docker_engine" in endpoint:
-                            provider = "Docker Desktop"
-
-                    # Fallback to name-based if endpoint check was inconclusive
-                    if provider == "Unknown":
-                        if context == "colima":
-                            provider = "Colima"
-                        elif context == "orbstack":
-                            provider = "OrbStack"
-
                     results.append(("Docker Context", context, True))
                     results.append(("Docker Provider", provider, True))
             except Exception:
@@ -808,6 +875,7 @@ del "%~f0"
         # 4.2 Legacy Compatibility Checks (Maintain existing summary lines)
         telnet_bin = shutil.which("telnet")
         nc_bin = shutil.which("nc")
+        ncat_bin = shutil.which("ncat")  # Nmap's netcat version
         lcp_bin = shutil.which("lcp")
 
         results.append(
@@ -818,19 +886,33 @@ del "%~f0"
             )
         )
         if not telnet_bin:
-            add_hint(
-                "Install telnet for Gogo Shell support (e.g. 'brew install telnet' or 'apt-get install telnet')."
-            )
+            if platform.system().lower() == "windows":
+                add_hint(
+                    "To enable telnet on Windows, run this in an Admin PowerShell: "
+                    f"'{UI.WHITE}Enable-WindowsOptionalFeature -Online -FeatureName TelnetClient{UI.COLOR_OFF}'"
+                )
+            else:
+                add_hint(
+                    "Install telnet for Gogo Shell support (e.g. 'brew install telnet' or 'apt-get install telnet')."
+                )
 
+        # Netcat / Ncat check
+        active_nc = nc_bin or ncat_bin
         results.append(
             (
-                "Tool: netcat (nc)",
-                "Installed" if nc_bin else "Missing (Log Level sync disabled)",
-                True if nc_bin else "warn",
+                "Tool: netcat (nc/ncat)",
+                "Installed" if active_nc else "Missing (Log Level sync disabled)",
+                True if active_nc else "warn",
             )
         )
-        if not nc_bin:
-            add_hint("Install netcat for log-level synchronization.")
+        if not active_nc:
+            if platform.system().lower() == "windows":
+                add_hint(
+                    f"Install nmap for Windows to get '{UI.WHITE}ncat{UI.COLOR_OFF}': "
+                    f"'{UI.WHITE}winget install Insecure.Nmap{UI.COLOR_OFF}'"
+                )
+            else:
+                add_hint("Install netcat for log-level synchronization.")
 
         results.append(
             (
@@ -1593,10 +1675,33 @@ del "%~f0"
                             (f"[{p_path.name}] DB Version", "Up to date", True)
                         )
 
+            # 7.2.6 Mount Integrity Check
             try:
-                if platform.system().lower() == "darwin":
-                    if liferay_container:
-                        import uuid
+                # Detect if the project is located on a Windows mount in WSL
+                # This is a major source of permission and performance issues
+                is_wsl_mount = False
+                if platform.system().lower() == "linux" and "/mnt/" in str(
+                    p_path.resolve()
+                ):
+                    is_wsl_mount = True
+
+                if is_wsl_mount:
+                    results.append(
+                        (
+                            f"[{p_path.name}] Mount Integrity",
+                            "WSL Mount (/mnt/c) Detected",
+                            False,
+                        )
+                    )
+                    add_hint(
+                        f"[{p_path.name}] Using Windows-mounted paths (/mnt/c) in WSL2 causes severe permission and performance issues with Liferay. "
+                        f"Move your project to the native Linux filesystem (e.g. ~/repos/{p_path.name}).",
+                        "https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/installation.md#linux--wsl-docker-permissions",
+                    )
+                else:
+                    if platform.system().lower() == "darwin":
+                        if liferay_container:
+                            import uuid
 
                         token_val = f"DOCTOR_LIVE_{uuid.uuid4().hex[:8]}"
                         deploy_dir = p_path / "deploy"

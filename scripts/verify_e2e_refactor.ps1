@@ -3,6 +3,7 @@
 # Optimized for low-spec machines.
 
 $ErrorActionPreference = "Stop"
+$currentDir = Get-Location
 echo "🚀 Starting Binary Verification (Windows Native)..."
 
 # Determine the binary command
@@ -48,7 +49,17 @@ function Cleanup-TestProjects {
         Capture-LogsOnFailure
         echo ""
         echo "!!! VERIFICATION FAILED !!!"
-        echo "--- Dumping Results File ($ResultsFile) ---"
+        
+        # Final Rename based on environment slug
+        $EnvSlug = & $LDM_CMD doctor --slug
+        $EnvSlug = $EnvSlug.Trim()
+        $Hash = [System.BitConverter]::ToString((New-Object System.Security.Cryptography.SHA256Managed).ComputeHash([System.Text.Encoding]::UTF8.GetBytes($Timestamp))).Replace("-", "").Substring(0, 8).ToLower()
+        $FinalName = "verify-${EnvSlug}-fail-${Hash}.txt"
+        
+        Move-Item -Path $ResultsFile -Destination (Join-Path $currentDir $FinalName) -Force
+        $ResultsFile = Join-Path $currentDir $FinalName
+
+        echo "--- Dumping Results File ($FinalName) ---"
         Get-Content $ResultsFile
         echo "--- End of Results Dump ---"
     }
@@ -128,6 +139,14 @@ try {
         throw "ERROR: Global Search failed to start"
     }
 
+    # Verify search backup repository is registered
+    $regCheck = docker exec liferay-search-global curl -s localhost:9200/_snapshot/liferay_backup
+    if ($regCheck -notmatch "liferay_backup") {
+        "❌ ERROR: Global Search backup repository not registered" | tee -a $ResultsFile
+        throw "Global Search backup repository not registered"
+    }
+    "✅ Global Search backup repository verified." | tee -a $ResultsFile
+
     # 2. Project Lifecycle
     echo "--- Step 2: Project Run ---"
     Copy-Item -Recurse "$TemplateSrc" "ldm-smoke-test"
@@ -154,7 +173,16 @@ try {
 
     echo "" | Out-File -FilePath $ResultsFile -Append
     echo "🎯 ALL E2E VERIFICATIONS PASSED!" | tee -a $ResultsFile
-    echo "Full results available in: $ResultsFile"
+    
+    # Final Rename based on environment slug
+    $EnvSlug = & $LDM_CMD doctor --slug
+    $EnvSlug = $EnvSlug.Trim()
+    $Hash = [System.BitConverter]::ToString((New-Object System.Security.Cryptography.SHA256Managed).ComputeHash([System.Text.Encoding]::UTF8.GetBytes($Timestamp))).Replace("-", "").Substring(0, 8).ToLower()
+    $FinalName = "verify-${EnvSlug}-pass-${Hash}.txt"
+    
+    Move-Item -Path $ResultsFile -Destination (Join-Path $currentDir $FinalName) -Force
+
+    echo "Full results available in: $FinalName"
 }
 finally {
     Set-Location $currentDir

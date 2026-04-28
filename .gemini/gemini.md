@@ -16,7 +16,15 @@ This file serves as the persistent state and technical knowledge base for the AI
   - **Legacy**: Use double underscore (`__`).
   - The tool must remain version-aware and switch separators automatically.
 
+<<<<<<< HEAD
 ### 2. Networking & Routing (Traefik v3)
+=======
+- **Prioritize DRY (Don't Repeat Yourself)**: Before creating a new function/helper, search the `@codebase` for existing utilities.
+- **Refactor over Duplicate**: If redundant code is found, suggest a refactor into a shared service or utility rather than creating a new one.
+- **Predictive Failure**: For every implementation, list two potential failure points (edge cases or performance) and how they were handled.
+- **Predictable Layers**: Ensure logic stays within its designated layer (e.g., UI vs. Business Logic vs. Data) as defined in `spec.md`.
+- **Script Parity**: All cross-platform utility, verification, and wrapper scripts (e.g., `.sh` vs `.ps1` or `.bat`) MUST be kept in perfect functional parity. Any hardening check or logic update applied to one must be immediately synchronized to the others.
+>>>>>>> fbe7738 (feat: implement environment slugs for automated verification reporting [pre-release])
 
 - **Explicit Network Labels**: Every container managed by LDM MUST have the `traefik.docker.network=liferay-net` label.
 - **Metadata DNA**: Every Liferay container MUST have the `com.liferay.ldm.project` label. This is essential for `ldm status` and `ldm prune`.
