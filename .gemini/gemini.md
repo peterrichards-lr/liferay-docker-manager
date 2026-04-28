@@ -171,8 +171,12 @@ This file serves as the persistent state and technical knowledge base for the AI
 >>>>>>> 518ff1f (fix: resolve Linux cross-device link error and Windows upgrade robustness [pre-release])
 =======
   - [x] **Fix**: Hardened `verify_e2e_refactor.sh` (macOS md5, FATAL detection, report preservation).
+<<<<<<< HEAD
   - [x] **Release**: Tagged as `v2.4.26-beta.40`.
 >>>>>>> d11415e (fix: harden verify script and stabilize reports)
+=======
+  - [x] **Release**: Tagged as `v2.4.26-beta.41`.
+>>>>>>> 28dc971 (fix: resolve macOS md5 and report loss in verify script)
 
 >>>>>>> 8b0a863 (feat: implement DNS cleanup and stable tier safety hatch [pre-release])
 --- End of Context from: /users/peterrichards/.gemini/gemini.md ---
