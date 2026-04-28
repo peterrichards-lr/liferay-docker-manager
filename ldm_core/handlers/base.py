@@ -55,6 +55,80 @@ class BaseHandler:
 
         return port
 
+<<<<<<< HEAD
+=======
+    def _apply_hosts_fix(self, unresolved_domains):
+        """Attempts to append missing host entries to the system hosts file."""
+        if not unresolved_domains:
+            return True
+
+        # Standard LDM expected IP for local development
+        target_ip = "127.0.0.1"
+        is_windows = platform.system().lower() == "windows"
+
+        # Check if we are running in WSL
+        is_wsl = False
+        if platform.system().lower() == "linux":
+            try:
+                with open("/proc/version", "r") as f:
+                    if "microsoft" in f.read().lower():
+                        is_wsl = True
+            except Exception:
+                pass
+
+        new_entries = []
+        for d in sorted(list(set(unresolved_domains))):
+            # Windows DNS Client DOES NOT support wildcards in the hosts file.
+            # We only add them for macOS/Linux.
+            if is_windows:
+                new_entries.append(f"{target_ip} {d}")
+            else:
+                new_entries.append(f"{target_ip} {d} *.{d}")
+
+        content_to_add = "\n# Added by Liferay Docker Manager (LDM)\n"
+        content_to_add += "\n".join(new_entries) + "\n"
+
+        hosts_path = (
+            r"C:\Windows\System32\drivers\etc\hosts" if is_windows else "/etc/hosts"
+        )
+
+        try:
+            UI.info(f"Requesting permission to update {hosts_path}...")
+            if is_windows:
+                # Use PowerShell to append with elevation and explicit UTF8 encoding (No BOM)
+                # Note: powershell 5.1 requires 'UTF8' for no BOM, while 7+ defaults to it.
+                cmd = [
+                    "powershell",
+                    "-Command",
+                    f"Start-Process powershell -Verb RunAs -ArgumentList \"Add-Content -Path {hosts_path} -Value '{content_to_add}' -Encoding UTF8\"",
+                ]
+                subprocess.run(cmd, check=True)
+            else:
+                # Use sudo tee to append
+                cmd = ["sudo", "tee", "-a", hosts_path]
+                process = subprocess.Popen(
+                    cmd, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL
+                )
+                process.communicate(input=content_to_add.encode())
+
+                if process.returncode != 0:
+                    return False
+
+                # WSL Specific: If we just updated /etc/hosts inside WSL, we should remind the user
+                # that their Windows browser might still need the host entry.
+                if is_wsl:
+                    UI.warning("WSL /etc/hosts updated.")
+                    UI.info("Your Windows browser may also require this host entry.")
+                    UI.info(
+                        f"Run {UI.CYAN}ldm fix-hosts{UI.COLOR_OFF} from a standard Windows terminal to update both."
+                    )
+
+            return True
+        except Exception as e:
+            UI.error(f"Failed to update hosts file: {e}")
+            return False
+
+>>>>>>> 3e58d74 (fix: resolve Windows/WSL hosts resolution and encoding issues [pre-release])
     def check_ram(self, mem_limit=None):
         """Verifies if the host has enough RAM allocated to Docker."""
         try:
