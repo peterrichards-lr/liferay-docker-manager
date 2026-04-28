@@ -67,14 +67,15 @@
   - [x] **Hardening**: Implemented self-healing permissions for macOS/Colima.
   - [x] **Reporting**: Improved macOS version detection and naming (Monterey, Sequoia, Tahoe).
   - [x] **Reporting**: Automated report naming based on environment slug and status.
-  - [x] **Sync**: Refined `sync_compatibility.py` with robust normalization and deduplication.
+  - [x] **Sync**: Refined `sync_compatibility.py` with robust normalization, Tahoe/Sequoia mapping, and "Failure + Latest Pass" cleanup policy.
   - [x] **Fix**: Improved Windows self-upgrade and WSL troubleshooting (Docker socket detection).
   - [x] **Fix**: Implemented proactive Volume Write Test in `ldm doctor`.
   - [x] **Fix**: Added Colima LaunchAgent detection and tailored hints.
   - [x] **Fix**: Corrected `mkcert` download URL and added `--fail` to `curl` in `.github/workflows/ci.yml`.
   - [x] **Fix**: Isolated CI version synchronization check to resolve segmentation fault (exit 139).
+  - [x] **Fix**: Hardened Windows verification script (`.ps1`) and fixed console encoding.
   - [x] **Docs**: Updated `TESTING.md` with functional grouping (Automated vs Manual).
   - [x] **Docs**: Updated `LDM_ARCHITECTURE.md` to reflect proactive health checks and provider detection.
-  - [x] **Release**: Tagged as `v2.4.26-beta.67`.
+  - [x] **Release**: Tagged as `v2.4.26-beta.69`.
 
 --- End of Context from: /users/peterrichards/.gemini/gemini.md ---
