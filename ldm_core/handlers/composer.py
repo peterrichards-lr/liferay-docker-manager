@@ -163,6 +163,7 @@ class ComposerHandler(BaseHandler):
         if use_shared_search:
             liferay_env.extend(
                 [
+<<<<<<< HEAD
                     f"LIFERAY_ELASTICSEARCH{separator}SIDECAR{separator}ENABLED=false",
                     f"LIFERAY_ELASTICSEARCH{separator}CONNECTION{separator}URL=http://liferay-search-global:9200",
                     f"LIFERAY_ELASTICSEARCH{separator}INDEX{separator}NAME{separator}PREFIX=ldm-{project_name}-",
@@ -173,6 +174,15 @@ class ComposerHandler(BaseHandler):
                 f"LIFERAY_ELASTICSEARCH{separator}SIDECAR{separator}ENABLED=true"
             )
 
+=======
+                    "LIFERAY_ELASTICSEARCH__PRODUCTION__MODE__ENABLED=true",
+                    "LIFERAY_ELASTICSEARCH__CONNECTION__URL=http://liferay-search-global:9200",
+                    f"LIFERAY_ELASTICSEARCH__INDEX__NAME__PREFIX=ldm-{project_name}-",
+                ]
+            )
+        else:
+            liferay_env.append("LIFERAY_ELASTICSEARCH__PRODUCTION__MODE__ENABLED=false")
+>>>>>>> bb0c7fb (feat: harden environmental diagnostics and formalize project management [pre-release])
         # Add custom environment variables from metadata
         custom_env_str = meta.get("custom_env", "{}")
         try:
@@ -266,6 +276,7 @@ class ComposerHandler(BaseHandler):
                 f"{paths['deploy']}:/mnt/liferay/deploy",
                 f"{paths['files']}:/mnt/liferay/files",
                 f"{paths['data']}:/storage/liferay/data",
+                f"{paths['configs']}:/opt/liferay/osgi/configs",
             ],
             "networks": ["liferay-net"],
         }

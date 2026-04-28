@@ -209,7 +209,12 @@ class TestArchitecturalContracts(unittest.TestCase):
         liferay_env = compose_content["services"]["liferay"].get("environment", [])
         self.assertTrue(
             any(
+<<<<<<< HEAD
                 "LIFERAY_ELASTICSEARCH_SIDECAR_ENABLED=false" in e for e in liferay_env
+=======
+                "LIFERAY_ELASTICSEARCH__PRODUCTION__MODE__ENABLED=true" in e
+                for e in liferay_env
+>>>>>>> bb0c7fb (feat: harden environmental diagnostics and formalize project management [pre-release])
             ),
             "REDLINE FAILURE: Sidecar disable variable missing from environment.",
         )

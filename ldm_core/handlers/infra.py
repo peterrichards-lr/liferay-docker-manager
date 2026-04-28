@@ -75,15 +75,49 @@ class InfraHandler(BaseHandler):
         env["LDM_RESOLVED_IP"] = resolved_ip
         return env
 
+    def _fix_cert_permissions(self, path):
+        """Attempts to fix directory permissions using sudo if authorized by the user."""
+        if UI.confirm(f"Fix permissions for {path}? (Requires sudo)", "Y"):
+            try:
+                # Get current user and group
+                import os
+
+                uid = os.getuid()
+                gid = os.getgid()
+                UI.info(f"Requesting permission to reclaim ownership of {path}...")
+                self.run_command(["sudo", "chown", "-R", f"{uid}:{gid}", str(path)])
+                return True
+            except Exception as e:
+                UI.error(f"Failed to reclaim ownership: {e}")
+        return False
+
     def setup_ssl(self, cert_dir, host_name):
         """Ensures valid locally-trusted wildcard certificates exist for the host."""
         if not shutil.which("mkcert"):
-            UI.warning(
-                "mkcert not found. SSL proxy will use default self-signed certs."
+            UI.error("LDM Requirement Missing: mkcert")
+            UI.info(
+                "Local SSL requires 'mkcert'. Please install it to continue:\n"
+                "  - macOS: brew install mkcert nss\n"
+                "  - Windows: scoop install mkcert\n"
+                "  - Linux: sudo apt install mkcert libnss3-tools\n"
             )
+            UI.info(f"After installation, run: {UI.WHITE}mkcert -install{UI.COLOR_OFF}")
+            UI.warning("SSL proxy will use default self-signed certs for now.")
             return False
 
-        cert_dir.mkdir(parents=True, exist_ok=True)
+        try:
+            cert_dir.mkdir(parents=True, exist_ok=True)
+        except PermissionError:
+            UI.error(f"Permission Denied: Cannot create directory {cert_dir}")
+            if self._fix_cert_permissions(cert_dir.parent):
+                # Retry
+                try:
+                    cert_dir.mkdir(parents=True, exist_ok=True)
+                except Exception:
+                    return False
+            else:
+                return False
+
         cert_file = cert_dir / f"{host_name}.pem"
         key_file = cert_dir / f"{host_name}-key.pem"
 
@@ -91,28 +125,56 @@ class InfraHandler(BaseHandler):
             UI.info(
                 f"Generating SSL certificates for {UI.CYAN}{host_name}{UI.COLOR_OFF}..."
             )
-            self.run_command(
-                [
-                    "mkcert",
-                    "-cert-file",
-                    str(cert_file),
-                    "-key-file",
-                    str(key_file),
-                    host_name,
-                    f"*.{host_name}",
-                ],
-                cwd=str(cert_dir),
-            )
+            try:
+                # We use check=False to handle errors manually with better feedback
+                res = self.run_command(
+                    [
+                        "mkcert",
+                        "-cert-file",
+                        str(cert_file),
+                        "-key-file",
+                        str(key_file),
+                        host_name,
+                        f"*.{host_name}",
+                    ],
+                    cwd=str(cert_dir),
+                    check=False,
+                    capture_output=True,
+                )
+
+                if res is None:
+                    # Check if it was a permission issue
+                    if not os.access(cert_dir, os.W_OK):
+                        UI.error(
+                            f"Permission Denied: mkcert cannot write to {cert_dir}"
+                        )
+                        if self._fix_cert_permissions(cert_dir):
+                            # Retry the mkcert command once
+                            return self.setup_ssl(cert_dir, host_name)
+                    else:
+                        UI.error("mkcert failed to generate certificates.")
+                        UI.info(
+                            "Ensure mkcert is correctly installed and initialized ('mkcert -install')."
+                        )
+                    return False
+            except Exception as e:
+                UI.error(f"mkcert unexpected error: {e}")
+                return False
 
         # Generate Traefik Dynamic Config for this host
-        config_content = f"""
+        try:
+            config_content = f"""
 tls:
   certificates:
     - certFile: /etc/traefik/certs/{host_name}.pem
       keyFile: /etc/traefik/certs/{host_name}-key.pem
 """
-        config_file = cert_dir / f"traefik-{host_name}.yml"
-        config_file.write_text(config_content)
+            config_file = cert_dir / f"traefik-{host_name}.yml"
+            config_file.write_text(config_content)
+        except Exception as e:
+            UI.error(f"Failed to write Traefik configuration: {e}")
+            return False
+
         return True
 
     def cmd_infra_down(self):

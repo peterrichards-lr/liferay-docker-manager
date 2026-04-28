@@ -510,6 +510,10 @@ You must add each domain and subdomain to your system's `hosts` file.
 
 > [!TIP]
 > LDM will proactively check your DNS configuration during `ldm run` or `ldm doctor` and provide the exact line you need to copy-paste if any subdomains are missing.
+>
+> [!CAUTION]
+> **Windows & .local domains:** Windows 10/11 reserve the `.local` TLD for **Multicast DNS (mDNS)**. If you use a `.local` domain, Windows may prioritize mDNS discovery and ignore your `hosts` file entries entirely, leading to resolution failures even if the entries are correct.
+> **Recommendation:** We strongly recommend using `.test`, `.internal`, or `.demo` instead of `.local` when working on Windows or WSL.
 
 ---
 

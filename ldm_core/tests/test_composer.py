@@ -30,6 +30,7 @@ class TestComposer(unittest.TestCase):
             "deploy": self.tmp_dir / "deploy",
             "files": self.tmp_dir / "files",
             "data": self.tmp_dir / "data",
+            "configs": self.tmp_dir / "osgi" / "configs",
             "state": self.tmp_dir / "osgi" / "state",
             "logs": self.tmp_dir / "logs",
             "compose": self.tmp_dir / "docker-compose.yml",

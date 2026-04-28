@@ -51,9 +51,25 @@ This file serves as the persistent state and technical knowledge base for the AI
 
 ### 7. Security & Compliance
 
+<<<<<<< HEAD
 - **Doctor Log Refinement**: Enhanced `_check_container_health_logs` to handle ECS-formatted Elasticsearch logs and suppressed benign "flood stage disk watermark" warnings.
 - **Nosec Disclosure**: Any use of `# nosec` in the codebase MUST be documented in `docs/SECURITY.md`.
 - **Contract Verification**: Refactoring MUST be verified against `ldm_core/tests/test_architectural_contracts.py` to ensure no silent loss of mandatory labels or properties.
+=======
+## 8. Git Management & Branching Strategy
+
+- **Logical Squashing**: Avoid creating a commit for every minor bugfix. Group related fixes and features into single, descriptive commits.
+- **Release Automation**:
+  - Use `[release]` in the commit summary to trigger a stable GitHub Release.
+  - Use `[pre-release]` in the commit summary to trigger a Beta/Test build.
+  - Ensure version tags (e.g., `v2.4.26` or `v2.4.26-beta.1`) match the `VERSION` in `ldm_core/constants.py`.
+- **Branching Separation**:
+  - **`master` / `main`**: Strictly for environmental hardening, stable maintenance, and verified hotfixes.
+  - **Roadmap Items**: All large roadmap items, complex features, or experimental refactors MUST be developed in dedicated feature branches (e.g., `roadmap/feature-name`).
+  - Merge roadmap branches to `master` only after full verification and peer approval.
+
+## Gemini Added Memories
+>>>>>>> bb0c7fb (feat: harden environmental diagnostics and formalize project management [pre-release])
 
 <<<<<<< HEAD
 ### 8. Robustness & State Management (Hardened v2.4.9)
@@ -96,10 +112,10 @@ This file serves as the persistent state and technical knowledge base for the AI
 - [ ] Documentation is fully updated.
 =======
 - I must update gemini.md before proposing any changes to serve as a persistent state, allowing me to resume my work if an interruption occurs.
-- **Task: Initialize Beta Release Cycle**
-  - [x] **Bug (Search)**: Standardized on `_PERIOD_` for search environment variables.
-  - [x] **Bug (Precedence)**: Fixed `version_to_tuple` to correctly compare beta vs stable releases.
-  - [x] **Bug (CI)**: Fixed download URL redundancy in GitHub Release notes.
-  - [x] **Release**: Initialized v2.4.26-beta.2.
+- **Task: System Hardening & Release Management**
+  - [x] **Git History**: Purged `image.png` from entire repository history using `filter-branch`.
+  - [x] **Hardening**: Implemented Tool Path Integrity check in `ldm doctor`.
+  - [x] **Hardening**: Implemented self-healing permission fixer for SSL certificates.
+  - [x] **Documentation**: Updated Rules of Engagement with Git and Branching strategy.
 --- End of Context from: /users/peterrichards/.gemini/gemini.md ---
 >>>>>>> 695ef4a (docs: update gemini.md session state)
