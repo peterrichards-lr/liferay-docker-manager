@@ -1,0 +1,9 @@
+=== LDM BINARY VERIFICATION REPORT ===
+Timestamp: Tue 28 Apr 2026 15:18:10 BST
+Hostname:  marilenas.macbook.air.lan
+Platform:  darwin25
+Binary:    /usr/local/bin/ldm
+Version:   ldm 2.4.26-beta.43
+
+
+--- FAILURE DEBUG LOGS ---
