@@ -100,6 +100,53 @@ class TestInfraHandler(unittest.TestCase):
         self.assertTrue(mock_down.called)
         self.assertTrue(mock_setup.called)
 
+    @patch("ldm_core.handlers.infra.get_actual_home")
+    @patch("time.sleep")
+    @patch.object(BaseHandler, "run_command")
+    def test_setup_global_search_full_init(self, mock_run, mock_sleep, mock_home):
+        mock_home.return_value = Path("/tmp/home")
+
+        # 1. exists check (ps -a) -> empty (new container)
+        # 2. docker run
+        # 3. health check 1 -> empty (not ready)
+        # 4. health check 2 -> success ("cluster_name": ...)
+        # 5. repo registration (PUT)
+        # 6. plugin list
+        # 7. plugin install (x4)
+        # 8. docker restart
+        mock_run.side_effect = [
+            "",  # 1
+            "new_id",  # 2
+            "",  # 3 (fail)
+            '{"cluster_name": "liferay-cluster"}',  # 4 (success)
+            "repo_ok",  # 5
+            "plugins...",  # 6
+            "",
+            "",
+            "",
+            "",  # 7
+            "restarted",  # 8
+        ]
+
+        with patch("pathlib.Path.mkdir"):
+            self.manager.setup_global_search()
+
+        # Verify health check was called twice
+        health_calls = [
+            c
+            for c in mock_run.call_args_list
+            if "curl" in str(c) and "9200" in str(c) and "PUT" not in str(c)
+        ]
+        self.assertEqual(len(health_calls), 2)
+
+        # Verify repo registration
+        self.assertTrue(
+            any(
+                "PUT" in str(c) and "_snapshot" in str(c)
+                for c in mock_run.call_args_list
+            )
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

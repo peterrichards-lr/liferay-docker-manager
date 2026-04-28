@@ -274,6 +274,8 @@ tls:
             es_backup.mkdir(parents=True, exist_ok=True)
 
             # Persistent ES8 instance matching Liferay requirements
+            from ldm_core.constants import ELASTICSEARCH_VERSION
+
             self.run_command(
                 [
                     "docker",
@@ -288,6 +290,8 @@ tls:
                     "-e",
                     "xpack.security.enabled=false",
                     "-e",
+                    "path.repo=/usr/share/elasticsearch/backup",
+                    "-e",
                     "cluster.name=liferay-cluster",
                     "-e",
                     "ES_JAVA_OPTS=-Xms1g -Xmx1g",
@@ -297,11 +301,27 @@ tls:
                     f"{es_data}:/usr/share/elasticsearch/data",
                     "-v",
                     f"{es_backup}:/usr/share/elasticsearch/backup",
-                    "elasticsearch:8.17.3",
+                    f"elasticsearch:{ELASTICSEARCH_VERSION}",
                 ]
             )
             UI.info("Waiting for Elasticsearch to become ready...")
-            time.sleep(15)
+
+            # Robust health check loop
+            ready = False
+            for _ in range(60):  # 5 minute timeout (60 * 5s)
+                res = self.run_command(
+                    ["docker", "exec", search_name, "curl", "-s", "localhost:9200"],
+                    check=False,
+                    capture_output=True,
+                )
+                if res and '"cluster_name"' in res:
+                    ready = True
+                    break
+                time.sleep(5)
+
+            if not ready:
+                UI.error("Elasticsearch failed to become ready in time.")
+                return False
 
             # Register backup repository (required for snapshots)
             self.run_command(

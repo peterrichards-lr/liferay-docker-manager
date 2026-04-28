@@ -42,6 +42,14 @@ The badges below represent our verified support for various Docker providers. En
 | **Elasticsearch** | `8.19.1`, `7.17.24` | Dual support with auto-plugin installation and optimized Liferay config. |
 <!-- COMPATIBILITY_END -->
 
+## Global Infrastructure
+
+| Component | Verified Versions | Notes |
+| :--- | :--- | :--- |
+| **Traefik** | `v3.6.1+` | Automatic API version negotiation enabled. |
+| **Elasticsearch** | `8.19.1`, `7.17.24` | Dual support with auto-plugin installation and optimized Liferay config. |
+<!-- COMPATIBILITY_END -->
+
 ---
 
 ## Key Features
