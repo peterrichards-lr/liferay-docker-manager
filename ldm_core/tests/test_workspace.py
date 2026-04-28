@@ -239,7 +239,7 @@ class TestWorkspaceImport(unittest.TestCase):
             project_dir = base_path / "my-project"
             project_dir.mkdir()
 
-            # Create an existing CX in the destination
+            # Create an existing CX in the destination with standard LDM structure
             cx_dest_dir = project_dir / "osgi" / "client-extensions"
             cx_dest_dir.mkdir(parents=True)
             existing_cx = cx_dest_dir / "test-ext.zip"
@@ -252,8 +252,21 @@ class TestWorkspaceImport(unittest.TestCase):
             self.handler.args.host_name = "localhost"
             self.handler.args.ssl = False
 
-            with patch.object(
-                self.handler, "detect_project_path", return_value=project_dir
+            with (
+                patch.object(
+                    self.handler, "detect_project_path", return_value=project_dir
+                ),
+                patch.object(
+                    self.handler,
+                    "setup_paths",
+                    return_value={
+                        "root": project_dir,
+                        "ce_dir": cx_dest_dir,
+                        "modules": project_dir / "osgi" / "modules",
+                        "configs": project_dir / "osgi" / "configs",
+                        "files": project_dir / "files",
+                    },
+                ),
             ):
                 with patch("ldm_core.handlers.workspace.UI") as mock_ui:
                     # Simulate user selecting 'N' (Skip Existing)

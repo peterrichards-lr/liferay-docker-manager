@@ -284,6 +284,11 @@ class SnapshotHandler(BaseHandler):
             choice = Path(backup_dir)
         elif getattr(self.args, "backup_dir", None):
             choice = Path(self.args.backup_dir)
+        elif getattr(self.args, "latest", False):
+            backups = self.cmd_snapshots(paths)
+            if not backups:
+                UI.die("No snapshots available for --latest.")
+            choice = backups[0]  # sorted reverse=True, so index 0 is latest
 
         if not choice:
             backups = self.cmd_snapshots(paths)

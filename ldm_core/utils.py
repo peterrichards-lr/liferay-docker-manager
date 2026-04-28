@@ -611,7 +611,9 @@ def write_meta(path, meta):
     """Writes project metadata to a file (atomically)."""
     path = Path(path)
     try:
-        tmp_path = path.with_suffix(".tmp")
+        # Use a more explicit tmp name to avoid issues with double suffixes
+        tmp_path = path.parent / f"{path.name}.tmp"
+
         # Ensure directory exists
         path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -620,7 +622,17 @@ def write_meta(path, meta):
             for k, v in sorted(meta.items()):
                 if v is not None:
                     f.write(f"{k}={v}\n")
-        os.replace(tmp_path, path)
+
+        # macOS filesystem sometimes has race conditions with renames in temp dirs
+        max_retries = 3
+        for i in range(max_retries):
+            try:
+                os.replace(tmp_path, path)
+                break
+            except (OSError, PermissionError):
+                if i == max_retries - 1:
+                    raise
+                time.sleep(0.1)
     except Exception as e:
         UI.warning(f"Could not write metadata at {path}: {e}")
 

@@ -752,7 +752,7 @@ class WorkspaceHandler(BaseHandler):
                     if count > 0:
                         UI.success(f"Imported {count} OSGi configs.")
 
-            def import_zips(search_base, label, target_dir):
+            def import_zips(search_base, label, target_dir, overwrite=False):
                 count = 0
                 if not search_base.exists():
                     return 0
@@ -785,14 +785,24 @@ class WorkspaceHandler(BaseHandler):
                         except Exception:
                             UI.error(f"{z.name} corrupt.")
                             continue
-                    shutil.copy2(z, target_dir / z.name)
+                    target_file = target_dir / z.name
+                    if target_file.exists() and not overwrite:
+                        UI.debug(f"Skipping existing {label}: {z.name}")
+                        continue
+
+                    shutil.copy2(z, target_file)
                     count += 1
                 return count
 
             import_zips(
-                workspace_root / "client-extensions", "Extension", paths["ce_dir"]
+                workspace_root / "client-extensions",
+                "Extension",
+                paths["ce_dir"],
+                overwrite,
             )
-            import_zips(workspace_root / "fragments", "Fragment", paths["ce_dir"])
+            import_zips(
+                workspace_root / "fragments", "Fragment", paths["ce_dir"], overwrite
+            )
 
             for search_folder in ["modules", "themes"]:
                 base = workspace_root / search_folder

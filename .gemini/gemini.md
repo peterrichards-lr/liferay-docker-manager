@@ -19,6 +19,7 @@
 ## 3. Testing & Hard-Gates
 
 - **Unit Test Requirement**: All new logic must have corresponding unit tests.
+- **Coverage Expansion**: For every change, review existing tests (unit, e2e, smoke, etc.) and determine if they need to be updated or expanded to increase overall coverage.
 - **The Deployment Gate**: You must never suggest a deployment command until you have explicitly asked me to confirm that all unit tests are passing.
 - **Test-Driven Alignment**: Propose test cases *before* providing the implementation.
 
@@ -63,6 +64,13 @@
 ## Gemini Added Memories
 
 - I must update gemini.md before proposing any changes to serve as a persistent state, allowing me to resume my work if an interruption occurs.
+- **Task: Verification Process & E2E Validation**
+  - [x] **Step 1**: Run `bash scripts/verify_e2e_refactor.sh` to identify current failure points.
+  - [x] **Step 2**: Analyze `references/verification-results/` for regression data.
+  - [x] **Step 3**: Fix any identified issues in the core orchestrator or handlers.
+    - [x] Fixed missing `--latest` flag in `ldm restore`.
+    - [x] Fixed Elasticsearch snapshot registration race condition in `infra-setup`.
+    - [x] Fixed Elasticsearch restart wait loop in `infra-setup`.
 - **Task: System Hardening & Release Management**
   - [x] **Git History**: Purged `image.png` from entire repository history using `filter-branch`.
   - [x] **Hardening**: Implemented Tool Path Integrity check in `ldm doctor`.

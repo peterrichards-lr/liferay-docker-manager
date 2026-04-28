@@ -273,6 +273,11 @@ tls:
             es_data.mkdir(parents=True, exist_ok=True)
             es_backup.mkdir(parents=True, exist_ok=True)
 
+            # Fix permissions for Linux/CI (ES runs as UID 1000, we ensure world-writable or chowned)
+            # Reclamation via Docker container ensures it works even if files are owned by root
+            self._reclaim_permissions(es_data)
+            self._reclaim_permissions(es_backup)
+
             # Persistent ES8 instance matching Liferay requirements
             from ldm_core.constants import ELASTICSEARCH_VERSION
 
@@ -376,6 +381,24 @@ tls:
 
             UI.info("Restarting Global Search to activate plugins...")
             self.run_command(["docker", "restart", search_name])
+
+            # Wait for it to come back up
+            UI.info("Waiting for Global Search to be ready after restart...")
+            ready = False
+            for _ in range(30):
+                res = self.run_command(
+                    ["docker", "exec", search_name, "curl", "-s", "localhost:9200"],
+                    check=False,
+                    capture_output=True,
+                )
+                if res and '"cluster_name"' in res:
+                    ready = True
+                    break
+                time.sleep(5)
+            if not ready:
+                UI.warning(
+                    "Global Search restart timed out. Snapshots may fail initially."
+                )
         else:
             # Check if it is running
             running = self.run_command(
@@ -384,3 +407,28 @@ tls:
             if not running:
                 UI.info(f"Starting existing {search_name} container...")
                 self.run_command(["docker", "start", search_name])
+
+            # Always ensure backup repository is registered if service is running
+            UI.debug("Ensuring Global Search backup repository is registered...")
+            self.run_command(
+                [
+                    "docker",
+                    "exec",
+                    search_name,
+                    "curl",
+                    "-s",
+                    "-X",
+                    "PUT",
+                    "localhost:9200/_snapshot/liferay_backup",
+                    "-H",
+                    "Content-Type: application/json",
+                    "-d",
+                    json.dumps(
+                        {
+                            "type": "fs",
+                            "settings": {"location": "/usr/share/elasticsearch/backup"},
+                        }
+                    ),
+                ],
+                check=False,
+            )
