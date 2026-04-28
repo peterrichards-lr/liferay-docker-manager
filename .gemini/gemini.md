@@ -153,6 +153,7 @@ This file serves as the persistent state and technical knowledge base for the AI
   - [x] **Reporting**: Automated report naming based on environment slug and status.
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
   - [x] **Sync**: Refined `sync_compatibility.py` to be non-destructive (LATEST only with historical preservation).
   - [x] **Restoration**: Recovered historical verification results by running the refined sync script.
   - [x] **Rules**: Added Script Parity and Pre-Change Persistence mandates.
@@ -249,6 +250,9 @@ This file serves as the persistent state and technical knowledge base for the AI
 =======
   - [x] **Sync**: Refined `sync_compatibility.py` with robust normalization, Tahoe/Sequoia mapping, and "Failure + Latest Pass" cleanup policy.
 >>>>>>> 712a3cd (fix: implement pass-only cleanup policy and Tahoe mapping)
+=======
+  - [x] **Sync**: Refined `sync_compatibility.py` with robust normalization, Tahoe/Sequoia mapping, and "Surgical Archival Strategy".
+>>>>>>> cddaea0 (fix: resolve syntax error in verify_e2e_refactor.ps1)
   - [x] **Fix**: Improved Windows self-upgrade and WSL troubleshooting (Docker socket detection).
   - [x] **Fix**: Implemented proactive Volume Write Test in `ldm doctor`.
   - [x] **Fix**: Added Colima LaunchAgent detection and tailored hints.
@@ -273,9 +277,10 @@ This file serves as the persistent state and technical knowledge base for the AI
 =======
   - [x] **Fix**: Isolated CI version synchronization check to resolve segmentation fault (exit 139).
   - [x] **Fix**: Hardened Windows verification script (`.ps1`) and fixed console encoding.
-  - [x] **Fix**: Implemented report archival strategy (moving old reports to `history/` subdirectory).
+  - [x] **Fix**: Resolved syntax error in `verify_e2e_refactor.ps1` caused by omission placeholders.
   - [x] **Docs**: Updated `TESTING.md` with functional grouping (Automated vs Manual).
   - [x] **Docs**: Updated `LDM_ARCHITECTURE.md` to reflect proactive health checks and provider detection.
+<<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
   - [x] **Release**: Tagged as `v2.4.26-beta.67`.
@@ -286,6 +291,9 @@ This file serves as the persistent state and technical knowledge base for the AI
 =======
   - [x] **Release**: Tagged as `v2.4.26-beta.70`.
 >>>>>>> 553eaec (fix: implement report archival strategy and clean up compatibility table)
+=======
+  - [x] **Release**: Tagged as `v2.4.26-beta.74`.
+>>>>>>> cddaea0 (fix: resolve syntax error in verify_e2e_refactor.ps1)
 
 >>>>>>> 8b0a863 (feat: implement DNS cleanup and stable tier safety hatch [pre-release])
 --- End of Context from: /users/peterrichards/.gemini/gemini.md ---
