@@ -75,27 +75,32 @@ def get_report_metadata(report_path):
 
     # 3. Extract LDM Version
     ldm_version = "Unknown"
-    # Try doctor section first
     ver_match = re.search(r"LDM Version\s+.*?(v\d+\.\d+\.\d+[^ \n]*)", content)
     if not ver_match:
-        # Try header
         ver_match = re.search(r"Version:\s+ldm\s+(\d+\.\d+\.\d+[^ \n]*)", content)
     if ver_match:
         ldm_version = ver_match.group(1).strip()
 
-    # 4. Extract Platform/OS info
-    platform_match = re.search(r"Platform\s+✅\s+([^\n]+)", content)
-    if not platform_match:
-        platform_match = re.search(r"Platform:\s+([^\n]+)", content)
-    platform_str = platform_match.group(1).strip() if platform_match else "Unknown"
+    # 4. Detect Environment (Doctor-First)
+    platform_str = "Unknown"
+    provider = "Unknown"
 
-    # 5. Extract Docker Provider
-    provider_match = re.search(r"Docker Provider\s+✅\s+([^\n]+)", content)
-    if not provider_match:
-        provider_match = re.search(r"Docker Provider\s+([^\n]+)", content)
-    provider = provider_match.group(1).strip() if provider_match else "Unknown"
+    # 4.1 Try Doctor Section
+    doc_plat_match = re.search(r"Platform\s+✅\s+([^\n]+)", content)
+    if doc_plat_match:
+        platform_str = doc_plat_match.group(1).strip()
 
-    # --- 6. Apply Fallback Mappings (Timestamps) ---
+    doc_prov_match = re.search(r"Docker Provider\s+✅\s+([^\n]+)", content)
+    if doc_prov_match:
+        provider = doc_prov_match.group(1).strip()
+
+    # 4.2 Fallback to Headers
+    if platform_str == "Unknown":
+        header_plat_match = re.search(r"Platform:\s+([^\n]+)", content)
+        if header_plat_match:
+            platform_str = header_plat_match.group(1).strip()
+
+    # --- 5. Apply Fallback Mappings (Timestamps) ---
     if timestamp_str == "Tue 28 Apr 12:25:38 BST 2026":
         platform_str = "linux-gnu (wsl)"
         provider = "Native WSL2"
@@ -115,15 +120,23 @@ def get_report_metadata(report_path):
         platform_str = "linux (native)"
         provider = "Native Docker"
 
-    # --- 7. Environment Detection & Normalization ---
+    # --- 6. Final Normalization Logic ---
     arch = "Unknown"
     host_os = "Unknown"
     p_low = platform_str.lower()
+
+    is_wsl = (
+        "wsl" in p_low or "microsoft" in content.lower() or provider == "Native WSL2"
+    )
     is_mac = "mac" in p_low or "darwin" in p_low
-    is_wsl = "microsoft" in p_low or "wsl" in p_low or "wsl" in content.lower()
     is_windows_native = "win32" in p_low or "windows" in p_low
 
-    if is_mac:
+    if is_wsl or is_windows_native:
+        host_os = "Windows 11"
+        arch = "Windows PC"
+        if provider == "Unknown":
+            provider = "Native WSL2" if is_wsl else "Docker Desktop"
+    elif is_mac:
         if provider == "Unknown" or provider == "Docker Desktop":
             provider = "Colima"
             if "orbstack" in content.lower() or "orbstack" in p_low:
@@ -163,12 +176,6 @@ def get_report_metadata(report_path):
             arch = "Apple Intel"
         else:
             arch = "Apple Silicon" if "arm64" in content.lower() else "Apple Intel"
-
-    elif is_windows_native or is_wsl:
-        host_os = "Windows 11"
-        arch = "Windows PC"
-        if provider == "Unknown":
-            provider = "Native WSL2" if is_wsl else "Docker Desktop"
     elif "fedora" in p_low:
         fedora_match = re.search(r"fc(\d+)", p_low)
         host_os = f"Fedora {fedora_match.group(1) if fedora_match else ''}".strip()
@@ -231,7 +238,7 @@ def sync_reports():
             UI.error(f"Failed to process {report.name}: {e}")
 
     # 2. Strict Archival Logic
-    # Strategy: Keep ONLY the single latest report per environment in the root.
+    # Keep ONLY the single latest report per environment in the root.
     latest_per_env = {}
     for meta in all_metas:
         key = (meta["arch"], meta["os"], meta["provider"])
