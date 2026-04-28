@@ -3,7 +3,7 @@ import math
 import platform
 import re
 from ldm_core.handlers.base import BaseHandler
-from ldm_core.utils import dict_to_yaml
+from ldm_core.utils import dict_to_yaml, resolve_dependency_version
 
 
 class ComposerHandler(BaseHandler):
@@ -378,15 +378,17 @@ class ComposerHandler(BaseHandler):
                     )
 
         if not use_shared_search:
+            es_ver = resolve_dependency_version(tag, "elasticsearch") or "7.17.10"
             services["search"] = {
-                "image": "elasticsearch:7.17.10",
+                "image": f"elasticsearch:{es_ver}",
                 "environment": ["discovery.type=single-node"],
                 "networks": ["liferay-net"],
             }
 
         if db_type == "postgresql":
+            pg_ver = resolve_dependency_version(tag, "postgresql") or "13"
             services["db"] = {
-                "image": "postgres:13",
+                "image": f"postgres:{pg_ver}",
                 "environment": {
                     "POSTGRES_PASSWORD": "test",
                     "POSTGRES_USER": "lportal",
@@ -413,9 +415,12 @@ class ComposerHandler(BaseHandler):
                     ]
 
             services["db"] = {
-                "image": ("mysql:8.4" if is_modern else "mysql:5.7")
+                "image": (
+                    resolve_dependency_version(tag, "mysql")
+                    or ("mysql:8.4" if is_modern else "mysql:5.7")
+                )
                 if db_type == "mysql"
-                else "mariadb:10.6",
+                else (resolve_dependency_version(tag, "mariadb") or "mariadb:10.6"),
                 "command": [
                     "mysqld",
                     "--character-set-server=utf8mb4",

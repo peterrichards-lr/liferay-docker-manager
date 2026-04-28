@@ -15,6 +15,7 @@ from ldm_core.utils import (
     version_to_tuple,
     verify_executable_checksum,
     strip_ansi,
+    resolve_dependency_version,
 )
 
 
@@ -767,6 +768,8 @@ del "%~f0"
             ("telnet", shutil.which("telnet")),
             ("nc", shutil.which("nc")),
             ("lcp", shutil.which("lcp")),
+            ("mysql", shutil.which("mysql")),
+            ("psql", shutil.which("psql")),
         ]
 
         # Add Docker Compose (detect if it's the plugin or standalone)
@@ -1000,11 +1003,20 @@ del "%~f0"
                             ELASTICSEARCH7_VERSION,
                         )
 
-                        target_ver = (
-                            ELASTICSEARCH_VERSION
-                            if search_version == 8
-                            else ELASTICSEARCH7_VERSION
-                        )
+                        # Discover latest tag if not already known
+                        tag = None
+                        if project_paths:
+                            first_meta = self.read_meta(project_paths[0])
+                            tag = first_meta.get("tag")
+
+                        target_ver = resolve_dependency_version(tag, "elasticsearch")
+                        if not target_ver:
+                            target_ver = (
+                                ELASTICSEARCH_VERSION
+                                if search_version == 8
+                                else ELASTICSEARCH7_VERSION
+                            )
+
                         running_ver = run_command(
                             [
                                 "docker",
@@ -1528,6 +1540,40 @@ del "%~f0"
                     )
                     for d in unresolved:
                         print(f"  {UI.RED}×{UI.COLOR_OFF} {d}")
+
+            # 7.2.5 Database Version Check
+            db_type = meta.get("db_type", "hypersonic")
+            if db_type in ["mysql", "postgresql", "mariadb"]:
+                db_container = f"{p_id}-db"
+                # Check if running
+                is_db_running = run_command(
+                    ["docker", "ps", "-q", "-f", f"name=^{db_container}$"], check=False
+                )
+                if is_db_running:
+                    target_db_ver = resolve_dependency_version(meta.get("tag"), db_type)
+                    running_db_ver = run_command(
+                        ["docker", "inspect", "-f", "{{.Config.Image}}", db_container],
+                        check=False,
+                    )
+                    if (
+                        target_db_ver
+                        and running_db_ver
+                        and target_db_ver not in running_db_ver
+                    ):
+                        results.append(
+                            (
+                                f"[{p_path.name}] DB Version",
+                                f"OUTDATED ({running_db_ver.split(':')[-1]})",
+                                "warn",
+                            )
+                        )
+                        add_hint(
+                            f"[{p_path.name}] Database image is outdated. Run '{UI.WHITE}ldm run {p_path.name}{UI.COLOR_OFF}' to update."
+                        )
+                    else:
+                        results.append(
+                            (f"[{p_path.name}] DB Version", "Up to date", True)
+                        )
 
             try:
                 if platform.system().lower() == "darwin":

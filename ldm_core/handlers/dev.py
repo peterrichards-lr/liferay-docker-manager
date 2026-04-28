@@ -120,10 +120,10 @@ class DevHandler(BaseHandler):
         """Atomicly updates all files containing the version string."""
         files_to_update = {
             "ldm_core/constants.py": [
-                (r'VERSION = ".*?"', f'VERSION = "{new_version}"'),
+                (r'^VERSION = ".*?"', f'VERSION = "{new_version}"'),
                 (r"LDM_MAGIC_VERSION: .*", f"LDM_MAGIC_VERSION: {new_version}"),
             ],
-            "pyproject.toml": [(r'version = ".*?"', f'version = "{new_version}"')],
+            "pyproject.toml": [(r'^version = ".*?"', f'version = "{new_version}"')],
         }
 
         if build_info:
@@ -182,7 +182,9 @@ class DevHandler(BaseHandler):
                 content = p.read_text()
                 new_content = content
                 for pattern, replacement in patterns:
-                    new_content = re.sub(pattern, replacement, new_content)
+                    new_content = re.sub(
+                        pattern, replacement, new_content, flags=re.MULTILINE
+                    )
 
                 if new_content == content:
                     UI.warning(f"No changes made to {rel_path} (Pattern mismatch?)")

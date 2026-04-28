@@ -76,7 +76,7 @@ class TestDevHandler(unittest.TestCase):
         constants_path = self.base / "ldm_core" / "constants.py"
         constants_path.parent.mkdir(parents=True, exist_ok=True)
         constants_path.write_text(
-            'VERSION = "2.4.26-beta.4"\n# LDM_MAGIC_VERSION: 2.4.26-beta.4'
+            'VERSION = "2.4.26-beta.4"\nELASTICSEARCH_VERSION = "8.19.1"\n# LDM_MAGIC_VERSION: 2.4.26-beta.4'
         )
 
         pyproject_path = self.base / "pyproject.toml"
@@ -84,8 +84,10 @@ class TestDevHandler(unittest.TestCase):
 
         self.handler._apply_version_update("2.4.26")
 
-        self.assertIn('VERSION = "2.4.26"', constants_path.read_text())
-        self.assertIn("LDM_MAGIC_VERSION: 2.4.26", constants_path.read_text())
+        content = constants_path.read_text()
+        self.assertIn('VERSION = "2.4.26"', content)
+        self.assertIn('ELASTICSEARCH_VERSION = "8.19.1"', content)  # UNCHANGED
+        self.assertIn("LDM_MAGIC_VERSION: 2.4.26", content)
         self.assertIn('version = "2.4.26"', pyproject_path.read_text())
 
     @patch("ldm_core.handlers.dev.Path.cwd")

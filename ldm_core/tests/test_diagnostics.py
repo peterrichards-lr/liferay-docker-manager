@@ -1,4 +1,5 @@
 import unittest
+import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 from ldm_core.handlers.diagnostics import DiagnosticsHandler
@@ -50,7 +51,7 @@ class MockDiagManager(DiagnosticsHandler):
         return "OK", True, []
 
     def validate_project_dns(self, *args, **kwargs):
-        return True, []
+        return True, [], []
 
     def check_mkcert(self, *args, **kwargs):
         return "Installed (Root CA Trusted)", True, "/home/user/.local/share/mkcert"
@@ -202,8 +203,6 @@ class TestDiagnostics(unittest.TestCase):
                     return "healthy"
                 return "200"
 
-            import sys
-
             with (
                 patch("builtins.print") as mock_print,
                 patch.object(Path, "exists", return_value=True),
@@ -215,6 +214,10 @@ class TestDiagnostics(unittest.TestCase):
                 ),
                 patch(
                     "ldm_core.utils.get_compose_cmd", return_value=["docker", "compose"]
+                ),
+                patch(
+                    "ldm_core.handlers.diagnostics.resolve_dependency_version",
+                    return_value="8.19.1",
                 ),
             ):
                 try:
@@ -279,10 +282,6 @@ class TestDiagnostics(unittest.TestCase):
                 lcp_file.unlink()
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class TestDiagnosticsCompletion(unittest.TestCase):
     def setUp(self):
         self.manager = DiagnosticsHandler()
@@ -319,3 +318,7 @@ class TestDiagnosticsCompletion(unittest.TestCase):
             # Case 4: Marker present (legacy style)
             zshrc.write_text('eval "$(register-python-argcomplete ldm)"')
             self.assertTrue(self.manager.is_completion_enabled())
+
+
+if __name__ == "__main__":
+    unittest.main()
