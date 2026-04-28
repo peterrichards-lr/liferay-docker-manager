@@ -448,7 +448,9 @@ class ConfigHandler(BaseHandler):
                                 dest.unlink()
                             continue
 
-                    dest = target / match.name
+                    # Standardize destination name (remove -REMOTE suffix if present)
+                    dest_name = match.name.replace("-REMOTE", "")
+                    dest = target / dest_name
 
                     # 80/20 DESIGN: Static Template + Dynamic Substitution
                     if "elasticsearch" in match.name.lower() and match.name.endswith(

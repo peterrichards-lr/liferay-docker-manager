@@ -304,6 +304,7 @@ class ComposerHandler(BaseHandler):
             liferay_service["labels"].extend(
                 [
                     "traefik.enable=true",
+                    "traefik.docker.network=liferay-net",
                     f"traefik.http.routers.{traefik_id}.rule=Host(`{host_name}`)",
                     f"traefik.http.routers.{traefik_id}.tls=true",
                     f"traefik.http.routers.{traefik_id}.entrypoints=websecure",
@@ -342,6 +343,7 @@ class ComposerHandler(BaseHandler):
                     traefik_svc_id = f"{svc_id}-svc"
                     services[svc_id]["labels"].extend(
                         [
+                            "traefik.docker.network=liferay-net",
                             f"traefik.http.routers.{traefik_svc_id}.rule=Host(`{ext['id']}.{host_name}`)",
                             f"traefik.http.routers.{traefik_svc_id}.tls=true",
                             f"traefik.http.services.{traefik_svc_id}.loadbalancer.server.port={ms_port}",
