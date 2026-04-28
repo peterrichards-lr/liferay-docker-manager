@@ -534,13 +534,21 @@ del "%~f0"
             )
             p_low = platform_str.lower()
             is_mac = "mac" in p_low or "darwin" in p_low
+
             if "arm64" in p_low or "aarch64" in p_low:
                 arch = "Apple Silicon" if is_mac else "ARM64"
             elif "x86_64" in p_low or "amd64" in p_low or "i386" in p_low:
                 arch = "Apple Intel" if is_mac else "x86_64"
 
             if is_mac:
-                host_os = "macOS 11+"
+                # Improved mapping: darwin21 = macOS 12, darwin24 = macOS 15, darwin25 = macOS 16, etc.
+                ver_match = re.search(r"darwin(\d+)", p_low)
+                if ver_match:
+                    darwin_major = int(ver_match.group(1))
+                    macos_major = darwin_major - 9
+                    host_os = f"macOS {macos_major}"
+                else:
+                    host_os = "macOS 11+"
             elif "microsoft" in p_low or "windows" in p_low:
                 host_os = "Windows 11"
                 arch = "Windows PC"

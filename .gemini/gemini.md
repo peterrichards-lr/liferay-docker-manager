@@ -201,8 +201,16 @@ This file serves as the persistent state and technical knowledge base for the AI
 >>>>>>> e316462 (fix: improve netcat detection on Windows (ncat support) [pre-release])
 =======
   - [x] **Fix**: Targeted cleanup in `verify_e2e_refactor.sh` to prevent accidental deletion of unrelated projects and report files.
+<<<<<<< HEAD
   - [x] **Release**: Tagged as `v2.4.26-beta.46`.
 >>>>>>> dd16bf1 (fix: targeted cleanup and report preservation in verify script)
+=======
+  - [x] **Reporting**: Refined `sync_compatibility.py` to eliminate "Unknown" entries and improved fallback detection for Apple Silicon/Intel.
+  - [x] **Reporting**: Improved macOS version detection (mapping Darwin major to macOS major) and updated compatibility table header.
+  - [x] **Fix**: Restored Apple Silicon/Intel detection in `ldm doctor --slug`.
+  - [x] **Fix**: Improved `verify_e2e_refactor.sh` robustness (ignore "not found" during cleanup).
+  - [x] **Release**: Tagged as `v2.4.26-beta.49`.
+>>>>>>> 1cbf92b (fix: restore Mac arch detection and improve verify script robustness [pre-release])
 
 >>>>>>> 8b0a863 (feat: implement DNS cleanup and stable tier safety hatch [pre-release])
 --- End of Context from: /users/peterrichards/.gemini/gemini.md ---
