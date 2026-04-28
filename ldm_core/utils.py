@@ -296,6 +296,10 @@ def get_actual_home():
 
 def open_browser(url):
     """Launches the system browser, with special handling for WSL to use the host browser."""
+    # Safety: Do not open browser tabs during automated tests
+    if os.getenv("LDM_TEST_MODE") == "true":
+        return True
+
     import webbrowser
 
     system = platform.system().lower()

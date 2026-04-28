@@ -15,6 +15,7 @@ success() { echo -e "\033[0;32m✅ $1\033[0m"; }
 error() { echo -e "\033[1;31m❌ $1\033[0m"; }
 
 EXIT_CODE=0
+export LDM_TEST_MODE=true
 
 # 1. Python (Ruff)
 info "Linting Python files (Ruff)..."
