@@ -1,0 +1,6 @@
+tag=2026.q1.4-lts
+container_name=ldm-smoke-test
+image_tag=alpine
+port=8082
+db_type=hypersonic
+ssl=false

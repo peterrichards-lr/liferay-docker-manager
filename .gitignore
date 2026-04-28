@@ -21,4 +21,5 @@ ldm-linux
 ldm-windows.exe
 samplestest/
 seeded-*/
-test-*/
+/test-*/
+ldm-verification-results.txt

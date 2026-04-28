@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "liferay-docker-manager"
-version = "2.4.26-beta.20"
+version = "2.4.26-beta.27"
 
 
 
@@ -27,6 +27,7 @@ include-package-data = true
 
 [tool.setuptools.package-data]
 ldm_core = ["resources/common_baseline/*", "resources/infra-compose.yml", "resources/ldm.1"]
+"*" = ["compatibility.json"]
 
 [tool.setuptools.packages.find]
 where = ["."]

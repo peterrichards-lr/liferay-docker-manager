@@ -161,6 +161,8 @@ class DevHandler(BaseHandler):
                     new_block = f"{header}\n\n### Added\n\n- \n\n"
                     lines.insert(insert_idx, new_block)
                     content = "\n".join(lines).strip() + "\n"
+                    # Final safety: remove trailing spaces from the empty list item
+                    content = content.replace("- \n", "-\n")
 
                 changelog_path.write_text(content)
                 UI.success("Updated CHANGELOG.md")

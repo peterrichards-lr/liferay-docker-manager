@@ -1,0 +1,6 @@
+assemble:
+    - from: build
+      include: "*.json"
+      into: data
+name: Smoke Test Job
+type: batch
