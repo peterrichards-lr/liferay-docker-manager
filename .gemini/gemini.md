@@ -156,7 +156,12 @@ This file serves as the persistent state and technical knowledge base for the AI
   - [x] **Restoration**: Recovered historical verification results by running the refined sync script.
   - [x] **Rules**: Added Script Parity and Pre-Change Persistence mandates.
   - [x] **Release**: Tagged as `v2.4.26-beta.37`.
+<<<<<<< HEAD
 >>>>>>> 1ddd76e (feat: stabilize cross-platform reporting and refine compatibility sync)
+=======
+  - [ ] **Fix**: Improved Windows self-upgrade robustness (retry loop + process termination).
+  - [ ] **Release**: Bump to `v2.4.26-beta.38`.
+>>>>>>> 801ce59 (fix: improve Windows self-upgrade robustness with retry loop [pre-release])
 
 >>>>>>> 8b0a863 (feat: implement DNS cleanup and stable tier safety hatch [pre-release])
 --- End of Context from: /users/peterrichards/.gemini/gemini.md ---
