@@ -221,12 +221,17 @@ This file serves as the persistent state and technical knowledge base for the AI
   - [x] **Reporting**: Updated compatibility table title to indicate "Standalone Binaries".
   - [x] **Fix**: Improved `verify_e2e_refactor.sh` to explicitly mention project template source and handle cleanup "not found" silently.
 <<<<<<< HEAD
+<<<<<<< HEAD
   - [x] **Release**: Tagged as `v2.4.26-beta.51`.
 >>>>>>> 8331e77 (fix: improve verify script template error and update table title)
 =======
   - [x] **Verification**: Final sync of compatibility table with latest historical and new reports.
   - [x] **Release**: Tagged as `v2.4.26-beta.52`.
 >>>>>>> a0c06c7 (feat: finalized cross-platform reporting and stability fixes)
+=======
+  - [x] **Fix**: Truly surgical cleanup in `verify_e2e_refactor.sh` (LDM_WORKSPACE isolation + no side effects).
+  - [x] **Release**: Tagged as `v2.4.26-beta.53`.
+>>>>>>> 374bd37 (feat: truly surgical cleanup and report preservation in verify script)
 
 >>>>>>> 8b0a863 (feat: implement DNS cleanup and stable tier safety hatch [pre-release])
 --- End of Context from: /users/peterrichards/.gemini/gemini.md ---
