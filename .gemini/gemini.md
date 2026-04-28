@@ -181,8 +181,13 @@ This file serves as the persistent state and technical knowledge base for the AI
 =======
   - [x] **Fix**: Resolved search backup permission error during restore (Errno 13).
   - [x] **Fix**: Corrected macOS detection in `ldm doctor --slug`.
+<<<<<<< HEAD
   - [x] **Release**: Tagged as `v2.4.26-beta.42`.
 >>>>>>> 406dc05 (fix: resolve search restore permissions and macOS detection [pre-release])
+=======
+  - [x] **Verification**: Verified stable on local Apple Silicon machine (Ubuntu + macOS logic).
+  - [x] **Release**: Tagged as `v2.4.26-beta.43`.
+>>>>>>> 2a7d95f (fix: resolve search restore permissions and macOS detection (Verified Stable))
 
 >>>>>>> 8b0a863 (feat: implement DNS cleanup and stable tier safety hatch [pre-release])
 --- End of Context from: /users/peterrichards/.gemini/gemini.md ---
