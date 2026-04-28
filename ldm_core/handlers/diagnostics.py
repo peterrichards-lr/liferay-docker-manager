@@ -458,11 +458,14 @@ del "%~f0"
                     os.chmod(temp_new, 0o755)  # nosec B103
                 except Exception:
                     pass
+                import shutil
+
                 try:
-                    # Attempt local rename first (if install dir is writable)
-                    os.replace(temp_new, exe_path)
+                    # Use shutil.move instead of os.replace because it handles
+                    # 'Invalid cross-device link' (Errno 18) by falling back to copy+unlink.
+                    shutil.move(str(temp_new), str(exe_path))
                     UI.success(f"Successfully upgraded to v{latest}!")
-                except PermissionError:
+                except (PermissionError, OSError):
                     UI.info(
                         "\nRequesting permission to replace the binary in system path..."
                     )
