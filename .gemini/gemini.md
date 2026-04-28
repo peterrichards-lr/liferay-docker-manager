@@ -77,6 +77,7 @@
   - [x] **Release**: Tagged as `v2.4.26-beta.37`.
   - [x] **Fix**: Improved Windows self-upgrade robustness (retry loop + process termination).
   - [x] **Fix**: Resolved Linux cross-device link error (Errno 18) using shutil.move.
-  - [x] **Release**: Tagged as `v2.4.26-beta.39`.
+  - [x] **Fix**: Hardened `verify_e2e_refactor.sh` (macOS md5, FATAL detection, report preservation).
+  - [x] **Release**: Tagged as `v2.4.26-beta.40`.
 
 --- End of Context from: /users/peterrichards/.gemini/gemini.md ---
