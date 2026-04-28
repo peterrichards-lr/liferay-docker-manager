@@ -55,6 +55,7 @@ This file serves as the persistent state and technical knowledge base for the AI
 - **Nosec Disclosure**: Any use of `# nosec` in the codebase MUST be documented in `docs/SECURITY.md`.
 - **Contract Verification**: Refactoring MUST be verified against `ldm_core/tests/test_architectural_contracts.py` to ensure no silent loss of mandatory labels or properties.
 
+<<<<<<< HEAD
 ### 8. Robustness & State Management (Hardened v2.4.9)
 
 - **Strict Path Resolution**: Project path detection (`detect_project_path`) MUST explicitly verify that target paths are not files to prevent initialization crashes (`NotADirectoryError`).
@@ -93,3 +94,10 @@ This file serves as the persistent state and technical knowledge base for the AI
 - [ ] SEED_VERSION incremented (if seeding logic changed).
 - [ ] Project labels (`com.liferay.ldm.project`) are applied.
 - [ ] Documentation is fully updated.
+=======
+- I must update gemini.md before proposing any changes to serve as a persistent state, allowing me to resume my work if an interruption occurs.
+- **Task: Fix Search Orchestration for Modern Liferay**
+  - [x] **Root Cause**: `__` separator triggers `EnvPropertiesUtil` decoding warnings and is ignored.
+  - [ ] **Fix**: Standardize on `_PERIOD_` for search environment variables and enable `production.mode`.
+--- End of Context from: /users/peterrichards/.gemini/gemini.md ---
+>>>>>>> 695ef4a (docs: update gemini.md session state)
