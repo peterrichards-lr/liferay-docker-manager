@@ -60,8 +60,17 @@ class UI:
             print(out, file=file, flush=True)
         except UnicodeEncodeError:
             # Fallback for old Windows consoles (CP1252)
-            # Replace problematic characters with safe ASCII equivalents
-            safe_out = out.encode("ascii", "replace").decode("ascii")
+            # Replace known problematic symbols with ASCII equivalents
+            safe_out = (
+                out.replace("✅", "[OK]")
+                .replace("❌", "[X]")
+                .replace("⚠️", "[!]")
+                .replace("ℹ", "[i]")
+                .replace("●", "*")
+                .replace("❓", "[?]")
+            )
+            # Final safety wash
+            safe_out = safe_out.encode("ascii", "replace").decode("ascii")
             print(safe_out, file=file, flush=True)
 
     @staticmethod

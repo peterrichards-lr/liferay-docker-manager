@@ -942,14 +942,15 @@ class BaseHandler:
 
                         if is_intel:
                             # Intel Macs (especially on Monterey) often need sshfs with :w
-                            UI.info(f"colima start {mount_hint}")
+                            # We explicitly suggest adding :w to the HOME mount
+                            UI.info("colima start --mount /Users/$(whoami):w")
                             UI.info(
-                                f"{UI.WHITE}Note: If performance is poor, try adding --vm-type=vz{UI.COLOR_OFF}"
+                                f"{UI.WHITE}Note: If write errors persist, try: 'colima stop' then 'colima start --vm-type vz --mount /Users/$(whoami):w'{UI.COLOR_OFF}"
                             )
                         else:
                             # Apple Silicon defaults to vz/virtiofs
                             UI.info(
-                                f"colima start {mount_hint} --vm-type=vz --mount-type=virtiofs"
+                                f"colima start {mount_hint} --vm-type vz --mount-type virtiofs"
                             )
 
                     sys.exit(1)
