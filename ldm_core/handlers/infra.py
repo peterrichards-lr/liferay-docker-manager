@@ -326,7 +326,19 @@ tls:
 
             if not ready:
                 UI.error("Elasticsearch failed to become ready in time.")
-                return False
+                # AUTO-REPAIR: If ES fails to start, it's often due to corrupted data in the volume.
+                # Wiping and restarting usually fixes mapping/plugin-mismatch issues.
+                UI.warning("Attempting automatic search volume repair...")
+                self.run_command(["docker", "rm", "-f", search_name], check=False)
+                if es_data.exists():
+                    import shutil
+
+                    shutil.rmtree(es_data)
+                    es_data.mkdir(parents=True, exist_ok=True)
+                    self._reclaim_permissions(es_data)
+
+                UI.info("Restarting Global Search with clean slate...")
+                return self.setup_global_search()
 
             # Register backup repository (required for snapshots)
             self.run_command(

@@ -38,7 +38,7 @@ function Capture-LogsOnFailure
     $containers = @("liferay-proxy-global", "liferay-search-global", "ldm-smoke-test", "ldm-smoke-test-db-1")
     foreach ($c in $containers) 
     {
-        $check = docker ps -a --filter "name=$c" --format "{{.Name}}"
+        $check = docker ps -a --filter "name=$c" --format "{{.Names}}"
         if ($check -match $c) 
         {
             ">> Logs for $c`:" | Out-File -FilePath $RESULTS_FILE_TMP -Append -Encoding utf8

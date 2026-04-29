@@ -154,8 +154,11 @@ class UI:
             else:
                 formatted_prompt += f": {UI.COLOR_OFF}"
 
+            sys.stdout.write(formatted_prompt)
+            sys.stdout.flush()
+
             try:
-                res = input(formatted_prompt)
+                res = input()
             except UnicodeEncodeError:
                 # Fallback prompt for CP1252 (Standard Windows CMD)
                 res = input(f"? {prompt} [{default}]: " if default else f"? {prompt}: ")
