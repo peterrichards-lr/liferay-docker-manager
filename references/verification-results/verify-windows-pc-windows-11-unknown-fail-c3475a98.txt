@@ -1,0 +1,93 @@
+=== LDM BINARY VERIFICATION REPORT ===
+Timestamp: 04/29/2026 10:33:13
+Hostname:  [ANONYMIZED]
+Platform:  Microsoft Windows 10.0.22631
+Binary:    [ANONYMIZED]
+Version:   ldm 2.4.26-beta.31
+
+\u274c  An unexpected error occurred.
+
+[1;33m=== LDM Doctor - Environmental Health Check ===[0m
+
+Component                           Status                        
+---------------------------------------------------------------------------
+Details:  'charmap' codec can't encode character '\u2705' in position 43: character maps to <undefined>
+
+--- Test Execution Log ---
+[0;33m??  Tearing down global infrastructure (Traefik)...[0m
+time="2026-04-29T10:33:21+01:00" level=warning msg="Warning: No resource found to remove for project \"resources\"."
+[0;32m?  Infrastructure teardown complete.[0m
+\u274c  Project 'ldm-smoke-test' not found or missing metadata ('meta' or '.liferay-docker.meta')
+Error response from daemon: No such container: liferay-proxy-global
+Error response from daemon: No such container: liferay-search-global
+Error response from daemon: No such container: liferay-docker-proxy
+>> Initializing Infrastructure
+[0;33m?  Starting Docker socket bridge...[0m
+[0;33m?  Initializing Global Search (ES8) container...[0m
+[0;33m?  Waiting for Elasticsearch to become ready...[0m
+[0;33m?  Installing missing Liferay analyzers in Global Search...[0m
+[0;33m?  Restarting Global Search to activate plugins...[0m
+[0;33m?  Waiting for Global Search to be ready after restart...[0m
+[0;33m?  Checking infrastructure stack (Traefik SSL Proxy)...[0m
+[0;32m?  Infrastructure setup complete.[0m
+ Image traefik:v3.6.1 Pulling 
+ e12cf03b5b74 Pulling fs layer 0B
+ 43a5be716dde Pulling fs layer 0B
+ bc116d93e45b Pulling fs layer 0B
+ 2d35ebdb57d9 Pulling fs layer 0B
+ 6397e1ae0137 Download complete 0B
+ 6670fb0d4099 Download complete 0B
+ e12cf03b5b74 Download complete 0B
+ 43a5be716dde Downloading 1.049MB
+ 43a5be716dde Downloading 3.015MB
+ bc116d93e45b Download complete 0B
+ 2d35ebdb57d9 Downloading 2.097MB
+ 2d35ebdb57d9 Download complete 0B
+ 43a5be716dde Downloading 5.243MB
+ 2d35ebdb57d9 Extracting 1B
+ 43a5be716dde Downloading 8.389MB
+ 2d35ebdb57d9 Extracting 1B
+ 43a5be716dde Downloading 11.53MB
+ bc116d93e45b Extracting 1B
+ 2d35ebdb57d9 Pull complete 0B
+ 43a5be716dde Downloading 13.63MB
+ bc116d93e45b Extracting 1B
+ 43a5be716dde Downloading 16.78MB
+ bc116d93e45b Pull complete 0B
+ 43a5be716dde Downloading 18.87MB
+ 43a5be716dde Downloading 22.02MB
+ 43a5be716dde Downloading 25.17MB
+ 43a5be716dde Downloading 28.31MB
+ 43a5be716dde Downloading 30.41MB
+ 43a5be716dde Downloading 34.6MB
+ 43a5be716dde Downloading 36.7MB
+ 43a5be716dde Downloading 39.85MB
+ 43a5be716dde Downloading 42.99MB
+ 43a5be716dde Downloading 46.14MB
+ 43a5be716dde Downloading 47.43MB
+ 43a5be716dde Download complete 0B
+ 43a5be716dde Extracting 1B
+ 43a5be716dde Extracting 1B
+ 43a5be716dde Extracting 1B
+ 43a5be716dde Extracting 1B
+ 43a5be716dde Extracting 1B
+ 43a5be716dde Extracting 1B
+ 43a5be716dde Extracting 1B
+ 43a5be716dde Extracting 1B
+ 43a5be716dde Extracting 1B
+ e12cf03b5b74 Pull complete 0B
+ 43a5be716dde Pull complete 0B
+ Image traefik:v3.6.1 Pulled 
+ Container liferay-proxy-global Creating 
+ Container liferay-proxy-global Created 
+ Container liferay-proxy-global Starting 
+ Container liferay-proxy-global Started 
+
+>> Running LDM Project
+[0;33m??  Docker has less than 8.0 GB RAM allocated.[0m
+[0;33m?  Liferay might be slow or unstable. Increase RAM in Docker Desktop settings.[0m
+[1;31m\u274c  No Liferay tag specified.[0m
+
+ERROR: Command failed with exit code 1
+
+--- FAILURE DEBUG LOGS ---

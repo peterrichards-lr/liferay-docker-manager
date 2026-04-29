@@ -1,0 +1,29 @@
+=== LDM BINARY VERIFICATION REPORT ===
+Timestamp: 04/29/2026 10:41:32
+Hostname:  [ANONYMIZED]
+Platform:  Microsoft Windows 10.0.22631
+Binary:    [ANONYMIZED]
+Version:   ldm 2.4.26-beta.31
+
+>> Initializing Infrastructure
+[0;33m?  Starting Docker socket bridge...[0m
+[0;33m?  Initializing Global Search (ES8) container...[0m
+[0;33m?  Waiting for Elasticsearch to become ready...[0m
+[0;33m?  Installing missing Liferay analyzers in Global Search...[0m
+[0;33m?  Restarting Global Search to activate plugins...[0m
+[0;33m?  Waiting for Global Search to be ready after restart...[0m
+[0;33m?  Checking infrastructure stack (Traefik SSL Proxy)...[0m
+[0;32m?  Infrastructure setup complete.[0m
+ Container liferay-proxy-global Creating 
+ Container liferay-proxy-global Created 
+ Container liferay-proxy-global Starting 
+ Container liferay-proxy-global Started 
+
+>> Running LDM Project
+[0;33m??  Docker has less than 8.0 GB RAM allocated.[0m
+[0;33m?  Liferay might be slow or unstable. Increase RAM in Docker Desktop settings.[0m
+[1;31m\u274c  No Liferay tag specified.[0m
+
+ERROR: Command failed with exit code 1
+
+--- FAILURE DEBUG LOGS ---

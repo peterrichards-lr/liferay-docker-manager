@@ -610,6 +610,7 @@ pause
             pass
 
         # 2. Docker Provider
+        mount_type = None
         try:
             context = run_command(["docker", "context", "show"], check=False).strip()
             if context:
@@ -648,14 +649,60 @@ pause
                             provider = "Colima"
                         elif context == "orbstack":
                             provider = "OrbStack"
+
+            # 3. Colima-specific info
+            if provider == "Colima":
+                try:
+                    # 'colima status' contains mountType in its output
+                    status_out = run_command(["colima", "status"], check=False)
+                    if status_out:
+                        for line in status_out.strip().split("\n"):
+                            if "mountType:" in line:
+                                mount_type = line.split("mountType:")[1].strip()
+                                break
+
+                    # 4. Check colima.yaml for explicit 'writable' flag
+                    # This is more reliable for 'sshfs' than just checking 'mount' output
+                    import yaml
+
+                    home = get_actual_home()
+                    config_path = (
+                        home
+                        / ".colima"
+                        / (context if context != "default" else "default")
+                        / "colima.yaml"
+                    )
+                    if config_path.exists():
+                        with open(config_path, "r") as f:
+                            config = yaml.safe_load(f)
+                            mounts = config.get("mounts", [])
+                            is_explicitly_writable = False
+                            for m in mounts:
+                                # Standard home mount check
+                                if (
+                                    m.get("location") == str(home)
+                                    or m.get("location") == "/Users"
+                                    or m.get("location").startswith("/Users/")
+                                ):
+                                    if m.get("writable") is True:
+                                        is_explicitly_writable = True
+                                        break
+
+                            # Store this in a way doctor can use
+                            if not is_explicitly_writable and mount_type == "sshfs":
+                                # We'll use this to trigger a warning even if the write test hasn't run yet
+                                setattr(self, "_colima_mount_not_writable", True)
+                except Exception:
+                    pass
+
         except Exception:
             pass
 
-        return arch, host_os, provider
+        return arch, host_os, provider, mount_type
 
     def cmd_doctor(self, project_id=None, all_projects=False):
         """Verify host environment health and project dependencies."""
-        arch, host_os, provider = self._get_env_info()
+        arch, host_os, provider, mount_type = self._get_env_info()
 
         if getattr(self.args, "slug", False):
             # Use same slug logic as sync_compatibility.py
@@ -831,8 +878,20 @@ pause
                         # On Mac, 'colima' or 'default' (standard socket) is treated as Colima
                         # for LDM's compatibility tracking purposes.
                         provider = "Colima"
+                elif platform.system().lower() == "windows":
+                    # On Windows native, any standard context is Docker Desktop
+                    if context in ["default", "desktop-linux", "docker-desktop"]:
+                        provider = "Docker Desktop"
 
                 results.append(("Docker Provider", provider, True))
+
+                # Proactive Colima SSHFS warning
+                if getattr(self, "_colima_mount_not_writable", False):
+                    add_hint(
+                        "Colima: Your mount is not explicitly marked as 'writable'. With 'sshfs', this often causes permission errors.",
+                        "https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/installation.md#colima-mount-permissions",
+                    )
+                    add_hint("Fix: 'colima stop' then 'colima start --mount [HOME]:w'")
 
                 # Check for symlinked socket in WSL (Docker Desktop override)
                 if is_wsl:
@@ -950,12 +1009,21 @@ pause
                                 'Change to: colima start --mount-type virtiofs --mount "$HOME:w"'
                             )
                         else:
-                            add_hint(
-                                "Colima Fix (Standard): 'colima stop' then 'colima start --mount [HOME]:w'"
-                            )
+                            if mount_type == "sshfs":
+                                add_hint(
+                                    "Colima Fix: Your mount type is 'sshfs'. You MUST add ':w' to your mount paths for write access."
+                                )
+                                add_hint(
+                                    "Run: 'colima stop' then 'colima start --mount [HOME]:w'"
+                                )
+                            else:
+                                add_hint(
+                                    "Colima Fix (Standard): 'colima stop' then 'colima start --mount [HOME]:w'"
+                                )
+
                             add_hint(
                                 "Colima Fix (Advanced): 'colima stop' then 'colima start --mount [HOME]:w --vm-type=vz --mount-type=virtiofs'",
-                                "https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/installation.md#colima-performance-tuning",
+                                "https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/colima-performance-tuning",
                             )
                         add_hint(
                             "Recommended: Upgrade Colima to the latest version ('brew upgrade colima') for better macOS integration."
