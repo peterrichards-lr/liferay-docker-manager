@@ -37,6 +37,13 @@ repos:
         types: [shell]
         exclude: ^ldm$
 
+      - id: psscriptanalyzer
+        name: PSScriptAnalyzer
+        entry: bash -c 'if command -v pwsh &>/dev/null; then pwsh -NoProfile -NonInteractive -Command "if (Get-Module -ListAvailable PSScriptAnalyzer) { Invoke-ScriptAnalyzer -Path . -Recurse | Where-Object { \$_.Severity -eq \"Error\" } | ForEach-Object { Write-Error \$_.Message }; if (\$error) { exit 1 } } else { Write-Host \"PSScriptAnalyzer not found, skipping.\" }"; else exit 0; fi'
+        language: system
+        files: \.ps1$|\.psm1$
+        pass_filenames: false
+
   - repo: https://github.com/DavidAnson/markdownlint-cli2
     rev: v0.16.0
     hooks:
