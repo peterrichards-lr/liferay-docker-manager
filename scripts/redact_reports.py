@@ -10,7 +10,6 @@ def anonymize_content(content):
     content = re.sub(r"Azure Region:\s+[^\n]+", "Azure Region: [ANONYMIZED]", content)
 
     # 2. Absolute paths (macOS and Linux/Windows)
-    # We use a very broad regex for Windows paths to be safe
     content = re.sub(
         r"(/Users/[^/\s]+|/home/[^/\s]+|[A-Z]:\\Users\\[^\\\s]+)", "[HOME]", content
     )
@@ -31,7 +30,6 @@ def anonymize_content(content):
 for p in Path("references/verification-results").rglob("verify-*.txt"):
     if not p.is_file():
         continue
-    print(f"Redacting {p}")
     raw = p.read_text(errors="ignore")
     clean = anonymize_content(raw)
     p.write_text(clean)
