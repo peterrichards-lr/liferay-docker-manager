@@ -263,14 +263,20 @@ class TestBaseCompletion(unittest.TestCase):
     def setUp(self):
         self.handler = MockBaseManager()
 
-    @patch("sys.stdout", new_callable=MagicMock)
     @patch("ldm_core.handlers.base.os.environ", {"SHELL": "/bin/zsh"})
-    def test_cmd_completion_zsh_instructions(self, mock_stdout):
+    def test_cmd_completion_zsh_instructions(self):
         # No argument: should show instructions
-        self.handler.cmd_completion(target_shell=None)
-        output = "".join(call.args[0] for call in mock_stdout.write.call_args_list)
-        self.assertIn('eval "$(ldm completion zsh)"', output)
-        self.assertIn("=== LDM Shell Completion ===", output)
+        import io
+        from contextlib import redirect_stdout
+        from ldm_core.utils import strip_ansi
+
+        f = io.StringIO()
+        with redirect_stdout(f):
+            self.handler.cmd_completion(target_shell=None)
+
+        clean_output = strip_ansi(f.getvalue())
+        self.assertIn('eval "$(ldm completion zsh)"', clean_output)
+        self.assertIn("=== LDM Shell Completion ===", clean_output)
 
     @patch("sys.stdout", new_callable=MagicMock)
     @patch("ldm_core.handlers.base.os.environ", {"SHELL": "/bin/bash"})

@@ -62,11 +62,11 @@ class DiagnosticsHandler(BaseHandler):
                     any_infra = True
 
         if not any_infra:
-            print(
+            UI.raw(
                 f"  {UI.WHITE}No global services are currently running.{UI.COLOR_OFF}"
             )
 
-        print()
+        UI.raw("")
 
         # 2. Project Status
         if all_projects:

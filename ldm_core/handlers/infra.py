@@ -314,6 +314,12 @@ tls:
             # Robust health check loop
             ready = False
             for _ in range(60):  # 5 minute timeout (60 * 5s)
+                # Fail fast if container exited
+                status = self.get_container_status(search_name)
+                if status == "exited":
+                    UI.error("Elasticsearch container exited unexpectedly.")
+                    break
+
                 res = self.run_command(
                     ["docker", "exec", search_name, "curl", "-s", "localhost:9200"],
                     check=False,
@@ -398,6 +404,14 @@ tls:
             UI.info("Waiting for Global Search to be ready after restart...")
             ready = False
             for _ in range(30):
+                # Fail fast if container exited
+                status = self.get_container_status(search_name)
+                if status == "exited":
+                    UI.error(
+                        "Elasticsearch container exited unexpectedly after restart."
+                    )
+                    break
+
                 res = self.run_command(
                     ["docker", "exec", search_name, "curl", "-s", "localhost:9200"],
                     check=False,

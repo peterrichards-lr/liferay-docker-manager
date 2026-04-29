@@ -153,16 +153,18 @@ class TestStackInfrastructure(unittest.TestCase):
                 "",  # 2. docker run ...
                 "reclaimed_data",  # 3. _reclaim_permissions (data)
                 "reclaimed_backup",  # 4. _reclaim_permissions (backup)
-                '{"cluster_name": "liferay-cluster"}',  # 5. health check (readiness)
-                "OK",  # 6. PUT snapshot
-                "",  # 7. elasticsearch-plugin list
-                "OK",  # 8. install 1
-                "OK",  # 9. install 2
-                "OK",  # 10. install 3
-                "OK",  # 11. install 4
-                "OK",  # 12. docker restart
-                '{"cluster_name": "liferay-cluster"}',  # 13. health check after restart
-                "OK",  # 14. repo registration check (end of method)
+                "running",  # 5. status check (inspect)
+                '{"cluster_name": "liferay-cluster"}',  # 6. health check (readiness)
+                "OK",  # 7. PUT snapshot
+                "",  # 8. elasticsearch-plugin list
+                "OK",  # 9. install 1
+                "OK",  # 10. install 2
+                "OK",  # 11. install 3
+                "OK",  # 12. install 4
+                "OK",  # 13. docker restart
+                "running",  # 14. status check after restart
+                '{"cluster_name": "liferay-cluster"}',  # 15. health check after restart
+                "OK",  # 16. repo registration check (end of method)
             ]
 
             self.manager.setup_global_search()

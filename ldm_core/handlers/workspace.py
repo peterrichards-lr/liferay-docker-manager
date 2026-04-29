@@ -106,7 +106,7 @@ class WorkspaceHandler(BaseHandler):
                     UI.warning(f"{header}: {status}")
                     if errors:
                         for err in errors:
-                            print(f"  {UI.YELLOW}⚠{UI.COLOR_OFF} {err}")
+                            UI.raw(f"  {UI.YELLOW}⚠{UI.COLOR_OFF} {err}")
             finally:
                 if tf_path.exists():
                     tf_path.unlink()

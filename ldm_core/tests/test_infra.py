@@ -80,28 +80,32 @@ class TestInfraHandler(unittest.TestCase):
         # 2. docker run
         # 3. _reclaim_permissions (data)
         # 4. _reclaim_permissions (backup)
-        # 5. health check 1 -> success ("cluster_name": ...)
-        # 6. repo registration (PUT)
-        # 7. plugin list
-        # 8. plugin install (x4)
-        # 9. docker restart
-        # 10. health check after restart -> success
-        # 11. Final repo registration check -> success
+        # 5. status check (inspect) -> running
+        # 6. health check 1 -> success ("cluster_name": ...)
+        # 7. repo registration (PUT)
+        # 8. plugin list
+        # 9. plugin install (x4)
+        # 10. docker restart
+        # 11. status check after restart (inspect) -> running
+        # 12. health check after restart -> success
+        # 13. Final repo registration check -> success
         mock_run.side_effect = [
             "",  # 1
             "new_id",  # 2
             "reclaimed_data",  # 3
             "reclaimed_backup",  # 4
-            '{"cluster_name": "liferay-cluster"}',  # 5
-            "repo_ok",  # 6
-            "plugins...",  # 7
+            "running",  # 5
+            '{"cluster_name": "liferay-cluster"}',  # 6
+            "repo_ok",  # 7
+            "plugins...",  # 8
             "",
             "",
             "",
-            "",  # 8
-            "restarted",  # 9
-            '{"cluster_name": "liferay-cluster"}',  # 10
-            "repo_ok",  # 11
+            "",  # 9
+            "restarted",  # 10
+            "running",  # 11
+            '{"cluster_name": "liferay-cluster"}',  # 12
+            "repo_ok",  # 13
         ]
 
         with patch("pathlib.Path.mkdir"):

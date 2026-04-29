@@ -343,6 +343,12 @@ class RuntimeHandler(BaseHandler):
                     open_browser(f"{access_url}/web/guest/home")
                 return True
 
+            # Fail fast if container exited
+            container_state = self.get_container_status(container_name)
+            if container_state == "exited":
+                UI.error(f"Liferay container '{container_name}' exited unexpectedly.")
+                return False
+
             time.sleep(5)  # Shorter sleep for more responsive status checks
 
         UI.error("\nTimed out waiting for Liferay to become healthy.")
@@ -489,6 +495,9 @@ class RuntimeHandler(BaseHandler):
                         if status == "healthy" or status == "running":
                             time.sleep(2)
                             break
+                        if status == "exited":
+                            UI.error(f"Dependency '{dep}' exited unexpectedly.")
+                            return False
                         time.sleep(2)
 
             UI.info(f"Starting {UI.BOLD}{project_id}{UI.COLOR_OFF} stack...")

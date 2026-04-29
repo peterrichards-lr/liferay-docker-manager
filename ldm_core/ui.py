@@ -44,8 +44,11 @@ class UI:
         return text
 
     @staticmethod
-    def _print(msg, color=None, icon=None, file=sys.stdout):
+    def _print(msg, color=None, icon=None, file=None):
         """Internal print helper with Unicode safety and automatic redaction."""
+        if file is None:
+            file = sys.stdout
+
         # Clean and Redact at the sink (Defensive Layer)
         msg = UI.redact(msg.strip())
 
@@ -104,13 +107,11 @@ class UI:
     def error(msg, details=None, tip=None):
         UI._print(msg, UI.BRED, "❌", file=sys.stderr)
         if details:
-            # Redact details before printing
+            # Redact and safely print details
             redacted_details = UI.redact(str(details))
-            print(
-                f"{UI.WHITE}Details:{UI.COLOR_OFF}  {redacted_details}", file=sys.stderr
-            )
+            UI._print(f"Details:  {redacted_details}", color=UI.WHITE, file=sys.stderr)
         if tip:
-            print(f"{UI.CYAN}💡 Tip:{UI.COLOR_OFF}      {tip}", file=sys.stderr)
+            UI._print(f"💡 Tip:      {tip}", color=UI.CYAN, file=sys.stderr)
 
     @staticmethod
     def die(msg, details=None, tip=None):
@@ -121,7 +122,7 @@ class UI:
     def heading(msg):
         # Redact headers just in case (e.g. project names containing sensitive words)
         msg = UI.redact(msg.strip())
-        print(f"\n{UI.BYELLOW}=== {msg} ==={UI.COLOR_OFF}")
+        UI._print(f"\n=== {msg} ===", color=UI.BYELLOW)
 
     @staticmethod
     def debug(msg):

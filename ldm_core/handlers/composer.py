@@ -2,6 +2,7 @@ import json
 import math
 import platform
 import re
+from pathlib import Path
 from ldm_core.handlers.base import BaseHandler
 from ldm_core.utils import dict_to_yaml, resolve_dependency_version
 
@@ -280,10 +281,10 @@ class ComposerHandler(BaseHandler):
             "environment": liferay_env,
             "labels": [f"com.liferay.ldm.project={project_name}"],
             "volumes": [
-                f"{paths['deploy']}:/mnt/liferay/deploy",
-                f"{paths['files']}:/mnt/liferay/files",
-                f"{paths['data']}:/storage/liferay/data",
-                f"{paths['configs']}:/opt/liferay/osgi/configs",
+                f"{paths['deploy'].as_posix()}:/mnt/liferay/deploy",
+                f"{paths['files'].as_posix()}:/mnt/liferay/files",
+                f"{paths['data'].as_posix()}:/storage/liferay/data",
+                f"{paths['configs'].as_posix()}:/opt/liferay/osgi/configs",
             ],
             "networks": ["liferay-net"],
         }
@@ -305,9 +306,11 @@ class ComposerHandler(BaseHandler):
         if scale == 1:
             liferay_service["container_name"] = project_name
             liferay_service["volumes"].append(
-                f"{paths['state']}:/opt/liferay/osgi/state"
+                f"{paths['state'].as_posix()}:/opt/liferay/osgi/state"
             )
-            liferay_service["volumes"].append(f"{paths['logs']}:/opt/liferay/logs")
+            liferay_service["volumes"].append(
+                f"{paths['logs'].as_posix()}:/opt/liferay/logs"
+            )
         else:
             liferay_env.extend(
                 [
@@ -353,7 +356,7 @@ class ComposerHandler(BaseHandler):
                 ms_port = ext.get("loadBalancer", {}).get("targetPort", 8080)
                 services[svc_id] = {
                     "image": f"{svc_id}:latest",
-                    "build": {"context": str(ext["path"])},
+                    "build": {"context": Path(ext["path"]).as_posix()},
                     "networks": ["liferay-net"],
                     "labels": ["traefik.enable=true"],
                 }
