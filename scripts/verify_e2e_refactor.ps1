@@ -146,6 +146,13 @@ function Log-AndRun
     }
 }
 
+# --- Metadata Collection ---
+Write-Host "--- Capturing Environment State ---"
+"--- Capturing Environment State ---" | Out-File -FilePath $RESULTS_FILE_TMP -Append -Encoding utf8
+& $LDM_CMD doctor --skip-project 2>&1 | Out-File -FilePath $RESULTS_FILE_TMP -Append -Encoding utf8
+"" | Out-File -FilePath $RESULTS_FILE_TMP -Append -Encoding utf8
+"--- Test Execution Log ---" | Out-File -FilePath $RESULTS_FILE_TMP -Append -Encoding utf8
+
 try 
 {
     Write-Host "--- Step 0: Targeted Cleanup ---"
