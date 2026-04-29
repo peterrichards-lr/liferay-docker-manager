@@ -1009,6 +1009,10 @@ pause
                                 'Change to: colima start --mount-type virtiofs --mount "$HOME:w"'
                             )
                         else:
+                            # Detect architecture
+                            arch = platform.machine().lower()
+                            is_intel = "x86" in arch or "i386" in arch
+
                             if mount_type == "sshfs":
                                 add_hint(
                                     "Colima Fix: Your mount type is 'sshfs'. You MUST add ':w' to your mount paths for write access."
@@ -1021,10 +1025,16 @@ pause
                                     "Colima Fix (Standard): 'colima stop' then 'colima start --mount [HOME]:w'"
                                 )
 
-                            add_hint(
-                                "Colima Fix (Advanced): 'colima stop' then 'colima start --mount [HOME]:w --vm-type=vz --mount-type=virtiofs'",
-                                "https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/colima-performance-tuning",
-                            )
+                            if is_intel:
+                                add_hint(
+                                    "Note: If performance is poor, try: 'colima stop' then 'colima start --mount [HOME]:w --vm-type=vz'"
+                                )
+                            else:
+                                add_hint(
+                                    "Colima Fix (Advanced): 'colima stop' then 'colima start --mount [HOME]:w --vm-type=vz --mount-type=virtiofs'",
+                                    "https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/colima-performance-tuning",
+                                )
+
                         add_hint(
                             "Recommended: Upgrade Colima to the latest version ('brew upgrade colima') for better macOS integration."
                         )

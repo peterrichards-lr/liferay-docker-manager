@@ -810,15 +810,13 @@ class BaseHandler:
         if not path.exists():
             return True
 
-        parent = path.parent.resolve()
-        rel_target = path.name
         current_uid = os.getuid() if hasattr(os, "getuid") else 1000
         current_gid = os.getgid() if hasattr(os, "getgid") else 1000
 
         docker_cmd = (
-            f"chown -R {current_uid}:{current_gid} /workspace/{rel_target} 2>/dev/null || true; "
-            f"chmod -R 777 /workspace/{rel_target} 2>/dev/null || true; "
-        )
+            "chown -R {current_uid}:{current_gid} /workspace 2>/dev/null || true; "
+            "chmod -R 777 /workspace 2>/dev/null || true; "
+        ).format(current_uid=current_uid, current_gid=current_gid)
 
         try:
             self.run_command(
@@ -827,7 +825,7 @@ class BaseHandler:
                     "run",
                     "--rm",
                     "-v",
-                    f"{parent.as_posix()}:/workspace",
+                    f"{path.as_posix()}:/workspace",
                     "alpine",
                     "sh",
                     "-c",
@@ -875,25 +873,23 @@ class BaseHandler:
                 token_val = "SKIP"  # nosec B105
 
             try:
-                # HARDENING: Mount the parent directory to ensure we can definitely
-                # fix permissions and ownership for the project root directory itself.
-                parent = root.parent.resolve()
-                rel_root = root.name
+                # HARDENING: Mount the project root directly for the write test.
+                # Mounting the parent was sometimes too aggressive on older macOS versions.
 
                 # Aggressive sub-directory creation
                 docker_cmd = (
-                    f"mkdir -p /workspace/{rel_root}/data /workspace/{rel_root}/deploy /workspace/{rel_root}/files "
-                    f"/workspace/{rel_root}/logs /workspace/{rel_root}/osgi/state /workspace/{rel_root}/osgi/configs "
-                    f"/workspace/{rel_root}/osgi/modules /workspace/{rel_root}/routes /workspace/{rel_root}/snapshots 2>/dev/null || true; "
+                    "mkdir -p /workspace/data /workspace/deploy /workspace/files "
+                    "/workspace/logs /workspace/osgi/state /workspace/osgi/configs "
+                    "/workspace/osgi/modules /workspace/routes /workspace/snapshots 2>/dev/null || true; "
                 )
 
                 if token_val != "SKIP":  # nosec B105
                     docker_cmd += (
-                        f'if [ "$(cat /workspace/{rel_root}/.ldm_mount_check 2>/dev/null)" = "{token_val}" ]; then '
-                        f"if touch /workspace/{rel_root}/.ldm_write_test 2>/dev/null; then echo 'OK'; "
+                        f'if [ "$(cat /workspace/.ldm_mount_check 2>/dev/null)" = "{token_val}" ]; then '
+                        f"if touch /workspace/.ldm_write_test 2>/dev/null; then echo 'OK'; "
                         # If touch fails, try an aggressive fix once before reporting failure
-                        f"else chmod 777 /workspace/{rel_root} 2>/dev/null; "
-                        f"if touch /workspace/{rel_root}/.ldm_write_test 2>/dev/null; then echo 'OK'; else echo 'NO_WRITE'; fi; "
+                        f"else chmod 777 /workspace 2>/dev/null; "
+                        f"if touch /workspace/.ldm_write_test 2>/dev/null; then echo 'OK'; else echo 'NO_WRITE'; fi; "
                         f"fi; "
                         f"else echo 'FAIL'; fi"
                     )
@@ -906,7 +902,7 @@ class BaseHandler:
                         "run",
                         "--rm",
                         "-v",
-                        f"{parent.as_posix()}:/workspace",
+                        f"{root.as_posix()}:/workspace",
                         "alpine",
                         "sh",
                         "-c",
@@ -937,11 +933,24 @@ class BaseHandler:
                         cert_dir = actual_home / "liferay-docker-certs"
                         mount_hint = self.get_colima_mount_flags([root, cert_dir])
 
+                        # Detect architecture to provide accurate advice
+                        arch = platform.machine().lower()
+                        is_intel = "x86" in arch or "i386" in arch
+
                         UI.info(f"\n{UI.CYAN}To fix this, run:{UI.COLOR_OFF}")
                         UI.info("colima stop")
-                        UI.info(
-                            f"colima start {mount_hint} --vm-type=vz --mount-type=virtiofs"
-                        )
+
+                        if is_intel:
+                            # Intel Macs (especially on Monterey) often need sshfs with :w
+                            UI.info(f"colima start {mount_hint}")
+                            UI.info(
+                                f"{UI.WHITE}Note: If performance is poor, try adding --vm-type=vz{UI.COLOR_OFF}"
+                            )
+                        else:
+                            # Apple Silicon defaults to vz/virtiofs
+                            UI.info(
+                                f"colima start {mount_hint} --vm-type=vz --mount-type=virtiofs"
+                            )
 
                     sys.exit(1)
 

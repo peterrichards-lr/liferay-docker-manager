@@ -512,7 +512,8 @@ def dict_to_yaml(d, indent=0):
                 elif isinstance(v, (int, float)):
                     v = str(v)
                 elif isinstance(v, str):
-                    escaped = v.replace('"', '\\"')
+                    # Escape backslashes for YAML compatibility (prevents \u parsing errors)
+                    escaped = v.replace("\\", "\\\\").replace('"', '\\"')
                     v = f'"{escaped}"'
                 lines.append(f"{spaces}{k}: {v}")
     elif isinstance(d, list):
@@ -528,7 +529,8 @@ def dict_to_yaml(d, indent=0):
                 elif isinstance(item, (int, float)):
                     item = str(item)
                 elif isinstance(item, str):
-                    escaped = item.replace('"', '\\"')
+                    # Escape backslashes for YAML compatibility
+                    escaped = item.replace("\\", "\\\\").replace('"', '\\"')
                     item = f'"{escaped}"'
                 lines.append(f"{spaces}- {item}")
     return "\n".join(lines)
