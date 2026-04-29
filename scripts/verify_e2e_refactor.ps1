@@ -1,5 +1,6 @@
 # Comprehensive E2E Binary Verification for LDM (Windows Native PowerShell)
-# Target: Standalone Binary Verification (Hardened for Windows)
+# Target: Verifies the INSTALLED binary, not the source code.
+# Optimized for Windows Native.
 
 # Force UTF-8 for Python and PowerShell
 $env:PYTHONUTF8 = 1
@@ -13,22 +14,27 @@ Write-Host "--- Starting Binary Verification (Windows Native) ---"
 $LDM_CMD = "ldm"
 if (-not (Get-Command $LDM_CMD -ErrorAction SilentlyContinue))
 {
-    Write-Host "ERROR: 'ldm' binary not found in PATH."
+    Write-Host "❌ ERROR: 'ldm' binary not found in PATH."
+    Write-Host "Please ensure LDM is installed and in your PATH."
     exit 1
 }
 
 # Unique filename based on machine identity
 $Hostname = $env:COMPUTERNAME
 $Timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
+
+# IMPORTANT: Keep RESULTS_FILE_TMP in ORIGINAL_PWD so it isn't deleted by work-dir cleanup
 $RESULTS_FILE_TMP = Join-Path $ORIGINAL_PWD ".ldm-verify-tmp-${Timestamp}.txt"
 
-"=== LDM BINARY VERIFICATION REPORT ===" | Out-File -FilePath $RESULTS_FILE_TMP -Encoding utf8
-"Timestamp: $(Get-Date)" | Out-File -FilePath $RESULTS_FILE_TMP -Append -Encoding utf8
-"Hostname:  $Hostname" | Out-File -FilePath $RESULTS_FILE_TMP -Append -Encoding utf8
-"Platform:  $($PSVersionTable.OS)" | Out-File -FilePath $RESULTS_FILE_TMP -Append -Encoding utf8
-"Binary:    $((Get-Command $LDM_CMD).Source)" | Out-File -FilePath $RESULTS_FILE_TMP -Append -Encoding utf8
-"Version:   $(& $LDM_CMD --version 2>$null)" | Out-File -FilePath $RESULTS_FILE_TMP -Append -Encoding utf8
-"" | Out-File -FilePath $RESULTS_FILE_TMP -Append -Encoding utf8
+{
+    Write-Output "=== LDM BINARY VERIFICATION REPORT ==="
+    Write-Output "Timestamp: $(Get-Date)"
+    Write-Output "Hostname:  $Hostname"
+    Write-Output "Platform:  $($PSVersionTable.OS)"
+    Write-Output "Binary:    $((Get-Command $LDM_CMD).Source)"
+    Write-Output "Version:   $(& $LDM_CMD --version 2>$null)"
+    Write-Output ""
+} | Out-File -FilePath $RESULTS_FILE_TMP -Encoding utf8
 
 # Capture logs helper
 function Capture-LogsOnFailure 
@@ -52,14 +58,17 @@ function Finalize-Verification
 {
     param($ExitCode)
     
+    # Determine status for filename
     $status = "pass"
     if ($ExitCode -ne 0) 
     {
         $status = "fail"
         Capture-LogsOnFailure
+        Write-Host ""
         Write-Host "!!! VERIFICATION FAILED (Exit Code: $ExitCode) !!!"
     }
 
+    # Final Rename based on environment slug
     $EnvSlug = & $LDM_CMD doctor --slug 2>$null
     if ($null -ne $EnvSlug) { $EnvSlug = $EnvSlug.Trim().Replace(" ", "-") }
     if ([string]::IsNullOrWhiteSpace($EnvSlug) -or $EnvSlug -eq "unknown") { $EnvSlug = "unknown-env" }
@@ -71,23 +80,36 @@ function Finalize-Verification
     $FinalName = "verify-${EnvSlug}-${status}-${shortHash}.txt"
     $FinalPath = Join-Path $ORIGINAL_PWD $FinalName
 
+    # Move report to final location BEFORE deleting the work dir
     if (Test-Path $RESULTS_FILE_TMP) 
     {
         Move-Item -Path $RESULTS_FILE_TMP -Destination $FinalPath -Force
-        Write-Host "Verification Complete ($status). Results: $FinalName"
+        Write-Host ""
+        Write-Host "================================================================"
+        Write-Host "✅ Verification Complete ($status)"
+        Write-Host "📊 Results: $FinalName"
+        Write-Host "================================================================"
     }
 
-    Write-Host "Cleaning up artifacts..."
+    Write-Host "🧹 Cleaning up test artifacts..."
+    # SURGICAL cleanup: only remove what we created
     docker rm -f liferay-proxy-global liferay-search-global liferay-docker-proxy smoke-test-app 2>$null | Out-Null
+    
     $env:LDM_WORKSPACE = Join-Path $ORIGINAL_PWD "e2e-work-dir"
     & $LDM_CMD -y rm ldm-smoke-test --delete > $null 2>&1
-    if (Test-Path $env:LDM_WORKSPACE) { Remove-Item -Recurse -Force $env:LDM_WORKSPACE -ErrorAction SilentlyContinue }
+    
+    if (Test-Path $env:LDM_WORKSPACE) { 
+        Remove-Item -Recurse -Force $env:LDM_WORKSPACE -ErrorAction SilentlyContinue 
+    }
 }
 
-# Template Discovery
-$SearchPaths = @()
-$SearchPaths += Join-Path $ORIGINAL_PWD "references\test-project"
-$SearchPaths += Join-Path $ORIGINAL_PWD "test-project"
+# Find the test project template (Flexible search)
+$SearchPaths = @(
+    Join-Path $PSScriptRoot "..\references\test-project",
+    Join-Path $PSScriptRoot "test-project",
+    Join-Path $ORIGINAL_PWD "test-project",
+    Join-Path $ORIGINAL_PWD "references\test-project"
+)
 
 $TemplateSrc = ""
 foreach ($path in $SearchPaths) 
@@ -97,9 +119,11 @@ foreach ($path in $SearchPaths)
 
 if ($TemplateSrc -eq "") 
 {
-    Write-Host "ERROR: Test project template folder not found."
+    Write-Host "❌ ERROR: Test project template folder not found."
+    Write-Host "Please ensure you are running from the repository root or that 'references\test-project' is present."
     exit 1
 }
+Write-Host "ℹ  Using test template: $TemplateSrc"
 
 # Isolate the LDM workspace
 $LDM_WORKSPACE = Join-Path $ORIGINAL_PWD "e2e-work-dir"
@@ -112,6 +136,9 @@ function Log-AndRun
     param($msg, $cmd, $args_list)
     Write-Host ">> $msg"
     ">> $msg" | Out-File -FilePath $RESULTS_FILE_TMP -Append -Encoding utf8
+    
+    # Temporary file for capturing output (similar to mktemp)
+    $tmp_output = [System.IO.Path]::GetTempFileName()
     
     $pinfo = New-Object System.Diagnostics.ProcessStartInfo
     $pinfo.FileName = $cmd
@@ -132,82 +159,119 @@ function Log-AndRun
     
     $output = $stdout + $stderr
     $output | Out-File -FilePath $RESULTS_FILE_TMP -Append -Encoding utf8
+    $output | Out-File -FilePath $tmp_output -Encoding utf8
     Write-Host $output
     
     if ($p.ExitCode -ne 0) 
     {
-        "ERROR: Command failed with exit code $($p.ExitCode)" | Out-File -FilePath $RESULTS_FILE_TMP -Append -Encoding utf8
+        "❌ ERROR: Command failed with exit code $($p.ExitCode): $cmd $args_list" | Out-File -FilePath $RESULTS_FILE_TMP -Append -Encoding utf8
+        Remove-Item $tmp_output -ErrorAction SilentlyContinue
         throw "Critical failure in $cmd"
     }
 
-    if ($output -match "FATAL" -or ($output -match "ERROR:" -and $output -notmatch "not found" -and $output -notmatch "already in sync")) 
+    # Scan for FATAL or specific LDM error markers
+    $content = Get-Content $tmp_output
+    $hasError = $false
+    foreach($line in $content) {
+        if ($line -match "FATAL|❌|ERROR:" -and $line -notmatch "ℹ|>>|not found|already in sync") {
+            $hasError = $true
+            break
+        }
+    }
+
+    if ($hasError)
     {
+        "❌ ERROR: Critical failure detected in output of command: $cmd $args_list" | Out-File -FilePath $RESULTS_FILE_TMP -Append -Encoding utf8
+        Remove-Item $tmp_output -ErrorAction SilentlyContinue
         throw "Critical failure marker detected"
     }
-}
 
-# --- Metadata Collection ---
-Write-Host "--- Capturing Environment State ---"
-"--- Capturing Environment State ---" | Out-File -FilePath $RESULTS_FILE_TMP -Append -Encoding utf8
-& $LDM_CMD doctor --skip-project 2>&1 | Out-File -FilePath $RESULTS_FILE_TMP -Append -Encoding utf8
-"" | Out-File -FilePath $RESULTS_FILE_TMP -Append -Encoding utf8
-"--- Test Execution Log ---" | Out-File -FilePath $RESULTS_FILE_TMP -Append -Encoding utf8
+    Remove-Item $tmp_output -ErrorAction SilentlyContinue
+}
 
 try 
 {
-    Write-Host "--- Step 0: Targeted Cleanup ---"
-    & $LDM_CMD -y rm ldm-smoke-test --delete --infra 2>&1 | Out-Null
-    docker rm -f liferay-proxy-global liferay-search-global liferay-docker-proxy 2>&1 | Out-Null
-    
-    # Wipe global search data to prevent mapping corruption on restart
-    $esDataDir = Join-Path $HOME ".ldm\infra\search\data"
-    if (Test-Path $esDataDir) { Remove-Item -Recurse -Force $esDataDir -ErrorAction SilentlyContinue }
+    # --- Metadata Collection ---
+    Write-Host "--- Capturing Environment State ---"
+    "--- Capturing Environment State ---" | Out-File -FilePath $RESULTS_FILE_TMP -Append -Encoding utf8
+    # Capture doctor output to file and console (mimic tee)
+    $doctorOut = & $LDM_CMD doctor --skip-project 2>&1
+    $doctorOut | Out-File -FilePath $RESULTS_FILE_TMP -Append -Encoding utf8
+    Write-Host $doctorOut
+    "" | Out-File -FilePath $RESULTS_FILE_TMP -Append -Encoding utf8
+    "--- Test Execution Log ---" | Out-File -FilePath $RESULTS_FILE_TMP -Append -Encoding utf8
 
+    # 1. Prepare a Clean Slate (SURGICAL)
+    Write-Host "--- Step 0: Targeted Cleanup ---"
+    {
+        Write-Output ">> Preparing clean slate (removing project and infra if they exist)"
+        & $LDM_CMD -y rm ldm-smoke-test --delete --infra 2>&1
+        docker rm -f liferay-proxy-global liferay-search-global liferay-docker-proxy 2>&1
+        
+        # Wipe global search data to prevent mapping corruption on restart
+        $esDataDir = Join-Path $HOME ".ldm\infra\search\data"
+        if (Test-Path $esDataDir) { Remove-Item -Recurse -Force $esDataDir -ErrorAction SilentlyContinue }
+    } | Out-File -FilePath $RESULTS_FILE_TMP -Append -Encoding utf8
+    Write-Host "✅ Clean slate established."
+    "✅ Clean slate established." | Out-File -FilePath $RESULTS_FILE_TMP -Append -Encoding utf8
+
+    # 2. Global Infra Setup
     Write-Host "--- Step 1: Global Infra Setup ---"
     Log-AndRun -msg "Initializing Infrastructure" -cmd $LDM_CMD -args_list "-y infra-setup --search"
 
+    # 3. Project Lifecycle
     Write-Host "--- Step 2: Project Run ---"
-    $projectDir = Join-Path $LDM_WORKSPACE "ldm-smoke-test"
+    $msg = "ℹ  Provisioning test project 'ldm-smoke-test' from template..."
+    Write-Host $msg
+    $msg | Out-File -FilePath $RESULTS_FILE_TMP -Append -Encoding utf8
     
-    # Surgical Copy
+    $projectDir = Join-Path $LDM_WORKSPACE "ldm-smoke-test"
     if (-not (Test-Path $projectDir)) { New-Item -ItemType Directory -Force -Path $projectDir | Out-Null }
     Copy-Item -Path "$TemplateSrc\*" -Destination $projectDir -Recurse -Force
     Set-Location $projectDir
 
-    # Hard-fix: Ensure the 'meta' file exists and is correctly encoded for Windows
-    if (-not (Test-Path "meta")) {
-        Write-Host "Warning: meta file missing after copy. Attempting to recreate..."
-        # Fallback metadata content
-        $metaContent = @(
-            "tag=2026.q1.4-lts",
-            "container_name=ldm-smoke-test",
-            "image_tag=alpine",
-            "port=8082",
-            "db_type=hypersonic",
-            "ssl=false"
-        )
-        $metaContent | Out-File -FilePath "meta" -Encoding utf8
+    if (Test-Path "meta") {
+        Write-Host "✅ Project metadata verified (meta)."
+        "✅ Project metadata verified (meta)." | Out-File -FilePath $RESULTS_FILE_TMP -Append -Encoding utf8
+    } else {
+        Write-Host "❌ ERROR: Project metadata file (meta) was not copied correctly!"
+        "❌ ERROR: Project metadata file (meta) was not copied correctly!" | Out-File -FilePath $RESULTS_FILE_TMP -Append -Encoding utf8
+        exit 1
     }
 
-    # LOG: List files in report to debug
-    "--- Project Files in $projectDir ---" | Out-File -FilePath $RESULTS_FILE_TMP -Append -Encoding utf8
-    Get-ChildItem | Out-File -FilePath $RESULTS_FILE_TMP -Append -Encoding utf8
-    "" | Out-File -FilePath $RESULTS_FILE_TMP -Append -Encoding utf8
+    Log-AndRun -msg "Running LDM Project" -cmd $LDM_CMD -args_list "-y run . --no-wait --no-tld-skip --no-jvm-verify"
 
-    Log-AndRun -msg "Running LDM Project" -cmd $LDM_CMD -args_list "-y run `"$projectDir`" --no-wait --no-tld-skip --no-jvm-verify"
-
+    # 4. Snapshot & Restore Verification
     Write-Host "--- Step 3: Snapshot & Restore ---"
     Log-AndRun -msg "Creating Snapshot" -cmd $LDM_CMD -args_list "-y snapshot --name Binary-Verify"
-    Log-AndRun -msg "Restoring Snapshot" -cmd $LDM_CMD -args_list "-y restore --latest"
+    
+    if (-not (Test-Path "snapshots")) {
+        Write-Host "❌ ERROR: Snapshot directory 'snapshots/' was not created."
+        "❌ ERROR: Snapshot directory 'snapshots/' was not created." | Out-File -FilePath $RESULTS_FILE_TMP -Append -Encoding utf8
+        exit 1
+    }
 
+    Log-AndRun -msg "Restoring Snapshot" -cmd $LDM_CMD -args_list "-y restore --latest"
+    Write-Host "✅ Snapshot and Restore verified."
+    "✅ Snapshot and Restore verified." | Out-File -FilePath $RESULTS_FILE_TMP -Append -Encoding utf8
+
+    # 5. Status and Logs
     Write-Host "--- Step 4: Status & Logs ---"
     Log-AndRun -msg "Checking Status" -cmd $LDM_CMD -args_list "-y status"
     Log-AndRun -msg "Checking Logs" -cmd $LDM_CMD -args_list "-y logs --no-wait"
+    Write-Host "✅ Status and Logs verified."
+    "✅ Status and Logs verified." | Out-File -FilePath $RESULTS_FILE_TMP -Append -Encoding utf8
 
+    # 6. Teardown
     Write-Host "--- Step 5: Teardown ---"
     Log-AndRun -msg "Tearing down stack" -cmd $LDM_CMD -args_list "-y down ldm-smoke-test --infra"
+    Write-Host "✅ Teardown successful."
+    "✅ Teardown successful." | Out-File -FilePath $RESULTS_FILE_TMP -Append -Encoding utf8
 
-    Write-Host "ALL E2E VERIFICATIONS PASSED!"
+    "" | Out-File -FilePath $RESULTS_FILE_TMP -Append -Encoding utf8
+    Write-Host "🎯 ALL E2E VERIFICATIONS PASSED!"
+    "🎯 ALL E2E VERIFICATIONS PASSED!" | Out-File -FilePath $RESULTS_FILE_TMP -Append -Encoding utf8
+    
     Finalize-Verification 0
 }
 catch 
