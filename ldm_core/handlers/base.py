@@ -810,13 +810,13 @@ class BaseHandler:
         if not path.exists():
             return True
 
-        current_uid = os.getuid() if hasattr(os, "getuid") else 1000
-        current_gid = os.getgid() if hasattr(os, "getgid") else 1000
-
+        # We try to satisfy both the host user and the container user (1000)
+        # 1. Chown to 1000:1000 so services like ES can lock files
+        # 2. Chmod 777 so the host user can still delete/read files
         docker_cmd = (
-            "chown -R {current_uid}:{current_gid} /workspace 2>/dev/null || true; "
+            "chown -R 1000:1000 /workspace 2>/dev/null || true; "
             "chmod -R 777 /workspace 2>/dev/null || true; "
-        ).format(current_uid=current_uid, current_gid=current_gid)
+        )
 
         try:
             self.run_command(
