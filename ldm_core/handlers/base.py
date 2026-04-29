@@ -623,13 +623,6 @@ class BaseHandler:
         """Resolves a project ID or path to a full filesystem path."""
         pid = project_id or getattr(self.args, "project", None)
 
-        if not pid and Path.cwd().resolve() == Path.home().resolve():
-            UI.warning(
-                "You are running LDM from your Home directory. "
-                "For better performance and to avoid noise, it is recommended to "
-                "run LDM from a dedicated workspace folder (e.g. ~/ldm)."
-            )
-
         if pid:
             p = Path(pid).expanduser().resolve()
             # Safety: exists() can raise PermissionError if the dir is 0700 root-owned
@@ -640,6 +633,13 @@ class BaseHandler:
                     for f in ["meta", ".liferay-docker.meta", ".ldm.meta"]
                 )
                 if has_meta:
+                    # If the project path IS the home directory, warn the user
+                    if p == Path.home().resolve():
+                        UI.warning(
+                            "You are running LDM from your Home directory. "
+                            "For better performance and to avoid noise, it is recommended to "
+                            "run LDM from a dedicated workspace folder (e.g. ~/ldm)."
+                        )
                     return p
                 # If for_init, we allow the path as long as it doesn't exist as a file
                 if for_init:
