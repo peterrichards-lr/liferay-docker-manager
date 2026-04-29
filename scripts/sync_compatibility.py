@@ -26,13 +26,18 @@ def anonymize_content(content):
     content = re.sub(r"Worker ID:\s+[^\n]+", "Worker ID: [ANONYMIZED]", content)
     content = re.sub(r"Azure Region:\s+[^\n]+", "Azure Region: [ANONYMIZED]", content)
 
-    # 2. Absolute paths (macOS and Linux)
-    content = re.sub(r"(/Users/[^/\s]+|/home/[^/\s]+)", "[HOME]", content)
+    # 2. Absolute paths (macOS and Linux/Windows)
+    content = re.sub(
+        r"(/Users/[^/\s]+|/home/[^/\s]+|[A-Z]:\\Users\\[^\\\s]+)", "[HOME]", content
+    )
 
     # 3. Path markers
     content = re.sub(r"✅\s+/[^\n]+", "✅  [PATH]", content)
     content = re.sub(r"⚠️\s+/[^\n]+", "⚠️  [PATH]", content)
     content = re.sub(r"❌\s+/[^\n]+", "❌  [PATH]", content)
+
+    # 4. Windows Specific binary paths
+    content = re.sub(r"✅\s+[A-Z]:\\[^\n]+", "✅  [PATH]", content)
 
     return content
 
@@ -100,25 +105,16 @@ def get_report_metadata(report_path):
 
     # --- Standardize Environment ---
     is_mac = "mac" in p_low or "darwin" in p_low
-    is_fedora = "fc" in p_low or "fedora" in p_low or "fedora" in content.lower()
-    is_ubuntu = "ubuntu" in p_low or "ubuntu" in content.lower()
+    is_fedora = "fc" in p_low or "fedora" in p_low
+    is_ubuntu = "ubuntu" in p_low
 
-    is_wsl = (
-        ("microsoft" in p_low or "wsl" in p_low or "wsl" in content.lower())
-        and not is_fedora
-        and not is_ubuntu
-    )
+    # WSL: Platform MUST be Linux, and mention microsoft/wsl
+    is_wsl = "linux" in p_low and ("microsoft" in p_low or "wsl" in p_low)
 
+    # Windows Native: Platform contains Windows, and NOT linux
     is_windows_native = (
-        ("win32" in p_low or "windows" in p_low)
-        and not is_wsl
-        and not is_fedora
-        and not is_ubuntu
-    )
-
-    is_linux_native = (
-        (is_fedora or is_ubuntu or "linux" in p_low) and not is_wsl and not is_mac
-    )
+        "windows" in p_low or "win32" in p_low
+    ) and "linux" not in p_low
 
     # 4.1 Force Provider standardization
     if is_mac:
@@ -135,26 +131,11 @@ def get_report_metadata(report_path):
 
     # --- FALLBACK MAPPINGS (Timestamps) ---
     if timestamp_str == "Tue 28 Apr 12:25:38 BST 2026":
-        platform_str = "linux-gnu (wsl)"
         provider = "Native WSL2"
         is_wsl = True
-        is_windows_native = False
-    elif (
-        timestamp_str == "Tue 28 Apr 2026 12:48:13 BST"
-        or timestamp_str == "Tue 28 Apr 2026 12:28:09 BST"
-    ):
-        platform_str = "darwin25 (arm64)"
-        provider = "Colima"
-    elif (
-        timestamp_str == "Tue 28 Apr 2026 15:18:10 BST"
-        or timestamp_str == "Tue 28 Apr 2026 15:18:49 BST"
-    ):
-        platform_str = "darwin25 (arm64)"
-        provider = "OrbStack"
     elif timestamp_str == "Tue 28 Apr 10:07:43 BST 2026":
-        platform_str = "linux (native)"
         provider = "Native Docker"
-        is_linux_native = True
+        is_fedora = True
 
     if is_mac:
         v_num = 0
@@ -181,26 +162,20 @@ def get_report_metadata(report_path):
             26: "Tahoe",
         }
         name = real_names.get(v_num, "")
-        if name:
-            host_os = f"macOS {v_num} {name}"
-        elif v_num > 0:
-            host_os = f"macOS {v_num}"
-        else:
-            host_os = "macOS 11+"
+        host_os = (
+            f"macOS {v_num} {name}"
+            if name
+            else (f"macOS {v_num}" if v_num > 0 else "macOS 11+")
+        )
 
-        if "arm64" in p_low or "aarch64" in p_low:
+        if "arm64" in p_low or "aarch64" in p_low or "darwin25" in p_low:
             arch = "Apple Silicon"
-        elif "x86_64" in p_low or "amd64" in p_low or "i386" in p_low:
-            arch = "Apple Intel"
         else:
-            if "arm64" in content.lower() or "darwin25" in p_low:
-                arch = "Apple Silicon"
-            elif "x86_64" in content.lower() or "darwin21" in p_low:
-                arch = "Apple Intel"
+            arch = "Apple Intel"
     elif is_wsl or is_windows_native:
         host_os = "Windows 11"
         arch = "Windows PC"
-    elif is_fedora:
+    elif is_fedora or "fedora" in content.lower():
         arch = "Linux Workstation"
         fedora_match = re.search(r"fc(\d+)", p_low)
         host_os = f"Fedora {fedora_match.group(1) if fedora_match else ''}".strip()
@@ -208,7 +183,7 @@ def get_report_metadata(report_path):
         arch = "Linux Workstation"
         ubuntu_match = re.search(r"(\d+\.\d+)", p_low)
         host_os = f"Ubuntu {ubuntu_match.group(1) if ubuntu_match else ''}".strip()
-    elif is_linux_native:
+    else:
         arch = "Linux Workstation"
         host_os = "Linux"
 
@@ -242,7 +217,7 @@ def sync_reports():
 
     history_dir.mkdir(exist_ok=True)
 
-    # 1. Process and normalize all reports
+    # 1. Process all reports
     reports = list(results_dir.glob("*.txt"))
     all_metas = []
     for report in reports:
@@ -250,13 +225,11 @@ def sync_reports():
             continue
         try:
             meta = get_report_metadata(report)
-            if meta["arch"] == "Unknown":
-                continue
             all_metas.append(meta)
         except Exception as e:
             UI.error(f"Failed to process {report.name}: {e}")
 
-    # 2. Archival Logic
+    # 2. Archival and Redaction Logic
     latest_per_env = {}
     for meta in all_metas:
         key = (meta["arch"], meta["os"], meta["provider"])
@@ -281,15 +254,17 @@ def sync_reports():
 
         if is_latest:
             target_path = results_dir / new_name
-            if meta["report_path"] != target_path:
-                UI.info(f"Standardizing: {meta['report_path'].name} -> {new_name}")
-                if not meta["report_path"].name.startswith("verify-"):
-                    clean_content = anonymize_content(meta["content"])
-                    target_path.write_text(clean_content)
-                    meta["report_path"].unlink()
-                else:
-                    meta["report_path"].rename(target_path)
-                meta["report_path"] = target_path
+            UI.info(
+                f"Standardizing & Anonymizing: {meta['report_path'].name} -> {new_name}"
+            )
+            clean_content = anonymize_content(meta["content"])
+
+            # Remove the old file if it has a different name
+            if meta["report_path"].exists() and meta["report_path"] != target_path:
+                meta["report_path"].unlink()
+
+            target_path.write_text(clean_content)
+            meta["report_path"] = target_path
         else:
             UI.info(f"Archiving old report: {meta['report_path'].name}")
             shutil.move(
