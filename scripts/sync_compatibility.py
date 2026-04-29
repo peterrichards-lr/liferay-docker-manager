@@ -96,8 +96,13 @@ def get_report_metadata(report_path):
 
     # --- Standardize Environment ---
     is_mac = "mac" in p_low or "darwin" in p_low
-    is_wsl = "microsoft" in p_low or "wsl" in p_low or "wsl" in content.lower()
-    is_windows_native = "win32" in p_low or "windows" in p_low
+    is_wsl = (
+        "microsoft" in p_low
+        or "wsl" in p_low
+        or "wsl" in content.lower()
+        or "/home/" in content
+    )
+    is_windows_native = ("win32" in p_low or "windows" in p_low) and not is_wsl
 
     # 4.1 Force Provider standardization
     if is_mac:
@@ -108,14 +113,20 @@ def get_report_metadata(report_path):
             # Extra check for OrbStack
             if "orbstack" in content.lower() or "orbstack" in p_low:
                 provider = "OrbStack"
-    elif is_windows_native or is_wsl:
-        if provider == "Unknown":
-            provider = "Native WSL2" if is_wsl else "Docker Desktop"
+    elif is_wsl:
+        if provider == "Unknown" or provider == "desktop-linux":
+            provider = "Native WSL2"
+    elif is_windows_native:
+        if provider == "Unknown" or provider == "desktop-linux":
+            provider = "Docker Desktop"
 
     # --- FALLBACK MAPPINGS (Timestamps) ---
+    # (Existing fallback mappings...)
     if timestamp_str == "Tue 28 Apr 12:25:38 BST 2026":
         platform_str = "linux-gnu (wsl)"
         provider = "Native WSL2"
+        is_wsl = True
+        is_windows_native = False
     elif (
         timestamp_str == "Tue 28 Apr 2026 12:48:13 BST"
         or timestamp_str == "Tue 28 Apr 2026 12:28:09 BST"
@@ -132,7 +143,19 @@ def get_report_metadata(report_path):
         platform_str = "linux (native)"
         provider = "Native Docker"
 
+    # 4.2 Fix 'Unknown' architecture for Windows
+    if arch == "Unknown":
+        if is_windows_native:
+            arch = "Windows PC"
+            host_os = "Windows 11"
+        elif is_wsl:
+            arch = "Linux Workstation"
+            host_os = "Windows 11"
+        elif is_mac:
+            arch = "Apple Silicon" if "arm64" in content.lower() else "Apple Intel"
+
     if is_mac:
+        # (Existing Mac logic...)
         v_num = 0
         macos_match = re.search(r"macos[-]?(\d+)", p_low)
         if macos_match:
@@ -168,12 +191,10 @@ def get_report_metadata(report_path):
             arch = "Apple Silicon"
         elif "x86_64" in p_low or "amd64" in p_low or "i386" in p_low:
             arch = "Apple Intel"
-        else:
-            if "arm64" in content.lower() or "darwin25" in p_low:
-                arch = "Apple Silicon"
-            elif "x86_64" in content.lower() or "darwin21" in p_low:
-                arch = "Apple Intel"
-    elif is_windows_native or is_wsl:
+    elif is_wsl:
+        host_os = "Windows 11"
+        arch = "Linux Workstation"
+    elif is_windows_native:
         host_os = "Windows 11"
         arch = "Windows PC"
     elif "fedora" in p_low:

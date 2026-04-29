@@ -1,0 +1,44 @@
+=== LDM BINARY VERIFICATION REPORT ===
+Timestamp: 04/29/2026 13:06:54
+Hostname:  [ANONYMIZED]
+Platform:  Microsoft Windows 10.0.22631
+Binary:    [ANONYMIZED]
+Version:   ldm 2.4.26-beta.33
+
+>> Initializing Infrastructure
+[0;33m?  Starting Docker socket bridge...[0m
+[0;33m?  Initializing Global Search (ES8) container...[0m
+[0;33m?  Waiting for Elasticsearch to become ready...[0m
+[0;33m?  Installing missing Liferay analyzers in Global Search...[0m
+[0;33m?  Restarting Global Search to activate plugins...[0m
+[0;33m?  Waiting for Global Search to be ready after restart...[0m
+[0;33m?  Checking infrastructure stack (Traefik SSL Proxy)...[0m
+[0;32m?  Infrastructure setup complete.[0m
+ Container liferay-proxy-global Creating 
+ Container liferay-proxy-global Created 
+ Container liferay-proxy-global Starting 
+ Container liferay-proxy-global Started 
+
+--- Project Files in [HOME]\ldm-verify\e2e-work-dir\ldm-smoke-test ---
+
+    Directory: [HOME]\ldm-verify\e2e-work-dir\ldm-smoke-test
+
+Mode                 LastWriteTime         Length Name
+----                 -------------         ------ ----
+d----          29/04/2026    13:08                client-extensions
+d----          29/04/2026    13:08                files
+d----          29/04/2026    13:08                osgi
+-a---          28/04/2026    08:08            104 meta
+
+
+>> Running LDM Project
+[0;33m??  Docker has less than 8.0 GB RAM allocated.[0m
+[0;33m?  Liferay might be slow or unstable. Increase RAM in Docker Desktop settings.[0m
+[0;33m??  Global 'common/' folder not found. Some baseline assets may be missing.[0m
+[0;33m?  You can recreate the baseline by running: [0;36mldm init-common[0m[0m
+[0;37mError Details:[0m yaml: while scanning a quoted scalar at line 16, column 9: line 16, column 14: did not find expected hexadecimal number
+[1;31m\u274c  Command failed (Exit 1): C:\Program Files\Docker\Docker\resources\bin\docker.EXE compose config --quiet[0m
+
+ERROR: Command failed with exit code 1
+
+--- FAILURE DEBUG LOGS ---
