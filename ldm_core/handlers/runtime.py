@@ -324,19 +324,19 @@ class RuntimeHandler(BaseHandler):
                 )
 
                 UI.heading("Useful Commands")
-                print(
+                UI.raw(
                     f"  {UI.CYAN}ldm logs -f {container_name}{UI.COLOR_OFF}  Tail logs"
                 )
-                print(
+                UI.raw(
                     f"  {UI.CYAN}ldm shell {container_name}{UI.COLOR_OFF}    Enter bash"
                 )
-                print(
+                UI.raw(
                     f"  {UI.CYAN}ldm status {container_name}{UI.COLOR_OFF}   Check health"
                 )
-                print(
+                UI.raw(
                     f"  {UI.CYAN}ldm stop {container_name}{UI.COLOR_OFF}     Stop stack"
                 )
-                print()
+                UI.raw("")
 
                 if getattr(self.args, "browser", False):
                     UI.info(f"Launching browser: {access_url}/web/guest/home")

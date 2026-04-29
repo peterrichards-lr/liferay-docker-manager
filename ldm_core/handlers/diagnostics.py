@@ -2194,10 +2194,10 @@ pause
                 cpus_ok = "warn"
             results.append(("Docker CPUs", f"{cpus} Cores", cpus_ok))
             if cpus_ok is not True:
-                print(
+                UI.raw(
                     f"  {UI.CYAN}ℹ{UI.COLOR_OFF} Hint: Allocate more CPU cores in your Docker provider settings."
                 )
-                print(
+                UI.raw(
                     f"    Doc: {UI.CYAN}https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/installation.md#docker-resource-alignment-windowswsl2macos{UI.COLOR_OFF}"
                 )
 
@@ -2208,10 +2208,10 @@ pause
                 mem_ok = "warn"
             results.append(("Docker Memory", f"{mem_gb:.1f} GB", mem_ok))
             if mem_ok is not True:
-                print(
+                UI.raw(
                     f"  {UI.CYAN}ℹ{UI.COLOR_OFF} Hint: Allocate more RAM in your Docker provider settings."
                 )
-                print(
+                UI.raw(
                     f"    Doc: {UI.CYAN}https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/installation.md#docker-resource-alignment-windowswsl2macos{UI.COLOR_OFF}"
                 )
 
@@ -2226,10 +2226,10 @@ pause
             UI.info("No projects found.")
             return
 
-        print(
+        UI.raw(
             f"{UI.WHITE}{'Project':<25} {'Version':<15} {'Status':<12} {'URL'}{UI.COLOR_OFF}"
         )
-        print("-" * 80)
+        UI.raw("-" * 80)
 
         for r in roots:
             path = r["path"]

@@ -89,14 +89,14 @@ def get_report_metadata(report_path):
         dt = datetime.fromtimestamp(report_path.stat().st_mtime)
 
     # 3. Extract Platform/OS info
-    platform_match = re.search(r"Platform\s+✅\s+([^\n]+)", content)
+    platform_match = re.search(r"Platform\s+(?:✅|\[OK\])\s+([^\n]+)", content)
     if not platform_match:
         platform_match = re.search(r"Platform:\s+([^\n]+)", content)
 
     platform_str = platform_match.group(1).strip() if platform_match else "Unknown"
 
     # 4. Extract Docker Provider
-    provider_match = re.search(r"Docker Provider\s+✅\s+([^\n]+)", content)
+    provider_match = re.search(r"Docker Provider\s+(?:✅|\[OK\])\s+([^\n]+)", content)
     if not provider_match:
         provider_match = re.search(r"Docker Provider\s+([^\n]+)", content)
 
