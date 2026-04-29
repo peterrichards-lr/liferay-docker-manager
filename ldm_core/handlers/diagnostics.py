@@ -643,14 +643,34 @@ pause
                             else:
                                 provider = "Docker Desktop"
 
-                    # Fallback to name-based
                     if provider == "Unknown":
                         if context == "colima":
                             provider = "Colima"
                         elif context == "orbstack":
                             provider = "OrbStack"
+                        elif context == "desktop-linux":
+                            provider = "Docker Desktop"
 
-            # 3. Colima-specific info
+            # 3. Final safety wash for slug/sync compatibility
+            p_low = platform.system().lower()
+            if provider == "Unknown":
+                if p_low == "linux":
+                    try:
+                        with open("/proc/version", "r") as f:
+                            if "microsoft" in f.read().lower():
+                                provider = "Native WSL2"
+                            else:
+                                provider = "Native Docker"
+                    except Exception:
+                        provider = "Native Docker"
+                elif p_low == "windows" or "win32" in p_low:
+                    provider = "Docker Desktop"
+                elif p_low == "darwin":
+                    # Colima and Orbstack usually have distinct context names
+                    # but if we are here, default to Docker Desktop
+                    provider = "Docker Desktop"
+
+            # 4. Colima-specific info
             if provider == "Colima":
                 try:
                     # 'colima status' contains mountType in its output
