@@ -48,7 +48,10 @@ def get_report_metadata(report_path):
     content = strip_ansi(raw_content)
 
     # 1. Detect Verification Status
-    passed = "🎯 ALL E2E VERIFICATIONS PASSED!" in content
+    passed = (
+        "🎯 ALL E2E VERIFICATIONS PASSED!" in content
+        or "ALL E2E VERIFICATIONS PASSED!" in content
+    )
 
     # Robustness check for errors
     lines = content.splitlines()
