@@ -63,7 +63,11 @@ def get_report_metadata(report_path):
         try:
             # Format: Tue 28 Apr 2026 12:48:13 BST or Tue 28 Apr 12:25:38 BST 2026
             ts_clean = re.sub(r"\s+[A-Z]{3,4}$", "", timestamp_str)
-            for fmt in ["%a %d %b %Y %H:%M:%S", "%a %d %b %H:%M:%S %Y"]:
+            for fmt in [
+                "%a %d %b %Y %H:%M:%S",
+                "%a %d %b %H:%M:%S %Y",
+                "%m/%d/%Y %H:%M:%S",
+            ]:
                 try:
                     dt = datetime.strptime(ts_clean, fmt)
                     break
@@ -96,21 +100,30 @@ def get_report_metadata(report_path):
 
     # --- Standardize Environment ---
     is_mac = "mac" in p_low or "darwin" in p_low
+    is_fedora = "fc" in p_low or "fedora" in p_low or "fedora" in content.lower()
+    is_ubuntu = "ubuntu" in p_low or "ubuntu" in content.lower()
+
     is_wsl = (
-        "microsoft" in p_low
-        or "wsl" in p_low
-        or "wsl" in content.lower()
-        or "/home/" in content
+        ("microsoft" in p_low or "wsl" in p_low or "wsl" in content.lower())
+        and not is_fedora
+        and not is_ubuntu
     )
-    is_windows_native = ("win32" in p_low or "windows" in p_low) and not is_wsl
+
+    is_windows_native = (
+        ("win32" in p_low or "windows" in p_low)
+        and not is_wsl
+        and not is_fedora
+        and not is_ubuntu
+    )
+
+    is_linux_native = (
+        (is_fedora or is_ubuntu or "linux" in p_low) and not is_wsl and not is_mac
+    )
 
     # 4.1 Force Provider standardization
     if is_mac:
-        # User specified: Windows is the ONLY environment for Docker Desktop.
-        # On Mac, 'default' or 'colima' context -> Colima
         if provider == "Unknown" or provider == "Docker Desktop":
             provider = "Colima"
-            # Extra check for OrbStack
             if "orbstack" in content.lower() or "orbstack" in p_low:
                 provider = "OrbStack"
     elif is_wsl:
@@ -121,7 +134,6 @@ def get_report_metadata(report_path):
             provider = "Docker Desktop"
 
     # --- FALLBACK MAPPINGS (Timestamps) ---
-    # (Existing fallback mappings...)
     if timestamp_str == "Tue 28 Apr 12:25:38 BST 2026":
         platform_str = "linux-gnu (wsl)"
         provider = "Native WSL2"
@@ -142,20 +154,9 @@ def get_report_metadata(report_path):
     elif timestamp_str == "Tue 28 Apr 10:07:43 BST 2026":
         platform_str = "linux (native)"
         provider = "Native Docker"
-
-    # 4.2 Fix 'Unknown' architecture for Windows
-    if arch == "Unknown":
-        if is_windows_native:
-            arch = "Windows PC"
-            host_os = "Windows 11"
-        elif is_wsl:
-            arch = "Linux Workstation"
-            host_os = "Windows 11"
-        elif is_mac:
-            arch = "Apple Silicon" if "arm64" in content.lower() else "Apple Intel"
+        is_linux_native = True
 
     if is_mac:
-        # (Existing Mac logic...)
         v_num = 0
         macos_match = re.search(r"macos[-]?(\d+)", p_low)
         if macos_match:
@@ -191,23 +192,25 @@ def get_report_metadata(report_path):
             arch = "Apple Silicon"
         elif "x86_64" in p_low or "amd64" in p_low or "i386" in p_low:
             arch = "Apple Intel"
-    elif is_wsl:
-        host_os = "Windows 11"
-        arch = "Linux Workstation"
-    elif is_windows_native:
+        else:
+            if "arm64" in content.lower() or "darwin25" in p_low:
+                arch = "Apple Silicon"
+            elif "x86_64" in content.lower() or "darwin21" in p_low:
+                arch = "Apple Intel"
+    elif is_wsl or is_windows_native:
         host_os = "Windows 11"
         arch = "Windows PC"
-    elif "fedora" in p_low:
+    elif is_fedora:
+        arch = "Linux Workstation"
         fedora_match = re.search(r"fc(\d+)", p_low)
         host_os = f"Fedora {fedora_match.group(1) if fedora_match else ''}".strip()
+    elif is_ubuntu:
         arch = "Linux Workstation"
-    elif "ubuntu" in p_low:
         ubuntu_match = re.search(r"(\d+\.\d+)", p_low)
         host_os = f"Ubuntu {ubuntu_match.group(1) if ubuntu_match else ''}".strip()
-        arch = "Linux Node" if "server" in p_low else "Linux Workstation"
-    elif "linux" in p_low:
-        host_os = "Linux"
+    elif is_linux_native:
         arch = "Linux Workstation"
+        host_os = "Linux"
 
     clean_arch = arch.lower().replace(" ", "-")
     clean_os = host_os.lower().replace(" ", "-").replace("+", "")
@@ -254,7 +257,6 @@ def sync_reports():
             UI.error(f"Failed to process {report.name}: {e}")
 
     # 2. Archival Logic
-    # Strategy: Keep ONLY the single LATEST report per unique environment in the root.
     latest_per_env = {}
     for meta in all_metas:
         key = (meta["arch"], meta["os"], meta["provider"])
