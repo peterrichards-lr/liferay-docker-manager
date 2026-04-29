@@ -61,8 +61,8 @@ class UI:
         try:
             # Try printing with the current encoding
             print(out, file=file, flush=True)
-        except UnicodeEncodeError:
-            # Fallback for old Windows consoles (CP1252)
+        except (UnicodeEncodeError, OSError):
+            # Fallback for old Windows consoles (CP1252) or problematic streams
             # Replace known problematic symbols with ASCII equivalents
             safe_out = (
                 out.replace("✅", "[OK]")

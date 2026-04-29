@@ -958,8 +958,11 @@ class BaseHandler:
                 if system_type == "darwin" and self.verbose:
                     UI.success("Volume mounts verified and permissions synchronized.")
 
-                # Final reclamation to ensure the root and all its new subdirs are accessible
-                self._reclaim_permissions(root)
+                # Only reclaim permissions for specific volumes that need it (data, state, logs)
+                # Reclaiming the root itself causes ownership issues for the host user (e.g. in CI)
+                for v in ["data", "state", "logs", "deploy"]:
+                    if v in paths and paths[v].exists():
+                        self._reclaim_permissions(paths[v])
             except Exception as e:
                 if self.verbose:
                     UI.warning(f"Could not verify mounts automatically: {e}")
