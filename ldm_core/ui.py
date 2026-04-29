@@ -67,6 +67,9 @@ class UI:
                 .replace("⚠️", "[!]")
                 .replace("ℹ", "[i]")
                 .replace("●", "*")
+                .replace("○", "o")
+                .replace("×", "x")
+                .replace("└─", "  +-")
                 .replace("❓", "[?]")
             )
             # Final safety wash
@@ -79,6 +82,11 @@ class UI:
         if "-" in version:
             return f" {UI.BLUE}{UI.BOLD}[BETA]{UI.COLOR_OFF}"
         return ""
+
+    @staticmethod
+    def raw(msg):
+        """Prints a raw string through the safety/redaction layer."""
+        UI._print(msg)
 
     @staticmethod
     def info(msg):

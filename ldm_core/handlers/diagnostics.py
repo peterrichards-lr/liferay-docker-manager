@@ -31,7 +31,7 @@ class DiagnosticsHandler(BaseHandler):
         UI.heading("LDM Service Status")
 
         # 1. Global Infrastructure
-        print(f"{UI.WHITE}Global Infrastructure:{UI.COLOR_OFF}")
+        UI.raw(f"{UI.WHITE}Global Infrastructure:{UI.COLOR_OFF}")
         infra = [
             ("liferay-proxy-global", "SSL Proxy (Traefik)"),
             ("liferay-search-global", "Search (ES)"),
@@ -56,7 +56,7 @@ class DiagnosticsHandler(BaseHandler):
                 )
                 if inspect:
                     status, image = inspect.split(" ", 1)
-                    print(
+                    UI.raw(
                         f"  {UI.GREEN}●{UI.COLOR_OFF} {label:<25} {status.capitalize():<10} {image}"
                     )
                     any_infra = True
@@ -70,11 +70,11 @@ class DiagnosticsHandler(BaseHandler):
 
         # 2. Project Status
         if all_projects:
-            print(f"{UI.WHITE}All Managed Projects:{UI.COLOR_OFF}")
+            UI.raw(f"{UI.WHITE}All Managed Projects:{UI.COLOR_OFF}")
         elif project_id:
-            print(f"{UI.WHITE}Project Status: {project_id}{UI.COLOR_OFF}")
+            UI.raw(f"{UI.WHITE}Project Status: {project_id}{UI.COLOR_OFF}")
         else:
-            print(f"{UI.WHITE}Active Projects:{UI.COLOR_OFF}")
+            UI.raw(f"{UI.WHITE}Active Projects:{UI.COLOR_OFF}")
 
         roots = []
         if project_id:
@@ -123,7 +123,7 @@ class DiagnosticsHandler(BaseHandler):
                 if (ssl and port != "443") or (not ssl and port != "80"):
                     url += f":{port}"
 
-                print(
+                UI.raw(
                     f"  {UI.GREEN}●{UI.COLOR_OFF} {p_id:<25} {r['version']:<15} {url}"
                 )
 
@@ -149,17 +149,17 @@ class DiagnosticsHandler(BaseHandler):
                         )
                         if ext_running:
                             ext_url = ext.get("url", "N/A")
-                            print(
+                            UI.raw(
                                 f"    {UI.WHITE}└─{UI.COLOR_OFF} {ext_id:<23} {ext_url}"
                             )
             elif all_projects:
-                print(
+                UI.raw(
                     f"  {UI.WHITE}○{UI.COLOR_OFF} {p_id:<25} {r['version']:<15} {UI.WHITE}Stopped{UI.COLOR_OFF}"
                 )
                 active_projects = True
 
         if not active_projects:
-            print(f"  {UI.WHITE}No projects are currently running.{UI.COLOR_OFF}")
+            UI.raw(f"  {UI.WHITE}No projects are currently running.{UI.COLOR_OFF}")
 
         if not any_infra and not active_projects:
             sys.exit(1)
@@ -1575,7 +1575,7 @@ pause
                     )
                     if prop_details:
                         for detail in prop_details:
-                            print(f"  {UI.YELLOW}⚠{UI.COLOR_OFF} {detail}")
+                            UI.raw(f"  {UI.YELLOW}⚠{UI.COLOR_OFF} {detail}")
             else:
                 results.append(
                     (
@@ -1655,7 +1655,7 @@ pause
                 results.append((f"Extension Config ({rel_path})", lcp_status, lcp_ok))
                 if lcp_errors:
                     for err in lcp_errors:
-                        print(f"  {UI.YELLOW}⚠{UI.COLOR_OFF} {err}")
+                        UI.raw(f"  {UI.YELLOW}⚠{UI.COLOR_OFF} {err}")
 
             # 7.2.4 License Check
             lic_status, lic_ok, lic_details = self.check_license_health(
@@ -1670,7 +1670,7 @@ pause
                 )
             if lic_details:
                 for detail in lic_details:
-                    print(f"  {UI.CYAN}ℹ{UI.COLOR_OFF} {detail}")
+                    UI.raw(f"  {UI.CYAN}ℹ{UI.COLOR_OFF} {detail}")
 
             host_name = meta.get("host_name", "localhost")
             ssl_enabled = str(meta.get("ssl", "false")).lower() == "true"
@@ -1837,7 +1837,7 @@ pause
                             )
                         )
                         for dp in double_prefixed:
-                            print(f"  {UI.YELLOW}⚠{UI.COLOR_OFF} {dp}")
+                            UI.raw(f"  {UI.YELLOW}⚠{UI.COLOR_OFF} {dp}")
                         add_hint(
                             f"[{p_path.name}] Standardize Traefik labels by running '{UI.WHITE}ldm run {p_path.name}{UI.COLOR_OFF}'.",
                             "https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/README.md#command-reference",
@@ -1916,7 +1916,7 @@ pause
                         "https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/installation.md#dns--subdomain-configuration",
                     )
                     for d in unresolved:
-                        print(f"  {UI.RED}×{UI.COLOR_OFF} {d}")
+                        UI.raw(f"  {UI.RED}×{UI.COLOR_OFF} {d}")
 
             # 7.2.5 Database Version Check
             db_type = meta.get("db_type", "hypersonic")
@@ -2021,8 +2021,8 @@ pause
                 pass
 
         # Print Results Table
-        print(f"\n{'Component':<35} {'Status':<30}")
-        print("-" * 75)
+        UI.raw(f"\n{'Component':<35} {'Status':<30}")
+        UI.raw("-" * 75)
 
         all_ok, has_warnings = True, False
         for component, status, ok in results:
@@ -2037,19 +2037,19 @@ pause
                 color = UI.RED
                 icon = "❌ "
                 all_ok = False
-            print(f"{component:<35} {color}{icon} {status}{UI.COLOR_OFF}")
+            UI.raw(f"{component:<35} {color}{icon} {status}{UI.COLOR_OFF}")
 
         # Print Actionable Hints at the end
         if hints:
-            print(f"\n{UI.CYAN}--- Recommended Actions ---{UI.COLOR_OFF}")
+            UI.raw(f"\n{UI.CYAN}--- Recommended Actions ---{UI.COLOR_OFF}")
             for h in hints:
                 padding = UI.get_padding("ℹ")
-                print(f"{UI.CYAN}ℹ{padding}{UI.COLOR_OFF}Fix: {h['text']}")
+                UI.raw(f"{UI.CYAN}ℹ{padding}{UI.COLOR_OFF}Fix: {h['text']}")
                 if h["doc"]:
                     # Align with the start of 'Fix:'
                     # Icon(1) + Padding(2) = 3 spaces
-                    print(f"   Doc: {UI.CYAN}{h['doc']}{UI.COLOR_OFF}")
-                print()
+                    UI.raw(f"   Doc: {UI.CYAN}{h['doc']}{UI.COLOR_OFF}")
+                UI.raw("")
 
         if all_ok and not has_warnings:
             UI.success("Everything looks good! Your environment is ready.")
