@@ -63,13 +63,7 @@ Verify host health, Docker resources, and project dependencies.
 View real-time logs. Supports \fB-f\fR (follow) and \fB--infra\fR for system logs.
 .TP
 \fBupgrade\fR
-Automatically update \fBldm\fR to the latest version. Handles cross-device filesystem links automatically. Use \fB--beta\fR to opt-in to pre-releases. Provides manual recovery hints on failure.
-.TP
-\fBupdate-check\fR
-Check for available stable or beta updates.
-.TP
-\fBfix-hosts\fR [\fIHOSTNAME\fR]
-Surgically append missing project hostnames to your local hosts file. Requires elevation.
+Automatically update \fBldm\fR to the latest version.
 .TP
 \fBcompletion\fR
 Configure shell TAB completion (Bash, Zsh, Fish).
@@ -116,11 +110,8 @@ Quick-start a project with example extensions.
 \fBldm logs -f forge\fR
 Follow real-time logs for the 'forge' project.
 .TP
-\fBldm fix-hosts my-project.local\fR
-Surgically fix missing host entries.
-.TP
 \fBldm doctor --fix-hosts\fR
-Verify environment and fix all missing host entries.
+Verify environment and fix missing host entries.
 
 .SH AUTHOR
 Peter Richards <peter.richards@liferay.com>

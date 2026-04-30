@@ -52,7 +52,7 @@ class TestCLIDisambiguation(unittest.TestCase):
         # VERIFICATION:
         # The logic should have shifted 'liferay' to the service list
         mock_manager.cmd_logs.assert_called_once()
-        args, _kwargs = mock_manager.cmd_logs.call_args
+        args, kwargs = mock_manager.cmd_logs.call_args
         # Positional arg 1 (p_name) should be None
         self.assertIsNone(args[0])
         # Positional arg 2 (service) should be ['liferay']
