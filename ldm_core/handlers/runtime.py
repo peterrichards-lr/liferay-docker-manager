@@ -1,10 +1,11 @@
-import time
 import shutil
 import subprocess
+import time
 from datetime import datetime
 from pathlib import Path
-from ldm_core.ui import UI
+
 from ldm_core.handlers.base import BaseHandler
+from ldm_core.ui import UI
 from ldm_core.utils import get_actual_home, get_compose_cmd, open_browser
 
 
@@ -150,15 +151,14 @@ class RuntimeHandler(BaseHandler):
             tag = tag or snap_meta.get("tag")
             db_type = db_type or snap_meta.get("db_type")
 
-        if is_new_project:
-            if self._ensure_seeded(tag, db_type, paths):
-                from ldm_core.constants import SEED_VERSION
+        if is_new_project and self._ensure_seeded(tag, db_type, paths):
+            from ldm_core.constants import SEED_VERSION
 
-                project_meta = self.read_meta(paths["root"])
-                project_meta["seeded"] = "true"
-                project_meta["seed_version"] = str(SEED_VERSION)
-                self.write_meta(paths["root"], project_meta)
-                is_new_project = False
+            project_meta = self.read_meta(paths["root"])
+            project_meta["seeded"] = "true"
+            project_meta["seed_version"] = str(SEED_VERSION)
+            self.write_meta(paths["root"], project_meta)
+            is_new_project = False
 
         use_shared_search = (
             str(project_meta.get("use_shared_search", "false")).lower() == "true"
@@ -206,7 +206,7 @@ class RuntimeHandler(BaseHandler):
 
             self.sync_stack(paths, project_meta, no_up=True)
             self.run_command(
-                get_compose_cmd() + ["up", "-d", "db"], cwd=str(paths["root"])
+                [*get_compose_cmd(), "up", "-d", "db"], cwd=str(paths["root"])
             )
             time.sleep(5)
             SnapshotHandler(self.args).cmd_restore(
@@ -307,12 +307,13 @@ class RuntimeHandler(BaseHandler):
                 check=False,
             )
             if status == "healthy":
-                total_duration = (
-                    time.time() - total_start
-                    if total_start
-                    else time.time() - start_time
+                ts = getattr(self.args, "total_start", None)
+                duration_total = (
+                    time.time() - float(ts) if ts else time.time() - start_time
                 )
-                duration_str = UI.format_duration(total_duration)
+
+                duration_str = UI.format_duration(duration_total)
+
                 UI.success(f"Liferay is ready! (Total time: {duration_str})")
                 access_url = (
                     f"https://{host_name}"
@@ -324,24 +325,30 @@ class RuntimeHandler(BaseHandler):
                 )
 
                 UI.heading("Useful Commands")
-                print(
+                UI.raw(
                     f"  {UI.CYAN}ldm logs -f {container_name}{UI.COLOR_OFF}  Tail logs"
                 )
-                print(
+                UI.raw(
                     f"  {UI.CYAN}ldm shell {container_name}{UI.COLOR_OFF}    Enter bash"
                 )
-                print(
+                UI.raw(
                     f"  {UI.CYAN}ldm status {container_name}{UI.COLOR_OFF}   Check health"
                 )
-                print(
+                UI.raw(
                     f"  {UI.CYAN}ldm stop {container_name}{UI.COLOR_OFF}     Stop stack"
                 )
-                print()
+                UI.raw("")
 
                 if getattr(self.args, "browser", False):
                     UI.info(f"Launching browser: {access_url}/web/guest/home")
                     open_browser(f"{access_url}/web/guest/home")
                 return True
+
+            # Fail fast if container exited
+            container_state = self.get_container_status(container_name)
+            if container_state == "exited":
+                UI.error(f"Liferay container '{container_name}' exited unexpectedly.")
+                return False
 
             time.sleep(5)  # Shorter sleep for more responsive status checks
 
@@ -423,12 +430,12 @@ class RuntimeHandler(BaseHandler):
 
         UI.debug("Validating generated docker-compose.yml syntax...")
         self.run_command(
-            get_compose_cmd() + ["config", "--quiet"],
+            [*get_compose_cmd(), "config", "--quiet"],
             cwd=str(paths["root"]),
             check=True,
         )
 
-        cmd = compose_base + ["up", "-d", "--remove-orphans"]
+        cmd = [*compose_base, "up", "-d", "--remove-orphans"]
         if rebuild:
             cmd.append("--build")
 
@@ -476,7 +483,7 @@ class RuntimeHandler(BaseHandler):
                     f"Starting dependencies: {UI.CYAN}{', '.join(deps)}{UI.COLOR_OFF}..."
                 )
                 self.run_command(
-                    compose_base + ["up", "-d"] + deps,
+                    [*compose_base, "up", "-d", *deps],
                     cwd=str(paths["root"]),
                     check=True,
                 )
@@ -486,18 +493,21 @@ class RuntimeHandler(BaseHandler):
                     start_wait = time.time()
                     while time.time() - start_wait < 60:
                         status = self.get_container_status(f"{project_id}-{dep}-1")
-                        if status == "healthy" or status == "running":
+                        if status in {"healthy", "running"}:
                             time.sleep(2)
                             break
+                        if status == "exited":
+                            UI.error(f"Dependency '{dep}' exited unexpectedly.")
+                            return False
                         time.sleep(2)
 
             UI.info(f"Starting {UI.BOLD}{project_id}{UI.COLOR_OFF} stack...")
             self.run_command(cmd, cwd=str(paths["root"]), capture_output=not follow)
 
             if follow:
-                self.run_command(compose_base + ["logs", "-f"], cwd=str(paths["root"]))
+                self.run_command([*compose_base, "logs", "-f"], cwd=str(paths["root"]))
                 return True
-            elif not no_wait:
+            if not no_wait:
                 return self._wait_for_ready(project_meta, host_name, total_start)
 
         if no_wait:
@@ -523,7 +533,7 @@ class RuntimeHandler(BaseHandler):
         compose_base = get_compose_cmd()
         for root in targets:
             UI.info(f"Stopping project: {root.name}...")
-            cmd = compose_base + ["stop"]
+            cmd = [*compose_base, "stop"]
             if service:
                 cmd.append(service)
             self.run_command(cmd, capture_output=False, cwd=str(root))
@@ -545,7 +555,7 @@ class RuntimeHandler(BaseHandler):
         compose_base = get_compose_cmd()
         for root in targets:
             UI.info(f"Restarting project: {root.name}...")
-            cmd = compose_base + ["restart"]
+            cmd = [*compose_base, "restart"]
             if service:
                 cmd.append(service)
             self.run_command(cmd, capture_output=False, cwd=str(root))
@@ -585,14 +595,14 @@ class RuntimeHandler(BaseHandler):
                 host = meta.get("host_name")
                 if host and host != "localhost":
                     # Collect subdomains as well (from extensions)
-                    unresolved, non_local = self.validate_project_dns(root)[1:]
+                    unresolved, _non_local = self.validate_project_dns(root)[1:]
                     # We remove the primary host and any unresolved subdomains
-                    to_clean = [host] + unresolved
+                    to_clean = [host, *unresolved]
                     self._remove_hosts_entries(hostnames=to_clean)
 
             # DOWN always tears down the whole project to ensure networks and orphans are handled.
             # If the user wants to stop a specific service, they should use 'ldm stop [svc]'.
-            cmd = compose_base + ["down", "-v", "--remove-orphans"]
+            cmd = [*compose_base, "down", "-v", "--remove-orphans"]
 
             if (root / "docker-compose.yml").exists():
                 self.run_command(cmd, capture_output=False, cwd=str(root))
@@ -679,10 +689,7 @@ class RuntimeHandler(BaseHandler):
         # 2. Wipe directories
         paths = self.setup_paths(root)
         targets = []
-        if target == "all":
-            targets = ["data", "logs", "state"]
-        else:
-            targets = [target]
+        targets = ["data", "logs", "state"] if target == "all" else [target]
 
         for t in targets:
             path = paths.get(t)
@@ -740,11 +747,7 @@ class RuntimeHandler(BaseHandler):
             if not infra_compose:
                 UI.die("Infrastructure compose file 'infra-compose.yml' not found.")
 
-            cmd = get_compose_cmd() + [
-                "-f",
-                str(infra_compose),
-                "logs",
-            ]
+            cmd = [*get_compose_cmd(), "-f", str(infra_compose), "logs"]
             if follow:
                 cmd.append("-f")
 
@@ -816,7 +819,7 @@ class RuntimeHandler(BaseHandler):
                         while not log_dir.exists() and time.time() - start_wait < 30:
                             time.sleep(1)
 
-                cmd = get_compose_cmd() + ["logs"]
+                cmd = [*get_compose_cmd(), "logs"]
                 if follow:
                     cmd.append("-f")
 

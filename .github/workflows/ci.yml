@@ -36,64 +36,13 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
           pip install -r requirements-dev.txt
-
-      - name: Lint with Ruff
-        run: |
-          ruff check .
-          ruff format --check .
-
-      - name: Security Scan (Bandit)
-        run: |
-          # Scan for common security issues in Python code.
-          # We only fail on Medium/High severity to allow necessary subprocess patterns.
-          bandit -r ldm_core/ -x ldm_core/tests/ --severity-level medium
-
-      - name: Dependency Audit (pip-audit)
-        run: |
-          # Ignoring CVE-2026-4539 (pygments) as it is currently unpatched and doesn't affect LDM.
-          pip-audit --ignore-vuln CVE-2026-4539
-
-      - name: Lint Shell scripts (ShellCheck)
-        run: |
-          sudo apt-get install -y shellcheck
-          find . -name "*.sh" -not -path "*/.*" | xargs shellcheck
-
-      - name: Lint PowerShell scripts (PSScriptAnalyzer)
-        shell: pwsh
-        run: |
-          # Use official PowerShell linter
-          if (-not (Get-Module -ListAvailable PSScriptAnalyzer)) {
-              Install-Module -Name PSScriptAnalyzer -Force -Scope CurrentUser
-          }
-          $results = Invoke-ScriptAnalyzer -Path ./scripts -Recurse | Where-Object Severity -eq "Error"
-          if ($results) {
-              $results | Format-Table
-              exit 1
-          }
-
-      - name: Lint Markdown
-        uses: DavidAnson/markdownlint-cli2-action@v20
-        with:
-          globs: "**/*.md"
-
-      - name: Documentation Sync
-        shell: bash
-        run: |
           pip install -e .
-          python3 scripts/sync_docs.py
-          # Fail CI if sync script made changes - this ensures docs were synced BEFORE commit
-          git diff --exit-code docs/*.md
 
-      - name: Verify Version Sync
-        shell: bash
+      - name: Run Quality Gate (pre-commit)
         run: |
-          python3 scripts/check_version_sync.py
-
-      - name: Run unit tests
-        shell: bash
-        run: |
-          pip install -e .
-          pytest
+          # Use pre-commit to run all linting, types, and unit tests.
+          # This ensures local and CI checks are identical.
+          pre-commit run --all-files --show-diff-on-failure
 
   smoke-test:
     needs: lint-and-test
@@ -162,12 +111,13 @@ jobs:
 
           # Now run without --no-up to verify it starts and exits quickly
           python3 liferay_docker.py -y run smoke-project --no-wait
+
   build:
     needs: [lint-and-test, smoke-test]
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest] # No more macos-12/13
+        os: [ubuntu-latest, windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     if: startsWith(github.ref, 'refs/tags/v')
 
@@ -209,20 +159,14 @@ jobs:
             python3 liferay_docker.py version --set "$VERSION_VAL" --build-info "Release $TAG_NAME"
           fi
           # 1. Build ARM64 (Native)
-
           shiv -e ldm_core.cli:main -o ldm-macos-arm64 -p '/usr/bin/env python3' .
           
           # 2. Build x86_64 (Cross-packaged)
-          # We fetch the Intel wheels explicitly
           mkdir x86_64_site_packages
-          pip install             --platform macosx_11_0_x86_64             --only-binary=:all:             --target x86_64_site_packages             --python-version 3.13             --implementation cp             -r requirements.txt
-          
-          # Bundle with shiv using the cross-fetched site-packages
+          pip install --platform macosx_11_0_x86_64 --only-binary=:all: --target x86_64_site_packages --python-version 3.13 --implementation cp -r requirements.txt
           shiv -e ldm_core.cli:main -o ldm-macos-x86_64 -p '/usr/bin/env python3' --no-deps --site-packages x86_64_site_packages .
           
           chmod +x ldm-macos-arm64 ldm-macos-x86_64
-          
-          # Create a list of files for the upload step (using wildcard in next step)
           echo "BINARY_PATH_ARM=ldm-macos-arm64" >> $GITHUB_ENV
           echo "BINARY_PATH_X86=ldm-macos-x86_64" >> $GITHUB_ENV
 
@@ -262,25 +206,22 @@ jobs:
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/v')
     permissions:
-      contents: write # Needed for creating releases
+      contents: write
 
     steps:
       - uses: actions/checkout@v6
         with:
-          fetch-depth: 0 # Fetch all history for commit message checks
+          fetch-depth: 0
 
       - name: Check for Release Keyword
         id: check_release
         shell: bash
         run: |
-          # Check if the commit message contains [release]
           MSG=$(git log -1 --pretty=%B)
           if echo "$MSG" | grep -qi "\[release\]"; then
             echo "is_release=true" >> $GITHUB_OUTPUT
-            echo "Release keyword found. Creating a FULL release."
           else
             echo "is_release=false" >> $GITHUB_OUTPUT
-            echo "Release keyword NOT found. Creating a PRE-RELEASE."
           fi
 
       - name: Download All Artifacts
@@ -299,10 +240,8 @@ jobs:
         shell: bash
         run: |
           cd bin-temp
-          # Create ldm-macos alias (pointing to arm64 for now)
           cp ldm-macos-arm64 ldm-macos
           sha256sum ldm-linux ldm-macos ldm-macos-arm64 ldm-macos-x86_64 ldm-windows.exe samples.zip ../compatibility.json > checksums.txt
-          cat checksums.txt
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
@@ -322,7 +261,7 @@ jobs:
           generate_release_notes: true
           body: |
             ## Liferay Docker Manager (LDM) ${{ github.ref_name }}
-
+            
             ${{ steps.check_release.outputs.is_release == 'true' && '🚀 **OFFICIAL RELEASE**' || '🧪 **PRE-RELEASE / TEST BUILD**' }}
 
             This version continues our commitment to environmental hardening for macOS, Windows, and Linux.
@@ -350,14 +289,7 @@ jobs:
             **Windows (PowerShell):**
             ```powershell
             New-Item -ItemType Directory -Force -Path "$HOME\bin"
-            Invoke-WebRequest -Uri "https://github.com/peterrichards-lr/liferay-docker-manager/releases/${{ steps.check_release.outputs.is_release == 'true' && 'latest/download' || format('download/{0}', github.ref_name) }}/ldm-windows.exe" -OutFile "$HOME\bin\ldm.exe"
+            Invoke-WebRequest -Uri "https://github.com/peterrichards-lr/liferay-docker-manager/releases/${{ steps.check_release.outputs.is_release == 'true' && 'latest/download' || format('download/{0}', github.ref_name) }}/ldm.exe" -OutFile "$HOME\bin\ldm.exe"
             ```
-
-            ### 🛠 Standard Hardening Features
-            - **Hardened Monitoring**: Native Polling on macOS to prevent descriptor crashes.
-            - **Wildcard SSL**: Automatic generation and Traefik matching for `*.local` and custom domains.
-            - **Self-Healing Baseline**: Restore developer defaults via `ldm init-common`.
-            - **Infrastructure Management**: Control global proxy state via `ldm infra-setup`.
-            - **Architecture-Aware**: Automatic detection of OS for updates and checksums.
           draft: false
           prerelease: ${{ steps.check_release.outputs.is_release != 'true' }}

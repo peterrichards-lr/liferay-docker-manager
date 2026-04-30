@@ -1,9 +1,10 @@
-import os
-import time
 import json
+import os
 import shutil
-from ldm_core.ui import UI
+import time
+
 from ldm_core.handlers.base import BaseHandler
+from ldm_core.ui import UI
 from ldm_core.utils import (
     get_actual_home,
     get_compose_cmd,
@@ -55,8 +56,14 @@ class InfraHandler(BaseHandler):
         env = self._get_infra_env(resolved_ip, ssl_port)
 
         self.run_command(
-            get_compose_cmd()
-            + ["-f", str(infra_compose), "up", "-d", "--remove-orphans"],
+            [
+                *get_compose_cmd(),
+                "-f",
+                str(infra_compose),
+                "up",
+                "-d",
+                "--remove-orphans",
+            ],
             env=env,
             capture_output=False,
         )
@@ -168,7 +175,9 @@ tls:
       keyFile: /etc/traefik/certs/{host_name}-key.pem
 """
             config_file = cert_dir / f"traefik-{host_name}.yml"
-            config_file.write_text(config_content)
+            from ldm_core.utils import safe_write_text
+
+            safe_write_text(config_file, config_content)
         except Exception as e:
             UI.error(f"Failed to write Traefik configuration: {e}")
             return False
@@ -185,7 +194,7 @@ tls:
         # Down requires the same env as UP to resolve volume paths correctly
         env = self._get_infra_env()
         self.run_command(
-            get_compose_cmd() + ["-f", str(infra_compose), "down", "-v"],
+            [*get_compose_cmd(), "-f", str(infra_compose), "down", "-v"],
             env=env,
             capture_output=False,
         )
@@ -314,6 +323,12 @@ tls:
             # Robust health check loop
             ready = False
             for _ in range(60):  # 5 minute timeout (60 * 5s)
+                # Fail fast if container exited
+                status = self.get_container_status(search_name)
+                if status == "exited":
+                    UI.error("Elasticsearch container exited unexpectedly.")
+                    break
+
                 res = self.run_command(
                     ["docker", "exec", search_name, "curl", "-s", "localhost:9200"],
                     check=False,
@@ -398,6 +413,14 @@ tls:
             UI.info("Waiting for Global Search to be ready after restart...")
             ready = False
             for _ in range(30):
+                # Fail fast if container exited
+                status = self.get_container_status(search_name)
+                if status == "exited":
+                    UI.error(
+                        "Elasticsearch container exited unexpectedly after restart."
+                    )
+                    break
+
                 res = self.run_command(
                     ["docker", "exec", search_name, "curl", "-s", "localhost:9200"],
                     check=False,
@@ -444,3 +467,4 @@ tls:
                 ],
                 check=False,
             )
+        return None

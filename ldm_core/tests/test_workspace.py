@@ -1,15 +1,17 @@
-import unittest
 import json
 import tempfile
+import unittest
 import zipfile
-from unittest.mock import patch, MagicMock
 from pathlib import Path
-from ldm_core.handlers.composer import ComposerHandler
-from ldm_core.handlers.runtime import RuntimeHandler
+from typing import Any
+from unittest.mock import MagicMock, patch
+
 from ldm_core.handlers.assets import AssetHandler
-from ldm_core.handlers.workspace import WorkspaceHandler
-from ldm_core.handlers.diagnostics import DiagnosticsHandler
 from ldm_core.handlers.base import BaseHandler
+from ldm_core.handlers.composer import ComposerHandler
+from ldm_core.handlers.diagnostics import DiagnosticsHandler
+from ldm_core.handlers.runtime import RuntimeHandler
+from ldm_core.handlers.workspace import WorkspaceHandler
 
 
 class MockWorkspaceManager(
@@ -125,11 +127,11 @@ class TestWorkspaceMetadata(unittest.TestCase):
 
         # Manually trigger the merge logic (we're testing the logic inside _scan_extension_metadata)
         # Using a closure helper similar to the real one
-        def merge(target, source):
-            for k in target.keys():
+        def merge(target: Any, source: Any):
+            for k, val in target.items():
                 if source.get(k) is not None:
                     if k == "loadBalancer" and source[k]:
-                        if target[k] is None:
+                        if val is None:
                             target[k] = {}
                         target[k].update(source[k])
                     elif k == "env":
@@ -267,15 +269,15 @@ class TestWorkspaceImport(unittest.TestCase):
                         "files": project_dir / "files",
                     },
                 ),
+                patch("ldm_core.handlers.workspace.UI") as mock_ui,
             ):
-                with patch("ldm_core.handlers.workspace.UI") as mock_ui:
-                    # Simulate user selecting 'N' (Skip Existing)
-                    mock_ui.ask.return_value = "N"
+                # Simulate user selecting 'N' (Skip Existing)
+                mock_ui.ask.return_value = "N"
 
-                    self.handler.cmd_import(str(source_dir))
+                self.handler.cmd_import(str(source_dir))
 
-                    # Verify the original content was PRESERVED
-                    self.assertEqual(existing_cx.read_text(), "ORIGINAL_CONTENT")
+                # Verify the original content was PRESERVED
+                self.assertEqual(existing_cx.read_text(), "ORIGINAL_CONTENT")
 
 
 if __name__ == "__main__":

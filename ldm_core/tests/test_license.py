@@ -1,5 +1,6 @@
 import unittest
 from pathlib import Path
+
 from ldm_core.handlers.license import LicenseHandler
 
 
@@ -98,7 +99,7 @@ class TestLicenseHandler(unittest.TestCase):
 
     def test_check_license_health_portal_ce(self):
         # Portal CE should be OK even if missing
-        status, ok, details = self.manager.check_license_health(
+        status, ok, _details = self.manager.check_license_health(
             self.paths, image_tag="liferay/portal:7.4.3.112"
         )
         self.assertEqual(status, "Not Required (Portal CE)")
@@ -109,7 +110,7 @@ class TestLicenseHandler(unittest.TestCase):
             "<license><product-name>Liferay DXP</product-name><expiration-date>2027-01-01</expiration-date></license>"
         )
 
-        status, ok, details = self.manager.check_license_health(
+        status, ok, _details = self.manager.check_license_health(
             self.paths, image_tag="liferay/dxp:latest"
         )
         self.assertTrue(ok)

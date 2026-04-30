@@ -1,22 +1,26 @@
-import os
-import re
-import sys
-import platform
-import shutil
+import contextlib
 import json
+import os
+import platform
+import re
+import shutil
 import subprocess
+import sys
 from pathlib import Path
-from ldm_core.ui import UI
-from ldm_core.constants import SCRIPT_DIR, VERSION, BUILD_INFO
+from typing import Any
+
+from ldm_core.constants import BUILD_INFO, SCRIPT_DIR, VERSION
 from ldm_core.handlers.base import BaseHandler
+from ldm_core.ui import UI
 from ldm_core.utils import (
-    run_command,
-    get_actual_home,
     check_for_updates,
-    version_to_tuple,
-    verify_executable_checksum,
-    strip_ansi,
+    get_actual_home,
     resolve_dependency_version,
+    run_command,
+    safe_move,
+    strip_ansi,
+    verify_executable_checksum,
+    version_to_tuple,
 )
 
 
@@ -62,11 +66,11 @@ class DiagnosticsHandler(BaseHandler):
                     any_infra = True
 
         if not any_infra:
-            print(
+            UI.raw(
                 f"  {UI.WHITE}No global services are currently running.{UI.COLOR_OFF}"
             )
 
-        print()
+        UI.raw("")
 
         # 2. Project Status
         if all_projects:
@@ -194,10 +198,9 @@ class DiagnosticsHandler(BaseHandler):
 
         cleared = []
 
-        if target in ["tags", "all"]:
-            if tag_cache.exists():
-                os.remove(tag_cache)
-                cleared.append("Docker tag cache")
+        if target in ["tags", "all"] and tag_cache.exists():
+            os.remove(tag_cache)
+            cleared.append("Docker tag cache")
 
         if target in ["seeds", "all"]:
             cache_dir = home / ".ldm" / "seeds"
@@ -227,14 +230,15 @@ class DiagnosticsHandler(BaseHandler):
         system = platform.system().lower()
         if system in ["win32", "windows"]:
             return f'Invoke-WebRequest -Uri "{url}" -OutFile "{exe_path}"'
-        else:
-            # Check if parent directory is writable to decide on sudo
-            try:
-                parent_writable = os.access(exe_path.parent, os.W_OK)
-            except Exception:
-                parent_writable = False
-            prefix = "sudo " if not parent_writable else ""
-            return f'{prefix}curl -L "{url}" -o "{exe_path}" && {prefix}chmod +x "{exe_path}"'
+        # Check if parent directory is writable to decide on sudo
+        try:
+            parent_writable = os.access(exe_path.parent, os.W_OK)
+        except Exception:
+            parent_writable = False
+        prefix = "sudo " if not parent_writable else ""
+        return (
+            f'{prefix}curl -L "{url}" -o "{exe_path}" && {prefix}chmod +x "{exe_path}"'
+        )
 
     def cmd_upgrade(self):
         """Self-upgrade the LDM binary to the latest version."""
@@ -434,7 +438,7 @@ if !RETRIES! lss !MAX_RETRIES! (
     goto :RETRY
 )
 
-echo [ERROR] Failed to apply update after !MAX_RETRIES! attempts. 
+echo [ERROR] Failed to apply update after !MAX_RETRIES! attempts.
 echo [ERROR] Please try running the following command manually in an elevated terminal:
 echo move /y "{temp_new}" "{exe_path}"
 pause
@@ -458,12 +462,11 @@ pause
                     os.chmod(temp_new, 0o755)  # nosec B103
                 except Exception:
                     pass
-                import shutil
 
                 try:
-                    # Use shutil.move instead of os.replace because it handles
+                    # Use safe_move instead of os.replace because it handles
                     # 'Invalid cross-device link' (Errno 18) by falling back to copy+unlink.
-                    shutil.move(str(temp_new), str(exe_path))
+                    safe_move(str(temp_new), str(exe_path))
                     UI.success(f"Successfully upgraded to v{latest}!")
                 except (PermissionError, OSError):
                     UI.info(
@@ -633,7 +636,7 @@ pause
                             if sys_type == "linux":
                                 # Check for WSL
                                 try:
-                                    with open("/proc/version", "r") as f:
+                                    with open("/proc/version") as f:
                                         if "microsoft" in f.read().lower():
                                             provider = "Native WSL2"
                                         else:
@@ -656,7 +659,7 @@ pause
             if provider == "Unknown":
                 if p_low == "linux":
                     try:
-                        with open("/proc/version", "r") as f:
+                        with open("/proc/version") as f:
                             if "microsoft" in f.read().lower():
                                 provider = "Native WSL2"
                             else:
@@ -693,7 +696,7 @@ pause
                         / "colima.yaml"
                     )
                     if config_path.exists():
-                        with open(config_path, "r") as f:
+                        with open(config_path) as f:
                             config = yaml.safe_load(f)
                             mounts = config.get("mounts", [])
                             is_explicitly_writable = False
@@ -703,15 +706,14 @@ pause
                                     m.get("location") == str(home)
                                     or m.get("location") == "/Users"
                                     or m.get("location").startswith("/Users/")
-                                ):
-                                    if m.get("writable") is True:
-                                        is_explicitly_writable = True
-                                        break
+                                ) and m.get("writable") is True:
+                                    is_explicitly_writable = True
+                                    break
 
                             # Store this in a way doctor can use
                             if not is_explicitly_writable and mount_type == "sshfs":
                                 # We'll use this to trigger a warning even if the write test hasn't run yet
-                                setattr(self, "_colima_mount_not_writable", True)
+                                self._colima_mount_not_writable = True
                 except Exception:
                     pass
 
@@ -755,8 +757,8 @@ pause
                 if str(p_meta.get("ssl", "false")).lower() == "true":
                     requires_ssl = True
 
-        results = []
-        hints = []
+        results: list[tuple[str, str, Any]] = []
+        hints: list[dict[str, str | None]] = []
 
         def add_hint(text, doc=None):
             hints.append({"text": text, "doc": doc})
@@ -765,7 +767,7 @@ pause
         is_wsl = False
         if platform.system().lower() == "linux":
             try:
-                with open("/proc/version", "r") as f:
+                with open("/proc/version") as f:
                     if "microsoft" in f.read().lower():
                         is_wsl = True
             except Exception:
@@ -1091,7 +1093,7 @@ pause
             is_wsl = False
             if platform.system().lower() == "linux":
                 try:
-                    with open("/proc/version", "r") as f:
+                    with open("/proc/version") as f:
                         if "microsoft" in f.read().lower():
                             is_wsl = True
                 except Exception:
@@ -1144,12 +1146,11 @@ pause
         for tool_name, tool_path in tool_list:
             if tool_path:
                 results.append((f"Path: {tool_name}", str(tool_path), True))
+            # Some are optional/warn only
+            elif tool_name in ["telnet", "lcp", "mkcert", "nc/ncat"]:
+                results.append((f"Path: {tool_name}", "Not Found", "warn"))
             else:
-                # Some are optional/warn only
-                if tool_name in ["telnet", "lcp", "mkcert", "nc/ncat"]:
-                    results.append((f"Path: {tool_name}", "Not Found", "warn"))
-                else:
-                    results.append((f"Path: {tool_name}", "Not Found", False))
+                results.append((f"Path: {tool_name}", "Not Found", False))
 
         # 4.1.5 Optional Database Clients (Recommended for developers)
         # Note: LDM uses 'docker exec' for snapshots, so local clients are NOT required for LDM operations.
@@ -1265,6 +1266,7 @@ pause
         else:
             try:
                 import importlib.resources as pkg_resources
+
                 from ldm_core import resources
 
                 pe_file = common_dir / "portal-ext.properties"
@@ -1394,8 +1396,8 @@ pause
                     # Version check for Global Search
                     if container == "liferay-search-global":
                         from ldm_core.constants import (
-                            ELASTICSEARCH_VERSION,
                             ELASTICSEARCH7_VERSION,
+                            ELASTICSEARCH_VERSION,
                         )
 
                         # Discover latest tag if not already known
@@ -1465,7 +1467,7 @@ pause
                                 ],
                                 check=False,
                             )
-                            if search_res != "200" and search_res != "401":
+                            if search_res not in {"200", "401"}:
                                 status = f"Unreachable (HTTP {search_res})"
                                 ok = "warn"
                                 add_hint(
@@ -1811,7 +1813,7 @@ pause
                 try:
                     import yaml
 
-                    with open(compose_file, "r") as f:
+                    with open(compose_file) as f:
                         compose_data = yaml.safe_load(f)
 
                     liferay_service = compose_data.get("services", {}).get(
@@ -1995,48 +1997,48 @@ pause
                         f"Move your project to the native Linux filesystem (e.g. ~/repos/{p_path.name}).",
                         "https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/installation.md#linux--wsl-docker-permissions",
                     )
-                else:
-                    if platform.system().lower() == "darwin":
-                        if liferay_container:
-                            import uuid
+                elif platform.system().lower() == "darwin":
+                    if liferay_container:
+                        import uuid
 
-                        token_val = f"DOCTOR_LIVE_{uuid.uuid4().hex[:8]}"
-                        deploy_dir = p_path / "deploy"
-                        token_file = deploy_dir / ".ldm_doctor_check"
+                    token_val = f"DOCTOR_LIVE_{uuid.uuid4().hex[:8]}"
+                    deploy_dir = p_path / "deploy"
+                    token_file = deploy_dir / ".ldm_doctor_check"
 
-                        try:
+                    try:
+                        with contextlib.suppress(PermissionError, OSError):
                             deploy_dir.mkdir(parents=True, exist_ok=True)
-                            token_file.write_text(token_val)
-                            verify_res = run_command(
-                                [
-                                    "docker",
-                                    "exec",
-                                    liferay_container,
-                                    "cat",
-                                    "/opt/liferay/deploy/.ldm_doctor_check",
-                                ],
-                                check=False,
-                            )
+                        from ldm_core.utils import safe_write_text
 
-                            if token_val in (verify_res or ""):
-                                results.append(
-                                    (f"[{p_path.name}] Mounts", "Live (OK)", True)
-                                )
-                            else:
-                                results.append(
-                                    (f"[{p_path.name}] Mounts", "BROKEN", False)
-                                )
-                                add_hint(
-                                    f"[{p_path.name}] Ensure Docker has permission to share your home directory.",
-                                    "https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/installation.md#the-ghost-mount-issue",
-                                )
-                        finally:
-                            if token_file.exists():
-                                token_file.unlink()
-                    else:
-                        results.append(
-                            (f"[{p_path.name}] Mounts", "Verified on start", True)
+                        safe_write_text(token_file, token_val)
+                        verify_res = run_command(
+                            [
+                                "docker",
+                                "exec",
+                                liferay_container,
+                                "cat",
+                                "/opt/liferay/deploy/.ldm_doctor_check",
+                            ],
+                            check=False,
                         )
+
+                        if token_val in (verify_res or ""):
+                            results.append(
+                                (f"[{p_path.name}] Mounts", "Live (OK)", True)
+                            )
+                        else:
+                            results.append((f"[{p_path.name}] Mounts", "BROKEN", False))
+                            add_hint(
+                                f"[{p_path.name}] Ensure Docker has permission to share your home directory.",
+                                "https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/installation.md#the-ghost-mount-issue",
+                            )
+                    finally:
+                        if token_file.exists():
+                            token_file.unlink()
+                else:
+                    results.append(
+                        (f"[{p_path.name}] Mounts", "Verified on start", True)
+                    )
             except Exception:
                 pass
 
@@ -2120,8 +2122,7 @@ pause
 
             if is_trusted:
                 return "Installed (Root CA Trusted)", True, ca_root
-            else:
-                return "Installed (NOT TRUSTED)", "warn", ca_root
+            return "Installed (NOT TRUSTED)", "warn", ca_root
         except Exception:
             return "Not found in PATH", "warn", None
 
@@ -2131,14 +2132,12 @@ pause
             openssl_version = run_command(["openssl", "version"], check=False)
             if openssl_version:
                 return openssl_version, True
-            else:
-                if platform.system().lower() == "windows":
-                    return (
-                        "Not found (Install Git for Windows, Scoop, or Chocolatey)",
-                        False,
-                    )
-                else:
-                    return "Not found", False
+            if platform.system().lower() == "windows":
+                return (
+                    "Not found (Install Git for Windows, Scoop, or Chocolatey)",
+                    False,
+                )
+            return "Not found", False
         except Exception:
             return "Not found in PATH", False
 
@@ -2152,8 +2151,7 @@ pause
             is_auth, _ = self._is_cloud_authenticated()
             if is_auth:
                 return "Logged In", True
-            else:
-                return "Not Logged In (Run 'lcp login')", "warn"
+            return "Not Logged In (Run 'lcp login')", "warn"
         except Exception:
             return None, None
 
@@ -2164,7 +2162,7 @@ pause
             if not docker_config_path.exists():
                 return None, None
 
-            with open(docker_config_path, "r") as f:
+            with open(docker_config_path) as f:
                 config = json.loads(f.read())
                 creds_store = config.get("credsStore")
                 if not creds_store:
@@ -2173,8 +2171,7 @@ pause
                 helper_bin = f"docker-credential-{creds_store}"
                 if not shutil.which(helper_bin):
                     return f"Broken ({creds_store} helper missing)", False
-                else:
-                    return f"OK ({creds_store})", True
+                return f"OK ({creds_store})", True
         except Exception:
             return None, None
 
@@ -2187,31 +2184,31 @@ pause
             mem_gb = mem_bytes / (1024**3)
 
             results = []
-            cpus_ok = True
+            cpus_ok: Any = True
             if cpus < 2:
                 cpus_ok = False
             elif cpus < 4:
                 cpus_ok = "warn"
             results.append(("Docker CPUs", f"{cpus} Cores", cpus_ok))
             if cpus_ok is not True:
-                print(
+                UI.raw(
                     f"  {UI.CYAN}ℹ{UI.COLOR_OFF} Hint: Allocate more CPU cores in your Docker provider settings."
                 )
-                print(
+                UI.raw(
                     f"    Doc: {UI.CYAN}https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/installation.md#docker-resource-alignment-windowswsl2macos{UI.COLOR_OFF}"
                 )
 
-            mem_ok = True
+            mem_ok: Any = True
             if mem_gb < 4.0:
                 mem_ok = False
             elif mem_gb < 7.5:
                 mem_ok = "warn"
             results.append(("Docker Memory", f"{mem_gb:.1f} GB", mem_ok))
             if mem_ok is not True:
-                print(
+                UI.raw(
                     f"  {UI.CYAN}ℹ{UI.COLOR_OFF} Hint: Allocate more RAM in your Docker provider settings."
                 )
-                print(
+                UI.raw(
                     f"    Doc: {UI.CYAN}https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/installation.md#docker-resource-alignment-windowswsl2macos{UI.COLOR_OFF}"
                 )
 
@@ -2226,10 +2223,10 @@ pause
             UI.info("No projects found.")
             return
 
-        print(
+        UI.raw(
             f"{UI.WHITE}{'Project':<25} {'Version':<15} {'Status':<12} {'URL'}{UI.COLOR_OFF}"
         )
-        print("-" * 80)
+        UI.raw("-" * 80)
 
         for r in roots:
             path = r["path"]
@@ -2468,7 +2465,7 @@ pause
                 return "Empty File", "warn", []
 
             last_line_continued = False
-            keys_found = {}  # key -> [line_numbers]
+            keys_found: dict[str, list[int]] = {}  # key -> [line_numbers]
             for i, line in enumerate(lines):
                 line_num = i + 1
                 stripped = line.strip()
@@ -2698,8 +2695,8 @@ pause
     def _check_liferay_health_logs(self, container_name, tail=50):
         """Checks the last N lines of Liferay logs for startup status and errors."""
         try:
-            import subprocess
             import re
+            import subprocess
 
             res = subprocess.run(
                 ["docker", "logs", "--tail", str(tail), container_name],
