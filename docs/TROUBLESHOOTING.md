@@ -84,13 +84,13 @@ On older macOS versions (12.x and below) using the QEMU backend, standard `sshfs
 - Errors like `FATAL: VOLUME MOUNT IS READ-ONLY` during `ldm run`.
 - Permission denied errors when creating snapshots.
 
-#### **Solution 1: Switch to 9p Mounts (Recommended)**
+#### **Solution 1: Switch to sshfs Mounts (Recommended)**
 
-The `9p` protocol is often more reliable for permissions on macOS 12 Intel.
+The `9p` protocol does not support the POSIX file locking required by databases like Elasticsearch, leading to `AccessDeniedException` errors on boot. For macOS 12 and older Intel Macs, you must use `sshfs` with explicit write permissions (`:w`).
 
 ```bash
 colima stop
-colima start --mount-type 9p --mount /Users/$(whoami):w
+colima start --mount-type sshfs --mount /Users/$(whoami):w
 ```
 
 #### **Solution 2: Force Writable Flag**

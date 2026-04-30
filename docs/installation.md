@@ -425,13 +425,13 @@ colima start --cpu 4 --memory 8 --vm-type=vz --mount-type=virtiofs --mount /User
 
 ### 2. Recommended Start Command (Legacy Intel Mac)
 
-If you are running on an older Intel Mac (e.g. Early 2015 with 8GB RAM), use these settings to ensure Liferay has enough host memory to function. We recommend the `9p` mount type for better permission mapping on macOS 12:
+If you are running on an older Intel Mac (e.g. Early 2015 with 8GB RAM), use these settings to ensure Liferay has enough host memory to function. We recommend the `sshfs` mount type for older macOS versions (macOS 12 and below):
 
 ```bash
 # Optimized for Dual-Core Intel (8GB RAM)
-# Note: uses 9p as it handles UID mapping better than sshfs on older macOS
+# Note: virtiofs requires macOS 14+, so older Macs must use sshfs
 colima stop
-colima start --cpus 2 --memory 6 --mount-type 9p --mount /Users/$(whoami):w
+colima start --cpu 2 --memory 6 --mount-type sshfs --mount /Users/$(whoami):w
 ```
 
 ### 3. The "Ghost Mount" Issue
