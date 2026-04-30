@@ -154,14 +154,14 @@ jobs:
 
           # Run LDM to generate compose
           pip install -e .
-          python3 liferay_docker.py -y run smoke-project --no-up --sidecar --no-wait
+          python3 liferay_docker.py -y run smoke-project --no-up --sidecar --no-wait --verbose
 
           # Override healthcheck in generated compose to avoid timeout since we use alpine
           # Use python to safely manipulate the YAML if possible, or simple sed
           sed -i 's/curl -f http:\/\/localhost:8080\/c\/portal\/layout/true/g' smoke-project/docker-compose.yml
 
           # Now run without --no-up to verify it starts and exits quickly
-          python3 liferay_docker.py -y run smoke-project --no-wait
+          python3 liferay_docker.py -y run smoke-project --no-wait --verbose
   build:
     needs: [lint-and-test, smoke-test]
     strategy:

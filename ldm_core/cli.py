@@ -713,12 +713,7 @@ def main():
             print(f"\n{UI.WHITE}Aborted.{UI.COLOR_OFF}")
             sys.exit(130)
         except Exception as e:
-            UI.error("An unexpected error occurred.", e)
-            if "-v" in sys.argv or "--verbose" in sys.argv:
-                import traceback
-
-                traceback.print_exc()
-            sys.exit(1)
+            UI.die("An unexpected error occurred.", details=e)
 
         if update_thread and args.command != "completion":
             update_thread.join(timeout=0.05)
