@@ -1,5 +1,6 @@
 import unittest
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
+
 from ldm_core.cli import main
 
 
@@ -51,7 +52,7 @@ class TestCLIDisambiguation(unittest.TestCase):
         # VERIFICATION:
         # The logic should have shifted 'liferay' to the service list
         mock_manager.cmd_logs.assert_called_once()
-        args, kwargs = mock_manager.cmd_logs.call_args
+        args, _kwargs = mock_manager.cmd_logs.call_args
         # Positional arg 1 (p_name) should be None
         self.assertIsNone(args[0])
         # Positional arg 2 (service) should be ['liferay']

@@ -1,11 +1,13 @@
 import json
 import tarfile
 import time
-from pathlib import Path
 from datetime import datetime
-from ldm_core.ui import UI
+from pathlib import Path
+from typing import cast
+
 from ldm_core.handlers.base import BaseHandler
-from ldm_core.utils import run_command, get_compose_cmd, get_actual_home
+from ldm_core.ui import UI
+from ldm_core.utils import get_actual_home, get_compose_cmd, run_command
 
 
 class SnapshotHandler(BaseHandler):
@@ -20,7 +22,7 @@ class SnapshotHandler(BaseHandler):
         if not paths:
             root = self.detect_project_path()
             if not root:
-                return
+                return None
             paths = self.setup_paths(root)
 
         backups_dir = paths["backups"]
@@ -74,6 +76,7 @@ class SnapshotHandler(BaseHandler):
 
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         snap_dir = paths["backups"] / timestamp
+        snap_dir.mkdir(parents=True, exist_ok=True)
         UI.info(f"Creating snapshot: {name}...")
 
         # --- SEARCH SNAPSHOT (Orchestrated) ---
@@ -316,9 +319,14 @@ class SnapshotHandler(BaseHandler):
         if not choice or not choice.exists():
             UI.die(f"Snapshot directory not found: {choice}")
 
+        # At this point Mypy should know choice is a Path and not None
+        choice_path = cast(Path, choice)
+
         # 2. Handle Cloud Layout vs Standard Layout
-        if (choice / "database.gz").exists() or (choice / "volume.tgz").exists():
-            if self._restore_from_cloud_layout(choice, paths, project_meta):
+        if (choice_path / "database.gz").exists() or (
+            choice_path / "volume.tgz"
+        ).exists():
+            if self._restore_from_cloud_layout(choice_path, paths, project_meta):
                 UI.success("Cloud restoration successful.")
             return
 
@@ -332,13 +340,13 @@ class SnapshotHandler(BaseHandler):
                 UI.die(
                     "Docker Compose not found. Please run 'ldm doctor' for installation instructions."
                 )
-            run_command(compose_base + ["stop"], check=True, cwd=str(paths["root"]))
+            run_command([*compose_base, "stop"], check=True, cwd=str(paths["root"]))
             time.sleep(2)
 
-        files_tar = choice / "files.tar.gz"
+        files_tar = choice_path / "files.tar.gz"
         if files_tar.exists():
             # Verify Integrity (Mandate 6.2)
-            sha_file = choice / "files.tar.gz.sha256"
+            sha_file = choice_path / "files.tar.gz.sha256"
             if sha_file.exists():
                 UI.info("Verifying snapshot integrity...")
                 from ldm_core.utils import calculate_sha256
@@ -347,7 +355,7 @@ class SnapshotHandler(BaseHandler):
                 expected_sha = sha_file.read_text().strip()
                 if actual_sha != expected_sha:
                     UI.die(
-                        f"Integrity check failed for snapshot: {choice.name}\n"
+                        f"Integrity check failed for snapshot: {choice_path.name}\n"
                         f"Expected: {expected_sha}\n"
                         f"Actual:   {actual_sha}\n"
                         f"The snapshot file may be corrupted or tampered with."
@@ -360,10 +368,10 @@ class SnapshotHandler(BaseHandler):
 
             self._extract_snapshot_archive(files_tar, paths)
         else:
-            UI.die(f"Standard snapshot files not found in {choice}")
+            UI.die(f"Standard snapshot files not found in {choice_path}")
 
         # --- SEARCH RESTORE (Orchestrated) ---
-        snap_meta = self.read_meta(choice / "meta")
+        snap_meta = self.read_meta(choice_path / "meta")
         search_snapshot_name = snap_meta.get("search_snapshot")
         search_name = "liferay-search-global"
 
@@ -539,7 +547,7 @@ class SnapshotHandler(BaseHandler):
         )
 
     def _get_dir_size(self, path):
-        total = 0
+        total: float = 0
         try:
             for f in path.rglob("*"):
                 if f.is_file():

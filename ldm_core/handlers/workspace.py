@@ -1,22 +1,27 @@
-import os
-import re
 import json
-import time
-import shutil
+import os
 import platform
-import tarfile
-import zipfile
-import threading
+import re
+import shutil
 import sys
-from pathlib import Path
+import tarfile
+import threading
+import time
+import zipfile
 from datetime import datetime
-from ldm_core.ui import UI
-from ldm_core.handlers.base import BaseHandler
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, cast
+
+if TYPE_CHECKING:
+    pass
+
 from ldm_core.constants import SCRIPT_DIR
+from ldm_core.handlers.base import BaseHandler
+from ldm_core.ui import UI
 from ldm_core.utils import (
-    run_command,
-    load_env_blacklist,
     is_env_var_blacklisted,
+    load_env_blacklist,
+    run_command,
     safe_copy,
     safe_move,
 )
@@ -34,7 +39,7 @@ class WorkspaceHandler(BaseHandler):
     def cmd_init(self, project_id=None):
         """Scaffolds a project without starting it."""
         # Set the no_up flag on args to ensure it doesn't try to start
-        setattr(self.args, "no_up", True)
+        self.args.no_up = True
 
         UI.info(f"Initializing project shell: {project_id or 'interactively'}")
         self.cmd_run(project_id)
@@ -43,7 +48,7 @@ class WorkspaceHandler(BaseHandler):
         )
 
     def _parse_client_extension_yaml(self, content):
-        info = {"type": None, "oauth_erc": None}
+        info: dict[str, Any] = {"type": None, "oauth_erc": None}
         type_match = re.search(r"^\s*type:\s*(\w+)", content, re.MULTILINE)
         if type_match:
             info["type"] = type_match.group(1).strip()
@@ -59,7 +64,7 @@ class WorkspaceHandler(BaseHandler):
         if paths and paths.get("root"):
             proj_blacklist = load_env_blacklist(paths["root"] / "env-blacklist.txt")
             blacklist.extend(proj_blacklist)
-        return sorted(list(set(blacklist)))
+        return sorted(set(blacklist))
 
     def _parse_client_extension_config_json(self, content):
         try:
@@ -75,7 +80,7 @@ class WorkspaceHandler(BaseHandler):
         return None
 
     def _parse_lcp_json(self, content, context_name=None):
-        info = {
+        info: dict[str, Any] = {
             "id": None,
             "kind": None,
             "deploy": True,  # Default to True if not specified
@@ -132,7 +137,8 @@ class WorkspaceHandler(BaseHandler):
                 if k in data:
                     info[k] = data[k]
             info["has_load_balancer"] = "loadBalancer" in data or any(
-                p.get("external") for p in info["ports"]
+                p.get("external")
+                for p in cast(list[dict[str, Any]], info.get("ports", []))
             )
             env = data.get("env", {})
             info["env"] = env
@@ -143,7 +149,7 @@ class WorkspaceHandler(BaseHandler):
         return info
 
     def _scan_extension_metadata(self, folder_path=None, zip_ref=None):
-        info = {
+        info: dict[str, Any] = {
             "id": None,
             "type": None,
             "kind": None,
@@ -160,20 +166,20 @@ class WorkspaceHandler(BaseHandler):
         }
 
         def merge_info(new_info):
-            for k in info.keys():
+            for k in info:
                 if new_info.get(k) is not None:
                     if k == "has_load_balancer":
                         info[k] = info[k] or new_info[k]
                     elif k == "ports" and new_info[k]:
-                        info[k].extend(new_info[k])
+                        cast(list, info[k]).extend(new_info[k])
                     elif k == "loadBalancer" and new_info[k]:
                         if info[k] is None:
                             info[k] = {}
-                        info[k].update(new_info[k])
+                        cast(dict, info[k]).update(new_info[k])
                     else:
                         info[k] = new_info[k]
             if new_info.get("env"):
-                info["env"].update(new_info["env"])
+                cast(dict, info["env"]).update(new_info["env"])
 
         if zip_ref:
             for f in zip_ref.namelist():
@@ -218,7 +224,7 @@ class WorkspaceHandler(BaseHandler):
         return info
 
     def scan_client_extensions(self, root_dir, osgi_cx_dir, ce_build_dir):
-        extensions = []
+        extensions: list[dict[str, Any]] = []
         if not root_dir.exists():
             return extensions
 
@@ -347,7 +353,7 @@ class WorkspaceHandler(BaseHandler):
         return extensions
 
     def scan_standalone_services(self, root_path):
-        services = []
+        services: list[dict[str, Any]] = []
         services_dir = root_path / "services"
         if not services_dir.exists():
             return services
@@ -408,7 +414,7 @@ class WorkspaceHandler(BaseHandler):
                     for e in exts + services
                 ):
                     res.append(f"{k}={v}")
-            return sorted(list(set(res)))
+            return sorted(set(res))
 
         prefix = target_id.upper().replace("-", "_") + "_"
         targeted = {
@@ -563,7 +569,7 @@ class WorkspaceHandler(BaseHandler):
                     ) as t:
                         safe_extract(t, temp_extract_dir)
 
-                for r, d, f in os.walk(temp_extract_dir):
+                for r, _d, f in os.walk(temp_extract_dir):
                     if (
                         Path(r) / "liferay" / "LCP.json"
                     ).exists() or "gradle.properties" in f:
@@ -667,10 +673,7 @@ class WorkspaceHandler(BaseHandler):
 
             # SSL Rule: Default to True only if host_name is NOT localhost
             ssl_arg = getattr(self.args, "ssl", None)
-            if ssl_arg is not None:
-                use_ssl = ssl_arg
-            else:
-                use_ssl = host_name != "localhost"
+            use_ssl = ssl_arg if ssl_arg is not None else host_name != "localhost"
 
             if (
                 use_ssl
@@ -764,7 +767,7 @@ class WorkspaceHandler(BaseHandler):
                     return 0
 
                 # Check root of search_base
-                root_zips = list(search_base.glob("*.zip"))
+                zips_at_root = list(search_base.glob("*.zip"))
 
                 # Check subdirectories
                 ext_folders = [
@@ -773,12 +776,12 @@ class WorkspaceHandler(BaseHandler):
                     if f.is_dir() and not f.name.startswith(".")
                 ]
 
-                nested_zips = []
+                nested_zips: list[Path] = []
                 for folder in ext_folders:
                     nested_zips.extend(list(folder.glob("dist/*.zip")))
                     nested_zips.extend(list(folder.glob("*.zip")))
 
-                for z in list(set(root_zips + nested_zips)):
+                for z in list(set(zips_at_root + nested_zips)):
                     if label == "Fragment":
                         try:
                             with zipfile.ZipFile(z, "r") as zip_ref:
@@ -813,7 +816,7 @@ class WorkspaceHandler(BaseHandler):
             for search_folder in ["modules", "themes"]:
                 base = workspace_root / search_folder
                 if base.exists():
-                    for root, dirs, files in os.walk(base):
+                    for root, dirs, _files in os.walk(base):
                         if "build" in dirs:
                             libs = Path(root) / "build" / "libs"
                             if libs.exists():
@@ -865,9 +868,9 @@ class WorkspaceHandler(BaseHandler):
 
     def cmd_monitor(self, source_path=None):
         try:
+            from watchdog.events import FileSystemEventHandler
             from watchdog.observers import Observer
             from watchdog.observers.polling import PollingObserver
-            from watchdog.events import FileSystemEventHandler
         except ImportError:
             UI.die("watchdog required: pip install watchdog")
 
@@ -940,13 +943,10 @@ class WorkspaceHandler(BaseHandler):
                 if p.suffix.lower() == ".zip":
                     if "client-extensions" in p.parts or "fragments" in p.parts:
                         is_valid = True
-                elif p.suffix.lower() in [".jar", ".war"]:
-                    if (
-                        "modules" in p.parts
-                        and "build" in p.parts
-                        and "libs" in p.parts
-                    ):
-                        is_valid = True
+                elif p.suffix.lower() in [".jar", ".war"] and (
+                    "modules" in p.parts and "build" in p.parts and "libs" in p.parts
+                ):
+                    is_valid = True
 
                 if is_valid:
                     if self.manager.verbose:
@@ -1007,7 +1007,7 @@ class WorkspaceHandler(BaseHandler):
             try:
                 import resource
 
-                soft, hard = resource.getrlimit(resource.RLIMIT_NOFILE)
+                _soft, hard = resource.getrlimit(resource.RLIMIT_NOFILE)
 
                 # Try to set a generous limit (e.g., 4096)
                 new_soft = min(hard, 4096)

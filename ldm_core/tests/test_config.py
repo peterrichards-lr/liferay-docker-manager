@@ -1,9 +1,10 @@
 import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
+
+from ldm_core.handlers.base import BaseHandler
 from ldm_core.handlers.config import ConfigHandler
 from ldm_core.handlers.diagnostics import DiagnosticsHandler
-from ldm_core.handlers.base import BaseHandler
 
 
 class MockConfigManager(ConfigHandler, DiagnosticsHandler, BaseHandler):
@@ -80,19 +81,17 @@ class TestConfigManagement(unittest.TestCase):
 
         def exists_side_effect(self_obj):
             path_str = str(self_obj)
-            if "/tmp/common" in path_str:
-                return True
-            return False
+            return "/tmp/common" in path_str
 
-        with patch.object(
-            Path, "exists", autospec=True, side_effect=exists_side_effect
+        with (
+            patch.object(Path, "exists", autospec=True, side_effect=exists_side_effect),
+            patch.object(self.manager, "get_common_dir", return_value=common_dir),
         ):
-            with patch.object(self.manager, "get_common_dir", return_value=common_dir):
-                self.manager.sync_common_assets(self.paths)
+            self.manager.sync_common_assets(self.paths)
 
-                # Verify that mkdir was called for the parent of target portal-ext
-                self.assertTrue(mock_mkdir.called)
-                self.assertTrue(mock_copy.called)
+            # Verify that mkdir was called for the parent of target portal-ext
+            self.assertTrue(mock_mkdir.called)
+            self.assertTrue(mock_copy.called)
 
     @patch("ldm_core.handlers.config.safe_copy")
     @patch("ldm_core.handlers.config.run_command")

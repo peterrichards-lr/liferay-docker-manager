@@ -1,8 +1,9 @@
-import unittest
 import os
 import platform
+import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
+
 from ldm_core.handlers.base import BaseHandler
 from ldm_core.handlers.workspace import WorkspaceHandler
 
@@ -141,8 +142,8 @@ class TestBaseHardening(unittest.TestCase):
     def test_detect_project_path_hardening(self):
         # Case: A file exists with the project name, but no directory
         # This used to cause a crash in ldm init
-        import tempfile
         import os
+        import tempfile
 
         with tempfile.TemporaryDirectory() as tmpdir:
             # Create a file that looks like a project name
@@ -167,7 +168,7 @@ class TestBaseHardening(unittest.TestCase):
         self, mock_detect, mock_scan, mock_meta, mock_resolve
     ):
         # Setup: forge.demo with 3 extensions
-        mock_detect.return_value = Path(".")
+        mock_detect.return_value = Path()
         mock_meta.return_value = {"host_name": "forge.demo"}
         mock_resolve.return_value = "127.0.0.1"  # All resolve initially
 
@@ -193,13 +194,15 @@ class TestBaseHardening(unittest.TestCase):
         ]
 
         # Run validation
-        with patch.object(
-            BaseHandler,
-            "setup_paths",
-            return_value={"root": Path("."), "cx": Path("."), "ce_dir": Path(".")},
+        with (
+            patch.object(
+                BaseHandler,
+                "setup_paths",
+                return_value={"root": Path(), "cx": Path(), "ce_dir": Path()},
+            ),
+            patch.object(Path, "exists", return_value=True),
         ):
-            with patch.object(Path, "exists", return_value=True):
-                ok, unresolved, non_local = self.handler.validate_project_dns(".")
+            ok, unresolved, non_local = self.handler.validate_project_dns(".")
 
         # Verify: Only "active-ext" should have been checked
         self.assertTrue(ok)
@@ -212,13 +215,15 @@ class TestBaseHardening(unittest.TestCase):
             return "127.0.0.1"
 
         mock_resolve.side_effect = resolve_side_effect
-        with patch.object(
-            BaseHandler,
-            "setup_paths",
-            return_value={"root": Path("."), "cx": Path("."), "ce_dir": Path(".")},
+        with (
+            patch.object(
+                BaseHandler,
+                "setup_paths",
+                return_value={"root": Path(), "cx": Path(), "ce_dir": Path()},
+            ),
+            patch.object(Path, "exists", return_value=True),
         ):
-            with patch.object(Path, "exists", return_value=True):
-                ok, unresolved, non_local = self.handler.validate_project_dns(".")
+            ok, unresolved, non_local = self.handler.validate_project_dns(".")
 
         self.assertFalse(ok)
         self.assertEqual(len(unresolved), 1)
@@ -268,6 +273,7 @@ class TestBaseCompletion(unittest.TestCase):
         # No argument: should show instructions
         import io
         from contextlib import redirect_stdout
+
         from ldm_core.utils import strip_ansi
 
         f = io.StringIO()

@@ -1,8 +1,9 @@
 import unittest
 from pathlib import Path
-from unittest.mock import patch, MagicMock, PropertyMock
-from ldm_core.handlers.infra import InfraHandler
+from unittest.mock import MagicMock, PropertyMock, patch
+
 from ldm_core.handlers.base import BaseHandler
+from ldm_core.handlers.infra import InfraHandler
 
 
 class MockInfraManager(InfraHandler, BaseHandler):

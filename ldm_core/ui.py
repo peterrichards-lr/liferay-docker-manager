@@ -13,6 +13,8 @@ class UI:
     CYAN = "\033[0;36m"
     BLUE = "\033[0;34m"
     BOLD = "\033[1m"
+    DIM = "\033[2m"
+    UNDERLINE = "\033[4m"
 
     NON_INTERACTIVE = False
     VERBOSE = False
@@ -39,9 +41,7 @@ class UI:
         # 2. Redact CLI password flags (e.g. -pPASSWORD or --password=secret)
         # We are careful to only match -p if followed by characters (not just a space)
         flag_pattern = r"(?i)(-p|--password=)([^&\s]+)"
-        text = re.sub(flag_pattern, r"\1[REDACTED]", text)
-
-        return text
+        return re.sub(flag_pattern, r"\1[REDACTED]", text)
 
     @staticmethod
     def _print(msg, color=None, icon=None, file=None):

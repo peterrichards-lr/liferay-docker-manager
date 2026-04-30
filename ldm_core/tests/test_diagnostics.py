@@ -1,9 +1,12 @@
-import unittest
+import contextlib
 import sys
+import unittest
 from pathlib import Path
+from typing import Any
 from unittest.mock import MagicMock, patch
-from ldm_core.handlers.diagnostics import DiagnosticsHandler
+
 from ldm_core.constants import VERSION
+from ldm_core.handlers.diagnostics import DiagnosticsHandler
 
 
 class MockDiagManager(DiagnosticsHandler):
@@ -11,6 +14,8 @@ class MockDiagManager(DiagnosticsHandler):
         self.args = MagicMock()
         self.verbose = False
         self.non_interactive = True
+        self._mock_roots: list[dict[str, Any]] = []
+        self._use_real_validate = False
 
     def find_dxp_roots(self, *args, **kwargs):
         # Default to empty for base doctor check
@@ -103,10 +108,8 @@ class TestDiagnostics(unittest.TestCase):
         ]
 
         with patch("builtins.print") as mock_print:
-            try:
+            with contextlib.suppress(SystemExit):
                 self.manager.cmd_status()
-            except SystemExit:
-                pass
 
             # Verify it printed something about global infrastructure
             self.assertTrue(
@@ -117,7 +120,7 @@ class TestDiagnostics(unittest.TestCase):
         lcp_file = Path("/tmp/LCP.json")
         lcp_file.write_text('{"id": "test-ext", "ports": [{"targetPort": 8080}]}')
         try:
-            status, ok, errors = self.manager.validate_lcp_json(lcp_file)
+            status, ok, _errors = self.manager.validate_lcp_json(lcp_file)
             self.assertTrue(ok)
             self.assertEqual(status, "Valid Structure")
         finally:
@@ -240,7 +243,7 @@ class TestDiagnostics(unittest.TestCase):
     def test_validate_properties_duplicates(self):
         self.manager._use_real_validate = True
         self.test_file.write_text("key1=value1\nkey1=value2\nkey2=v3")
-        status, ok, errors = self.manager.validate_properties_file(self.test_file)
+        _status, ok, errors = self.manager.validate_properties_file(self.test_file)
         self.assertEqual(ok, "warn")
         self.assertTrue(any("Duplicate key 'key1'" in e for e in errors))
 
@@ -248,14 +251,14 @@ class TestDiagnostics(unittest.TestCase):
         self.manager._use_real_validate = True
         # Line ends in backslash but next line is empty
         self.test_file.write_text("key1=value1\\\n\nkey2=value2")
-        status, ok, errors = self.manager.validate_properties_file(self.test_file)
+        _status, ok, errors = self.manager.validate_properties_file(self.test_file)
         self.assertEqual(ok, "warn")
         self.assertTrue(any("Broken continuation" in e for e in errors))
 
     def test_validate_properties_orphaned_line(self):
         self.manager._use_real_validate = True
         self.test_file.write_text("key1=value1\norphaned line here")
-        status, ok, errors = self.manager.validate_properties_file(self.test_file)
+        _status, ok, errors = self.manager.validate_properties_file(self.test_file)
         self.assertEqual(ok, "warn")
         self.assertTrue(any("Orphaned line" in e for e in errors))
 
@@ -263,7 +266,7 @@ class TestDiagnostics(unittest.TestCase):
         lcp_file = Path("/tmp/LCP.json")
         lcp_file.write_text('{"ports": [{"targetPort": 8080}]}')
         try:
-            status, ok, errors = self.manager.validate_lcp_json(lcp_file)
+            _status, ok, errors = self.manager.validate_lcp_json(lcp_file)
             self.assertEqual(ok, "warn")
             self.assertTrue(any("Missing mandatory 'id'" in e for e in errors))
         finally:
@@ -274,7 +277,7 @@ class TestDiagnostics(unittest.TestCase):
         lcp_file = Path("/tmp/LCP.json")
         lcp_file.write_text('{"id": "test", "ports": [{"noPort": 1}]}')
         try:
-            status, ok, errors = self.manager.validate_lcp_json(lcp_file)
+            _status, ok, errors = self.manager.validate_lcp_json(lcp_file)
             self.assertEqual(ok, "warn")
             self.assertTrue(any("missing 'targetPort'" in e for e in errors))
         finally:

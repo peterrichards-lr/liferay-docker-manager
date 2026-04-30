@@ -1,9 +1,10 @@
-import os
-import time
 import json
+import os
 import shutil
-from ldm_core.ui import UI
+import time
+
 from ldm_core.handlers.base import BaseHandler
+from ldm_core.ui import UI
 from ldm_core.utils import (
     get_actual_home,
     get_compose_cmd,
@@ -55,8 +56,14 @@ class InfraHandler(BaseHandler):
         env = self._get_infra_env(resolved_ip, ssl_port)
 
         self.run_command(
-            get_compose_cmd()
-            + ["-f", str(infra_compose), "up", "-d", "--remove-orphans"],
+            [
+                *get_compose_cmd(),
+                "-f",
+                str(infra_compose),
+                "up",
+                "-d",
+                "--remove-orphans",
+            ],
             env=env,
             capture_output=False,
         )
@@ -187,7 +194,7 @@ tls:
         # Down requires the same env as UP to resolve volume paths correctly
         env = self._get_infra_env()
         self.run_command(
-            get_compose_cmd() + ["-f", str(infra_compose), "down", "-v"],
+            [*get_compose_cmd(), "-f", str(infra_compose), "down", "-v"],
             env=env,
             capture_output=False,
         )
@@ -460,3 +467,4 @@ tls:
                 ],
                 check=False,
             )
+        return None

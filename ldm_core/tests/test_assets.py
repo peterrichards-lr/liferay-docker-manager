@@ -1,7 +1,9 @@
 import unittest
-import requests
 from pathlib import Path
 from unittest.mock import MagicMock, patch
+
+import requests
+
 from ldm_core.handlers.assets import AssetHandler
 from ldm_core.handlers.base import BaseHandler
 

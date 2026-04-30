@@ -1,16 +1,19 @@
-import os
-import sys
-import platform
+import contextlib
+import hashlib
 import json
-import time
-import subprocess
+import os
+import platform
 import re
 import shutil
-import hashlib
+import subprocess
+import sys
+import time
 from pathlib import Path
+
 import requests
-from ldm_core.ui import UI
+
 from ldm_core.constants import TAG_PATTERN
+from ldm_core.ui import UI
 
 
 def download_file(url, destination):
@@ -88,11 +91,11 @@ def get_seed_url(tag, db="postgresql", search="shared"):
 
 def load_env_blacklist(path):
     """Loads environment variable blacklist patterns from a file."""
-    patterns = []
+    patterns: list[str] = []
     if not path or not path.exists():
         return patterns
     try:
-        with open(path, "r") as f:
+        with Path(path).open() as f:
             for line in f:
                 line = line.strip()
                 if line and not line.startswith("#"):
@@ -170,10 +173,7 @@ def _sanitize_shell_command(cmd):
 def run_command(
     cmd, shell=False, capture_output=True, check=True, env=None, cwd=None, verbose=False
 ):
-    if env is None:
-        env = os.environ.copy()
-    else:
-        env = env.copy()
+    env = os.environ.copy() if env is None else env.copy()
 
     env["DOCKER_CLI_HINTS"] = "false"
 
@@ -290,10 +290,8 @@ def safe_write_text(path, content, encoding="utf-8"):
                 time.sleep(0.1)
     except Exception as e:
         if tmp_path.exists():
-            try:
+            with contextlib.suppress(OSError):
                 tmp_path.unlink()
-            except OSError:
-                pass
         raise e
 
 
@@ -302,10 +300,8 @@ def safe_copy(src, dst):
     try:
         shutil.copyfile(src, dst)
         # Try to copy permissions/mode, but ignore if it fails (common for cross-user files)
-        try:
+        with contextlib.suppress(OSError, PermissionError):
             shutil.copymode(src, dst)
-        except (OSError, PermissionError):
-            pass
     except Exception as e:
         raise e
 
@@ -317,10 +313,8 @@ def safe_move(src, dst):
     except (OSError, PermissionError):
         # Fallback to copy and delete if rename fails (e.g. cross-device or permission lock)
         safe_copy(src, dst)
-        try:
+        with contextlib.suppress(OSError, PermissionError):
             os.unlink(src)
-        except (OSError, PermissionError):
-            pass
 
 
 def get_actual_home():
@@ -351,7 +345,7 @@ def open_browser(url):
     is_wsl = False
     if system == "linux":
         try:
-            with open("/proc/version", "r") as f:
+            with open("/proc/version") as f:
                 if "microsoft" in f.read().lower():
                     is_wsl = True
         except Exception:
@@ -396,7 +390,7 @@ def discover_latest_tag(
 
     if not refresh and cache_path.exists():
         try:
-            with open(cache_path, "r") as f:
+            with open(cache_path) as f:
                 cache = json.load(f)
                 if cache_key in cache:
                     entry = cache[cache_key]
@@ -431,9 +425,8 @@ def discover_latest_tag(
     url = api_url.replace("ordering=name", "ordering=-last_updated")
 
     api_filter = prefix_filter
-    if not api_filter:
-        if release_type in ["lts", "u", "qr"]:
-            api_filter = f"-{release_type}"
+    if not api_filter and release_type in ["lts", "u", "qr"]:
+        api_filter = f"-{release_type}"
 
     if api_filter:
         url += f"&name={api_filter}"
@@ -515,7 +508,7 @@ def discover_latest_tag(
         try:
             cache = {}
             if cache_path.exists():
-                with open(cache_path, "r") as f:
+                with open(cache_path) as f:
                     cache = json.load(f)
             cache[cache_key] = {"tag": latest_tag, "timestamp": time.time()}
             with open(cache_path, "w") as f:
@@ -605,7 +598,7 @@ def is_within_root(path, root):
 
 def read_meta(path):
     """Reads LDM project metadata from a file (supports JSON and Flat formats)."""
-    meta = {}
+    meta: dict[str, str | bool | int | None] = {}
     path = Path(path)
     if not path.exists():
         return meta
@@ -615,17 +608,22 @@ def read_meta(path):
         if content.startswith("{"):
             meta = json.loads(content)
         else:
-            with open(path, "r", encoding="utf-8") as f:
+            with path.open(encoding="utf-8") as f:
                 for line in f:
-                    line = line.strip()
-                    if line and not line.startswith("#") and "=" in line:
-                        k, v = line.split("=", 1)
-                        k, v = k.strip(), v.strip()
-                        if v == "None":
+                    stripped_line = line.strip()
+                    if (
+                        stripped_line
+                        and not stripped_line.startswith("#")
+                        and "=" in stripped_line
+                    ):
+                        k, v_str = stripped_line.split("=", 1)
+                        k, v_str = k.strip(), v_str.strip()
+                        v: str | bool | None = v_str
+                        if v_str == "None":
                             v = None
-                        elif v == "True" or v == "true":
+                        elif v_str.lower() == "true":
                             v = True
-                        elif v == "False" or v == "false":
+                        elif v_str.lower() == "false":
                             v = False
                         meta[k] = v
     except Exception as e:
@@ -635,12 +633,9 @@ def read_meta(path):
     # Ensure mandatory fields are present and valid to prevent runtime crashes
     required_keys = ["container_name", "tag", "db_type"]
     missing = [k for k in required_keys if k not in meta]
-    if missing:
+    if missing and path.name == ".liferay-docker.meta":
         # Don't warn for internal meta files or temporary ones
-        if path.name == ".liferay-docker.meta":
-            UI.warning(
-                f"Metadata in {path} is missing required keys: {', '.join(missing)}"
-            )
+        UI.warning(f"Metadata in {path} is missing required keys: {', '.join(missing)}")
 
     # Type/Value validation for critical fields
     if meta.get("port") and not str(meta["port"]).isdigit():
@@ -769,19 +764,19 @@ def find_dxp_roots(search_dir=None):
                         continue
 
                     # Support multiple metadata filenames
-                    meta_file = None
+                    found_meta: Path | None = None
                     for f in [PROJECT_META_FILE, ".liferay-docker.meta", ".ldm.meta"]:
                         if (item / f).exists():
-                            meta_file = item / f
+                            found_meta = item / f
                             break
 
-                    has_meta = meta_file is not None
+                    has_meta = found_meta is not None
                     has_structure = (item / "files").exists() and (
                         item / "deploy"
                     ).exists()
 
                     if has_meta or (not is_home and has_structure):
-                        meta = read_meta(meta_file) if has_meta else {}
+                        meta = read_meta(found_meta) if has_meta else {}
                         version = meta.get("tag") or "unknown"
                         roots.append({"path": item, "version": version})
                         seen_paths.add(abs_path)
@@ -955,8 +950,7 @@ def verify_executable_checksum(version):
         if expected_hash:
             if local_hash == expected_hash:
                 return f"Verified ({local_hash[:12]})", True, version
-            else:
-                return f"TAMPERED / MISMATCH ({local_hash[:12]})", False, version
+            return f"TAMPERED / MISMATCH ({local_hash[:12]})", False, version
 
         return f"Unknown Build ({local_hash[:12]})", "warn", version
     except Exception:
@@ -998,13 +992,12 @@ def version_to_tuple(v):
             return tuple(base_nums[:4])
         # Otherwise, use a high sentinel (999) so stable > any beta.
         return (base_nums[0], base_nums[1], base_nums[2], 999)
-    else:
-        # Pre-release Logic
-        # Extract the first number from the pre-release string (e.g. 'beta.1' -> 1)
-        pre_nums = [int(n) for n in re.findall(r"\d+", pre_part)]
-        beta_num = pre_nums[0] if pre_nums else 0
-        # Use the actual number, which is naturally < 999
-        return (base_nums[0], base_nums[1], base_nums[2], beta_num)
+    # Pre-release Logic
+    # Extract the first number from the pre-release string (e.g. 'beta.1' -> 1)
+    pre_nums = [int(n) for n in re.findall(r"\d+", pre_part)]
+    beta_num = pre_nums[0] if pre_nums else 0
+    # Use the actual number, which is naturally < 999
+    return (base_nums[0], base_nums[1], base_nums[2], beta_num)
 
 
 def check_for_updates(current_version, force=False, pre_release=False):
@@ -1139,10 +1132,8 @@ def fetch_compatibility_metadata(force=False):
     bundled_file = Path(__file__).parent.parent / "compatibility.json"
     baseline = {}
     if bundled_file.exists():
-        try:
+        with contextlib.suppress(Exception):
             baseline = json.loads(bundled_file.read_text())
-        except Exception:
-            pass
 
     # 2. Check cache
     if not force and cache_file.exists():
@@ -1170,7 +1161,7 @@ def resolve_dependency_version(liferay_tag, dependency_name):
     matrix = fetch_compatibility_metadata()
     if not matrix or "mappings" not in matrix:
         # Fallback to hardcoded constants if metadata fails
-        from ldm_core.constants import ELASTICSEARCH_VERSION, ELASTICSEARCH7_VERSION
+        from ldm_core.constants import ELASTICSEARCH7_VERSION, ELASTICSEARCH_VERSION
 
         if dependency_name == "elasticsearch":
             v_tuple = version_to_tuple(liferay_tag)

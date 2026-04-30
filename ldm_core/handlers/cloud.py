@@ -1,9 +1,11 @@
 import json
 import shutil
 import subprocess
-from ldm_core.ui import UI
-from ldm_core.handlers.base import BaseHandler
+from typing import cast
+
 from ldm_core.constants import PROJECT_META_FILE
+from ldm_core.handlers.base import BaseHandler
+from ldm_core.ui import UI
 
 
 class CloudHandler(BaseHandler):
@@ -47,14 +49,17 @@ class CloudHandler(BaseHandler):
         UI.warning("You are not logged into Liferay Cloud.")
         if UI.confirm("Run 'lcp login' now?", "Y"):
             lcp_bin = shutil.which("lcp")
+            if not lcp_bin:
+                UI.die("Liferay Cloud CLI (lcp) not found.")
             try:
                 # lcp login is interactive and may open a browser
-                subprocess.run([lcp_bin, "login"], check=True)
+                subprocess.run([cast(str, lcp_bin), "login"], check=True)
                 return True
             except Exception as e:
                 UI.error(f"Login failed: {e}")
 
         UI.die("Authentication required for cloud operations.")
+        return None
 
     def _run_lcp_cmd(self, args, capture_json=True, project=None, env=None):
         """Runs an LCP command and returns parsed JSON or output string."""
@@ -62,7 +67,7 @@ class CloudHandler(BaseHandler):
         if not lcp_bin:
             UI.die("LCP CLI not found.")
 
-        cmd = [lcp_bin] + args
+        cmd = [lcp_bin, *args]
         if project:
             cmd.extend(["--project", project])
         if env:
@@ -79,10 +84,9 @@ class CloudHandler(BaseHandler):
             if capture_json:
                 res = subprocess.run(cmd, capture_output=True, text=True, check=True)
                 return json.loads(res.stdout)
-            else:
-                # For streaming or direct output
-                res = subprocess.run(cmd, capture_output=True, text=True, check=True)
-                return res.stdout
+            # For streaming or direct output
+            res = subprocess.run(cmd, capture_output=True, text=True, check=True)
+            return res.stdout
         except subprocess.CalledProcessError as e:
             UI.error(f"LCP command failed: {e.stderr or e.stdout}")
             return None
@@ -99,8 +103,7 @@ class CloudHandler(BaseHandler):
                 if service.get("id") == "liferay":
                     image = service.get("image")
                     if image and ":" in image:
-                        tag = image.split(":")[1]
-                        return tag
+                        return image.split(":")[1]
         return None
 
     def cmd_cloud_fetch(self, project_id=None, env_id=None, follow=False):

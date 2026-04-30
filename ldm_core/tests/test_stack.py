@@ -1,19 +1,22 @@
-import unittest
-import yaml
-import tempfile
 import os
+import tempfile
+import unittest
 from pathlib import Path
+from typing import cast
 from unittest.mock import MagicMock, patch
-from ldm_core.handlers.composer import ComposerHandler
-from ldm_core.handlers.runtime import RuntimeHandler
+
+import yaml
+
 from ldm_core.handlers.assets import AssetHandler
-from ldm_core.handlers.infra import InfraHandler
-from ldm_core.handlers.workspace import WorkspaceHandler
-from ldm_core.handlers.license import LicenseHandler
-from ldm_core.handlers.snapshot import SnapshotHandler
 from ldm_core.handlers.base import BaseHandler
+from ldm_core.handlers.composer import ComposerHandler
 from ldm_core.handlers.config import ConfigHandler
 from ldm_core.handlers.diagnostics import DiagnosticsHandler
+from ldm_core.handlers.infra import InfraHandler
+from ldm_core.handlers.license import LicenseHandler
+from ldm_core.handlers.runtime import RuntimeHandler
+from ldm_core.handlers.snapshot import SnapshotHandler
+from ldm_core.handlers.workspace import WorkspaceHandler
 
 
 class MockManager(
@@ -34,21 +37,21 @@ class MockManager(
         self.verbose = False
         self.non_interactive = True
 
-        # Wrap methods for patching while keeping logic
-        self.run_command = MagicMock()
-        self.write_docker_compose = MagicMock(
+        self.run_command = MagicMock()  # type: ignore[method-assign]
+        self.write_docker_compose = MagicMock(  # type: ignore[method-assign]
             side_effect=ComposerHandler.write_docker_compose.__get__(self, MockManager)
         )
-        self.setup_ssl = MagicMock(
+        self.setup_ssl = MagicMock(  # type: ignore[method-assign]
             side_effect=InfraHandler.setup_ssl.__get__(self, MockManager)
         )
-        self.cmd_browser = MagicMock(
+        self.cmd_browser = MagicMock(  # type: ignore[method-assign]
             side_effect=RuntimeHandler.cmd_browser.__get__(self, MockManager)
         )
-        self.cmd_reset = MagicMock(
+        self.cmd_reset = MagicMock(  # type: ignore[method-assign]
             side_effect=RuntimeHandler.cmd_reset.__get__(self, MockManager)
         )
-        self.update_portal_ext = MagicMock()
+        self.get_container_status = MagicMock()  # type: ignore[method-assign]
+        self.update_portal_ext = MagicMock()  # type: ignore[method-assign]
 
     def get_host_passthrough_env(self, *args, **kwargs):
         return []
@@ -308,7 +311,9 @@ class TestStackOrchestration(unittest.TestCase):
                 patch.object(self.manager, "run_command"),
             ):
                 self.manager.sync_stack(paths, meta, no_up=False, no_wait=True)
-                self.assertGreater(self.manager.get_container_status.call_count, 1)
+                self.assertGreater(
+                    cast(MagicMock, self.manager.get_container_status).call_count, 1
+                )
 
     def test_generate_compose_with_mysql(self):
         config = {

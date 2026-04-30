@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-import re
-import sys
 import hashlib
+import re
 import shutil
-from pathlib import Path
+import sys
 from datetime import datetime
+from pathlib import Path
+from typing import Any
 
 # Add project root to sys.path to allow importing ldm_core and scripts
 sys.path.append(str(Path(__file__).parent.parent))
@@ -37,9 +38,7 @@ def anonymize_content(content):
     content = re.sub(r"❌\s+/[^\n]+", "❌  [PATH]", content)
 
     # 4. Windows Specific binary paths
-    content = re.sub(r"✅\s+[A-Z]:\\[^\n]+", "✅  [PATH]", content)
-
-    return content
+    return re.sub(r"✅\s+[A-Z]:\\[^\n]+", "✅  [PATH]", content)
 
 
 def get_report_metadata(report_path):
@@ -121,16 +120,15 @@ def get_report_metadata(report_path):
 
     # 4.1 Force Provider standardization
     if is_mac:
-        if provider == "Unknown" or provider == "Docker Desktop":
+        if provider in {"Unknown", "Docker Desktop"}:
             provider = "Colima"
             if "orbstack" in content.lower() or "orbstack" in p_low:
                 provider = "OrbStack"
     elif is_wsl:
-        if provider == "Unknown" or provider == "desktop-linux":
+        if provider in {"Unknown", "desktop-linux"}:
             provider = "Native WSL2"
-    elif is_windows_native:
-        if provider == "Unknown" or provider == "desktop-linux":
-            provider = "Docker Desktop"
+    elif is_windows_native and provider in {"Unknown", "desktop-linux"}:
+        provider = "Docker Desktop"
 
     # --- FALLBACK MAPPINGS (Timestamps) ---
     if timestamp_str == "Tue 28 Apr 12:25:38 BST 2026":
@@ -233,7 +231,7 @@ def sync_reports():
             UI.error(f"Failed to process {report.name}: {e}")
 
     # 2. Archival and Redaction Logic
-    latest_per_env = {}
+    latest_per_env: dict[tuple[str, str, str], dict[str, Any]] = {}
     for meta in all_metas:
         key = (meta["arch"], meta["os"], meta["provider"])
         if (

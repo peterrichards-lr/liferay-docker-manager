@@ -3,6 +3,7 @@ import math
 import platform
 import re
 from pathlib import Path
+
 from ldm_core.handlers.base import BaseHandler
 from ldm_core.utils import dict_to_yaml, resolve_dependency_version
 
@@ -393,7 +394,7 @@ class ComposerHandler(BaseHandler):
         elif db_type in ["mysql", "mariadb"]:
             is_modern = False
             try:
-                major_ver = int(tag.split(".")[0])
+                major_ver = int(tag.split(".", maxsplit=1)[0])
                 if major_ver >= 2024:
                     is_modern = True
             except (ValueError, IndexError):
@@ -429,8 +430,8 @@ class ComposerHandler(BaseHandler):
                     "--lower_case_table_names=1",
                     "--bind-address=0.0.0.0",
                     "--skip-name-resolve",
-                ]
-                + auth_flags,
+                    *auth_flags,
+                ],
                 "environment": {
                     "MYSQL_ROOT_PASSWORD": "test",  # nosec B105
                     "MYSQL_USER": "lportal",

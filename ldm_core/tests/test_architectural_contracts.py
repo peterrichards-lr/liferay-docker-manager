@@ -1,12 +1,14 @@
-import unittest
-import yaml
-import pkgutil
-import inspect
 import importlib
-from pathlib import Path
+import inspect
+import pkgutil
 import tempfile
-from ldm_core.manager import LiferayManager
+import unittest
+from pathlib import Path
+
+import yaml
+
 import ldm_core.handlers
+from ldm_core.manager import LiferayManager
 
 
 class TestArchitecturalContracts(unittest.TestCase):
@@ -26,7 +28,7 @@ class TestArchitecturalContracts(unittest.TestCase):
         mock_args = MockArgs()
 
         # Iterate through all modules in the handlers package
-        for loader, module_name, is_pkg in pkgutil.walk_packages(
+        for _loader, module_name, is_pkg in pkgutil.walk_packages(
             handler_package.__path__, handler_package.__name__ + "."
         ):
             if is_pkg:

@@ -1,9 +1,10 @@
 import json
 import re
 import sys
-import requests
 from collections import defaultdict
 from datetime import datetime
+
+import requests
 
 API_BASE = "https://hub.docker.com/v2/repositories/liferay/dxp/tags?page_size=100&ordering=-last_updated"
 GITHUB_API = "https://api.github.com/repos/peterrichards-lr/liferay-docker-manager/releases/tags/seeded-states"
@@ -44,12 +45,11 @@ def get_existing_seeds():
         if response.status_code == 200:
             data = response.json()
             return [asset["name"] for asset in data.get("assets", [])]
-        else:
-            print(
-                f"Warning: Could not fetch existing seeds (HTTP {response.status_code}).",
-                file=sys.stderr,
-            )
-            return []
+        print(
+            f"Warning: Could not fetch existing seeds (HTTP {response.status_code}).",
+            file=sys.stderr,
+        )
+        return []
     except Exception as e:
         print(
             f"Warning: Could not fetch existing seeds from GitHub ({e}).",
@@ -83,7 +83,7 @@ def filter_tags(tags, existing_assets):
         # Match standard QR
         qr_match = qr_pattern.match(tag)
         if qr_match:
-            quarter, patch = qr_match.groups()
+            quarter, _patch = qr_match.groups()
             qr_patches[quarter].append(tag)
             continue
 
@@ -120,7 +120,7 @@ def filter_tags(tags, existing_assets):
 
     # Convert back to full tags
     candidates = [
-        latest_per_quarter[q] for q in sorted(list(selected_quarters), reverse=True)
+        latest_per_quarter[q] for q in sorted(selected_quarters, reverse=True)
     ]
 
     # Smart Filtering: Skip rebuild if ALL 3 DB seeds already exist for this tag
