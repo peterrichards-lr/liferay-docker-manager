@@ -341,7 +341,10 @@ class BaseHandler:
 
         actual_home = get_actual_home()
         ldm_dir = actual_home / ".ldm"
-        ldm_dir.mkdir(parents=True, exist_ok=True)
+        try:
+            ldm_dir.mkdir(parents=True, exist_ok=True)
+        except (PermissionError, OSError):
+            pass
         registry_path = ldm_dir / REGISTRY_FILE
 
         registry = {}
@@ -863,10 +866,12 @@ class BaseHandler:
 
             import uuid
 
+            from ldm_core.utils import safe_write_text
+
             token_val = f"LDM_VERIFY_{uuid.uuid4().hex[:8]}"
             token_file = root / ".ldm_mount_check"
             try:
-                token_file.write_text(token_val)
+                safe_write_text(token_file, token_val)
             except (PermissionError, OSError) as e:
                 if self.verbose:
                     UI.debug(f"Could not create mount-check token (ignoring): {e}")
@@ -880,7 +885,9 @@ class BaseHandler:
                 docker_cmd = (
                     "mkdir -p /workspace/data /workspace/deploy /workspace/files "
                     "/workspace/logs /workspace/osgi/state /workspace/osgi/configs "
-                    "/workspace/osgi/modules /workspace/routes /workspace/snapshots 2>/dev/null || true; "
+                    "/workspace/osgi/modules /workspace/osgi/portal-log4j /workspace/osgi/log4j "
+                    "/workspace/osgi/marketplace /workspace/osgi/client-extensions "
+                    "/workspace/routes /workspace/snapshots 2>/dev/null || true; "
                 )
 
                 if token_val != "SKIP":  # nosec B105
@@ -958,11 +965,21 @@ class BaseHandler:
                 if system_type == "darwin" and self.verbose:
                     UI.success("Volume mounts verified and permissions synchronized.")
 
-                # Only reclaim permissions for specific volumes that need it (data, state, logs)
+                # Only reclaim permissions for specific volumes that need it (data, state, logs, deploy, etc.)
                 # Reclaiming the root itself causes ownership issues for the host user (e.g. in CI)
-                for v in ["data", "state", "logs", "deploy"]:
+                for v in [
+                    "data",
+                    "state",
+                    "logs",
+                    "deploy",
+                    "log4j",
+                    "portal_log4j",
+                    "files",
+                    "configs",
+                ]:
                     if v in paths and paths[v].exists():
                         self._reclaim_permissions(paths[v])
+
             except Exception as e:
                 if self.verbose:
                     UI.warning(f"Could not verify mounts automatically: {e}")
@@ -991,9 +1008,11 @@ class BaseHandler:
             if p_key in paths:
                 try:
                     paths[p_key].mkdir(parents=True, exist_ok=True)
-                except Exception as e:
+                except (PermissionError, OSError) as e:
                     if self.verbose:
-                        UI.warning(f"Could not create directory {paths[p_key]}: {e}")
+                        UI.debug(
+                            f"Could not ensure directory exists {paths[p_key]}: {e}"
+                        )
 
         pe_file = paths["files"] / "portal-ext.properties"
         if pe_file.exists() and pe_file.is_dir():

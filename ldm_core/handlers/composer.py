@@ -461,4 +461,6 @@ class ComposerHandler(BaseHandler):
             "services": services,
             "networks": {"liferay-net": {"external": True}},
         }
-        paths["compose"].write_text(dict_to_yaml(compose))
+        from ldm_core.utils import safe_write_text
+
+        safe_write_text(paths["compose"], dict_to_yaml(compose))

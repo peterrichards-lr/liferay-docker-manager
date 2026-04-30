@@ -168,7 +168,9 @@ tls:
       keyFile: /etc/traefik/certs/{host_name}-key.pem
 """
             config_file = cert_dir / f"traefik-{host_name}.yml"
-            config_file.write_text(config_content)
+            from ldm_core.utils import safe_write_text
+
+            safe_write_text(config_file, config_content)
         except Exception as e:
             UI.error(f"Failed to write Traefik configuration: {e}")
             return False

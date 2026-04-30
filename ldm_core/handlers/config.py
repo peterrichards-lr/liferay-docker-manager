@@ -127,7 +127,10 @@ class ConfigHandler(BaseHandler):
         target = paths["portal_log4j"] / "portal-log4j-ext.xml"
 
         # Always ensure the directory exists
-        paths["portal_log4j"].mkdir(parents=True, exist_ok=True)
+        try:
+            paths["portal_log4j"].mkdir(parents=True, exist_ok=True)
+        except (PermissionError, OSError):
+            pass
 
         # 1. Ensure we have a valid baseline XML structure
         standard_template = '<?xml version="1.0"?>\n<Configuration strict="true">\n\t<Loggers>\n\t</Loggers>\n</Configuration>\n'
@@ -269,9 +272,14 @@ class ConfigHandler(BaseHandler):
         """Recreates the baseline common/ folder with standard development assets."""
         # Ensure we create this in the CURRENT directory, not the script directory
         common_dir = self.get_common_dir()
-        common_dir.mkdir(parents=True, exist_ok=True)
+        try:
+            common_dir.mkdir(parents=True, exist_ok=True)
+        except (PermissionError, OSError):
+            pass
 
         UI.heading("Initializing Baseline Common Assets")
+
+        from ldm_core.utils import safe_write_text
 
         try:
             import importlib.resources as pkg_resources
@@ -285,7 +293,7 @@ class ConfigHandler(BaseHandler):
                     / "common_baseline"
                     / "env-blacklist.txt"
                 ).read_text()
-                blacklist_file.write_text(content)
+                safe_write_text(blacklist_file, content)
                 UI.info("  + Created env-blacklist.txt")
 
             # 2. portal-ext.properties
@@ -296,7 +304,7 @@ class ConfigHandler(BaseHandler):
                     / "common_baseline"
                     / "portal-ext.properties"
                 ).read_text()
-                pe_file.write_text(content)
+                safe_write_text(pe_file, content)
                 UI.info("  + Created portal-ext.properties")
 
             # 3. Session Timeout Config
@@ -308,7 +316,7 @@ class ConfigHandler(BaseHandler):
                     / "common_baseline"
                     / timeout_config_name
                 ).read_text()
-                timeout_file.write_text(content)
+                safe_write_text(timeout_file, content)
                 UI.info("  + Created SessionTimeout config")
 
             # 4. Elasticsearch Configs
@@ -324,7 +332,7 @@ class ConfigHandler(BaseHandler):
                     content = (
                         pkg_resources.files(resources) / "common_baseline" / es_conf
                     ).read_text()
-                    target_file.write_text(content)
+                    safe_write_text(target_file, content)
                     UI.info(f"  + Created {es_conf}")
 
             UI.success(f"Baseline common assets initialized in: {common_dir}")
@@ -355,8 +363,13 @@ class ConfigHandler(BaseHandler):
                     / "com.liferay.captcha.configuration.CaptchaConfiguration.config"
                 )
                 if not captcha_cfg.exists():
-                    captcha_cfg.parent.mkdir(parents=True, exist_ok=True)
-                    captcha_cfg.write_text('maxChallenges="-1"\n')
+                    try:
+                        captcha_cfg.parent.mkdir(parents=True, exist_ok=True)
+                    except (PermissionError, OSError):
+                        pass
+                    from ldm_core.utils import safe_write_text
+
+                    safe_write_text(captcha_cfg, 'maxChallenges="-1"\n')
 
         # Use the binary-aware 'common' path from setup_paths
         common_dir = paths.get("common")
@@ -373,8 +386,12 @@ class ConfigHandler(BaseHandler):
             common_ext = common_dir / "portal-ext.properties"
             if common_ext.exists():
                 if not target_ext.exists():
-                    target_ext.parent.mkdir(parents=True, exist_ok=True)
+                    try:
+                        target_ext.parent.mkdir(parents=True, exist_ok=True)
+                    except (PermissionError, OSError):
+                        pass
                     shutil.copy2(common_ext, target_ext)
+
                 else:
                     # Robust extraction of project and common properties
                     project_props = self._get_properties(target_ext.read_text())
@@ -478,7 +495,9 @@ class ConfigHandler(BaseHandler):
 
                         # Write the substituted config
                         if not dest.exists() or dest.read_text() != content:
-                            dest.write_text(content)
+                            from ldm_core.utils import safe_write_text
+
+                            safe_write_text(dest, content)
                             if not dest.exists():
                                 history.add(match.name)
                         continue
@@ -493,7 +512,9 @@ class ConfigHandler(BaseHandler):
                     ):
                         shutil.copy(match, dest)
 
-            history_file.write_text("\n".join(sorted(list(history))))
+            from ldm_core.utils import safe_write_text
+
+            safe_write_text(history_file, "\n".join(sorted(list(history))))
         else:
             UI.warning(
                 "Global 'common/' folder not found. Some baseline assets may be missing."
@@ -651,7 +672,10 @@ class ConfigHandler(BaseHandler):
             file_to_edit = root_path / PROJECT_META_FILE
         else:
             file_to_edit = root_path / "files" / "portal-ext.properties"
-            (root_path / "files").mkdir(exist_ok=True)
+            try:
+                (root_path / "files").mkdir(exist_ok=True)
+            except (PermissionError, OSError):
+                pass
             if not file_to_edit.exists():
                 from ldm_core.utils import safe_write_text
 

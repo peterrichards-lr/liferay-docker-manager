@@ -86,7 +86,7 @@ class TestComposer(unittest.TestCase):
         }
 
         with (
-            patch.object(Path, "write_text"),
+            patch("ldm_core.utils.safe_write_text"),
             patch.object(self.composer, "update_portal_ext"),
         ):
             self.composer.write_docker_compose(self.paths, meta)
@@ -102,7 +102,7 @@ class TestComposer(unittest.TestCase):
     def test_jvm_opts_mandatory_opens(self):
         meta = {"jvm_args": "-Xmx4g"}
         with (
-            patch.object(Path, "write_text"),
+            patch("ldm_core.utils.safe_write_text"),
             patch.object(self.composer, "update_portal_ext"),
         ):
             # Capture the environment passed to the service

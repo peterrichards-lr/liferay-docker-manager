@@ -2005,8 +2005,13 @@ pause
                         token_file = deploy_dir / ".ldm_doctor_check"
 
                         try:
-                            deploy_dir.mkdir(parents=True, exist_ok=True)
-                            token_file.write_text(token_val)
+                            try:
+                                deploy_dir.mkdir(parents=True, exist_ok=True)
+                            except (PermissionError, OSError):
+                                pass
+                            from ldm_core.utils import safe_write_text
+
+                            safe_write_text(token_file, token_val)
                             verify_res = run_command(
                                 [
                                     "docker",

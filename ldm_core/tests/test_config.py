@@ -47,7 +47,7 @@ class TestConfigManagement(unittest.TestCase):
 
         with (
             patch.object(Path, "mkdir"),
-            patch.object(Path, "write_text") as mock_write,
+            patch("ldm_core.utils.safe_write_text") as mock_write,
         ):
             with patch.object(Path, "exists", return_value=False):
                 self.manager.cmd_init_common()
@@ -71,7 +71,7 @@ class TestConfigManagement(unittest.TestCase):
 
     @patch("ldm_core.handlers.config.shutil.copy2")
     @patch("pathlib.Path.mkdir")
-    @patch("pathlib.Path.write_text")
+    @patch("ldm_core.utils.safe_write_text")
     def test_sync_common_assets_dir_creation(self, mock_write, mock_mkdir, mock_copy):
 
         # Setup: Target files/ dir does NOT exist, common/ DOES exist
@@ -121,22 +121,16 @@ class TestConfigManagement(unittest.TestCase):
                 with patch.object(Path, "read_text", side_effect=mock_read_text_logic):
                     # 3. Satisfy globbing and file writing
                     with patch.object(Path, "glob", return_value=[es_config_path]):
-                        with patch.object(Path, "write_text") as mock_write:
-                            with patch(
-                                "os.replace"
-                            ):  # Prevent FileNotFoundError in safe_write_text
-                                # Trigger sync
-                                self.manager.sync_common_assets(self.paths)
+                        with patch("ldm_core.utils.safe_write_text") as mock_write:
+                            # Trigger sync
+                            self.manager.sync_common_assets(self.paths)
 
-                                # If substitution was applied, it should be in one of the write_text calls
-                                found_substitution = False
-                                for call in mock_write.call_args_list:
-                                    if (
-                                        'indexNamePrefix="ldm-test-project-"'
-                                        in call[0][0]
-                                    ):
-                                        found_substitution = True
-                                        break
+                            # If substitution was applied, it should be in one of the write_text calls
+                            found_substitution = False
+                            for call in mock_write.call_args_list:
+                                if 'indexNamePrefix="ldm-test-project-"' in call[0][1]:
+                                    found_substitution = True
+                                    break
 
                                 self.assertTrue(
                                     found_substitution,

@@ -220,10 +220,10 @@ class TestStackScaling(unittest.TestCase):
             "container_name": "scaled-test",
         }
 
-        with patch.object(Path, "write_text") as mock_write:
+        with patch("ldm_core.utils.safe_write_text") as mock_write:
             self.manager.write_docker_compose(self.paths, meta)
 
-            compose_data = yaml.safe_load(mock_write.call_args[0][0])
+            compose_data = yaml.safe_load(mock_write.call_args[0][1])
             liferay_service = compose_data["services"]["liferay"]
 
             # SCALE MANDATE: Scale > 1 must NOT have container_name
@@ -319,9 +319,9 @@ class TestStackOrchestration(unittest.TestCase):
             "db_type": "mysql",
         }
 
-        with patch.object(Path, "write_text") as mock_write:
+        with patch("ldm_core.utils.safe_write_text") as mock_write:
             self.manager.write_docker_compose(self.paths, config)
-            compose_data = yaml.safe_load(mock_write.call_args[0][0])
+            compose_data = yaml.safe_load(mock_write.call_args[0][1])
             liferay_service = compose_data["services"]["liferay"]
             db_service = compose_data["services"]["db"]
 

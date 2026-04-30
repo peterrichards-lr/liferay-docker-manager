@@ -265,12 +265,29 @@ def get_raw(url):
 
 
 def safe_write_text(path, content, encoding="utf-8"):
-    """Atomically writes text to a file using a temporary file and rename."""
+    """Atomically writes text to a file using a temporary file and robust replacement."""
     path = Path(path).resolve()
     tmp_path = path.with_suffix(".tmp" + path.suffix)
     try:
         tmp_path.write_text(content, encoding=encoding)
-        os.replace(tmp_path, path)
+
+        # Robust replacement with retries (for Windows file locking)
+        # and fallback (for permission nuances in CI)
+        max_retries = 3
+        for i in range(max_retries):
+            try:
+                os.replace(tmp_path, path)
+                return
+            except (OSError, PermissionError) as e:
+                if i == max_retries - 1:
+                    # Final attempt: manual copy and unlink
+                    try:
+                        shutil.copy2(tmp_path, path)
+                        tmp_path.unlink()
+                        return
+                    except Exception:
+                        raise e
+                time.sleep(0.1)
     except Exception as e:
         if tmp_path.exists():
             try:
@@ -631,9 +648,15 @@ def write_meta(path, meta):
             try:
                 os.replace(tmp_path, path)
                 break
-            except (OSError, PermissionError):
+            except (OSError, PermissionError) as e:
                 if i == max_retries - 1:
-                    raise
+                    # Final attempt: manual copy and unlink (robust for cross-user permissions)
+                    try:
+                        shutil.copy2(tmp_path, path)
+                        tmp_path.unlink()
+                        break
+                    except Exception:
+                        raise e
                 time.sleep(0.1)
     except Exception as e:
         UI.warning(f"Could not write metadata at {path}: {e}")
