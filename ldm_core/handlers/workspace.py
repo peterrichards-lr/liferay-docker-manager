@@ -10,21 +10,11 @@ import time
 import zipfile
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, cast
-
-if TYPE_CHECKING:
-    pass
 
 from ldm_core.constants import SCRIPT_DIR
 from ldm_core.handlers.base import BaseHandler
 from ldm_core.ui import UI
-from ldm_core.utils import (
-    is_env_var_blacklisted,
-    load_env_blacklist,
-    run_command,
-    safe_copy,
-    safe_move,
-)
+from ldm_core.utils import is_env_var_blacklisted, load_env_blacklist, run_command
 
 
 class WorkspaceHandler(BaseHandler):
@@ -37,18 +27,89 @@ class WorkspaceHandler(BaseHandler):
         self.non_interactive = getattr(args, "non_interactive", False)
 
     def cmd_init(self, project_id=None):
-        """Scaffolds a project without starting it."""
-        # Set the no_up flag on args to ensure it doesn't try to start
-        self.args.no_up = True
+        """Scaffolds a new project from a template."""
+        template_name = getattr(self.args, "template", "basic")
+        is_interactive = getattr(self.args, "interactive", False)
 
-        UI.info(f"Initializing project shell: {project_id or 'interactively'}")
-        self.cmd_run(project_id)
-        UI.success(
-            "Initialization complete. You can now run 'ldm doctor' or 'ldm run'."
-        )
+        UI.heading(f"LDM Project Initialization ({template_name})")
+
+        # 1. Resolve Target Path
+        if not project_id:
+            if is_interactive:
+                project_id = UI.ask("Enter project name", "my-liferay-project")
+            else:
+                UI.die("Project name is required. Use 'ldm init <name>'.")
+
+        root = Path.cwd() / project_id
+        if root.exists():
+            if not UI.confirm(
+                f"Directory '{project_id}' already exists. Overwrite missing assets?",
+                "N",
+            ):
+                return
+        else:
+            root.mkdir(parents=True)
+
+        # 2. Resolve Template Source
+        template_root = SCRIPT_DIR / "references" / "templates" / template_name
+        if not template_root.exists():
+            UI.die(f"Template '{template_name}' not found in {template_root}")
+
+        # 3. Collect Metadata
+        meta = {}
+        # Load defaults from template if they exist
+        template_meta_path = template_root / "meta"
+        if template_meta_path.exists():
+            for line in template_meta_path.read_text().splitlines():
+                if "=" in line:
+                    k, v = line.split("=", 1)
+                    meta[k.strip()] = v.strip()
+
+        if is_interactive:
+            meta["tag"] = UI.ask("Liferay Tag", meta.get("tag", "2026.q1.4-lts"))
+            meta["db_type"] = UI.ask(
+                "Database Type (hypersonic, postgresql, mysql)",
+                meta.get("db_type", "hypersonic"),
+            )
+            meta["port"] = UI.ask("Port", meta.get("port", "8082"))
+            meta["host_name"] = UI.ask("Virtual Hostname", "localhost")
+        else:
+            # Apply CLI overrides if provided
+            if getattr(self.args, "tag", None):
+                meta["tag"] = self.args.tag
+            if getattr(self.args, "db", None):
+                meta["db_type"] = self.args.db
+            if getattr(self.args, "host_name", None):
+                meta["host_name"] = self.args.host_name
+
+        # Ensure container_name matches project_id by default
+        if "container_name" not in meta:
+            meta["container_name"] = project_id
+
+        # 4. Provision Assets
+        UI.info(f"Provisioning project assets in {root}...")
+        for item in template_root.iterdir():
+            if item.name == "meta":
+                continue
+            dest = root / item.name
+            if item.is_dir():
+                if not dest.exists():
+                    shutil.copytree(item, dest)
+            elif not dest.exists():
+                shutil.copy2(item, dest)
+
+        # 5. Write Meta
+        meta_content = "\n".join([f"{k}={v}" for k, v in meta.items()])
+        (root / "meta").write_text(meta_content)
+
+        UI.success(f"Project '{project_id}' initialized successfully.")
+        UI.info("Next steps:")
+        print(f"  1. cd {project_id}")
+        print("  2. ldm doctor")
+        print("  3. ldm run .")
 
     def _parse_client_extension_yaml(self, content):
-        info: dict[str, Any] = {"type": None, "oauth_erc": None}
+        info = {"type": None, "oauth_erc": None}
         type_match = re.search(r"^\s*type:\s*(\w+)", content, re.MULTILINE)
         if type_match:
             info["type"] = type_match.group(1).strip()
@@ -80,7 +141,7 @@ class WorkspaceHandler(BaseHandler):
         return None
 
     def _parse_lcp_json(self, content, context_name=None):
-        info: dict[str, Any] = {
+        info = {
             "id": None,
             "kind": None,
             "deploy": True,  # Default to True if not specified
@@ -117,7 +178,7 @@ class WorkspaceHandler(BaseHandler):
                     UI.warning(f"{header}: {status}")
                     if errors:
                         for err in errors:
-                            UI.raw(f"  {UI.YELLOW}⚠{UI.COLOR_OFF} {err}")
+                            print(f"  {UI.YELLOW}⚠{UI.COLOR_OFF} {err}")
             finally:
                 if tf_path.exists():
                     tf_path.unlink()
@@ -137,8 +198,7 @@ class WorkspaceHandler(BaseHandler):
                 if k in data:
                     info[k] = data[k]
             info["has_load_balancer"] = "loadBalancer" in data or any(
-                p.get("external")
-                for p in cast(list[dict[str, Any]], info.get("ports", []))
+                p.get("external") for p in info["ports"]
             )
             env = data.get("env", {})
             info["env"] = env
@@ -149,7 +209,7 @@ class WorkspaceHandler(BaseHandler):
         return info
 
     def _scan_extension_metadata(self, folder_path=None, zip_ref=None):
-        info: dict[str, Any] = {
+        info = {
             "id": None,
             "type": None,
             "kind": None,
@@ -171,15 +231,15 @@ class WorkspaceHandler(BaseHandler):
                     if k == "has_load_balancer":
                         info[k] = info[k] or new_info[k]
                     elif k == "ports" and new_info[k]:
-                        cast(list, info[k]).extend(new_info[k])
+                        info[k].extend(new_info[k])
                     elif k == "loadBalancer" and new_info[k]:
                         if info[k] is None:
                             info[k] = {}
-                        cast(dict, info[k]).update(new_info[k])
+                        info[k].update(new_info[k])
                     else:
                         info[k] = new_info[k]
             if new_info.get("env"):
-                cast(dict, info["env"]).update(new_info["env"])
+                info["env"].update(new_info["env"])
 
         if zip_ref:
             for f in zip_ref.namelist():
@@ -224,7 +284,7 @@ class WorkspaceHandler(BaseHandler):
         return info
 
     def scan_client_extensions(self, root_dir, osgi_cx_dir, ce_build_dir):
-        extensions: list[dict[str, Any]] = []
+        extensions = []
         if not root_dir.exists():
             return extensions
 
@@ -255,7 +315,7 @@ class WorkspaceHandler(BaseHandler):
                     pass
 
                 if not is_same:
-                    safe_copy(item, root_zip_copy)
+                    shutil.copy2(item, root_zip_copy)
 
                 with zipfile.ZipFile(root_zip_copy, "r") as zip_ref:
                     ext_info = self._scan_extension_metadata(zip_ref=zip_ref)
@@ -294,7 +354,7 @@ class WorkspaceHandler(BaseHandler):
                         if not is_same_dest:
                             if dest_zip.exists():
                                 os.remove(dest_zip)
-                            safe_copy(root_zip_copy, dest_zip)
+                            shutil.copy2(root_zip_copy, dest_zip)
 
                         extensions.append(
                             {
@@ -353,7 +413,7 @@ class WorkspaceHandler(BaseHandler):
         return extensions
 
     def scan_standalone_services(self, root_path):
-        services: list[dict[str, Any]] = []
+        services = []
         services_dir = root_path / "services"
         if not services_dir.exists():
             return services
@@ -451,7 +511,7 @@ class WorkspaceHandler(BaseHandler):
                         if not overwrite and dest.exists():
                             UI.info(f"  - Skipping existing module: {jar.name}")
                             continue
-                        safe_copy(jar, dest)
+                        shutil.copy2(jar, dest)
                         UI.info(f"  + Synced {folder.capitalize()[:-1]}: {jar.name}")
 
         # 3. Sync Fragments (ZIPs)
@@ -471,7 +531,7 @@ class WorkspaceHandler(BaseHandler):
                                     f"  - Skipping existing fragment: {zip_file.name}"
                                 )
                                 continue
-                            safe_copy(zip_file, dest)
+                            shutil.copy2(zip_file, dest)
                             UI.info(f"  + Synced Fragment: {zip_file.name}")
                         else:
                             # If it's a ZIP in fragments but not a fragment, try syncing as CX
@@ -494,7 +554,7 @@ class WorkspaceHandler(BaseHandler):
             return
 
         if zip_path.resolve() != root_zip_path.resolve():
-            safe_copy(zip_path, root_zip_path)
+            shutil.copy2(zip_path, root_zip_path)
         # Step 2: Expand ZIP in root for Docker builds
         try:
             with zipfile.ZipFile(root_zip_path, "r") as zip_ref:
@@ -527,7 +587,7 @@ class WorkspaceHandler(BaseHandler):
                     os.remove(root_zip_path)
                 return
             os.remove(dest_zip)
-        safe_move(str(root_zip_path), str(dest_zip))
+        shutil.move(str(root_zip_path), str(dest_zip))
 
     def cmd_init_from(self, source_path):
         """Initialize project with a persistent link to a source workspace and start monitoring."""
@@ -673,7 +733,10 @@ class WorkspaceHandler(BaseHandler):
 
             # SSL Rule: Default to True only if host_name is NOT localhost
             ssl_arg = getattr(self.args, "ssl", None)
-            use_ssl = ssl_arg if ssl_arg is not None else host_name != "localhost"
+            if ssl_arg is not None:
+                use_ssl = ssl_arg
+            else:
+                use_ssl = host_name != "localhost"
 
             if (
                 use_ssl
@@ -748,7 +811,7 @@ class WorkspaceHandler(BaseHandler):
             if config_src.exists():
                 pe = config_src / "portal-ext.properties"
                 if pe.exists():
-                    safe_copy(pe, paths["files"] / "portal-ext.properties")
+                    shutil.copy2(pe, paths["files"] / "portal-ext.properties")
                     UI.success("Imported portal-ext.properties")
                 osgi_src = config_src / "osgi" / "configs"
                 if osgi_src.exists():
@@ -756,7 +819,7 @@ class WorkspaceHandler(BaseHandler):
                     for f in list(osgi_src.glob("*.config")) + list(
                         osgi_src.glob("*.cfg")
                     ):
-                        safe_copy(f, paths["configs"] / f.name)
+                        shutil.copy2(f, paths["configs"] / f.name)
                         count += 1
                     if count > 0:
                         UI.success(f"Imported {count} OSGi configs.")
@@ -767,7 +830,7 @@ class WorkspaceHandler(BaseHandler):
                     return 0
 
                 # Check root of search_base
-                zips_at_root = list(search_base.glob("*.zip"))
+                root_zips = list(search_base.glob("*.zip"))
 
                 # Check subdirectories
                 ext_folders = [
@@ -776,12 +839,12 @@ class WorkspaceHandler(BaseHandler):
                     if f.is_dir() and not f.name.startswith(".")
                 ]
 
-                nested_zips: list[Path] = []
+                nested_zips = []
                 for folder in ext_folders:
                     nested_zips.extend(list(folder.glob("dist/*.zip")))
                     nested_zips.extend(list(folder.glob("*.zip")))
 
-                for z in list(set(zips_at_root + nested_zips)):
+                for z in list(set(root_zips + nested_zips)):
                     if label == "Fragment":
                         try:
                             with zipfile.ZipFile(z, "r") as zip_ref:
@@ -799,7 +862,7 @@ class WorkspaceHandler(BaseHandler):
                         UI.debug(f"Skipping existing {label}: {z.name}")
                         continue
 
-                    safe_copy(z, target_file)
+                    shutil.copy2(z, target_file)
                     count += 1
                 return count
 
@@ -825,7 +888,7 @@ class WorkspaceHandler(BaseHandler):
                                         x in f.name.lower()
                                         for x in ["-sources", "-javadoc", "-tests"]
                                     ):
-                                        safe_copy(f, paths["modules"] / f.name)
+                                        shutil.copy2(f, paths["modules"] / f.name)
 
             if is_cloud:
                 infra_dirs = [
@@ -848,7 +911,7 @@ class WorkspaceHandler(BaseHandler):
                         dest = paths["root"] / "services" / item.name
                         if dest.exists():
                             self.safe_rmtree(dest)
-                        shutil.copytree(item, dest, copy_function=safe_copy)
+                        shutil.copytree(item, dest)
 
             backup_dir_path = getattr(self.args, "backup_dir", None)
             if backup_dir_path:
@@ -943,10 +1006,13 @@ class WorkspaceHandler(BaseHandler):
                 if p.suffix.lower() == ".zip":
                     if "client-extensions" in p.parts or "fragments" in p.parts:
                         is_valid = True
-                elif p.suffix.lower() in [".jar", ".war"] and (
-                    "modules" in p.parts and "build" in p.parts and "libs" in p.parts
-                ):
-                    is_valid = True
+                elif p.suffix.lower() in [".jar", ".war"]:
+                    if (
+                        "modules" in p.parts
+                        and "build" in p.parts
+                        and "libs" in p.parts
+                    ):
+                        is_valid = True
 
                 if is_valid:
                     if self.manager.verbose:
@@ -986,7 +1052,7 @@ class WorkspaceHandler(BaseHandler):
                         # JARs for Liferay modules (sync to deploy)
                         dest_path = self.paths["deploy"] / f.name
                         UI.info(f"Syncing Module: {f.name}")
-                        safe_copy(f, dest_path)
+                        shutil.copy2(f, dest_path)
 
                 # 3. Trigger deployment from the project's internal state
                 if updated_services:
@@ -1007,7 +1073,7 @@ class WorkspaceHandler(BaseHandler):
             try:
                 import resource
 
-                _soft, hard = resource.getrlimit(resource.RLIMIT_NOFILE)
+                soft, hard = resource.getrlimit(resource.RLIMIT_NOFILE)
 
                 # Try to set a generous limit (e.g., 4096)
                 new_soft = min(hard, 4096)
