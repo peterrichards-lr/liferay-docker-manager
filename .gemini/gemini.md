@@ -56,7 +56,9 @@
 - **Branching Separation**:
   - **`master` / `main`**: Strictly for environmental hardening, stable maintenance, and verified hotfixes.
   - **Roadmap Items**: All large roadmap items, complex features, or experimental refactors MUST be developed in dedicated feature branches (e.g., `roadmap/feature-name`).
-  - Merge roadmap branches to `master` only after full verification and peer approval.
+  - **Branch Independence**: Roadmap branches MUST remain independent of each other. Never merge one roadmap branch into another. This ensures they can be verified and merged into `master` in any order.
+  - **Active Sync**: While a roadmap branch is active, it MUST be periodically synchronized with the latest changes from `master` (via rebase or merge). This prevents code from going stale and minimizes future merge friction.
+  - **Explicit Merge**: Roadmap branches MUST NOT be merged into `master` until full verification is complete and the user has provided an explicit request to merge.
   - **Cleanup**: Delete feature branches immediately after a successful merge to `master`.
 - **Pre-Change State Persistence**: Before performing ANY file modification (code, documentation, or configuration), I MUST update the `Gemini Added Memories` section of this file with a detailed `<plan>` or task summary to ensure state is persisted in case of an interruption.
 
