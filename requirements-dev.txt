@@ -3,5 +3,6 @@ pre-commit
 bandit
 pip-audit
 pytest
+pytest-cov
 shiv
 pyinstaller
