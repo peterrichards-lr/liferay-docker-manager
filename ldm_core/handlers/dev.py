@@ -1,4 +1,5 @@
 import os
+import platform
 import re
 import signal
 import sys
@@ -11,6 +12,60 @@ from ldm_core.ui import UI
 
 class DevHandler(BaseHandler):
     """Handler for development-only utilities (versioning, internal tools)."""
+
+    def cmd_dev_setup(self):
+        """Initializes the local development environment (venv, dependencies, hooks)."""
+        self._ensure_dev_env()
+
+        UI.heading("LDM Developer Environment Setup")
+        root = Path.cwd()
+
+        # 1. Create Virtual Environment
+        venv_dir = root / ".venv"
+        if not venv_dir.exists():
+            UI.info("Creating virtual environment (.venv)...")
+            from ldm_core.utils import run_command
+
+            run_command([sys.executable, "-m", "venv", ".venv"])
+            UI.success("Virtual environment created.")
+        else:
+            UI.info("Virtual environment already exists.")
+
+        # 2. Identify venv python/pip
+        if platform.system().lower() == "windows":
+            venv_python = venv_dir / "Scripts" / "python.exe"
+            venv_pip = venv_dir / "Scripts" / "pip.exe"
+        else:
+            venv_python = venv_dir / "bin" / "python3"
+            venv_pip = venv_dir / "bin" / "pip"
+
+        if not venv_python.exists():
+            UI.die(f"Could not find python in venv: {venv_python}")
+
+        # 3. Install Dependencies
+        UI.info("Installing dependencies...")
+        from ldm_core.utils import run_command
+
+        run_command([str(venv_pip), "install", "--upgrade", "pip"])
+        run_command([str(venv_pip), "install", "-r", "requirements.txt"])
+        run_command([str(venv_pip), "install", "-r", "requirements-dev.txt"])
+        run_command([str(venv_pip), "install", "-e", "."])
+        UI.success("Dependencies installed.")
+
+        # 4. Install pre-commit hooks
+        UI.info("Registering pre-commit hooks...")
+        run_command([str(venv_python), "-m", "pre-commit", "install"])
+        UI.success("Pre-commit hooks registered.")
+
+        UI.success("\n✅ Development environment is ready!")
+        if platform.system().lower() == "windows":
+            UI.info(
+                f"To activate, run: {UI.CYAN}.\\.venv\\Scripts\\activate{UI.COLOR_OFF}"
+            )
+        else:
+            UI.info(
+                f"To activate, run: {UI.CYAN}source .venv/bin/activate{UI.COLOR_OFF}"
+            )
 
     def _ensure_dev_env(self):
         """Verifies that we are running in a git clone with source files available."""

@@ -372,6 +372,11 @@ def get_parser():
         action="store_true",
         help="Automatically fix missing entries in /etc/hosts",
     )
+    doctor.add_argument(
+        "--bundle",
+        action="store_true",
+        help="Generate a sanitized debug bundle for troubleshooting",
+    )
 
     # Command: fix-hosts (Legacy support/Direct access)
     fh = subparsers.add_parser("fix-hosts", parents=[base_sub_parent])
@@ -486,6 +491,8 @@ def get_parser():
         action="store_true",
         help="Promote the current beta to a stable release",
     )
+
+    subparsers.add_parser("dev-setup", parents=[base_sub_parent])
 
     return parser, subparsers
 
@@ -692,6 +699,7 @@ def main():
             check=args.check,
             print_only=args.print,
         ),
+        "dev-setup": manager.cmd_dev_setup,
     }
 
     if args.command in cmds:
