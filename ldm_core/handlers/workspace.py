@@ -243,7 +243,7 @@ class WorkspaceHandler(BaseHandler):
                     pass
 
                 if not is_same:
-                    shutil.copy2(item, root_zip_copy)
+                    shutil.copy(item, root_zip_copy)
 
                 with zipfile.ZipFile(root_zip_copy, "r") as zip_ref:
                     ext_info = self._scan_extension_metadata(zip_ref=zip_ref)
@@ -282,7 +282,7 @@ class WorkspaceHandler(BaseHandler):
                         if not is_same_dest:
                             if dest_zip.exists():
                                 os.remove(dest_zip)
-                            shutil.copy2(root_zip_copy, dest_zip)
+                            shutil.copy(root_zip_copy, dest_zip)
 
                         extensions.append(
                             {
@@ -439,7 +439,7 @@ class WorkspaceHandler(BaseHandler):
                         if not overwrite and dest.exists():
                             UI.info(f"  - Skipping existing module: {jar.name}")
                             continue
-                        shutil.copy2(jar, dest)
+                        shutil.copy(jar, dest)
                         UI.info(f"  + Synced {folder.capitalize()[:-1]}: {jar.name}")
 
         # 3. Sync Fragments (ZIPs)
@@ -459,7 +459,7 @@ class WorkspaceHandler(BaseHandler):
                                     f"  - Skipping existing fragment: {zip_file.name}"
                                 )
                                 continue
-                            shutil.copy2(zip_file, dest)
+                            shutil.copy(zip_file, dest)
                             UI.info(f"  + Synced Fragment: {zip_file.name}")
                         else:
                             # If it's a ZIP in fragments but not a fragment, try syncing as CX
@@ -482,7 +482,7 @@ class WorkspaceHandler(BaseHandler):
             return
 
         if zip_path.resolve() != root_zip_path.resolve():
-            shutil.copy2(zip_path, root_zip_path)
+            shutil.copy(zip_path, root_zip_path)
         # Step 2: Expand ZIP in root for Docker builds
         try:
             with zipfile.ZipFile(root_zip_path, "r") as zip_ref:
@@ -739,7 +739,7 @@ class WorkspaceHandler(BaseHandler):
             if config_src.exists():
                 pe = config_src / "portal-ext.properties"
                 if pe.exists():
-                    shutil.copy2(pe, paths["files"] / "portal-ext.properties")
+                    shutil.copy(pe, paths["files"] / "portal-ext.properties")
                     UI.success("Imported portal-ext.properties")
                 osgi_src = config_src / "osgi" / "configs"
                 if osgi_src.exists():
@@ -747,7 +747,7 @@ class WorkspaceHandler(BaseHandler):
                     for f in list(osgi_src.glob("*.config")) + list(
                         osgi_src.glob("*.cfg")
                     ):
-                        shutil.copy2(f, paths["configs"] / f.name)
+                        shutil.copy(f, paths["configs"] / f.name)
                         count += 1
                     if count > 0:
                         UI.success(f"Imported {count} OSGi configs.")
@@ -790,7 +790,7 @@ class WorkspaceHandler(BaseHandler):
                         UI.debug(f"Skipping existing {label}: {z.name}")
                         continue
 
-                    shutil.copy2(z, target_file)
+                    shutil.copy(z, target_file)
                     count += 1
                 return count
 
@@ -816,7 +816,7 @@ class WorkspaceHandler(BaseHandler):
                                         x in f.name.lower()
                                         for x in ["-sources", "-javadoc", "-tests"]
                                     ):
-                                        shutil.copy2(f, paths["modules"] / f.name)
+                                        shutil.copy(f, paths["modules"] / f.name)
 
             if is_cloud:
                 infra_dirs = [
@@ -980,7 +980,7 @@ class WorkspaceHandler(BaseHandler):
                         # JARs for Liferay modules (sync to deploy)
                         dest_path = self.paths["deploy"] / f.name
                         UI.info(f"Syncing Module: {f.name}")
-                        shutil.copy2(f, dest_path)
+                        shutil.copy(f, dest_path)
 
                 # 3. Trigger deployment from the project's internal state
                 if updated_services:

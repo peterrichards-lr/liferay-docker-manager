@@ -280,9 +280,9 @@ def safe_write_text(path, content, encoding="utf-8"):
                 return
             except (OSError, PermissionError) as e:
                 if i == max_retries - 1:
-                    # Final attempt: manual copy and unlink
+                    # Final attempt: manual copy and unlink (robust for cross-user permissions)
                     try:
-                        shutil.copy2(tmp_path, path)
+                        shutil.copyfile(tmp_path, path)
                         tmp_path.unlink()
                         return
                     except Exception:
@@ -652,7 +652,7 @@ def write_meta(path, meta):
                 if i == max_retries - 1:
                     # Final attempt: manual copy and unlink (robust for cross-user permissions)
                     try:
-                        shutil.copy2(tmp_path, path)
+                        shutil.copyfile(tmp_path, path)
                         tmp_path.unlink()
                         break
                     except Exception:

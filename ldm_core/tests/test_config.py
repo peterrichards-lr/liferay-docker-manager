@@ -69,7 +69,7 @@ class TestConfigManagement(unittest.TestCase):
                 # Even if common/ doesn't exist, host_updates should be applied
                 mock_update.assert_called_with(target_ext, host_updates)
 
-    @patch("ldm_core.handlers.config.shutil.copy2")
+    @patch("ldm_core.handlers.config.shutil.copy")
     @patch("pathlib.Path.mkdir")
     @patch("ldm_core.utils.safe_write_text")
     def test_sync_common_assets_dir_creation(self, mock_write, mock_mkdir, mock_copy):

@@ -390,7 +390,7 @@ class ConfigHandler(BaseHandler):
                         target_ext.parent.mkdir(parents=True, exist_ok=True)
                     except (PermissionError, OSError):
                         pass
-                    shutil.copy2(common_ext, target_ext)
+                    shutil.copy(common_ext, target_ext)
 
                 else:
                     # Robust extraction of project and common properties
