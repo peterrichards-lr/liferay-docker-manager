@@ -60,15 +60,22 @@ ldm --version
 
 ## 2. Manual Installation (Development)
 
-Clone this repository and use the provided wrapper script for your platform. The wrapper will automatically set up a local Python virtual environment and install the required dependencies on its first run.
+To contribute to LDM or run it from source, clone the repository and use the built-in developer utility to set up your environment:
 
 ### macOS / Linux / WSL2
 
 ```bash
-
 git clone https://github.com/peterrichards-lr/liferay-docker-manager.git
 cd liferay-docker-manager
-./ldm --help
+
+# Initialize the dev environment (venv, dependencies, hooks)
+python3 liferay_docker.py dev-setup
+
+# Activate the environment
+source .venv/bin/activate
+
+# Verify
+ldm --help
 ```
 
 ### Windows
@@ -76,8 +83,15 @@ cd liferay-docker-manager
 ```powershell
 git clone https://github.com/peterrichards-lr/liferay-docker-manager.git
 cd liferay-docker-manager
-# Note: On Windows, use the ldm.bat wrapper or the local python script
-.\ldm.bat --help
+
+# Initialize the dev environment
+python3 liferay_docker.py dev-setup
+
+# Activate the environment
+.\.venv\Scripts\activate
+
+# Verify
+ldm --help
 ```
 
 ---

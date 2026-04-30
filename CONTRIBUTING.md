@@ -47,9 +47,23 @@ We encourage the use of AI to help improve LDM.
 
 ## 🛠️ Development Environment
 
-- **Python**: 3.12+ recommended.
+The easiest way to set up your environment is to use the built-in developer utility:
+
+```bash
+# Clone the repository
+git clone https://github.com/peterrichards-lr/liferay-docker-manager.git
+cd liferay-docker-manager
+
+# Initialize the dev environment (venv, dependencies, hooks)
+python3 liferay_docker.py dev-setup
+
+# Activate the environment
+source .venv/bin/activate
+```
+
+- **Python**: 3.11+ recommended.
 - **Docker**: Required for runtime testing.
-- **Pre-commit**: We use pre-commit hooks to ensure code quality.
+- **Pre-commit**: Automatically installed by `dev-setup`. We use hooks to ensure code quality.
 
 ## 📜 Commit Message Conventions
 

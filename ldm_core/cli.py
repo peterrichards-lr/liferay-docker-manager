@@ -487,6 +487,8 @@ def get_parser():
         help="Promote the current beta to a stable release",
     )
 
+    subparsers.add_parser("dev-setup", parents=[base_sub_parent])
+
     return parser, subparsers
 
 
@@ -692,6 +694,7 @@ def main():
             check=args.check,
             print_only=args.print,
         ),
+        "dev-setup": manager.cmd_dev_setup,
     }
 
     if args.command in cmds:
