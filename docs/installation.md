@@ -666,6 +666,18 @@ LDM binaries use **"Magic Byte" detection** to accurately report their checksum 
 
 We maintain "Tier 1" support for the following physical lab configurations:
 
+| Environment Type | Host OS | Docker Provider | Lab Hardware |
+| :--- | :--- | :--- | :--- |
+| **Legacy/Intel Mac** | macOS 12 Monterey | Colima | Apple Intel Core i7 (16GB) |
+| **Standard Mac** | macOS 15 Sequoia | Colima | Apple M1 Pro (32GB) |
+| **Modern Mac** | macOS 26 Tahoe | Colima | Apple M3 Max (36GB) |
+| **Modern Mac** | macOS 26 Tahoe | OrbStack | Apple M3 Max (36GB) |
+| **Linux Workstation** | Fedora 43 | Native Docker | MacBook Pro 11,3 (Intel i7) |
+| **Corporate Windows** | Windows 11 | Docker Desktop | Intel i7-7800X (16GB) |
+| **Corporate Windows** | Windows 11 | Native WSL2 | Intel i7-7800X (16GB) |
+
+### Latest Verification Results
+
 <!-- COMPATIBILITY_START -->
 | Architecture | Host OS | Docker Provider | Hardening | Verified | Report |
 | :--- | :--- | :--- | :--- | :--- | :--- |
