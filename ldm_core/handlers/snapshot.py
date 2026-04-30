@@ -214,6 +214,7 @@ class SnapshotHandler(BaseHandler):
                     get_actual_home() / ".ldm" / "infra" / "search" / "backup"
                 )
                 if es_infra_backup.exists():
+                    self._reclaim_permissions(es_infra_backup)
                     tar.add(es_infra_backup, arcname="search_backup")
 
         # Capture custom environment variables from docker-compose.yml

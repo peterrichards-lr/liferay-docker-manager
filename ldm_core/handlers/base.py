@@ -976,6 +976,9 @@ class BaseHandler:
                     "portal_log4j",
                     "files",
                     "configs",
+                    "backups",
+                    "cx",
+                    "routes",
                 ]:
                     if v in paths and paths[v].exists():
                         self._reclaim_permissions(paths[v])
