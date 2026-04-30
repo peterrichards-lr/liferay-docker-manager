@@ -289,7 +289,7 @@ jobs:
             **Windows (PowerShell):**
             ```powershell
             New-Item -ItemType Directory -Force -Path "$HOME\bin"
-            Invoke-WebRequest -Uri "https://github.com/peterrichards-lr/liferay-docker-manager/releases/${{ steps.check_release.outputs.is_release == 'true' && 'latest/download' || format('download/{0}', github.ref_name) }}/ldm.exe" -OutFile "$HOME\bin\ldm.exe"
+            Invoke-WebRequest -Uri "https://github.com/peterrichards-lr/liferay-docker-manager/releases/${{ steps.check_release.outputs.is_release == 'true' && 'latest/download' || format('download/{0}', github.ref_name) }}/ldm-windows.exe" -OutFile "$HOME\bin\ldm.exe"
             ```
           draft: false
           prerelease: ${{ steps.check_release.outputs.is_release != 'true' }}
