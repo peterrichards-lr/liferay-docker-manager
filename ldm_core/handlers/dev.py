@@ -150,15 +150,18 @@ class DevHandler(BaseHandler):
             new_version = f"{major}.{minor + 1}.0"
         elif bump_type == "patch":
             new_version = f"{major}.{minor}.{patch + 1}"
-        elif bump_type == "beta":
-            if pre_release and "beta" in pre_release:
-                # Increment beta number
-                beta_match = re.search(r"(\d+)", pre_release)
-                beta_num = int(beta_match.group(1)) if beta_match else 0
-                new_version = f"{base_version}-beta.{beta_num + 1}"
+        elif bump_type in ["beta", "pre"]:
+            if pre_release and re.search(r"(beta|pre)", pre_release):
+                # Increment pre-release number
+                pre_match = re.search(r"(\d+)", pre_release)
+                pre_num = int(pre_match.group(1)) if pre_match else 0
+                # Preserve the existing prefix (beta or pre)
+                prefix_match = re.search(r"(beta|pre)", pre_release)
+                prefix = prefix_match.group(1) if prefix_match else "pre"
+                new_version = f"{base_version}-{prefix}.{pre_num + 1}"
             else:
-                # Start new beta cycle for next patch
-                new_version = f"{major}.{minor}.{patch + 1}-beta.1"
+                # Start new pre-release cycle for next patch
+                new_version = f"{major}.{minor}.{patch + 1}-pre.1"
         else:
             UI.die(f"Invalid bump type: {bump_type}")
 

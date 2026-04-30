@@ -16,18 +16,18 @@ class TestUtils(unittest.TestCase):
         self.assertEqual(version, "1.6.11")
 
     def test_version_to_tuple(self):
-        # 1. Stable versions (use 999 sentinel for precedence)
-        self.assertEqual(version_to_tuple("2.4.25"), (2, 4, 25, 999))
-        self.assertEqual(version_to_tuple("v2.4.25"), (2, 4, 25, 999))
-        self.assertEqual(version_to_tuple("2.4"), (2, 4, 0, 999))
-        self.assertEqual(version_to_tuple("2"), (2, 0, 0, 999))
+        # 1. Stable versions (assigned weight 999 to beat pre-releases)
+        self.assertEqual(version_to_tuple("2.4.26"), (2, 4, 26, 999))
+        self.assertEqual(version_to_tuple("v2.4.26"), (2, 4, 26, 999))
+        self.assertEqual(version_to_tuple("1.0"), (1, 0, 0, 999))
 
         # 2. Beta / Pre-release versions
-        self.assertEqual(version_to_tuple("2.4.26-beta.1"), (2, 4, 26, 1))
-        self.assertEqual(version_to_tuple("2.4.26-beta.2"), (2, 4, 26, 2))
-        self.assertEqual(version_to_tuple("2.4.26-beta.10"), (2, 4, 26, 10))
+        self.assertEqual(version_to_tuple("2.4.26-beta.1"), (2, 4, 26, 1, 1))
+        self.assertEqual(version_to_tuple("2.4.26-beta.2"), (2, 4, 26, 1, 2))
+        self.assertEqual(version_to_tuple("2.4.26-beta.10"), (2, 4, 26, 1, 10))
+        self.assertEqual(version_to_tuple("2.4.26-pre.1"), (2, 4, 26, 2, 1))
 
-        # 3. Comparison checks
+        # 3. Comparisons
         self.assertTrue(version_to_tuple("2.4.26-beta.1") > version_to_tuple("2.4.25"))
         self.assertTrue(version_to_tuple("2.4.26") > version_to_tuple("2.4.26-beta.1"))
         self.assertTrue(
@@ -35,6 +35,9 @@ class TestUtils(unittest.TestCase):
         )
         self.assertTrue(
             version_to_tuple("2.4.26-beta.10") > version_to_tuple("2.4.26-beta.9")
+        )
+        self.assertTrue(
+            version_to_tuple("2.4.26-pre.1") > version_to_tuple("2.4.26-beta.48")
         )
         self.assertTrue(version_to_tuple("1.6.0") > version_to_tuple("1.5.9"))
         self.assertFalse(version_to_tuple("2.4.25") > version_to_tuple("2.4.25"))

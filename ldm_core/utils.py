@@ -993,11 +993,18 @@ def version_to_tuple(v):
         # Otherwise, use a high sentinel (999) so stable > any beta.
         return (base_nums[0], base_nums[1], base_nums[2], 999)
     # Pre-release Logic
+    # We assign a weight to the prefix so 'pre' ranks higher than 'beta'
+    weight = 0
+    if "beta" in pre_part.lower():
+        weight = 1
+    elif "pre" in pre_part.lower():
+        weight = 2
+
     # Extract the first number from the pre-release string (e.g. 'beta.1' -> 1)
     pre_nums = [int(n) for n in re.findall(r"\d+", pre_part)]
     beta_num = pre_nums[0] if pre_nums else 0
     # Use the actual number, which is naturally < 999
-    return (base_nums[0], base_nums[1], base_nums[2], beta_num)
+    return (base_nums[0], base_nums[1], base_nums[2], weight, beta_num)
 
 
 def check_for_updates(current_version, force=False, pre_release=False):

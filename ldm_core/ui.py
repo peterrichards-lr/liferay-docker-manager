@@ -39,9 +39,13 @@ class UI:
         text = re.sub(kv_pattern, r"\1=[REDACTED]", str(text))
 
         # 2. Redact CLI password flags (e.g. -pPASSWORD or --password=secret)
-        # We are careful to only match -p if followed by characters (not just a space)
-        flag_pattern = r"(?i)(-p|--password=)([^&\s]+)"
-        return re.sub(flag_pattern, r"\1[REDACTED]", text)
+        # Avoid matching '-pre' (our version suffix)
+        flag_pattern = r"(?i)(--password=)([^&\s]+)"
+        text = re.sub(flag_pattern, r"\1[REDACTED]", text)
+
+        # Explicitly handle MySQL -p flag (-pSecret) without matching -pre
+        p_pattern = r"(?i)(\s-p)(?!re\.)([^&\s]+)"
+        return re.sub(p_pattern, r"\1[REDACTED]", text)
 
     @staticmethod
     def _print(msg, color=None, icon=None, file=None):
