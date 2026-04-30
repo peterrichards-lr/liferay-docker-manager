@@ -423,16 +423,14 @@ For the best compatibility with Liferay and SSCE build processes, we recommend u
 colima start --cpu 4 --memory 8 --vm-type=vz --mount-type=virtiofs --mount /Users/$(whoami):w --mount /Volumes:w
 ```
 
-### 2. Recommended Start Command (Legacy Intel Mac)
+### 2. Supported Providers (Legacy Intel Mac / macOS 12)
 
-If you are running on an older Intel Mac (e.g. Early 2015 with 8GB RAM), use these settings to ensure Liferay has enough host memory to function. We recommend the `sshfs` mount type for older macOS versions (macOS 12 and below):
+If you are running on an older Intel Mac (macOS 12 and below), **Colima is explicitly unsupported** for LDM due to filesystem limitations (`sshfs` breaks write permissions, `9p` breaks Elasticsearch file locking).
 
-```bash
-# Optimized for Dual-Core Intel (8GB RAM)
-# Note: virtiofs requires macOS 14+, so older Macs must use sshfs
-colima stop
-colima start --cpu 2 --memory 6 --mount-type sshfs --mount /Users/$(whoami):w
-```
+For older macOS versions, you must use a provider that supports gRPC FUSE or `osxfs`:
+
+- **[Docker Desktop](https://www.docker.com/products/docker-desktop/)** (Recommended)
+- **[OrbStack](https://orbstack.dev/)** (Lightweight alternative)
 
 ### 3. The "Ghost Mount" Issue
 

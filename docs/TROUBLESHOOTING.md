@@ -77,35 +77,21 @@ If LDM cannot connect to infrastructure services:
 
 ### **macOS 12 Monterey (Intel): Read-Only Volumes**
 
-On older macOS versions (12.x and below) using the QEMU backend, standard `sshfs` mounts may appear as read-only to the `liferay` container user (UID 1000), even if they are writable by you.
+On older macOS versions (12.x and below), Colima relies on the QEMU backend which presents a "Catch-22" for Liferay Docker Manager:
 
-**Signs:**
+1. **`sshfs` mounts**: Appear as read-only to the `liferay` container user (UID 1000), preventing the project from starting and blocking snapshots.
+2. **`9p` mounts**: Allow write access but do **not** support POSIX file locking (`flock` / `fcntl`), causing databases like Elasticsearch to crash on boot with `AccessDeniedException` on `node.lock`.
 
-- Errors like `FATAL: VOLUME MOUNT IS READ-ONLY` during `ldm run`.
-- Permission denied errors when creating snapshots.
+Because LDM requires both writable bind mounts and POSIX file locking, **Colima on macOS 12 (Intel) is explicitly unsupported**.
 
-#### **Solution 1: Switch to sshfs Mounts (Recommended)**
+#### **Solution: Use Docker Desktop or OrbStack**
 
-The `9p` protocol does not support the POSIX file locking required by databases like Elasticsearch, leading to `AccessDeniedException` errors on boot. For macOS 12 and older Intel Macs, you must use `sshfs` with explicit write permissions (`:w`).
+To run LDM on macOS 12 Monterey, you must use a Docker provider that supports gRPC FUSE, `osxfs`, or a custom optimized filesystem:
 
-```bash
-colima stop
-colima start --mount-type sshfs --mount /Users/$(whoami):w
-```
+1. **[Docker Desktop](https://www.docker.com/products/docker-desktop/)** (Recommended for macOS 12)
+2. **[OrbStack](https://orbstack.dev/)** (Lightweight alternative)
 
-#### **Solution 2: Force Writable Flag**
-
-> [!TIP]
-> **How to determine your current mount type?**
-> You can check your active mount type by running `colima status`. Look for the `mountType` line in the output (e.g., `mountType: virtiofs` or `mountType: sshfs`). Alternatively, you can view your Colima configuration directly by running `colima start --edit` or inspecting `~/.colima/default/colima.yaml`.
-
-Ensure your Colima configuration explicitly enables write access. Run `colima start --edit` and ensure the `mounts` section is configured:
-
-```yaml
-mounts:
-  - location: /Users/[username]
-    writable: true
-```
+Once installed, simply uninstall Colima (`brew uninstall colima`) and start your new provider. LDM will detect it automatically.
 
 ---
 
