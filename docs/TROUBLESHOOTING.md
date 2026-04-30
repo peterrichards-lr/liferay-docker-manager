@@ -95,7 +95,11 @@ colima start --mount-type 9p --mount /Users/$(whoami):w
 
 #### **Solution 2: Force Writable Flag**
 
-Ensure your Colima configuration explicitly enables write access. Run `colima edit` and ensure the `mounts` section is configured:
+> [!TIP]
+> **How to determine your current mount type?**
+> You can check your active mount type by running `colima status`. Look for the `mountType` line in the output (e.g., `mountType: virtiofs` or `mountType: sshfs`). Alternatively, you can view your Colima configuration directly by running `colima start --edit` or inspecting `~/.colima/default/colima.yaml`.
+
+Ensure your Colima configuration explicitly enables write access. Run `colima start --edit` and ensure the `mounts` section is configured:
 
 ```yaml
 mounts:
