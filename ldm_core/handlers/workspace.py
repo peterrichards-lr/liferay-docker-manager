@@ -13,7 +13,13 @@ from datetime import datetime
 from ldm_core.ui import UI
 from ldm_core.handlers.base import BaseHandler
 from ldm_core.constants import SCRIPT_DIR
-from ldm_core.utils import run_command, load_env_blacklist, is_env_var_blacklisted
+from ldm_core.utils import (
+    run_command,
+    load_env_blacklist,
+    is_env_var_blacklisted,
+    safe_copy,
+    safe_move,
+)
 
 
 class WorkspaceHandler(BaseHandler):
@@ -243,7 +249,7 @@ class WorkspaceHandler(BaseHandler):
                     pass
 
                 if not is_same:
-                    shutil.copy(item, root_zip_copy)
+                    safe_copy(item, root_zip_copy)
 
                 with zipfile.ZipFile(root_zip_copy, "r") as zip_ref:
                     ext_info = self._scan_extension_metadata(zip_ref=zip_ref)
@@ -282,7 +288,7 @@ class WorkspaceHandler(BaseHandler):
                         if not is_same_dest:
                             if dest_zip.exists():
                                 os.remove(dest_zip)
-                            shutil.copy(root_zip_copy, dest_zip)
+                            safe_copy(root_zip_copy, dest_zip)
 
                         extensions.append(
                             {
@@ -439,7 +445,7 @@ class WorkspaceHandler(BaseHandler):
                         if not overwrite and dest.exists():
                             UI.info(f"  - Skipping existing module: {jar.name}")
                             continue
-                        shutil.copy(jar, dest)
+                        safe_copy(jar, dest)
                         UI.info(f"  + Synced {folder.capitalize()[:-1]}: {jar.name}")
 
         # 3. Sync Fragments (ZIPs)
@@ -459,7 +465,7 @@ class WorkspaceHandler(BaseHandler):
                                     f"  - Skipping existing fragment: {zip_file.name}"
                                 )
                                 continue
-                            shutil.copy(zip_file, dest)
+                            safe_copy(zip_file, dest)
                             UI.info(f"  + Synced Fragment: {zip_file.name}")
                         else:
                             # If it's a ZIP in fragments but not a fragment, try syncing as CX
@@ -482,7 +488,7 @@ class WorkspaceHandler(BaseHandler):
             return
 
         if zip_path.resolve() != root_zip_path.resolve():
-            shutil.copy(zip_path, root_zip_path)
+            safe_copy(zip_path, root_zip_path)
         # Step 2: Expand ZIP in root for Docker builds
         try:
             with zipfile.ZipFile(root_zip_path, "r") as zip_ref:
@@ -515,7 +521,7 @@ class WorkspaceHandler(BaseHandler):
                     os.remove(root_zip_path)
                 return
             os.remove(dest_zip)
-        shutil.move(str(root_zip_path), str(dest_zip))
+        safe_move(str(root_zip_path), str(dest_zip))
 
     def cmd_init_from(self, source_path):
         """Initialize project with a persistent link to a source workspace and start monitoring."""
@@ -739,7 +745,7 @@ class WorkspaceHandler(BaseHandler):
             if config_src.exists():
                 pe = config_src / "portal-ext.properties"
                 if pe.exists():
-                    shutil.copy(pe, paths["files"] / "portal-ext.properties")
+                    safe_copy(pe, paths["files"] / "portal-ext.properties")
                     UI.success("Imported portal-ext.properties")
                 osgi_src = config_src / "osgi" / "configs"
                 if osgi_src.exists():
@@ -747,7 +753,7 @@ class WorkspaceHandler(BaseHandler):
                     for f in list(osgi_src.glob("*.config")) + list(
                         osgi_src.glob("*.cfg")
                     ):
-                        shutil.copy(f, paths["configs"] / f.name)
+                        safe_copy(f, paths["configs"] / f.name)
                         count += 1
                     if count > 0:
                         UI.success(f"Imported {count} OSGi configs.")
@@ -790,7 +796,7 @@ class WorkspaceHandler(BaseHandler):
                         UI.debug(f"Skipping existing {label}: {z.name}")
                         continue
 
-                    shutil.copy(z, target_file)
+                    safe_copy(z, target_file)
                     count += 1
                 return count
 
@@ -816,7 +822,7 @@ class WorkspaceHandler(BaseHandler):
                                         x in f.name.lower()
                                         for x in ["-sources", "-javadoc", "-tests"]
                                     ):
-                                        shutil.copy(f, paths["modules"] / f.name)
+                                        safe_copy(f, paths["modules"] / f.name)
 
             if is_cloud:
                 infra_dirs = [
@@ -839,7 +845,7 @@ class WorkspaceHandler(BaseHandler):
                         dest = paths["root"] / "services" / item.name
                         if dest.exists():
                             self.safe_rmtree(dest)
-                        shutil.copytree(item, dest)
+                        shutil.copytree(item, dest, copy_function=safe_copy)
 
             backup_dir_path = getattr(self.args, "backup_dir", None)
             if backup_dir_path:
@@ -980,7 +986,7 @@ class WorkspaceHandler(BaseHandler):
                         # JARs for Liferay modules (sync to deploy)
                         dest_path = self.paths["deploy"] / f.name
                         UI.info(f"Syncing Module: {f.name}")
-                        shutil.copy(f, dest_path)
+                        safe_copy(f, dest_path)
 
                 # 3. Trigger deployment from the project's internal state
                 if updated_services:

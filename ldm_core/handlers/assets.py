@@ -6,7 +6,7 @@ import shutil
 import requests
 from ldm_core.ui import UI
 from ldm_core.handlers.base import BaseHandler
-from ldm_core.utils import get_actual_home
+from ldm_core.utils import get_actual_home, safe_move
 
 
 # Reference for reliable mocking in tests
@@ -258,7 +258,7 @@ class AssetHandler(BaseHandler):
                             shutil.rmtree(target)
                         else:
                             os.remove(target)
-                    shutil.move(str(item), str(target))
+                    safe_move(str(item), str(target))
 
                 shutil.rmtree(extract_temp)
 

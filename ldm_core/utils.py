@@ -297,6 +297,32 @@ def safe_write_text(path, content, encoding="utf-8"):
         raise e
 
 
+def safe_copy(src, dst):
+    """Copies a file safely, ignoring metadata preservation errors (EPERM/OSError)."""
+    try:
+        shutil.copyfile(src, dst)
+        # Try to copy permissions/mode, but ignore if it fails (common for cross-user files)
+        try:
+            shutil.copymode(src, dst)
+        except (OSError, PermissionError):
+            pass
+    except Exception as e:
+        raise e
+
+
+def safe_move(src, dst):
+    """Moves a file safely, handling cross-filesystem and permission nuances."""
+    try:
+        os.rename(src, dst)
+    except (OSError, PermissionError):
+        # Fallback to copy and delete if rename fails (e.g. cross-device or permission lock)
+        safe_copy(src, dst)
+        try:
+            os.unlink(src)
+        except (OSError, PermissionError):
+            pass
+
+
 def get_actual_home():
     """Returns the home directory of the real user, even when running with sudo."""
     import getpass

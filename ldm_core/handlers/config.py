@@ -8,7 +8,7 @@ from datetime import datetime
 from ldm_core.ui import UI
 from ldm_core.handlers.base import BaseHandler
 from ldm_core.constants import PROJECT_META_FILE, SCRIPT_DIR
-from ldm_core.utils import run_command, get_actual_home, safe_write_text
+from ldm_core.utils import run_command, get_actual_home, safe_write_text, safe_copy
 
 
 class ConfigHandler(BaseHandler):
@@ -266,7 +266,9 @@ class ConfigHandler(BaseHandler):
         """Sync global samples into the current project path with on-demand download support."""
         samples_root = self.get_samples_root()
         UI.info("Syncing project samples...")
-        shutil.copytree(samples_root, paths["root"], dirs_exist_ok=True)
+        shutil.copytree(
+            samples_root, paths["root"], dirs_exist_ok=True, copy_function=safe_copy
+        )
 
     def cmd_init_common(self):
         """Recreates the baseline common/ folder with standard development assets."""
@@ -390,7 +392,7 @@ class ConfigHandler(BaseHandler):
                         target_ext.parent.mkdir(parents=True, exist_ok=True)
                     except (PermissionError, OSError):
                         pass
-                    shutil.copy(common_ext, target_ext)
+                    safe_copy(common_ext, target_ext)
 
                 else:
                     # Robust extraction of project and common properties
@@ -504,13 +506,13 @@ class ConfigHandler(BaseHandler):
 
                     # Always copy if it doesn't exist
                     if not dest.exists():
-                        shutil.copy(match, dest)
+                        safe_copy(match, dest)
                         history.add(match.name)
                     # For OSGi configs, overwrite if it's a managed file (to apply baseline updates)
                     elif match.name in history and (
                         pattern.endswith("config") or pattern.endswith("cfg")
                     ):
-                        shutil.copy(match, dest)
+                        safe_copy(match, dest)
 
             from ldm_core.utils import safe_write_text
 

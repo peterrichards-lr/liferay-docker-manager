@@ -17,6 +17,7 @@ from ldm_core.utils import (
     verify_executable_checksum,
     strip_ansi,
     resolve_dependency_version,
+    safe_move,
 )
 
 
@@ -458,12 +459,11 @@ pause
                     os.chmod(temp_new, 0o755)  # nosec B103
                 except Exception:
                     pass
-                import shutil
 
                 try:
-                    # Use shutil.move instead of os.replace because it handles
+                    # Use safe_move instead of os.replace because it handles
                     # 'Invalid cross-device link' (Errno 18) by falling back to copy+unlink.
-                    shutil.move(str(temp_new), str(exe_path))
+                    safe_move(str(temp_new), str(exe_path))
                     UI.success(f"Successfully upgraded to v{latest}!")
                 except (PermissionError, OSError):
                     UI.info(

@@ -69,7 +69,7 @@ class TestConfigManagement(unittest.TestCase):
                 # Even if common/ doesn't exist, host_updates should be applied
                 mock_update.assert_called_with(target_ext, host_updates)
 
-    @patch("ldm_core.handlers.config.shutil.copy")
+    @patch("ldm_core.handlers.config.safe_copy")
     @patch("pathlib.Path.mkdir")
     @patch("ldm_core.utils.safe_write_text")
     def test_sync_common_assets_dir_creation(self, mock_write, mock_mkdir, mock_copy):
@@ -94,7 +94,7 @@ class TestConfigManagement(unittest.TestCase):
                 self.assertTrue(mock_mkdir.called)
                 self.assertTrue(mock_copy.called)
 
-    @patch("shutil.copy")
+    @patch("ldm_core.handlers.config.safe_copy")
     @patch("ldm_core.handlers.config.run_command")
     def test_sync_common_assets_es_substitution(self, mock_run, mock_copy):
         """Verifies that ES .config files are dynamically namespaced during sync."""

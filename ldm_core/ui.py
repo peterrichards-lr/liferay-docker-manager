@@ -116,11 +116,6 @@ class UI:
     @staticmethod
     def die(msg, details=None, tip=None):
         UI.error(msg, details, tip)
-        if details and not isinstance(details, str):
-            import traceback
-
-            UI.raw(f"\n{UI.WHITE}--- Debug Traceback ---{UI.COLOR_OFF}")
-            traceback.print_exc()
         sys.exit(1)
 
     @staticmethod
