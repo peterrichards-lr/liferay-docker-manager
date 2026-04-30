@@ -1,10 +1,10 @@
 import unittest
 from pathlib import Path
+from typing import Any, cast
 from unittest.mock import MagicMock, patch
-from ldm_core.handlers.composer import ComposerHandler
+
 from ldm_core.handlers.base import BaseHandler
-
-
+from ldm_core.handlers.composer import ComposerHandler
 from ldm_core.handlers.config import ConfigHandler
 
 
@@ -60,7 +60,7 @@ class TestComposer(unittest.TestCase):
             self.assertIn("-XX:MaxMetaspaceSize=1024m", args)
 
     def test_is_ssl_active_logic(self):
-        meta = {}
+        meta: dict[str, Any] = {}
         # Localhost should always be False
         self.assertFalse(self.composer._is_ssl_active("localhost", meta))
 
@@ -86,13 +86,13 @@ class TestComposer(unittest.TestCase):
         }
 
         with (
-            patch.object(Path, "write_text"),
+            patch("ldm_core.utils.safe_write_text"),
             patch.object(self.composer, "update_portal_ext"),
         ):
             self.composer.write_docker_compose(self.paths, meta)
 
             # Verify update_portal_ext was called for PostgreSQL
-            self.assertTrue(self.composer.update_portal_ext.called)
+            self.assertTrue(cast(MagicMock, self.composer.update_portal_ext).called)
 
             # Verify YAML generation
             compose_call_data = mock_yaml.call_args[0][0]
@@ -102,7 +102,7 @@ class TestComposer(unittest.TestCase):
     def test_jvm_opts_mandatory_opens(self):
         meta = {"jvm_args": "-Xmx4g"}
         with (
-            patch.object(Path, "write_text"),
+            patch("ldm_core.utils.safe_write_text"),
             patch.object(self.composer, "update_portal_ext"),
         ):
             # Capture the environment passed to the service

@@ -16,6 +16,7 @@ This file serves as the main entry point for the **Liferay Docker Manager (LDM)*
 
 ### UX & Hardening
 
+- **[Quality & Adoption Plan](./quality-adoption-plan.md)**: Hardening the linting/testing stack and improving onboarding.
 - **[Hardness & UX Refinements](./hardening-ux-plan.md)**: Port conflict detection, atomic writes, and fuzzy selection.
 - **[Samples Support](./samples-support.md)**: Initial implementation of the `--samples` switch.
 - **[On-Demand Sample Hydration](./on-demand-samples.md)**: Dynamic downloading of sample assets from GitHub.

@@ -1,7 +1,8 @@
 import unittest
-from unittest.mock import patch
 from pathlib import Path
-from ldm_core.utils import version_to_tuple, verify_executable_checksum
+from unittest.mock import patch
+
+from ldm_core.utils import verify_executable_checksum, version_to_tuple
 
 
 class TestUtils(unittest.TestCase):
@@ -121,8 +122,9 @@ class TestUtils(unittest.TestCase):
 
     def test_metadata_flat_file(self):
 
-        from ldm_core.utils import read_meta, write_meta
         import tempfile
+
+        from ldm_core.utils import read_meta, write_meta
 
         with tempfile.TemporaryDirectory() as tmp_dir:
             meta_path = Path(tmp_dir) / "project.meta"
@@ -137,9 +139,10 @@ class TestUtils(unittest.TestCase):
             self.assertEqual(read_data["key"], "value")
 
     def test_metadata_json(self):
-        from ldm_core.utils import read_meta
-        import tempfile
         import json
+        import tempfile
+
+        from ldm_core.utils import read_meta
 
         with tempfile.TemporaryDirectory() as tmp_dir:
             meta_path = Path(tmp_dir) / ".meta"
@@ -152,8 +155,9 @@ class TestUtils(unittest.TestCase):
 
     @patch("ldm_core.utils.get_actual_home")
     def test_find_dxp_roots(self, mock_home):
-        from ldm_core.utils import find_dxp_roots
         import tempfile
+
+        from ldm_core.utils import find_dxp_roots
 
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp_path = Path(tmp_dir)

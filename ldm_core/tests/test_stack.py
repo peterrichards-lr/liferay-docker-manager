@@ -1,19 +1,22 @@
-import unittest
-import yaml
-import tempfile
 import os
+import tempfile
+import unittest
 from pathlib import Path
+from typing import cast
 from unittest.mock import MagicMock, patch
-from ldm_core.handlers.composer import ComposerHandler
-from ldm_core.handlers.runtime import RuntimeHandler
+
+import yaml
+
 from ldm_core.handlers.assets import AssetHandler
-from ldm_core.handlers.infra import InfraHandler
-from ldm_core.handlers.workspace import WorkspaceHandler
-from ldm_core.handlers.license import LicenseHandler
-from ldm_core.handlers.snapshot import SnapshotHandler
 from ldm_core.handlers.base import BaseHandler
+from ldm_core.handlers.composer import ComposerHandler
 from ldm_core.handlers.config import ConfigHandler
 from ldm_core.handlers.diagnostics import DiagnosticsHandler
+from ldm_core.handlers.infra import InfraHandler
+from ldm_core.handlers.license import LicenseHandler
+from ldm_core.handlers.runtime import RuntimeHandler
+from ldm_core.handlers.snapshot import SnapshotHandler
+from ldm_core.handlers.workspace import WorkspaceHandler
 
 
 class MockManager(
@@ -34,21 +37,21 @@ class MockManager(
         self.verbose = False
         self.non_interactive = True
 
-        # Wrap methods for patching while keeping logic
-        self.run_command = MagicMock()
-        self.write_docker_compose = MagicMock(
+        self.run_command = MagicMock()  # type: ignore[method-assign]
+        self.write_docker_compose = MagicMock(  # type: ignore[method-assign]
             side_effect=ComposerHandler.write_docker_compose.__get__(self, MockManager)
         )
-        self.setup_ssl = MagicMock(
+        self.setup_ssl = MagicMock(  # type: ignore[method-assign]
             side_effect=InfraHandler.setup_ssl.__get__(self, MockManager)
         )
-        self.cmd_browser = MagicMock(
+        self.cmd_browser = MagicMock(  # type: ignore[method-assign]
             side_effect=RuntimeHandler.cmd_browser.__get__(self, MockManager)
         )
-        self.cmd_reset = MagicMock(
+        self.cmd_reset = MagicMock(  # type: ignore[method-assign]
             side_effect=RuntimeHandler.cmd_reset.__get__(self, MockManager)
         )
-        self.update_portal_ext = MagicMock()
+        self.get_container_status = MagicMock()  # type: ignore[method-assign]
+        self.update_portal_ext = MagicMock()  # type: ignore[method-assign]
 
     def get_host_passthrough_env(self, *args, **kwargs):
         return []
@@ -153,16 +156,18 @@ class TestStackInfrastructure(unittest.TestCase):
                 "",  # 2. docker run ...
                 "reclaimed_data",  # 3. _reclaim_permissions (data)
                 "reclaimed_backup",  # 4. _reclaim_permissions (backup)
-                '{"cluster_name": "liferay-cluster"}',  # 5. health check (readiness)
-                "OK",  # 6. PUT snapshot
-                "",  # 7. elasticsearch-plugin list
-                "OK",  # 8. install 1
-                "OK",  # 9. install 2
-                "OK",  # 10. install 3
-                "OK",  # 11. install 4
-                "OK",  # 12. docker restart
-                '{"cluster_name": "liferay-cluster"}',  # 13. health check after restart
-                "OK",  # 14. repo registration check (end of method)
+                "running",  # 5. status check (inspect)
+                '{"cluster_name": "liferay-cluster"}',  # 6. health check (readiness)
+                "OK",  # 7. PUT snapshot
+                "",  # 8. elasticsearch-plugin list
+                "OK",  # 9. install 1
+                "OK",  # 10. install 2
+                "OK",  # 11. install 3
+                "OK",  # 12. install 4
+                "OK",  # 13. docker restart
+                "running",  # 14. status check after restart
+                '{"cluster_name": "liferay-cluster"}',  # 15. health check after restart
+                "OK",  # 16. repo registration check (end of method)
             ]
 
             self.manager.setup_global_search()
@@ -218,10 +223,10 @@ class TestStackScaling(unittest.TestCase):
             "container_name": "scaled-test",
         }
 
-        with patch.object(Path, "write_text") as mock_write:
+        with patch("ldm_core.utils.safe_write_text") as mock_write:
             self.manager.write_docker_compose(self.paths, meta)
 
-            compose_data = yaml.safe_load(mock_write.call_args[0][0])
+            compose_data = yaml.safe_load(mock_write.call_args[0][1])
             liferay_service = compose_data["services"]["liferay"]
 
             # SCALE MANDATE: Scale > 1 must NOT have container_name
@@ -306,7 +311,9 @@ class TestStackOrchestration(unittest.TestCase):
                 patch.object(self.manager, "run_command"),
             ):
                 self.manager.sync_stack(paths, meta, no_up=False, no_wait=True)
-                self.assertGreater(self.manager.get_container_status.call_count, 1)
+                self.assertGreater(
+                    cast(MagicMock, self.manager.get_container_status).call_count, 1
+                )
 
     def test_generate_compose_with_mysql(self):
         config = {
@@ -317,9 +324,9 @@ class TestStackOrchestration(unittest.TestCase):
             "db_type": "mysql",
         }
 
-        with patch.object(Path, "write_text") as mock_write:
+        with patch("ldm_core.utils.safe_write_text") as mock_write:
             self.manager.write_docker_compose(self.paths, config)
-            compose_data = yaml.safe_load(mock_write.call_args[0][0])
+            compose_data = yaml.safe_load(mock_write.call_args[0][1])
             liferay_service = compose_data["services"]["liferay"]
             db_service = compose_data["services"]["db"]
 

@@ -73,12 +73,70 @@ If LDM cannot connect to infrastructure services:
 2. Check if a VPN or Firewall is blocking traffic on port 9200 (Search) or 443 (Proxy).
 3. Run `ldm infra-restart` to reset the bridge.
 
-## 🔐 SSL & Certificates
+## 📂 Permission & Mount Issues
 
-### **Browser says "Not Secure" (WSL2)**
+### **macOS 12 Monterey (Intel): Read-Only Volumes**
 
-On WSL2, `mkcert -install` only trusts the CA *inside* Linux. You must also run it on the Windows side:
+On older macOS versions (12.x and below) using the QEMU backend, standard `sshfs` mounts may appear as read-only to the `liferay` container user (UID 1000), even if they are writable by you.
 
-1. Open PowerShell as Administrator.
-2. Install `mkcert` (via `choco install mkcert` or `scoop install mkcert`).
-3. Run `mkcert -install`.
+**Signs:**
+
+- Errors like `FATAL: VOLUME MOUNT IS READ-ONLY` during `ldm run`.
+- Permission denied errors when creating snapshots.
+
+#### **Solution 1: Switch to 9p Mounts (Recommended)**
+
+The `9p` protocol is often more reliable for permissions on macOS 12 Intel.
+
+```bash
+colima stop
+colima start --mount-type 9p --mount /Users/$(whoami):w
+```
+
+#### **Solution 2: Force Writable Flag**
+
+Ensure your Colima configuration explicitly enables write access. Run `colima edit` and ensure the `mounts` section is configured:
+
+```yaml
+mounts:
+  - location: /Users/[username]
+    writable: true
+```
+
+---
+
+## 🖥️ Platform Specifics
+
+### **Windows: "charmap" codec can't encode character**
+
+If you see Python encoding errors (like `'\u25cf' character maps to <undefined>`) in your terminal when running `ldm status` or `ldm doctor`:
+
+1. **Upgrade to LDM `v2.4.26-beta.37` or later.** LDM now detects legacy terminal encodings and automatically switches to ASCII fallbacks (e.g., using `*` instead of `●`).
+2. **Use a modern terminal.** We highly recommend **Windows Terminal** with PowerShell 7, which supports full Unicode output.
+
+---
+
+## 🔍 Search (Elasticsearch)
+
+### **Elasticsearch: Failed to obtain node locks**
+
+If Elasticsearch fails to boot with `AccessDeniedException: /usr/share/elasticsearch/data/node.lock`:
+
+1. **Ensure LDM is up to date.** LDM `v2.4.26-beta.38+` includes an automated "Permission Reclamation" step that runs `chown -R 1000:1000` inside the volume via a helper container.
+2. **Manual Fix:** If using a custom mount, ensure the host directory has open permissions:
+
+```bash
+chmod -R 777 ~/.ldm/infra/search/data
+```
+
+### **Elasticsearch: Failed to parse mappings**
+
+If Elasticsearch fails to start after a crash or version change due to mapping errors:
+
+LDM includes an **Auto-Repair** feature. If the health check fails for 5 minutes, LDM will automatically wipe the `~/.ldm/infra/search/data` directory and perform a clean boot. You can trigger this manually by running:
+
+```bash
+ldm infra-down
+rm -rf ~/.ldm/infra/search/data
+ldm infra-setup --search
+```

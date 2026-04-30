@@ -1,10 +1,11 @@
 import argparse
+import platform
 import sys
 import warnings
-import platform
-from ldm_core.ui import UI
+
+from ldm_core.constants import SCRIPT_DIR, VERSION
 from ldm_core.manager import LiferayManager
-from ldm_core.constants import VERSION, SCRIPT_DIR
+from ldm_core.ui import UI
 from ldm_core.utils import check_for_updates
 
 try:
@@ -589,7 +590,7 @@ def main():
         "up": lambda: manager.cmd_run(getattr(args, "project", None)),
         "import": lambda: manager.cmd_import(args.source),
         "init-from": lambda: manager.cmd_init_from(args.source),
-        "monitor": lambda: manager.cmd_monitor(args.source, args.delay),
+        "monitor": lambda: manager.cmd_monitor(args.source),
         "init": lambda: manager.cmd_init(getattr(args, "project", None)),
         "stop": lambda: manager.cmd_stop(
             getattr(args, "project", None),
@@ -632,7 +633,7 @@ def main():
         "env": lambda: manager.cmd_env(getattr(args, "project", None)),
         "snapshot": lambda: manager.cmd_snapshot(getattr(args, "project", None)),
         "restore": lambda: manager.cmd_restore(getattr(args, "project", None)),
-        "init-common": lambda: manager.cmd_init_common(),
+        "init-common": manager.cmd_init_common,
         "reset": lambda: manager.cmd_reset(
             getattr(args, "project", None), getattr(args, "target", "state")
         ),
@@ -641,9 +642,9 @@ def main():
             getattr(args, "project", None)
         ),
         "renew-ssl": lambda: manager.cmd_renew_ssl(getattr(args, "project", None)),
-        "infra-setup": lambda: manager.cmd_infra_setup(),
-        "infra-down": lambda: manager.cmd_infra_down(),
-        "infra-restart": lambda: manager.cmd_infra_restart(),
+        "infra-setup": manager.cmd_infra_setup,
+        "infra-down": manager.cmd_infra_down,
+        "infra-restart": manager.cmd_infra_restart,
         "cache": lambda: manager.cmd_cache(getattr(args, "target", "tags")),
         "clear-cache": lambda: manager.cmd_cache("tags"),
         "clear-tags": lambda: manager.cmd_cache("tags"),
@@ -659,8 +660,8 @@ def main():
         "ps": lambda: manager.cmd_status(
             getattr(args, "project", None), all_projects=args.all
         ),
-        "list": lambda: manager.cmd_list(),
-        "ls": lambda: manager.cmd_list(),
+        "list": manager.cmd_list,
+        "ls": manager.cmd_list,
         "config": lambda: manager.cmd_config(args.key, args.value),
         "shell": lambda: manager.cmd_shell(
             getattr(args, "project", None), getattr(args, "service", None)
@@ -679,10 +680,10 @@ def main():
         ),
         "edit": lambda: manager.cmd_edit(getattr(args, "project", None), args.target),
         "completion": lambda: manager.cmd_completion(args.shell),
-        "man": lambda: manager.cmd_man(),
-        "prune": lambda: manager.cmd_prune(),
-        "upgrade": lambda: manager.cmd_upgrade(),
-        "update-check": lambda: manager.cmd_upgrade(),
+        "man": manager.cmd_man,
+        "prune": manager.cmd_prune,
+        "upgrade": manager.cmd_upgrade,
+        "update-check": manager.cmd_upgrade,
         "version": lambda: manager.cmd_version(
             bump_type=args.bump,
             promote=args.promote,
@@ -699,7 +700,7 @@ def main():
         update_info = {}
 
         def run_update_check():
-            latest, url = check_for_updates(VERSION)
+            latest, _url = check_for_updates(VERSION)
             update_info["latest"] = latest
 
         update_thread = None
@@ -713,12 +714,7 @@ def main():
             print(f"\n{UI.WHITE}Aborted.{UI.COLOR_OFF}")
             sys.exit(130)
         except Exception as e:
-            UI.error("An unexpected error occurred.", e)
-            if "-v" in sys.argv or "--verbose" in sys.argv:
-                import traceback
-
-                traceback.print_exc()
-            sys.exit(1)
+            UI.die("An unexpected error occurred.", details=e)
 
         if update_thread and args.command != "completion":
             update_thread.join(timeout=0.05)

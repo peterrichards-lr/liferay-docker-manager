@@ -1,14 +1,21 @@
-import os
-import re
-import sys
 import json
-import time
+import os
 import platform
-import subprocess
+import re
 import shutil
+import subprocess
+import sys
+import time
 from pathlib import Path
-from ldm_core.ui import UI
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from ldm_core.manager import LiferayManager
+
+import contextlib
+
 from ldm_core.constants import SCRIPT_DIR
+from ldm_core.ui import UI
 from ldm_core.utils import get_actual_home
 
 
@@ -19,12 +26,55 @@ class BaseHandler:
         self.args = args
         self.non_interactive = getattr(args, "non_interactive", False)
         self.verbose = getattr(args, "verbose", False)
+        # Type stubs for LiferayManager methods (satisfied by mixin resolution)
+        self.manager: LiferayManager = None  # type: ignore
+
+    def cmd_run(self, *args, **kwargs): ...
+    def cmd_stop(self, *args, **kwargs): ...
+    def cmd_deploy(self, *args, **kwargs): ...
+    def cmd_snapshot(self, *args, **kwargs): ...
+    def cmd_restore(self, *args, **kwargs): ...
+    def cmd_reset(self, *args, **kwargs): ...
+    def cmd_infra_setup(self, *args, **kwargs): ...
+    def cmd_infra_down(self, *args, **kwargs): ...
+    def cmd_infra_restart(self, *args, **kwargs): ...
+    def cmd_status(self, *args, **kwargs): ...
+    def cmd_list(self, *args, **kwargs): ...
+    def cmd_config(self, *args, **kwargs): ...
+    def cmd_shell(self, *args, **kwargs): ...
+    def cmd_env(self, *args, **kwargs): ...
+    def cmd_scale(self, *args, **kwargs): ...
+    def cmd_rm(self, *args, **kwargs): ...
+    def cmd_edit(self, *args, **kwargs): ...
+    def cmd_upgrade(self, *args, **kwargs): ...
+    def cmd_version(self, *args, **kwargs): ...
+    def cmd_dev_setup(self, *args, **kwargs): ...
+    def cmd_migrate_search(self, *args, **kwargs): ...
+
+    def get_samples_root(self, *args, **kwargs): ...
+    def check_mkcert(self, *args, **kwargs): ...
+    def _ensure_seeded(self, *args, **kwargs): ...
+    def _fetch_seed(self, *args, **kwargs): ...
+    def _ensure_network(self, *args, **kwargs): ...
+    def setup_infrastructure(self, *args, **kwargs): ...
+    def setup_ssl(self, *args, **kwargs): ...
+    def write_docker_compose(self, *args, **kwargs): ...
+    def update_portal_ext(self, *args, **kwargs): ...
+    def _get_infra_env(self, *args, **kwargs): ...
+    def _is_ssl_active(self, *args, **kwargs): ...
+    def _restore_from_cloud_layout(self, *args, **kwargs): ...
+    def validate_lcp_json(self, *args, **kwargs): ...
+    def check_license_health(self, *args, **kwargs): ...
+    def _is_cloud_authenticated(self, *args, **kwargs): ...
+    def get_host_passthrough_env(self, *args, **kwargs): ...
+    def sync_stack(self, *args, **kwargs): ...
+    def get_default_jvm_args(self, *args, **kwargs): ...
 
     def is_wsl(self):
         """Checks if the current environment is WSL."""
         if platform.system().lower() == "linux":
             try:
-                with open("/proc/version", "r") as f:
+                with open("/proc/version") as f:
                     if "microsoft" in f.read().lower():
                         return True
             except Exception:
@@ -93,7 +143,7 @@ class BaseHandler:
         is_wsl = self.is_wsl()
 
         new_entries = []
-        for d in sorted(list(set(unresolved_domains))):
+        for d in sorted(set(unresolved_domains)):
             # Standardize on explicit host entries with the LDM tag for easy removal later
             new_entries.append(f"{target_ip} {d} {self.LDM_HOST_TAG}")
 
@@ -261,7 +311,7 @@ class BaseHandler:
             try:
                 s.bind((ip, int(port)))
                 return True
-            except (socket.error, OverflowError):
+            except (OSError, OverflowError):
                 return False
 
     def find_available_port(self, ip, start_port):
@@ -341,15 +391,14 @@ class BaseHandler:
 
         actual_home = get_actual_home()
         ldm_dir = actual_home / ".ldm"
-        ldm_dir.mkdir(parents=True, exist_ok=True)
+        with contextlib.suppress(PermissionError, OSError):
+            ldm_dir.mkdir(parents=True, exist_ok=True)
         registry_path = ldm_dir / REGISTRY_FILE
 
         registry = {}
         if registry_path.exists():
-            try:
+            with contextlib.suppress(Exception):
                 registry = json.loads(registry_path.read_text())
-            except Exception:
-                pass
 
         # We store both path and host for better collision detection
         registry[project_name] = {
@@ -434,8 +483,9 @@ class BaseHandler:
 
     def read_meta(self, path):
         """Reads project metadata, supporting both modern and legacy filenames."""
-        from ldm_core.utils import read_meta
         import os
+
+        from ldm_core.utils import read_meta
 
         # If passed a dict, return it (already loaded)
         if isinstance(path, dict):
@@ -767,8 +817,7 @@ class BaseHandler:
 
         if is_source:
             return SCRIPT_DIR / "common"
-        else:
-            return Path.cwd() / "common"
+        return Path.cwd() / "common"
 
     def setup_paths(self, project_path):
         """Initializes a standard path dictionary for a project."""
@@ -863,10 +912,12 @@ class BaseHandler:
 
             import uuid
 
+            from ldm_core.utils import safe_write_text
+
             token_val = f"LDM_VERIFY_{uuid.uuid4().hex[:8]}"
             token_file = root / ".ldm_mount_check"
             try:
-                token_file.write_text(token_val)
+                safe_write_text(token_file, token_val)
             except (PermissionError, OSError) as e:
                 if self.verbose:
                     UI.debug(f"Could not create mount-check token (ignoring): {e}")
@@ -880,7 +931,9 @@ class BaseHandler:
                 docker_cmd = (
                     "mkdir -p /workspace/data /workspace/deploy /workspace/files "
                     "/workspace/logs /workspace/osgi/state /workspace/osgi/configs "
-                    "/workspace/osgi/modules /workspace/routes /workspace/snapshots 2>/dev/null || true; "
+                    "/workspace/osgi/modules /workspace/osgi/portal-log4j /workspace/osgi/log4j "
+                    "/workspace/osgi/marketplace /workspace/osgi/client-extensions "
+                    "/workspace/routes /workspace/snapshots 2>/dev/null || true; "
                 )
 
                 if token_val != "SKIP":  # nosec B105
@@ -925,10 +978,8 @@ class BaseHandler:
 
                     if system_type == "darwin":
                         actual_home = Path.home()
-                        try:
+                        with contextlib.suppress(Exception):
                             actual_home = get_actual_home()
-                        except Exception:
-                            pass
 
                         cert_dir = actual_home / "liferay-docker-certs"
                         mount_hint = self.get_colima_mount_flags([root, cert_dir])
@@ -958,8 +1009,24 @@ class BaseHandler:
                 if system_type == "darwin" and self.verbose:
                     UI.success("Volume mounts verified and permissions synchronized.")
 
-                # Final reclamation to ensure the root and all its new subdirs are accessible
-                self._reclaim_permissions(root)
+                # Only reclaim permissions for specific volumes that need it (data, state, logs, deploy, etc.)
+                # Reclaiming the root itself causes ownership issues for the host user (e.g. in CI)
+                for v in [
+                    "data",
+                    "state",
+                    "logs",
+                    "deploy",
+                    "log4j",
+                    "portal_log4j",
+                    "files",
+                    "configs",
+                    "backups",
+                    "cx",
+                    "routes",
+                ]:
+                    if v in paths and paths[v].exists():
+                        self._reclaim_permissions(paths[v])
+
             except Exception as e:
                 if self.verbose:
                     UI.warning(f"Could not verify mounts automatically: {e}")
@@ -988,9 +1055,11 @@ class BaseHandler:
             if p_key in paths:
                 try:
                     paths[p_key].mkdir(parents=True, exist_ok=True)
-                except Exception as e:
+                except (PermissionError, OSError) as e:
                     if self.verbose:
-                        UI.warning(f"Could not create directory {paths[p_key]}: {e}")
+                        UI.debug(
+                            f"Could not ensure directory exists {paths[p_key]}: {e}"
+                        )
 
         pe_file = paths["files"] / "portal-ext.properties"
         if pe_file.exists() and pe_file.is_dir():
@@ -998,10 +1067,8 @@ class BaseHandler:
             self.safe_rmtree(pe_file)
 
         if not pe_file.exists():
-            try:
+            with contextlib.suppress(Exception):
                 pe_file.touch()
-            except Exception:
-                pass
 
     def check_docker(self):
         """Verifies Docker accessibility."""
@@ -1193,10 +1260,8 @@ class BaseHandler:
 
             # Fallback check
             if path.exists():
-                try:
+                with contextlib.suppress(Exception):
                     shutil.rmtree(path)
-                except Exception:
-                    pass
 
     def get_colima_mount_flags(self, paths):
         """Generates the necessary --mount flags for Colima based on project paths."""
@@ -1218,7 +1283,7 @@ class BaseHandler:
 
             mounts.add(f"--mount {mount_point}:w")
 
-        return " ".join(sorted(list(mounts)))
+        return " ".join(sorted(mounts))
 
     def get_resource_path(self, filename):
         """Resiliently locates internal resource files (supports source vs bundled)."""
@@ -1288,17 +1353,17 @@ class BaseHandler:
                     )
                     print(code)
                     return
-                elif target_shell == "bash":
+                if target_shell == "bash":
                     print(
                         argcomplete.shellcode(["ldm"], shell="bash")  # nosec B604
                     )
                     return
-                elif target_shell == "fish":
+                if target_shell == "fish":
                     print(
                         argcomplete.shellcode(["ldm"], shell="fish")  # nosec B604
                     )
                     return
-                elif target_shell == "powershell":
+                if target_shell == "powershell":
                     # PowerShell doesn't have native argcomplete support, so we provide a bridge script
                     print("# LDM PowerShell Completion Bridge")
                     print(
@@ -1384,21 +1449,20 @@ class BaseHandler:
                 )
                 if "-l" in res.stdout or "-l" in res.stderr:
                     subprocess.run(["man", "-l", str(man_path)])
+                # Fallback to less with roff processing if possible, or raw text
+                # We can use mandoc or groff if available
+                elif shutil.which("mandoc"):
+                    subprocess.run(
+                        f"mandoc -Tutf8 {man_path} | less -R",
+                        shell=True,  # nosec B602 B604
+                    )
+                elif shutil.which("groff"):
+                    subprocess.run(
+                        f"groff -man -Tascii {man_path} | less -R",
+                        shell=True,  # nosec B602 B604
+                    )
                 else:
-                    # Fallback to less with roff processing if possible, or raw text
-                    # We can use mandoc or groff if available
-                    if shutil.which("mandoc"):
-                        subprocess.run(
-                            f"mandoc -Tutf8 {man_path} | less -R",
-                            shell=True,  # nosec B602 B604
-                        )
-                    elif shutil.which("groff"):
-                        subprocess.run(
-                            f"groff -man -Tascii {man_path} | less -R",
-                            shell=True,  # nosec B602 B604
-                        )
-                    else:
-                        subprocess.run(["less", str(man_path)])
+                    subprocess.run(["less", str(man_path)])
             else:
                 # Windows fallback to notepad or similar
                 subprocess.run(["notepad", str(man_path)])

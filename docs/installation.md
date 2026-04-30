@@ -96,7 +96,12 @@ cd liferay-docker-manager
 
 ### 🪟 Windows Setup & Tools
 
-Windows does not include the networking tools required for LDM log-level synchronization and Gogo shell access by default. Run the following in an **Administrator PowerShell**:
+Windows does not include the networking tools required for LDM log-level synchronization and Gogo shell access by default.
+
+> [!IMPORTANT]
+> **Terminal Encoding:** Older Windows consoles (cmd.exe / PowerShell 5) may have trouble displaying Unicode symbols (●, ✅). LDM **v2.4.26-beta.37+** automatically detects these terminals and switches to safe ASCII fallbacks. For the best experience, we recommend using **Windows Terminal**.
+
+Run the following in an **Administrator PowerShell**:
 
 1. **Install Netcat (Ncat)**:
 
@@ -406,13 +411,13 @@ colima start --cpu 4 --memory 8 --vm-type=vz --mount-type=virtiofs --mount /User
 
 ### 2. Recommended Start Command (Legacy Intel Mac)
 
-If you are running on an older Intel Mac (e.g. Early 2015 with 8GB RAM), use these settings to ensure Liferay has enough host memory to function:
+If you are running on an older Intel Mac (e.g. Early 2015 with 8GB RAM), use these settings to ensure Liferay has enough host memory to function. We recommend the `9p` mount type for better permission mapping on macOS 12:
 
 ```bash
-
 # Optimized for Dual-Core Intel (8GB RAM)
-# Note: uses sshfs as virtiofs requires macOS 14+ on Intel
-colima start --cpus 2 --memory 6 --mount-type sshfs --mount /Users/$(whoami):w
+# Note: uses 9p as it handles UID mapping better than sshfs on older macOS
+colima stop
+colima start --cpus 2 --memory 6 --mount-type 9p --mount /Users/$(whoami):w
 ```
 
 ### 3. The "Ghost Mount" Issue

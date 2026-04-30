@@ -13,6 +13,8 @@ class UI:
     CYAN = "\033[0;36m"
     BLUE = "\033[0;34m"
     BOLD = "\033[1m"
+    DIM = "\033[2m"
+    UNDERLINE = "\033[4m"
 
     NON_INTERACTIVE = False
     VERBOSE = False
@@ -39,13 +41,14 @@ class UI:
         # 2. Redact CLI password flags (e.g. -pPASSWORD or --password=secret)
         # We are careful to only match -p if followed by characters (not just a space)
         flag_pattern = r"(?i)(-p|--password=)([^&\s]+)"
-        text = re.sub(flag_pattern, r"\1[REDACTED]", text)
-
-        return text
+        return re.sub(flag_pattern, r"\1[REDACTED]", text)
 
     @staticmethod
-    def _print(msg, color=None, icon=None, file=sys.stdout):
+    def _print(msg, color=None, icon=None, file=None):
         """Internal print helper with Unicode safety and automatic redaction."""
+        if file is None:
+            file = sys.stdout
+
         # Clean and Redact at the sink (Defensive Layer)
         msg = UI.redact(msg.strip())
 
@@ -58,8 +61,8 @@ class UI:
         try:
             # Try printing with the current encoding
             print(out, file=file, flush=True)
-        except UnicodeEncodeError:
-            # Fallback for old Windows consoles (CP1252)
+        except (UnicodeEncodeError, OSError):
+            # Fallback for old Windows consoles (CP1252) or problematic streams
             # Replace known problematic symbols with ASCII equivalents
             safe_out = (
                 out.replace("✅", "[OK]")
@@ -104,13 +107,11 @@ class UI:
     def error(msg, details=None, tip=None):
         UI._print(msg, UI.BRED, "❌", file=sys.stderr)
         if details:
-            # Redact details before printing
+            # Redact and safely print details
             redacted_details = UI.redact(str(details))
-            print(
-                f"{UI.WHITE}Details:{UI.COLOR_OFF}  {redacted_details}", file=sys.stderr
-            )
+            UI._print(f"Details:  {redacted_details}", color=UI.WHITE, file=sys.stderr)
         if tip:
-            print(f"{UI.CYAN}💡 Tip:{UI.COLOR_OFF}      {tip}", file=sys.stderr)
+            UI._print(f"💡 Tip:      {tip}", color=UI.CYAN, file=sys.stderr)
 
     @staticmethod
     def die(msg, details=None, tip=None):
@@ -121,7 +122,7 @@ class UI:
     def heading(msg):
         # Redact headers just in case (e.g. project names containing sensitive words)
         msg = UI.redact(msg.strip())
-        print(f"\n{UI.BYELLOW}=== {msg} ==={UI.COLOR_OFF}")
+        UI._print(f"\n=== {msg} ===", color=UI.BYELLOW)
 
     @staticmethod
     def debug(msg):

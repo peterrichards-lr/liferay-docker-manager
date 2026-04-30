@@ -105,9 +105,9 @@ function Finalize-Verification
 
 # Find the test project template (Flexible search)
 $SearchPaths = @(
-    Join-Path $PSScriptRoot "..\references\test-project",
-    Join-Path $PSScriptRoot "test-project",
-    Join-Path $ORIGINAL_PWD "test-project",
+    Join-Path $PSScriptRoot "..\references\test-project"
+    Join-Path $PSScriptRoot "test-project"
+    Join-Path $ORIGINAL_PWD "test-project"
     Join-Path $ORIGINAL_PWD "references\test-project"
 )
 

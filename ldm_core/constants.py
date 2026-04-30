@@ -1,8 +1,8 @@
 from pathlib import Path
 
 # --- Constants & Configuration ---
-# LDM_MAGIC_VERSION: 2.4.26-beta.38
-VERSION = "2.4.26-beta.38"
+# LDM_MAGIC_VERSION: 2.4.26-pre.1
+VERSION = "2.4.26-pre.1"
 
 
 BUILD_INFO = None
@@ -106,7 +106,7 @@ RUN_ATTRS = [
 SEED_VERSION = "2"
 
 # --- Sample Extension Hashes (SHA-256) ---
-SAMPLE_HASHES = {
+SAMPLE_HASHES: dict[str, dict[str, str]] = {
     "client-extensions": {
         # "liferay-meridian-theme-css.zip": "23ace3256bdf52e0f36e518857b1e21fc4d72cddc86817ee65493a15804bbb66",
         # "liferay-meridian-theme-spritemap.zip": "d615e2db87065ffb9ee699aa9f83cc14b37c209bd33a9ab7d7d5f43cf275c15a",

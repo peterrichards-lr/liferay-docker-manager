@@ -1,7 +1,9 @@
 import unittest
-import requests
 from pathlib import Path
 from unittest.mock import MagicMock, patch
+
+import requests
+
 from ldm_core.handlers.assets import AssetHandler
 from ldm_core.handlers.base import BaseHandler
 
@@ -58,7 +60,7 @@ class TestAssets(unittest.TestCase):
 
     @patch("ldm_core.handlers.assets.zipfile.ZipFile")
     @patch("ldm_core.handlers.assets.shutil.rmtree")
-    @patch("ldm_core.handlers.assets.shutil.move")
+    @patch("ldm_core.handlers.assets.safe_move")
     def test_download_samples_extraction_logic(self, mock_move, mock_rmtree, mock_zip):
         with (
             patch("ldm_core.handlers.assets.requests.get"),

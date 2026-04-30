@@ -22,9 +22,7 @@ def anonymize_content(content):
     # 4. Windows Specific binary paths
     content = re.sub(r"✅\s+[A-Z]:\\[^\n\x1b]+", "✅  [PATH]", content)
     content = re.sub(r"⚠️\s+[A-Z]:\\[^\n\x1b]+", "⚠️  [PATH]", content)
-    content = re.sub(r"❌\s+[A-Z]:\\[^\n\x1b]+", "❌  [PATH]", content)
-
-    return content
+    return re.sub(r"❌\s+[A-Z]:\\[^\n\x1b]+", "❌  [PATH]", content)
 
 
 for p in Path("references/verification-results").rglob("verify-*.txt"):

@@ -1,8 +1,9 @@
 import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
-from ldm_core.handlers.runtime import RuntimeHandler
+
 from ldm_core.handlers.base import BaseHandler
+from ldm_core.handlers.runtime import RuntimeHandler
 
 
 class MockRuntime(RuntimeHandler, BaseHandler):
