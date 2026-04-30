@@ -147,6 +147,7 @@ function Log-AndRun
     $pinfo.RedirectStandardOutput = $true
     $pinfo.UseShellExecute = $false
     $pinfo.CreateNoWindow = $true
+    $pinfo.WorkingDirectory = $PWD.Path
     $pinfo.StandardOutputEncoding = [System.Text.Encoding]::UTF8
     
     $p = New-Object System.Diagnostics.Process
