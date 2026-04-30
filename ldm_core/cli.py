@@ -372,6 +372,11 @@ def get_parser():
         action="store_true",
         help="Automatically fix missing entries in /etc/hosts",
     )
+    doctor.add_argument(
+        "--bundle",
+        action="store_true",
+        help="Generate a sanitized debug bundle for troubleshooting",
+    )
 
     # Command: fix-hosts (Legacy support/Direct access)
     fh = subparsers.add_parser("fix-hosts", parents=[base_sub_parent])

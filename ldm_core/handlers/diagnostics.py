@@ -6,6 +6,7 @@ import re
 import shutil
 import subprocess
 import sys
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -2073,6 +2074,10 @@ pause
                     UI.raw(f"   Doc: {UI.CYAN}{h['doc']}{UI.COLOR_OFF}")
                 UI.raw("")
 
+        if getattr(self.args, "bundle", False):
+            self._generate_debug_bundle(results, project_paths)
+            sys.exit(0)
+
         if all_ok and not has_warnings:
             UI.success("Everything looks good! Your environment is ready.")
             sys.exit(0)
@@ -2758,3 +2763,63 @@ pause
             return "Running (Starting Up)", True
         except Exception:
             return "Running", True
+
+    def _generate_debug_bundle(self, results, project_paths):
+        """Generates a sanitized ZIP bundle for troubleshooting support."""
+        import io
+        import zipfile
+
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        bundle_name = f"ldm-debug-bundle-{timestamp}.zip"
+        bundle_path = Path.cwd() / bundle_name
+
+        UI.info(f"Generating sanitized debug bundle: {bundle_name}...")
+
+        with zipfile.ZipFile(bundle_path, "w") as z:
+            # 1. Doctor Report
+            report = io.StringIO()
+            report.write("LDM DOCTOR REPORT\n")
+            report.write("=" * 40 + "\n\n")
+            for comp, status, ok in results:
+                status_clean = strip_ansi(str(status))
+                icon = "[OK]" if ok is True else "[!!]" if ok == "warn" else "[FAIL]"
+                report.write(f"{icon} {comp:<35} {status_clean}\n")
+            z.writestr("doctor-report.txt", report.getvalue())
+
+            # 2. Config Files (~/.ldmrc)
+            ldmrc = get_actual_home() / ".ldmrc"
+            if ldmrc.exists():
+                z.writestr("ldmrc.txt", UI.redact(ldmrc.read_text()))
+
+            # 3. Project Specific Data
+            for p_path in project_paths:
+                p_name = p_path.name
+                meta_file = p_path / ".liferay-docker.meta"
+                if meta_file.exists():
+                    z.writestr(
+                        f"projects/{p_name}/meta.txt", UI.redact(meta_file.read_text())
+                    )
+
+                compose_file = p_path / "docker-compose.yml"
+                if compose_file.exists():
+                    z.writestr(
+                        f"projects/{p_name}/docker-compose.yml",
+                        UI.redact(compose_file.read_text()),
+                    )
+
+                # Collect redacted logs (last 500 lines)
+                meta = self.read_meta(p_path)
+                p_id = meta.get("container_name") or p_name
+                # Use project label to find liferay container
+                logs_res = run_command(
+                    ["docker", "logs", "--tail", "500", f"{p_id}-liferay"], check=False
+                )
+                if logs_res and logs_res.stdout:
+                    z.writestr(
+                        f"projects/{p_name}/liferay-redacted.log",
+                        UI.redact(logs_res.stdout),
+                    )
+
+        UI.success(f"\n✅ Debug bundle created: {bundle_name}")
+        UI.info("Please attach this file to your GitHub Issue.")
+        return bundle_path
