@@ -30,7 +30,11 @@ def sync_table():
     inner_content = source_match.group(1).strip()
 
     # 2. Update TARGET files
-    targets = [script_dir / "docs" / "README.md", script_dir / "docs" / "TESTING.md"]
+    targets = [
+        script_dir / "docs" / "README.md",
+        script_dir / "docs" / "TESTING.md",
+        script_dir / "docs" / "installation.md",
+    ]
 
     for target in targets:
         if not target.exists():
