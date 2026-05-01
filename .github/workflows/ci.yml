@@ -144,6 +144,11 @@ jobs:
           pip install -r requirements.txt
           pip install -r requirements-dev.txt
 
+      - name: Synchronize Resources
+        run: |
+          python3 scripts/sync_baseline.py
+          python3 scripts/sync_colors.py
+
       - name: Build Standalone (Linux)
         if: matrix.os == 'ubuntu-latest'
         run: |
