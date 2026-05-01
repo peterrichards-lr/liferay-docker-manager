@@ -240,12 +240,13 @@ tls:
             UI.info("Starting Docker socket bridge...")
             socket_path = get_docker_socket_path()
 
-            # Hardening for Colima/Lima:
-            if (
-                "colima" in str(socket_path).lower()
-                or ".lima" in str(socket_path).lower()
+            # Hardening for VM-based providers (Colima, Lima, OrbStack):
+            if any(
+                p in str(socket_path).lower() for p in ["colima", ".lima", "orbstack"]
             ):
-                UI.debug("Colima/Lima detected. Using standard internal socket path.")
+                UI.debug(
+                    f"Provider VM detected ({socket_path}). Using standard internal socket path."
+                )
                 socket_path = "/var/run/docker.sock"
 
             self.run_command(
