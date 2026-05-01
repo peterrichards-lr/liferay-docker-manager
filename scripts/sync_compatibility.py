@@ -205,10 +205,21 @@ def get_report_metadata(report_path):
         arch = "Linux Workstation"
         host_os = "Linux"
 
+    # Standardize slugs
     clean_arch = arch.lower().replace(" ", "-")
     clean_os = host_os.lower().replace(" ", "-").replace("+", "")
     clean_provider = provider.lower().replace(" ", "-")
     internal_slug = f"{clean_arch}-{clean_os}-{clean_provider}"
+
+    # Explicitly ignore unsupported or erroneous environments
+    blacklist = {
+        "apple-intel-macos-12-monterey-colima",
+        "apple-silicon-macos-15-sequoia-colima",
+    }
+    if internal_slug in blacklist:
+        passed = False  # Ensure it doesn't accidentally pass logic elsewhere
+        # We'll filter this out in the main loop anyway
+        internal_slug = "IGNORE"
 
     return {
         "arch": arch,
@@ -243,7 +254,10 @@ def sync_reports():
         if r.name == ".gitkeep":
             continue
         try:
-            report_metas.append(get_report_metadata(r))
+            meta = get_report_metadata(r)
+            if meta["internal_slug"] == "IGNORE":
+                continue
+            report_metas.append(meta)
         except Exception as e:
             UI.warning(f"Failed to parse {r.name}: {e}")
 
