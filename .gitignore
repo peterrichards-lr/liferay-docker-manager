@@ -26,3 +26,7 @@ samplestest/
 seeded-*/
 /test-*/
 ldm-verification-results.txt
+
+# Generated Resources
+ldm_core/ui_colors.py
+scripts/colors.sh
