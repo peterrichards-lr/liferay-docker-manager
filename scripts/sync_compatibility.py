@@ -108,15 +108,23 @@ def get_report_metadata(report_path):
 
     # 6. Extract specific provider versions (OrbStack/Colima)
     provider_v = ""
-    # OrbStack Version may appear in new reports
-    ov_match = re.search(r"OrbStack Version\s+.*?v([0-9.]+)", content)
-    if ov_match:
-        provider_v = f"v{ov_match.group(1)}"
-    else:
-        # Colima Version may appear in new reports
-        cv_match = re.search(r"Colima Version\s+.*?v([0-9.]+)", content)
-        if cv_match:
-            provider_v = f"v{cv_match.group(1)}"
+    # Try header first (new scripts)
+    hv_match = re.search(r"(?:Colima|OrbStack|Docker):\s+([^\n]+)", content)
+    if hv_match:
+        provider_v = hv_match.group(1).strip()
+        if not provider_v.startswith("v"):
+            provider_v = f"v{provider_v}"
+
+    if not provider_v:
+        # OrbStack Version may appear in new doctor reports
+        ov_match = re.search(r"OrbStack Version\s+.*?v([0-9.]+)", content)
+        if ov_match:
+            provider_v = f"v{ov_match.group(1)}"
+        else:
+            # Colima Version may appear in new doctor reports
+            cv_match = re.search(r"Colima Version\s+.*?v([0-9.]+)", content)
+            if cv_match:
+                provider_v = f"v{cv_match.group(1)}"
 
     # --- LEGACY MAPPINGS (Manual Overrides for existing lab reports) ---
     legacy_map = {

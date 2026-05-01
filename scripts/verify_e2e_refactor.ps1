@@ -33,6 +33,16 @@ $RESULTS_FILE_TMP = Join-Path $ORIGINAL_PWD ".ldm-verify-tmp-${Timestamp}.txt"
     Write-Output "Platform:  $($PSVersionTable.OS)"
     Write-Output "Binary:    $((Get-Command $LDM_CMD).Source)"
     Write-Output "Version:   $(& $LDM_CMD --version 2>$null)"
+    
+    # Capture Provider Versions explicitly for the header
+    if (Get-Command docker -ErrorAction SilentlyContinue) {
+        $dv = & docker version --format '{{.Server.Version}}' 2>$null
+        Write-Output "Docker:    $dv"
+        if (docker compose version 2>$null) {
+            $cv = & docker compose version --short 2>$null
+            Write-Output "Compose:   $cv"
+        }
+    }
     Write-Output ""
 } | Out-File -FilePath $RESULTS_FILE_TMP -Encoding utf8
 

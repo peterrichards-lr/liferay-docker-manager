@@ -905,30 +905,61 @@ pause
                 results.append(("Docker Provider", provider, True))
 
                 # Try to get specific provider versions
+                provider_version = None
                 if provider == "OrbStack":
                     try:
                         orb_v = self.run_command(["orb", "version"], check=False)
                         if orb_v and "version" in orb_v.lower():
-                            # Format: "OrbStack version 1.x.x (hash)" -> "v1.x.x"
                             v_match = re.search(r"version\s+([0-9.]+)", orb_v, re.I)
                             if v_match:
-                                results.append(
-                                    ("OrbStack Version", f"v{v_match.group(1)}", True)
-                                )
+                                provider_version = f"v{v_match.group(1)}"
                     except Exception:
                         pass
                 elif provider == "Colima":
                     try:
                         col_v = self.run_command(["colima", "version"], check=False)
                         if col_v and "version" in col_v.lower():
-                            # Format: "colima version 0.x.x" -> "v0.x.x"
                             v_match = re.search(r"version\s+([0-9.]+)", col_v, re.I)
                             if v_match:
-                                results.append(
-                                    ("Colima Version", f"v{v_match.group(1)}", True)
-                                )
+                                provider_version = f"v{v_match.group(1)}"
                     except Exception:
                         pass
+                elif provider == "Docker Desktop":
+                    try:
+                        # On Mac, check the app bundle
+                        if platform.system().lower() == "darwin":
+                            plist = "/Applications/Docker.app/Contents/Info.plist"
+                            if os.path.exists(plist):
+                                v_res = self.run_command(
+                                    [
+                                        "defaults",
+                                        "read",
+                                        plist,
+                                        "CFBundleShortVersionString",
+                                    ],
+                                    check=False,
+                                )
+                                if v_res:
+                                    provider_version = f"v{v_res.strip()}"
+
+                        # Fallback/Windows: Try to parse from 'docker version' Server section
+                        if not provider_version:
+                            dv_res = self.run_command(
+                                ["docker", "version"], check=False
+                            )
+                            # Look for "Server: Docker Desktop 4.x.x"
+                            dd_match = re.search(
+                                r"Server:\s+Docker Desktop\s+([0-9.]+)",
+                                dv_res or "",
+                                re.I,
+                            )
+                            if dd_match:
+                                provider_version = f"v{dd_match.group(1)}"
+                    except Exception:
+                        pass
+
+                if provider_version:
+                    results.append((f"{provider} Version", provider_version, True))
 
                 # Proactive Colima SSHFS warning
                 if getattr(self, "_colima_mount_not_writable", False):

@@ -33,6 +33,20 @@ RESULTS_FILE_TMP="${ORIGINAL_PWD}/.ldm-verify-tmp-${TIMESTAMP}.txt"
     echo "Platform:  $OSTYPE"
     echo "Binary:    $(which "$LDM_CMD")"
     echo "Version:   $("$LDM_CMD" --version 2>/dev/null || echo "unknown")"
+    
+    # Capture Provider Versions explicitly for the header
+    if command -v colima &>/dev/null; then
+        echo "Colima:    $(colima version | grep -o 'v[0-9.]*' | head -n 1 || echo "installed")"
+    fi
+    if command -v orb &>/dev/null; then
+        echo "OrbStack:  $(orb version | grep -o '[0-9.]*' | head -n 1 || echo "installed")"
+    fi
+    if command -v docker &>/dev/null; then
+        echo "Docker:    $(docker version --format '{{.Server.Version}}' 2>/dev/null || echo "running")"
+        if docker compose version &>/dev/null; then
+            echo "Compose:   $(docker compose version --short 2>/dev/null || echo "detected")"
+        fi
+    fi
     echo ""
 } >"$RESULTS_FILE_TMP"
 
