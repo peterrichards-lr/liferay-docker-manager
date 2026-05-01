@@ -26,7 +26,7 @@ $Timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
 # IMPORTANT: Keep RESULTS_FILE_TMP in ORIGINAL_PWD so it isn't deleted by work-dir cleanup
 $RESULTS_FILE_TMP = Join-Path $ORIGINAL_PWD ".ldm-verify-tmp-${Timestamp}.txt"
 
-{
+& {
     Write-Output "=== LDM BINARY VERIFICATION REPORT ==="
     Write-Output "Timestamp: $(Get-Date)"
     Write-Output "Hostname:  $Hostname"

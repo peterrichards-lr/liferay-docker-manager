@@ -102,29 +102,38 @@ def get_report_metadata(report_path):
 
     # 5. Extract Docker Engine version
     engine_v = "Unknown"
-    engine_match = re.search(r"Docker Engine\s+.*?v([0-9.]+)", content)
-    if engine_match:
-        engine_v = f"v{engine_match.group(1)}"
+    # Try header first
+    hev_match = re.search(r"Docker:\s+([^\n]+)", content)
+    if hev_match:
+        engine_v = hev_match.group(1).strip()
+
+    if engine_v == "Unknown" or engine_v.startswith("$"):
+        engine_match = re.search(r"Docker Engine\s+.*?v([0-9.]+)", content)
+        if engine_match:
+            engine_v = f"v{engine_match.group(1)}"
 
     # 6. Extract specific provider versions (OrbStack/Colima)
     provider_v = ""
     # Try header first (new scripts)
-    hv_match = re.search(r"(?:Colima|OrbStack|Docker):\s+([^\n]+)", content)
+    hv_match = re.search(r"(?:Colima|OrbStack):\s+([^\n]+)", content)
     if hv_match:
-        provider_v = hv_match.group(1).strip()
-        if not provider_v.startswith("v"):
-            provider_v = f"v{provider_v}"
+        cand = hv_match.group(1).strip()
+        if cand and cand != "v" and not cand.startswith("$"):
+            provider_v = cand if cand.startswith("v") else f"v{cand}"
 
     if not provider_v:
-        # OrbStack Version may appear in new doctor reports
+        # Fallback to doctor section
         ov_match = re.search(r"OrbStack Version\s+.*?v([0-9.]+)", content)
         if ov_match:
             provider_v = f"v{ov_match.group(1)}"
         else:
-            # Colima Version may appear in new doctor reports
             cv_match = re.search(r"Colima Version\s+.*?v([0-9.]+)", content)
             if cv_match:
                 provider_v = f"v{cv_match.group(1)}"
+            else:
+                dd_match = re.search(r"Docker Desktop Version\s+.*?v([0-9.]+)", content)
+                if dd_match:
+                    provider_v = f"v{dd_match.group(1)}"
 
     # --- LEGACY MAPPINGS (Manual Overrides for existing lab reports) ---
     legacy_map = {
