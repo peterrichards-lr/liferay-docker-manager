@@ -904,6 +904,32 @@ pause
 
                 results.append(("Docker Provider", provider, True))
 
+                # Try to get specific provider versions
+                if provider == "OrbStack":
+                    try:
+                        orb_v = self.run_command(["orb", "version"], check=False)
+                        if orb_v and "version" in orb_v.lower():
+                            # Format: "OrbStack version 1.x.x (hash)" -> "v1.x.x"
+                            v_match = re.search(r"version\s+([0-9.]+)", orb_v, re.I)
+                            if v_match:
+                                results.append(
+                                    ("OrbStack Version", f"v{v_match.group(1)}", True)
+                                )
+                    except Exception:
+                        pass
+                elif provider == "Colima":
+                    try:
+                        col_v = self.run_command(["colima", "version"], check=False)
+                        if col_v and "version" in col_v.lower():
+                            # Format: "colima version 0.x.x" -> "v0.x.x"
+                            v_match = re.search(r"version\s+([0-9.]+)", col_v, re.I)
+                            if v_match:
+                                results.append(
+                                    ("Colima Version", f"v{v_match.group(1)}", True)
+                                )
+                    except Exception:
+                        pass
+
                 # Proactive Colima SSHFS warning
                 if getattr(self, "_colima_mount_not_writable", False):
                     add_hint(

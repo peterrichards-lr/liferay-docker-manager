@@ -1,44 +1,26 @@
-#!/usr/bin/env python3
 import hashlib
 import re
 import shutil
-import sys
 from datetime import datetime
 from pathlib import Path
-from typing import Any
-
-# Add project root to sys.path to allow importing ldm_core and scripts
-sys.path.append(str(Path(__file__).parent.parent))
 
 from ldm_core.ui import UI
 
 
 def strip_ansi(text):
-    """Removes ANSI escape sequences from a string."""
-    ansi_escape = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
-    return ansi_escape.sub("", text)
+    """Removes ANSI escape codes from text."""
+    return re.sub(r"\x1b\[[0-9;]*[mK]", "", text)
 
 
 def anonymize_content(content):
-    """Removes identifiable information from the report content."""
-    # 1. Specific headers
+    """Redacts sensitive host-specific paths."""
+    # Redact HOME paths
+    home = str(Path.home())
+    content = content.replace(home, "[HOME]")
+    # Redact hostname if detected in report headers
     content = re.sub(r"Hostname:\s+[^\n]+", "Hostname:  [ANONYMIZED]", content)
-    content = re.sub(r"Binary:\s+[^\n]+", "Binary:    [ANONYMIZED]", content)
-    content = re.sub(r"Worker ID:\s+[^\n]+", "Worker ID: [ANONYMIZED]", content)
-    content = re.sub(r"Azure Region:\s+[^\n]+", "Azure Region: [ANONYMIZED]", content)
-
-    # 2. Absolute paths (macOS and Linux/Windows)
-    content = re.sub(
-        r"(/Users/[^/\s]+|/home/[^/\s]+|[A-Z]:\\Users\\[^\\\s]+)", "[HOME]", content
-    )
-
-    # 3. Path markers
-    content = re.sub(r"✅\s+/[^\n]+", "✅  [PATH]", content)
-    content = re.sub(r"⚠️\s+/[^\n]+", "⚠️  [PATH]", content)
-    content = re.sub(r"❌\s+/[^\n]+", "❌  [PATH]", content)
-
-    # 4. Windows Specific binary paths
-    return re.sub(r"✅\s+[A-Z]:\\[^\n]+", "✅  [PATH]", content)
+    # Redact binary path
+    return re.sub(r"Binary:\s+[^\n]+", "Binary:    [ANONYMIZED]", content)
 
 
 def get_report_metadata(report_path):
@@ -102,10 +84,39 @@ def get_report_metadata(report_path):
     provider = provider_match.group(1).strip() if provider_match else "Unknown"
 
     # 4. Extract LDM Version
+    version = "Unknown"
     version_match = re.search(r"Version:\s+ldm\s+([^\n]+)", content)
     if not version_match:
         version_match = re.search(r"Version:\s+([^\n]+)", content)
-    version = version_match.group(1).strip() if version_match else "Unknown"
+
+    if version_match:
+        cand = version_match.group(1).strip()
+        if not cand.startswith("$("):  # Ignore malformed PS output
+            version = cand
+
+    if version == "Unknown" or version.startswith("$("):
+        # Fallback: Extract from doctor output
+        v_doctor_match = re.search(r"LDM Version\s+.*?v([0-9a-z.-]+)", content)
+        if v_doctor_match:
+            version = v_doctor_match.group(1).strip()
+
+    # 5. Extract Docker Engine version
+    engine_v = "Unknown"
+    engine_match = re.search(r"Docker Engine\s+.*?v([0-9.]+)", content)
+    if engine_match:
+        engine_v = f"v{engine_match.group(1)}"
+
+    # 6. Extract specific provider versions (OrbStack/Colima)
+    provider_v = ""
+    # OrbStack Version may appear in new reports
+    ov_match = re.search(r"OrbStack Version\s+.*?v([0-9.]+)", content)
+    if ov_match:
+        provider_v = f"v{ov_match.group(1)}"
+    else:
+        # Colima Version may appear in new reports
+        cv_match = re.search(r"Colima Version\s+.*?v([0-9.]+)", content)
+        if cv_match:
+            provider_v = f"v{cv_match.group(1)}"
 
     arch = "Unknown"
     host_os = "Unknown"
@@ -203,6 +214,8 @@ def get_report_metadata(report_path):
         "arch": arch,
         "os": host_os,
         "provider": provider,
+        "engine_v": engine_v,
+        "provider_v": provider_v,
         "version": version,
         "passed": passed,
         "status_slug": status_slug,
@@ -214,50 +227,40 @@ def get_report_metadata(report_path):
 
 
 def sync_reports():
-    script_dir = Path(__file__).parent.parent
-    results_dir = script_dir / "references" / "verification-results"
+    """Main synchronization logic."""
+    results_dir = Path("references/verification-results")
     history_dir = results_dir / "history"
-    source_file = script_dir / "docs" / "COMPATIBILITY_TABLE.md"
+    source_file = Path("docs/COMPATIBILITY_TABLE.md")
 
-    if not source_file.exists():
-        UI.error(f"Source file not found: {source_file}")
+    if not results_dir.exists():
+        UI.error(f"Directory not found: {results_dir}")
         return
 
-    history_dir.mkdir(exist_ok=True)
-
-    # 1. Process all reports
-    reports = list(results_dir.glob("*.txt"))
-    all_metas = []
-    for report in reports:
-        if report.name == ".gitkeep":
+    # 1. Gather and Parse all reports (including history)
+    all_txt = list(results_dir.glob("*.txt")) + list(history_dir.glob("*.txt"))
+    report_metas = []
+    for r in all_txt:
+        if r.name == ".gitkeep":
             continue
         try:
-            meta = get_report_metadata(report)
-            all_metas.append(meta)
+            report_metas.append(get_report_metadata(r))
         except Exception as e:
-            UI.error(f"Failed to process {report.name}: {e}")
+            UI.warning(f"Failed to parse {r.name}: {e}")
 
-    # 2. Archival and Redaction Logic
-    latest_per_env: dict[tuple[str, str, str], dict[str, Any]] = {}
-    for meta in all_metas:
-        key = (meta["arch"], meta["os"], meta["provider"])
-        if (
-            key not in latest_per_env
-            or meta["timestamp"] > latest_per_env[key]["timestamp"]
-        ):
-            latest_per_env[key] = meta
+    # 2. Standardize Filenames & Archive Old Reports
+    # We only keep the LATEST report for each environment (internal_slug) in the root
+    latest_by_env = {}
+    for meta in sorted(report_metas, key=lambda x: x["timestamp"]):
+        latest_by_env[meta["internal_slug"]] = meta
 
-    for meta in all_metas:
-        key = (meta["arch"], meta["os"], meta["provider"])
-        is_latest = latest_per_env[key]["report_path"] == meta["report_path"]
-
+    for meta in report_metas:
+        is_latest = latest_by_env[meta["internal_slug"]] == meta
         expected_name = f"verify-{meta['internal_slug']}-{meta['status_slug']}"
-        name_parts = meta["report_path"].stem.split("-")
-        name_hash = (
-            name_parts[-1]
-            if (len(name_parts) >= 6 and meta["report_path"].name.startswith("verify-"))
-            else hashlib.sha256(meta["report_path"].name.encode()).hexdigest()[:8]
-        )
+
+        # Generate a unique hash for the filename to prevent collisions if timestamps are identical
+        name_hash = hashlib.md5(
+            f"{meta['internal_slug']}{meta['timestamp']}".encode()
+        ).hexdigest()[:8]
         new_name = f"{expected_name}-{name_hash}.txt"
 
         if is_latest:
@@ -317,15 +320,20 @@ def sync_reports():
         }
         return mapping.get(provider, f"`{provider}`")
 
-    table_header = "| Architecture | Host OS | Docker Provider | Hardening | LDM Version | Verified | Report |"
-    table_sep = "| :--- | :--- | :--- | :--- | :--- | :--- | :--- |"
+    table_header = "| Architecture | Host OS | Docker Provider | Docker Engine | Hardening | LDM Version | Verified | Report |"
+    table_sep = "| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |"
     rows = []
     for meta in sorted(table_metas, key=lambda x: (x["arch"], x["os"], x["provider"])):
         badge = get_badge(meta["provider"], meta["os"])
         icon = "✅" if meta["passed"] else "❌"
         report_link = f"[{meta['report_path'].name}](../references/verification-results/{meta['report_path'].name})"
+
+        provider_display = f"**{meta['provider']}**"
+        if meta["provider_v"]:
+            provider_display += f" `{meta['provider_v']}`"
+
         rows.append(
-            f"| **{meta['arch']}** | {meta['os']} | **{meta['provider']}** | {badge} | `{meta['version']}` | {icon} | {report_link} |"
+            f"| **{meta['arch']}** | {meta['os']} | {provider_display} | `{meta['engine_v']}` | {badge} | `{meta['version']}` | {icon} | {report_link} |"
         )
 
     new_table = f"{table_header}\n{table_sep}\n" + "\n".join(rows)
