@@ -26,11 +26,27 @@ TIMESTAMP=$(date +%Y%m%d-%H%M%S)
 # Use a specific prefix to avoid glob matches with other files
 RESULTS_FILE_TMP="${ORIGINAL_PWD}/.ldm-verify-tmp-${TIMESTAMP}.txt"
 
+# Determine the OS platform precisely
+PLATFORM_INFO="$OSTYPE"
+if [[ "$OSTYPE" == "linux"* ]]; then
+    if [ -f /etc/os-release ]; then
+        # Extract PRETTY_NAME or ID+VERSION_ID
+        DISTRO=$(grep "^PRETTY_NAME=" /etc/os-release | cut -d'=' -f2 | tr -d '"')
+        if [ -n "$DISTRO" ]; then
+            PLATFORM_INFO="$DISTRO"
+        else
+            ID=$(grep "^ID=" /etc/os-release | cut -d'=' -f2 | tr -d '"')
+            VER=$(grep "^VERSION_ID=" /etc/os-release | cut -d'=' -f2 | tr -d '"')
+            PLATFORM_INFO="${ID}-${VER}"
+        fi
+    fi
+fi
+
 {
     echo "=== LDM BINARY VERIFICATION REPORT ==="
     echo "Timestamp: $(date)"
     echo "Hostname:  $HOSTNAME"
-    echo "Platform:  $OSTYPE"
+    echo "Platform:  $PLATFORM_INFO"
     echo "Binary:    $(which "$LDM_CMD")"
     echo "Version:   $("$LDM_CMD" --version 2>/dev/null || echo "unknown")"
     
