@@ -925,11 +925,11 @@ def verify_executable_checksum(version):
 
         candidates = []
         if system == "darwin":
-            candidates.append("ldm-macos")  # Unified/Universal2 binary
             if machine == "arm64":
                 candidates.append("ldm-macos-arm64")
             else:
                 candidates.append("ldm-macos-x86_64")
+            candidates.append("ldm-macos")  # Fallback for legacy unified binary
         elif system in ["win32", "windows"]:
             candidates.append("ldm-windows.exe")
         else:

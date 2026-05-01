@@ -240,8 +240,7 @@ jobs:
         shell: bash
         run: |
           cd bin-temp
-          cp ldm-macos-arm64 ldm-macos
-          sha256sum ldm-linux ldm-macos ldm-macos-arm64 ldm-macos-x86_64 ldm-windows.exe samples.zip ../compatibility.json > checksums.txt
+          sha256sum ldm-linux ldm-macos-arm64 ldm-macos-x86_64 ldm-windows.exe samples.zip ../compatibility.json > checksums.txt
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
@@ -269,26 +268,26 @@ jobs:
 
             **macOS (Apple Silicon):**
             ```bash
-            sudo curl -L https://github.Dist/liferay-docker-manager/releases/${{ steps.check_release.outputs.is_release == 'true' && 'latest/download' || format('download/{0}', github.ref_name) }}/ldm-macos-arm64 -o /usr/local/bin/ldm
+            sudo curl -L https://github.com/peterrichards-lr/liferay-docker-manager/releases/${{ steps.check_release.outputs.is_release == 'true' && 'latest/download' || format('download/{0}', github.ref_name) }}/ldm-macos-arm64 -o /usr/local/bin/ldm
             sudo chmod +x /usr/local/bin/ldm
             ```
 
             **macOS (Apple Intel):**
             ```bash
-            sudo curl -L https://github.Dist/liferay-docker-manager/releases/${{ steps.check_release.outputs.is_release == 'true' && 'latest/download' || format('download/{0}', github.ref_name) }}/ldm-macos-x86_64 -o /usr/local/bin/ldm
+            sudo curl -L https://github.com/peterrichards-lr/liferay-docker-manager/releases/${{ steps.check_release.outputs.is_release == 'true' && 'latest/download' || format('download/{0}', github.ref_name) }}/ldm-macos-x86_64 -o /usr/local/bin/ldm
             sudo chmod +x /usr/local/bin/ldm
             ```
 
             **Linux / WSL2:**
             ```bash
-            sudo curl -L https://github.Dist/liferay-docker-manager/releases/${{ steps.check_release.outputs.is_release == 'true' && 'latest/download' || format('download/{0}', github.ref_name) }}/ldm-linux -o /usr/local/bin/ldm
+            sudo curl -L https://github.com/peterrichards-lr/liferay-docker-manager/releases/${{ steps.check_release.outputs.is_release == 'true' && 'latest/download' || format('download/{0}', github.ref_name) }}/ldm-linux -o /usr/local/bin/ldm
             sudo chmod +x /usr/local/bin/ldm
             ```
 
             **Windows (PowerShell):**
             ```powershell
             New-Item -ItemType Directory -Force -Path "$HOME\bin"
-            Invoke-WebRequest -Uri "https://github.Dist/liferay-docker-manager/releases/${{ steps.check_release.outputs.is_release == 'true' && 'latest/download' || format('download/{0}', github.ref_name) }}/ldm-windows.exe" -OutFile "$HOME\bin\ldm.exe"
+            Invoke-WebRequest -Uri "https://github.com/peterrichards-lr/liferay-docker-manager/releases/${{ steps.check_release.outputs.is_release == 'true' && 'latest/download' || format('download/{0}', github.ref_name) }}/ldm-windows.exe" -OutFile "$HOME\bin\ldm.exe"
             ```
           draft: false
           prerelease: ${{ steps.check_release.outputs.is_release != 'true' }}
