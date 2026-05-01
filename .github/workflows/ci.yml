@@ -249,7 +249,7 @@ jobs:
           files: |
             bin-temp/ldm-linux
             bin-temp/ldm-macos-arm64
-            bin-temp/ldm-macos-x86_64            bin-temp/ldm-macos-x86_64
+            bin-temp/ldm-macos-x86_64
             bin-temp/ldm-windows.exe
             bin-temp/samples.zip
             bin-temp/checksums.txt
