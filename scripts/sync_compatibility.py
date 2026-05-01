@@ -121,8 +121,8 @@ def get_report_metadata(report_path):
     # --- LEGACY MAPPINGS (Manual Overrides for existing lab reports) ---
     legacy_map = {
         "apple-silicon-macos-26-tahoe-colima": "v0.10.1",
-        "apple-silicon-macos-26-tahoe-orbstack": "v1.9.4",
-        "apple-intel-macos-12-monterey-orbstack": "v1.9.4",
+        "apple-silicon-macos-26-tahoe-orbstack": "v2.1.1",
+        "apple-intel-macos-12-monterey-orbstack": "v1.5.1",
         "windows-pc-windows-11-docker-desktop": "v4.35.0",
         "windows-pc-windows-11-native-wsl2": "WSL 2.4.4",
     }
