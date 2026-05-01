@@ -284,55 +284,23 @@ class ConfigHandler(BaseHandler):
 
             from ldm_core import resources
 
-            # 1. env-blacklist.txt
-            blacklist_file = common_dir / "env-blacklist.txt"
-            if not blacklist_file.exists():
-                content = (
-                    pkg_resources.files(resources)
-                    / "common_baseline"
-                    / "env-blacklist.txt"
-                ).read_text()
-                safe_write_text(blacklist_file, content)
-                UI.info("  + Created env-blacklist.txt")
+            baseline_path = pkg_resources.files(resources) / "common_baseline"
 
-            # 2. portal-ext.properties
-            pe_file = common_dir / "portal-ext.properties"
-            if not pe_file.exists():
-                content = (
-                    pkg_resources.files(resources)
-                    / "common_baseline"
-                    / "portal-ext.properties"
-                ).read_text()
-                safe_write_text(pe_file, content)
-                UI.info("  + Created portal-ext.properties")
+            created_count = 0
+            for resource_file in baseline_path.iterdir():
+                # Skip non-files or directories
+                if not resource_file.is_file():
+                    continue
 
-            # 3. Session Timeout Config
-            timeout_config_name = "com.liferay.frontend.js.web.internal.session.timeout.configuration.SessionTimeoutConfiguration.scoped~3e124e46-69f0-4ebd-a3be-43b3de16f45a.config"
-            timeout_file = common_dir / timeout_config_name
-            if not timeout_file.exists():
-                content = (
-                    pkg_resources.files(resources)
-                    / "common_baseline"
-                    / timeout_config_name
-                ).read_text()
-                safe_write_text(timeout_file, content)
-                UI.info("  + Created SessionTimeout config")
-
-            # 4. Elasticsearch Configs
-            es_configs = [
-                "com.liferay.portal.search.elasticsearch7.configuration.ElasticsearchConfiguration.config",
-                "com.liferay.portal.search.elasticsearch7.configuration.ElasticsearchConnectionConfiguration-REMOTE.config",
-                "com.liferay.portal.search.elasticsearch8.configuration.ElasticsearchConfiguration.config",
-                "com.liferay.portal.search.elasticsearch8.configuration.ElasticsearchConnectionConfiguration-REMOTE.config",
-            ]
-            for es_conf in es_configs:
-                target_file = common_dir / es_conf
+                target_file = common_dir / resource_file.name
                 if not target_file.exists():
-                    content = (
-                        pkg_resources.files(resources) / "common_baseline" / es_conf
-                    ).read_text()
+                    content = resource_file.read_text()
                     safe_write_text(target_file, content)
-                    UI.info(f"  + Created {es_conf}")
+                    UI.info(f"  + Created {resource_file.name}")
+                    created_count += 1
+
+            if created_count == 0:
+                UI.info("  (All baseline assets already present)")
 
             UI.success(f"Baseline common assets initialized in: {common_dir}")
         except Exception as e:

@@ -92,7 +92,13 @@ if [ -d "$VENV_PATH" ]; then
 	fi
 fi
 
-# 7. Documentation Sync
+# 7. Baseline Resources Sync
+info "Synchronizing Baseline Resources..."
+export PYTHONPATH="$SCRIPT_DIR"
+python3 "$SCRIPT_DIR/scripts/sync_baseline.py" || EXIT_CODE=1
+python3 "$SCRIPT_DIR/scripts/sync_colors.py" || EXIT_CODE=1
+
+# 8. Documentation Sync
 info "Synchronizing Documentation..."
 export PYTHONPATH="$SCRIPT_DIR"
 python3 "$SCRIPT_DIR/scripts/sync_docs.py" || EXIT_CODE=1

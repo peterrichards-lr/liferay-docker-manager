@@ -200,7 +200,11 @@ tls:
         )
 
         # Also stop the docker socket proxy and global search
-        for container in ["liferay-docker-proxy", "liferay-search-global"]:
+        from ldm_core.constants import INFRA_SERVICES
+
+        for container, _ in INFRA_SERVICES:
+            if container == "liferay-proxy-global":
+                continue  # Handled by compose down above
             self.run_command(
                 ["docker", "stop", container], check=False, capture_output=True
             )

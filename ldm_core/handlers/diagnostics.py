@@ -37,14 +37,10 @@ class DiagnosticsHandler(BaseHandler):
 
         # 1. Global Infrastructure
         UI.raw(f"{UI.WHITE}Global Infrastructure:{UI.COLOR_OFF}")
-        infra = [
-            ("liferay-proxy-global", "SSL Proxy (Traefik)"),
-            ("liferay-search-global", "Search (ES)"),
-            ("liferay-docker-proxy", "macOS Socket Bridge"),
-        ]
+        from ldm_core.constants import INFRA_SERVICES
 
         any_infra = False
-        for container, label in infra:
+        for container, label in INFRA_SERVICES:
             res = run_command(
                 ["docker", "ps", "-q", "-f", f"name=^{container}$"], check=False
             )

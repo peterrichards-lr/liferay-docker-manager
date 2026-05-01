@@ -1,8 +1,8 @@
 from pathlib import Path
 
 # --- Constants & Configuration ---
-# LDM_MAGIC_VERSION: 2.4.26-pre.4
-VERSION = "2.4.26-pre.4"
+# LDM_MAGIC_VERSION: 2.4.26-pre.7
+VERSION = "2.4.26-pre.7"
 
 
 BUILD_INFO = None
@@ -23,6 +23,13 @@ ELASTICSEARCH_VERSION = "8.19.1"
 ELASTICSEARCH7_VERSION = "7.17.24"
 TRAEFIK_VERSION = "v3.6.1"
 SOCAT_IMAGE = "alpine/socat"
+
+# --- Global Infrastructure ---
+INFRA_SERVICES = [
+    ("liferay-proxy-global", "SSL Proxy (Traefik)"),
+    ("liferay-search-global", "Search (ES)"),
+    ("liferay-docker-proxy", "macOS Socket Bridge"),
+]
 
 # --- Orchestration Configuration ---
 RUN_ATTRS = [

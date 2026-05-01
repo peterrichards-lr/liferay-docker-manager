@@ -1,20 +1,22 @@
 import sys
 
+from ldm_core.ui_colors import UIColors
+
 
 # --- UI Helpers ---
 class UI:
-    COLOR_OFF = "\033[0m"
-    GREEN = "\033[0;32m"
-    YELLOW = "\033[0;33m"
-    WHITE = "\033[0;37m"
-    BYELLOW = "\033[1;33m"
-    RED = "\033[0;31m"
-    BRED = "\033[1;31m"
-    CYAN = "\033[0;36m"
-    BLUE = "\033[0;34m"
-    BOLD = "\033[1m"
-    DIM = "\033[2m"
-    UNDERLINE = "\033[4m"
+    COLOR_OFF = UIColors.COLOR_OFF
+    GREEN = UIColors.GREEN
+    YELLOW = UIColors.YELLOW
+    WHITE = UIColors.WHITE
+    BYELLOW = UIColors.BYELLOW
+    RED = UIColors.RED
+    BRED = UIColors.BRED
+    CYAN = UIColors.CYAN
+    BLUE = UIColors.BLUE
+    BOLD = UIColors.BOLD
+    DIM = UIColors.DIM
+    UNDERLINE = UIColors.UNDERLINE
 
     NON_INTERACTIVE = False
     VERBOSE = False

@@ -4,10 +4,24 @@ set -e
 # LDM Local Smoke Test Suite
 # Replicates the CI environment checks to catch CLI/Attribute regressions locally.
 
-UI_YELLOW='\033[1;33m'
-UI_GREEN='\033[0;32m'
-UI_RED='\033[0;31m'
-UI_OFF='\033[0m'
+# Source centralized colors
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [ -f "$SCRIPT_DIR/colors.sh" ]; then
+    # shellcheck disable=SC1091
+    source "$SCRIPT_DIR/colors.sh"
+    # shellcheck disable=SC2153
+    UI_YELLOW=$UI_BYELLOW # Map to bold yellow for compatibility with original script
+    # shellcheck disable=SC2269
+    UI_GREEN=$UI_GREEN
+    # shellcheck disable=SC2153
+    UI_RED=$UI_BRED
+    UI_OFF=$UI_COLOR_OFF
+else
+    UI_YELLOW='\033[1;33m'
+    UI_GREEN='\033[0;32m'
+    UI_RED='\033[0;31m'
+    UI_OFF='\033[0m'
+fi
 
 echo -e "${UI_YELLOW}=== Starting LDM Smoke Tests ===${UI_OFF}"
 

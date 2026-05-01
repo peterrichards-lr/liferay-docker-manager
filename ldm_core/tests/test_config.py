@@ -42,9 +42,14 @@ class TestConfigManagement(unittest.TestCase):
         mock_cwd.return_value = Path("/tmp/work")
 
         # Mock the resource files
-        mock_resource = MagicMock()
-        mock_resource.read_text.return_value = "baseline content"
-        mock_pkg_files.return_value.__truediv__.return_value.__truediv__.return_value = mock_resource
+        mock_baseline_dir = MagicMock()
+        mock_resource_file = MagicMock()
+        mock_resource_file.name = "portal-ext.properties"
+        mock_resource_file.is_file.return_value = True
+        mock_resource_file.read_text.return_value = "baseline content"
+
+        mock_baseline_dir.iterdir.return_value = [mock_resource_file]
+        mock_pkg_files.return_value.__truediv__.return_value = mock_baseline_dir
 
         with (
             patch.object(Path, "mkdir"),
