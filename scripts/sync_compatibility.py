@@ -101,6 +101,12 @@ def get_report_metadata(report_path):
 
     provider = provider_match.group(1).strip() if provider_match else "Unknown"
 
+    # 4. Extract LDM Version
+    version_match = re.search(r"Version:\s+ldm\s+([^\n]+)", content)
+    if not version_match:
+        version_match = re.search(r"Version:\s+([^\n]+)", content)
+    version = version_match.group(1).strip() if version_match else "Unknown"
+
     arch = "Unknown"
     host_os = "Unknown"
     p_low = platform_str.lower()
@@ -197,6 +203,7 @@ def get_report_metadata(report_path):
         "arch": arch,
         "os": host_os,
         "provider": provider,
+        "version": version,
         "passed": passed,
         "status_slug": status_slug,
         "internal_slug": internal_slug,
@@ -310,17 +317,15 @@ def sync_reports():
         }
         return mapping.get(provider, f"`{provider}`")
 
-    table_header = (
-        "| Architecture | Host OS | Docker Provider | Hardening | Verified | Report |"
-    )
-    table_sep = "| :--- | :--- | :--- | :--- | :--- | :--- |"
+    table_header = "| Architecture | Host OS | Docker Provider | Hardening | LDM Version | Verified | Report |"
+    table_sep = "| :--- | :--- | :--- | :--- | :--- | :--- | :--- |"
     rows = []
     for meta in sorted(table_metas, key=lambda x: (x["arch"], x["os"], x["provider"])):
         badge = get_badge(meta["provider"], meta["os"])
         icon = "✅" if meta["passed"] else "❌"
         report_link = f"[{meta['report_path'].name}](../references/verification-results/{meta['report_path'].name})"
         rows.append(
-            f"| **{meta['arch']}** | {meta['os']} | **{meta['provider']}** | {badge} | {icon} | {report_link} |"
+            f"| **{meta['arch']}** | {meta['os']} | **{meta['provider']}** | {badge} | `{meta['version']}` | {icon} | {report_link} |"
         )
 
     new_table = f"{table_header}\n{table_sep}\n" + "\n".join(rows)
