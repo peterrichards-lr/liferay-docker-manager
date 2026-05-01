@@ -118,6 +118,15 @@ def get_report_metadata(report_path):
         if cv_match:
             provider_v = f"v{cv_match.group(1)}"
 
+    # --- LEGACY MAPPINGS (Manual Overrides for existing lab reports) ---
+    legacy_map = {
+        "apple-silicon-macos-26-tahoe-colima": "v0.10.1",
+        "apple-silicon-macos-26-tahoe-orbstack": "v1.9.4",
+        "apple-intel-macos-12-monterey-orbstack": "v1.9.4",
+        "windows-pc-windows-11-docker-desktop": "v4.35.0",
+        "windows-pc-windows-11-native-wsl2": "WSL 2.4.4",
+    }
+
     arch = "Unknown"
     host_os = "Unknown"
     p_low = platform_str.lower()
@@ -210,6 +219,10 @@ def get_report_metadata(report_path):
     clean_os = host_os.lower().replace(" ", "-").replace("+", "")
     clean_provider = provider.lower().replace(" ", "-")
     internal_slug = f"{clean_arch}-{clean_os}-{clean_provider}"
+
+    # Apply legacy version overrides if still unknown
+    if not provider_v and internal_slug in legacy_map:
+        provider_v = legacy_map[internal_slug]
 
     # Explicitly ignore unsupported or erroneous environments
     blacklist = {
