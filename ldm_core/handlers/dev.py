@@ -54,7 +54,7 @@ class DevHandler(BaseHandler):
 
         # 4. Install pre-commit hooks
         UI.info("Registering pre-commit hooks...")
-        run_command([str(venv_python), "-m", "pre-commit", "install"])
+        run_command([str(venv_python), "-m", "pre_commit", "install"])
         UI.success("Pre-commit hooks registered.")
 
         UI.success("\n✅ Development environment is ready!")

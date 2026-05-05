@@ -29,8 +29,7 @@ if not exist "%VENV_PATH%" (
 if exist "%SCRIPT_DIR%.git" (
     if exist "%VENV_PATH%\Scripts\pre-commit.exe" (
         if not exist "%SCRIPT_DIR%.git\hooks\pre-commit" (
-            echo ⚓ Automating local git hooks (pre-commit)...
-            "%VENV_PATH%\Scripts\pre-commit.exe" install >nul 2>&1
+            echo ⚓ Automating local git hooks ^(pre-commit^)...            "%VENV_PATH%\Scripts\pre-commit.exe" install >nul 2>&1
         )
     )
 )

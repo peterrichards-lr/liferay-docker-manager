@@ -1,6 +1,22 @@
 import sys
 
-from ldm_core.ui_colors import UIColors
+try:
+    from ldm_core.ui_colors import UIColors
+except ImportError:
+
+    class UIColors:  # type: ignore[no-redef]
+        COLOR_OFF = ""
+        GREEN = ""
+        YELLOW = ""
+        WHITE = ""
+        BYELLOW = ""
+        RED = ""
+        BRED = ""
+        CYAN = ""
+        BLUE = ""
+        BOLD = ""
+        DIM = ""
+        UNDERLINE = ""
 
 
 # --- UI Helpers ---
