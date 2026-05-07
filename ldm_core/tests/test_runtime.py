@@ -172,6 +172,7 @@ class TestRuntime(unittest.TestCase):
                 return_value={
                     "host_name": "samples.local",
                     "container_name": "test-samples",
+                    "ssl": "true",
                 },
             ),
             patch.object(self.runtime, "write_meta"),
@@ -194,6 +195,8 @@ class TestRuntime(unittest.TestCase):
                 return_value=["docker", "compose"],
             ),
             patch("ldm_core.ui.UI.ask", return_value="samples.local"),
+            patch.object(self.runtime, "check_port", return_value=True),
+            patch.object(self.runtime, "check_registry_collisions"),
         ):
             # Set arguments for samples bootstrap
             self.runtime.args.samples = True

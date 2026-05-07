@@ -108,20 +108,23 @@ class BaseHandler:
                 if UI.confirm("Add host entry? (Requires sudo)", "Y"):
                     self._apply_hosts_fix([host_name])
 
-        # 3. Port Check
-        resolved_ip = (
-            self.get_resolved_ip(host_name) if host_name != "localhost" else "127.0.0.1"
-        )
-        # Handle cases where resolution fails (e.g. immediately after hosts update)
-        if not resolved_ip:
-            resolved_ip = "127.0.0.1"
+        # 3. Port Check (Only if not using SSL proxy which handles routing dynamically)
+        if not ssl_enabled:
+            resolved_ip = (
+                self.get_resolved_ip(host_name)
+                if host_name != "localhost"
+                else "127.0.0.1"
+            )
+            # Handle cases where resolution fails (e.g. immediately after hosts update)
+            if not resolved_ip:
+                resolved_ip = "127.0.0.1"
 
-        if not self.check_port(resolved_ip, port):
-            if self.non_interactive:
-                UI.die(f"Port {port} is already in use on {resolved_ip}.")
-            new_port = self.find_available_port(resolved_ip, port)
-            UI.warning(f"Port {port} is in use. Using {new_port} instead.")
-            port = new_port
+            if not self.check_port(resolved_ip, port):
+                if self.non_interactive:
+                    UI.die(f"Port {port} is already in use on {resolved_ip}.")
+                new_port = self.find_available_port(resolved_ip, port)
+                UI.warning(f"Port {port} is in use. Using {new_port} instead.")
+                port = new_port
 
         # 4. Registry Conflict Check
         project_name = meta.get("project_name") if meta else None
