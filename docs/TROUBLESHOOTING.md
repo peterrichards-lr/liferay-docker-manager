@@ -4,14 +4,24 @@ This guide provides solutions for common issues encountered while using Liferay 
 
 ## 💾 Disk Space Issues (Elasticsearch Flood Stage)
 
-If you see a warning about `flood stage disk watermark exceeded` in `ldm doctor`, Elasticsearch has marked your indices as **read-only** because your Docker environment is nearly full.
+If you see a warning about `flood stage disk watermark exceeded` in `ldm doctor` (or you receive a high disk space warning), Elasticsearch has marked your indices as **read-only** because your Docker environment is nearly full.
 
 ### **Reclaiming Space**
 
-Before moving data, try cleaning up unused Docker resources:
+LDM includes a proactive check in `ldm doctor` to warn you about dangling resources. If warned, clean up unused LDM resources and Docker volumes:
 
 ```bash
+# 1. Prune LDM orphaned resources (snapshots, certs, containers)
+ldm prune
+
+# 2. Prune unused Docker system resources
 docker system prune -a --volumes
+```
+
+If Elasticsearch is still stuck in read-only mode after clearing space, you may need to restart the global search container:
+
+```bash
+ldm infra-restart --search
 ```
 
 ### **Moving Docker to an External Drive (macOS / Colima)**
@@ -60,6 +70,28 @@ Docker Desktop on Windows stores data in a WSL2 VHDX file. To move it:
     ```
 
 4. **Restart Docker Desktop**.
+
+---
+
+## 🗄️ Database Issues
+
+### **MySQL: Initialization Crash / "The designated data directory is unusable"**
+
+If your database container (`<project>-db-1`) continuously crashes with logs indicating `Table 'mysql.plugin' doesn't exist` or `The designated data directory /var/lib/mysql/ is unusable`, the initial database setup was interrupted or failed (often due to an incorrect configuration flag for that specific version).
+
+Because the initialization aborted, the Docker volume was corrupted.
+
+#### **Solution: Wipe and Re-initialize**
+
+1. Stop the broken project.
+2. Remove the project and **explicitly delete its corrupted volumes**.
+3. Run the project again to trigger a clean database initialization.
+
+```bash
+ldm stop <project>
+ldm rm <project> --volumes
+ldm run <project>
+```
 
 ---
 
@@ -129,4 +161,27 @@ LDM includes an **Auto-Repair** feature. If the health check fails for 5 minutes
 ldm infra-down
 rm -rf ~/.ldm/infra/search/data
 ldm infra-setup --search
+```
+
+### **Elasticsearch: index_not_found_exception / Cascading OSGi Failures**
+
+If Liferay's `ElasticsearchSearchEngine` fails to activate, causing dozens of cascading `NullPointerException` and `ServiceException` logs, the search index is likely missing or out-of-sync with the database. This commonly happens if a pre-warmed seed lacked the corresponding search snapshot.
+
+#### **Solution 1: Surgical Search Reset (Recommended)**
+
+If you want to keep your database intact but rebuild the broken search indices from scratch:
+
+```bash
+ldm stop <project>
+ldm reset <project> global-search
+ldm run <project>
+```
+
+#### **Solution 2: Total Project Reseed**
+
+If the database and search index are completely desynchronized (often resulting in `NoSuchResourcePermissionException` logs), wipe all data and start fresh:
+
+```bash
+ldm stop <project>
+ldm reseed <project>
 ```
