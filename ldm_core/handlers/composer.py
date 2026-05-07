@@ -1,7 +1,6 @@
 import json
 import math
 import platform
-import re
 from pathlib import Path
 
 from ldm_core.handlers.base import BaseHandler
@@ -137,10 +136,7 @@ class ComposerHandler(BaseHandler):
             # 2. If it has a known suffix, use it as is (DXP)
             elif any(s in tag for s in ["-lts", "-qr", "-ga"]):
                 image = f"liferay/dxp:{tag}"
-            # 3. Modern Quarterly Tags (e.g. 2026.q1.4) without suffix default to LTS
-            elif re.match(r"^\d{4}\.q[1-4]\.\d+$", tag):
-                image = f"liferay/dxp:{tag}-lts"
-            # 4. Default Fallback
+            # 3. Default Fallback
             else:
                 image = f"liferay/dxp:{tag}"
 

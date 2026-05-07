@@ -279,7 +279,7 @@ class TestDiagnostics(unittest.TestCase):
         try:
             _status, ok, errors = self.manager.validate_lcp_json(lcp_file)
             self.assertEqual(ok, "warn")
-            self.assertTrue(any("missing 'targetPort'" in e for e in errors))
+            self.assertTrue(any("missing 'port' or 'targetPort'" in e for e in errors))
         finally:
             if lcp_file.exists():
                 lcp_file.unlink()

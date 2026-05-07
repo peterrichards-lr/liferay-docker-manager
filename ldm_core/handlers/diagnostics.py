@@ -2599,8 +2599,10 @@ pause
                     if not isinstance(p, dict):
                         errors.append(f"Port at index {i} must be an object.")
                         continue
-                    if not p.get("targetPort"):
-                        errors.append(f"Port at index {i} missing 'targetPort'.")
+                    if not p.get("port") and not p.get("targetPort"):
+                        errors.append(
+                            f"Port at index {i} missing 'port' or 'targetPort'."
+                        )
 
             # 3. Load Balancer / External Port Consistency
             has_lb = "loadBalancer" in data
