@@ -198,41 +198,41 @@ class ConfigHandler(BaseHandler):
             if p.exists():
                 return p
 
-        # 2. Check Local (Source Checkout)
+        # 2. Check Cache (~/.ldm/references/samples/vVERSION)
+        home = get_actual_home()
+        cache_base = home / ".ldm" / "references" / "samples"
+
+        cache_versioned = cache_base / f"v{VERSION}"
+        if cache_versioned.exists():
+            return cache_versioned
+
+        # Backwards compatibility for older caches
+        cache_current = cache_base / "current"
+
+        # 3. Check Local (Source Checkout)
         # We check relative to SCRIPT_DIR and also CWD for convenience during dev
+        # But we do this BEFORE prompting for download so developers don't have to download
+        # if they are actively working in the LDM repo.
         samples_root = SCRIPT_DIR / "references" / "samples"
         if not samples_root.exists():
             samples_root = Path.cwd() / "references" / "samples"
 
-        # 3. Check Cache (~/.ldm/references/samples/current or /vVERSION)
-        if not samples_root.exists():
-            home = get_actual_home()
-            cache_base = home / ".ldm" / "references" / "samples"
+        if samples_root.exists():
+            return samples_root
 
-            # Priority 1: 'current' (latest successfully downloaded)
-            cache_current = cache_base / "current"
-            if cache_current.exists():
-                return cache_current
-
-            # Priority 2: Version-specific (backwards compatibility)
-            cache_versioned = cache_base / f"v{VERSION}"
-            if cache_versioned.exists():
-                return cache_versioned
-
-            # Priority 3: Download
-            # 4. Prompt & Download (Standalone Binary Mode)
-            if not self.non_interactive:
-                UI.heading("On-Demand Sample Pack")
-                UI.info("Sample assets are not bundled with the standalone binary.")
-                if UI.confirm(f"Download sample pack for v{VERSION} (~50MB)?", "Y"):
-                    if AssetHandler(self.args).download_samples(VERSION, cache_current):
-                        UI.success("Sample pack ready.")
-                        return cache_current
-                    UI.die("Failed to download sample pack.")
-                else:
-                    UI.die("Sample pack required for --samples mode.")
+        # 4. Prompt & Download
+        if not self.non_interactive:
+            UI.heading("On-Demand Sample Pack")
+            UI.info("Sample assets are not bundled with the standalone binary.")
+            if UI.confirm(f"Download sample pack for v{VERSION} (~50MB)?", "Y"):
+                if AssetHandler(self.args).download_samples(VERSION, cache_versioned):
+                    UI.success("Sample pack ready.")
+                    return cache_versioned
+                UI.die("Failed to download sample pack.")
             else:
-                UI.die("Sample assets missing and non-interactive mode is active.")
+                UI.die("Sample pack required for --samples mode.")
+        else:
+            UI.die("Sample assets missing and non-interactive mode is active.")
 
         return samples_root
 
