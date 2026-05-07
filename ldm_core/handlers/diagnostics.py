@@ -2096,6 +2096,37 @@ pause
             except Exception:
                 pass
 
+        # 4.4 Dangling Docker Resources Check
+        df_out = run_command(
+            ["docker", "system", "df", "--format", "{{json .}}"], check=False
+        )
+        if df_out:
+            reclaimable_bytes = 0
+            for line in df_out.strip().split("\n"):
+                if not line:
+                    continue
+                try:
+                    data = json.loads(line)
+                    # Extract Reclaimable space bytes from json
+                    if "ReclaimableSize" in data:
+                        reclaimable_bytes += int(data.get("ReclaimableSize", 0))
+                except Exception:
+                    pass
+
+            # If reclaimable space is more than 5GB (5 * 1024 * 1024 * 1024)
+            if reclaimable_bytes > 5368709120:
+                reclaim_gb = reclaimable_bytes // 1073741824
+                results.append(
+                    (
+                        "Disk Space",
+                        f"⚠️ {reclaim_gb}GB reclaimable docker resources",
+                        "warn",
+                    )
+                )
+                add_hint(
+                    f"You have {reclaim_gb}GB of unused Docker resources. Run '{UI.WHITE}ldm prune{UI.COLOR_OFF}' and '{UI.WHITE}docker system prune --volumes{UI.COLOR_OFF}' to reclaim space and prevent disk watermark issues."
+                )
+
         # Print Results Table
         UI.raw(f"\n{'Component':<35} {'Status':<30}")
         UI.raw("-" * 75)
