@@ -117,6 +117,46 @@ class TestComposer(unittest.TestCase):
                 self.assertIn("--add-opens=java.base/java.lang=ALL-UNNAMED", jvm_opts)
                 self.assertIn("-Dfile.encoding=UTF8", jvm_opts)
 
+    @patch("ldm_core.handlers.composer.dict_to_yaml")
+    def test_write_docker_compose_mysql_auth_flags(self, mock_yaml):
+        mock_yaml.return_value = "services: {}"
+
+        with (
+            patch("ldm_core.utils.safe_write_text"),
+            patch.object(self.composer, "update_portal_ext"),
+        ):
+            # Test MySQL 8.0 logic (default authentication plugin)
+            meta_80 = {
+                "tag": "7.4.3.112",  # Resolves to mysql:5.7 if no resolve_dependency_version matches, wait let's pass a tag that resolves to 8.0, or we can mock resolve_dependency_version
+                "db_type": "mysql",
+                "host_name": "localhost",
+            }
+            with patch(
+                "ldm_core.handlers.composer.resolve_dependency_version",
+                return_value="8.0.36",
+            ):
+                self.composer.write_docker_compose(self.paths, meta_80)
+                compose_data = mock_yaml.call_args[0][0]
+                db_command = " ".join(compose_data["services"]["db"]["command"])
+                self.assertIn(
+                    "--default-authentication-plugin=mysql_native_password", db_command
+                )
+
+            # Test MySQL 8.4 logic (native-password plugin)
+            meta_84 = {
+                "tag": "2024.q4.1",
+                "db_type": "mysql",
+                "host_name": "localhost",
+            }
+            with patch(
+                "ldm_core.handlers.composer.resolve_dependency_version",
+                return_value="8.4.1",
+            ):
+                self.composer.write_docker_compose(self.paths, meta_84)
+                compose_data = mock_yaml.call_args[0][0]
+                db_command = " ".join(compose_data["services"]["db"]["command"])
+                self.assertIn("--mysql-native-password=ON", db_command)
+
 
 if __name__ == "__main__":
     unittest.main()

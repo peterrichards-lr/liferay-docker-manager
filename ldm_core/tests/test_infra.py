@@ -40,6 +40,28 @@ class TestInfraHandler(unittest.TestCase):
             any("compose" in str(c) and "up" in str(c) for c in mock_run.call_args_list)
         )
 
+    @patch("ldm_core.handlers.infra.get_actual_home")
+    @patch.object(InfraHandler, "setup_global_search")
+    @patch.object(BaseHandler, "run_command")
+    def test_setup_infrastructure_quiet(self, mock_run, mock_search, mock_home):
+        mock_home.return_value = Path("/tmp/home")
+
+        # Just return a generic success value for all run_command calls
+        mock_run.return_value = "ok"
+
+        # Call with quiet=True
+        self.manager.setup_infrastructure("127.0.0.1", 443, use_ssl=True, quiet=True)
+
+        # Verify that compose up was called with capture_output=True
+        compose_call_found = False
+        for call in mock_run.call_args_list:
+            if "compose" in str(call) and "up" in str(call):
+                compose_call_found = True
+                self.assertTrue(call.kwargs.get("capture_output", False))
+                break
+
+        self.assertTrue(compose_call_found, "Docker compose up should have been called")
+
     @patch.object(InfraHandler, "cmd_infra_down")
     @patch.object(InfraHandler, "cmd_infra_setup")
     def test_cmd_infra_restart(self, mock_setup, mock_down):

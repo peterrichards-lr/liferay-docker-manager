@@ -145,6 +145,79 @@ class TestRuntime(unittest.TestCase):
             self.assertEqual(str(written_meta.get("seeded")).lower(), "true")
             self.assertIn("seed_version", written_meta)
 
+    @patch("socket.gethostbyname")
+    def test_cmd_run_duplicate_orchestration_suppressed(self, mock_gethost):
+        mock_gethost.return_value = "127.0.0.1"
+        root = Path("test-samples")
+        all_paths = {
+            "root": root,
+            "data": root / "data",
+            "deploy": root / "deploy",
+            "files": root / "files",
+            "state": root / "osgi" / "state",
+            "cx": root / "osgi" / "client-extensions",
+            "configs": root / "osgi" / "configs",
+            "modules": root / "osgi" / "modules",
+            "backups": root / "snapshots",
+            "portal_log4j": root / "osgi" / "log4j",
+            "common": Path("/tmp/common"),
+        }
+
+        with (
+            patch.object(self.runtime, "detect_project_path", return_value=root),
+            patch.object(self.runtime, "setup_paths", return_value=all_paths),
+            patch.object(
+                self.runtime,
+                "read_meta",
+                return_value={
+                    "host_name": "samples.local",
+                    "container_name": "test-samples",
+                },
+            ),
+            patch.object(self.runtime, "write_meta"),
+            patch.object(self.runtime, "verify_runtime_environment"),
+            patch.object(self.runtime, "run_command"),
+            patch.object(self.runtime, "sync_stack") as mock_sync,
+            patch("ldm_core.handlers.config.ConfigHandler.sync_samples"),
+            patch(
+                "ldm_core.handlers.config.ConfigHandler.get_samples_tag",
+                return_value="2025.q3.10",
+            ),
+            patch(
+                "ldm_core.handlers.config.ConfigHandler.get_samples_db_type",
+                return_value="postgresql",
+            ),
+            patch("ldm_core.handlers.snapshot.SnapshotHandler.cmd_restore"),
+            patch("time.sleep"),
+            patch(
+                "ldm_core.handlers.runtime.get_compose_cmd",
+                return_value=["docker", "compose"],
+            ),
+            patch("ldm_core.ui.UI.ask", return_value="samples.local"),
+        ):
+            # Set arguments for samples bootstrap
+            self.runtime.args.samples = True
+            self.runtime.args.tag = None
+            self.runtime.args.db = None
+            self.runtime.args.host_name = None
+            self.runtime.args.no_up = False
+            self.runtime.args.sidecar = False
+
+            self.runtime.cmd_run("test-samples")
+
+            # Verify sync_stack was called twice
+            self.assertEqual(mock_sync.call_count, 2)
+
+            # The first call should have show_summary=False (to suppress duplicates)
+            first_call_kwargs = mock_sync.call_args_list[0][1]
+            self.assertFalse(first_call_kwargs.get("show_summary", True))
+
+            # The second call shouldn't have show_summary=False
+            second_call_kwargs = mock_sync.call_args_list[1][1]
+            self.assertNotIn(
+                "show_summary", second_call_kwargs
+            )  # Or it's True by default
+
 
 if __name__ == "__main__":
     unittest.main()

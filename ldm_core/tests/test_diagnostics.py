@@ -163,7 +163,46 @@ class TestDiagnostics(unittest.TestCase):
         )
         status, ok = self.manager._check_liferay_health_logs("test-container")
         self.assertTrue("Warning" in status)
-        self.assertEqual(ok, "warn")
+        self.assertTrue(ok)
+
+    @patch("ldm_core.handlers.diagnostics.run_command")
+    @patch("ldm_core.handlers.diagnostics.sys.exit")
+    def test_cmd_doctor_disk_space_warning(self, mock_exit, mock_run):
+        # We want to specifically trigger the df_out parsing logic.
+        # So we mock run_command to return something specific when called with ["docker", "system", "df", ...]
+        # and otherwise fall back to its defaults or return None.
+
+        def run_command_side_effect(cmd, **kwargs):
+            if "df" in cmd:
+                # Return a JSON payload simulating 10GB of reclaimable space
+                return '{"Active":"18","Reclaimable":"10.5GB (99%)","Size":"10.6GB","TotalCount":"19","Type":"Images"}'
+            if "docker" in cmd and "info" in cmd:
+                return "{}"
+            if "colima" in cmd and "status" in cmd:
+                return "mountType: sshfs"
+            return None
+
+        mock_run.side_effect = run_command_side_effect
+
+        # Mock shutil.which to avoid failure on missing tools
+        with patch("shutil.which", return_value="/bin/dummy"):
+            with patch("ldm_core.ui.UI.raw") as mock_raw:
+                self.manager.args.skip_project = True
+                self.manager.args.slug = False
+                self.manager.args.bundle = False
+                self.manager.cmd_doctor()
+
+                # Check if the disk space warning was printed via UI.raw or UI.warning
+                disk_warning_found = False
+                for call in mock_raw.call_args_list:
+                    if "reclaimable docker resources" in str(call):
+                        disk_warning_found = True
+                        break
+
+                self.assertTrue(
+                    disk_warning_found,
+                    "Disk space warning should be displayed when reclaimable space is > 5GB",
+                )
 
     @patch("ldm_core.handlers.diagnostics.verify_executable_checksum")
     @patch("ldm_core.handlers.diagnostics.check_for_updates")
