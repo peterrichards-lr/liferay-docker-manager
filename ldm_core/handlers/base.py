@@ -801,7 +801,7 @@ class BaseHandler:
         return tuple(map(int, parts))
 
     def get_common_dir(self, project_path=None):
-        """Finds the 'common' directory by prioritizing CWD, Project Parent, then Binary Location."""
+        """Finds the 'common' directory by prioritizing CWD, Project Parent, then Global ~/.ldm/common."""
         # Safety: If passed a dict, extract root
         if isinstance(project_path, dict):
             project_path = project_path.get("root", ".")
@@ -819,7 +819,13 @@ class BaseHandler:
         is_source = exe_path.suffix.lower() == ".py"
 
         if is_source:
-            return SCRIPT_DIR / "common"
+            if (SCRIPT_DIR / "common").exists():
+                return SCRIPT_DIR / "common"
+
+        global_common = get_actual_home() / ".ldm" / "common"
+        if global_common.exists():
+            return global_common
+
         return Path.cwd() / "common"
 
     def setup_paths(self, project_path):
