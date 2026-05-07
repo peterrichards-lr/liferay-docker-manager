@@ -47,6 +47,12 @@ jobs:
       - name: Initialize Common Assets
         run: ldm init-common
 
+      - name: Initialize Infrastructure
+        run: |
+          ldm infra-setup --search
+          echo "Waiting for Elasticsearch to be ready..."
+          sleep 30
+
       - name: Start Liferay
         run: |
           # Construct a safe project name (dots -> underscores) for the filesystem
