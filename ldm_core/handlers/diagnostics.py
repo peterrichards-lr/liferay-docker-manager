@@ -2139,7 +2139,7 @@ pause
                 results.append(
                     (
                         "Disk Space",
-                        f"⚠️ {reclaim_gb}GB reclaimable docker resources",
+                        f"{reclaim_gb}GB reclaimable docker resources",
                         "warn",
                     )
                 )
@@ -2562,6 +2562,19 @@ pause
         if clean_hosts:
             if UI.confirm("Remove ALL LDM-managed entries from your hosts file?", "N"):
                 self._remove_hosts_entries(all_ldm=True)
+
+        # 6. Docker System Volumes & Images
+        UI.info("Cleaning up dangling Docker volumes and images...")
+        prune_output = run_command(
+            ["docker", "system", "prune", "-a", "--volumes", "-f"], check=False
+        )
+
+        # Check if space was actually reclaimed
+        if prune_output and "Total reclaimed space:" in prune_output:
+            for line in prune_output.splitlines():
+                if "Total reclaimed space:" in line:
+                    UI.success(line.strip())
+                    break
 
         UI.info("Prune complete.")
 
