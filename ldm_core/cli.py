@@ -351,7 +351,11 @@ def get_parser():
     )
     subparsers.add_parser("migrate-search", parents=[base_sub_parent])
 
-    doctor = subparsers.add_parser("doctor", parents=[base_sub_parent])
+    doctor = subparsers.add_parser(
+        "doctor",
+        parents=[base_sub_parent],
+        help="Run comprehensive health checks on your Docker environment, mounts, connectivity, and disk space.",
+    )
     doctor.add_argument("project", nargs="?")
     doctor.add_argument("-p", "--project", dest="project_flag")
     doctor.add_argument(
@@ -392,7 +396,11 @@ def get_parser():
     config.add_argument("key", nargs="?")
     config.add_argument("value", nargs="?")
     config.add_argument("--remove", action="store_true")
-    prune = subparsers.add_parser("prune", parents=[base_sub_parent])
+    prune = subparsers.add_parser(
+        "prune",
+        parents=[base_sub_parent],
+        help="Reclaim disk space by safely removing orphaned containers, search snapshots, dangling Docker volumes, and temporary files.",
+    )
     prune.add_argument(
         "--clean-hosts",
         action="store_true",

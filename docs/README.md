@@ -500,7 +500,7 @@ ldm log-level
 
 ### `doctor`
 
-Verify host environment health, Docker resources (CPUs/Memory), and project dependencies. Now includes checks for required tools: `mkcert`, `telnet`, `nc`, `lcp`, and the Docker Compose V2 plugin.
+Verify host environment health, Docker resources (CPUs/Memory), disk space (warns on dangling volumes), and project dependencies. Now includes checks for required tools: `mkcert`, `telnet`, `nc`, `lcp`, and the Docker Compose V2 plugin.
 
 ```bash
 ldm doctor          # Health check for current/selected project
@@ -663,7 +663,7 @@ ldm reset demo all            # Total project data wipe
 
 ### `prune`
 
-Identify and remove orphaned resources. This command scans your Docker environment for containers and global search snapshots that no longer have a matching project folder on your disk.
+Identify and reclaim disk space by safely removing orphaned resources. This command scans your Docker environment for containers and global search snapshots that no longer have a matching project folder on your disk, as well as cleaning up temporary files. If `ldm doctor` warns you about low disk space, run this along with `docker system prune --volumes`.
 
 ```bash
 ldm prune
