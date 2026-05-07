@@ -396,24 +396,38 @@ class ComposerHandler(BaseHandler):
             except (ValueError, IndexError):
                 pass
 
+            target_mysql = resolve_dependency_version(tag, "mysql")
+            target_mariadb = resolve_dependency_version(tag, "mariadb")
+
             auth_flags = []
             if db_type == "mysql":
-                if is_modern:
-                    auth_flags = ["--mysql-native-password=ON"]
-                else:
+                # Determine which MySQL version we are actually using
+                mysql_image_ver = (
+                    target_mysql if target_mysql else ("8.4" if is_modern else "5.7")
+                )
+
+                # Check if it's 8.4+ (LTS) which requires the new native-password plugin flag
+                try:
+                    # Strip any minor version to check base major/minor
+                    ver_parts = mysql_image_ver.split(".")
+                    if (
+                        len(ver_parts) >= 2
+                        and int(ver_parts[0]) == 8
+                        and int(ver_parts[1]) >= 4
+                    ):
+                        auth_flags = ["--mysql-native-password=ON"]
+                    else:
+                        auth_flags = [
+                            "--default-authentication-plugin=mysql_native_password"
+                        ]
+                except ValueError:
+                    # Fallback if version string is weird
                     auth_flags = [
                         "--default-authentication-plugin=mysql_native_password"
                     ]
 
-            target_mysql = resolve_dependency_version(tag, "mysql")
-            target_mariadb = resolve_dependency_version(tag, "mariadb")
-
             services["db"] = {
-                "image": (
-                    f"mysql:{target_mysql}"
-                    if target_mysql
-                    else ("mysql:8.4" if is_modern else "mysql:5.7")
-                )
+                "image": (f"mysql:{mysql_image_ver}")
                 if db_type == "mysql"
                 else (
                     f"mariadb:{target_mariadb}" if target_mariadb else "mariadb:10.6"
