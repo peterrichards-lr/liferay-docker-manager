@@ -204,7 +204,7 @@ class RuntimeHandler(BaseHandler):
         if is_samples or external_snapshot:
             from ldm_core.handlers.snapshot import SnapshotHandler
 
-            self.sync_stack(paths, project_meta, no_up=True)
+            self.sync_stack(paths, project_meta, no_up=True, show_summary=False)
             self.run_command(
                 [*get_compose_cmd(), "up", "-d", "db"], cwd=str(paths["root"])
             )
@@ -398,12 +398,11 @@ class RuntimeHandler(BaseHandler):
 
         self._ensure_network()
         if ssl_enabled or getattr(self.args, "search", False):
-            if self.verbose:
-                UI.info("Checking infrastructure stack (Traefik SSL Proxy)...")
-
             infra_start = time.time()
             resolved_ip = self.get_resolved_ip(host_name) or "127.0.0.1"
-            self.setup_infrastructure(resolved_ip, ssl_port, use_ssl=ssl_enabled)
+            self.setup_infrastructure(
+                resolved_ip, ssl_port, use_ssl=ssl_enabled, quiet=not show_summary
+            )
 
             if self.verbose:
                 duration_str = UI.format_duration(time.time() - infra_start)

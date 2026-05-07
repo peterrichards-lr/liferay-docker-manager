@@ -32,7 +32,7 @@ class InfraHandler(BaseHandler):
         self.setup_infrastructure(resolved_ip, 443, use_ssl=True)
         UI.success("Infrastructure setup complete.")
 
-    def setup_infrastructure(self, resolved_ip, ssl_port, use_ssl=True):
+    def setup_infrastructure(self, resolved_ip, ssl_port, use_ssl=True, quiet=False):
         """Initializes global Traefik proxy and search services."""
         self._ensure_network()
         if not use_ssl:
@@ -45,7 +45,8 @@ class InfraHandler(BaseHandler):
         if getattr(self.args, "search", False):
             self.setup_global_search()
 
-        UI.info("Checking infrastructure stack (Traefik SSL Proxy)...")
+        if not quiet:
+            UI.info("Checking infrastructure stack (Traefik SSL Proxy)...")
         infra_compose = self.get_resource_path("infra-compose.yml")
         if not infra_compose:
             UI.die(
@@ -65,7 +66,7 @@ class InfraHandler(BaseHandler):
                 "--remove-orphans",
             ],
             env=env,
-            capture_output=False,
+            capture_output=quiet,
         )
         return True
 
