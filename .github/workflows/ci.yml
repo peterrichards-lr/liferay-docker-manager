@@ -233,7 +233,7 @@ jobs:
         shell: bash
         run: |
           MSG=$(git log -1 --pretty=%B)
-          if echo "$MSG" | grep -qi "\[release\]"; then
+          if echo "$MSG" | grep -qi "\[release\]" || [[ "${{ github.ref_name }}" != *"-"* ]]; then
             echo "is_release=true" >> $GITHUB_OUTPUT
           else
             echo "is_release=false" >> $GITHUB_OUTPUT
