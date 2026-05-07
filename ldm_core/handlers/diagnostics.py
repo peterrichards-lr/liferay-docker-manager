@@ -2107,9 +2107,29 @@ pause
                     continue
                 try:
                     data = json.loads(line)
-                    # Extract Reclaimable space bytes from json
-                    if "ReclaimableSize" in data:
-                        reclaimable_bytes += int(data.get("ReclaimableSize", 0))
+                    # Extract Reclaimable space bytes from string (e.g., "7.937GB (99%)" or "437.4MB")
+                    reclaim_str = data.get("Reclaimable", "")
+                    if reclaim_str:
+                        # Extract the size part before the space/parenthesis
+                        size_str = reclaim_str.split(" ")[0].upper()
+
+                        # Convert string to bytes
+                        multiplier = 1
+                        if "GB" in size_str:
+                            multiplier = 1073741824
+                            size_str = size_str.replace("GB", "")
+                        elif "MB" in size_str:
+                            multiplier = 1048576
+                            size_str = size_str.replace("MB", "")
+                        elif "KB" in size_str:
+                            multiplier = 1024
+                            size_str = size_str.replace("KB", "")
+                        elif "B" in size_str:
+                            size_str = size_str.replace("B", "")
+
+                        if size_str.replace(".", "", 1).isdigit():
+                            reclaimable_bytes += int(float(size_str) * multiplier)
+
                 except Exception:
                     pass
 
@@ -2124,7 +2144,7 @@ pause
                     )
                 )
                 add_hint(
-                    f"You have {reclaim_gb}GB of unused Docker resources. Run '{UI.WHITE}ldm prune{UI.COLOR_OFF}' and '{UI.WHITE}docker system prune --volumes{UI.COLOR_OFF}' to reclaim space and prevent disk watermark issues."
+                    f"You have over {reclaim_gb}GB of unused Docker resources. Run '{UI.WHITE}ldm prune{UI.COLOR_OFF}' and '{UI.WHITE}docker system prune --volumes{UI.COLOR_OFF}' to reclaim space and prevent disk watermark issues."
                 )
 
         # Print Results Table
