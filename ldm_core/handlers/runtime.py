@@ -566,12 +566,13 @@ class RuntimeHandler(BaseHandler):
             return
 
         compose_base = get_compose_cmd()
+        capture = not (UI.INFO_MODE or UI.VERBOSE)
         for root in targets:
             UI.info(f"Stopping project: {root.name}...")
             cmd = [*compose_base, "stop"]
             if service:
                 cmd.append(service)
-            self.run_command(cmd, capture_output=False, cwd=str(root))
+            self.run_command(cmd, capture_output=capture, cwd=str(root))
 
     def cmd_restart(self, project_id=None, service=None, all_projects=False):
         """Restarts project containers."""
@@ -588,12 +589,13 @@ class RuntimeHandler(BaseHandler):
             return
 
         compose_base = get_compose_cmd()
+        capture = not (UI.INFO_MODE or UI.VERBOSE)
         for root in targets:
             UI.info(f"Restarting project: {root.name}...")
             cmd = [*compose_base, "restart"]
             if service:
                 cmd.append(service)
-            self.run_command(cmd, capture_output=False, cwd=str(root))
+            self.run_command(cmd, capture_output=capture, cwd=str(root))
 
     def cmd_down(
         self,
@@ -621,6 +623,7 @@ class RuntimeHandler(BaseHandler):
             return
 
         compose_base = get_compose_cmd()
+        capture = not (UI.INFO_MODE or UI.VERBOSE)
         for root in targets:
             UI.warning(f"Tearing down stack: {root.name}")
 
@@ -640,7 +643,7 @@ class RuntimeHandler(BaseHandler):
             cmd = [*compose_base, "down", "-v", "--remove-orphans"]
 
             if (root / "docker-compose.yml").exists():
-                self.run_command(cmd, capture_output=False, cwd=str(root))
+                self.run_command(cmd, capture_output=capture, cwd=str(root))
             else:
                 UI.debug(
                     f"No docker-compose.yml found in {root}. Skipping docker-compose down."

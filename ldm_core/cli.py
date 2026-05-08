@@ -392,6 +392,11 @@ def get_parser():
         action="store_true",
         help="Show detailed troubleshooting hints and fixes",
     )
+    doctor.add_argument(
+        "--fix",
+        action="store_true",
+        help="Automatically apply recommended fixes (e.g., pruning, lifting watermarks)",
+    )
 
     # Command: fix-hosts (Legacy support/Direct access)
     fh = subparsers.add_parser("fix-hosts", parents=[base_sub_parent])
@@ -426,6 +431,11 @@ def get_parser():
         "--samples",
         action="store_true",
         help="Also clear the sample extension cache",
+    )
+    prune.add_argument(
+        "--all",
+        action="store_true",
+        help="Run all pruning operations without asking (includes seeds, samples, and hosts)",
     )
 
     system = subparsers.add_parser("system", parents=[base_sub_parent])

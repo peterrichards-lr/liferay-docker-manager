@@ -194,10 +194,11 @@ tls:
 
         # Down requires the same env as UP to resolve volume paths correctly
         env = self._get_infra_env()
+        capture = not (UI.INFO_MODE or UI.VERBOSE)
         self.run_command(
             [*get_compose_cmd(), "-f", str(infra_compose), "down", "-v"],
             env=env,
-            capture_output=False,
+            capture_output=capture,
         )
 
         # Also stop the docker socket proxy and global search

@@ -407,7 +407,6 @@ class DiagnosticsHandler(BaseHandler):
 
         # 5. Atomic Swap
         UI.info("Applying update...")
-        import subprocess
 
         try:
             if platform.system().lower() == "windows":
@@ -853,6 +852,8 @@ pause
         # Perform a silent check first to avoid double error reporting in the UI
         docker_version = None
         try:
+            import subprocess
+
             docker_bin = shutil.which("docker")
             if docker_bin:
                 res = subprocess.run(
@@ -2177,6 +2178,8 @@ pause
 
         # Print Actionable Hints at the end
         detailed_mode = getattr(self.args, "detailed", False)
+        auto_fix_mode = getattr(self.args, "fix", False)
+
         if hints and detailed_mode:
             UI.raw(f"\n{UI.CYAN}--- Recommended Actions ---{UI.COLOR_OFF}")
             for h in hints:
@@ -2188,6 +2191,36 @@ pause
                     UI.raw(f"   Doc: {UI.CYAN}{h['doc']}{UI.COLOR_OFF}")
                 UI.raw("")
 
+        fixable_commands = []
+        if auto_fix_mode and hints:
+            for h in hints:
+                if not h.get("text"):
+                    continue
+                # Remove color codes for reliable regex matching
+                clean_text = re.sub(r"\033\[[0-9;]*m", "", str(h["text"]))
+                # Look for Run '...' or Run: '...'
+                match = re.search(r"Run\s*:?\s*'([^']+)'", clean_text)
+                if match:
+                    cmd_str = match.group(1)
+                    if cmd_str.startswith("ldm ") and cmd_str not in fixable_commands:
+                        fixable_commands.append(cmd_str)
+
+        if fixable_commands:
+            UI.heading("Auto-Remediation")
+            for cmd_str in fixable_commands:
+                UI.info(f"Applying fix: {UI.CYAN}{cmd_str}{UI.COLOR_OFF}")
+                # Use the absolute path to the currently running LDM script
+                full_cmd = [
+                    sys.executable,
+                    str(Path(sys.argv[0]).resolve()),
+                    *cmd_str.split()[1:],
+                ]
+                # We use os.system or subprocess to run the LDM command
+                try:
+                    subprocess.run(full_cmd, check=True)
+                except subprocess.CalledProcessError:
+                    UI.error(f"Auto-fix failed for: {cmd_str}")
+
         if getattr(self.args, "bundle", False):
             self._generate_debug_bundle(results, project_paths)
             sys.exit(0)
@@ -2197,14 +2230,16 @@ pause
             sys.exit(0)
         elif all_ok and has_warnings:
             msg = "Some non-critical issues were detected. Check the items above."
-            if hints and not detailed_mode:
+            if hints and not detailed_mode and not auto_fix_mode:
                 msg += f" Run '{UI.WHITE}ldm doctor --detailed{UI.COLOR_OFF}' for troubleshooting hints and fixes."
             UI.warning(msg)
             sys.exit(0)
         else:
             msg = "Critical issues were detected. Check the items above."
-            if hints and not detailed_mode:
+            if hints and not detailed_mode and not auto_fix_mode:
                 msg += f" Run '{UI.WHITE}ldm doctor --detailed{UI.COLOR_OFF}' for troubleshooting hints and fixes."
+            if auto_fix_mode:
+                msg += f" (Attempted {len(fixable_commands)} auto-fixes)."
             UI.error(msg)
             sys.exit(1)
 
@@ -2478,7 +2513,10 @@ pause
 
     def cmd_prune(self):
         UI.heading("LDM Global Maintenance - Pruning Orphaned Resources")
-        clean_hosts = getattr(self.args, "clean_hosts", False)
+        prune_all = getattr(self.args, "all", False)
+        clean_hosts = getattr(self.args, "clean_hosts", False) or prune_all
+        prune_seeds = getattr(self.args, "seeds", False) or prune_all
+        prune_samples = getattr(self.args, "samples", False) or prune_all
 
         roots = self.find_dxp_roots()
         active_projects = set()
@@ -2531,7 +2569,11 @@ pause
             if UI.INFO_MODE or UI.VERBOSE:
                 for o in orphans:
                     print(f"  - {o}")
-            if self.non_interactive or UI.confirm("Remove them? (y/n/q)", "N"):
+            if (
+                prune_all
+                or self.non_interactive
+                or UI.confirm("Remove them? (y/n/q)", "N")
+            ):
                 for o in orphans:
                     run_command(["docker", "rm", "-f", o])
                 UI.success(f"{len(orphans)} orphaned containers removed.")
@@ -2577,8 +2619,10 @@ pause
                         if UI.INFO_MODE or UI.VERBOSE:
                             for s in orphaned_snaps:
                                 print(f"  - {s}")
-                        if self.non_interactive or UI.confirm(
-                            "Remove them from global vault?", "N"
+                        if (
+                            prune_all
+                            or self.non_interactive
+                            or UI.confirm("Remove them from global vault?", "N")
                         ):
                             for s in orphaned_snaps:
                                 run_command(
@@ -2606,7 +2650,11 @@ pause
         tmp_files = list(SCRIPT_DIR.glob("**/.*.tmp"))
         if tmp_files:
             UI.info(f"Found {len(tmp_files)} temporary files.")
-            if self.non_interactive or UI.confirm("Remove them? (y/n/q)", "Y"):
+            if (
+                prune_all
+                or self.non_interactive
+                or UI.confirm("Remove them? (y/n/q)", "Y")
+            ):
                 for f in tmp_files:
                     f.unlink()
                 UI.success("Temporary files removed.")
@@ -2636,8 +2684,10 @@ pause
                 if UI.INFO_MODE or UI.VERBOSE:
                     for c in orphaned_certs:
                         print(f"  - {c.name}")
-                if self.non_interactive or UI.confirm(
-                    "Remove them from global cert store?", "N"
+                if (
+                    prune_all
+                    or self.non_interactive
+                    or UI.confirm("Remove them from global cert store?", "N")
                 ):
                     for c in orphaned_certs:
                         c.unlink()
@@ -2653,7 +2703,7 @@ pause
                 size_bytes = sum(f.stat().st_size for f in seed_files)
                 size_str = UI.format_size(size_bytes)
                 UI.info(f"Found {len(seed_files)} pre-warmed seeds ({size_str}).")
-                if getattr(self.args, "seeds", False) or (
+                if prune_seeds or (
                     not self.non_interactive
                     and UI.confirm("Clear pre-warmed seed cache?", "N")
                 ):
@@ -2672,7 +2722,7 @@ pause
                 size_bytes = sum(f.stat().st_size for f in sample_files)
                 size_str = UI.format_size(size_bytes)
                 UI.info(f"Found sample extension cache ({size_str}).")
-                if getattr(self.args, "samples", False) or (
+                if prune_samples or (
                     not self.non_interactive
                     and UI.confirm("Clear sample extension cache?", "N")
                 ):
@@ -2685,7 +2735,9 @@ pause
 
         # 7. DNS Cleanup (Explicitly requested via --clean-hosts)
         if clean_hosts:
-            if UI.confirm("Remove ALL LDM-managed entries from your hosts file?", "N"):
+            if prune_all or UI.confirm(
+                "Remove ALL LDM-managed entries from your hosts file?", "N"
+            ):
                 self._remove_hosts_entries(all_ldm=True)
 
         # 6. Docker System Volumes & Images
