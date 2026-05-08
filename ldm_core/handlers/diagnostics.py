@@ -2520,15 +2520,16 @@ pause
                     orphans.append(name)
 
         if orphans:
-            UI.info(f"Found {len(orphans)} orphaned containers from deleted projects:")
-            for o in orphans:
-                print(f"  - {o}")
+            UI.info(f"Found {len(orphans)} orphaned containers from deleted projects.")
+            if UI.INFO_MODE or UI.VERBOSE:
+                for o in orphans:
+                    print(f"  - {o}")
             if self.non_interactive or UI.confirm("Remove them? (y/n/q)", "N"):
                 for o in orphans:
                     run_command(["docker", "rm", "-f", o])
-                UI.success("Orphaned containers removed.")
+                UI.success(f"{len(orphans)} orphaned containers removed.")
         else:
-            UI.info("No orphaned containers found.")
+            UI.detail("No orphaned containers found.")
 
         # 2. Orphaned Search Snapshots
         search_name = "liferay-search-global"
@@ -2564,10 +2565,11 @@ pause
 
                     if orphaned_snaps:
                         UI.info(
-                            f"Found {len(orphaned_snaps)} orphaned search snapshots:"
+                            f"Found {len(orphaned_snaps)} orphaned search snapshots."
                         )
-                        for s in orphaned_snaps:
-                            print(f"  - {s}")
+                        if UI.INFO_MODE or UI.VERBOSE:
+                            for s in orphaned_snaps:
+                                print(f"  - {s}")
                         if self.non_interactive or UI.confirm(
                             "Remove them from global vault?", "N"
                         ):
@@ -2585,9 +2587,11 @@ pause
                                     ],
                                     check=False,
                                 )
-                            UI.success("Orphaned search snapshots removed.")
+                            UI.success(
+                                f"{len(orphaned_snaps)} orphaned search snapshots removed."
+                            )
                     else:
-                        UI.info("No orphaned search snapshots found.")
+                        UI.detail("No orphaned search snapshots found.")
                 except Exception:
                     pass
 
@@ -2621,17 +2625,18 @@ pause
                     orphaned_certs.append(f)
 
             if orphaned_certs:
-                UI.info(f"Found {len(orphaned_certs)} orphaned SSL artifacts:")
-                for c in orphaned_certs:
-                    print(f"  - {c.name}")
+                UI.info(f"Found {len(orphaned_certs)} orphaned SSL artifacts.")
+                if UI.INFO_MODE or UI.VERBOSE:
+                    for c in orphaned_certs:
+                        print(f"  - {c.name}")
                 if self.non_interactive or UI.confirm(
                     "Remove them from global cert store?", "N"
                 ):
                     for c in orphaned_certs:
                         c.unlink()
-                    UI.success("Orphaned SSL artifacts removed.")
+                    UI.success(f"{len(orphaned_certs)} orphaned SSL artifacts removed.")
             else:
-                UI.info("No orphaned SSL artifacts found.")
+                UI.detail("No orphaned SSL artifacts found.")
 
         # 5. Pre-warmed Seeds Cache
         seeds_cache = get_actual_home() / ".ldm" / "seeds"
@@ -2650,7 +2655,7 @@ pause
                     shutil.rmtree(seeds_cache)
                     UI.success("Seed cache cleared.")
             else:
-                UI.info("Seed cache is empty.")
+                UI.detail("Seed cache is empty.")
 
         # 6. Sample Extensions Cache
         samples_cache = get_actual_home() / ".ldm" / "references" / "samples"
@@ -2669,7 +2674,7 @@ pause
                     shutil.rmtree(samples_cache)
                     UI.success("Sample cache cleared.")
             else:
-                UI.info("Sample cache is empty.")
+                UI.detail("Sample cache is empty.")
 
         # 7. DNS Cleanup (Explicitly requested via --clean-hosts)
         if clean_hosts:

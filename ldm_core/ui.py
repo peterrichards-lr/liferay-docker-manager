@@ -36,6 +36,7 @@ class UI:
 
     NON_INTERACTIVE = False
     VERBOSE = False
+    INFO_MODE = False
 
     @staticmethod
     def get_padding(icon=None):
@@ -116,6 +117,12 @@ class UI:
     @staticmethod
     def info(msg):
         UI._print(msg, UI.YELLOW, "ℹ")
+
+    @staticmethod
+    def detail(msg):
+        """Prints info only if info mode or verbose mode is enabled (middle tier)."""
+        if UI.INFO_MODE or UI.VERBOSE:
+            UI._print(msg, UI.YELLOW, "ℹ")
 
     @staticmethod
     def success(msg):

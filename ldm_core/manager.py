@@ -1,5 +1,4 @@
 import os
-import sys
 
 from ldm_core.constants import RUN_ATTRS
 from ldm_core.handlers.assets import AssetHandler
@@ -36,20 +35,17 @@ class LiferayManager(
     def __init__(self, args):
         self.args = args
         self.verbose = getattr(args, "verbose", False)
+        self.info_mode = getattr(args, "info", False)
         self.non_interactive = getattr(args, "non_interactive", False)
 
-        # Automatic CI and TTY detection
-        if (
-            os.getenv("CI")
-            or os.getenv("GITHUB_ACTIONS")
-            or os.getenv("GITLAB_CI")
-            or not sys.stdin.isatty()
-        ):
+        # Automatic CI detection
+        if os.getenv("CI") or os.getenv("GITHUB_ACTIONS") or os.getenv("GITLAB_CI"):
             self.non_interactive = True
 
         # Synchronize global UI state
         UI.NON_INTERACTIVE = self.non_interactive
         UI.VERBOSE = self.verbose
+        UI.INFO_MODE = self.info_mode
 
         # Ensure standard attributes exist on args
         for attr in RUN_ATTRS:

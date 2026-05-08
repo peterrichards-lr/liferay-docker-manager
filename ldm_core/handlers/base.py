@@ -295,11 +295,11 @@ class BaseHandler:
                 elif "m" in mem_limit.lower():
                     min_required = int(mem_limit.lower().replace("m", "")) * 1024 * 1024
 
-            if mem_total < min_required:
-                UI.warning(
+            if mem_total and mem_total < min_required:
+                UI.detail(
                     f"Docker has less than {UI.format_size(min_required)} RAM allocated."
                 )
-                UI.info(
+                UI.detail(
                     "Liferay might be slow or unstable. Increase RAM in Docker Desktop settings."
                 )
         except Exception:

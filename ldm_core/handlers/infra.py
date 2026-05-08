@@ -226,7 +226,7 @@ tls:
             ["docker", "network", "ls", "--format", "{{.Name}}"]
         )
         if "liferay-net" not in (networks or ""):
-            UI.info("Creating Docker network: liferay-net")
+            UI.detail("Creating Docker network: liferay-net")
             self.run_command(["docker", "network", "create", "liferay-net"])
 
     def _ensure_docker_proxy(self):
@@ -238,7 +238,7 @@ tls:
         )
 
         if not exists:
-            UI.info("Starting Docker socket bridge...")
+            UI.detail("Starting Docker socket bridge...")
             socket_path = get_docker_socket_path()
 
             # Hardening for VM-based providers (Colima, Lima, OrbStack):
@@ -270,7 +270,7 @@ tls:
                 ["docker", "ps", "-q", "-f", f"name={container_name}"]
             )
             if not running:
-                UI.info("Starting existing Docker socket bridge...")
+                UI.detail("Starting existing Docker socket bridge...")
                 self.run_command(["docker", "start", container_name])
 
     def setup_global_search(self):
@@ -281,7 +281,7 @@ tls:
         )
 
         if not exists:
-            UI.info("Initializing Global Search (ES8) container...")
+            UI.detail("Initializing Global Search (ES8) container...")
             home = get_actual_home()
             es_data = (home / ".ldm" / "infra" / "search" / "data").resolve()
             es_backup = (home / ".ldm" / "infra" / "search" / "backup").resolve()
@@ -446,7 +446,7 @@ tls:
                 ["docker", "ps", "-q", "-f", f"name={search_name}"]
             )
             if not running:
-                UI.info(f"Starting existing {search_name} container...")
+                UI.detail(f"Starting existing {search_name} container...")
                 self.run_command(["docker", "start", search_name])
 
             # Always ensure backup repository is registered if service is running

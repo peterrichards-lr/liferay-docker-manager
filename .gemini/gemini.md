@@ -89,4 +89,9 @@
 - **Interactive Fallback**: If a required piece of information (like a project name or a Liferay tag) is missing from your command and cannot be detected, ldm will prompt you interactively or show you a list of choices.
 - **Graceful Abort**: You can type `q` at any interactive prompt to safely cancel the operation.
 
+## 10. Scripting & Automation (Piped Input)
+
+- **Automating Prompts**: LDM supports receiving answers to interactive prompts via standard input piping (e.g., `echo -e "n\nmy-project\n\n\n" | ldm run`).
+- **Shell Precedence Pitfall**: When piping into a chained command, ensure the pipe binds directly to LDM. For example, `echo "y" | cd /tmp && ldm run` incorrectly pipes into `cd`. The correct syntax is `cd /tmp && echo "y" | ldm run`.
+
 --- End of Context from: /users/peterrichards/.gemini/gemini.md ---

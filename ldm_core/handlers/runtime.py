@@ -37,10 +37,10 @@ class RuntimeHandler(BaseHandler):
             if self.non_interactive:
                 UI.die("Project not found and no name provided to initialize.")
 
-            project_id = UI.ask("Enter a new project name to initialize", "demo")
+            default_name = f"ldm-{int(time.time())}"
+            project_id = UI.ask("Enter a new project name to initialize", default_name)
             if not project_id:
                 return
-
             root = self.detect_project_path(project_id, for_init=True)
             if not root:
                 UI.die("Failed to resolve project path.")
@@ -278,7 +278,7 @@ class RuntimeHandler(BaseHandler):
             if elapsed - last_notified_time >= 30:
                 timestamp = datetime.now().strftime("%H:%M:%S")
                 duration_str = UI.format_duration(elapsed)
-                UI.info(
+                UI.detail(
                     f"[{timestamp}] Still waiting for Liferay to become healthy... ({duration_str})"
                 )
 
@@ -354,20 +354,20 @@ class RuntimeHandler(BaseHandler):
                     f"Access your instance at: {UI.CYAN}{UI.BOLD}{access_url}{UI.COLOR_OFF}"
                 )
 
-                UI.heading("Useful Commands")
-                UI.raw(
+                UI.detail("=== Useful Commands ===")
+                UI.detail(
                     f"  {UI.CYAN}ldm logs -f {container_name}{UI.COLOR_OFF}  Tail logs"
                 )
-                UI.raw(
+                UI.detail(
                     f"  {UI.CYAN}ldm shell {container_name}{UI.COLOR_OFF}    Enter bash"
                 )
-                UI.raw(
+                UI.detail(
                     f"  {UI.CYAN}ldm status {container_name}{UI.COLOR_OFF}   Check health"
                 )
-                UI.raw(
+                UI.detail(
                     f"  {UI.CYAN}ldm stop {container_name}{UI.COLOR_OFF}     Stop stack"
                 )
-                UI.raw("")
+                UI.detail("")
 
                 if getattr(self.args, "browser", False):
                     UI.info(f"Launching browser: {access_url}/web/guest/home")
@@ -469,31 +469,35 @@ class RuntimeHandler(BaseHandler):
             cmd.append("--build")
 
         if show_summary:
-            UI.heading(f"Stack Orchestration: {project_id}")
-            UI.info(f"  + Liferay: {UI.CYAN}{project_meta.get('tag')}{UI.COLOR_OFF}")
+            tag_val = project_meta.get("tag")
+            db_val = project_meta.get("db_type", "hypersonic")
+            port_val = project_meta.get("port", 8080)
+
             UI.info(
-                f"  + DB Type: {UI.CYAN}{project_meta.get('db_type', 'hypersonic')}{UI.COLOR_OFF}"
+                f"🚀 Starting {project_id} stack ({tag_val}, {db_val}, {host_name}:{port_val})..."
             )
+
+            UI.detail(f"=== Stack Configuration: {project_id} ===")
+            UI.detail(f"  + Liferay: {UI.CYAN}{tag_val}{UI.COLOR_OFF}")
+            UI.detail(f"  + DB Type: {UI.CYAN}{db_val}{UI.COLOR_OFF}")
 
             search_mode = (
                 "Shared (ES8)"
                 if str(project_meta.get("use_shared_search", "true")).lower() == "true"
                 else "Sidecar (Internal)"
             )
-            UI.info(f"  + Search:  {UI.CYAN}{search_mode}{UI.COLOR_OFF}")
+            UI.detail(f"  + Search:  {UI.CYAN}{search_mode}{UI.COLOR_OFF}")
 
-            UI.info(f"  + Host:    {UI.BOLD}{host_name}{UI.COLOR_OFF}")
+            UI.detail(f"  + Host:    {UI.BOLD}{host_name}{UI.COLOR_OFF}")
             if ssl_enabled:
-                UI.info(
+                UI.detail(
                     f"  + SSL:     {UI.GREEN}Active (Port {ssl_port}){UI.COLOR_OFF}"
                 )
-                UI.info(
+                UI.detail(
                     f"  + Port:    {UI.YELLOW}Disabled (SSL Proxy Active){UI.COLOR_OFF}"
                 )
             else:
-                UI.info(
-                    f"  + Port:    {UI.CYAN}8080 -> {project_meta.get('port', 8080)}{UI.COLOR_OFF}"
-                )
+                UI.detail(f"  + Port:    {UI.CYAN}8080 -> {port_val}{UI.COLOR_OFF}")
 
         if not no_up:
             if self.verbose and total_start:
@@ -508,7 +512,7 @@ class RuntimeHandler(BaseHandler):
                 deps.append("search")
 
             if deps:
-                UI.info(
+                UI.detail(
                     f"Starting dependencies: {UI.CYAN}{', '.join(deps)}{UI.COLOR_OFF}..."
                 )
                 self.run_command(
@@ -518,7 +522,9 @@ class RuntimeHandler(BaseHandler):
                 )
 
                 for dep in deps:
-                    UI.info(f"Waiting for {UI.CYAN}{dep}{UI.COLOR_OFF} to be ready...")
+                    UI.detail(
+                        f"Waiting for {UI.CYAN}{dep}{UI.COLOR_OFF} to be ready..."
+                    )
                     start_wait = time.time()
                     while time.time() - start_wait < 60:
                         status = self.get_container_status(f"{project_id}-{dep}-1")

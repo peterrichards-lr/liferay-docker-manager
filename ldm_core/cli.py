@@ -25,6 +25,11 @@ def get_parser():
     # Define a parent parser for common arguments shared by all subparsers
     # This allows flags like -v and -y to be placed both before AND after subcommands
     base_parent = argparse.ArgumentParser(add_help=False)
+    base_parent.add_argument(
+        "--info",
+        action="store_true",
+        help="Show informational logging (middle tier)",
+    )
     base_parent.add_argument("-v", "--verbose", action="store_true")
     base_parent.add_argument("-y", "--non-interactive", action="store_true")
 
@@ -33,6 +38,7 @@ def get_parser():
     base_sub_parent = argparse.ArgumentParser(
         add_help=False, argument_default=argparse.SUPPRESS
     )
+    base_sub_parent.add_argument("--info", action="store_true")
     base_sub_parent.add_argument("-v", "--verbose", action="store_true")
     base_sub_parent.add_argument("-y", "--non-interactive", action="store_true")
 
