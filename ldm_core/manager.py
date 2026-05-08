@@ -9,7 +9,7 @@ from ldm_core.handlers.config import ConfigHandler
 from ldm_core.handlers.dev import DevHandler
 from ldm_core.handlers.diagnostics import DiagnosticsHandler
 from ldm_core.handlers.infra import InfraHandler
-from ldm_core.handlers.license import LicenseHandler
+from ldm_core.handlers.license import LicenseService
 from ldm_core.handlers.runtime import RuntimeHandler
 from ldm_core.handlers.snapshot import SnapshotHandler
 from ldm_core.handlers.workspace import WorkspaceHandler
@@ -25,7 +25,6 @@ class LiferayManager(
     ConfigHandler,
     DiagnosticsHandler,
     CloudHandler,
-    LicenseHandler,
     InfraHandler,
     DevHandler,
     BaseHandler,
@@ -37,6 +36,9 @@ class LiferayManager(
         self.verbose = getattr(args, "verbose", False)
         self.info_mode = getattr(args, "info", False)
         self.non_interactive = getattr(args, "non_interactive", False)
+
+        # Services via Composition
+        self.license = LicenseService(self)
 
         # Automatic CI detection
         if os.getenv("CI") or os.getenv("GITHUB_ACTIONS") or os.getenv("GITLAB_CI"):

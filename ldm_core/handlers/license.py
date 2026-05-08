@@ -1,11 +1,8 @@
-from ldm_core.handlers.base import BaseHandler
+class LicenseService:
+    """Service for Liferay license detection and parsing."""
 
-
-class LicenseHandler(BaseHandler):
-    """Mixin for Liferay license detection and parsing."""
-
-    def __init__(self, args=None):
-        super().__init__(args)
+    def __init__(self, manager=None):
+        self.manager = manager
 
     def find_license(self, paths):
         """

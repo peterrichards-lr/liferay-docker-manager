@@ -1,17 +1,18 @@
 import unittest
 from pathlib import Path
 
-from ldm_core.handlers.license import LicenseHandler
+from ldm_core.handlers.license import LicenseService
 
 
-class MockManager(LicenseHandler):
+class MockManager:
     def __init__(self):
         self.verbose = False
 
 
 class TestLicenseHandler(unittest.TestCase):
     def setUp(self):
-        self.manager = MockManager()
+        self.mock_manager = MockManager()
+        self.manager = LicenseService(self.mock_manager)
         self.test_dir = Path("/tmp/ldm_license_test")
         self.test_dir.mkdir(parents=True, exist_ok=True)
         self.common_dir = self.test_dir / "common"
