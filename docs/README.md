@@ -75,6 +75,26 @@ The badges below represent our verified support for various Docker providers. En
 
 LDM is designed to be pipeline-friendly. The `ldm doctor` command returns a non-zero exit code if critical environment issues are detected.
 
+### Automating Interactive Prompts (Piped Input)
+
+When running LDM in an automated environment (or if you just want to skip interactive menus quickly), you can pipe responses directly into the command using standard shell `echo` formatting.
+
+*Note: Ensure your `echo` pipes into LDM directly. Due to shell precedence, `echo "y" | cd /tmp && ldm run` pipes to `cd` instead of LDM. Use `cd /tmp && echo "y" | ldm run` instead.*
+
+#### Example: Automate starting a new project
+
+```bash
+# Provide 'n' to select 'new', 'my-project' for the name, and \n (enters) to accept default host/tag options
+echo -e "n\nmy-project\n\n\n" | ldm run
+```
+
+#### Example: Automate project teardown
+
+```bash
+# Automatically confirm project deletion, and confirm removal of global search index
+echo -e "y\ny" | ldm down my-project --delete
+```
+
 ### Health Check Pipe
 
 Ensure your environment is healthy before attempting to start a project:
