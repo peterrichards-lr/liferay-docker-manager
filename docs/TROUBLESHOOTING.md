@@ -12,7 +12,8 @@ LDM includes a proactive check in `ldm doctor` to warn you about dangling resour
 
 ```bash
 # 1. Prune LDM orphaned resources (snapshots, certs, containers)
-ldm prune
+# Use --seeds and --samples to also clear large asset caches
+ldm prune --seeds --samples
 
 # 2. Prune unused Docker system resources
 docker system prune -a --volumes
@@ -26,7 +27,39 @@ ldm infra-restart --search
 
 ### **Moving Docker to an External Drive (macOS / Colima)**
 
-If your internal disk is full and you have an external drive (e.g., `/Volumes/SanDisk`):
+If your internal disk is full and you have an external drive (e.g., `/Volumes/SanDisk`), you can move the entire Docker engine storage to it.
+
+#### **Option A: Symbolic Link (Recommended for Persistence)**
+
+This method "tricks" Colima into using your external disk without needing to manage environment variables.
+
+1. **Stop Colima**:
+
+    ```bash
+    colima stop
+    ```
+
+2. **Move the existing data** (Optional: only if you want to keep your current images/containers):
+
+    ```bash
+    mv ~/.colima /Volumes/SanDisk/.colima
+    ```
+
+3. **Create the Symlink**:
+    *CRITICAL: Ensure `~/.colima` does not exist before creating the link, or you will create a nested link.*
+
+    ```bash
+    rm -rf ~/.colima
+    ln -s /Volumes/SanDisk/.colima ~/.colima
+    ```
+
+4. **Start Colima**:
+
+    ```bash
+    colima start
+    ```
+
+#### **Option B: Environment Variable**
 
 1. **Stop and Delete the current environment**:
 
@@ -42,7 +75,7 @@ If your internal disk is full and you have an external drive (e.g., `/Volumes/Sa
     mkdir -p $COLIMA_HOME
     ```
 
-3. **Start a new, larger VM**:
+3. **Start a new VM**:
 
     ```bash
     colima start --disk 100 --memory 8 --cpu 4
@@ -50,6 +83,25 @@ If your internal disk is full and you have an external drive (e.g., `/Volumes/Sa
 
 4. **Make it permanent**:
     Add `export COLIMA_HOME="/Volumes/SanDisk/colima"` to your `~/.zshrc` or `~/.bash_profile`.
+
+### **Moving LDM Configuration & Search Data (~/.ldm)**
+
+LDM stores shared infrastructure data (Elasticsearch indices, SSL certs, and project registries) in `~/.ldm`. This can grow over time.
+
+To move it to an external drive:
+
+1. **Stop all LDM projects**.
+2. **Move the folder**:
+
+    ```bash
+    mv ~/.ldm /Volumes/SanDisk/.ldm
+    ```
+
+3. **Create the link**:
+
+    ```bash
+    ln -s /Volumes/SanDisk/.ldm ~/.ldm
+    ```
 
 ### **Moving Docker to an External Drive (Windows / WSL2)**
 

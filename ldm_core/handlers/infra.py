@@ -73,7 +73,7 @@ class InfraHandler(BaseHandler):
     def _get_infra_env(self, resolved_ip="127.0.0.1", ssl_port=443):
         """Generates the standard environment variables for the infrastructure stack."""
         actual_home = get_actual_home()
-        cert_dir = actual_home / "liferay-docker-certs"
+        cert_dir = (actual_home / "liferay-docker-certs").resolve()
 
         env = os.environ.copy()
         env["LDM_CERTS_DIR"] = str(cert_dir)
@@ -283,8 +283,8 @@ tls:
         if not exists:
             UI.info("Initializing Global Search (ES8) container...")
             home = get_actual_home()
-            es_data = home / ".ldm" / "infra" / "search" / "data"
-            es_backup = home / ".ldm" / "infra" / "search" / "backup"
+            es_data = (home / ".ldm" / "infra" / "search" / "data").resolve()
+            es_backup = (home / ".ldm" / "infra" / "search" / "backup").resolve()
             es_data.mkdir(parents=True, exist_ok=True)
             es_backup.mkdir(parents=True, exist_ok=True)
 
@@ -474,3 +474,163 @@ tls:
                 check=False,
             )
         return None
+
+    def cmd_system(self, subcommand):
+        """Routing for system-level management commands."""
+        if subcommand == "relocate":
+            self.cmd_system_relocate(self.args.target)
+        else:
+            UI.die(f"Unknown system subcommand: {subcommand}")
+
+    def cmd_system_relocate(self, target_path):
+        """Safely moves LDM and Docker data to an external drive via symbolic links."""
+        from pathlib import Path
+
+        UI.heading(f"System Relocation: {target_path}")
+
+        target = Path(target_path).resolve()
+        if not target.exists() or not target.is_dir():
+            UI.die(f"Target path does not exist or is not a directory: {target}")
+
+        # Ensure target is not in the home directory to avoid circular links
+        home = get_actual_home()
+        if str(home) in str(target):
+            UI.die("Target path must be outside of your home directory.")
+
+        paths_to_move = [
+            (".colima", "Docker Engine (Colima)"),
+            (".ldm", "LDM Configuration & Search Data"),
+            ("liferay-docker-certs", "Global SSL Certificates"),
+        ]
+
+        # 1. Safety Checks
+        try:
+            context = (
+                self.run_command(["docker", "context", "show"], check=False) or ""
+            ).strip()
+            if "colima" in context.lower() or context == "default":
+                UI.info("Stopping Colima to ensure data integrity...")
+                self.run_command(["colima", "stop"], check=False)
+        except Exception:
+            pass
+
+        for folder, label in paths_to_move:
+            source = home / folder
+            dest = target / folder
+
+            if not source.exists() and not source.is_symlink():
+                UI.debug(f"Skipping {label}: Source does not exist.")
+                continue
+
+            if source.is_symlink():
+                target_link = source.readlink()
+                UI.info(
+                    f"{label} is already a link to: {UI.CYAN}{target_link}{UI.COLOR_OFF}"
+                )
+                continue
+
+            UI.info(f"Relocating {label}...")
+
+            # 2. Move data if requested
+            if not getattr(self.args, "no_move", False):
+                if dest.exists():
+                    if not UI.confirm(
+                        f"Destination {dest} already exists. Merge/Overwrite?", "N"
+                    ):
+                        UI.warning(f"Skipping {label}")
+                        continue
+
+                # Perform the move
+                try:
+                    # We use shutil.move which handles cross-device moves by copy+delete
+                    UI.info(f"  -> Moving data to {dest} (this may take a while)...")
+                    if dest.exists():
+                        shutil.rmtree(dest)
+                    shutil.move(str(source), str(dest))
+                except Exception as e:
+                    UI.error(f"Failed to move {label}: {e}")
+                    continue
+            # If no-move, we assume user already moved it or wants a fresh start
+            elif source.exists():
+                UI.info(f"  -> Deleting local {source} (no-move flag active)...")
+                if source.is_dir():
+                    shutil.rmtree(source)
+                else:
+                    source.unlink()
+
+            # 3. Create Symlink
+            try:
+                # Ensure the destination directory exists if it was a fresh start
+                if not dest.exists():
+                    dest.mkdir(parents=True, exist_ok=True)
+
+                source.symlink_to(dest)
+                UI.success(f"{label} is now linked to external drive.")
+            except Exception as e:
+                UI.error(f"Failed to create link for {label}: {e}")
+
+        UI.success("Relocation complete. You can now restart Colima.")
+        UI.info(f"Run: {UI.WHITE}colima start{UI.COLOR_OFF}")
+
+    def thaw_elasticsearch(self, quiet=False):
+        """Attempts to lift disk watermarks on the global search container."""
+        search_name = "liferay-search-global"
+        if not quiet:
+            UI.info("Checking for blocked search indices (Disk Watermark)...")
+
+        try:
+            # First, lift the watermarks to 99%
+            lift_res = self.run_command(
+                [
+                    "docker",
+                    "exec",
+                    search_name,
+                    "curl",
+                    "-s",
+                    "-X",
+                    "PUT",
+                    "localhost:9200/_cluster/settings",
+                    "-H",
+                    "Content-Type: application/json",
+                    "-d",
+                    json.dumps(
+                        {
+                            "persistent": {
+                                "cluster.routing.allocation.disk.watermark.low": "95%",
+                                "cluster.routing.allocation.disk.watermark.high": "98%",
+                                "cluster.routing.allocation.disk.watermark.flood_stage": "99%",
+                            }
+                        }
+                    ),
+                ],
+                check=False,
+            )
+
+            if lift_res and '"acknowledged":true' in lift_res:
+                if not quiet:
+                    UI.success("Elasticsearch disk watermarks lifted.")
+
+                # Now explicitly lift the read-only block from all indices
+                self.run_command(
+                    [
+                        "docker",
+                        "exec",
+                        search_name,
+                        "curl",
+                        "-s",
+                        "-X",
+                        "PUT",
+                        "localhost:9200/_all/_settings",
+                        "-H",
+                        "Content-Type: application/json",
+                        "-d",
+                        json.dumps({"index.blocks.read_only_allow_delete": None}),
+                    ],
+                    check=False,
+                )
+                return True
+        except Exception as e:
+            if not quiet:
+                UI.debug(f"Thaw failed: {e}")
+
+        return False

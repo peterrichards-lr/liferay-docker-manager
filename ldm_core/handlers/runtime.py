@@ -44,7 +44,7 @@ class RuntimeHandler(BaseHandler):
         host_name = self.args.host_name or project_meta.get("host_name") or "localhost"
         db_type = getattr(self.args, "db", None) or project_meta.get("db_type")
         jvm_args = getattr(self.args, "jvm_args", None) or project_meta.get("jvm_args")
-        port_val = project_meta.get("port", 8080)
+        port_val = getattr(self.args, "port", None) or project_meta.get("port", 8080)
         port = int(port_val) if port_val is not None else 8080
 
         # FAIL FAST: Pre-flight checks before expensive operations
@@ -294,6 +294,24 @@ class RuntimeHandler(BaseHandler):
                             UI.info(
                                 f"Recent log error: {UI.YELLOW}{last_unique_error[:120]}...{UI.COLOR_OFF}"
                             )
+
+                            # --- Auto-Thaw & Hints Win ---
+                            if (
+                                "ClusterBlockException" in last_unique_error
+                                or "index.blocks.read_only" in last_unique_error
+                            ):
+                                UI.warning(
+                                    "Detected Elasticsearch disk pressure blocking Liferay startup."
+                                )
+                                if self.thaw_elasticsearch():
+                                    UI.success(
+                                        "Auto-Thaw successful. Liferay should now proceed."
+                                    )
+                                else:
+                                    UI.info(
+                                        f"💡 {UI.CYAN}Hint:{UI.COLOR_OFF} Your disk is likely full. Run '{UI.WHITE}ldm prune --seeds --samples{UI.COLOR_OFF}' to free space."
+                                    )
+
                             UI.info(
                                 f"Check full logs: {UI.WHITE}ldm logs -f {container_name}{UI.COLOR_OFF}"
                             )

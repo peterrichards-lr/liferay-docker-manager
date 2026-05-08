@@ -406,6 +406,31 @@ def get_parser():
         action="store_true",
         help="Remove all LDM-tagged entries from hosts file",
     )
+    prune.add_argument(
+        "--seeds",
+        action="store_true",
+        help="Also clear the pre-warmed seed cache",
+    )
+    prune.add_argument(
+        "--samples",
+        action="store_true",
+        help="Also clear the sample extension cache",
+    )
+
+    system = subparsers.add_parser("system", parents=[base_sub_parent])
+    system_subparsers = system.add_subparsers(dest="subcommand")
+
+    relocate = system_subparsers.add_parser(
+        "relocate", help="Safely move LDM/Docker data to an external drive"
+    )
+    relocate.add_argument(
+        "target", help="Target directory on the external drive (e.g. /Volumes/SanDisk)"
+    )
+    relocate.add_argument(
+        "--no-move",
+        action="store_true",
+        help="Skip moving existing data (just create symlinks)",
+    )
 
     shell = subparsers.add_parser("shell", parents=[base_sub_parent])
     shell.add_argument("project", nargs="?")
@@ -697,6 +722,7 @@ def main():
         "completion": lambda: manager.cmd_completion(args.shell),
         "man": manager.cmd_man,
         "prune": manager.cmd_prune,
+        "system": lambda: manager.cmd_system(args.subcommand),
         "upgrade": manager.cmd_upgrade,
         "update-check": manager.cmd_upgrade,
         "version": lambda: manager.cmd_version(

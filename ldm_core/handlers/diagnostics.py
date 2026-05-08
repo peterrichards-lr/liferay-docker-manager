@@ -1506,6 +1506,7 @@ pause
 
                     if container == "liferay-search-global":
                         try:
+                            # 1. Connectivity Check
                             search_res = run_command(
                                 [
                                     "docker",
@@ -1527,6 +1528,14 @@ pause
                                 add_hint(
                                     f"Run '{UI.WHITE}ldm infra-restart --search{UI.COLOR_OFF}' if the search cluster is unresponsive."
                                 )
+                            else:
+                                # 2. Disk Watermark / Blocked Indices Check
+                                watermark_status = self._check_elasticsearch_watermarks(
+                                    add_hint
+                                )
+                                if watermark_status:
+                                    status = watermark_status
+                                    ok = False
                         except Exception:
                             pass
 
@@ -2264,6 +2273,70 @@ pause
         except Exception:
             return None, None
 
+    def _check_elasticsearch_watermarks(self, add_hint):
+        """Checks if Elasticsearch is blocking indices due to disk watermarks."""
+        search_name = "liferay-search-global"
+        try:
+            # 1. Check for unassigned shards and allocation decisions
+            explain_raw = run_command(
+                [
+                    "docker",
+                    "exec",
+                    search_name,
+                    "curl",
+                    "-s",
+                    "http://localhost:9200/_cluster/allocation/explain",
+                ],
+                check=False,
+            )
+            if not explain_raw:
+                return None
+
+            import json
+
+            data = json.loads(explain_raw)
+
+            # Check for disk_threshold decider in node decisions
+            decisions = data.get("node_allocation_decisions", [])
+            for node in decisions:
+                for decider in node.get("deciders", []):
+                    if (
+                        decider.get("decider") == "disk_threshold"
+                        and decider.get("decision") == "NO"
+                    ):
+                        explanation = decider.get("explanation", "")
+                        add_hint(
+                            f"Elasticsearch: {explanation}",
+                            "https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/TROUBLESHOOTING.md#disk-space-issues-elasticsearch-flood-stage",
+                        )
+                        add_hint(
+                            f"Run '{UI.WHITE}ldm prune --seeds --samples{UI.COLOR_OFF}' to reclaim space."
+                        )
+                        return "Disk Watermark Exceeded (Blocked)"
+
+            # 2. Check for explicitly read-only indices
+            settings_raw = run_command(
+                [
+                    "docker",
+                    "exec",
+                    search_name,
+                    "curl",
+                    "-s",
+                    "http://localhost:9200/_all/_settings?flat_settings=true",
+                ],
+                check=False,
+            )
+            if settings_raw and "index.blocks.read_only_allow_delete" in settings_raw:
+                add_hint(
+                    "Elasticsearch indices are in READ-ONLY mode due to flood-stage disk pressure.",
+                    "https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/TROUBLESHOOTING.md#disk-space-issues-elasticsearch-flood-stage",
+                )
+                return "Read-Only (Flood Stage)"
+
+        except Exception:
+            pass
+        return None
+
     def _check_docker_creds(self):
         """Checks for Docker credential store health."""
         try:
@@ -2459,7 +2532,9 @@ pause
 
         # 2. Orphaned Search Snapshots
         search_name = "liferay-search-global"
-        if run_command(["docker", "ps", "-q", "-f", f"name={search_name}"]):
+        if run_command(
+            ["docker", "ps", "-q", "-f", f"name={search_name}"], check=False
+        ):
             snaps_raw = run_command(
                 [
                     "docker",
@@ -2558,7 +2633,45 @@ pause
             else:
                 UI.info("No orphaned SSL artifacts found.")
 
-        # 5. DNS Cleanup (Explicitly requested via --clean-hosts)
+        # 5. Pre-warmed Seeds Cache
+        seeds_cache = get_actual_home() / ".ldm" / "seeds"
+        if seeds_cache.exists():
+            seed_files = list(seeds_cache.glob("*.tar.gz"))
+            if seed_files:
+                size_bytes = sum(f.stat().st_size for f in seed_files)
+                size_str = UI.format_size(size_bytes)
+                UI.info(f"Found {len(seed_files)} pre-warmed seeds ({size_str}).")
+                if getattr(self.args, "seeds", False) or (
+                    not self.non_interactive
+                    and UI.confirm("Clear pre-warmed seed cache?", "N")
+                ):
+                    import shutil
+
+                    shutil.rmtree(seeds_cache)
+                    UI.success("Seed cache cleared.")
+            else:
+                UI.info("Seed cache is empty.")
+
+        # 6. Sample Extensions Cache
+        samples_cache = get_actual_home() / ".ldm" / "references" / "samples"
+        if samples_cache.exists():
+            sample_files = [f for f in samples_cache.glob("**/*") if f.is_file()]
+            if sample_files:
+                size_bytes = sum(f.stat().st_size for f in sample_files)
+                size_str = UI.format_size(size_bytes)
+                UI.info(f"Found sample extension cache ({size_str}).")
+                if getattr(self.args, "samples", False) or (
+                    not self.non_interactive
+                    and UI.confirm("Clear sample extension cache?", "N")
+                ):
+                    import shutil
+
+                    shutil.rmtree(samples_cache)
+                    UI.success("Sample cache cleared.")
+            else:
+                UI.info("Sample cache is empty.")
+
+        # 7. DNS Cleanup (Explicitly requested via --clean-hosts)
         if clean_hosts:
             if UI.confirm("Remove ALL LDM-managed entries from your hosts file?", "N"):
                 self._remove_hosts_entries(all_ldm=True)

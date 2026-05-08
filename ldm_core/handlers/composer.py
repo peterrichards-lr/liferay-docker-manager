@@ -354,6 +354,7 @@ class ComposerHandler(BaseHandler):
                 services[svc_id] = {
                     "image": f"{svc_id}:latest",
                     "build": {"context": Path(ext["path"]).as_posix()},
+                    "pull_policy": "build",
                     "networks": ["liferay-net"],
                     "labels": ["traefik.enable=true"],
                 }

@@ -663,16 +663,19 @@ ldm reset demo all            # Total project data wipe
 
 ### `prune`
 
-Identify and reclaim disk space by safely removing orphaned resources. This command scans your Docker environment for containers and global search snapshots that no longer have a matching project folder on your disk, as well as cleaning up temporary files. If `ldm doctor` warns you about low disk space, run this along with `docker system prune --volumes`.
+Identify and reclaim disk space by safely removing orphaned resources. This command scans your Docker environment for containers and global search snapshots that no longer have a matching project folder on your disk, as well as cleaning up temporary files and large asset caches. If `ldm doctor` warns you about low disk space, run this along with `docker system prune --volumes`.
 
 ```bash
 ldm prune
+ldm prune --seeds --samples   # Also clear large pre-warmed asset caches
 ```
 
 **What it cleans:**
 
 - **Orphaned Containers**: Any container with the `com.liferay.ldm.managed` label whose project folder was manually deleted.
 - **Orphaned Search Snapshots**: Leftover Elasticsearch 8.x snapshots in the global vault from deleted projects.
+- **Pre-warmed Seeds**: (Optional) Large Database + Search + OSGi state archives used for instant project initialization.
+- **Sample Extensions**: (Optional) Cached sample client extensions.
 - **Temporary Files**: Residual `.*.tmp` files left behind by interrupted sync or build operations.
 
 ### `clear-cache`
