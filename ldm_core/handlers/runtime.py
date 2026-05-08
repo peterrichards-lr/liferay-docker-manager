@@ -27,11 +27,23 @@ class RuntimeHandler(BaseHandler):
             selection = self.select_project_interactively(heading="Available Projects")
             if not selection:
                 return
-            project_id = selection["path"].name
+            if selection.get("new"):
+                project_id = None
+            else:
+                project_id = selection["path"].name
 
         root = self.detect_project_path(project_id, for_init=True)
         if not root:
-            UI.die("Project not found and no name provided to initialize.")
+            if self.non_interactive:
+                UI.die("Project not found and no name provided to initialize.")
+
+            project_id = UI.ask("Enter a new project name to initialize", "demo")
+            if not project_id:
+                return
+
+            root = self.detect_project_path(project_id, for_init=True)
+            if not root:
+                UI.die("Failed to resolve project path.")
 
         project_id = root.name
         is_new_project = not any(

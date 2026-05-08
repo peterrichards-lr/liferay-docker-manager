@@ -647,7 +647,7 @@ class BaseHandler:
             prompt = "\nSelect index, type to filter"
             if filter_str:
                 prompt += f" (Current: {UI.CYAN}{filter_str}{UI.COLOR_OFF})"
-            prompt += ", 's' to skip, or 'q' to quit"
+            prompt += ", 'n' for new, 's' to skip, or 'q' to quit"
 
             choice = UI.ask(prompt, "1" if len(filtered) == 1 else None)
 
@@ -661,6 +661,8 @@ class BaseHandler:
                 sys.exit(0)
             if str(choice).lower() == "s":
                 return None
+            if str(choice).lower() == "n":
+                return {"new": True}
 
             # If choice is numeric, it's an index selection
             if str(choice).isdigit():
@@ -785,6 +787,8 @@ class BaseHandler:
             return cwd
 
         selection = self.select_project_interactively()
+        if selection and selection.get("new"):
+            return None
         return selection["path"] if selection else None
 
     def find_dxp_roots(self, search_dir=None):

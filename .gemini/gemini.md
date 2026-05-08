@@ -82,4 +82,11 @@
   - [ ] **Stabilization**: Collect verification reports and address any residual environment-specific edge cases.
   - [ ] **Promotion**: Move to stable release once all verification tiers are green.
 
+## 9. Founding Patterns of LDM
+
+- **Sensible Defaults**: Whenever a standard Liferay convention exists, ldm uses it automatically (e.g., port 8080, managed DB name lportal).
+- **Smart Context**: If you run a command from inside a project folder, ldm automatically detects the project context.
+- **Interactive Fallback**: If a required piece of information (like a project name or a Liferay tag) is missing from your command and cannot be detected, ldm will prompt you interactively or show you a list of choices.
+- **Graceful Abort**: You can type `q` at any interactive prompt to safely cancel the operation.
+
 --- End of Context from: /users/peterrichards/.gemini/gemini.md ---
