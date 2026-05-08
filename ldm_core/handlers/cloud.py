@@ -217,7 +217,9 @@ class CloudHandler(BaseHandler):
                         paths = self.setup_paths(root_path)
                         # We use the db type from args or default to mysql (Liferay Cloud standard)
                         db_type_for_seed = getattr(self.args, "db", None) or "mysql"
-                        if self._ensure_seeded(tag_for_seed, db_type_for_seed, paths):
+                        if self.manager.assets._ensure_seeded(
+                            tag_for_seed, db_type_for_seed, paths
+                        ):
                             # Refresh meta from seed before merging restoration changes
                             seed_meta = self.read_meta(root_path)
                             project_meta.update(seed_meta)

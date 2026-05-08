@@ -189,7 +189,6 @@ class ConfigHandler(BaseHandler):
     def get_samples_root(self):
         """Locates or downloads the global samples directory."""
         from ldm_core.constants import VERSION
-        from ldm_core.handlers.assets import AssetHandler
 
         # 1. Priority: Environment Variable (Development Override)
         env_path = os.environ.get("LDM_SAMPLES_PATH")
@@ -225,7 +224,7 @@ class ConfigHandler(BaseHandler):
             UI.heading("On-Demand Sample Pack")
             UI.info("Sample assets are not bundled with the standalone binary.")
             if UI.confirm(f"Download sample pack for v{VERSION} (~50MB)?", "Y"):
-                if AssetHandler(self.args).download_samples(VERSION, cache_versioned):
+                if self.manager.assets.download_samples(VERSION, cache_versioned):
                     UI.success("Sample pack ready.")
                     return cache_versioned
                 UI.die("Failed to download sample pack.")

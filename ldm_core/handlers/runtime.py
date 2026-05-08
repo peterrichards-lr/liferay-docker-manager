@@ -163,7 +163,7 @@ class RuntimeHandler(BaseHandler):
             tag = tag or snap_meta.get("tag")
             db_type = db_type or snap_meta.get("db_type")
 
-        if is_new_project and self._ensure_seeded(tag, db_type, paths):
+        if is_new_project and self.manager.assets._ensure_seeded(tag, db_type, paths):
             from ldm_core.constants import SEED_VERSION
 
             project_meta = self.read_meta(paths["root"])

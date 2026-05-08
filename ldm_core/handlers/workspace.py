@@ -725,7 +725,9 @@ class WorkspaceHandler(BaseHandler):
                             db_type_for_seed = (
                                 getattr(self.args, "db", None) or "hypersonic"
                             )
-                            if self._ensure_seeded(tag, db_type_for_seed, paths):
+                            if self.manager.assets._ensure_seeded(
+                                tag, db_type_for_seed, paths
+                            ):
                                 # Refresh meta from seed before merging workspace changes
                                 seed_meta = self.read_meta(project_path)
                                 project_meta.update(seed_meta)

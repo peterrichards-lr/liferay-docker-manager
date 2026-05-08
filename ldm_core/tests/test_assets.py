@@ -4,11 +4,10 @@ from unittest.mock import MagicMock, patch
 
 import requests
 
-from ldm_core.handlers.assets import AssetHandler
-from ldm_core.handlers.base import BaseHandler
+from ldm_core.handlers.assets import AssetService
 
 
-class MockAssets(AssetHandler, BaseHandler):
+class MockManager:
     def __init__(self):
         self.args = MagicMock()
         self.verbose = False
@@ -20,14 +19,25 @@ class MockAssets(AssetHandler, BaseHandler):
     def setup_paths(self, root):
         return {"root": root}
 
+    def parse_version(self, tag):
+        if not tag:
+            return (0, 0, 0)
+        parts = tag.replace("-lts", "").replace("-qr", "").split(".")
+        try:
+            return tuple(int(p) for p in parts[:3])
+        except Exception:
+            return (0, 0, 0)
+
 
 class TestAssets(unittest.TestCase):
     def setUp(self):
-        self.assets = MockAssets()
+        self.manager = MockManager()
+        self.assets = AssetService(self.manager)
         self.tmp_dir = Path("/tmp/assets-test")
 
+    @patch("ldm_core.ui.UI.confirm", return_value=True)
     @patch("ldm_core.handlers.assets.requests.head")
-    def test_fetch_seed_api_fallback(self, mock_head):
+    def test_fetch_seed_api_fallback(self, mock_head, mock_confirm):
         # Scenario: Direct download URL returns 404, fallback to GitHub API
         res_404 = MagicMock()
         res_404.status_code = 404
@@ -78,8 +88,9 @@ class TestAssets(unittest.TestCase):
                 # Verify moves were attempted
                 self.assertTrue(mock_move.called)
 
+    @patch("ldm_core.ui.UI.confirm", return_value=True)
     @patch("ldm_core.handlers.assets.requests.head")
-    def test_fetch_seed_offline_fallback(self, mock_head):
+    def test_fetch_seed_offline_fallback(self, mock_head, mock_confirm):
         """Verifies that the tool falls back to vanilla if discovery fails (offline)."""
         # Scenario: Network timeout during HEAD request
         mock_head.side_effect = requests.exceptions.Timeout("Connection timed out")

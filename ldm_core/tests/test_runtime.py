@@ -11,6 +11,8 @@ class MockRuntime(RuntimeHandler, BaseHandler):
         self.args = MagicMock()
         self.verbose = False
         self.non_interactive = True
+        self.manager = MagicMock()
+        self.manager.assets = MagicMock()
 
     def detect_project_path(self, *args, **kwargs):
         return Path("/tmp/runtime-project")

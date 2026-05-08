@@ -6,7 +6,6 @@ import zipfile
 
 import requests
 
-from ldm_core.handlers.base import BaseHandler
 from ldm_core.ui import UI
 from ldm_core.utils import get_actual_home, safe_move
 
@@ -14,11 +13,11 @@ from ldm_core.utils import get_actual_home, safe_move
 exists_fn = os.path.exists
 
 
-class AssetHandler(BaseHandler):
-    """Specialized handler for 'Offline First' asset management (Seeds, Samples)."""
+class AssetService:
+    """Specialized service for 'Offline First' asset management (Seeds, Samples)."""
 
-    def __init__(self, args=None):
-        super().__init__(args)
+    def __init__(self, manager=None):
+        self.manager = manager
 
     def _fetch_seed(self, tag, db_type, search_mode, paths):
         """Discovers and downloads a pre-warmed seed from GitHub Releases with Offline-First logic."""
@@ -137,17 +136,17 @@ class AssetHandler(BaseHandler):
         try:
             from ldm_core.handlers.snapshot import SnapshotHandler
 
-            handler = SnapshotHandler(self.args)
-            self.verify_runtime_environment(paths)
+            handler = SnapshotHandler(self.manager.args)
+            self.manager.verify_runtime_environment(paths)
 
-            if getattr(self.args, "no_osgi_seed", False):
+            if getattr(self.manager.args, "no_osgi_seed", False):
                 UI.debug("User opted out of OSGi state seeding.")
 
             UI.info("Bootstrapping project from seed...")
             handler._extract_snapshot_archive(tmp_path, paths)
 
             success_msg = "Project bootstrapped from seed."
-            if not getattr(self.args, "no_osgi_seed", False):
+            if not getattr(self.manager.args, "no_osgi_seed", False):
                 success_msg = "Project bootstrapped from seed (including OSGi state)."
             UI.success(
                 f"{success_msg} {UI.WHITE}(Saved ~15m of initialization time){UI.COLOR_OFF}"
@@ -160,19 +159,19 @@ class AssetHandler(BaseHandler):
 
     def _ensure_seeded(self, tag, db_type, paths):
         """Helper to ensure a project is bootstrapped from a seed if available and appropriate."""
-        if getattr(self.args, "no_seed", False):
+        if getattr(self.manager.args, "no_seed", False):
             return False
 
-        sidecar_flag = getattr(self.args, "sidecar", False)
+        sidecar_flag = getattr(self.manager.args, "sidecar", False)
         search_mode = (
             "sidecar"
-            if sidecar_flag or self.parse_version(tag) < (2025, 1, 0)
+            if sidecar_flag or self.manager.parse_version(tag) < (2025, 1, 0)
             else "shared"
         )
 
         seed_start = time.time()
         if self._fetch_seed(tag, db_type or "hypersonic", search_mode, paths):
-            if self.verbose:
+            if self.manager.verbose:
                 duration_str = UI.format_duration(time.time() - seed_start)
                 UI.debug(f"Seed fetch & extraction took: {duration_str}")
             return True

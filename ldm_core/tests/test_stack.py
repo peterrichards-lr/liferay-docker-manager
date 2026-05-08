@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 
 import yaml
 
-from ldm_core.handlers.assets import AssetHandler
+from ldm_core.handlers.assets import AssetService
 from ldm_core.handlers.base import BaseHandler
 from ldm_core.handlers.composer import ComposerHandler
 from ldm_core.handlers.config import ConfigHandler
@@ -22,7 +22,6 @@ from ldm_core.handlers.workspace import WorkspaceHandler
 class MockManager(
     ComposerHandler,
     RuntimeHandler,
-    AssetHandler,
     InfraHandler,
     WorkspaceHandler,
     SnapshotHandler,
@@ -36,6 +35,7 @@ class MockManager(
         self.verbose = False
         self.non_interactive = True
         self.license = LicenseService(self)
+        self.assets = AssetService(self)
 
         self.run_command = MagicMock()  # type: ignore[method-assign]
         self.write_docker_compose = MagicMock(  # type: ignore[method-assign]
@@ -387,7 +387,7 @@ class TestStackOrchestration(unittest.TestCase):
             patch("os.path.exists", return_value=False),
         ):
             mock_head.return_value.status_code = 404  # Skip download
-            self.manager._fetch_seed(tag, db_type, search_mode, self.paths)
+            self.manager.assets._fetch_seed(tag, db_type, search_mode, self.paths)
             call_url = mock_head.call_args[0][0]
             self.assertIn("seeded-states", call_url)
             self.assertIn(
@@ -421,7 +421,9 @@ class TestStackOrchestration(unittest.TestCase):
 
                 # 1. User says NO
                 mock_confirm.return_value = False
-                result = self.manager._fetch_seed("tag", "db", "search", self.paths)
+                result = self.manager.assets._fetch_seed(
+                    "tag", "db", "search", self.paths
+                )
                 self.assertFalse(result)
                 mock_confirm.assert_called()
 
@@ -429,7 +431,9 @@ class TestStackOrchestration(unittest.TestCase):
                 mock_confirm.reset_mock()
                 mock_confirm.return_value = True
                 mock_get.side_effect = Exception("Stop")
-                result = self.manager._fetch_seed("tag", "db", "search", self.paths)
+                result = self.manager.assets._fetch_seed(
+                    "tag", "db", "search", self.paths
+                )
                 self.assertFalse(result)
                 self.assertTrue(mock_get.called)
 

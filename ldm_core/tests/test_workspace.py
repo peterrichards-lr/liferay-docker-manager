@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock, patch
 
-from ldm_core.handlers.assets import AssetHandler
+from ldm_core.handlers.assets import AssetService
 from ldm_core.handlers.base import BaseHandler
 from ldm_core.handlers.composer import ComposerHandler
 from ldm_core.handlers.diagnostics import DiagnosticsHandler
@@ -17,7 +17,6 @@ from ldm_core.handlers.workspace import WorkspaceHandler
 class MockWorkspaceManager(
     ComposerHandler,
     RuntimeHandler,
-    AssetHandler,
     WorkspaceHandler,
     DiagnosticsHandler,
     BaseHandler,
@@ -29,6 +28,10 @@ class MockWorkspaceManager(
         # Default host_name to localhost to avoid gethostbyname calls
         self.args.host_name = "localhost"
         self.args.ssl = False
+        self.manager = MagicMock()
+        self.manager.args = self.args
+        self.assets = AssetService(self.manager)
+        self.manager.assets = self.assets
 
     def _check_java_version(self, *args, **kwargs):
         return True

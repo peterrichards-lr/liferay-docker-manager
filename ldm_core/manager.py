@@ -1,7 +1,7 @@
 import os
 
 from ldm_core.constants import RUN_ATTRS
-from ldm_core.handlers.assets import AssetHandler
+from ldm_core.handlers.assets import AssetService
 from ldm_core.handlers.base import BaseHandler
 from ldm_core.handlers.cloud import CloudHandler
 from ldm_core.handlers.composer import ComposerHandler
@@ -19,7 +19,6 @@ from ldm_core.ui import UI
 class LiferayManager(
     ComposerHandler,
     RuntimeHandler,
-    AssetHandler,
     WorkspaceHandler,
     SnapshotHandler,
     ConfigHandler,
@@ -39,6 +38,7 @@ class LiferayManager(
 
         # Services via Composition
         self.license = LicenseService(self)
+        self.assets = AssetService(self)
 
         # Automatic CI detection
         if os.getenv("CI") or os.getenv("GITHUB_ACTIONS") or os.getenv("GITLAB_CI"):
