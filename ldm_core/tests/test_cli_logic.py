@@ -70,6 +70,22 @@ class TestCLILogic(unittest.TestCase):
         self.assertEqual(args.command, "infra-restart")
         self.assertTrue(args.search)
 
+    def test_piped_input_preserves_interactive(self):
+        from unittest.mock import patch
+
+        from ldm_core.manager import LiferayManager
+
+        args = self.parser.parse_args(["run"])
+
+        # Simulate piping input (isatty is False) but no CI flags
+        with patch("sys.stdin.isatty", return_value=False):
+            with patch("os.getenv", return_value=None):
+                manager = LiferayManager(args)
+                self.assertFalse(
+                    manager.non_interactive,
+                    "Piping standard input should not force non-interactive mode",
+                )
+
 
 if __name__ == "__main__":
     unittest.main()

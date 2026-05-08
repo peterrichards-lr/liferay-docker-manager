@@ -2176,7 +2176,8 @@ pause
             UI.raw(f"{component:<35} {color}{icon} {status}{UI.COLOR_OFF}")
 
         # Print Actionable Hints at the end
-        if hints:
+        detailed_mode = getattr(self.args, "detailed", False)
+        if hints and detailed_mode:
             UI.raw(f"\n{UI.CYAN}--- Recommended Actions ---{UI.COLOR_OFF}")
             for h in hints:
                 padding = UI.get_padding("ℹ")
@@ -2195,10 +2196,16 @@ pause
             UI.success("Everything looks good! Your environment is ready.")
             sys.exit(0)
         elif all_ok and has_warnings:
-            UI.warning("Some non-critical issues were detected. Check the items above.")
+            msg = "Some non-critical issues were detected. Check the items above."
+            if hints and not detailed_mode:
+                msg += f" Run '{UI.WHITE}ldm doctor --detailed{UI.COLOR_OFF}' for troubleshooting hints and fixes."
+            UI.warning(msg)
             sys.exit(0)
         else:
-            UI.error("Critical issues were detected. Check the items above.")
+            msg = "Critical issues were detected. Check the items above."
+            if hints and not detailed_mode:
+                msg += f" Run '{UI.WHITE}ldm doctor --detailed{UI.COLOR_OFF}' for troubleshooting hints and fixes."
+            UI.error(msg)
             sys.exit(1)
 
     def check_mkcert(self):
