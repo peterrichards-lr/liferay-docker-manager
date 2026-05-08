@@ -2574,22 +2574,22 @@ pause
                 or self.non_interactive
                 or UI.confirm("Remove them? (y/n/q)", "N")
             ):
+                from ldm_core.docker_service import DockerService
+
                 for o in orphans:
-                    run_command(["docker", "rm", "-f", o])
+                    DockerService.rm(o, force=True)
                 UI.success(f"{len(orphans)} orphaned containers removed.")
         else:
             UI.detail("No orphaned containers found.")
 
         # 2. Orphaned Search Snapshots
+        from ldm_core.docker_service import DockerService
+
         search_name = "liferay-search-global"
-        if run_command(
-            ["docker", "ps", "-q", "-f", f"name={search_name}"], check=False
-        ):
-            snaps_raw = run_command(
+        if DockerService.is_running(search_name):
+            snaps_raw = DockerService.exec(
+                search_name,
                 [
-                    "docker",
-                    "exec",
-                    search_name,
                     "curl",
                     "-s",
                     "localhost:9200/_snapshot/liferay_backup/_all",
@@ -2625,11 +2625,9 @@ pause
                             or UI.confirm("Remove them from global vault?", "N")
                         ):
                             for s in orphaned_snaps:
-                                run_command(
+                                DockerService.exec(
+                                    search_name,
                                     [
-                                        "docker",
-                                        "exec",
-                                        search_name,
                                         "curl",
                                         "-s",
                                         "-X",
@@ -2872,17 +2870,10 @@ pause
 
     def _check_container_health_logs(self, container_name, add_hint=None, tail=20):
         """Checks the last N lines of container logs for errors or warnings."""
-        try:
-            # We capture BOTH stdout and stderr
-            import subprocess
+        from ldm_core.docker_service import DockerService
 
-            res = subprocess.run(
-                ["docker", "logs", "--tail", str(tail), container_name],
-                capture_output=True,
-                text=True,
-                check=False,
-            )
-            logs = (res.stdout or "") + (res.stderr or "")
+        try:
+            logs = DockerService.get_logs(container_name, tail=tail)
             if not logs:
                 return None, None
 
@@ -2995,17 +2986,12 @@ pause
 
     def _check_liferay_health_logs(self, container_name, tail=50):
         """Checks the last N lines of Liferay logs for startup status and errors."""
+        from ldm_core.docker_service import DockerService
+
         try:
             import re
-            import subprocess
 
-            res = subprocess.run(
-                ["docker", "logs", "--tail", str(tail), container_name],
-                capture_output=True,
-                text=True,
-                check=False,
-            )
-            logs = (res.stdout or "") + (res.stderr or "")
+            logs = DockerService.get_logs(container_name, tail=tail)
             if not logs:
                 return "Initializing...", True
 
@@ -3107,13 +3093,13 @@ pause
                 meta = self.read_meta(p_path)
                 p_id = meta.get("container_name") or p_name
                 # Use project label to find liferay container
-                logs_res = run_command(
-                    ["docker", "logs", "--tail", "500", f"{p_id}-liferay"], check=False
-                )
-                if logs_res and logs_res.stdout:
+                from ldm_core.docker_service import DockerService
+
+                logs = DockerService.get_logs(f"{p_id}-liferay", tail=500)
+                if logs:
                     z.writestr(
                         f"projects/{p_name}/liferay-redacted.log",
-                        UI.redact(logs_res.stdout),
+                        UI.redact(logs),
                     )
 
         UI.success(f"\n✅ Debug bundle created: {bundle_name}")

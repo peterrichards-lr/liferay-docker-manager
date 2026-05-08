@@ -217,7 +217,9 @@ class SnapshotHandler(BaseHandler):
                     get_actual_home() / ".ldm" / "infra" / "search" / "backup"
                 )
                 if es_infra_backup.exists():
-                    self._reclaim_permissions(es_infra_backup)
+                    from ldm_core.utils import reclaim_volume_permissions
+
+                    reclaim_volume_permissions(es_infra_backup)
                     tar.add(es_infra_backup, arcname="search_backup")
 
         # Capture custom environment variables from docker-compose.yml
@@ -469,7 +471,9 @@ class SnapshotHandler(BaseHandler):
                 es_infra_root = es_infra_backup.resolve()
 
                 # Reclaim permissions before extracting (Fixes [Errno 13] in CI/Linux)
-                self._reclaim_permissions(es_infra_backup)
+                from ldm_core.utils import reclaim_volume_permissions
+
+                reclaim_volume_permissions(es_infra_backup)
 
                 for m in tar.getmembers():
                     if m.name.startswith("search_backup/"):

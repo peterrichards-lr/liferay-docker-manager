@@ -559,28 +559,18 @@ class BaseHandler:
 
     def get_container_status(self, container_name):
         """Returns the health or status of a container."""
+        from ldm_core.docker_service import DockerService
+
         try:
             # First try to get health status
-            health = self.run_command(
-                [
-                    "docker",
-                    "inspect",
-                    "-f",
-                    "{{.State.Health.Status}}",
-                    container_name,
-                ],
-                check=False,
-            )
-            if health and health.strip():
-                return health.strip().lower()
+            health = DockerService.get_health(container_name)
+            if health and health != "unknown":
+                return health
 
             # Fallback to general state
-            status = self.run_command(
-                ["docker", "inspect", "-f", "{{.State.Status}}", container_name],
-                check=False,
-            )
-            if status and status.strip():
-                return status.strip().lower()
+            status = DockerService.get_status(container_name)
+            if status and status != "unknown":
+                return status
         except Exception:
             pass
         return "unknown"
@@ -863,45 +853,6 @@ class BaseHandler:
             "compose": root / "docker-compose.yml",
         }
 
-    def _reclaim_permissions(self, path):
-        """Forces ownership and permissions of a directory via Docker (Linux/macOS)."""
-        system_type = platform.system().lower()
-        if system_type not in ["darwin", "linux"]:
-            return True
-
-        if not path.exists():
-            return True
-
-        # We try to satisfy both the host user and the container user (1000)
-        # 1. Chown to 1000:1000 so services like ES can lock files
-        # 2. Chmod 777 so the host user can still delete/read files
-        docker_cmd = (
-            "chown -R 1000:1000 /workspace 2>/dev/null || true; "
-            "chmod -R 777 /workspace 2>/dev/null || true; "
-        )
-
-        try:
-            self.run_command(
-                [
-                    "docker",
-                    "run",
-                    "--rm",
-                    "-v",
-                    f"{path.as_posix()}:/workspace",
-                    "alpine",
-                    "sh",
-                    "-c",
-                    docker_cmd,
-                ],
-                check=False,
-                capture_output=True,
-            )
-            return True
-        except Exception as e:
-            if self.verbose:
-                UI.debug(f"Failed to reclaim permissions for {path}: {e}")
-            return False
-
     def verify_runtime_environment(self, paths):
         """Verifies volume mounts and synchronizes permissions across the project root."""
         # Safety: If passed a direct path (common error in refactored handlers), initialize paths dict
@@ -991,7 +942,11 @@ class BaseHandler:
 
                     if system_type == "darwin":
                         actual_home = Path.home()
+                        import contextlib
+
                         with contextlib.suppress(Exception):
+                            from ldm_core.utils import get_actual_home
+
                             actual_home = get_actual_home()
 
                         cert_dir = actual_home / "liferay-docker-certs"
@@ -1024,6 +979,8 @@ class BaseHandler:
 
                 # Only reclaim permissions for specific volumes that need it (data, state, logs, deploy, etc.)
                 # Reclaiming the root itself causes ownership issues for the host user (e.g. in CI)
+                from ldm_core.utils import reclaim_volume_permissions
+
                 for v in [
                     "data",
                     "state",
@@ -1038,7 +995,7 @@ class BaseHandler:
                     "routes",
                 ]:
                     if v in paths and paths[v].exists():
-                        self._reclaim_permissions(paths[v])
+                        reclaim_volume_permissions(paths[v])
 
             except Exception as e:
                 if self.verbose:

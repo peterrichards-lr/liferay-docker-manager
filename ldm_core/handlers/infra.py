@@ -203,16 +203,13 @@ tls:
 
         # Also stop the docker socket proxy and global search
         from ldm_core.constants import INFRA_SERVICES
+        from ldm_core.docker_service import DockerService
 
         for container, _ in INFRA_SERVICES:
             if container == "liferay-proxy-global":
                 continue  # Handled by compose down above
-            self.run_command(
-                ["docker", "stop", container], check=False, capture_output=True
-            )
-            self.run_command(
-                ["docker", "rm", container], check=False, capture_output=True
-            )
+            DockerService.stop(container)
+            DockerService.rm(container)
         UI.success("Infrastructure teardown complete.")
 
     def cmd_infra_restart(self):
@@ -232,11 +229,11 @@ tls:
 
     def _ensure_docker_proxy(self):
         """Ensures a safe Docker socket proxy is running for Traefik."""
+        from ldm_core.docker_service import DockerService
+
         container_name = "liferay-docker-proxy"
         # Check if it exists at all (running or stopped)
-        exists = self.run_command(
-            ["docker", "ps", "-a", "-q", "-f", f"name={container_name}"]
-        )
+        exists = DockerService.exists(container_name)
 
         if not exists:
             UI.detail("Starting Docker socket bridge...")
@@ -267,19 +264,17 @@ tls:
             )
         else:
             # If it exists, make sure it is running
-            running = self.run_command(
-                ["docker", "ps", "-q", "-f", f"name={container_name}"]
-            )
+            running = DockerService.is_running(container_name)
             if not running:
                 UI.detail("Starting existing Docker socket bridge...")
-                self.run_command(["docker", "start", container_name])
+                DockerService.start(container_name)
 
     def setup_global_search(self):
         """Ensures the global ES8 search service is running."""
+        from ldm_core.docker_service import DockerService
+
         search_name = "liferay-search-global"
-        exists = self.run_command(
-            ["docker", "ps", "-a", "-q", "-f", f"name={search_name}"]
-        )
+        exists = DockerService.exists(search_name)
 
         if not exists:
             UI.detail("Initializing Global Search (ES8) container...")
@@ -291,8 +286,10 @@ tls:
 
             # Fix permissions for Linux/CI (ES runs as UID 1000, we ensure world-writable or chowned)
             # Reclamation via Docker container ensures it works even if files are owned by root
-            self._reclaim_permissions(es_data)
-            self._reclaim_permissions(es_backup)
+            from ldm_core.utils import reclaim_volume_permissions
+
+            reclaim_volume_permissions(es_data)
+            reclaim_volume_permissions(es_backup)
 
             # Persistent ES8 instance matching Liferay requirements
             from ldm_core.constants import ELASTICSEARCH_VERSION
@@ -357,7 +354,9 @@ tls:
 
                     shutil.rmtree(es_data)
                     es_data.mkdir(parents=True, exist_ok=True)
-                    self._reclaim_permissions(es_data)
+                    from ldm_core.utils import reclaim_volume_permissions
+
+                    reclaim_volume_permissions(es_data)
 
                 UI.info("Restarting Global Search with clean slate...")
                 return self.setup_global_search()
@@ -443,12 +442,10 @@ tls:
                 )
         else:
             # Check if it is running
-            running = self.run_command(
-                ["docker", "ps", "-q", "-f", f"name={search_name}"]
-            )
+            running = DockerService.is_running(search_name)
             if not running:
                 UI.detail(f"Starting existing {search_name} container...")
-                self.run_command(["docker", "start", search_name])
+                DockerService.start(search_name)
 
             # Always ensure backup repository is registered if service is running
             UI.debug("Ensuring Global Search backup repository is registered...")
@@ -575,17 +572,17 @@ tls:
 
     def thaw_elasticsearch(self, quiet=False):
         """Attempts to lift disk watermarks on the global search container."""
+        from ldm_core.docker_service import DockerService
+
         search_name = "liferay-search-global"
         if not quiet:
             UI.info("Checking for blocked search indices (Disk Watermark)...")
 
         try:
             # First, lift the watermarks to 99%
-            lift_res = self.run_command(
+            lift_res = DockerService.exec(
+                search_name,
                 [
-                    "docker",
-                    "exec",
-                    search_name,
                     "curl",
                     "-s",
                     "-X",
@@ -612,11 +609,9 @@ tls:
                     UI.success("Elasticsearch disk watermarks lifted.")
 
                 # Now explicitly lift the read-only block from all indices
-                self.run_command(
+                DockerService.exec(
+                    search_name,
                     [
-                        "docker",
-                        "exec",
-                        search_name,
                         "curl",
                         "-s",
                         "-X",

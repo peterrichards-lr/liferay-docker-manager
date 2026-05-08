@@ -720,7 +720,9 @@ class RuntimeHandler(BaseHandler):
         # 1. Stop containers if running
         meta = self.read_meta(root)
         c_name = meta.get("container_name") or root.name
-        is_running = self.run_command(["docker", "ps", "-q", "-f", f"name=^{c_name}$"])
+        from ldm_core.docker_service import DockerService
+
+        is_running = DockerService.is_running(c_name)
         if is_running:
             self.cmd_stop(root.name)
 

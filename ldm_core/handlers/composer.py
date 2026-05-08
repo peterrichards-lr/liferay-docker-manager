@@ -74,29 +74,62 @@ class ComposerHandler(BaseHandler):
         return active
 
     def write_docker_compose(self, paths, meta, liferay_env=None):
-        """Generates the docker-compose.yml file for the project."""
+        """Generates the docker-compose.yml file using the Builder Pattern."""
         # Ensure paths is a dictionary for subscripting
         if not isinstance(paths, dict):
             paths = self.setup_paths(paths)
 
-        tag = str(meta.get("tag") or "latest")
-        db_type = meta.get("db_type", "hypersonic")
-        use_shared_search = str(meta.get("use_shared_search", "true")).lower() == "true"
-        host_name = meta.get("host_name", "localhost")
         project_name = meta.get("container_name") or paths["root"].name
-
+        host_name = meta.get("host_name", "localhost")
         ssl_enabled = self._is_ssl_active(host_name, meta)
+
+        services = {}
+
+        # Build individual services
+        services["liferay"] = self._build_liferay_service(
+            paths, meta, host_name, project_name, ssl_enabled, liferay_env
+        )
+
+        search_service = self._build_search_service(meta)
+        if search_service:
+            services["search"] = search_service
+
+        db_service = self._build_db_service(meta)
+        if db_service:
+            services["db"] = db_service
+            # Add dependency from liferay to db
+            services["liferay"]["depends_on"] = {"db": {"condition": "service_healthy"}}
+
+        # Append Microservices/Client Extensions
+        ext_services = self._build_extensions_services(
+            paths, meta, host_name, project_name, ssl_enabled
+        )
+        services.update(ext_services)
+
+        compose = {
+            "services": services,
+            "networks": {"liferay-net": {"external": True}},
+        }
+
+        from ldm_core.utils import safe_write_text
+
+        safe_write_text(paths["compose"], dict_to_yaml(compose))
+
+    def _build_liferay_service(
+        self, paths, meta, host_name, project_name, ssl_enabled, base_env
+    ):
+        """Constructs the primary Liferay service definition."""
+        tag = str(meta.get("tag") or "latest")
         scale = int(meta.get("scale_liferay", 1))
+        port = meta.get("port", 8080)
+        use_shared_search = str(meta.get("use_shared_search", "true")).lower() == "true"
 
-        # Base Liferay Service
         jvm_opts = str(meta.get("jvm_args", ""))
-
         if "-Dfile.encoding" not in jvm_opts:
             jvm_opts += " -Dfile.encoding=UTF8"
         if "-Duser.timezone" not in jvm_opts:
             jvm_opts += " -Duser.timezone=GMT"
 
-        # JDK 17+ Mandatory Module Exports
         mandatory_opens = [
             "java.base/java.lang=ALL-UNNAMED",
             "java.base/java.lang.reflect=ALL-UNNAMED",
@@ -125,27 +158,10 @@ class ComposerHandler(BaseHandler):
         if "-Xms" in jvm_opts and "-XX:TieredStopAtLevel=1" not in jvm_opts:
             jvm_opts += " -XX:TieredStopAtLevel=1"
 
-        jvm_opts = jvm_opts.strip()
-
-        image = meta.get("image_tag")
-        if not image:
-            # Smart Image Mapping
-            # 1. If it contains 'u', it's always Portal
-            if "u" in tag:
-                image = f"liferay/portal:{tag}"
-            # 2. If it has a known suffix, use it as is (DXP)
-            elif any(s in tag for s in ["-lts", "-qr", "-ga"]):
-                image = f"liferay/dxp:{tag}"
-            # 3. Default Fallback
-            else:
-                image = f"liferay/dxp:{tag}"
-
-        port = meta.get("port", 8080)
-
-        if liferay_env is None:
-            liferay_env = ["LIFERAY_HOME=/opt/liferay"]
-
-        liferay_env.append(f"LIFERAY_JVM_OPTS={jvm_opts}")
+        liferay_env = (
+            base_env if base_env is not None else ["LIFERAY_HOME=/opt/liferay"]
+        )
+        liferay_env.append(f"LIFERAY_JVM_OPTS={jvm_opts.strip()}")
 
         if use_shared_search:
             liferay_env.extend(
@@ -163,12 +179,11 @@ class ComposerHandler(BaseHandler):
                     "LIFERAY_ELASTICSEARCH_PERIOD_SIDECAR_PERIOD_ENABLED=true",
                 ]
             )
-        # Add custom environment variables from metadata
+
         custom_env_str = meta.get("custom_env", "{}")
         try:
             custom_env_dict = json.loads(custom_env_str)
         except Exception:
-            # Fallback for old comma-separated format
             custom_env_dict = {}
             if custom_env_str:
                 for pair in custom_env_str.split(","):
@@ -178,22 +193,17 @@ class ComposerHandler(BaseHandler):
 
         has_jdbc_env = False
         for k, v in custom_env_dict.items():
-            env_line = f"{k}={v}"
-            liferay_env.append(env_line)
+            liferay_env.append(f"{k}={v}")
             if k.startswith("LIFERAY_JDBC_PERIOD_"):
                 has_jdbc_env = True
 
+        db_type = meta.get("db_type", "hypersonic")
         if db_type in ["mysql", "mariadb"]:
-            # Standardize on optimized driver/dialect from compatibility matrix
             driver = (
                 resolve_dependency_version(tag, "jdbc_driver_mysql")
                 or "org.mariadb.jdbc.Driver"
             )
-            dialect = (
-                resolve_dependency_version(tag, "jdbc_dialect_mysql")
-                or "org.hibernate.dialect.MariaDB103Dialect"
-            )
-
+            dialect = "org.hibernate.dialect.MariaDB103Dialect"
             url = (
                 "jdbc:mariadb://db:3306/lportal?"
                 "characterEncoding=UTF-8"
@@ -211,8 +221,6 @@ class ComposerHandler(BaseHandler):
                 "&useLocalTransactionState=true"
                 "&permitMysqlScheme=true"
             )
-            dialect = "org.hibernate.dialect.MariaDB103Dialect"
-
             if not has_jdbc_env:
                 self.update_portal_ext(
                     paths,
@@ -225,9 +233,7 @@ class ComposerHandler(BaseHandler):
                         "hibernate.dialect": dialect,
                     },
                 )
-
             liferay_env.append("LIFERAY_HSQL_PERIOD_ENABLED=false")
-
         elif db_type == "postgresql":
             driver = (
                 resolve_dependency_version(tag, "jdbc_driver_postgresql")
@@ -238,7 +244,6 @@ class ComposerHandler(BaseHandler):
                 resolve_dependency_version(tag, "jdbc_dialect_postgresql")
                 or "org.hibernate.dialect.PostgreSQL10Dialect"
             )
-
             if not has_jdbc_env:
                 self.update_portal_ext(
                     paths,
@@ -253,16 +258,11 @@ class ComposerHandler(BaseHandler):
                 )
             liferay_env.append("LIFERAY_HSQL_PERIOD_ENABLED=false")
 
-        # Port Binding
-        resolved_ip = self.get_resolved_ip(host_name)
-        ssl_active = self._is_ssl_active(host_name, meta)
-
         port_list = []
-        if host_name == "localhost" or not ssl_active:
-            bind_ip = resolved_ip or "127.0.0.1"
+        if host_name == "localhost" or not ssl_enabled:
+            bind_ip = self.get_resolved_ip(host_name) or "127.0.0.1"
             port_list.append(f"{bind_ip}:{port}:8080")
-        elif ssl_active:
-            # Inject mandatory web server properties for SSL alignment
+        elif ssl_enabled:
             self.update_portal_ext(
                 paths,
                 {
@@ -272,7 +272,16 @@ class ComposerHandler(BaseHandler):
                 },
             )
 
-        liferay_service = {
+        image = meta.get("image_tag")
+        if not image:
+            if "u" in tag:
+                image = f"liferay/portal:{tag}"
+            elif any(s in tag for s in ["-lts", "-qr", "-ga"]):
+                image = f"liferay/dxp:{tag}"
+            else:
+                image = f"liferay/dxp:{tag}"
+
+        service = {
             "image": image,
             "ports": port_list,
             "environment": liferay_env,
@@ -286,27 +295,24 @@ class ComposerHandler(BaseHandler):
             "networks": ["liferay-net"],
         }
 
-        # Resource Limits
         cpu_limit = meta.get("cpu_limit")
         mem_limit = meta.get("mem_limit")
         if cpu_limit or mem_limit:
-            liferay_service["deploy"] = {"resources": {"limits": {}}}
+            service["deploy"] = {"resources": {"limits": {}}}
             if cpu_limit:
-                liferay_service["deploy"]["resources"]["limits"]["cpus"] = str(
-                    cpu_limit
-                )
+                service["deploy"]["resources"]["limits"]["cpus"] = str(cpu_limit)
             if mem_limit:
-                liferay_service["deploy"]["resources"]["limits"]["memory"] = (
+                service["deploy"]["resources"]["limits"]["memory"] = (
                     str(mem_limit) + "M"
                 )
 
         if scale == 1:
-            liferay_service["container_name"] = project_name
-            liferay_service["volumes"].append(
-                f"{paths['state'].as_posix()}:/opt/liferay/osgi/state"
-            )
-            liferay_service["volumes"].append(
-                f"{paths['logs'].as_posix()}:/opt/liferay/logs"
+            service["container_name"] = project_name
+            service["volumes"].extend(
+                [
+                    f"{paths['state'].as_posix()}:/opt/liferay/osgi/state",
+                    f"{paths['logs'].as_posix()}:/opt/liferay/logs",
+                ]
             )
         else:
             liferay_env.extend(
@@ -316,10 +322,9 @@ class ComposerHandler(BaseHandler):
                 ]
             )
 
-        # SSL Labels
         if ssl_enabled:
             traefik_id = f"{project_name}-main"
-            liferay_service["labels"].extend(
+            service["labels"].extend(
                 [
                     "traefik.enable=true",
                     "traefik.docker.network=liferay-net",
@@ -332,54 +337,30 @@ class ComposerHandler(BaseHandler):
                 ]
             )
 
-        services = {"liferay": liferay_service}
+        return service
 
-        # Client Extensions / Microservices
-        if hasattr(self, "scan_client_extensions"):
-            extensions = self.scan_client_extensions(
-                paths["root"], paths["cx"], paths["ce_dir"]
-            )
-        else:
-            from ldm_core.handlers.workspace import WorkspaceHandler
+    def _build_search_service(self, meta):
+        """Constructs the Sidecar Elasticsearch service if required."""
+        use_shared_search = str(meta.get("use_shared_search", "true")).lower() == "true"
+        if use_shared_search:
+            return None
 
-            cx_handler = WorkspaceHandler(self.args)
-            extensions = cx_handler.scan_client_extensions(
-                paths["root"], paths["cx"], paths["ce_dir"]
-            )
+        tag = str(meta.get("tag") or "latest")
+        es_ver = resolve_dependency_version(tag, "elasticsearch") or "7.17.10"
+        return {
+            "image": f"elasticsearch:{es_ver}",
+            "environment": ["discovery.type=single-node"],
+            "networks": ["liferay-net"],
+        }
 
-        for ext in extensions:
-            if ext.get("deploy") and ext.get("is_service"):
-                svc_id = f"{project_name}-{ext['id']}"
-                ms_port = ext.get("loadBalancer", {}).get("targetPort", 8080)
-                services[svc_id] = {
-                    "image": f"{svc_id}:latest",
-                    "build": {"context": Path(ext["path"]).as_posix()},
-                    "pull_policy": "build",
-                    "networks": ["liferay-net"],
-                    "labels": ["traefik.enable=true"],
-                }
-                if ssl_enabled:
-                    traefik_svc_id = f"{svc_id}-svc"
-                    services[svc_id]["labels"].extend(
-                        [
-                            "traefik.docker.network=liferay-net",
-                            f"traefik.http.routers.{traefik_svc_id}.rule=Host(`{ext['id']}.{host_name}`)",
-                            f"traefik.http.routers.{traefik_svc_id}.tls=true",
-                            f"traefik.http.services.{traefik_svc_id}.loadbalancer.server.port={ms_port}",
-                        ]
-                    )
-
-        if not use_shared_search:
-            es_ver = resolve_dependency_version(tag, "elasticsearch") or "7.17.10"
-            services["search"] = {
-                "image": f"elasticsearch:{es_ver}",
-                "environment": ["discovery.type=single-node"],
-                "networks": ["liferay-net"],
-            }
+    def _build_db_service(self, meta):
+        """Constructs the Database service (MySQL/PostgreSQL) if required."""
+        db_type = meta.get("db_type", "hypersonic")
+        tag = str(meta.get("tag") or "latest")
 
         if db_type == "postgresql":
             pg_ver = resolve_dependency_version(tag, "postgresql") or "13"
-            services["db"] = {
+            return {
                 "image": f"postgres:{pg_ver}",
                 "environment": {
                     "POSTGRES_PASSWORD": "test",  # nosec B105
@@ -388,7 +369,7 @@ class ComposerHandler(BaseHandler):
                 },
                 "networks": ["liferay-net"],
             }
-        elif db_type in ["mysql", "mariadb"]:
+        if db_type in ["mysql", "mariadb"]:
             is_modern = False
             try:
                 major_ver = int(tag.split(".", maxsplit=1)[0])
@@ -402,14 +383,10 @@ class ComposerHandler(BaseHandler):
 
             auth_flags = []
             if db_type == "mysql":
-                # Determine which MySQL version we are actually using
                 mysql_image_ver = (
                     target_mysql if target_mysql else ("8.4" if is_modern else "5.7")
                 )
-
-                # Check if it's 8.4+ (LTS) which requires the new native-password plugin flag
                 try:
-                    # Strip any minor version to check base major/minor
                     ver_parts = mysql_image_ver.split(".")
                     if (
                         len(ver_parts) >= 2
@@ -422,17 +399,17 @@ class ComposerHandler(BaseHandler):
                             "--default-authentication-plugin=mysql_native_password"
                         ]
                 except ValueError:
-                    # Fallback if version string is weird
                     auth_flags = [
                         "--default-authentication-plugin=mysql_native_password"
                     ]
 
-            services["db"] = {
-                "image": (f"mysql:{mysql_image_ver}")
+            image = (
+                f"mysql:{mysql_image_ver}"
                 if db_type == "mysql"
-                else (
-                    f"mariadb:{target_mariadb}" if target_mariadb else "mariadb:10.6"
-                ),
+                else (f"mariadb:{target_mariadb}" if target_mariadb else "mariadb:10.6")
+            )
+            return {
+                "image": image,
                 "command": [
                     "mysqld",
                     "--character-set-server=utf8mb4",
@@ -467,12 +444,46 @@ class ComposerHandler(BaseHandler):
                 },
                 "networks": ["liferay-net"],
             }
-            liferay_service["depends_on"] = {"db": {"condition": "service_healthy"}}
+        return None
 
-        compose = {
-            "services": services,
-            "networks": {"liferay-net": {"external": True}},
-        }
-        from ldm_core.utils import safe_write_text
+    def _build_extensions_services(
+        self, paths, meta, host_name, project_name, ssl_enabled
+    ):
+        """Constructs services for Liferay Client Extensions."""
+        services = {}
+        if hasattr(self, "scan_client_extensions"):
+            extensions = self.scan_client_extensions(
+                paths["root"], paths["cx"], paths["ce_dir"]
+            )
+        else:
+            from ldm_core.handlers.workspace import WorkspaceHandler
 
-        safe_write_text(paths["compose"], dict_to_yaml(compose))
+            cx_handler = WorkspaceHandler(self.args)
+            extensions = cx_handler.scan_client_extensions(
+                paths["root"], paths["cx"], paths["ce_dir"]
+            )
+
+        for ext in extensions:
+            if ext.get("deploy") and ext.get("is_service"):
+                svc_id = f"{project_name}-{ext['id']}"
+                ms_port = ext.get("loadBalancer", {}).get("targetPort", 8080)
+                labels = ["traefik.enable=true"]
+                services[svc_id] = {
+                    "image": f"{svc_id}:latest",
+                    "build": {"context": Path(ext["path"]).as_posix()},
+                    "pull_policy": "build",
+                    "networks": ["liferay-net"],
+                    "labels": labels,
+                }
+                if ssl_enabled:
+                    traefik_svc_id = f"{svc_id}-svc"
+                    labels.extend(
+                        [
+                            "traefik.docker.network=liferay-net",
+                            f"traefik.http.routers.{traefik_svc_id}.rule=Host(`{ext['id']}.{host_name}`)",
+                            f"traefik.http.routers.{traefik_svc_id}.tls=true",
+                            f"traefik.http.services.{traefik_svc_id}.loadbalancer.server.port={ms_port}",
+                        ]
+                    )
+                    services[svc_id]["labels"] = labels
+        return services

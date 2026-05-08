@@ -1197,3 +1197,41 @@ def resolve_dependency_version(liferay_tag, dependency_name):
                 return entry.get("dependencies", {}).get(dependency_name)
 
     return None
+
+
+def reclaim_volume_permissions(path, uid="1000", gid="1000"):
+    """Forces ownership and permissions of a directory via Docker (Linux/macOS)."""
+    import platform
+    from pathlib import Path
+
+    system_type = platform.system().lower()
+    if system_type not in ["darwin", "linux"]:
+        return True
+
+    if not Path(path).exists():
+        return True
+
+    docker_cmd = (
+        f"chown -R {uid}:{gid} /workspace 2>/dev/null || true; "
+        "chmod -R 777 /workspace 2>/dev/null || true; "
+    )
+
+    try:
+        run_command(
+            [
+                "docker",
+                "run",
+                "--rm",
+                "-v",
+                f"{Path(path).as_posix()}:/workspace",
+                "alpine",
+                "sh",
+                "-c",
+                docker_cmd,
+            ],
+            check=False,
+            capture_output=True,
+        )
+        return True
+    except Exception:
+        return False
