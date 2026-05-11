@@ -3,21 +3,20 @@ import math
 import platform
 from pathlib import Path
 
-from ldm_core.handlers.base import BaseHandler
 from ldm_core.utils import dict_to_yaml, resolve_dependency_version
 
 
-class ComposerHandler(BaseHandler):
-    """Specialized handler for Stack Composition and Metadata translation."""
+class ComposerService:
+    """Service for Stack Composition and Metadata translation."""
 
-    def __init__(self, args=None):
-        super().__init__(args)
+    def __init__(self, manager=None):
+        self.manager = manager
 
     def get_default_jvm_args(self):
         """Calculates recommended JVM arguments based on available Docker RAM."""
         try:
-            # We use self.run_command from the base mixin
-            docker_info_raw = self.run_command(
+            # We use self.manager.run_command from the base mixin
+            docker_info_raw = self.manager.run_command(
                 ["docker", "info", "--format", "{{json .}}"], check=False
             )
             if not docker_info_raw:
@@ -58,7 +57,7 @@ class ComposerHandler(BaseHandler):
         is_literal_localhost = host_name == "localhost"
 
         # Priority: 1. CLI Arg, 2. Meta 'ssl', 3. Meta 'use_ssl', 4. Default (True for custom)
-        ssl_arg = getattr(self.args, "ssl", None)
+        ssl_arg = getattr(self.manager.args, "ssl", None)
         meta_ssl = meta.get("ssl", meta.get("use_ssl"))
 
         if ssl_arg is not None:
@@ -77,7 +76,7 @@ class ComposerHandler(BaseHandler):
         """Generates the docker-compose.yml file using the Builder Pattern."""
         # Ensure paths is a dictionary for subscripting
         if not isinstance(paths, dict):
-            paths = self.setup_paths(paths)
+            paths = self.manager.setup_paths(paths)
 
         project_name = meta.get("container_name") or paths["root"].name
         host_name = meta.get("host_name", "localhost")
@@ -222,7 +221,7 @@ class ComposerHandler(BaseHandler):
                 "&permitMysqlScheme=true"
             )
             if not has_jdbc_env:
-                self.config.update_portal_ext(  # type: ignore[attr-defined]
+                self.manager.config.update_portal_ext(  # type: ignore[attr-defined]
                     paths,
                     {
                         "jdbc.default.enabled": "true",
@@ -245,7 +244,7 @@ class ComposerHandler(BaseHandler):
                 or "org.hibernate.dialect.PostgreSQL10Dialect"
             )
             if not has_jdbc_env:
-                self.config.update_portal_ext(  # type: ignore[attr-defined]
+                self.manager.config.update_portal_ext(  # type: ignore[attr-defined]
                     paths,
                     {
                         "jdbc.default.enabled": "true",
@@ -260,10 +259,10 @@ class ComposerHandler(BaseHandler):
 
         port_list = []
         if host_name == "localhost" or not ssl_enabled:
-            bind_ip = self.get_resolved_ip(host_name) or "127.0.0.1"
+            bind_ip = self.manager.get_resolved_ip(host_name) or "127.0.0.1"
             port_list.append(f"{bind_ip}:{port}:8080")
         elif ssl_enabled:
-            self.config.update_portal_ext(  # type: ignore[attr-defined]
+            self.manager.config.update_portal_ext(  # type: ignore[attr-defined]
                 paths,
                 {
                     "web.server.host": host_name,
@@ -451,14 +450,14 @@ class ComposerHandler(BaseHandler):
     ):
         """Constructs services for Liferay Client Extensions."""
         services = {}
-        if hasattr(self, "scan_client_extensions"):
-            extensions = self.scan_client_extensions(
+        if self.manager and hasattr(self.manager, "workspace"):
+            extensions = self.manager.workspace.scan_client_extensions(
                 paths["root"], paths["cx"], paths["ce_dir"]
             )
         else:
             from ldm_core.handlers.workspace import WorkspaceService
 
-            cx_handler = WorkspaceService(self)
+            cx_handler = WorkspaceService(self.manager)
             extensions = cx_handler.scan_client_extensions(
                 paths["root"], paths["cx"], paths["ce_dir"]
             )

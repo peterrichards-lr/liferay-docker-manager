@@ -101,7 +101,7 @@ class TestArchitecturalContracts(unittest.TestCase):
             "host_name": "contract.local",
         }
 
-        self.manager.write_docker_compose(paths, meta)
+        self.manager.composer.write_docker_compose(paths, meta)
 
         compose_content = yaml.safe_load(paths["compose"].read_text())
         liferay_labels = compose_content["services"]["liferay"].get("labels", [])
@@ -127,7 +127,9 @@ class TestArchitecturalContracts(unittest.TestCase):
 
         with patch.object(self.manager, "run_command"):
             with patch.object(self.manager, "setup_infrastructure"):
-                with patch.object(self.manager, "write_docker_compose") as mock_write:
+                with patch.object(
+                    self.manager.composer, "write_docker_compose"
+                ) as mock_write:
                     self.manager.sync_stack(paths, meta, no_up=True)
 
                     # Verify that environment variables were passed to write_docker_compose

@@ -4,17 +4,18 @@ from typing import Any, cast
 from unittest.mock import MagicMock, patch
 
 from ldm_core.handlers.base import BaseHandler
-from ldm_core.handlers.composer import ComposerHandler
+from ldm_core.handlers.composer import ComposerService
+from ldm_core.handlers.config import ConfigService
 
 
-class MockComposer(ComposerHandler, BaseHandler):
+class MockComposer(BaseHandler):
     def __init__(self):
         self.args = MagicMock()
         self.verbose = False
         self.non_interactive = True
-        from ldm_core.handlers.config import ConfigService
-
         self.config = ConfigService(self)
+        self.workspace = MagicMock()
+        self.composer = ComposerService(self)
 
     def get_resolved_ip(self, host_name):
         return "127.0.0.1"
@@ -25,7 +26,8 @@ class MockComposer(ComposerHandler, BaseHandler):
 
 class TestComposer(unittest.TestCase):
     def setUp(self):
-        self.composer = MockComposer()
+        self.manager = MockComposer()
+        self.composer = self.manager.composer
         self.tmp_dir = Path("/tmp/composer-test")
         self.paths = {
             "root": self.tmp_dir,
@@ -45,7 +47,7 @@ class TestComposer(unittest.TestCase):
         # Test 16GB RAM detection
         mock_json.return_value = {"MemTotal": 16 * 1024 * 1024 * 1024}
         with patch.object(
-            self.composer, "run_command", return_value='{"MemTotal": 17179869184}'
+            self.manager, "run_command", return_value='{"MemTotal": 17179869184}'
         ):
             args = self.composer.get_default_jvm_args()
             self.assertIn("-Xmx12288m", args)
@@ -54,7 +56,7 @@ class TestComposer(unittest.TestCase):
         # Test 32GB RAM detection (Capped at 24GB or 32GB depending on logic, verify actual output)
         mock_json.return_value = {"MemTotal": 32 * 1024 * 1024 * 1024}
         with patch.object(
-            self.composer, "run_command", return_value='{"MemTotal": 34359738368}'
+            self.manager, "run_command", return_value='{"MemTotal": 34359738368}'
         ):
             args = self.composer.get_default_jvm_args()
             # The current logic caps at min(floor(32*0.75), 32) = 24GB
@@ -70,11 +72,11 @@ class TestComposer(unittest.TestCase):
         self.assertTrue(self.composer._is_ssl_active("test.local", meta))
 
         # CLI Override
-        self.composer.args.ssl = False
+        self.manager.args.ssl = False
         self.assertFalse(self.composer._is_ssl_active("test.local", meta))
 
         # Meta Override
-        self.composer.args.ssl = None
+        self.manager.args.ssl = None
         meta["ssl"] = "true"
         self.assertTrue(self.composer._is_ssl_active("test.local", meta))
 
@@ -89,13 +91,13 @@ class TestComposer(unittest.TestCase):
 
         with (
             patch("ldm_core.utils.safe_write_text"),
-            patch.object(self.composer.config, "update_portal_ext"),
+            patch.object(self.manager.config, "update_portal_ext"),
         ):
             self.composer.write_docker_compose(self.paths, meta)
 
             # Verify update_portal_ext was called for PostgreSQL
             self.assertTrue(
-                cast(MagicMock, self.composer.config.update_portal_ext).called
+                cast(MagicMock, self.manager.config.update_portal_ext).called
             )
 
             # Verify YAML generation
@@ -107,7 +109,7 @@ class TestComposer(unittest.TestCase):
         meta = {"jvm_args": "-Xmx4g"}
         with (
             patch("ldm_core.utils.safe_write_text"),
-            patch.object(self.composer.config, "update_portal_ext"),
+            patch.object(self.manager.config, "update_portal_ext"),
         ):
             # Capture the environment passed to the service
             with patch("ldm_core.handlers.composer.dict_to_yaml") as mock_yaml:
@@ -127,7 +129,7 @@ class TestComposer(unittest.TestCase):
 
         with (
             patch("ldm_core.utils.safe_write_text"),
-            patch.object(self.composer.config, "update_portal_ext"),
+            patch.object(self.manager.config, "update_portal_ext"),
         ):
             # Test MySQL 8.0 logic (default authentication plugin)
             meta_80 = {

@@ -9,7 +9,7 @@ import yaml
 
 from ldm_core.handlers.assets import AssetService
 from ldm_core.handlers.base import BaseHandler
-from ldm_core.handlers.composer import ComposerHandler
+from ldm_core.handlers.composer import ComposerService
 from ldm_core.handlers.config import ConfigService
 from ldm_core.handlers.diagnostics import DiagnosticsService
 from ldm_core.handlers.infra import InfraService
@@ -20,7 +20,6 @@ from ldm_core.handlers.workspace import WorkspaceService
 
 
 class MockManager(
-    ComposerHandler,
     RuntimeHandler,
     BaseHandler,
 ):
@@ -36,11 +35,10 @@ class MockManager(
         self.diagnostics = DiagnosticsService(self)
         self.snapshot = SnapshotService(self)
         self.workspace = WorkspaceService(self)
+        self.composer = ComposerService(self)
 
         self.run_command = MagicMock()  # type: ignore[method-assign]
-        self.write_docker_compose = MagicMock(  # type: ignore[method-assign]
-            side_effect=ComposerHandler.write_docker_compose.__get__(self, MockManager)
-        )
+        self.write_docker_compose = MagicMock()  # type: ignore[method-assign]
         self.cmd_browser = MagicMock(  # type: ignore[method-assign]
             side_effect=RuntimeHandler.cmd_browser.__get__(self, MockManager)
         )
@@ -221,7 +219,7 @@ class TestStackScaling(unittest.TestCase):
         }
 
         with patch("ldm_core.utils.safe_write_text") as mock_write:
-            self.manager.write_docker_compose(self.paths, meta)
+            self.manager.composer.write_docker_compose(self.paths, meta)
 
             compose_data = yaml.safe_load(mock_write.call_args[0][1])
             liferay_service = compose_data["services"]["liferay"]
@@ -322,7 +320,7 @@ class TestStackOrchestration(unittest.TestCase):
         }
 
         with patch("ldm_core.utils.safe_write_text") as mock_write:
-            self.manager.write_docker_compose(self.paths, config)
+            self.manager.composer.write_docker_compose(self.paths, config)
             compose_data = yaml.safe_load(mock_write.call_args[0][1])
             liferay_service = compose_data["services"]["liferay"]
             db_service = compose_data["services"]["db"]

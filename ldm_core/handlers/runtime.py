@@ -98,7 +98,7 @@ class RuntimeHandler(BaseHandler):
         )
 
         if not jvm_args:
-            jvm_args = self.get_default_jvm_args()
+            jvm_args = self.composer.get_default_jvm_args()
 
         is_samples = getattr(self.args, "samples", False)
         if is_samples:
@@ -447,7 +447,7 @@ class RuntimeHandler(BaseHandler):
         )
         config_handler.sync_logging(paths)
 
-        self.write_docker_compose(paths, project_meta, liferay_env=liferay_env)
+        self.composer.write_docker_compose(paths, project_meta, liferay_env=liferay_env)
 
         UI.debug("Validating generated docker-compose.yml syntax...")
         self.run_command(

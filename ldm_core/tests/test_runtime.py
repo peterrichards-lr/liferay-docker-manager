@@ -13,9 +13,11 @@ class MockRuntime(RuntimeHandler, BaseHandler):
         self.non_interactive = True
         self.manager = MagicMock()
         self.manager.assets = MagicMock()
+        from ldm_core.handlers.composer import ComposerService
         from ldm_core.handlers.config import ConfigService
 
         self.config = ConfigService(self.manager)
+        self.composer = ComposerService(self)
 
     def detect_project_path(self, *args, **kwargs):
         return Path("/tmp/runtime-project")
@@ -112,10 +114,13 @@ class TestRuntime(unittest.TestCase):
             "files": root / "files",
             "state": root / "osgi" / "state",
             "cx": root / "osgi" / "client-extensions",
+            "ce_dir": root / "osgi" / "client-extensions",
             "configs": root / "osgi" / "configs",
             "modules": root / "osgi" / "modules",
             "backups": root / "snapshots",
             "portal_log4j": root / "osgi" / "log4j",
+            "logs": root / "logs",
+            "compose": root / "docker-compose.yml",
             "common": Path("/tmp/common"),
         }
 
@@ -161,10 +166,13 @@ class TestRuntime(unittest.TestCase):
             "files": root / "files",
             "state": root / "osgi" / "state",
             "cx": root / "osgi" / "client-extensions",
+            "ce_dir": root / "osgi" / "client-extensions",
             "configs": root / "osgi" / "configs",
             "modules": root / "osgi" / "modules",
             "backups": root / "snapshots",
             "portal_log4j": root / "osgi" / "log4j",
+            "logs": root / "logs",
+            "compose": root / "docker-compose.yml",
             "common": Path("/tmp/common"),
         }
 

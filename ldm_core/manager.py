@@ -4,7 +4,7 @@ from ldm_core.constants import RUN_ATTRS
 from ldm_core.handlers.assets import AssetService
 from ldm_core.handlers.base import BaseHandler
 from ldm_core.handlers.cloud import CloudService
-from ldm_core.handlers.composer import ComposerHandler
+from ldm_core.handlers.composer import ComposerService
 from ldm_core.handlers.config import ConfigService
 from ldm_core.handlers.dev import DevService
 from ldm_core.handlers.diagnostics import DiagnosticsService
@@ -17,7 +17,6 @@ from ldm_core.ui import UI
 
 
 class LiferayManager(
-    ComposerHandler,
     RuntimeHandler,
     BaseHandler,
 ):
@@ -39,6 +38,7 @@ class LiferayManager(
         self.diagnostics = DiagnosticsService(self)
         self.snapshot = SnapshotService(self)
         self.workspace = WorkspaceService(self)
+        self.composer = ComposerService(self)
 
         # Automatic CI detection
         if os.getenv("CI") or os.getenv("GITHUB_ACTIONS") or os.getenv("GITLAB_CI"):
