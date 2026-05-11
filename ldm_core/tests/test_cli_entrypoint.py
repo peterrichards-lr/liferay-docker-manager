@@ -36,7 +36,7 @@ class TestCLIEntrypoint(unittest.TestCase):
             main()
 
         # Verify cmd_run was called with the project arg
-        mock_manager.cmd_run.assert_called_once_with("new-project")
+        mock_manager.runtime.cmd_run.assert_called_once_with("new-project")
 
     @patch("ldm_core.cli.LiferayManager")
     @patch("ldm_core.cli.get_parser")
@@ -102,7 +102,7 @@ class TestCLIEntrypoint(unittest.TestCase):
         # Setup mock manager
         mock_manager = mock_manager_class.return_value
         mock_manager.check_docker.return_value = True
-        mock_manager.cmd_run = MagicMock()
+        mock_manager.runtime.cmd_run = MagicMock()
 
         # Run main
         with patch("sys.argv", ["ldm", "run", "demo"]):

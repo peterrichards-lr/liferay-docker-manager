@@ -448,20 +448,21 @@ class ComposerService:
     def _build_extensions_services(
         self, paths, meta, host_name, project_name, ssl_enabled
     ):
-        """Constructs services for Liferay Client Extensions."""
+        # 4. Append Microservices/Client Extensions
         services = {}
+        extensions = []
         if self.manager and hasattr(self.manager, "workspace"):
             extensions = self.manager.workspace.scan_client_extensions(
                 paths["root"], paths["cx"], paths["ce_dir"]
             )
         else:
+            # Fallback for standalone/mock usage
             from ldm_core.handlers.workspace import WorkspaceService
 
             cx_handler = WorkspaceService(self.manager)
             extensions = cx_handler.scan_client_extensions(
                 paths["root"], paths["cx"], paths["ce_dir"]
             )
-
         for ext in extensions:
             if ext.get("deploy") and ext.get("is_service"):
                 svc_id = f"{project_name}-{ext['id']}"

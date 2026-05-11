@@ -4,27 +4,30 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-from ldm_core.handlers.base import BaseHandler
 from ldm_core.ui import UI
 from ldm_core.utils import get_actual_home, get_compose_cmd, open_browser
 
 
-class RuntimeHandler(BaseHandler):
-    """Specialized handler for container lifecycle and orchestration."""
+class RuntimeService:
+    """Service for container lifecycle and orchestration."""
 
-    def __init__(self, args=None):
-        super().__init__(args)
+    def __init__(self, manager=None):
+        self.manager = manager
 
     def cmd_run(self, project_id=None, is_restart=False):
         """Main entry point for starting or updating a project stack."""
         total_start = time.time()
         project_id = (
-            project_id or self.args.project or getattr(self.args, "project_flag", None)
+            project_id
+            or self.manager.args.project
+            or getattr(self.manager.args, "project_flag", None)
         )
-        if getattr(self.args, "select", False) and not project_id:
-            if self.non_interactive:
+        if getattr(self.manager.args, "select", False) and not project_id:
+            if self.manager.non_interactive:
                 UI.die("Project selection is not supported in non-interactive mode.")
-            selection = self.select_project_interactively(heading="Available Projects")
+            selection = self.manager.select_project_interactively(
+                heading="Available Projects"
+            )
             if not selection:
                 return
             if selection.get("new"):
@@ -32,16 +35,16 @@ class RuntimeHandler(BaseHandler):
             else:
                 project_id = selection["path"].name
 
-        root = self.detect_project_path(project_id, for_init=True)
+        root = self.manager.detect_project_path(project_id, for_init=True)
         if not root:
-            if self.non_interactive:
+            if self.manager.non_interactive:
                 UI.die("Project not found and no name provided to initialize.")
 
             default_name = f"ldm-{int(time.time())}"
             project_id = UI.ask("Enter a new project name to initialize", default_name)
             if not project_id:
                 return
-            root = self.detect_project_path(project_id, for_init=True)
+            root = self.manager.detect_project_path(project_id, for_init=True)
             if not root:
                 UI.die("Failed to resolve project path.")
 
@@ -49,25 +52,31 @@ class RuntimeHandler(BaseHandler):
         is_new_project = not any(
             (root / f).exists() for f in ["meta", ".liferay-docker.meta", ".ldm.meta"]
         )
-        paths = self.setup_paths(root)
-        project_meta = self.read_meta(paths["root"])
+        paths = self.manager.setup_paths(root)
+        project_meta = self.manager.read_meta(paths["root"])
 
-        tag = self.args.tag or project_meta.get("tag")
-        host_name = self.args.host_name or project_meta.get("host_name") or "localhost"
-        db_type = getattr(self.args, "db", None) or project_meta.get("db_type")
-        jvm_args = getattr(self.args, "jvm_args", None) or project_meta.get("jvm_args")
-        port_val = getattr(self.args, "port", None) or project_meta.get("port", 8080)
+        tag = self.manager.args.tag or project_meta.get("tag")
+        host_name = (
+            self.manager.args.host_name or project_meta.get("host_name") or "localhost"
+        )
+        db_type = getattr(self.manager.args, "db", None) or project_meta.get("db_type")
+        jvm_args = getattr(self.manager.args, "jvm_args", None) or project_meta.get(
+            "jvm_args"
+        )
+        port_val = getattr(self.manager.args, "port", None) or project_meta.get(
+            "port", 8080
+        )
         port = int(port_val) if port_val is not None else 8080
 
         # FAIL FAST: Pre-flight checks before expensive operations
         project_meta["root"] = str(root.resolve())
         project_meta["project_name"] = project_id
 
-        paths = self.setup_paths(root)
-        ssl_val = self._is_ssl_active(host_name, project_meta)
+        paths = self.manager.setup_paths(root)
+        ssl_val = self.manager.composer._is_ssl_active(host_name, project_meta)
 
-        if not getattr(self.args, "no_up", False):
-            port = self._pre_flight_checks(
+        if not getattr(self.manager.args, "no_up", False):
+            port = self.manager._pre_flight_checks(
                 host_name, port, ssl_enabled=ssl_val, meta=project_meta
             )
 
@@ -75,36 +84,36 @@ class RuntimeHandler(BaseHandler):
 
         # Performance Overrides
         no_vol_cache = (
-            getattr(self.args, "no_vol_cache", False)
+            getattr(self.manager.args, "no_vol_cache", False)
             or str(project_meta.get("no_vol_cache", "false")).lower() == "true"
         )
         no_jvm_verify = (
-            getattr(self.args, "no_jvm_verify", False)
+            getattr(self.manager.args, "no_jvm_verify", False)
             or str(project_meta.get("no_jvm_verify", "false")).lower() == "true"
         )
         no_tld_skip = (
-            getattr(self.args, "no_tld_skip", False)
+            getattr(self.manager.args, "no_tld_skip", False)
             or str(project_meta.get("no_tld_skip", "false")).lower() == "true"
         )
 
-        env_type = getattr(self.args, "env_type", None) or project_meta.get(
+        env_type = getattr(self.manager.args, "env_type", None) or project_meta.get(
             "env_type", "dev"
         )
-        cpu_limit = getattr(self.args, "cpu_limit", None) or project_meta.get(
+        cpu_limit = getattr(self.manager.args, "cpu_limit", None) or project_meta.get(
             "cpu_limit"
         )
-        mem_limit = getattr(self.args, "mem_limit", None) or project_meta.get(
+        mem_limit = getattr(self.manager.args, "mem_limit", None) or project_meta.get(
             "mem_limit"
         )
 
         if not jvm_args:
-            jvm_args = self.composer.get_default_jvm_args()
+            jvm_args = self.manager.composer.get_default_jvm_args()
 
-        is_samples = getattr(self.args, "samples", False)
+        is_samples = getattr(self.manager.args, "samples", False)
         if is_samples:
-            config_handler = self.config
+            config_handler = self.manager.config
             if host_name == "localhost":
-                if self.non_interactive:
+                if self.manager.non_interactive:
                     UI.die("--samples requires a custom hostname.")
                 host_name = UI.ask("Enter project Virtual Hostname", "samples.local")
             if not tag:
@@ -113,15 +122,15 @@ class RuntimeHandler(BaseHandler):
                 db_type = config_handler.get_samples_db_type()
 
         if not tag:
-            tag_latest = getattr(self.args, "tag_latest", False)
-            if self.non_interactive and not tag_latest:
+            tag_latest = getattr(self.manager.args, "tag_latest", False)
+            if self.manager.non_interactive and not tag_latest:
                 UI.die("No Liferay tag specified.")
 
             from ldm_core.constants import API_BASE_DXP
             from ldm_core.utils import discover_latest_tag
 
-            rt = getattr(self.args, "release_type", None) or "lts"
-            prefix = getattr(self.args, "tag_prefix", None)
+            rt = getattr(self.manager.args, "release_type", None) or "lts"
+            prefix = getattr(self.manager.args, "tag_prefix", None)
 
             if not tag_latest:
                 # Interactive Tag Discovery Sequence
@@ -139,50 +148,50 @@ class RuntimeHandler(BaseHandler):
                 )
                 tag = UI.ask("Enter Liferay Tag", latest_tag)
             else:
-                if self.verbose:
+                if self.manager.verbose:
                     UI.info("Automatically discovering latest Liferay tag...")
                 tag = discover_latest_tag(
                     API_BASE_DXP,
                     release_type=rt,
                     prefix_filter=prefix,
-                    verbose=self.verbose,
+                    verbose=self.manager.verbose,
                 )
                 if not tag:
                     UI.die(
                         "Failed to discover latest Liferay tag. Please specify one explicitly with -t."
                     )
-                if self.verbose:
+                if self.manager.verbose:
                     UI.success(f"Using tag: {tag}")
 
-        external_snapshot = getattr(self.args, "snapshot", None)
+        external_snapshot = getattr(self.manager.args, "snapshot", None)
         if external_snapshot:
             snap_path = Path(external_snapshot).resolve()
-            snap_meta = self.read_meta(snap_path)
+            snap_meta = self.manager.read_meta(snap_path)
             tag = tag or snap_meta.get("tag")
             db_type = db_type or snap_meta.get("db_type")
 
         if is_new_project and self.manager.assets._ensure_seeded(tag, db_type, paths):
             from ldm_core.constants import SEED_VERSION
 
-            project_meta = self.read_meta(paths["root"])
+            project_meta = self.manager.read_meta(paths["root"])
             project_meta["seeded"] = "true"
             project_meta["seed_version"] = str(SEED_VERSION)
-            self.write_meta(paths["root"], project_meta)
+            self.manager.write_meta(paths["root"], project_meta)
             is_new_project = False
 
         use_shared_search = (
             str(project_meta.get("use_shared_search", "false")).lower() == "true"
         )
-        if not getattr(self.args, "sidecar", False) and not use_shared_search:
-            use_shared_search = self.parse_version(tag) >= (2025, 1, 0)
+        if not getattr(self.manager.args, "sidecar", False) and not use_shared_search:
+            use_shared_search = self.manager.parse_version(tag) >= (2025, 1, 0)
 
-        self.verify_runtime_environment(paths)
+        self.manager.verify_runtime_environment(paths)
 
         if is_samples:
-            self.config.sync_samples(paths)
+            self.manager.config.sync_samples(paths)
 
         no_captcha = (
-            getattr(self.args, "no_captcha", False)
+            getattr(self.manager.args, "no_captcha", False)
             or str(project_meta.get("no_captcha", "false")).lower() == "true"
         )
 
@@ -206,12 +215,12 @@ class RuntimeHandler(BaseHandler):
                 "mem_limit": mem_limit,
             }
         )
-        self.write_meta(paths["root"], project_meta)
-        self.register_project(project_id, paths["root"], host_name=host_name)
+        self.manager.write_meta(paths["root"], project_meta)
+        self.manager.register_project(project_id, paths["root"], host_name=host_name)
 
         if is_samples or external_snapshot:
             self.sync_stack(paths, project_meta, no_up=True, show_summary=False)
-            self.run_command(
+            self.manager.run_command(
                 [*get_compose_cmd(), "up", "-d", "db"], cwd=str(paths["root"])
             )
             time.sleep(5)
@@ -224,19 +233,19 @@ class RuntimeHandler(BaseHandler):
         self.sync_stack(
             paths,
             project_meta,
-            follow=getattr(self.args, "follow", False),
-            rebuild=getattr(self.args, "rebuild", False),
-            no_up=getattr(self.args, "no_up", False),
-            no_wait=getattr(self.args, "no_wait", False),
+            follow=getattr(self.manager.args, "follow", False),
+            rebuild=getattr(self.manager.args, "rebuild", False),
+            no_up=getattr(self.manager.args, "no_up", False),
+            no_wait=getattr(self.manager.args, "no_wait", False),
             total_start=total_start,
         )
 
     def cmd_reseed(self, project_id=None):
         """Triggers a re-bootstrap of the project from a fresh seed."""
-        root = self.detect_project_path(project_id)
+        root = self.manager.detect_project_path(project_id)
         if not root:
             return
-        project_meta = self.read_meta(root)
+        project_meta = self.manager.read_meta(root)
         tag = project_meta.get("tag")
         db_type = project_meta.get("db_type")
         use_shared = (
@@ -252,8 +261,8 @@ class RuntimeHandler(BaseHandler):
             "N",
         ):
             self.cmd_reset(root.name, target="all")
-            paths = self.setup_paths(root)
-            if self._fetch_seed(tag, db_type, search_mode, paths):
+            paths = self.manager.setup_paths(root)
+            if self.manager.assets._fetch_seed(tag, db_type, search_mode, paths):
                 UI.success("Reseed complete.")
             else:
                 UI.error("Reseed failed.")
@@ -278,7 +287,7 @@ class RuntimeHandler(BaseHandler):
 
                 # Proactive Log Monitoring: Look for ERRORS
                 try:
-                    logs = self.run_command(
+                    logs = self.manager.run_command(
                         ["docker", "logs", "--tail", "100", container_name],
                         check=False,
                         capture_output=True,
@@ -309,7 +318,7 @@ class RuntimeHandler(BaseHandler):
                                 UI.warning(
                                     "Detected Elasticsearch disk pressure blocking Liferay startup."
                                 )
-                                if self.thaw_elasticsearch():
+                                if self.manager.infra.thaw_elasticsearch():
                                     UI.success(
                                         "Auto-Thaw successful. Liferay should now proceed."
                                     )
@@ -326,12 +335,12 @@ class RuntimeHandler(BaseHandler):
 
                 last_notified_time = elapsed
 
-            status = self.run_command(
+            status = self.manager.run_command(
                 ["docker", "inspect", "-f", "{{.State.Health.Status}}", container_name],
                 check=False,
             )
             if status == "healthy":
-                ts = getattr(self.args, "total_start", None)
+                ts = getattr(self.manager.args, "total_start", None)
                 duration_total = (
                     time.time() - float(ts) if ts else time.time() - start_time
                 )
@@ -363,13 +372,13 @@ class RuntimeHandler(BaseHandler):
                 )
                 UI.detail("")
 
-                if getattr(self.args, "browser", False):
+                if getattr(self.manager.args, "browser", False):
                     UI.info(f"Launching browser: {access_url}/web/guest/home")
                     open_browser(f"{access_url}/web/guest/home")
                 return True
 
             # Fail fast if container exited
-            container_state = self.get_container_status(container_name)
+            container_state = self.manager.get_container_status(container_name)
             if container_state == "exited":
                 UI.error(f"Liferay container '{container_name}' exited unexpectedly.")
                 return False
@@ -393,7 +402,7 @@ class RuntimeHandler(BaseHandler):
         """Orchestrates stack configuration and startup."""
         # Ensure paths is a dictionary for subscripting
         if not isinstance(paths, dict):
-            paths = self.setup_paths(paths)
+            paths = self.manager.setup_paths(paths)
 
         compose_base = get_compose_cmd()
         if not compose_base:
@@ -405,7 +414,7 @@ class RuntimeHandler(BaseHandler):
         project_id = project_meta.get("container_name")
         host_name = project_meta.get("host_name", "localhost")
 
-        ssl_enabled = self._is_ssl_active(host_name, project_meta)
+        ssl_enabled = self.manager.composer._is_ssl_active(host_name, project_meta)
         ssl_port_val = project_meta.get("ssl_port", 443)
         ssl_port = int(ssl_port_val) if ssl_port_val is not None else 443
         use_shared_search = (
@@ -420,15 +429,15 @@ class RuntimeHandler(BaseHandler):
                 ]
             )
 
-        self._ensure_network()
-        if ssl_enabled or getattr(self.args, "search", False):
+        self.manager.infra._ensure_network()
+        if ssl_enabled or getattr(self.manager.args, "search", False):
             infra_start = time.time()
-            resolved_ip = self.get_resolved_ip(host_name) or "127.0.0.1"
-            self.setup_infrastructure(
+            resolved_ip = self.manager.get_resolved_ip(host_name) or "127.0.0.1"
+            self.manager.infra.setup_infrastructure(
                 resolved_ip, ssl_port, use_ssl=ssl_enabled, quiet=not show_summary
             )
 
-            if self.verbose:
+            if self.manager.verbose:
                 duration_str = UI.format_duration(time.time() - infra_start)
                 UI.debug(f"Infrastructure setup took: {duration_str}")
 
@@ -436,21 +445,23 @@ class RuntimeHandler(BaseHandler):
                 ssl_start = time.time()
                 actual_home = get_actual_home()
                 cert_dir = actual_home / "liferay-docker-certs"
-                self.setup_ssl(cert_dir, host_name)
-                if self.verbose:
+                self.manager.infra.setup_ssl(cert_dir, host_name)
+                if self.manager.verbose:
                     duration_str = UI.format_duration(time.time() - ssl_start)
                     UI.debug(f"SSL certificate generation took: {duration_str}")
 
-        config_handler = self.config
+        config_handler = self.manager.config
         config_handler.sync_common_assets(
             paths, version=project_meta.get("tag"), project_meta=project_meta
         )
         config_handler.sync_logging(paths)
 
-        self.composer.write_docker_compose(paths, project_meta, liferay_env=liferay_env)
+        self.manager.composer.write_docker_compose(
+            paths, project_meta, liferay_env=liferay_env
+        )
 
         UI.debug("Validating generated docker-compose.yml syntax...")
-        self.run_command(
+        self.manager.run_command(
             [*get_compose_cmd(), "config", "--quiet"],
             cwd=str(paths["root"]),
             check=True,
@@ -492,7 +503,7 @@ class RuntimeHandler(BaseHandler):
                 UI.detail(f"  + Port:    {UI.CYAN}8080 -> {port_val}{UI.COLOR_OFF}")
 
         if not no_up:
-            if self.verbose and total_start:
+            if self.manager.verbose and total_start:
                 duration_str = UI.format_duration(time.time() - total_start)
                 UI.debug(f"Time to orchestration start: {duration_str}")
 
@@ -507,7 +518,7 @@ class RuntimeHandler(BaseHandler):
                 UI.detail(
                     f"Starting dependencies: {UI.CYAN}{', '.join(deps)}{UI.COLOR_OFF}..."
                 )
-                self.run_command(
+                self.manager.run_command(
                     [*compose_base, "up", "-d", *deps],
                     cwd=str(paths["root"]),
                     check=True,
@@ -519,7 +530,9 @@ class RuntimeHandler(BaseHandler):
                     )
                     start_wait = time.time()
                     while time.time() - start_wait < 60:
-                        status = self.get_container_status(f"{project_id}-{dep}-1")
+                        status = self.manager.get_container_status(
+                            f"{project_id}-{dep}-1"
+                        )
                         if status in {"healthy", "running"}:
                             time.sleep(2)
                             break
@@ -529,10 +542,14 @@ class RuntimeHandler(BaseHandler):
                         time.sleep(2)
 
             UI.info(f"Starting {UI.BOLD}{project_id}{UI.COLOR_OFF} stack...")
-            self.run_command(cmd, cwd=str(paths["root"]), capture_output=not follow)
+            self.manager.run_command(
+                cmd, cwd=str(paths["root"]), capture_output=not follow
+            )
 
             if follow:
-                self.run_command([*compose_base, "logs", "-f"], cwd=str(paths["root"]))
+                self.manager.run_command(
+                    [*compose_base, "logs", "-f"], cwd=str(paths["root"])
+                )
                 return True
             if not no_wait:
                 return self._wait_for_ready(project_meta, host_name, total_start)
@@ -547,9 +564,9 @@ class RuntimeHandler(BaseHandler):
         """Stops project containers."""
         targets = []
         if all_projects:
-            targets = [r["path"] for r in self.find_dxp_roots()]
+            targets = [r["path"] for r in self.manager.find_dxp_roots()]
         else:
-            root = self.detect_project_path(project_id)
+            root = self.manager.detect_project_path(project_id)
             if root:
                 targets = [root]
 
@@ -564,15 +581,15 @@ class RuntimeHandler(BaseHandler):
             cmd = [*compose_base, "stop"]
             if service:
                 cmd.append(service)
-            self.run_command(cmd, capture_output=capture, cwd=str(root))
+            self.manager.run_command(cmd, capture_output=capture, cwd=str(root))
 
     def cmd_restart(self, project_id=None, service=None, all_projects=False):
         """Restarts project containers."""
         targets = []
         if all_projects:
-            targets = [r["path"] for r in self.find_dxp_roots()]
+            targets = [r["path"] for r in self.manager.find_dxp_roots()]
         else:
-            root = self.detect_project_path(project_id)
+            root = self.manager.detect_project_path(project_id)
             if root:
                 targets = [root]
 
@@ -587,7 +604,7 @@ class RuntimeHandler(BaseHandler):
             cmd = [*compose_base, "restart"]
             if service:
                 cmd.append(service)
-            self.run_command(cmd, capture_output=capture, cwd=str(root))
+            self.manager.run_command(cmd, capture_output=capture, cwd=str(root))
 
     def cmd_down(
         self,
@@ -600,13 +617,13 @@ class RuntimeHandler(BaseHandler):
     ):
         """Tears down project containers and volumes."""
         if infra:
-            self.cmd_infra_down()
+            self.manager.infra.cmd_infra_down()
 
         targets = []
         if all_projects:
-            targets = [r["path"] for r in self.find_dxp_roots()]
+            targets = [r["path"] for r in self.manager.find_dxp_roots()]
         else:
-            root = self.detect_project_path(project_id)
+            root = self.manager.detect_project_path(project_id)
             if root:
                 targets = [root]
 
@@ -621,21 +638,21 @@ class RuntimeHandler(BaseHandler):
 
             # DNS Cleanup (if requested)
             if clean_hosts:
-                meta = self.read_meta(root)
+                meta = self.manager.read_meta(root)
                 host = meta.get("host_name")
                 if host and host != "localhost":
                     # Collect subdomains as well (from extensions)
-                    unresolved, _non_local = self.validate_project_dns(root)[1:]
+                    unresolved, _non_local = self.manager.validate_project_dns(root)[1:]
                     # We remove the primary host and any unresolved subdomains
                     to_clean = [host, *unresolved]
-                    self._remove_hosts_entries(hostnames=to_clean)
+                    self.manager._remove_hosts_entries(hostnames=to_clean)
 
             # DOWN always tears down the whole project to ensure networks and orphans are handled.
             # If the user wants to stop a specific service, they should use 'ldm stop [svc]'.
             cmd = [*compose_base, "down", "-v", "--remove-orphans"]
 
             if (root / "docker-compose.yml").exists():
-                self.run_command(cmd, capture_output=capture, cwd=str(root))
+                self.manager.run_command(cmd, capture_output=capture, cwd=str(root))
             else:
                 UI.debug(
                     f"No docker-compose.yml found in {root}. Skipping docker-compose down."
@@ -643,17 +660,17 @@ class RuntimeHandler(BaseHandler):
 
             if delete:
                 UI.warning(f"Permanently deleting project directory: {root.name}")
-                self.unregister_project(root.name)
-                self.safe_rmtree(root)
+                self.manager.unregister_project(root.name)
+                self.manager.safe_rmtree(root)
 
     def cmd_browser(self, project_id=None):
         """Opens the project's URL in the default browser."""
         from ldm_core.utils import open_browser
 
-        root = self.detect_project_path(project_id)
+        root = self.manager.detect_project_path(project_id)
         if not root:
             return
-        meta = self.read_meta(root)
+        meta = self.manager.read_meta(root)
         host_name = meta.get("host_name", "localhost")
         ssl_enabled = str(meta.get("ssl", "false")).lower() == "true"
         port = meta.get("port", 8080)
@@ -671,13 +688,13 @@ class RuntimeHandler(BaseHandler):
         targets = []
         if all_projects:
             targets = [
-                {"path": r["path"], "meta": self.read_meta(r["path"])}
-                for r in self.find_dxp_roots()
+                {"path": r["path"], "meta": self.manager.read_meta(r["path"])}
+                for r in self.manager.find_dxp_roots()
             ]
         else:
-            root = self.detect_project_path(project_id)
+            root = self.manager.detect_project_path(project_id)
             if root:
-                meta = self.read_meta(root)
+                meta = self.manager.read_meta(root)
                 targets.append({"path": root, "meta": meta})
 
         if not targets:
@@ -695,7 +712,7 @@ class RuntimeHandler(BaseHandler):
                 for f in [f"{host_name}.pem", f"{host_name}-key.pem"]:
                     if (cert_dir / f).exists():
                         (cert_dir / f).unlink()
-                self.setup_ssl(cert_dir, host_name)
+                self.manager.infra.setup_ssl(cert_dir, host_name)
 
         UI.success(
             "SSL renewal complete. Changes will be detected by Traefik automatically."
@@ -703,14 +720,14 @@ class RuntimeHandler(BaseHandler):
 
     def cmd_reset(self, project_id=None, target="all"):
         """Wipes local state (data, logs, osgi/state) for a project."""
-        root = self.detect_project_path(project_id)
+        root = self.manager.detect_project_path(project_id)
         if not root:
             return
 
         UI.warning(f"Resetting {UI.BOLD}{root.name}{UI.COLOR_OFF} ({target})...")
 
         # 1. Stop containers if running
-        meta = self.read_meta(root)
+        meta = self.manager.read_meta(root)
         c_name = meta.get("container_name") or root.name
         from ldm_core.docker_service import DockerService
 
@@ -719,7 +736,7 @@ class RuntimeHandler(BaseHandler):
             self.cmd_stop(root.name)
 
         # 2. Wipe directories
-        paths = self.setup_paths(root)
+        paths = self.manager.setup_paths(root)
         targets = []
         targets = ["data", "logs", "state"] if target == "all" else [target]
 
@@ -734,10 +751,10 @@ class RuntimeHandler(BaseHandler):
 
     def cmd_gogo(self, project_id=None):
         """Connects to the OSGi Gogo shell."""
-        root = self.detect_project_path(project_id)
+        root = self.manager.detect_project_path(project_id)
         if not root:
             return
-        meta = self.read_meta(root)
+        meta = self.manager.read_meta(root)
         port = meta.get("gogo_port")
 
         if not port or port == "None":
@@ -773,9 +790,11 @@ class RuntimeHandler(BaseHandler):
                 containers.append("liferay-search-global")
 
             for container in containers:
-                self.run_command(["docker", "ps", "-q", "-f", f"name=^{container}$"])
+                self.manager.run_command(
+                    ["docker", "ps", "-q", "-f", f"name=^{container}$"]
+                )
 
-            infra_compose = self.get_resource_path("infra-compose.yml")
+            infra_compose = self.manager.get_resource_path("infra-compose.yml")
             if not infra_compose:
                 UI.die("Infrastructure compose file 'infra-compose.yml' not found.")
 
@@ -786,14 +805,14 @@ class RuntimeHandler(BaseHandler):
             if tail:
                 cmd.extend(["--tail", str(tail)])
 
-            env = self._get_infra_env()
-            self.run_command(cmd, env=env, capture_output=not follow)
+            env = self.manager.infra._get_infra_env()
+            self.manager.run_command(cmd, env=env, capture_output=not follow)
         else:
             targets = []
             if all_projects:
-                targets = [r["path"] for r in self.find_dxp_roots()]
+                targets = [r["path"] for r in self.manager.find_dxp_roots()]
             else:
-                root = self.detect_project_path(project_id)
+                root = self.manager.detect_project_path(project_id)
                 if root:
                     targets = [root]
 
@@ -802,13 +821,13 @@ class RuntimeHandler(BaseHandler):
                 return
 
             for root in targets:
-                if self.verbose:
+                if self.manager.verbose:
                     UI.debug(f"Processing logs for project: {root.name} in {root}")
 
-                meta = self.read_meta(root)
+                meta = self.manager.read_meta(root)
                 c_name = meta.get("container_name") or root.name
 
-                res = self.run_command(
+                res = self.manager.run_command(
                     ["docker", "ps", "-a", "-q", "-f", f"name=^{c_name}$"],
                     check=False,
                 )
@@ -826,7 +845,7 @@ class RuntimeHandler(BaseHandler):
                         if elapsed > 0 and elapsed % 10 == 0:
                             UI.info(f"  ... still waiting for '{c_name}' ({elapsed}s)")
 
-                        if self.run_command(
+                        if self.manager.run_command(
                             ["docker", "ps", "-a", "-q", "-f", f"name=^{c_name}$"]
                         ):
                             found = True
@@ -863,4 +882,131 @@ class RuntimeHandler(BaseHandler):
                         cmd.extend(service)
                     else:
                         cmd.append(service)
-                self.run_command(cmd, capture_output=not follow, cwd=str(root))
+                self.manager.run_command(cmd, capture_output=not follow, cwd=str(root))
+
+    def cmd_deploy(self, project_id=None, service=None):
+        """Deploys a project or specific service."""
+        root = self.manager.detect_project_path(project_id)
+        if not root:
+            return
+        paths, meta = self.manager.setup_paths(root), self.manager.read_meta(root)
+        if service:
+            UI.info(f"Deploying service '{service}'...")
+            self.manager.run_command(
+                [*get_compose_cmd(), "up", "-d", service],
+                capture_output=False,
+                cwd=str(root),
+            )
+        else:
+            self.sync_stack(
+                paths, meta, rebuild=getattr(self.manager.args, "rebuild", False)
+            )
+
+    def cmd_shell(self, project_id=None, service="liferay"):
+        """Enters a project container via bash."""
+        root = self.manager.detect_project_path(project_id)
+        if not root:
+            return
+        service_name = service or "liferay"
+        meta = self.manager.read_meta(root)
+        container_prefix = meta.get("container_name")
+
+        target_container = f"{container_prefix}-{service_name}"
+        if service_name == "liferay":
+            target_container = container_prefix
+
+        UI.info(f"Entering container: {target_container}")
+        try:
+            subprocess.run(["docker", "exec", "-it", target_container, "/bin/bash"])
+        except KeyboardInterrupt:
+            pass
+
+    def cmd_scale(self, project_id, scale_args):
+        """Scales project services."""
+        project_path = self.manager.detect_project_path(project_id)
+        if not project_path:
+            UI.die("Project not found.")
+
+        meta = self.manager.read_meta(project_path)
+
+        for arg in scale_args:
+            if "=" not in arg:
+                UI.error(f"Invalid scale argument: {arg}. Expected service=number")
+                continue
+            service, count = arg.split("=", 1)
+            if not count.isdigit():
+                UI.error(f"Invalid scale count for {service}: {count}")
+                continue
+            meta[f"scale_{service}"] = count
+
+        self.manager.write_meta(project_path, meta)
+        UI.success(f"Updated scale factors for project {project_path.name}")
+
+        # Trigger regeneration and restart
+        self.cmd_run(project_id)
+
+    def cmd_migrate_search(self, project_id=None):
+        """Migrates a project from Sidecar to Global Elasticsearch."""
+        root = self.manager.detect_project_path(project_id)
+        if not root:
+            return
+
+        p_id = root.name
+        paths = self.manager.setup_paths(p_id)
+
+        # 1. Ensure Liferay is NOT running
+        is_running = self.manager.run_command(
+            ["docker", "ps", "-q", "-f", f"name=^{p_id}$"], check=False
+        )
+        if is_running:
+            UI.die(
+                f"Project '{p_id}' is currently running. Please stop it first with: ldm stop {p_id}"
+            )
+
+        UI.heading(f"Migrating '{p_id}' to Global Search")
+
+        # 2. Check if Global Search is running
+        search_running = self.manager.run_command(
+            ["docker", "ps", "-q", "-f", "name=^liferay-search-global$"], check=False
+        )
+        if not search_running:
+            if (
+                UI.ask(
+                    "Global Search container is not running. Start it now?", "Y"
+                ).upper()
+                == "Y"
+            ):
+                self.manager.infra.setup_global_search()
+            else:
+                UI.die("Migration aborted. Global Search is required.")
+
+        # 3. Clean up internal indices
+        data_dir = paths["data"]
+        indices_found = False
+        for es_dir in ["elasticsearch7", "elasticsearch8"]:
+            target = data_dir / es_dir
+            if target.exists():
+                UI.info(f"Removing internal index directory: {target}")
+                shutil.rmtree(target)
+                indices_found = True
+
+        if not indices_found:
+            UI.info("No internal sidecar indices found. (Already clean?)")
+
+        # 4. Sync configuration
+        UI.info("Applying Global Search configurations...")
+        # We force use_shared_search=True in meta
+        project_meta = self.manager.read_meta(root)
+        project_meta["use_shared_search"] = "true"
+        self.manager.write_meta(root, project_meta)
+
+        # sync_common_assets will now find the global search running and copy the configs
+        self.manager.config.sync_common_assets(paths)
+
+        UI.success(
+            f"Migration complete! Project '{p_id}' is now configured for Global Search."
+        )
+
+        if not self.manager.non_interactive:
+            if UI.ask("Restart project now?", "Y").upper() == "Y":
+                self.cmd_run(project_id)

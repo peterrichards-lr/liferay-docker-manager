@@ -14,13 +14,12 @@ from ldm_core.handlers.config import ConfigService
 from ldm_core.handlers.diagnostics import DiagnosticsService
 from ldm_core.handlers.infra import InfraService
 from ldm_core.handlers.license import LicenseService
-from ldm_core.handlers.runtime import RuntimeHandler
+from ldm_core.handlers.runtime import RuntimeService
 from ldm_core.handlers.snapshot import SnapshotService
 from ldm_core.handlers.workspace import WorkspaceService
 
 
 class MockManager(
-    RuntimeHandler,
     BaseHandler,
 ):
     def __init__(self):
@@ -36,17 +35,36 @@ class MockManager(
         self.snapshot = SnapshotService(self)
         self.workspace = WorkspaceService(self)
         self.composer = ComposerService(self)
+        self.runtime = RuntimeService(self)
 
         self.run_command = MagicMock()  # type: ignore[method-assign]
         self.write_docker_compose = MagicMock()  # type: ignore[method-assign]
         self.cmd_browser = MagicMock(  # type: ignore[method-assign]
-            side_effect=RuntimeHandler.cmd_browser.__get__(self, MockManager)
+            side_effect=self.runtime.cmd_browser
         )
         self.cmd_reset = MagicMock(  # type: ignore[method-assign]
-            side_effect=RuntimeHandler.cmd_reset.__get__(self, MockManager)
+            side_effect=self.runtime.cmd_reset
         )
         self.get_container_status = MagicMock()  # type: ignore[method-assign]
         self.update_portal_ext = MagicMock()  # type: ignore[method-assign]
+
+    def _wait_for_ready(self, *args, **kwargs):
+        return self.runtime._wait_for_ready(*args, **kwargs)
+
+    def sync_stack(self, *args, **kwargs):
+        return self.runtime.sync_stack(*args, **kwargs)
+
+    def cmd_run(self, *args, **kwargs):
+        return self.runtime.cmd_run(*args, **kwargs)
+
+    def cmd_stop(self, *args, **kwargs):
+        return self.runtime.cmd_stop(*args, **kwargs)
+
+    def cmd_restart(self, *args, **kwargs):
+        return self.runtime.cmd_restart(*args, **kwargs)
+
+    def cmd_down(self, *args, **kwargs):
+        return self.runtime.cmd_down(*args, **kwargs)
 
     def get_host_passthrough_env(self, *args, **kwargs):
         return []
@@ -90,9 +108,6 @@ class MockManager(
 
     def get_resource_path(self, *args, **kwargs):
         return Path("/tmp/res")
-
-    def cmd_down(self, *args, **kwargs):
-        pass
 
     def check_hostname(self, *args, **kwargs):
         return True

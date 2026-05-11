@@ -58,7 +58,7 @@ class TestE2EWorkspace(unittest.TestCase):
         with (
             patch.object(sys, "argv", test_args),
             patch.object(sys, "stdin", mock_stdin),
-            patch("ldm_core.handlers.runtime.RuntimeHandler.cmd_run") as mock_cmd_run,
+            patch("ldm_core.handlers.runtime.RuntimeService.cmd_run") as mock_cmd_run,
             patch("sys.stdout", new_callable=io.StringIO) as mock_stdout,
         ):
             try:

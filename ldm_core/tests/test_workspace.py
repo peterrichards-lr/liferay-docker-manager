@@ -10,12 +10,11 @@ from ldm_core.handlers.assets import AssetService
 from ldm_core.handlers.base import BaseHandler
 from ldm_core.handlers.composer import ComposerService
 from ldm_core.handlers.diagnostics import DiagnosticsService
-from ldm_core.handlers.runtime import RuntimeHandler
+from ldm_core.handlers.runtime import RuntimeService
 from ldm_core.handlers.workspace import WorkspaceService
 
 
 class MockWorkspaceManager(
-    RuntimeHandler,
     BaseHandler,
 ):
     def __init__(self):
@@ -30,6 +29,7 @@ class MockWorkspaceManager(
         self.diagnostics.validate_lcp_json = MagicMock(return_value=("Valid", True, []))
         self.workspace = WorkspaceService(self)
         self.composer = ComposerService(self)
+        self.runtime = RuntimeService(self)
         self.snapshot = MagicMock()
 
     def _check_java_version(self, *args, **kwargs):
@@ -153,7 +153,7 @@ class TestWorkspaceImport(unittest.TestCase):
     def setUp(self):
         self.handler = MockWorkspaceManager()
 
-    @patch("ldm_core.handlers.runtime.RuntimeHandler.cmd_run")
+    @patch("ldm_core.handlers.runtime.RuntimeService.cmd_run")
     @patch("ldm_core.handlers.workspace.run_command")
     def test_cmd_import_project_id_passing(self, mock_run, mock_cmd_run):
         # Use real temporary directories to avoid mock-related isinstance failures
@@ -186,7 +186,7 @@ class TestWorkspaceImport(unittest.TestCase):
                     self.assertEqual(self.handler.args.project, "my-dev-stack")
                     self.assertNotEqual(self.handler.args.project, str(project_dir))
 
-    @patch("ldm_core.handlers.runtime.RuntimeHandler.cmd_run")
+    @patch("ldm_core.handlers.runtime.RuntimeService.cmd_run")
     @patch("ldm_core.handlers.workspace.run_command")
     def test_cmd_import_clean_option(self, mock_run, mock_cmd_run):
         with tempfile.TemporaryDirectory() as tmp_base:
@@ -222,7 +222,7 @@ class TestWorkspaceImport(unittest.TestCase):
                     self.assertFalse((project_dir / "old-file.txt").exists())
                     self.assertTrue(project_dir.exists())
 
-    @patch("ldm_core.handlers.runtime.RuntimeHandler.cmd_run")
+    @patch("ldm_core.handlers.runtime.RuntimeService.cmd_run")
     @patch("ldm_core.handlers.workspace.run_command")
     def test_cmd_import_no_overwrite_option(self, mock_run, mock_cmd_run):
         with tempfile.TemporaryDirectory() as tmp_base:

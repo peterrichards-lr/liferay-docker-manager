@@ -647,31 +647,23 @@ def main():
 
     # Execution map
     cmds = {
-        "run": lambda: manager.cmd_run(getattr(args, "project", None)),
-        "up": lambda: manager.cmd_run(getattr(args, "project", None)),
+        "run": lambda: manager.runtime.cmd_run(getattr(args, "project", None)),
+        "up": lambda: manager.runtime.cmd_run(getattr(args, "project", None)),
         "import": lambda: manager.workspace.cmd_import(args.source),
         "init-from": lambda: manager.workspace.cmd_init_from(args.source),
         "monitor": lambda: manager.workspace.cmd_monitor(args.source),
         "init": lambda: manager.workspace.cmd_init(getattr(args, "project", None)),
-        "stop": lambda: manager.cmd_stop(
+        "stop": lambda: manager.runtime.cmd_stop(
             getattr(args, "project", None),
             getattr(args, "service", None),
             all_projects=args.all,
         ),
-        "restart": lambda: manager.cmd_restart(
+        "restart": lambda: manager.runtime.cmd_restart(
             getattr(args, "project", None),
             getattr(args, "service", None),
             all_projects=args.all,
         ),
-        "down": lambda: manager.cmd_down(
-            getattr(args, "project", None),
-            getattr(args, "service", None),
-            all_projects=args.all,
-            delete=getattr(args, "delete", False),
-            infra=getattr(args, "infra", False),
-            clean_hosts=getattr(args, "clean_hosts", False),
-        ),
-        "rm": lambda: manager.cmd_down(
+        "down": lambda: manager.runtime.cmd_down(
             getattr(args, "project", None),
             getattr(args, "service", None),
             all_projects=args.all,
@@ -679,7 +671,15 @@ def main():
             infra=getattr(args, "infra", False),
             clean_hosts=getattr(args, "clean_hosts", False),
         ),
-        "logs": lambda: manager.cmd_logs(
+        "rm": lambda: manager.runtime.cmd_down(
+            getattr(args, "project", None),
+            getattr(args, "service", None),
+            all_projects=args.all,
+            delete=getattr(args, "delete", False),
+            infra=getattr(args, "infra", False),
+            clean_hosts=getattr(args, "clean_hosts", False),
+        ),
+        "logs": lambda: manager.runtime.cmd_logs(
             getattr(args, "project", None),
             getattr(args, "service", None),
             all_projects=args.all,
@@ -688,7 +688,7 @@ def main():
             no_wait=getattr(args, "no_wait", False),
             tail=getattr(args, "tail", "100"),
         ),
-        "deploy": lambda: manager.cmd_deploy(
+        "deploy": lambda: manager.runtime.cmd_deploy(
             getattr(args, "project", None), getattr(args, "service", None)
         ),
         "env": lambda: manager.config.cmd_env(getattr(args, "project", None)),
@@ -697,14 +697,16 @@ def main():
         ),
         "restore": lambda: manager.snapshot.cmd_restore(getattr(args, "project", None)),
         "init-common": manager.config.cmd_init_common,
-        "reset": lambda: manager.cmd_reset(
+        "reset": lambda: manager.runtime.cmd_reset(
             getattr(args, "project", None), getattr(args, "target", "state")
         ),
-        "re-seed": lambda: manager.cmd_reseed(getattr(args, "project", None)),
-        "migrate-search": lambda: manager.cmd_migrate_search(
+        "re-seed": lambda: manager.runtime.cmd_reseed(getattr(args, "project", None)),
+        "migrate-search": lambda: manager.runtime.cmd_migrate_search(
             getattr(args, "project", None)
         ),
-        "renew-ssl": lambda: manager.cmd_renew_ssl(getattr(args, "project", None)),
+        "renew-ssl": lambda: manager.runtime.cmd_renew_ssl(
+            getattr(args, "project", None)
+        ),
         "infra-setup": manager.infra.cmd_infra_setup,
         "infra-down": manager.infra.cmd_infra_down,
         "infra-restart": manager.infra.cmd_infra_restart,
@@ -726,16 +728,16 @@ def main():
         "list": manager.diagnostics.cmd_list,
         "ls": manager.diagnostics.cmd_list,
         "config": lambda: manager.config.cmd_config(args.key, args.value),
-        "shell": lambda: manager.cmd_shell(
+        "shell": lambda: manager.runtime.cmd_shell(
             getattr(args, "project", None), getattr(args, "service", None)
         ),
-        "gogo": lambda: manager.cmd_gogo(getattr(args, "project", None)),
+        "gogo": lambda: manager.runtime.cmd_gogo(getattr(args, "project", None)),
         "log-level": lambda: manager.config.cmd_log_level(
             getattr(args, "project", None)
         ),
-        "browser": lambda: manager.cmd_browser(getattr(args, "project", None)),
-        "open": lambda: manager.cmd_browser(getattr(args, "project", None)),
-        "scale": lambda: manager.cmd_scale(
+        "browser": lambda: manager.runtime.cmd_browser(getattr(args, "project", None)),
+        "open": lambda: manager.runtime.cmd_browser(getattr(args, "project", None)),
+        "scale": lambda: manager.runtime.cmd_scale(
             getattr(args, "project", None), args.service_scale
         ),
         "cloud-fetch": lambda: manager.cloud.cmd_cloud_fetch(
@@ -743,7 +745,9 @@ def main():
             getattr(args, "env_id", None),
             follow=getattr(args, "follow", False),
         ),
-        "edit": lambda: manager.cmd_edit(getattr(args, "project", None), args.target),
+        "edit": lambda: manager.config.cmd_edit(
+            getattr(args, "project", None), args.target
+        ),
         "completion": lambda: manager.cmd_completion(args.shell),
         "man": manager.cmd_man,
         "prune": manager.diagnostics.cmd_prune,
