@@ -1,6 +1,6 @@
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from ldm_core.utils import verify_executable_checksum, version_to_tuple
 
@@ -186,6 +186,31 @@ class TestUtils(unittest.TestCase):
             root_names = [r["path"].name for r in roots]
             self.assertIn("project1", root_names)
             self.assertIn("project2", root_names)
+
+
+class TestUpdateChecks(unittest.TestCase):
+    @patch("requests.get")
+    @patch("pathlib.Path.home")
+    def test_check_for_updates_stable(self, mock_home, mock_get):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            mock_home.return_value = Path(tmp_dir)
+
+            mock_res = MagicMock()
+            mock_res.status_code = 200
+            mock_res.json.return_value = {
+                "tag_name": "v2.6.0",
+                "html_url": "http://release",
+                "assets": [{"name": "ldm-macos", "browser_download_url": "http://dl"}],
+            }
+            mock_get.return_value = mock_res
+
+            from ldm_core.utils import check_for_updates
+
+            version, url = check_for_updates("2.5.0")
+            self.assertEqual(version, "2.6.0")
+            self.assertEqual(url, "http://dl")
 
 
 if __name__ == "__main__":

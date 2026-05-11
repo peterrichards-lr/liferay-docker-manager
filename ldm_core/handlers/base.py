@@ -705,7 +705,7 @@ class BaseHandler:
             else:
                 search_dirs = [
                     Path.cwd(),
-                    Path.home() / "ldm",
+                    get_actual_home() / "ldm",
                 ]
                 # Only fallback to SCRIPT_DIR if we are NOT initializing a new project
                 if not for_init:
@@ -792,7 +792,12 @@ class BaseHandler:
         return tuple(map(int, parts))
 
     def get_common_dir(self, project_path=None):
-        """Finds the 'common' directory by prioritizing CWD, Project Parent, then Global ~/.ldm/common."""
+        """Finds the 'common' directory by prioritizing Env, CWD, Project Parent, then Global ~/.ldm/common."""
+        # Priority 1: Environment override
+        env_common = os.environ.get("LDM_COMMON_DIR")
+        if env_common:
+            return Path(env_common).resolve()
+
         # Safety: If passed a dict, extract root
         if isinstance(project_path, dict):
             project_path = project_path.get("root", ".")
@@ -1250,188 +1255,3 @@ class BaseHandler:
             mounts.add(f"--mount {mount_point}:w")
 
         return " ".join(sorted(mounts))
-
-    def get_resource_path(self, filename):
-        """Resiliently locates internal resource files (supports source vs bundled)."""
-        # 1. Check bundled package structure (site-packages/ldm_core/resources)
-        path = SCRIPT_DIR / "ldm_core" / "resources" / filename
-        if path.exists():
-            return path
-
-        # 2. Check source development structure (root/resources)
-        path = SCRIPT_DIR / "resources" / filename
-        if path.exists():
-            return path
-
-        return None
-
-    def _refresh_man_symlink(self):
-        """Ensures a stable symlink for the man page exists in ~/.ldm/man/man1/."""
-        if platform.system().lower() == "windows":
-            return
-
-        try:
-            man_source = self.get_resource_path("ldm.1")
-            if not man_source:
-                return
-
-            home = get_actual_home()
-            man_dir = home / ".ldm" / "man" / "man1"
-            man_dir.mkdir(parents=True, exist_ok=True)
-            man_link = man_dir / "ldm.1"
-
-            if man_link.is_symlink() or man_link.exists():
-                man_link.unlink()
-
-            man_link.symlink_to(man_source)
-        except Exception:
-            # Silent fail for symlink refresh
-            pass
-
-    def cmd_completion(self, target_shell=None):
-        """Displays instructions or outputs shellcode for enabling completion."""
-        # Detect active shell if not provided
-        active_shell = os.environ.get("SHELL", "").split("/")[-1].lower()
-        if active_shell.endswith(".exe"):
-            active_shell = active_shell[:-4]
-
-        # Normalize pwsh to powershell for internal logic
-        if active_shell == "pwsh":
-            active_shell = "powershell"
-
-        # Refresh man symlink so 'man ldm' setup is always ready
-        self._refresh_man_symlink()
-
-        # If target_shell is specifically requested via CLI (e.g. 'ldm completion zsh')
-        # we MUST only output shellcode to stdout to avoid breaking 'eval'.
-        if target_shell:
-            target_shell = target_shell.lower()
-            try:
-                import argcomplete
-
-                if target_shell == "zsh":
-                    # We use the internal argcomplete shellcode generator
-                    code = argcomplete.shellcode(["ldm"], shell="zsh")  # nosec B604
-                    # Zsh requires compinit to support the 'compdef' command used by argcomplete
-                    print("# LDM Zsh Completion Initialization")
-                    print(
-                        "(( $+functions[compdef] )) || { autoload -U compinit && compinit }"
-                    )
-                    print(code)
-                    return
-                if target_shell == "bash":
-                    print(
-                        argcomplete.shellcode(["ldm"], shell="bash")  # nosec B604
-                    )
-                    return
-                if target_shell == "fish":
-                    print(
-                        argcomplete.shellcode(["ldm"], shell="fish")  # nosec B604
-                    )
-                    return
-                if target_shell == "powershell":
-                    # PowerShell doesn't have native argcomplete support, so we provide a bridge script
-                    print("# LDM PowerShell Completion Bridge")
-                    print(
-                        "if (-not (Get-Command ldm -ErrorAction SilentlyContinue)) { return }"
-                    )
-                    print("$scriptblock = {")
-                    print(
-                        "    param($commandName, $wordToComplete, $cursorPosition, $commandAst, $fakeBoundParameters)"
-                    )
-                    print("    $env:COMP_LINE = $commandAst.ToString()")
-                    print("    $env:COMP_POINT = $cursorPosition")
-                    print("    $env:_ARGCOMPLETE = 1")
-                    print("    $results = & ldm 2>$null")
-                    print("    $results | ForEach-Object {")
-                    print(
-                        "        [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_)"
-                    )
-                    print("    }")
-                    print(
-                        "    Remove-Item Env:COMP_LINE, Env:COMP_POINT, Env:_ARGCOMPLETE"
-                    )
-                    print("}")
-                    print(
-                        "Register-ArgumentCompleter -Native -CommandName ldm -ScriptBlock $scriptblock"
-                    )
-                    return
-            except Exception as e:
-                # If generation fails, we print the error to stderr so eval ignores it
-                print(f"Error generating completion: {e}", file=sys.stderr)
-                return
-
-        UI.heading("LDM Shell Completion")
-        shell = active_shell
-        if shell not in ["bash", "zsh", "fish", "powershell"]:
-            UI.info(
-                f"Completion is currently optimized for bash, zsh, fish, and powershell. (Found: {shell})"
-            )
-            return
-
-        UI.info(
-            f"To enable tab-completion for {UI.BYELLOW}{shell}{UI.COLOR_OFF}, add this to your startup profile:"
-        )
-
-        if shell == "zsh":
-            print('\n    eval "$(ldm completion zsh)"\n')
-            profile = ".zshrc"
-        elif shell == "bash":
-            print('\n    eval "$(ldm completion bash)"\n')
-            profile = ".bashrc"
-        elif shell == "fish":
-            print("\n    ldm completion fish | source\n")
-            profile = "config.fish"
-        elif shell == "powershell":
-            print("\n    ldm completion powershell | Out-String | Invoke-Expression\n")
-            profile = "Microsoft.PowerShell_profile.ps1"
-
-        UI.info(
-            f"To support native {UI.BOLD}man ldm{UI.COLOR_OFF}, add this to the same file:"
-        )
-        print('\n    export MANPATH="$MANPATH:$HOME/.ldm/man"\n')
-
-        UI.info(
-            f"You may need to restart your terminal or source your profile ({UI.CYAN}~/{profile}{UI.COLOR_OFF})"
-        )
-        print("for the changes to take effect.")
-
-    def cmd_man(self):
-        """Displays the ldm manual page."""
-        self._refresh_man_symlink()
-        man_path = self.get_resource_path("ldm.1")
-        if not man_path:
-            UI.die("Manual page 'ldm.1' not found in resources.")
-
-        # On macOS/Linux, we can use 'man -l' to view a local file
-        # Fallback to 'less' if 'man' is not found or fails
-        try:
-            import subprocess
-
-            if platform.system().lower() != "windows":
-                # Check if man supports -l (macOS and most Linux)
-                res = subprocess.run(
-                    ["man", "--help"], capture_output=True, text=True, check=False
-                )
-                if "-l" in res.stdout or "-l" in res.stderr:
-                    subprocess.run(["man", "-l", str(man_path)])
-                # Fallback to less with roff processing if possible, or raw text
-                # We can use mandoc or groff if available
-                elif shutil.which("mandoc"):
-                    subprocess.run(
-                        f"mandoc -Tutf8 {man_path} | less -R",
-                        shell=True,  # nosec B602 B604
-                    )
-                elif shutil.which("groff"):
-                    subprocess.run(
-                        f"groff -man -Tascii {man_path} | less -R",
-                        shell=True,  # nosec B602 B604
-                    )
-                else:
-                    subprocess.run(["less", str(man_path)])
-            else:
-                # Windows fallback to notepad or similar
-                subprocess.run(["notepad", str(man_path)])
-        except Exception as e:
-            UI.error(f"Failed to display manual: {e}")
-            UI.info(f"You can view the raw manual file at: {man_path}")

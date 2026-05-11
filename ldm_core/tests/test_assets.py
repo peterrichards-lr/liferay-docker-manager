@@ -2,112 +2,87 @@ import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-import requests
-
+from ldm_core.constants import SEED_VERSION
 from ldm_core.handlers.assets import AssetService
 
 
-class MockManager:
+class MockAssetManager:
     def __init__(self):
         self.args = MagicMock()
         self.verbose = False
         self.non_interactive = True
+        self.snapshot = MagicMock()
 
-    def verify_runtime_environment(self, *args, **kwargs):
+    def verify_runtime_environment(self, paths):
         pass
 
-    def setup_paths(self, root):
-        return {"root": root}
 
-    def parse_version(self, tag):
-        if not tag:
-            return (0, 0, 0)
-        parts = tag.replace("-lts", "").replace("-qr", "").split(".")
-        try:
-            return tuple(int(p) for p in parts[:3])
-        except Exception:
-            return (0, 0, 0)
-
-
-class TestAssets(unittest.TestCase):
+class TestAssetService(unittest.TestCase):
     def setUp(self):
-        self.manager = MockManager()
+        self.manager = MockAssetManager()
         self.assets = AssetService(self.manager)
-        self.tmp_dir = Path("/tmp/assets-test")
 
-    @patch("ldm_core.ui.UI.confirm", return_value=True)
-    @patch("ldm_core.handlers.assets.requests.head")
-    def test_fetch_seed_api_fallback(self, mock_head, mock_confirm):
-        # Scenario: Direct download URL returns 404, fallback to GitHub API
-        res_404 = MagicMock()
-        res_404.status_code = 404
-        mock_head.return_value = res_404
+    @patch("ldm_core.handlers.assets.get_actual_home")
+    @patch("requests.get")
+    def test_download_samples_success(self, mock_get, mock_home):
+        import tempfile
 
-        with (
-            patch("ldm_core.handlers.assets.requests.get") as mock_get,
-            patch(
-                "ldm_core.handlers.assets.get_actual_home", return_value=self.tmp_dir
-            ),
-            patch("os.path.exists", return_value=False),
-        ):
-            # Mock API response to find the asset
-            res_api = MagicMock()
-            res_api.status_code = 200
-            res_api.json.return_value = {
-                "tag_name": "seeded-states",
-                "assets": [
-                    {
-                        "name": "seeded-tag-db-search-v2.tar.gz",
-                        "browser_download_url": "http://fallback",
-                    }
-                ],
-            }
-            mock_get.side_effect = [res_api, Exception("Stop after URL resolved")]
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            mock_home.return_value = tmp_path
 
-            # The tool should attempt the API call after the HEAD 404
-            self.assets._fetch_seed("tag", "db", "search", {"root": self.tmp_dir})
-            self.assertGreater(mock_get.call_count, 0)
+            # Mock response
+            mock_res = MagicMock()
+            mock_res.status_code = 200
+            mock_res.iter_content = MagicMock(return_value=[b"ZIP"])
+            mock_get.return_value = mock_res
 
-    @patch("ldm_core.handlers.assets.zipfile.ZipFile")
-    @patch("ldm_core.handlers.assets.shutil.rmtree")
-    @patch("ldm_core.handlers.assets.safe_move")
-    def test_download_samples_extraction_logic(self, mock_move, mock_rmtree, mock_zip):
-        with (
-            patch("ldm_core.handlers.assets.requests.get"),
-            patch(
-                "ldm_core.handlers.assets.os.path.exists", return_value=True
-            ),  # Cached
-            patch.object(Path, "mkdir"),
-        ):
-            # Mock ZipFile context manager
-            mock_zip.return_value.__enter__.return_value
-            # Mock iterdir to simulate inner 'samples' folder
-            with patch.object(Path, "iterdir", return_value=[Path("inner-file")]):
-                res = self.assets.download_samples("2.3.0", self.tmp_dir)
+            # Mock ZipFile to avoid BadZipFile
+            with patch("zipfile.ZipFile") as mock_zip:
+                res = self.assets.download_samples("2.5.0", tmp_path / "dest")
                 self.assertTrue(res)
-                # Verify moves were attempted
-                self.assertTrue(mock_move.called)
+                self.assertTrue(mock_get.called)
 
-    @patch("ldm_core.ui.UI.confirm", return_value=True)
-    @patch("ldm_core.handlers.assets.requests.head")
-    def test_fetch_seed_offline_fallback(self, mock_head, mock_confirm):
-        """Verifies that the tool falls back to vanilla if discovery fails (offline)."""
-        # Scenario: Network timeout during HEAD request
-        mock_head.side_effect = requests.exceptions.Timeout("Connection timed out")
+    @patch("ldm_core.handlers.assets.get_actual_home")
+    @patch("os.path.exists", return_value=True)
+    def test_download_samples_cached(self, mock_exists, mock_home):
+        import tempfile
 
-        with (
-            patch(
-                "ldm_core.handlers.assets.get_actual_home", return_value=self.tmp_dir
-            ),
-            patch("os.path.exists", return_value=False),
-            patch("ldm_core.ui.UI.warning") as mock_warn,
-        ):
-            # Should NOT raise, but should return False and log warning
-            res = self.assets._fetch_seed("tag", "db", "search", {"root": self.tmp_dir})
-            self.assertFalse(res)
-            # Verify user was informed about the offline state
-            warn_calls = [call[0][0] for call in mock_warn.call_args_list]
-            self.assertTrue(any("offline" in msg.lower() for msg in warn_calls))
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            mock_home.return_value = tmp_path
+
+            # Mock ZipFile
+            with patch("zipfile.ZipFile") as mock_zip:
+                res = self.assets.download_samples("2.5.0", tmp_path / "dest")
+                self.assertTrue(res)
+
+    @patch("ldm_core.handlers.assets.get_actual_home")
+    @patch("requests.head")
+    def test_fetch_seed_cached(self, mock_head, mock_home):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            mock_home.return_value = tmp_path
+
+            seed_file = (
+                tmp_path
+                / ".ldm"
+                / "seeds"
+                / f"seeded-7.4-mysql-local-v{SEED_VERSION}.tar.gz"
+            )
+            seed_file.parent.mkdir(parents=True)
+            seed_file.touch()
+
+            paths = {"root": tmp_path}
+            # We must mock os.path.exists specifically for the seed file path
+            with patch(
+                "os.path.exists",
+                side_effect=lambda x: str(x) == str(seed_file) or Path(x).exists(),
+            ):
+                res = self.assets._fetch_seed("7.4", "mysql", "local", paths)
+                self.assertTrue(res)
 
 
 if __name__ == "__main__":

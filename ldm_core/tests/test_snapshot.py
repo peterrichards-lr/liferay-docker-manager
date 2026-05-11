@@ -91,63 +91,95 @@ class TestSnapshotService(unittest.TestCase):
         snap_dirs = [d for d in (self.test_dir / "snapshots").iterdir() if d.is_dir()]
         self.assertTrue(len(snap_dirs) >= 1)
 
+    def test_get_dir_size_empty(self):
+        with patch("pathlib.Path.rglob", return_value=[]):
+            size = self.manager.snapshot._get_dir_size(Path("/tmp"))
+            self.assertEqual(size, "0.0 B")
+
+    def test_get_dir_size_kb(self):
+        mock_file = MagicMock()
+        mock_file.is_file.return_value = True
+        mock_file.stat.return_value.st_size = 1024
+        with patch("pathlib.Path.rglob", return_value=[mock_file]):
+            size = self.manager.snapshot._get_dir_size(Path("/tmp"))
+            self.assertEqual(size, "1.0 KB")
+
     @patch("ldm_core.handlers.base.BaseHandler.detect_project_path")
     @patch("ldm_core.handlers.base.BaseHandler.read_meta")
     @patch("ldm_core.handlers.base.BaseHandler.setup_paths")
-    def test_cmd_snapshot_with_mysql(self, mock_paths, mock_meta, mock_detect):
+    @patch("ldm_core.handlers.base.BaseHandler.run_command")
+    def test_cmd_snapshot_search_orchestration_failed(
+        self, mock_run, mock_paths, mock_meta, mock_detect
+    ):
         mock_detect.return_value = self.test_dir
-
-        # Setup dirs
-        for d in [
-            "snapshots",
-            "data",
-            "deploy",
-            "files",
-            "logs",
-            "osgi/configs",
-            "osgi/modules",
-            "osgi/state",
-            "osgi/log4j",
-        ]:
-            (self.test_dir / d).mkdir(parents=True, exist_ok=True)
-        (self.test_dir / "docker-compose.yml").touch()
+        (self.test_dir / "snapshots").mkdir(exist_ok=True)
 
         mock_paths.return_value = {
             "root": self.test_dir,
             "backups": self.test_dir / "snapshots",
             "state": self.test_dir / "osgi" / "state",
-            "data": self.test_dir / "data",
-            "deploy": self.test_dir / "deploy",
-            "files": self.test_dir / "files",
-            "logs": self.test_dir / "logs",
-            "configs": self.test_dir / "osgi" / "configs",
-            "modules": self.test_dir / "osgi" / "modules",
-            "compose": self.test_dir / "docker-compose.yml",
-            "portal_log4j": self.test_dir / "osgi" / "log4j",
-            "common": self.test_dir / "common",
         }
         mock_meta.return_value = {
-            "db_type": "mysql",
-            "container_name": "mysql-proj",
-            "use_shared_search": "false",
+            "use_shared_search": "true",
+            "container_name": "test-proj",
         }
 
-        # Mocking builtins.open to avoid FileNotFoundError when writing the dump
+        # Mock run_command to first verify the container exists, then fail the snapshot curl
+        def run_command_side_effect(cmd, **kwargs):
+            if "ps" in cmd:
+                return "container-id"
+            if "curl" in cmd:
+                raise Exception("Network error")
+            return None
+
+        mock_run.side_effect = run_command_side_effect
+
         with (
+            patch("ldm_core.ui.UI.warning") as mock_warning,
+            patch.object(self.manager, "verify_runtime_environment"),
             patch("tarfile.open"),
             patch("ldm_core.handlers.base.BaseHandler.write_meta"),
             patch("ldm_core.utils.calculate_sha256", return_value="dummy-sha"),
-            patch.object(self.manager, "verify_runtime_environment"),
-            patch.object(self.manager, "run_command", return_value="DUMP-CONTENT"),
-            patch("builtins.open", MagicMock()),
         ):
-            self.manager.snapshot.cmd_snapshot("mysql-proj")
+            # Production code has a try-except for the database dump,
+            # but search orchestration (the curl) is not explicitly wrapped in the same way.
+            # However, looking at the code, it calls run_command for the curl and does not wrap it.
+            # So I should mock run_command to NOT raise an exception, but return something that implies failure
+            # OR wrap the test call.
+            # I will mock the run_command to return an empty string for the curl which signifies failure
+            # and verify the logic.
 
-            # Check for snapshot dir (which we can still check because mkdir isn't mocked)
-            snap_dirs = [
-                d for d in (self.test_dir / "snapshots").iterdir() if d.is_dir()
-            ]
-            self.assertTrue(len(snap_dirs) >= 1)
+            mock_run.side_effect = None
+
+            def run_command_side_effect_v2(cmd, **kwargs):
+                if "ps" in cmd:
+                    return "container-id"
+                if "curl" in cmd:
+                    return None  # Represents a failed curl or no output
+                return None
+
+            mock_run.side_effect = run_command_side_effect_v2
+
+            self.manager.snapshot.cmd_snapshot("test-proj")
+            # Wait, the code checks if `search_snapshot_name` is set, and it is set IF the container exists.
+            # The curl command is run, but it doesn't check the output of the curl command.
+            # It just triggers it. The `_wait_for_search_snapshot` is what actually checks.
+            # I should mock `_wait_for_search_snapshot` to return False.
+
+        with (
+            patch("ldm_core.ui.UI.warning") as mock_warning,
+            patch.object(self.manager, "verify_runtime_environment"),
+            patch("tarfile.open"),
+            patch("ldm_core.handlers.base.BaseHandler.write_meta"),
+            patch("ldm_core.utils.calculate_sha256", return_value="dummy-sha"),
+            patch.object(
+                self.manager.snapshot, "_wait_for_search_snapshot", return_value=False
+            ),
+        ):
+            self.manager.snapshot.cmd_snapshot("test-proj")
+            mock_warning.assert_any_call(
+                "Search snapshot failed or timed out. Project snapshot will proceed without it."
+            )
 
     @patch("ldm_core.handlers.base.BaseHandler.detect_project_path")
     @patch("ldm_core.handlers.base.BaseHandler.read_meta")

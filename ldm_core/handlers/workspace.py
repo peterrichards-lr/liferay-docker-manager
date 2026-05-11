@@ -71,8 +71,7 @@ class WorkspaceService:
                     return key[len(prefix) :]
                 if val.get("type") == "oAuthApplicationHeadlessServer":
                     return val.get("projectId") or val.get("projectName")
-        except Exception as e:
-            print(f"DEBUG EXCEPTION: {e}")
+        except Exception:
             pass
         return None
 
@@ -141,8 +140,7 @@ class WorkspaceService:
             info["env"] = env
             if "LIFERAY_BATCH_OAUTH_APP_ERC" in env:
                 info["oauth_erc"] = env["LIFERAY_BATCH_OAUTH_APP_ERC"]
-        except Exception as e:
-            print(f"DEBUG EXCEPTION: {e}")
+        except Exception:
             pass
         return info
 
@@ -476,6 +474,7 @@ class WorkspaceService:
                             self._sync_cx_artifact(zip_file, paths, overwrite=overwrite)
                 except Exception:
                     pass
+        return True
 
     def _sync_cx_artifact(self, zip_path, paths, overwrite=True):
         """Internal helper for the mandatory 3-step CX sync sequence."""

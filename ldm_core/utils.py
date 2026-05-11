@@ -12,8 +12,23 @@ from pathlib import Path
 
 import requests
 
-from ldm_core.constants import TAG_PATTERN
+from ldm_core.constants import SCRIPT_DIR, TAG_PATTERN
 from ldm_core.ui import UI
+
+
+def get_resource_path(filename):
+    """Resiliently locates internal resource files (supports source vs bundled)."""
+    # 1. Check bundled package structure (site-packages/ldm_core/resources)
+    path = SCRIPT_DIR / "ldm_core" / "resources" / filename
+    if path.exists():
+        return path
+
+    # 2. Check source development structure (root/resources)
+    path = SCRIPT_DIR / "resources" / filename
+    if path.exists():
+        return path
+
+    return None
 
 
 def download_file(url, destination):

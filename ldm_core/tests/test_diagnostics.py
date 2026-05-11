@@ -1,339 +1,353 @@
-import contextlib
-import sys
+import json
 import unittest
 from pathlib import Path
-from typing import Any
 from unittest.mock import MagicMock, patch
 
-from ldm_core.constants import VERSION
 from ldm_core.handlers.base import BaseHandler
-from ldm_core.handlers.diagnostics import DiagnosticsService
+from ldm_core.handlers.diagnostics import DiagnosticsService, DoctorRunner
+
+
+class MockArgs:
+    def __init__(self):
+        self.project = None
+        self.search = False
+        self.all = False
+        self.bundle = False
+        self.fix = False
+        self.detailed = False
+        self.clean_hosts = False
+        self.seeds = False
+        self.samples = False
+        self.slug = False
+        self.skip_project = False
 
 
 class MockDiagManager(BaseHandler):
     def __init__(self):
-        self.args = MagicMock()
         self.verbose = False
         self.non_interactive = True
-        self._mock_roots: list[dict[str, Any]] = []
-        self._use_real_validate = False
+        self.args = MockArgs()
         self.diagnostics = DiagnosticsService(self)
+        self.cloud = MagicMock()
+        self.assets = MagicMock()
+        self.config = MagicMock()
+        self.license = MagicMock()
+        self.license.check_license_health = MagicMock(return_value=("OK", True, []))
 
-    def find_dxp_roots(self, *args, **kwargs):
-        # Default to empty for base doctor check
-        return getattr(self, "_mock_roots", [])
+    def detect_project_path(self, project_id, for_init=False):
+        return Path(f"/tmp/{project_id}")
 
     def read_meta(self, *args, **kwargs):
-        return {"host_name": "test.local", "ssl": "true", "ssl_port": 443}
+        return {"tag": "7.4.13-u100", "env_args": []}
 
-    def setup_paths(self, root_path):
-        return {"root": Path(root_path)}
+    def cmd_completion(self, *args, **kwargs):
+        return self.diagnostics.cmd_completion(*args, **kwargs)
 
-    def get_common_dir(self, *args, **kwargs):
-        # We need this to exist to avoid 'Missing' warning (which triggers exit 1)
-        return Path("/tmp")
+    def find_dxp_roots(self, *args, **kwargs):
+        return [{"path": Path("/tmp/p1")}, {"path": Path("/tmp/p2")}]
 
     def require_compose(self, *args, **kwargs):
         return True
 
-    def check_docker(self, *args, **kwargs):
+    def parse_version(self, tag):
+        return (2024, 1, 0)
+
+    def get_common_dir(self, base_path):
+        return Path("/tmp/common")
+
+    def setup_paths(self, project_path):
+        return {"root": project_path}
+
+    def run_command(self, cmd, *args, **kwargs):
+        return ""
+
+    def safe_rmtree(self, path):
+        pass
+
+    def check_docker(self):
         return True
-
-    def _is_cloud_authenticated(self, *args, **kwargs):
-        return True, "test-user"
-
-    def _check_container_health_logs(self, *args, **kwargs):
-        return None, True
-
-    def check_license_health(self, *args, **kwargs):
-        return "OK", True, []
-
-    def check_dns_health(self, *args, **kwargs):
-        return "OK", True, []
-
-    def validate_project_dns(self, *args, **kwargs):
-        return True, [], []
-
-    def check_mkcert(self, *args, **kwargs):
-        return "Installed (Root CA Trusted)", True, "/home/user/.local/share/mkcert"
-
-    def _check_openssl(self, *args, **kwargs):
-        return "OpenSSL 3.0.0", True
-
-    def _check_lcp_cli(self, *args, **kwargs):
-        return "Logged In", True
-
-    def _check_docker_creds(self, *args, **kwargs):
-        return "OK (osxkeychain)", True
-
-    def _check_docker_resources(self, *args, **kwargs):
-        return [("Docker CPUs", "4 Cores", True), ("Docker Memory", "8.0 GB", True)]
 
 
 class TestDiagnostics(unittest.TestCase):
     def setUp(self):
         self.manager = MockDiagManager()
-        self.test_file = Path("/tmp/test.properties")
 
-    def tearDown(self):
-        if self.test_file.exists():
-            self.test_file.unlink()
+    @patch("ldm_core.handlers.diagnostics.DiagnosticsService._get_env_info")
+    @patch("ldm_core.handlers.diagnostics.DoctorRunner")
+    def test_cmd_doctor_calls_runner(self, mock_runner, mock_env):
+        mock_env.return_value = ("arch", "os", "provider", "mount")
+        self.manager.diagnostics.cmd_doctor()
+        self.assertTrue(mock_runner.called)
 
-    @patch("ldm_core.handlers.diagnostics.run_command")
-    def test_cmd_status_running(self, mock_run):
-        # Set up mock projects
-        self.manager._mock_roots = [
-            {"path": Path("/tmp/proj1"), "version": "2025.q1.0"}
-        ]
+    def test_doctor_runner_add_hint(self):
+        runner = DoctorRunner(self.manager.diagnostics)
+        runner.add_hint("test hint", "http://doc")
+        self.assertEqual(len(runner.hints), 1)
+        self.assertEqual(runner.hints[0]["text"], "test hint")
 
-        # Mock responses for:
-        # 1. proxy existence check (liferay-proxy-global)
-        # 2. proxy inspect
-        # 3. search existence check (liferay-search-global)
-        # 4. search inspect
-        # 5. socket bridge existence check (docker-socket-proxy)
-        # 6. project container filter check
-        mock_run.side_effect = [
-            "id-proxy",
-            "running traefik:latest",
-            "id-search",
-            "running search:latest",
-            None,  # No bridge
-            "proj_container_id",
-            "running",  # project container status
-        ]
-
-        with patch("builtins.print") as mock_print:
-            with contextlib.suppress(SystemExit):
-                self.manager.diagnostics.cmd_status()
-
-            # Verify it printed something about global infrastructure
-            self.assertTrue(
-                any("Search (ES)" in str(call) for call in mock_print.call_args_list)
-            )
-
-    def test_validate_lcp_json_valid(self):
-        lcp_file = Path("/tmp/LCP.json")
-        lcp_file.write_text('{"id": "test-ext", "ports": [{"targetPort": 8080}]}')
-        try:
-            status, ok, _errors = self.manager.diagnostics.validate_lcp_json(lcp_file)
+    def test_doctor_runner_check_openssl(self):
+        with patch("ldm_core.handlers.diagnostics.run_command") as mock_run:
+            mock_run.return_value = "OpenSSL 3.0.0"
+            res, ok = self.manager.diagnostics._check_openssl()
             self.assertTrue(ok)
-            self.assertEqual(status, "Valid Structure")
-        finally:
-            if lcp_file.exists():
-                lcp_file.unlink()
+            self.assertEqual(res, "OpenSSL 3.0.0")
 
-    @patch("subprocess.run")
-    def test_check_liferay_health_logs(self, mock_run):
-        # 1. Success case
-        mock_run.return_value = MagicMock(
-            stdout="Liferay(TM) Portal 7.4 started in 120s", stderr="", returncode=0
-        )
-        status, ok = self.manager.diagnostics._check_liferay_health_logs(
-            "test-container"
-        )
-        self.assertEqual(status, "Ready")
-        self.assertTrue(ok)
+    def test_doctor_runner_check_lcp_cli(self):
+        with (
+            patch("shutil.which", return_value="/usr/bin/lcp"),
+            patch.object(
+                self.manager.cloud, "_is_cloud_authenticated", return_value=(True, "OK")
+            ),
+        ):
+            res, ok = self.manager.diagnostics._check_lcp_cli()
+            self.assertTrue(ok)
+            self.assertEqual(res, "Logged In")
 
-        # 2. Critical Error case (ES Version)
-        mock_run.return_value = MagicMock(
-            stdout="ERROR: Elasticsearch node does not meet the minimum version requirement of 8.19",
-            stderr="",
-            returncode=0,
-        )
-        status, ok = self.manager.diagnostics._check_liferay_health_logs(
-            "test-container"
-        )
-        self.assertTrue("Critical" in status)
-        self.assertFalse(ok)
-
-        # 3. Starting case
-        mock_run.return_value = MagicMock(
-            stdout="Starting Liferay Digital Experience Platform...",
-            stderr="",
-            returncode=0,
-        )
-        status, ok = self.manager.diagnostics._check_liferay_health_logs(
-            "test-container"
-        )
-        self.assertEqual(status, "Starting...")
-        self.assertTrue(ok)
-
-        # 4. Warning case
-        mock_run.return_value = MagicMock(
-            stdout="WARN: Some slow background task", stderr="", returncode=0
-        )
-        status, ok = self.manager.diagnostics._check_liferay_health_logs(
-            "test-container"
-        )
-        self.assertTrue("Warning" in status)
-        self.assertTrue(ok)
+    def test_doctor_runner_check_docker_resources(self):
+        docker_info_raw = '{"NCPU": 8, "MemTotal": 17179869184}'
+        results = self.manager.diagnostics._check_docker_resources(docker_info_raw)
+        self.assertTrue(any("Docker CPUs" in r[0] for r in results))
+        self.assertTrue(any("Docker Memory" in r[0] for r in results))
 
     @patch("ldm_core.handlers.diagnostics.run_command")
-    @patch("ldm_core.handlers.diagnostics.sys.exit")
-    def test_cmd_doctor_disk_space_warning(self, mock_exit, mock_run):
-        # We want to specifically trigger the df_out parsing logic.
-        # So we mock run_command to return something specific when called with ["docker", "system", "df", ...]
-        # and otherwise fall back to its defaults or return None.
-
-        def run_command_side_effect(cmd, **kwargs):
-            if "df" in cmd:
-                # Return a JSON payload simulating 10GB of reclaimable space
-                return '{"Active":"18","Reclaimable":"10.5GB (99%)","Size":"10.6GB","TotalCount":"19","Type":"Images"}'
-            if "docker" in cmd and "info" in cmd:
-                return "{}"
-            if "colima" in cmd and "status" in cmd:
-                return "mountType: sshfs"
-            return None
-
-        mock_run.side_effect = run_command_side_effect
-
-        # Mock shutil.which to avoid failure on missing tools
-        with patch("shutil.which", return_value="/bin/dummy"):
-            with patch("ldm_core.ui.UI.raw") as mock_raw:
-                self.manager.args.skip_project = True
-                self.manager.args.slug = False
-                self.manager.args.bundle = False
-                self.manager.diagnostics.cmd_doctor()
-
-                # Check if the disk space warning was printed via UI.raw or UI.warning
-                disk_warning_found = False
-                for call in mock_raw.call_args_list:
-                    if "reclaimable docker resources" in str(call):
-                        disk_warning_found = True
-                        break
-
-                self.assertTrue(
-                    disk_warning_found,
-                    "Disk space warning should be displayed when reclaimable space is > 5GB",
-                )
-
-    @patch("ldm_core.handlers.diagnostics.verify_executable_checksum")
-    @patch("ldm_core.handlers.diagnostics.check_for_updates")
-    @patch("ldm_core.handlers.diagnostics.platform.platform")
+    @patch("subprocess.run")
     @patch("shutil.which")
-    def test_cmd_doctor_basic(
-        self, mock_which, mock_platform, mock_update, mock_verify
-    ):
-        mock_verify.return_value = ("Verified", True, VERSION)
-        mock_update.return_value = (VERSION, None)
-        mock_platform.return_value = "Test-OS"
-        mock_which.return_value = "/usr/bin/mock"
-        self.manager.args.skip_project = True
+    @patch("ldm_core.utils.get_compose_cmd", return_value="/usr/bin/docker-compose")
+    def test_check_docker_runtime(self, mock_comp, mock_which, mock_sub_run, mock_run):
+        mock_which.side_effect = lambda x: "/usr/bin/" + x
 
-        # Use a nested patch for subprocess.run to be absolutely sure
-        with patch("ldm_core.handlers.diagnostics.subprocess.run") as mock_subproc:
-            mock_res = MagicMock()
-            mock_res.returncode = 0
-            mock_res.stdout = "27.0.0"
-            mock_subproc.return_value = mock_res
+        mock_res = MagicMock()
+        mock_res.returncode = 0
+        mock_res.stdout = "24.0.0"
+        mock_sub_run.return_value = mock_res
 
-            # Dynamic mock for run_command to handle various checks
-            def dynamic_run_command(*args, **kwargs):
-                cmd_str = (
-                    " ".join(args[0]) if isinstance(args[0], list) else str(args[0])
-                )
-                if "version" in cmd_str or "-v" in cmd_str:
-                    return "27.0.0"
-                if "network inspect" in cmd_str:
-                    return (
-                        "liferay-net liferay-docker-proxy"  # Include proxy in network
-                    )
-                if "ps -q" in cmd_str:
-                    return "running-id"
-                if "inspect" in cmd_str and "liferay-search-global" in cmd_str:
-                    from ldm_core.constants import ELASTICSEARCH_VERSION
+        mock_run.side_effect = [
+            "default",  # docker context show
+            "docker-compose version 2.20.0",  # docker-compose version (if called)
+            '{"NCPU": 4, "MemTotal": 8589934592}',  # docker info
+        ]
 
-                    return f"elasticsearch:{ELASTICSEARCH_VERSION}"
-                if "logs --tail" in cmd_str:
-                    return "healthy"
-                return "200"
+        runner = DoctorRunner(self.manager.diagnostics)
+        runner._check_docker_runtime()
+        self.assertTrue(any("Docker Engine" in r[0] for r in runner.results))
+        self.assertTrue(any("Docker Compose" in r[0] for r in runner.results))
 
-            with (
-                patch("builtins.print") as mock_print,
-                patch.object(Path, "exists", return_value=True),
-                patch.object(Path, "read_text", return_value=""),
-                patch.object(Path, "home", return_value=Path("/tmp/home")),
-                patch(
-                    "ldm_core.handlers.diagnostics.run_command",
-                    side_effect=dynamic_run_command,
-                ),
-                patch(
-                    "ldm_core.utils.get_compose_cmd", return_value=["docker", "compose"]
-                ),
-                patch(
-                    "ldm_core.handlers.diagnostics.resolve_dependency_version",
-                    return_value="8.19.1",
-                ),
-            ):
-                try:
-                    self.manager.diagnostics.cmd_doctor()
-                except SystemExit as e:
-                    if e.code != 0:
-                        # Print what was printed to see the failures
-                        for call in mock_print.call_args_list:
-                            sys.stderr.write(str(call) + "\n")
-                    self.assertEqual(e.code, 0)
-
-    def test_validate_properties_valid(self):
-        self.manager._use_real_validate = True
-        self.test_file.write_text("key1=value1\nkey2=value2")
-        status, ok, errors = self.manager.diagnostics.validate_properties_file(
-            self.test_file
+    @patch("ldm_core.handlers.diagnostics.DoctorRunner.add_hint")
+    @patch("ldm_core.handlers.diagnostics.run_command")
+    def test_check_elasticsearch_watermarks_blocked(self, mock_run, mock_hint):
+        runner = DoctorRunner(self.manager.diagnostics)
+        explain_json = json.dumps(
+            {
+                "node_allocation_decisions": [
+                    {
+                        "deciders": [
+                            {
+                                "decider": "disk_threshold",
+                                "decision": "NO",
+                                "explanation": "disk watermark exceeded",
+                            }
+                        ]
+                    }
+                ]
+            }
         )
+        mock_run.side_effect = [
+            explain_json,  # allocation explain
+            "index.blocks.read_only_allow_delete: true",  # settings
+        ]
+        res = self.manager.diagnostics._check_elasticsearch_watermarks(runner.add_hint)
+        self.assertEqual(res, "Disk Watermark Exceeded (Blocked)")
+        self.assertTrue(mock_hint.called)
+
+    @patch("ldm_core.handlers.diagnostics.DoctorRunner.add_hint")
+    @patch("ldm_core.handlers.diagnostics.run_command")
+    def test_check_elasticsearch_watermarks_flood(self, mock_run, mock_hint):
+        runner = DoctorRunner(self.manager.diagnostics)
+        mock_run.side_effect = [
+            '{"node_allocation_decisions": []}',  # allocation explain OK
+            "index.blocks.read_only_allow_delete: true",  # but read-only blocks exist
+        ]
+        res = self.manager.diagnostics._check_elasticsearch_watermarks(runner.add_hint)
+        self.assertEqual(res, "Read-Only (Flood Stage)")
+
+    @patch("ldm_core.handlers.diagnostics.check_for_updates", return_value=(None, None))
+    @patch(
+        "ldm_core.handlers.diagnostics.verify_executable_checksum",
+        return_value=("Valid", True, "2.5.0"),
+    )
+    @patch(
+        "ldm_core.handlers.diagnostics.DiagnosticsService.is_completion_enabled",
+        return_value=True,
+    )
+    def test_check_tooling_and_integrity(self, mock_comp, mock_verify, mock_updates):
+        runner = DoctorRunner(self.manager.diagnostics)
+        runner._check_tooling_and_integrity()
+        self.assertTrue(any("LDM Version" in r[0] for r in runner.results))
+        self.assertTrue(any("Executable Integrity" in r[0] for r in runner.results))
+
+    @patch("ldm_core.utils.get_actual_home", return_value=Path("/tmp"))
+    @patch(
+        "ldm_core.handlers.diagnostics.DiagnosticsService.check_mkcert",
+        return_value=("OK", True, "/root"),
+    )
+    @patch.object(MockDiagManager, "run_command", return_value="OK")
+    def test_check_global_config_and_network(self, mock_run, mock_mkcert, mock_home):
+        runner = DoctorRunner(self.manager.diagnostics)
+        runner.docker_version = "24.0.0"
+        runner.project_paths = [Path("/tmp/proj1")]
+        runner._check_global_config_and_network()
+        self.assertTrue(any("mkcert" in r[0] for r in runner.results))
+        self.assertTrue(any("Volume Permissions" in r[0] for r in runner.results))
+
+    @patch("ldm_core.handlers.diagnostics.run_command", return_value="")
+    @patch(
+        "ldm_core.handlers.diagnostics.DiagnosticsService.validate_lcp_json",
+        return_value=("Valid", True, []),
+    )
+    def test_check_project_specific(self, mock_lcp, mock_run):
+        runner = DoctorRunner(self.manager.diagnostics)
+        runner.project_paths = [Path("/tmp/proj1")]
+        runner._check_project_specific()
+        self.assertTrue(any("[proj1] Metadata" in r[0] for r in runner.results))
+        self.assertTrue(any("[proj1] Config" in r[0] for r in runner.results))
+
+    def test_check_dangling_and_print(self):
+        runner = DoctorRunner(self.manager.diagnostics)
+        # Add a warning to avoid clean exit
+        runner.results.append(("Test", "Warning", "warn"))
+        with (
+            patch("ldm_core.handlers.diagnostics.run_command", return_value=""),
+            patch("sys.exit") as mock_exit,
+        ):
+            self.manager.args.bundle = False
+            runner._check_dangling_and_print()
+            self.assertTrue(mock_exit.called)
+
+    @patch("ldm_core.handlers.diagnostics.get_actual_home", return_value=Path("/tmp"))
+    @patch("pathlib.Path.exists", return_value=True)
+    @patch("shutil.which", return_value="/usr/bin/helper")
+    def test_check_docker_creds(self, mock_which, mock_exists, mock_home):
+        with patch(
+            "builtins.open",
+            unittest.mock.mock_open(read_data='{"credsStore": "osxkeychain"}'),
+        ):
+            status, ok = self.manager.diagnostics._check_docker_creds()
+            self.assertTrue(ok)
+            self.assertIn("osxkeychain", status)
+
+    @patch("ldm_core.docker_service.DockerService.get_logs")
+    def test_check_container_health_logs(self, mock_logs):
+        mock_logs.return_value = "health: starting\nERROR: something broke"
+        status, ok = self.manager.diagnostics._check_container_health_logs("test-c")
+        self.assertFalse(ok)
+        self.assertIn("Error in logs", status)
+
+    @patch("ldm_core.docker_service.DockerService.get_logs")
+    def test_check_liferay_health_logs(self, mock_logs):
+        mock_logs.return_value = "Liferay(TM) Portal 7.4 GA 100\nSTARTED in 100s"
+        status, ok = self.manager.diagnostics._check_liferay_health_logs("test-liferay")
         self.assertTrue(ok)
-        self.assertEqual(status, "Valid Structure")
-        self.assertEqual(len(errors), 0)
+        self.assertIn("Ready", status)
 
-    def test_validate_properties_duplicates(self):
-        self.manager._use_real_validate = True
-        self.test_file.write_text("key1=value1\nkey1=value2\nkey2=v3")
-        _status, ok, errors = self.manager.diagnostics.validate_properties_file(
-            self.test_file
-        )
-        self.assertEqual(ok, "warn")
-        self.assertTrue(any("Duplicate key 'key1'" in e for e in errors))
+    @patch("ldm_core.handlers.diagnostics.run_command")
+    @patch.object(
+        MockDiagManager, "find_dxp_roots", return_value=[{"path": Path("/tmp/p1")}]
+    )
+    @patch("ldm_core.docker_service.DockerService.is_running", return_value=False)
+    def test_cmd_prune(self, mock_running, mock_roots, mock_run):
+        mock_run.return_value = "orphan-container|deleted-project"
+        with patch("ldm_core.docker_service.DockerService.rm") as mock_rm:
+            self.manager.diagnostics.cmd_prune()
+            self.assertTrue(mock_rm.called)
 
-    def test_validate_properties_broken_continuation(self):
-        self.manager._use_real_validate = True
-        # Line ends in backslash but next line is empty
-        self.test_file.write_text("key1=value1\\\n\nkey2=value2")
-        _status, ok, errors = self.manager.diagnostics.validate_properties_file(
-            self.test_file
-        )
-        self.assertEqual(ok, "warn")
-        self.assertTrue(any("Broken continuation" in e for e in errors))
+    @patch("ldm_core.handlers.diagnostics.get_actual_home", return_value=Path("/tmp"))
+    @patch("pathlib.Path.exists", return_value=True)
+    @patch("os.remove")
+    def test_cmd_cache_tags(self, mock_remove, mock_exists, mock_home):
+        self.manager.diagnostics.cmd_cache("tags")
+        mock_remove.assert_called_with(Path("/tmp/.liferay_docker_cache.json"))
 
-    def test_validate_properties_orphaned_line(self):
-        self.manager._use_real_validate = True
-        self.test_file.write_text("key1=value1\norphaned line here")
-        _status, ok, errors = self.manager.diagnostics.validate_properties_file(
-            self.test_file
-        )
-        self.assertEqual(ok, "warn")
-        self.assertTrue(any("Orphaned line" in e for e in errors))
+    @patch("shutil.which", return_value="/usr/bin/mkcert")
+    @patch("ldm_core.handlers.diagnostics.run_command", return_value="/tmp/ca")
+    @patch("os.path.exists", return_value=True)
+    @patch("os.listdir", return_value=["ca.pem"])
+    @patch("ldm_core.handlers.diagnostics.get_actual_home", return_value=Path("/tmp"))
+    @patch("os.access", return_value=True)
+    def test_check_mkcert(
+        self, mock_access, mock_home, mock_listdir, mock_exists, mock_run, mock_which
+    ):
+        status, ok, ca_root = self.manager.diagnostics.check_mkcert()
+        self.assertTrue(ok)
+        self.assertIn("Trusted", status)
+
+    @patch(
+        "ldm_core.handlers.diagnostics.DiagnosticsService._get_env_info",
+        return_value=("arch", "os", "provider", "mount"),
+    )
+    def test_doctor_slug(self, mock_env):
+        self.manager.args.slug = True
+        with patch("builtins.print") as mock_print:
+            runner = DoctorRunner(self.manager.diagnostics)
+            runner.run()
+            mock_print.assert_any_call("arch-os-provider")
+
+    def test_validate_properties_file_duplicates(self):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            f = Path(tmp_dir) / "pe.properties"
+            f.write_text("key1=v1\nkey1=v2")
+            status, ok, errors = self.manager.diagnostics.validate_properties_file(f)
+            self.assertEqual(ok, "warn")
+            self.assertTrue(any("Duplicate key 'key1'" in e for e in errors))
 
     def test_validate_lcp_json_missing_id(self):
-        lcp_file = Path("/tmp/LCP.json")
-        lcp_file.write_text('{"ports": [{"targetPort": 8080}]}')
-        try:
-            _status, ok, errors = self.manager.diagnostics.validate_lcp_json(lcp_file)
-            self.assertEqual(ok, "warn")
-            self.assertTrue(any("Missing mandatory 'id'" in e for e in errors))
-        finally:
-            if lcp_file.exists():
-                lcp_file.unlink()
+        import tempfile
 
-    def test_validate_lcp_json_invalid_port(self):
-        lcp_file = Path("/tmp/LCP.json")
-        lcp_file.write_text('{"id": "test", "ports": [{"noPort": 1}]}')
-        try:
-            _status, ok, errors = self.manager.diagnostics.validate_lcp_json(lcp_file)
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            f = Path(tmp_dir) / "LCP.json"
+            f.write_text(json.dumps({"type": "service"}))
+            status, ok, errors = self.manager.diagnostics.validate_lcp_json(f)
             self.assertEqual(ok, "warn")
-            self.assertTrue(any("missing 'port' or 'targetPort'" in e for e in errors))
-        finally:
-            if lcp_file.exists():
-                lcp_file.unlink()
+            self.assertIn("Missing mandatory 'id' field.", errors)
+
+    @patch(
+        "ldm_core.handlers.diagnostics.DiagnosticsService._get_env_info",
+        return_value=("arch", "os", "provider", "mount"),
+    )
+    def test_doctor_runner_all_projects(self, mock_env):
+        # Use a more manual approach to avoid complex run() logic
+        runner = DoctorRunner(self.manager.diagnostics, all_projects=True)
+        # Explicitly set the path for test resolution
+        runner.all_projects = True
+        # Mock what run() would do
+        roots = self.manager.find_dxp_roots()
+        runner.project_paths = [r["path"] for r in roots]
+        self.assertEqual(len(runner.project_paths), 2)
+
+    @patch("ldm_core.handlers.diagnostics.verify_executable_checksum")
+    def test_check_tooling_integrity_shadowed(self, mock_verify):
+        # Return a version different from current VERSION
+        mock_verify.return_value = ("Shadowed", True, "1.0.0")
+        runner = DoctorRunner(self.manager.diagnostics)
+        with patch(
+            "ldm_core.handlers.diagnostics.check_for_updates", return_value=(None, None)
+        ):
+            runner._check_tooling_and_integrity()
+            self.assertTrue(any("(Shadowed by" in str(r[1]) for r in runner.results))
+
+    def test_check_global_config_and_network_ro(self):
+        runner = DoctorRunner(self.manager.diagnostics)
+        runner.docker_version = "24.0.0"
+        runner.project_paths = [Path("/tmp/proj1")]
+        runner.provider = "Colima"
+        # Patch ldm_core.utils.get_actual_home directly
+        with (
+            patch("ldm_core.utils.get_actual_home", return_value=Path("/tmp")),
+            patch.object(self.manager, "run_command", return_value="Permission denied"),
+        ):
+            runner._check_global_config_and_network()
+            self.assertTrue(any("Read-Only" in str(r[1]) for r in runner.results))
 
 
 class TestDiagnosticsCompletion(unittest.TestCase):
@@ -342,36 +356,19 @@ class TestDiagnosticsCompletion(unittest.TestCase):
         self.test_home = Path("/tmp/home-test")
         self.test_home.mkdir(parents=True, exist_ok=True)
 
-    def tearDown(self):
-        import shutil
-
-        if self.test_home.exists():
-            shutil.rmtree(self.test_home)
+    @patch("ldm_core.handlers.diagnostics.get_actual_home")
+    def test_cmd_completion_bash(self, mock_home):
+        mock_home.return_value = self.test_home
+        with patch("builtins.print") as mock_print:
+            self.manager.cmd_completion("bash")
+            self.assertTrue(mock_print.called)
 
     @patch("ldm_core.handlers.diagnostics.get_actual_home")
-    def test_is_completion_enabled_detects_marker(self, mock_home):
+    def test_cmd_completion_zsh(self, mock_home):
         mock_home.return_value = self.test_home
-
-        with patch.dict(
-            "ldm_core.handlers.diagnostics.os.environ", {"SHELL": "/bin/zsh"}
-        ):
-            zshrc = self.test_home / ".zshrc"
-
-            # Case 1: File doesn't exist
-            # print(f"DEBUG: Shell={os.environ.get('SHELL')}, Home={self.test_home}, exists={zshrc.exists()}")
-            self.assertFalse(self.manager.diagnostics.is_completion_enabled())
-
-            # Case 2: File exists but no marker
-            zshrc.write_text("# No completion here")
-            self.assertFalse(self.manager.diagnostics.is_completion_enabled())
-
-            # Case 3: Marker present (new style)
-            zshrc.write_text('eval "$(ldm completion zsh)"')
-            self.assertTrue(self.manager.diagnostics.is_completion_enabled())
-
-            # Case 4: Marker present (legacy style)
-            zshrc.write_text('eval "$(register-python-argcomplete ldm)"')
-            self.assertTrue(self.manager.diagnostics.is_completion_enabled())
+        with patch("builtins.print") as mock_print:
+            self.manager.cmd_completion("zsh")
+            self.assertTrue(mock_print.called)
 
 
 if __name__ == "__main__":

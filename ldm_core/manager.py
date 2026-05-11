@@ -58,6 +58,11 @@ class LiferayManager(
     def sync_stack(self, *args, **kwargs):
         return self.runtime.sync_stack(*args, **kwargs)
 
+    def get_resource_path(self, filename):
+        from ldm_core.utils import get_resource_path
+
+        return get_resource_path(filename)
+
     def write_docker_compose(self, *args, **kwargs):
         return self.composer.write_docker_compose(*args, **kwargs)
 
@@ -141,6 +146,12 @@ class LiferayManager(
 
     def cmd_status(self, *args, **kwargs):
         return self.diagnostics.cmd_status(*args, **kwargs)
+
+    def cmd_completion(self, *args, **kwargs):
+        return self.diagnostics.cmd_completion(*args, **kwargs)
+
+    def cmd_man(self, *args, **kwargs):
+        return self.diagnostics.cmd_man(*args, **kwargs)
 
     def cmd_infra_setup(self, *args, **kwargs):
         return self.infra.cmd_infra_setup(*args, **kwargs)
