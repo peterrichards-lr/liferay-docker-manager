@@ -748,7 +748,7 @@ def main():
         "system": lambda: manager.cmd_system(args.subcommand),
         "upgrade": manager.cmd_upgrade,
         "update-check": manager.cmd_upgrade,
-        "version": lambda: manager.cmd_version(
+        "version": lambda: manager.dev.cmd_version(
             bump_type=args.bump,
             promote=args.promote,
             set_version=args.set_version,
@@ -756,7 +756,7 @@ def main():
             check=args.check,
             print_only=args.print,
         ),
-        "dev-setup": manager.cmd_dev_setup,
+        "dev-setup": manager.dev.cmd_dev_setup,
     }
 
     if args.command in cmds:

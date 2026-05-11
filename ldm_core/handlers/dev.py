@@ -6,12 +6,14 @@ import sys
 from pathlib import Path
 
 from ldm_core.constants import VERSION
-from ldm_core.handlers.base import BaseHandler
 from ldm_core.ui import UI
 
 
-class DevHandler(BaseHandler):
-    """Handler for development-only utilities (versioning, internal tools)."""
+class DevService:
+    """Service for development-only utilities (versioning, internal tools)."""
+
+    def __init__(self, manager=None):
+        self.manager = manager
 
     def cmd_dev_setup(self):
         """Initializes the local development environment (venv, dependencies, hooks)."""
@@ -77,7 +79,9 @@ class DevHandler(BaseHandler):
                 "Action restricted: This command can only be run from the root of a git clone."
             )
 
-        if os.getenv("LDM_DEV_MODE") != "true" and not getattr(self.args, "yes", False):
+        if os.getenv("LDM_DEV_MODE") != "true" and not getattr(
+            self.manager.args, "yes", False
+        ):
             UI.warning("Internal Developer Utility detected.")
             if not UI.confirm("Continue in Developer Mode?", "N"):
                 sys.exit(0)

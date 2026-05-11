@@ -3,10 +3,15 @@ import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from ldm_core.handlers.dev import DevHandler
+from ldm_core.handlers.dev import DevService
 
 
-class TestDevHandler(unittest.TestCase):
+class MockDevManager:
+    def __init__(self, args):
+        self.args = args
+
+
+class TestDevService(unittest.TestCase):
     def setUp(self):
         self.tmp_dir = tempfile.TemporaryDirectory()
         self.base = Path(self.tmp_dir.name)
@@ -14,7 +19,8 @@ class TestDevHandler(unittest.TestCase):
         # Mock args
         self.args = MagicMock()
         self.args.yes = True
-        self.handler = DevHandler(self.args)
+        self.manager = MockDevManager(self.args)
+        self.handler = DevService(self.manager)
 
         # Create mock project structure
         (self.base / ".git").mkdir()
