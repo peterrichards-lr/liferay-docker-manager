@@ -23,9 +23,11 @@ class TestE2EInteractive(unittest.TestCase):
         # The input simulates:
         # 1. 'n' (select new project)
         # 2. 'piped-test-project' (project name)
-        # 3. 'q' (quit / abort immediately after name to avoid spinning up docker)
+        # 3. Enter (accept default host)
+        # 4. Enter (accept default tag)
+        # 5. 'q' (quit)
 
-        test_input = "n\npiped-test-project\nq\n"
+        test_input = "n\npiped-test-project\n\n\nq\n"
         with tempfile.TemporaryDirectory() as tmp_dir:
             process = subprocess.run(
                 [*ldm_executable, "run"],

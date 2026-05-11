@@ -646,7 +646,9 @@ def main():
         UI.die("Docker not accessible.")
 
     # Execution map
-    cmds = {
+    from collections.abc import Callable
+
+    cmds: dict[str, Callable[[], None]] = {
         "run": lambda: manager.runtime.cmd_run(getattr(args, "project", None)),
         "up": lambda: manager.runtime.cmd_run(getattr(args, "project", None)),
         "import": lambda: manager.workspace.cmd_import(args.source),
@@ -771,6 +773,7 @@ def main():
         update_info = {}
 
         def run_update_check():
+            latest: str | None
             latest, _url = check_for_updates(VERSION)
             update_info["latest"] = latest
 
