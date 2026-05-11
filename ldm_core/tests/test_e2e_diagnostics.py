@@ -9,7 +9,13 @@ class TestE2EDiagnostics(unittest.TestCase):
         End-to-End test to ensure that piped input correctly navigates
         LDM's interactive prompts in the 'prune' command.
         """
-        ldm_executable = Path(__file__).parent.parent.parent / "ldm"
+        import sys
+
+        # Use the current python interpreter to run the main script
+        ldm_executable = [
+            sys.executable,
+            str(Path(__file__).parent.parent.parent / "liferay_docker.py"),
+        ]
 
         # Provide multiple 'n' responses for the interactive prompts in ldm prune
         # 1. Orphaned containers
@@ -20,9 +26,8 @@ class TestE2EDiagnostics(unittest.TestCase):
         # 6. Samples cache
         # 7. Hosts
         test_input = "n\nn\nn\nn\nn\nn\nn\n"
-
         process = subprocess.run(
-            [str(ldm_executable), "prune", "--seeds", "--samples", "--clean-hosts"],
+            [*ldm_executable, "prune", "--seeds", "--samples", "--clean-hosts"],
             input=test_input,
             capture_output=True,
             text=True,

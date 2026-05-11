@@ -9,8 +9,14 @@ class TestE2EInteractive(unittest.TestCase):
         End-to-End test to ensure that piped input correctly navigates
         LDM's interactive prompts (like project selection).
         """
-        # Resolve the LDM executable path
-        ldm_executable = Path(__file__).parent.parent.parent / "ldm"
+        import sys
+        import tempfile
+
+        # Use the current python interpreter to run the main script
+        ldm_executable = [
+            sys.executable,
+            str(Path(__file__).parent.parent.parent / "liferay_docker.py"),
+        ]
 
         # We run 'ldm run' with no arguments in a temporary directory
         # to force the interactive 'Select Project' menu and 'new project' fallback.
@@ -20,14 +26,14 @@ class TestE2EInteractive(unittest.TestCase):
         # 3. 'q' (quit / abort immediately after name to avoid spinning up docker)
 
         test_input = "n\npiped-test-project\nq\n"
-
-        process = subprocess.run(
-            [str(ldm_executable), "run"],
-            input=test_input,
-            capture_output=True,
-            text=True,
-            cwd="/tmp",
-        )
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            process = subprocess.run(
+                [*ldm_executable, "run"],
+                input=test_input,
+                capture_output=True,
+                text=True,
+                cwd=str(tmp_dir),
+            )
 
         # Verify the prompt for project name was actually reached and handled
         self.assertIn("Enter a new project name to initialize", process.stdout)
