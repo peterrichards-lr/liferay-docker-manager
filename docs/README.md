@@ -18,6 +18,22 @@ A professional command-line orchestrator for quickly standing up Liferay Portal 
 
 ---
 
+## Environment Configuration
+
+### `LDM_COMMON_DIR`
+
+By default, LDM uses a `common/` directory located in the project's parent, the current working directory, or `~/.ldm/common/` to store shared configurations, portal extensions, and licenses.
+
+If you need to use a specific, shared configuration across multiple independent project directories or CI pipelines, you can override this by setting the `LDM_COMMON_DIR` environment variable:
+
+```bash
+# Example: Point LDM to a shared organization config folder
+export LDM_COMMON_DIR="/path/to/shared/organization/common"
+ldm run my-project
+```
+
+---
+
 ## 🛡️ Compatibility (Verified Environments)
 
 The badges below represent our verified support for various Docker providers. Environments marked as **Hardened** have received specific logic refinements to handle complex file-sharing and permission scenarios.
