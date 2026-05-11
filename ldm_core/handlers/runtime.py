@@ -102,9 +102,7 @@ class RuntimeHandler(BaseHandler):
 
         is_samples = getattr(self.args, "samples", False)
         if is_samples:
-            from ldm_core.handlers.config import ConfigHandler
-
-            config_handler = ConfigHandler(self.args)
+            config_handler = self.config
             if host_name == "localhost":
                 if self.non_interactive:
                     UI.die("--samples requires a custom hostname.")
@@ -181,9 +179,7 @@ class RuntimeHandler(BaseHandler):
         self.verify_runtime_environment(paths)
 
         if is_samples:
-            from ldm_core.handlers.config import ConfigHandler
-
-            ConfigHandler(self.args).sync_samples(paths)
+            self.config.sync_samples(paths)
 
         no_captcha = (
             getattr(self.args, "no_captcha", False)
@@ -447,9 +443,7 @@ class RuntimeHandler(BaseHandler):
                     duration_str = UI.format_duration(time.time() - ssl_start)
                     UI.debug(f"SSL certificate generation took: {duration_str}")
 
-        from ldm_core.handlers.config import ConfigHandler
-
-        config_handler = ConfigHandler(self.args)
+        config_handler = self.config
         config_handler.sync_common_assets(
             paths, version=project_meta.get("tag"), project_meta=project_meta
         )

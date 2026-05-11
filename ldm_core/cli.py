@@ -691,10 +691,10 @@ def main():
         "deploy": lambda: manager.cmd_deploy(
             getattr(args, "project", None), getattr(args, "service", None)
         ),
-        "env": lambda: manager.cmd_env(getattr(args, "project", None)),
+        "env": lambda: manager.config.cmd_env(getattr(args, "project", None)),
         "snapshot": lambda: manager.cmd_snapshot(getattr(args, "project", None)),
         "restore": lambda: manager.cmd_restore(getattr(args, "project", None)),
-        "init-common": manager.cmd_init_common,
+        "init-common": manager.config.cmd_init_common,
         "reset": lambda: manager.cmd_reset(
             getattr(args, "project", None), getattr(args, "target", "state")
         ),
@@ -723,12 +723,14 @@ def main():
         ),
         "list": manager.cmd_list,
         "ls": manager.cmd_list,
-        "config": lambda: manager.cmd_config(args.key, args.value),
+        "config": lambda: manager.config.cmd_config(args.key, args.value),
         "shell": lambda: manager.cmd_shell(
             getattr(args, "project", None), getattr(args, "service", None)
         ),
         "gogo": lambda: manager.cmd_gogo(getattr(args, "project", None)),
-        "log-level": lambda: manager.cmd_log_level(getattr(args, "project", None)),
+        "log-level": lambda: manager.config.cmd_log_level(
+            getattr(args, "project", None)
+        ),
         "browser": lambda: manager.cmd_browser(getattr(args, "project", None)),
         "open": lambda: manager.cmd_browser(getattr(args, "project", None)),
         "scale": lambda: manager.cmd_scale(

@@ -13,6 +13,9 @@ class MockRuntime(RuntimeHandler, BaseHandler):
         self.non_interactive = True
         self.manager = MagicMock()
         self.manager.assets = MagicMock()
+        from ldm_core.handlers.config import ConfigService
+
+        self.config = ConfigService(self.manager)
 
     def detect_project_path(self, *args, **kwargs):
         return Path("/tmp/runtime-project")
@@ -181,13 +184,13 @@ class TestRuntime(unittest.TestCase):
             patch.object(self.runtime, "verify_runtime_environment"),
             patch.object(self.runtime, "run_command"),
             patch.object(self.runtime, "sync_stack") as mock_sync,
-            patch("ldm_core.handlers.config.ConfigHandler.sync_samples"),
+            patch("ldm_core.handlers.config.ConfigService.sync_samples"),
             patch(
-                "ldm_core.handlers.config.ConfigHandler.get_samples_tag",
+                "ldm_core.handlers.config.ConfigService.get_samples_tag",
                 return_value="2025.q3.10",
             ),
             patch(
-                "ldm_core.handlers.config.ConfigHandler.get_samples_db_type",
+                "ldm_core.handlers.config.ConfigService.get_samples_db_type",
                 return_value="postgresql",
             ),
             patch("ldm_core.handlers.snapshot.SnapshotHandler.cmd_restore"),

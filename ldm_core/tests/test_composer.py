@@ -5,14 +5,16 @@ from unittest.mock import MagicMock, patch
 
 from ldm_core.handlers.base import BaseHandler
 from ldm_core.handlers.composer import ComposerHandler
-from ldm_core.handlers.config import ConfigHandler
 
 
-class MockComposer(ComposerHandler, ConfigHandler, BaseHandler):
+class MockComposer(ComposerHandler, BaseHandler):
     def __init__(self):
         self.args = MagicMock()
         self.verbose = False
         self.non_interactive = True
+        from ldm_core.handlers.config import ConfigService
+
+        self.config = ConfigService(self)
 
     def get_resolved_ip(self, host_name):
         return "127.0.0.1"
@@ -87,12 +89,14 @@ class TestComposer(unittest.TestCase):
 
         with (
             patch("ldm_core.utils.safe_write_text"),
-            patch.object(self.composer, "update_portal_ext"),
+            patch.object(self.composer.config, "update_portal_ext"),
         ):
             self.composer.write_docker_compose(self.paths, meta)
 
             # Verify update_portal_ext was called for PostgreSQL
-            self.assertTrue(cast(MagicMock, self.composer.update_portal_ext).called)
+            self.assertTrue(
+                cast(MagicMock, self.composer.config.update_portal_ext).called
+            )
 
             # Verify YAML generation
             compose_call_data = mock_yaml.call_args[0][0]
@@ -103,7 +107,7 @@ class TestComposer(unittest.TestCase):
         meta = {"jvm_args": "-Xmx4g"}
         with (
             patch("ldm_core.utils.safe_write_text"),
-            patch.object(self.composer, "update_portal_ext"),
+            patch.object(self.composer.config, "update_portal_ext"),
         ):
             # Capture the environment passed to the service
             with patch("ldm_core.handlers.composer.dict_to_yaml") as mock_yaml:
@@ -123,7 +127,7 @@ class TestComposer(unittest.TestCase):
 
         with (
             patch("ldm_core.utils.safe_write_text"),
-            patch.object(self.composer, "update_portal_ext"),
+            patch.object(self.composer.config, "update_portal_ext"),
         ):
             # Test MySQL 8.0 logic (default authentication plugin)
             meta_80 = {

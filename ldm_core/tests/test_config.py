@@ -3,14 +3,17 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from ldm_core.handlers.base import BaseHandler
-from ldm_core.handlers.config import ConfigHandler
+from ldm_core.handlers.config import ConfigService
 from ldm_core.handlers.diagnostics import DiagnosticsHandler
 
 
-class MockConfigManager(ConfigHandler, DiagnosticsHandler, BaseHandler):
+class MockConfigManager(DiagnosticsHandler, BaseHandler):
     def __init__(self):
         self.args = MagicMock()
         self.verbose = False
+        self.non_interactive = True
+        self.config = ConfigService(self)
+        self.assets = MagicMock()
 
     def parse_version(self, tag):
         return (7, 4, 13)
@@ -56,7 +59,7 @@ class TestConfigManagement(unittest.TestCase):
             patch("ldm_core.utils.safe_write_text") as mock_write,
         ):
             with patch.object(Path, "exists", return_value=False):
-                self.manager.cmd_init_common()
+                self.manager.config.cmd_init_common()
 
                 # Verify it attempted to write at least one baseline file
                 self.assertTrue(mock_write.called)
@@ -70,7 +73,9 @@ class TestConfigManagement(unittest.TestCase):
 
         with patch.object(Path, "exists", return_value=False):
             with patch.object(self.manager, "update_portal_ext") as mock_update:
-                self.manager.sync_common_assets(self.paths, host_updates=host_updates)
+                self.manager.config.sync_common_assets(
+                    self.paths, host_updates=host_updates
+                )
 
                 # Even if common/ doesn't exist, host_updates should be applied
                 mock_update.assert_called_with(target_ext, host_updates)
@@ -92,7 +97,7 @@ class TestConfigManagement(unittest.TestCase):
             patch.object(Path, "exists", autospec=True, side_effect=exists_side_effect),
             patch.object(self.manager, "get_common_dir", return_value=common_dir),
         ):
-            self.manager.sync_common_assets(self.paths)
+            self.manager.config.sync_common_assets(self.paths)
 
             # Verify that mkdir was called for the parent of target portal-ext
             self.assertTrue(mock_mkdir.called)
@@ -127,7 +132,7 @@ class TestConfigManagement(unittest.TestCase):
                     with patch.object(Path, "glob", return_value=[es_config_path]):
                         with patch("ldm_core.utils.safe_write_text") as mock_write:
                             # Trigger sync
-                            self.manager.sync_common_assets(self.paths)
+                            self.manager.config.sync_common_assets(self.paths)
 
                             # If substitution was applied, it should be in one of the write_text calls
                             found_substitution = False
@@ -154,11 +159,11 @@ class TestConfigManagement(unittest.TestCase):
         ):
             # 1. Test Get
             with patch("builtins.print") as mock_print:
-                self.manager.cmd_config("verbose")
+                self.manager.config.cmd_config("verbose")
                 mock_print.assert_called_with("true")
 
             # 2. Test Set
-            self.manager.cmd_config("verbose", "false")
+            self.manager.config.cmd_config("verbose", "false")
             self.assertTrue(mock_write.called)
             write_call = mock_write.call_args[0][0]
             self.assertIn('"verbose": "false"', write_call)

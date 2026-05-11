@@ -8,19 +8,15 @@ from datetime import datetime
 from pathlib import Path
 
 from ldm_core.constants import PROJECT_META_FILE, SCRIPT_DIR
-from ldm_core.handlers.base import BaseHandler
 from ldm_core.ui import UI
 from ldm_core.utils import get_actual_home, run_command, safe_copy, safe_write_text
 
 
-class ConfigHandler(BaseHandler):
-    """Mixin for configuration management (env, logging, browser)."""
+class ConfigService:
+    """Service for configuration management (env, logging, browser)."""
 
-    def __init__(self, args=None):
-        super().__init__(args)
-        self.args = args
-        self.verbose = getattr(args, "verbose", False)
-        self.non_interactive = getattr(args, "non_interactive", False)
+    def __init__(self, manager=None):
+        self.manager = manager
 
     def _get_properties(self, content):
         """Robustly extracts properties from a string, handling multi-line values."""
@@ -220,7 +216,7 @@ class ConfigHandler(BaseHandler):
             return samples_root
 
         # 4. Prompt & Download
-        if not self.non_interactive:
+        if not self.manager.non_interactive:
             UI.heading("On-Demand Sample Pack")
             UI.info("Sample assets are not bundled with the standalone binary.")
             if UI.confirm(f"Download sample pack for v{VERSION} (~50MB)?", "Y"):
@@ -237,7 +233,7 @@ class ConfigHandler(BaseHandler):
 
     def get_samples_tag(self):
         """Extracts the reference Liferay tag from the samples metadata."""
-        root = self.get_samples_root()
+        root = self.manager.get_samples_root()
         meta_file = root / "metadata.json"
         if meta_file.exists():
             try:
@@ -249,7 +245,7 @@ class ConfigHandler(BaseHandler):
 
     def get_samples_db_type(self):
         """Extracts the database type from the samples metadata."""
-        root = self.get_samples_root()
+        root = self.manager.get_samples_root()
         meta_file = root / "metadata.json"
         if meta_file.exists():
             try:
@@ -261,7 +257,7 @@ class ConfigHandler(BaseHandler):
 
     def sync_samples(self, paths):
         """Sync global samples into the current project path with on-demand download support."""
-        samples_root = self.get_samples_root()
+        samples_root = self.manager.get_samples_root()
         UI.info("Syncing project samples...")
         shutil.copytree(
             samples_root, paths["root"], dirs_exist_ok=True, copy_function=safe_copy
@@ -270,7 +266,7 @@ class ConfigHandler(BaseHandler):
     def cmd_init_common(self):
         """Recreates the baseline common/ folder with standard development assets."""
         # Ensure we create this in the CURRENT directory, not the script directory
-        common_dir = self.get_common_dir()
+        common_dir = self.manager.get_common_dir()
         with contextlib.suppress(PermissionError, OSError):
             common_dir.mkdir(parents=True, exist_ok=True)
 
@@ -304,7 +300,7 @@ class ConfigHandler(BaseHandler):
             UI.success(f"Baseline common assets initialized in: {common_dir}")
         except Exception as e:
             UI.error(f"Failed to initialize common assets: {e}")
-            if self.verbose:
+            if self.manager.verbose:
                 import traceback
 
                 traceback.print_exc()
@@ -314,7 +310,7 @@ class ConfigHandler(BaseHandler):
     ):
         # Safety: If passed a direct path (common error in refactored handlers), initialize paths dict
         if not isinstance(paths, dict):
-            paths = self.setup_paths(paths)
+            paths = self.manager.setup_paths(paths)
 
         # Handle Captcha Configuration
         if project_meta:
@@ -364,7 +360,7 @@ class ConfigHandler(BaseHandler):
                         k: v for k, v in common_props.items() if k not in project_props
                     }
                     if to_add:
-                        self.update_portal_ext(target_ext, to_add)
+                        self.manager.update_portal_ext(target_ext, to_add)
 
             patterns = [
                 ("*.xml", paths["deploy"]),
@@ -486,15 +482,15 @@ class ConfigHandler(BaseHandler):
             )
 
         if host_updates:
-            self.update_portal_ext(target_ext, host_updates)
+            self.manager.update_portal_ext(target_ext, host_updates)
 
     def cmd_log_level(self, project_id=None):
         """Manage Liferay internal logging levels via Gogo shell and logging.json."""
-        root = self.detect_project_path(project_id)
+        root = self.manager.detect_project_path(project_id)
         if not root:
             return
 
-        meta = self.read_meta(root)
+        meta = self.manager.read_meta(root)
         port = meta.get("gogo_port")
         if not port or port == "None":
             UI.die(
@@ -503,11 +499,11 @@ class ConfigHandler(BaseHandler):
             )
 
         # 1. Determine action from args
-        bundle = getattr(self.args, "bundle", None)
-        category = getattr(self.args, "category", None)
-        level = getattr(self.args, "level", None)
-        remove = getattr(self.args, "remove", False)
-        list_levels = getattr(self.args, "list", False)
+        bundle = getattr(self.manager.args, "bundle", None)
+        category = getattr(self.manager.args, "category", None)
+        level = getattr(self.manager.args, "level", None)
+        remove = getattr(self.manager.args, "remove", False)
+        list_levels = getattr(self.manager.args, "list", False)
 
         if list_levels:
             logging_json = root / "logging.json"
@@ -610,7 +606,7 @@ class ConfigHandler(BaseHandler):
 
         if key and value:
             # Set specific key
-            if getattr(self.args, "remove", False) or value.lower() == "unset":
+            if getattr(self.manager.args, "remove", False) or value.lower() == "unset":
                 config.pop(key, None)
                 UI.success(f"Configuration key '{key}' removed.")
             else:
@@ -622,7 +618,7 @@ class ConfigHandler(BaseHandler):
             safe_write_text(config_path, json.dumps(config, indent=4))
 
     def cmd_edit(self, project_id=None, target="meta"):
-        root_path = self.detect_project_path(project_id)
+        root_path = self.manager.detect_project_path(project_id)
         if not root_path:
             return
 
@@ -650,21 +646,21 @@ class ConfigHandler(BaseHandler):
 
     def cmd_env(self, project_id=None):
         pid = project_id
-        vars_to_apply = getattr(self.args, "vars", [])
+        vars_to_apply = getattr(self.manager.args, "vars", [])
         if vars_to_apply and "=" not in vars_to_apply[0] and not pid:
-            test_path = self.detect_project_path(vars_to_apply[0])
+            test_path = self.manager.detect_project_path(vars_to_apply[0])
             if test_path:
                 pid = vars_to_apply.pop(0)
 
-        root_path = self.detect_project_path(pid)
+        root_path = self.manager.detect_project_path(pid)
         if not root_path:
             return
-        paths = self.setup_paths(root_path)
-        project_meta = self.read_meta(paths["root"])
+        paths = self.manager.setup_paths(root_path)
+        project_meta = self.manager.read_meta(paths["root"])
         custom_env = json.loads(project_meta.get("custom_env", "{}"))
 
-        if getattr(self.args, "import_env", False):
-            for v in self.get_host_passthrough_env(paths):
+        if getattr(self.manager.args, "import_env", False):
+            for v in self.manager.get_host_passthrough_env(paths):
                 if "=" in v:
                     k, val = v.split("=", 1)
                     custom_env[k] = val
@@ -672,19 +668,19 @@ class ConfigHandler(BaseHandler):
 
         if (
             not vars_to_apply
-            and self.non_interactive
-            and not getattr(self.args, "import_env", False)
+            and self.manager.non_interactive
+            and not getattr(self.manager.args, "import_env", False)
         ):
             UI.die(
                 "No environment variables specified. In non-interactive mode, use: ldm env <pid> KEY=VALUE"
             )
 
-        if not vars_to_apply and not self.non_interactive:
+        if not vars_to_apply and not self.manager.non_interactive:
             UI.heading("Environment Variables")
             if custom_env:
                 for k, v in sorted(custom_env.items()):
                     print(f"  {k}={v}")
-            passthroughs = self.get_host_passthrough_env(paths)
+            passthroughs = self.manager.get_host_passthrough_env(paths)
             if passthroughs:
                 UI.info("\nHost Passthrough:")
                 for v in passthroughs:
@@ -693,8 +689,8 @@ class ConfigHandler(BaseHandler):
             key = UI.ask("\nEnter Key (or Enter to apply current shell vars)")
             if not key:
                 project_meta["custom_env"] = json.dumps(custom_env)
-                self.write_meta(paths["root"], project_meta)
-                self.sync_stack(paths, project_meta, no_up=True)
+                self.manager.write_meta(paths["root"], project_meta)
+                self.manager.sync_stack(paths, project_meta, no_up=True)
                 UI.success("Environment variables saved.")
                 return
 
@@ -706,22 +702,22 @@ class ConfigHandler(BaseHandler):
                 custom_env[key] = value
 
             project_meta["custom_env"] = json.dumps(custom_env)
-            self.write_meta(paths["root"], project_meta)
-            self.sync_stack(paths, project_meta, no_up=True)
+            self.manager.write_meta(paths["root"], project_meta)
+            self.manager.sync_stack(paths, project_meta, no_up=True)
             UI.success(f"Variable '{key}' updated.")
         else:
             # Batch update from CLI
             for pair in vars_to_apply:
                 if "=" in pair:
                     k, v = pair.split("=", 1)
-                    if getattr(self.args, "remove", False):
+                    if getattr(self.manager.args, "remove", False):
                         custom_env.pop(k, None)
                     else:
                         custom_env[k] = v
-                elif getattr(self.args, "remove", False):
+                elif getattr(self.manager.args, "remove", False):
                     custom_env.pop(pair, None)
 
             project_meta["custom_env"] = json.dumps(custom_env)
-            self.write_meta(paths["root"], project_meta)
-            self.sync_stack(paths, project_meta, no_up=True)
+            self.manager.write_meta(paths["root"], project_meta)
+            self.manager.sync_stack(paths, project_meta, no_up=True)
             UI.success("Environment updated.")

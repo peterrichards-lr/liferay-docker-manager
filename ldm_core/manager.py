@@ -5,7 +5,7 @@ from ldm_core.handlers.assets import AssetService
 from ldm_core.handlers.base import BaseHandler
 from ldm_core.handlers.cloud import CloudHandler
 from ldm_core.handlers.composer import ComposerHandler
-from ldm_core.handlers.config import ConfigHandler
+from ldm_core.handlers.config import ConfigService
 from ldm_core.handlers.dev import DevHandler
 from ldm_core.handlers.diagnostics import DiagnosticsHandler
 from ldm_core.handlers.infra import InfraHandler
@@ -21,7 +21,6 @@ class LiferayManager(
     RuntimeHandler,
     WorkspaceHandler,
     SnapshotHandler,
-    ConfigHandler,
     DiagnosticsHandler,
     CloudHandler,
     InfraHandler,
@@ -39,6 +38,7 @@ class LiferayManager(
         # Services via Composition
         self.license = LicenseService(self)
         self.assets = AssetService(self)
+        self.config = ConfigService(self)
 
         # Automatic CI detection
         if os.getenv("CI") or os.getenv("GITHUB_ACTIONS") or os.getenv("GITLAB_CI"):

@@ -222,7 +222,7 @@ class ComposerHandler(BaseHandler):
                 "&permitMysqlScheme=true"
             )
             if not has_jdbc_env:
-                self.update_portal_ext(
+                self.config.update_portal_ext(  # type: ignore[attr-defined]
                     paths,
                     {
                         "jdbc.default.enabled": "true",
@@ -245,7 +245,7 @@ class ComposerHandler(BaseHandler):
                 or "org.hibernate.dialect.PostgreSQL10Dialect"
             )
             if not has_jdbc_env:
-                self.update_portal_ext(
+                self.config.update_portal_ext(  # type: ignore[attr-defined]
                     paths,
                     {
                         "jdbc.default.enabled": "true",
@@ -263,7 +263,7 @@ class ComposerHandler(BaseHandler):
             bind_ip = self.get_resolved_ip(host_name) or "127.0.0.1"
             port_list.append(f"{bind_ip}:{port}:8080")
         elif ssl_enabled:
-            self.update_portal_ext(
+            self.config.update_portal_ext(  # type: ignore[attr-defined]
                 paths,
                 {
                     "web.server.host": host_name,
