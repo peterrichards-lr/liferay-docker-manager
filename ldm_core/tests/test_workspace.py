@@ -11,30 +11,26 @@ from ldm_core.handlers.base import BaseHandler
 from ldm_core.handlers.composer import ComposerHandler
 from ldm_core.handlers.diagnostics import DiagnosticsService
 from ldm_core.handlers.runtime import RuntimeHandler
-from ldm_core.handlers.workspace import WorkspaceHandler
+from ldm_core.handlers.workspace import WorkspaceService
 
 
 class MockWorkspaceManager(
     ComposerHandler,
     RuntimeHandler,
-    WorkspaceHandler,
     BaseHandler,
 ):
     def __init__(self):
         self.verbose = False
         self.non_interactive = True
         self.args = MagicMock()
-        # Default host_name to localhost to avoid gethostbyname calls
         self.args.host_name = "localhost"
         self.args.ssl = False
-        self.manager = MagicMock()
-        self.manager.args = self.args
-        self.assets = AssetService(self.manager)
-        self.manager.assets = self.assets
-        self.manager.diagnostics = DiagnosticsService(self.manager)
-        self.manager.diagnostics.validate_lcp_json = MagicMock(
-            return_value=("Valid", True, [])
-        )
+
+        self.assets = AssetService(self)
+        self.diagnostics = DiagnosticsService(self)
+        self.diagnostics.validate_lcp_json = MagicMock(return_value=("Valid", True, []))
+        self.workspace = WorkspaceService(self)
+        self.snapshot = MagicMock()
 
     def _check_java_version(self, *args, **kwargs):
         return True
@@ -90,7 +86,7 @@ class TestWorkspaceMetadata(unittest.TestCase):
 
     def test_parse_lcp_json_basic(self):
         content = json.dumps({"id": "my-service", "kind": "deployment", "memory": 1024})
-        info = self.handler._parse_lcp_json(content)
+        info = self.handler.workspace._parse_lcp_json(content)
         self.assertEqual(info["id"], "my-service")
         self.assertEqual(info["kind"], "Deployment")
         self.assertEqual(info["memory"], 1024)
@@ -98,20 +94,20 @@ class TestWorkspaceMetadata(unittest.TestCase):
 
     def test_parse_lcp_json_with_deploy_false(self):
         content = json.dumps({"id": "test", "deploy": False})
-        info = self.handler._parse_lcp_json(content)
+        info = self.handler.workspace._parse_lcp_json(content)
         self.assertFalse(info["deploy"])
 
     def test_parse_lcp_json_target_port(self):
         content = json.dumps(
             {"id": "microservice", "loadBalancer": {"targetPort": 3001}}
         )
-        info = self.handler._parse_lcp_json(content)
+        info = self.handler.workspace._parse_lcp_json(content)
         self.assertEqual(info["loadBalancer"]["targetPort"], 3001)
         self.assertTrue(info["has_load_balancer"])
 
     def test_parse_lcp_json_external_port(self):
         content = json.dumps({"id": "web", "ports": [{"port": 80, "external": True}]})
-        info = self.handler._parse_lcp_json(content)
+        info = self.handler.workspace._parse_lcp_json(content)
         self.assertTrue(info["has_load_balancer"])
 
     def test_merge_info_logic(self):
@@ -183,7 +179,7 @@ class TestWorkspaceImport(unittest.TestCase):
                 self.handler, "detect_project_path", return_value=project_dir
             ):
                 with patch("ldm_core.handlers.workspace.UI"):
-                    self.handler.cmd_import(str(source_dir))
+                    self.handler.workspace.cmd_import(str(source_dir))
 
                     # CRITICAL CHECK: self.args.project must be the short name, NOT the absolute path
                     # This verifies the fix for the user's reported issue
@@ -219,7 +215,7 @@ class TestWorkspaceImport(unittest.TestCase):
                     # Simulate user selecting 'C'
                     mock_ui.ask.return_value = "C"
 
-                    self.handler.cmd_import(str(source_dir))
+                    self.handler.workspace.cmd_import(str(source_dir))
 
                     # Verify safe_rmtree was called (or just check if directory was recreated)
                     # If it was cleaned, the 'old-file.txt' should be gone.
@@ -270,9 +266,11 @@ class TestWorkspaceImport(unittest.TestCase):
                     return_value={
                         "root": project_dir,
                         "ce_dir": cx_dest_dir,
+                        "cx": cx_dest_dir,
                         "modules": project_dir / "osgi" / "modules",
                         "configs": project_dir / "osgi" / "configs",
                         "files": project_dir / "files",
+                        "deploy": project_dir / "deploy",
                     },
                 ),
                 patch("ldm_core.handlers.workspace.UI") as mock_ui,
@@ -280,7 +278,7 @@ class TestWorkspaceImport(unittest.TestCase):
                 # Simulate user selecting 'N' (Skip Existing)
                 mock_ui.ask.return_value = "N"
 
-                self.handler.cmd_import(str(source_dir))
+                self.handler.workspace.cmd_import(str(source_dir))
 
                 # Verify the original content was PRESERVED
                 self.assertEqual(existing_cx.read_text(), "ORIGINAL_CONTENT")

@@ -456,9 +456,9 @@ class ComposerHandler(BaseHandler):
                 paths["root"], paths["cx"], paths["ce_dir"]
             )
         else:
-            from ldm_core.handlers.workspace import WorkspaceHandler
+            from ldm_core.handlers.workspace import WorkspaceService
 
-            cx_handler = WorkspaceHandler(self.args)
+            cx_handler = WorkspaceService(self)
             extensions = cx_handler.scan_client_extensions(
                 paths["root"], paths["cx"], paths["ce_dir"]
             )

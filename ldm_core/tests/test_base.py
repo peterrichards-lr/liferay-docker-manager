@@ -5,14 +5,15 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from ldm_core.handlers.base import BaseHandler
-from ldm_core.handlers.workspace import WorkspaceHandler
+from ldm_core.handlers.workspace import WorkspaceService
 
 
-class MockBaseManager(WorkspaceHandler, BaseHandler):
+class MockBaseManager(BaseHandler):
     def __init__(self):
         self.args = MagicMock()
         self.verbose = False
         self.non_interactive = True
+        self.workspace = WorkspaceService(self)
 
 
 class TestBaseDiscovery(unittest.TestCase):
@@ -162,7 +163,7 @@ class TestBaseHardening(unittest.TestCase):
 
     @patch("ldm_core.handlers.base.BaseHandler.get_resolved_ip")
     @patch("ldm_core.handlers.base.BaseHandler.read_meta")
-    @patch("ldm_core.handlers.workspace.WorkspaceHandler.scan_client_extensions")
+    @patch("ldm_core.handlers.workspace.WorkspaceService.scan_client_extensions")
     @patch("ldm_core.handlers.base.BaseHandler.detect_project_path")
     def test_validate_project_dns_filtering(
         self, mock_detect, mock_scan, mock_meta, mock_resolve

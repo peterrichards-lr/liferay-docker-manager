@@ -16,7 +16,6 @@ if TYPE_CHECKING:
     pass
 
 from ldm_core.constants import SCRIPT_DIR
-from ldm_core.handlers.base import BaseHandler
 from ldm_core.ui import UI
 from ldm_core.utils import (
     is_env_var_blacklisted,
@@ -27,22 +26,19 @@ from ldm_core.utils import (
 )
 
 
-class WorkspaceHandler(BaseHandler):
-    """Mixin for workspace management (import, monitor, scanning)."""
+class WorkspaceService:
+    """Service for workspace management (import, monitor, scanning)."""
 
-    def __init__(self, args=None):
-        super().__init__(args)
-        self.args = args
-        self.verbose = getattr(args, "verbose", False)
-        self.non_interactive = getattr(args, "non_interactive", False)
+    def __init__(self, manager=None):
+        self.manager = manager
 
     def cmd_init(self, project_id=None):
         """Scaffolds a project without starting it."""
         # Set the no_up flag on args to ensure it doesn't try to start
-        self.args.no_up = True
+        self.manager.args.no_up = True
 
         UI.info(f"Initializing project shell: {project_id or 'interactively'}")
-        self.cmd_run(project_id)
+        self.manager.cmd_run(project_id)
         UI.success(
             "Initialization complete. You can now run 'ldm doctor' or 'ldm run'."
         )
@@ -275,7 +271,7 @@ class WorkspaceHandler(BaseHandler):
 
                         if is_service:
                             if target_folder.exists():
-                                self.safe_rmtree(target_folder)
+                                self.manager.safe_rmtree(target_folder)
                             target_folder.mkdir(parents=True)
                             from ldm_core.utils import safe_extract
 
@@ -546,7 +542,7 @@ class WorkspaceHandler(BaseHandler):
         try:
             if not source.exists():
                 UI.die(f"Source path not found: {source}")
-            if not self._check_java_version("21"):
+            if not self.manager._check_java_version("21"):
                 UI.die("Incorrect system Java version. LDM import requires JDK 21.")
 
             if source.is_file():
@@ -586,21 +582,21 @@ class WorkspaceHandler(BaseHandler):
             is_cloud = (source / "liferay" / "LCP.json").exists()
 
             # Project Naming Logic (Standardized)
-            project_name = getattr(self.args, "project", None) or getattr(
-                self.args, "project_flag", None
+            project_name = getattr(self.manager.args, "project", None) or getattr(
+                self.manager.args, "project_flag", None
             )
             if not project_name:
                 project_name = source.name
-                if self.non_interactive:
+                if self.manager.non_interactive:
                     UI.info(f"Using default project name: {project_name}")
                 else:
                     project_name = UI.ask("Project Name", project_name)
 
-            project_path = self.detect_project_path(project_name, for_init=True)
+            project_path = self.manager.detect_project_path(project_name, for_init=True)
             overwrite = True
 
             if project_path.exists():
-                if self.non_interactive:
+                if self.manager.non_interactive:
                     UI.info(
                         f"Project '{project_name}' exists. Overwriting in non-interactive mode."
                     )
@@ -611,7 +607,7 @@ class WorkspaceHandler(BaseHandler):
                     ).upper()
                     if ans == "C":
                         UI.info(f"Cleaning existing project directory: {project_path}")
-                        self.safe_rmtree(project_path)
+                        self.manager.safe_rmtree(project_path)
                     elif ans == "N":
                         overwrite = False
                         UI.info("Proceeding in 'skip existing' mode.")
@@ -620,16 +616,16 @@ class WorkspaceHandler(BaseHandler):
                     else:
                         UI.die("Initialization aborted.")
 
-            paths = self.setup_paths(project_path)
+            paths = self.manager.setup_paths(project_path)
             for p in [
                 v for v in paths.values() if isinstance(v, Path) and not v.suffix
             ]:
                 p.mkdir(parents=True, exist_ok=True)
 
             # Fail Fast: Verify volume mounting before performing any sync/import work
-            self.verify_runtime_environment(paths)
+            self.manager.verify_runtime_environment(paths)
 
-            if getattr(self.args, "build", False):
+            if getattr(self.manager.args, "build", False):
                 UI.heading(f"Building Workspace: {workspace_root.name}")
                 gradlew = workspace_root / (
                     "gradlew" if platform.system() != "Windows" else "gradlew.bat"
@@ -641,7 +637,7 @@ class WorkspaceHandler(BaseHandler):
                 ):
                     gradlew = workspace_root.parent / gradlew.name
                 if gradlew.exists():
-                    if not self._check_gradle_java_version(gradlew, "21"):
+                    if not self.manager._check_gradle_java_version(gradlew, "21"):
                         UI.die("Gradle requires JDK 21.")
                     if platform.system() != "Windows":
                         # Bandit: B103 (chmod 0o755) is safe for gradlew.
@@ -658,7 +654,7 @@ class WorkspaceHandler(BaseHandler):
                         )
                     except Exception as e:
                         UI.error(f"Build failed: {e}")
-                        if self.non_interactive:
+                        if self.manager.non_interactive:
                             UI.die("Build failed in non-interactive mode. Aborting.")
                         if not UI.confirm("Continue anyway? (y/n/q)", "N"):
                             sys.exit(1)
@@ -666,47 +662,49 @@ class WorkspaceHandler(BaseHandler):
                     UI.warning("gradlew not found. Skipping build.")
 
             # 5. Finalize Meta (Match cmd_run rules)
-            host_name = getattr(self.args, "host_name", None)
+            host_name = getattr(self.manager.args, "host_name", None)
             if not host_name:
-                if self.non_interactive:
+                if self.manager.non_interactive:
                     host_name = "localhost"
                 else:
                     host_name = UI.ask("Enter project Virtual Hostname", "localhost")
 
             # SSL Rule: Default to True only if host_name is NOT localhost
-            ssl_arg = getattr(self.args, "ssl", None)
+            ssl_arg = getattr(self.manager.args, "ssl", None)
             use_ssl = ssl_arg if ssl_arg is not None else host_name != "localhost"
 
             if (
                 use_ssl
                 and host_name != "localhost"
-                and not self.check_hostname(host_name)
+                and not self.manager.check_hostname(host_name)
             ):
                 sys.exit(1)
 
             custom_env = {
                 k: v
-                for env_pair in (getattr(self.args, "env", None) or [])
+                for env_pair in (getattr(self.manager.args, "env", None) or [])
                 if "=" in env_pair
                 for k, v in [env_pair.split("=", 1)]
             }
             if use_ssl:
-                self.check_mkcert()
+                self.manager.diagnostics.check_mkcert()
 
             project_meta = {
                 "project_name": project_name,
                 "container_name": project_name.replace(".", "-"),
-                "port": str(getattr(self.args, "port", None) or 8080),
+                "port": str(getattr(self.manager.args, "port", None) or 8080),
                 "ssl": str(use_ssl).lower(),
                 "ssl_port": "443",
                 "host_name": host_name,
                 "last_run": datetime.now().isoformat(),
                 "mount_logs": str(
-                    getattr(self.args, "mount_logs", None) or False
+                    getattr(self.manager.args, "mount_logs", None) or False
                 ).lower(),
-                "gogo_port": str(getattr(self.args, "gogo_port", None) or "None"),
+                "gogo_port": str(
+                    getattr(self.manager.args, "gogo_port", None) or "None"
+                ),
                 "custom_env": json.dumps(custom_env),
-                "db_type": getattr(self.args, "db", None),
+                "db_type": getattr(self.manager.args, "db", None),
                 "workspace_path": str(source) if is_init_from else None,
             }
 
@@ -719,19 +717,19 @@ class WorkspaceHandler(BaseHandler):
                         )
                         # Workspace product always wins
                         project_meta["tag"] = tag
-                        self.args.tag = tag
+                        self.manager.args.tag = tag
                         UI.info(f"Extracted version: {tag}")
 
                         # Seeded Start: Boost performance if tag is known
                         if not project_path.exists() or overwrite:
                             db_type_for_seed = (
-                                getattr(self.args, "db", None) or "hypersonic"
+                                getattr(self.manager.args, "db", None) or "hypersonic"
                             )
                             if self.manager.assets._ensure_seeded(
                                 tag, db_type_for_seed, paths
                             ):
                                 # Refresh meta from seed before merging workspace changes
-                                seed_meta = self.read_meta(project_path)
+                                seed_meta = self.manager.read_meta(project_path)
                                 project_meta.update(seed_meta)
                         break
 
@@ -747,7 +745,9 @@ class WorkspaceHandler(BaseHandler):
                         UI.warning(f"Failed to parse LCP.json: {e}")
 
             config_src = (
-                workspace_root / "configs" / getattr(self.args, "target_env", "local")
+                workspace_root
+                / "configs"
+                / getattr(self.manager.args, "target_env", "local")
             )
             if config_src.exists():
                 pe = config_src / "portal-ext.properties"
@@ -851,24 +851,26 @@ class WorkspaceHandler(BaseHandler):
                     if (item / "LCP.json").exists() and (item / "Dockerfile").exists():
                         dest = paths["root"] / "services" / item.name
                         if dest.exists():
-                            self.safe_rmtree(dest)
+                            self.manager.safe_rmtree(dest)
                         shutil.copytree(item, dest, copy_function=safe_copy)
 
-            backup_dir_path = getattr(self.args, "backup_dir", None)
+            backup_dir_path = getattr(self.manager.args, "backup_dir", None)
             if backup_dir_path:
                 backup_dir = Path(backup_dir_path).resolve()
                 if backup_dir.exists():
-                    self._restore_from_cloud_layout(backup_dir, paths, project_meta)
+                    self.manager.snapshot._restore_from_cloud_layout(
+                        backup_dir, paths, project_meta
+                    )
 
             self._hydrate_from_workspace(workspace_root, paths, overwrite=overwrite)
 
-            self.write_meta(project_path, project_meta)
+            self.manager.write_meta(project_path, project_meta)
             UI.success(f"Project created at: {project_path}")
-            if not getattr(self.args, "no_run", False):
-                self.cmd_run(project_id=project_name, is_restart=True)
+            if not getattr(self.manager.args, "no_run", False):
+                self.manager.cmd_run(project_id=project_name, is_restart=True)
         finally:
             if temp_extract_dir:
-                self.safe_rmtree(temp_extract_dir)
+                self.manager.safe_rmtree(temp_extract_dir)
 
     def cmd_monitor(self, source_path=None):
         try:
@@ -878,15 +880,18 @@ class WorkspaceHandler(BaseHandler):
         except ImportError:
             UI.die("watchdog required: pip install watchdog")
 
-        project_id = getattr(self.args, "project", None) or self.detect_project_path()
+        project_id = (
+            getattr(self.manager.args, "project", None)
+            or self.manager.detect_project_path()
+        )
         if not project_id:
             UI.die(
                 "No project specified and no project found in current directory. "
                 "Use 'ldm monitor <project_name>' or navigate to a project folder."
             )
 
-        paths = self.setup_paths(project_id)
-        project_meta = self.read_meta(paths["root"])
+        paths = self.manager.setup_paths(project_id)
+        project_meta = self.manager.read_meta(paths["root"])
 
         if not source_path:
             source_path = project_meta.get("workspace_path")
@@ -1017,7 +1022,7 @@ class WorkspaceHandler(BaseHandler):
                 new_soft = min(hard, 4096)
                 resource.setrlimit(resource.RLIMIT_NOFILE, (new_soft, hard))
 
-                if self.verbose:
+                if self.manager.verbose:
                     UI.info(f"OS File Limits: Soft={new_soft}, Hard={hard}")
             except Exception:
                 pass
@@ -1047,7 +1052,7 @@ class WorkspaceHandler(BaseHandler):
             workspace_root,
             paths,
             project_meta,
-            float(getattr(self.args, "delay", 2.0)),
+            float(getattr(self.manager.args, "delay", 2.0)),
         )
 
         for target in watch_targets:

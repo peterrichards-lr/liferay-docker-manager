@@ -649,10 +649,10 @@ def main():
     cmds = {
         "run": lambda: manager.cmd_run(getattr(args, "project", None)),
         "up": lambda: manager.cmd_run(getattr(args, "project", None)),
-        "import": lambda: manager.cmd_import(args.source),
-        "init-from": lambda: manager.cmd_init_from(args.source),
-        "monitor": lambda: manager.cmd_monitor(args.source),
-        "init": lambda: manager.cmd_init(getattr(args, "project", None)),
+        "import": lambda: manager.workspace.cmd_import(args.source),
+        "init-from": lambda: manager.workspace.cmd_init_from(args.source),
+        "monitor": lambda: manager.workspace.cmd_monitor(args.source),
+        "init": lambda: manager.workspace.cmd_init(getattr(args, "project", None)),
         "stop": lambda: manager.cmd_stop(
             getattr(args, "project", None),
             getattr(args, "service", None),

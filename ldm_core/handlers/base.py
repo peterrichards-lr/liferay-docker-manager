@@ -1183,10 +1183,9 @@ class BaseHandler:
         check_host(host_name)
 
         if paths["cx"].exists():
-            from ldm_core.handlers.workspace import WorkspaceHandler
+            from ldm_core.handlers.workspace import WorkspaceService
 
-            handler = WorkspaceHandler()
-            handler.args = self.args
+            handler = WorkspaceService(self)
             extensions = handler.scan_client_extensions(
                 paths["root"], paths["cx"], paths["ce_dir"]
             )
