@@ -692,8 +692,10 @@ def main():
             getattr(args, "project", None), getattr(args, "service", None)
         ),
         "env": lambda: manager.config.cmd_env(getattr(args, "project", None)),
-        "snapshot": lambda: manager.cmd_snapshot(getattr(args, "project", None)),
-        "restore": lambda: manager.cmd_restore(getattr(args, "project", None)),
+        "snapshot": lambda: manager.snapshot.cmd_snapshot(
+            getattr(args, "project", None)
+        ),
+        "restore": lambda: manager.snapshot.cmd_restore(getattr(args, "project", None)),
         "init-common": manager.config.cmd_init_common,
         "reset": lambda: manager.cmd_reset(
             getattr(args, "project", None), getattr(args, "target", "state")

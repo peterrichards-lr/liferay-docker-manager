@@ -4,17 +4,19 @@ import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from ldm_core.handlers.snapshot import SnapshotHandler
+from ldm_core.handlers.base import BaseHandler
+from ldm_core.handlers.snapshot import SnapshotService
 
 
-class MockSnapshotManager(SnapshotHandler):
+class MockSnapshotManager(BaseHandler):
     def __init__(self):
         self.args = MagicMock()
         self.verbose = False
         self.non_interactive = True
+        self.snapshot = SnapshotService(self)
 
 
-class TestSnapshotHandler(unittest.TestCase):
+class TestSnapshotService(unittest.TestCase):
     def setUp(self):
         self.manager = MockSnapshotManager()
         self.test_dir = Path(tempfile.mkdtemp())
@@ -27,19 +29,19 @@ class TestSnapshotHandler(unittest.TestCase):
         mock_detect.return_value = self.test_dir
 
         with patch("ldm_core.ui.UI.info") as mock_info:
-            backups = self.manager.cmd_snapshots()
+            backups = self.manager.snapshot.cmd_snapshots()
             self.assertEqual(backups, [])
             mock_info.assert_called_with("No snapshots found.")
 
     @patch("ldm_core.handlers.base.BaseHandler.detect_project_path")
     def test_cmd_snapshot_abort_no_project(self, mock_detect):
         mock_detect.return_value = None
-        self.assertIsNone(self.manager.cmd_snapshot())
+        self.assertIsNone(self.manager.snapshot.cmd_snapshot())
 
     @patch("ldm_core.handlers.base.BaseHandler.detect_project_path")
     def test_cmd_restore_abort_no_project(self, mock_detect):
         mock_detect.return_value = None
-        self.assertIsNone(self.manager.cmd_restore())
+        self.assertIsNone(self.manager.snapshot.cmd_restore())
 
     @patch("ldm_core.handlers.base.BaseHandler.detect_project_path")
     @patch("ldm_core.handlers.base.BaseHandler.read_meta")
@@ -84,7 +86,7 @@ class TestSnapshotHandler(unittest.TestCase):
             patch("ldm_core.handlers.base.BaseHandler.write_meta"),
             patch("ldm_core.utils.calculate_sha256", return_value="dummy-sha"),
         ):
-            self.manager.cmd_snapshot("proj")
+            self.manager.snapshot.cmd_snapshot("proj")
 
         snap_dirs = [d for d in (self.test_dir / "snapshots").iterdir() if d.is_dir()]
         self.assertTrue(len(snap_dirs) >= 1)
@@ -139,7 +141,7 @@ class TestSnapshotHandler(unittest.TestCase):
             patch.object(self.manager, "run_command", return_value="DUMP-CONTENT"),
             patch("builtins.open", MagicMock()),
         ):
-            self.manager.cmd_snapshot("mysql-proj")
+            self.manager.snapshot.cmd_snapshot("mysql-proj")
 
             # Check for snapshot dir (which we can still check because mkdir isn't mocked)
             snap_dirs = [
@@ -151,7 +153,7 @@ class TestSnapshotHandler(unittest.TestCase):
     @patch("ldm_core.handlers.base.BaseHandler.read_meta")
     @patch("ldm_core.handlers.base.BaseHandler.setup_paths")
     @patch("ldm_core.handlers.base.BaseHandler.run_command")
-    @patch.object(SnapshotHandler, "_extract_snapshot_archive")
+    @patch.object(SnapshotService, "_extract_snapshot_archive")
     def test_cmd_restore_latest(
         self, mock_extract, mock_run, mock_paths, mock_meta, mock_detect
     ):
@@ -193,17 +195,17 @@ class TestSnapshotHandler(unittest.TestCase):
                 self.manager, "read_meta", return_value={"container_name": "test-proj"}
             ),
             patch.object(
-                SnapshotHandler, "_restore_from_cloud_layout", return_value=False
+                SnapshotService, "_restore_from_cloud_layout", return_value=False
             ),
             # Mock verify_snapshot_integrity
             patch.object(
-                SnapshotHandler,
+                SnapshotService,
                 "verify_snapshot_integrity",
                 return_value=True,
                 create=True,
             ),
         ):
-            self.manager.cmd_restore("proj")
+            self.manager.snapshot.cmd_restore("proj")
 
         # Verify that the newest snapshot (snap2) was chosen
         mock_extract.assert_called_once()

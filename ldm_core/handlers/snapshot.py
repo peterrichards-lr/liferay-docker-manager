@@ -5,25 +5,21 @@ from datetime import datetime
 from pathlib import Path
 from typing import cast
 
-from ldm_core.handlers.base import BaseHandler
 from ldm_core.ui import UI
 from ldm_core.utils import get_actual_home, get_compose_cmd, run_command
 
 
-class SnapshotHandler(BaseHandler):
-    def __init__(self, args=None):
-        super().__init__(args)
-        self.args = args
-        self.verbose = getattr(args, "verbose", False)
-        self.non_interactive = getattr(args, "non_interactive", False)
+class SnapshotService:
+    def __init__(self, manager=None):
+        self.manager = manager
 
     def cmd_snapshots(self, paths=None):
         """Lists snapshots for a project."""
         if not paths:
-            root = self.detect_project_path()
+            root = self.manager.detect_project_path()
             if not root:
                 return None
-            paths = self.setup_paths(root)
+            paths = self.manager.setup_paths(root)
 
         backups_dir = paths["backups"]
         if not backups_dir.exists():
@@ -42,11 +38,11 @@ class SnapshotHandler(BaseHandler):
 
         # Ensure paths is a dictionary for subscripting
         if not isinstance(paths, dict):
-            paths = self.setup_paths(paths)
+            paths = self.manager.setup_paths(paths)
 
         UI.heading(f"Snapshots for {paths['root'].name}")
         for i, b in enumerate(backups):
-            meta = self.read_meta(b / "meta")
+            meta = self.manager.read_meta(b / "meta")
             name = meta.get("name", "Untitled")
             timestamp = b.name
             size = self._get_dir_size(b)
@@ -58,18 +54,18 @@ class SnapshotHandler(BaseHandler):
 
     def cmd_snapshot(self, project_id=None):
         """Creates a snapshot of the project state."""
-        root = self.detect_project_path(project_id)
+        root = self.manager.detect_project_path(project_id)
         if not root:
             return
-        paths = self.setup_paths(root)
-        project_meta = self.read_meta(root)
+        paths = self.manager.setup_paths(root)
+        project_meta = self.manager.read_meta(root)
 
         # Reclaim permissions on potential root-owned files before starting
-        self.verify_runtime_environment(paths)
+        self.manager.verify_runtime_environment(paths)
 
-        name = getattr(self.args, "name", None)
+        name = getattr(self.manager.args, "name", None)
         if not name:
-            if self.non_interactive:
+            if self.manager.non_interactive:
                 name = f"Auto-snapshot {datetime.now().strftime('%Y-%m-%d %H:%M')}"
             else:
                 name = UI.ask("Snapshot Name", "Manual Snapshot")
@@ -88,12 +84,14 @@ class SnapshotHandler(BaseHandler):
 
         # Check if project uses shared search and service is running
         if str(project_meta.get("use_shared_search", "false")).lower() == "true":
-            if self.run_command(["docker", "ps", "-q", "-f", f"name={search_name}"]):
+            if self.manager.run_command(
+                ["docker", "ps", "-q", "-f", f"name={search_name}"]
+            ):
                 search_snapshot_name = f"{container_name}_{timestamp}"
                 UI.info(
                     f"Triggering orchestrated search snapshot: {search_snapshot_name}..."
                 )
-                self.run_command(
+                self.manager.run_command(
                     [
                         "docker",
                         "exec",
@@ -116,7 +114,9 @@ class SnapshotHandler(BaseHandler):
         if db_type in ["mysql", "postgresql", "mariadb"]:
             db_container = f"{container_name}-db"
             # Check if DB container is running
-            if self.run_command(["docker", "ps", "-q", "-f", f"name=^{db_container}$"]):
+            if self.manager.run_command(
+                ["docker", "ps", "-q", "-f", f"name=^{db_container}$"]
+            ):
                 db_snapshot_file = snap_dir / "database.sql"
                 UI.info(f"Triggering orchestrated database snapshot ({db_type})...")
 
@@ -146,7 +146,9 @@ class SnapshotHandler(BaseHandler):
                     ]
 
                 try:
-                    sql_content = self.run_command(dump_cmd, capture_output=True)
+                    sql_content = self.manager.run_command(
+                        dump_cmd, capture_output=True
+                    )
                     if sql_content:
                         db_snapshot_file.write_text(sql_content)
                         UI.success("Database dump completed.")
@@ -180,7 +182,7 @@ class SnapshotHandler(BaseHandler):
         # --- ARCHIVE ---
         # Final permission sync before archiving (Fixes late-created Docker file issues)
         # We call this again to ensure even files created by search snapshot are unlocked.
-        self.verify_runtime_environment(paths)
+        self.manager.verify_runtime_environment(paths)
 
         snap_dir.mkdir(parents=True, exist_ok=True)
         files_tar = snap_dir / "files.tar.gz"
@@ -191,7 +193,7 @@ class SnapshotHandler(BaseHandler):
                 if f_path.exists():
                     try:
                         # Re-verify specific path permissions before adding
-                        if self.verbose:
+                        if self.manager.verbose:
                             UI.info(f"Adding {f} to archive...")
                         tar.add(f_path, arcname=f)
                     except (PermissionError, OSError) as e:
@@ -205,7 +207,7 @@ class SnapshotHandler(BaseHandler):
                     # Check if it's already in the tar to avoid duplicates
                     tar_names = [m.name for m in tar.getmembers()]
                     if "osgi/state" not in tar_names:
-                        if self.verbose:
+                        if self.manager.verbose:
                             UI.info("Adding missing osgi/state to archive...")
                         tar.add(osgi_state, arcname="osgi/state")
                 except Exception:
@@ -260,7 +262,7 @@ class SnapshotHandler(BaseHandler):
             "search_snapshot": search_snapshot_name,
             "custom_env": ",".join(custom_env) if custom_env else None,
         }
-        self.write_meta(snap_dir, meta)
+        self.manager.write_meta(snap_dir, meta)
 
         # 4. Generate SHA-256 Checksum
         from ldm_core.utils import calculate_sha256
@@ -272,15 +274,15 @@ class SnapshotHandler(BaseHandler):
         UI.success(f"Snapshot saved: {snap_dir}")
 
     def cmd_restore(self, project_id=None, auto_index=None, backup_dir=None):
-        root_path = self.detect_project_path(project_id, for_init=True)
+        root_path = self.manager.detect_project_path(project_id, for_init=True)
         if not root_path:
             return
-        paths = self.setup_paths(root_path)
+        paths = self.manager.setup_paths(root_path)
         # For new projects (seeding), meta might not exist yet
-        project_meta = self.read_meta(paths["root"]) or {}
+        project_meta = self.manager.read_meta(paths["root"]) or {}
 
         # 0. Support for --list (Non-interactive overview)
-        if getattr(self.args, "list", False):
+        if getattr(self.manager.args, "list", False):
             self.cmd_snapshots(paths)
             return
 
@@ -288,9 +290,9 @@ class SnapshotHandler(BaseHandler):
         choice = None
         if backup_dir:
             choice = Path(backup_dir)
-        elif getattr(self.args, "backup_dir", None):
-            choice = Path(self.args.backup_dir)
-        elif getattr(self.args, "latest", False):
+        elif getattr(self.manager.args, "backup_dir", None):
+            choice = Path(self.manager.args.backup_dir)
+        elif getattr(self.manager.args, "latest", False):
             backups = self.cmd_snapshots(paths)
             if not backups:
                 UI.die("No snapshots available for --latest.")
@@ -309,9 +311,9 @@ class SnapshotHandler(BaseHandler):
 
             if auto_index is not None:
                 choice = backups[auto_index - 1]
-            elif getattr(self.args, "index", None):
-                choice = backups[self.args.index - 1]
-            elif self.non_interactive:
+            elif getattr(self.manager.args, "index", None):
+                choice = backups[self.manager.args.index - 1]
+            elif self.manager.non_interactive:
                 UI.die(
                     "No snapshot index specified. In non-interactive mode, use: ldm restore <pid> --index <num>"
                 )
@@ -373,7 +375,7 @@ class SnapshotHandler(BaseHandler):
             UI.die(f"Standard snapshot files not found in {choice_path}")
 
         # --- SEARCH RESTORE (Orchestrated) ---
-        snap_meta = self.read_meta(choice_path / "meta")
+        snap_meta = self.manager.read_meta(choice_path / "meta")
         search_snapshot_name = snap_meta.get("search_snapshot")
         search_name = "liferay-search-global"
 
@@ -381,7 +383,7 @@ class SnapshotHandler(BaseHandler):
         custom_env = snap_meta.get("custom_env")
         if custom_env:
             project_meta["custom_env"] = custom_env
-            self.write_meta(paths["root"], project_meta)
+            self.manager.write_meta(paths["root"], project_meta)
 
         if search_snapshot_name and search_snapshot_name != "None":
             if run_command(["docker", "ps", "-q", "-f", f"name={search_name}"]):
@@ -432,9 +434,9 @@ class SnapshotHandler(BaseHandler):
         """Extracts a snapshot tarball into the project root with security checks."""
         # Ensure paths is a dictionary for subscripting
         if not isinstance(paths, dict):
-            paths = self.setup_paths(paths)
+            paths = self.manager.setup_paths(paths)
 
-        no_osgi = getattr(self.args, "no_osgi_seed", False)
+        no_osgi = getattr(self.manager.args, "no_osgi_seed", False)
 
         with tarfile.open(files_tar, "r:gz") as tar:
             from ldm_core.utils import is_within_root
@@ -495,7 +497,7 @@ class SnapshotHandler(BaseHandler):
         search_name = "liferay-search-global"
         start_time = time.time()
         while time.time() - start_time < timeout:
-            res = self.run_command(
+            res = self.manager.run_command(
                 [
                     "docker",
                     "exec",
@@ -517,7 +519,7 @@ class SnapshotHandler(BaseHandler):
         search_name = "liferay-search-global"
         start_time = time.time()
         while time.time() - start_time < timeout:
-            res = self.run_command(
+            res = self.manager.run_command(
                 [
                     "docker",
                     "exec",
@@ -536,7 +538,7 @@ class SnapshotHandler(BaseHandler):
 
     def _delete_project_indices(self, container_name):
         search_name = "liferay-search-global"
-        self.run_command(
+        self.manager.run_command(
             [
                 "docker",
                 "exec",
@@ -586,6 +588,8 @@ class SnapshotHandler(BaseHandler):
             UI.info("  + Extracting data volume...")
             target_data = paths["data"]
             target_data.mkdir(parents=True, exist_ok=True)
-            self.run_command(["tar", "-xzf", str(volume_tgz), "-C", str(target_data)])
+            self.manager.run_command(
+                ["tar", "-xzf", str(volume_tgz), "-C", str(target_data)]
+            )
 
         return True

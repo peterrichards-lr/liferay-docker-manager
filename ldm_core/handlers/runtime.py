@@ -210,14 +210,12 @@ class RuntimeHandler(BaseHandler):
         self.register_project(project_id, paths["root"], host_name=host_name)
 
         if is_samples or external_snapshot:
-            from ldm_core.handlers.snapshot import SnapshotHandler
-
             self.sync_stack(paths, project_meta, no_up=True, show_summary=False)
             self.run_command(
                 [*get_compose_cmd(), "up", "-d", "db"], cwd=str(paths["root"])
             )
             time.sleep(5)
-            SnapshotHandler(self.args).cmd_restore(
+            self.manager.snapshot.cmd_restore(
                 project_id,
                 auto_index=1 if is_samples else None,
                 backup_dir=external_snapshot if not is_samples else None,

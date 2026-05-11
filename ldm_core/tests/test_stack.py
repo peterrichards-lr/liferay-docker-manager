@@ -15,7 +15,7 @@ from ldm_core.handlers.diagnostics import DiagnosticsService
 from ldm_core.handlers.infra import InfraService
 from ldm_core.handlers.license import LicenseService
 from ldm_core.handlers.runtime import RuntimeHandler
-from ldm_core.handlers.snapshot import SnapshotHandler
+from ldm_core.handlers.snapshot import SnapshotService
 from ldm_core.handlers.workspace import WorkspaceHandler
 
 
@@ -23,7 +23,6 @@ class MockManager(
     ComposerHandler,
     RuntimeHandler,
     WorkspaceHandler,
-    SnapshotHandler,
     BaseHandler,
 ):
     def __init__(self):
@@ -36,6 +35,7 @@ class MockManager(
         self.config = ConfigService(self)
         self.infra = InfraService(self)
         self.diagnostics = DiagnosticsService(self)
+        self.snapshot = SnapshotService(self)
 
         self.run_command = MagicMock()  # type: ignore[method-assign]
         self.write_docker_compose = MagicMock(  # type: ignore[method-assign]

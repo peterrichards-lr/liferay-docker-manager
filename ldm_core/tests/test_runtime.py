@@ -193,7 +193,7 @@ class TestRuntime(unittest.TestCase):
                 "ldm_core.handlers.config.ConfigService.get_samples_db_type",
                 return_value="postgresql",
             ),
-            patch("ldm_core.handlers.snapshot.SnapshotHandler.cmd_restore"),
+            patch("ldm_core.handlers.snapshot.SnapshotService.cmd_restore"),
             patch("time.sleep"),
             patch(
                 "ldm_core.handlers.runtime.get_compose_cmd",

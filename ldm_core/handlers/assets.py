@@ -134,9 +134,7 @@ class AssetService:
             return False
 
         try:
-            from ldm_core.handlers.snapshot import SnapshotHandler
-
-            handler = SnapshotHandler(self.manager.args)
+            handler = self.manager.snapshot
             self.manager.verify_runtime_environment(paths)
 
             if getattr(self.manager.args, "no_osgi_seed", False):
