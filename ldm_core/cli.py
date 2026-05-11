@@ -703,9 +703,9 @@ def main():
             getattr(args, "project", None)
         ),
         "renew-ssl": lambda: manager.cmd_renew_ssl(getattr(args, "project", None)),
-        "infra-setup": manager.cmd_infra_setup,
-        "infra-down": manager.cmd_infra_down,
-        "infra-restart": manager.cmd_infra_restart,
+        "infra-setup": manager.infra.cmd_infra_setup,
+        "infra-down": manager.infra.cmd_infra_down,
+        "infra-restart": manager.infra.cmd_infra_restart,
         "cache": lambda: manager.cmd_cache(getattr(args, "target", "tags")),
         "clear-cache": lambda: manager.cmd_cache("tags"),
         "clear-tags": lambda: manager.cmd_cache("tags"),
@@ -745,7 +745,7 @@ def main():
         "completion": lambda: manager.cmd_completion(args.shell),
         "man": manager.cmd_man,
         "prune": manager.cmd_prune,
-        "system": lambda: manager.cmd_system(args.subcommand),
+        "system": lambda: manager.infra.cmd_system(args.subcommand),
         "upgrade": manager.cmd_upgrade,
         "update-check": manager.cmd_upgrade,
         "version": lambda: manager.dev.cmd_version(

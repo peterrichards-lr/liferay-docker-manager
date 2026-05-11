@@ -3,14 +3,15 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from ldm_core.handlers.base import BaseHandler
-from ldm_core.handlers.infra import InfraHandler
+from ldm_core.handlers.infra import InfraService
 
 
-class MockInfraManager(InfraHandler, BaseHandler):
+class MockInfraManager(BaseHandler):
     def __init__(self):
         self.args = MagicMock()
         self.verbose = False
         self.non_interactive = True
+        self.infra = InfraService(self)
 
     def run_command(self, *args, **kwargs):
         # Allow individual tests to override this via patch.object
@@ -22,7 +23,7 @@ class TestInfraHandler(unittest.TestCase):
         self.manager = MockInfraManager()
 
     @patch("ldm_core.handlers.infra.get_actual_home")
-    @patch.object(InfraHandler, "setup_global_search")
+    @patch.object(InfraService, "setup_global_search")
     @patch.object(BaseHandler, "run_command")
     def test_cmd_infra_setup_basic(self, mock_run, mock_search, mock_home):
         mock_home.return_value = Path("/tmp/home")
@@ -33,7 +34,7 @@ class TestInfraHandler(unittest.TestCase):
         # 4. Compose Up for traefik (docker compose up ...)
         mock_run.side_effect = ["liferay-net", "", "proxy_started", "compose_ok"]
 
-        self.manager.cmd_infra_setup()
+        self.manager.infra.cmd_infra_setup()
 
         # Check if compose was called
         self.assertTrue(
@@ -41,7 +42,7 @@ class TestInfraHandler(unittest.TestCase):
         )
 
     @patch("ldm_core.handlers.infra.get_actual_home")
-    @patch.object(InfraHandler, "setup_global_search")
+    @patch.object(InfraService, "setup_global_search")
     @patch.object(BaseHandler, "run_command")
     def test_setup_infrastructure_quiet(self, mock_run, mock_search, mock_home):
         mock_home.return_value = Path("/tmp/home")
@@ -50,7 +51,9 @@ class TestInfraHandler(unittest.TestCase):
         mock_run.return_value = "ok"
 
         # Call with quiet=True
-        self.manager.setup_infrastructure("127.0.0.1", 443, use_ssl=True, quiet=True)
+        self.manager.infra.setup_infrastructure(
+            "127.0.0.1", 443, use_ssl=True, quiet=True
+        )
 
         # Verify that compose up was called with capture_output=True
         compose_call_found = False
@@ -62,10 +65,10 @@ class TestInfraHandler(unittest.TestCase):
 
         self.assertTrue(compose_call_found, "Docker compose up should have been called")
 
-    @patch.object(InfraHandler, "cmd_infra_down")
-    @patch.object(InfraHandler, "cmd_infra_setup")
+    @patch.object(InfraService, "cmd_infra_down")
+    @patch.object(InfraService, "cmd_infra_setup")
     def test_cmd_infra_restart(self, mock_setup, mock_down):
-        self.manager.cmd_infra_restart()
+        self.manager.infra.cmd_infra_restart()
         self.assertTrue(mock_down.called)
         self.assertTrue(mock_setup.called)
 
@@ -84,7 +87,7 @@ class TestInfraHandler(unittest.TestCase):
         mock_utils_run.side_effect = ["container_id", "", "started", "repo_ok"]
         mock_run.side_effect = ["repo_ok"]  # For self.run_command
 
-        self.manager.setup_global_search()
+        self.manager.infra.setup_global_search()
 
         mock_utils_run.assert_any_call(
             ["docker", "start", "liferay-search-global"],
@@ -121,7 +124,7 @@ class TestInfraHandler(unittest.TestCase):
         mock_run.return_value = '{"cluster_name": "liferay-cluster"}'
 
         with patch("pathlib.Path.mkdir"):
-            self.manager.setup_global_search()
+            self.manager.infra.setup_global_search()
 
         # Robust check: Just verify that the expected types of calls happened
         # instead of fragile exact counting of readiness loop iterations.

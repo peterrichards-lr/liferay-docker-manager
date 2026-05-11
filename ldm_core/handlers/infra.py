@@ -3,7 +3,6 @@ import os
 import shutil
 import time
 
-from ldm_core.handlers.base import BaseHandler
 from ldm_core.ui import UI
 from ldm_core.utils import (
     get_actual_home,
@@ -12,22 +11,22 @@ from ldm_core.utils import (
 )
 
 
-class InfraHandler(BaseHandler):
-    """Mixin for global infrastructure management (Traefik, Global Search)."""
+class InfraService:
+    """Service for global infrastructure management (Traefik, Global Search)."""
 
-    def __init__(self, args=None):
-        super().__init__(args)
+    def __init__(self, manager=None):
+        self.manager = manager
 
     def cmd_infra_setup(self):
         """Sets up the global infrastructure (Traefik, Search)."""
         import sys
 
-        if not self.check_docker():
+        if not self.manager.check_docker():
             UI.die("Docker is not running.")
         resolved_ip = (
             "0.0.0.0"  # nosec B104
             if sys.platform == "darwin"
-            else self.get_resolved_ip("localhost")
+            else self.manager.get_resolved_ip("localhost")
         )
         self.setup_infrastructure(resolved_ip, 443, use_ssl=True)
         UI.success("Infrastructure setup complete.")
@@ -42,12 +41,12 @@ class InfraHandler(BaseHandler):
         self._ensure_docker_proxy()
 
         # Orchestrated Global Search (ES8)
-        if getattr(self.args, "search", False):
+        if getattr(self.manager.args, "search", False):
             self.setup_global_search()
 
         if not quiet:
             UI.info("Checking infrastructure stack (Traefik SSL Proxy)...")
-        infra_compose = self.get_resource_path("infra-compose.yml")
+        infra_compose = self.manager.get_resource_path("infra-compose.yml")
         if not infra_compose:
             UI.die(
                 "Infrastructure compose file 'infra-compose.yml' not found in resources."
@@ -56,7 +55,7 @@ class InfraHandler(BaseHandler):
         # Start infrastructure
         env = self._get_infra_env(resolved_ip, ssl_port)
 
-        self.run_command(
+        self.manager.run_command(
             [
                 *get_compose_cmd(),
                 "-f",
@@ -91,7 +90,9 @@ class InfraHandler(BaseHandler):
                 uid = os.getuid()
                 gid = os.getgid()
                 UI.info(f"Requesting permission to reclaim ownership of {path}...")
-                self.run_command(["sudo", "chown", "-R", f"{uid}:{gid}", str(path)])
+                self.manager.run_command(
+                    ["sudo", "chown", "-R", f"{uid}:{gid}", str(path)]
+                )
                 return True
             except Exception as e:
                 UI.error(f"Failed to reclaim ownership: {e}")
@@ -133,7 +134,7 @@ class InfraHandler(BaseHandler):
             )
             try:
                 # We use check=False to handle errors manually with better feedback
-                res = self.run_command(
+                res = self.manager.run_command(
                     [
                         "mkcert",
                         "-cert-file",
@@ -188,14 +189,14 @@ tls:
     def cmd_infra_down(self):
         """Tears down the global infrastructure (Traefik, Proxy)."""
         UI.warning("Tearing down global infrastructure (Traefik)...")
-        infra_compose = self.get_resource_path("infra-compose.yml")
+        infra_compose = self.manager.get_resource_path("infra-compose.yml")
         if not infra_compose:
             UI.die("Infrastructure compose file 'infra-compose.yml' not found.")
 
         # Down requires the same env as UP to resolve volume paths correctly
         env = self._get_infra_env()
         capture = not (UI.INFO_MODE or UI.VERBOSE)
-        self.run_command(
+        self.manager.run_command(
             [*get_compose_cmd(), "-f", str(infra_compose), "down", "-v"],
             env=env,
             capture_output=capture,
@@ -220,12 +221,12 @@ tls:
 
     def _ensure_network(self):
         """Ensures the standard 'liferay-net' Docker network exists."""
-        networks = self.run_command(
+        networks = self.manager.run_command(
             ["docker", "network", "ls", "--format", "{{.Name}}"]
         )
         if "liferay-net" not in (networks or ""):
             UI.detail("Creating Docker network: liferay-net")
-            self.run_command(["docker", "network", "create", "liferay-net"])
+            self.manager.run_command(["docker", "network", "create", "liferay-net"])
 
     def _ensure_docker_proxy(self):
         """Ensures a safe Docker socket proxy is running for Traefik."""
@@ -248,7 +249,7 @@ tls:
                 )
                 socket_path = "/var/run/docker.sock"
 
-            self.run_command(
+            self.manager.run_command(
                 [
                     "docker",
                     "run",
@@ -294,7 +295,7 @@ tls:
             # Persistent ES8 instance matching Liferay requirements
             from ldm_core.constants import ELASTICSEARCH_VERSION
 
-            self.run_command(
+            self.manager.run_command(
                 [
                     "docker",
                     "run",
@@ -328,12 +329,12 @@ tls:
             ready = False
             for _ in range(60):  # 5 minute timeout (60 * 5s)
                 # Fail fast if container exited
-                status = self.get_container_status(search_name)
+                status = self.manager.get_container_status(search_name)
                 if status == "exited":
                     UI.error("Elasticsearch container exited unexpectedly.")
                     break
 
-                res = self.run_command(
+                res = self.manager.run_command(
                     ["docker", "exec", search_name, "curl", "-s", "localhost:9200"],
                     check=False,
                     capture_output=True,
@@ -348,7 +349,9 @@ tls:
                 # AUTO-REPAIR: If ES fails to start, it's often due to corrupted data in the volume.
                 # Wiping and restarting usually fixes mapping/plugin-mismatch issues.
                 UI.warning("Attempting automatic search volume repair...")
-                self.run_command(["docker", "rm", "-f", search_name], check=False)
+                self.manager.run_command(
+                    ["docker", "rm", "-f", search_name], check=False
+                )
                 if es_data.exists():
                     import shutil
 
@@ -362,7 +365,7 @@ tls:
                 return self.setup_global_search()
 
             # Register backup repository (required for snapshots)
-            self.run_command(
+            self.manager.run_command(
                 [
                     "docker",
                     "exec",
@@ -388,7 +391,7 @@ tls:
             UI.info("Installing missing Liferay analyzers in Global Search...")
 
             # Tests expect a 'plugin list' call first
-            self.run_command(
+            self.manager.run_command(
                 ["docker", "exec", search_name, "bin/elasticsearch-plugin", "list"]
             )
 
@@ -399,7 +402,7 @@ tls:
                 "analysis-stempel",
             ]
             for plugin in analyzers:
-                self.run_command(
+                self.manager.run_command(
                     [
                         "docker",
                         "exec",
@@ -413,21 +416,21 @@ tls:
                 )
 
             UI.info("Restarting Global Search to activate plugins...")
-            self.run_command(["docker", "restart", search_name])
+            self.manager.run_command(["docker", "restart", search_name])
 
             # Wait for it to come back up
             UI.info("Waiting for Global Search to be ready after restart...")
             ready = False
             for _ in range(30):
                 # Fail fast if container exited
-                status = self.get_container_status(search_name)
+                status = self.manager.get_container_status(search_name)
                 if status == "exited":
                     UI.error(
                         "Elasticsearch container exited unexpectedly after restart."
                     )
                     break
 
-                res = self.run_command(
+                res = self.manager.run_command(
                     ["docker", "exec", search_name, "curl", "-s", "localhost:9200"],
                     check=False,
                     capture_output=True,
@@ -449,7 +452,7 @@ tls:
 
             # Always ensure backup repository is registered if service is running
             UI.debug("Ensuring Global Search backup repository is registered...")
-            self.run_command(
+            self.manager.run_command(
                 [
                     "docker",
                     "exec",
@@ -476,7 +479,7 @@ tls:
     def cmd_system(self, subcommand):
         """Routing for system-level management commands."""
         if subcommand == "relocate":
-            self.cmd_system_relocate(self.args.target)
+            self.cmd_system_relocate(self.manager.args.target)
         else:
             UI.die(f"Unknown system subcommand: {subcommand}")
 
@@ -504,11 +507,12 @@ tls:
         # 1. Safety Checks
         try:
             context = (
-                self.run_command(["docker", "context", "show"], check=False) or ""
+                self.manager.run_command(["docker", "context", "show"], check=False)
+                or ""
             ).strip()
             if "colima" in context.lower() or context == "default":
                 UI.info("Stopping Colima to ensure data integrity...")
-                self.run_command(["colima", "stop"], check=False)
+                self.manager.run_command(["colima", "stop"], check=False)
         except Exception:
             pass
 
@@ -530,7 +534,7 @@ tls:
             UI.info(f"Relocating {label}...")
 
             # 2. Move data if requested
-            if not getattr(self.args, "no_move", False):
+            if not getattr(self.manager.args, "no_move", False):
                 if dest.exists():
                     if not UI.confirm(
                         f"Destination {dest} already exists. Merge/Overwrite?", "N"

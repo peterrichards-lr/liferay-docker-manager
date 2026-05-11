@@ -8,7 +8,7 @@ from ldm_core.handlers.composer import ComposerHandler
 from ldm_core.handlers.config import ConfigService
 from ldm_core.handlers.dev import DevService
 from ldm_core.handlers.diagnostics import DiagnosticsHandler
-from ldm_core.handlers.infra import InfraHandler
+from ldm_core.handlers.infra import InfraService
 from ldm_core.handlers.license import LicenseService
 from ldm_core.handlers.runtime import RuntimeHandler
 from ldm_core.handlers.snapshot import SnapshotHandler
@@ -23,7 +23,6 @@ class LiferayManager(
     SnapshotHandler,
     DiagnosticsHandler,
     CloudHandler,
-    InfraHandler,
     BaseHandler,
 ):
     """Orchestrator class for LDM, composed of multiple functional mixins."""
@@ -39,6 +38,7 @@ class LiferayManager(
         self.assets = AssetService(self)
         self.config = ConfigService(self)
         self.dev = DevService(self)
+        self.infra = InfraService(self)
 
         # Automatic CI detection
         if os.getenv("CI") or os.getenv("GITHUB_ACTIONS") or os.getenv("GITLAB_CI"):

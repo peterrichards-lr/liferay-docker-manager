@@ -12,7 +12,7 @@ from ldm_core.handlers.base import BaseHandler
 from ldm_core.handlers.composer import ComposerHandler
 from ldm_core.handlers.config import ConfigService
 from ldm_core.handlers.diagnostics import DiagnosticsHandler
-from ldm_core.handlers.infra import InfraHandler
+from ldm_core.handlers.infra import InfraService
 from ldm_core.handlers.license import LicenseService
 from ldm_core.handlers.runtime import RuntimeHandler
 from ldm_core.handlers.snapshot import SnapshotHandler
@@ -22,7 +22,6 @@ from ldm_core.handlers.workspace import WorkspaceHandler
 class MockManager(
     ComposerHandler,
     RuntimeHandler,
-    InfraHandler,
     WorkspaceHandler,
     SnapshotHandler,
     DiagnosticsHandler,
@@ -36,13 +35,11 @@ class MockManager(
         self.license = LicenseService(self)
         self.assets = AssetService(self)
         self.config = ConfigService(self)
+        self.infra = InfraService(self)
 
         self.run_command = MagicMock()  # type: ignore[method-assign]
         self.write_docker_compose = MagicMock(  # type: ignore[method-assign]
             side_effect=ComposerHandler.write_docker_compose.__get__(self, MockManager)
-        )
-        self.setup_ssl = MagicMock(  # type: ignore[method-assign]
-            side_effect=InfraHandler.setup_ssl.__get__(self, MockManager)
         )
         self.cmd_browser = MagicMock(  # type: ignore[method-assign]
             side_effect=RuntimeHandler.cmd_browser.__get__(self, MockManager)
@@ -170,7 +167,7 @@ class TestStackInfrastructure(unittest.TestCase):
                 "OK",  # 16. repo registration check (end of method)
             ]
 
-            self.manager.setup_global_search()
+            self.manager.infra.setup_global_search()
 
             # Verify plugin installation was attempted
             install_calls = [
@@ -202,7 +199,7 @@ class TestStackInfrastructure(unittest.TestCase):
 
                 mock_run.side_effect = mock_mkcert
 
-                res = self.manager.setup_ssl(cert_dir, host_name)
+                res = self.manager.infra.setup_ssl(cert_dir, host_name)
 
                 self.assertTrue(res)
                 config_file = cert_dir / f"traefik-{host_name}.yml"
