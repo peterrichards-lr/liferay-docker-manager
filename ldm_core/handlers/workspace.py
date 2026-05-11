@@ -75,7 +75,8 @@ class WorkspaceHandler(BaseHandler):
                     return key[len(prefix) :]
                 if val.get("type") == "oAuthApplicationHeadlessServer":
                     return val.get("projectId") or val.get("projectName")
-        except Exception:
+        except Exception as e:
+            print(f"DEBUG EXCEPTION: {e}")
             pass
         return None
 
@@ -109,7 +110,7 @@ class WorkspaceHandler(BaseHandler):
                 tf_path = Path(tf.name)
 
             try:
-                status, ok, errors = self.validate_lcp_json(tf_path)
+                status, ok, errors = self.manager.diagnostics.validate_lcp_json(tf_path)
                 if not ok or ok == "warn":
                     header = "LCP.json Issue"
                     if context_name:
@@ -144,7 +145,8 @@ class WorkspaceHandler(BaseHandler):
             info["env"] = env
             if "LIFERAY_BATCH_OAUTH_APP_ERC" in env:
                 info["oauth_erc"] = env["LIFERAY_BATCH_OAUTH_APP_ERC"]
-        except Exception:
+        except Exception as e:
+            print(f"DEBUG EXCEPTION: {e}")
             pass
         return info
 

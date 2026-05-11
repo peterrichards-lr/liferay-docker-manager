@@ -706,23 +706,23 @@ def main():
         "infra-setup": manager.infra.cmd_infra_setup,
         "infra-down": manager.infra.cmd_infra_down,
         "infra-restart": manager.infra.cmd_infra_restart,
-        "cache": lambda: manager.cmd_cache(getattr(args, "target", "tags")),
-        "clear-cache": lambda: manager.cmd_cache("tags"),
-        "clear-tags": lambda: manager.cmd_cache("tags"),
-        "doctor": lambda: manager.cmd_doctor(
+        "cache": lambda: manager.diagnostics.cmd_cache(getattr(args, "target", "tags")),
+        "clear-cache": lambda: manager.diagnostics.cmd_cache("tags"),
+        "clear-tags": lambda: manager.diagnostics.cmd_cache("tags"),
+        "doctor": lambda: manager.diagnostics.cmd_doctor(
             getattr(args, "project", None), all_projects=args.all
         ),
         "fix-hosts": lambda: manager._apply_hosts_fix(
             [args.host_name] if getattr(args, "host_name", None) else []
         ),
-        "status": lambda: manager.cmd_status(
+        "status": lambda: manager.diagnostics.cmd_status(
             getattr(args, "project", None), all_projects=args.all
         ),
-        "ps": lambda: manager.cmd_status(
+        "ps": lambda: manager.diagnostics.cmd_status(
             getattr(args, "project", None), all_projects=args.all
         ),
-        "list": manager.cmd_list,
-        "ls": manager.cmd_list,
+        "list": manager.diagnostics.cmd_list,
+        "ls": manager.diagnostics.cmd_list,
         "config": lambda: manager.config.cmd_config(args.key, args.value),
         "shell": lambda: manager.cmd_shell(
             getattr(args, "project", None), getattr(args, "service", None)
@@ -744,10 +744,10 @@ def main():
         "edit": lambda: manager.cmd_edit(getattr(args, "project", None), args.target),
         "completion": lambda: manager.cmd_completion(args.shell),
         "man": manager.cmd_man,
-        "prune": manager.cmd_prune,
+        "prune": manager.diagnostics.cmd_prune,
         "system": lambda: manager.infra.cmd_system(args.subcommand),
-        "upgrade": manager.cmd_upgrade,
-        "update-check": manager.cmd_upgrade,
+        "upgrade": manager.diagnostics.cmd_upgrade,
+        "update-check": manager.diagnostics.cmd_upgrade,
         "version": lambda: manager.dev.cmd_version(
             bump_type=args.bump,
             promote=args.promote,

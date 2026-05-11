@@ -4,16 +4,17 @@ from unittest.mock import MagicMock, patch
 
 from ldm_core.handlers.base import BaseHandler
 from ldm_core.handlers.config import ConfigService
-from ldm_core.handlers.diagnostics import DiagnosticsHandler
+from ldm_core.handlers.diagnostics import DiagnosticsService
 
 
-class MockConfigManager(DiagnosticsHandler, BaseHandler):
+class MockConfigManager(BaseHandler):
     def __init__(self):
         self.args = MagicMock()
         self.verbose = False
         self.non_interactive = True
         self.config = ConfigService(self)
         self.assets = MagicMock()
+        self.diagnostics = DiagnosticsService(self)
 
     def parse_version(self, tag):
         return (7, 4, 13)
@@ -174,7 +175,7 @@ class TestConfigManagement(unittest.TestCase):
         mock_home.return_value = Path("/tmp/home")
 
         with patch.object(Path, "exists", return_value=True):
-            self.manager.cmd_cache(target="tags")
+            self.manager.diagnostics.cmd_cache(target="tags")
             # Verify tag cache removal
             self.assertTrue(mock_remove.called)
 

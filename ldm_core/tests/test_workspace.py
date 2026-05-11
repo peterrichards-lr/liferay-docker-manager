@@ -9,7 +9,7 @@ from unittest.mock import MagicMock, patch
 from ldm_core.handlers.assets import AssetService
 from ldm_core.handlers.base import BaseHandler
 from ldm_core.handlers.composer import ComposerHandler
-from ldm_core.handlers.diagnostics import DiagnosticsHandler
+from ldm_core.handlers.diagnostics import DiagnosticsService
 from ldm_core.handlers.runtime import RuntimeHandler
 from ldm_core.handlers.workspace import WorkspaceHandler
 
@@ -18,7 +18,6 @@ class MockWorkspaceManager(
     ComposerHandler,
     RuntimeHandler,
     WorkspaceHandler,
-    DiagnosticsHandler,
     BaseHandler,
 ):
     def __init__(self):
@@ -32,6 +31,10 @@ class MockWorkspaceManager(
         self.manager.args = self.args
         self.assets = AssetService(self.manager)
         self.manager.assets = self.assets
+        self.manager.diagnostics = DiagnosticsService(self.manager)
+        self.manager.diagnostics.validate_lcp_json = MagicMock(
+            return_value=("Valid", True, [])
+        )
 
     def _check_java_version(self, *args, **kwargs):
         return True

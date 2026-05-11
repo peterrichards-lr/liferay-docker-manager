@@ -11,7 +11,6 @@ from pathlib import Path
 from typing import Any
 
 from ldm_core.constants import BUILD_INFO, SCRIPT_DIR, VERSION
-from ldm_core.handlers.base import BaseHandler
 from ldm_core.ui import UI
 from ldm_core.utils import (
     check_for_updates,
@@ -32,7 +31,7 @@ class DoctorRunner:
         from typing import Any
 
         self.handler = handler
-        self.args = handler.args
+        self.args = handler.manager.args
         self.project_id = project_id
         self.all_projects = all_projects
         self.results: list[tuple[str, str, Any]] = []
@@ -54,7 +53,7 @@ class DoctorRunner:
             self.handler._get_env_info()
         )
 
-        if getattr(self.handler.args, "slug", False):
+        if getattr(self.args, "slug", False):
             # Use same slug logic as sync_compatibility.py
             clean_arch = self.arch.lower().replace(" ", "-")
             clean_os = self.host_os.lower().replace(" ", "-").replace("+", "")
@@ -65,23 +64,23 @@ class DoctorRunner:
         UI.heading("LDM Doctor - Environmental Health Check")
 
         # 0. Early Project Resolve (Optional skip allowed)
-        skip_project = getattr(self.handler.args, "skip_project", False)
-        check_all = self.all_projects or getattr(self.handler.args, "all", False)
+        skip_project = getattr(self.args, "skip_project", False)
+        check_all = self.all_projects or getattr(self.args, "all", False)
 
         self.project_paths = []
         self.requires_ssl = False
         if check_all:
-            roots = self.handler.find_dxp_roots()
+            roots = self.handler.manager.find_dxp_roots()
             self.project_paths = [r["path"] for r in roots]
             for r in roots:
-                p_meta = self.handler.read_meta(r["path"])
+                p_meta = self.handler.manager.read_meta(r["path"])
                 if str(p_meta.get("ssl", "false")).lower() == "true":
                     self.requires_ssl = True
         elif not skip_project:
-            p_path = self.handler.detect_project_path(self.project_id)
+            p_path = self.handler.manager.detect_project_path(self.project_id)
             if p_path:
                 self.project_paths = [p_path]
-                p_meta = self.handler.read_meta(p_path)
+                p_meta = self.handler.manager.read_meta(p_path)
                 if str(p_meta.get("ssl", "false")).lower() == "true":
                     self.requires_ssl = True
 
@@ -213,7 +212,9 @@ class DoctorRunner:
             # 2.0 Docker Context & Provider Check
             try:
                 context = (
-                    self.handler.run_command(["docker", "context", "show"], check=False)
+                    self.handler.manager.run_command(
+                        ["docker", "context", "show"], check=False
+                    )
                     or ""
                 ).strip()
                 if context:
@@ -225,7 +226,7 @@ class DoctorRunner:
                         self.provider = "Docker Desktop"
                     elif context == "default":
                         # If default, check if endpoint is local or redirected
-                        inspect = self.handler.run_command(
+                        inspect = self.handler.manager.run_command(
                             ["docker", "context", "inspect", "default"], check=False
                         )
                         if "docker-desktop" in str(inspect).lower():
@@ -250,7 +251,7 @@ class DoctorRunner:
                 provider_version = None
                 if self.provider == "OrbStack":
                     try:
-                        orb_v = self.handler.run_command(
+                        orb_v = self.handler.manager.run_command(
                             ["orb", "version"], check=False
                         )
                         if orb_v and "version" in orb_v.lower():
@@ -261,7 +262,7 @@ class DoctorRunner:
                         pass
                 elif self.provider == "Colima":
                     try:
-                        col_v = self.handler.run_command(
+                        col_v = self.handler.manager.run_command(
                             ["colima", "version"], check=False
                         )
                         if col_v and "version" in col_v.lower():
@@ -276,7 +277,7 @@ class DoctorRunner:
                         if platform.system().lower() == "darwin":
                             plist = "/Applications/Docker.app/Contents/Info.plist"
                             if os.path.exists(plist):
-                                v_res = self.handler.run_command(
+                                v_res = self.handler.manager.run_command(
                                     [
                                         "defaults",
                                         "read",
@@ -290,7 +291,7 @@ class DoctorRunner:
 
                         # Fallback/Windows: Try to parse from 'docker version' Server section
                         if not provider_version:
-                            dv_res = self.handler.run_command(
+                            dv_res = self.handler.manager.run_command(
                                 ["docker", "version"], check=False
                             )
                             # Look for "Server: Docker Desktop 4.x.x"
@@ -370,7 +371,7 @@ class DoctorRunner:
                         )
         else:
             # Trigger the detailed error reporting from base.py
-            self.handler.check_docker()
+            self.handler.manager.check_docker()
             self.results.append(("Docker Engine", "Not reachable", False))
             self.add_hint(
                 "If Docker is running but LDM cannot connect, ensure your user is in the 'docker' group.",
@@ -400,7 +401,7 @@ class DoctorRunner:
 
                 rel_path = test_path.relative_to(get_actual_home())
 
-                res = self.handler.run_command(
+                res = self.handler.manager.run_command(
                     [
                         "docker",
                         "run",
@@ -638,7 +639,7 @@ class DoctorRunner:
         # 4.2 Project Health (if specific project is being checked)
         if self.project_paths and len(self.project_paths) == 1:
             p_path = self.project_paths[0]
-            meta = self.handler.read_meta(p_path)
+            meta = self.handler.manager.read_meta(p_path)
             if meta:
                 is_seeded = str(meta.get("seeded", "false")).lower() == "true"
                 s_version = meta.get("seed_version")
@@ -657,7 +658,7 @@ class DoctorRunner:
 
         # 4.3 Global Config Check
         base_path = self.project_paths[0] if self.project_paths else None
-        common_dir = self.handler.get_common_dir(base_path)
+        common_dir = self.handler.manager.get_common_dir(base_path)
         search_version = 8  # Default
 
         if not common_dir.exists():
@@ -812,7 +813,9 @@ class DoctorRunner:
                         # Discover latest tag if not already known
                         tag = None
                         if self.project_paths:
-                            first_meta = self.handler.read_meta(self.project_paths[0])
+                            first_meta = self.handler.manager.read_meta(
+                                self.project_paths[0]
+                            )
                             tag = first_meta.get("tag")
 
                         target_ver = resolve_dependency_version(tag, "elasticsearch")
@@ -966,7 +969,7 @@ class DoctorRunner:
         # 7. Project-Specific Check (Optional)
         for p_path in self.project_paths:
             UI.heading(f"Project Health: {p_path.name}")
-            meta = self.handler.read_meta(p_path)
+            meta = self.handler.manager.read_meta(p_path)
             env_args = meta.get("env_args", [])
             blacklisted_prefixes = [
                 "LIFERAY_ELASTICSEARCH",
@@ -996,7 +999,7 @@ class DoctorRunner:
             else:
                 self.results.append((f"[{p_path.name}] Metadata", "Healthy", True))
 
-            if self.handler.require_compose(p_path, silent=True):
+            if self.handler.manager.require_compose(p_path, silent=True):
                 self.results.append(
                     (f"[{p_path.name}] Config", "docker-compose.yml OK", True)
                 )
@@ -1063,7 +1066,7 @@ class DoctorRunner:
             osgi_config_dir = p_path / "osgi" / "configs"
 
             # Smart Detection based on Liferay Version
-            is_es8 = self.handler.parse_version(meta.get("tag")) >= (2024, 1, 0)
+            is_es8 = self.handler.manager.parse_version(meta.get("tag")) >= (2024, 1, 0)
             es_ver = "8" if is_es8 else "7"
 
             es_main_conf = (
@@ -1116,10 +1119,10 @@ class DoctorRunner:
 
             # 7.2.4 License Check
             base_path = self.project_paths[0] if self.project_paths else None
-            common_dir = self.handler.get_common_dir(base_path)
+            common_dir = self.handler.manager.get_common_dir(base_path)
             lic_status, lic_ok, lic_details = (
                 self.handler.manager.license.check_license_health(
-                    {"common": common_dir, **self.handler.setup_paths(p_path)},
+                    {"common": common_dir, **self.handler.manager.setup_paths(p_path)},
                     image_tag=meta.get("tag"),
                 )
             )
@@ -1319,13 +1322,13 @@ class DoctorRunner:
                         )
                     )
 
-            dns_res = self.handler.validate_project_dns(p_path)
+            dns_res = self.handler.manager.validate_project_dns(p_path)
             dns_ok = dns_res[0]
             unresolved = dns_res[1]
             non_local = dns_res[2]
 
             if host_name != "localhost":
-                fix_hosts = getattr(self.handler.args, "fix_hosts", False)
+                fix_hosts = getattr(self.args, "fix_hosts", False)
                 needs_fix = unresolved + [h for h, ip in non_local]
 
                 if dns_ok and not non_local:
@@ -1337,7 +1340,7 @@ class DoctorRunner:
                         )
                     )
                 elif fix_hosts and needs_fix:
-                    if self.handler._apply_hosts_fix(needs_fix):
+                    if self.handler.manager._apply_hosts_fix(needs_fix):
                         self.results.append(
                             (
                                 f"[{p_path.name}] DNS ({host_name})",
@@ -1558,8 +1561,8 @@ class DoctorRunner:
             UI.raw(f"{component:<35} {color}{icon} {status}{UI.COLOR_OFF}")
 
         # Print Actionable Hints at the end
-        detailed_mode = getattr(self.handler.args, "detailed", False)
-        auto_fix_mode = getattr(self.handler.args, "fix", False)
+        detailed_mode = getattr(self.args, "detailed", False)
+        auto_fix_mode = getattr(self.args, "fix", False)
 
         if self.hints and detailed_mode:
             UI.raw(f"\n{UI.CYAN}--- Recommended Actions ---{UI.COLOR_OFF}")
@@ -1602,7 +1605,7 @@ class DoctorRunner:
                 except subprocess.CalledProcessError:
                     UI.error(f"Auto-fix failed for: {cmd_str}")
 
-        if getattr(self.handler.args, "bundle", False):
+        if getattr(self.args, "bundle", False):
             self.handler._generate_debug_bundle(self.results, self.project_paths)
             sys.exit(0)
 
@@ -1625,11 +1628,11 @@ class DoctorRunner:
             sys.exit(1)
 
 
-class DiagnosticsHandler(BaseHandler):
-    """Mixin for diagnostic and maintenance commands."""
+class DiagnosticsService:
+    """Service for diagnostic and maintenance commands."""
 
-    def __init__(self, args=None):
-        super().__init__(args)
+    def __init__(self, manager=None):
+        self.manager = manager
 
     def cmd_status(self, project_id=None, all_projects=False):
         """Displays a summary of active global services and projects."""
@@ -1679,21 +1682,21 @@ class DiagnosticsHandler(BaseHandler):
 
         roots = []
         if project_id:
-            root_path = self.detect_project_path(project_id)
+            root_path = self.manager.detect_project_path(project_id)
             if root_path:
                 # We need to match find_dxp_roots structure
                 roots = [{"path": root_path, "version": "unknown"}]
-                meta = self.read_meta(root_path)
+                meta = self.manager.read_meta(root_path)
                 if meta.get("tag"):
                     roots[0]["version"] = meta["tag"]
         else:
-            roots = self.find_dxp_roots()
+            roots = self.manager.find_dxp_roots()
 
         active_projects = False
 
         for r in roots:
             path = r["path"]
-            meta = self.read_meta(path)
+            meta = self.manager.read_meta(path)
             p_id = meta.get("container_name") or path.name
 
             # Check if any container for this project is running
@@ -1840,8 +1843,8 @@ class DiagnosticsHandler(BaseHandler):
     def cmd_upgrade(self):
         """Self-upgrade the LDM binary to the latest version."""
         UI.heading("LDM Self-Upgrade")
-        is_repair = getattr(self.args, "repair", False)
-        pre_release = getattr(self.args, "pre_release", False)
+        is_repair = getattr(self.manager.args, "repair", False)
+        pre_release = getattr(self.manager.args, "pre_release", False)
 
         if is_repair:
             latest = VERSION
@@ -1898,7 +1901,7 @@ class DiagnosticsHandler(BaseHandler):
             if is_repair
             else f"Upgrade from v{VERSION} to v{latest}?"
         )
-        if not self.non_interactive and not UI.confirm(prompt, "Y"):
+        if not self.manager.non_interactive and not UI.confirm(prompt, "Y"):
             UI.info("Operation aborted.")
             return
 
@@ -2388,7 +2391,7 @@ pause
             if not lcp_bin:
                 return "LCP CLI Not Installed", "warn"
 
-            is_auth, _ = self._is_cloud_authenticated()
+            is_auth, _ = self.manager.cloud._is_cloud_authenticated()
             if is_auth:
                 return "Logged In", True
             return "Not Logged In (Run 'lcp login')", "warn"
@@ -2522,7 +2525,7 @@ pause
 
     def cmd_list(self):
         UI.heading("LDM Sandbox Projects")
-        roots = self.find_dxp_roots()
+        roots = self.manager.find_dxp_roots()
         if not roots:
             UI.info("No projects found.")
             return
@@ -2534,7 +2537,7 @@ pause
 
         for r in roots:
             path = r["path"]
-            meta = self.read_meta(path)
+            meta = self.manager.read_meta(path)
             name = meta.get("container_name") or path.name
             version = r["version"]
 
@@ -2593,16 +2596,16 @@ pause
 
     def cmd_prune(self):
         UI.heading("LDM Global Maintenance - Pruning Orphaned Resources")
-        prune_all = getattr(self.args, "all", False)
-        clean_hosts = getattr(self.args, "clean_hosts", False) or prune_all
-        prune_seeds = getattr(self.args, "seeds", False) or prune_all
-        prune_samples = getattr(self.args, "samples", False) or prune_all
+        prune_all = getattr(self.manager.args, "all", False)
+        clean_hosts = getattr(self.manager.args, "clean_hosts", False) or prune_all
+        prune_seeds = getattr(self.manager.args, "seeds", False) or prune_all
+        prune_samples = getattr(self.manager.args, "samples", False) or prune_all
 
-        roots = self.find_dxp_roots()
+        roots = self.manager.find_dxp_roots()
         active_projects = set()
         active_hostnames = set()
         for r in roots:
-            meta = self.read_meta(r["path"])
+            meta = self.manager.read_meta(r["path"])
             # Use container_name from meta, or fall back to folder name
             name = meta.get("container_name") or r["path"].name
             active_projects.add(name)
@@ -2610,7 +2613,7 @@ pause
             if host and host != "localhost":
                 active_hostnames.add(host)
 
-        if self.verbose:
+        if self.manager.verbose:
             UI.debug(
                 f"Active projects identified: {', '.join(active_projects) if active_projects else 'None'}"
             )
@@ -2651,7 +2654,7 @@ pause
                     print(f"  - {o}")
             if (
                 prune_all
-                or self.non_interactive
+                or self.manager.non_interactive
                 or UI.confirm("Remove them? (y/n/q)", "N")
             ):
                 from ldm_core.docker_service import DockerService
@@ -2701,7 +2704,7 @@ pause
                                 print(f"  - {s}")
                         if (
                             prune_all
-                            or self.non_interactive
+                            or self.manager.non_interactive
                             or UI.confirm("Remove them from global vault?", "N")
                         ):
                             for s in orphaned_snaps:
@@ -2730,7 +2733,7 @@ pause
             UI.info(f"Found {len(tmp_files)} temporary files.")
             if (
                 prune_all
-                or self.non_interactive
+                or self.manager.non_interactive
                 or UI.confirm("Remove them? (y/n/q)", "Y")
             ):
                 for f in tmp_files:
@@ -2764,7 +2767,7 @@ pause
                         print(f"  - {c.name}")
                 if (
                     prune_all
-                    or self.non_interactive
+                    or self.manager.non_interactive
                     or UI.confirm("Remove them from global cert store?", "N")
                 ):
                     for c in orphaned_certs:
@@ -2782,7 +2785,7 @@ pause
                 size_str = UI.format_size(size_bytes)
                 UI.info(f"Found {len(seed_files)} pre-warmed seeds ({size_str}).")
                 if prune_seeds or (
-                    not self.non_interactive
+                    not self.manager.non_interactive
                     and UI.confirm("Clear pre-warmed seed cache?", "N")
                 ):
                     import shutil
@@ -2801,7 +2804,7 @@ pause
                 size_str = UI.format_size(size_bytes)
                 UI.info(f"Found sample extension cache ({size_str}).")
                 if prune_samples or (
-                    not self.non_interactive
+                    not self.manager.non_interactive
                     and UI.confirm("Clear sample extension cache?", "N")
                 ):
                     import shutil
@@ -2816,7 +2819,7 @@ pause
             if prune_all or UI.confirm(
                 "Remove ALL LDM-managed entries from your hosts file?", "N"
             ):
-                self._remove_hosts_entries(all_ldm=True)
+                self.manager._remove_hosts_entries(all_ldm=True)
 
         # 6. Docker System Volumes & Images
         UI.info("Cleaning up dangling Docker volumes and images...")
@@ -3170,7 +3173,7 @@ pause
                     )
 
                 # Collect redacted logs (last 500 lines)
-                meta = self.read_meta(p_path)
+                meta = self.manager.read_meta(p_path)
                 p_id = meta.get("container_name") or p_name
                 # Use project label to find liferay container
                 from ldm_core.docker_service import DockerService

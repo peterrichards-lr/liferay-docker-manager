@@ -6,16 +6,18 @@ from typing import Any
 from unittest.mock import MagicMock, patch
 
 from ldm_core.constants import VERSION
-from ldm_core.handlers.diagnostics import DiagnosticsHandler
+from ldm_core.handlers.base import BaseHandler
+from ldm_core.handlers.diagnostics import DiagnosticsService
 
 
-class MockDiagManager(DiagnosticsHandler):
+class MockDiagManager(BaseHandler):
     def __init__(self):
         self.args = MagicMock()
         self.verbose = False
         self.non_interactive = True
         self._mock_roots: list[dict[str, Any]] = []
         self._use_real_validate = False
+        self.diagnostics = DiagnosticsService(self)
 
     def find_dxp_roots(self, *args, **kwargs):
         # Default to empty for base doctor check
@@ -42,12 +44,6 @@ class MockDiagManager(DiagnosticsHandler):
 
     def _check_container_health_logs(self, *args, **kwargs):
         return None, True
-
-    def validate_properties_file(self, *args, **kwargs):
-        # Fallback to real implementation for property validation tests
-        if hasattr(self, "_use_real_validate"):
-            return super().validate_properties_file(*args, **kwargs)
-        return "OK", True, []
 
     def check_license_health(self, *args, **kwargs):
         return "OK", True, []
@@ -109,7 +105,7 @@ class TestDiagnostics(unittest.TestCase):
 
         with patch("builtins.print") as mock_print:
             with contextlib.suppress(SystemExit):
-                self.manager.cmd_status()
+                self.manager.diagnostics.cmd_status()
 
             # Verify it printed something about global infrastructure
             self.assertTrue(
@@ -120,7 +116,7 @@ class TestDiagnostics(unittest.TestCase):
         lcp_file = Path("/tmp/LCP.json")
         lcp_file.write_text('{"id": "test-ext", "ports": [{"targetPort": 8080}]}')
         try:
-            status, ok, _errors = self.manager.validate_lcp_json(lcp_file)
+            status, ok, _errors = self.manager.diagnostics.validate_lcp_json(lcp_file)
             self.assertTrue(ok)
             self.assertEqual(status, "Valid Structure")
         finally:
@@ -133,7 +129,9 @@ class TestDiagnostics(unittest.TestCase):
         mock_run.return_value = MagicMock(
             stdout="Liferay(TM) Portal 7.4 started in 120s", stderr="", returncode=0
         )
-        status, ok = self.manager._check_liferay_health_logs("test-container")
+        status, ok = self.manager.diagnostics._check_liferay_health_logs(
+            "test-container"
+        )
         self.assertEqual(status, "Ready")
         self.assertTrue(ok)
 
@@ -143,7 +141,9 @@ class TestDiagnostics(unittest.TestCase):
             stderr="",
             returncode=0,
         )
-        status, ok = self.manager._check_liferay_health_logs("test-container")
+        status, ok = self.manager.diagnostics._check_liferay_health_logs(
+            "test-container"
+        )
         self.assertTrue("Critical" in status)
         self.assertFalse(ok)
 
@@ -153,7 +153,9 @@ class TestDiagnostics(unittest.TestCase):
             stderr="",
             returncode=0,
         )
-        status, ok = self.manager._check_liferay_health_logs("test-container")
+        status, ok = self.manager.diagnostics._check_liferay_health_logs(
+            "test-container"
+        )
         self.assertEqual(status, "Starting...")
         self.assertTrue(ok)
 
@@ -161,7 +163,9 @@ class TestDiagnostics(unittest.TestCase):
         mock_run.return_value = MagicMock(
             stdout="WARN: Some slow background task", stderr="", returncode=0
         )
-        status, ok = self.manager._check_liferay_health_logs("test-container")
+        status, ok = self.manager.diagnostics._check_liferay_health_logs(
+            "test-container"
+        )
         self.assertTrue("Warning" in status)
         self.assertTrue(ok)
 
@@ -190,7 +194,7 @@ class TestDiagnostics(unittest.TestCase):
                 self.manager.args.skip_project = True
                 self.manager.args.slug = False
                 self.manager.args.bundle = False
-                self.manager.cmd_doctor()
+                self.manager.diagnostics.cmd_doctor()
 
                 # Check if the disk space warning was printed via UI.raw or UI.warning
                 disk_warning_found = False
@@ -263,7 +267,7 @@ class TestDiagnostics(unittest.TestCase):
                 ),
             ):
                 try:
-                    self.manager.cmd_doctor()
+                    self.manager.diagnostics.cmd_doctor()
                 except SystemExit as e:
                     if e.code != 0:
                         # Print what was printed to see the failures
@@ -274,7 +278,9 @@ class TestDiagnostics(unittest.TestCase):
     def test_validate_properties_valid(self):
         self.manager._use_real_validate = True
         self.test_file.write_text("key1=value1\nkey2=value2")
-        status, ok, errors = self.manager.validate_properties_file(self.test_file)
+        status, ok, errors = self.manager.diagnostics.validate_properties_file(
+            self.test_file
+        )
         self.assertTrue(ok)
         self.assertEqual(status, "Valid Structure")
         self.assertEqual(len(errors), 0)
@@ -282,7 +288,9 @@ class TestDiagnostics(unittest.TestCase):
     def test_validate_properties_duplicates(self):
         self.manager._use_real_validate = True
         self.test_file.write_text("key1=value1\nkey1=value2\nkey2=v3")
-        _status, ok, errors = self.manager.validate_properties_file(self.test_file)
+        _status, ok, errors = self.manager.diagnostics.validate_properties_file(
+            self.test_file
+        )
         self.assertEqual(ok, "warn")
         self.assertTrue(any("Duplicate key 'key1'" in e for e in errors))
 
@@ -290,14 +298,18 @@ class TestDiagnostics(unittest.TestCase):
         self.manager._use_real_validate = True
         # Line ends in backslash but next line is empty
         self.test_file.write_text("key1=value1\\\n\nkey2=value2")
-        _status, ok, errors = self.manager.validate_properties_file(self.test_file)
+        _status, ok, errors = self.manager.diagnostics.validate_properties_file(
+            self.test_file
+        )
         self.assertEqual(ok, "warn")
         self.assertTrue(any("Broken continuation" in e for e in errors))
 
     def test_validate_properties_orphaned_line(self):
         self.manager._use_real_validate = True
         self.test_file.write_text("key1=value1\norphaned line here")
-        _status, ok, errors = self.manager.validate_properties_file(self.test_file)
+        _status, ok, errors = self.manager.diagnostics.validate_properties_file(
+            self.test_file
+        )
         self.assertEqual(ok, "warn")
         self.assertTrue(any("Orphaned line" in e for e in errors))
 
@@ -305,7 +317,7 @@ class TestDiagnostics(unittest.TestCase):
         lcp_file = Path("/tmp/LCP.json")
         lcp_file.write_text('{"ports": [{"targetPort": 8080}]}')
         try:
-            _status, ok, errors = self.manager.validate_lcp_json(lcp_file)
+            _status, ok, errors = self.manager.diagnostics.validate_lcp_json(lcp_file)
             self.assertEqual(ok, "warn")
             self.assertTrue(any("Missing mandatory 'id'" in e for e in errors))
         finally:
@@ -316,7 +328,7 @@ class TestDiagnostics(unittest.TestCase):
         lcp_file = Path("/tmp/LCP.json")
         lcp_file.write_text('{"id": "test", "ports": [{"noPort": 1}]}')
         try:
-            _status, ok, errors = self.manager.validate_lcp_json(lcp_file)
+            _status, ok, errors = self.manager.diagnostics.validate_lcp_json(lcp_file)
             self.assertEqual(ok, "warn")
             self.assertTrue(any("missing 'port' or 'targetPort'" in e for e in errors))
         finally:
@@ -326,7 +338,7 @@ class TestDiagnostics(unittest.TestCase):
 
 class TestDiagnosticsCompletion(unittest.TestCase):
     def setUp(self):
-        self.manager = DiagnosticsHandler()
+        self.manager = MockDiagManager()
         self.test_home = Path("/tmp/home-test")
         self.test_home.mkdir(parents=True, exist_ok=True)
 
@@ -347,19 +359,19 @@ class TestDiagnosticsCompletion(unittest.TestCase):
 
             # Case 1: File doesn't exist
             # print(f"DEBUG: Shell={os.environ.get('SHELL')}, Home={self.test_home}, exists={zshrc.exists()}")
-            self.assertFalse(self.manager.is_completion_enabled())
+            self.assertFalse(self.manager.diagnostics.is_completion_enabled())
 
             # Case 2: File exists but no marker
             zshrc.write_text("# No completion here")
-            self.assertFalse(self.manager.is_completion_enabled())
+            self.assertFalse(self.manager.diagnostics.is_completion_enabled())
 
             # Case 3: Marker present (new style)
             zshrc.write_text('eval "$(ldm completion zsh)"')
-            self.assertTrue(self.manager.is_completion_enabled())
+            self.assertTrue(self.manager.diagnostics.is_completion_enabled())
 
             # Case 4: Marker present (legacy style)
             zshrc.write_text('eval "$(register-python-argcomplete ldm)"')
-            self.assertTrue(self.manager.is_completion_enabled())
+            self.assertTrue(self.manager.diagnostics.is_completion_enabled())
 
 
 if __name__ == "__main__":
