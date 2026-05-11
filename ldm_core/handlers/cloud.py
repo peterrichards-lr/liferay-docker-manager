@@ -4,15 +4,14 @@ import subprocess
 from typing import cast
 
 from ldm_core.constants import PROJECT_META_FILE
-from ldm_core.handlers.base import BaseHandler
 from ldm_core.ui import UI
 
 
-class CloudHandler(BaseHandler):
-    """Mixin for Liferay Cloud (LCP) integration."""
+class CloudService:
+    """Service for Liferay Cloud (LCP) integration."""
 
-    def __init__(self, args=None):
-        super().__init__(args)
+    def __init__(self, manager=None):
+        self.manager = manager
 
     def _is_cloud_authenticated(self):
         """Checks if the user is currently logged into Liferay Cloud."""
@@ -43,7 +42,7 @@ class CloudHandler(BaseHandler):
                 "Liferay Cloud CLI (lcp) is not installed. Install it to use cloud features."
             )
 
-        if self.non_interactive:
+        if self.manager.non_interactive:
             UI.die("Not logged into Liferay Cloud. Please run 'lcp login' first.")
 
         UI.warning("You are not logged into Liferay Cloud.")
@@ -110,14 +109,14 @@ class CloudHandler(BaseHandler):
         """Orchestrates the cloud-fetch command logic."""
         self.ensure_cloud_auth()
 
-        root_path = self.detect_project_path(project_id, for_init=True)
+        root_path = self.manager.detect_project_path(project_id, for_init=True)
         if not root_path:
             return
 
         is_new_project = not (root_path / PROJECT_META_FILE).exists()
         from ldm_core.utils import sanitize_id
 
-        project_meta = self.read_meta(root_path)
+        project_meta = self.manager.read_meta(root_path)
         cp_id = sanitize_id(
             project_meta.get("cloud_project_id")
             or project_meta.get("project_id")
@@ -125,16 +124,16 @@ class CloudHandler(BaseHandler):
         )
 
         # Use provided env_id or positional arg
-        target_env = sanitize_id(env_id or getattr(self.args, "env_id", None))
+        target_env = sanitize_id(env_id or getattr(self.manager.args, "env_id", None))
 
-        if getattr(self.args, "list_envs", False) or not target_env:
+        if getattr(self.manager.args, "list_envs", False) or not target_env:
             UI.heading(f"Available Liferay Cloud Environments (Project: {cp_id})")
             data = self._run_lcp_cmd(["list"])
             if data:
                 print(data)  # Since it's plain text now, just print it
             return
 
-        if getattr(self.args, "list_backups", False):
+        if getattr(self.manager.args, "list_backups", False):
             UI.heading(f"Liferay Cloud Backups: {cp_id} / {target_env}")
             data = self._run_lcp_cmd(["backup", "list"], project=cp_id, env=target_env)
             if data:
@@ -144,11 +143,11 @@ class CloudHandler(BaseHandler):
                     print(f"  [{UI.CYAN}{backup_id}{UI.COLOR_OFF}] {date}")
             return
 
-        if getattr(self.args, "logs", False):
-            service = getattr(self.args, "service", "liferay")
+        if getattr(self.manager.args, "logs", False):
+            service = getattr(self.manager.args, "service", "liferay")
             UI.heading(f"Remote Logs: {cp_id} / {target_env} ({service})")
             lcp_args = ["log", "--service", service]
-            if getattr(self.args, "follow", False):
+            if getattr(self.manager.args, "follow", False):
                 lcp_args.append("--follow")
             self._run_lcp_cmd(
                 lcp_args,
@@ -158,7 +157,7 @@ class CloudHandler(BaseHandler):
             )
             return
 
-        if getattr(self.args, "sync_env", False):
+        if getattr(self.manager.args, "sync_env", False):
             UI.heading(f"Syncing Cloud Environment Variables: {cp_id} / {target_env}")
             data = self._run_lcp_cmd(["env", "list"], project=cp_id, env=target_env)
             if data:
@@ -169,12 +168,12 @@ class CloudHandler(BaseHandler):
                         custom_env[k] = v
                         UI.info(f"  Synced {k}")
                 project_meta["custom_env"] = json.dumps(custom_env)
-                self.write_meta(root_path, project_meta)
+                self.manager.write_meta(root_path, project_meta)
                 UI.success("Metadata updated.")
             return
 
-        if getattr(self.args, "download", False) or getattr(
-            self.args, "restore", False
+        if getattr(self.manager.args, "download", False) or getattr(
+            self.manager.args, "restore", False
         ):
             UI.heading(f"Downloading Cloud Backups: {cp_id} / {target_env}")
             # Find latest backup ID
@@ -209,23 +208,25 @@ class CloudHandler(BaseHandler):
             # Checksum Verification
             self._verify_cloud_backup_checksums(snapshot_dir, latest)
 
-            if getattr(self.args, "restore", False):
+            if getattr(self.manager.args, "restore", False):
                 # Seeded Start: Boost performance for new project restorations
                 if is_new_project:
                     tag_for_seed = self._get_cloud_liferay_version(cp_id, target_env)
                     if tag_for_seed:
-                        paths = self.setup_paths(root_path)
+                        paths = self.manager.setup_paths(root_path)
                         # We use the db type from args or default to mysql (Liferay Cloud standard)
-                        db_type_for_seed = getattr(self.args, "db", None) or "mysql"
+                        db_type_for_seed = (
+                            getattr(self.manager.args, "db", None) or "mysql"
+                        )
                         if self.manager.assets._ensure_seeded(
                             tag_for_seed, db_type_for_seed, paths
                         ):
                             # Refresh meta from seed before merging restoration changes
-                            seed_meta = self.read_meta(root_path)
+                            seed_meta = self.manager.read_meta(root_path)
                             project_meta.update(seed_meta)
 
                 UI.info("Triggering local restore...")
-                self.cmd_restore(project_id=project_id, backup_dir=snapshot_dir)
+                self.manager.cmd_restore(project_id=project_id, backup_dir=snapshot_dir)
             return
 
         UI.info(

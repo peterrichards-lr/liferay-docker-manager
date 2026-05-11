@@ -736,7 +736,7 @@ def main():
         "scale": lambda: manager.cmd_scale(
             getattr(args, "project", None), args.service_scale
         ),
-        "cloud-fetch": lambda: manager.cmd_cloud_fetch(
+        "cloud-fetch": lambda: manager.cloud.cmd_cloud_fetch(
             getattr(args, "project", None),
             getattr(args, "env_id", None),
             follow=getattr(args, "follow", False),
