@@ -19,8 +19,9 @@ The LDM CI pipeline runs Bandit security scans. We explicitly ignore the followi
 | :--- | :--- |
 | **B103** | Permissive 777 permissions. Used in `migrate_layout` for legacy projects and `cmd_upgrade` to ensure the newly downloaded binary is executable. **Mitigation**: All calls are wrapped in `try...except` and LDM prioritizes standard user ownership. |
 | **B104** | Hardcoded bind to all interfaces. Required for macOS loopback, Gogo shell access, and infrastructure setup. |
+| **B105** | Hardcoded passwords or tokens. Used for default local development database passwords (e.g., `test`) and transient mount verification tokens. **Mitigation**: These are only used in isolated sandbox environments and are not intended for production secrets. |
 | **B108** | Hardcoded /tmp directory. Used only for transient mount verification tokens. |
-| **B112** | `try...except continue` patterns. Used in loops (e.g., tag discovery, project scanning) where a single failure should not abort the entire operation. |
+| **B110 / B112** | `try...except pass/continue` patterns. Used in loops (e.g., tag discovery, project scanning) and cleanup routines where a single failure should not abort the entire operation. |
 | **B202** | Tar `extractall` operations. Used for snapshots and samples. **Mitigation**: LDM uses a mandatory `is_within_root` validation before every extraction to prevent Zip Slip / Path Traversal attacks. |
 | **B324** | Use of MD5 hashing. Used in `cloud-fetch` for ETag verification and non-cryptographic file integrity checks. |
 | **B602 / B603** | Subprocess execution with shell or without absolute paths. Used for complex piping during database snapshots, Windows bridge logic, and rendering the local man page (`cmd_man`). **Mitigation**: Commands are hardcoded or constructed from strictly sanitized internal identifiers. |
@@ -35,6 +36,7 @@ Following our commitment to local security, the following hardening measures are
 - **Native Command Piping**: Database restore and snapshot operations now use native OS-level process piping (stdin/stdout) instead of `shell=True`. This eliminates the risk of shell injection while maintaining performance for large database dumps.
 - **XXE Protection**: Liferay XML license parsing uses a regex-based extraction layer instead of a standard XML parser. This provides absolute immunity to XML External Entity (XXE) attacks.
 - **Identifier Sanitization**: All project IDs, container names, and environment identifiers are strictly sanitized to allow only alphanumeric characters, preventing malicious path or command injection via project metadata.
+- **Snapshot Integrity Verification**: LDM generates SHA-256 checksums for all project snapshots. During recovery or import, the tool validates the archive against this checksum to detect accidental corruption or accidental tampering. Note that this provides *integrity* (data validity) but not *authenticity* (proof of origin), as the checksum files are stored alongside the data in the local filesystem.
 
 ## 4. Sensitive Data Masking (Log Redaction)
 
