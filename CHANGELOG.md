@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v2.5.0] - 2026-05-12
+
+### Added
+
+- **Snapshot Integrity Verification**: Mandatory SHA-256 checksum validation for all project snapshots and workspace imports.
+- **Environment Overrides**: Support for `LDM_COMMON_DIR` environment variable to share configurations across different project roots.
+
+### Changed
+
+- **God Object Decomposition**: Complete architectural refactor of the core orchestration engine into specialized services (Snapshot, Workspace, Runtime, etc.).
+- **Improved Test Coverage**: Reached 50% test coverage threshold with comprehensive unit and E2E interactivity tests.
+- **Hardened Resource Resolution**: Centralized and architecture-aware resource path discovery.
+- **Documentation Overhaul**: Updated technical design documents, security posture, and compatibility tables.
+
 ## [v2.4.26-beta.29] - 2026-04-28
 
 ### Added
