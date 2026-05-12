@@ -5,12 +5,14 @@ from datetime import datetime
 from pathlib import Path
 from typing import cast
 
+from ldm_core.handlers.base import BaseHandler
 from ldm_core.ui import UI
-from ldm_core.utils import get_actual_home, get_compose_cmd, run_command
+from ldm_core.utils import get_actual_home, get_compose_cmd
 
 
-class SnapshotService:
-    def __init__(self, manager=None):
+class SnapshotService(BaseHandler):
+    def __init__(self, manager):
+        super().__init__(manager.args)
         self.manager = manager
 
     def cmd_snapshots(self, paths=None):
@@ -267,9 +269,11 @@ class SnapshotService:
         # 4. Generate SHA-256 Checksum
         from ldm_core.utils import calculate_sha256
 
-        if files_tar.exists():
+        if files_tar.exists() and getattr(self.manager.args, "verify", True):
             sha = calculate_sha256(files_tar)
             (snap_dir / "files.tar.gz.sha256").write_text(sha)
+        elif files_tar.exists():
+            UI.warning("Integrity checksum generation skipped via --no-verify.")
 
         UI.success(f"Snapshot saved: {snap_dir}")
 
@@ -338,37 +342,46 @@ class SnapshotService:
         container_name = project_meta.get("container_name") or paths[
             "root"
         ].name.replace(".", "-")
-        if run_command(["docker", "ps", "-q", "-f", f"name=^{container_name}$"]):
+        if self.manager.run_command(
+            ["docker", "ps", "-q", "-f", f"name=^{container_name}$"]
+        ):
             compose_base = get_compose_cmd()
             if not compose_base:
                 UI.die(
                     "Docker Compose not found. Please run 'ldm doctor' for installation instructions."
                 )
-            run_command([*compose_base, "stop"], check=True, cwd=str(paths["root"]))
+            self.manager.run_command(
+                [*compose_base, "stop"], check=True, cwd=str(paths["root"])
+            )
             time.sleep(2)
 
         files_tar = choice_path / "files.tar.gz"
         if files_tar.exists():
             # Verify Integrity (Mandate 6.2)
             sha_file = choice_path / "files.tar.gz.sha256"
-            if sha_file.exists():
-                UI.info("Verifying snapshot integrity...")
-                from ldm_core.utils import calculate_sha256
+            verify_enabled = getattr(self.manager.args, "verify", True)
 
-                actual_sha = calculate_sha256(files_tar)
-                expected_sha = sha_file.read_text().strip()
-                if actual_sha != expected_sha:
-                    UI.die(
-                        f"Integrity check failed for snapshot: {choice_path.name}\n"
-                        f"Expected: {expected_sha}\n"
-                        f"Actual:   {actual_sha}\n"
-                        f"The snapshot file may be corrupted or tampered with."
+            if verify_enabled:
+                if sha_file.exists():
+                    UI.info("Verifying snapshot integrity...")
+                    from ldm_core.utils import calculate_sha256
+
+                    actual_sha = calculate_sha256(files_tar)
+                    expected_sha = sha_file.read_text().strip()
+                    if actual_sha != expected_sha:
+                        UI.die(
+                            f"Integrity check failed for snapshot: {choice_path.name}\n"
+                            f"Expected: {expected_sha}\n"
+                            f"Actual:   {actual_sha}\n"
+                            f"The snapshot file may be corrupted or tampered with."
+                        )
+                    UI.success("Snapshot integrity verified.")
+                else:
+                    UI.warning(
+                        "Snapshot does not have an integrity checksum. Verification skipped."
                     )
-                UI.success("Snapshot integrity verified.")
             else:
-                UI.warning(
-                    "Snapshot does not have an integrity checksum. Proceeding anyway."
-                )
+                UI.warning("Integrity verification disabled via --no-verify.")
 
             self._extract_snapshot_archive(files_tar, paths)
         else:
@@ -386,7 +399,9 @@ class SnapshotService:
             self.manager.write_meta(paths["root"], project_meta)
 
         if search_snapshot_name and search_snapshot_name != "None":
-            if run_command(["docker", "ps", "-q", "-f", f"name={search_name}"]):
+            if self.manager.run_command(
+                ["docker", "ps", "-q", "-f", f"name={search_name}"]
+            ):
                 UI.info(
                     f"Triggering orchestrated search restore: {search_snapshot_name}..."
                 )
@@ -395,7 +410,7 @@ class SnapshotService:
                 self._delete_project_indices(container_name)
 
                 # 2. Trigger restore
-                run_command(
+                self.manager.run_command(
                     [
                         "docker",
                         "exec",

@@ -16,20 +16,21 @@ if TYPE_CHECKING:
     pass
 
 from ldm_core.constants import SCRIPT_DIR
+from ldm_core.handlers.base import BaseHandler
 from ldm_core.ui import UI
 from ldm_core.utils import (
     is_env_var_blacklisted,
     load_env_blacklist,
-    run_command,
     safe_copy,
     safe_move,
 )
 
 
-class WorkspaceService:
+class WorkspaceService(BaseHandler):
     """Service for workspace management (import, monitor, scanning)."""
 
-    def __init__(self, manager=None):
+    def __init__(self, manager):
+        super().__init__(manager.args)
         self.manager = manager
 
     def cmd_init(self, project_id=None):
@@ -547,6 +548,33 @@ class WorkspaceService:
             if source.is_file():
                 if source.suffix.lower() not in [".zip", ".tgz", ".gz", ".tar"]:
                     UI.die(f"Unsupported source format: {source.suffix}")
+
+                # Verification logic (Integrity Track)
+                verify_enabled = getattr(self.manager.args, "verify", True)
+                sha_file = source.with_name(f"{source.name}.sha256")
+
+                if verify_enabled:
+                    if sha_file.exists():
+                        UI.info(f"Verifying integrity of {source.name}...")
+                        from ldm_core.utils import calculate_sha256
+
+                        actual_sha = calculate_sha256(source)
+                        expected_sha = sha_file.read_text().strip()
+                        if actual_sha != expected_sha:
+                            UI.die(
+                                f"Integrity check failed for archive: {source.name}\n"
+                                f"Expected: {expected_sha}\n"
+                                f"Actual:   {actual_sha}\n"
+                                f"The archive file may be corrupted or tampered with."
+                            )
+                        UI.success("Archive integrity verified.")
+                    else:
+                        UI.warning(
+                            "Archive does not have an integrity checksum. Proceeding without verification."
+                        )
+                else:
+                    UI.warning("Integrity verification disabled via --no-verify.")
+
                 temp_extract_dir = (
                     Path.cwd()
                     / ".ldm_temp"
@@ -646,7 +674,7 @@ class WorkspaceService:
                             pass
                     try:
                         UI.info(f"Executing clean build in {gradlew.parent}...")
-                        run_command(
+                        self.manager.run_command(
                             [str(gradlew), "clean", "build", "-x", "test"],
                             capture_output=False,
                             cwd=str(gradlew.parent),

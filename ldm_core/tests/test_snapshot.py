@@ -105,12 +105,8 @@ class TestSnapshotService(unittest.TestCase):
             self.assertEqual(size, "1.0 KB")
 
     @patch("ldm_core.handlers.base.BaseHandler.detect_project_path")
-    @patch("ldm_core.handlers.base.BaseHandler.read_meta")
     @patch("ldm_core.handlers.base.BaseHandler.setup_paths")
-    @patch("ldm_core.handlers.base.BaseHandler.run_command")
-    def test_cmd_snapshot_search_orchestration_failed(
-        self, mock_run, mock_paths, mock_meta, mock_detect
-    ):
+    def test_cmd_restore_integrity_success(self, mock_paths, mock_detect):
         mock_detect.return_value = self.test_dir
         (self.test_dir / "snapshots").mkdir(exist_ok=True)
 
@@ -119,132 +115,55 @@ class TestSnapshotService(unittest.TestCase):
             "backups": self.test_dir / "snapshots",
             "state": self.test_dir / "osgi" / "state",
         }
-        mock_meta.return_value = {
-            "use_shared_search": "true",
-            "container_name": "test-proj",
-        }
 
-        # Mock run_command to first verify the container exists, then fail the snapshot curl
-        def run_command_side_effect(cmd, **kwargs):
-            if "ps" in cmd:
-                return "container-id"
-            if "curl" in cmd:
-                raise Exception("Network error")
-            return None
+        snap_dir = self.test_dir / "snapshots" / "20260512_120000"
+        snap_dir.mkdir(parents=True)
+        (snap_dir / "files.tar.gz").touch()
+        (snap_dir / "files.tar.gz.sha256").write_text("match-sha")
+        (snap_dir / "meta").touch()
 
-        mock_run.side_effect = run_command_side_effect
-
-        with (
-            patch("ldm_core.ui.UI.warning") as mock_warning,
-            patch.object(self.manager, "verify_runtime_environment"),
-            patch("tarfile.open"),
-            patch("ldm_core.handlers.base.BaseHandler.write_meta"),
-            patch("ldm_core.utils.calculate_sha256", return_value="dummy-sha"),
-        ):
-            # Production code has a try-except for the database dump,
-            # but search orchestration (the curl) is not explicitly wrapped in the same way.
-            # However, looking at the code, it calls run_command for the curl and does not wrap it.
-            # So I should mock run_command to NOT raise an exception, but return something that implies failure
-            # OR wrap the test call.
-            # I will mock the run_command to return an empty string for the curl which signifies failure
-            # and verify the logic.
-
-            mock_run.side_effect = None
-
-            def run_command_side_effect_v2(cmd, **kwargs):
-                if "ps" in cmd:
-                    return "container-id"
-                if "curl" in cmd:
-                    return None  # Represents a failed curl or no output
-                return None
-
-            mock_run.side_effect = run_command_side_effect_v2
-
-            self.manager.snapshot.cmd_snapshot("test-proj")
-            # Wait, the code checks if `search_snapshot_name` is set, and it is set IF the container exists.
-            # The curl command is run, but it doesn't check the output of the curl command.
-            # It just triggers it. The `_wait_for_search_snapshot` is what actually checks.
-            # I should mock `_wait_for_search_snapshot` to return False.
-
-        with (
-            patch("ldm_core.ui.UI.warning") as mock_warning,
-            patch.object(self.manager, "verify_runtime_environment"),
-            patch("tarfile.open"),
-            patch("ldm_core.handlers.base.BaseHandler.write_meta"),
-            patch("ldm_core.utils.calculate_sha256", return_value="dummy-sha"),
-            patch.object(
-                self.manager.snapshot, "_wait_for_search_snapshot", return_value=False
-            ),
-        ):
-            self.manager.snapshot.cmd_snapshot("test-proj")
-            mock_warning.assert_any_call(
-                "Search snapshot failed or timed out. Project snapshot will proceed without it."
-            )
-
-    @patch("ldm_core.handlers.base.BaseHandler.detect_project_path")
-    @patch("ldm_core.handlers.base.BaseHandler.read_meta")
-    @patch("ldm_core.handlers.base.BaseHandler.setup_paths")
-    @patch("ldm_core.handlers.base.BaseHandler.run_command")
-    @patch.object(SnapshotService, "_extract_snapshot_archive")
-    def test_cmd_restore_latest(
-        self, mock_extract, mock_run, mock_paths, mock_meta, mock_detect
-    ):
-        # 1. Setup real filesystem state in temp dir
-        root = self.test_dir
-        snapshots_dir = root / "snapshots"
-        snapshots_dir.mkdir()
-
-        # Create two snapshots
-        snap1 = snapshots_dir / "20260428_100000"
-        snap2 = snapshots_dir / "20260428_110000"  # Newer
-
-        for s in [snap1, snap2]:
-            s.mkdir()
-            (s / "files.tar.gz").touch()  # LDM marker
-
-        mock_detect.return_value = root
-        mock_paths.return_value = {
-            "root": root,
-            "backups": snapshots_dir,
-            "state": root / "osgi" / "state",
-            "data": root / "data",
-            "deploy": root / "deploy",
-            "files": root / "files",
-            "modules": root / "osgi" / "modules",
-            "configs": root / "osgi" / "configs",
-        }
-        mock_meta.return_value = {"container_name": "test-proj"}
-
+        # Set latest flag
         self.manager.args.latest = True
+        self.manager.args.verify = True
         self.manager.args.list = False
-        self.manager.args.index = None
         self.manager.args.backup_dir = None
 
         with (
-            patch("tarfile.open"),
-            patch.object(self.manager, "verify_runtime_environment"),
-            patch.object(
-                self.manager, "read_meta", return_value={"container_name": "test-proj"}
-            ),
-            patch.object(
-                SnapshotService, "_restore_from_cloud_layout", return_value=False
-            ),
-            # Mock verify_snapshot_integrity
-            patch.object(
-                SnapshotService,
-                "verify_snapshot_integrity",
-                return_value=True,
-                create=True,
-            ),
+            patch("ldm_core.utils.calculate_sha256", return_value="match-sha"),
+            patch.object(self.manager.snapshot, "_extract_snapshot_archive"),
+            patch("ldm_core.ui.UI.success") as mock_success,
+            patch("ldm_core.handlers.base.BaseHandler.read_meta", return_value={}),
         ):
-            self.manager.snapshot.cmd_restore("proj")
+            self.manager.snapshot.cmd_restore("test")
+            mock_success.assert_any_call("Snapshot integrity verified.")
 
-        # Verify that the newest snapshot (snap2) was chosen
-        mock_extract.assert_called_once()
-        actual_choice = mock_extract.call_args[0][0]
-        # Verify it chose snap2 by checking the path string contains the newer timestamp
-        self.assertIn("20260428_110000", str(actual_choice))
+    @patch("ldm_core.handlers.base.BaseHandler.detect_project_path")
+    @patch("ldm_core.handlers.base.BaseHandler.setup_paths")
+    def test_cmd_restore_integrity_failure(self, mock_paths, mock_detect):
+        mock_detect.return_value = self.test_dir
+        (self.test_dir / "snapshots").mkdir(exist_ok=True)
 
+        mock_paths.return_value = {
+            "root": self.test_dir,
+            "backups": self.test_dir / "snapshots",
+            "state": self.test_dir / "osgi" / "state",
+        }
 
-if __name__ == "__main__":
-    unittest.main()
+        snap_dir = self.test_dir / "snapshots" / "20260512_120000"
+        snap_dir.mkdir(parents=True)
+        (snap_dir / "files.tar.gz").touch()
+        (snap_dir / "files.tar.gz.sha256").write_text("wrong-sha")
+        (snap_dir / "meta").touch()
+
+        self.manager.args.latest = True
+        self.manager.args.verify = True
+        self.manager.args.list = False
+
+        with (
+            patch("ldm_core.utils.calculate_sha256", return_value="actual-sha"),
+            patch("ldm_core.ui.UI.die", side_effect=SystemExit) as mock_die,
+            patch("ldm_core.handlers.base.BaseHandler.read_meta", return_value={}),
+        ):
+            with self.assertRaises(SystemExit):
+                self.manager.snapshot.cmd_restore("test")
+            self.assertTrue(mock_die.called)

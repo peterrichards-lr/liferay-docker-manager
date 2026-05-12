@@ -147,6 +147,15 @@ def get_parser():
     imp.add_argument("--no-seed", action="store_true")
     imp.add_argument("--no-osgi-seed", action="store_true")
     imp.add_argument("--no-captcha", action="store_true")
+    imp.add_argument(
+        "--verify", action="store_true", default=True, help="Verify snapshot integrity"
+    )
+    imp.add_argument(
+        "--no-verify",
+        action="store_false",
+        dest="verify",
+        help="Skip snapshot integrity verification",
+    )
     imp.add_argument("--env", action="append")
 
     # Command: init
@@ -267,6 +276,18 @@ def get_parser():
     snap.add_argument("-p", "--project", dest="project_flag")
     snap.add_argument("-n", "--name")
     snap.add_argument("--files-only", action="store_true")
+    snap.add_argument(
+        "--verify",
+        action="store_true",
+        default=True,
+        help="Generate integrity checksum for snapshot",
+    )
+    snap.add_argument(
+        "--no-verify",
+        action="store_false",
+        dest="verify",
+        help="Skip integrity checksum generation",
+    )
 
     rest = subparsers.add_parser("restore", parents=[base_sub_parent])
     rest.add_argument("project", nargs="?")
@@ -277,6 +298,15 @@ def get_parser():
     )
     rest.add_argument("--list", action="store_true", help="List available snapshots")
     rest.add_argument("--backup-dir")
+    rest.add_argument(
+        "--verify", action="store_true", default=True, help="Verify snapshot integrity"
+    )
+    rest.add_argument(
+        "--no-verify",
+        action="store_false",
+        dest="verify",
+        help="Skip snapshot integrity verification",
+    )
 
     # Simple Commands
     subparsers.add_parser("init-common", parents=[base_sub_parent])

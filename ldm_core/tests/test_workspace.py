@@ -63,7 +63,7 @@ class MockWorkspaceManager(
 
     def detect_project_path(self, project_name, for_init=False):
         # This will be patched in the test
-        pass
+        return Path(f"/tmp/{project_name}")
 
     def setup_paths(self, project_path):
         root = Path(project_path)
@@ -228,6 +228,50 @@ class TestWorkspaceImport(unittest.TestCase):
 
                 # Verify the original content was PRESERVED
                 self.assertEqual(existing_cx.read_text(), "ORIGINAL_CONTENT")
+
+    def test_cmd_import_integrity_success(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            source_zip = tmp_path / "project.zip"
+            source_zip.touch()
+            sha_file = tmp_path / "project.zip.sha256"
+            sha_file.write_text("match-sha")
+
+            self.handler.args.verify = True
+            self.handler.args.db = "hypersonic"
+            self.handler.args.build = False
+            self.handler.args.ssl = None
+            self.handler.args.host_name = None
+            self.handler.args.port = None
+            self.handler.args.mount_logs = False
+            self.handler.args.gogo_port = None
+            self.handler.args.env = None
+            self.handler.args.no_run = True
+            self.handler.args.project = "test-proj"
+            self.handler.args.project_flag = None
+
+            with (
+                patch("ldm_core.utils.calculate_sha256", return_value="match-sha"),
+                patch("ldm_core.handlers.workspace.UI.success") as mock_success,
+                patch("zipfile.ZipFile"),
+                patch("ldm_core.utils.safe_extract"),
+                patch("ldm_core.handlers.workspace.datetime") as mock_date,
+                patch.object(
+                    self.handler, "detect_project_path", return_value=tmp_path / "test"
+                ),
+            ):
+                mock_date.now.return_value.strftime.return_value = "20260512_120000"
+                # Mock die to avoid further processing
+                with patch(
+                    "ldm_core.handlers.workspace.UI.die", side_effect=SystemExit
+                ):
+                    try:
+                        self.handler.workspace.cmd_import(str(source_zip))
+                    except SystemExit:
+                        pass
+
+                success_calls = [call[0][0] for call in mock_success.call_args_list]
+                self.assertIn("Archive integrity verified.", success_calls)
 
     def test_hydrate_from_workspace_missing_source(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
