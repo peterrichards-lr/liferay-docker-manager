@@ -208,9 +208,14 @@ class TestUpdateChecks(unittest.TestCase):
 
             from ldm_core.utils import check_for_updates
 
-            version, url = check_for_updates("2.5.0")
-            self.assertEqual(version, "2.6.0")
-            self.assertEqual(url, "http://dl")
+            # Mock system and machine to ensure predictable result
+            with (
+                patch("sys.platform", "darwin"),
+                patch("platform.machine", return_value="arm64"),
+            ):
+                version, url = check_for_updates("2.5.0")
+                self.assertEqual(version, "2.6.0")
+                self.assertEqual(url, "http://dl")
 
 
 if __name__ == "__main__":

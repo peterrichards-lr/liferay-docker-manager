@@ -21,6 +21,14 @@ class TestE2EInteractive(unittest.TestCase):
         # We run 'ldm run' with no arguments in a temporary directory
         # to force the interactive 'Select Project' menu and 'new project' fallback.
         # The input simulates:
+        import os
+
+        # Create a clean environment without CI markers to force interactivity
+        env = os.environ.copy()
+        env.pop("CI", None)
+        env.pop("GITHUB_ACTIONS", None)
+        env.pop("GITLAB_CI", None)
+
         # 1. 'n' (select new project)
         # 2. 'piped-test-project' (project name)
         # 3. Enter (accept default host)
@@ -35,10 +43,13 @@ class TestE2EInteractive(unittest.TestCase):
                 capture_output=True,
                 text=True,
                 cwd=str(tmp_dir),
+                env=env,
             )
 
         # Verify the prompt for project name was actually reached and handled
-        self.assertIn("Enter a new project name to initialize", process.stdout)
+        # Check both stdout and stderr since UI.die or prompts might go to either depending on state
+        output = process.stdout + process.stderr
+        self.assertIn("Enter a new project name to initialize", output)
 
         # Because we sent 'q' to abort at the next prompt (Release type),
         # the process should exit with code 130 or 1 (depending on how the abort is handled)

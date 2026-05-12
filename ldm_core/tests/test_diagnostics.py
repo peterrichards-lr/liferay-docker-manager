@@ -34,8 +34,8 @@ class MockDiagManager(BaseHandler):
         self.license = MagicMock()
         self.license.check_license_health = MagicMock(return_value=("OK", True, []))
 
-    def detect_project_path(self, project_id, for_init=False):
-        return Path(f"/tmp/{project_id}")
+    def detect_project_path(self, project_id=None, for_init=False):
+        return Path(f"/tmp/{project_id}") if project_id else Path("/tmp/default")
 
     def read_meta(self, *args, **kwargs):
         return {"tag": "7.4.13-u100", "env_args": []}
@@ -52,7 +52,7 @@ class MockDiagManager(BaseHandler):
     def parse_version(self, tag):
         return (2024, 1, 0)
 
-    def get_common_dir(self, base_path):
+    def get_common_dir(self, project_path=None):
         return Path("/tmp/common")
 
     def setup_paths(self, project_path):

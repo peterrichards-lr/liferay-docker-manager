@@ -11,7 +11,7 @@ from ldm_core.utils import check_for_updates
 try:
     import argcomplete
 except ImportError:
-    argcomplete = None
+    argcomplete = None  # type: ignore
 
 
 def project_completer(prefix, **kwargs):
@@ -647,8 +647,9 @@ def main():
 
     # Execution map
     from collections.abc import Callable
+    from typing import Any
 
-    cmds: dict[str, Callable[[], None]] = {
+    cmds: dict[str, Callable[..., Any]] = {
         "run": lambda: manager.runtime.cmd_run(getattr(args, "project", None)),
         "up": lambda: manager.runtime.cmd_run(getattr(args, "project", None)),
         "import": lambda: manager.workspace.cmd_import(args.source),
