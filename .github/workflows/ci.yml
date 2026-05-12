@@ -228,12 +228,11 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Check for Release Keyword
+      - name: Check for Release Pattern
         id: check_release
         shell: bash
         run: |
-          MSG=$(git log -1 --pretty=%B)
-          if echo "$MSG" | grep -qi "\[release\]" || [[ "${{ github.ref_name }}" != *"-"* ]]; then
+          if [[ "${{ github.ref_name }}" != *"-"* ]]; then
             echo "is_release=true" >> $GITHUB_OUTPUT
           else
             echo "is_release=false" >> $GITHUB_OUTPUT

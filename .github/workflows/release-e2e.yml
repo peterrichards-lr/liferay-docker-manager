@@ -13,13 +13,8 @@ env:
 
 jobs:
   e2e-verification:
-    # Run if the commit message includes [release], [beta], [pre-release]
-    # OR if the tag name indicates a pre-release (contains a hyphen)
-    if: |
-      contains(github.event.head_commit.message, '[release]') ||
-      contains(github.event.head_commit.message, '[beta]') ||
-      contains(github.event.head_commit.message, '[pre-release]') ||
-      contains(github.ref_name, '-')
+    # Run on all version tags (v2.5.0, v2.5.0-pre.1, etc.)
+    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     
     steps:
