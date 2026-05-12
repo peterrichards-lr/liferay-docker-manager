@@ -85,6 +85,7 @@
 | 3.6 | **Captcha Switch** | `ldm init test-captcha --no-captcha` | Generates config to disable CAPTCHA. |
 | 3.9 | **License Discovery** | Drop `.xml` into `deploy/` | Doctor identifies the XML as a license. |
 | 3.10 | **Sample Hydration** | `ldm init test-samples --samples` | Scaffolds project and populates samples. |
+| 3.11 | **Import Integrity** | `ldm import source.zip` | Verifies `source.zip.sha256` before extraction. |
 
 ---
 
@@ -122,6 +123,7 @@
 | :-- | :---------------------- | :---------- | :------------------------------------------ |
 | 5.3 | **Corruption Guard** | Corrupt `files.tar.gz` manually | `ldm restore` fails with integrity error. |
 | 5.4 | **Project Reset** | `ldm reset state test-init` | Clears state while container is stopped. |
+| 5.5 | **Verification Bypass** | `ldm restore test-init --no-verify` | Restores tampered snapshot without error. |
 
 ---
 

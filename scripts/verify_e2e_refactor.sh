@@ -258,6 +258,33 @@ fi
 log_and_run "Restoring Snapshot" "$LDM_CMD" -y restore --latest
 echo "✅ Snapshot and Restore verified." | tee -a "$RESULTS_FILE_TMP"
 
+# 4b. Integrity Verification (Failure & Override)
+echo "--- Step 3b: Integrity Verification ---"
+# Resolve the latest snapshot directory
+# shellcheck disable=SC2012
+LATEST_SNAP=$(ls -td snapshots/*/ | head -n 1)
+SHA_FILE="${LATEST_SNAP}files.tar.gz.sha256"
+
+if [ -f "$SHA_FILE" ]; then
+    echo "ℹ  Tampering with checksum to test enforcement..." | tee -a "$RESULTS_FILE_TMP"
+    echo "CORRUPTED-DATA" > "$SHA_FILE"
+    
+    echo ">> Attempting restore of tampered snapshot (Expected Failure)..."
+    # We don't use log_and_run here because we EXPECT it to fail (non-zero exit)
+    if "$LDM_CMD" -y restore --latest 2>&1 | grep -q "Integrity check failed"; then
+         echo "✅ Tampered snapshot correctly rejected." | tee -a "$RESULTS_FILE_TMP"
+    else
+         echo "❌ ERROR: Tampered snapshot was NOT rejected!" | tee -a "$RESULTS_FILE_TMP"
+         exit 1
+    fi
+    
+    log_and_run "Restoring with --no-verify override" "$LDM_CMD" -y restore --latest --no-verify
+    echo "✅ Integrity override verified." | tee -a "$RESULTS_FILE_TMP"
+else
+    echo "❌ ERROR: No SHA256 file found. Integrity generation failed!" | tee -a "$RESULTS_FILE_TMP"
+    exit 1
+fi
+
 # 5. Status and Logs
 echo "--- Step 4: Status & Logs ---"
 log_and_run "Checking Status" "$LDM_CMD" -y status

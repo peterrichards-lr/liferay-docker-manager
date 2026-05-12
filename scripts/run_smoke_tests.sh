@@ -70,6 +70,16 @@ python3 liferay_docker.py snapshot "$SMOKE_ROOT" --name "Smoke Test Snapshot" --
 
 if [ -d "$SMOKE_ROOT/snapshots" ]; then
     echo -e "${UI_GREEN}✅ Snapshot directory created and accessible.${UI_OFF}"
+    
+    # 6. Integrity Verification check
+    # shellcheck disable=SC2012
+    LATEST_SNAP=$(ls -td "$SMOKE_ROOT/snapshots"/*/ | head -n 1)
+    if [ -f "${LATEST_SNAP}files.tar.gz.sha256" ]; then
+        echo -e "${UI_GREEN}✅ Integrity SHA file generated successfully.${UI_OFF}"
+    else
+        echo -e "${UI_RED}❌ Integrity SHA file MISSING!${UI_OFF}"
+        exit 1
+    fi
 else
     echo -e "${UI_RED}❌ Failed to create snapshot directory.${UI_OFF}"
     exit 1

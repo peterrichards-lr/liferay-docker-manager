@@ -69,7 +69,7 @@ The badges below represent our verified support for various Docker providers. En
 - **Fail-Fast Design**: Proactive environment checking. LDM verifies Docker reachability, volume mounts, resource allocations (CPU/RAM), and **Compose functionality** before execution, providing clean, actionable error messages instead of tracebacks.
 - **Port Conflict Detection**: Proactively verifies that required host ports (80, 443, 9200, etc.) are available before starting, preventing cryptic Docker errors.
 - **Atomic Configuration**: All project metadata and property updates use safe atomic writes to prevent file corruption during interruptions.
-- **Integrity Verification**: As of v2.4.0, all project snapshots and pre-warmed bootstrap seeds include mandatory **SHA-256 checksums**. LDM automatically verifies these during recovery and import to ensure data validity.
+- **Integrity Verification**: As of v2.5.0, all project snapshots and pre-warmed bootstrap seeds include mandatory **SHA-256 checksums**. LDM automatically verifies these during recovery and import to ensure data validity. Users can bypass this check using the `--no-verify` flag if necessary for legacy or manually modified snapshots.
 - **Global Project Registry**: Proactively detects project and hostname collisions across the entire filesystem, preventing infrastructure conflicts.
 - **Architecture-Aware**: The tool detects your OS automatically to fetch the correct optimized binary during self-updates.
 - **Shell Autocompletion**: TAB completion for commands and project names across Bash, Zsh, and Fish.
