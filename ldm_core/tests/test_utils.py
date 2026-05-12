@@ -210,7 +210,7 @@ class TestUpdateChecks(unittest.TestCase):
 
             # Mock system and machine to ensure predictable result
             with (
-                patch("sys.platform", "darwin"),
+                patch("sys.platform", "darwin", create=True),
                 patch("platform.machine", return_value="arm64"),
             ):
                 version, url = check_for_updates("2.5.0")

@@ -9,6 +9,7 @@ class TestE2EInteractive(unittest.TestCase):
         End-to-End test to ensure that piped input correctly navigates
         LDM's interactive prompts (like project selection).
         """
+        import shutil
         import sys
         import tempfile
 
@@ -18,9 +19,6 @@ class TestE2EInteractive(unittest.TestCase):
             str(Path(__file__).parent.parent.parent / "liferay_docker.py"),
         ]
 
-        # We run 'ldm run' with no arguments in a temporary directory
-        # to force the interactive 'Select Project' menu and 'new project' fallback.
-        # The input simulates:
         import os
 
         # Create a clean environment without CI markers to force interactivity
@@ -30,13 +28,12 @@ class TestE2EInteractive(unittest.TestCase):
         env.pop("GITLAB_CI", None)
 
         # 1. 'n' (select new project)
-        # 2. 'piped-test-project' (project name)
-        # 3. Enter (accept default host)
-        # 4. Enter (accept default tag)
-        # 5. 'q' (quit)
+        # We stop here to let it hit EOF at the "Enter project name" prompt.
+        # This prevents it from proceeding to verify_runtime_environment which triggers Docker.
+        test_input = "n\n"
 
-        test_input = "n\npiped-test-project\n\n\nq\n"
-        with tempfile.TemporaryDirectory() as tmp_dir:
+        tmp_dir = tempfile.mkdtemp()
+        try:
             process = subprocess.run(
                 [*ldm_executable, "run"],
                 input=test_input,
@@ -46,10 +43,11 @@ class TestE2EInteractive(unittest.TestCase):
                 env=env,
             )
 
-        # Verify the prompt for project name was actually reached and handled
-        # Check both stdout and stderr since UI.die or prompts might go to either depending on state
-        output = process.stdout + process.stderr
-        self.assertIn("Enter a new project name to initialize", output)
+            # Verify the prompt for project name was actually reached
+            output = process.stdout + process.stderr
+            self.assertIn("Enter a new project name to initialize", output)
+        finally:
+            shutil.rmtree(tmp_dir, ignore_errors=True)
 
         # Because we sent 'q' to abort at the next prompt (Release type),
         # the process should exit with code 130 or 1 (depending on how the abort is handled)
