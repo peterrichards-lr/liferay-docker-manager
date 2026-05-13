@@ -31,3 +31,4 @@ ldm-verification-results.txt
 ldm_core/ui_colors.py
 scripts/colors.sh
 /test
+ldm-debug-bundle*.zip
