@@ -725,7 +725,10 @@ class BaseHandler:
                         (p_test / f).exists()
                         for f in ["meta", ".liferay-docker.meta", ".ldm.meta"]
                     )
-                    if has_meta:
+                    has_structure = (p_test / "files").exists() and (
+                        p_test / "deploy"
+                    ).exists()
+                    if has_meta or has_structure:
                         return p_test
                     if for_init and s_dir.exists() and not p_test.is_file():
                         return p_test
