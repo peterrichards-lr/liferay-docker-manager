@@ -261,6 +261,43 @@ class TestRuntime(unittest.TestCase):
                 "show_summary", second_call_kwargs
             )  # Or it's True by default
 
+    @patch("ldm_core.utils.discover_latest_tag")
+    def test_cmd_run_non_interactive_tag_prefix(self, mock_discover):
+        mock_discover.return_value = "2026.q1.10"
+        with (
+            patch.object(
+                self.handler, "detect_project_path", return_value=self.tmp_dir
+            ),
+            patch.object(
+                self.handler, "setup_paths", return_value={"root": self.tmp_dir}
+            ),
+            patch.object(self.handler, "read_meta", return_value={}),
+            patch.object(self.handler, "_pre_flight_checks", return_value=8080),
+            patch.object(self.handler, "verify_runtime_environment"),
+            patch.object(self.handler.handler, "sync_stack"),
+        ):
+            self.handler.args.project = "test"
+            self.handler.args.tag = None
+            self.handler.args.tag_latest = False
+            self.handler.args.tag_prefix = "2026.q1"
+            self.handler.args.release_type = None
+            self.handler.args.no_up = True
+            self.handler.args.samples = False
+            self.handler.args.db = None
+            self.handler.args.host_name = None
+            self.handler.args.jvm_args = None
+            self.handler.args.port = None
+            self.handler.args.snapshot = None
+
+            # The test checks that we don't die and discover_latest_tag is called
+            self.handler.cmd_run("test")
+
+            mock_discover.assert_called_once()
+            # verify prefix_filter was passed
+            call_kwargs = mock_discover.call_args[1]
+            self.assertEqual(call_kwargs.get("prefix_filter"), "2026.q1")
+            self.assertEqual(call_kwargs.get("release_type"), "any")
+
 
 if __name__ == "__main__":
     unittest.main()

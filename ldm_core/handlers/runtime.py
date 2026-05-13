@@ -123,16 +123,20 @@ class RuntimeService:
 
         if not tag:
             tag_latest = getattr(self.manager.args, "tag_latest", False)
-            if self.manager.non_interactive and not tag_latest:
+            prefix = getattr(self.manager.args, "tag_prefix", None)
+
+            can_discover = tag_latest or bool(prefix)
+            if self.manager.non_interactive and not can_discover:
                 UI.die("No Liferay tag specified.")
 
             from ldm_core.constants import API_BASE_DXP
             from ldm_core.utils import discover_latest_tag
 
-            rt = getattr(self.manager.args, "release_type", None) or "lts"
-            prefix = getattr(self.manager.args, "tag_prefix", None)
+            rt = getattr(self.manager.args, "release_type", None)
+            if not rt:
+                rt = "any" if prefix else "lts"
 
-            if not tag_latest:
+            if not can_discover:
                 # Interactive Tag Discovery Sequence
                 # Combined prompt for release type or specific version prefix
                 ans = UI.ask("Release type (any|u|lts|qr) or prefix", "lts")
