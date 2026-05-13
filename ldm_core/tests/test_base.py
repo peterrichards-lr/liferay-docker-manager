@@ -443,6 +443,34 @@ class TestBaseCompletion(unittest.TestCase):
         with patch("argcomplete.shellcode", side_effect=Exception("Failed")):
             self.handler.cmd_completion(target_shell="zsh")
 
+    @patch("platform.system", return_value="Darwin")
+    @patch("ldm_core.handlers.base.subprocess.run")
+    @patch("ldm_core.handlers.base.shutil.which", return_value="/usr/local/bin/docker")
+    def test_verify_runtime_environment_darwin_no_unbound_local_error(
+        self, mock_which, mock_run, mock_system
+    ):
+        from ldm_core.handlers.base import BaseHandler
+
+        handler = BaseHandler(MagicMock())
+        handler.verbose = False
+        # Create a mock path that acts like it exists so it doesn't fail early
+        mock_root = MagicMock(spec=Path)
+        mock_root.exists.return_value = True
+        mock_root.__str__.return_value = "/tmp/mock_root"  # type: ignore[attr-defined]
+        mock_root.as_posix.return_value = "/tmp/mock_root"  # type: ignore[attr-defined]
+        paths = {"root": mock_root, "files": mock_root / "files"}
+
+        mock_result = MagicMock()
+        mock_result.stdout = "OK"
+        mock_run.return_value = mock_result
+
+        try:
+            handler.verify_runtime_environment(paths)
+        except UnboundLocalError:
+            self.fail(
+                "verify_runtime_environment raised UnboundLocalError unexpectedly!"
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

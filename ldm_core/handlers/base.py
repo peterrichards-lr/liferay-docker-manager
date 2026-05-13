@@ -944,7 +944,6 @@ class BaseHandler:
 
                     if system_type == "darwin":
                         actual_home = Path.home()
-                        import contextlib
 
                         with contextlib.suppress(Exception):
                             from ldm_core.utils import get_actual_home
