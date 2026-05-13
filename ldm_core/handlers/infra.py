@@ -272,8 +272,19 @@ tls:
                 UI.detail("Starting existing Docker socket bridge...")
                 DockerService.start(container_name)
 
-    def setup_global_search(self):
+    def setup_global_search(self, force=False):
         """Ensures the global ES8 search service is running."""
+        # LDM-369: Sidecar Protection. If the current project metadata explicitly
+        # disables shared search, we MUST NOT touch the global search infrastructure.
+        project_meta = getattr(self.manager, "meta", {})
+        if project_meta:
+            use_shared = (
+                str(project_meta.get("use_shared_search", "true")).lower() == "true"
+            )
+            if not use_shared and not force:
+                UI.debug("Skipping global search setup (Sidecar mode active)")
+                return None
+
         from ldm_core.docker_service import DockerService
 
         search_name = "liferay-search-global"

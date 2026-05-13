@@ -166,6 +166,17 @@ class TestSidecarImplementation(unittest.TestCase):
                     args, _ = call
                     self.assertNotIn("elasticsearch", str(args[0]).lower())
 
+    def test_setup_global_search_skipped_in_sidecar_mode(self):
+        """Requirement: sidecar project cannot be allowed to affect the shared infrastructure."""
+        # Scenario: Project is sidecar
+        self.manager.meta = {"use_shared_search": "false"}
+
+        with patch.object(self.manager, "run_command") as mock_run:
+            self.manager.infra.setup_global_search()
+
+            # Verify no docker commands were run (early exit)
+            mock_run.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()
