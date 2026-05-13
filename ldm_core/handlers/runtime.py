@@ -519,8 +519,6 @@ class RuntimeService:
             deps = []
             if db_type != "hypersonic":
                 deps.append("db")
-            if not use_shared_search:
-                deps.append("search")
 
             if deps:
                 UI.detail(
