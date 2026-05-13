@@ -369,17 +369,26 @@ class ConfigService:
                 ("*.cfg", paths["configs"]),
             ]
 
+            use_sidecar = False
+            if project_meta:
+                use_shared_search = (
+                    str(project_meta.get("use_shared_search", "true")).lower() == "true"
+                )
+                use_sidecar = not use_shared_search
+
             # Determine if global search is actually active and what version it is
-            search_inspect = run_command(
-                [
-                    "docker",
-                    "inspect",
-                    "-f",
-                    "{{.Config.Image}}",
-                    "liferay-search-global",
-                ],
-                check=False,
-            )
+            search_inspect = None
+            if not use_sidecar:
+                search_inspect = run_command(
+                    [
+                        "docker",
+                        "inspect",
+                        "-f",
+                        "{{.Config.Image}}",
+                        "liferay-search-global",
+                    ],
+                    check=False,
+                )
             search_running = search_inspect is not None
             search_version = 8
             if search_inspect and ":7." in search_inspect:

@@ -31,7 +31,9 @@ class InfraService:
         self.setup_infrastructure(resolved_ip, 443, use_ssl=True)
         UI.success("Infrastructure setup complete.")
 
-    def setup_infrastructure(self, resolved_ip, ssl_port, use_ssl=True, quiet=False):
+    def setup_infrastructure(
+        self, resolved_ip, ssl_port, use_ssl=True, quiet=False, use_shared_search=True
+    ):
         """Initializes global Traefik proxy and search services."""
         self._ensure_network()
         if not use_ssl:
@@ -41,7 +43,7 @@ class InfraService:
         self._ensure_docker_proxy()
 
         # Orchestrated Global Search (ES8)
-        if getattr(self.manager.args, "search", False):
+        if getattr(self.manager.args, "search", False) and use_shared_search:
             self.setup_global_search()
 
         if not quiet:

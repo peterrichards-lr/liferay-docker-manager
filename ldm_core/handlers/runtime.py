@@ -438,7 +438,11 @@ class RuntimeService:
             infra_start = time.time()
             resolved_ip = self.manager.get_resolved_ip(host_name) or "127.0.0.1"
             self.manager.infra.setup_infrastructure(
-                resolved_ip, ssl_port, use_ssl=ssl_enabled, quiet=not show_summary
+                resolved_ip,
+                ssl_port,
+                use_ssl=ssl_enabled,
+                quiet=not show_summary,
+                use_shared_search=use_shared_search,
             )
 
             if self.manager.verbose:

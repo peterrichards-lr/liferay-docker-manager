@@ -340,17 +340,9 @@ class ComposerService:
 
     def _build_search_service(self, meta):
         """Constructs the Sidecar Elasticsearch service if required."""
-        use_shared_search = str(meta.get("use_shared_search", "true")).lower() == "true"
-        if use_shared_search:
-            return None
-
-        tag = str(meta.get("tag") or "latest")
-        es_ver = resolve_dependency_version(tag, "elasticsearch") or "7.17.10"
-        return {
-            "image": f"elasticsearch:{es_ver}",
-            "environment": ["discovery.type=single-node"],
-            "networks": ["liferay-net"],
-        }
+        # LDM-369: If sidecar is active, we do NOT want a separate search container.
+        # Liferay will use its internal sidecar search inside the main container.
+        return
 
     def _build_db_service(self, meta):
         """Constructs the Database service (MySQL/PostgreSQL) if required."""
