@@ -61,6 +61,20 @@ class TestSidecarImplementation(unittest.TestCase):
         self.project_root = Path("/tmp/sidecar-project")
         self.paths = self.manager.setup_paths(self.project_root)
 
+    def _validate_compose_dependencies(self, compose_data):
+        """Internal helper to verify all depends_on targets are defined in the same file."""
+        services = compose_data.get("services", {})
+        for svc_id, svc_def in services.items():
+            depends_on = svc_def.get("depends_on", [])
+            if isinstance(depends_on, dict):
+                depends_on = list(depends_on.keys())
+            for dep in depends_on:
+                self.assertIn(
+                    dep,
+                    services,
+                    f"Service '{svc_id}' depends on undefined service '{dep}'",
+                )
+
     def test_composer_no_separate_search_container(self):
         """Requirement: There should no seperate search container for a ldm project which has used --sidecar."""
         meta = {
@@ -73,6 +87,9 @@ class TestSidecarImplementation(unittest.TestCase):
         with patch("ldm_core.utils.safe_write_text") as mock_write:
             self.manager.composer.write_docker_compose(self.paths, meta)
             compose_data = yaml.safe_load(mock_write.call_args[0][1])
+
+            # Requirement: Validate integrity of the generated file
+            self._validate_compose_dependencies(compose_data)
 
             # Verify no 'search' service is present
             self.assertNotIn("search", compose_data["services"])
@@ -93,7 +110,8 @@ class TestSidecarImplementation(unittest.TestCase):
             self.assertNotIn("liferay-search-global", depends_on)
 
     def test_composer_shared_search_dependency(self):
-        """Requirement: Shared infrastructure projects should have a dependency on global search."""
+        """Requirement: Shared infrastructure projects should NOT have a dependency on global search in the compose file
+        (as it is an external service managed by the global infra stack)."""
         meta = {
             "use_shared_search": "true",
             "tag": "7.4.13-u100",
@@ -105,9 +123,13 @@ class TestSidecarImplementation(unittest.TestCase):
             self.manager.composer.write_docker_compose(self.paths, meta)
             compose_data = yaml.safe_load(mock_write.call_args[0][1])
 
+            # Requirement: Validate integrity of the generated file
+            self._validate_compose_dependencies(compose_data)
+
             liferay_service = compose_data["services"]["liferay"]
             depends_on = liferay_service.get("depends_on", [])
-            self.assertIn("liferay-search-global", depends_on)
+            # LDM-369: External services must not be in depends_on
+            self.assertNotIn("liferay-search-global", depends_on)
 
     @patch("ldm_core.handlers.infra.InfraService.setup_global_search")
     def test_runtime_skips_global_search_setup(self, mock_setup_global_search):
@@ -189,6 +211,9 @@ class TestSidecarImplementation(unittest.TestCase):
             # 4. snapshot register (run_command)
             # 5. plugin list (run_command)
             # 6-9. plugin installs (run_command)
+            # 10. docker restart
+            # 11. health check after restart
+            # 12. repo registration check
 
             mock_run.side_effect = [
                 "",  # exists check (ps)
@@ -244,6 +269,7 @@ class TestSidecarImplementation(unittest.TestCase):
             "use_shared_search": "false",
             "tag": "7.4.13-u100",
             "container_name": "env-test",
+            "db_type": "hypersonic",
         }
         with patch("ldm_core.utils.safe_write_text") as mock_write:
             self.manager.composer.write_docker_compose(self.paths, meta)
@@ -268,6 +294,7 @@ class TestSidecarImplementation(unittest.TestCase):
             "use_shared_search": "true",
             "tag": "7.4.13-u100",
             "container_name": "shared-env-test",
+            "db_type": "hypersonic",
         }
         with patch("ldm_core.utils.safe_write_text") as mock_write:
             self.manager.composer.write_docker_compose(self.paths, meta)
