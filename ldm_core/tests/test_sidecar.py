@@ -67,6 +67,7 @@ class TestSidecarImplementation(unittest.TestCase):
             "use_shared_search": "false",
             "tag": "7.4.13-u100",
             "container_name": "sidecar-test",
+            "db_type": "hypersonic",
         }
 
         with patch("ldm_core.utils.safe_write_text") as mock_write:
@@ -77,7 +78,8 @@ class TestSidecarImplementation(unittest.TestCase):
             self.assertNotIn("search", compose_data["services"])
 
             # Verify Liferay is configured for sidecar
-            liferay_env = compose_data["services"]["liferay"]["environment"]
+            liferay_service = compose_data["services"]["liferay"]
+            liferay_env = liferay_service["environment"]
             self.assertIn(
                 "LIFERAY_ELASTICSEARCH_PERIOD_SIDECAR_PERIOD_ENABLED=true", liferay_env
             )
@@ -85,6 +87,27 @@ class TestSidecarImplementation(unittest.TestCase):
                 "LIFERAY_ELASTICSEARCH_PERIOD_PRODUCTION_PERIOD_MODE_PERIOD_ENABLED=false",
                 liferay_env,
             )
+
+            # Requirement: No dependency on search in sidecar mode
+            depends_on = liferay_service.get("depends_on", [])
+            self.assertNotIn("liferay-search-global", depends_on)
+
+    def test_composer_shared_search_dependency(self):
+        """Requirement: Shared infrastructure projects should have a dependency on global search."""
+        meta = {
+            "use_shared_search": "true",
+            "tag": "7.4.13-u100",
+            "container_name": "shared-test",
+            "db_type": "hypersonic",
+        }
+
+        with patch("ldm_core.utils.safe_write_text") as mock_write:
+            self.manager.composer.write_docker_compose(self.paths, meta)
+            compose_data = yaml.safe_load(mock_write.call_args[0][1])
+
+            liferay_service = compose_data["services"]["liferay"]
+            depends_on = liferay_service.get("depends_on", [])
+            self.assertIn("liferay-search-global", depends_on)
 
     @patch("ldm_core.handlers.infra.InfraService.setup_global_search")
     def test_runtime_skips_global_search_setup(self, mock_setup_global_search):

@@ -280,6 +280,12 @@ class ComposerService:
             else:
                 image = f"liferay/dxp:{tag}"
 
+        depends_on = []
+        if db_type != "hypersonic":
+            depends_on.append("db")
+        if use_shared_search:
+            depends_on.append("liferay-search-global")
+
         service = {
             "image": image,
             "ports": port_list,
@@ -293,6 +299,8 @@ class ComposerService:
             ],
             "networks": ["liferay-net"],
         }
+        if depends_on:
+            service["depends_on"] = depends_on
 
         cpu_limit = meta.get("cpu_limit")
         mem_limit = meta.get("mem_limit")
