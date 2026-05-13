@@ -298,6 +298,124 @@ class TestRuntime(unittest.TestCase):
             self.assertEqual(call_kwargs.get("prefix_filter"), "2026.q1")
             self.assertEqual(call_kwargs.get("release_type"), "any")
 
+    @patch("ldm_core.ui.UI.die")
+    def test_cmd_run_select_non_interactive_dies(self, mock_die):
+        mock_die.side_effect = SystemExit
+        self.handler.args.select = True
+        self.handler.args.project = None
+        self.handler.args.project_flag = None
+        self.handler.non_interactive = True
+        with self.assertRaises(SystemExit):
+            self.handler.cmd_run()
+        mock_die.assert_called_with(
+            "Project selection is not supported in non-interactive mode."
+        )
+
+    @patch("ldm_core.ui.UI.die")
+    def test_cmd_run_no_project_found_dies(self, mock_die):
+        mock_die.side_effect = SystemExit
+        self.handler.args.select = False
+        self.handler.args.project = "notfound"
+        self.handler.args.project_flag = None
+        self.handler.non_interactive = True
+        with patch.object(self.handler, "detect_project_path", return_value=None):
+            with self.assertRaises(SystemExit):
+                self.handler.cmd_run("notfound")
+            mock_die.assert_called_with(
+                "Project not found and no name provided to initialize."
+            )
+
+    @patch("ldm_core.ui.UI.die")
+    def test_cmd_reseed_no_tag_dies(self, mock_die):
+        mock_die.side_effect = SystemExit
+        with (
+            patch.object(
+                self.handler, "detect_project_path", return_value=self.tmp_dir
+            ),
+            patch.object(self.handler, "read_meta", return_value={}),
+        ):
+            with self.assertRaises(SystemExit):
+                self.handler.handler.cmd_reseed("test")
+            mock_die.assert_called_with("Project missing tag metadata. Cannot reseed.")
+
+    @patch("ldm_core.ui.UI.success")
+    @patch("ldm_core.ui.UI.confirm", return_value=True)
+    def test_cmd_reseed_success(self, mock_confirm, mock_success):
+        with (
+            patch.object(
+                self.handler, "detect_project_path", return_value=self.tmp_dir
+            ),
+            patch.object(
+                self.handler,
+                "read_meta",
+                return_value={"tag": "2026.q1", "db_type": "mysql"},
+            ),
+            patch.object(self.handler.handler, "cmd_reset"),
+            patch.object(self.handler, "setup_paths", return_value={}),
+            patch.object(self.handler.assets, "_fetch_seed", return_value=True),
+        ):
+            self.handler.handler.cmd_reseed("test")
+            mock_success.assert_called_with("Reseed complete.")
+
+    @patch("ldm_core.ui.UI.error")
+    @patch("ldm_core.ui.UI.confirm", return_value=True)
+    def test_cmd_reseed_fail(self, mock_confirm, mock_error):
+        with (
+            patch.object(
+                self.handler, "detect_project_path", return_value=self.tmp_dir
+            ),
+            patch.object(
+                self.handler,
+                "read_meta",
+                return_value={"tag": "2026.q1", "db_type": "mysql"},
+            ),
+            patch.object(self.handler.handler, "cmd_reset"),
+            patch.object(self.handler, "setup_paths", return_value={}),
+            patch.object(self.handler.assets, "_fetch_seed", return_value=False),
+        ):
+            self.handler.handler.cmd_reseed("test")
+            mock_error.assert_called_with("Reseed failed.")
+
+    @patch("ldm_core.ui.UI.success")
+    @patch("ldm_core.ui.UI.warning")
+    def test_wait_for_ready_healthy_with_error_logs(self, mock_warning, mock_success):
+        # We need to simulate time passing so `elapsed >= 30` triggers
+        def mock_time_side_effect():
+            yield 1000  # start_time
+            yield 1035  # while condition check (time.time() - start_time = 35)
+            yield 1035  # elapsed calculation
+            yield 1035  # duration calculation after healthy
+            yield 1035  # one more just in case
+
+        def mock_run_command_side_effect(cmd, **kwargs):
+            if "logs" in cmd:
+                return "INFO: starting\nERROR: ClusterBlockException disk full\n"
+            if "inspect" in cmd:
+                return "healthy"
+            return ""
+
+        self.handler.args.total_start = "900"
+        self.handler.args.browser = False
+        with (
+            patch("time.time") as mock_time,
+            patch.object(
+                self.handler, "run_command", side_effect=mock_run_command_side_effect
+            ),
+            patch.object(self.handler.infra, "thaw_elasticsearch", return_value=True),
+        ):
+            # Create a mock generator
+            mock_time.side_effect = mock_time_side_effect()
+
+            project_meta = {"container_name": "test-container"}
+            self.handler.handler._wait_for_ready(project_meta, "test.local")
+
+            mock_warning.assert_any_call("LDM detected 1 error(s) in the logs.")
+            mock_success.assert_any_call(
+                "Auto-Thaw successful. Liferay should now proceed."
+            )
+            # Also it should break the loop and succeed
+            mock_success.assert_any_call("Liferay is ready! (Total time: 2m 15s)")
+
 
 if __name__ == "__main__":
     unittest.main()
