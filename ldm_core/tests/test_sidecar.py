@@ -168,14 +168,127 @@ class TestSidecarImplementation(unittest.TestCase):
 
     def test_setup_global_search_skipped_in_sidecar_mode(self):
         """Requirement: sidecar project cannot be allowed to affect the shared infrastructure."""
-        # Scenario: Project is sidecar
+        # Scenario 1: Project is sidecar - should skip
         self.manager.meta = {"use_shared_search": "false"}
-
         with patch.object(self.manager, "run_command") as mock_run:
             self.manager.infra.setup_global_search()
-
-            # Verify no docker commands were run (early exit)
             mock_run.assert_not_called()
+
+        # Scenario 2: Project is shared - should proceed
+        self.manager.meta = {"use_shared_search": "true"}
+        with (
+            patch.object(self.manager, "run_command") as mock_run,
+            patch("time.sleep"),
+            patch("pathlib.Path.mkdir"),
+            patch("ldm_core.utils.reclaim_volume_permissions"),
+        ):
+            # Setup side_effect to avoid recursion/repair loop
+            # 1. exists check (run_command)
+            # 2. docker run (run_command)
+            # 3. health check (run_command)
+            # 4. snapshot register (run_command)
+            # 5. plugin list (run_command)
+            # 6-9. plugin installs (run_command)
+
+            mock_run.side_effect = [
+                "",  # exists check (ps)
+                "",  # docker run
+                '{"cluster_name": "liferay-cluster"}',  # health check (curl)
+                "OK",  # snapshot
+                "plugins",  # plugin list
+                "OK",
+                "OK",
+                "OK",
+                "OK",  # plugin installs
+                "OK",  # docker restart
+                '{"cluster_name": "liferay-cluster"}',  # health check after restart
+                "OK",  # repo registration check
+            ]
+            self.manager.get_container_status = MagicMock(return_value="running")  # type: ignore[method-assign]
+
+            self.manager.infra.setup_global_search()
+
+            # Verify it proceeded past the sidecar check
+            self.assertTrue(mock_run.called)
+
+        # Scenario 3: Force flag overrides sidecar check
+        self.manager.meta = {"use_shared_search": "false"}
+        with (
+            patch.object(self.manager, "run_command") as mock_run,
+            patch("time.sleep"),
+            patch("pathlib.Path.mkdir"),
+            patch("ldm_core.utils.reclaim_volume_permissions"),
+        ):
+            mock_run.side_effect = [
+                "",  # exists
+                "",  # run
+                '{"cluster_name": "liferay-cluster"}',  # health
+                "OK",  # snapshot
+                "plugins",  # plugin list
+                "OK",
+                "OK",
+                "OK",
+                "OK",  # plugin installs
+                "OK",  # docker restart
+                '{"cluster_name": "liferay-cluster"}',  # health check after restart
+                "OK",  # repo registration check
+            ]
+            self.manager.get_container_status = MagicMock(return_value="running")  # type: ignore[method-assign]
+
+            self.manager.infra.setup_global_search(force=True)
+            self.assertTrue(mock_run.called)
+
+    def test_composer_sidecar_env_vars(self):
+        """Verify specific environment variables for sidecar mode."""
+        meta = {
+            "use_shared_search": "false",
+            "tag": "7.4.13-u100",
+            "container_name": "env-test",
+        }
+        with patch("ldm_core.utils.safe_write_text") as mock_write:
+            self.manager.composer.write_docker_compose(self.paths, meta)
+            compose_data = yaml.safe_load(mock_write.call_args[0][1])
+            env = compose_data["services"]["liferay"]["environment"]
+
+            # Sidecar specific env vars
+            self.assertIn(
+                "LIFERAY_ELASTICSEARCH_PERIOD_SIDECAR_PERIOD_ENABLED=true", env
+            )
+            self.assertIn(
+                "LIFERAY_ELASTICSEARCH_PERIOD_PRODUCTION_PERIOD_MODE_PERIOD_ENABLED=false",
+                env,
+            )
+
+            # Ensure no connection URL to global search
+            self.assertFalse(any("liferay-search-global" in e for e in env))
+
+    def test_composer_shared_env_vars(self):
+        """Verify specific environment variables for shared mode."""
+        meta = {
+            "use_shared_search": "true",
+            "tag": "7.4.13-u100",
+            "container_name": "shared-env-test",
+        }
+        with patch("ldm_core.utils.safe_write_text") as mock_write:
+            self.manager.composer.write_docker_compose(self.paths, meta)
+            compose_data = yaml.safe_load(mock_write.call_args[0][1])
+            env = compose_data["services"]["liferay"]["environment"]
+
+            self.assertIn(
+                "LIFERAY_ELASTICSEARCH_PERIOD_SIDECAR_PERIOD_ENABLED=false", env
+            )
+            self.assertIn(
+                "LIFERAY_ELASTICSEARCH_PERIOD_PRODUCTION_PERIOD_MODE_PERIOD_ENABLED=true",
+                env,
+            )
+            self.assertIn(
+                "LIFERAY_ELASTICSEARCH_PERIOD_CONNECTION_PERIOD_URL=http://liferay-search-global:9200",
+                env,
+            )
+            self.assertIn(
+                "LIFERAY_ELASTICSEARCH_PERIOD_INDEX_PERIOD_NAME_PERIOD_PREFIX=ldm-shared-env-test-",
+                env,
+            )
 
 
 if __name__ == "__main__":

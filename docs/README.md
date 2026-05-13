@@ -61,6 +61,7 @@ The badges below represent our verified support for various Docker providers. En
 ## Key Features
 
 - **Multi-Instance Session Isolation**: Run multiple demos side-by-side on the same machine without session cross-talk. `ldm` automatically manages unique session cookie names and virtual hostnames.
+- **Strict Infrastructure Isolation**: Projects using the `--sidecar` search mode are cryptographically isolated from the global infrastructure. LDM guarantees that sidecar projects will not start, stop, or reconfigure the shared Global Search container, even if global search flags are provided.
 - **Orchestrated Search Snapshots**: Save and restore the exact state of a demonstration, including the database, files, and **Elasticsearch 8.x index state**.
 - **Service-Specific Lifecycle**: Manage individual components within a project surgically. Restart or view logs for a single extension without affecting the rest of the stack.
 - **Client Extension Lifecycle**: Automatically detects and builds Server-Side Client Extensions (SSCE). Subdomains are automatically generated, and traffic is routed based on `LCP.json`.

@@ -252,7 +252,17 @@ When a service is scaled via `ldm scale [project] liferay=N`:
     - **Sidecar Fallback**: If the global container is missing, LDM automatically suppresses global ES configs to allow Liferay's internal **Sidecar** to start without configuration conflicts.
     - **Socat Bridge (Fallback)**: An optional bridge used only on macOS when the standard `/var/run/docker.sock` is missing (primarily for Docker Desktop isolation).
 
-4. **Multi-Instance Isolation (Project Tier):**
-    - **Network Stability**: All services use unique namespacing for Traefik routers and services (e.g., `[project-id]-main`), preventing routing collisions.
-    - **Session Security**: Unique session cookie names are generated based on the project's virtual hostname to prevent session cross-talk.
-    - **Standalone Services**: Arbitrary containers (like jBPM) placed in the `services/` folder are seamlessly orchestrated with the same routing and resource guardrails as Liferay.
+### 4. Search Infrastructure Isolation (Mandate)
+
+To ensure that projects using Liferay's internal search do not interfere with others using the shared Global Search container, LDM enforces a strict isolation layer:
+
+- **Metadata Guardrails**: Every infrastructure command is context-aware. If a project is in `--sidecar` mode, the `InfraService` explicitly skips all operations (initialization, repair, plugin installation) targeting the global `liferay-search-global` container.
+- **Dependency Isolation**: Sidecar projects do not include a `depends_on: liferay-search-global` entry in their `docker-compose.yml`. This prevents Docker from accidentally starting the global search infrastructure when it is not needed.
+- **Configuration Filtering**: During asset synchronization, LDM proactively filters out any Elasticsearch `.config` files from the `common/` folder for sidecar projects. This prevents configuration pollution and ensures Liferay defaults correctly to its internal search.
+- **Zero Interference**: Sidecar projects are guaranteed to be "Shared Infrastructure Neutral." They can be started, stopped, or reset without affecting the uptime or state of the global search cluster used by other projects.
+
+## 5. Multi-Instance Isolation (Project Tier)
+
+- **Network Stability**: All services use unique namespacing for Traefik routers and services (e.g., `[project-id]-main`), preventing routing collisions.
+- **Session Security**: Unique session cookie names are generated based on the project's virtual hostname to prevent session cross-talk.
+- **Standalone Services**: Arbitrary containers (like jBPM) placed in the `services/` folder are seamlessly orchestrated with the same routing and resource guardrails as Liferay.
