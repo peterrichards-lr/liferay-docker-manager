@@ -748,10 +748,16 @@ def find_dxp_roots(search_dir=None):
 
                             if meta_file.exists():
                                 meta = read_meta(meta_file)
+                                last_seen = (
+                                    data.get("last_seen")
+                                    if isinstance(data, dict)
+                                    else None
+                                )
                                 roots.append(
                                     {
                                         "path": item,
                                         "version": meta.get("tag") or "unknown",
+                                        "last_seen": last_seen,
                                     }
                                 )
                                 seen_paths.add(abs_path)

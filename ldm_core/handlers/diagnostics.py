@@ -2595,6 +2595,22 @@ pause
                 f"{name + seeded_indicator:<35} {version:<15} {status_color}{status:<12}{UI.COLOR_OFF} {UI.CYAN}{url}{UI.COLOR_OFF}"
             )
 
+            if self.manager.verbose:
+                from datetime import datetime
+
+                last_seen_ts = r.get("last_seen")
+                if last_seen_ts:
+                    try:
+                        dt = datetime.fromtimestamp(last_seen_ts)
+                        last_seen_str = dt.strftime("%Y-%m-%d %H:%M:%S")
+                    except Exception:
+                        last_seen_str = "Unknown"
+                else:
+                    last_seen_str = "Unknown"
+
+                print(f"    {UI.BYELLOW}Path:{UI.COLOR_OFF} {path}")
+                print(f"    {UI.BYELLOW}Last Seen:{UI.COLOR_OFF} {last_seen_str}\n")
+
     def cmd_prune(self):
         UI.heading("LDM Global Maintenance - Pruning Orphaned Resources")
         prune_all = getattr(self.manager.args, "all", False)
