@@ -147,6 +147,30 @@ ldm run <project>
 
 ---
 
+## 🐳 Docker Filesystem Errors
+
+### **Docker: failed to Lchown / overlayfs: no such file or directory**
+
+If your automated test or `ldm run` command crashes during the `Pulling` phase with a deep daemon error like:
+`failed to extract layer (...) to overlayfs ... failed to Lchown ... no such file or directory`
+
+This is a low-level Docker daemon failure completely unrelated to LDM. It happens when Docker's internal cache or filesystem (`overlayfs`) becomes corrupted or runs out of inodes/space inside the Linux Virtual Machine.
+
+**Understanding Sparse Disks:**
+Providers like Colima, Docker Desktop, and OrbStack use "Sparse Disks". Even if `colima list` shows a `100GiB` disk and you have terabytes of space on an external drive, Docker pulls images strictly into this internal virtual disk file. If an image pull gets interrupted or corrupted, a broken ghost file remains in the cache.
+
+#### **Solution: Wipe the Corrupted Cache**
+
+Run the native Docker command (or use `ldm prune`) to blast away the corrupted system cache and force a clean download:
+
+```bash
+docker system prune -a --volumes
+```
+
+*Note: This clears all unused images and volumes, resolving the corruption.*
+
+---
+
 ## 🌐 Network & Connectivity
 
 ### **Windows/WSL2: Connection Refused (Exit Code 7)**
