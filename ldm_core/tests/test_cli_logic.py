@@ -70,6 +70,18 @@ class TestCLILogic(unittest.TestCase):
         self.assertEqual(args.command, "infra-restart")
         self.assertTrue(args.search)
 
+    def test_logs_advanced_flags_parsing(self):
+        # Test: ldm logs demo -n 50 -t --since 1h --until 10m
+        args = self.parser.parse_args(
+            ["logs", "demo", "-n", "50", "-t", "--since", "1h", "--until", "10m"]
+        )
+        self.assertEqual(args.command, "logs")
+        self.assertEqual(args.project, "demo")
+        self.assertEqual(args.tail, "50")
+        self.assertTrue(args.timestamps)
+        self.assertEqual(args.since, "1h")
+        self.assertEqual(args.until, "10m")
+
     def test_piped_input_preserves_interactive(self):
         from unittest.mock import patch
 

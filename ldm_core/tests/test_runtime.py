@@ -52,6 +52,9 @@ class MockRuntime(BaseHandler):
     def detect_project_path(self, *args, **kwargs):
         return Path("/tmp/runtime-project")
 
+    def get_resource_path(self, name):
+        return Path("/tmp/res") / name
+
     def read_meta(self, *args, **kwargs):
         return {"container_name": "test-runtime", "host_name": "localhost"}
 
@@ -136,6 +139,63 @@ class TestRuntime(unittest.TestCase):
             self.assertIn("2024-01-01", logs_call)
             self.assertIn("--until", logs_call)
             self.assertIn("2024-01-02", logs_call)
+
+    @patch("ldm_core.handlers.runtime.get_compose_cmd")
+    def test_cmd_logs_infra_advanced_flags(self, mock_compose):
+        mock_compose.return_value = ["docker", "compose"]
+        with patch.object(self.handler, "run_command") as mock_run:
+            self.handler.cmd_logs(
+                infra=True,
+                tail="20",
+                timestamps=True,
+                since="10m",
+            )
+            mock_run.assert_called()
+            # Find infra-compose call
+            logs_call = []
+            for call in mock_run.call_args_list:
+                call_args = call[0][0]
+                if "logs" in call_args:
+                    logs_call = call_args
+                    break
+
+            self.assertTrue(len(logs_call) > 0)
+            self.assertIn("--tail", logs_call)
+            self.assertIn("20", logs_call)
+            self.assertIn("-t", logs_call)
+            self.assertIn("--since", logs_call)
+            self.assertIn("10m", logs_call)
+
+    @patch("ldm_core.handlers.runtime.get_compose_cmd")
+    def test_cmd_logs_partial_flags(self, mock_compose):
+        mock_compose.return_value = ["docker", "compose"]
+        with patch.object(
+            self.handler, "run_command", return_value="running"
+        ) as mock_run:
+            # Only tail and timestamps
+            self.handler.cmd_logs(project_id="test", tail="10", timestamps=True)
+            logs_call = mock_run.call_args[0][0]
+            self.assertIn("--tail", logs_call)
+            self.assertIn("-t", logs_call)
+            self.assertNotIn("--since", logs_call)
+            self.assertNotIn("--until", logs_call)
+
+    @patch("ldm_core.handlers.runtime.get_compose_cmd")
+    def test_cmd_logs_defaults_not_passed(self, mock_compose):
+        mock_compose.return_value = ["docker", "compose"]
+        with patch.object(
+            self.handler, "run_command", return_value="running"
+        ) as mock_run:
+            # Default call
+            self.handler.cmd_logs(project_id="test")
+            logs_call = mock_run.call_args[0][0]
+            # Tail is 100 by default, so it should be there
+            self.assertIn("--tail", logs_call)
+            self.assertIn("100", logs_call)
+            # Others should be absent
+            self.assertNotIn("-t", logs_call)
+            self.assertNotIn("--since", logs_call)
+            self.assertNotIn("--until", logs_call)
 
     @patch("ldm_core.handlers.runtime.get_compose_cmd")
     @patch("ldm_core.handlers.runtime.shutil.rmtree")
