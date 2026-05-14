@@ -198,6 +198,10 @@ class RuntimeService:
             getattr(self.manager.args, "no_captcha", False)
             or str(project_meta.get("no_captcha", "false")).lower() == "true"
         )
+        fast_login = (
+            getattr(self.manager.args, "fast_login", False)
+            or str(project_meta.get("fast_login", "false")).lower() == "true"
+        )
 
         project_meta.update(
             {
@@ -214,6 +218,7 @@ class RuntimeService:
                 "no_jvm_verify": str(no_jvm_verify).lower(),
                 "no_tld_skip": str(no_tld_skip).lower(),
                 "no_captcha": str(no_captcha).lower(),
+                "fast_login": str(fast_login).lower(),
                 "env_type": env_type,
                 "cpu_limit": cpu_limit,
                 "mem_limit": mem_limit,

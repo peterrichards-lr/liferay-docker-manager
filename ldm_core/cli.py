@@ -106,6 +106,11 @@ def get_parser():
         action="store_true",
         help="Disable CAPTCHA enforcement for Omni-Admin actions (testing only)",
     )
+    run.add_argument(
+        "--fast-login",
+        action="store_true",
+        help="Bypass typical startup prompts (terms of use, password reset) - best with external DBs",
+    )
     run.add_argument("-f", "--follow", action="store_true")
     run.add_argument("--env", action="append")
     run.add_argument(
@@ -147,6 +152,7 @@ def get_parser():
     imp.add_argument("--no-seed", action="store_true")
     imp.add_argument("--no-osgi-seed", action="store_true")
     imp.add_argument("--no-captcha", action="store_true")
+    imp.add_argument("--fast-login", action="store_true")
     imp.add_argument(
         "--verify", action="store_true", default=True, help="Verify snapshot integrity"
     )
@@ -177,6 +183,11 @@ def get_parser():
         action="store_true",
         help="Disable CAPTCHA for Omni-Admin actions",
     )
+    init.add_argument(
+        "--fast-login",
+        action="store_true",
+        help="Bypass typical startup prompts (terms of use, password reset)",
+    )
 
     # Command: init-from
     init_from = subparsers.add_parser("init-from", parents=[base_sub_parent])
@@ -205,6 +216,7 @@ def get_parser():
     init_from.add_argument("--no-seed", action="store_true")
     init_from.add_argument("--no-osgi-seed", action="store_true")
     init_from.add_argument("--no-captcha", action="store_true")
+    init_from.add_argument("--fast-login", action="store_true")
     init_from.add_argument("--env", action="append")
     init_from.add_argument("--delay", type=float, default=2.0)
 

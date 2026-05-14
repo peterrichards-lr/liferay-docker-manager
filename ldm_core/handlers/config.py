@@ -340,6 +340,38 @@ class ConfigService:
                     host_updates = {}
                 host_updates["captcha.enforce.disabled"] = "false"
 
+        # Handle Fast-Login Configuration
+        if project_meta:
+            fast_login = str(project_meta.get("fast_login", "false")).lower() == "true"
+            if fast_login:
+                db_type = project_meta.get("db_type", "hypersonic")
+                if db_type == "hypersonic":
+                    UI.warning(
+                        "The '--fast-login' feature (specifically password policy bypass) does not fully work with the default Hypersonic database. "
+                        "For best results, use an external database like PostgreSQL or MySQL."
+                    )
+
+                if host_updates is None:
+                    host_updates = {}
+
+                host_updates.update(
+                    {
+                        "captcha.check.portal.create_account": "false",
+                        "captcha.check.portal.send_password": "false",
+                        "company.security.strangers.verify": "false",
+                        "enterprise.product.notification.enabled": "false",
+                        "live.users.enabled": "true",
+                        "passwords.default.policy.change.required": "false",
+                        "passwords.passwordpolicytoolkit.generator": "static",
+                        "passwords.passwordpolicytoolkit.static": "test",
+                        "setup.wizard.enabled": "false",
+                        "terms.of.use.required": "false",
+                        "users.last.name.required": "false",
+                        "users.reminder.queries.custom.question.enabled": "false",
+                        "users.reminder.queries.enabled": "false",
+                    }
+                )
+
         # Use the binary-aware 'common' path from setup_paths
         common_dir = paths.get("common")
         target_ext = paths["files"] / "portal-ext.properties"

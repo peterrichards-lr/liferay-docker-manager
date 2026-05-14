@@ -165,6 +165,70 @@ class TestConfigService(unittest.TestCase):
             self.assertFalse(captcha_cfg.exists())
             self.assertEqual(host_updates["captcha.enforce.disabled"], "false")
 
+    def test_sync_common_assets_fast_login(self):
+        """Verify fast-login properties are set."""
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            configs_dir = tmp_path / "osgi" / "configs"
+            configs_dir.mkdir(parents=True)
+            files_dir = tmp_path / "files"
+            files_dir.mkdir(parents=True)
+
+            paths = {
+                "root": tmp_path,
+                "configs": configs_dir,
+                "files": files_dir,
+                "common": tmp_path / "common",
+            }
+            project_meta = {"fast_login": "true", "db_type": "mysql"}
+            host_updates: dict[str, str] = {}
+
+            with patch("ldm_core.ui.UI.warning") as mock_warning:
+                self.config.sync_common_assets(
+                    paths, project_meta=project_meta, host_updates=host_updates
+                )
+                for call in mock_warning.call_args_list:
+                    self.assertNotIn("Hypersonic", call[0][0])
+
+            self.assertEqual(
+                host_updates["passwords.default.policy.change.required"], "false"
+            )
+            self.assertEqual(host_updates["setup.wizard.enabled"], "false")
+            self.assertEqual(host_updates["terms.of.use.required"], "false")
+
+    def test_sync_common_assets_fast_login_hypersonic_warning(self):
+        """Verify fast-login warns if used with Hypersonic database."""
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            configs_dir = tmp_path / "osgi" / "configs"
+            configs_dir.mkdir(parents=True)
+            files_dir = tmp_path / "files"
+            files_dir.mkdir(parents=True)
+
+            paths = {
+                "root": tmp_path,
+                "configs": configs_dir,
+                "files": files_dir,
+                "common": tmp_path / "common",
+            }
+            project_meta = {"fast_login": "true", "db_type": "hypersonic"}
+            host_updates: dict[str, str] = {}
+
+            with patch("ldm_core.ui.UI.warning") as mock_warning:
+                self.config.sync_common_assets(
+                    paths, project_meta=project_meta, host_updates=host_updates
+                )
+                hypersonic_warnings = [
+                    call
+                    for call in mock_warning.call_args_list
+                    if "Hypersonic" in call[0][0]
+                ]
+                self.assertEqual(len(hypersonic_warnings), 1)
+
 
 if __name__ == "__main__":
     unittest.main()
