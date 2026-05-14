@@ -239,6 +239,9 @@ ldm run demo --tag-latest --no-captcha
 # Note: Password policy bypass works best with an external database (--db mysql)
 ldm run demo --fast-login --db mysql
 
+# Enable specific Liferay feature flags
+ldm run demo --feature LPS-122920 dev beta
+
 # Run on a custom port
 ldm run my-project --port 8081
 

@@ -202,6 +202,13 @@ class RuntimeService:
             getattr(self.manager.args, "fast_login", False)
             or str(project_meta.get("fast_login", "false")).lower() == "true"
         )
+        features = getattr(self.manager.args, "feature", None)
+        if features:
+            # Flatten potential comma-separated values
+            flat_features = []
+            for f in features:
+                flat_features.extend([x.strip() for x in f.split(",") if x.strip()])
+            project_meta["features"] = ",".join(flat_features)
 
         project_meta.update(
             {
@@ -219,6 +226,7 @@ class RuntimeService:
                 "no_tld_skip": str(no_tld_skip).lower(),
                 "no_captcha": str(no_captcha).lower(),
                 "fast_login": str(fast_login).lower(),
+                "features": project_meta.get("features", ""),
                 "env_type": env_type,
                 "cpu_limit": cpu_limit,
                 "mem_limit": mem_limit,

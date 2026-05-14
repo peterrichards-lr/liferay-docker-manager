@@ -229,6 +229,34 @@ class TestConfigService(unittest.TestCase):
                 ]
                 self.assertEqual(len(hypersonic_warnings), 1)
 
+    def test_sync_common_assets_feature_flags(self):
+        """Verify feature flags are correctly injected into portal properties."""
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            configs_dir = tmp_path / "osgi" / "configs"
+            configs_dir.mkdir(parents=True)
+            files_dir = tmp_path / "files"
+            files_dir.mkdir(parents=True)
+
+            paths = {
+                "root": tmp_path,
+                "configs": configs_dir,
+                "files": files_dir,
+                "common": tmp_path / "common",
+            }
+            project_meta = {"features": "LPS-122920, dev, beta"}
+            host_updates: dict[str, str] = {}
+
+            self.config.sync_common_assets(
+                paths, project_meta=project_meta, host_updates=host_updates
+            )
+
+            self.assertEqual(host_updates["feature.flag.LPS-122920"], "true")
+            self.assertEqual(host_updates["feature.flag.ui.visible[dev]"], "true")
+            self.assertEqual(host_updates["feature.flag.ui.visible[beta]"], "true")
+
 
 if __name__ == "__main__":
     unittest.main()

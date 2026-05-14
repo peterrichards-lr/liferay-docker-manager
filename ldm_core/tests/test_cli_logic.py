@@ -82,6 +82,15 @@ class TestCLILogic(unittest.TestCase):
         self.assertEqual(args.since, "1h")
         self.assertEqual(args.until, "10m")
 
+    def test_feature_flag_parsing(self):
+        # Test: ldm run demo --feature LPS-122920 dev beta
+        args = self.parser.parse_args(
+            ["run", "demo", "--feature", "LPS-122920", "dev", "beta"]
+        )
+        self.assertEqual(args.command, "run")
+        self.assertEqual(args.project, "demo")
+        self.assertEqual(args.feature, ["LPS-122920", "dev", "beta"])
+
     def test_piped_input_preserves_interactive(self):
         from unittest.mock import patch
 

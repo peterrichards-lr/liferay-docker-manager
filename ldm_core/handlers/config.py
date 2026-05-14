@@ -372,6 +372,21 @@ class ConfigService:
                     }
                 )
 
+        # Handle Feature Flags
+        if project_meta:
+            features_str = project_meta.get("features", "")
+            if features_str:
+                if host_updates is None:
+                    host_updates = {}
+                for f in features_str.split(","):
+                    f = f.strip()
+                    if not f:
+                        continue
+                    if f.lower() in ["dev", "beta", "release"]:
+                        host_updates[f"feature.flag.ui.visible[{f.lower()}]"] = "true"
+                    else:
+                        host_updates[f"feature.flag.{f}"] = "true"
+
         # Use the binary-aware 'common' path from setup_paths
         common_dir = paths.get("common")
         target_ext = paths["files"] / "portal-ext.properties"
