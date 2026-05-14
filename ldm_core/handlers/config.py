@@ -15,8 +15,18 @@ from ldm_core.utils import get_actual_home, run_command, safe_copy, safe_write_t
 class ConfigService:
     """Service for configuration management (env, logging, browser)."""
 
-    def __init__(self, manager=None):
+    def __init__(self, manager):
         self.manager = manager
+
+    def get_global_config(self):
+        """Helper to load global LDM configuration from ~/.ldmrc."""
+        from ldm_core.utils import get_actual_home
+
+        config_path = get_actual_home() / ".ldmrc"
+        if config_path.exists():
+            with contextlib.suppress(Exception):
+                return json.loads(config_path.read_text())
+        return {}
 
     def _get_properties(self, content):
         """Robustly extracts properties from a string, handling multi-line values."""
@@ -372,20 +382,27 @@ class ConfigService:
                     }
                 )
 
-        # Handle Feature Flags
-        if project_meta:
-            features_str = project_meta.get("features", "")
-            if features_str:
-                if host_updates is None:
-                    host_updates = {}
-                for f in features_str.split(","):
-                    f = f.strip()
-                    if not f:
-                        continue
-                    if f.lower() in ["dev", "beta", "release"]:
-                        host_updates[f"feature.flag.ui.visible[{f.lower()}]"] = "true"
-                    else:
-                        host_updates[f"feature.flag.{f}"] = "true"
+        # Handle Feature Flags (Global Defaults + Project Specific)
+        global_config = self.get_global_config()
+        global_features = global_config.get("features", "")
+        project_features = project_meta.get("features", "") if project_meta else ""
+
+        # Merge global and project features
+        all_features = set()
+        for f_list in [global_features, project_features]:
+            if f_list:
+                for f in f_list.split(","):
+                    if f.strip():
+                        all_features.add(f.strip())
+
+        if all_features:
+            if host_updates is None:
+                host_updates = {}
+            for f in sorted(all_features):
+                if f.lower() in ["dev", "beta", "release"]:
+                    host_updates[f"feature.flag.ui.visible[{f.lower()}]"] = "true"
+                else:
+                    host_updates[f"feature.flag.{f}"] = "true"
 
         # Use the binary-aware 'common' path from setup_paths
         common_dir = paths.get("common")
@@ -786,3 +803,50 @@ class ConfigService:
             self.manager.write_meta(paths["root"], project_meta)
             self.manager.sync_stack(paths, project_meta, no_up=True)
             UI.success("Environment updated.")
+
+    def cmd_feature(self, project_id=None, enable=None, disable=None):
+        """View or manage enabled feature flags for a project."""
+        root = self.manager.detect_project_path(project_id)
+        if not root:
+            UI.die(f"Project '{project_id}' not found.")
+
+        meta = self.manager.read_meta(root)
+        current_features = meta.get("features", "").split(",")
+        current_features = [f.strip() for f in current_features if f.strip()]
+
+        if enable or disable:
+            features_set = set(current_features)
+            if enable:
+                for f in enable:
+                    # Flatten comma-separated input
+                    for x in f.split(","):
+                        if x.strip():
+                            features_set.add(x.strip())
+
+            if disable:
+                for f in disable:
+                    for x in f.split(","):
+                        if x.strip() in features_set:
+                            features_set.remove(x.strip())
+
+            meta["features"] = ",".join(sorted(features_set))
+            self.manager.write_meta(root, meta)
+            UI.success("Project metadata updated with new feature flags.")
+            UI.info(
+                "Run 'ldm run' or 'ldm deploy' to apply changes to portal-ext.properties."
+            )
+            current_features = list(features_set)
+
+        UI.heading(f"Feature Flags for '{root.name}'")
+        if not current_features:
+            UI.info("No feature flags explicitly enabled for this project.")
+        else:
+            for f in sorted(current_features):
+                if f.lower() in ["dev", "beta", "release"]:
+                    UI.raw(
+                        f"  {UI.GREEN}✓{UI.COLOR_OFF} {UI.WHITE}{f}{UI.COLOR_OFF} (UI Visibility)"
+                    )
+                else:
+                    UI.raw(f"  {UI.GREEN}✓{UI.COLOR_OFF} {UI.WHITE}{f}{UI.COLOR_OFF}")
+
+        UI.raw("")

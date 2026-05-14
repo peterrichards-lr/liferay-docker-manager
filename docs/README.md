@@ -738,6 +738,7 @@ View or set global LDM configuration settings (stored in `~/.ldmrc`).
 
 ```bash
 ldm config                  # View all global settings
+ldm config features "dev,beta,LPS-122920" # Set global default feature flags
 ldm config key value        # Set a global preference
 ldm config key --remove     # Remove a preference
 ```

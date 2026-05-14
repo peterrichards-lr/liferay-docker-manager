@@ -15,6 +15,15 @@ class MockConfigManager:
     def update_portal_ext(self, *args, **kwargs):
         pass
 
+    def detect_project_path(self, *args, **kwargs):
+        pass
+
+    def read_meta(self, *args, **kwargs):
+        pass
+
+    def write_meta(self, *args, **kwargs):
+        pass
+
 
 class TestConfigService(unittest.TestCase):
     def setUp(self):
@@ -256,6 +265,82 @@ class TestConfigService(unittest.TestCase):
             self.assertEqual(host_updates["feature.flag.LPS-122920"], "true")
             self.assertEqual(host_updates["feature.flag.ui.visible[dev]"], "true")
             self.assertEqual(host_updates["feature.flag.ui.visible[beta]"], "true")
+
+    def test_sync_common_assets_global_features(self):
+        """Verify global feature defaults are merged with project features."""
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            configs_dir = tmp_path / "osgi" / "configs"
+            configs_dir.mkdir(parents=True)
+            files_dir = tmp_path / "files"
+            files_dir.mkdir(parents=True)
+
+            paths = {
+                "root": tmp_path,
+                "configs": configs_dir,
+                "files": files_dir,
+                "common": tmp_path / "common",
+            }
+            project_meta = {"features": "LPS-1, dev"}
+            host_updates: dict[str, str] = {}
+
+            # Mock get_global_config to return some global features
+            with patch.object(self.config, "get_global_config") as mock_global:
+                mock_global.return_value = {"features": "LPS-2, beta"}
+
+                self.config.sync_common_assets(
+                    paths, project_meta=project_meta, host_updates=host_updates
+                )
+
+            # Should have both global and project features
+            self.assertEqual(host_updates["feature.flag.LPS-1"], "true")
+            self.assertEqual(host_updates["feature.flag.LPS-2"], "true")
+            self.assertEqual(host_updates["feature.flag.ui.visible[dev]"], "true")
+            self.assertEqual(host_updates["feature.flag.ui.visible[beta]"], "true")
+
+    def test_cmd_feature(self):
+        """Verify cmd_feature manages and lists feature flags."""
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            (tmp_path / "files").mkdir()
+
+            # Setup paths for MockConfigManager
+            self.manager.detect_project_path = MagicMock(return_value=tmp_path)  # type: ignore[method-assign]
+            self.manager.read_meta = MagicMock(  # type: ignore[method-assign]
+                return_value={"features": "dev,LPS-122920"}
+            )
+            self.manager.write_meta = MagicMock()  # type: ignore[method-assign]
+
+            # Test 1: Listing (no enable/disable)
+            with patch("ldm_core.ui.UI.raw") as mock_raw:
+                self.config.cmd_feature("project")
+                # Verify dev and LPS were listed
+                raw_outputs = [str(call[0][0]) for call in mock_raw.call_args_list]
+                self.assertTrue(any("dev" in out for out in raw_outputs))
+                self.assertTrue(any("LPS-122920" in out for out in raw_outputs))
+
+            # Test 2: Enable
+            self.config.cmd_feature("project", enable=["beta", "LPS-178642"])
+            self.manager.write_meta.assert_called()
+            updated_meta = self.manager.write_meta.call_args[0][1]
+            features = updated_meta["features"].split(",")
+            self.assertIn("dev", features)
+            self.assertIn("LPS-122920", features)
+            self.assertIn("beta", features)
+            self.assertIn("LPS-178642", features)
+
+            # Test 3: Disable
+            self.manager.read_meta.return_value = {"features": "dev,beta,LPS-122920"}  # type: ignore[method-assign]
+            self.config.cmd_feature("project", disable=["LPS-122920"])
+            updated_meta = self.manager.write_meta.call_args[0][1]
+            features = updated_meta["features"].split(",")
+            self.assertIn("dev", features)
+            self.assertIn("beta", features)
+            self.assertNotIn("LPS-122920", features)
 
 
 if __name__ == "__main__":

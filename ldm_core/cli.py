@@ -314,6 +314,13 @@ def get_parser():
     env.add_argument("--remove", action="store_true")
     env.add_argument("--import", action="store_true", dest="import_env")
 
+    # Command: feature
+    feat = subparsers.add_parser("feature", parents=[base_sub_parent])
+    feat.add_argument("project", nargs="?")
+    feat.add_argument("-p", "--project", dest="project_flag")
+    feat.add_argument("--enable", nargs="+", help="Enable one or more feature flags")
+    feat.add_argument("--disable", nargs="+", help="Disable one or more feature flags")
+
     # Command: snapshot, restore
     snap = subparsers.add_parser("snapshot", parents=[base_sub_parent])
     snap.add_argument("project", nargs="?")
@@ -772,6 +779,11 @@ def main():
             getattr(args, "project", None), getattr(args, "service", None)
         ),
         "env": lambda: manager.config.cmd_env(getattr(args, "project", None)),
+        "feature": lambda: manager.config.cmd_feature(
+            getattr(args, "project", None),
+            enable=getattr(args, "enable", None),
+            disable=getattr(args, "disable", None),
+        ),
         "snapshot": lambda: manager.snapshot.cmd_snapshot(
             getattr(args, "project", None)
         ),
