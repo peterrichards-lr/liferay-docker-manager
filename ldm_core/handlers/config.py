@@ -315,21 +315,30 @@ class ConfigService:
         # Handle Captcha Configuration
         if project_meta:
             no_captcha = str(project_meta.get("no_captcha", "false")).lower() == "true"
+            captcha_cfg = (
+                paths["configs"]
+                / "com.liferay.captcha.configuration.CaptchaConfiguration.config"
+            )
             if no_captcha:
                 if host_updates is None:
                     host_updates = {}
                 host_updates["captcha.enforce.disabled"] = "true"
 
-                captcha_cfg = (
-                    paths["configs"]
-                    / "com.liferay.captcha.configuration.CaptchaConfiguration.config"
-                )
                 if not captcha_cfg.exists():
                     with contextlib.suppress(PermissionError, OSError):
                         captcha_cfg.parent.mkdir(parents=True, exist_ok=True)
                     from ldm_core.utils import safe_write_text
 
                     safe_write_text(captcha_cfg, 'maxChallenges=I"-1"\n')
+            else:
+                # LDM-369: If not explicitly disabled, ensure it's enabled (reversible)
+                if captcha_cfg.exists():
+                    with contextlib.suppress(PermissionError, OSError):
+                        captcha_cfg.unlink()
+
+                if host_updates is None:
+                    host_updates = {}
+                host_updates["captcha.enforce.disabled"] = "false"
 
         # Use the binary-aware 'common' path from setup_paths
         common_dir = paths.get("common")

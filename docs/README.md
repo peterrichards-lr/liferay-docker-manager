@@ -783,7 +783,7 @@ colima start --cpu 4 --memory 8
 - **Tag Prefix Search**: When running `ldm run` without a tag, you can enter a prefix (e.g., `2025.q4`) to filter the available Liferay versions from Docker Hub. Alternatively, use the `--tag-prefix` switch to bypass the prompt entirely.
 - **Tag Discovery**: If no prefix or release type is provided, the tool fetches the latest available tags from Docker Hub.
 - **Automated Latest Tags**: In automated environments, use `--tag-latest` (with `ldm init` or `ldm run`) to automatically discover and use the most recent stable tag, bypassing all interactive prompts.
-- **Omni-Admin Captcha**: During testing or CI workflows, you can use the `--no-captcha` flag during initialization to automatically disable Liferay's mandatory Omni-Admin CAPTCHA checks.
+- **Omni-Admin Captcha**: During testing or CI workflows, you can use the `--no-captcha` flag during initialization or run to automatically disable Liferay's mandatory Omni-Admin CAPTCHA checks. This is strictly opt-in and reversible; running without the flag will automatically re-enable CAPTCHA enforcement.
 
 ---
 

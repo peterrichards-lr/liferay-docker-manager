@@ -82,7 +82,7 @@
 | 3.2 | **Missing Tag Guard** | `ldm run test-fail -y` (no tag) | Fails gracefully with "No tag specified". |
 | 3.4 | **Project Collision** | `ldm init test-init` (in different dir) | Blocks; identifies original path. |
 | 3.5 | **Hostname Collision** | `ldm run --host-name existing.local` | Blocks execution due to registry conflict. |
-| 3.6 | **Captcha Switch** | `ldm init test-captcha --no-captcha` | Generates config to disable CAPTCHA. |
+| 3.6 | **Captcha Switch** | `ldm init test-captcha --no-captcha` | Generates OSGi config and portal property to disable CAPTCHA. Reversible by running without the flag. |
 | 3.9 | **License Discovery** | Drop `.xml` into `deploy/` | Doctor identifies the XML as a license. |
 | 3.10 | **Sample Hydration** | `ldm init test-samples --samples` | Scaffolds project and populates samples. |
 | 3.11 | **Import Integrity** | `ldm import source.zip` | Verifies `source.zip.sha256` before extraction. |

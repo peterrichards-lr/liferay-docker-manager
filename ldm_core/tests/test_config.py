@@ -85,8 +85,11 @@ class TestConfigService(unittest.TestCase):
                 "common": tmp_path / "common",
             }
             project_meta = {"no_captcha": "true"}
+            host_updates: dict[str, str] = {}
 
-            self.config.sync_common_assets(paths, project_meta=project_meta)
+            self.config.sync_common_assets(
+                paths, project_meta=project_meta, host_updates=host_updates
+            )
 
             captcha_cfg = (
                 configs_dir
@@ -95,6 +98,72 @@ class TestConfigService(unittest.TestCase):
             self.assertTrue(captcha_cfg.exists())
             content = captcha_cfg.read_text()
             self.assertIn('maxChallenges=I"-1"', content)
+            self.assertEqual(host_updates["captcha.enforce.disabled"], "true")
+
+    def test_sync_common_assets_captcha_enabled(self):
+        """Verify that by default (no flag), captcha is enabled."""
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            configs_dir = tmp_path / "osgi" / "configs"
+            configs_dir.mkdir(parents=True)
+            files_dir = tmp_path / "files"
+            files_dir.mkdir(parents=True)
+
+            paths = {
+                "root": tmp_path,
+                "configs": configs_dir,
+                "files": files_dir,
+                "common": tmp_path / "common",
+            }
+            project_meta = {"no_captcha": "false"}
+            host_updates: dict[str, str] = {}
+
+            self.config.sync_common_assets(
+                paths, project_meta=project_meta, host_updates=host_updates
+            )
+
+            captcha_cfg = (
+                configs_dir
+                / "com.liferay.captcha.configuration.CaptchaConfiguration.config"
+            )
+            self.assertFalse(captcha_cfg.exists())
+            self.assertEqual(host_updates["captcha.enforce.disabled"], "false")
+
+    def test_sync_common_assets_captcha_cleanup(self):
+        """Verify that running without the flag cleans up previous bypass configs."""
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            configs_dir = tmp_path / "osgi" / "configs"
+            configs_dir.mkdir(parents=True)
+            files_dir = tmp_path / "files"
+            files_dir.mkdir(parents=True)
+
+            # Pre-create the bypass file
+            captcha_cfg = (
+                configs_dir
+                / "com.liferay.captcha.configuration.CaptchaConfiguration.config"
+            )
+            captcha_cfg.write_text("old-content")
+
+            paths = {
+                "root": tmp_path,
+                "configs": configs_dir,
+                "files": files_dir,
+                "common": tmp_path / "common",
+            }
+            project_meta = {"no_captcha": "false"}
+            host_updates: dict[str, str] = {}
+
+            self.config.sync_common_assets(
+                paths, project_meta=project_meta, host_updates=host_updates
+            )
+
+            self.assertFalse(captcha_cfg.exists())
+            self.assertEqual(host_updates["captcha.enforce.disabled"], "false")
 
 
 if __name__ == "__main__":
