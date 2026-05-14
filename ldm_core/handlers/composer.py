@@ -313,12 +313,23 @@ class ComposerService:
 
         if scale == 1:
             service["container_name"] = project_name
-            service["volumes"].extend(
-                [
-                    f"{paths['state'].as_posix()}:/opt/liferay/osgi/state",
-                    f"{paths['logs'].as_posix()}:/opt/liferay/logs",
-                ]
-            )
+            # LDM-369: Filesystem Resilience.
+            # OSGi state bind-mounts fail on external drives (e.g., /Volumes/ on macOS)
+            # because they don't support file-locking correctly.
+            internal_state = str(meta.get("internal_state", "false")).lower() == "true"
+            if not internal_state:
+                # Auto-detect external drives on macOS
+                if str(paths["root"]).startswith("/Volumes/"):
+                    internal_state = True
+
+            if internal_state:
+                service["volumes"].append("/opt/liferay/osgi/state")
+            else:
+                service["volumes"].append(
+                    f"{paths['state'].as_posix()}:/opt/liferay/osgi/state"
+                )
+
+            service["volumes"].append(f"{paths['logs'].as_posix()}:/opt/liferay/logs")
         else:
             liferay_env.extend(
                 [

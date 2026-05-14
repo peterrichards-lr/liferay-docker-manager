@@ -87,6 +87,10 @@ class RuntimeService:
             getattr(self.manager.args, "no_vol_cache", False)
             or str(project_meta.get("no_vol_cache", "false")).lower() == "true"
         )
+        internal_state = (
+            getattr(self.manager.args, "internal_state", False)
+            or str(project_meta.get("internal_state", "false")).lower() == "true"
+        )
         no_jvm_verify = (
             getattr(self.manager.args, "no_jvm_verify", False)
             or str(project_meta.get("no_jvm_verify", "false")).lower() == "true"
@@ -222,6 +226,7 @@ class RuntimeService:
                 "jvm_args": jvm_args,
                 "use_shared_search": str(use_shared_search).lower(),
                 "no_vol_cache": str(no_vol_cache).lower(),
+                "internal_state": str(internal_state).lower(),
                 "no_jvm_verify": str(no_jvm_verify).lower(),
                 "no_tld_skip": str(no_tld_skip).lower(),
                 "no_captcha": str(no_captcha).lower(),

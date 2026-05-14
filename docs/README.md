@@ -793,6 +793,7 @@ colima start --cpu 4 --memory 8
 - **Automated Latest Tags**: In automated environments, use `--tag-latest` (with `ldm init` or `ldm run`) to automatically discover and use the most recent stable tag, bypassing all interactive prompts.
 - **Omni-Admin Captcha**: During testing or CI workflows, you can use the `--no-captcha` flag during initialization or run to automatically disable Liferay's mandatory Omni-Admin CAPTCHA checks. This is strictly opt-in and reversible; running without the flag will automatically re-enable CAPTCHA enforcement.
 - **Fast Login**: Use the `--fast-login` flag to automatically bypass typical post-startup prompts, such as the Terms of Use acceptance and the initial password reset screen. *Note: The password policy bypass component does not fully function if you explicitly use the embedded Hypersonic database (`--db hypersonic`). It works perfectly with the default PostgreSQL database.*
+- **Filesystem Resilience**: If your project is stored on an external SSD (common on macOS `/Volumes/` paths), Liferay's OSGi container can fail due to bind-mount locking limitations. LDM **automatically detects** these paths and uses a high-performance internal volume for the OSGi state to prevent these errors. You can also force this behavior using the `--internal-state` flag.
 
 ---
 

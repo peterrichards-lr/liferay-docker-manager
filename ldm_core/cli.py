@@ -90,6 +90,11 @@ def get_parser():
         help="Disable :cached volumes on macOS/Windows",
     )
     run.add_argument(
+        "--internal-state",
+        action="store_true",
+        help="Use internal anonymous volume for OSGi state (fixes locking issues on external drives)",
+    )
+    run.add_argument(
         "--no-jvm-verify",
         action="store_true",
         help="Disable JVM bytecode verification skip",
@@ -156,6 +161,7 @@ def get_parser():
     )
     imp.add_argument("--tag-prefix", help="Prefix for Liferay tag discovery")
     imp.add_argument("--no-vol-cache", action="store_true")
+    imp.add_argument("--internal-state", action="store_true")
     imp.add_argument("--no-jvm-verify", action="store_true")
     imp.add_argument("--no-tld-skip", action="store_true")
     imp.add_argument("--no-seed", action="store_true")
@@ -186,6 +192,7 @@ def get_parser():
     )
     init.add_argument("--host-name", help="Virtual Hostname")
     init.add_argument("--db", choices=["postgresql", "mysql", "hypersonic"])
+    init.add_argument("--internal-state", action="store_true")
     init.add_argument(
         "--samples", action="store_true", help="Initialize with sample extensions"
     )
@@ -224,6 +231,7 @@ def get_parser():
     )
     init_from.add_argument("--tag-prefix", help="Prefix for Liferay tag discovery")
     init_from.add_argument("--no-vol-cache", action="store_true")
+    init_from.add_argument("--internal-state", action="store_true")
     init_from.add_argument("--no-jvm-verify", action="store_true")
     init_from.add_argument("--no-tld-skip", action="store_true")
     init_from.add_argument("--no-seed", action="store_true")

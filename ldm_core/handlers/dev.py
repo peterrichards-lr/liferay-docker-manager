@@ -96,7 +96,9 @@ class DevService:
         print_only=False,
     ):
         """Manages LDM versioning and release tiers."""
-        if print_only:
+        if print_only or (
+            not any([bump_type, set_version, build_info, promote, check])
+        ):
             print(VERSION)
             return
 
