@@ -355,14 +355,21 @@ class ComposerService:
         db_type = meta.get("db_type", "hypersonic")
         tag = str(meta.get("tag") or "latest")
 
-        if db_type == "postgresql":
-            pg_ver = resolve_dependency_version(tag, "postgresql") or "13"
+        if db_type in ["postgresql", "postgres"]:
+            pg_ver = resolve_dependency_version(tag, "postgresql") or "16"
             return {
                 "image": f"postgres:{pg_ver}",
                 "environment": {
                     "POSTGRES_PASSWORD": "test",  # nosec B105
                     "POSTGRES_USER": "lportal",
                     "POSTGRES_DB": "lportal",
+                },
+                "healthcheck": {
+                    "test": ["CMD-SHELL", "pg_isready -U lportal"],
+                    "interval": "10s",
+                    "timeout": "5s",
+                    "retries": 10,
+                    "start_period": "60s",
                 },
                 "networks": ["liferay-net"],
             }
