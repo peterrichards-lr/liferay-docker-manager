@@ -329,7 +329,7 @@ class ConfigService:
                         captcha_cfg.parent.mkdir(parents=True, exist_ok=True)
                     from ldm_core.utils import safe_write_text
 
-                    safe_write_text(captcha_cfg, 'maxChallenges="-1"\n')
+                    safe_write_text(captcha_cfg, 'maxChallenges=I"-1"\n')
 
         # Use the binary-aware 'common' path from setup_paths
         common_dir = paths.get("common")

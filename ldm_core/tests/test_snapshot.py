@@ -15,6 +15,9 @@ class MockSnapshotManager(BaseHandler):
         self.non_interactive = True
         self.snapshot = SnapshotService(self)
 
+    def run_command(self, *args, **kwargs):
+        return ""
+
 
 class TestSnapshotService(unittest.TestCase):
     def setUp(self):

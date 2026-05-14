@@ -1046,6 +1046,9 @@ class BaseHandler:
 
     def check_docker(self):
         """Verifies Docker accessibility."""
+        if os.getenv("LDM_IGNORE_DOCKER", "false").lower() == "true":
+            return True
+
         try:
             docker_bin = shutil.which("docker")
             if not docker_bin:

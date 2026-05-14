@@ -26,6 +26,7 @@ class TestE2EInteractive(unittest.TestCase):
         env.pop("CI", None)
         env.pop("GITHUB_ACTIONS", None)
         env.pop("GITLAB_CI", None)
+        env["LDM_IGNORE_DOCKER"] = "true"
 
         # 1. 'n' (select new project)
         # We stop here to let it hit EOF at the "Enter project name" prompt.

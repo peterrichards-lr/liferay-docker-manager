@@ -12,6 +12,9 @@ class MockConfigManager:
         self.verbose = False
         self.non_interactive = True
 
+    def update_portal_ext(self, *args, **kwargs):
+        pass
+
 
 class TestConfigService(unittest.TestCase):
     def setUp(self):
@@ -64,6 +67,34 @@ class TestConfigService(unittest.TestCase):
             # Check if file was written and contains the logger
             content = target.read_text()
             self.assertIn('name="com.liferay" level="DEBUG"', content)
+
+    def test_sync_common_assets_no_captcha(self):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            configs_dir = tmp_path / "osgi" / "configs"
+            configs_dir.mkdir(parents=True)
+            files_dir = tmp_path / "files"
+            files_dir.mkdir(parents=True)
+
+            paths = {
+                "root": tmp_path,
+                "configs": configs_dir,
+                "files": files_dir,
+                "common": tmp_path / "common",
+            }
+            project_meta = {"no_captcha": "true"}
+
+            self.config.sync_common_assets(paths, project_meta=project_meta)
+
+            captcha_cfg = (
+                configs_dir
+                / "com.liferay.captcha.configuration.CaptchaConfiguration.config"
+            )
+            self.assertTrue(captcha_cfg.exists())
+            content = captcha_cfg.read_text()
+            self.assertIn('maxChallenges=I"-1"', content)
 
 
 if __name__ == "__main__":
