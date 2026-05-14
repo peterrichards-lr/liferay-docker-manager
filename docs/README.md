@@ -692,7 +692,7 @@ ldm reset [project] [target]
 
 - **`state`** (Default): Clears the `osgi/state` folder.
 - **`search`**: Clears internal Sidecar indices.
-- **`db`**: Clears the Hypersonic database (if used).
+- **`db`**: Clears the database (e.g. PostgreSQL or Hypersonic).
 - **`global-search`**: Deletes the project's indices from the shared Global Search container.
 - **`all`**: Performs all of the above.
 
@@ -788,7 +788,7 @@ colima start --cpu 4 --memory 8
 - **Tag Discovery**: If no prefix or release type is provided, the tool fetches the latest available tags from Docker Hub.
 - **Automated Latest Tags**: In automated environments, use `--tag-latest` (with `ldm init` or `ldm run`) to automatically discover and use the most recent stable tag, bypassing all interactive prompts.
 - **Omni-Admin Captcha**: During testing or CI workflows, you can use the `--no-captcha` flag during initialization or run to automatically disable Liferay's mandatory Omni-Admin CAPTCHA checks. This is strictly opt-in and reversible; running without the flag will automatically re-enable CAPTCHA enforcement.
-- **Fast Login**: Use the `--fast-login` flag to automatically bypass typical post-startup prompts, such as the Terms of Use acceptance and the initial password reset screen. *Note: The password policy bypass component does not fully function on the default Hypersonic database. For the best experience, use this flag in conjunction with an external database (e.g., `--db mysql` or `--db postgresql`).*
+- **Fast Login**: Use the `--fast-login` flag to automatically bypass typical post-startup prompts, such as the Terms of Use acceptance and the initial password reset screen. *Note: The password policy bypass component does not fully function if you explicitly use the embedded Hypersonic database (`--db hypersonic`). It works perfectly with the default PostgreSQL database.*
 
 ---
 

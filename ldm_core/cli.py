@@ -71,7 +71,11 @@ def get_parser():
     run.add_argument("--release-type", choices=["any", "u", "lts", "qr"])
     run.add_argument("--portal", action="store_true")
     run.add_argument("--refresh", action="store_true")
-    run.add_argument("--sidecar", action="store_true")
+    run.add_argument(
+        "--sidecar",
+        action="store_true",
+        help="Use internal Liferay Sidecar search instead of the shared Global Search container",
+    )
     run.add_argument(
         "--es7", action="store_true", help="Use Elasticsearch 7 for global search"
     )
@@ -151,6 +155,7 @@ def get_parser():
     imp.add_argument("--no-tld-skip", action="store_true")
     imp.add_argument("--no-seed", action="store_true")
     imp.add_argument("--no-osgi-seed", action="store_true")
+    imp.add_argument("--sidecar", action="store_true")
     imp.add_argument("--no-captcha", action="store_true")
     imp.add_argument("--fast-login", action="store_true")
     imp.add_argument(
@@ -178,6 +183,7 @@ def get_parser():
     init.add_argument(
         "--samples", action="store_true", help="Initialize with sample extensions"
     )
+    init.add_argument("--sidecar", action="store_true")
     init.add_argument(
         "--no-captcha",
         action="store_true",
@@ -217,6 +223,7 @@ def get_parser():
     init_from.add_argument("--no-osgi-seed", action="store_true")
     init_from.add_argument("--no-captcha", action="store_true")
     init_from.add_argument("--fast-login", action="store_true")
+    init_from.add_argument("--sidecar", action="store_true")
     init_from.add_argument("--env", action="append")
     init_from.add_argument("--delay", type=float, default=2.0)
 

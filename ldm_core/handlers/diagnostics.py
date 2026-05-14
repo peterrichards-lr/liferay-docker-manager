@@ -1387,7 +1387,7 @@ class DoctorRunner:
                         UI.raw(f"  {UI.RED}×{UI.COLOR_OFF} {d}")
 
             # 7.2.5 Database Version Check
-            db_type = meta.get("db_type", "hypersonic")
+            db_type = meta.get("db_type", "postgresql")
             if db_type in ["mysql", "postgresql", "mariadb"]:
                 db_container = f"{p_id}-db"
                 # Check if running

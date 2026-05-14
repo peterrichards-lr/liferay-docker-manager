@@ -344,7 +344,7 @@ class ConfigService:
         if project_meta:
             fast_login = str(project_meta.get("fast_login", "false")).lower() == "true"
             if fast_login:
-                db_type = project_meta.get("db_type", "hypersonic")
+                db_type = project_meta.get("db_type", "postgresql")
                 if db_type == "hypersonic":
                     UI.warning(
                         "The '--fast-login' feature (specifically password policy bypass) does not fully work with the default Hypersonic database. "

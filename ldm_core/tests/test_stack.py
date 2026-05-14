@@ -225,7 +225,8 @@ class TestStackScaling(unittest.TestCase):
         self.paths = self.manager.setup_paths("/tmp/proj")
 
     @patch("ldm_core.handlers.infra.get_docker_socket_path")
-    def test_generate_compose_with_scale(self, mock_socket):
+    @patch("ldm_core.handlers.config.ConfigService.update_portal_ext")
+    def test_generate_compose_with_scale(self, mock_update, mock_socket):
         meta = {
             "tag": "2025.q1.0",
             "scale_liferay": 2,

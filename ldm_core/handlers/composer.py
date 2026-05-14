@@ -196,7 +196,7 @@ class ComposerService:
             if k.startswith("LIFERAY_JDBC_PERIOD_"):
                 has_jdbc_env = True
 
-        db_type = meta.get("db_type", "hypersonic")
+        db_type = meta.get("db_type", "postgresql")
         if db_type in ["mysql", "mariadb"]:
             driver = (
                 resolve_dependency_version(tag, "jdbc_driver_mysql")
@@ -352,7 +352,7 @@ class ComposerService:
 
     def _build_db_service(self, meta):
         """Constructs the Database service (MySQL/PostgreSQL) if required."""
-        db_type = meta.get("db_type", "hypersonic")
+        db_type = meta.get("db_type", "postgresql")
         tag = str(meta.get("tag") or "latest")
 
         if db_type in ["postgresql", "postgres"]:

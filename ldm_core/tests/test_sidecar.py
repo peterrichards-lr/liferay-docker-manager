@@ -132,7 +132,10 @@ class TestSidecarImplementation(unittest.TestCase):
             self.assertNotIn("liferay-search-global", depends_on)
 
     @patch("ldm_core.handlers.infra.InfraService.setup_global_search")
-    def test_runtime_skips_global_search_setup(self, mock_setup_global_search):
+    @patch("ldm_core.handlers.config.ConfigService.update_portal_ext")
+    def test_runtime_skips_global_search_setup(
+        self, mock_update, mock_setup_global_search
+    ):
         """Requirement: ldm should not interfer with any pre-existing search containers."""
         # Scenario: User runs with --search flag, but project is --sidecar
         self.manager.args.search = True

@@ -184,10 +184,10 @@ class RuntimeService:
             is_new_project = False
 
         use_shared_search = (
-            str(project_meta.get("use_shared_search", "false")).lower() == "true"
+            str(project_meta.get("use_shared_search", "true")).lower() == "true"
         )
-        if not getattr(self.manager.args, "sidecar", False) and not use_shared_search:
-            use_shared_search = self.manager.parse_version(tag) >= (2025, 1, 0)
+        if getattr(self.manager.args, "sidecar", False):
+            use_shared_search = False
 
         self.manager.verify_runtime_environment(paths)
 
@@ -210,7 +210,7 @@ class RuntimeService:
                 "host_name": host_name,
                 "container_name": project_id,
                 "ssl": str(ssl_val).lower(),
-                "db_type": db_type or "hypersonic",
+                "db_type": db_type or project_meta.get("db_type", "postgresql"),
                 "port": port,
                 "jvm_args": jvm_args,
                 "use_shared_search": str(use_shared_search).lower(),
@@ -486,7 +486,7 @@ class RuntimeService:
 
         if show_summary:
             tag_val = project_meta.get("tag")
-            db_val = project_meta.get("db_type", "hypersonic")
+            db_val = project_meta.get("db_type", "postgresql")
             port_val = project_meta.get("port", 8080)
 
             UI.info(
@@ -520,7 +520,7 @@ class RuntimeService:
                 duration_str = UI.format_duration(time.time() - total_start)
                 UI.debug(f"Time to orchestration start: {duration_str}")
 
-            db_type = project_meta.get("db_type", "hypersonic")
+            db_type = project_meta.get("db_type", "postgresql")
             deps = []
             if db_type != "hypersonic":
                 deps.append("db")
