@@ -40,6 +40,9 @@ class MockRuntime(BaseHandler):
     def cmd_down(self, *args, **kwargs):
         return self.handler.cmd_down(*args, **kwargs)
 
+    def cmd_logs(self, *args, **kwargs):
+        return self.handler.cmd_logs(*args, **kwargs)
+
     def _wait_for_ready(self, *args, **kwargs):
         return self.handler._wait_for_ready(*args, **kwargs)
 
@@ -102,6 +105,37 @@ class TestRuntime(unittest.TestCase):
             mock_run.assert_called()
             call_args = mock_run.call_args[0][0]
             self.assertIn("restart", call_args)
+
+    @patch("ldm_core.handlers.runtime.get_compose_cmd")
+    def test_cmd_logs_advanced_flags(self, mock_compose):
+        mock_compose.return_value = ["docker", "compose"]
+        with patch.object(
+            self.handler, "run_command", return_value="running"
+        ) as mock_run:
+            self.handler.cmd_logs(
+                project_id="test",
+                tail="50",
+                timestamps=True,
+                since="2024-01-01",
+                until="2024-01-02",
+            )
+            mock_run.assert_called()
+            # Find the call that executed 'docker compose logs'
+            logs_call = []
+            for call in mock_run.call_args_list:
+                call_args = call[0][0]
+                if "logs" in call_args:
+                    logs_call = call_args
+                    break
+
+            self.assertTrue(len(logs_call) > 0)
+            self.assertIn("--tail", logs_call)
+            self.assertIn("50", logs_call)
+            self.assertIn("-t", logs_call)
+            self.assertIn("--since", logs_call)
+            self.assertIn("2024-01-01", logs_call)
+            self.assertIn("--until", logs_call)
+            self.assertIn("2024-01-02", logs_call)
 
     @patch("ldm_core.handlers.runtime.get_compose_cmd")
     @patch("ldm_core.handlers.runtime.shutil.rmtree")

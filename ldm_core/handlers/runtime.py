@@ -785,6 +785,9 @@ class RuntimeService:
         follow=False,
         no_wait=False,
         tail="100",
+        timestamps=False,
+        since=None,
+        until=None,
     ):
         """Shows logs for a project or global infrastructure."""
         if infra:
@@ -810,6 +813,15 @@ class RuntimeService:
 
             if tail:
                 cmd.extend(["--tail", str(tail)])
+
+            if timestamps:
+                cmd.append("-t")
+
+            if since:
+                cmd.extend(["--since", str(since)])
+
+            if until:
+                cmd.extend(["--until", str(until)])
 
             env = self.manager.infra._get_infra_env()
             self.manager.run_command(cmd, env=env, capture_output=not follow)
@@ -882,6 +894,15 @@ class RuntimeService:
 
                 if tail:
                     cmd.extend(["--tail", str(tail)])
+
+                if timestamps:
+                    cmd.append("-t")
+
+                if since:
+                    cmd.extend(["--since", str(since)])
+
+                if until:
+                    cmd.extend(["--until", str(until)])
 
                 if service:
                     if isinstance(service, list):

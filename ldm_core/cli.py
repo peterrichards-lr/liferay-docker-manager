@@ -240,10 +240,27 @@ def get_parser():
         if cmd == "logs":
             p.add_argument("-f", "--follow", action="store_true")
             p.add_argument(
+                "-n",
                 "--tail",
                 type=str,
                 default="100",
                 help="Number of lines to show from the end of the logs (default: 100)",
+            )
+            p.add_argument(
+                "-t",
+                "--timestamps",
+                action="store_true",
+                help="Show timestamps",
+            )
+            p.add_argument(
+                "--since",
+                type=str,
+                help="Show logs since timestamp (e.g. 2013-01-02T13:23:37Z) or relative (e.g. 42m for 42 minutes)",
+            )
+            p.add_argument(
+                "--until",
+                type=str,
+                help="Show logs before a timestamp (e.g. 2013-01-02T13:23:37Z) or relative (e.g. 42m for 42 minutes)",
             )
             p.add_argument(
                 "--no-wait",
@@ -720,6 +737,9 @@ def main():
             follow=getattr(args, "follow", False),
             no_wait=getattr(args, "no_wait", False),
             tail=getattr(args, "tail", "100"),
+            timestamps=getattr(args, "timestamps", False),
+            since=getattr(args, "since", None),
+            until=getattr(args, "until", None),
         ),
         "deploy": lambda: manager.runtime.cmd_deploy(
             getattr(args, "project", None), getattr(args, "service", None)
