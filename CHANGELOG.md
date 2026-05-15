@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v2.7.2-beta.16] - 2026-05-15
+
+### Added
+
+- **Improved Log-Level UX**: Made the `--bundle` parameter optional in the `ldm log-level` command. It now defaults to `portal`, allowing users to set log levels by category only (e.g. `ldm log-level --level DEBUG --category com.liferay.fragments`).
+
 ## [v2.7.2-beta.15] - 2026-05-15
 
 ### Added

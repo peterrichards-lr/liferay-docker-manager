@@ -626,8 +626,12 @@ class ConfigService:
             print(logging_json.read_text())
             return
 
-        if not bundle or not category:
-            UI.die("Log-level requires --bundle and --category.")
+        if not category:
+            UI.die("Log-level requires --category.")
+
+        # Default bundle to 'portal' if not provided
+        if not bundle:
+            bundle = "portal"
 
         if not remove and not level:
             UI.die("Log-level requires --level.")
