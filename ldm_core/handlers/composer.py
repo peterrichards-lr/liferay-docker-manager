@@ -163,11 +163,7 @@ class ComposerService:
             if platform.system().lower() in ["darwin", "windows"]:
                 jvm_opts += " -XX:TieredStopAtLevel=1"
 
-        # LDM-369: DO NOT include-and-override=portal-developer.properties by default.
-        # This turns off critical caches that prevent DB transaction rollbacks
-        # during heavy concurrent deployments (like 26 fragment collections).
-        self.manager.config.remove_portal_ext(paths, ["include-and-override"])
-
+        # LDM-369: JVM argument deduplication
         liferay_env = []
 
         # Clean up JVM opts (remove duplicates and trailing spaces)
@@ -320,18 +316,22 @@ class ComposerService:
         if db_type != "hypersonic":
             depends_on.append("db")
 
+        # 80/20 DESIGN: SELinux compatibility for Fedora/RHEL
+        z_label = ":z" if platform.system().lower() == "linux" else ""
+
         service = {
             "image": image,
             "ports": port_list,
             "environment": liferay_env,
             "labels": [f"com.liferay.ldm.project={project_name}"],
             "volumes": [
-                f"{paths['deploy'].as_posix()}:/mnt/liferay/deploy",
-                f"{paths['files'].as_posix()}:/mnt/liferay/files",
-                f"{paths['scripts'].as_posix()}:/mnt/liferay/scripts",
-                f"{paths['data'].as_posix()}:/opt/liferay/data",
-                f"{paths['modules'].as_posix()}:/opt/liferay/modules",
-                f"{paths['cx'].as_posix()}:/opt/liferay/osgi/client-extensions",
+                f"{paths['deploy'].as_posix()}:/mnt/liferay/deploy{z_label}",
+                f"{paths['files'].as_posix()}:/mnt/liferay/files{z_label}",
+                f"{paths['scripts'].as_posix()}:/mnt/liferay/scripts{z_label}",
+                f"{paths['data'].as_posix()}:/opt/liferay/data{z_label}",
+                f"{paths['modules'].as_posix()}:/opt/liferay/modules{z_label}",
+                f"{paths['cx'].as_posix()}:/opt/liferay/osgi/client-extensions{z_label}",
+                f"{paths['portal_log4j'].as_posix()}:/opt/liferay/osgi/log4j{z_label}",
             ],
             "networks": ["liferay-net"],
         }
@@ -354,8 +354,8 @@ class ComposerService:
             # Host-mapped state and logs only for non-scaled instances
             service["volumes"].extend(
                 [
-                    f"{paths['state'].as_posix()}:/opt/liferay/osgi/state",
-                    f"{paths['logs'].as_posix()}:/opt/liferay/logs",
+                    f"{paths['state'].as_posix()}:/opt/liferay/osgi/state{z_label}",
+                    f"{paths['logs'].as_posix()}:/opt/liferay/logs{z_label}",
                 ]
             )
         else:

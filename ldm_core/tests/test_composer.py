@@ -47,6 +47,7 @@ class TestComposerService(unittest.TestCase):
             "scripts": Path("/tmp/proj/scripts"),
             "state": Path("/tmp/proj/osgi/state"),
             "logs": Path("/tmp/proj/logs"),
+            "portal_log4j": Path("/tmp/proj/osgi/log4j"),
         }
         meta = {"tag": "2026.q1.7-lts", "container_name": "proj"}
 

@@ -499,6 +499,10 @@ class RuntimeService:
         )
         config_handler.sync_logging(paths)
 
+        # LDM-369: DO NOT include-and-override=portal-developer.properties by default.
+        # This MUST happen after sync_common_assets to ensure it sticks.
+        config_handler.remove_portal_ext(paths, ["include-and-override"])
+
         self.manager.composer.write_docker_compose(
             paths, project_meta, liferay_env=liferay_env
         )

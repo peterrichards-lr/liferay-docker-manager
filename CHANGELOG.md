@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v2.7.2-beta.18] - 2026-05-15
+
+### Fixed
+
+- **SELinux Compatibility Hardening**: Added the `:z` (shared) label to all Docker volume mounts on Linux systems. This definitively resolves the `access_denied_exception` found in Fedora logs by ensuring the Linux kernel correctly relabels host directories for container write access.
+- **Property Recursion Definitive Fix**: Re-ordered the startup sequence to ensure that surgical property removal happens as the absolute last step after all common assets are synced. This prevents `include-and-override` properties from being restored from the global baseline and causing `java.lang.StackOverflowError`.
+- **Log Management Restoration**: Restored the `/opt/liferay/osgi/log4j` volume mount, ensuring that `ldm log-level` changes are correctly propagated to the container for hot-reloading.
+
 ## [v2.7.2-beta.17] - 2026-05-15
 
 ### Fixed
