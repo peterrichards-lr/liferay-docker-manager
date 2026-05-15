@@ -64,23 +64,21 @@
 
 ## Gemini Added Memories
 
-- **Status: History Linearized & Build Stabilized (v2.4.26-beta.31)**
-  - [x] **History**: Successfully linearized and professionally re-indexed beta history (v2.4.26-beta.1 through v2.4.26-beta.30).
-  - [x] **Cleanup**: Purged massive git conflict marker pollution across core logic files caused by faulty reconstruction logic.
-  - [x] **Fix (Infra)**: Restored critical infrastructure constants (`ELASTICSEARCH_VERSION`, `TRAEFIK_VERSION`) in `ldm_core/constants.py` that were accidentally overwritten, resolving E2E image pull failures.
-  - [x] **Fix (Core)**: Restored missing `DevHandler` functional mixin to `LiferayManager`, re-enabling `cmd_version` and resolving binary build failures.
-  - [x] **Environment**: Restored `.pre-commit-config.yaml` and verified that local linting hooks are active and passing.
-  - [x] **Release**: Consolidated all improvements and fixes into clean **`v2.4.26-beta.31 [pre-release]`**.
-  - [x] **Remote**: Master branch and tags force-pushed to origin for a clean, accurate baseline.
+- **Status: Feature Hardening & Orchestration Refinement (v2.7.1)**
+  - [x] **Core Architecture**: Successfully pivoted LDM default stack to **PostgreSQL** and **Shared Global Search**.
+  - [x] **Orchestration**: Fixed critical bug by injecting required `healthcheck` blocks for PostgreSQL to satisfy `depends_on: service_healthy` constraints.
+  - [x] **Filesystem**: Implemented `--internal-state` flag and auto-detection for `/Volumes/` paths to use high-performance internal volumes for OSGi state, resolving SSD locking failures.
+  - [x] **Logging**: Enhanced `ldm logs` with `-n/--tail`, `-t/--timestamps`, `--since`, and `--until` flags; resolved output capture bug.
+  - [x] **Security Switches**: Implemented strictly opt-in and reversible `--no-captcha` and `--fast-login` switches with automatic property/config cleanup.
+  - [x] **Features**: Implemented dynamic `--feature` switch and `ldm feature` command for project management, plus global defaults via `ldm config features`.
+  - [x] **UX Hardening**: Decoupled `ldm version` from git root requirements, supporting standalone binary execution.
+  - [x] **Stability**: Expanded the full test suite to **221 passing tests** covering all new logic and isolation mandates.
+  - [x] **Deployment**: Successfully released and verified **`v2.7.1`** across GitHub CI and E2E pipelines.
+  - [x] **Docs**: Updated architecture guidelines, troubleshooting for sparse disks/overlayfs, and testing protocols.
 
-- **Next Focus: Targeted Environment Verification**
-  - [ ] **Verification**: Execute full E2E verification of `v2.4.26-beta.31` across all target tiers:
-    - macOS Monterey (Intel)
-    - macOS Sequoia/Tahoe (Apple Silicon)
-    - Windows 11 / WSL2
-    - Linux Native (Workstation)
-  - [ ] **Stabilization**: Collect verification reports and address any residual environment-specific edge cases.
-  - [ ] **Promotion**: Move to stable release once all verification tiers are green.
+- **Next Focus: Maintenance & Performance**
+  - [ ] **Cleanup**: Monitor GitHub Action run volume and keep failed history clean.
+  - [ ] **Efficiency**: Investigate further optimizations for large Liferay image pulls in automated CI environments.
 
 ## 9. Founding Patterns of LDM
 

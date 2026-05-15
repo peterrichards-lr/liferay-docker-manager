@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v2.7.2-beta.1] - 2026-05-15
+
+### Fixed
+
+- **Liferay Data Persistence**: Corrected the internal data volume mount point from `/storage/liferay/data` to `/opt/liferay/data`. This ensures that Liferay and its sidecar Elasticsearch correctly use the host-side `data/` directory, preventing data loss and fixing search index initialization issues.
+- Fragment Deployment Resilience: Added `-Djdk.util.zip.disableZip64ExtraFieldValidation=true` to the default JVM options. This resolves issues where fragment collections appear empty after auto-deployment due to Zip64 metadata validation failures.
+
 ## [v2.5.0] - 2026-05-12
 
 ### Added

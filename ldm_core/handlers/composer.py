@@ -154,6 +154,9 @@ class ComposerService:
             if flag not in jvm_opts:
                 jvm_opts += f" {flag}"
 
+        if "-Djdk.util.zip.disableZip64ExtraFieldValidation=true" not in jvm_opts:
+            jvm_opts += " -Djdk.util.zip.disableZip64ExtraFieldValidation=true"
+
         if "-Xms" in jvm_opts and "-XX:TieredStopAtLevel=1" not in jvm_opts:
             jvm_opts += " -XX:TieredStopAtLevel=1"
 
@@ -292,7 +295,7 @@ class ComposerService:
             "volumes": [
                 f"{paths['deploy'].as_posix()}:/mnt/liferay/deploy",
                 f"{paths['files'].as_posix()}:/mnt/liferay/files",
-                f"{paths['data'].as_posix()}:/storage/liferay/data",
+                f"{paths['data'].as_posix()}:/opt/liferay/data",
                 f"{paths['configs'].as_posix()}:/opt/liferay/osgi/configs",
             ],
             "networks": ["liferay-net"],
