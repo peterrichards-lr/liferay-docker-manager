@@ -12,6 +12,8 @@ class MockComposerManager:
         self.verbose = False
         self.non_interactive = True
         self.workspace = MagicMock()
+        self.config = MagicMock()
+        self.get_resolved_ip = MagicMock(return_value="127.0.0.1")
 
 
 class TestComposerService(unittest.TestCase):
@@ -32,6 +34,36 @@ class TestComposerService(unittest.TestCase):
         )
         self.assertIn("proj-ms1", services)
         self.assertEqual(services["proj-ms1"]["image"], "proj-ms1:latest")
+
+    def test_build_liferay_service_volumes_and_jvm(self):
+        paths = {
+            "root": Path("/tmp/proj"),
+            "deploy": Path("/tmp/proj/deploy"),
+            "files": Path("/tmp/proj/files"),
+            "data": Path("/tmp/proj/data"),
+            "configs": Path("/tmp/proj/osgi/configs"),
+            "state": Path("/tmp/proj/osgi/state"),
+            "logs": Path("/tmp/proj/logs"),
+        }
+        meta = {"tag": "2026.q1.7-lts", "container_name": "proj"}
+
+        service = self.composer._build_liferay_service(
+            paths, meta, "localhost", "proj", False, None
+        )
+
+        # Verify volume mapping
+        volumes = service["volumes"]
+        self.assertIn(f"{Path('/tmp/proj/data').as_posix()}:/opt/liferay/data", volumes)
+        self.assertNotIn(
+            f"{Path('/tmp/proj/data').as_posix()}:/storage/liferay/data", volumes
+        )
+
+        # Verify JVM opts
+        env = service["environment"]
+        jvm_opts = next(
+            (e.split("=", 1)[1] for e in env if e.startswith("LIFERAY_JVM_OPTS=")), ""
+        )
+        self.assertIn("-Djdk.util.zip.disableZip64ExtraFieldValidation=true", jvm_opts)
 
     def test_is_ssl_active_meta(self):
         self.manager.args.ssl = None

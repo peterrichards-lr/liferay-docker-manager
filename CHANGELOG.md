@@ -5,7 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [v2.7.2-beta.1] - 2026-05-15
+## [v2.7.2-beta.2] - 2026-05-15
+
+### Added
+
+- **Project Visibility**: The `ldm list` command now includes a **Path** column by default, making it easier to locate sandboxes on the host machine.
+- **Regression Testing**: Added new automated tests to verify volume mapping accuracy, JVM flag injection, and tabulated project listing output.
 
 ### Fixed
 

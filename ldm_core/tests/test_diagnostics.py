@@ -250,6 +250,46 @@ class TestDiagnostics(unittest.TestCase):
         self.assertIn("Ready", status)
 
     @patch("ldm_core.handlers.diagnostics.run_command")
+    def test_cmd_list(self, mock_run):
+        # 1. Setup mocks
+        with (
+            patch.object(
+                self.manager,
+                "find_dxp_roots",
+                return_value=[{"path": Path("/tmp/proj1"), "version": "2024.q1.0"}],
+            ),
+            patch.object(
+                self.manager,
+                "read_meta",
+                return_value={
+                    "container_name": "proj1",
+                    "port": 8080,
+                    "host_name": "localhost",
+                },
+            ),
+        ):
+            mock_run.return_value = "running"
+
+            # 2. Capture output
+            import io
+            from contextlib import redirect_stdout
+
+            f = io.StringIO()
+            with redirect_stdout(f):
+                self.manager.diagnostics.cmd_list()
+
+            output = f.getvalue()
+
+            # 3. Verify
+            self.assertIn("Project", output)
+            self.assertIn("Path", output)
+            self.assertIn("proj1", output)
+            self.assertIn("2024.q1.0", output)
+            self.assertIn("Running", output)
+            self.assertIn("http://localhost:8080", output)
+            self.assertIn("/tmp/proj1", output)
+
+    @patch("ldm_core.handlers.diagnostics.run_command")
     @patch.object(
         MockDiagManager, "find_dxp_roots", return_value=[{"path": Path("/tmp/p1")}]
     )
