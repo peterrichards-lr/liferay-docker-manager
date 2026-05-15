@@ -32,6 +32,7 @@ class DoctorRunner:
         from typing import Any
 
         self.handler = handler
+        self.manager = handler.manager
         self.args = handler.manager.args
         self.project_id = project_id
         self.all_projects = all_projects
@@ -760,6 +761,17 @@ class DoctorRunner:
                         )
                         if compat_main.exists():
                             msg = "REMOTE mode ready (ES8 + ES7 Compat)"
+
+                    # Project Override Check
+                    if self.manager and self.manager.meta:
+                        use_sidecar = (
+                            str(
+                                self.manager.meta.get("use_shared_search", "true")
+                            ).lower()
+                            == "false"
+                        )
+                        if use_sidecar:
+                            msg = "SIDECAR mode active (Local Project)"
 
                     self.results.append(("Global Search Config", msg, True))
             except Exception:

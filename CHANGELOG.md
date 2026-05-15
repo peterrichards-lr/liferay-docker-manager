@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v2.7.2-beta.8] - 2026-05-15
+
+### Fixed
+
+- **Exhaustive Sidecar Configuration**: LDM now explicitly injects both `sidecarTransportTcpPort` and `transportTcpPort` property keys into `portal-ext.properties`. This ensures that Liferay correctly initializes its internal search engine regardless of minor version differences in configuration property names.
+- **Accurate Diagnostic Reporting**: Updated `ldm doctor` to correctly detect and report 'SIDECAR mode active' for local projects, preventing misleading 'REMOTE' configuration warnings.
+
 ## [v2.7.2-beta.7] - 2026-05-15
 
 ### Fixed
@@ -22,7 +29,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - **Sidecar Search Enforcement**: LDM now explicitly sets `operationMode=EMBEDDED` in `portal-ext.properties` when in Sidecar mode. This ensures that Liferay ignores any conflicting `.config` files (e.g. from a shared 'common/' directory) and correctly initializes its internal search engine, resolving the "Blank Fragment" deployment issue.
-- Clean Search Isolation: Removed the `indexNamePrefix` for Sidecar projects to align with standard Liferay behavior and avoid potential UI incompatibilities with prefixed indices.
+- **Clean Search Isolation**: Removed the `indexNamePrefix` for Sidecar projects to align with standard Liferay behavior and avoid potential UI incompatibilities with prefixed indices.
 
 ## [v2.7.2-beta.4] - 2026-05-15
 
@@ -36,7 +43,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - **Sidecar Search Orchestration**: LDM now explicitly informs Liferay of its Sidecar Elasticsearch ports (defaulting to 9201/9301). This resolves critical "Blank Fragment" issues caused by Liferay attempting to index fragments using the default port 9200 when the Sidecar engine was shifted to avoid collisions.
-- Enhanced Persistence: Added persistent host-mounts for `osgi/modules` and `osgi/client-extensions` to align with standard Liferay Docker practices. This ensures that any dynamically processed or extracted fragment content is correctly persisted and accessible.
+- **Enhanced Persistence**: Added persistent host-mounts for `osgi/modules` and `osgi/client-extensions` to align with standard Liferay Docker practices. This ensures that any dynamically processed or extracted fragment content is correctly persisted and accessible.
 
 ## [v2.7.2-beta.2] - 2026-05-15
 
@@ -48,7 +55,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - **Liferay Data Persistence**: Corrected the internal data volume mount point from `/storage/liferay/data` to `/opt/liferay/data`. This ensures that Liferay and its sidecar Elasticsearch correctly use the host-side `data/` directory, preventing data loss and fixing search index initialization issues.
-- Fragment Deployment Resilience: Added `-Djdk.util.zip.disableZip64ExtraFieldValidation=true` to the default JVM options. This resolves issues where fragment collections appear empty after auto-deployment due to Zip64 metadata validation failures.
+- **Fragment Deployment Resilience**: Added `-Djdk.util.zip.disableZip64ExtraFieldValidation=true` to the default JVM options. This resolves issues where fragment collections appear empty after auto-deployment due to Zip64 metadata validation failures.
 
 ## [v2.5.0] - 2026-05-12
 

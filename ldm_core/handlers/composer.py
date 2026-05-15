@@ -187,6 +187,7 @@ class ComposerService:
                     f"{base}.operationMode": "EMBEDDED",
                     f"{base}.sidecarHttpPort": str(es_port),
                     f"{base}.sidecarTransportTcpPort": str(tcp_port),
+                    f"{base}.transportTcpPort": str(tcp_port),
                 }
 
             self.manager.config.update_portal_ext(paths, get_es_props(7))
@@ -196,6 +197,7 @@ class ComposerService:
                 [
                     "LIFERAY_ELASTICSEARCH_PERIOD_PRODUCTION_PERIOD_MODE_PERIOD_ENABLED=false",
                     "LIFERAY_ELASTICSEARCH_PERIOD_SIDECAR_PERIOD_ENABLED=true",
+                    "LIFERAY_ELASTICSEARCH_PERIOD_OPERATION_PERIOD_MODE=EMBEDDED",
                 ]
             )
         custom_env_str = meta.get("custom_env", "{}")
