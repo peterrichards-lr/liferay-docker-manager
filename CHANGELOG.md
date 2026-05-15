@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v2.7.2-beta.17] - 2026-05-15
+
+### Fixed
+
+- **Elasticsearch Lock Recovery**: Implemented proactive clearing of Sidecar `write.lock` files during project startup. This definitively resolves the `access_denied_exception` found in Fedora logs, which was causing fragment indexing to fail silently by leaving the search index in a read-only state.
+- **Boot-time Permission Hardening**: Added an additional recursive permission reclamation step specifically for the search data directory just before container launch, ensuring the Sidecar process has full write access to its indices.
+
 ## [v2.7.2-beta.16] - 2026-05-15
 
 ### Added

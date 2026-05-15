@@ -1,3 +1,5 @@
+import contextlib
+import platform
 import shutil
 import subprocess
 import time
@@ -194,6 +196,21 @@ class RuntimeService:
             use_shared_search = False
 
         self.manager.verify_runtime_environment(paths)
+
+        # Proactive Search Lock Clearing (LDM-369)
+        # Stale lock files in sidecar indices cause 'access_denied_exception' and block indexing.
+        # We also enforce permissions again just before boot.
+        es_data = paths["data"] / "elasticsearch8"
+        if es_data.exists():
+            UI.info("Clearing stale search locks and enforcing permissions...")
+            for lock_file in es_data.rglob("write.lock"):
+                with contextlib.suppress(Exception):
+                    lock_file.unlink()
+
+            if platform.system().lower() != "windows":
+                from ldm_core.utils import run_command
+
+                run_command(["chmod", "-R", "777", str(es_data)], check=False)
 
         if is_samples:
             self.manager.config.sync_samples(paths)

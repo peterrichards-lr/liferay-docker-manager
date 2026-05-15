@@ -365,7 +365,9 @@ class TestRuntime(unittest.TestCase):
                 self.handler, "detect_project_path", return_value=self.tmp_dir
             ),
             patch.object(
-                self.handler, "setup_paths", return_value={"root": self.tmp_dir}
+                self.handler,
+                "setup_paths",
+                return_value={"root": self.tmp_dir, "data": self.tmp_dir / "data"},
             ),
             patch.object(self.handler, "read_meta", return_value={}),
             patch.object(self.handler, "_pre_flight_checks", return_value=8080),
