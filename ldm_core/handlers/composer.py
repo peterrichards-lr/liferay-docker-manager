@@ -164,15 +164,25 @@ class ComposerService:
                 jvm_opts += " -XX:TieredStopAtLevel=1"
 
         # LDM-369: JVM argument deduplication
-        liferay_env = []
-
-        # Clean up JVM opts (remove duplicates and trailing spaces)
-        clean_opts = []
+        # We use a dictionary-style merge where the last flag wins for any duplicated key
+        opt_map = {}
         for opt in jvm_opts.split(" "):
-            if opt and opt not in clean_opts:
-                clean_opts.append(opt)
+            if not opt:
+                continue
+            if opt.startswith("-D"):
+                key = opt.split("=", 1)[0]
+                opt_map[key] = opt
+            elif opt.startswith("-Xm"):
+                key = opt[:3]
+                opt_map[key] = opt
+            elif opt.startswith("-XX:"):
+                key = opt.split("=", 1)[0]
+                opt_map[key] = opt
+            else:
+                opt_map[opt] = opt
 
-        liferay_env.append(f"LIFERAY_JVM_OPTS={' '.join(clean_opts)}")
+        liferay_env = []
+        liferay_env.append(f"LIFERAY_JVM_OPTS={' '.join(opt_map.values())}")
 
         if use_shared_search:
             liferay_env.extend(
@@ -325,13 +335,13 @@ class ComposerService:
             "environment": liferay_env,
             "labels": [f"com.liferay.ldm.project={project_name}"],
             "volumes": [
-                f"{paths['deploy'].as_posix()}:/mnt/liferay/deploy{z_label}",
-                f"{paths['files'].as_posix()}:/mnt/liferay/files{z_label}",
-                f"{paths['scripts'].as_posix()}:/mnt/liferay/scripts{z_label}",
-                f"{paths['data'].as_posix()}:/opt/liferay/data{z_label}",
-                f"{paths['modules'].as_posix()}:/opt/liferay/modules{z_label}",
-                f"{paths['cx'].as_posix()}:/opt/liferay/osgi/client-extensions{z_label}",
-                f"{paths['portal_log4j'].as_posix()}:/opt/liferay/osgi/log4j{z_label}",
+                f"{paths['deploy'].as_posix()}:/mnt/liferay/deploy",
+                f"{paths['files'].as_posix()}:/mnt/liferay/files",
+                f"{paths['scripts'].as_posix()}:/mnt/liferay/scripts",
+                f"{paths['data'].as_posix()}:/opt/liferay/data",
+                f"{paths['modules'].as_posix()}:/opt/liferay/modules",
+                f"{paths['cx'].as_posix()}:/opt/liferay/osgi/client-extensions",
+                f"{paths['portal_log4j'].as_posix()}:/opt/liferay/osgi/log4j",
             ],
             "networks": ["liferay-net"],
         }
@@ -354,8 +364,8 @@ class ComposerService:
             # Host-mapped state and logs only for non-scaled instances
             service["volumes"].extend(
                 [
-                    f"{paths['state'].as_posix()}:/opt/liferay/osgi/state{z_label}",
-                    f"{paths['logs'].as_posix()}:/opt/liferay/logs{z_label}",
+                    f"{paths['state'].as_posix()}:/opt/liferay/osgi/state",
+                    f"{paths['logs'].as_posix()}:/opt/liferay/logs",
                 ]
             )
         else:

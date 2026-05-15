@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v2.7.2-beta.19] - 2026-05-15
+
+### Fixed
+
+- **Linux Hardening Rollback**: Removed the `:z` SELinux label from volume mounts. This ensures compatibility with external drives (like SanDisk ExFAT) on Fedora where kernel-level relabeling is not supported and was causing `access_denied_exception` on search indices.
+- **Aggressive JVM Deduplication**: Implemented a "last-one-wins" dictionary merge for all JVM options. This prevents Liferay from receiving duplicate memory limits or conflicting performance flags from the underlying Docker image.
+- **Hot-Reload Consistency**: Aligned the `osgi/log4j` volume mount to ensure `ldm log-level` changes are correctly visible to the container's hot-reloading engine.
+
 ## [v2.7.2-beta.18] - 2026-05-15
 
 ### Fixed
