@@ -57,10 +57,14 @@ class TestComposerService(unittest.TestCase):
 
         # Verify volume mapping
         volumes = service["volumes"]
-        self.assertIn(f"{Path('/tmp/proj/data').as_posix()}:/opt/liferay/data", volumes)
-        self.assertNotIn(
-            f"{Path('/tmp/proj/data').as_posix()}:/storage/liferay/data", volumes
+        # Use startswith to handle potential :z label on Linux
+        self.assertTrue(
+            any(
+                v.startswith(f"{Path('/tmp/proj/data').as_posix()}:/opt/liferay/data")
+                for v in volumes
+            )
         )
+        self.assertFalse(any("/storage/liferay/data" in v for v in volumes))
 
         # Verify JVM opts
         env = service["environment"]
