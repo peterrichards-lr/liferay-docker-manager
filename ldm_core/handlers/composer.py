@@ -28,7 +28,8 @@ class ComposerService:
                 return "-Xms4g -Xmx12g -XX:MaxMetadataSize=768m -XX:MetaspaceSize=768m"
 
             mem_gb = mem_bytes / (1024**3)
-            max_heap_gb = max(4, math.floor(mem_gb * 0.75))
+            # 80/20 DESIGN: Leave room for Sidecar and OS
+            max_heap_gb = max(4, math.floor(mem_gb * 0.50))
             min_heap_gb = max(2, math.floor(mem_gb * 0.25))
             max_heap_gb = min(max_heap_gb, 12 if mem_gb < 24 else 32)
             min_heap_gb = min(min_heap_gb, 4)
@@ -188,10 +189,14 @@ class ComposerService:
                     f"{base}.sidecarHttpPort": str(es_port),
                     f"{base}.sidecarTransportTcpPort": str(tcp_port),
                     f"{base}.transportTcpPort": str(tcp_port),
+                    f"{base}.sidecarNetworkHost": "0.0.0.0",  # nosec B104
                 }
 
             self.manager.config.update_portal_ext(paths, get_es_props(7))
             self.manager.config.update_portal_ext(paths, get_es_props(8))
+
+            if "-Dliferay.auto.deploy.interval" not in jvm_opts:
+                jvm_opts += " -Dliferay.auto.deploy.interval=5000"
 
             liferay_env.extend(
                 [
