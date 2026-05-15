@@ -245,7 +245,6 @@ class ComposerService:
                 self.manager.config.update_portal_ext(  # type: ignore[attr-defined]
                     paths,
                     {
-                        "jdbc.default.enabled": "true",
                         "jdbc.default.driverClassName": driver,
                         "jdbc.default.url": url,
                         "jdbc.default.username": "lportal",
@@ -268,7 +267,6 @@ class ComposerService:
                 self.manager.config.update_portal_ext(  # type: ignore[attr-defined]
                     paths,
                     {
-                        "jdbc.default.enabled": "true",
                         "jdbc.default.driverClassName": driver,
                         "jdbc.default.url": url,
                         "jdbc.default.username": "lportal",

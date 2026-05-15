@@ -5,12 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v2.7.2-beta.9] - 2026-05-15
+
+### Fixed
+
+- **Recursive Permission Reclamation**: LDM now performs a recursive `chmod 777` on the `data/` directory during project startup on non-Windows systems. This ensures that Liferay has write access to critical subfolders like `data/license/`, breaking the infinite license loop and enabling background tasks like search indexing.
+- **Improved JDBC Stability**: Removed the redundant `jdbc.default.enabled=true` property from the default configuration. This resolves a `NullPointerException` in modern Liferay versions using HikariCP and provides a cleaner startup log.
+
 ## [v2.7.2-beta.8] - 2026-05-15
 
 ### Fixed
 
 - **Exhaustive Sidecar Configuration**: LDM now explicitly injects both `sidecarTransportTcpPort` and `transportTcpPort` property keys into `portal-ext.properties`. This ensures that Liferay correctly initializes its internal search engine regardless of minor version differences in configuration property names.
-- **Accurate Diagnostic Reporting**: Updated `ldm doctor` to correctly detect and report 'SIDECAR mode active' for local projects, preventing misleading 'REMOTE' configuration warnings.
+- Accurate Diagnostic Reporting: Updated `ldm doctor` to correctly detect and report 'SIDECAR mode active' for local projects, preventing misleading 'REMOTE' configuration warnings.
 
 ## [v2.7.2-beta.7] - 2026-05-15
 

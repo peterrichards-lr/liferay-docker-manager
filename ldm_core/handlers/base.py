@@ -1116,10 +1116,10 @@ class BaseHandler:
 
         if platform.system().lower() != "windows":
             try:
-                os.chmod(str(paths["root"]), 0o777)  # nosec B103
-                for key in essential_paths:
-                    if key in paths and paths[key].exists():
-                        os.chmod(str(paths[key]), 0o777)  # nosec B103
+                # Recursive chmod 777 to ensure Liferay can write to subfolders like data/license
+                from ldm_core.utils import run_command
+
+                run_command(["chmod", "-R", "777", str(paths["root"])], check=False)
             except Exception:
                 pass
 
