@@ -177,14 +177,23 @@ class ComposerService:
         else:
             # LDM-Sidecar: We must explicitly tell Liferay which ports to use for Sidecar
             # because LDM defaults to 9201 to avoid global search collisions.
+            # We inject both ES7 and ES8 keys to ensure compatibility across DXP versions.
             es_port = int(meta.get("es_port", 9201))
             tcp_port = es_port + 100
+
+            # Helper for constructing the long OSGi property env var name
+            def es_env(ver, key):
+                base = "LIFERAY_MODULE_PERIOD_FRAMEWORK_PERIOD_PROPERTIES_PERIOD_COM_PERIOD_LIFERAY_PORTAL_PERIOD_SEARCH_PERIOD"
+                return f"{base}_ELASTICSEARCH{ver}_PERIOD_CONFIGURATION_PERIOD_ELASTICSEARCHCONFIGURATION_PERIOD_{key}"
+
             liferay_env.extend(
                 [
                     "LIFERAY_ELASTICSEARCH_PERIOD_PRODUCTION_PERIOD_MODE_PERIOD_ENABLED=false",
                     "LIFERAY_ELASTICSEARCH_PERIOD_SIDECAR_PERIOD_ENABLED=true",
-                    f"LIFERAY_MODULE_PERIOD_FRAMEWORK_PERIOD_PROPERTIES_PERIOD_COM_PERIOD_LIFERAY_PORTAL_PERIOD_SEARCH_PERIOD_ELASTICSEARCH7_PERIOD_CONFIGURATION_PERIOD_ELASTICSEARCHCONFIGURATION_PERIOD_SIDECARHTTPPORT={es_port}",
-                    f"LIFERAY_MODULE_PERIOD_FRAMEWORK_PERIOD_PROPERTIES_PERIOD_COM_PERIOD_LIFERAY_PORTAL_PERIOD_SEARCH_PERIOD_ELASTICSEARCH7_PERIOD_CONFIGURATION_PERIOD_ELASTICSEARCHCONFIGURATION_PERIOD_SIDECARTRANSPORTTCPPORT={tcp_port}",
+                    f"{es_env(7, 'SIDECARHTTPPORT')}={es_port}",
+                    f"{es_env(7, 'SIDECARTRANSPORTTCPPORT')}={tcp_port}",
+                    f"{es_env(8, 'SIDECARHTTPPORT')}={es_port}",
+                    f"{es_env(8, 'SIDECARTRANSPORTTCPPORT')}={tcp_port}",
                 ]
             )
 
@@ -304,6 +313,7 @@ class ComposerService:
                 f"{paths['data'].as_posix()}:/opt/liferay/data",
                 f"{paths['configs'].as_posix()}:/opt/liferay/osgi/configs",
                 f"{paths['modules'].as_posix()}:/opt/liferay/osgi/modules",
+                f"{paths['modules'].as_posix()}:/opt/liferay/modules",
                 f"{paths['cx'].as_posix()}:/opt/liferay/osgi/client-extensions",
             ],
             "networks": ["liferay-net"],

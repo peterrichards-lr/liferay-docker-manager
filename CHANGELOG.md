@@ -5,12 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v2.7.2-beta.4] - 2026-05-15
+
+### Fixed
+
+- **Sidecar Search Orchestration**: Explicitly configures both Elasticsearch 7 and 8 ports (9201/9301) for Sidecar mode. This ensures Liferay always finds its search engine regardless of the version being used.
+- **Legacy Path Alignment**: Added volume mount for `/opt/liferay/modules` to match standard Liferay Docker expectations and ensure fragment persistence.
+
 ## [v2.7.2-beta.3] - 2026-05-15
 
 ### Fixed
 
 - **Sidecar Search Orchestration**: LDM now explicitly informs Liferay of its Sidecar Elasticsearch ports (defaulting to 9201/9301). This resolves critical "Blank Fragment" issues caused by Liferay attempting to index fragments using the default port 9200 when the Sidecar engine was shifted to avoid collisions.
-- **Enhanced Persistence**: Added persistent host-mounts for `osgi/modules` and `osgi/client-extensions` to align with standard Liferay Docker practices. This ensures that any dynamically processed or extracted fragment content is correctly persisted and accessible.
+- Enhanced Persistence: Added persistent host-mounts for `osgi/modules` and `osgi/client-extensions` to align with standard Liferay Docker practices. This ensures that any dynamically processed or extracted fragment content is correctly persisted and accessible.
 
 ## [v2.7.2-beta.2] - 2026-05-15
 
