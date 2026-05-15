@@ -514,10 +514,6 @@ class ConfigService:
                     if "elasticsearch" in match.name.lower() and match.name.endswith(
                         ".config"
                     ):
-                        content = match.read_text()
-
-                        # Inject index prefix dynamically based on project
-                        # Liferay ES configuration uses standard property keys in .config files
                         project_id = paths["root"].name
                         use_sidecar = (
                             project_meta
@@ -528,30 +524,14 @@ class ConfigService:
                         )
 
                         if use_sidecar:
-                            # Sidecar projects should not have a prefix (to match standard behavior)
-                            # and MUST be in EMBEDDED mode.
-                            import re
+                            # CRITICAL: Sidecar projects MUST NOT have these .config files
+                            # if they contain REMOTE settings, as they override portal-ext.
+                            # We delete any existing one to force fallback to LDM's property overrides.
+                            if dest.exists():
+                                dest.unlink()
+                            continue
 
-                            content = re.sub(
-                                r'operationMode="[^"]*"',
-                                'operationMode="EMBEDDED"',
-                                content,
-                            )
-                            # Remove prefix if present
-                            content = re.sub(r'indexNamePrefix="[^"]*"', "", content)
-                        else:
-                            prefix = f"ldm-{project_id}-"
-                            # Add or update indexNamePrefix
-                            if 'indexNamePrefix="' in content:
-                                import re
-
-                                content = re.sub(
-                                    r'indexNamePrefix="[^"]*"',
-                                    f'indexNamePrefix="{prefix}"',
-                                    content,
-                                )
-                            else:
-                                content += f'\nindexNamePrefix="{prefix}"'
+                        content = match.read_text()
 
                         # Write the substituted config
                         if not dest.exists() or dest.read_text() != content:
