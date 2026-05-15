@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v2.7.2-beta.13] - 2026-05-15
+
+### Fixed
+
+- **Transaction Race Prevention**: Explicitly disabled the automatic inclusion of `portal-developer.properties`. This restores Liferay's internal caches, preventing "Duplicate Key" race conditions and transaction rollbacks during bulk fragment deployments.
+- **Database Resource Hardening**: Increased PostgreSQL container resources to 1GB shared buffers and 200 max connections. This provides the necessary IO overhead for heavy concurrent write operations.
+
+## [v2.7.2-beta.12] - 2026-05-15
+
+### Fixed
+
+- **Absolute Parity**: Removed explicit `LIFERAY_HOME` environment variable and implemented JVM argument deduplication to ensure a clean container profile that matches standard manual Docker scripts.
+- **Volume Re-alignment**: Restored host-mapped `osgi/state` and `logs` for standard instances to maintain performance while preserving scaling isolation.
+
 ## [v2.7.2-beta.11] - 2026-05-15
 
 ### Fixed

@@ -163,10 +163,22 @@ class ComposerService:
             if platform.system().lower() in ["darwin", "windows"]:
                 jvm_opts += " -XX:TieredStopAtLevel=1"
 
-        liferay_env = (
-            base_env if base_env is not None else ["LIFERAY_HOME=/opt/liferay"]
+        # LDM-369: DO NOT include-and-override=portal-developer.properties by default.
+        # This turns off critical caches that prevent DB transaction rollbacks
+        # during heavy concurrent deployments (like 26 fragment collections).
+        self.manager.config.update_portal_ext(
+            paths, {"include-and-override": "portal.properties"}
         )
-        liferay_env.append(f"LIFERAY_JVM_OPTS={jvm_opts.strip()}")
+
+        liferay_env = []
+
+        # Clean up JVM opts (remove duplicates and trailing spaces)
+        clean_opts = []
+        for opt in jvm_opts.split(" "):
+            if opt and opt not in clean_opts:
+                clean_opts.append(opt)
+
+        liferay_env.append(f"LIFERAY_JVM_OPTS={' '.join(clean_opts)}")
 
         if use_shared_search:
             liferay_env.extend(
@@ -341,23 +353,13 @@ class ComposerService:
 
         if scale == 1:
             service["container_name"] = project_name
-            # LDM-369: Filesystem Resilience.
-            # OSGi state bind-mounts fail on external drives (e.g., /Volumes/ on macOS)
-            # because they don't support file-locking correctly.
-            internal_state = str(meta.get("internal_state", "false")).lower() == "true"
-            if not internal_state:
-                # Auto-detect external drives on macOS
-                if str(paths["root"]).startswith("/Volumes/"):
-                    internal_state = True
-
-            if internal_state:
-                service["volumes"].append("/opt/liferay/osgi/state")
-            else:
-                service["volumes"].append(
-                    f"{paths['state'].as_posix()}:/opt/liferay/osgi/state"
-                )
-
-            service["volumes"].append(f"{paths['logs'].as_posix()}:/opt/liferay/logs")
+            # Host-mapped state and logs only for non-scaled instances
+            service["volumes"].extend(
+                [
+                    f"{paths['state'].as_posix()}:/opt/liferay/osgi/state",
+                    f"{paths['logs'].as_posix()}:/opt/liferay/logs",
+                ]
+            )
         else:
             liferay_env.extend(
                 [
@@ -398,6 +400,13 @@ class ComposerService:
             pg_ver = resolve_dependency_version(tag, "postgresql") or "16"
             return {
                 "image": f"postgres:{pg_ver}",
+                "command": [
+                    "postgres",
+                    "-c",
+                    "shared_buffers=1024MB",
+                    "-c",
+                    "max_connections=200",
+                ],
                 "environment": {
                     "POSTGRES_PASSWORD": "test",  # nosec B105
                     "POSTGRES_USER": "lportal",
