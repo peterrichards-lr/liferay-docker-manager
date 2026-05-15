@@ -511,9 +511,15 @@ class ConfigService:
                     dest = target / dest_name
 
                     # 80/20 DESIGN: Static Template + Dynamic Substitution
-                    if "elasticsearch" in match.name.lower() and match.name.endswith(
-                        ".config"
-                    ):
+                    # Exact filenames required by Liferay to manage search mode precedence
+                    sidecar_conflicts = [
+                        "com.liferay.portal.search.elasticsearch7.configuration.ElasticsearchConfiguration.config",
+                        "com.liferay.portal.search.elasticsearch8.configuration.ElasticsearchConfiguration.config",
+                        "com.liferay.portal.search.elasticsearch7.configuration.ElasticsearchConnectionConfiguration.config",
+                        "com.liferay.portal.search.elasticsearch8.configuration.ElasticsearchConnectionConfiguration.config",
+                    ]
+
+                    if dest_name in sidecar_conflicts:
                         project_id = paths["root"].name
                         use_sidecar = (
                             project_meta
@@ -524,7 +530,7 @@ class ConfigService:
                         )
 
                         if use_sidecar:
-                            # CRITICAL: Sidecar projects MUST NOT have these .config files
+                            # CRITICAL: Sidecar projects MUST NOT have these specific .config files
                             # if they contain REMOTE settings, as they override portal-ext.
                             # We delete any existing one to force fallback to LDM's property overrides.
                             if dest.exists():
