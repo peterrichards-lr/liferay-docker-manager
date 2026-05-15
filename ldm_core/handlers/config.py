@@ -170,8 +170,8 @@ class ConfigService:
         with contextlib.suppress(PermissionError, OSError):
             paths["portal_log4j"].mkdir(parents=True, exist_ok=True)
 
-        # 1. Ensure we have a valid baseline XML structure
-        standard_template = '<?xml version="1.0"?>\n<Configuration strict="true">\n\t<Loggers>\n\t</Loggers>\n</Configuration>\n'
+        # 1. Ensure we have a valid baseline XML structure with hot-reload enabled
+        standard_template = '<?xml version="1.0"?>\n<Configuration strict="true" monitorInterval="5">\n\t<Loggers>\n\t</Loggers>\n</Configuration>\n'
 
         if not target.exists() or target.stat().st_size < 10:
             safe_write_text(target, standard_template)
@@ -605,18 +605,10 @@ class ConfigService:
             self.manager.update_portal_ext(target_ext, host_updates)
 
     def cmd_log_level(self, project_id=None):
-        """Manage Liferay internal logging levels via Gogo shell and logging.json."""
+        """Manage Liferay internal logging levels via file-based hot-reloading."""
         root = self.manager.detect_project_path(project_id)
         if not root:
             return
-
-        meta = self.manager.read_meta(root)
-        port = meta.get("gogo_port")
-        if not port or port == "None":
-            UI.die(
-                "Log-level sync requires Gogo shell to be exposed. "
-                "Run 'ldm run --gogo-port <port>' to enable it."
-            )
 
         # 1. Determine action from args
         bundle = getattr(self.manager.args, "bundle", None)
@@ -637,66 +629,37 @@ class ConfigService:
         if not bundle or not category:
             UI.die("Log-level requires --bundle and --category.")
 
-        # 2. Build Gogo Command
-        # Format: log:set <level> <category>
-        # Liferay Gogo shell 'log:set' often requires the level first
+        if not remove and not level:
+            UI.die("Log-level requires --level.")
+
+        # 2. Persistence: Update logging.json
+        logging_json = root / "logging.json"
+        log_data = {}
+        if logging_json.exists():
+            with contextlib.suppress(Exception):
+                log_data = json.loads(logging_json.read_text())
+
         if remove:
-            # Revert to default (usually INFO)
-            gogo_cmd = f"log:set INFO {category}\n"
+            if bundle in log_data and category in log_data[bundle]:
+                del log_data[bundle][category]
+                if not log_data[bundle]:
+                    del log_data[bundle]
         else:
-            if not level:
-                UI.die("Log-level requires --level.")
-            gogo_cmd = f"log:set {level} {category}\n"
+            if bundle not in log_data:
+                log_data[bundle] = {}
+            log_data[bundle][category] = level
 
-        # 3. Send to Gogo Shell via nc or ncat
-        nc_bin = shutil.which("nc")
-        ncat_bin = shutil.which("ncat")
-        active_nc = nc_bin or ncat_bin
+        from ldm_core.utils import safe_write_text
 
-        if not active_nc:
-            UI.error("Neither 'nc' nor 'ncat' was found.")
-            if platform.system().lower() == "windows":
-                UI.info("Tip: Run 'winget install Insecure.Nmap' to get 'ncat'.")
-            UI.die("Cannot sync log levels without netcat-compatible tool.")
+        safe_write_text(logging_json, json.dumps(log_data, indent=4))
 
-        UI.info(f"Syncing log level to {root.name} (localhost:{port})...")
-        try:
-            # We use a shell piping pattern to feed the command to netcat
-            # echo "log:set ..." | nc localhost <port>
-            import subprocess
-            from typing import cast
+        # 3. Synchronize to portal-log4j-ext.xml
+        paths = self.manager.setup_paths(root)
+        self.sync_logging(paths)
 
-            ps = subprocess.Popen(["echo", gogo_cmd], stdout=subprocess.PIPE)
-            subprocess.check_call(
-                [cast(str, active_nc), "localhost", str(port)],
-                stdin=ps.stdout,
-                timeout=5,
-            )
-            ps.wait()
-
-            # 4. Persistence: Update logging.json
-            logging_json = root / "logging.json"
-            log_data = {}
-            if logging_json.exists():
-                with contextlib.suppress(Exception):
-                    log_data = json.loads(logging_json.read_text())
-
-            if remove:
-                if bundle in log_data and category in log_data[bundle]:
-                    del log_data[bundle][category]
-                    if not log_data[bundle]:
-                        del log_data[bundle]
-            else:
-                if bundle not in log_data:
-                    log_data[bundle] = {}
-                log_data[bundle][category] = level
-
-            safe_write_text(logging_json, json.dumps(log_data, indent=4))
-            UI.success("Log level updated and persisted.")
-
-        except Exception as e:
-            UI.error(f"Failed to communicate with Gogo shell: {e}")
-            UI.info("Ensure the container is running and the Gogo port is accessible.")
+        UI.success(
+            "Log level updated and persisted. Liferay will hot-reload the changes within 5 seconds."
+        )
 
     def cmd_config(self, key=None, value=None):
         """View or set global LDM configuration."""
@@ -742,7 +705,6 @@ class ConfigService:
         if not root_path:
             return
 
-        import platform
         import subprocess
 
         if target == "meta":

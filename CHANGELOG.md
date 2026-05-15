@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v2.7.2-beta.15] - 2026-05-15
+
+### Added
+
+- **Port-less Log Level Management**: Refactored `ldm log-level` to use file-based hot-reloading via `portal-log4j-ext.xml`. By adding `monitorInterval="5"` to the configuration, Liferay now picks up log level changes from the disk within 5 seconds, removing the need for Gogo shell, Telnet, or any administrative ports.
+
 ## [v2.7.2-beta.14] - 2026-05-15
 
 ### Fixed
@@ -100,21 +106,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Liferay Data Persistence**: Corrected the internal data volume mount point from `/storage/liferay/data` to `/opt/liferay/data`. This ensures that Liferay and its sidecar Elasticsearch correctly use the host-side `data/` directory, preventing data loss and fixing search index initialization issues.
 - **Fragment Deployment Resilience**: Added `-Djdk.util.zip.disableZip64ExtraFieldValidation=true` to the default JVM options. This resolves issues where fragment collections appear empty after auto-deployment due to Zip64 metadata validation failures.
-
-## [v2.7.2-beta.12] - 2026-05-15
-
-### Fixed
-
-- **Absolute Parity**: Removed explicit `LIFERAY_HOME` environment variable and implemented JVM argument deduplication to ensure a clean container profile that matches standard manual Docker scripts.
-- **Volume Re-alignment**: Restored host-mapped `osgi/state` and `logs` for standard instances to maintain performance while preserving scaling isolation.
-
-## [v2.7.2-beta.11] - 2026-05-15
-
-### Fixed
-
-- **Performance Optimization Restriction**: Restricted the `TieredStopAtLevel=1` and `Xverify:none` JVM flags to macOS/Windows VM environments only. This prevents potential race conditions in background indexing on native Linux (Fedora).
-- **Volume Mount Parity**: Removed the direct `osgi/configs` bind-mount and aligned the `modules` mount to match the successful manual script. This ensures Liferay uses internal defaults for search configuration and avoids metadata precedence conflicts.
-- **Missing Scripts Mount**: Re-added the missing `scripts` volume mount to ensure project-specific initialization scripts are correctly executed.
 
 ## [v2.5.0] - 2026-05-12
 
