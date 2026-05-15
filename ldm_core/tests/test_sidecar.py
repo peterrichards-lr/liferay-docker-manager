@@ -32,6 +32,7 @@ class MockManager(BaseHandler):
             "data": root / "data",
             "deploy": root / "deploy",
             "modules": root / "osgi" / "modules",
+            "scripts": root / "scripts",
             "compose": root / "docker-compose.yml",
             "logs": root / "logs",
             "state": root / "osgi" / "state",

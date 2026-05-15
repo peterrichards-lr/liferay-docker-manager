@@ -237,6 +237,7 @@ class TestRuntime(unittest.TestCase):
             "state": root / "osgi" / "state",
             "cx": root / "osgi" / "client-extensions",
             "ce_dir": root / "osgi" / "client-extensions",
+            "scripts": root / "scripts",
             "configs": root / "osgi" / "configs",
             "modules": root / "osgi" / "modules",
             "backups": root / "snapshots",

@@ -44,6 +44,7 @@ class TestComposerService(unittest.TestCase):
             "configs": Path("/tmp/proj/osgi/configs"),
             "modules": Path("/tmp/proj/osgi/modules"),
             "cx": Path("/tmp/proj/osgi/client-extensions"),
+            "scripts": Path("/tmp/proj/scripts"),
             "state": Path("/tmp/proj/osgi/state"),
             "logs": Path("/tmp/proj/logs"),
         }

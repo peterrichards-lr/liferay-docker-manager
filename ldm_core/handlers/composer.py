@@ -159,7 +159,9 @@ class ComposerService:
             jvm_opts += " -Djdk.util.zip.disableZip64ExtraFieldValidation=true"
 
         if "-Xms" in jvm_opts and "-XX:TieredStopAtLevel=1" not in jvm_opts:
-            jvm_opts += " -XX:TieredStopAtLevel=1"
+            # ONLY apply these to Darwin/Windows VMs where bundle resolution is slow
+            if platform.system().lower() in ["darwin", "windows"]:
+                jvm_opts += " -XX:TieredStopAtLevel=1"
 
         liferay_env = (
             base_env if base_env is not None else ["LIFERAY_HOME=/opt/liferay"]
@@ -316,9 +318,8 @@ class ComposerService:
             "volumes": [
                 f"{paths['deploy'].as_posix()}:/mnt/liferay/deploy",
                 f"{paths['files'].as_posix()}:/mnt/liferay/files",
+                f"{paths['scripts'].as_posix()}:/mnt/liferay/scripts",
                 f"{paths['data'].as_posix()}:/opt/liferay/data",
-                f"{paths['configs'].as_posix()}:/opt/liferay/osgi/configs",
-                f"{paths['modules'].as_posix()}:/opt/liferay/osgi/modules",
                 f"{paths['modules'].as_posix()}:/opt/liferay/modules",
                 f"{paths['cx'].as_posix()}:/opt/liferay/osgi/client-extensions",
             ],
