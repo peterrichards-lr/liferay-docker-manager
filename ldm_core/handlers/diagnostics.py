@@ -2532,9 +2532,9 @@ pause
             return
 
         UI.raw(
-            f"{UI.WHITE}{'Project':<25} {'Version':<15} {'Status':<12} {'URL'}{UI.COLOR_OFF}"
+            f"{UI.WHITE}{'Project':<35} {'Version':<15} {'Status':<12} {'URL':<30} {'Path'}{UI.COLOR_OFF}"
         )
-        UI.raw("-" * 80)
+        UI.raw("-" * 120)
 
         for r in roots:
             path = r["path"]
@@ -2591,8 +2591,14 @@ pause
             seeded = str(meta.get("seeded", "false")).lower() == "true"
             seeded_indicator = f" {UI.GREEN}🌱{UI.COLOR_OFF}" if seeded else ""
 
+            # Truncate path for readability if too long, or use ~ for home
+            display_path = str(path)
+            home = str(Path.home())
+            if display_path.startswith(home):
+                display_path = display_path.replace(home, "~", 1)
+
             print(
-                f"{name + seeded_indicator:<35} {version:<15} {status_color}{status:<12}{UI.COLOR_OFF} {UI.CYAN}{url}{UI.COLOR_OFF}"
+                f"{name + seeded_indicator:<35} {version:<15} {status_color}{status:<12}{UI.COLOR_OFF} {UI.CYAN}{url:<30}{UI.COLOR_OFF} {UI.WHITE}{display_path}{UI.COLOR_OFF}"
             )
 
             if self.manager.verbose:
