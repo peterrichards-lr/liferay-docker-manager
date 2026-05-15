@@ -519,19 +519,39 @@ class ConfigService:
                         # Inject index prefix dynamically based on project
                         # Liferay ES configuration uses standard property keys in .config files
                         project_id = paths["root"].name
-                        prefix = f"ldm-{project_id}-"
+                        use_sidecar = (
+                            project_meta
+                            and str(
+                                project_meta.get("use_shared_search", "true")
+                            ).lower()
+                            == "false"
+                        )
 
-                        # Add or update indexNamePrefix
-                        if 'indexNamePrefix="' in content:
+                        if use_sidecar:
+                            # Sidecar projects should not have a prefix (to match standard behavior)
+                            # and MUST be in EMBEDDED mode.
                             import re
 
                             content = re.sub(
-                                r'indexNamePrefix="[^"]*"',
-                                f'indexNamePrefix="{prefix}"',
+                                r'operationMode="[^"]*"',
+                                'operationMode="EMBEDDED"',
                                 content,
                             )
+                            # Remove prefix if present
+                            content = re.sub(r'indexNamePrefix="[^"]*"', "", content)
                         else:
-                            content += f'\nindexNamePrefix="{prefix}"'
+                            prefix = f"ldm-{project_id}-"
+                            # Add or update indexNamePrefix
+                            if 'indexNamePrefix="' in content:
+                                import re
+
+                                content = re.sub(
+                                    r'indexNamePrefix="[^"]*"',
+                                    f'indexNamePrefix="{prefix}"',
+                                    content,
+                                )
+                            else:
+                                content += f'\nindexNamePrefix="{prefix}"'
 
                         # Write the substituted config
                         if not dest.exists() or dest.read_text() != content:

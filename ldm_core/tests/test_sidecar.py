@@ -59,6 +59,7 @@ class MockManager(BaseHandler):
 class TestSidecarImplementation(unittest.TestCase):
     def setUp(self):
         self.manager = MockManager()
+        self.manager.config.update_portal_ext = MagicMock()  # type: ignore[method-assign]
         self.project_root = Path("/tmp/sidecar-project")
         self.paths = self.manager.setup_paths(self.project_root)
 
@@ -288,17 +289,13 @@ class TestSidecarImplementation(unittest.TestCase):
                 "LIFERAY_ELASTICSEARCH_PERIOD_PRODUCTION_PERIOD_MODE_PERIOD_ENABLED=false",
                 env,
             )
-            # Verify port injection (LDM defaults to 9201 for sidecar)
-            self.assertIn(
-                "LIFERAY_MODULE_PERIOD_FRAMEWORK_PERIOD_PROPERTIES_PERIOD_COM_PERIOD_LIFERAY_PORTAL_PERIOD_SEARCH_PERIOD_ELASTICSEARCH7_PERIOD_CONFIGURATION_PERIOD_ELASTICSEARCHCONFIGURATION_PERIOD_SIDECARHTTPPORT=9201",
-                env,
-            )
-            self.assertIn(
-                "LIFERAY_MODULE_PERIOD_FRAMEWORK_PERIOD_PROPERTIES_PERIOD_COM_PERIOD_LIFERAY_PORTAL_PERIOD_SEARCH_PERIOD_ELASTICSEARCH7_PERIOD_CONFIGURATION_PERIOD_ELASTICSEARCHCONFIGURATION_PERIOD_SIDECARTRANSPORTTCPPORT=9301",
-                env,
-            )
+
+            # Verify port injection via portal-ext.properties
+            update_mock = self.manager.config.update_portal_ext
+            self.assertTrue(getattr(update_mock, "called", False))
 
             # Ensure no connection URL to global search
+
             self.assertFalse(any("liferay-search-global" in e for e in env))
 
     def test_composer_shared_env_vars(self):

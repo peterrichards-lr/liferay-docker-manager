@@ -25,6 +25,7 @@ class MockRuntime(BaseHandler):
         from ldm_core.handlers.config import ConfigService
 
         self.config = ConfigService(self)
+        self.config.update_portal_ext = MagicMock()  # type: ignore[method-assign]
         self.composer = ComposerService(self)
         self.handler = RuntimeService(self)
 

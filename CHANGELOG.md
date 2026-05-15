@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v2.7.2-beta.5] - 2026-05-15
+
+### Fixed
+
+- **Sidecar Search Enforcement**: LDM now explicitly sets `operationMode=EMBEDDED` in `portal-ext.properties` when in Sidecar mode. This ensures that Liferay ignores any conflicting `.config` files (e.g. from a shared 'common/' directory) and correctly initializes its internal search engine, resolving the "Blank Fragment" deployment issue.
+- **Clean Search Isolation**: Removed the `indexNamePrefix` for Sidecar projects to align with standard Liferay behavior and avoid potential UI incompatibilities with prefixed indices.
+
 ## [v2.7.2-beta.4] - 2026-05-15
 
 ### Fixed

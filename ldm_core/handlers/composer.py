@@ -177,26 +177,27 @@ class ComposerService:
         else:
             # LDM-Sidecar: We must explicitly tell Liferay which ports to use for Sidecar
             # because LDM defaults to 9201 to avoid global search collisions.
-            # We inject both ES7 and ES8 keys to ensure compatibility across DXP versions.
+            # We use portal-ext.properties to ensure these take precedence over .config files.
             es_port = int(meta.get("es_port", 9201))
             tcp_port = es_port + 100
 
-            # Helper for constructing the long OSGi property env var name
-            def es_env(ver, key):
-                base = "LIFERAY_MODULE_PERIOD_FRAMEWORK_PERIOD_PROPERTIES_PERIOD_COM_PERIOD_LIFERAY_PORTAL_PERIOD_SEARCH_PERIOD"
-                return f"{base}_ELASTICSEARCH{ver}_PERIOD_CONFIGURATION_PERIOD_ELASTICSEARCHCONFIGURATION_PERIOD_{key}"
+            def get_es_props(ver):
+                base = f"module.framework.properties.com.liferay.portal.search.elasticsearch{ver}.configuration.ElasticsearchConfiguration"
+                return {
+                    f"{base}.operationMode": "EMBEDDED",
+                    f"{base}.sidecarHttpPort": str(es_port),
+                    f"{base}.sidecarTransportTcpPort": str(tcp_port),
+                }
+
+            self.manager.config.update_portal_ext(paths, get_es_props(7))
+            self.manager.config.update_portal_ext(paths, get_es_props(8))
 
             liferay_env.extend(
                 [
                     "LIFERAY_ELASTICSEARCH_PERIOD_PRODUCTION_PERIOD_MODE_PERIOD_ENABLED=false",
                     "LIFERAY_ELASTICSEARCH_PERIOD_SIDECAR_PERIOD_ENABLED=true",
-                    f"{es_env(7, 'SIDECARHTTPPORT')}={es_port}",
-                    f"{es_env(7, 'SIDECARTRANSPORTTCPPORT')}={tcp_port}",
-                    f"{es_env(8, 'SIDECARHTTPPORT')}={es_port}",
-                    f"{es_env(8, 'SIDECARTRANSPORTTCPPORT')}={tcp_port}",
                 ]
             )
-
         custom_env_str = meta.get("custom_env", "{}")
         try:
             custom_env_dict = json.loads(custom_env_str)
