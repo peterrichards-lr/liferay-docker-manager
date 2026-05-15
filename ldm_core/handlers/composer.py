@@ -166,9 +166,7 @@ class ComposerService:
         # LDM-369: DO NOT include-and-override=portal-developer.properties by default.
         # This turns off critical caches that prevent DB transaction rollbacks
         # during heavy concurrent deployments (like 26 fragment collections).
-        self.manager.config.update_portal_ext(
-            paths, {"include-and-override": "portal.properties"}
-        )
+        self.manager.config.remove_portal_ext(paths, ["include-and-override"])
 
         liferay_env = []
 

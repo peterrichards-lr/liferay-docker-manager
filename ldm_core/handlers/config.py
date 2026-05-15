@@ -130,6 +130,38 @@ class ConfigService:
 
         safe_write_text(pe_path, "\n".join(new_lines).strip() + "\n")
 
+    def remove_portal_ext(self, paths, keys_to_remove):
+        """Surgically removes specific properties from portal-ext.properties."""
+        pe_path = paths["files"] / "portal-ext.properties"
+        if not pe_path.exists():
+            return
+
+        from ldm_core.utils import safe_write_text
+
+        lines = pe_path.read_text().splitlines()
+        new_lines = []
+        i = 0
+
+        while i < len(lines):
+            line = lines[i]
+            stripped = line.strip()
+
+            if "=" in stripped and not stripped.startswith(("#", "!")):
+                key = stripped.split("=", 1)[0].strip()
+                if key in keys_to_remove:
+                    # Skip the entire block
+                    temp_val = stripped.split("=", 1)[1]
+                    while temp_val.endswith("\\") and i + 1 < len(lines):
+                        i += 1
+                        temp_val = lines[i]
+                    i += 1
+                    continue
+
+            new_lines.append(line)
+            i += 1
+
+        safe_write_text(pe_path, "\n".join(new_lines).strip() + "\n")
+
     def sync_logging(self, paths):
         """Injects custom logging levels into the project's portal-log4j-ext.xml."""
         target = paths["portal_log4j"] / "portal-log4j-ext.xml"
