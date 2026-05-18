@@ -292,7 +292,7 @@ echo "✅ Liferay is healthy (or running)." | tee -a "$RESULTS_FILE_TMP"
 
 # 2c. UI Verification (Fragments)
 echo "--- Step 2c: UI Verification (Fragments) ---"
-log_and_run "Running Playwright UI Tests" pytest ldm_core/tests/e2e_ui_fragments.py --base-url http://localhost:8082
+log_and_run "Running Playwright UI Tests" pytest "${ORIGINAL_PWD}/ldm_core/tests/e2e_ui_fragments.py" --base-url http://localhost:8082
 echo "✅ UI Verification successful." | tee -a "$RESULTS_FILE_TMP"
 
 # 3. Snapshot & Restore Verification
