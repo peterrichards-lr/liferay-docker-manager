@@ -1,7 +1,6 @@
 import os
 import platform
 import re
-import signal
 import sys
 from pathlib import Path
 
@@ -231,13 +230,6 @@ class DevService:
 
                 changelog_path.write_text(content)
                 UI.success("Updated CHANGELOG.md")
-
-        # Setup Signal Handling for Atomicity
-        def signal_handler(sig, frame):
-            UI.error("\nInterrupted! Cleaning up...")
-            sys.exit(1)
-
-        signal.signal(signal.SIGINT, signal_handler)
 
         updated_paths = []
         try:

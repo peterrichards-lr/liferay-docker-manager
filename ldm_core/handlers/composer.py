@@ -340,13 +340,14 @@ class ComposerService:
             )
 
         image = meta.get("image_tag")
-        if not image:
+        if not image or ":" not in str(image):
+            suffix = f"-{image}" if image else ""
             if "u" in tag:
-                image = f"liferay/portal:{tag}"
+                image = f"liferay/portal:{tag}{suffix}"
             elif any(s in tag for s in ["-lts", "-qr", "-ga"]):
-                image = f"liferay/dxp:{tag}"
+                image = f"liferay/dxp:{tag}{suffix}"
             else:
-                image = f"liferay/dxp:{tag}"
+                image = f"liferay/dxp:{tag}{suffix}"
 
         depends_on = []
         if db_type != "hypersonic":

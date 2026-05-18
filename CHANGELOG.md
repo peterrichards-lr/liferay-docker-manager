@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v2.7.2-beta.28] - 2026-05-18
+
+### Fixed
+
+- **Image Tag Suffix Support**: Corrected the `image_tag` metadata logic to treat values as suffixes (e.g. `-alpine`) if they don't contain a full image name. This ensures that Liferay images are correctly identified even when variant tags are requested.
+- **MacOS Stability**: Removed internal signal handlers during version updates to mitigate segmentation faults observed on macOS ARM64 runners in CI.
+- **E2E Template cleanup**: Removed incorrect `image_tag=alpine` from the test project template which was causing Liferay to attempt to boot from a plain Alpine image.
+
 ## [v2.7.2-beta.27] - 2026-05-18
 
 ### Fixed
