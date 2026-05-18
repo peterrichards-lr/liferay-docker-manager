@@ -141,6 +141,42 @@ class TestRuntime(unittest.TestCase):
             self.assertIn("--until", logs_call)
             self.assertIn("2024-01-02", logs_call)
 
+    @patch("ldm_core.handlers.base.BaseHandler.detect_project_path")
+    def test_cmd_logs_service_aware(self, mock_detect):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            mock_detect.return_value = root
+            (root / "meta").write_text("tag=7.4\ncontainer_name=test-proj")
+
+            with patch.object(self.handler, "run_command") as mock_run:
+                # 1. First call fails (container not ready), second succeeds
+                mock_run.side_effect = [
+                    "",  # First check (docker ps)
+                    "container-id-123",  # Second check inside wait loop
+                    None,  # Final docker logs call
+                ]
+
+                # We mock time.sleep to speed up the test
+                with patch("time.sleep"):
+                    self.handler.cmd_logs(
+                        project_id="test-proj", service="db", no_wait=False
+                    )
+
+                # Verify it searched for the specific db service container
+                found_db_check = False
+                for call in mock_run.call_args_list:
+                    args = call[0][0]
+                    if isinstance(args, list) and "docker" in args and "ps" in args:
+                        for arg in args:
+                            if "name=" in arg and "db" in arg:
+                                found_db_check = True
+                                break
+
+                self.assertTrue(
+                    found_db_check,
+                    f"Did not find DB container check in calls: {mock_run.call_args_list}",
+                )
+
     @patch("ldm_core.handlers.runtime.get_compose_cmd")
     def test_cmd_logs_infra_advanced_flags(self, mock_compose):
         mock_compose.return_value = ["docker", "compose"]

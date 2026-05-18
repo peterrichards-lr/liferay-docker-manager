@@ -50,8 +50,17 @@ class MockBaseManager(BaseHandler):
 
     def read_meta(self, path):
         # We need to return a dict with project_name matching the ID for discovery tests
-        if Path(path).name == "p_match":
+        p = Path(path)
+        if p.name == "p_match":
             return {"project_name": "p1"}
+
+        # Realistically read if file exists
+        from ldm_core.utils import read_meta
+
+        for f in ["meta", ".liferay-docker.meta", ".ldm.meta"]:
+            if (p / f).exists():
+                return read_meta(p / f)
+
         return {}
 
 
@@ -139,6 +148,27 @@ class TestBaseDiscoveryPath(unittest.TestCase):
                 ):
                     res = self.handler.detect_project_path("p1")
                     self.assertEqual(res.name, "p1")
+
+    @patch("ldm_core.handlers.base.get_actual_home")
+    def test_detect_project_path_by_container_name_in_sibling(self, mock_home):
+        with tempfile.TemporaryDirectory() as base_tmp:
+            base_path = Path(base_tmp).resolve()
+            mock_home.return_value = base_path / "home"
+
+            # Create a sibling project dir with a different name than its container
+            sibling_dir = base_path / "actual-folder-name"
+            sibling_dir.mkdir(parents=True)
+            (sibling_dir / "meta").write_text("tag=7.4\ncontainer_name=my-container-id")
+
+            # We are currently in another sibling dir
+            cwd = base_path / "current-repo"
+            cwd.mkdir()
+
+            with patch("ldm_core.handlers.base.Path.cwd", return_value=cwd):
+                # Search for the container id
+                res = self.handler.detect_project_path("my-container-id")
+                self.assertIsNotNone(res)
+                self.assertEqual(res.resolve(), sibling_dir.resolve())
 
     @patch("ldm_core.handlers.base.get_actual_home")
     def test_detect_project_path_iterative_search(self, mock_home):

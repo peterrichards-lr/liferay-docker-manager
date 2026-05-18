@@ -2,7 +2,7 @@ import shutil
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import ANY, MagicMock, patch
 
 from ldm_core.handlers.base import BaseHandler
 from ldm_core.handlers.snapshot import SnapshotService
@@ -37,6 +37,30 @@ class TestSnapshotService(unittest.TestCase):
             backups = self.manager.snapshot.cmd_snapshots()
             self.assertEqual(backups, [])
             mock_info.assert_called_with("No snapshots found.")
+
+    def test_dehydrate_hydration_hooks(self):
+        # Test that dehydration/hydration are triggered when is_using_named_volumes is True
+        paths = {
+            "root": self.test_dir,
+            "data": self.test_dir / "data",
+            "state": self.test_dir / "state",
+        }
+        self.manager.composer.is_using_named_volumes.return_value = True
+
+        with patch.object(self.manager.snapshot, "_sync_volume") as mock_sync:
+            # 1. Test Dehydration
+            self.manager.snapshot._dehydrate_named_volumes(paths)
+            self.assertEqual(mock_sync.call_count, 2)
+            mock_sync.assert_any_call(paths["data"], ANY, direction="from_volume")
+
+            # 2. Test Hydration
+            mock_sync.reset_mock()
+            # Create host dirs to trigger hydration
+            paths["data"].mkdir()
+            paths["state"].mkdir()
+            self.manager.snapshot._hydrate_named_volumes(paths)
+            self.assertEqual(mock_sync.call_count, 2)
+            mock_sync.assert_any_call(paths["data"], ANY, direction="to_volume")
 
     @patch("ldm_core.handlers.base.BaseHandler.detect_project_path")
     def test_cmd_snapshot_abort_no_project(self, mock_detect):
