@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v2.7.2-beta.32] - 2026-05-18
+
+### Fixed
+
+- **CI License Compatibility**: Switched the E2E verification project to use Liferay Portal (CE) instead of DXP to avoid license activation blocks in CI environments, allowing UI automation tests to complete successfully.
+
 ## [v2.7.2-beta.31] - 2026-05-18
 
 ### Fixed

@@ -1,4 +1,4 @@
-tag=2026.q1.4-lts
+tag=7.4.13-u100
 container_name=ldm-smoke-test
 port=8082
 db_type=hypersonic
