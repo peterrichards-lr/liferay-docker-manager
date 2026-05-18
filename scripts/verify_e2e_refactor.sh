@@ -183,11 +183,11 @@ log_and_run() {
     local msg=$1
     shift
     echo ">> $msg" | tee -a "$RESULTS_FILE_TMP"
-    
+
     # We use a temporary file to capture output so we can scan for FATAL
     local tmp_output
     tmp_output=$(mktemp -t ldm-verify-XXXX)
-    
+
     # Execute and capture
     if ! "$@" 2>&1 | tee "$tmp_output"; then
         cat "$tmp_output" >> "$RESULTS_FILE_TMP"
@@ -195,9 +195,9 @@ log_and_run() {
         rm -f "$tmp_output"
         exit 1
     fi
-    
+
     cat "$tmp_output" >> "$RESULTS_FILE_TMP"
-    
+
     # Scan for FATAL or specific LDM error markers that should trigger a script failure
     # We ignore standard "not found" or "already in sync" messages
     if grep -Ei "FATAL|❌|ERROR:" "$tmp_output" | grep -v "ℹ" | grep -v ">>" | grep -vEi "not found|already in sync" > /dev/null; then
@@ -205,10 +205,19 @@ log_and_run() {
         rm -f "$tmp_output"
         exit 1
     fi
-    
+
     rm -f "$tmp_output"
 }
 
+log_and_run_no_scan() {
+    local msg=$1
+    shift
+    echo ">> $msg" | tee -a "$RESULTS_FILE_TMP"
+    if ! "$@" 2>&1 | tee -a "$RESULTS_FILE_TMP"; then
+        echo "❌ ERROR: Command failed with exit code $?: $*" | tee -a "$RESULTS_FILE_TMP"
+        exit 1
+    fi
+}
 # --- Metadata Collection ---
 echo "--- Capturing Environment State ---" | tee -a "$RESULTS_FILE_TMP"
 {
@@ -337,7 +346,7 @@ fi
 # 5. Status and Logs
 echo "--- Step 4: Status & Logs ---"
 log_and_run "Checking Status" "$LDM_CMD" -y status
-log_and_run "Checking Logs" "$LDM_CMD" -y logs --no-wait
+log_and_run_no_scan "Checking Logs" "$LDM_CMD" -y logs --no-wait
 echo "✅ Status and Logs verified." | tee -a "$RESULTS_FILE_TMP"
 
 # 6. Teardown
