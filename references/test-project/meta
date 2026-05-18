@@ -2,5 +2,5 @@ tag=7.4.3.112-ga112
 container_name=ldm-smoke-test
 image_tag=liferay/portal:7.4.3.112-ga112
 port=8082
-db_type=hypersonic
+db_type=postgresql
 ssl=false
