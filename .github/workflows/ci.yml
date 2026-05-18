@@ -8,6 +8,11 @@ on:
     branches: ["master"]
   workflow_dispatch: # Allow manual triggers
 
+# LDM-385: Prevent simultaneous release updates for the same tag/branch
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
@@ -259,6 +264,7 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ github.ref_name }}
           files: |
             bin-temp/ldm-linux
             bin-temp/ldm-macos-arm64

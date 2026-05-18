@@ -5,6 +5,11 @@ on:
     tags: ["v*"] # Only run when a tag is pushed
   workflow_dispatch: # Allow manual trigger for ad-hoc verification
 
+# LDM-385: Prevent simultaneous runs for the same tag
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 

@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v2.7.2-beta.23] - 2026-05-18
+
+### Fixed
+
+- **CI Stability**: Added `concurrency` groups to GitHub Action workflows to prevent simultaneous release updates and race conditions during tag consolidation. This resolves the recurring `already_exists` errors during the release phase.
+
 ## [v2.7.2-beta.22] - 2026-05-18
 
 ### Fixed
