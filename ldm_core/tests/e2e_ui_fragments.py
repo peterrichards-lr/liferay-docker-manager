@@ -5,19 +5,19 @@ from playwright.sync_api import Page, expect
 
 
 @pytest.fixture(scope="module")
-def base_url():
+def liferay_url():
     return os.environ.get("LIFERAY_URL", "http://localhost:8082")
 
 
-def test_fragment_deployment(page: Page, base_url: str):
+def test_fragment_deployment(page: Page, liferay_url: str):
     """
     Verifies that the 'Test Collection' fragment collection and its 'Test Fragment'
     are correctly deployed and visible in the Liferay UI.
     """
-    print(f"Connecting to Liferay at {base_url}...")
+    print(f"Connecting to Liferay at {liferay_url}...")
 
     # 1. Login
-    page.goto(f"{base_url}/c/portal/login")
+    page.goto(f"{liferay_url}/c/portal/login")
 
     # Check if we are already logged in or if login page appeared
     login_field = page.locator('input[name*="LoginPortlet_login"]')
@@ -28,14 +28,14 @@ def test_fragment_deployment(page: Page, base_url: str):
 
     # Wait for the home page to load or check if we're at home
     try:
-        page.wait_for_url(f"{base_url}/web/guest**", timeout=60000)
+        page.wait_for_url(f"{liferay_url}/web/guest**", timeout=60000)
     except Exception:
         # Fallback: maybe we are already at home or redirected elsewhere
         print(f"Current URL after login: {page.url}")
 
     # 2. Navigate to Fragments
     # We use the direct portlet URL for efficiency
-    fragments_url = f"{base_url}/group/control_panel/manage?p_p_id=com_liferay_fragment_web_portlet_FragmentPortlet"
+    fragments_url = f"{liferay_url}/group/control_panel/manage?p_p_id=com_liferay_fragment_web_portlet_FragmentPortlet"
     page.goto(fragments_url)
 
     # 3. Verify Collection exists
