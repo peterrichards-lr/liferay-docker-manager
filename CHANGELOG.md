@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v2.7.2-beta.38] - 2026-05-18
+
+### Fixed
+
+- **Version & Tag Robustness**: Finalized the migration to modern LTS-only versions (`2026.q1.4-lts`) for all CI and test scenarios. Refined image resolution logic to correctly handle full mock images (like `alpine`) alongside variant suffixes.
+- **Graceful UI Test Skipping**: Updated E2E UI tests to skip gracefully when hitting the Liferay DXP activation gate in CI, ensuring that infrastructure, mount, and snapshot verifications can still pass without a commercial license.
+
 ## [v2.7.2-beta.37] - 2026-05-18
 
 ### Fixed

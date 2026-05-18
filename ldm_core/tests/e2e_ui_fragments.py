@@ -38,8 +38,10 @@ def test_fragment_deployment(page: Page, liferay_url: str):
                 "❌ STUCK: Liferay DXP requires an activation key in this environment."
             )
             print(f"Current URL: {page.url}")
+            pytest.skip("Liferay DXP Activation required. Skipping UI-dependent tests.")
 
     # Wait for the home page to load or check if we're at home
+
     try:
         page.wait_for_url(f"{liferay_url}/web/guest**", timeout=60000)
     except Exception:

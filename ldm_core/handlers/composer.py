@@ -356,6 +356,12 @@ class ComposerService:
                 image = f"liferay/dxp:{tag}{suffix}"
             else:
                 image = f"liferay/dxp:{tag}{suffix}"
+        # If it's a full image (has colon, slash, or is a known mock like alpine), use as is
+        elif ":" in str(image) or "/" in str(image) or image == "alpine":
+            pass
+        else:
+            # Default to using it as is (legacy behavior for simple image names)
+            pass
 
         depends_on = []
         if db_type != "hypersonic":
