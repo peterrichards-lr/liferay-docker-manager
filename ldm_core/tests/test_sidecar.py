@@ -82,7 +82,7 @@ class TestSidecarImplementation(unittest.TestCase):
         """Requirement: There should no seperate search container for a ldm project which has used --sidecar."""
         meta = {
             "use_shared_search": "false",
-            "tag": "7.4.13-u100",
+            "tag": "2026.q1.4-lts",
             "container_name": "sidecar-test",
             "db_type": "hypersonic",
         }
@@ -117,7 +117,7 @@ class TestSidecarImplementation(unittest.TestCase):
         (as it is an external service managed by the global infra stack)."""
         meta = {
             "use_shared_search": "true",
-            "tag": "7.4.13-u100",
+            "tag": "2026.q1.4-lts",
             "container_name": "shared-test",
             "db_type": "hypersonic",
         }
@@ -273,7 +273,7 @@ class TestSidecarImplementation(unittest.TestCase):
         """Verify specific environment variables for sidecar mode."""
         meta = {
             "use_shared_search": "false",
-            "tag": "7.4.13-u100",
+            "tag": "2026.q1.4-lts",
             "container_name": "env-test",
             "db_type": "hypersonic",
         }
@@ -303,7 +303,7 @@ class TestSidecarImplementation(unittest.TestCase):
         """Verify specific environment variables for shared mode."""
         meta = {
             "use_shared_search": "true",
-            "tag": "7.4.13-u100",
+            "tag": "2026.q1.4-lts",
             "container_name": "shared-env-test",
             "db_type": "hypersonic",
         }

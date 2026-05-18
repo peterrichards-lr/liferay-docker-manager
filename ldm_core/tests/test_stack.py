@@ -329,7 +329,7 @@ class TestStackOrchestration(unittest.TestCase):
     def test_generate_compose_with_mysql(self):
         config = {
             "container_name": "test",
-            "tag": "7.4.13-u100",
+            "tag": "2026.q1.4-lts",
             "port": 8080,
             "host_name": "localhost",
             "db_type": "mysql",
@@ -341,11 +341,12 @@ class TestStackOrchestration(unittest.TestCase):
             liferay_service = compose_data["services"]["liferay"]
             db_service = compose_data["services"]["db"]
 
-            self.assertEqual(liferay_service["image"], "liferay/portal:7.4.13-u100")
-            self.assertEqual(db_service["image"], "mysql:8.0.32")
+            self.assertEqual(liferay_service["image"], "liferay/dxp:2026.q1.4-lts")
+            self.assertEqual(db_service["image"], "mysql:8.4.0")
 
+            # MySQL 8.4 uses --mysql-native-password=ON instead of --default-authentication-plugin
             self.assertIn(
-                "--default-authentication-plugin=mysql_native_password",
+                "--mysql-native-password=ON",
                 db_service["command"],
             )
 

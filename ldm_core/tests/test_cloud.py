@@ -112,10 +112,10 @@ class TestCloudService(unittest.TestCase):
     @patch("ldm_core.handlers.cloud.CloudService._run_lcp_cmd")
     def test_get_cloud_liferay_version(self, mock_run):
         mock_run.return_value = [
-            {"id": "liferay", "image": "liferay/portal:7.4.13-u100"}
+            {"id": "liferay", "image": "liferay/dxp:2026.q1.4-lts"}
         ]
         version = self.cloud._get_cloud_liferay_version("my-project", "uat")
-        self.assertEqual(version, "7.4.13-u100")
+        self.assertEqual(version, "2026.q1.4-lts")
 
     @patch("ldm_core.handlers.cloud.CloudService.ensure_cloud_auth")
     @patch("ldm_core.handlers.cloud.CloudService._run_lcp_cmd")

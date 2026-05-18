@@ -38,7 +38,7 @@ class MockDiagManager(BaseHandler):
         return Path(f"/tmp/{project_id}") if project_id else Path("/tmp/default")
 
     def read_meta(self, *args, **kwargs):
-        return {"tag": "7.4.13-u100", "env_args": []}
+        return {"tag": "2026.q1.4-lts", "env_args": []}
 
     def cmd_completion(self, *args, **kwargs):
         return self.diagnostics.cmd_completion(*args, **kwargs)

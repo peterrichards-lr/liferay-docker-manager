@@ -91,7 +91,7 @@ class TestUtils(unittest.TestCase):
         html_data = """
         <html><body>
         <ul>
-            <li><a href="/dxp/7.4.13-u100">7.4.13-u100</a></li>
+            <li><a href="/dxp/2026.q1.3-lts">2026.q1.3-lts</a></li>
             <li><a href="/dxp/2026.q1.4-lts">2026.q1.4-lts</a></li>
             <li><a href="/dxp/not-a-tag">not-a-tag</a></li>
         </ul>
