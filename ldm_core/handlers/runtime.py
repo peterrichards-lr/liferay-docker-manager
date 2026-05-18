@@ -376,11 +376,35 @@ class RuntimeService:
 
                 last_notified_time = elapsed
 
+            # LDM-385: Enhanced readiness check
+            # We look for the Tomcat 'Server startup' log marker as it's often
+            # faster/more reliable than the Docker healthcheck in CI.
+            ready_by_logs = False
+            try:
+                logs = self.manager.run_command(
+                    ["docker", "logs", "--tail", "100", container_name],
+                    check=False,
+                    capture_output=True,
+                )
+                if (
+                    logs
+                    and "org.apache.catalina.startup.Catalina.start Server startup in"
+                    in logs
+                ):
+                    ready_by_logs = True
+            except Exception:
+                pass
+
             status = self.manager.run_command(
                 ["docker", "inspect", "-f", "{{.State.Health.Status}}", container_name],
                 check=False,
             )
-            if status == "healthy":
+
+            if status == "healthy" or ready_by_logs:
+                # If we bypassed by logs, wait a tiny bit to ensure the port is truly bound
+                if status != "healthy":
+                    time.sleep(2)
+
                 ts = getattr(self.manager.args, "total_start", None)
                 duration_total = (
                     time.time() - float(ts) if ts else time.time() - start_time

@@ -356,7 +356,7 @@ class TestStackOrchestration(unittest.TestCase):
         self.t = 0
 
         def mock_time():
-            self.t += 31  # Increment by 31s each call
+            self.t += 31  # Trigger notification blocks
             return self.t
 
         with (
@@ -365,13 +365,20 @@ class TestStackOrchestration(unittest.TestCase):
             patch.object(self.manager, "run_command") as mock_run,
             patch("ldm_core.ui.UI.warning") as mock_warn,
         ):
-            # Sequence:
-            # 1. run_command (logs) -> returns ERROR
-            # 2. run_command (inspect) -> returns healthy (to exit loop)
-            mock_run.side_effect = [
-                "ERROR: Database connection failed",  # logs output
-                "healthy",  # inspect output
-            ]
+            # Dynamic response logic to avoid StopIteration and correctly trigger both paths
+            def run_cmd_side_effect(cmd, *args, **kwargs):
+                cmd_str = str(cmd)
+                if "logs" in cmd_str and "--tail" in cmd_str:
+                    if self.t > 100:  # Succeed in later loops
+                        return "org.apache.catalina.startup.Catalina.start Server startup in 123 ms"
+                    return "ERROR: Database connection failed"
+                if "inspect" in cmd_str:
+                    if self.t > 200:
+                        return "healthy"
+                    return ""
+                return ""
+
+            mock_run.side_effect = run_cmd_side_effect
 
             with patch("ldm_core.handlers.runtime.datetime") as mock_dt:
                 mock_dt.now().strftime.return_value = "12:00:00"
@@ -379,6 +386,7 @@ class TestStackOrchestration(unittest.TestCase):
                     {"container_name": "test-container"}, "test-host", 0
                 )
 
+            # Verify that we hit the warning logic
             mock_warn.assert_any_call("LDM detected 1 error(s) in the logs.")
 
     def test_fetch_seed_url_construction(self):

@@ -274,6 +274,13 @@ MAX_RETRIES=90 # 15 minutes total
 COUNT=0
 
 until [ "$(docker inspect -f '{{.State.Health.Status}}' "$PROJECT_NAME" 2>/dev/null)" == "healthy" ]; do
+    # LDM-385: Check for Tomcat startup log marker as a faster/more reliable 'ready' signal
+    if docker logs "$PROJECT_NAME" 2>&1 | grep -q "org.apache.catalina.startup.Catalina.start Server startup in"; then
+        echo ""
+        echo "✅ Liferay Tomcat has started (detected via logs)." | tee -a "$RESULTS_FILE_TMP"
+        break
+    fi
+
     # Fallback: if the container is running and we've reached 12 minutes, check if it's actually responding
     # Some images might have broken healthchecks in specific environments
     if [ $COUNT -gt 72 ]; then
