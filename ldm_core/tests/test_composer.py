@@ -57,12 +57,12 @@ class TestComposerService(unittest.TestCase):
 
         # Verify volume mapping
         volumes = service["volumes"]
-        # Use startswith to handle potential :z label on Linux
+        # Use startswith to handle potential :z label on Linux, but check for named volumes now
         self.assertTrue(
-            any(
-                v.startswith(f"{Path('/tmp/proj/data').as_posix()}:/opt/liferay/data")
-                for v in volumes
-            )
+            any(v.startswith("proj-data:/opt/liferay/data") for v in volumes)
+        )
+        self.assertTrue(
+            any(v.startswith("proj-state:/opt/liferay/osgi/state") for v in volumes)
         )
         self.assertFalse(any("/storage/liferay/data" in v for v in volumes))
 

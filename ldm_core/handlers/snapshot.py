@@ -74,7 +74,9 @@ class SnapshotService(BaseHandler):
 
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         snap_dir = paths["backups"] / timestamp
-        snap_dir.mkdir(parents=True, exist_ok=True)
+        from ldm_core.utils import safe_mkdir
+
+        safe_mkdir(snap_dir, parents=True, exist_ok=True)
         UI.info(f"Creating snapshot: {name}...")
 
         # --- SEARCH SNAPSHOT (Orchestrated) ---
@@ -172,7 +174,9 @@ class SnapshotService(BaseHandler):
                     )
                     if es_backup_source.exists():
                         snap_es_dir = paths["backups"] / timestamp / "search"
-                        snap_es_dir.mkdir(parents=True, exist_ok=True)
+                        from ldm_core.utils import safe_mkdir
+
+                        safe_mkdir(snap_es_dir, parents=True, exist_ok=True)
                 except Exception as e:
                     UI.warning(f"Could not copy search snapshots: {e}")
             else:
@@ -181,12 +185,18 @@ class SnapshotService(BaseHandler):
                 )
                 search_snapshot_name = None
 
+        # --- VOLUME DEHYDRATION (LDM-382) ---
+        # If using Named Volumes (macOS), sync volume data back to host before archiving
+        self._dehydrate_named_volumes(paths)
+
         # --- ARCHIVE ---
         # Final permission sync before archiving (Fixes late-created Docker file issues)
         # We call this again to ensure even files created by search snapshot are unlocked.
         self.manager.verify_runtime_environment(paths)
 
-        snap_dir.mkdir(parents=True, exist_ok=True)
+        from ldm_core.utils import safe_mkdir
+
+        safe_mkdir(snap_dir, parents=True, exist_ok=True)
         files_tar = snap_dir / "files.tar.gz"
 
         with tarfile.open(files_tar, "w:gz") as tar:
@@ -484,7 +494,9 @@ class SnapshotService(BaseHandler):
                 es_infra_backup = (
                     get_actual_home() / ".ldm" / "infra" / "search" / "backup"
                 )
-                es_infra_backup.mkdir(parents=True, exist_ok=True)
+                from ldm_core.utils import safe_mkdir
+
+                safe_mkdir(es_infra_backup, parents=True, exist_ok=True)
                 es_infra_root = es_infra_backup.resolve()
 
                 # Reclaim permissions before extracting (Fixes [Errno 13] in CI/Linux)
@@ -507,6 +519,10 @@ class SnapshotService(BaseHandler):
                         # Temporarily adjust member name for extraction into the target dir
                         m.name = rel_name
                         tar.extract(m, path=es_infra_root)  # nosec B202
+
+            # 3. Hydrate Named Volumes (LDM-382)
+            # If using Named Volumes (macOS), sync the extracted files into Docker volumes
+            self._hydrate_named_volumes(paths)
 
     def _wait_for_search_snapshot(self, snapshot_name, timeout=120):
         search_name = "liferay-search-global"
@@ -582,9 +598,91 @@ class SnapshotService(BaseHandler):
             total /= 1024
         return f"{total:.1f} TB"
 
+    def _sync_volume(self, host_path, volume_name, direction="to_volume"):
+        """Synchronizes data between a host directory and a Docker Named Volume."""
+        host_path_abs = Path(host_path).resolve()
+        if not host_path_abs.exists():
+            host_path_abs.mkdir(parents=True, exist_ok=True)
+
+        # Ensure volume exists
+        self.manager.run_command(
+            ["docker", "volume", "create", volume_name], check=False
+        )
+
+        src = "/host" if direction == "to_volume" else "/vol"
+        dst = "/vol" if direction == "to_volume" else "/host"
+
+        # Note: We use 'cp -aT' to copy directory contents without creating a nested subdir
+        cmd = [
+            "docker",
+            "run",
+            "--rm",
+            "-v",
+            f"{host_path_abs.as_posix()}:/host",
+            "-v",
+            f"{volume_name}:/vol",
+            "alpine",
+            "sh",
+            "-c",
+            f"cp -aT {src}/. {dst}/ 2>/dev/null || true",
+        ]
+
+        try:
+            if self.manager.verbose:
+                UI.info(
+                    f"  + Syncing volume {UI.CYAN}{volume_name}{UI.COLOR_OFF} ({direction})..."
+                )
+            self.manager.run_command(cmd, check=False)
+            return True
+        except Exception as e:
+            UI.warning(f"Failed to sync volume {volume_name}: {e}")
+            return False
+
+    def _dehydrate_named_volumes(self, paths):
+        """Copies data from Docker Named Volumes back to the host for snapshotting."""
+        if not self.manager.composer.is_using_named_volumes():
+            return
+
+        meta = self.manager.read_meta(paths["root"])
+        c_name = meta.get("container_name") or paths["root"].name
+
+        for target in ["data", "state"]:
+            volume_name = f"{c_name}-{target}"
+            host_path = paths[target]
+            UI.info(
+                f"  + Dehydrating volume {UI.CYAN}{volume_name}{UI.COLOR_OFF} to host..."
+            )
+            self._sync_volume(host_path, volume_name, direction="from_volume")
+
+    def _hydrate_named_volumes(self, paths):
+        """Copies data from the host into Docker Named Volumes after extraction."""
+        if not self.manager.composer.is_using_named_volumes():
+            return
+
+        meta = self.manager.read_meta(paths["root"])
+        c_name = meta.get("container_name") or paths["root"].name
+
+        for target in ["data", "state"]:
+            volume_name = f"{c_name}-{target}"
+            host_path = paths[target]
+            if host_path.exists():
+                UI.info(
+                    f"  + Hydrating volume {UI.CYAN}{volume_name}{UI.COLOR_OFF} from host..."
+                )
+                self._sync_volume(host_path, volume_name, direction="to_volume")
+                # Clean up host-side files after hydration to avoid confusion (except for logs)
+                if self.manager.verbose:
+                    UI.info(f"  + Cleaning up host-side {target}...")
+                from ldm_core.utils import safe_rmtree
+
+                safe_rmtree(host_path)
+                host_path.mkdir(parents=True, exist_ok=True)
+
     def _restore_from_cloud_layout(self, choice, paths, project_meta):
         """Restores a project from a Liferay Cloud backup layout."""
         UI.info("Detected Liferay Cloud backup layout. Restoring...")
+
+        from ldm_core.utils import safe_mkdir
 
         # 1. Database
         db_gz = choice / "database.gz"
@@ -593,7 +691,7 @@ class SnapshotService(BaseHandler):
             # We'll place it in the project root for now, or deploy/ if it's an SQL
             # Better: if it's a seed, we might need a specific DB handler.
             # For now, just ensure the dir exists.
-            paths["data"].mkdir(parents=True, exist_ok=True)
+            safe_mkdir(paths["data"], parents=True, exist_ok=True)
             # Cloud backups usually need manual intervention for DB import depending on DB type
             UI.warning("  ! Cloud DB dump detected. Manual import may be required.")
 
@@ -602,7 +700,7 @@ class SnapshotService(BaseHandler):
         if volume_tgz.exists():
             UI.info("  + Extracting data volume...")
             target_data = paths["data"]
-            target_data.mkdir(parents=True, exist_ok=True)
+            safe_mkdir(target_data, parents=True, exist_ok=True)
             self.manager.run_command(
                 ["tar", "-xzf", str(volume_tgz), "-C", str(target_data)]
             )

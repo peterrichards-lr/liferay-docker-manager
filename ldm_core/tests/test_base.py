@@ -453,23 +453,21 @@ class TestBaseCompletion(unittest.TestCase):
 
         handler = BaseHandler(MagicMock())
         handler.verbose = False
-        # Create a mock path that acts like it exists so it doesn't fail early
-        mock_root = MagicMock(spec=Path)
-        mock_root.exists.return_value = True
-        mock_root.__str__.return_value = "/tmp/mock_root"  # type: ignore[attr-defined]
-        mock_root.as_posix.return_value = "/tmp/mock_root"  # type: ignore[attr-defined]
-        paths = {"root": mock_root, "files": mock_root / "files"}
 
-        mock_result = MagicMock()
-        mock_result.stdout = "OK"
-        mock_run.return_value = mock_result
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            paths = {"root": root, "files": root / "files"}
 
-        try:
-            handler.verify_runtime_environment(paths)
-        except UnboundLocalError:
-            self.fail(
-                "verify_runtime_environment raised UnboundLocalError unexpectedly!"
-            )
+            mock_result = MagicMock()
+            mock_result.stdout = "OK"
+            mock_run.return_value = mock_result
+
+            try:
+                handler.verify_runtime_environment(paths)
+            except UnboundLocalError:
+                self.fail(
+                    "verify_runtime_environment raised UnboundLocalError unexpectedly!"
+                )
 
 
 if __name__ == "__main__":

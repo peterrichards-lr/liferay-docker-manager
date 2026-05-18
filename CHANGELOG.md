@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v2.7.2-beta.22] - 2026-05-18
+
+### Fixed
+
+- **Hybrid Mount Strategy (Named Volumes)**: Implemented a hybrid volume mounting strategy to prevent critical locking errors (`access_denied_exception`, `Unable to create lock manager`) on macOS and external ExFAT drives. `data` and `osgi/state` now strictly use Docker named volumes, while others remain host bind-mounted for rapid iteration.
+- **Volume-Aware Snapshots & Seeding**: Updated the snapshot orchestration engine to support the Hybrid Mount Strategy. LDM now automatically "dehydrates" Docker Named Volumes back to the host before creating a snapshot and "hydrates" them after extraction.
+- **Atomic Deployment Strategy**: Implemented a **Staging & Atomic Move** pattern for all file synchronizations targeting Liferay's watched directories (`deploy/`, `osgi/modules/`). This ensures Liferay's auto-deployer never processes a partial artifact.
+- **Smart Project Discovery**: Improved the project resolution engine to match projects by metadata (`project_name` or `container_name`) in all search paths (including parent and sibling folders).
+- **Just-in-Time (JIT) Permission Hardening**: Added automatic permission reclamation to core file utilities. If LDM hits a "Permission Denied" error (common in CI/CD), it now proactively attempts to fix the directory ownership before retrying.
+- **Service-Aware Logging**: Updated `ldm logs` to correctly detect and wait for specific service containers (like `db`) even if the main Liferay container is not yet ready.
+
+### Added
+
+- **Log4j Hardening**: Injected the `LIFERAY_LOG4J2_CONFIGURATION_FILE` environment variable into the stack to guarantee hot-reloadable log overrides (`portal-log4j-ext.xml`) are honored immediately by Liferay upon startup.
+
 ## [v2.7.2-beta.19] - 2026-05-15
 
 ### Fixed

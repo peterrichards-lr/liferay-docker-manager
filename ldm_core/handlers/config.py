@@ -9,7 +9,12 @@ from pathlib import Path
 
 from ldm_core.constants import PROJECT_META_FILE, SCRIPT_DIR
 from ldm_core.ui import UI
-from ldm_core.utils import get_actual_home, run_command, safe_copy, safe_write_text
+from ldm_core.utils import (
+    atomic_copy,
+    get_actual_home,
+    run_command,
+    safe_write_text,
+)
 
 
 class ConfigService:
@@ -302,7 +307,7 @@ class ConfigService:
         samples_root = self.manager.get_samples_root()
         UI.info("Syncing project samples...")
         shutil.copytree(
-            samples_root, paths["root"], dirs_exist_ok=True, copy_function=safe_copy
+            samples_root, paths["root"], dirs_exist_ok=True, copy_function=atomic_copy
         )
 
     def cmd_init_common(self):
@@ -453,7 +458,7 @@ class ConfigService:
                 if not target_ext.exists():
                     with contextlib.suppress(PermissionError, OSError):
                         target_ext.parent.mkdir(parents=True, exist_ok=True)
-                    safe_copy(common_ext, target_ext)
+                    atomic_copy(common_ext, target_ext)
 
                 else:
                     # Robust extraction of project and common properties
@@ -582,13 +587,13 @@ class ConfigService:
 
                     # Always copy if it doesn't exist
                     if not dest.exists():
-                        safe_copy(match, dest)
+                        atomic_copy(match, dest)
                         history.add(match.name)
                     # For OSGi configs, overwrite if it's a managed file (to apply baseline updates)
                     elif match.name in history and (
                         pattern.endswith("config") or pattern.endswith("cfg")
                     ):
-                        safe_copy(match, dest)
+                        atomic_copy(match, dest)
 
             from ldm_core.utils import safe_write_text
 

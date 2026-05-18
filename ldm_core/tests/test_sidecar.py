@@ -186,10 +186,10 @@ class TestSidecarImplementation(unittest.TestCase):
             # Mock paths
             paths = self.manager.setup_paths("/tmp/proj")
 
-            with patch("ldm_core.handlers.config.safe_copy") as mock_copy:
+            with patch("ldm_core.handlers.config.atomic_copy") as mock_copy:
                 self.manager.config.sync_common_assets(paths, project_meta=project_meta)
 
-                # Verify safe_copy was NOT called for ES configs
+                # Verify atomic_copy was NOT called for ES configs
                 for call in mock_copy.call_args_list:
                     args, _ = call
                     self.assertNotIn("elasticsearch", str(args[0]).lower())

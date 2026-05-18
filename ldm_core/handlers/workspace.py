@@ -19,6 +19,7 @@ from ldm_core.constants import SCRIPT_DIR
 from ldm_core.handlers.base import BaseHandler
 from ldm_core.ui import UI
 from ldm_core.utils import (
+    atomic_copy,
     is_env_var_blacklisted,
     load_env_blacklist,
     safe_copy,
@@ -1022,7 +1023,7 @@ class WorkspaceService(BaseHandler):
                         # JARs for Liferay modules (sync to deploy)
                         dest_path = self.paths["deploy"] / f.name
                         UI.info(f"Syncing Module: {f.name}")
-                        safe_copy(f, dest_path)
+                        atomic_copy(f, dest_path)
 
                 # 3. Trigger deployment from the project's internal state
                 if updated_services:

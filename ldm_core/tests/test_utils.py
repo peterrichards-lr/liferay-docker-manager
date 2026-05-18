@@ -217,6 +217,27 @@ class TestUpdateChecks(unittest.TestCase):
                 self.assertEqual(version, "2.6.0")
                 self.assertEqual(url, "http://dl")
 
+    def test_atomic_copy(self):
+        from ldm_core.utils import atomic_copy
+
+        with (
+            patch("ldm_core.utils.safe_copy") as mock_safe_copy,
+            patch("os.replace") as mock_replace,
+        ):
+            src = Path("/tmp/src.jar")
+            dst = Path("/tmp/deploy/dst.jar")
+
+            # We use a mock for resolve that returns the path itself for testing
+            with patch.object(Path, "resolve", return_value=dst):
+                atomic_copy(src, dst)
+
+                # Verify it copied to a temp hidden file first
+                expected_tmp = dst.parent / f".{dst.name}.tmp"
+                mock_safe_copy.assert_called_once_with(src, expected_tmp)
+
+                # Verify it atomically moved the temp file to destination
+                mock_replace.assert_called_once_with(expected_tmp, dst)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -15,6 +15,7 @@
 - **Refactor over Duplicate**: If redundant code is found, suggest a refactor into a shared service or utility rather than creating a new one.
 - **Predictive Failure**: For every implementation, list two potential failure points (edge cases or performance) and how they were handled.
 - **Predictable Layers**: Ensure logic stays within its designated layer (e.g., UI vs. Business Logic vs. Data) as defined in `spec.md`.
+- **Hybrid Volume Strategy**: Always use **Docker Named Volumes** for lock-sensitive directories (`data/`, `osgi/state/`) on macOS and external ExFAT storage. Use **Host Bind-Mounts** for directories requiring developer interaction (`deploy/`, `modules/`, `client-extensions/`). This ensures robust POSIX file locking while maintaining a smooth DX.
 - **Script Parity**: All cross-platform utility, verification, and wrapper scripts (e.g., `.sh` vs `.ps1` or `.bat`) MUST be kept in perfect functional parity. Any hardening check or logic update applied to one must be immediately synchronized to the others.
 
 ## 3. Testing & Hard-Gates
@@ -64,21 +65,17 @@
 
 ## Gemini Added Memories
 
-- **Status: Feature Hardening & Orchestration Refinement (v2.7.1)**
+- **Status: High-Performance Infrastructure & Multi-Drive Stability (v2.7.2)**
   - [x] **Core Architecture**: Successfully pivoted LDM default stack to **PostgreSQL** and **Shared Global Search**.
-  - [x] **Orchestration**: Fixed critical bug by injecting required `healthcheck` blocks for PostgreSQL to satisfy `depends_on: service_healthy` constraints.
-  - [x] **Filesystem**: Implemented `--internal-state` flag and auto-detection for `/Volumes/` paths to use high-performance internal volumes for OSGi state, resolving SSD locking failures.
-  - [x] **Logging**: Enhanced `ldm logs` with `-n/--tail`, `-t/--timestamps`, `--since`, and `--until` flags; resolved output capture bug.
-  - [x] **Security Switches**: Implemented strictly opt-in and reversible `--no-captcha` and `--fast-login` switches with automatic property/config cleanup.
-  - [x] **Features**: Implemented dynamic `--feature` switch and `ldm feature` command for project management, plus global defaults via `ldm config features`.
-  - [x] **UX Hardening**: Decoupled `ldm version` from git root requirements, supporting standalone binary execution.
-  - [x] **Stability**: Expanded the full test suite to **221 passing tests** covering all new logic and isolation mandates.
-  - [x] **Deployment**: Successfully released and verified **`v2.7.1`** across GitHub CI and E2E pipelines.
-  - [x] **Docs**: Updated architecture guidelines, troubleshooting for sparse disks/overlayfs, and testing protocols.
+  - [x] **Multi-Drive Fix**: Resolved critical `Unable to create lock manager` and `access_denied_exception` crashes on macOS/ExFAT by implementing a **Hybrid Mount Strategy**.
+  - [x] **Named Volumes**: Refactored `ComposerService` to use named volumes for `data/` and `osgi/state/` while preserving bind-mounts for `deploy/`, `modules/`, and `client-extensions/`.
+  - [x] **Logging Force**: Injected `LIFERAY_LOG4J2_CONFIGURATION_FILE` environment variable to ensure hot-reloadable log overrides are honored immediately.
+  - [x] **Verification**: Conclusively verified the fix across internal SSD and SanDisk ExFAT drives using incremental isolation test scripts.
+  - [x] **Release**: Tagged and released **`v2.7.2-beta.20`** with finalized documentation.
 
-- **Next Focus: Maintenance & Performance**
-  - [ ] **Cleanup**: Monitor GitHub Action run volume and keep failed history clean.
-  - [ ] **Efficiency**: Investigate further optimizations for large Liferay image pulls in automated CI environments.
+- **Next Focus: Liferay Core Snippets & Feature Context**
+  - [ ] **Search Snapshots**: Investigate `SnapshotDetails` and converters for enhanced search engine adapter support.
+  - [ ] **Analytics & UI**: Process provided `LengthInput.tsx` and `AnalyticsFrame.tsx` context for upcoming feature development.
 
 ## 9. Founding Patterns of LDM
 

@@ -54,9 +54,12 @@ graph TD
 
 ---
 
-## 2. Volume Mounting Structure
+## 2. Volume Mounting Structure (Hybrid Strategy)
 
-This diagram shows how `ldm` maps your local project folder and the global certificate store into the containers.
+To ensure maximum reliability across different host filesystems (especially **macOS** and **ExFAT** external drives), LDM employs a **Hybrid Mount Strategy**.
+
+- **Named Volumes**: Used for directories that require strict POSIX file locking (`fcntl`/`flock`). These are stored within the Linux VM's native filesystem.
+- **Host Bind-Mounts**: Used for directories that facilitate hot-swapping code, configurations, and deployment artifacts from the host IDE.
 
 ```mermaid
 graph LR
@@ -68,11 +71,16 @@ graph LR
         direction TB
         H_Files[files/]
         H_Deploy[deploy/]
-        H_OSGi[osgi/]
-        H_State[osgi/state/]
-        H_Data[data/]
-        H_Routes[routes/]
+        H_Scripts[scripts/]
+        H_Modules[modules/]
+        H_CX[osgi/client-extensions/]
+        H_Log4j[osgi/log4j/]
         H_Logs[logs/]
+    end
+
+    subgraph Docker_Internal [Docker Internal Storage]
+        V_State[(Named Volume: proj-state)]
+        V_Data[(Named Volume: proj-data)]
     end
 
     subgraph Traefik_Container [Traefik Proxy]
@@ -83,26 +91,28 @@ graph LR
         direction TB
         C_Files["/mnt/liferay/files"]
         C_Deploy["/mnt/liferay/deploy"]
-        C_Configs["/opt/liferay/osgi/configs"]
+        C_Scripts["/mnt/liferay/scripts"]
         C_Modules["/opt/liferay/osgi/modules"]
         C_CX["/opt/liferay/osgi/client-extensions"]
+        C_Log4j["/opt/liferay/osgi/log4j"]
         C_State["/opt/liferay/osgi/state"]
         C_Data["/opt/liferay/data"]
-        C_Routes["/opt/liferay/routes"]
         C_Logs["/opt/liferay/logs"]
     end
 
-    %% Mappings
+    %% Mappings (Bind)
     G_Certs === T_Certs
     H_Files --- C_Files
     H_Deploy --- C_Deploy
-    H_OSGi --- C_Configs
-    H_OSGi --- C_Modules
-    H_OSGi --- C_CX
-    H_State --- C_State
-    H_Data --- C_Data
-    H_Routes --- C_Routes
+    H_Scripts --- C_Scripts
+    H_Modules --- C_Modules
+    H_CX --- C_CX
+    H_Log4j --- C_Log4j
     H_Logs --- C_Logs
+
+    %% Mappings (Named Volumes)
+    V_State ==> C_State
+    V_Data ==> C_Data
 ```
 
 ---
@@ -206,8 +216,12 @@ LDM handles project state surgically to ensure snapshots are portable and comple
   3. **Graceful Fallback**: If the asset is missing and unreachable, LDM flags the offline state and reverts to the standard "Vanilla" (non-seeded) workflow.
   4. **Samples Exception**: The `--samples` workflow requires assets to be present. If missing and unreachable, LDM informs the user and stops gracefully to avoid broken environments.
 
+- **Atomic Deployment Strategy**: As of v2.7.2-beta.21, LDM employs a **Staging & Atomic Move** pattern for all file synchronizations targeting Liferay's watched directories (`deploy/`, `osgi/modules/`, `osgi/configs/`). Files are first written to a hidden `.tmp` file in the destination folder and then atomically renamed. This ensures Liferay's auto-deployer never processes a partial artifact, preventing `java.util.zip.ZipException` and other race conditions.
 - **Integrity Verification**: As of v2.4.0, all snapshots and pre-warmed seeds include **SHA-256 checksums**. LDM automatically verifies these checksums during `restore` and `import` to ensure data integrity and detect corruption.
 - **Proactive Volume Write Test**: As of v2.4.26, LDM performs a real-world write test during `ldm doctor`. It spins up a temporary container to attempt a `touch` operation as UID 1000 (the Liferay user), proactively identifying read-only volume mounts caused by Docker Desktop integration or Colima permission mismatches.
+- **Volume-Aware Orchestration (macOS)**: To support the Hybrid Mount Strategy, the snapshot and seeding engines include automatic **Dehydration** and **Hydration** phases.
+  - **Dehydration**: Before snapshotting, data is synced from Docker Named Volumes back to the host project folder.
+  - **Hydration**: After extraction, data is injected into the Docker Named Volumes. This ensures that snapshots and pre-warmed seeds remain fully functional even when using internal Docker storage to bypass filesystem locking issues.
 - **Orchestrated Snapshots**: Project snapshots include the database, Document Library, and the **Elasticsearch 8.x index state**.
 - **Pre-warmed Bootstrap Seeds**: To eliminate the ~15 minute initialization time for new projects, LDM automatically fetches pre-initialized "Seed" volumes (Database + Search Index + **OSGi State**) from a dedicated GitHub repository. These seeds are version-matched to the requested Liferay tag.
 - **Environment Capture**: During `ldm snapshot`, the tool automatically parses the project's `docker-compose.yml` to capture custom `LIFERAY_` environment variables. These are stored in the snapshot metadata and restored during `ldm restore`, ensuring that manual tweaks are never lost during rollback.
@@ -233,6 +247,7 @@ When a service is scaled via `ldm scale [project] liferay=N`:
     - **Offline-First Engine (`AssetService`)**: Orchestrates the discovery, caching, and hydration of seeds and samples.
     - **Proactive Health (`DiagnosticsService`)**: Performs over 20 environmental health checks, including proactive volume write testing and context-aware provider detection (identifying Docker Desktop vs. Native engine).
     - **Project Registry**: Centralizes project and hostname collision detection to prevent infrastructure conflicts across the filesystem.
+    - **Smart Project Discovery**: As of v2.7.2-beta.24, LDM's project resolution engine matches projects not only by their directory name but also by the `project_name` or `container_name` defined in their metadata. It automatically searches sibling directories and parent folders, allowing commands like `ldm logs` to work reliably in complex repository layouts.
     - Every command supports a standardized discovery priority: **Argument > Flag > CWD > Interactive Selection**.
     - **Resilient Tag Discovery**: The discovery engine uses a dual-mode parser supporting both the Docker Hub API (JSON) and the Liferay Release Server (HTML), ensuring the tool remains functional even when primary upstream APIs change.
     - **Mandatory Compose v2**: LDM strictly requires the **Docker Compose v2 Plugin** (`docker compose`). Legacy v1 standalone binaries are no longer supported due to modern library and API incompatibilities.

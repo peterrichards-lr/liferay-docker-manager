@@ -201,7 +201,9 @@ class RuntimeService:
         # Stale lock files in sidecar indices cause 'access_denied_exception' and block indexing.
         # We also enforce permissions again just before boot.
         es_data = paths["data"] / "elasticsearch8"
-        if es_data.exists():
+        use_volumes = self.manager.composer.is_using_named_volumes()
+
+        if es_data.exists() and not use_volumes:
             UI.info("Clearing stale search locks and enforcing permissions...")
             for lock_file in es_data.rglob("write.lock"):
                 with contextlib.suppress(Exception):
@@ -787,8 +789,28 @@ class RuntimeService:
 
         for t in targets:
             path = paths.get(t)
+
+            # LDM-369: Handle Named Volumes (Hybrid Mount Strategy)
+            if t in ["data", "state"]:
+                volume_name = f"{c_name}-{t}"
+                # Check if this volume exists in Docker
+                try:
+                    res = self.manager.run_command(
+                        ["docker", "volume", "ls", "-q", "-f", f"name=^{volume_name}$"],
+                        check=False,
+                    )
+                    if res.strip():
+                        UI.info(
+                            f"  - Removing Docker volume {UI.CYAN}{volume_name}{UI.COLOR_OFF}..."
+                        )
+                        self.manager.run_command(
+                            ["docker", "volume", "rm", "-f", volume_name], check=False
+                        )
+                except Exception:
+                    pass
+
             if path and path.exists():
-                UI.info(f"  - Cleaning {t}...")
+                UI.info(f"  - Cleaning {t} (host)...")
                 shutil.rmtree(path)
                 path.mkdir(parents=True, exist_ok=True)
 
@@ -884,17 +906,35 @@ class RuntimeService:
                 meta = self.manager.read_meta(root)
                 c_name = meta.get("container_name") or root.name
 
+                # LDM-381: Check for the specific service container if requested
+                # Compose v2 uses {project}-{service}-1 or {project}_{service}_1
+                target_service = (
+                    service if service and not isinstance(service, list) else "liferay"
+                )
+
+                # Check for either exact name (Liferay) or service-prefixed name
                 res = self.manager.run_command(
-                    ["docker", "ps", "-a", "-q", "-f", f"name=^{c_name}$"],
+                    [
+                        "docker",
+                        "ps",
+                        "-a",
+                        "-q",
+                        "-f",
+                        f"name=^({c_name}|{c_name}.*{target_service}.*)$",
+                    ],
                     check=False,
                 )
 
                 if not res:
                     if no_wait:
-                        UI.error(f"Container '{c_name}' does not exist. Skipping.")
+                        UI.error(
+                            f"Service '{target_service}' in project '{c_name}' does not exist. Skipping."
+                        )
                         continue
 
-                    UI.info(f"Waiting for container {UI.CYAN}{c_name}{UI.COLOR_OFF}...")
+                    UI.info(
+                        f"Waiting for container {UI.CYAN}{c_name}{UI.COLOR_OFF} (service: {target_service})..."
+                    )
                     start_wait = time.time()
                     found = False
                     while time.time() - start_wait < 60:
@@ -903,7 +943,14 @@ class RuntimeService:
                             UI.info(f"  ... still waiting for '{c_name}' ({elapsed}s)")
 
                         if self.manager.run_command(
-                            ["docker", "ps", "-a", "-q", "-f", f"name=^{c_name}$"]
+                            [
+                                "docker",
+                                "ps",
+                                "-a",
+                                "-q",
+                                "-f",
+                                f"name=^({c_name}|{c_name}.*{target_service}.*)$",
+                            ]
                         ):
                             found = True
                             break

@@ -391,8 +391,10 @@ class BaseHandler:
 
         actual_home = get_actual_home()
         ldm_dir = actual_home / ".ldm"
-        with contextlib.suppress(PermissionError, OSError):
-            ldm_dir.mkdir(parents=True, exist_ok=True)
+        from ldm_core.utils import safe_mkdir
+
+        safe_mkdir(ldm_dir, parents=True, exist_ok=True)
+
         registry_path = ldm_dir / REGISTRY_FILE
 
         registry = {}
@@ -523,7 +525,9 @@ class BaseHandler:
                     target = p / ".liferay-docker.meta"
 
             # Ensure the parent directory exists
-            target.parent.mkdir(parents=True, exist_ok=True)
+            from ldm_core.utils import safe_mkdir
+
+            safe_mkdir(target.parent, parents=True, exist_ok=True)
             write_meta(target, meta)
         except Exception:
             pass
@@ -705,6 +709,7 @@ class BaseHandler:
             else:
                 search_dirs = [
                     Path.cwd(),
+                    Path.cwd().parent,
                     get_actual_home() / "ldm",
                 ]
                 # Only fallback to SCRIPT_DIR if we are NOT initializing a new project
@@ -752,29 +757,53 @@ class BaseHandler:
                             try:
                                 if meta_file:
                                     meta = self.read_meta(item)
-                                    if meta.get("project_name") == pid:
+                                    # LDM-383: Match by folder name, project_name, or container_name
+                                    if (
+                                        item.name == pid
+                                        or meta.get("project_name") == pid
+                                        or meta.get("container_name") == pid
+                                    ):
                                         return item.resolve()
                             except PermissionError:
                                 continue
                 except Exception:  # nosec B112
                     continue
 
-            if not for_init:
-                UI.die(
-                    f"Project '{pid}' not found or missing metadata ('meta' or '.liferay-docker.meta')"
-                )
-
-        cwd = Path.cwd()
+        cwd = Path.cwd().resolve()
         # Check for multiple metadata filenames
         has_meta = any(
             (cwd / f).exists() for f in ["meta", ".liferay-docker.meta", ".ldm.meta"]
         )
+
+        # LDM-383: If pid is provided, check if CWD metadata matches it
+        if pid and has_meta:
+            try:
+                meta = self.read_meta(cwd)
+                if (
+                    cwd.name == pid
+                    or meta.get("project_name") == pid
+                    or meta.get("container_name") == pid
+                ):
+                    return cwd
+            except Exception:
+                pass
+
         if (
             (cwd / "files" / "portal-ext.properties").exists()
             or (cwd / "deploy").exists()
             or has_meta
         ):
-            return cwd
+            # If no pid or pid matches directory name, return CWD
+            if not pid or cwd.name == pid:
+                return cwd
+
+        if pid:
+            # If we reached here, a PID was specified but not found in any search dir or CWD
+            if not for_init:
+                UI.die(
+                    f"Project '{pid}' not found. Searched subdirectories of: "
+                    f"{', '.join(str(d) for d in search_dirs)} and the current folder."
+                )
 
         selection = self.select_project_interactively()
         if selection and selection.get("new"):
@@ -871,7 +900,9 @@ class BaseHandler:
             # Ensure the project root actually exists before we try to write to it
             try:
                 if not root.exists():
-                    root.mkdir(parents=True, exist_ok=True)
+                    from ldm_core.utils import safe_mkdir
+
+                    safe_mkdir(root, parents=True, exist_ok=True)
             except Exception as e:
                 if self.verbose:
                     UI.warning(f"Could not ensure root directory exists: {e}")
@@ -985,6 +1016,8 @@ class BaseHandler:
                 # Reclaiming the root itself causes ownership issues for the host user (e.g. in CI)
                 from ldm_core.utils import reclaim_volume_permissions
 
+                use_volumes = self.manager.composer.is_using_named_volumes()
+
                 for v in [
                     "data",
                     "state",
@@ -999,6 +1032,9 @@ class BaseHandler:
                     "routes",
                 ]:
                     if v in paths and paths[v].exists():
+                        # LDM-382: Skip reclamation for data/state if they are Docker-managed volumes
+                        if use_volumes and v in ["data", "state"]:
+                            continue
                         reclaim_volume_permissions(paths[v])
 
             except Exception as e:
@@ -1027,13 +1063,9 @@ class BaseHandler:
             "backups",
         ]:
             if p_key in paths:
-                try:
-                    paths[p_key].mkdir(parents=True, exist_ok=True)
-                except (PermissionError, OSError) as e:
-                    if self.verbose:
-                        UI.debug(
-                            f"Could not ensure directory exists {paths[p_key]}: {e}"
-                        )
+                from ldm_core.utils import safe_mkdir
+
+                safe_mkdir(paths[p_key], parents=True, exist_ok=True)
 
         pe_file = paths["files"] / "portal-ext.properties"
         if pe_file.exists() and pe_file.is_dir():
@@ -1099,29 +1131,14 @@ class BaseHandler:
         ]
         for key in essential_paths:
             if key in paths:
-                try:
-                    paths[key].mkdir(parents=True, exist_ok=True)
-                except Exception as e:
-                    if self.verbose:
-                        UI.warning(
-                            f"Could not ensure directory exists {paths[key]}: {e}"
-                        )
+                from ldm_core.utils import safe_mkdir
+
+                safe_mkdir(paths[key], parents=True, exist_ok=True)
 
         routes_base = paths["root"] / "routes" / "default" / "dxp"
-        try:
-            routes_base.mkdir(parents=True, exist_ok=True)
-        except Exception as e:
-            if self.verbose:
-                UI.warning(f"Could not ensure routes directory exists: {e}")
+        from ldm_core.utils import safe_mkdir
 
-        if platform.system().lower() != "windows":
-            try:
-                # Recursive chmod 777 to ensure Liferay can write to subfolders like data/license
-                from ldm_core.utils import run_command
-
-                run_command(["chmod", "-R", "777", str(paths["root"])], check=False)
-            except Exception:
-                pass
+        safe_mkdir(routes_base, parents=True, exist_ok=True)
 
     def get_resolved_ip(self, host_name):
         """Resolves a hostname to its IP address."""
@@ -1208,36 +1225,9 @@ class BaseHandler:
 
     def safe_rmtree(self, path):
         """Securely deletes a directory tree, handling potential Docker/Root permission issues."""
-        if not path or not path.exists():
-            return
+        from ldm_core.utils import safe_rmtree
 
-        try:
-            shutil.rmtree(path)
-        except (PermissionError, OSError):
-            parent = path.parent.resolve()
-
-            # Harden for Colima/Lima:
-            # We use standard /var/run/docker.sock to avoid 'operation not supported' errors
-            # when mounting host paths into cleanup containers.
-            self.run_command(
-                [
-                    "docker",
-                    "run",
-                    "--rm",
-                    "-v",
-                    f"{parent.as_posix()}:/parent",
-                    "alpine",
-                    "sh",
-                    "-c",
-                    f"chmod -R 777 /parent/{path.name} 2>/dev/null || true; rm -rf /parent/{path.name} 2>/dev/null || true",
-                ],
-                check=False,
-            )
-
-            # Fallback check
-            if path.exists():
-                with contextlib.suppress(Exception):
-                    shutil.rmtree(path)
+        safe_rmtree(path)
 
     def get_colima_mount_flags(self, paths):
         """Generates the necessary --mount flags for Colima based on project paths."""

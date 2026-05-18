@@ -284,7 +284,19 @@ def safe_write_text(path, content, encoding="utf-8"):
     path = Path(path).resolve()
     tmp_path = path.with_suffix(".tmp" + path.suffix)
     try:
-        tmp_path.write_text(content, encoding=encoding)
+        try:
+            tmp_path.write_text(content, encoding=encoding)
+        except (OSError, PermissionError) as e:
+            # LDM-384: Fallback for root-owned directories in CI
+            if platform.system().lower() != "windows":
+                from ldm_core.utils import reclaim_volume_permissions
+
+                if reclaim_volume_permissions(path.parent):
+                    tmp_path.write_text(content, encoding=encoding)
+                else:
+                    raise e
+            else:
+                raise e
 
         # Robust replacement with retries (for Windows file locking)
         # and fallback (for permission nuances in CI)
@@ -313,11 +325,60 @@ def safe_write_text(path, content, encoding="utf-8"):
 def safe_copy(src, dst):
     """Copies a file safely, ignoring metadata preservation errors (EPERM/OSError)."""
     try:
-        shutil.copyfile(src, dst)
+        try:
+            shutil.copyfile(src, dst)
+        except (OSError, PermissionError) as e:
+            # LDM-384: Fallback for root-owned directories in CI
+            if platform.system().lower() != "windows":
+                from ldm_core.utils import reclaim_volume_permissions
+
+                if reclaim_volume_permissions(Path(dst).parent):
+                    shutil.copyfile(src, dst)
+                else:
+                    raise e
+            else:
+                raise e
+
         # Try to copy permissions/mode, but ignore if it fails (common for cross-user files)
         with contextlib.suppress(OSError, PermissionError):
             shutil.copymode(src, dst)
     except Exception as e:
+        raise e
+
+
+def atomic_copy(src, dst):
+    """
+    Copies a file to a temporary location and then moves it to the destination
+    atomically within the same filesystem. This prevents 'partial file' reads
+    by Liferay's auto-deployer.
+    """
+    dst_path = Path(dst).resolve()
+    # Create a hidden temp file in the same directory to ensure same filesystem rename
+    tmp_dst = dst_path.parent / f".{dst_path.name}.tmp"
+
+    try:
+        # 1. Perform safe copy to hidden temp file
+        safe_copy(src, tmp_dst)
+
+        # 2. Atomic rename to final destination with retries
+        max_retries = 3
+        for i in range(max_retries):
+            try:
+                os.replace(tmp_dst, dst_path)
+                return
+            except (OSError, PermissionError) as e:
+                if i == max_retries - 1:
+                    # Final attempt: direct copy if rename is blocked (e.g. cross-device)
+                    # Note: This loses atomicity but ensures the file is delivered
+                    safe_copy(tmp_dst, dst_path)
+                    with contextlib.suppress(OSError):
+                        tmp_dst.unlink()
+                    return
+                time.sleep(0.1)
+    except Exception as e:
+        if tmp_dst.exists():
+            with contextlib.suppress(OSError):
+                tmp_dst.unlink()
         raise e
 
 
@@ -554,6 +615,8 @@ def dict_to_yaml(d, indent=0):
                 continue
             if isinstance(v, (dict, list)):
                 if not v:
+                    val = "{}" if isinstance(v, dict) else "[]"
+                    lines.append(f"{spaces}{k}: {val}")
                     continue
                 lines.append(f"{spaces}{k}:")
                 lines.append(dict_to_yaml(v, indent + 1))
@@ -1218,6 +1281,40 @@ def resolve_dependency_version(liferay_tag, dependency_name):
                 return entry.get("dependencies", {}).get(dependency_name)
 
     return None
+
+
+def safe_mkdir(path, parents=True, exist_ok=True):
+    """Creates a directory safely, with JIT permission reclamation if needed."""
+    path_obj = Path(path).resolve()
+    try:
+        path_obj.mkdir(parents=parents, exist_ok=exist_ok)
+    except (OSError, PermissionError) as e:
+        if platform.system().lower() != "windows":
+            # Attempt to reclaim parent
+            if reclaim_volume_permissions(path_obj.parent):
+                path_obj.mkdir(parents=parents, exist_ok=exist_ok)
+            else:
+                raise e
+        else:
+            raise e
+
+
+def safe_rmtree(path):
+    """Deletes a directory tree safely, with JIT permission reclamation if needed."""
+    path_obj = Path(path).resolve()
+    if not path_obj.exists():
+        return
+
+    try:
+        shutil.rmtree(path_obj)
+    except (OSError, PermissionError) as e:
+        if platform.system().lower() != "windows":
+            if reclaim_volume_permissions(path_obj):
+                shutil.rmtree(path_obj)
+            else:
+                raise e
+        else:
+            raise e
 
 
 def reclaim_volume_permissions(path, uid="1000", gid="1000"):

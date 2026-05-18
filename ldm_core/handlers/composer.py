@@ -111,9 +111,32 @@ class ComposerService:
             "networks": {"liferay-net": {"external": True}},
         }
 
+        # LDM-369: Add top-level volumes for Named Volumes (data/state)
+        named_volumes: dict[str, dict] = {}
+        for svc in services.values():
+            for vol in svc.get("volumes", []):
+                if ":" in vol:
+                    host_side = vol.split(":")[0]
+                    # If it doesn't look like a path, it's a named volume
+                    if not (
+                        host_side.startswith(".")
+                        or host_side.startswith("/")
+                        or "/" in host_side
+                        or "\\" in host_side
+                    ):
+                        named_volumes[host_side] = {}
+
+        if named_volumes:
+            compose["volumes"] = named_volumes
+
         from ldm_core.utils import safe_write_text
 
         safe_write_text(paths["compose"], dict_to_yaml(compose))
+
+    def is_using_named_volumes(self):
+        """Returns True if the current platform/configuration uses Docker Named Volumes for data/state."""
+        # Current policy: macOS always uses volumes to prevent locking errors.
+        return platform.system().lower() == "darwin"
 
     def _build_liferay_service(
         self, paths, meta, host_name, project_name, ssl_enabled, base_env
@@ -183,6 +206,9 @@ class ComposerService:
 
         liferay_env = []
         liferay_env.append(f"LIFERAY_JVM_OPTS={' '.join(opt_map.values())}")
+        liferay_env.append(
+            "LIFERAY_LOG4J2_CONFIGURATION_FILE=/opt/liferay/osgi/log4j/portal-log4j-ext.xml"
+        )
 
         if use_shared_search:
             liferay_env.extend(
@@ -338,7 +364,7 @@ class ComposerService:
                 f"{paths['deploy'].as_posix()}:/mnt/liferay/deploy",
                 f"{paths['files'].as_posix()}:/mnt/liferay/files",
                 f"{paths['scripts'].as_posix()}:/mnt/liferay/scripts",
-                f"{paths['data'].as_posix()}:/opt/liferay/data",
+                f"{project_name}-data:/opt/liferay/data",
                 f"{paths['modules'].as_posix()}:/opt/liferay/modules",
                 f"{paths['cx'].as_posix()}:/opt/liferay/osgi/client-extensions",
                 f"{paths['portal_log4j'].as_posix()}:/opt/liferay/osgi/log4j",
@@ -364,7 +390,7 @@ class ComposerService:
             # Host-mapped state and logs only for non-scaled instances
             service["volumes"].extend(
                 [
-                    f"{paths['state'].as_posix()}:/opt/liferay/osgi/state",
+                    f"{project_name}-state:/opt/liferay/osgi/state",
                     f"{paths['logs'].as_posix()}:/opt/liferay/logs",
                 ]
             )

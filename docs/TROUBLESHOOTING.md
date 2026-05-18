@@ -183,6 +183,30 @@ If LDM cannot connect to infrastructure services:
 
 ## 📂 Permission & Mount Issues
 
+### **macOS / ExFAT: "Unable to create lock manager" or "access_denied_exception"**
+
+If Liferay fails to start with one of the following errors:
+
+- `java.io.IOException: Unable to create lock manager` (Equinox / OSGi State)
+- `access_denied_exception` on `write.lock` (Elasticsearch / Data)
+
+This is caused by the **lack of POSIX file locking support** on ExFAT filesystems or limitations in the macOS-to-Linux filesystem sharing layer (VirtioFS/SSHFS). Liferay's core components require low-level mandatory file locks that these environments cannot provide for host-mapped directories.
+
+#### **Solution: Use the Hybrid Mount Strategy (v2.7.2-beta.20+)**
+
+LDM automatically resolves this by using **Docker Named Volumes** for the most sensitive directories. These volumes live entirely inside the Docker Linux VM's native filesystem.
+
+1. **Verify your LDM version**: `ldm version` (Should be `v2.7.2-beta.20` or higher).
+2. **Reset the project state** (if migrating from an older version):
+
+    ```bash
+    ldm stop <project>
+    ldm rm <project> --volumes
+    ldm run <project>
+    ```
+
+*Note: Your project code (`deploy/`, `modules/`, etc.) can remain on the external drive; only the internal state and search indices are moved to Docker internal storage.*
+
 ### **macOS 12 Monterey (Intel): Read-Only Volumes**
 
 On older macOS versions (12.x and below), Colima relies on the QEMU backend which presents a "Catch-22" for Liferay Docker Manager:
@@ -220,11 +244,12 @@ If you see Python encoding errors (like `'\u25cf' character maps to <undefined>`
 
 If Elasticsearch fails to boot with `AccessDeniedException: /usr/share/elasticsearch/data/node.lock`:
 
-1. **Ensure LDM is up to date.** LDM `v2.4.26-beta.38+` includes an automated "Permission Reclamation" step that runs `chown -R 1000:1000` inside the volume via a helper container.
-2. **Manual Fix:** If using a custom mount, ensure the host directory has open permissions:
+1. **Ensure LDM is up to date.** LDM `v2.7.2-beta.24+` includes **Just-in-Time (JIT) Permission Hardening**. If LDM hits a "Permission Denied" error on Linux/macOS while writing to a directory, it will automatically attempt to reclaim the folder's permissions via a temporary helper container before retrying.
+2. **Fedora / Linux Workstations**: If Docker Desktop is not used, search indices are created as `root` by the Docker daemon. LDM's JIT hardening is specifically designed to resolve these ownership mismatches on native Linux filesystems.
+3. **Manual Fix**: If the automated hardening is bypassed, ensure the host directory has open permissions:
 
 ```bash
-chmod -R 777 ~/.ldm/infra/search/data
+sudo chmod -R 777 ~/.ldm/infra/search/data
 ```
 
 ### **Elasticsearch: Failed to parse mappings**
