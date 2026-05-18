@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v2.7.2-beta.33] - 2026-05-18
+
+### Fixed
+
+- **CI Image Resolution**: Corrected the Liferay Portal (CE) tag in the E2E verification project to use a valid manifest (`7.4.3.112-ga112`), resolving "manifest unknown" errors in CI.
+
 ## [v2.7.2-beta.32] - 2026-05-18
 
 ### Fixed
