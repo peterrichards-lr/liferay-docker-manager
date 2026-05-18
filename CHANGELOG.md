@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v2.7.2-beta.26] - 2026-05-18
+
+### Fixed
+
+- **E2E Healthcheck Reliability**: Resolved a critical timeout issue in the E2E verification suite by ensuring Liferay's setup wizard is correctly disabled via `LDM_COMMON_DIR` and project-level properties. This prevents Liferay from hanging in an "unhealthy" state during automated CI runs.
+- **Improved Common Discovery**: Expanded the discovery engine for the `common/` folder to include grandparent directory searching, providing better support for nested workspace layouts.
+
 ## [v2.7.2-beta.25] - 2026-05-18
 
 ### Fixed

@@ -174,7 +174,9 @@ echo "ℹ  Using test template: $TEMPLATE_SRC"
 
 # Isolate the LDM workspace
 LDM_WORKSPACE="${ORIGINAL_PWD}/e2e-work-dir"
+LDM_COMMON_DIR="${ORIGINAL_PWD}/common"
 export LDM_WORKSPACE
+export LDM_COMMON_DIR
 mkdir -p "$LDM_WORKSPACE"
 
 log_and_run() {

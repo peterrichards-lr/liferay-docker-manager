@@ -839,9 +839,14 @@ class BaseHandler:
             return common_path
 
         if project_path:
-            p_parent_common = Path(project_path).resolve().parent / "common"
+            p_path = Path(project_path).resolve()
+            p_parent_common = p_path.parent / "common"
             if p_parent_common.exists():
                 return p_parent_common
+
+            p_grandparent_common = p_path.parent.parent / "common"
+            if p_grandparent_common.exists():
+                return p_grandparent_common
 
         exe_path = Path(sys.argv[0]).resolve()
         is_source = exe_path.suffix.lower() == ".py"
