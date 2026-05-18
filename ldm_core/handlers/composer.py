@@ -340,8 +340,16 @@ class ComposerService:
             )
 
         image = meta.get("image_tag")
-        if not image or ":" not in str(image):
-            suffix = f"-{image}" if image else ""
+        if not image:
+            if "u" in tag:
+                image = f"liferay/portal:{tag}"
+            elif any(s in tag for s in ["-lts", "-qr", "-ga"]):
+                image = f"liferay/dxp:{tag}"
+            else:
+                image = f"liferay/dxp:{tag}"
+        elif str(image).startswith("-"):
+            # It's a suffix
+            suffix = str(image)
             if "u" in tag:
                 image = f"liferay/portal:{tag}{suffix}"
             elif any(s in tag for s in ["-lts", "-qr", "-ga"]):
