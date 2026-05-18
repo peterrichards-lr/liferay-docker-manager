@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v2.7.2-beta.34] - 2026-05-18
+
+### Fixed
+
+- **Explicit E2E Image Resolution**: Switched the E2E verification project to use an explicit full image name for Liferay Portal (CE), ensuring robust image pulling and avoiding activation blocks or manifest mismatches in CI.
+
 ## [v2.7.2-beta.33] - 2026-05-18
 
 ### Fixed
