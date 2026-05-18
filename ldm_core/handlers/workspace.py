@@ -449,7 +449,7 @@ class WorkspaceService(BaseHandler):
                         if not overwrite and dest.exists():
                             UI.info(f"  - Skipping existing module: {jar.name}")
                             continue
-                        safe_copy(jar, dest)
+                        atomic_copy(jar, dest)
                         UI.info(f"  + Synced {folder.capitalize()[:-1]}: {jar.name}")
 
         # 3. Sync Fragments (ZIPs)
@@ -469,7 +469,7 @@ class WorkspaceService(BaseHandler):
                                     f"  - Skipping existing fragment: {zip_file.name}"
                                 )
                                 continue
-                            safe_copy(zip_file, dest)
+                            atomic_copy(zip_file, dest)
                             UI.info(f"  + Synced Fragment: {zip_file.name}")
                         else:
                             # If it's a ZIP in fragments but not a fragment, try syncing as CX

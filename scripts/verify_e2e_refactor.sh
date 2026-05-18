@@ -247,7 +247,31 @@ fi
 
 log_and_run "Running LDM Project" "$LDM_CMD" -y run . --no-wait --no-tld-skip --no-jvm-verify
 
-# 4. Snapshot & Restore Verification
+# 2b. Wait for Liferay Health (Required for UI Tests)
+echo "--- Step 2b: Wait for Liferay Health ---"
+echo ">> Waiting for Liferay to be healthy (this can take several minutes)..." | tee -a "$RESULTS_FILE_TMP"
+MAX_RETRIES=60
+COUNT=0
+PROJECT_NAME="ldm-smoke-test"
+# Note: we use docker inspect as it is the most reliable cross-platform health check
+until [ "$(docker inspect -f '{{.State.Health.Status}}' $PROJECT_NAME 2>/dev/null)" == "healthy" ]; do
+    if [ $COUNT -ge $MAX_RETRIES ]; then
+        echo "❌ ERROR: Timeout waiting for Liferay health. Status: $(docker inspect -f '{{.State.Health.Status}}' $PROJECT_NAME 2>/dev/null)" | tee -a "$RESULTS_FILE_TMP"
+        exit 1
+    fi
+    printf "."
+    sleep 10
+    COUNT=$((COUNT+1))
+done
+echo ""
+echo "✅ Liferay is healthy." | tee -a "$RESULTS_FILE_TMP"
+
+# 2c. UI Verification (Fragments)
+echo "--- Step 2c: UI Verification (Fragments) ---"
+log_and_run "Running Playwright UI Tests" pytest ldm_core/tests/e2e_ui_fragments.py --base-url http://localhost:8082
+echo "✅ UI Verification successful." | tee -a "$RESULTS_FILE_TMP"
+
+# 3. Snapshot & Restore Verification
 echo "--- Step 3: Snapshot & Restore ---"
 log_and_run "Creating Snapshot" "$LDM_CMD" -y snapshot --name "Binary-Verify"
 if [ ! -d "snapshots" ]; then

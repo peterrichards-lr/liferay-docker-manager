@@ -4,5 +4,7 @@ bandit
 pip-audit
 pytest
 pytest-cov
+playwright
+pytest-playwright
 shiv
 pyinstaller

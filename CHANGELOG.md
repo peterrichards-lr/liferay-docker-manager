@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v2.7.2-beta.24] - 2026-05-18
+
+### Added
+
+- **Fragment UI Verification**: Integrated Playwright-based UI automation into the E2E test suite. LDM now automatically verifies that fragment collections are correctly deployed and visible in the Liferay UI during smoke tests.
+- **Sample Fragment Collection**: Added a standard fragment collection template to the test project for automated deployment validation.
+
+### Fixed
+
+- **Atomic Workspace Sync**: Extended the **Staging & Atomic Move** pattern to all workspace synchronization operations, including OSGi modules and fragment ZIPs. This ensures that Liferay's internal auto-deployer never hits race conditions during background syncs.
+
 ## [v2.7.2-beta.23] - 2026-05-18
 
 ### Fixed

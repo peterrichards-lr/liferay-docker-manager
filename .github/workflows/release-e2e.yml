@@ -43,6 +43,10 @@ jobs:
           python3 scripts/sync_baseline.py
           python3 scripts/sync_colors.py
 
+      - name: Install Playwright Browsers
+        run: |
+          playwright install chromium --with-deps
+
       - name: Run Live Docker E2E Suite
         shell: bash
         run: |
