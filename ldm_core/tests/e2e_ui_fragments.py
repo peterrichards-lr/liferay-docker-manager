@@ -26,6 +26,19 @@ def test_fragment_deployment(page: Page, liferay_url: str):
         page.fill('input[name*="LoginPortlet_password"]', "test")
         page.click('button[type="submit"]')
 
+    # LDM-385: Handle potential license activation blocks in CI
+    if "license_activation" in page.url:
+        print("⚠️  Redirected to license activation page. Checking for trial options...")
+        # Try to find a "Back to Portal" or "Trial" link
+        trial_link = page.get_by_role("link", name="Trial")
+        if trial_link.is_visible(timeout=2000):
+            trial_link.click()
+        else:
+            print(
+                "❌ STUCK: Liferay DXP requires an activation key in this environment."
+            )
+            print(f"Current URL: {page.url}")
+
     # Wait for the home page to load or check if we're at home
     try:
         page.wait_for_url(f"{liferay_url}/web/guest**", timeout=60000)

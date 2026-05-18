@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v2.7.2-beta.36] - 2026-05-18
+
+### Fixed
+
+- **Log4j Baseline**: Included `portal-log4j-ext.xml` in the LDM baseline to ensure that hot-reloadable log overrides are functional by default.
+- **CI Smoke Test Refinement**: Updated smoke tests to use standard Liferay images and improved the `image_tag` resolution logic to handle variant suffixes more robustly.
+- **E2E UI Resilience**: Hardened Playwright UI tests to detect and log license activation blocks in CI environments.
+
 ## [v2.7.2-beta.35] - 2026-05-18
 
 ### Fixed

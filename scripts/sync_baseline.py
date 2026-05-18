@@ -21,8 +21,8 @@ def sync_baseline():
     # 1. Clean destination (remove files that no longer exist in source)
     for dest_file in DEST_DIR.iterdir():
         if dest_file.is_file() and dest_file.name not in EXCLUDE_FILES:
-            # Also clean up any accidental XML files
-            if dest_file.suffix.lower() == ".xml":
+            # Also clean up any accidental XML files (except logging configs)
+            if dest_file.suffix.lower() == ".xml" and "log4j" not in dest_file.name:
                 print(f"  - Removing restricted: {dest_file.name}")
                 dest_file.unlink()
                 continue
@@ -36,8 +36,8 @@ def sync_baseline():
     count = 0
     for source_file in SOURCE_DIR.iterdir():
         if source_file.is_file() and source_file.name not in EXCLUDE_FILES:
-            # Skip XML files (activation keys)
-            if source_file.suffix.lower() == ".xml":
+            # Skip XML files (activation keys), but allow log4j configs
+            if source_file.suffix.lower() == ".xml" and "log4j" not in source_file.name:
                 continue
 
             dest_file = DEST_DIR / source_file.name

@@ -720,6 +720,38 @@ class BaseHandler:
                 if Path("/Volumes/SanDisk/ldm").exists():
                     search_dirs.append(Path("/Volumes/SanDisk/ldm"))
 
+            # LDM-383: Priority 4 - Global Registry
+            from ldm_core.constants import REGISTRY_FILE
+
+            registry_path = get_actual_home() / ".ldm" / REGISTRY_FILE
+            if registry_path.exists():
+                try:
+                    registry = json.loads(registry_path.read_text())
+                    for name, data in registry.items():
+                        path_str = data.get("path") if isinstance(data, dict) else data
+                        if path_str:
+                            item = Path(path_str)
+                            if item.exists() and item.is_dir():
+                                # Check if this registered project matches the PID
+                                if pid in (item.name, name):
+                                    return item.resolve()
+
+                                # Deep check metadata if folder name didn't match
+                                meta_file = None
+                                for f in ["meta", ".liferay-docker.meta", ".ldm.meta"]:
+                                    if (item / f).exists():
+                                        meta_file = item / f
+                                        break
+                                if meta_file:
+                                    meta = self.read_meta(item)
+                                    if (
+                                        meta.get("project_name") == pid
+                                        or meta.get("container_name") == pid
+                                    ):
+                                        return item.resolve()
+                except Exception:
+                    pass
+
             for s_dir in search_dirs:
                 if not s_dir.exists():
                     continue

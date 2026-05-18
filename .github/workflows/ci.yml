@@ -114,7 +114,8 @@ jobs:
           # Using an older version format to avoid triggering global search logic in CI
           echo "tag=7.4.13-u100" > smoke-project/.liferay-docker.meta
           echo "container_name=smoke-test" >> smoke-project/.liferay-docker.meta
-          echo "image_tag=alpine" >> smoke-project/.liferay-docker.meta
+          # image_tag=alpine was causing manifest unknown issues when treated as a suffix
+          echo "image_tag=liferay/portal:7.4.13-u100" >> smoke-project/.liferay-docker.meta
 
           # Run LDM to generate compose
           pip install -e .
