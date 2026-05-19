@@ -68,10 +68,8 @@ def test_fragment_deployment(page: Page, liferay_url: str):
     print("Navigating to Fragments and waiting for 'Test Collection'...")
 
     # In CI, the hot-deployment of the ZIP might take longer than the bash script's sleep.
-    # We implement a reload loop to wait for the deployment to finish up to 90 seconds.
-    import time
-
-    max_retries = 9
+    # We implement a reload loop to wait for the deployment to finish up to 150 seconds.
+    max_retries = 15
     collection_found = False
 
     for attempt in range(max_retries):
@@ -95,10 +93,11 @@ def test_fragment_deployment(page: Page, liferay_url: str):
         print(
             f"Attempt {attempt + 1}/{max_retries}: 'Test Collection' not found yet. Reloading in 10s..."
         )
-        time.sleep(10)
+        # Use Playwright's native wait instead of time.sleep to avoid blocking the event loop
+        page.wait_for_timeout(10000)
 
     if not collection_found:
-        pytest.fail("Test Collection did not appear after 90 seconds of reloading.")
+        pytest.fail("Test Collection did not appear after 150 seconds of reloading.")
 
     expect(collection_item.first).to_be_visible(timeout=5000)
     print("Found 'Test Collection'. Checking fragments...")
