@@ -14,6 +14,10 @@ def test_fragment_deployment(page: Page, liferay_url: str):
     Verifies that the 'Test Collection' fragment collection and its 'Test Fragment'
     are correctly deployed and visible in the Liferay UI.
     """
+    # Optimize E2E tests by blocking external tracking and status scripts
+    page.route("**/*.statuspage.io/**", lambda route: route.abort())
+    page.route("**/cdn.pendo.io/**", lambda route: route.abort())
+
     print(f"Connecting to Liferay at {liferay_url}...")
 
     # 1. Login
@@ -48,6 +52,13 @@ def test_fragment_deployment(page: Page, liferay_url: str):
         # Fallback: maybe we are already at home or redirected elsewhere
         print(f"Current URL after login: {page.url}")
 
+    # Dismiss "Terms of Use" modal (Liferay Enterprise Search) if it appears on login
+    terms_modal = page.locator(".modal-dialog", has_text="Terms of Use")
+    if terms_modal.is_visible(timeout=5000):
+        print("Dismissing 'Terms of Use' modal...")
+        terms_modal.get_by_role("button", name="Done").click()
+        terms_modal.wait_for(state="hidden", timeout=10000)
+
     # 2. Navigate to Fragments
     # We use the direct portlet URL for efficiency, explicitly targeting the Guest site
     fragments_url = f"{liferay_url}/group/guest/~/control_panel/manage?p_p_id=com_liferay_fragment_web_portlet_FragmentPortlet"
@@ -70,9 +81,9 @@ def test_fragment_deployment(page: Page, liferay_url: str):
 
     # 4. Click the collection and verify fragment
     # We use force=True because Liferay sometimes pops up a "Liferay Enterprise Search"
-    # warning modal in trial environments that intercepts the click.
+    # warning modal in trial environments that intercepts the click. The modal animation
+    # timing is highly unpredictable across different environments.
     collection_item.first.click(force=True)
-
     fragment_item = page.get_by_text("Test Fragment")
     expect(fragment_item.first).to_be_visible(timeout=10000)
 

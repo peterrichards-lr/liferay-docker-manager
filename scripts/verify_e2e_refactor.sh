@@ -335,7 +335,7 @@ fi
 # 2c. UI Verification (Fragments)
 echo "--- Step 2c: UI Verification (Fragments) ---"
 # Note: we disable coverage with --no-cov to avoid 0% coverage failure on installed binary
-log_and_run "Running Playwright UI Tests" pytest "${ORIGINAL_PWD}/ldm_core/tests/e2e_ui_fragments.py" --no-cov --base-url http://localhost:8082
+log_and_run "Running Playwright UI Tests" pytest "${ORIGINAL_PWD}/ldm_core/tests/e2e_ui_fragments.py" --no-cov --base-url http://localhost:8082 --screenshot=only-on-failure
 echo "✅ UI Verification successful." | tee -a "$RESULTS_FILE_TMP"
 
 # 3. Snapshot & Restore Verification
