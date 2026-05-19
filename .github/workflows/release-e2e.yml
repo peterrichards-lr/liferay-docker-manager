@@ -52,3 +52,13 @@ jobs:
         run: |
           # The script verifies global infra, project labels, status, and disambiguation
           bash scripts/verify_e2e_refactor.sh
+
+      - name: Upload Test Results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-and-verification-results
+          path: |
+            test-results/
+            verify-*.txt
+          retention-days: 7

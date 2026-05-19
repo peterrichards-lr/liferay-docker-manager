@@ -89,12 +89,12 @@ get_hash() {
 
 # Capture logs helper
 capture_logs_on_failure() {
-    echo "" >>"$RESULTS_FILE_TMP"
-    echo "--- FAILURE DEBUG LOGS ---" >>"$RESULTS_FILE_TMP"
+    echo "" | tee -a "$RESULTS_FILE_TMP"
+    echo "--- FAILURE DEBUG LOGS ---" | tee -a "$RESULTS_FILE_TMP"
     for container in liferay-proxy-global liferay-search-global ldm-smoke-test ldm-smoke-test-db-1; do
         if docker ps -a | grep -q "$container"; then
-            echo ">> Logs for $container:" >>"$RESULTS_FILE_TMP"
-            docker logs "$container" --tail 50 >>"$RESULTS_FILE_TMP" 2>&1
+            echo ">> Logs for $container:" | tee -a "$RESULTS_FILE_TMP"
+            docker logs "$container" --tail 50 2>&1 | tee -a "$RESULTS_FILE_TMP"
         fi
     done
 }
