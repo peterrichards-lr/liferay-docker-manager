@@ -65,18 +65,42 @@ def test_fragment_deployment(page: Page, liferay_url: str):
     page.goto(fragments_url)
 
     # 3. Verify Collection exists
-    # Using locator with text to be more precise in Liferay's complex UI
-    collection_item = page.locator(".clay-card", has_text="Test Collection")
+    print("Navigating to Fragments and waiting for 'Test Collection'...")
 
-    # If card layout isn't used, try list layout
-    if not collection_item.is_visible(timeout=2000):
-        collection_item = page.locator("tr", has_text="Test Collection")
+    # In CI, the hot-deployment of the ZIP might take longer than the bash script's sleep.
+    # We implement a reload loop to wait for the deployment to finish up to 90 seconds.
+    import time
 
-    # Final fallback to generic text
-    if not collection_item.is_visible(timeout=2000):
-        collection_item = page.get_by_text("Test Collection")
+    max_retries = 9
+    collection_found = False
 
-    expect(collection_item.first).to_be_visible(timeout=30000)
+    for attempt in range(max_retries):
+        page.goto(fragments_url)
+
+        # Using locator with text to be more precise in Liferay's complex UI
+        collection_item = page.locator(".clay-card", has_text="Test Collection")
+
+        # If card layout isn't used, try list layout
+        if not collection_item.is_visible(timeout=2000):
+            collection_item = page.locator("tr", has_text="Test Collection")
+
+        # Final fallback to generic text
+        if not collection_item.is_visible(timeout=2000):
+            collection_item = page.get_by_text("Test Collection")
+
+        if collection_item.is_visible(timeout=5000):
+            collection_found = True
+            break
+
+        print(
+            f"Attempt {attempt + 1}/{max_retries}: 'Test Collection' not found yet. Reloading in 10s..."
+        )
+        time.sleep(10)
+
+    if not collection_found:
+        pytest.fail("Test Collection did not appear after 90 seconds of reloading.")
+
+    expect(collection_item.first).to_be_visible(timeout=5000)
     print("Found 'Test Collection'. Checking fragments...")
 
     # 4. Click the collection and verify fragment
