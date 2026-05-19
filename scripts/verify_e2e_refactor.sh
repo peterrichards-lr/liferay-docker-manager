@@ -134,6 +134,14 @@ cleanup_test_projects() {
         echo "================================================================"
         echo "✅ Verification Complete ($status)"
         echo "📊 Results: $final_name"
+        
+        # Automatically archive passing reports
+        if [ "$status" == "pass" ]; then
+            local archive_dir="${ORIGINAL_PWD}/references/verification-results"
+            mkdir -p "$archive_dir"
+            cp "$final_path" "$archive_dir/"
+            echo "📦 Archived to: references/verification-results/"
+        fi
         echo "================================================================"
     fi
 
