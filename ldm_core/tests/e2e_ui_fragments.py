@@ -49,8 +49,8 @@ def test_fragment_deployment(page: Page, liferay_url: str):
         print(f"Current URL after login: {page.url}")
 
     # 2. Navigate to Fragments
-    # We use the direct portlet URL for efficiency
-    fragments_url = f"{liferay_url}/group/control_panel/manage?p_p_id=com_liferay_fragment_web_portlet_FragmentPortlet"
+    # We use the direct portlet URL for efficiency, explicitly targeting the Guest site
+    fragments_url = f"{liferay_url}/group/guest/~/control_panel/manage?p_p_id=com_liferay_fragment_web_portlet_FragmentPortlet"
     page.goto(fragments_url)
 
     # 3. Verify Collection exists
@@ -69,7 +69,9 @@ def test_fragment_deployment(page: Page, liferay_url: str):
     print("Found 'Test Collection'. Checking fragments...")
 
     # 4. Click the collection and verify fragment
-    collection_item.first.click()
+    # We use force=True because Liferay sometimes pops up a "Liferay Enterprise Search"
+    # warning modal in trial environments that intercepts the click.
+    collection_item.first.click(force=True)
 
     fragment_item = page.get_by_text("Test Fragment")
     expect(fragment_item.first).to_be_visible(timeout=10000)

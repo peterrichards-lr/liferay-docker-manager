@@ -5,6 +5,13 @@ set -e
 # Target: Verifies the INSTALLED binary, not the source code.
 # Optimized for macOS (Intel/Silicon) and Linux.
 
+KEEP_ARTIFACTS=false
+for arg in "$@"; do
+    if [ "$arg" == "-k" ] || [ "$arg" == "--keep" ]; then
+        KEEP_ARTIFACTS=true
+    fi
+done
+
 echo "🚀 Starting Binary Verification..."
 
 # Store the original directory for final report placement
@@ -128,6 +135,12 @@ cleanup_test_projects() {
         echo "✅ Verification Complete ($status)"
         echo "📊 Results: $final_name"
         echo "================================================================"
+    fi
+
+    if [ "$KEEP_ARTIFACTS" = true ]; then
+        echo "⚠️  --keep flag detected. Skipping artifact cleanup."
+        echo "Container 'ldm-smoke-test' and workspace 'e2e-work-dir' have been preserved."
+        return
     fi
 
     echo "🧹 Cleaning up test artifacts..."
@@ -305,6 +318,19 @@ until [ "$(docker inspect -f '{{.State.Health.Status}}' "$PROJECT_NAME" 2>/dev/n
 done
 echo ""
 echo "✅ Liferay is healthy (or running)." | tee -a "$RESULTS_FILE_TMP"
+
+# 2b-Sequenced: Delayed Fragment Deployment
+echo "--- Step 2b: Sequenced Fragment Deployment ---"
+if [ -f "${LDM_WORKSPACE}/ldm-smoke-test/delayed-deploy/test-fragments.zip" ]; then
+    echo ">> Triggering hot-deployment of test-fragments.zip..." | tee -a "$RESULTS_FILE_TMP"
+    cp "${LDM_WORKSPACE}/ldm-smoke-test/delayed-deploy/test-fragments.zip" "${LDM_WORKSPACE}/ldm-smoke-test/deploy/"
+    
+    # Wait for Liferay's DirectoryWatcher to process the zip
+    echo ">> Waiting 30s for Liferay auto-deploy scanner to process the fragment..."
+    sleep 30
+else
+    echo "⚠️  WARNING: delayed-deploy/test-fragments.zip not found!" | tee -a "$RESULTS_FILE_TMP"
+fi
 
 # 2c. UI Verification (Fragments)
 echo "--- Step 2c: UI Verification (Fragments) ---"
