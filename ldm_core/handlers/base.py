@@ -558,6 +558,27 @@ class BaseHandler:
             return False
         return True
 
+    def resolve_container(self, project_name, service="liferay"):
+        """Resolves a service to an actual container name or ID via labels."""
+        cmd = [
+            "docker",
+            "ps",
+            "-a",
+            "--format",
+            "{{.Names}}",
+            "-f",
+            f"label=com.liferay.ldm.project={project_name}",
+            "-f",
+            f"label=com.docker.compose.service={service}",
+        ]
+        res = self.run_command(cmd, check=False)
+        if res:
+            # Return the first matching name
+            return res.splitlines()[0].strip()
+
+        # Fallback to standard naming convention
+        return f"{project_name}-{service}-1"
+
     def get_container_status(self, container_name):
         """Returns the health or status of a container."""
         from ldm_core.docker_service import DockerService

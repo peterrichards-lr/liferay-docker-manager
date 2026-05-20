@@ -113,9 +113,9 @@ class TestRuntime(unittest.TestCase):
     @patch("ldm_core.handlers.runtime.get_compose_cmd")
     def test_cmd_logs_advanced_flags(self, mock_compose):
         mock_compose.return_value = ["docker", "compose"]
-        with patch.object(
-            self.handler, "run_command", return_value="running"
-        ) as mock_run:
+        with patch.object(self.handler, "run_command") as mock_run:
+            # 1. resolve_container, 2. exact check, 3. logs call
+            mock_run.side_effect = ["container-id", "container-id", None]
             self.handler.cmd_logs(
                 project_id="test",
                 tail="50",
@@ -149,11 +149,17 @@ class TestRuntime(unittest.TestCase):
             (root / "meta").write_text("tag=7.4\ncontainer_name=test-proj")
 
             with patch.object(self.handler, "run_command") as mock_run:
-                # 1. First call fails (container not ready), second succeeds
+                # 1. resolve_container fails (returns fallback)
+                # 2. name check fails (triggers loop)
+                # 3. resolve_container succeeds
+                # 4. name check succeeds
+                # 5. logs call
                 mock_run.side_effect = [
-                    "",  # First check (docker ps)
-                    "container-id-123",  # Second check inside wait loop
-                    None,  # Final docker logs call
+                    "",  # Call 1: resolve_container (Discovery)
+                    "",  # Call 2: Name check (Fails, enters loop)
+                    "container-id-123",  # Call 3: resolve_container (Discovery succeeds)
+                    "container-id-123",  # Call 4: Name check (Succeeds)
+                    None,  # Call 5: Final docker logs call
                 ]
 
                 # We mock time.sleep to speed up the test
@@ -162,13 +168,13 @@ class TestRuntime(unittest.TestCase):
                         project_id="test-proj", service="db", no_wait=False
                     )
 
-                # Verify it searched for the specific db service container
+                # Verify it searched for the specific db service container label
                 found_db_check = False
                 for call in mock_run.call_args_list:
                     args = call[0][0]
                     if isinstance(args, list) and "docker" in args and "ps" in args:
                         for arg in args:
-                            if "name=" in arg and "db" in arg:
+                            if "label=com.docker.compose.service=db" in arg:
                                 found_db_check = True
                                 break
 
@@ -206,12 +212,19 @@ class TestRuntime(unittest.TestCase):
     @patch("ldm_core.handlers.runtime.get_compose_cmd")
     def test_cmd_logs_partial_flags(self, mock_compose):
         mock_compose.return_value = ["docker", "compose"]
-        with patch.object(
-            self.handler, "run_command", return_value="running"
-        ) as mock_run:
+        with patch.object(self.handler, "run_command") as mock_run:
+            # 1. resolve_container, 2. exact check, 3. logs call
+            mock_run.side_effect = ["container-id", "container-id", None]
             # Only tail and timestamps
             self.handler.cmd_logs(project_id="test", tail="10", timestamps=True)
-            logs_call = mock_run.call_args[0][0]
+
+            logs_call = []
+            for call in mock_run.call_args_list:
+                call_args = call[0][0]
+                if "logs" in call_args:
+                    logs_call = call_args
+                    break
+
             self.assertIn("--tail", logs_call)
             self.assertIn("-t", logs_call)
             self.assertNotIn("--since", logs_call)
@@ -220,12 +233,19 @@ class TestRuntime(unittest.TestCase):
     @patch("ldm_core.handlers.runtime.get_compose_cmd")
     def test_cmd_logs_defaults_not_passed(self, mock_compose):
         mock_compose.return_value = ["docker", "compose"]
-        with patch.object(
-            self.handler, "run_command", return_value="running"
-        ) as mock_run:
+        with patch.object(self.handler, "run_command") as mock_run:
+            # 1. resolve_container, 2. exact check, 3. logs call
+            mock_run.side_effect = ["container-id", "container-id", None]
             # Default call
             self.handler.cmd_logs(project_id="test")
-            logs_call = mock_run.call_args[0][0]
+
+            logs_call = []
+            for call in mock_run.call_args_list:
+                call_args = call[0][0]
+                if "logs" in call_args:
+                    logs_call = call_args
+                    break
+
             # Tail is 100 by default, so it should be there
             self.assertIn("--tail", logs_call)
             self.assertIn("100", logs_call)

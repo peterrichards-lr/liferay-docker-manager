@@ -929,59 +929,54 @@ class RuntimeService:
 
                 meta = self.manager.read_meta(root)
                 c_name = meta.get("container_name") or root.name
-
-                # LDM-381: Check for the specific service container if requested
-                # Compose v2 uses {project}-{service}-1 or {project}_{service}_1
                 target_service = (
                     service if service and not isinstance(service, list) else "liferay"
                 )
 
-                # Check for either exact name (Liferay) or service-prefixed name
-                res = self.manager.run_command(
-                    [
-                        "docker",
-                        "ps",
-                        "-a",
-                        "-q",
-                        "-f",
-                        f"name=^({c_name}|{c_name}.*{target_service}.*)$",
-                    ],
-                    check=False,
+                # LDM-381: Resolve the actual container name using labels
+                actual_container = self.manager.resolve_container(
+                    root.name, target_service
                 )
 
-                if not res:
+                # Check if it exists
+                check_cmd = [
+                    "docker",
+                    "ps",
+                    "-a",
+                    "-q",
+                    "-f",
+                    f"name=^{actual_container}$",
+                ]
+                if not self.manager.run_command(check_cmd, check=False):
                     if no_wait:
                         UI.error(
-                            f"Service '{target_service}' in project '{c_name}' does not exist. Skipping."
+                            f"Service '{target_service}' in project '{root.name}' does not exist. Skipping."
                         )
                         continue
 
                     UI.info(
-                        f"Waiting for container {UI.CYAN}{c_name}{UI.COLOR_OFF} (service: {target_service})..."
+                        f"Waiting for container {UI.CYAN}{root.name}{UI.COLOR_OFF} (service: {target_service})..."
                     )
                     start_wait = time.time()
                     found = False
                     while time.time() - start_wait < 60:
                         elapsed = int(time.time() - start_wait)
                         if elapsed > 0 and elapsed % 10 == 0:
-                            UI.info(f"  ... still waiting for '{c_name}' ({elapsed}s)")
+                            UI.info(
+                                f"  ... still waiting for '{root.name}' ({elapsed}s)"
+                            )
 
-                        if self.manager.run_command(
-                            [
-                                "docker",
-                                "ps",
-                                "-a",
-                                "-q",
-                                "-f",
-                                f"name=^({c_name}|{c_name}.*{target_service}.*)$",
-                            ]
-                        ):
+                        # Re-resolve in case it was created during wait
+                        actual_container = self.manager.resolve_container(
+                            root.name, target_service
+                        )
+                        if self.manager.run_command(check_cmd, check=False):
                             found = True
                             break
                         time.sleep(2)
 
                     if not found:
-                        UI.error(f"Container '{c_name}' did not appear within 60s.")
+                        UI.error(f"Container '{root.name}' did not appear within 60s.")
                         continue
 
                 if follow:
@@ -1047,12 +1042,9 @@ class RuntimeService:
         if not root:
             return
         service_name = service or "liferay"
-        meta = self.manager.read_meta(root)
-        container_prefix = meta.get("container_name")
 
-        target_container = f"{container_prefix}-{service_name}"
-        if service_name == "liferay":
-            target_container = container_prefix
+        # LDM-381: Resolve the actual container name using labels
+        target_container = self.manager.resolve_container(root.name, service_name)
 
         UI.info(f"Entering container: {target_container}")
         try:
