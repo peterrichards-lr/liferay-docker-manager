@@ -909,7 +909,7 @@ class RuntimeService:
                 cmd.extend(["--until", str(until)])
 
             env = self.manager.infra._get_infra_env()
-            self.manager.run_command(cmd, env=env, capture_output=False)
+            self.manager.run_command(cmd, env=env, capture_output=False, check=False)
         else:
             targets = []
             if all_projects:
@@ -1019,7 +1019,9 @@ class RuntimeService:
                         cmd.extend(service)
                     else:
                         cmd.append(service)
-                self.manager.run_command(cmd, capture_output=False, cwd=str(root))
+                self.manager.run_command(
+                    cmd, capture_output=False, cwd=str(root), check=False
+                )
 
     def cmd_deploy(self, project_id=None, service=None):
         """Deploys a project or specific service."""
