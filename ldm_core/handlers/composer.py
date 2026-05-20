@@ -42,7 +42,7 @@ class ComposerService:
             if os_name in ["darwin", "windows"]:
                 # Optimization for local dev environments (macOS/Windows Docker VM)
                 # TieredStopAtLevel=1 speeds up bundle resolution significantly.
-                jvm_base += " -XX:TieredStopAtLevel=1 -Xverify:none"
+                jvm_base += " -XX:TieredStopAtLevel=1"
 
             return (
                 f"-Xms{min_heap_gb * 1024}m -Xmx{max_heap_gb * 1024}m "
@@ -155,6 +155,7 @@ class ComposerService:
 
         mandatory_opens = [
             "java.base/java.lang=ALL-UNNAMED",
+            "java.base/java.lang.invoke=ALL-UNNAMED",
             "java.base/java.lang.reflect=ALL-UNNAMED",
             "java.base/java.net=ALL-UNNAMED",
             "java.base/java.util=ALL-UNNAMED",
@@ -169,9 +170,10 @@ class ComposerService:
             "java.base/sun.security.util=ALL-UNNAMED",
             "java.base/sun.security.x509=ALL-UNNAMED",
             "java.base/sun.util.calendar=ALL-UNNAMED",
-            "java.security.sasl/conf=ALL-UNNAMED",
             "java.management/sun.management=ALL-UNNAMED",
+            "java.rmi/sun.rmi.transport=ALL-UNNAMED",
             "jdk.management/com.sun.management.internal=ALL-UNNAMED",
+            "jdk.zipfs/jdk.nio.zipfs=ALL-UNNAMED",
         ]
         for opt in mandatory_opens:
             flag = f"--add-opens={opt}"
