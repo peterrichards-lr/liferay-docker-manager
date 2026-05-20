@@ -30,7 +30,12 @@ class TestDevService(unittest.TestCase):
         self.version_patch = patch("ldm_core.handlers.dev.VERSION", "2.4.26-beta.4")
         self.version_patch.start()
 
+        # Mock DEV_MODE for tests
+        self.dev_mode_patch = patch.dict("os.environ", {"LDM_DEV_MODE": "true"})
+        self.dev_mode_patch.start()
+
     def tearDown(self):
+        self.dev_mode_patch.stop()
         self.version_patch.stop()
         self.tmp_dir.cleanup()
 

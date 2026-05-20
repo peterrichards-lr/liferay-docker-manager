@@ -78,12 +78,15 @@ class DevService:
                 "Action restricted: This command can only be run from the root of a git clone."
             )
 
-        if os.getenv("LDM_DEV_MODE") != "true" and not getattr(
-            self.manager.args, "yes", False
-        ):
-            UI.warning("Internal Developer Utility detected.")
-            if not UI.confirm("Continue in Developer Mode?", "N"):
-                sys.exit(0)
+        if os.getenv("LDM_DEV_MODE") != "true":
+            if getattr(self.manager.args, "yes", False) or self.manager.non_interactive:
+                UI.die(
+                    "Error: Developer utility requires LDM_DEV_MODE=true or an interactive terminal."
+                )
+            else:
+                UI.warning("Internal Developer Utility detected.")
+                if not UI.confirm("Continue in Developer Mode?", "N"):
+                    sys.exit(0)
 
     def cmd_version(
         self,

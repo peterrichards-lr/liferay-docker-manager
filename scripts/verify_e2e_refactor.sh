@@ -127,6 +127,11 @@ cleanup_test_projects() {
     local final_name="verify-${env_slug}-${status}-${short_hash}.txt"
     local final_path="${ORIGINAL_PWD}/${final_name}"
 
+    # Move Playwright screenshots to root before deletion
+    if [ -d "${LDM_WORKSPACE}/ldm-smoke-test/test-results" ]; then
+        cp -r "${LDM_WORKSPACE}/ldm-smoke-test/test-results" "${ORIGINAL_PWD}/"
+    fi
+
     # Move report to final location BEFORE deleting the work dir
     if [ -f "$RESULTS_FILE_TMP" ]; then
         mv "$RESULTS_FILE_TMP" "$final_path"
