@@ -33,3 +33,8 @@ scripts/colors.sh
 /test
 ldm-debug-bundle*.zip
 /docker-scripts
+
+# E2E Testing Directories
+e2e-work-dir/
+test-results/
+verify-*.txt
