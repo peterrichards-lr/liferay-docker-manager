@@ -79,14 +79,20 @@ def test_fragment_deployment(page: Page, liferay_url: str):
         collection_item = page.locator(".clay-card", has_text="Test Collection")
 
         # If card layout isn't used, try list layout
-        if not collection_item.is_visible(timeout=2000):
+        if collection_item.count() == 0 or not collection_item.first.is_visible(
+            timeout=2000
+        ):
             collection_item = page.locator("tr", has_text="Test Collection")
 
         # Final fallback to generic text
-        if not collection_item.is_visible(timeout=2000):
+        if collection_item.count() == 0 or not collection_item.first.is_visible(
+            timeout=2000
+        ):
             collection_item = page.get_by_text("Test Collection")
 
-        if collection_item.is_visible(timeout=5000):
+        if collection_item.count() > 0 and collection_item.first.is_visible(
+            timeout=5000
+        ):
             collection_found = True
             break
 
