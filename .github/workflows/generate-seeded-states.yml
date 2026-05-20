@@ -81,6 +81,14 @@ jobs:
           done
           echo "Liferay is healthy!"
 
+      - name: Upload Seed Generation Artifacts on Failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: generate-seeds-failure-${{ matrix.tag }}-${{ matrix.db_type }}
+          path: seeded-*/
+          retention-days: 7
+
       - name: Capture Snapshot
         run: |
           SAFE_TAG=$(echo "${{ matrix.tag }}" | tr '.' '_')

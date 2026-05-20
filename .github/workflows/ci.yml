@@ -128,6 +128,14 @@ jobs:
           # Now run without --no-up to verify it starts and exits quickly
           python3 liferay_docker.py -y run smoke-project --no-wait
 
+      - name: Upload Smoke Test Artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-test-artifacts
+          path: smoke-project/
+          retention-days: 7
+
   build:
     needs: [lint-and-test, smoke-test]
     strategy:
