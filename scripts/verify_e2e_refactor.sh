@@ -333,6 +333,10 @@ if [ -f "${LDM_WORKSPACE}/ldm-smoke-test/delayed-deploy/test-fragments.zip" ]; t
     echo ">> Triggering hot-deployment of test-fragments.zip..." | tee -a "$RESULTS_FILE_TMP"
     cp "${LDM_WORKSPACE}/ldm-smoke-test/delayed-deploy/test-fragments.zip" "${LDM_WORKSPACE}/ldm-smoke-test/deploy/"
     
+    # Fix permissions so Liferay (uid 1000) can process the file on native Linux runners
+    chmod -R 777 "${LDM_WORKSPACE}/ldm-smoke-test/deploy" 2>/dev/null || true
+    chmod -R 777 "${LDM_WORKSPACE}/ldm-smoke-test/logs" 2>/dev/null || true
+    
     # Wait for Liferay's DirectoryWatcher to process the zip
     echo ">> Waiting 30s for Liferay auto-deploy scanner to process the fragment..."
     sleep 30
