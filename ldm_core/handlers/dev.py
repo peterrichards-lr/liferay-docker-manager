@@ -79,11 +79,7 @@ class DevService:
             )
 
         if os.getenv("LDM_DEV_MODE") != "true":
-            if getattr(self.manager.args, "yes", False) or self.manager.non_interactive:
-                UI.die(
-                    "Error: Developer utility requires LDM_DEV_MODE=true or an interactive terminal."
-                )
-            else:
+            if not self.manager.non_interactive:
                 UI.warning("Internal Developer Utility detected.")
                 if not UI.confirm("Continue in Developer Mode?", "N"):
                     sys.exit(0)

@@ -57,6 +57,23 @@ class RuntimeService:
         paths = self.manager.setup_paths(root)
         project_meta = self.manager.read_meta(paths["root"])
 
+        # Check if project is already running to prevent unexpected container conflicts
+        from ldm_core.docker_service import DockerService
+
+        container_name = project_meta.get("container_name") or project_id
+        if not getattr(self.manager.args, "no_up", False) and not is_restart:
+            if DockerService.is_running(container_name):
+                if self.manager.non_interactive:
+                    UI.die(
+                        f"Project '{project_id}' is already running. Use 'ldm restart' to apply updates, or 'ldm stop' it first."
+                    )
+                elif not UI.confirm(
+                    f"Project '{project_id}' is already running. Reconfigure and restart?",
+                    "Y",
+                ):
+                    return
+                is_restart = True
+
         tag = self.manager.args.tag or project_meta.get("tag")
         is_portal = (
             getattr(self.manager.args, "portal", False)

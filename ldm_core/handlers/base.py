@@ -116,7 +116,15 @@ class BaseHandler:
             if not resolved_ip:
                 resolved_ip = "127.0.0.1"
 
-            if not self.check_port(resolved_ip, port):
+            # Skip port check if the container is already running (it already owns the port)
+            from ldm_core.docker_service import DockerService
+
+            container_name = meta.get("container_name") if meta else None
+            is_running = (
+                DockerService.is_running(container_name) if container_name else False
+            )
+
+            if not is_running and not self.check_port(resolved_ip, port):
                 if self.non_interactive:
                     UI.die(f"Port {port} is already in use on {resolved_ip}.")
                 new_port = self.find_available_port(resolved_ip, port)

@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v2.7.3] - 2026-05-21
+
+### Fixed
+
+- Fixed port check conflict where `ldm import` would start a project and `ldm run` would fail.
+- Added runtime state-awareness checks to commands (run, import) to prevent unexpected container collisions.
+- Enabled non-interactive bypass for internal developer utility prompts.
+
 ## [v2.7.2-beta.40] - 2026-05-18
 
 ### Fixed
