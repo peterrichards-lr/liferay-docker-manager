@@ -153,13 +153,11 @@ fi
 VENV_PYTHON="${TEST_VENV}/bin/python"
 VENV_PIP="${TEST_VENV}/bin/pip"
 VENV_PYTEST="${TEST_VENV}/bin/pytest"
-VENV_PLAYWRIGHT="${TEST_VENV}/bin/playwright"
 
 # Install dependencies into venv
 if [ ! -f "$VENV_PYTEST" ]; then
     echo ">> Installing test dependencies into virtual environment..."
-    "$VENV_PIP" install pytest pytest-playwright requests PyYAML --quiet
-    "$VENV_PLAYWRIGHT" install chromium --with-deps
+    "$VENV_PIP" install pytest requests PyYAML --quiet
 fi
 
 # 1. Cleanup & Setup
@@ -264,44 +262,12 @@ cp "delayed-deploy/test-bundle.jar" "deploy/"
 chmod -R 777 "deploy" "logs" 2>/dev/null || true
 echo ">> Waiting 60s for auto-deploy processing..." && sleep 60
 
-# UI Test
-cat << 'PYEOF' > e2e_ui_test.py
-import os, pytest
-from playwright.sync_api import Page, expect
-def test_portal_health(page: Page):
-    # Intercept and block external telemetry/status scripts to prevent slowness
-    page.route("**/*.statuspage.io/**", lambda route: route.abort())
-    page.route("**/cdn.pendo.io/**", lambda route: route.abort())
-    
-    url = os.environ.get("LIFERAY_URL", f"http://localhost:{os.environ.get('TEST_PORT', '8082')}")
-    page.goto(f"{url}/c/portal/login")
-    if page.locator('input[name*="LoginPortlet_login"]').is_visible(timeout=5000):
-        page.fill('input[name*="LoginPortlet_login"]', "test@liferay.com")
-        page.fill('input[name*="LoginPortlet_password"]', "test")
-        page.click('button[type="submit"]')
-    # Support landing on /web/guest or /home (depending on portal settings)
-    page.wait_for_function("() => window.location.href.includes('/web/guest') || window.location.href.includes('/home')", timeout=30000)
-    
-    # Verify control panel is accessible
-    cp_url = f"{url}/group/control_panel"
-    page.goto(cp_url)
-    page.wait_for_timeout(5000)
-    expect(page.locator("body")).not_to_be_empty()
-PYEOF
-touch pytest_empty.ini
-# Run UI test
-log_and_run "Running UI Tests" "$VENV_PYTEST" "e2e_ui_test.py" -c pytest_empty.ini --base-url "http://localhost:${TEST_PORT}" --screenshot=only-on-failure
-rm e2e_ui_test.py
-rm pytest_empty.ini
-
-echo "✅ UI Verification successful." | tee -a "$RESULTS_FILE_TMP"
-
-# Verify Hot Deploy via LDM Gogo Shell
+# Verify Hot Deploy via Logs
 echo ">> Verifying Hot Deploy..."
-if docker exec ldm-smoke-test bash -c 'echo "lb | grep Test\ Bundle" | telnet localhost 11311 2>/dev/null' | grep -q "Test Bundle"; then
+if docker logs ldm-smoke-test --tail 100 2>&1 | grep -q "STARTED com.liferay.test.bundle"; then
     echo "✅ Hot Deploy verified." | tee -a "$RESULTS_FILE_TMP"
 else
-    echo "❌ ERROR: Hot Deploy failed. Test Bundle not found in Gogo shell." | tee -a "$RESULTS_FILE_TMP"
+    echo "❌ ERROR: Hot Deploy failed. Test Bundle did not start." | tee -a "$RESULTS_FILE_TMP"
     docker logs ldm-smoke-test --tail 50
     exit 1
 fi

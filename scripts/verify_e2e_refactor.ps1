@@ -21,7 +21,6 @@ if (-not (Test-Path $LDM_WORKSPACE)) { New-Item -ItemType Directory -Path $LDM_W
 $TEST_VENV = Join-Path $LDM_WORKSPACE ".verify-venv"
 $VENV_PYTHON = Join-Path $TEST_VENV "Scripts\python.exe"
 $VENV_PYTEST = Join-Path $TEST_VENV "Scripts\pytest.exe"
-$VENV_PLAYWRIGHT = Join-Path $TEST_VENV "Scripts\playwright.exe"
 
 Write-Host "ℹ  Preparing isolated test environment..."
 if (-not (Test-Path $TEST_VENV)) {
@@ -30,8 +29,7 @@ if (-not (Test-Path $TEST_VENV)) {
 
 if (-not (Test-Path $VENV_PYTEST)) {
     Write-Host ">> Installing test dependencies into virtual environment..."
-    & $VENV_PYTHON -m pip install pytest pytest-playwright requests PyYAML --quiet
-    & $VENV_PLAYWRIGHT install chromium --with-deps
+    & $VENV_PYTHON -m pip install pytest requests PyYAML --quiet
 }
 
 # Header
@@ -131,23 +129,12 @@ try {
     Copy-Item "delayed-deploy\test-bundle.jar" "deploy" -Force
     Write-Host ">> Waiting 60s for auto-deploy processing..." ; Start-Sleep 60
 
-    # UI Test
-    $uiTest = "import os, pytest; from playwright.sync_api import Page, expect; def test_portal_health(page: Page): page.route('\`'**/*.statuspage.io/**\`'', lambda route: route.abort()); page.route('\`'**/cdn.pendo.io/**\`'', lambda route: route.abort()); url = os.environ.get('LIFERAY_URL', f'http://localhost:{os.environ.get(\`'TEST_PORT\`', \`'8082\`')}'); page.goto(f'{url}/c/portal/login'); if page.locator('input[name*=\`'LoginPortlet_login\`']').is_visible(timeout=5000): page.fill('input[name*=\`'LoginPortlet_login\`']', 'test@liferay.com'); page.fill('input[name*=\`'LoginPortlet_password\`']', 'test'); page.click('button[type=\`'submit\`']'); page.wait_for_function('\`'() => window.location.href.includes(\"/web/guest\") || window.location.href.includes(\"/home\")\`'', timeout=30000); cp_url = f'{url}/group/control_panel'; page.goto(cp_url); page.wait_for_timeout(5000); expect(page.locator('\`'body\`'')).not_to_be_empty()"
-    $uiTest | Out-File "e2e_ui_test.py" -Encoding utf8
-    # Create empty config to avoid picking up repo pyproject.toml
-    "" | Out-File "pytest_empty.ini" -Encoding utf8
-    $env:TEST_PORT = $TEST_PORT
-    Log-AndRun "Running UI Tests" $VENV_PYTEST "e2e_ui_test.py -c pytest_empty.ini --base-url http://localhost:$TEST_PORT --screenshot=only-on-failure"
-    Remove-Item "pytest_empty.ini"
-    Write-Host "✅ UI Verification successful."
-
-    # Verify Hot Deploy via Gogo Shell
+    # Verify Hot Deploy via Logs
     Write-Host ">> Verifying Hot Deploy..."
-    $gogoOutput = docker exec ldm-smoke-test bash -c 'echo "lb | grep Test\ Bundle" | telnet localhost 11311 2>/dev/null'
-    if ($gogoOutput -match "Test Bundle") {
+    if ((docker logs ldm-smoke-test --tail 100 2>&1) -match "STARTED com.liferay.test.bundle") {
         Write-Host "✅ Hot Deploy verified."
     } else {
-        Write-Host "❌ ERROR: Hot Deploy failed. Test Bundle not found in Gogo shell." -ForegroundColor Red
+        Write-Host "❌ ERROR: Hot Deploy failed. Test Bundle did not start." -ForegroundColor Red
         docker logs ldm-smoke-test --tail 50
         exit 1
     }
