@@ -345,7 +345,7 @@ class ComposerService:
         tag = str(meta.get("tag") or "latest")
         is_portal = str(meta.get("portal", "false")).lower() == "true"
 
-        # Explicit tag prefixes take precedence (redundancy check)
+        # Explicit tag prefixes take precedence and are stripped
         if tag.startswith("dxp-"):
             is_portal = False
             tag = tag[4:]
@@ -353,19 +353,26 @@ class ComposerService:
             is_portal = True
             tag = tag[7:]
 
+        # Heuristic: Is it a legacy portal update tag? (e.g. 7.4.13-u102)
+        is_legacy_portal_u_tag = (
+            "u" in tag and "." in tag and tag.index("u") > tag.rindex(".")
+        )
+
         image = meta.get("image_tag")
         if not image:
-            if is_portal:
-                image = f"liferay/portal:{tag}"
-            elif "u" in tag and "." in tag and tag.index("u") > tag.rindex("."):
-                # Standard pattern: 7.4.13-u102 -> portal
+            # LDM-381: Portal is deprecated, default to DXP
+            if is_portal or is_legacy_portal_u_tag:
                 image = f"liferay/portal:{tag}"
             else:
                 image = f"liferay/dxp:{tag}"
         elif str(image).startswith("-"):
             # It's a suffix
             suffix = str(image)
-            image_base = "liferay/portal" if is_portal else "liferay/dxp"
+            image_base = (
+                "liferay/portal"
+                if (is_portal or is_legacy_portal_u_tag)
+                else "liferay/dxp"
+            )
             image = f"{image_base}:{tag}{suffix}"
 
         depends_on = []
