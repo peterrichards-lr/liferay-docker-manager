@@ -116,12 +116,22 @@ log_and_run() {
     shift
     local tmp_out
     tmp_out=$(mktemp)
-    if ! "$@" 2>&1 | tee "$tmp_out"; then
-        cat "$tmp_out" >> "$RESULTS_FILE_TMP"
+
+    # We use PIPESTATUS to catch failure of the command even when piped to tee
+    local exit_code=0
+    "$@" 2>&1 | tee "$tmp_out" || exit_code=$?
+
+    cat "$tmp_out" >> "$RESULTS_FILE_TMP"
+
+    # Exit code of the actual command ($@) is at index 0 of PIPESTATUS in bash
+    # However, since we are using '|| exit_code=$?', exit_code will contain the non-zero code.
+    if [ $exit_code -ne 0 ]; then
+        echo "❌ ERROR: Command failed with exit code $exit_code." | tee -a "$RESULTS_FILE_TMP"
         exit 1
     fi
-    cat "$tmp_out" >> "$RESULTS_FILE_TMP"
+
     if grep -Ei "FATAL|❌|ERROR:" "$tmp_out" | grep -vEi "not found|already in sync|ℹ|>>" > /dev/null; then
+        echo "❌ ERROR: Critical failure marker detected in output." | tee -a "$RESULTS_FILE_TMP"
         exit 1
     fi
 }
@@ -271,7 +281,7 @@ def test_fragment_deployment(page: Page):
         print(f"  -> Attempt {i+1}: Checking for 'Test Collection' at {fragments_url}")
         page.goto(fragments_url)
         # Robust locator for the collection item (card title, table cell, or direct text)
-        coll = page.locator(".clay-card, tr, [role='gridcell'], h5").filter(has_text="Test Collection").first
+        coll = page.get_by_text("Test Collection", exact=True).first
         try:
             if coll.is_visible(timeout=10000):
                 print("  -> Found 'Test Collection', attempting to click...")
