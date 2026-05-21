@@ -89,7 +89,10 @@ LDM uses an explicit gating mechanism for GitHub Releases:
 All significant changes to the orchestration or infrastructure handlers MUST be verified against our live-Docker suite:
 
 1. **Architectural Contracts**: Run `python3 ldm_core/tests/test_architectural_contracts.py` to ensure mandatory labels and properties are preserved.
-2. **E2E Verification**: Execute `bash scripts/verify_e2e_refactor.sh` on a machine with a running Docker engine to verify global infra and project lifecycle.
+2. **E2E Verification**:
+    - Execute `bash scripts/verify_e2e_refactor.sh` (or `.\scripts\verify_e2e_refactor.ps1` on Windows) on a machine with a running Docker engine.
+    - Place the generated `verify-*.txt` report into the `references/verification-results/` directory.
+    - Run `python3 scripts/sync_compatibility.py` to automatically update the project's compatibility matrix and archive older reports.
 
 ## ⚖️ License
 

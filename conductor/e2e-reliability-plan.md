@@ -33,8 +33,38 @@ To stabilize the LDM release pipeline by decoupling flaky, environment-sensitive
 **Decision:** Dropped support for older Python 3.9 environments (specifically observed on Apple Intel macOS 12 Monterey setups that lack modern Python installations).
 **Rationale:** Attempting to maintain backwards compatibility with Python 3.9 required downgrading dependencies (`urllib3<2.0`) and stripping out modern Python 3.10+ features (like union type hints `str | None`). This hampered development and caused cascading failures. `pyproject.toml` now strictly enforces `requires-python = ">=3.10"`.
 
-## Usage
+## Verification & Documentation Workflow
 
-* **Run Core Verification:** `./scripts/verify_e2e_refactor.sh` (or `.ps1`)
-* **Run UI Health Check:** `. e2e-work-dir/.verify-venv/bin/activate && python scripts/test_ui.py`
-* **Sync Documentation:** `python3 scripts/sync_compatibility.py && python3 scripts/sync_docs.py`
+The process for testing LDM and updating the compatibility matrix has been fully automated through the following workflow:
+
+1. **Execute Verification:**
+    * Run the appropriate verification script for the target platform:
+        * **macOS/Linux:** `./scripts/verify_e2e_refactor.sh`
+        * **Windows:** `.\scripts\verify_e2e_refactor.ps1`
+    * The script will automatically generate a timestamped report file (e.g., `verify-apple-silicon-macos-15-sequoia-colima-pass-e1b5b25c.txt`) in the root directory.
+
+2. **Stage Results:**
+    * If the script ran successfully, it will automatically attempt to move the report into `references/verification-results/`.
+    * If run on an isolated machine, manually copy the generated `verify-*.txt` report into the `references/verification-results/` directory of the main repository.
+
+3. **Process & Sync Documentation:**
+    * From the repository root, run the synchronization script:
+
+        ```bash
+        python3 scripts/sync_compatibility.py
+        ```
+
+    * **What this does:**
+        * Scans the `references/verification-results/` directory.
+        * Identifies the newest report for each unique environment (Architecture + OS + Docker Provider).
+        * Automatically moves all older or duplicate reports for that environment into `references/verification-results/history/`.
+        * Parses the latest reports and regenerates `docs/COMPATIBILITY_TABLE.md`.
+        * Automatically chains to `scripts/sync_docs.py` to inject the updated table into `docs/README.md`, `docs/TESTING.md`, and `docs/installation.md`.
+
+4. **Standalone UI Verification (Optional):**
+    * If frontend validation is required, activate the virtual environment created by the verification script and run the standalone Playwright test:
+
+        ```bash
+        source e2e-work-dir/.verify-venv/bin/activate
+        python scripts/test_ui.py
+        ```
