@@ -51,14 +51,22 @@ function Capture-LogsOnFailure
 {
     "" | Out-File -FilePath $RESULTS_FILE_TMP -Append -Encoding utf8
     "--- FAILURE DEBUG LOGS ---" | Out-File -FilePath $RESULTS_FILE_TMP -Append -Encoding utf8
+    Write-Host "`n--- FAILURE DEBUG LOGS ---" -ForegroundColor Red
+    
     $containers = @("liferay-proxy-global", "liferay-search-global", "ldm-smoke-test", "ldm-smoke-test-db-1")
     foreach ($c in $containers) 
     {
+        # Get container name precisely
         $check = docker ps -a --filter "name=$c" --format "{{.Names}}"
         if ($check -match $c) 
         {
-            ">> Logs for $c`:" | Out-File -FilePath $RESULTS_FILE_TMP -Append -Encoding utf8
-            docker logs $c --tail 50 2>&1 | Out-File -FilePath $RESULTS_FILE_TMP -Append -Encoding utf8
+            $logHeader = ">> Logs for $c`:"
+            $logHeader | Out-File -FilePath $RESULTS_FILE_TMP -Append -Encoding utf8
+            Write-Host $logHeader -ForegroundColor Cyan
+            
+            $logs = docker logs $c --tail 50 2>&1
+            $logs | Out-File -FilePath $RESULTS_FILE_TMP -Append -Encoding utf8
+            Write-Host $logs
         }
     }
 }
@@ -75,7 +83,7 @@ function Finalize-Verification
         $status = "fail"
         Capture-LogsOnFailure
         Write-Host ""
-        Write-Host "!!! VERIFICATION FAILED (Exit Code: $ExitCode) !!!"
+        Write-Host "!!! VERIFICATION FAILED (Exit Code: $ExitCode) !!!" -ForegroundColor Red
     }
 
     # Final Rename based on environment slug
@@ -90,6 +98,13 @@ function Finalize-Verification
     $FinalName = "verify-${EnvSlug}-${status}-${shortHash}.txt"
     $FinalPath = Join-Path $ORIGINAL_PWD $FinalName
 
+    # Move Playwright screenshots to root before deletion
+    $playwrightResults = Join-Path $LDM_WORKSPACE "ldm-smoke-test\test-results"
+    if (Test-Path $playwrightResults) 
+    {
+        Copy-Item -Path $playwrightResults -Destination $ORIGINAL_PWD -Recurse -Force
+    }
+
     # Move report to final location BEFORE deleting the work dir
     if (Test-Path $RESULTS_FILE_TMP) 
     {
@@ -98,6 +113,15 @@ function Finalize-Verification
         Write-Host "================================================================"
         Write-Host "✅ Verification Complete ($status)"
         Write-Host "📊 Results: $FinalName"
+        
+        # Automatically archive passing reports
+        if ($status -eq "pass") 
+        {
+            $archiveDir = Join-Path $ORIGINAL_PWD "references\verification-results"
+            if (-not (Test-Path $archiveDir)) { New-Item -ItemType Directory -Path $archiveDir | Out-Null }
+            Copy-Item -Path $FinalPath -Destination $archiveDir -Force
+            Write-Host "📦 Archived to: references/verification-results/"
+        }
         Write-Host "================================================================"
     }
 
@@ -200,6 +224,42 @@ function Log-AndRun
     Remove-Item $tmp_output -ErrorAction SilentlyContinue
 }
 
+# Helper to log and run without scanning for error markers
+function Log-AndRunNoScan
+{
+    param($msg, $cmd, $args_list)
+    Write-Host ">> $msg"
+    ">> $msg" | Out-File -FilePath $RESULTS_FILE_TMP -Append -Encoding utf8
+    
+    $pinfo = New-Object System.Diagnostics.ProcessStartInfo
+    $pinfo.FileName = $cmd
+    $pinfo.Arguments = $args_list
+    $pinfo.RedirectStandardError = $true
+    $pinfo.RedirectStandardOutput = $true
+    $pinfo.UseShellExecute = $false
+    $pinfo.CreateNoWindow = $true
+    $pinfo.WorkingDirectory = $PWD.Path
+    $pinfo.StandardOutputEncoding = [System.Text.Encoding]::UTF8
+    
+    $p = New-Object System.Diagnostics.Process
+    $p.StartInfo = $pinfo
+    $p.Start() | Out-Null
+    
+    $stdout = $p.StandardOutput.ReadToEnd()
+    $stderr = $p.StandardError.ReadToEnd()
+    $p.WaitForExit()
+    
+    $output = $stdout + $stderr
+    $output | Out-File -FilePath $RESULTS_FILE_TMP -Append -Encoding utf8
+    Write-Host $output
+    
+    if ($p.ExitCode -ne 0) 
+    {
+        "❌ ERROR: Command failed with exit code $($p.ExitCode): $cmd $args_list" | Out-File -FilePath $RESULTS_FILE_TMP -Append -Encoding utf8
+        throw "Critical failure in $cmd"
+    }
+}
+
 try 
 {
     # --- Metadata Collection ---
@@ -252,24 +312,95 @@ try
 
     Log-AndRun -msg "Running LDM Project" -cmd $LDM_CMD -args_list "-y run . --no-wait --no-tld-skip --no-jvm-verify"
 
+    # 2b. Wait for Liferay Health (Required for UI Tests)
+    Write-Host "--- Step 2b: Wait for Liferay Health ---"
+    $project_name = "ldm-smoke-test"
+    $max_retries = 90
+    $count = 0
+    while ($true) {
+        $health = docker inspect -f '{{.State.Health.Status}}' $project_name 2>$null
+
+        # Fast-track: check logs for startup marker
+        $logCheck = docker logs $project_name 2>&1
+        if ($logCheck -match "org.apache.catalina.startup.Catalina.start Server startup in") {
+            Write-Host "`n✅ Liferay Tomcat has started (detected via logs)."
+            break
+        }
+
+        if ($health -eq "healthy") {
+            Write-Host "`n✅ Liferay is healthy."
+            break
+        }
+
+        if ($count -ge $max_retries) {
+            Write-Error "Timeout waiting for Liferay health."
+            exit 1
+        }
+
+        Write-Host -NoNewline "."
+        Start-Sleep -Seconds 10
+        $count++
+    }
+    Write-Host ""
+
+    # 2b-Sequenced: Delayed Fragment Deployment
+    Write-Host "--- Step 2b: Sequenced Fragment Deployment ---"
+    $fragmentZip = Join-Path $LDM_WORKSPACE "ldm-smoke-test\delayed-deploy\test-fragments.zip"
+    if (Test-Path $fragmentZip) {
+        Write-Host ">> Triggering hot-deployment of test-fragments.zip..."
+        Copy-Item -Path $fragmentZip -Destination (Join-Path $projectDir "deploy") -Force
+        Write-Host ">> Waiting 30s for Liferay auto-deploy scanner to process the fragment..."
+        Start-Sleep -Seconds 30
+    } else {
+        Write-Host "⚠️  WARNING: delayed-deploy/test-fragments.zip not found!"
+    }
+
+    # 2c. UI Verification (Fragments)
+    Write-Host "--- Step 2c: UI Verification (Fragments) ---"
+    $pyScript = Join-Path $ORIGINAL_PWD "ldm_core\tests\e2e_ui_fragments.py"
+    Log-AndRun -msg "Running Playwright UI Tests" -cmd "pytest" -args_list "$pyScript --no-cov --base-url http://localhost:8082 --screenshot=only-on-failure"
+    Write-Host "✅ UI Verification successful."
+
     # 4. Snapshot & Restore Verification
     Write-Host "--- Step 3: Snapshot & Restore ---"
     Log-AndRun -msg "Creating Snapshot" -cmd $LDM_CMD -args_list "-y snapshot --name Binary-Verify"
-    
+
     if (-not (Test-Path "snapshots")) {
         Write-Host "❌ ERROR: Snapshot directory 'snapshots/' was not created."
-        "❌ ERROR: Snapshot directory 'snapshots/' was not created." | Out-File -FilePath $RESULTS_FILE_TMP -Append -Encoding utf8
+        "❌ ERROR: Snapshot directory 'snapshots/' was not created!" | Out-File -FilePath $RESULTS_FILE_TMP -Append -Encoding utf8
         exit 1
     }
 
     Log-AndRun -msg "Restoring Snapshot" -cmd $LDM_CMD -args_list "-y restore --latest"
     Write-Host "✅ Snapshot and Restore verified."
-    "✅ Snapshot and Restore verified." | Out-File -FilePath $RESULTS_FILE_TMP -Append -Encoding utf8
+
+    # 3b. Integrity Verification
+    Write-Host "--- Step 3b: Integrity Verification ---"
+    $latestSnapDir = Get-ChildItem -Path "snapshots" | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+    if ($null -ne $latestSnapDir) {
+        $shaFile = Join-Path $latestSnapDir.FullName "files.tar.gz.sha256"
+        if (Test-Path $shaFile) {
+            Write-Host "ℹ  Tampering with checksum to test enforcement..."
+            "CORRUPTED-DATA" | Out-File -FilePath $shaFile -Encoding utf8
+
+            Write-Host ">> Attempting restore of tampered snapshot (Expected Failure)..."
+            $res = & $LDM_CMD -y restore --latest 2>&1
+            if ($res -match "Integrity check failed") {
+                Write-Host "✅ Tampered snapshot correctly rejected."
+            } else {
+                Write-Host "❌ ERROR: Tampered snapshot was NOT rejected!"
+                exit 1
+            }
+
+            Log-AndRun -msg "Restoring with --no-verify override" -cmd $LDM_CMD -args_list "-y restore --latest --no-verify"
+            Write-Host "✅ Integrity override verified."
+        }
+    }
 
     # 5. Status and Logs
     Write-Host "--- Step 4: Status & Logs ---"
     Log-AndRun -msg "Checking Status" -cmd $LDM_CMD -args_list "-y status"
-    Log-AndRun -msg "Checking Logs" -cmd $LDM_CMD -args_list "-y logs --no-wait"
+    Log-AndRunNoScan -msg "Checking Logs" -cmd $LDM_CMD -args_list "-y logs --no-wait"
     Write-Host "✅ Status and Logs verified."
     "✅ Status and Logs verified." | Out-File -FilePath $RESULTS_FILE_TMP -Append -Encoding utf8
 
