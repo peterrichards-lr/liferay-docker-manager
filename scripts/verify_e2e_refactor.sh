@@ -102,7 +102,10 @@ cleanup_test_projects() {
     if [ "$KEEP_ARTIFACTS" != "true" ]; then
         docker rm -f liferay-proxy-global liferay-search-global liferay-docker-proxy 2>/dev/null || true
         LDM_WORKSPACE="${ORIGINAL_PWD}/e2e-work-dir" "$LDM_CMD" -y rm ldm-smoke-test --delete >/dev/null 2>&1 || true
-        rm -rf "${ORIGINAL_PWD}/e2e-work-dir"
+        # Keep the venv if we are in the repository for developer convenience, otherwise delete
+        if [ ! -f "pyproject.toml" ]; then
+            rm -rf "${ORIGINAL_PWD}/e2e-work-dir"
+        fi
     fi
 }
 
@@ -125,17 +128,32 @@ log_and_run() {
 
 # --- Execution ---
 
-# 0. Dependencies
-if ! command -v pytest &>/dev/null; then
-    echo "ℹ  Installing test dependencies..."
-    pip install pytest pytest-playwright requests PyYAML --quiet
-    playwright install chromium --with-deps --quiet
+# 0. Dependencies & Virtual Environment
+# We use a virtual environment to avoid PEP 668 'externally-managed-environment' errors.
+LDM_WORKSPACE="${ORIGINAL_PWD}/e2e-work-dir"
+TEST_VENV="${LDM_WORKSPACE}/.verify-venv"
+mkdir -p "$LDM_WORKSPACE"
+
+echo "ℹ  Preparing isolated test environment..."
+if [ ! -d "$TEST_VENV" ]; then
+    python3 -m venv "$TEST_VENV"
+fi
+
+# Determine venv binaries
+VENV_PYTHON="${TEST_VENV}/bin/python"
+VENV_PIP="${TEST_VENV}/bin/pip"
+VENV_PYTEST="${TEST_VENV}/bin/pytest"
+VENV_PLAYWRIGHT="${TEST_VENV}/bin/playwright"
+
+# Install dependencies into venv
+if [ ! -f "$VENV_PYTEST" ]; then
+    echo ">> Installing test dependencies into virtual environment..."
+    "$VENV_PIP" install pytest pytest-playwright requests PyYAML --quiet
+    "$VENV_PLAYWRIGHT" install chromium --with-deps --quiet
 fi
 
 # 1. Cleanup & Setup
 "$LDM_CMD" -y rm ldm-smoke-test --delete --infra >/dev/null 2>&1 || true
-LDM_WORKSPACE="${ORIGINAL_PWD}/e2e-work-dir"
-mkdir -p "$LDM_WORKSPACE"
 export LDM_WORKSPACE
 
 log_and_run "Initializing Infrastructure" "$LDM_CMD" -y infra-setup --search
@@ -212,7 +230,7 @@ done
 
 # Hot Deploy
 mkdir -p "delayed-deploy"
-python3 -c "import zipfile; zf = zipfile.ZipFile('delayed-deploy/test-fragments.zip', 'w'); zf.writestr('test-collection/collection.json', '{\"name\": \"Test Collection\", \"description\": \"Test\"}'); zf.writestr('test-collection/test-fragment/fragment.json', '{\"name\": \"Test Fragment\", \"type\": \"component\"}'); zf.writestr('test-collection/test-fragment/index.html', '<div>Test Fragment</div>'); zf.writestr('test-collection/test-fragment/index.js', ''); zf.writestr('test-collection/test-fragment/index.css', ''); zf.close()"
+"$VENV_PYTHON" -c "import zipfile; zf = zipfile.ZipFile('delayed-deploy/test-fragments.zip', 'w'); zf.writestr('test-collection/collection.json', '{\"name\": \"Test Collection\", \"description\": \"Test\"}'); zf.writestr('test-collection/test-fragment/fragment.json', '{\"name\": \"Test Fragment\", \"type\": \"component\"}'); zf.writestr('test-collection/test-fragment/index.html', '<div>Test Fragment</div>'); zf.writestr('test-collection/test-fragment/index.js', ''); zf.writestr('test-collection/test-fragment/index.css', ''); zf.close()"
 cp "delayed-deploy/test-fragments.zip" "deploy/"
 chmod -R 777 "deploy" "logs" 2>/dev/null || true
 echo ">> Waiting 30s for auto-deploy..." && sleep 30
@@ -253,7 +271,9 @@ def test_fragment_deployment(page: Page):
         
     expect(page.get_by_text("Test Fragment").first).to_be_visible(timeout=20000)
 PYEOF
-log_and_run "Running UI Tests" pytest "e2e_ui_test.py" --no-cov --base-url http://localhost:8082 --screenshot=only-on-failure
+log_and_run "Running UI Tests" "$VENV_PYTEST" "e2e_ui_test.py" --no-cov --base-url http://localhost:8082 --screenshot=only-on-failure
+rm e2e_ui_test.py
+echo "✅ UI Verification successful." | tee -a "$RESULTS_FILE_TMP"
 
 # Integrity
 log_and_run "Creating Snapshot" "$LDM_CMD" -y snapshot --name "Binary-Verify"
