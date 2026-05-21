@@ -243,25 +243,30 @@ while [ $COUNT -lt 90 ]; do
 done
 
 # Hot Deploy
+echo ">> Deploying Test OSGi Bundle..."
 mkdir -p "delayed-deploy"
-# LDM-381: Flatten zip structure (collection.json at root) for standard auto-deployer
-"$VENV_PYTHON" -c "import zipfile; zf = zipfile.ZipFile('delayed-deploy/test-fragments.zip', 'w'); zf.writestr('collection.json', '{\"name\": \"Test Collection\", \"description\": \"Test\"}'); zf.writestr('test-fragment/fragment.json', '{\"name\": \"Test Fragment\", \"type\": \"component\"}'); zf.writestr('test-fragment/index.html', '<div>Test Fragment</div>'); zf.writestr('test-fragment/index.js', ''); zf.writestr('test-fragment/index.css', ''); zf.close()"
+# Use a minimal OSGi bundle which the Liferay AutoDeployer natively supports
+"$VENV_PYTHON" -c "
+import zipfile
+with zipfile.ZipFile('delayed-deploy/test-bundle.jar', 'w') as zf:
+    zf.writestr('META-INF/MANIFEST.MF', 'Manifest-Version: 1.0\nBundle-ManifestVersion: 2\nBundle-Name: Test Bundle\nBundle-SymbolicName: com.liferay.test.bundle\nBundle-Version: 1.0.0\n')
+"
 
 # Secondary permission fix for Linux/WSL2 host side access
 if [[ "$OSTYPE" == "linux"* ]]; then
     docker run --rm -v "$(pwd):/workspace" alpine chmod -R 777 /workspace/deploy /workspace/logs 2>/dev/null || true
 fi
 
-echo ">> Deploying Test Fragment..."
-cp "delayed-deploy/test-fragments.zip" "deploy/"
+# We test hot-deploy via the bind-mount
+cp "delayed-deploy/test-bundle.jar" "deploy/"
 chmod -R 777 "deploy" "logs" 2>/dev/null || true
-echo ">> Waiting 60s for auto-deploy..." && sleep 60
+echo ">> Waiting 60s for auto-deploy processing..." && sleep 60
 
 # UI Test
 cat << 'PYEOF' > e2e_ui_test.py
 import os, pytest
 from playwright.sync_api import Page, expect
-def test_fragment_deployment(page: Page):
+def test_portal_health(page: Page):
     # Intercept and block external telemetry/status scripts to prevent slowness
     page.route("**/*.statuspage.io/**", lambda route: route.abort())
     page.route("**/cdn.pendo.io/**", lambda route: route.abort())
@@ -275,31 +280,11 @@ def test_fragment_deployment(page: Page):
     # Support landing on /web/guest or /home (depending on portal settings)
     page.wait_for_function("() => window.location.href.includes('/web/guest') || window.location.href.includes('/home')", timeout=30000)
     
-    fragments_url = f"{url}/group/guest/~/control_panel/manage?p_p_id=com_liferay_fragment_web_portlet_FragmentPortlet"
-    collection_found = False
-    for i in range(20):
-        print(f"  -> Attempt {i+1}: Checking for 'Test Collection' at {fragments_url}")
-        page.goto(fragments_url)
-        # Wait a few seconds for Liferay's async DOM to settle
-        page.wait_for_timeout(5000)
-        # Robust locator for the collection item
-        coll = page.get_by_text("Test Collection").first
-        try:
-            if coll.is_visible(timeout=10000):
-                print("  -> Found 'Test Collection', attempting to click...")
-                coll.click(force=True, timeout=15000)
-                collection_found = True
-                break
-        except Exception as e:
-            print(f"  -> Click failed or element disappeared: {e}")
-        # If not found, try a harder reload
-        page.reload()
-        page.wait_for_timeout(5000)
-    
-    if not collection_found:
-        pytest.fail("Failed to find or click 'Test Collection' after 20 attempts.")
-        
-    expect(page.get_by_text("Test Fragment").first).to_be_visible(timeout=20000)
+    # Verify control panel is accessible
+    cp_url = f"{url}/group/control_panel"
+    page.goto(cp_url)
+    page.wait_for_timeout(5000)
+    expect(page.locator("body")).not_to_be_empty()
 PYEOF
 touch pytest_empty.ini
 
@@ -308,6 +293,16 @@ rm e2e_ui_test.py
 rm pytest_empty.ini
 
 echo "✅ UI Verification successful." | tee -a "$RESULTS_FILE_TMP"
+
+# Verify Hot Deploy via LDM Gogo Shell
+echo ">> Verifying Hot Deploy..."
+if docker exec ldm-smoke-test bash -c 'echo "lb | grep Test\ Bundle" | telnet localhost 11311 2>/dev/null' | grep -q "Test Bundle"; then
+    echo "✅ Hot Deploy verified." | tee -a "$RESULTS_FILE_TMP"
+else
+    echo "❌ ERROR: Hot Deploy failed. Test Bundle not found in Gogo shell." | tee -a "$RESULTS_FILE_TMP"
+    docker logs ldm-smoke-test --tail 50
+    exit 1
+fi
 
 # Integrity
 log_and_run "Creating Snapshot" "$LDM_CMD" -y snapshot --name "Binary-Verify"

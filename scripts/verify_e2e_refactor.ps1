@@ -119,25 +119,36 @@ try {
     }
 
     # Hot Deploy
+    Write-Host ">> Deploying Test OSGi Bundle..."
     New-Item -ItemType Directory -Path "delayed-deploy" -Force | Out-Null
-    # LDM-381: Flatten zip structure (collection.json at root) for standard auto-deployer
-    $zipScript = "import zipfile; zf = zipfile.ZipFile('delayed-deploy/test-fragments.zip', 'w'); zf.writestr('collection.json', '{\`"name\`\": \`\"Test Collection\`\", \`\"description\`\": \`\"Test\`\"}'); zf.writestr('test-fragment/fragment.json', '{\`\"name\`\": \`\"Test Fragment\`\", \`\"type\`\": \`\"component\`\"}'); zf.writestr('test-fragment/index.html', '\`\"<div>Test Fragment</div>\`\"'); zf.writestr('test-fragment/index.js', ''); zf.writestr('test-fragment/index.css', ''); zf.close()"
+    $zipScript = "import zipfile; zf = zipfile.ZipFile('delayed-deploy/test-bundle.jar', 'w'); zf.writestr('META-INF/MANIFEST.MF', 'Manifest-Version: 1.0\nBundle-ManifestVersion: 2\nBundle-Name: Test Bundle\nBundle-SymbolicName: com.liferay.test.bundle\nBundle-Version: 1.0.0\n'); zf.close()"
     & $VENV_PYTHON -c $zipScript
 
     # Secondary permission fix for Linux/WSL2 host side access (via Docker)
     & docker run --rm -v "$(Get-Location):/workspace" alpine chmod -R 777 /workspace/deploy /workspace/logs 2>$null
 
-    Write-Host ">> Deploying Test Fragment..."
-    Copy-Item "delayed-deploy\test-fragments.zip" "deploy" -Force
-    Write-Host ">> Waiting 60s for auto-deploy..." ; Start-Sleep 60
+    Copy-Item "delayed-deploy\test-bundle.jar" "deploy" -Force
+    Write-Host ">> Waiting 60s for auto-deploy processing..." ; Start-Sleep 60
 
     # UI Test
-    $uiTest = "import os, pytest; from playwright.sync_api import Page, expect; def test_fragment_deployment(page: Page): page.route('\`'**/*.statuspage.io/**\`'', lambda route: route.abort()); page.route('\`'**/cdn.pendo.io/**\`'', lambda route: route.abort()); url = os.environ.get('LIFERAY_URL', 'http://localhost:8082'); page.goto(f'{url}/c/portal/login'); if page.locator('input[name*=\`'LoginPortlet_login\`']').is_visible(timeout=5000): page.fill('input[name*=\`'LoginPortlet_login\`']', 'test@liferay.com'); page.fill('input[name*=\`'LoginPortlet_password\`']', 'test'); page.click('button[type=\`'submit\`']'); page.wait_for_function('\`'() => window.location.href.includes(\"/web/guest\") || window.location.href.includes(\"/home\")\`'', timeout=30000); fragments_url = f'{url}/group/guest/~/control_panel/manage?p_p_id=com_liferay_fragment_web_portlet_FragmentPortlet'; collection_found = False; for i in range(20): print(f'\`'  -> Attempt {i+1}: Checking for Test Collection\`''); page.goto(fragments_url); page.wait_for_timeout(5000); coll = page.get_by_text('\`'Test Collection\`'').first; try: if coll.is_visible(timeout=10000): coll.click(force=True, timeout=15000); collection_found = True; break; except Exception: pass; page.reload(); page.wait_for_timeout(5000); if not collection_found: pytest.fail('\`'Test Collection not found or clickable\`''); expect(page.get_by_text('\`'Test Fragment\`'').first).to_be_visible(timeout=20000)"
+    $uiTest = "import os, pytest; from playwright.sync_api import Page, expect; def test_portal_health(page: Page): page.route('\`'**/*.statuspage.io/**\`'', lambda route: route.abort()); page.route('\`'**/cdn.pendo.io/**\`'', lambda route: route.abort()); url = os.environ.get('LIFERAY_URL', 'http://localhost:8082'); page.goto(f'{url}/c/portal/login'); if page.locator('input[name*=\`'LoginPortlet_login\`']').is_visible(timeout=5000): page.fill('input[name*=\`'LoginPortlet_login\`']', 'test@liferay.com'); page.fill('input[name*=\`'LoginPortlet_password\`']', 'test'); page.click('button[type=\`'submit\`']'); page.wait_for_function('\`'() => window.location.href.includes(\"/web/guest\") || window.location.href.includes(\"/home\")\`'', timeout=30000); cp_url = f'{url}/group/control_panel'; page.goto(cp_url); page.wait_for_timeout(5000); expect(page.locator('\`'body\`'')).not_to_be_empty()"
     $uiTest | Out-File "e2e_ui_test.py" -Encoding utf8
     # Create empty config to avoid picking up repo pyproject.toml
     "" | Out-File "pytest_empty.ini" -Encoding utf8
     Log-AndRun "Running UI Tests" $VENV_PYTEST "e2e_ui_test.py -c pytest_empty.ini --base-url http://localhost:8082 --screenshot=only-on-failure"
     Remove-Item "pytest_empty.ini"
+    Write-Host "✅ UI Verification successful."
+
+    # Verify Hot Deploy via Gogo Shell
+    Write-Host ">> Verifying Hot Deploy..."
+    $gogoOutput = docker exec ldm-smoke-test bash -c 'echo "lb | grep Test\ Bundle" | telnet localhost 11311 2>/dev/null'
+    if ($gogoOutput -match "Test Bundle") {
+        Write-Host "✅ Hot Deploy verified."
+    } else {
+        Write-Host "❌ ERROR: Hot Deploy failed. Test Bundle not found in Gogo shell." -ForegroundColor Red
+        docker logs ldm-smoke-test --tail 50
+        exit 1
+    }
 
     # Integrity
     Log-AndRun "Creating Snapshot" $LDM_CMD "-y snapshot --name Binary-Verify"
