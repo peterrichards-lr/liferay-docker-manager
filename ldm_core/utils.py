@@ -9,6 +9,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+from typing import Any
 
 import requests
 
@@ -676,7 +677,7 @@ def is_within_root(path, root):
 
 def read_meta(path):
     """Reads LDM project metadata from a file (supports JSON and Flat formats)."""
-    meta: dict[str, str | bool | int | None] = {}
+    meta: dict[str, Any] = {}
     path = Path(path)
     if not path.exists():
         return meta
@@ -696,7 +697,7 @@ def read_meta(path):
                     ):
                         k, v_str = stripped_line.split("=", 1)
                         k, v_str = k.strip(), v_str.strip()
-                        v: str | bool | None = v_str
+                        v: Any = v_str
                         if v_str == "None":
                             v = None
                         elif v_str.lower() == "true":
@@ -848,7 +849,7 @@ def find_dxp_roots(search_dir=None):
                         continue
 
                     # Support multiple metadata filenames
-                    found_meta: Path | None = None
+                    found_meta: Any = None
                     for f in [PROJECT_META_FILE, ".liferay-docker.meta", ".ldm.meta"]:
                         if (item / f).exists():
                             found_meta = item / f

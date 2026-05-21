@@ -43,14 +43,14 @@ class DockerService:
         return res.strip().lower() if res else "unknown"
 
     @staticmethod
-    def stop(container_name: str) -> str | None:
+    def stop(container_name: str):
         """Stops a container."""
         return run_command(
             ["docker", "stop", container_name], check=False, capture_output=True
         )
 
     @staticmethod
-    def rm(container_name: str, force: bool = False) -> str | None:
+    def rm(container_name: str, force: bool = False):
         """Removes a container."""
         cmd = ["docker", "rm"]
         if force:
@@ -59,7 +59,7 @@ class DockerService:
         return run_command(cmd, check=False, capture_output=True)
 
     @staticmethod
-    def start(container_name: str) -> str | None:
+    def start(container_name: str):
         """Starts a container."""
         return run_command(
             ["docker", "start", container_name], check=False, capture_output=True
@@ -71,7 +71,7 @@ class DockerService:
         command_list: list[str],
         check: bool = False,
         capture_output: bool = True,
-    ) -> str | None:
+    ):
         """Executes a command inside a container."""
         return run_command(
             ["docker", "exec", container_name, *command_list],
@@ -80,7 +80,7 @@ class DockerService:
         )
 
     @staticmethod
-    def get_logs(container_name: str, tail: int = 100) -> str | None:
+    def get_logs(container_name: str, tail: int = 100):
         """Gets the recent logs for a container."""
         return run_command(
             ["docker", "logs", "--tail", str(tail), container_name],

@@ -879,7 +879,7 @@ def main():
         update_info = {}
 
         def run_update_check():
-            latest: str | None
+            latest: Any = None
             latest, _url = check_for_updates(VERSION)
             update_info["latest"] = latest
 
