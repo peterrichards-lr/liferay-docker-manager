@@ -657,36 +657,41 @@ def main():
 
     # Use parse_args (intermixed is not supported by subparsers)
     args = parser.parse_args()
-    if not args.command:
-        parser.print_help()
-        return
 
     # Root Safety Guard: Prevent running as sudo for non-upgrade commands
     # This protects the ~/.shiv cache from ownership issues.
-    if platform.system().lower() != "windows":
+    if platform.system().lower() != "windows" and args.command != "upgrade":
         import os
 
-        if os.geteuid() == 0:
-            allow_root_file = SCRIPT_DIR / ".ldm_allow_root"
-            allow_root = (
-                os.environ.get("LDM_ALLOW_ROOT", "false").lower() == "true"
-                or allow_root_file.exists()
-            )
-            if not allow_root:
-                UI.error("Security Risk: Do not run LDM with 'sudo'.")
-                UI.info(
-                    "Running as root causes cache ownership issues in your home directory (~/.shiv).\n"
-                    "LDM will prompt for your password only when elevated privileges are needed (e.g. hosts file updates)."
+        try:
+            if os.geteuid() == 0:
+                allow_root_file = SCRIPT_DIR / ".ldm_allow_root"
+                allow_root = (
+                    os.environ.get("LDM_ALLOW_ROOT", "false").lower() == "true"
+                    or allow_root_file.exists()
                 )
-                UI.info(
-                    f"\nSee troubleshooting: {UI.CYAN}https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/installation.md#troubleshooting-sudo--root-issues{UI.COLOR_OFF}"
-                )
-                if platform.system().lower() == "linux":
+                if not allow_root:
+                    UI.error("Security Risk: Do not run LDM with 'sudo'.")
                     UI.info(
-                        f"\nIf you are using sudo because of Docker permissions, please run:\n"
-                        f"{UI.CYAN}sudo usermod -aG docker $USER{UI.COLOR_OFF} and restart your terminal session."
+                        "Running as root causes cache ownership issues in your home directory (~/.shiv).\n"
+                        "LDM will prompt for your password only when elevated privileges are needed (e.g. hosts file updates)."
                     )
-                sys.exit(1)
+                    UI.info(
+                        f"\nSee troubleshooting: {UI.CYAN}https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/installation.md#troubleshooting-sudo--root-issues{UI.COLOR_OFF}"
+                    )
+                    if platform.system().lower() == "linux":
+                        UI.info(
+                            f"\nIf you are using sudo because of Docker permissions, please run:\n"
+                            f"{UI.CYAN}sudo usermod -aG docker $USER{UI.COLOR_OFF} and restart your terminal session."
+                        )
+                    sys.exit(1)
+        except AttributeError:
+            # os.geteuid() not available on this platform (though handled by system check)
+            pass
+
+    if not args.command:
+        parser.print_help()
+        return
 
     manager = LiferayManager(args)
 

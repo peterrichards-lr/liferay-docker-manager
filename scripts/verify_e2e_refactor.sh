@@ -148,6 +148,24 @@ else
     echo "❌ ERROR: Dev Guardrails failed." && exit 1
 fi
 
+echo ">> Verifying Sudo Guard (Behavioral)..."
+if [[ "$OSTYPE" == "linux"* ]] && command -v unshare &>/dev/null; then
+    # unshare -r runs the command as simulated root (UID 0) in a new namespace
+    SUDO_BLOCK_OUT=$(unshare -r "$LDM_CMD" version 2>&1 || true)
+    if echo "$SUDO_BLOCK_OUT" | grep -q "Do not run LDM with 'sudo'"; then
+        echo "✅ Sudo Guard verified (via unshare simulation)."
+    else
+        # If unshare failed for other reasons (e.g. namespaces disabled), skip gracefully
+        if echo "$SUDO_BLOCK_OUT" | grep -q "unshare: "; then
+             echo "⚠️  Skipping behavioral Sudo Guard check (unshare simulation failed: $SUDO_BLOCK_OUT)."
+        else
+             echo "❌ ERROR: Sudo Guard failed to block simulated root execution." && exit 1
+        fi
+    fi
+else
+    echo "⚠️  Skipping behavioral Sudo Guard check (unshare not available or not Linux)."
+fi
+
 echo ">> Verifying Project Collision Detection..."
 $LDM_CMD -y run "collision-test" --tag 2026.q1.4-lts --port 8099 --no-wait --no-up >/dev/null 2>&1
 mkdir -p "collision-test/nested"
