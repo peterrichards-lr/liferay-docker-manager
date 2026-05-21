@@ -12,7 +12,7 @@ for arg in "$@"; do
     fi
 done
 
-echo "🚀 Starting Standalone Binary Verification..."
+echo "⚡ Starting Standalone Binary Verification..."
 
 # Store the original directory for final report placement
 ORIGINAL_PWD=$(pwd)
@@ -232,6 +232,12 @@ done
 # Hot Deploy
 mkdir -p "delayed-deploy"
 "$VENV_PYTHON" -c "import zipfile; zf = zipfile.ZipFile('delayed-deploy/test-fragments.zip', 'w'); zf.writestr('test-collection/collection.json', '{\"name\": \"Test Collection\", \"description\": \"Test\"}'); zf.writestr('test-collection/test-fragment/fragment.json', '{\"name\": \"Test Fragment\", \"type\": \"component\"}'); zf.writestr('test-collection/test-fragment/index.html', '<div>Test Fragment</div>'); zf.writestr('test-collection/test-fragment/index.js', ''); zf.writestr('test-collection/test-fragment/index.css', ''); zf.close()"
+
+# Secondary permission fix for Linux/WSL2 host side access
+if [[ "$OSTYPE" == "linux"* ]]; then
+    docker run --rm -v "$(pwd):/workspace" alpine chmod -R 777 /workspace/deploy /workspace/logs 2>/dev/null || true
+fi
+
 cp "delayed-deploy/test-fragments.zip" "deploy/"
 chmod -R 777 "deploy" "logs" 2>/dev/null || true
 echo ">> Waiting 30s for auto-deploy..." && sleep 30

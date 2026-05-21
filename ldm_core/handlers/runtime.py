@@ -573,7 +573,7 @@ class RuntimeService:
             port_val = project_meta.get("port", 8080)
 
             UI.info(
-                f"🚀 Starting {project_id} stack ({tag_val}, {db_val}, {host_name}:{port_val})..."
+                f"{UI.WHITE}⚡{UI.COLOR_OFF} Starting {project_id} stack ({tag_val}, {db_val}, {host_name}:{port_val})..."
             )
 
             UI.detail(f"=== Stack Configuration: {project_id} ===")
@@ -636,6 +636,17 @@ class RuntimeService:
                         time.sleep(2)
 
             UI.info(f"Starting {UI.BOLD}{project_id}{UI.COLOR_OFF} stack...")
+
+            # LDM-381: Reclaim volume permissions on Linux before starting
+            # This prevents host-side 'Permission denied' errors when Liferay container
+            # (running as UID 1000) takes ownership of bind-mounted folders.
+            if platform.system().lower() == "linux":
+                from ldm_core.utils import reclaim_volume_permissions
+
+                for p_key in ["deploy", "logs", "osgi", "files"]:
+                    if p_key in paths:
+                        reclaim_volume_permissions(paths[p_key])
+
             self.manager.run_command(
                 cmd, cwd=str(paths["root"]), capture_output=not follow
             )

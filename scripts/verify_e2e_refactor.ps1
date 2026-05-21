@@ -10,7 +10,7 @@ $LDM_CMD = "ldm"
 $Timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
 $RESULTS_FILE_TMP = Join-Path $ORIGINAL_PWD ".ldm-verify-tmp-${Timestamp}.txt"
 
-Write-Host "🚀 Starting Standalone Binary Verification (Windows Native)..."
+Write-Host "⚡ Starting Standalone Binary Verification (Windows Native)..."
 
 # 0. Dependencies & Virtual Environment
 $LDM_WORKSPACE = Join-Path $ORIGINAL_PWD "e2e-work-dir"
@@ -115,8 +115,12 @@ try {
 
     # Hot Deploy
     New-Item -ItemType Directory -Path "delayed-deploy" -Force | Out-Null
-    $zipScript = "import zipfile; zf = zipfile.ZipFile('delayed-deploy/test-fragments.zip', 'w'); zf.writestr('test-collection/collection.json', '{\`"name\`": \`"Test Collection\`", \`"description\`": \`"Test\`"}'); zf.writestr('test-collection/test-fragment/fragment.json', '{\`"name\`": \`"Test Fragment\`", \`"type\`": \`"component\`"}'); zf.writestr('test-collection/test-fragment/index.html', '\`"<div>Test Fragment</div>\`"'); zf.close()"
+    $zipScript = "import zipfile; zf = zipfile.ZipFile('delayed-deploy/test-fragments.zip', 'w'); zf.writestr('test-collection/collection.json', '{\`"name\`": \`"Test Collection\`", \`"description\`": \`"Test\`"}'); zf.writestr('test-collection/test-fragment/fragment.json', '{\`"name\`": \`"Test Fragment\`", \`"type\`": \`"component\`"}'); zf.writestr('test-collection/test-fragment/index.html', '\`"<div>Test Fragment</div>\`"'); zf.writestr('test-collection/test-fragment/index.js', ''); zf.writestr('test-collection/test-fragment/index.css', ''); zf.close()"
     & $VENV_PYTHON -c $zipScript
+
+    # Secondary permission fix for Linux/WSL2 host side access (via Docker)
+    & docker run --rm -v "$(Get-Location):/workspace" alpine chmod -R 777 /workspace/deploy /workspace/logs 2>$null
+
     Copy-Item "delayed-deploy\test-fragments.zip" "deploy" -Force
     Write-Host ">> Waiting 30s for auto-deploy..." ; Start-Sleep 30
 
