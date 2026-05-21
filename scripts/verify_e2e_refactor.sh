@@ -282,8 +282,12 @@ def test_fragment_deployment(page: Page):
         
     expect(page.get_by_text("Test Fragment").first).to_be_visible(timeout=20000)
 PYEOF
-log_and_run "Running UI Tests" "$VENV_PYTEST" "e2e_ui_test.py" -c /dev/null --base-url http://localhost:8082 --screenshot=only-on-failure
+touch pytest_empty.ini
+
+log_and_run "Running UI Tests" "$VENV_PYTEST" "e2e_ui_test.py" -c pytest_empty.ini --base-url http://localhost:8082 --screenshot=only-on-failure
 rm e2e_ui_test.py
+rm pytest_empty.ini
+
 echo "✅ UI Verification successful." | tee -a "$RESULTS_FILE_TMP"
 
 # Integrity

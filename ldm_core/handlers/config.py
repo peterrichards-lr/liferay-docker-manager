@@ -748,7 +748,18 @@ class ConfigService:
             return
         paths = self.manager.setup_paths(root_path)
         project_meta = self.manager.read_meta(paths["root"])
-        custom_env = json.loads(project_meta.get("custom_env", "{}"))
+
+        custom_env_str = project_meta.get("custom_env", "{}")
+        try:
+            custom_env = json.loads(custom_env_str or "{}")
+        except Exception:
+            # Fallback for legacy comma-separated string format
+            custom_env = {}
+            if custom_env_str:
+                for pair in custom_env_str.split(","):
+                    if "=" in pair:
+                        k, v = pair.split("=", 1)
+                        custom_env[k] = v
 
         if getattr(self.manager.args, "import_env", False):
             for v in self.manager.get_host_passthrough_env(paths):
