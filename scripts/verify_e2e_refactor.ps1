@@ -120,7 +120,7 @@ try {
     $uiTest | Out-File "e2e_ui_test.py" -Encoding utf8
     # Create empty config to avoid picking up repo pyproject.toml
     "" | Out-File "pytest_empty.ini" -Encoding utf8
-    Log-AndRun "Running UI Tests" $VENV_PYTEST "e2e_ui_test.py -c pytest_empty.ini --no-cov --base-url http://localhost:8082 --screenshot=only-on-failure"
+    Log-AndRun "Running UI Tests" $VENV_PYTEST "e2e_ui_test.py -c pytest_empty.ini --base-url http://localhost:8082 --screenshot=only-on-failure"
     Remove-Item "pytest_empty.ini"
 
     # Integrity
