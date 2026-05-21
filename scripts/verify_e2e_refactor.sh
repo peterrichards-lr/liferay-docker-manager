@@ -118,14 +118,13 @@ log_and_run() {
     tmp_out=$(mktemp)
 
     # We use PIPESTATUS to catch failure of the command even when piped to tee
-    local exit_code=0
-    "$@" 2>&1 | tee "$tmp_out" || exit_code=$?
+    # PIPESTATUS[0] is the exit code of the first command in the pipe ($@)
+    "$@" 2>&1 | tee "$tmp_out"
+    local exit_code=${PIPESTATUS[0]}
 
     cat "$tmp_out" >> "$RESULTS_FILE_TMP"
 
-    # Exit code of the actual command ($@) is at index 0 of PIPESTATUS in bash
-    # However, since we are using '|| exit_code=$?', exit_code will contain the non-zero code.
-    if [ $exit_code -ne 0 ]; then
+    if [ "$exit_code" -ne 0 ]; then
         echo "❌ ERROR: Command failed with exit code $exit_code." | tee -a "$RESULTS_FILE_TMP"
         exit 1
     fi
@@ -135,7 +134,6 @@ log_and_run() {
         exit 1
     fi
 }
-
 # --- Execution ---
 
 # 0. Dependencies & Virtual Environment
@@ -280,8 +278,10 @@ def test_fragment_deployment(page: Page):
     for i in range(20):
         print(f"  -> Attempt {i+1}: Checking for 'Test Collection' at {fragments_url}")
         page.goto(fragments_url)
-        # Robust locator for the collection item (card title, table cell, or direct text)
-        coll = page.get_by_text("Test Collection", exact=True).first
+        # Wait a few seconds for Liferay's async DOM to settle
+        page.wait_for_timeout(5000)
+        # Robust locator for the collection item (look for text exactly or partially)
+        coll = page.get_by_text("Test Collection").first
         try:
             if coll.is_visible(timeout=10000):
                 print("  -> Found 'Test Collection', attempting to click...")
@@ -290,7 +290,9 @@ def test_fragment_deployment(page: Page):
                 break
         except Exception as e:
             print(f"  -> Click failed or element disappeared: {e}")
-        page.wait_for_timeout(10000)
+        # If not found, try a harder reload
+        page.reload()
+        page.wait_for_timeout(5000)
     
     if not collection_found:
         pytest.fail("Failed to find or click 'Test Collection' after 20 attempts.")
@@ -333,6 +335,6 @@ grep -q "scale_liferay=3" meta && echo "✅ Scaling verified."
 log_and_run "Checking Status" "$LDM_CMD" -y status
 
 # Clean up any potential orphans from the run
-"$LDM_CMD" -y prune --all >/dev/null 2>&1 || true
+"$LDM_CMD" -y prune >/dev/null 2>&1 || true
 
 echo -e "\n🎯 ALL E2E VERIFICATIONS PASSED!"

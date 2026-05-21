@@ -130,7 +130,7 @@ try {
     Write-Host ">> Waiting 30s for auto-deploy..." ; Start-Sleep 30
 
     # UI Test
-    $uiTest = "import os, pytest; from playwright.sync_api import Page, expect; def test_fragment_deployment(page: Page): page.route('\`'**/*.statuspage.io/**\`'', lambda route: route.abort()); page.route('\`'**/cdn.pendo.io/**\`'', lambda route: route.abort()); url = os.environ.get('LIFERAY_URL', 'http://localhost:8082'); page.goto(f'{url}/c/portal/login'); if page.locator('input[name*=\`'LoginPortlet_login\`']').is_visible(timeout=5000): page.fill('input[name*=\`'LoginPortlet_login\`']', 'test@liferay.com'); page.fill('input[name*=\`'LoginPortlet_password\`']', 'test'); page.click('button[type=\`'submit\`']'); page.wait_for_function('\`'() => window.location.href.includes(\"/web/guest\") || window.location.href.includes(\"/home\")\`'', timeout=30000); fragments_url = f'{url}/group/guest/~/control_panel/manage?p_p_id=com_liferay_fragment_web_portlet_FragmentPortlet'; collection_found = False; for i in range(20): print(f'\`'  -> Attempt {i+1}: Checking for Test Collection\`''); page.goto(fragments_url); coll = page.locator('\`'.clay-card, tr, [role=\"gridcell\"], h5\`'').filter(has_text='\`'Test Collection\`'').first; try: if coll.is_visible(timeout=10000): coll.click(force=True, timeout=15000); collection_found = True; break; except Exception: pass; page.wait_for_timeout(10000); if not collection_found: pytest.fail('\`'Test Collection not found or clickable\`''); expect(page.get_by_text('\`'Test Fragment\`'').first).to_be_visible(timeout=20000)"
+    $uiTest = "import os, pytest; from playwright.sync_api import Page, expect; def test_fragment_deployment(page: Page): page.route('\`'**/*.statuspage.io/**\`'', lambda route: route.abort()); page.route('\`'**/cdn.pendo.io/**\`'', lambda route: route.abort()); url = os.environ.get('LIFERAY_URL', 'http://localhost:8082'); page.goto(f'{url}/c/portal/login'); if page.locator('input[name*=\`'LoginPortlet_login\`']').is_visible(timeout=5000): page.fill('input[name*=\`'LoginPortlet_login\`']', 'test@liferay.com'); page.fill('input[name*=\`'LoginPortlet_password\`']', 'test'); page.click('button[type=\`'submit\`']'); page.wait_for_function('\`'() => window.location.href.includes(\"/web/guest\") || window.location.href.includes(\"/home\")\`'', timeout=30000); fragments_url = f'{url}/group/guest/~/control_panel/manage?p_p_id=com_liferay_fragment_web_portlet_FragmentPortlet'; collection_found = False; for i in range(20): print(f'\`'  -> Attempt {i+1}: Checking for Test Collection\`''); page.goto(fragments_url); page.wait_for_timeout(5000); coll = page.get_by_text('\`'Test Collection\`'').first; try: if coll.is_visible(timeout=10000): coll.click(force=True, timeout=15000); collection_found = True; break; except Exception: pass; page.reload(); page.wait_for_timeout(5000); if not collection_found: pytest.fail('\`'Test Collection not found or clickable\`''); expect(page.get_by_text('\`'Test Fragment\`'').first).to_be_visible(timeout=20000)"
     $uiTest | Out-File "e2e_ui_test.py" -Encoding utf8
     # Create empty config to avoid picking up repo pyproject.toml
     "" | Out-File "pytest_empty.ini" -Encoding utf8
@@ -152,7 +152,7 @@ try {
     if ((Get-Content "meta" -Raw) -match "scale_liferay=3") { Write-Host "✅ Scaling verified." }
 
     # Clean up any potential orphans from the run
-    & $LDM_CMD -y prune --all > $null 2>&1
+    & $LDM_CMD -y prune > $null 2>&1
 
     Write-Host "`n🎯 ALL E2E VERIFICATIONS PASSED!"
     Finalize-Verification 0
