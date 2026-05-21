@@ -8,7 +8,14 @@ from ldm_core.handlers.config import ConfigService
 
 class MockConfigManager:
     def __init__(self):
-        self.args = MagicMock()
+        class Args:
+            def __init__(self):
+                self.vars = []
+                self.remove = False
+                self.import_env = False
+                self.project = None
+
+        self.args = Args()
         self.verbose = False
         self.non_interactive = True
 
@@ -23,6 +30,15 @@ class MockConfigManager:
 
     def write_meta(self, *args, **kwargs):
         pass
+
+    def sync_stack(self, *args, **kwargs):
+        pass
+
+    def setup_paths(self, root):
+        return {"root": Path(root)}
+
+    def get_host_passthrough_env(self, *args, **kwargs):
+        return []
 
 
 class TestConfigService(unittest.TestCase):
@@ -342,6 +358,61 @@ class TestConfigService(unittest.TestCase):
             self.assertIn("beta", features)
             self.assertNotIn("LPS-122920", features)
 
+    def test_cmd_env_parsing_robustness(self):
+        """Verify that cmd_env handles various custom_env formats safely."""
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            (tmp_path / "files").mkdir()
+
+            self.manager.detect_project_path = MagicMock(return_value=tmp_path)  # type: ignore[method-assign]
+            self.manager.write_meta = MagicMock()  # type: ignore[method-assign]
+            self.manager.sync_stack = MagicMock()  # type: ignore[method-assign]
+
+            # Case 1: Empty string + Batch Update
+            self.manager.non_interactive = True
+            self.manager.args.vars = ["KEY=VAL"]
+            self.manager.read_meta = MagicMock(return_value={"custom_env": ""})  # type: ignore[method-assign]
+
+            self.config.cmd_env("project")
+
+            self.manager.write_meta.assert_called()
+            updated_meta = self.manager.write_meta.call_args[0][1]
+            print(f"DEBUG Case 1: {updated_meta}")
+            self.assertEqual(json.loads(updated_meta["custom_env"]), {"KEY": "VAL"})
+
+            # Case 2: Legacy comma-separated format + Interactive Update
+            self.manager.read_meta = MagicMock(  # type: ignore[method-assign]
+                return_value={"custom_env": "KEY1=VAL1,KEY2=VAL2"}
+            )
+            self.manager.non_interactive = False
+            self.manager.args.vars = []
+
+            # We mock the interactive UI.ask sequence:
+            # 1. First UI.ask returns 'KEY1'
+            # 2. Second UI.ask returns 'VAL3'
+            with patch("ldm_core.ui.UI.ask", side_effect=["KEY1", "VAL3"]):
+                self.config.cmd_env("project")
+
+                updated_meta = self.manager.write_meta.call_args[0][1]
+                updated_env = json.loads(updated_meta["custom_env"])
+                self.assertEqual(updated_env["KEY1"], "VAL3")
+                self.assertEqual(updated_env["KEY2"], "VAL2")
+
+            # Case 3: Proper JSON + Batch Update
+            self.manager.non_interactive = True
+            self.manager.args.vars = ["KEY3=VAL3"]
+            self.manager.read_meta = MagicMock(  # type: ignore[method-assign]
+                return_value={"custom_env": '{"KEY1": "VAL1"}'}
+            )
+            self.config.cmd_env("project")
+
+            updated_meta = self.manager.write_meta.call_args[0][1]
+            updated_env = json.loads(updated_meta["custom_env"])
+            self.assertEqual(updated_env["KEY1"], "VAL1")
+            self.assertEqual(updated_env["KEY3"], "VAL3")
+
 
 if __name__ == "__main__":
-    unittest.main()
+    unittest.main()  # type: ignore[misc]

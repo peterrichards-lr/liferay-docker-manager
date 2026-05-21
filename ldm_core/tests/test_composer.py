@@ -79,6 +79,49 @@ class TestComposerService(unittest.TestCase):
         self.assertTrue(self.composer._is_ssl_active("myhost.local", {"ssl": "true"}))
         self.assertFalse(self.composer._is_ssl_active("myhost.local", {"ssl": "false"}))
 
+    def test_tag_sanitization_and_image_determination(self):
+        paths = {
+            "root": Path("/tmp/proj"),
+            "deploy": Path("/tmp/proj/deploy"),
+            "files": Path("/tmp/proj/files"),
+            "data": Path("/tmp/proj/data"),
+            "configs": Path("/tmp/proj/osgi/configs"),
+            "modules": Path("/tmp/proj/osgi/modules"),
+            "cx": Path("/tmp/proj/osgi/client-extensions"),
+            "scripts": Path("/tmp/proj/scripts"),
+            "state": Path("/tmp/proj/osgi/state"),
+            "logs": Path("/tmp/proj/logs"),
+            "portal_log4j": Path("/tmp/proj/osgi/log4j"),
+        }
+
+        # Case 1: DXP prefix
+        meta = {"tag": "dxp-2026.q1.7-lts", "container_name": "proj"}
+        service = self.composer._build_liferay_service(
+            paths, meta, "localhost", "proj", False, None
+        )
+        self.assertEqual(service["image"], "liferay/dxp:2026.q1.7-lts")
+
+        # Case 2: Portal prefix
+        meta = {"tag": "portal-7.4.13-u102", "container_name": "proj"}
+        service = self.composer._build_liferay_service(
+            paths, meta, "localhost", "proj", False, None
+        )
+        self.assertEqual(service["image"], "liferay/portal:7.4.13-u102")
+
+        # Case 3: Legacy portal u-tag without prefix
+        meta = {"tag": "7.4.13-u102", "container_name": "proj"}
+        service = self.composer._build_liferay_service(
+            paths, meta, "localhost", "proj", False, None
+        )
+        self.assertEqual(service["image"], "liferay/portal:7.4.13-u102")
+
+        # Case 4: Modern tag without prefix (defaults to DXP)
+        meta = {"tag": "2026.q1.4-lts", "container_name": "proj"}
+        service = self.composer._build_liferay_service(
+            paths, meta, "localhost", "proj", False, None
+        )
+        self.assertEqual(service["image"], "liferay/dxp:2026.q1.4-lts")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -91,6 +91,32 @@ class TestRuntime(unittest.TestCase):
         self.handler = MockRuntime()
         self.tmp_dir = Path("/tmp/runtime-project")
 
+    def test_resolve_container_label_discovery(self):
+        """Verify that resolve_container uses Docker labels for discovery."""
+        with patch.object(self.handler, "run_command") as mock_run:
+            # Mock 'docker ps' returning a renamed container
+            mock_run.return_value = "a8cf79c6a3b2_my-project-liferay-1"
+
+            res = self.handler.resolve_container("my-project", "liferay")
+
+            # Verify the call used labels
+            mock_run.assert_called()
+            args = mock_run.call_args[0][0]
+            self.assertIn("label=com.liferay.ldm.project=my-project", args)
+            self.assertIn("label=com.docker.compose.service=liferay", args)
+
+            # Verify it returned the discovered name
+            self.assertEqual(res, "a8cf79c6a3b2_my-project-liferay-1")
+
+    def test_resolve_container_fallback(self):
+        """Verify that resolve_container falls back to standard name if labels fail."""
+        with patch.object(self.handler, "run_command") as mock_run:
+            mock_run.return_value = ""
+
+            res = self.handler.resolve_container("my-project", "db")
+
+            self.assertEqual(res, "my-project-db-1")
+
     @patch("ldm_core.handlers.runtime.get_compose_cmd")
     def test_cmd_stop_basic(self, mock_compose):
         mock_compose.return_value = ["docker", "compose"]

@@ -238,6 +238,26 @@ class TestUpdateChecks(unittest.TestCase):
                 # Verify it atomically moved the temp file to destination
                 mock_replace.assert_called_once_with(expected_tmp, dst)
 
+    def test_reclaim_volume_permissions(self):
+        from ldm_core.utils import reclaim_volume_permissions
+
+        with (
+            patch("ldm_core.utils.run_command") as mock_run,
+            patch("pathlib.Path.exists", return_value=True),
+            patch("ldm_core.utils.platform.system", return_value="Linux"),
+        ):
+            reclaim_volume_permissions("/tmp/some-dir", uid="1001", gid="1001")
+
+            # Verify it ran a docker container with chmod/chown
+            mock_run.assert_called_once()
+            cmd = mock_run.call_args[0][0]
+            self.assertEqual(cmd[0], "docker")
+            self.assertEqual(cmd[1], "run")
+            # Verify the chmod/chown commands in the command string
+            docker_cmd = cmd[cmd.index("-c") + 1]
+            self.assertIn("chown -R 1001:1001", docker_cmd)
+            self.assertIn("chmod -R 777", docker_cmd)
+
 
 if __name__ == "__main__":
     unittest.main()
