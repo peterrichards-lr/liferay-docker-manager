@@ -5,9 +5,10 @@ on:
     tags: ["v*"] # Only run when a tag is pushed
   workflow_dispatch: # Allow manual trigger for ad-hoc verification
 
-# LDM-385: Prevent simultaneous runs for the same tag
+# LDM-385: Prevent simultaneous runs for the entire workflow
+# This groups all tag pushes into a single queue, cancelling older runs
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}
   cancel-in-progress: true
 
 permissions:
@@ -23,6 +24,13 @@ jobs:
     runs-on: ubuntu-latest
     
     steps:
+      - name: Wait for commit batching (15m debounce)
+        # This allows multiple pushes in a 15-min window to be 'grouped'
+        # into a single run, as the previous runs will be cancelled by concurrency.
+        # Note: We skip this for manual 'workflow_dispatch' triggers.
+        if: github.event_name == 'push'
+        run: sleep 900
+
       - uses: actions/checkout@v6
 
       - name: Set up Python
