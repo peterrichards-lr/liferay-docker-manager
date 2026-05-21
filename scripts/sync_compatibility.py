@@ -254,7 +254,7 @@ def get_report_metadata(report_path):
         "provider": provider,
         "engine_v": engine_v,
         "provider_v": provider_v,
-        "version": version,
+        "version": "2.7.2",
         "passed": passed,
         "status_slug": status_slug,
         "internal_slug": internal_slug,
@@ -296,6 +296,7 @@ def sync_reports():
 
     for meta in report_metas:
         is_latest = latest_by_env[meta["internal_slug"]] == meta
+
         expected_name = f"verify-{meta['internal_slug']}-{meta['status_slug']}"
 
         # Generate a unique hash for the filename to prevent collisions if timestamps are identical
