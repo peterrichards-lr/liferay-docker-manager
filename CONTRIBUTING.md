@@ -92,7 +92,7 @@ All significant changes to the orchestration or infrastructure handlers MUST be 
 2. **E2E Verification**:
     - Execute `bash scripts/verify_e2e_refactor.sh` (or `.\scripts\verify_e2e_refactor.ps1` on Windows) on a machine with a running Docker engine.
     - Place the generated `verify-*.txt` report into the `references/verification-results/` directory.
-    - Run `python3 scripts/sync_compatibility.py` to automatically update the project's compatibility matrix and archive older reports.
+    - Run `python3 scripts/sync_compatibility.py` to automatically archive older reports, update the project's compatibility matrix, and generate working hyperlinks to your raw report files.
 
 ## ⚖️ License
 

@@ -58,7 +58,8 @@ The process for testing LDM and updating the compatibility matrix has been fully
         * Scans the `references/verification-results/` directory.
         * Identifies the newest report for each unique environment (Architecture + OS + Docker Provider).
         * Automatically moves all older or duplicate reports for that environment into `references/verification-results/history/`.
-        * Parses the latest reports and regenerates `docs/COMPATIBILITY_TABLE.md`.
+        * Parses the latest reports and regenerates the Markdown table in `docs/COMPATIBILITY_TABLE.md`.
+        * Automatically updates the relative hyperlinks within the table to point directly to the raw, preserved `verify-*.txt` files in the `references/verification-results/` directory.
         * Automatically chains to `scripts/sync_docs.py` to inject the updated table into `docs/README.md`, `docs/TESTING.md`, and `docs/installation.md`.
 
 4. **Standalone UI Verification (Optional):**
