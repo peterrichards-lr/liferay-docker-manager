@@ -2654,14 +2654,14 @@ pause
             )
 
         # 1. Orphaned Containers
-        # We look for containers with our management label
+        # LDM-381: We look for containers with our project label
         containers_raw = run_command(
             [
                 "docker",
                 "ps",
                 "-a",
                 "--filter",
-                "label=com.liferay.ldm.managed=true",
+                "label=com.liferay.ldm.project",
                 "--format",
                 '{{.Names}}|{{.Label "com.liferay.ldm.project"}}',
             ],
@@ -2848,6 +2848,21 @@ pause
                     UI.success("Sample cache cleared.")
             else:
                 UI.detail("Sample cache is empty.")
+
+        # 7. Global Docker Pruning (Dangling Volumes)
+        if prune_all or (
+            not self.manager.non_interactive
+            and UI.confirm("Remove all dangling Docker volumes? (y/n/q)", "N")
+        ):
+            UI.info("Pruning dangling Docker volumes...")
+            run_command(["docker", "volume", "prune", "-f"], check=False)
+            UI.success("Volume pruning complete.")
+
+        if not self.manager.non_interactive:
+            UI.info(
+                f"\n{UI.CYAN}ℹ{UI.COLOR_OFF} Hint: For a deep cleanup (including unused images), run: "
+                f"{UI.WHITE}docker system prune -af{UI.COLOR_OFF}"
+            )
 
         # 7. DNS Cleanup (Explicitly requested via --clean-hosts)
         if clean_hosts:

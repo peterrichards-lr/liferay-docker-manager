@@ -151,6 +151,9 @@ try {
     & $LDM_CMD -y scale . liferay=3 > $null 2>&1
     if ((Get-Content "meta" -Raw) -match "scale_liferay=3") { Write-Host "✅ Scaling verified." }
 
+    # Clean up any potential orphans from the run
+    & $LDM_CMD -y prune --all > $null 2>&1
+
     Write-Host "`n🎯 ALL E2E VERIFICATIONS PASSED!"
     Finalize-Verification 0
 } catch {

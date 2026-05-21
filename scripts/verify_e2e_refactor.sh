@@ -321,4 +321,8 @@ grep -q "scale_liferay=3" meta && echo "✅ Scaling verified."
 
 # Final
 log_and_run "Checking Status" "$LDM_CMD" -y status
+
+# Clean up any potential orphans from the run
+"$LDM_CMD" -y prune --all >/dev/null 2>&1 || true
+
 echo -e "\n🎯 ALL E2E VERIFICATIONS PASSED!"

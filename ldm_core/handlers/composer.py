@@ -111,6 +111,23 @@ class ComposerService:
             "networks": {"liferay-net": {"external": True}},
         }
 
+        # LDM-381: Ensure all services have standard LDM labels for pruning
+        for _, svc_data in services.items():
+            if "labels" not in svc_data:
+                svc_data["labels"] = []
+
+            # Convert to list if it's a dict (though LDM uses lists)
+            if isinstance(svc_data["labels"], dict):
+                svc_data["labels"] = [f"{k}={v}" for k, v in svc_data["labels"].items()]
+
+            standard_labels = [
+                f"com.liferay.ldm.project={project_name}",
+                "com.liferay.ldm.managed=true",
+            ]
+            for label in standard_labels:
+                if label not in svc_data["labels"]:
+                    svc_data["labels"].append(label)
+
         # LDM-369: Add top-level volumes for Named Volumes (data/state)
         named_volumes: dict[str, dict] = {}
         for svc in services.values():
@@ -386,7 +403,10 @@ class ComposerService:
             "image": image,
             "ports": port_list,
             "environment": liferay_env,
-            "labels": [f"com.liferay.ldm.project={project_name}"],
+            "labels": [
+                f"com.liferay.ldm.project={project_name}",
+                "com.liferay.ldm.managed=true",
+            ],
             "volumes": [
                 f"{paths['deploy'].as_posix()}:/mnt/liferay/deploy{z_label}",
                 f"{paths['files'].as_posix()}:/mnt/liferay/files{z_label}",
