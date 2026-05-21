@@ -244,16 +244,18 @@ done
 
 # Hot Deploy
 mkdir -p "delayed-deploy"
-"$VENV_PYTHON" -c "import zipfile; zf = zipfile.ZipFile('delayed-deploy/test-fragments.zip', 'w'); zf.writestr('test-collection/collection.json', '{\"name\": \"Test Collection\", \"description\": \"Test\"}'); zf.writestr('test-collection/test-fragment/fragment.json', '{\"name\": \"Test Fragment\", \"type\": \"component\"}'); zf.writestr('test-collection/test-fragment/index.html', '<div>Test Fragment</div>'); zf.writestr('test-collection/test-fragment/index.js', ''); zf.writestr('test-collection/test-fragment/index.css', ''); zf.close()"
+# LDM-381: Flatten zip structure (collection.json at root) for standard auto-deployer
+"$VENV_PYTHON" -c "import zipfile; zf = zipfile.ZipFile('delayed-deploy/test-fragments.zip', 'w'); zf.writestr('collection.json', '{\"name\": \"Test Collection\", \"description\": \"Test\"}'); zf.writestr('test-fragment/fragment.json', '{\"name\": \"Test Fragment\", \"type\": \"component\"}'); zf.writestr('test-fragment/index.html', '<div>Test Fragment</div>'); zf.writestr('test-fragment/index.js', ''); zf.writestr('test-fragment/index.css', ''); zf.close()"
 
 # Secondary permission fix for Linux/WSL2 host side access
 if [[ "$OSTYPE" == "linux"* ]]; then
     docker run --rm -v "$(pwd):/workspace" alpine chmod -R 777 /workspace/deploy /workspace/logs 2>/dev/null || true
 fi
 
+echo ">> Deploying Test Fragment..."
 cp "delayed-deploy/test-fragments.zip" "deploy/"
 chmod -R 777 "deploy" "logs" 2>/dev/null || true
-echo ">> Waiting 30s for auto-deploy..." && sleep 30
+echo ">> Waiting 60s for auto-deploy..." && sleep 60
 
 # UI Test
 cat << 'PYEOF' > e2e_ui_test.py
@@ -280,7 +282,7 @@ def test_fragment_deployment(page: Page):
         page.goto(fragments_url)
         # Wait a few seconds for Liferay's async DOM to settle
         page.wait_for_timeout(5000)
-        # Robust locator for the collection item (look for text exactly or partially)
+        # Robust locator for the collection item
         coll = page.get_by_text("Test Collection").first
         try:
             if coll.is_visible(timeout=10000):
