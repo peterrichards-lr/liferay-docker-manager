@@ -237,7 +237,7 @@ class SnapshotService(BaseHandler):
                     tar.add(es_infra_backup, arcname="search_backup")
 
         # Capture custom environment variables from docker-compose.yml
-        custom_env = []
+        custom_env_dict = {}
         compose_path = paths["root"] / "docker-compose.yml"
         if compose_path.exists():
             try:
@@ -248,7 +248,6 @@ class SnapshotService(BaseHandler):
                 env_vars = liferay_service.get("environment", [])
                 if isinstance(env_vars, list):
                     # Filter for LIFERAY_ variables that aren't the standard ones managed by LDM
-                    # Standard ones: LIFERAY_JVM_OPTS, LIFERAY_HOME, LIFERAY_HSQL_PERIOD_ENABLED
                     standard_vars = [
                         "LIFERAY_JVM_OPTS",
                         "LIFERAY_HOME",
@@ -256,9 +255,9 @@ class SnapshotService(BaseHandler):
                     ]
                     for var in env_vars:
                         if "=" in var:
-                            key = var.split("=", 1)[0]
+                            key, val = var.split("=", 1)
                             if key.startswith("LIFERAY_") and key not in standard_vars:
-                                custom_env.append(var)
+                                custom_env_dict[key] = val
             except Exception as e:
                 UI.warning(
                     f"Could not parse docker-compose.yml for environment variables: {e}"
@@ -272,7 +271,7 @@ class SnapshotService(BaseHandler):
             "db_type": project_meta.get("db_type"),
             "host_name": project_meta.get("host_name"),
             "search_snapshot": search_snapshot_name,
-            "custom_env": ",".join(custom_env) if custom_env else None,
+            "custom_env": json.dumps(custom_env_dict) if custom_env_dict else None,
         }
         self.manager.write_meta(snap_dir, meta)
 

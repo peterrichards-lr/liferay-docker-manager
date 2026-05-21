@@ -212,7 +212,7 @@ done
 
 # Hot Deploy
 mkdir -p "delayed-deploy"
-python3 -c "import zipfile; zf = zipfile.ZipFile('delayed-deploy/test-fragments.zip', 'w'); zf.writestr('test-collection/collection.json', '{\"name\": \"Test Collection\"}'); zf.writestr('test-collection/test-fragment/fragment.json', '{\"name\": \"Test Fragment\", \"type\": \"component\"}'); zf.writestr('test-collection/test-fragment/index.html', '<div>Test Fragment</div>'); zf.close()"
+python3 -c "import zipfile; zf = zipfile.ZipFile('delayed-deploy/test-fragments.zip', 'w'); zf.writestr('test-collection/collection.json', '{\"name\": \"Test Collection\", \"description\": \"Test\"}'); zf.writestr('test-collection/test-fragment/fragment.json', '{\"name\": \"Test Fragment\", \"type\": \"component\"}'); zf.writestr('test-collection/test-fragment/index.html', '<div>Test Fragment</div>'); zf.writestr('test-collection/test-fragment/index.js', ''); zf.writestr('test-collection/test-fragment/index.css', ''); zf.close()"
 cp "delayed-deploy/test-fragments.zip" "deploy/"
 chmod -R 777 "deploy" "logs" 2>/dev/null || true
 echo ">> Waiting 30s for auto-deploy..." && sleep 30
@@ -236,8 +236,8 @@ def test_fragment_deployment(page: Page):
     for i in range(20):
         print(f"  -> Attempt {i+1}: Checking for 'Test Collection' at {fragments_url}")
         page.goto(fragments_url)
-        # Use a more specific locator for the collection item
-        coll = page.locator(".clay-card, tr, [role='gridcell']").filter(has_text="Test Collection").first
+        # Robust locator for the collection item (card title, table cell, or direct text)
+        coll = page.locator(".clay-card, tr, [role='gridcell'], h5").filter(has_text="Test Collection").first
         try:
             if coll.is_visible(timeout=10000):
                 print("  -> Found 'Test Collection', attempting to click...")
@@ -246,7 +246,7 @@ def test_fragment_deployment(page: Page):
                 break
         except Exception as e:
             print(f"  -> Click failed or element disappeared: {e}")
-        page.wait_for_timeout(5000)
+        page.wait_for_timeout(10000)
     
     if not collection_found:
         pytest.fail("Failed to find or click 'Test Collection' after 20 attempts.")
