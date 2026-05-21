@@ -12,10 +12,11 @@ description = "A professional command-line orchestrator for Liferay Docker envir
 authors = [{ name = "Peter Richards", email = "peter.richards@liferay.com" }]
 license = { text = "MIT" }
 readme = "docs/README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.9"
 dependencies = [
     "watchdog==4.0.2",
-    "requests==2.34.2",
+    "requests==2.32.3",
+    "urllib3<2.0",
     "PyYAML==6.0.3",
     "argcomplete==3.6.3",
 ]
