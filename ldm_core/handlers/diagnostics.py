@@ -2855,6 +2855,7 @@ pause
             and UI.confirm("Remove all dangling Docker volumes? (y/n/q)", "N")
         ):
             UI.info("Pruning dangling Docker volumes...")
+            UI.detail("Command: docker volume prune -f")
             run_command(["docker", "volume", "prune", "-f"], check=False)
             UI.success("Volume pruning complete.")
 
@@ -2866,23 +2867,13 @@ pause
 
         # 7. DNS Cleanup (Explicitly requested via --clean-hosts)
         if clean_hosts:
-            if prune_all or UI.confirm(
-                "Remove ALL LDM-managed entries from your hosts file?", "N"
+            if prune_all or (
+                not self.manager.non_interactive
+                and UI.confirm(
+                    "Remove ALL LDM-managed entries from your hosts file?", "N"
+                )
             ):
                 self.manager._remove_hosts_entries(all_ldm=True)
-
-        # 6. Docker System Volumes & Images
-        UI.info("Cleaning up dangling Docker volumes and images...")
-        prune_output = run_command(
-            ["docker", "system", "prune", "-a", "--volumes", "-f"], check=False
-        )
-
-        # Check if space was actually reclaimed
-        if prune_output and "Total reclaimed space:" in prune_output:
-            for line in prune_output.splitlines():
-                if "Total reclaimed space:" in line:
-                    UI.success(line.strip())
-                    break
 
         UI.info("Prune complete.")
 

@@ -181,7 +181,8 @@ class BaseHandler:
                     )
             else:
                 # Standard Linux / macOS (non-WSL)
-                UI.info(f"Requesting permission to update {hosts_path}...")
+                UI.info(f"Requesting elevated privileges to update: {hosts_path}")
+                UI.detail(f"Command: sudo tee -a {hosts_path}")
                 cmd = ["sudo", "tee", "-a", hosts_path]
                 process = subprocess.Popen(
                     cmd, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL
@@ -244,7 +245,7 @@ class BaseHandler:
         else:
             # macOS / Linux
             hosts_path = "/etc/hosts"
-            UI.info(f"Requesting permission to clean {hosts_path}...")
+            UI.info(f"Requesting elevated privileges to clean: {hosts_path}")
 
             try:
                 # Use sudo sed to surgically remove lines
@@ -254,6 +255,9 @@ class BaseHandler:
                     "-i",
                     ".bak" if platform.system().lower() == "darwin" else "",
                 ]
+
+                # ... remaining cmd logic ...
+                UI.detail(f"Command: {' '.join(cmd)}")
 
                 if all_ldm:
                     cmd.append(f"/{re.escape(self.LDM_HOST_TAG)}/d")

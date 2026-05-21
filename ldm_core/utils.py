@@ -1329,6 +1329,10 @@ def reclaim_volume_permissions(path, uid="1000", gid="1000"):
     if not Path(path).exists():
         return True
 
+    from ldm_core.ui import UI
+
+    UI.detail(f"Reclaiming permissions for: {path}")
+
     docker_cmd = (
         f"chown -R {uid}:{gid} /workspace 2>/dev/null || true; "
         "chmod -R 777 /workspace 2>/dev/null || true; "
