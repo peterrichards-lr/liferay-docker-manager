@@ -5,6 +5,8 @@ set -e
 # Target: Verifies the INSTALLED binary, not the source code.
 # Optimized for macOS (Intel/Silicon) and Linux.
 
+TEST_PORT="${LDM_TEST_PORT:-8082}"
+export TEST_PORT
 KEEP_ARTIFACTS=false
 for arg in "$@"; do
     if [ "$arg" == "-k" ] || [ "$arg" == "--keep" ]; then
@@ -228,7 +230,7 @@ fi
 echo "ℹ  Provisioning standalone test project..."
 mkdir -p "$LDM_WORKSPACE/ldm-smoke-test/files"
 cd "$LDM_WORKSPACE/ldm-smoke-test"
-echo -e "tag=2026.q1.7-lts\ncontainer_name=ldm-smoke-test\nport=8082\ndb_type=postgresql" > meta
+echo -e "tag=2026.q1.7-lts\ncontainer_name=ldm-smoke-test\nport=${TEST_PORT}\ndb_type=postgresql" > meta
 
 log_and_run "Running LDM Project" "$LDM_CMD" -y run . --no-wait --no-tld-skip --no-jvm-verify
 
@@ -271,7 +273,7 @@ def test_portal_health(page: Page):
     page.route("**/*.statuspage.io/**", lambda route: route.abort())
     page.route("**/cdn.pendo.io/**", lambda route: route.abort())
     
-    url = os.environ.get("LIFERAY_URL", "http://localhost:8082")
+    url = os.environ.get("LIFERAY_URL", f"http://localhost:{os.environ.get('TEST_PORT', '8082')}")
     page.goto(f"{url}/c/portal/login")
     if page.locator('input[name*="LoginPortlet_login"]').is_visible(timeout=5000):
         page.fill('input[name*="LoginPortlet_login"]', "test@liferay.com")
@@ -287,8 +289,8 @@ def test_portal_health(page: Page):
     expect(page.locator("body")).not_to_be_empty()
 PYEOF
 touch pytest_empty.ini
-
-log_and_run "Running UI Tests" "$VENV_PYTEST" "e2e_ui_test.py" -c pytest_empty.ini --base-url http://localhost:8082 --screenshot=only-on-failure
+# Run UI test
+log_and_run "Running UI Tests" "$VENV_PYTEST" "e2e_ui_test.py" -c pytest_empty.ini --base-url "http://localhost:${TEST_PORT}" --screenshot=only-on-failure
 rm e2e_ui_test.py
 rm pytest_empty.ini
 
