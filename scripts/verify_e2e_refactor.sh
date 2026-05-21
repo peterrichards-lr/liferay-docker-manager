@@ -240,6 +240,10 @@ cat << 'PYEOF' > e2e_ui_test.py
 import os, pytest
 from playwright.sync_api import Page, expect
 def test_fragment_deployment(page: Page):
+    # Intercept and block external telemetry/status scripts to prevent slowness
+    page.route("**/*.statuspage.io/**", lambda route: route.abort())
+    page.route("**/cdn.pendo.io/**", lambda route: route.abort())
+    
     url = os.environ.get("LIFERAY_URL", "http://localhost:8082")
     page.goto(f"{url}/c/portal/login")
     if page.locator('input[name*="LoginPortlet_login"]').is_visible(timeout=5000):
