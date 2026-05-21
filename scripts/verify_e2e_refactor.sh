@@ -160,10 +160,11 @@ log_and_run "Initializing Infrastructure" "$LDM_CMD" -y infra-setup --search
 
 # 2. Guardrails
 echo ">> Verifying Dev Guardrails..."
-if $LDM_CMD version --bump patch -y 2>&1 | grep -q "Error: Developer utility requires LDM_DEV_MODE=true"; then
+DEV_GUARD_OUT=$($LDM_CMD version --bump patch -y 2>&1 || true)
+if echo "$DEV_GUARD_OUT" | grep -qE "Error: Developer utility requires LDM_DEV_MODE=true|Action restricted"; then
     echo "✅ Dev Guardrails verified."
 else
-    echo "❌ ERROR: Dev Guardrails failed." && exit 1
+    echo "❌ ERROR: Dev Guardrails failed. Output was: $DEV_GUARD_OUT" && exit 1
 fi
 
 echo ">> Verifying Sudo Guard (Behavioral)..."

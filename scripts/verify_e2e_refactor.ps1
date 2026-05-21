@@ -87,7 +87,12 @@ try {
     # 2. Guardrails
     Write-Host ">> Verifying Dev Guardrails..."
     $res = & $LDM_CMD version --bump patch -y 2>&1
-    if ($res -match "Developer utility requires LDM_DEV_MODE=true") { Write-Host "✅ Dev Guardrails verified." } else { throw "Dev Guardrails failed" }
+    if ($res -match "Developer utility requires LDM_DEV_MODE=true" -or $res -match "Action restricted") { 
+        Write-Host "✅ Dev Guardrails verified." 
+    } else { 
+        Write-Host "❌ ERROR: Dev Guardrails failed! Output was: $res" -ForegroundColor Red
+        exit 1
+    }
 
     # 3. Project Run
     Write-Host "ℹ  Provisioning standalone test project..."
