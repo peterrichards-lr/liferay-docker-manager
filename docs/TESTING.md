@@ -74,6 +74,13 @@
 | ID | Test Case | Steps | Expected Outcome |
 | :-- | :--------------------- | :---------------------------------- | :------------------------------------------ |
 | 3.3 | **Fresh Project Run** | `ldm run test-run -y --tag-latest` | Starts a fresh project from seed. |
+| 3.4 | **Hot Deploy (OSGi)** | Drop `test-bundle.jar` into `deploy/` | Verifies deployment via Gogo shell (`lb`). |
+
+### 🎭 Standalone UI Testing
+
+UI health checks have been decoupled from the strict binary E2E suite to prevent false negatives caused by host VM rendering delays.
+
+* **Run manually:** `python3 scripts/test_ui.py` (Verifies portal login and Control Panel navigation).
 
 ### 🛠️ Manual
 
