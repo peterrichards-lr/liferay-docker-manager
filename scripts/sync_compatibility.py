@@ -242,10 +242,7 @@ def get_report_metadata(report_path):
         provider_v = legacy_map[internal_slug]
 
     # Explicitly ignore unsupported or erroneous environments
-    blacklist = {
-        "apple-intel-macos-12-monterey-colima",
-        "apple-silicon-macos-15-sequoia-colima",
-    }
+    blacklist = set()
     if internal_slug in blacklist:
         passed = False  # Ensure it doesn't accidentally pass logic elsewhere
         # We'll filter this out in the main loop anyway
@@ -356,11 +353,11 @@ def sync_reports():
             else ("windows" if "windows" in host_os.lower() else "linux")
         )
         mapping = {
-            "Colima": f"![Colima](https://img.shields.io/badge/Colima-Hardened-FFAB00?style=flat-square&logo={logo})",
-            "OrbStack": f"![OrbStack](https://img.shields.io/badge/OrbStack-Hardened-00B0FF?style=flat-square&logo={logo})",
-            "Docker Desktop": f"![DockerDesktop](https://img.shields.io/badge/Docker_Desktop-Hardened-00C853?style=flat-square&logo={logo})",
-            "Native WSL2": f"![WSL2](https://img.shields.io/badge/WSL2-Hardened-blue?style=flat-square&logo={logo})",
-            "Native Docker": f"![Linux](https://img.shields.io/badge/Linux-Native-success?style=flat-square&logo={logo})",
+            "Colima": f"![Colima](https://img.shields.io/badge/Colima-Hardening-FFAB00?style=flat-square&logo={logo})",
+            "OrbStack": f"![OrbStack](https://img.shields.io/badge/OrbStack-Hardening-00B0FF?style=flat-square&logo={logo})",
+            "Docker Desktop": f"![DockerDesktop](https://img.shields.io/badge/Docker_Desktop-Hardening-00C853?style=flat-square&logo={logo})",
+            "Native WSL2": f"![WSL2](https://img.shields.io/badge/WSL2-Hardening-blue?style=flat-square&logo={logo})",
+            "Native Docker": f"![Linux](https://img.shields.io/badge/Linux-Hardening-success?style=flat-square&logo={logo})",
         }
         return mapping.get(provider, f"`{provider}`")
 
