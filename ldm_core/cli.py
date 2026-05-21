@@ -660,7 +660,10 @@ def main():
 
     # Root Safety Guard: Prevent running as sudo for non-upgrade commands
     # This protects the ~/.shiv cache from ownership issues.
-    if platform.system().lower() != "windows" and args.command != "upgrade":
+    if platform.system().lower() != "windows" and args.command not in [
+        "upgrade",
+        "fix-hosts",
+    ]:
         import os
 
         try:

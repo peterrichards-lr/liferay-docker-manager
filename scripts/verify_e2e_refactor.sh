@@ -153,7 +153,14 @@ if [[ "$OSTYPE" == "linux"* ]] && command -v unshare &>/dev/null; then
     # unshare -r runs the command as simulated root (UID 0) in a new namespace
     SUDO_BLOCK_OUT=$(unshare -r "$LDM_CMD" version 2>&1 || true)
     if echo "$SUDO_BLOCK_OUT" | grep -q "Do not run LDM with 'sudo'"; then
-        echo "✅ Sudo Guard verified (via unshare simulation)."
+        echo "✅ Sudo Guard verified (Blocked 'version')."
+        
+        # Verify that exempted commands are NOT blocked
+        if unshare -r "$LDM_CMD" fix-hosts --help >/dev/null 2>&1; then
+            echo "✅ Sudo Guard verified (Allowed 'fix-hosts')."
+        else
+            echo "❌ ERROR: Sudo Guard incorrectly blocked 'fix-hosts'!" && exit 1
+        fi
     else
         # If unshare failed for other reasons (e.g. namespaces disabled), skip gracefully
         if echo "$SUDO_BLOCK_OUT" | grep -q "unshare: "; then
