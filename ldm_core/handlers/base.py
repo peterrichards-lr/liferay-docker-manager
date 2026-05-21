@@ -943,6 +943,7 @@ class BaseHandler:
             "data": root / "data",
             "deploy": root / "deploy",
             "files": root / "files",
+            "osgi": root / "osgi",
             "configs": root / "osgi" / "configs",
             "marketplace": root / "osgi" / "marketplace",
             "state": root / "osgi" / "state",
