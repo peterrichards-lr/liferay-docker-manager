@@ -30,7 +30,7 @@ if (-not (Test-Path $TEST_VENV)) {
 if (-not (Test-Path $VENV_PYTEST)) {
     Write-Host ">> Installing test dependencies into virtual environment..."
     & $VENV_PYTHON -m pip install pytest pytest-playwright requests PyYAML --quiet
-    & $VENV_PLAYWRIGHT install chromium --with-deps --quiet
+    & $VENV_PLAYWRIGHT install chromium --with-deps
 }
 
 # Header

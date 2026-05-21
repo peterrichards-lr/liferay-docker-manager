@@ -149,7 +149,7 @@ VENV_PLAYWRIGHT="${TEST_VENV}/bin/playwright"
 if [ ! -f "$VENV_PYTEST" ]; then
     echo ">> Installing test dependencies into virtual environment..."
     "$VENV_PIP" install pytest pytest-playwright requests PyYAML --quiet
-    "$VENV_PLAYWRIGHT" install chromium --with-deps --quiet
+    "$VENV_PLAYWRIGHT" install chromium --with-deps
 fi
 
 # 1. Cleanup & Setup
