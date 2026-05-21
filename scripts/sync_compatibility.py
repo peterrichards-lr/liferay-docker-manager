@@ -403,7 +403,10 @@ def sync_reports():
     )
 
     try:
-        from scripts.sync_docs import sync_table
+        import sys
+
+        sys.path.insert(0, str(Path(__file__).parent))
+        from sync_docs import sync_table
 
         sync_table()
     except Exception as e:
