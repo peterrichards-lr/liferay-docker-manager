@@ -81,6 +81,12 @@ class RuntimeService:
             port = self.manager._pre_flight_checks(
                 host_name, port, ssl_enabled=ssl_val, meta=project_meta
             )
+        else:
+            # LDM-381: Even if not starting, check for registry collisions
+            # This ensures we don't accidentally register a nested project or name conflict.
+            self.manager.check_registry_collisions(
+                project_id, paths["root"], host_name=host_name
+            )
 
         project_meta["port"] = port
 

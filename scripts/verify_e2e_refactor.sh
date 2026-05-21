@@ -174,14 +174,23 @@ else
 fi
 
 echo ">> Verifying Project Collision Detection..."
-$LDM_CMD -y run "collision-test" --tag 2026.q1.4-lts --port 8099 --no-wait --no-up >/dev/null 2>&1
+# Use --no-seed to avoid 1GB download for a simple collision test
+if ! "$LDM_CMD" -y run "collision-test" --tag 2026.q1.4-lts --port 8099 --no-wait --no-up --no-seed > col_init.log 2>&1; then
+    echo "❌ ERROR: Failed to initialize collision-test project." | tee -a "$RESULTS_FILE_TMP"
+    tee -a "$RESULTS_FILE_TMP" < col_init.log
+    exit 1
+fi
+
 mkdir -p "collision-test/nested"
-if (cd collision-test/nested && $LDM_CMD -y run "collision-test" --port 8099 --no-wait --no-up 2>&1 | grep -qE "Project collision|already registered"); then
+if (cd collision-test/nested && "$LDM_CMD" -y run "collision-test" --port 8099 --no-wait --no-up --no-seed 2>&1 | grep -qE "Project collision|already registered"); then
     echo "✅ Project Collision verified."
 else
-    echo "❌ ERROR: Collision detection failed." && exit 1
+    echo "❌ ERROR: Collision detection failed." | tee -a "$RESULTS_FILE_TMP"
+    # Print the log of the failed second run for debugging
+    (cd collision-test/nested && "$LDM_CMD" -y run "collision-test" --port 8099 --no-wait --no-up --no-seed 2>&1) | tee -a "$RESULTS_FILE_TMP"
+    exit 1
 fi
-$LDM_CMD -y rm "collision-test" --delete >/dev/null 2>&1 && rm -rf "collision-test"
+"$LDM_CMD" -y rm "collision-test" --delete >/dev/null 2>&1 && rm -rf "collision-test" col_init.log
 
 # 3. Project Run
 echo "ℹ  Provisioning standalone test project..."

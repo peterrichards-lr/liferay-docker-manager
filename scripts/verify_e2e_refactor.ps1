@@ -75,6 +75,24 @@ try {
     $res = & $LDM_CMD version --bump patch -y 2>&1
     if ($res -match "Developer utility requires LDM_DEV_MODE=true") { Write-Host "✅ Dev Guardrails verified." } else { throw "Dev Guardrails failed" }
 
+    # Test: Project Collision
+    Write-Host ">> Verifying Project Collision Detection..."
+    # Use --no-seed to avoid 1GB download for a simple collision test
+    $res = & $LDM_CMD -y run "collision-test" --tag 2026.q1.4-lts --port 8099 --no-wait --no-up --no-seed 2>&1
+    if ($LASTEXITCODE -ne 0) { throw "Failed to initialize collision-test project: $res" }
+    
+    New-Item -ItemType Directory -Path "collision-test\nested" -Force | Out-Null
+    Set-Location "collision-test\nested"
+    $res = & $LDM_CMD -y run "collision-test" --port 8099 --no-wait --no-up --no-seed 2>&1
+    if ($res -match "Project collision" -or $res -match "already registered") {
+        Write-Host "✅ Project Collision detection verified."
+    } else {
+        throw "Collision detection failed: $res"
+    }
+    Set-Location ..\..
+    & $LDM_CMD -y rm "collision-test" --delete > $null 2>&1
+    Remove-Item -Recurse -Force "collision-test" -ErrorAction SilentlyContinue
+
     # 3. Project Run
     Write-Host "ℹ  Provisioning standalone test project..."
     $projectDir = Join-Path $LDM_WORKSPACE "ldm-smoke-test"

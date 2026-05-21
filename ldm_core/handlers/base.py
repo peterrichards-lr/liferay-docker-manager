@@ -333,56 +333,57 @@ class BaseHandler:
             return
 
         try:
-            # Robust path resolution
-            if isinstance(project_root, dict):
-                current_root_path = Path(project_root.get("root", ".")).resolve()
-            else:
-                current_root_path = Path(project_root).resolve()
-
             registry = json.loads(registry_path.read_text())
+        except Exception as e:
+            UI.warning(f"Failed to load registry: {e}")
+            return
 
-            # 1. Check Project Name
-            existing_path = registry.get(project_name)
-            if existing_path:
-                if isinstance(existing_path, dict):
-                    existing_path = existing_path.get("path")
+        # Robust path resolution
+        if isinstance(project_root, dict):
+            current_root_path = Path(project_root.get("root", ".")).resolve()
+        else:
+            current_root_path = Path(project_root).resolve()
 
-                abs_existing = str(Path(existing_path).resolve())
-                abs_current = str(current_root_path)
+        # 1. Check Project Name
+        existing_path = registry.get(project_name)
+        if existing_path:
+            if isinstance(existing_path, dict):
+                existing_path = existing_path.get("path")
 
-                if abs_existing != abs_current:
-                    UI.die(
-                        f"Project collision: '{project_name}' is already registered at:\n"
-                        f"  {UI.CYAN}{existing_path}{UI.COLOR_OFF}\n"
-                        f"Current path:\n"
-                        f"  {UI.CYAN}{abs_current}{UI.COLOR_OFF}\n\n"
-                        f"Run {UI.BOLD}ldm down --delete{UI.COLOR_OFF} in the original folder to remove it."
-                    )
+            abs_existing = str(Path(existing_path).resolve())
+            abs_current = str(current_root_path)
 
-            # 2. Check Hostname (if provided and not localhost)
-            if host_name and host_name != "localhost":
-                for name, data in registry.items():
-                    if name == project_name:
-                        continue
+            if abs_existing != abs_current:
+                UI.die(
+                    f"Project collision: '{project_name}' is already registered at:\n"
+                    f"  {UI.CYAN}{existing_path}{UI.COLOR_OFF}\n"
+                    f"Current path:\n"
+                    f"  {UI.CYAN}{abs_current}{UI.COLOR_OFF}\n\n"
+                    f"Run {UI.BOLD}ldm down --delete{UI.COLOR_OFF} in the original folder to remove it."
+                )
 
-                    existing_host = None
-                    existing_path = None
-                    if isinstance(data, dict):
-                        existing_host = data.get("host")
-                        existing_path = data.get("path")
+        # 2. Check Hostname (if provided and not localhost)
+        if host_name and host_name != "localhost":
+            for name, data in registry.items():
+                if name == project_name:
+                    continue
 
-                    if existing_host == host_name:
-                        abs_existing = str(Path(existing_path).resolve())
-                        abs_current = str(current_root_path)
+                existing_host = None
+                existing_path = None
+                if isinstance(data, dict):
+                    existing_host = data.get("host")
+                    existing_path = data.get("path")
 
-                        if abs_existing != abs_current:
-                            UI.die(
-                                f"Hostname collision: '{host_name}' is already registered for project '{name}' at:\n"
-                                f"  {UI.CYAN}{existing_path}{UI.COLOR_OFF}\n\n"
-                                f"Each project must have a unique Virtual Hostname."
-                            )
-        except Exception:
-            pass
+                if existing_host == host_name:
+                    abs_existing = str(Path(existing_path).resolve())
+                    abs_current = str(current_root_path)
+
+                    if abs_existing != abs_current:
+                        UI.die(
+                            f"Hostname collision: '{host_name}' is already registered for project '{name}' at:\n"
+                            f"  {UI.CYAN}{existing_path}{UI.COLOR_OFF}\n\n"
+                            f"Each project must have a unique Virtual Hostname."
+                        )
 
     def register_project(self, project_name, project_root, host_name=None):
         """Registers a project in the global registry."""
