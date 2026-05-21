@@ -323,6 +323,29 @@ def safe_write_text(path, content, encoding="utf-8"):
         raise e
 
 
+def _fixup_unix_permissions(path):
+    """
+    Ensures a file is writable by Liferay (UID 1000) and world-readable/writable on Unix.
+    This prevents 'Unable to write' errors in Liferay's AutoDeployScanner when LDM
+    is running as root (e.g., in CI environments).
+    """
+    if platform.system().lower() == "windows":
+        return
+
+    path_obj = Path(path)
+    if not path_obj.exists():
+        return
+
+    with contextlib.suppress(OSError):
+        # 1. Broaden permissions: ensure rw-rw-rw- (666) while preserving execute bits
+        current_mode = path_obj.stat().st_mode
+        path_obj.chmod(current_mode | 0o666)
+
+        # 2. Handover ownership: if running as root, proactively chown to Liferay UID 1000
+        if hasattr(os, "getuid") and os.getuid() == 0:
+            os.chown(path, 1000, 1000)
+
+
 def safe_copy(src, dst):
     """Copies a file safely, ignoring metadata preservation errors (EPERM/OSError)."""
     try:
@@ -343,6 +366,8 @@ def safe_copy(src, dst):
         # Try to copy permissions/mode, but ignore if it fails (common for cross-user files)
         with contextlib.suppress(OSError, PermissionError):
             shutil.copymode(src, dst)
+
+        _fixup_unix_permissions(dst)
     except Exception as e:
         raise e
 
@@ -354,17 +379,22 @@ def atomic_copy(src, dst):
     by Liferay's auto-deployer.
     """
     dst_path = Path(dst).resolve()
-    # Create a hidden temp file in the same directory to ensure same filesystem rename
+    # Create a hidden temp file in the same directory to ensure same filesystem rename.
+    # Liferay ignores files starting with a dot, allowing us to perform fixups
+    # in-place without triggering the scanner.
     tmp_dst = dst_path.parent / f".{dst_path.name}.tmp"
 
     try:
         # 1. Perform safe copy to hidden temp file
+        # This already calls _fixup_unix_permissions(tmp_dst)
         safe_copy(src, tmp_dst)
 
         # 2. Atomic rename to final destination with retries
         max_retries = 3
         for i in range(max_retries):
             try:
+                # We rename the perfectly-permissioned file into its final place.
+                # Since it's on the same filesystem, this is atomic.
                 os.replace(tmp_dst, dst_path)
                 return
             except (OSError, PermissionError) as e:
@@ -385,13 +415,20 @@ def atomic_copy(src, dst):
 
 def safe_move(src, dst):
     """Moves a file safely, handling cross-filesystem and permission nuances."""
+    # We follow the same atomic pattern for moves to ensure permissions are fixed
+    # BEFORE the file becomes visible to any scanners.
     try:
-        os.rename(src, dst)
-    except (OSError, PermissionError):
-        # Fallback to copy and delete if rename fails (e.g. cross-device or permission lock)
-        safe_copy(src, dst)
+        atomic_copy(src, dst)
         with contextlib.suppress(OSError, PermissionError):
             os.unlink(src)
+    except (OSError, PermissionError):
+        # Fallback for simple renames if they are definitely on the same device
+        # and we can tolerate the permission fixup happening slightly after.
+        try:
+            os.rename(src, dst)
+            _fixup_unix_permissions(dst)
+        except Exception as e:
+            raise e
 
 
 def get_actual_home():
