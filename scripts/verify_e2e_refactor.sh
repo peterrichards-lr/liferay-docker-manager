@@ -232,12 +232,26 @@ def test_fragment_deployment(page: Page):
     page.wait_for_function("() => window.location.href.includes('/web/guest') || window.location.href.includes('/home')", timeout=30000)
     
     fragments_url = f"{url}/group/guest/~/control_panel/manage?p_p_id=com_liferay_fragment_web_portlet_FragmentPortlet"
-    for _ in range(15):
+    collection_found = False
+    for i in range(20):
+        print(f"  -> Attempt {i+1}: Checking for 'Test Collection' at {fragments_url}")
         page.goto(fragments_url)
-        if page.locator(":text('Test Collection')").first.is_visible(timeout=5000): break
-        page.wait_for_timeout(10000)
-    page.locator(":text('Test Collection')").first.click(force=True)
-    expect(page.get_by_text("Test Fragment").first).to_be_visible(timeout=10000)
+        # Use a more specific locator for the collection item
+        coll = page.locator(".clay-card, tr, [role='gridcell']").filter(has_text="Test Collection").first
+        try:
+            if coll.is_visible(timeout=10000):
+                print("  -> Found 'Test Collection', attempting to click...")
+                coll.click(force=True, timeout=15000)
+                collection_found = True
+                break
+        except Exception as e:
+            print(f"  -> Click failed or element disappeared: {e}")
+        page.wait_for_timeout(5000)
+    
+    if not collection_found:
+        pytest.fail("Failed to find or click 'Test Collection' after 20 attempts.")
+        
+    expect(page.get_by_text("Test Fragment").first).to_be_visible(timeout=20000)
 PYEOF
 log_and_run "Running UI Tests" pytest "e2e_ui_test.py" --no-cov --base-url http://localhost:8082 --screenshot=only-on-failure
 
