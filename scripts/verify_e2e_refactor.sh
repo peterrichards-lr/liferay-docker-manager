@@ -156,6 +156,11 @@ fi
 "$LDM_CMD" -y rm ldm-smoke-test --delete --infra >/dev/null 2>&1 || true
 export LDM_WORKSPACE
 
+# Pre-pull large images to avoid containerd lease timeouts during the timed E2E run
+echo "ℹ  Pre-pulling required Docker images..."
+docker pull liferay/dxp:2026.q1.7-lts --quiet
+docker pull postgres:16.2 --quiet
+
 log_and_run "Initializing Infrastructure" "$LDM_CMD" -y infra-setup --search
 
 # 2. Guardrails

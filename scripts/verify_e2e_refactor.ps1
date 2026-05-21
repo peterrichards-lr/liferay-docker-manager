@@ -82,6 +82,11 @@ try {
     # 1. Cleanup
     & $LDM_CMD -y rm ldm-smoke-test --delete --infra > $null 2>&1
 
+    # Pre-pull large images to avoid containerd lease timeouts during the timed E2E run
+    Write-Host "ℹ  Pre-pulling required Docker images..."
+    & docker pull liferay/dxp:2026.q1.7-lts --quiet
+    & docker pull postgres:16.2 --quiet
+
     Log-AndRun "Initializing Infrastructure" $LDM_CMD "-y infra-setup --search"
 
     # 2. Guardrails
