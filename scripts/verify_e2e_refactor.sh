@@ -228,11 +228,14 @@ def test_fragment_deployment(page: Page):
         page.fill('input[name*="LoginPortlet_login"]', "test@liferay.com")
         page.fill('input[name*="LoginPortlet_password"]', "test")
         page.click('button[type="submit"]')
-    page.wait_for_url(f"{url}/web/guest**", timeout=30000)
-    page.goto(f"{url}/group/guest/~/control_panel/manage?p_p_id=com_liferay_fragment_web_portlet_FragmentPortlet")
+    # Support landing on /web/guest or /home (depending on portal settings)
+    page.wait_for_function("() => window.location.href.includes('/web/guest') || window.location.href.includes('/home')", timeout=30000)
+    
+    fragments_url = f"{url}/group/guest/~/control_panel/manage?p_p_id=com_liferay_fragment_web_portlet_FragmentPortlet"
     for _ in range(15):
-        if page.locator(":text('Test Collection')").first.is_visible(timeout=2000): break
-        page.reload() or page.wait_for_timeout(10000)
+        page.goto(fragments_url)
+        if page.locator(":text('Test Collection')").first.is_visible(timeout=5000): break
+        page.wait_for_timeout(10000)
     page.locator(":text('Test Collection')").first.click(force=True)
     expect(page.get_by_text("Test Fragment").first).to_be_visible(timeout=10000)
 PYEOF
