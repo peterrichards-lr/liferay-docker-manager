@@ -37,7 +37,7 @@ class DoctorRunner:
         self.project_id = project_id
         self.all_projects = all_projects
         self.results: list[tuple[str, str, Any]] = []
-        self.hints: list[dict[str, str | None]] = []
+        self.hints: list[dict[str, Any]] = []
         self.project_paths = []
         self.requires_ssl = False
         self.is_wsl = False
