@@ -58,6 +58,20 @@ class RuntimeService:
         project_meta = self.manager.read_meta(paths["root"])
 
         tag = self.manager.args.tag or project_meta.get("tag")
+        is_portal = (
+            getattr(self.manager.args, "portal", False)
+            or str(project_meta.get("portal", "false")).lower() == "true"
+        )
+
+        # LDM-381: Sanitize tag and auto-detect image type from prefix
+        if tag:
+            if tag.startswith("dxp-"):
+                is_portal = False
+                tag = tag[4:]
+            elif tag.startswith("portal-"):
+                is_portal = True
+                tag = tag[7:]
+
         host_name = (
             self.manager.args.host_name or project_meta.get("host_name") or "localhost"
         )
@@ -141,8 +155,10 @@ class RuntimeService:
             if self.manager.non_interactive and not can_discover:
                 UI.die("No Liferay tag specified.")
 
-            from ldm_core.constants import API_BASE_DXP
+            from ldm_core.constants import API_BASE_DXP, API_BASE_PORTAL
             from ldm_core.utils import discover_latest_tag
+
+            api_base = API_BASE_PORTAL if is_portal else API_BASE_DXP
 
             rt = getattr(self.manager.args, "release_type", None)
             if not rt:
@@ -160,14 +176,14 @@ class RuntimeService:
                     rt = "any"
 
                 latest_tag = discover_latest_tag(
-                    API_BASE_DXP, release_type=rt, prefix_filter=prefix, verbose=True
+                    api_base, release_type=rt, prefix_filter=prefix, verbose=True
                 )
                 tag = UI.ask("Enter Liferay Tag", latest_tag)
             else:
                 if self.manager.verbose:
                     UI.info("Automatically discovering latest Liferay tag...")
                 tag = discover_latest_tag(
-                    API_BASE_DXP,
+                    api_base,
                     release_type=rt,
                     prefix_filter=prefix,
                     verbose=self.manager.verbose,
@@ -243,6 +259,7 @@ class RuntimeService:
             {
                 "project_name": project_id,
                 "tag": tag,
+                "portal": str(is_portal).lower(),
                 "host_name": host_name,
                 "container_name": project_id,
                 "ssl": str(ssl_val).lower(),

@@ -341,29 +341,32 @@ class ComposerService:
                 },
             )
 
+        # LDM-381: Determine base image and sanitized tag
+        tag = str(meta.get("tag") or "latest")
+        is_portal = str(meta.get("portal", "false")).lower() == "true"
+
+        # Explicit tag prefixes take precedence (redundancy check)
+        if tag.startswith("dxp-"):
+            is_portal = False
+            tag = tag[4:]
+        elif tag.startswith("portal-"):
+            is_portal = True
+            tag = tag[7:]
+
         image = meta.get("image_tag")
         if not image:
-            if "u" in tag:
+            if is_portal:
                 image = f"liferay/portal:{tag}"
-            elif any(s in tag for s in ["-lts", "-qr", "-ga"]):
-                image = f"liferay/dxp:{tag}"
+            elif "u" in tag and "." in tag and tag.index("u") > tag.rindex("."):
+                # Standard pattern: 7.4.13-u102 -> portal
+                image = f"liferay/portal:{tag}"
             else:
                 image = f"liferay/dxp:{tag}"
         elif str(image).startswith("-"):
             # It's a suffix
             suffix = str(image)
-            if "u" in tag:
-                image = f"liferay/portal:{tag}{suffix}"
-            elif any(s in tag for s in ["-lts", "-qr", "-ga"]):
-                image = f"liferay/dxp:{tag}{suffix}"
-            else:
-                image = f"liferay/dxp:{tag}{suffix}"
-        # If it's a full image (has colon, slash, or is a known mock like alpine), use as is
-        elif ":" in str(image) or "/" in str(image) or image == "alpine":
-            pass
-        else:
-            # Default to using it as is (legacy behavior for simple image names)
-            pass
+            image_base = "liferay/portal" if is_portal else "liferay/dxp"
+            image = f"{image_base}:{tag}{suffix}"
 
         depends_on = []
         if db_type != "hypersonic":
@@ -378,13 +381,13 @@ class ComposerService:
             "environment": liferay_env,
             "labels": [f"com.liferay.ldm.project={project_name}"],
             "volumes": [
-                f"{paths['deploy'].as_posix()}:/mnt/liferay/deploy",
-                f"{paths['files'].as_posix()}:/mnt/liferay/files",
-                f"{paths['scripts'].as_posix()}:/mnt/liferay/scripts",
+                f"{paths['deploy'].as_posix()}:/mnt/liferay/deploy{z_label}",
+                f"{paths['files'].as_posix()}:/mnt/liferay/files{z_label}",
+                f"{paths['scripts'].as_posix()}:/mnt/liferay/scripts{z_label}",
                 f"{project_name}-data:/opt/liferay/data",
-                f"{paths['modules'].as_posix()}:/opt/liferay/modules",
-                f"{paths['cx'].as_posix()}:/opt/liferay/osgi/client-extensions",
-                f"{paths['portal_log4j'].as_posix()}:/opt/liferay/osgi/log4j",
+                f"{paths['modules'].as_posix()}:/opt/liferay/modules{z_label}",
+                f"{paths['cx'].as_posix()}:/opt/liferay/osgi/client-extensions{z_label}",
+                f"{paths['portal_log4j'].as_posix()}:/opt/liferay/osgi/log4j{z_label}",
             ],
             "networks": ["liferay-net"],
         }
@@ -408,7 +411,7 @@ class ComposerService:
             service["volumes"].extend(
                 [
                     f"{project_name}-state:/opt/liferay/osgi/state",
-                    f"{paths['logs'].as_posix()}:/opt/liferay/logs",
+                    f"{paths['logs'].as_posix()}:/opt/liferay/logs{z_label}",
                 ]
             )
         else:
