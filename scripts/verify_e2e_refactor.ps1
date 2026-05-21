@@ -47,9 +47,15 @@ if (-not (Test-Path $VENV_PYTEST)) {
 function Finalize-Verification {
     param($ExitCode)
     $status = if ($ExitCode -eq 0) { "pass" } else { "fail" }
-    $slug = & $LDM_CMD doctor --slug 2>$null
-    if ($null -eq $slug) { $slug = "unknown" }
-    $FinalName = "verify-$($slug.Trim().Replace(' ','-'))-$status-$($Timestamp.Substring(10)).txt"
+    
+    $slugOut = & $LDM_CMD doctor --slug 2>$null
+    if ($null -eq $slugOut) { 
+        $slug = "unknown" 
+    } else {
+        $slug = ($slugOut -join "-") -replace '[^a-zA-Z0-9-]', '-'
+    }
+    
+    $FinalName = "verify-$slug-$status-$($Timestamp.Substring(10)).txt"
     
     if (Test-Path $RESULTS_FILE_TMP) {
         Move-Item $RESULTS_FILE_TMP (Join-Path $ORIGINAL_PWD $FinalName) -Force
@@ -74,7 +80,10 @@ function Log-AndRun {
     Write-Host ">> $msg"
     $res = & $cmd $args_list.Split(' ') 2>&1
     $res | Out-File -FilePath $RESULTS_FILE_TMP -Append -Encoding utf8
-    if ($LASTEXITCODE -ne 0) { throw "Command failed: $msg" }
+    if ($LASTEXITCODE -ne 0) { 
+        Write-Host $res -ForegroundColor Red
+        throw "Command failed: $msg" 
+    }
 }
 
 try {
