@@ -290,6 +290,57 @@ try
     Write-Host "--- Step 1: Global Infra Setup ---"
     Log-AndRun -msg "Initializing Infrastructure" -cmd $LDM_CMD -args_list "-y infra-setup --search"
 
+    # 2b. Edge Case Guardrails
+    Write-Host "--- Step 1b: Edge Case Guardrails ---"
+    
+    # Test: No-Sudo Guard (Simulation)
+    Write-Host ">> Verifying No-Sudo Guard..."
+    $sudoScript = @"
+import os
+import sys
+import ldm_core.cli
+os.geteuid = lambda: 0
+try:
+    ldm_core.cli.main()
+except SystemExit as e:
+    sys.exit(e.code)
+"@
+    $sudoScript | Out-File -FilePath "fake_sudo.py" -Encoding utf8
+    $res = & python fake_sudo.py run . --tag 2026.q1.4-lts --no-wait --no-up -y 2>&1
+    if ($res -match "Do not run LDM with 'sudo'") {
+        Write-Host "✅ Sudo Guard verified."
+    } else {
+        Write-Host "❌ ERROR: Sudo Guard failed!"
+        exit 1
+    }
+    Remove-Item "fake_sudo.py"
+
+    # Test: Dev Guardrails
+    Write-Host ">> Verifying Dev Guardrails..."
+    $res = & $LDM_CMD version --bump patch -y 2>&1
+    if ($res -match "Developer utility requires LDM_DEV_MODE=true") {
+        Write-Host "✅ Dev Guardrails verified."
+    } else {
+        Write-Host "❌ ERROR: Dev Guardrails failed!"
+        exit 1
+    }
+
+    # Test: Project Collision
+    Write-Host ">> Verifying Project Collision Detection..."
+    & $LDM_CMD -y run "collision-test" --tag 2026.q1.4-lts --port 8099 --no-wait --no-up > $null 2>&1
+    New-Item -ItemType Directory -Path "collision-test\nested" -Force | Out-Null
+    Set-Location "collision-test\nested"
+    $res = & $LDM_CMD -y run "collision-test" --port 8099 --no-wait --no-up 2>&1
+    if ($res -match "Project collision" -or $res -match "already registered") {
+        Write-Host "✅ Project Collision detection verified."
+    } else {
+        Write-Host "❌ ERROR: Collision detection failed!"
+        exit 1
+    }
+    Set-Location ..\..
+    & $LDM_CMD -y rm "collision-test" --delete > $null 2>&1
+    Remove-Item -Recurse -Force "collision-test" -ErrorAction SilentlyContinue
+
     # 3. Project Lifecycle
     Write-Host "--- Step 2: Project Run ---"
     $msg = "ℹ  Provisioning test project 'ldm-smoke-test' from template..."
@@ -396,6 +447,62 @@ try
             Write-Host "✅ Integrity override verified."
         }
     }
+
+    # 4c. Advanced Configurations & UX
+    Write-Host "--- Step 3c: Advanced Configurations & UX ---"
+
+    # Test: Env Sync
+    Write-Host ">> Verifying Env Sync..."
+    & $LDM_CMD env . TEST_SECRET=supersecret123 > $null 2>&1
+    $compose = Get-Content "docker-compose.yml" -Raw
+    if ($compose -match "TEST_SECRET=supersecret123") {
+        Write-Host "✅ Env Sync verified."
+    } else {
+        Write-Host "❌ ERROR: Env Sync failed!"
+        exit 1
+    }
+
+    # Test: Redaction Check
+    Write-Host ">> Verifying Redaction Check..."
+    $redactScript = @"
+from ldm_core.utils import run_command
+from ldm_core.ui import UI
+UI.VERBOSE = True
+run_command("echo DB_PASSWORD=hidden_secret", shell=True, verbose=True)
+"@
+    $redactScript | Out-File -FilePath "test_redact.py" -Encoding utf8
+    $res = & python test_redact.py 2>&1
+    if ($res -match "DB_PASSWORD=\[REDACTED\]" -and -not ($res -match "hidden_secret")) {
+        Write-Host "✅ Redaction Check verified."
+    } else {
+        Write-Host "❌ ERROR: Redaction Check failed!"
+        exit 1
+    }
+    Remove-Item "test_redact.py"
+
+    # Test: Multi-Node Scaling (Metadata Update)
+    Write-Host ">> Verifying Multi-Node Scaling Metadata..."
+    $scaleScript = @"
+import sys
+from unittest.mock import patch
+import ldm_core.cli
+with patch("ldm_core.handlers.runtime.RuntimeService.cmd_run"):
+    sys.argv = ["ldm", "-y", "scale", "ldm-smoke-test", "liferay=3"]
+    try:
+        ldm_core.cli.main()
+    except SystemExit:
+        pass
+"@
+    $scaleScript | Out-File -FilePath "test_scale.py" -Encoding utf8
+    & python test_scale.py > $null 2>&1
+    $meta = Get-Content "meta" -Raw
+    if ($meta -match "scale_liferay=3") {
+        Write-Host "✅ Multi-Node Scaling metadata verified."
+    } else {
+        Write-Host "❌ ERROR: Scale metadata update failed!"
+        exit 1
+    }
+    Remove-Item "test_scale.py"
 
     # 5. Status and Logs
     Write-Host "--- Step 4: Status & Logs ---"

@@ -268,6 +268,70 @@ echo "✅ Clean slate established." >>"$RESULTS_FILE_TMP"
 echo "--- Step 1: Global Infra Setup ---"
 log_and_run "Initializing Infrastructure" "$LDM_CMD" -y infra-setup --search
 
+# 2b. Edge Case Guardrails (LDM-381)
+echo "--- Step 1b: Edge Case Guardrails ---"
+
+# Test: No-Sudo Guard
+echo ">> Verifying No-Sudo Guard..." | tee -a "$RESULTS_FILE_TMP"
+cat << 'PYEOF' > fake_sudo.py
+import os
+import sys
+import ldm_core.cli
+os.geteuid = lambda: 0
+try:
+    ldm_core.cli.main()
+except SystemExit as e:
+    sys.exit(e.code)
+PYEOF
+
+if python3 fake_sudo.py run . --tag 2026.q1.4-lts --no-wait --no-up -y > sudo_test.log 2>&1; then
+    echo "❌ ERROR: LDM allowed execution under pseudo-sudo." | tee -a "$RESULTS_FILE_TMP"
+    exit 1
+else
+    if grep -q "Do not run LDM with 'sudo'" sudo_test.log; then
+        echo "✅ Sudo Guard verified." | tee -a "$RESULTS_FILE_TMP"
+    else
+        echo "❌ ERROR: Sudo Guard failed to print warning." | tee -a "$RESULTS_FILE_TMP"
+        exit 1
+    fi
+fi
+rm sudo_test.log fake_sudo.py
+
+# Test: Dev Guardrails
+echo ">> Verifying Dev Guardrails..." | tee -a "$RESULTS_FILE_TMP"
+if $LDM_CMD version --bump patch -y > dev_test.log 2>&1; then
+    echo "❌ ERROR: LDM allowed version bump outside dev mode." | tee -a "$RESULTS_FILE_TMP"
+    exit 1
+else
+    if grep -q "Error: Developer utility requires LDM_DEV_MODE=true" dev_test.log; then
+        echo "✅ Dev Guardrails verified." | tee -a "$RESULTS_FILE_TMP"
+    else
+        echo "❌ ERROR: Dev Guardrails failed." | tee -a "$RESULTS_FILE_TMP"
+        exit 1
+    fi
+fi
+rm dev_test.log
+
+# Test: Project Collision
+echo ">> Verifying Project Collision Detection..." | tee -a "$RESULTS_FILE_TMP"
+$LDM_CMD -y run "collision-test" --tag 2026.q1.4-lts --port 8099 --no-wait --no-up >/dev/null 2>&1
+mkdir -p "collision-test/nested"
+cd "collision-test/nested"
+if $LDM_CMD -y run "collision-test" --port 8099 --no-wait --no-up > col_test.log 2>&1; then
+    echo "❌ ERROR: LDM allowed nested project collision!" | tee -a "$RESULTS_FILE_TMP"
+    exit 1
+else
+    if grep -qE "Project collision|already registered" col_test.log; then
+        echo "✅ Project Collision detection verified." | tee -a "$RESULTS_FILE_TMP"
+    else
+        echo "❌ ERROR: Collision detection failed to print warning." | tee -a "$RESULTS_FILE_TMP"
+        exit 1
+    fi
+fi
+cd ../..
+$LDM_CMD -y rm "collision-test" --delete >/dev/null 2>&1
+rm -rf "collision-test"
+
 # 3. Project Lifecycle
 echo "--- Step 2: Project Run ---"
 echo "ℹ  Provisioning test project 'ldm-smoke-test' from template..." | tee -a "$RESULTS_FILE_TMP"
@@ -392,6 +456,61 @@ else
     echo "❌ ERROR: No SHA256 file found. Integrity generation failed!" | tee -a "$RESULTS_FILE_TMP"
     exit 1
 fi
+
+# 4c. Advanced Configurations & UX (LDM-381)
+echo "--- Step 3c: Advanced Configurations & UX ---"
+
+# Test: Env Sync
+echo ">> Verifying Env Sync..." | tee -a "$RESULTS_FILE_TMP"
+$LDM_CMD env . TEST_SECRET=supersecret123 >/dev/null
+if grep -q "TEST_SECRET=supersecret123" docker-compose.yml; then
+    echo "✅ Env Sync verified." | tee -a "$RESULTS_FILE_TMP"
+else
+    echo "❌ ERROR: Env Sync failed to update docker-compose.yml." | tee -a "$RESULTS_FILE_TMP"
+    exit 1
+fi
+
+# Test: Redaction Check
+echo ">> Verifying Redaction Check..." | tee -a "$RESULTS_FILE_TMP"
+cat << 'PYEOF' > test_redact.py
+from ldm_core.utils import run_command
+from ldm_core.ui import UI
+UI.VERBOSE = True
+run_command("echo DB_PASSWORD=hidden_secret", shell=True, verbose=True)
+PYEOF
+
+if python3 test_redact.py > redact_test.log 2>&1; then
+    if grep -q "DB_PASSWORD=\[REDACTED\]" redact_test.log && ! grep -q "hidden_secret" redact_test.log; then
+        echo "✅ Redaction Check verified." | tee -a "$RESULTS_FILE_TMP"
+    else
+        echo "❌ ERROR: Redaction Check leaked secrets!" | tee -a "$RESULTS_FILE_TMP"
+        exit 1
+    fi
+fi
+rm redact_test.log test_redact.py
+
+# Test: Multi-Node Scaling (Metadata Update)
+echo ">> Verifying Multi-Node Scaling Metadata..." | tee -a "$RESULTS_FILE_TMP"
+cat << 'PYEOF' > test_scale.py
+import sys
+from unittest.mock import patch
+import ldm_core.cli
+with patch("ldm_core.handlers.runtime.RuntimeService.cmd_run"):
+    sys.argv = ["ldm", "-y", "scale", "ldm-smoke-test", "liferay=3"]
+    try:
+        ldm_core.cli.main()
+    except SystemExit:
+        pass
+PYEOF
+if python3 test_scale.py >/dev/null 2>&1; then
+    if grep -q "scale_liferay=3" meta; then
+        echo "✅ Multi-Node Scaling metadata verified." | tee -a "$RESULTS_FILE_TMP"
+    else
+        echo "❌ ERROR: Scale metadata was not updated!" | tee -a "$RESULTS_FILE_TMP"
+        exit 1
+    fi
+fi
+rm test_scale.py
 
 # 5. Status and Logs
 echo "--- Step 4: Status & Logs ---"

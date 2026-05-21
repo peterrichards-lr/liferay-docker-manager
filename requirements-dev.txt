@@ -1,10 +1,10 @@
-ruff==0.15.6
+ruff==0.15.13
 pre-commit
 bandit
 pip-audit
-pytest
-pytest-cov
-playwright
-pytest-playwright
-shiv
-pyinstaller
+pytest==9.0.3
+pytest-cov==7.1.0
+playwright==1.60.0
+pytest-playwright==0.8.0
+shiv==1.0.8
+pyinstaller==6.20.0
