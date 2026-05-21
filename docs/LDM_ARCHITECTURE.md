@@ -216,7 +216,14 @@ LDM handles project state surgically to ensure snapshots are portable and comple
   3. **Graceful Fallback**: If the asset is missing and unreachable, LDM flags the offline state and reverts to the standard "Vanilla" (non-seeded) workflow.
   4. **Samples Exception**: The `--samples` workflow requires assets to be present. If missing and unreachable, LDM informs the user and stops gracefully to avoid broken environments.
 
-- **Atomic Deployment Strategy**: As of v2.7.2-beta.21, LDM employs a **Staging & Atomic Move** pattern for all file synchronizations targeting Liferay's watched directories (`deploy/`, `osgi/modules/`, `osgi/configs/`). Files are first written to a hidden `.tmp` file in the destination folder and then atomically renamed. This ensures Liferay's auto-deployer never processes a partial artifact, preventing `java.util.zip.ZipException` and other race conditions.
+- **Zero-Race Atomic Deployment Strategy**: As of v2.7.6, LDM employs a **Staging, Fixup & Atomic Move** pattern for all file synchronizations targeting Liferay's watched directories (`deploy/`, `osgi/modules/`, `osgi/configs/`, `osgi/client-extensions/`).
+  1. **Staging**: Files are first written to a hidden `.tmp` file (e.g., `.my-artifact.zip.tmp`) in the destination folder.
+  2. **Invisibility**: Liferay's `AutoDeployScanner` ignores hidden files starting with a dot, ensuring it never attempts to process a partial or incorrectly-permissioned artifact.
+  3. **Permission Fixup**: While still hidden, LDM performs a **Unix Permission Fixup**:
+     - **Broaden Access**: Applies `chmod 666` to ensure the file is readable/writable by any container user.
+     - **Ownership Handover**: If LDM is running as root (common in CI or with sudo), it proactively executes `chown 1000:1000` to hand ownership to the `liferay` user.
+  4. **Atomic Move**: Once the file has the correct permissions and ownership, LDM performs an atomic `os.replace` (rename) to the final destination.
+  This ensures that when the artifact "appears" to Liferay's scanner, it is already perfectly permissioned and complete, eliminating `java.util.zip.ZipException` and "Permission Denied" race conditions.
 - **Integrity Verification**: As of v2.4.0, all snapshots and pre-warmed seeds include **SHA-256 checksums**. LDM automatically verifies these checksums during `restore` and `import` to ensure data integrity and detect corruption.
 - **Proactive Volume Write Test**: As of v2.4.26, LDM performs a real-world write test during `ldm doctor`. It spins up a temporary container to attempt a `touch` operation as UID 1000 (the Liferay user), proactively identifying read-only volume mounts caused by Docker Desktop integration or Colima permission mismatches.
 - **Volume-Aware Orchestration (macOS)**: To support the Hybrid Mount Strategy, the snapshot and seeding engines include automatic **Dehydration** and **Hydration** phases.
