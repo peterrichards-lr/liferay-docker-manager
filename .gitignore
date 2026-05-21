@@ -37,4 +37,4 @@ ldm-debug-bundle*.zip
 # E2E Testing Directories
 e2e-work-dir/
 test-results/
-verify-*.txt
+/verify-*.txt

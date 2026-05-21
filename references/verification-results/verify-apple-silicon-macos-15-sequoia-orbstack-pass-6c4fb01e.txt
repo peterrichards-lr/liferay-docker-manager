@@ -1,0 +1,55 @@
+=== LDM BINARY VERIFICATION REPORT ===
+Timestamp: Thu 21 May 2026 16:56:49 BST
+Hostname:  [ANONYMIZED]
+Platform:  darwin25
+Binary:    [ANONYMIZED]
+Version:   ldm 2.7.2-beta.73
+OrbStack:  2.1.1
+
+Docker:    29.4.0
+Compose:   5.1.2
+
+>> Initializing Infrastructure
+[0;33mℹ  Waiting for Elasticsearch to become ready...[0m
+[0;33mℹ  Installing missing Liferay analyzers in Global Search...[0m
+[0;33mℹ  Restarting Global Search to activate plugins...[0m
+[0;33mℹ  Waiting for Global Search to be ready after restart...[0m
+[0;33mℹ  Checking infrastructure stack (Traefik SSL Proxy)...[0m
+ Container liferay-proxy-global Creating 
+ Container liferay-proxy-global Created 
+ Container liferay-proxy-global Starting 
+ Container liferay-proxy-global Started 
+[0;32m✅  Infrastructure setup complete.[0m
+>> Running LDM Project
+[0;33m⚠️  Global 'common/' folder not found. Some baseline assets may be missing.[0m
+[0;33mℹ  You can recreate the baseline by running: [0;36mldm init-common[0m[0m
+[0;33mℹ  [0;37m⚡[0m Starting ldm-smoke-test stack (2026.q1.7-lts, postgresql, localhost:8082)...[0m
+[0;33mℹ  Starting [1mldm-smoke-test[0m stack...[0m
+[0;32m✅  Project 'ldm-smoke-test' started in background.[0m
+✅ Hot Deploy verified.
+>> Creating Snapshot
+[0;33mℹ  Creating snapshot: Binary-Verify...[0m
+[0;33mℹ  Triggering orchestrated search snapshot: ldm-smoke-test_20260521_170104...[0m
+[0;32m✅  Search snapshot completed.[0m
+[0;33mℹ  + Dehydrating volume [0;36mldm-smoke-test-data[0m to host...[0m
+[0;33mℹ  + Dehydrating volume [0;36mldm-smoke-test-state[0m to host...[0m
+[0;32m✅  Snapshot saved: [HOME]/ldm-verify/e2e-work-dir/ldm-smoke-test/snapshots/20260521_170104[0m
+>> Bypassing Integrity
+[1;33m=== Snapshots for ldm-smoke-test ===[0m
+[1] [0;36m20260521_170104[0m - [1mBinary-Verify[0m (176.8 KB)
+[0;33m⚠️  Integrity verification disabled via --no-verify.[0m
+[0;33mℹ  + Hydrating volume [0;36mldm-smoke-test-data[0m from host...[0m
+[0;33mℹ  + Hydrating volume [0;36mldm-smoke-test-state[0m from host...[0m
+[0;33mℹ  Triggering orchestrated search restore: ldm-smoke-test_20260521_170104...[0m
+[0;32m✅  Search restore completed.[0m
+[0;32m✅  Restore complete.[0m
+>> Checking Status
+[1;33m=== LDM Service Status ===[0m
+[0;37mGlobal Infrastructure:[0m
+[0;32m●[0m SSL Proxy (Traefik)       Running    traefik:v3.6.1
+[0;32m●[0m Search (ES)               Running    elasticsearch:8.19.1
+[0;32m●[0m macOS Socket Bridge       Running    tecnativa/docker-socket-proxy
+
+[0;37mActive Projects:[0m
+[0;32m●[0m ldm-smoke-test            2026.q1.7-lts   http://localhost:8082
+🎯 ALL E2E VERIFICATIONS PASSED!
