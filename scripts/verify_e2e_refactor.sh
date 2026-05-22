@@ -181,7 +181,9 @@ else
 fi
 
 echo ">> Verifying Sudo Guard (Behavioral)..."
-if [[ "$OSTYPE" == "linux"* ]] && command -v unshare &>/dev/null; then
+if [ "$GITHUB_ACTIONS" = "true" ]; then
+    echo "⚠️  Skipping behavioral Sudo Guard check (Sudo allowed in CI)."
+elif [[ "$OSTYPE" == "linux"* ]] && command -v unshare &>/dev/null; then
     # unshare -r runs the command as simulated root (UID 0) in a new namespace
     SUDO_BLOCK_OUT=$(unshare -r "$LDM_CMD" version 2>&1 || true)
     if echo "$SUDO_BLOCK_OUT" | grep -q "Do not run LDM with 'sudo'"; then

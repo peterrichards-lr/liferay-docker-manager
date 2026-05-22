@@ -28,7 +28,7 @@ jobs:
       - name: Install System Dependencies
         run: |
           if [ -f /etc/fedora-release ]; then
-            dnf install -y python3-pip git docker docker-compose hostname
+            dnf install -y python3-pip git docker docker-compose hostname which
           else
             apt-get update && apt-get install -y python3-pip git docker-compose python3-full hostname
           fi
