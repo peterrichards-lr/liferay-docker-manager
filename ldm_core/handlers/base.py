@@ -107,7 +107,9 @@ class BaseHandler:
                 if ext.get("deploy") and ext.get("has_load_balancer"):
                     required_hosts.append(f"{ext['id']}.{host_name}")
 
-        unresolved = [h for h in required_hosts if not self.check_hostname(h)]
+        unresolved = [
+            h for h in required_hosts if not self.check_hostname(h, silent=True)
+        ]
 
         if unresolved:
             if self.non_interactive:
@@ -119,7 +121,9 @@ class BaseHandler:
                     import time
 
                     time.sleep(0.5)
-                    still_broken = [h for h in unresolved if not self.check_hostname(h)]
+                    still_broken = [
+                        h for h in unresolved if not self.check_hostname(h, silent=True)
+                    ]
                     if not still_broken:
                         UI.success("All host entries fixed automatically.")
                         return True
@@ -1283,17 +1287,18 @@ class BaseHandler:
         except socket.gaierror:
             return None
 
-    def check_hostname(self, host_name):
+    def check_hostname(self, host_name, silent=False):
         """Verifies that the hostname resolves to the local machine."""
         if host_name == "localhost":
             return True
 
         resolved_ip = self.get_resolved_ip(host_name)
         if not resolved_ip:
-            UI.error(f"Hostname '{host_name}' does not resolve to any IP address.")
-            UI.info(
-                f"Please add it to your local hosts file or run '{UI.WHITE}ldm doctor --fix-hosts{UI.COLOR_OFF}'."
-            )
+            if not silent:
+                UI.error(f"Hostname '{host_name}' does not resolve to any IP address.")
+                UI.info(
+                    f"Please add it to your local hosts file or run '{UI.WHITE}ldm doctor --fix-hosts{UI.COLOR_OFF}'."
+                )
             return False
 
         # Get host's own primary IP for local check
@@ -1317,8 +1322,11 @@ class BaseHandler:
         if resolved_ip in local_ips:
             return True
 
-        UI.warning(f"Hostname '{host_name}' resolves to non-local IP: {resolved_ip}")
-        UI.info("It should resolve to 127.0.0.1 for local development.")
+        if not silent:
+            UI.warning(
+                f"Hostname '{host_name}' resolves to non-local IP: {resolved_ip}"
+            )
+            UI.info("It should resolve to 127.0.0.1 for local development.")
         return False
 
     def cmd_fix_hosts(self, target=None):

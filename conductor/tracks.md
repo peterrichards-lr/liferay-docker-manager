@@ -12,6 +12,7 @@ This registry tracks the status and priority of independent development tracks f
 | `ai-orchestration` | AI-Assisted Orchestration (`ldm ai`) | Medium | 📝 Planned | [Plan](./ai-orchestration-plan.md) |
 | `cli-namespacing` | CLI Namespacing | Low | 📝 Planned | [Plan](./cli-namespacing-plan.md) |
 | `snapshot-integrity` | Snapshot Integrity Verification | Medium | ✅ Completed | [Plan](./snapshot-integrity-plan.md) |
+| `diagnostics-dashboard` | Polished Diagnostics (`ldm doctor`) | Medium | 📝 Planned | [Plan](./tracks/diagnostics-dashboard/plan.md) |
 
 ---
 

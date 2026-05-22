@@ -32,6 +32,25 @@ While the v2.4.0 release solidified the modular architecture, **v2.5.0** will fo
 
 - **The `ldm ai` Command**: Integrate a specialized AI handler (Gemini-powered) for troubleshooting.
 
+### 6. Polished Diagnostics Dashboard
+
+- **High-Level RAG Status**: Transition `ldm doctor` to a concise Red/Amber/Green summary dashboard by default.
+- **Granular Subsection Flags**: Implement flags like `--docker`, `--system`, and `--project` to view deep-dive diagnostics for specific areas only when needed.
+
+### 7. Documentation Audit & Modularization
+
+- **Guide De-coupling**: Split the monolithic `README.md` into specialized guides (e.g., `guides/ENVIRONMENT.md`, `guides/DNS.md`) to improve readability and maintainability.
+- **Technical Deep-Dives**: Create dedicated docs for advanced topics like the "Zero-Race Atomic Deployment Strategy" and "Intelligent DNS Engine."
+
+### 8. Project Self-Healing (`ldm repair`)
+
+- **Inconsistency Recovery**: Implement a command to restore projects in "half-baked" states (e.g., missing `docker-compose.yml` but valid `meta`).
+- **Permission Re-sync**: A dedicated trigger to re-apply the "Zero-Race" permission fixups across an entire existing project stack.
+
+### 9. Dry-Run Mode
+
+- **Change Preview**: Support a `--dry-run` flag for destructive or configuration-heavy commands (`run`, `rm`, `import`, `scale`) to preview filesystem and Docker modifications without applying them.
+
 ---
 
 ## ✅ Completed Improvements (v2.4.0 - StackHandler Modularization)
