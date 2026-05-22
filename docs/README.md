@@ -55,6 +55,9 @@ The badges below represent our verified support for various Docker providers. En
 - **Atomic Configuration**: All project metadata and property updates use safe atomic writes to prevent file corruption during interruptions.
 - **Integrity Verification**: As of v2.5.0, all project snapshots and pre-warmed bootstrap seeds include mandatory **SHA-256 checksums**. LDM automatically verifies these during recovery and import to ensure data validity. Users can bypass this check using the `--no-verify` flag if necessary for legacy or manually modified snapshots.
 - **Global Project Registry**: Proactively detects project and hostname collisions across the entire filesystem, preventing infrastructure conflicts.
+- **Lean JVM Profile**: Includes a resource-optimized JVM profile (`-Xms1536m -Xmx2048m`) designed for constrained environments. LDM **automatically detects** GitHub Actions and applies this profile to ensure reliable boots on 7GB runners. Use the `--lean` flag to trigger this manually.
+- **Atomic Project Initialization**: Employs a "Commit/Rollback" pattern for new projects. If initialization fails (e.g. DNS errors or image pull failures), LDM automatically cleans up the half-baked project directory and unregisters it to prevent zombie states.
+- **Zero-Race Atomic Deployments**: All file synchronizations (via `ldm deploy` or the `deploy/` bind mount) are staged, permission-fixed (`chmod 666`, `chown 1000:1000`), and atomically moved. This definitively eliminates `AutoDeployScanner` "Unable to write" errors.
 - **Architecture-Aware**: The tool detects your OS automatically to fetch the correct optimized binary during self-updates.
 - **Shell Autocompletion**: TAB completion for commands and project names across Bash, Zsh, and Fish.
 - **Fuzzy Interactive Selection**: Quickly filter through dozens of projects by typing a few characters in any interactive menu.
@@ -182,6 +185,9 @@ LDM is designed to run as a standard user and will **automatically request eleva
 
 - **`ldm fix-hosts`**: Requires elevation to append entries to `/etc/hosts`. Can be called manually or triggered automatically during `ldm run`.
 - **`ldm upgrade`**: Automatically handles cross-device file systems (e.g. Fedora /tmpfs) by using a `cp` + `rm` pattern for system binary replacement. Requires elevation to replace the binary in system paths like `/usr/local/bin`.
+
+> [!NOTE]
+> **Non-Interactive Sudo**: When running with the `-y` or `--non-interactive` flag, LDM uses `sudo -n` to perform elevated tasks. If a password is required, the command will fail fast and cleanly instead of hanging the terminal. This is essential for CI/CD pipeline stability.
 
 If you are using `sudo` because of Docker "Permission Denied" errors, do not use `sudo ldm`. Instead, add your user to the `docker` group:
 
@@ -571,6 +577,22 @@ ldm fix-hosts custom.local
 
 # Run a full fix for all projects via doctor
 ldm doctor --fix-hosts
+```
+
+### `wait` (Readiness Gating)
+
+Blocks execution until a Liferay instance is genuinely ready for work. This is highly recommended for CI/CD pipelines and complex deployment scripts. Unlike basic Docker healthchecks, `ldm wait` performs a **3-Phase Verification**:
+
+1. **Log Readiness**: Scans Docker logs for the Tomcat `"Server startup"` marker.
+2. **HTTP Availability**: Polls the instance until it responds with an `HTTP 200` or `302` on its primary port.
+3. **CPU Idle State**: Actively monitors the container's CPU usage, blocking until it drops below 15% for three consecutive checks. This ensures background OSGi initialization (like `BundleSiteInitializer`) is truly finished.
+
+```bash
+# Wait for the current project to be fully idle (up to 10 minutes)
+ldm wait
+
+# Wait for a specific project with a custom timeout
+ldm wait my-project --timeout 300
 ```
 
 ### `status` (alias: `ps`)

@@ -233,6 +233,10 @@ LDM handles project state surgically to ensure snapshots are portable and comple
 - **Pre-warmed Bootstrap Seeds**: To eliminate the ~15 minute initialization time for new projects, LDM automatically fetches pre-initialized "Seed" volumes (Database + Search Index + **OSGi State**) from a dedicated GitHub repository. These seeds are version-matched to the requested Liferay tag.
 - **Environment Capture**: During `ldm snapshot`, the tool automatically parses the project's `docker-compose.yml` to capture custom `LIFERAY_` environment variables. These are stored in the snapshot metadata and restored during `ldm restore`, ensuring that manual tweaks are never lost during rollback.
 - **Automated Healthchecks**: Converts `LCP.json` probes into native Docker healthchecks for robust orchestration.
+- **3-Phase Readiness Gating**: As of v2.8.0, LDM's `wait` command (and internal boot sequence) uses a multi-layered verification strategy:
+  1. **Log Analysis**: Scans for the Tomcat `"Server startup"` marker.
+  2. **Network Probing**: Verifies HTTP 200/302 responsiveness.
+  3. **CPU Stabilization**: Monitors container CPU usage and blocks until it drops below a 15% threshold for three consecutive samples, ensuring all background site initialization and OSGi wiring is complete.
 - **SSL**: `mkcert` provides automated, locally trusted wildcard certificates for all project subdomains.
 
 ### 7. Multi-Node Scaling & Clustering

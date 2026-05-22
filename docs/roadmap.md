@@ -7,7 +7,7 @@ This document outlines potential enhancements to the Liferay Docker Manager (ldm
 
 ---
 
-## 🚀 Future Roadmap: v2.5.0 (The Ecosystem Phase Continued)
+## 🚀 Future Roadmap: v2.9.0+ (Polished Diagnostics & Self-Healing)
 
 While the v2.4.0 release solidified the modular architecture, **v2.5.0** will focus on implementing the remaining Ecosystem features.
 
@@ -51,12 +51,19 @@ While the v2.4.0 release solidified the modular architecture, **v2.5.0** will fo
 
 - **Change Preview**: Support a `--dry-run` flag for destructive or configuration-heavy commands (`run`, `rm`, `import`, `scale`) to preview filesystem and Docker modifications without applying them.
 
-### 10. Automated Multi-OS Verification
+## ✅ Completed Improvements (v2.8.0 - Stability & Automation)
 
-- **Comprehensive CI Matrix**: Refactor GitHub Actions to run the full E2E suite on Ubuntu, Fedora (via Container Jobs), macOS Silicon (`macos-14`), macOS Intel (`macos-13`), and Windows runners.
-- **JVM Footprint Optimization**: Automatically trigger a "Lean" JVM profile when running in CI to fit within GitHub's 7GB RAM limit.
+### **Advanced Orchestration**
 
----
+- **3-Phase Readiness Gating**: Introduced a high-precision `ldm wait` command that combines log markers, HTTP probing, and **CPU Idle detection** (< 15% load) to guarantee Liferay is fully stabilized before proceeding.
+- **Local Cloud Hydration**: Implemented the `ldm hydrate` command, allowing developers to recreate full project environments from local Liferay Cloud backup archives (`database.gz` and `volume.tgz`).
+- **Lean JVM Profile**: Added a resource-optimized JVM profile for 7GB runners, with **automatic GHA detection** to prevent OOM kills in CI/CD pipelines.
+- **Atomic Initialization & Rollback**: Hardened project creation with a commit/rollback pattern that automatically cleans up failed initialization attempts.
+
+### **Cross-Platform Verification**
+
+- **Automated Multi-OS Verification Matrix**: Refactored CI to run the full E2E suite on Ubuntu and Fedora (via explicit Docker orchestration).
+- **Non-Interactive Sudo**: Enabled `sudo -n` support for elevated tasks when running in `-y` mode, ensuring unattended scripts never hang on password prompts.
 
 ## ✅ Completed Improvements (v2.4.0 - StackHandler Modularization)
 

@@ -14,6 +14,7 @@ This registry tracks the status and priority of independent development tracks f
 | `snapshot-integrity` | Snapshot Integrity Verification | Medium | ✅ Completed | [Plan](./snapshot-integrity-plan.md) |
 | `multi-os-e2e` | Multi-OS E2E Matrix & JVM | Medium | 📝 Planned | [Plan](./tracks/multi-os-e2e/plan.md) |
 | `diagnostics-dashboard` | Polished Diagnostics (`ldm doctor`) | Medium | 📝 Planned | [Plan](./tracks/diagnostics-dashboard/plan.md) |
+| `docs-restructure` | Documentation Audit & Modularization | High | 📝 Planned | [Plan](./tracks/docs-restructure/plan.md) |
 
 ---
 
