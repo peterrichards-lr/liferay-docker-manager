@@ -12,7 +12,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Formally documented the **Client Extension Routing & Wildcard SSL** logic in `README.md`.
 - Reorganized the `README.md` to move the `LDM_COMMON_DIR` section under "Configuration Files" for better logical flow.
 
-## [v2.7.7] - 2026-05-21
+## [2.7.9] - 2026-05-21
+
+### Fixed
+
+- Enabled true non-interactive execution for commands requiring elevation (`fix-hosts`, `upgrade`) on Linux and macOS. By passing `-y/--non-interactive`, LDM now uses `sudo -n` to suppress password prompts and fail fast if a password is required.
+
+## [2.7.8] - 2026-05-21
 
 ### Documentation
 

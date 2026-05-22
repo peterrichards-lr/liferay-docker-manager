@@ -191,7 +191,10 @@ class BaseHandler:
                 # Standard Linux / macOS (non-WSL)
                 UI.info(f"Requesting elevated privileges to update: {hosts_path}")
                 UI.detail(f"Command: sudo tee -a {hosts_path}")
-                cmd = ["sudo", "tee", "-a", hosts_path]
+
+                sudo_prefix = ["sudo", "-n"] if self.non_interactive else ["sudo"]
+                cmd = [*sudo_prefix, "tee", "-a", hosts_path]
+
                 process = subprocess.Popen(
                     cmd, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL
                 )
@@ -257,8 +260,9 @@ class BaseHandler:
 
             try:
                 # Use sudo sed to surgically remove lines
+                sudo_prefix = ["sudo", "-n"] if self.non_interactive else ["sudo"]
                 cmd = [
-                    "sudo",
+                    *sudo_prefix,
                     "sed",
                     "-i",
                     ".bak" if platform.system().lower() == "darwin" else "",

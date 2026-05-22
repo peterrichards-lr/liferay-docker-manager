@@ -2088,10 +2088,16 @@ pause
                         # Use sudo to copy the file from /tmp to system path
                         # We use cp + rm instead of mv to avoid 'Invalid cross-device link' errors
                         # on systems where /tmp is a different filesystem (like Fedora/tmpfs).
-                        subprocess.run(
-                            ["sudo", "cp", str(temp_new), str(exe_path)], check=True
+                        sudo_prefix = (
+                            ["sudo", "-n"]
+                            if getattr(self.manager.args, "non_interactive", False)
+                            else ["sudo"]
                         )
-                        subprocess.run(["sudo", "rm", str(temp_new)], check=True)
+                        subprocess.run(
+                            [*sudo_prefix, "cp", str(temp_new), str(exe_path)],
+                            check=True,
+                        )
+                        subprocess.run([*sudo_prefix, "rm", str(temp_new)], check=True)
                         UI.success(f"Successfully upgraded to v{latest}!")
                     except Exception as e:
                         UI.error(f"Failed to replace binary even with sudo: {e}")
