@@ -1,0 +1,55 @@
+name: LDM Platform Verification (Multi-OS)
+
+on:
+  workflow_dispatch: # Allow manual trigger
+  schedule:
+    - cron: '0 2 * * *' # Run nightly at 2 AM UTC
+  push:
+    tags: ["v*"] # Run on every release
+
+# LDM-385: Prevent simultaneous runs
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify-linux:
+    name: Verify Linux (${{ matrix.distro }})
+    strategy:
+      fail-fast: false
+      matrix:
+        distro: [ubuntu, fedora]
+    runs-on: ubuntu-latest
+    container:
+      image: ${{ matrix.distro == 'fedora' && 'fedora:latest' || 'ubuntu:latest' }}
+      options: --user root --privileged -v /var/run/docker.sock:/var/run/docker.sock
+    
+    steps:
+      - name: Install System Dependencies
+        run: |
+          if [ "${{ matrix.distro }}" = "fedora" ]; then
+            dnf install -y python3-pip git docker docker-compose
+          else
+            apt-get update && apt-get install -y python3-pip git docker-compose
+          fi
+
+      - name: Checkout Code
+        uses: actions/checkout@v6
+
+      - name: Install LDM
+        run: pip install . --break-system-packages # breakage is fine in ephemeral CI
+
+      - name: Run E2E Verification Suite
+        run: bash scripts/verify_e2e_refactor.sh --ci
+        env:
+          GITHUB_ACTIONS: "true"
+          # Mount the host docker socket to enable container orchestration
+          # Note: This requires the container job to have access to the socket
+        
+      - name: Upload Test Results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: verification-results-${{ matrix.distro }}
+          path: verify-*.txt
+          retention-days: 7
