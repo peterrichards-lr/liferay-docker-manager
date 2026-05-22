@@ -229,7 +229,8 @@ class ComposerService:
                 key = opt.split("=", 1)[0]
                 opt_map[key] = opt
             elif opt.startswith("-Xm"):
-                key = opt[:3]
+                # Use 4 chars to distinguish -Xms and -Xmx
+                key = opt[:4]
                 opt_map[key] = opt
             elif opt.startswith("-XX:"):
                 key = opt.split("=", 1)[0]
