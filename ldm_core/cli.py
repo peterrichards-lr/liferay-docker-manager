@@ -705,6 +705,7 @@ def main():
                 allow_root_file = SCRIPT_DIR / ".ldm_allow_root"
                 allow_root = (
                     os.environ.get("LDM_ALLOW_ROOT", "false").lower() == "true"
+                    or os.environ.get("GITHUB_ACTIONS", "false").lower() == "true"
                     or allow_root_file.exists()
                 )
                 if not allow_root:

@@ -28,9 +28,9 @@ jobs:
       - name: Install System Dependencies
         run: |
           if [ "${{ matrix.distro }}" = "fedora" ]; then
-            dnf install -y python3-pip git docker docker-compose
+            dnf install -y python3-pip git docker docker-compose hostname
           else
-            apt-get update && apt-get install -y python3-pip git docker-compose
+            apt-get update && apt-get install -y python3-pip git docker-compose python3-venv
           fi
 
       - name: Checkout Code
