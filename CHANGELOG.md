@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.7.16] - 2026-05-21
+
+### Fixed
+
+- Fixed `ldm scale` command failing in non-interactive environments when the project was already running.
+
 ## [2.7.15] - 2026-05-21
 
 ### Documentation

@@ -1224,8 +1224,8 @@ class RuntimeService:
         self.manager.write_meta(project_path, meta)
         UI.success(f"Updated scale factors for project {project_path.name}")
 
-        # Trigger regeneration and restart
-        self.cmd_run(project_id)
+        # Trigger regeneration and restart (pass is_restart=True to bypass running check)
+        self.cmd_run(project_id, is_restart=True)
 
     def cmd_migrate_search(self, project_id=None):
         """Migrates a project from Sidecar to Global Elasticsearch."""
