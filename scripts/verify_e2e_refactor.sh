@@ -237,6 +237,9 @@ log_and_run "Running LDM Project" "$LDM_CMD" -y run . --no-wait --no-tld-skip --
 # Wait for Health
 log_and_run "Waiting for Liferay health" "$LDM_CMD" -y wait . --timeout 900
 
+echo ">> Allowing system to stabilize (60s)..."
+sleep 60
+
 # Hot Deploy
 echo ">> Deploying Test OSGi Bundle..."
 mkdir -p "delayed-deploy"
