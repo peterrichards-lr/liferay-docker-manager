@@ -768,46 +768,49 @@ class ConfigService:
                     custom_env[k] = val
             vars_to_apply = []
 
-        if (
-            not vars_to_apply
-            and self.manager.non_interactive
-            and not getattr(self.manager.args, "import_env", False)
-        ):
-            UI.die(
-                "No environment variables specified. In non-interactive mode, use: ldm env <pid> KEY=VALUE"
-            )
-
-        if not vars_to_apply and not self.manager.non_interactive:
-            UI.heading("Environment Variables")
-            if custom_env:
-                for k, v in sorted(custom_env.items()):
-                    print(f"  {k}={v}")
-            passthroughs = self.manager.get_host_passthrough_env(paths)
-            if passthroughs:
-                UI.info("\nHost Passthrough:")
-                for v in passthroughs:
-                    print(f"  {v}")
-
-            key = UI.ask("\nEnter Key (or Enter to apply current shell vars)")
-            if not key:
-                project_meta["custom_env"] = json.dumps(custom_env)
-                self.manager.write_meta(paths["root"], project_meta)
-                self.manager.sync_stack(paths, project_meta, no_up=True)
-                UI.success("Environment variables saved.")
-                return
-
-            if "=" in key:
-                k, v = key.split("=", 1)
-                custom_env[k] = v
+        if not vars_to_apply:
+            if self.manager.non_interactive:
+                # In non-interactive mode, if no vars are provided, we default to --import
+                # This enables 'ldm env <pid> -y' to sync all shell vars automatically.
+                UI.info(
+                    "No specific variables provided. Syncing all passthrough shell vars..."
+                )
+                for v in self.manager.get_host_passthrough_env(paths):
+                    if "=" in v:
+                        k, val = v.split("=", 1)
+                        custom_env[k] = val
             else:
-                value = UI.ask(f"Enter Value for {key}")
-                custom_env[key] = value
+                UI.heading("Environment Variables")
+                if custom_env:
+                    for k, v in sorted(custom_env.items()):
+                        print(f"  {k}={v}")
+                passthroughs = self.manager.get_host_passthrough_env(paths)
+                if passthroughs:
+                    UI.info("\nHost Passthrough:")
+                    for v in passthroughs:
+                        print(f"  {v}")
 
-            project_meta["custom_env"] = json.dumps(custom_env)
-            self.manager.write_meta(paths["root"], project_meta)
-            self.manager.sync_stack(paths, project_meta, no_up=True)
-            UI.success(f"Variable '{key}' updated.")
-        else:
+                key = UI.ask("\nEnter Key (or Enter to apply current shell vars)")
+                if not key:
+                    # Apply shell vars as promised by the prompt
+                    for v in self.manager.get_host_passthrough_env(paths):
+                        if "=" in v:
+                            k, val = v.split("=", 1)
+                            custom_env[k] = val
+                    project_meta["custom_env"] = json.dumps(custom_env)
+                    self.manager.write_meta(paths["root"], project_meta)
+                    self.manager.sync_stack(paths, project_meta, no_up=True)
+                    UI.success("Environment variables synchronized from shell.")
+                    return
+
+                if "=" in key:
+                    k, v = key.split("=", 1)
+                    custom_env[k] = v
+                else:
+                    value = UI.ask(f"Enter Value for {key}")
+                    custom_env[key] = value
+
+        if vars_to_apply:
             # Batch update from CLI
             for pair in vars_to_apply:
                 if "=" in pair:
@@ -819,10 +822,11 @@ class ConfigService:
                 elif getattr(self.manager.args, "remove", False):
                     custom_env.pop(pair, None)
 
-            project_meta["custom_env"] = json.dumps(custom_env)
-            self.manager.write_meta(paths["root"], project_meta)
-            self.manager.sync_stack(paths, project_meta, no_up=True)
-            UI.success("Environment updated.")
+        # Final Commit
+        project_meta["custom_env"] = json.dumps(custom_env)
+        self.manager.write_meta(paths["root"], project_meta)
+        self.manager.sync_stack(paths, project_meta, no_up=True)
+        UI.success("Environment updated.")
 
     def cmd_feature(self, project_id=None, enable=None, disable=None):
         """View or manage enabled feature flags for a project."""
