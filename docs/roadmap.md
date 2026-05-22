@@ -51,6 +51,11 @@ While the v2.4.0 release solidified the modular architecture, **v2.5.0** will fo
 
 - **Change Preview**: Support a `--dry-run` flag for destructive or configuration-heavy commands (`run`, `rm`, `import`, `scale`) to preview filesystem and Docker modifications without applying them.
 
+### 10. Automated Multi-OS Verification
+
+- **CI Matrix**: Refactor GitHub Actions to run the full E2E suite on Linux, macOS (via Colima), and Windows runners.
+- **JVM Footprint Optimization**: Automatically trigger a "Lean" JVM profile when running in CI to fit within GitHub's 7GB RAM limit.
+
 ---
 
 ## ✅ Completed Improvements (v2.4.0 - StackHandler Modularization)
