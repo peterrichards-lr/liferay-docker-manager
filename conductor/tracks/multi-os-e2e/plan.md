@@ -17,15 +17,17 @@ Currently, we rely on manual E2E verification reports for macOS, Windows, and sp
 
 ## 3. Implementation Steps
 
-### Phase 1: JVM Optimization (`--lean` mode)
+### Phase 1: JVM Optimization (`--lean` mode) [✅ COMPLETED]
 
+- **Status**: Implemented in v2.7.23, bugfixed in v2.7.24.
 - Update `ComposerHandler.get_default_jvm_args` to support a "Lean" profile.
-- **Lean Profile**: `-Xms1536m -Xmx2g -XX:MaxMetaspaceSize=512m` (sufficient for basic smoke tests with shared search).
+- **Lean Profile**: `-Xms1536m -Xmx2048m -XX:MaxMetaspaceSize=512m` (sufficient for basic smoke tests with shared search).
 - Automatically trigger Lean mode if `GITHUB_ACTIONS=true` is detected on the host.
 
-### Phase 2: GitHub Actions Matrix Refactor
+### Phase 2: GitHub Actions Matrix Refactor (Linux/Fedora) [🔄 IN-PROGRESS]
 
-- Refactor `.github/workflows/release-e2e.yml` to use an expanded `strategy.matrix`:
+- **Status**: Dedicated `scheduled-verification.yml` workflow created. Phase 2 (Fedora via container) implemented.
+- Refactor `.github/workflows/release-e2e.yml` (or create new) to use an expanded `strategy.matrix`:
   - `os`: `[ubuntu-latest, macos-13, macos-14, windows-latest]`
   - `distro`: `[ubuntu, fedora]` (for Linux runners).
 - Update reporting logic to include `matrix.os` and `matrix.distro` in artifact names.
