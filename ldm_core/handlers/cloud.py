@@ -209,29 +209,60 @@ class CloudService:
             self._verify_cloud_backup_checksums(snapshot_dir, latest)
 
             if getattr(self.manager.args, "restore", False):
-                # Seeded Start: Boost performance for new project restorations
+                tag_for_seed = None
                 if is_new_project:
                     tag_for_seed = self._get_cloud_liferay_version(cp_id, target_env)
-                    if tag_for_seed:
-                        paths = self.manager.setup_paths(root_path)
-                        # We use the db type from args or default to mysql (Liferay Cloud standard)
-                        db_type_for_seed = (
-                            getattr(self.manager.args, "db", None) or "mysql"
-                        )
-                        if self.manager.assets._ensure_seeded(
-                            tag_for_seed, db_type_for_seed, paths
-                        ):
-                            # Refresh meta from seed before merging restoration changes
-                            seed_meta = self.manager.read_meta(root_path)
-                            project_meta.update(seed_meta)
-
-                UI.info("Triggering local restore...")
-                self.manager.cmd_restore(project_id=project_id, backup_dir=snapshot_dir)
+                self.hydrate_cloud_backup(
+                    project_id, snapshot_dir, tag_for_seed=tag_for_seed
+                )
             return
 
         UI.info(
             f"Environment '{target_env}' (Project: {cp_id}) selected. Use flags (--list-backups, --download, --logs, --sync-env) to perform actions."
         )
+
+    def hydrate_cloud_backup(self, project_id, backup_dir_path, tag_for_seed=None):
+        """Generic function to hydrate an LDM project from a cloud backup directory (local or remote)."""
+        root_path = self.manager.detect_project_path(project_id, for_init=True)
+        if not root_path:
+            return False
+
+        is_new_project = not (root_path / PROJECT_META_FILE).exists()
+        project_meta = self.manager.read_meta(root_path)
+
+        if is_new_project and tag_for_seed:
+            paths = self.manager.setup_paths(root_path)
+            # Default to mysql as it's common for cloud backups, but allow override via args
+            db_type_for_seed = getattr(self.manager.args, "db", None) or "mysql"
+            if self.manager.assets._ensure_seeded(
+                tag_for_seed, db_type_for_seed, paths
+            ):
+                # Refresh meta from seed before merging restoration changes
+                seed_meta = self.manager.read_meta(root_path)
+                project_meta.update(seed_meta)
+
+        UI.info(f"Triggering local restore from {backup_dir_path}...")
+        self.manager.cmd_restore(project_id=project_id, backup_dir=backup_dir_path)
+        return True
+
+    def cmd_hydrate(self, backup_path, project_id=None):
+        """Creates or updates an LDM project from a local Liferay Cloud backup folder."""
+        from pathlib import Path
+
+        backup_dir = Path(backup_path).resolve()
+        if not backup_dir.exists() or not backup_dir.is_dir():
+            UI.die(f"Backup directory not found or is not a directory: {backup_dir}")
+
+        if (
+            not (backup_dir / "database.gz").exists()
+            and not (backup_dir / "volume.tgz").exists()
+        ):
+            UI.die(
+                f"Invalid cloud backup format in {backup_dir}. Missing database.gz or volume.tgz"
+            )
+
+        tag = getattr(self.manager.args, "tag", None)
+        self.hydrate_cloud_backup(project_id, backup_dir, tag_for_seed=tag)
 
     def _verify_cloud_backup_checksums(self, backup_dir, backup_meta):
         """Verifies MD5 checksums of downloaded cloud backup files."""

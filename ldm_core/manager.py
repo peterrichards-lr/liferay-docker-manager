@@ -120,6 +120,9 @@ class LiferayManager(
     def cmd_reset(self, *args, **kwargs):
         return self.runtime.cmd_reset(*args, **kwargs)
 
+    def cmd_hydrate(self, *args, **kwargs):
+        return self.cloud.cmd_hydrate(*args, **kwargs)
+
     def cmd_import(self, *args, **kwargs):
         return self.workspace.cmd_import(*args, **kwargs)
 

@@ -503,6 +503,15 @@ ldm edit [project]              # Edit .liferay-docker.meta
 ldm edit [project] --target properties # Edit portal-ext.properties
 ```
 
+### `hydrate` (Local Cloud Backup Hydration)
+
+Creates or restores a project from a local Liferay Cloud backup layout (`database.gz` and `volume.tgz`). This command reuses the high-performance seeding and restoration capabilities of `cloud-fetch` but targets local backup archives instead of downloading them from LCP.
+
+```bash
+ldm hydrate /path/to/backup/folder [project-name]
+ldm hydrate /path/to/backup/folder my-project --tag 2026.q1.7-lts --db postgresql
+```
+
 ### `cloud-fetch` (Fetch Cloud State)
 
 Synchronize an **existing local project** with data, logs, and configuration from Liferay Cloud (LCP). This is used for local debugging and state hydration, not for importing source code.

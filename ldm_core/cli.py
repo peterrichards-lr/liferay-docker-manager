@@ -195,6 +195,19 @@ def get_parser():
     )
     imp.add_argument("--env", action="append")
 
+    # Command: hydrate
+    hydrate = subparsers.add_parser("hydrate", parents=[base_sub_parent])
+    hydrate.add_argument("backup_path", help="Path to local cloud backup directory")
+    hydrate.add_argument("project", nargs="?")
+    hydrate.add_argument("-p", "--project", dest="project_flag")
+    hydrate.add_argument("-t", "--tag", help="Liferay Tag (e.g. 2024.q1.3)")
+    hydrate.add_argument(
+        "--db",
+        choices=["postgresql", "mysql"],
+        default="mysql",
+        help="Database type for the seed (default: mysql)",
+    )
+
     # Command: init
     init = subparsers.add_parser("init", parents=[base_sub_parent])
     init.add_argument("project", nargs="?")
@@ -765,6 +778,7 @@ def main():
         "env",
         "snapshot",
         "restore",
+        "hydrate",
         "import",
         "scale",
         "log-level",
@@ -784,6 +798,9 @@ def main():
     cmds: dict[str, Callable[..., Any]] = {
         "run": lambda: manager.runtime.cmd_run(getattr(args, "project", None)),
         "up": lambda: manager.runtime.cmd_run(getattr(args, "project", None)),
+        "hydrate": lambda: manager.cmd_hydrate(
+            args.backup_path, getattr(args, "project", None)
+        ),
         "import": lambda: manager.workspace.cmd_import(args.source),
         "init-from": lambda: manager.workspace.cmd_init_from(args.source),
         "monitor": lambda: manager.workspace.cmd_monitor(args.source),

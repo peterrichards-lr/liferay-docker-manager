@@ -409,23 +409,69 @@ class RuntimeService:
         start_time = time.time()
         import requests
 
+        http_ready = False
         while time.time() - start_time < timeout:
             try:
                 # Use a short timeout for the request itself
                 response = requests.get(url, timeout=5, verify=False)  # nosec B501
                 if response.status_code in [200, 302]:
                     UI.success(
-                        f"Project '{project_id}' is fully ready (HTTP {response.status_code})."
+                        f"Project '{project_id}' is responding to HTTP ({response.status_code})."
                     )
-                    return True
+                    http_ready = True
+                    break
             except Exception:
                 pass
             time.sleep(2)
 
-        UI.die(
-            f"Project '{project_id}' is running but HTTP {url} is not responding correctly."
+        if not http_ready:
+            UI.die(
+                f"Project '{project_id}' is running but HTTP {url} is not responding correctly."
+            )
+
+        # 3. Wait for System to become Idle (CPU Drop)
+        UI.info("Waiting for background initialization to complete (CPU Idle)...")
+        idle_checks = 0
+        consecutive_required = 3
+        cpu_threshold = 15.0  # Consider < 15% CPU to be "idle" for Liferay
+
+        while time.time() - start_time < timeout:
+            try:
+                result = self.manager.run_command(
+                    [
+                        "docker",
+                        "stats",
+                        "--no-stream",
+                        "--format",
+                        "{{.CPUPerc}}",
+                        meta.get("container_name"),
+                    ],
+                    capture_output=True,
+                    check=False,
+                )
+                if result:
+                    cpu_str = result.strip().replace("%", "")
+                    try:
+                        cpu = float(cpu_str)
+                        if cpu < cpu_threshold:
+                            idle_checks += 1
+                            if idle_checks >= consecutive_required:
+                                UI.success(
+                                    f"Project '{project_id}' is fully initialized and idle."
+                                )
+                                return True
+                        else:
+                            idle_checks = 0
+                    except ValueError:
+                        pass
+            except Exception:
+                pass
+            time.sleep(2)
+
+        UI.warning(
+            f"Project '{project_id}' did not reach an idle state within the timeout, but is responding to HTTP."
         )
-        return False
+        return True
 
     def _wait_for_ready(self, project_meta, host_name, total_start=None, timeout=600):
         """Wait for Liferay to become healthy and provide access information."""
