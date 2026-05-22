@@ -24,27 +24,27 @@ Currently, we rely on manual E2E verification reports for macOS, Windows, and sp
 - **Lean Profile**: `-Xms1536m -Xmx2048m -XX:MaxMetaspaceSize=512m` (sufficient for basic smoke tests with shared search).
 - Automatically trigger Lean mode if `GITHUB_ACTIONS=true` is detected on the host.
 
-### Phase 2: GitHub Actions Matrix Refactor (Linux/Fedora) [🔄 IN-PROGRESS]
+### Phase 2: GitHub Actions Matrix Refactor (Linux/Fedora) [✅ COMPLETED]
 
-- **Status**: Dedicated `scheduled-verification.yml` workflow created. Phase 2 (Fedora via container) implemented.
+- **Status**: Dedicated `scheduled-verification.yml` workflow created. Phase 2 (Fedora via explicit docker run) implemented.
 - Refactor `.github/workflows/release-e2e.yml` (or create new) to use an expanded `strategy.matrix`:
   - `os`: `[ubuntu-latest, macos-13, macos-14, windows-latest]`
   - `distro`: `[ubuntu, fedora]` (for Linux runners).
 - Update reporting logic to include `matrix.os` and `matrix.distro` in artifact names.
 
-### Phase 3: macOS Environment (Apple Silicon & Intel)
+### Phase 3: macOS Environment (Apple Silicon & Intel) [✅ COMPLETED]
 
 - Implement setup steps for macOS runners to install `colima` and `docker` via Homebrew.
 - Initialize Colima with CI-optimized resource limits (`colima start --cpu 2 --memory 6`).
 - Verify binary execution (`shiv` for macOS) and Traefik routing.
 
-### Phase 4: Fedora Environment (Container Jobs)
+### Phase 4: Fedora Environment (Container Jobs) [✅ COMPLETED]
 
 - Implement a specific job that runs inside a `fedora:latest` container on an Ubuntu host.
 - Mount `/var/run/docker.sock` to enable LDM to orchestrate containers from within Fedora.
 - Verify LDM's path and permission handling on the Fedora filesystem.
 
-### Phase 5: Windows Environment (WSL2/Linux Mode)
+### Phase 5: Windows Environment (WSL2/Linux Mode) [✅ COMPLETED]
 
 - Configure Windows runners to switch Docker to Linux Container mode.
 - Ensure the LDM binary (built with PyInstaller) correctly interacts with the Docker daemon.
