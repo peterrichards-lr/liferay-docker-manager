@@ -1132,23 +1132,60 @@ class RuntimeService:
                     cmd, capture_output=False, cwd=str(root), check=False
                 )
 
-    def cmd_deploy(self, project_id=None, service=None):
-        """Deploys a project or specific service."""
+    def cmd_deploy(self, project_id=None, targets=None, service=None):
+        """Deploys a project, specific services, or individual artifacts."""
         root = self.manager.detect_project_path(project_id)
         if not root:
             return
         paths, meta = self.manager.setup_paths(root), self.manager.read_meta(root)
-        if service:
-            UI.info(f"Deploying service '{service}'...")
-            self.manager.run_command(
-                [*get_compose_cmd(), "up", "-d", service],
-                capture_output=False,
-                cwd=str(root),
-            )
-        else:
+
+        # Normalize targets (legacy support for service parameter)
+        if service and not targets:
+            targets = [service]
+        elif not targets:
+            targets = []
+
+        if not targets:
+            # Full stack sync
             self.sync_stack(
                 paths, meta, rebuild=getattr(self.manager.args, "rebuild", False)
             )
+            return
+
+        # Handle specific targets (services or files)
+        from ldm_core.utils import atomic_copy
+
+        services_to_up = set()
+        for t in targets:
+            t_path = Path(t)
+            if t_path.exists() and t_path.is_file():
+                ext = t_path.suffix.lower()
+                if ext in [".jar", ".war"]:
+                    dest = paths["modules"] / t_path.name
+                    UI.info(f"Syncing Module: {t_path.name}")
+                    atomic_copy(t_path, dest)
+                elif ext == ".zip":
+                    # Potentially a CX or Fragment
+                    from ldm_core.handlers.workspace import WorkspaceService
+
+                    handler = WorkspaceService(self.manager)
+                    handler._sync_cx_artifact(t_path, paths)
+                else:
+                    UI.warning(f"Unsupported file type for deployment: {t}")
+            else:
+                # Treat as service name
+                services_to_up.add(t)
+
+        if services_to_up:
+            for svc in sorted(services_to_up):
+                UI.info(f"Deploying service '{svc}'...")
+                self.manager.run_command(
+                    [*get_compose_cmd(), "up", "-d", svc],
+                    capture_output=False,
+                    cwd=str(root),
+                )
+        else:
+            UI.success("Artifact deployment complete.")
 
     def cmd_shell(self, project_id=None, service="liferay"):
         """Enters a project container via bash."""

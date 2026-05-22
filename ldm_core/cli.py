@@ -263,12 +263,20 @@ def get_parser():
         p = subparsers.add_parser(cmd, aliases=aliases, parents=[base_sub_parent])
         p.add_argument("project", nargs="?")
 
-        if cmd == "logs":
+        if cmd == "deploy":
+            p.add_argument(
+                "targets",
+                nargs="*",
+                help="Optional: specific services or files to deploy",
+            )
+            p.add_argument("--rebuild", action="store_true")
+        elif cmd == "logs":
             p.add_argument("service", nargs="*")
         else:
             p.add_argument("service", nargs="?")
 
         p.add_argument("-p", "--project", dest="project_flag")
+
         if cmd == "down":
             p.add_argument("-V", "--volumes", action="store_true")
             p.add_argument("-d", "--delete", action="store_true")
@@ -313,8 +321,6 @@ def get_parser():
                 action="store_true",
                 help="View logs for global infrastructure",
             )
-        if cmd == "deploy":
-            p.add_argument("--rebuild", action="store_true")
         if cmd in ["stop", "restart", "down", "logs"]:
             p.add_argument(
                 "--all", action="store_true", help="Apply to all running projects"
@@ -811,8 +817,8 @@ def main():
             since=getattr(args, "since", None),
             until=getattr(args, "until", None),
         ),
-        "deploy": lambda: manager.runtime.cmd_deploy(
-            getattr(args, "project", None), getattr(args, "service", None)
+        "deploy": lambda: manager.cmd_deploy(
+            getattr(args, "project", None), targets=getattr(args, "targets", [])
         ),
         "env": lambda: manager.config.cmd_env(getattr(args, "project", None)),
         "feature": lambda: manager.config.cmd_feature(
