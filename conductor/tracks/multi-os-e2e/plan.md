@@ -32,8 +32,9 @@ Currently, we rely on manual E2E verification reports for macOS, Windows, and sp
   - `distro`: `[ubuntu, fedora]` (for Linux runners).
 - Update reporting logic to include `matrix.os` and `matrix.distro` in artifact names.
 
-### Phase 3: macOS Environment (Apple Silicon & Intel) [✅ COMPLETED]
+### Phase 3: macOS Environment (Apple Silicon & Intel) [⚠️ LOCAL ONLY]
 
+- **Status**: E2E scripts are fully compatible. However, automated GitHub Actions execution was backed out because the macOS runners do not support nested virtualization reliably enough for Colima. This remains a local-only automated verification.
 - Implement setup steps for macOS runners to install `colima` and `docker` via Homebrew.
 - Initialize Colima with CI-optimized resource limits (`colima start --cpu 2 --memory 6`).
 - Verify binary execution (`shiv` for macOS) and Traefik routing.
@@ -44,8 +45,9 @@ Currently, we rely on manual E2E verification reports for macOS, Windows, and sp
 - Mount `/var/run/docker.sock` to enable LDM to orchestrate containers from within Fedora.
 - Verify LDM's path and permission handling on the Fedora filesystem.
 
-### Phase 5: Windows Environment (WSL2/Linux Mode) [✅ COMPLETED]
+### Phase 5: Windows Environment (WSL2/Linux Mode) [⚠️ LOCAL ONLY]
 
+- **Status**: E2E PowerShell script is fully implemented. However, automated GitHub Actions execution was backed out because the Windows Server runners (windows-latest) do not natively support Linux Containers (LCOW) without complex Hyper-V / WSL2 nested setups that frequently fail. This remains a local-only automated verification.
 - Configure Windows runners to switch Docker to Linux Container mode.
 - Ensure the LDM binary (built with PyInstaller) correctly interacts with the Docker daemon.
 
