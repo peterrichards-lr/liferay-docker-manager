@@ -97,31 +97,52 @@ class BaseHandler:
                 )
                 UI.info("Recommended: Use '.test' or '.internal' instead.")
 
-            if not self.check_hostname(host_name):
+            # Collect all required hostnames (main + extensions)
+            required_hosts = [host_name]
+            paths = self.setup_paths(root)
+            if paths["cx"].exists():
+                from ldm_core.handlers.workspace import WorkspaceService
+
+                handler = WorkspaceService(self)
+                extensions = handler.scan_client_extensions(
+                    paths["root"], paths["cx"], paths["ce_dir"]
+                )
+                for ext in extensions:
+                    if ext.get("deploy") and ext.get("has_load_balancer"):
+                        required_hosts.append(f"{ext['id']}.{host_name}")
+
+            unresolved = [h for h in required_hosts if not self.check_hostname(h)]
+
+            if unresolved:
                 if self.non_interactive:
                     UI.info(
-                        f"Hostname resolution failed for '{host_name}'. Attempting non-interactive fix..."
+                        f"Missing host entries detected: {', '.join(unresolved)}. Attempting non-interactive fix..."
                     )
-                    if self._apply_hosts_fix([host_name]):
+                    if self._apply_hosts_fix(unresolved):
                         # Give the OS a moment to refresh DNS cache
                         import time
 
                         time.sleep(0.5)
-                        if self.check_hostname(host_name):
-                            UI.success(f"Hostname '{host_name}' fixed automatically.")
+                        still_broken = [
+                            h for h in unresolved if not self.check_hostname(h)
+                        ]
+                        if not still_broken:
+                            UI.success("All host entries fixed automatically.")
                         else:
                             UI.die(
-                                f"Hostname resolution failed for '{host_name}' even after attempted fix."
+                                f"Hostname resolution failed for: {', '.join(still_broken)} even after attempted fix."
                             )
                     else:
                         UI.die(
-                            f"Hostname resolution failed for '{host_name}' and fix could not be applied non-interactively."
+                            "Hostname resolution failed and fix could not be applied non-interactively."
                         )
                 else:
-                    UI.warning(f"Hostname '{host_name}' does not resolve to an IP.")
-                    UI.info("LDM can try to fix this by adding an entry to /etc/hosts.")
-                    if UI.confirm("Add host entry? (Requires sudo)", "Y"):
-                        self._apply_hosts_fix([host_name])
+                    UI.warning(
+                        f"Missing host entries detected: {', '.join(unresolved)}"
+                    )
+                    UI.info("LDM can try to fix this by adding entries to /etc/hosts.")
+                    if UI.confirm("Add host entries? (Requires sudo)", "Y"):
+                        self._apply_hosts_fix(unresolved)
 
         # 3. Port Check (Only if not using SSL proxy which handles routing dynamically)
         if not ssl_enabled:
@@ -1259,6 +1280,29 @@ class BaseHandler:
             f"Please add it to your local hosts file or run '{UI.WHITE}ldm doctor --fix-hosts{UI.COLOR_OFF}'."
         )
         return False
+
+    def cmd_fix_hosts(self, target=None):
+        """Fixes missing host entries for a specific hostname or a LDM project."""
+        if not target:
+            # If no target provided, run doctor's fix-hosts logic (scans all/current project)
+            return self.manager.cmd_doctor(fix_hosts=True)
+
+        # 1. Try to treat as a project first
+        root = self.detect_project_path(target)
+        if root:
+            UI.info(f"Scanning project '{target}' for required hostnames...")
+            dns_ok, unresolved, non_local = self.validate_project_dns(root)
+            needs_fix = unresolved + [h for h, ip in non_local]
+
+            if not needs_fix:
+                UI.success(f"All domains for project '{target}' resolve correctly.")
+                return True
+
+            UI.info(f"Found {len(needs_fix)} domain(s) needing fix.")
+            return self._apply_hosts_fix(needs_fix)
+
+        # 2. Otherwise treat as direct hostname
+        return self._apply_hosts_fix([target])
 
     def validate_project_dns(self, project_id):
         """Verifies that the project's hostname and all active client extensions resolve correctly."""

@@ -327,7 +327,7 @@ LDM automates the routing and SSL orchestration for both the main Liferay instan
 - **Liferay Integration**: LDM automatically injects `LIFERAY_WEB_SERVER_HOST` and other necessary properties into Liferay to ensure it can communicate seamlessly with its client extension subdomains.
 
 > [!TIP]
-> **DNS Resolution**: Standard `/etc/hosts` files do not support wildcards. While LDM can fix the main hostname for you, you must manually add entries for each extension subdomain or use a local DNS resolver like `dnsmasq`.
+> **DNS Resolution**: Standard `/etc/hosts` files do not support wildcards. However, LDM's **`ldm fix-hosts [project]`** and **`ldm doctor --fix-hosts`** commands are intelligent—they scan your project for active client extensions and automatically append entries for both the main hostname and all required subdomains (e.g., `custom-logic.my-project.local`) to your hosts file.
 
 ### `monitor`
 
@@ -554,10 +554,13 @@ ldm doctor --fix-hosts # Automatically add missing domains to /etc/hosts (will p
 Manually append missing project hostnames to your system's `/etc/hosts` file. This command is automatically triggered by `ldm run` if a resolution failure is detected, but can also be called surgically.
 
 ```bash
-# Add a specific hostname
-ldm fix-hosts my-project.local
+# Fix all hostnames for a project (including extension subdomains)
+ldm fix-hosts my-project
 
-# Run a full fix via doctor
+# Add a specific raw hostname
+ldm fix-hosts custom.local
+
+# Run a full fix for all projects via doctor
 ldm doctor --fix-hosts
 ```
 

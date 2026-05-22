@@ -824,9 +824,7 @@ def main():
         "doctor": lambda: manager.diagnostics.cmd_doctor(
             getattr(args, "project", None), all_projects=args.all
         ),
-        "fix-hosts": lambda: manager._apply_hosts_fix(
-            [args.host_name] if getattr(args, "host_name", None) else []
-        ),
+        "fix-hosts": lambda: manager.cmd_fix_hosts(getattr(args, "host_name", None)),
         "status": lambda: manager.diagnostics.cmd_status(
             getattr(args, "project", None), all_projects=args.all
         ),

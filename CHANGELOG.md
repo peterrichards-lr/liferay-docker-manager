@@ -36,7 +36,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Hardened atomic deployment logic by ensuring Unix permission fixups occur on hidden staging files *before* they are moved into Liferay's scanner path. This eliminates the race condition where `AutoDeployScanner` could see a file before its ownership was handed off to the `liferay` user.
 
-## [v2.7.5] - 2026-05-21
+## [2.7.11] - 2026-05-21
+
+### Added
+
+- **Smarter Subdomain Fixing**: Enhanced `ldm fix-hosts` and pre-flight checks to automatically identify and fix missing client extension subdomains. LDM now scans projects for active extensions and ensures every required URL resolves to 127.0.0.1 before starting.
+- Updated documentation to clarify that LDM handles the entire project DNS tree (main host + wildcards/subdomains) automatically.
+
+## [2.7.10] - 2026-05-21
 
 ### Fixed
 
