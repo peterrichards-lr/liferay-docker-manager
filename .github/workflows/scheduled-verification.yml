@@ -20,32 +20,31 @@ jobs:
       matrix:
         distro: [ubuntu, fedora]
     runs-on: ubuntu-latest
-    container:
-      image: ${{ matrix.distro == 'fedora' && 'fedora:latest' || 'ubuntu:latest' }}
-      options: --user root --privileged -v /var/run/docker.sock:/var/run/docker.sock
     
     steps:
-      - name: Install System Dependencies
-        run: |
-          if [ -f /etc/fedora-release ]; then
-            dnf install -y python3-pip git docker docker-compose hostname which
-          else
-            apt-get update && apt-get install -y python3-pip git docker-compose python3-full hostname
-          fi
-
       - name: Checkout Code
         uses: actions/checkout@v6
 
-      - name: Install LDM
-        run: pip install . --break-system-packages # breakage is fine in ephemeral CI
-
-      - name: Run E2E Verification Suite
-        run: bash scripts/verify_e2e_refactor.sh --ci
+      - name: Run E2E Verification Suite (Ubuntu)
+        if: matrix.distro == 'ubuntu'
         env:
           GITHUB_ACTIONS: "true"
-          # Mount the host docker socket to enable container orchestration
-          # Note: This requires the container job to have access to the socket
-        
+        run: |
+          sudo apt-get update && sudo apt-get install -y python3-pip git docker-compose python3-venv hostname
+          pip install . --break-system-packages
+          bash scripts/verify_e2e_refactor.sh --ci
+          
+      - name: Run E2E Verification Suite (Fedora)
+        if: matrix.distro == 'fedora'
+        run: |
+          docker run --rm --privileged \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            -v ${{ github.workspace }}:${{ github.workspace }} \
+            -w ${{ github.workspace }} \
+            -e GITHUB_ACTIONS="true" \
+            fedora:latest \
+            bash -c "dnf install -y python3-pip git docker-compose hostname which && pip install . --break-system-packages && bash scripts/verify_e2e_refactor.sh --ci"
+
       - name: Upload Test Results
         if: always()
         uses: actions/upload-artifact@v4
