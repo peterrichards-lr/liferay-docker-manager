@@ -233,14 +233,7 @@ echo -e "tag=2026.q1.7-lts\ncontainer_name=ldm-smoke-test\nport=${TEST_PORT}\ndb
 log_and_run "Running LDM Project" "$LDM_CMD" -y run . --no-wait --no-tld-skip --no-jvm-verify
 
 # Wait for Health
-echo ">> Waiting for Liferay health (max 15m)..."
-COUNT=0
-while [ $COUNT -lt 90 ]; do
-    if docker logs ldm-smoke-test 2>&1 | grep -q "org.apache.catalina.startup.Catalina.start Server startup in"; then
-        echo -e "\n✅ Liferay Tomcat started." && break
-    fi
-    printf "." && sleep 10 && COUNT=$((COUNT+1))
-done
+log_and_run "Waiting for Liferay health" "$LDM_CMD" -y wait . --timeout 900
 
 # Hot Deploy
 echo ">> Deploying Test OSGi Bundle..."
@@ -293,7 +286,7 @@ echo ">> Verifying Redaction..."
 "$LDM_CMD" -v env . REDACT_SECRET=hidden 2>&1 | grep -q "REDACT_SECRET=\[REDACTED\]" && echo "✅ Redaction verified."
 
 echo ">> Verifying Scaling..."
-"$LDM_CMD" -y scale . liferay=3 >/dev/null 2>&1
+log_and_run "Scaling Liferay" "$LDM_CMD" -y scale . liferay=3
 grep -q "scale_liferay=3" meta && echo "✅ Scaling verified."
 
 # Final
