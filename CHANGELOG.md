@@ -49,7 +49,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Implemented universal permission fixup (`chmod 666` and `chown 1000:1000`) for all file deployment operations on Unix. This definitively resolves the "Unable to write" errors in Liferay's `AutoDeployScanner` when LDM is running as root (e.g. in CI or with sudo).
 
-## [v2.7.4] - 2026-05-21
+## [2.7.12] - 2026-05-21
+
+### Added
+
+- Added **`ldm wait` command**: Provides a standardized way to block script execution until a project is fully ready and returning HTTP 200/302.
+- Added **Automatic Volume Hardening**: LDM now automatically detects projects stored on external macOS volumes (`/Volumes/`) and enables the `--internal-state` flag for better OSGi locking performance.
+- Enhanced **Environment Forwarding**: Automatically forwards common AI-related environment variables (prefixes: `OPENAI_`, `GEMINI_`, `ANTHROPIC_`, `MISTRAL_`) into Liferay and extension containers.
+- Added **`--timeout` flag** to `ldm run`: Allows customizing the readiness wait period.
+
+### Fixed
+
+- Confirmed that `ldm deploy` already utilizes the **Zero-Race Atomic Deployment** strategy (staging + atomic move) for all client extensions.
+
+## [2.7.11] - 2026-05-21
 
 ### Fixed
 

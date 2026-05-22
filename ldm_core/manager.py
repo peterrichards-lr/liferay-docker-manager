@@ -102,6 +102,9 @@ class LiferayManager(
     def cmd_doctor(self, *args, **kwargs):
         return self.diagnostics.cmd_doctor(*args, **kwargs)
 
+    def cmd_wait(self, *args, **kwargs):
+        return self.runtime.cmd_wait(*args, **kwargs)
+
     def cmd_prune(self, *args, **kwargs):
         return self.diagnostics.cmd_prune(*args, **kwargs)
 

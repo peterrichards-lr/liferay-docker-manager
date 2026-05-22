@@ -136,6 +136,12 @@ def get_parser():
         "--snapshot",
         help="Initialize project from an external snapshot folder",
     )
+    run.add_argument(
+        "--timeout",
+        type=int,
+        default=600,
+        help="Maximum time to wait for health (default: 600)",
+    )
 
     # Command: import
     imp = subparsers.add_parser("import", parents=[base_sub_parent])
@@ -491,6 +497,20 @@ def get_parser():
     fh = subparsers.add_parser("fix-hosts", parents=[base_sub_parent])
     fh.add_argument("host_name", nargs="?")
 
+    # Command: wait
+    wait_cmd = subparsers.add_parser(
+        "wait",
+        parents=[base_sub_parent],
+        help="Block execution until a project is fully ready (HTTP 200/302).",
+    )
+    wait_cmd.add_argument("project", nargs="?")
+    wait_cmd.add_argument(
+        "--timeout",
+        type=int,
+        default=600,
+        help="Maximum time to wait in seconds (default: 600)",
+    )
+
     status = subparsers.add_parser("status", aliases=["ps"], parents=[base_sub_parent])
     status.add_argument("project", nargs="?")
     status.add_argument("--all", action="store_true", help="Show all managed projects")
@@ -821,10 +841,13 @@ def main():
         "cache": lambda: manager.diagnostics.cmd_cache(getattr(args, "target", "tags")),
         "clear-cache": lambda: manager.diagnostics.cmd_cache("tags"),
         "clear-tags": lambda: manager.diagnostics.cmd_cache("tags"),
-        "doctor": lambda: manager.diagnostics.cmd_doctor(
+        "doctor": lambda: manager.cmd_doctor(
             getattr(args, "project", None), all_projects=args.all
         ),
         "fix-hosts": lambda: manager.cmd_fix_hosts(getattr(args, "host_name", None)),
+        "wait": lambda: manager.cmd_wait(
+            getattr(args, "project", None), timeout=getattr(args, "timeout", 600)
+        ),
         "status": lambda: manager.diagnostics.cmd_status(
             getattr(args, "project", None), all_projects=args.all
         ),

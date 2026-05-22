@@ -393,7 +393,17 @@ class WorkspaceService(BaseHandler):
             {
                 k: v
                 for k, v in os.environ.items()
-                if any(k.startswith(p) for p in ["LXC_", "COM_LIFERAY_LXC_"])
+                if any(
+                    k.startswith(p)
+                    for p in [
+                        "LXC_",
+                        "COM_LIFERAY_LXC_",
+                        "OPENAI_",
+                        "GEMINI_",
+                        "ANTHROPIC_",
+                        "MISTRAL_",
+                    ]
+                )
                 and not is_env_var_blacklisted(k, blacklist)
             }
         )

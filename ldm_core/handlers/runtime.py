@@ -126,6 +126,20 @@ class RuntimeService:
             getattr(self.manager.args, "no_vol_cache", False)
             or str(project_meta.get("no_vol_cache", "false")).lower() == "true"
         )
+
+        # LDM-384: Auto-detect external volumes and enable internal-state
+        is_external_volume = platform.system().lower() == "darwin" and str(
+            root
+        ).startswith("/Volumes/")
+        if is_external_volume and not getattr(
+            self.manager.args, "internal_state", None
+        ):
+            if str(project_meta.get("internal_state", "false")).lower() != "true":
+                UI.info(
+                    "External volume detected. Automatically enabling '--internal-state' for stability."
+                )
+                project_meta["internal_state"] = "true"
+
         internal_state = (
             getattr(self.manager.args, "internal_state", False)
             or str(project_meta.get("internal_state", "false")).lower() == "true"
@@ -348,14 +362,58 @@ class RuntimeService:
             else:
                 UI.error("Reseed failed.")
 
-    def _wait_for_ready(self, project_meta, host_name, total_start=None):
+    def cmd_wait(self, project_id=None, timeout=600):
+        """Block execution until project is fully ready (HTTP 200/302)."""
+        root = self.manager.detect_project_path(project_id)
+        if not root:
+            return None
+        meta = self.manager.read_meta(root)
+        host_name = meta.get("host_name", "localhost")
+
+        # 1. Wait for Container/Log Readiness
+        if not self._wait_for_ready(meta, host_name, timeout=timeout):
+            UI.die(f"Project '{project_id}' failed to become ready within {timeout}s.")
+
+        # 2. Wait for HTTP Availability
+        UI.info(
+            f"Verifying HTTP accessibility for {UI.CYAN}{host_name}{UI.COLOR_OFF}..."
+        )
+        ssl_enabled = self.manager.composer._is_ssl_active(host_name, meta)
+        port = meta.get("port", 8080)
+        protocol = "https" if ssl_enabled else "http"
+        url = f"{protocol}://{host_name}"
+        if not ssl_enabled and port != 80:
+            url += f":{port}"
+
+        start_time = time.time()
+        import requests
+
+        while time.time() - start_time < timeout:
+            try:
+                # Use a short timeout for the request itself
+                response = requests.get(url, timeout=5, verify=False)  # nosec B501
+                if response.status_code in [200, 302]:
+                    UI.success(
+                        f"Project '{project_id}' is fully ready (HTTP {response.status_code})."
+                    )
+                    return True
+            except Exception:
+                pass
+            time.sleep(2)
+
+        UI.die(
+            f"Project '{project_id}' is running but HTTP {url} is not responding correctly."
+        )
+        return False
+
+    def _wait_for_ready(self, project_meta, host_name, total_start=None, timeout=600):
         """Wait for Liferay to become healthy and provide access information."""
         container_name = project_meta.get("container_name")
         start_time = time.time()
         UI.info(f"Waiting for Liferay to become healthy ({container_name})...")
 
         last_notified_time = 0
-        while time.time() - start_time < 600:  # 10 minute timeout
+        while time.time() - start_time < timeout:
             elapsed = time.time() - start_time
             # Notify every 30 seconds (Robust timestamp check)
             # Move notification BEFORE blocking call for guaranteed feedback
@@ -674,7 +732,12 @@ class RuntimeService:
                 )
                 return True
             if not no_wait:
-                return self._wait_for_ready(project_meta, host_name, total_start)
+                return self._wait_for_ready(
+                    project_meta,
+                    host_name,
+                    total_start,
+                    timeout=getattr(self.manager.args, "timeout", 600),
+                )
 
         if no_wait:
             UI.success(f"Project '{project_id}' started in background.")
