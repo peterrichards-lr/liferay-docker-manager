@@ -384,36 +384,49 @@ class WorkspaceService(BaseHandler):
 
     def get_host_passthrough_env(self, paths=None, target_id=None):
         blacklist = self._get_effective_blacklist(paths)
+
+        # 1. Global Strip-Forwarding (LDM_VAR=xxx -> VAR=xxx in ALL containers)
         global_pool = {
             k[4:]: v
             for k, v in os.environ.items()
             if k.upper().startswith("LDM_") and not is_env_var_blacklisted(k, blacklist)
         }
+
+        # 2. Passthrough Prefixes (Preserve prefix, forward to ALL containers)
+        # Default set covers Liferay Cloud and common AI providers
+        passthrough_prefixes = [
+            "LXC_",
+            "COM_LIFERAY_LXC_",
+            "OPENAI_",
+            "GEMINI_",
+            "ANTHROPIC_",
+            "MISTRAL_",
+        ]
+        # Allow user to extend this list via host environment
+        extra_prefixes = os.environ.get("LDM_FORWARD_PREFIXES")
+        if extra_prefixes:
+            passthrough_prefixes.extend(
+                [p.strip() for p in extra_prefixes.split(",") if p.strip()]
+            )
+
         global_pool.update(
             {
                 k: v
                 for k, v in os.environ.items()
-                if any(
-                    k.startswith(p)
-                    for p in [
-                        "LXC_",
-                        "COM_LIFERAY_LXC_",
-                        "OPENAI_",
-                        "GEMINI_",
-                        "ANTHROPIC_",
-                        "MISTRAL_",
-                    ]
-                )
+                if any(k.upper().startswith(p.upper()) for p in passthrough_prefixes)
                 and not is_env_var_blacklisted(k, blacklist)
             }
         )
 
         if not target_id:
+            # Multi-service request (used for initialcompose generation)
             res = [f"{k}={v}" for k, v in global_pool.items()]
             exts = self.scan_client_extensions(
                 paths["root"], paths["cx"], paths["ce_dir"]
             )
             services = self.scan_standalone_services(paths["root"])
+
+            # Add un-stripped service/liferay vars to the comprehensive list
             for k, v in os.environ.items():
                 if is_env_var_blacklisted(k, blacklist):
                     continue
@@ -424,6 +437,7 @@ class WorkspaceService(BaseHandler):
                     res.append(f"{k}={v}")
             return sorted(set(res))
 
+        # Targeted service request: [SERVICE_ID]_VAR=xxx -> VAR=xxx
         prefix = target_id.upper().replace("-", "_") + "_"
         targeted = {
             k[len(prefix) :] if target_id.lower() != "liferay" else k: v
