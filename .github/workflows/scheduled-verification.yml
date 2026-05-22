@@ -27,10 +27,10 @@ jobs:
     steps:
       - name: Install System Dependencies
         run: |
-          if [ "${{ matrix.distro }}" = "fedora" ]; then
+          if [ -f /etc/fedora-release ]; then
             dnf install -y python3-pip git docker docker-compose hostname
           else
-            apt-get update && apt-get install -y python3-pip git docker-compose python3-venv
+            apt-get update && apt-get install -y python3-pip git docker-compose python3-full hostname
           fi
 
       - name: Checkout Code

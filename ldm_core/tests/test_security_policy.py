@@ -30,7 +30,9 @@ class TestSecurityPolicy(unittest.TestCase):
         with (
             patch("ldm_core.cli.SCRIPT_DIR", Path("/tmp")),
             patch("pathlib.Path.exists", return_value=False),
-            patch.dict(os.environ, {"LDM_ALLOW_ROOT": "false"}),
+            patch.dict(
+                os.environ, {"LDM_ALLOW_ROOT": "false", "GITHUB_ACTIONS": "false"}
+            ),
             patch("ldm_core.cli.LiferayManager") as mock_manager_cls,
         ):
             # Setup mock manager instance
@@ -51,6 +53,52 @@ class TestSecurityPolicy(unittest.TestCase):
             mock_ui.error.assert_called_with(
                 "Security Risk: Do not run LDM with 'sudo'."
             )
+
+    @patch("ldm_core.cli.platform.system")
+    @patch("os.geteuid")
+    @patch("sys.exit")
+    @patch("ldm_core.cli.get_parser")
+    @patch("ldm_core.cli.UI")
+    def test_sudo_guard_bypassed_in_ci(
+        self, mock_ui, mock_get_parser, mock_exit, mock_geteuid, mock_system
+    ):
+        # Setup mocks
+        mock_system.return_value = "Linux"
+        mock_geteuid.return_value = 0  # Root
+
+        # Mock the parser and arguments
+        mock_parser = MagicMock()
+        mock_subparsers = MagicMock()
+        mock_get_parser.return_value = (mock_parser, mock_subparsers)
+
+        mock_args = MagicMock()
+        mock_args.command = "run"
+        mock_parser.parse_args.return_value = mock_args
+
+        with (
+            patch("ldm_core.cli.SCRIPT_DIR", Path("/tmp")),
+            patch("pathlib.Path.exists", return_value=False),
+            patch.dict(
+                os.environ, {"LDM_ALLOW_ROOT": "false", "GITHUB_ACTIONS": "true"}
+            ),
+            patch("ldm_core.cli.LiferayManager") as mock_manager_cls,
+        ):
+            mock_manager = mock_manager_cls.return_value
+            mock_manager.detect_project_path.return_value = None
+            mock_manager.check_docker.return_value = True
+
+            from ldm_core.cli import main
+
+            try:
+                main()
+            except Exception:
+                pass
+
+            # Verify exit was NOT called with 1
+            for call in mock_exit.call_args_list:
+                self.assertNotEqual(call[0][0], 1)
+            # Verify UI error was NOT called
+            mock_ui.error.assert_not_called()
 
     @patch("ldm_core.cli.platform.system")
     @patch("os.geteuid")
