@@ -78,6 +78,67 @@ class BaseHandler:
                 pass
         return False
 
+    def ensure_hostnames_resolve(self, root, host_name, project_id=None):
+        """Verifies that the main host and all extension subdomains resolve, fixing them if needed."""
+        if host_name == "localhost":
+            return True
+
+        # Windows/WSL .local warning
+        if host_name.endswith(".local") and (
+            platform.system().lower() == "windows" or self.is_wsl()
+        ):
+            UI.warning(f"Hostname '{host_name}' uses the '.local' TLD.")
+            UI.info(
+                "On Windows, '.local' is reserved for mDNS and may ignore your hosts file."
+            )
+            UI.info("Recommended: Use '.test' or '.internal' instead.")
+
+        # Collect all required hostnames (main + extensions)
+        required_hosts = [host_name]
+        paths = self.setup_paths(root)
+        if paths["cx"].exists():
+            from ldm_core.handlers.workspace import WorkspaceService
+
+            handler = WorkspaceService(self)
+            extensions = handler.scan_client_extensions(
+                paths["root"], paths["cx"], paths["ce_dir"]
+            )
+            for ext in extensions:
+                if ext.get("deploy") and ext.get("has_load_balancer"):
+                    required_hosts.append(f"{ext['id']}.{host_name}")
+
+        unresolved = [h for h in required_hosts if not self.check_hostname(h)]
+
+        if unresolved:
+            if self.non_interactive:
+                UI.info(
+                    f"Missing host entries detected: {', '.join(unresolved)}. Attempting non-interactive fix..."
+                )
+                if self._apply_hosts_fix(unresolved):
+                    # Give the OS a moment to refresh DNS cache
+                    import time
+
+                    time.sleep(0.5)
+                    still_broken = [h for h in unresolved if not self.check_hostname(h)]
+                    if not still_broken:
+                        UI.success("All host entries fixed automatically.")
+                        return True
+                    UI.die(
+                        f"Hostname resolution failed for: {', '.join(still_broken)} even after attempted fix."
+                    )
+                else:
+                    UI.die(
+                        "Hostname resolution failed and fix could not be applied non-interactively."
+                    )
+            else:
+                UI.warning(f"Missing host entries detected: {', '.join(unresolved)}")
+                UI.info("LDM can try to fix this by adding entries to /etc/hosts.")
+                if UI.confirm("Add host entries? (Requires sudo)", "Y"):
+                    return self._apply_hosts_fix(unresolved)
+                UI.die("Aborted. Hostnames must resolve to continue.")
+
+        return True
+
     def _pre_flight_checks(self, host_name, port, ssl_enabled=False, meta=None):
         """Runs critical safety checks before starting containers."""
         root = Path(meta.get("root"))
@@ -86,63 +147,8 @@ class BaseHandler:
         self.check_ram(mem_limit=mem_limit)
 
         # 2. Hostname Check
-        if host_name != "localhost":
-            # Windows/WSL .local warning
-            if host_name.endswith(".local") and (
-                platform.system().lower() == "windows" or self.is_wsl()
-            ):
-                UI.warning(f"Hostname '{host_name}' uses the '.local' TLD.")
-                UI.info(
-                    "On Windows, '.local' is reserved for mDNS and may ignore your hosts file."
-                )
-                UI.info("Recommended: Use '.test' or '.internal' instead.")
-
-            # Collect all required hostnames (main + extensions)
-            required_hosts = [host_name]
-            paths = self.setup_paths(root)
-            if paths["cx"].exists():
-                from ldm_core.handlers.workspace import WorkspaceService
-
-                handler = WorkspaceService(self)
-                extensions = handler.scan_client_extensions(
-                    paths["root"], paths["cx"], paths["ce_dir"]
-                )
-                for ext in extensions:
-                    if ext.get("deploy") and ext.get("has_load_balancer"):
-                        required_hosts.append(f"{ext['id']}.{host_name}")
-
-            unresolved = [h for h in required_hosts if not self.check_hostname(h)]
-
-            if unresolved:
-                if self.non_interactive:
-                    UI.info(
-                        f"Missing host entries detected: {', '.join(unresolved)}. Attempting non-interactive fix..."
-                    )
-                    if self._apply_hosts_fix(unresolved):
-                        # Give the OS a moment to refresh DNS cache
-                        import time
-
-                        time.sleep(0.5)
-                        still_broken = [
-                            h for h in unresolved if not self.check_hostname(h)
-                        ]
-                        if not still_broken:
-                            UI.success("All host entries fixed automatically.")
-                        else:
-                            UI.die(
-                                f"Hostname resolution failed for: {', '.join(still_broken)} even after attempted fix."
-                            )
-                    else:
-                        UI.die(
-                            "Hostname resolution failed and fix could not be applied non-interactively."
-                        )
-                else:
-                    UI.warning(
-                        f"Missing host entries detected: {', '.join(unresolved)}"
-                    )
-                    UI.info("LDM can try to fix this by adding entries to /etc/hosts.")
-                    if UI.confirm("Add host entries? (Requires sudo)", "Y"):
-                        self._apply_hosts_fix(unresolved)
+        project_id = meta.get("project_name") if meta else None
+        self.ensure_hostnames_resolve(root, host_name, project_id=project_id)
 
         # 3. Port Check (Only if not using SSL proxy which handles routing dynamically)
         if not ssl_enabled:

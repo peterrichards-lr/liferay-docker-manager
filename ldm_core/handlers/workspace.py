@@ -668,6 +668,8 @@ class WorkspaceService(BaseHandler):
                         )
 
             overwrite = True
+            is_brand_new = not project_path.exists()
+            init_success = False
 
             if project_path.exists():
                 if self.manager.non_interactive:
@@ -682,6 +684,7 @@ class WorkspaceService(BaseHandler):
                     if ans == "C":
                         UI.info(f"Cleaning existing project directory: {project_path}")
                         self.manager.safe_rmtree(project_path)
+                        is_brand_new = True
                     elif ans == "N":
                         overwrite = False
                         UI.info("Proceeding in 'skip existing' mode.")
@@ -747,12 +750,10 @@ class WorkspaceService(BaseHandler):
             ssl_arg = getattr(self.manager.args, "ssl", None)
             use_ssl = ssl_arg if ssl_arg is not None else host_name != "localhost"
 
-            if (
-                use_ssl
-                and host_name != "localhost"
-                and not self.manager.check_hostname(host_name)
-            ):
-                sys.exit(1)
+            # DNS Check (Intelligent & Auto-Fixing)
+            self.manager.ensure_hostnames_resolve(
+                project_path, host_name, project_id=project_name
+            )
 
             custom_env = {
                 k: v
@@ -939,12 +940,19 @@ class WorkspaceService(BaseHandler):
             self._hydrate_from_workspace(workspace_root, paths, overwrite=overwrite)
 
             self.manager.write_meta(project_path, project_meta)
+            init_success = True
             UI.success(f"Project created at: {project_path}")
             if not getattr(self.manager.args, "no_run", False):
                 self.manager.cmd_run(project_id=project_name, is_restart=True)
         finally:
             if temp_extract_dir:
                 self.manager.safe_rmtree(temp_extract_dir)
+
+            # Rollback: If a brand-new project failed to initialize, clean it up
+            # to avoid leaving a half-baked 'unknown' project in the registry.
+            if is_brand_new and not init_success and project_path.exists():
+                UI.info(f"Cleaning up failed initialization: {project_path}")
+                self.manager.safe_rmtree(project_path)
 
     def cmd_monitor(self, source_path=None):
         try:

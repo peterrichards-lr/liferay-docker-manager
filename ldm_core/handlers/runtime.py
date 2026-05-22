@@ -54,286 +54,304 @@ class RuntimeService:
         is_new_project = not any(
             (root / f).exists() for f in ["meta", ".liferay-docker.meta", ".ldm.meta"]
         )
+        init_success = False
         paths = self.manager.setup_paths(root)
         project_meta = self.manager.read_meta(paths["root"])
 
-        # Check if project is already running to prevent unexpected container conflicts
-        from ldm_core.docker_service import DockerService
+        try:
+            # Check if project is already running to prevent unexpected container conflicts
+            from ldm_core.docker_service import DockerService
 
-        container_name = project_meta.get("container_name") or project_id
-        if not getattr(self.manager.args, "no_up", False) and not is_restart:
-            if DockerService.is_running(container_name):
-                if self.manager.non_interactive:
-                    UI.die(
-                        f"Project '{project_id}' is already running. Use 'ldm restart' to apply updates, or 'ldm stop' it first."
-                    )
-                elif not UI.confirm(
-                    f"Project '{project_id}' is already running. Reconfigure and restart?",
-                    "Y",
-                ):
-                    return
-                is_restart = True
+            container_name = project_meta.get("container_name") or project_id
+            if not getattr(self.manager.args, "no_up", False) and not is_restart:
+                if DockerService.is_running(container_name):
+                    if self.manager.non_interactive:
+                        UI.die(
+                            f"Project '{project_id}' is already running. Use 'ldm restart' to apply updates, or 'ldm stop' it first."
+                        )
+                    elif not UI.confirm(
+                        f"Project '{project_id}' is already running. Reconfigure and restart?",
+                        "Y",
+                    ):
+                        return
+                    is_restart = True
 
-        tag = self.manager.args.tag or project_meta.get("tag")
-        is_portal = (
-            getattr(self.manager.args, "portal", False)
-            or str(project_meta.get("portal", "false")).lower() == "true"
-        )
-
-        # LDM-381: Sanitize tag and auto-detect image type from prefix
-        if tag:
-            if tag.startswith("dxp-"):
-                is_portal = False
-                tag = tag[4:]
-            elif tag.startswith("portal-"):
-                is_portal = True
-                tag = tag[7:]
-
-        host_name = (
-            self.manager.args.host_name or project_meta.get("host_name") or "localhost"
-        )
-        db_type = getattr(self.manager.args, "db", None) or project_meta.get("db_type")
-        jvm_args = getattr(self.manager.args, "jvm_args", None) or project_meta.get(
-            "jvm_args"
-        )
-        port_val = getattr(self.manager.args, "port", None) or project_meta.get(
-            "port", 8080
-        )
-        port = int(port_val) if port_val is not None else 8080
-
-        # FAIL FAST: Pre-flight checks before expensive operations
-        project_meta["root"] = str(root.resolve())
-        project_meta["project_name"] = project_id
-
-        paths = self.manager.setup_paths(root)
-        ssl_val = self.manager.composer._is_ssl_active(host_name, project_meta)
-
-        if not getattr(self.manager.args, "no_up", False):
-            port = self.manager._pre_flight_checks(
-                host_name, port, ssl_enabled=ssl_val, meta=project_meta
+            tag = self.manager.args.tag or project_meta.get("tag")
+            is_portal = (
+                getattr(self.manager.args, "portal", False)
+                or str(project_meta.get("portal", "false")).lower() == "true"
             )
-        else:
-            # LDM-381: Even if not starting, check for registry collisions
-            # This ensures we don't accidentally register a nested project or name conflict.
-            self.manager.check_registry_collisions(
+
+            # LDM-381: Sanitize tag and auto-detect image type from prefix
+            if tag:
+                if tag.startswith("dxp-"):
+                    is_portal = False
+                    tag = tag[4:]
+                elif tag.startswith("portal-"):
+                    is_portal = True
+                    tag = tag[7:]
+
+            host_name = (
+                self.manager.args.host_name
+                or project_meta.get("host_name")
+                or "localhost"
+            )
+            db_type = getattr(self.manager.args, "db", None) or project_meta.get(
+                "db_type"
+            )
+            jvm_args = getattr(self.manager.args, "jvm_args", None) or project_meta.get(
+                "jvm_args"
+            )
+            port_val = getattr(self.manager.args, "port", None) or project_meta.get(
+                "port", 8080
+            )
+            port = int(port_val) if port_val is not None else 8080
+
+            # FAIL FAST: Pre-flight checks before expensive operations
+            project_meta["root"] = str(root.resolve())
+            project_meta["project_name"] = project_id
+
+            paths = self.manager.setup_paths(root)
+            ssl_val = self.manager.composer._is_ssl_active(host_name, project_meta)
+
+            if not getattr(self.manager.args, "no_up", False):
+                port = self.manager._pre_flight_checks(
+                    host_name, port, ssl_enabled=ssl_val, meta=project_meta
+                )
+            else:
+                # LDM-381: Even if not starting, check for registry collisions
+                # This ensures we don't accidentally register a nested project or name conflict.
+                self.manager.check_registry_collisions(
+                    project_id, paths["root"], host_name=host_name
+                )
+
+            project_meta["port"] = port
+
+            # Performance Overrides
+            no_vol_cache = (
+                getattr(self.manager.args, "no_vol_cache", False)
+                or str(project_meta.get("no_vol_cache", "false")).lower() == "true"
+            )
+
+            # LDM-384: Auto-detect external volumes and enable internal-state
+            is_external_volume = platform.system().lower() == "darwin" and str(
+                root
+            ).startswith("/Volumes/")
+            if is_external_volume and not getattr(
+                self.manager.args, "internal_state", None
+            ):
+                if str(project_meta.get("internal_state", "false")).lower() != "true":
+                    UI.info(
+                        "External volume detected. Automatically enabling '--internal-state' for stability."
+                    )
+                    project_meta["internal_state"] = "true"
+
+            internal_state = (
+                getattr(self.manager.args, "internal_state", False)
+                or str(project_meta.get("internal_state", "false")).lower() == "true"
+            )
+            no_jvm_verify = (
+                getattr(self.manager.args, "no_jvm_verify", False)
+                or str(project_meta.get("no_jvm_verify", "false")).lower() == "true"
+            )
+            no_tld_skip = (
+                getattr(self.manager.args, "no_tld_skip", False)
+                or str(project_meta.get("no_tld_skip", "false")).lower() == "true"
+            )
+
+            env_type = getattr(self.manager.args, "env_type", None) or project_meta.get(
+                "env_type", "dev"
+            )
+            cpu_limit = getattr(
+                self.manager.args, "cpu_limit", None
+            ) or project_meta.get("cpu_limit")
+            mem_limit = getattr(
+                self.manager.args, "mem_limit", None
+            ) or project_meta.get("mem_limit")
+
+            if not jvm_args:
+                jvm_args = self.manager.composer.get_default_jvm_args()
+
+            is_samples = getattr(self.manager.args, "samples", False)
+            if is_samples:
+                config_handler = self.manager.config
+                if host_name == "localhost":
+                    if self.manager.non_interactive:
+                        UI.die("--samples requires a custom hostname.")
+                    host_name = UI.ask(
+                        "Enter project Virtual Hostname", "samples.local"
+                    )
+                if not tag:
+                    tag = config_handler.get_samples_tag()
+                if not db_type:
+                    db_type = config_handler.get_samples_db_type()
+
+            if not tag:
+                tag_latest = getattr(self.manager.args, "tag_latest", False)
+                prefix = getattr(self.manager.args, "tag_prefix", None)
+
+                can_discover = tag_latest or bool(prefix)
+                if self.manager.non_interactive and not can_discover:
+                    UI.die("No Liferay tag specified.")
+
+                from ldm_core.constants import API_BASE_DXP, API_BASE_PORTAL
+                from ldm_core.utils import discover_latest_tag
+
+                api_base = API_BASE_PORTAL if is_portal else API_BASE_DXP
+
+                rt = getattr(self.manager.args, "release_type", None)
+                if not rt:
+                    rt = "any" if prefix else "lts"
+
+                if not can_discover:
+                    # Interactive Tag Discovery Sequence
+                    # Combined prompt for release type or specific version prefix
+                    ans = UI.ask("Release type (any|u|lts|qr) or prefix", "lts")
+
+                    if ans in ["any", "u", "lts", "qr"]:
+                        rt = ans
+                    else:
+                        prefix = ans
+                        rt = "any"
+
+                    latest_tag = discover_latest_tag(
+                        api_base, release_type=rt, prefix_filter=prefix, verbose=True
+                    )
+                    tag = UI.ask("Enter Liferay Tag", latest_tag)
+                else:
+                    if self.manager.verbose:
+                        UI.info("Automatically discovering latest Liferay tag...")
+                    tag = discover_latest_tag(
+                        api_base,
+                        release_type=rt,
+                        prefix_filter=prefix,
+                        verbose=self.manager.verbose,
+                    )
+                    if not tag:
+                        UI.die(
+                            "Failed to discover latest Liferay tag. Please specify one explicitly with -t."
+                        )
+                    if self.manager.verbose:
+                        UI.success(f"Using tag: {tag}")
+
+            external_snapshot = getattr(self.manager.args, "snapshot", None)
+            if external_snapshot:
+                snap_path = Path(external_snapshot).resolve()
+                snap_meta = self.manager.read_meta(snap_path)
+                tag = tag or snap_meta.get("tag")
+                db_type = db_type or snap_meta.get("db_type")
+
+            if is_new_project and self.manager.assets._ensure_seeded(
+                tag, db_type, paths
+            ):
+                from ldm_core.constants import SEED_VERSION
+
+                project_meta = self.manager.read_meta(paths["root"])
+                project_meta["seeded"] = "true"
+                project_meta["seed_version"] = str(SEED_VERSION)
+                self.manager.write_meta(paths["root"], project_meta)
+                is_new_project = False
+
+            use_shared_search = (
+                str(project_meta.get("use_shared_search", "true")).lower() == "true"
+            )
+            if getattr(self.manager.args, "sidecar", False):
+                use_shared_search = False
+
+            self.manager.verify_runtime_environment(paths)
+
+            # Proactive Search Lock Clearing (LDM-369)
+            # Stale lock files in sidecar indices cause 'access_denied_exception' and block indexing.
+            # We also enforce permissions again just before boot.
+            es_data = paths["data"] / "elasticsearch8"
+            use_volumes = self.manager.composer.is_using_named_volumes()
+
+            if es_data.exists() and not use_volumes:
+                UI.info("Clearing stale search locks and enforcing permissions...")
+                for lock_file in es_data.rglob("write.lock"):
+                    with contextlib.suppress(Exception):
+                        lock_file.unlink()
+
+                if platform.system().lower() != "windows":
+                    from ldm_core.utils import run_command
+
+                    run_command(["chmod", "-R", "777", str(es_data)], check=False)
+
+            if is_samples:
+                self.manager.config.sync_samples(paths)
+
+            no_captcha = (
+                getattr(self.manager.args, "no_captcha", False)
+                or str(project_meta.get("no_captcha", "false")).lower() == "true"
+            )
+            fast_login = (
+                getattr(self.manager.args, "fast_login", False)
+                or str(project_meta.get("fast_login", "false")).lower() == "true"
+            )
+            features = getattr(self.manager.args, "feature", None)
+            if features:
+                # Flatten potential comma-separated values
+                flat_features = []
+                for f in features:
+                    flat_features.extend([x.strip() for x in f.split(",") if x.strip()])
+                project_meta["features"] = ",".join(flat_features)
+
+            project_meta.update(
+                {
+                    "project_name": project_id,
+                    "tag": tag,
+                    "portal": str(is_portal).lower(),
+                    "host_name": host_name,
+                    "container_name": project_id,
+                    "ssl": str(ssl_val).lower(),
+                    "db_type": db_type or project_meta.get("db_type", "postgresql"),
+                    "port": port,
+                    "jvm_args": jvm_args,
+                    "use_shared_search": str(use_shared_search).lower(),
+                    "no_vol_cache": str(no_vol_cache).lower(),
+                    "internal_state": str(internal_state).lower(),
+                    "no_jvm_verify": str(no_jvm_verify).lower(),
+                    "no_tld_skip": str(no_tld_skip).lower(),
+                    "no_captcha": str(no_captcha).lower(),
+                    "fast_login": str(fast_login).lower(),
+                    "features": project_meta.get("features", ""),
+                    "env_type": env_type,
+                    "cpu_limit": cpu_limit,
+                    "mem_limit": mem_limit,
+                }
+            )
+            self.manager.write_meta(paths["root"], project_meta)
+            init_success = True
+            self.manager.register_project(
                 project_id, paths["root"], host_name=host_name
             )
 
-        project_meta["port"] = port
-
-        # Performance Overrides
-        no_vol_cache = (
-            getattr(self.manager.args, "no_vol_cache", False)
-            or str(project_meta.get("no_vol_cache", "false")).lower() == "true"
-        )
-
-        # LDM-384: Auto-detect external volumes and enable internal-state
-        is_external_volume = platform.system().lower() == "darwin" and str(
-            root
-        ).startswith("/Volumes/")
-        if is_external_volume and not getattr(
-            self.manager.args, "internal_state", None
-        ):
-            if str(project_meta.get("internal_state", "false")).lower() != "true":
-                UI.info(
-                    "External volume detected. Automatically enabling '--internal-state' for stability."
+            if is_samples or external_snapshot:
+                self.sync_stack(paths, project_meta, no_up=True, show_summary=False)
+                self.manager.run_command(
+                    [*get_compose_cmd(), "up", "-d", "db"], cwd=str(paths["root"])
                 )
-                project_meta["internal_state"] = "true"
-
-        internal_state = (
-            getattr(self.manager.args, "internal_state", False)
-            or str(project_meta.get("internal_state", "false")).lower() == "true"
-        )
-        no_jvm_verify = (
-            getattr(self.manager.args, "no_jvm_verify", False)
-            or str(project_meta.get("no_jvm_verify", "false")).lower() == "true"
-        )
-        no_tld_skip = (
-            getattr(self.manager.args, "no_tld_skip", False)
-            or str(project_meta.get("no_tld_skip", "false")).lower() == "true"
-        )
-
-        env_type = getattr(self.manager.args, "env_type", None) or project_meta.get(
-            "env_type", "dev"
-        )
-        cpu_limit = getattr(self.manager.args, "cpu_limit", None) or project_meta.get(
-            "cpu_limit"
-        )
-        mem_limit = getattr(self.manager.args, "mem_limit", None) or project_meta.get(
-            "mem_limit"
-        )
-
-        if not jvm_args:
-            jvm_args = self.manager.composer.get_default_jvm_args()
-
-        is_samples = getattr(self.manager.args, "samples", False)
-        if is_samples:
-            config_handler = self.manager.config
-            if host_name == "localhost":
-                if self.manager.non_interactive:
-                    UI.die("--samples requires a custom hostname.")
-                host_name = UI.ask("Enter project Virtual Hostname", "samples.local")
-            if not tag:
-                tag = config_handler.get_samples_tag()
-            if not db_type:
-                db_type = config_handler.get_samples_db_type()
-
-        if not tag:
-            tag_latest = getattr(self.manager.args, "tag_latest", False)
-            prefix = getattr(self.manager.args, "tag_prefix", None)
-
-            can_discover = tag_latest or bool(prefix)
-            if self.manager.non_interactive and not can_discover:
-                UI.die("No Liferay tag specified.")
-
-            from ldm_core.constants import API_BASE_DXP, API_BASE_PORTAL
-            from ldm_core.utils import discover_latest_tag
-
-            api_base = API_BASE_PORTAL if is_portal else API_BASE_DXP
-
-            rt = getattr(self.manager.args, "release_type", None)
-            if not rt:
-                rt = "any" if prefix else "lts"
-
-            if not can_discover:
-                # Interactive Tag Discovery Sequence
-                # Combined prompt for release type or specific version prefix
-                ans = UI.ask("Release type (any|u|lts|qr) or prefix", "lts")
-
-                if ans in ["any", "u", "lts", "qr"]:
-                    rt = ans
-                else:
-                    prefix = ans
-                    rt = "any"
-
-                latest_tag = discover_latest_tag(
-                    api_base, release_type=rt, prefix_filter=prefix, verbose=True
+                time.sleep(5)
+                self.manager.snapshot.cmd_restore(
+                    project_id,
+                    auto_index=1 if is_samples else None,
+                    backup_dir=external_snapshot if not is_samples else None,
                 )
-                tag = UI.ask("Enter Liferay Tag", latest_tag)
-            else:
-                if self.manager.verbose:
-                    UI.info("Automatically discovering latest Liferay tag...")
-                tag = discover_latest_tag(
-                    api_base,
-                    release_type=rt,
-                    prefix_filter=prefix,
-                    verbose=self.manager.verbose,
-                )
-                if not tag:
-                    UI.die(
-                        "Failed to discover latest Liferay tag. Please specify one explicitly with -t."
-                    )
-                if self.manager.verbose:
-                    UI.success(f"Using tag: {tag}")
 
-        external_snapshot = getattr(self.manager.args, "snapshot", None)
-        if external_snapshot:
-            snap_path = Path(external_snapshot).resolve()
-            snap_meta = self.manager.read_meta(snap_path)
-            tag = tag or snap_meta.get("tag")
-            db_type = db_type or snap_meta.get("db_type")
-
-        if is_new_project and self.manager.assets._ensure_seeded(tag, db_type, paths):
-            from ldm_core.constants import SEED_VERSION
-
-            project_meta = self.manager.read_meta(paths["root"])
-            project_meta["seeded"] = "true"
-            project_meta["seed_version"] = str(SEED_VERSION)
-            self.manager.write_meta(paths["root"], project_meta)
-            is_new_project = False
-
-        use_shared_search = (
-            str(project_meta.get("use_shared_search", "true")).lower() == "true"
-        )
-        if getattr(self.manager.args, "sidecar", False):
-            use_shared_search = False
-
-        self.manager.verify_runtime_environment(paths)
-
-        # Proactive Search Lock Clearing (LDM-369)
-        # Stale lock files in sidecar indices cause 'access_denied_exception' and block indexing.
-        # We also enforce permissions again just before boot.
-        es_data = paths["data"] / "elasticsearch8"
-        use_volumes = self.manager.composer.is_using_named_volumes()
-
-        if es_data.exists() and not use_volumes:
-            UI.info("Clearing stale search locks and enforcing permissions...")
-            for lock_file in es_data.rglob("write.lock"):
-                with contextlib.suppress(Exception):
-                    lock_file.unlink()
-
-            if platform.system().lower() != "windows":
-                from ldm_core.utils import run_command
-
-                run_command(["chmod", "-R", "777", str(es_data)], check=False)
-
-        if is_samples:
-            self.manager.config.sync_samples(paths)
-
-        no_captcha = (
-            getattr(self.manager.args, "no_captcha", False)
-            or str(project_meta.get("no_captcha", "false")).lower() == "true"
-        )
-        fast_login = (
-            getattr(self.manager.args, "fast_login", False)
-            or str(project_meta.get("fast_login", "false")).lower() == "true"
-        )
-        features = getattr(self.manager.args, "feature", None)
-        if features:
-            # Flatten potential comma-separated values
-            flat_features = []
-            for f in features:
-                flat_features.extend([x.strip() for x in f.split(",") if x.strip()])
-            project_meta["features"] = ",".join(flat_features)
-
-        project_meta.update(
-            {
-                "project_name": project_id,
-                "tag": tag,
-                "portal": str(is_portal).lower(),
-                "host_name": host_name,
-                "container_name": project_id,
-                "ssl": str(ssl_val).lower(),
-                "db_type": db_type or project_meta.get("db_type", "postgresql"),
-                "port": port,
-                "jvm_args": jvm_args,
-                "use_shared_search": str(use_shared_search).lower(),
-                "no_vol_cache": str(no_vol_cache).lower(),
-                "internal_state": str(internal_state).lower(),
-                "no_jvm_verify": str(no_jvm_verify).lower(),
-                "no_tld_skip": str(no_tld_skip).lower(),
-                "no_captcha": str(no_captcha).lower(),
-                "fast_login": str(fast_login).lower(),
-                "features": project_meta.get("features", ""),
-                "env_type": env_type,
-                "cpu_limit": cpu_limit,
-                "mem_limit": mem_limit,
-            }
-        )
-        self.manager.write_meta(paths["root"], project_meta)
-        self.manager.register_project(project_id, paths["root"], host_name=host_name)
-
-        if is_samples or external_snapshot:
-            self.sync_stack(paths, project_meta, no_up=True, show_summary=False)
-            self.manager.run_command(
-                [*get_compose_cmd(), "up", "-d", "db"], cwd=str(paths["root"])
+            self.sync_stack(
+                paths,
+                project_meta,
+                follow=getattr(self.manager.args, "follow", False),
+                rebuild=getattr(self.manager.args, "rebuild", False),
+                no_up=getattr(self.manager.args, "no_up", False),
+                no_wait=getattr(self.manager.args, "no_wait", False),
+                total_start=total_start,
             )
-            time.sleep(5)
-            self.manager.snapshot.cmd_restore(
-                project_id,
-                auto_index=1 if is_samples else None,
-                backup_dir=external_snapshot if not is_samples else None,
-            )
-
-        self.sync_stack(
-            paths,
-            project_meta,
-            follow=getattr(self.manager.args, "follow", False),
-            rebuild=getattr(self.manager.args, "rebuild", False),
-            no_up=getattr(self.manager.args, "no_up", False),
-            no_wait=getattr(self.manager.args, "no_wait", False),
-            total_start=total_start,
-        )
+        finally:
+            # Rollback: If a brand-new project failed to initialize, clean it up
+            if is_new_project and not init_success and root.exists():
+                UI.info(f"Cleaning up failed initialization: {root}")
+                self.manager.safe_rmtree(root)
 
     def cmd_reseed(self, project_id=None):
         """Triggers a re-bootstrap of the project from a fresh seed."""
