@@ -2099,10 +2099,17 @@ pause
                         )
                         subprocess.run([*sudo_prefix, "rm", str(temp_new)], check=True)
                         UI.success(f"Successfully upgraded to v{latest}!")
-                    except Exception as e:
-                        UI.error(f"Failed to replace binary even with sudo: {e}")
+                    except subprocess.CalledProcessError:
+                        UI.error(
+                            "Failed to replace binary. Elevated privileges were denied or incorrect."
+                        )
                         UI.info(
                             f'Please run manually: {UI.CYAN}sudo cp "{temp_new}" "{exe_path}" && sudo rm "{temp_new}"{UI.COLOR_OFF}'
+                        )
+                        return
+                    except Exception as e:
+                        UI.error(
+                            f"An unexpected error occurred during replacement: {e}"
                         )
                         return
 
