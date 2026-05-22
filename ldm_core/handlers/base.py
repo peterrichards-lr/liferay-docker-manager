@@ -99,11 +99,29 @@ class BaseHandler:
 
             if not self.check_hostname(host_name):
                 if self.non_interactive:
-                    UI.die(f"Hostname resolution failed for '{host_name}'.")
-                UI.warning(f"Hostname '{host_name}' does not resolve to an IP.")
-                UI.info("LDM can try to fix this by adding an entry to /etc/hosts.")
-                if UI.confirm("Add host entry? (Requires sudo)", "Y"):
-                    self._apply_hosts_fix([host_name])
+                    UI.info(
+                        f"Hostname resolution failed for '{host_name}'. Attempting non-interactive fix..."
+                    )
+                    if self._apply_hosts_fix([host_name]):
+                        # Give the OS a moment to refresh DNS cache
+                        import time
+
+                        time.sleep(0.5)
+                        if self.check_hostname(host_name):
+                            UI.success(f"Hostname '{host_name}' fixed automatically.")
+                        else:
+                            UI.die(
+                                f"Hostname resolution failed for '{host_name}' even after attempted fix."
+                            )
+                    else:
+                        UI.die(
+                            f"Hostname resolution failed for '{host_name}' and fix could not be applied non-interactively."
+                        )
+                else:
+                    UI.warning(f"Hostname '{host_name}' does not resolve to an IP.")
+                    UI.info("LDM can try to fix this by adding an entry to /etc/hosts.")
+                    if UI.confirm("Add host entry? (Requires sudo)", "Y"):
+                        self._apply_hosts_fix([host_name])
 
         # 3. Port Check (Only if not using SSL proxy which handles routing dynamically)
         if not ssl_enabled:

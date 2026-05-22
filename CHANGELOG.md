@@ -24,7 +24,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Formally documented the **Zero-Race Atomic Deployment Strategy** in `docs/LDM_ARCHITECTURE.md`, detailing the staging and permission fixup pattern.
 
-## [v2.7.6] - 2026-05-21
+## [2.7.10] - 2026-05-21
+
+### Added
+
+- Enabled **Automatic Non-Interactive Hosts Fix**: When running with `-y/--non-interactive`, LDM will now automatically attempt to fix missing hostname entries in `/etc/hosts` using `sudo -n`. This enables completely unattended project setup for users with passwordless sudo.
+
+## [2.7.9] - 2026-05-21
 
 ### Fixed
 
