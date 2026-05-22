@@ -4,13 +4,16 @@ This track focuses on enabling automated cross-platform verification of LDM by i
 
 ## 1. Problem Statement
 
-Currently, we rely on manual E2E verification reports for macOS and Windows. While we have an automated E2E suite for Linux, the resource limits of GitHub-hosted runners (7GB RAM) and the lack of native Docker on non-Linux runners make cross-platform automation challenging. Liferay's default JVM settings are too aggressive for these environments.
+Currently, we rely on manual E2E verification reports for macOS, Windows, and specific Linux distros like Fedora. While we have an automated E2E suite for Ubuntu, the resource limits of GitHub-hosted runners (7GB RAM) and the lack of native Docker on non-Linux runners make full cross-platform automation challenging. Liferay's default JVM settings are too aggressive for these environments.
 
 ## 2. Proposed Solution
 
 - **JVM Footprint Reduction**: Implement a `--lean` flag (or automatic CI detection) that reduces Liferay's heap and metaspace allocation to fit within 7GB total system RAM.
-- **Cross-Platform Matrix**: Refactor `release-e2e.yml` to run the verification suite on `ubuntu-latest`, `macos-latest`, and `windows-latest`.
-- **Virtualization Setup**: Use Colima for macOS and configure Docker Linux mode for Windows runners.
+- **Comprehensive Cross-Platform Matrix**: Refactor `release-e2e.yml` to cover all verified workstation environments:
+  - **Linux**: Ubuntu (Native) and Fedora (via Container Job).
+  - **macOS**: Apple Silicon (`macos-14`) and Intel (`macos-13`) via Colima.
+  - **Windows**: Docker Desktop / Linux mode.
+- **Virtualization Setup**: Automate Colima for macOS and Docker Linux-mode for Windows.
 
 ## 3. Implementation Steps
 
@@ -22,27 +25,35 @@ Currently, we rely on manual E2E verification reports for macOS and Windows. Whi
 
 ### Phase 2: GitHub Actions Matrix Refactor
 
-- Refactor `.github/workflows/release-e2e.yml` to use `strategy.matrix`.
-- Update reporting logic to include the `matrix.os` in the artifact names to prevent collisions.
+- Refactor `.github/workflows/release-e2e.yml` to use an expanded `strategy.matrix`:
+  - `os`: `[ubuntu-latest, macos-13, macos-14, windows-latest]`
+  - `distro`: `[ubuntu, fedora]` (for Linux runners).
+- Update reporting logic to include `matrix.os` and `matrix.distro` in artifact names.
 
-### Phase 3: macOS Environment (Colima)
+### Phase 3: macOS Environment (Apple Silicon & Intel)
 
-- Add a setup step for macOS runners to install `colima` and `docker` via Homebrew.
-- Initialize Colima with specific resource limits (`colima start --cpu 2 --memory 6`).
-- Verify binary execution and Traefik routing in the virtualized environment.
+- Implement setup steps for macOS runners to install `colima` and `docker` via Homebrew.
+- Initialize Colima with CI-optimized resource limits (`colima start --cpu 2 --memory 6`).
+- Verify binary execution (`shiv` for macOS) and Traefik routing.
 
-### Phase 4: Windows Environment (WSL2/Linux Mode)
+### Phase 4: Fedora Environment (Container Jobs)
+
+- Implement a specific job that runs inside a `fedora:latest` container on an Ubuntu host.
+- Mount `/var/run/docker.sock` to enable LDM to orchestrate containers from within Fedora.
+- Verify LDM's path and permission handling on the Fedora filesystem.
+
+### Phase 5: Windows Environment (WSL2/Linux Mode)
 
 - Configure Windows runners to switch Docker to Linux Container mode.
-- Ensure the LDM binary (built with PyInstaller) correctly interacts with the Docker daemon in the Windows CI environment.
+- Ensure the LDM binary (built with PyInstaller) correctly interacts with the Docker daemon.
 
-### Phase 5: Reporting & Documentation
+### Phase 6: Reporting & Documentation
 
-- Update `scripts/sync_compatibility.py` to automatically ingest and parse reports from all three platforms.
+- Update `scripts/sync_compatibility.py` to ingest and parse reports from all matrix permutations.
 - Update `docs/TESTING.md` to reflect that all platforms are now verified automatically.
 
 ## 4. Definition of Done
 
-- `LDM Release E2E` workflow successfully passes on Linux, macOS, and Windows.
+- `LDM Release E2E` workflow successfully passes on Ubuntu, Fedora, macOS (Silicon), macOS (Intel), and Windows.
 - `ldm run --lean` (or CI auto-detect) allows Liferay to boot within 7GB RAM without OOM kills.
 - Compatibility table in `README.md` is updated automatically from multi-OS CI results.
