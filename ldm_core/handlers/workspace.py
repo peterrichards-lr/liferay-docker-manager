@@ -1,3 +1,4 @@
+import contextlib
 import json
 import os
 import platform
@@ -948,11 +949,23 @@ class WorkspaceService(BaseHandler):
             if temp_extract_dir:
                 self.manager.safe_rmtree(temp_extract_dir)
 
+                # Clean up parent .ldm_temp if it's now empty
+                ldm_temp = temp_extract_dir.parent
+                if (
+                    ldm_temp.exists()
+                    and ldm_temp.is_dir()
+                    and not any(ldm_temp.iterdir())
+                ):
+                    with contextlib.suppress(OSError):
+                        ldm_temp.rmdir()
+
             # Rollback: If a brand-new project failed to initialize, clean it up
-            # to avoid leaving a half-baked 'unknown' project in the registry.
-            if is_brand_new and not init_success and project_path.exists():
-                UI.info(f"Cleaning up failed initialization: {project_path}")
-                self.manager.safe_rmtree(project_path)
+            # and unregister it to avoid leaving a half-baked 'unknown' project.
+            if is_brand_new and not init_success:
+                if project_path.exists():
+                    UI.info(f"Cleaning up failed initialization: {project_path}")
+                    self.manager.safe_rmtree(project_path)
+                self.manager.unregister_project(project_name)
 
     def cmd_monitor(self, source_path=None):
         try:

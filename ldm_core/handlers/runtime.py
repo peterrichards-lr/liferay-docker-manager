@@ -349,9 +349,12 @@ class RuntimeService:
             )
         finally:
             # Rollback: If a brand-new project failed to initialize, clean it up
-            if is_new_project and not init_success and root.exists():
-                UI.info(f"Cleaning up failed initialization: {root}")
-                self.manager.safe_rmtree(root)
+            # and unregister it to avoid inconsistent state or 'zombie' registry entries.
+            if is_new_project and not init_success:
+                if root.exists():
+                    UI.info(f"Cleaning up failed initialization: {root}")
+                    self.manager.safe_rmtree(root)
+                self.manager.unregister_project(project_id)
 
     def cmd_reseed(self, project_id=None):
         """Triggers a re-bootstrap of the project from a fresh seed."""
