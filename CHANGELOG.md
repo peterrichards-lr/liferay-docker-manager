@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.7.23] - 2026-05-21
+
+### Added
+
+- **Lean JVM Profile**: Introduced a resource-optimized JVM profile (2GB heap) for constrained environments.
+- **Automatic CI Optimization**: LDM now automatically switches to the Lean profile when it detects a GitHub Actions environment, ensuring reliable Liferay boots on standard 7GB runners.
+- **`--lean` Flag**: Added a manual flag to `run` and `import` for users on low-memory local machines.
+
 ## [2.7.22] - 2026-05-21
 
 ### Fixed

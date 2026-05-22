@@ -1,5 +1,6 @@
 import json
 import math
+import os
 import platform
 from pathlib import Path
 
@@ -14,6 +15,19 @@ class ComposerService:
 
     def get_default_jvm_args(self):
         """Calculates recommended JVM arguments based on available Docker RAM."""
+        # LDM-385: Support 'Lean' profile for CI or low-memory environments
+        is_lean = (
+            getattr(self.manager.args, "lean", False)
+            or os.getenv("GITHUB_ACTIONS") == "true"
+        )
+
+        if is_lean:
+            # Optimized for 7GB GitHub Runners (2GB heap)
+            return (
+                "-Xms1536m -Xmx2048m -XX:MaxMetaspaceSize=512m "
+                "-XX:MetaspaceSize=512m -XX:TieredStopAtLevel=1"
+            )
+
         try:
             # We use self.manager.run_command from the base mixin
             docker_info_raw = self.manager.run_command(

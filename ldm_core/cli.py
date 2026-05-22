@@ -142,6 +142,11 @@ def get_parser():
         default=600,
         help="Maximum time to wait for health (default: 600)",
     )
+    run.add_argument(
+        "--lean",
+        action="store_true",
+        help="Use a resource-optimized JVM profile (useful for CI or low-memory systems)",
+    )
 
     # Command: import
     imp = subparsers.add_parser("import", parents=[base_sub_parent])
@@ -157,6 +162,9 @@ def get_parser():
     imp.add_argument("--no-ssl", action="store_false", dest="ssl")
     imp.add_argument("--port", type=int)
     imp.add_argument("--db", choices=["postgresql", "mysql", "hypersonic"])
+    imp.add_argument(
+        "--lean", action="store_true", help="Use a resource-optimized JVM profile"
+    )
     imp.add_argument("--mount-logs", action="store_true")
     imp.add_argument("--gogo-port", type=int)
     imp.add_argument("--jvm-args", help="Override Liferay JVM arguments")
