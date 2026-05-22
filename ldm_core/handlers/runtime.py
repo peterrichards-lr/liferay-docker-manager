@@ -535,7 +535,7 @@ class RuntimeService:
                 access_url = (
                     f"https://{host_name}"
                     if host_name != "localhost"
-                    else "http://localhost:8080"
+                    else f"http://localhost:{project_meta.get('port', 8080)}"
                 )
                 UI.info(
                     f"Access your instance at: {UI.CYAN}{UI.BOLD}{access_url}{UI.COLOR_OFF}"

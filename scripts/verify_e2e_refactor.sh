@@ -249,17 +249,25 @@ with zipfile.ZipFile('delayed-deploy/test-bundle.jar', 'w') as zf:
 
 # We test hot-deploy via the LDM deploy command
 log_and_run "Deploying artifact" "$LDM_CMD" -y deploy . "delayed-deploy/test-bundle.jar"
-echo ">> Waiting 60s for auto-deploy processing..." && sleep 60
+echo ">> Waiting for auto-deploy processing (up to 3m)..."
 
-# Verify Hot Deploy via Logs
-echo ">> Verifying Hot Deploy..."
-if docker logs ldm-smoke-test --tail 100 2>&1 | grep -q "STARTED com.liferay.test.bundle"; then
-    echo "✅ Hot Deploy verified." | tee -a "$RESULTS_FILE_TMP"
-else
-    echo "❌ ERROR: Hot Deploy failed. Test Bundle did not start." | tee -a "$RESULTS_FILE_TMP"
-    docker logs ldm-smoke-test --tail 50
+# Verify Hot Deploy via Logs with a polling loop
+HOT_DEPLOY_SUCCESS=false
+for _ in {1..18}; do
+    if docker logs ldm-smoke-test --tail 200 2>&1 | grep -q "STARTED com.liferay.test.bundle"; then
+        echo "✅ Hot Deploy verified." | tee -a "$RESULTS_FILE_TMP"
+        HOT_DEPLOY_SUCCESS=true
+        break
+    fi
+    printf "." && sleep 10
+done
+
+if [ "$HOT_DEPLOY_SUCCESS" = false ]; then
+    echo -e "\n❌ ERROR: Hot Deploy failed. Test Bundle did not start." | tee -a "$RESULTS_FILE_TMP"
+    docker logs ldm-smoke-test --tail 100
     exit 1
 fi
+echo ""
 
 # Integrity
 log_and_run "Creating Snapshot" "$LDM_CMD" -y snapshot --name "Binary-Verify"
