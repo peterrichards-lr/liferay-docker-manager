@@ -181,7 +181,9 @@ class BaseHandler:
 
     def _apply_hosts_fix(self, unresolved_domains):
         """Attempts to append missing host entries to the system hosts file."""
-        if not unresolved_domains:
+        # 1. Filter out empty or already resolved (sanity check)
+        domains = sorted({d for d in unresolved_domains if d and d != "localhost"})
+        if not domains:
             return True
 
         # Standard LDM expected IP for local development
@@ -190,9 +192,12 @@ class BaseHandler:
         is_wsl = self.is_wsl()
 
         new_entries = []
-        for d in sorted(set(unresolved_domains)):
+        for d in domains:
             # Standardize on explicit host entries with the LDM tag for easy removal later
             new_entries.append(f"{target_ip} {d} {self.LDM_HOST_TAG}")
+
+        if not new_entries:
+            return True
 
         content_to_add = "\n# Added by Liferay Docker Manager (LDM)\n"
         content_to_add += "\n".join(new_entries) + "\n"
@@ -229,7 +234,7 @@ class BaseHandler:
             else:
                 # Standard Linux / macOS (non-WSL)
                 UI.info(f"Requesting elevated privileges to update: {hosts_path}")
-                UI.detail(f"Command: sudo tee -a {hosts_path}")
+                UI.detail(f"Adding entries:\n{content_to_add.strip()}")
 
                 sudo_prefix = ["sudo", "-n"] if self.non_interactive else ["sudo"]
                 cmd = [*sudo_prefix, "tee", "-a", hosts_path]
@@ -240,6 +245,10 @@ class BaseHandler:
                 process.communicate(input=content_to_add.encode())
 
                 if process.returncode != 0:
+                    if self.non_interactive:
+                        UI.die(
+                            f"Elevation failed (sudo -n). Please run manually: ldm fix-hosts {' '.join(domains)}"
+                        )
                     return False
 
             return True
@@ -742,7 +751,7 @@ class BaseHandler:
                 # Treat as filter string
                 filter_str = str(choice)
 
-    def detect_project_path(self, project_id=None, for_init=False):
+    def detect_project_path(self, project_id=None, for_init=False, fatal=True):
         """Resolves a project ID or path to a full filesystem path."""
         pid = project_id or getattr(self.args, "project", None)
 
@@ -908,11 +917,13 @@ class BaseHandler:
 
         if pid:
             # If we reached here, a PID was specified but not found in any search dir or CWD
-            if not for_init:
+            if not for_init and fatal:
                 UI.die(
                     f"Project '{pid}' not found. Searched subdirectories of: "
                     f"{', '.join(str(d) for d in search_dirs)} and the current folder."
                 )
+            elif not fatal:
+                return None
 
         selection = self.select_project_interactively()
         if selection and selection.get("new"):
@@ -1267,18 +1278,41 @@ class BaseHandler:
             return None
 
     def check_hostname(self, host_name):
-        """Verifies that the hostname resolves to the local machine, helping the user fix it if not."""
+        """Verifies that the hostname resolves to the local machine."""
         if host_name == "localhost":
             return True
 
         resolved_ip = self.get_resolved_ip(host_name)
-        if resolved_ip:
+        if not resolved_ip:
+            UI.error(f"Hostname '{host_name}' does not resolve to any IP address.")
+            UI.info(
+                f"Please add it to your local hosts file or run '{UI.WHITE}ldm doctor --fix-hosts{UI.COLOR_OFF}'."
+            )
+            return False
+
+        # Get host's own primary IP for local check
+        import socket
+
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            s.settimeout(0)
+            try:
+                s.connect(("10.254.254.254", 1))
+                host_ip = s.getsockname()[0]
+            except Exception:
+                host_ip = "127.0.0.1"
+            finally:
+                s.close()
+        except Exception:
+            host_ip = "127.0.0.1"
+
+        local_ips = ["127.0.0.1", "0.0.0.0", host_ip]  # nosec B104
+
+        if resolved_ip in local_ips:
             return True
 
-        UI.error(f"Hostname '{host_name}' does not resolve to any IP address.")
-        UI.info(
-            f"Please add it to your local hosts file or run '{UI.WHITE}ldm doctor --fix-hosts{UI.COLOR_OFF}'."
-        )
+        UI.warning(f"Hostname '{host_name}' resolves to non-local IP: {resolved_ip}")
+        UI.info("It should resolve to 127.0.0.1 for local development.")
         return False
 
     def cmd_fix_hosts(self, target=None):
@@ -1287,8 +1321,8 @@ class BaseHandler:
             # If no target provided, run doctor's fix-hosts logic (scans all/current project)
             return self.manager.cmd_doctor(fix_hosts=True)
 
-        # 1. Try to treat as a project first
-        root = self.detect_project_path(target)
+        # 1. Try to treat as a project first (non-fatal)
+        root = self.detect_project_path(target, fatal=False)
         if root:
             UI.info(f"Scanning project '{target}' for required hostnames...")
             dns_ok, unresolved, non_local = self.validate_project_dns(root)
