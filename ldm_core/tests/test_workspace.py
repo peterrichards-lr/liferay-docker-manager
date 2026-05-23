@@ -25,6 +25,10 @@ class MockWorkspaceManager(
         self.args.host_name = "localhost"
         self.args.ssl = False
 
+        from ldm_core.defaults import DefaultsManager
+
+        self.defaults = DefaultsManager()
+
         self.assets = AssetService(self)
         self.diagnostics = DiagnosticsService(self)
         self.diagnostics.validate_lcp_json = MagicMock(return_value=("Valid", True, []))

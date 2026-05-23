@@ -1,5 +1,36 @@
 # Configuration Guide
 
+## Cascading Defaults
+
+LDM uses a robust cascading configuration system to ensure consistent, reproducible environments while offering flexibility across system, user, and project levels. This architecture prevents a project's foundational settings from mysteriously changing if global configurations are updated later.
+
+### The Resolution Hierarchy
+
+When LDM needs a default value (e.g., for the Liferay tag, database type, or port), it resolves it in the following order (highest to lowest priority):
+
+1. **Project Metadata (`.liferay-docker.meta`)**: Once a project is created (via `init`, `run`, or `hydrate`), the resolved settings are permanently "frozen" into the project's metadata. This ensures stability.
+2. **User Defaults (`~/.ldmrc`)**: Custom defaults specific to the current developer's machine.
+3. **Global Defaults (`/etc/ldmrc`)**: System-wide defaults, typically managed by system administrators or CI/CD provisioning scripts.
+4. **Convention Defaults**: Hardcoded fallback values within the LDM source code (e.g., Port `8080`, DB `postgresql`, Search `sidecar`).
+
+### Managing Defaults
+
+You can view and manage these settings interactively or programmatically using the `ldm defaults` command.
+
+```bash
+# View the current resolution tree for all configuration keys
+ldm defaults
+
+# Set a custom user-level default (e.g., always prefer MySQL)
+ldm defaults db_type mysql
+
+# Set a system-wide default (requires appropriate permissions)
+sudo ldm defaults port 9090 --global
+
+# Remove a custom default to fall back to the convention
+ldm defaults --remove tag
+```
+
 ## Configuration Files
 
 - **`logging.json`**: Managed via `log-level` command.

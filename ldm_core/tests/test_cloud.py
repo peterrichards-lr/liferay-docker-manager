@@ -26,6 +26,10 @@ class MockManager:
         self.args = MockArgs()
         self.non_interactive = False
 
+        from ldm_core.defaults import DefaultsManager
+
+        self.defaults = DefaultsManager()
+
     def detect_project_path(self, *args, **kwargs):
         return Path("/tmp/proj")
 

@@ -317,7 +317,7 @@ class CloudService:
                 db_type = UI.ask_choices(
                     "Database type for hydration",
                     ["postgresql", "mysql"],
-                    default="postgresql",
+                    default=self.manager.defaults.get("db_type"),
                 )
 
         return db_type

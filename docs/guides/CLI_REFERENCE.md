@@ -71,9 +71,8 @@ fi
   - `c` (Clean): Delete the entire project folder and start fresh.
   - `q` (Quit): Abort the process entirely.
 - **Bypass Prompts**: Use the `-y` or `--non-interactive` flag to skip all confirmations and use default values. This is ideal for scripts and CI/CD pipelines.
-- **Tag Prefix Search**: When running `ldm run` without a tag, you can enter a prefix (e.g., `2025.q4`) to filter the available Liferay versions from Docker Hub. Alternatively, use the `--tag-prefix` switch to bypass the prompt entirely.
-- **Tag Discovery**: If no prefix or release type is provided, the tool fetches the latest available tags from Docker Hub.
-- **Automated Latest Tags**: In automated environments, use `--tag-latest` (with `ldm init` or `ldm run`) to automatically discover and use the most recent stable tag, bypassing all interactive prompts.
+- **Tag Prompt & Discovery**: When running `ldm run` without a tag, the interactive prompt will automatically fetch the latest release matching your default release type (usually LTS) and offer it as the default choice. You can simply press Enter to accept it, or type a specific release type (`lts`, `qr`, `u`), a prefix (`2025.q4`), or an exact tag name.
+- **Automated Latest Tags**: In non-interactive environments, LDM will automatically discover and use the latest tag matching your default release type (LTS) if no tag is explicitly provided. You can also force specific discovery using `--tag-latest` or `--tag-prefix`.
 - **Omni-Admin Captcha**: During testing or CI workflows, you can use the `--no-captcha` flag during initialization or run to automatically disable Liferay's mandatory Omni-Admin CAPTCHA checks. This is strictly opt-in and reversible; running without the flag will automatically re-enable CAPTCHA enforcement.
 - **Fast Login**: Use the `--fast-login` flag to automatically bypass typical post-startup prompts, such as the Terms of Use acceptance and the initial password reset screen. *Note: The password policy bypass component does not fully function if you explicitly use the embedded Hypersonic database (`--db hypersonic`). It works perfectly with the default PostgreSQL database.*
 - **Filesystem Resilience**: If your project is stored on an external SSD (common on macOS `/Volumes/` paths), Liferay's OSGi container can fail due to bind-mount locking limitations. LDM **automatically detects** these paths and uses a high-performance internal volume for the OSGi state to prevent these errors. You can also force this behavior using the `--internal-state` flag.
@@ -122,6 +121,7 @@ ldm up demo
 ldm run demo --samples
 
 # Interactive run (will prompt for version and project name)
+# Prompts are automatically pre-filled using the Cascading Defaults system
 ldm run
 ```
 
@@ -517,13 +517,30 @@ ldm clear-cache
 
 ### `config`
 
-View or set global LDM configuration settings (stored in `~/.ldmrc`).
+View or set generic custom environment variables inside a project's metadata. (For core LDM settings, see `ldm defaults`).
 
 ```bash
-ldm config                  # View all global settings
-ldm config features "dev,beta,LPS-122920" # Set global default feature flags
-ldm config key value        # Set a global preference
-ldm config key --remove     # Remove a preference
+ldm config                  # Interactive manager (view and edit all)
+ldm config MY_VAR "value"   # Set a project-level environment variable
+ldm config MY_VAR --remove  # Remove a custom environment variable
+```
+
+### `defaults`
+
+View or manage LDM's Cascading Configuration Defaults. This system resolves settings (like the default DB type, search mode, or host name) using a hierarchy: Convention -> Global -> User -> Project.
+
+```bash
+# View the resolved configuration tree and their sources
+ldm defaults
+
+# Set a custom default just for your local user (~/.ldmrc)
+ldm defaults db_type mysql
+
+# Remove a local user default to fall back to the convention
+ldm defaults --remove db_type
+
+# Set a system-wide global default (requires permissions, writes to /etc/ldmrc)
+sudo ldm defaults port 9090 --global
 ```
 
 ---

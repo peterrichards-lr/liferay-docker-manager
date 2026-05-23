@@ -743,9 +743,12 @@ class WorkspaceService(BaseHandler):
             host_name = getattr(self.manager.args, "host_name", None)
             if not host_name:
                 if self.manager.non_interactive:
-                    host_name = "localhost"
+                    host_name = self.manager.defaults.get("host_name")
                 else:
-                    host_name = UI.ask("Enter project Virtual Hostname", "localhost")
+                    host_name = UI.ask(
+                        "Enter project Virtual Hostname",
+                        self.manager.defaults.get("host_name"),
+                    )
 
             # SSL Rule: Default to True only if host_name is NOT localhost
             ssl_arg = getattr(self.manager.args, "ssl", None)

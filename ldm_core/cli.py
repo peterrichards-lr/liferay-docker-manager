@@ -548,6 +548,25 @@ def get_parser():
     config.add_argument("key", nargs="?")
     config.add_argument("value", nargs="?")
     config.add_argument("--remove", action="store_true")
+
+    # Command: defaults
+    defaults = subparsers.add_parser(
+        "defaults",
+        parents=[base_sub_parent],
+        help="View or modify cascading configuration defaults",
+    )
+    defaults.add_argument("key", nargs="?", help="The configuration key to set or view")
+    defaults.add_argument("value", nargs="?", help="The value to set")
+    defaults.add_argument(
+        "--global",
+        dest="global_level",
+        action="store_true",
+        help="Apply to the global system level (/etc/ldmrc)",
+    )
+    defaults.add_argument(
+        "--remove", action="store_true", help="Remove the custom default"
+    )
+
     prune = subparsers.add_parser(
         "prune",
         parents=[base_sub_parent],
@@ -890,6 +909,9 @@ def main():
         "list": manager.diagnostics.cmd_list,
         "ls": manager.diagnostics.cmd_list,
         "config": lambda: manager.config.cmd_config(args.key, args.value),
+        "defaults": lambda: manager.config.cmd_defaults(
+            getattr(args, "key", None), getattr(args, "value", None)
+        ),
         "shell": lambda: manager.runtime.cmd_shell(
             getattr(args, "project", None), getattr(args, "service", None)
         ),

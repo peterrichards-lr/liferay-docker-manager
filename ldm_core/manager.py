@@ -1,6 +1,7 @@
 import os
 
 from ldm_core.constants import RUN_ATTRS
+from ldm_core.defaults import DefaultsManager
 from ldm_core.handlers.assets import AssetService
 from ldm_core.handlers.base import BaseHandler
 from ldm_core.handlers.cloud import CloudService
@@ -26,6 +27,7 @@ class LiferayManager(
         self.verbose = getattr(args, "verbose", False)
         self.info_mode = getattr(args, "info", False)
         self.non_interactive = getattr(args, "non_interactive", False)
+        self.defaults = DefaultsManager()
 
         # Services via Composition
         self.license = LicenseService(self)

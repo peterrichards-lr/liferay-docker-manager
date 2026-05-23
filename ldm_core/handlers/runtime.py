@@ -76,10 +76,17 @@ class RuntimeService:
                         return
                     is_restart = True
 
-            tag = self.manager.args.tag or project_meta.get("tag")
+            tag = (
+                self.manager.args.tag
+                or project_meta.get("tag")
+                or self.manager.defaults.get("tag")
+            )
             is_portal = (
                 getattr(self.manager.args, "portal", False)
-                or str(project_meta.get("portal", "false")).lower() == "true"
+                or str(
+                    project_meta.get("portal", self.manager.defaults.get("portal"))
+                ).lower()
+                == "true"
             )
 
             # LDM-381: Sanitize tag and auto-detect image type from prefix
@@ -94,16 +101,18 @@ class RuntimeService:
             host_name = (
                 self.manager.args.host_name
                 or project_meta.get("host_name")
-                or "localhost"
+                or self.manager.defaults.get("host_name")
             )
-            db_type = getattr(self.manager.args, "db", None) or project_meta.get(
-                "db_type"
+            db_type = (
+                getattr(self.manager.args, "db", None)
+                or project_meta.get("db_type")
+                or self.manager.defaults.get("db_type")
             )
             jvm_args = getattr(self.manager.args, "jvm_args", None) or project_meta.get(
                 "jvm_args"
             )
             port_val = getattr(self.manager.args, "port", None) or project_meta.get(
-                "port", 8080
+                "port", self.manager.defaults.get("port")
             )
             port = int(port_val) if port_val is not None else 8080
 
@@ -191,33 +200,66 @@ class RuntimeService:
                 prefix = getattr(self.manager.args, "tag_prefix", None)
 
                 can_discover = tag_latest or bool(prefix)
-                if self.manager.non_interactive and not can_discover:
-                    UI.die("No Liferay tag specified.")
+
+                # LDM-388: Auto-discover default tag (e.g., latest LTS) in non-interactive mode if no tag is provided
+                if self.manager.non_interactive:
+                    can_discover = True
 
                 from ldm_core.constants import API_BASE_DXP, API_BASE_PORTAL
                 from ldm_core.utils import discover_latest_tag
 
                 api_base = API_BASE_PORTAL if is_portal else API_BASE_DXP
 
+                default_rt = self.manager.defaults.get("release_type", "lts")
                 rt = getattr(self.manager.args, "release_type", None)
                 if not rt:
-                    rt = "any" if prefix else "lts"
+                    rt = "any" if prefix else default_rt
 
                 if not can_discover:
                     # Interactive Tag Discovery Sequence
-                    # Combined prompt for release type or specific version prefix
-                    ans = UI.ask("Release type (any|u|lts|qr) or prefix", "lts")
+                    # Pre-resolve the default so the user sees the actual tag they will get by pressing Enter
+                    if self.manager.verbose:
+                        UI.info(
+                            f"Pre-resolving latest {rt.upper()} release to populate default prompt..."
+                        )
 
-                    if ans in ["any", "u", "lts", "qr"]:
-                        rt = ans
-                    else:
-                        prefix = ans
-                        rt = "any"
-
-                    latest_tag = discover_latest_tag(
-                        api_base, release_type=rt, prefix_filter=prefix, verbose=True
+                    default_resolved_tag = discover_latest_tag(
+                        api_base,
+                        release_type=rt,
+                        prefix_filter=prefix,
+                        verbose=self.manager.verbose,
                     )
-                    tag = UI.ask("Enter Liferay Tag", latest_tag)
+
+                    ans = UI.ask(
+                        "Release type (lts|u|qr), prefix, or specific tag",
+                        default_resolved_tag,
+                    )
+
+                    if ans == default_resolved_tag:
+                        tag = default_resolved_tag
+                    elif ans.lower() in ["any", "u", "lts", "qr"]:
+                        if self.manager.verbose:
+                            UI.info(f"Discovering latest {ans.upper()} release...")
+                        tag = discover_latest_tag(
+                            api_base,
+                            release_type=ans.lower(),
+                            verbose=self.manager.verbose,
+                        )
+                        if not tag:
+                            UI.die(f"Could not find any tags for release type: {ans}")
+                    else:
+                        # Treat as prefix or exact tag
+                        if self.manager.verbose:
+                            UI.info(f"Discovering latest tag matching prefix: {ans}...")
+                        tag = discover_latest_tag(
+                            api_base,
+                            release_type="any",
+                            prefix_filter=ans,
+                            verbose=self.manager.verbose,
+                        )
+                        if not tag:
+                            # Fallback: trust the user input if not found in the registry (e.g. custom or unlisted tag)
+                            tag = ans
                 else:
                     if self.manager.verbose:
                         UI.info("Automatically discovering latest Liferay tag...")
@@ -252,8 +294,14 @@ class RuntimeService:
                 self.manager.write_meta(paths["root"], project_meta)
                 is_new_project = False
 
+            default_shared = (
+                "true"
+                if self.manager.defaults.get("search_mode") == "shared"
+                else "false"
+            )
             use_shared_search = (
-                str(project_meta.get("use_shared_search", "true")).lower() == "true"
+                str(project_meta.get("use_shared_search", default_shared)).lower()
+                == "true"
             )
             if getattr(self.manager.args, "sidecar", False):
                 use_shared_search = False
@@ -385,10 +433,10 @@ class RuntimeService:
             else:
                 UI.error("Reseed failed.")
 
-    def cmd_wait(self, project_id=None, timeout=600):
+    def cmd_wait(self, project_id=None, timeout=900):
         """Block execution until project is fully ready (HTTP 200/302)."""
         if timeout is None:
-            timeout = 600
+            timeout = 900
 
         root = self.manager.detect_project_path(project_id)
         if not root:

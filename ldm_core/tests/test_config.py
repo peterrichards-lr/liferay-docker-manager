@@ -14,10 +14,15 @@ class MockConfigManager:
                 self.remove = False
                 self.import_env = False
                 self.project = None
+                self.global_level = False
 
         self.args = Args()
         self.verbose = False
         self.non_interactive = True
+
+        from ldm_core.defaults import DefaultsManager
+
+        self.defaults = DefaultsManager()
 
     def update_portal_ext(self, *args, **kwargs):
         pass
@@ -412,6 +417,26 @@ class TestConfigService(unittest.TestCase):
             updated_env = json.loads(updated_meta["custom_env"])
             self.assertEqual(updated_env["KEY1"], "VAL1")
             self.assertEqual(updated_env["KEY3"], "VAL3")
+
+    @patch("ldm_core.ui.UI.info")
+    @patch("ldm_core.ui.UI.success")
+    @patch("ldm_core.ui.UI.raw")
+    def test_cmd_defaults(self, mock_raw, mock_success, mock_info):
+        self.manager.args.global_level = False
+        self.manager.args.remove = False
+
+        # Test viewing defaults
+        self.config.cmd_defaults()
+        mock_info.assert_any_call("======================")
+
+        # Test setting a default
+        self.config.cmd_defaults("tag", "2024.q1.4-lts")
+        mock_success.assert_called_with("Set user default 'tag' to '2024.q1.4-lts'.")
+
+        # Test removing a default
+        self.manager.args.remove = True
+        self.config.cmd_defaults("tag")
+        mock_success.assert_called_with("Removed user default 'tag'.")
 
 
 if __name__ == "__main__":

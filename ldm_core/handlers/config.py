@@ -714,6 +714,52 @@ class ConfigService:
 
             safe_write_text(config_path, json.dumps(config, indent=4))
 
+    def cmd_defaults(self, key=None, value=None):
+        """View or manage cascading configuration defaults."""
+        global_level = getattr(self.manager.args, "global_level", False)
+        remove = getattr(self.manager.args, "remove", False)
+        defaults_mgr = self.manager.defaults
+
+        if remove:
+            if not key:
+                UI.die("Key required to remove a default.")
+            if global_level:
+                defaults_mgr.remove_global_default(key)
+                UI.success(f"Removed global default '{key}'.")
+            else:
+                defaults_mgr.remove_user_default(key)
+                UI.success(f"Removed user default '{key}'.")
+            return
+
+        if key and value:
+            if global_level:
+                defaults_mgr.set_global_default(key, value)
+                UI.success(f"Set global default '{key}' to '{value}'.")
+            else:
+                defaults_mgr.set_user_default(key, value)
+                UI.success(f"Set user default '{key}' to '{value}'.")
+            return
+
+        # View defaults
+        resolved = defaults_mgr.get_resolved()
+
+        UI.info("\nLDM Cascading Defaults")
+        UI.info("======================")
+        for k in sorted(resolved.keys()):
+            v = resolved[k]
+            display_v = str(v)
+            if k == "tag" and not v:
+                display_v = "<auto-discover latest>"
+
+            if k in defaults_mgr.user_defaults:
+                source = f"{UI.CYAN}User{UI.COLOR_OFF}"
+            elif k in defaults_mgr.global_defaults:
+                source = f"{UI.YELLOW}Global{UI.COLOR_OFF}"
+            else:
+                source = f"{UI.DIM}Convention{UI.COLOR_OFF}"
+            UI.raw(f"  {k.ljust(15)}: {display_v.ljust(20)} [{source}]")
+        UI.raw("")
+
     def cmd_edit(self, project_id=None, target="meta"):
         root_path = self.manager.detect_project_path(project_id)
         if not root_path:

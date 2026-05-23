@@ -21,9 +21,11 @@ class MockRuntime(BaseHandler):
         self.assets = MagicMock()
         self.infra = MagicMock()
         self.snapshot = MagicMock()
+        from ldm_core.defaults import DefaultsManager
         from ldm_core.handlers.composer import ComposerService
         from ldm_core.handlers.config import ConfigService
 
+        self.defaults = DefaultsManager()
         self.config = ConfigService(self)
         self.config.update_portal_ext = MagicMock()  # type: ignore[method-assign]
         self.composer = ComposerService(self)
@@ -43,6 +45,9 @@ class MockRuntime(BaseHandler):
 
     def cmd_logs(self, *args, **kwargs):
         return self.handler.cmd_logs(*args, **kwargs)
+
+    def cmd_wait(self, *args, **kwargs):
+        return self.handler.cmd_wait(*args, **kwargs)
 
     def _wait_for_ready(self, *args, **kwargs):
         return self.handler._wait_for_ready(*args, **kwargs)
@@ -135,6 +140,33 @@ class TestRuntime(unittest.TestCase):
             mock_run.assert_called()
             call_args = mock_run.call_args[0][0]
             self.assertIn("restart", call_args)
+
+    @patch("ldm_core.ui.UI.info")
+    @patch("ldm_core.ui.UI.success")
+    @patch("ldm_core.ui.UI.die")
+    def test_cmd_wait_default_timeout(self, mock_die, mock_success, mock_info):
+        """Verify cmd_wait uses the default timeout of 900 if passed None."""
+        mock_die.side_effect = Exception("UI.die called")
+        with patch.object(self.handler.manager, "run_command", return_value="10%"):
+            # Use a time mock that jumps forward by 1000 seconds on the second call
+            t = [100, 1100, 1100, 1100, 1100]
+
+            def mock_time():
+                return t.pop(0)
+
+            with patch("time.time", side_effect=mock_time), patch("time.sleep"):
+                with patch("requests.get") as mock_get:
+                    mock_get.return_value.status_code = 200
+
+                    try:
+                        self.handler.cmd_wait("test", timeout=None)
+                    except Exception as e:
+                        self.assertEqual(str(e), "UI.die called")
+
+        # Verify it died due to timeout in _wait_for_ready since we advanced time by 1000 > 900
+        mock_die.assert_called_with(
+            "Project 'test' failed to become ready within 900s."
+        )
 
     @patch("ldm_core.handlers.runtime.get_compose_cmd")
     def test_cmd_logs_advanced_flags(self, mock_compose):
