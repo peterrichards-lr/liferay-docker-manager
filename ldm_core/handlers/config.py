@@ -506,6 +506,11 @@ class ConfigService:
 
             for pattern, target in patterns:
                 for match in common_dir.glob(pattern):
+                    # LDM-388: Prevent portal-log4j-ext.xml from entering deploy/
+                    # This file is handled surgically by sync_logging.
+                    if match.name == "portal-log4j-ext.xml":
+                        continue
+
                     # Skip ES-specific configs if the global search container isn't running
                     if "elasticsearch" in match.name.lower():
                         if not search_running:
