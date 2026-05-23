@@ -204,8 +204,7 @@ def get_parser():
     hydrate.add_argument(
         "--db",
         choices=["postgresql", "mysql"],
-        default="mysql",
-        help="Database type for the seed (default: mysql)",
+        help="Database type for the seed",
     )
 
     # Command: init

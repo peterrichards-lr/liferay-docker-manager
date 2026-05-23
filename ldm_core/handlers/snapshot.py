@@ -686,13 +686,16 @@ class SnapshotService(BaseHandler):
         # 1. Database
         db_gz = choice / "database.gz"
         if db_gz.exists():
-            UI.info("  + Extracting database dump...")
+            db_type = project_meta.get("db_type", "database")
+            UI.info(f"  + Extracting {db_type} dump...")
             # We'll place it in the project root for now, or deploy/ if it's an SQL
             # Better: if it's a seed, we might need a specific DB handler.
             # For now, just ensure the dir exists.
             safe_mkdir(paths["data"], parents=True, exist_ok=True)
             # Cloud backups usually need manual intervention for DB import depending on DB type
-            UI.warning("  ! Cloud DB dump detected. Manual import may be required.")
+            UI.warning(
+                f"  ! Cloud {db_type} dump detected. Manual import may be required."
+            )
 
         # 2. Volume (Document Library / etc)
         volume_tgz = choice / "volume.tgz"

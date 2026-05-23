@@ -198,6 +198,108 @@ class TestCloudService(unittest.TestCase):
                 # Verify OK was logged
                 self.assertTrue(any("OK" in str(c) for c in mock_info.call_args_list))
 
+    def test_detect_db_type_postgresql(self):
+        import gzip
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            backup_dir = Path(tmp_dir)
+            db_gz = backup_dir / "database.gz"
+            with gzip.open(db_gz, "wt") as f:
+                f.write("-- PostgreSQL database dump\n...")
+
+            self.assertEqual(self.cloud._detect_db_type(backup_dir), "postgresql")
+
+    def test_detect_db_type_mysql(self):
+        import gzip
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            backup_dir = Path(tmp_dir)
+            db_gz = backup_dir / "database.gz"
+            with gzip.open(db_gz, "wt") as f:
+                f.write("-- MySQL dump\n...")
+
+            self.assertEqual(self.cloud._detect_db_type(backup_dir), "mysql")
+
+    def test_detect_db_type_unknown(self):
+        import gzip
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            backup_dir = Path(tmp_dir)
+            db_gz = backup_dir / "database.gz"
+            with gzip.open(db_gz, "wt") as f:
+                f.write("Some other content")
+
+            self.assertIsNone(self.cloud._detect_db_type(backup_dir))
+
+    @patch("ldm_core.ui.UI.info")
+    def test_resolve_hydrate_db_type_auto_detect(self, mock_info):
+        import gzip
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            backup_dir = Path(tmp_dir)
+            db_gz = backup_dir / "database.gz"
+            with gzip.open(db_gz, "wt") as f:
+                f.write("-- PostgreSQL database dump\n...")
+
+            self.manager.args.db = None
+            res = self.cloud._resolve_hydrate_db_type(backup_dir)
+            self.assertEqual(res, "postgresql")
+            self.assertTrue(
+                any("postgresql" in str(c) for c in mock_info.call_args_list)
+            )
+
+    @patch("ldm_core.ui.UI.die")
+    def test_resolve_hydrate_db_type_mismatch(self, mock_die):
+        import gzip
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            backup_dir = Path(tmp_dir)
+            db_gz = backup_dir / "database.gz"
+            with gzip.open(db_gz, "wt") as f:
+                f.write("-- PostgreSQL database dump\n...")
+
+            self.manager.args.db = "mysql"
+            self.cloud._resolve_hydrate_db_type(backup_dir)
+            mock_die.assert_called_once()
+            args = mock_die.call_args[0][0]
+            self.assertIn("Database type mismatch", args)
+
+    @patch("ldm_core.ui.UI.ask_choices")
+    def test_resolve_hydrate_db_type_prompt(self, mock_ask):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            backup_dir = Path(tmp_dir)
+            # No database.gz so detection fails
+            self.manager.args.db = None
+            mock_ask.return_value = "mysql"
+
+            res = self.cloud._resolve_hydrate_db_type(backup_dir)
+            self.assertEqual(res, "mysql")
+            mock_ask.assert_called_once_with(
+                "Database type for hydration",
+                ["postgresql", "mysql"],
+                default="postgresql",
+            )
+
+    @patch("ldm_core.ui.UI.die")
+    def test_resolve_hydrate_db_type_non_interactive_die(self, mock_die):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            backup_dir = Path(tmp_dir)
+            self.manager.args.db = None
+            self.manager.non_interactive = True
+
+            self.cloud._resolve_hydrate_db_type(backup_dir)
+            mock_die.assert_called_once()
+            self.assertIn("Could not determine database type", mock_die.call_args[0][0])
+
 
 if __name__ == "__main__":
     unittest.main()

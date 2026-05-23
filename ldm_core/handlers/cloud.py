@@ -230,16 +230,20 @@ class CloudService:
         is_new_project = not (root_path / PROJECT_META_FILE).exists()
         project_meta = self.manager.read_meta(root_path)
 
+        # Resolve DB type early (Detection/Validation)
+        db_type = self._resolve_hydrate_db_type(backup_dir_path)
+
         if is_new_project and tag_for_seed:
             paths = self.manager.setup_paths(root_path)
-            # Default to mysql as it's common for cloud backups, but allow override via args
-            db_type_for_seed = getattr(self.manager.args, "db", None) or "mysql"
-            if self.manager.assets._ensure_seeded(
-                tag_for_seed, db_type_for_seed, paths
-            ):
+            # Use the resolved db_type for seeding
+            if self.manager.assets._ensure_seeded(tag_for_seed, db_type, paths):
                 # Refresh meta from seed before merging restoration changes
                 seed_meta = self.manager.read_meta(root_path)
                 project_meta.update(seed_meta)
+
+        # Update meta with the resolved db_type before restoration
+        project_meta["db_type"] = db_type
+        self.manager.write_meta(root_path, project_meta)
 
         UI.info(f"Triggering local restore from {backup_dir_path}...")
         self.manager.cmd_restore(project_id=project_id, backup_dir=backup_dir_path)
@@ -263,6 +267,60 @@ class CloudService:
 
         tag = getattr(self.manager.args, "tag", None)
         self.hydrate_cloud_backup(project_id, backup_dir, tag_for_seed=tag)
+
+    def _detect_db_type(self, backup_dir):
+        """Attempts to detect the database type (mysql/postgresql) from a cloud backup's database.gz."""
+        db_gz = backup_dir / "database.gz"
+        if not db_gz.exists():
+            return None
+
+        import gzip
+
+        try:
+            with gzip.open(db_gz, "rt", errors="ignore") as f:
+                # Read a small head to find dump markers
+                head = f.read(4096)
+                if "-- PostgreSQL database dump" in head:
+                    return "postgresql"
+                if "-- MySQL dump" in head or "/*!40101 SET" in head:
+                    return "mysql"
+        except Exception as e:
+            UI.debug(f"Failed to detect DB type from {db_gz}: {e}")
+
+        return None
+
+    def _resolve_hydrate_db_type(self, backup_dir):
+        """Resolves the DB type for hydration, handling auto-detection, validation, and user prompts."""
+        db_type = getattr(self.manager.args, "db", None)
+        detected = self._detect_db_type(backup_dir)
+
+        if db_type and detected and db_type != detected:
+            UI.die(
+                f"Database type mismatch for hydration:\n"
+                f"  Requested: {UI.CYAN}{db_type}{UI.COLOR_OFF}\n"
+                f"  Detected:  {UI.CYAN}{detected}{UI.COLOR_OFF} (from backup)\n\n"
+                f"Please omit the --db parameter to use the detected type, or ensure it matches the backup."
+            )
+
+        if not db_type:
+            if detected:
+                UI.info(
+                    f"Auto-detected database type: {UI.CYAN}{detected}{UI.COLOR_OFF}"
+                )
+                db_type = detected
+            elif self.manager.non_interactive:
+                UI.die(
+                    "Could not determine database type from backup.\n"
+                    f"Please specify the type on the CLI: {UI.CYAN}ldm hydrate <path> --db [postgresql|mysql]{UI.COLOR_OFF}"
+                )
+            else:
+                db_type = UI.ask_choices(
+                    "Database type for hydration",
+                    ["postgresql", "mysql"],
+                    default="postgresql",
+                )
+
+        return db_type
 
     def _verify_cloud_backup_checksums(self, backup_dir, backup_meta):
         """Verifies MD5 checksums of downloaded cloud backup files."""

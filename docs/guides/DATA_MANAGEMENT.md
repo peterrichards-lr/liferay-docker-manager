@@ -35,11 +35,24 @@ ldm restore demo --index 1 # Restore to index 1
 
 ## `hydrate` (Local Cloud Backup Hydration)
 
-Creates or restores a project from a local Liferay Cloud backup layout (`database.gz` and `volume.tgz`). This command reuses the high-performance seeding and restoration capabilities of `cloud-fetch` but targets local backup archives instead of downloading them from LCP.
+Creates or restores a project from a local Liferay Cloud backup layout (`database.gz` and `volume.tgz`).
+
+### Database Handling
+
+LDM automatically attempts to detect the database type (MySQL or PostgreSQL) by analyzing the `database.gz` dump header.
+
+- **Auto-Detection**: If the type is successfully detected, LDM will use it automatically.
+- **Validation**: If you specify `--db`, LDM verifies it matches the backup. A mismatch will cause the command to exit.
+- **Ambiguity**:
+  - In **interactive mode**, if detection fails, LDM prompts you to select a type (defaulting to `postgresql`).
+  - In **non-interactive mode**, if detection fails and no `--db` is provided, LDM exits with an error.
 
 ```bash
+# LDM will auto-detect the DB type from the backup
 ldm hydrate /path/to/backup/folder [project-name]
-ldm hydrate /path/to/backup/folder my-project --tag 2026.q1.7-lts --db postgresql
+
+# Manually specify or override (validated against the backup)
+ldm hydrate /path/to/backup/folder my-project --tag 2024.q1.3 --db postgresql
 ```
 
 ## `cloud-fetch` (Fetch Cloud State)
