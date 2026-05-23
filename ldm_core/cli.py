@@ -460,6 +460,7 @@ def get_parser():
         action="store_true",
         help="Re-download the current version to fix integrity issues",
     )
+    upgrade.add_argument("--timeout", type=int, default=900)
     upgrade.add_argument(
         "--pre-release",
         "--beta",
@@ -642,6 +643,7 @@ def get_parser():
     scale.add_argument("project", nargs="?")
     scale.add_argument("service_scale", nargs="+")
     scale.add_argument("-p", "--project", dest="project_flag")
+    scale.add_argument("--timeout", type=int, default=900)
 
     cloud = subparsers.add_parser("cloud-fetch", parents=[base_sub_parent])
     cloud.add_argument("project", nargs="?")

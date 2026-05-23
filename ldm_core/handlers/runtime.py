@@ -808,10 +808,10 @@ class RuntimeService:
                 )
                 return True
             if not no_wait:
-                # LDM-388: Defensive timeout handling
-                timeout_val = getattr(self.manager.args, "timeout", 600)
+                # LDM-388: Defensive timeout handling (Fallback to 900s)
+                timeout_val = getattr(self.manager.args, "timeout", 900)
                 if timeout_val is None:
-                    timeout_val = 600
+                    timeout_val = 900
 
                 return self._wait_for_ready(
                     project_meta,
