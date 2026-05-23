@@ -77,8 +77,9 @@ class TestSnapshotService(unittest.TestCase):
     @patch("ldm_core.handlers.base.BaseHandler.setup_paths")
     @patch("ldm_core.handlers.base.BaseHandler.verify_runtime_environment")
     @patch("ldm_core.handlers.base.BaseHandler.run_command")
+    @patch("ldm_core.utils.reclaim_volume_permissions")
     def test_cmd_snapshot_basic(
-        self, mock_run, mock_verify, mock_paths, mock_meta, mock_detect
+        self, mock_reclaim, mock_run, mock_verify, mock_paths, mock_meta, mock_detect
     ):
         mock_detect.return_value = self.test_dir
 
