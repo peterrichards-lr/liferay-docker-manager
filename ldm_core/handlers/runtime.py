@@ -327,7 +327,9 @@ class RuntimeService:
             )
 
             if is_samples or external_snapshot:
-                self.sync_stack(paths, project_meta, no_up=True, show_summary=False)
+                self.sync_stack(
+                    paths, project_meta, no_up=True, no_wait=True, show_summary=False
+                )
                 self.manager.run_command(
                     [*get_compose_cmd(), "up", "-d", "db"], cwd=str(paths["root"])
                 )
@@ -385,6 +387,9 @@ class RuntimeService:
 
     def cmd_wait(self, project_id=None, timeout=600):
         """Block execution until project is fully ready (HTTP 200/302)."""
+        if timeout is None:
+            timeout = 600
+
         root = self.manager.detect_project_path(project_id)
         if not root:
             return None
@@ -799,11 +804,16 @@ class RuntimeService:
                 )
                 return True
             if not no_wait:
+                # LDM-388: Defensive timeout handling
+                timeout_val = getattr(self.manager.args, "timeout", 600)
+                if timeout_val is None:
+                    timeout_val = 600
+
                 return self._wait_for_ready(
                     project_meta,
                     host_name,
                     total_start,
-                    timeout=getattr(self.manager.args, "timeout", 600),
+                    timeout=timeout_val,
                 )
 
         if no_wait:
