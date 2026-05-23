@@ -139,8 +139,8 @@ def get_parser():
     run.add_argument(
         "--timeout",
         type=int,
-        default=600,
-        help="Maximum time to wait for health (default: 600)",
+        default=900,
+        help="Maximum time to wait for health (default: 900)",
     )
     run.add_argument(
         "--lean",
@@ -533,8 +533,8 @@ def get_parser():
     wait_cmd.add_argument(
         "--timeout",
         type=int,
-        default=600,
-        help="Maximum time to wait in seconds (default: 600)",
+        default=900,
+        help="Maximum time to wait in seconds (default: 900)",
     )
 
     status = subparsers.add_parser("status", aliases=["ps"], parents=[base_sub_parent])

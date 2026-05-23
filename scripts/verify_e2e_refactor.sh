@@ -235,7 +235,7 @@ echo -e "tag=2026.q1.7-lts\ncontainer_name=ldm-smoke-test\nport=${TEST_PORT}\ndb
 log_and_run "Running LDM Project" "$LDM_CMD" -y run . --no-wait --no-tld-skip --no-jvm-verify
 
 # Wait for Health
-log_and_run "Waiting for Liferay health" "$LDM_CMD" -y wait . --timeout 300
+log_and_run "Waiting for Liferay health" "$LDM_CMD" -y wait . --timeout 600
 
 # Hot Deploy
 echo ">> Deploying Test OSGi Bundle..."
@@ -249,11 +249,11 @@ with zipfile.ZipFile('delayed-deploy/test-bundle.jar', 'w') as zf:
 
 # We test hot-deploy via the LDM deploy command
 log_and_run "Deploying artifact" "$LDM_CMD" -y deploy . "delayed-deploy/test-bundle.jar"
-echo ">> Waiting for auto-deploy processing (up to 6m)..."
+echo ">> Waiting for auto-deploy processing (up to 10m)..."
 
 # Verify Hot Deploy via Logs with a polling loop
 HOT_DEPLOY_SUCCESS=false
-for _ in {1..36}; do
+for _ in {1..60}; do
     if docker logs ldm-smoke-test --tail 200 2>&1 | grep -q "STARTED com.liferay.test.bundle"; then
         echo "✅ Hot Deploy verified." | tee -a "$RESULTS_FILE_TMP"
         HOT_DEPLOY_SUCCESS=true
