@@ -282,6 +282,22 @@ fi
 log_and_run "Bypassing Integrity" "$LDM_CMD" -y restore --latest --no-verify
 
 # UX & Scaling
+echo ">> Verifying Cascading Defaults..."
+"$LDM_CMD" defaults test_key test_value >/dev/null
+if "$LDM_CMD" defaults | grep -q "test_key.*test_value.*User"; then
+    echo "✅ Set User Default verified."
+else
+    echo "❌ ERROR: Set User Default failed." | tee -a "$RESULTS_FILE_TMP"
+    exit 1
+fi
+"$LDM_CMD" defaults --remove test_key >/dev/null
+if ! "$LDM_CMD" defaults | grep -q "test_key.*test_value.*User"; then
+    echo "✅ Remove User Default verified."
+else
+    echo "❌ ERROR: Remove User Default failed." | tee -a "$RESULTS_FILE_TMP"
+    exit 1
+fi
+
 echo ">> Verifying Env Sync..."
 "$LDM_CMD" env . TEST_SECRET=supersecret123 >/dev/null
 grep -q "TEST_SECRET=supersecret123" docker-compose.yml && echo "✅ Env Sync verified."
