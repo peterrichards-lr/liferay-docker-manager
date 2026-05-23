@@ -194,6 +194,18 @@ class SnapshotService(BaseHandler):
         # We call this again to ensure even files created by search snapshot are unlocked.
         self.manager.verify_runtime_environment(paths)
 
+        # LDM-388: Proactively reclaim ownership of the project root to ensure we can read all files for archiving
+        try:
+            import os
+
+            from ldm_core.utils import reclaim_volume_permissions
+
+            reclaim_volume_permissions(
+                paths["root"], uid=str(os.getuid()), gid=str(os.getgid())
+            )
+        except Exception as e:
+            UI.debug(f"Failed to reclaim root permissions: {e}")
+
         from ldm_core.utils import safe_mkdir
 
         safe_mkdir(snap_dir, parents=True, exist_ok=True)
@@ -231,9 +243,13 @@ class SnapshotService(BaseHandler):
                     get_actual_home() / ".ldm" / "infra" / "search" / "backup"
                 )
                 if es_infra_backup.exists():
+                    import os
+
                     from ldm_core.utils import reclaim_volume_permissions
 
-                    reclaim_volume_permissions(es_infra_backup)
+                    reclaim_volume_permissions(
+                        es_infra_backup, uid=str(os.getuid()), gid=str(os.getgid())
+                    )
                     tar.add(es_infra_backup, arcname="search_backup")
 
         # Capture custom environment variables from docker-compose.yml
