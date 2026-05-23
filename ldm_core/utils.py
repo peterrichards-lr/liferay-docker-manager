@@ -1371,13 +1371,10 @@ def reclaim_volume_permissions(path, uid="1000", gid="1000"):
 
     UI.detail(f"Reclaiming permissions for: {path}")
 
-    docker_cmd = (
-        f"chown -R {uid}:{gid} /workspace 2>/dev/null || true; "
-        "chmod -R 777 /workspace 2>/dev/null || true; "
-    )
+    docker_cmd = f"chown -R {uid}:{gid} /workspace; chmod -R 777 /workspace; "
 
     try:
-        run_command(
+        res = run_command(
             [
                 "docker",
                 "run",
@@ -1392,6 +1389,6 @@ def reclaim_volume_permissions(path, uid="1000", gid="1000"):
             check=False,
             capture_output=True,
         )
-        return True
+        return res is not None
     except Exception:
         return False

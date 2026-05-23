@@ -200,6 +200,7 @@ class SnapshotService(BaseHandler):
 
             from ldm_core.utils import reclaim_volume_permissions
 
+            UI.info("Reclaiming project permissions before snapshot...")
             reclaim_volume_permissions(
                 paths["root"], uid=str(os.getuid()), gid=str(os.getgid())
             )
