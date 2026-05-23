@@ -407,15 +407,18 @@ class RuntimeService:
         ssl_enabled = self.manager.composer._is_ssl_active(host_name, meta)
         port = meta.get("port", 8080)
         protocol = "https" if ssl_enabled else "http"
-        url = f"{protocol}://{host_name}"
+
+        # LDM-388: Use explicit IP for local checks to avoid CI IPv6 quirks
+        target_host = "127.0.0.1" if host_name == "localhost" else host_name
+        url = f"{protocol}://{target_host}"
         if not ssl_enabled and port != 80:
             url += f":{port}"
 
-        start_time = time.time()
+        phase_start = time.time()
         import requests
 
         http_ready = False
-        while time.time() - start_time < timeout:
+        while time.time() - phase_start < timeout:
             try:
                 # Use a short timeout for the request itself
                 response = requests.get(url, timeout=5, verify=False)  # nosec B501
@@ -440,7 +443,8 @@ class RuntimeService:
         consecutive_required = 3
         cpu_threshold = 15.0  # Consider < 15% CPU to be "idle" for Liferay
 
-        while time.time() - start_time < timeout:
+        phase_start = time.time()
+        while time.time() - phase_start < timeout:
             try:
                 result = self.manager.run_command(
                     [
