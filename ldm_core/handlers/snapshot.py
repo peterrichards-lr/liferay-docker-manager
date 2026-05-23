@@ -194,16 +194,14 @@ class SnapshotService(BaseHandler):
         # We call this again to ensure even files created by search snapshot are unlocked.
         self.manager.verify_runtime_environment(paths)
 
-        # LDM-388: Proactively reclaim ownership of the project root to ensure we can read all files for archiving
+        # LDM-388: Proactively reclaim ownership of the project root to ensure we can read all files for archiving.
+        # We use 1000:1000 (Liferay standard) to ensure the container remains happy after restart,
+        # but rely on the utility's chmod 777 to allow LDM (host user) to read the files for the archive.
         try:
-            import os
-
             from ldm_core.utils import reclaim_volume_permissions
 
             UI.info("Reclaiming project permissions before snapshot...")
-            reclaim_volume_permissions(
-                paths["root"], uid=str(os.getuid()), gid=str(os.getgid())
-            )
+            reclaim_volume_permissions(paths["root"])
         except Exception as e:
             UI.debug(f"Failed to reclaim root permissions: {e}")
 
@@ -244,13 +242,9 @@ class SnapshotService(BaseHandler):
                     get_actual_home() / ".ldm" / "infra" / "search" / "backup"
                 )
                 if es_infra_backup.exists():
-                    import os
-
                     from ldm_core.utils import reclaim_volume_permissions
 
-                    reclaim_volume_permissions(
-                        es_infra_backup, uid=str(os.getuid()), gid=str(os.getgid())
-                    )
+                    reclaim_volume_permissions(es_infra_backup)
                     tar.add(es_infra_backup, arcname="search_backup")
 
         # Capture custom environment variables from docker-compose.yml
