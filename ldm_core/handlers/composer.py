@@ -427,7 +427,7 @@ class ComposerService:
                 f"{paths['files'].as_posix()}:/mnt/liferay/files{z_label}",
                 f"{paths['scripts'].as_posix()}:/mnt/liferay/scripts{z_label}",
                 f"{project_name}-data:/opt/liferay/data",
-                f"{paths['modules'].as_posix()}:/opt/liferay/modules{z_label}",
+                f"{paths['modules'].as_posix()}:/opt/liferay/osgi/modules{z_label}",
                 f"{paths['cx'].as_posix()}:/opt/liferay/osgi/client-extensions{z_label}",
                 f"{paths['portal_log4j'].as_posix()}:/opt/liferay/osgi/log4j{z_label}",
             ],
