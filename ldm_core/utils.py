@@ -1355,7 +1355,7 @@ def safe_rmtree(path):
             raise e
 
 
-def reclaim_volume_permissions(path, uid="1000", gid="1000"):
+def reclaim_volume_permissions(path, uid="1000", gid="1000", chmod_val="777"):
     """Forces ownership and permissions of a directory via Docker (Linux/macOS)."""
     import platform
     from pathlib import Path
@@ -1371,7 +1371,7 @@ def reclaim_volume_permissions(path, uid="1000", gid="1000"):
 
     UI.detail(f"Reclaiming permissions for: {path}")
 
-    docker_cmd = f"chown -R {uid}:{gid} /workspace; chmod -R 777 /workspace; "
+    docker_cmd = f"chown -R {uid}:{gid} /workspace; chmod -R {chmod_val} /workspace; "
 
     try:
         res = run_command(

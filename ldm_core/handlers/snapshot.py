@@ -194,16 +194,30 @@ class SnapshotService(BaseHandler):
         # We call this again to ensure even files created by search snapshot are unlocked.
         self.manager.verify_runtime_environment(paths)
 
-        # LDM-388: Proactively reclaim ownership of the project root to ensure we can read all files for archiving.
-        # We use 1000:1000 (Liferay standard) to ensure the container remains happy after restart,
-        # but rely on the utility's chmod 777 to allow LDM (host user) to read the files for the archive.
+        # LDM-388: Proactively reclaim ownership of the project directories to ensure we can read all files for archiving.
+        # We use 1000:1000 (Liferay standard) and 777 for bind mounts so LDM (host user) can read them.
+        # CRITICAL: For named volumes (data, state) we use 755 and host UID to prevent breaking Elasticsearch which refuses 777.
         try:
+            import os
+
             from ldm_core.utils import reclaim_volume_permissions
 
             UI.info("Reclaiming project permissions before snapshot...")
-            reclaim_volume_permissions(paths["root"])
+            for d in ["deploy", "files", "logs", "configs", "modules"]:
+                if paths[d].exists():
+                    reclaim_volume_permissions(
+                        paths[d], uid="1000", gid="1000", chmod_val="777"
+                    )
+            for d in ["data", "state"]:
+                if paths.get(d) and paths[d].exists():
+                    reclaim_volume_permissions(
+                        paths[d],
+                        uid=str(os.getuid()),
+                        gid=str(os.getgid()),
+                        chmod_val="755",
+                    )
         except Exception as e:
-            UI.debug(f"Failed to reclaim root permissions: {e}")
+            UI.debug(f"Failed to reclaim permissions: {e}")
 
         from ldm_core.utils import safe_mkdir
 
