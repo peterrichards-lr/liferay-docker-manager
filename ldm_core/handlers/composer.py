@@ -270,8 +270,7 @@ class ComposerService:
                     f"{base}.sidecarNetworkHost": "0.0.0.0",  # nosec B104
                 }
 
-            if self.manager.parse_version(tag) < (2025, 2, 0):
-                self.manager.config.update_portal_ext(paths, get_es_props(7))
+            self.manager.config.update_portal_ext(paths, get_es_props(7))
             self.manager.config.update_portal_ext(paths, get_es_props(8))
 
             if "-Dliferay.auto.deploy.interval" not in jvm_opts:
