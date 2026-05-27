@@ -108,7 +108,7 @@ class ComposerService:
         if search_service:
             services["search"] = search_service
 
-        db_service = self._build_db_service(meta)
+        db_service = self._build_db_service(meta, project_name)
         if db_service:
             services["db"] = db_service
             # Add dependency from liferay to db
@@ -448,11 +448,12 @@ class ComposerService:
                 )
 
         if scale == 1:
-            service["container_name"] = project_name
+            liferay_container = meta.get("liferay_container_name") or project_name
+            service["container_name"] = liferay_container
             # Host-mapped state and logs only for non-scaled instances
             service["volumes"].extend(
                 [
-                    f"{project_name}-state:/opt/liferay/osgi/state",
+                    f"{liferay_container}-state:/opt/liferay/osgi/state",
                     f"{paths['logs'].as_posix()}:/opt/liferay/logs{z_label}",
                 ]
             )
@@ -487,15 +488,17 @@ class ComposerService:
         # Liferay will use its internal sidecar search inside the main container.
         return
 
-    def _build_db_service(self, meta):
+    def _build_db_service(self, meta, project_name):
         """Constructs the Database service (MySQL/PostgreSQL) if required."""
         db_type = meta.get("db_type", "postgresql")
         tag = str(meta.get("tag") or "latest")
+        db_container = meta.get("db_container_name") or f"{project_name}-db"
 
         if db_type in ["postgresql", "postgres"]:
             pg_ver = resolve_dependency_version(tag, "postgresql") or "16"
             return {
                 "image": f"postgres:{pg_ver}",
+                "container_name": db_container,
                 "command": [
                     "postgres",
                     "-c",
@@ -558,6 +561,7 @@ class ComposerService:
             )
             return {
                 "image": image,
+                "container_name": db_container,
                 "command": [
                     "mysqld",
                     "--character-set-server=utf8mb4",
@@ -619,6 +623,7 @@ class ComposerService:
                 labels = ["traefik.enable=true"]
                 services[svc_id] = {
                     "image": f"{svc_id}:latest",
+                    "container_name": svc_id,
                     "build": {"context": Path(ext["path"]).as_posix()},
                     "pull_policy": "build",
                     "networks": ["liferay-net"],

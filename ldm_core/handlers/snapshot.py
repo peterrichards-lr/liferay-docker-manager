@@ -7,7 +7,7 @@ from typing import cast
 
 from ldm_core.handlers.base import BaseHandler
 from ldm_core.ui import UI
-from ldm_core.utils import get_actual_home, get_compose_cmd
+from ldm_core.utils import get_actual_home
 
 
 class SnapshotService(BaseHandler):
@@ -176,8 +176,10 @@ class SnapshotService(BaseHandler):
         # --- SEARCH SNAPSHOT (Orchestrated) ---
         search_snapshot_name = None
         search_name = "liferay-search-global"
-        container_name = project_meta.get("container_name") or root.name.replace(
-            ".", "-"
+        container_name = (
+            project_meta.get("liferay_container_name")
+            or project_meta.get("container_name")
+            or root.name.replace(".", "-")
         )
 
         # Check if project uses shared search and service is running
@@ -210,9 +212,18 @@ class SnapshotService(BaseHandler):
         db_type = project_meta.get("db_type", "hypersonic")
         db_snapshot_file = None
         if db_type in ["mysql", "postgresql", "mariadb"]:
-            db_container = f"{container_name}-db"
-            # Check if DB container is running
-            if self.manager.run_command(
+            # LDM-388: Priority: Metadata -> Explicit Heuristic
+            db_container = project_meta.get("db_container_name")
+            if not db_container:
+                for suffix in ["-db", "-db-1"]:
+                    candidate = f"{container_name}{suffix}"
+                    if self.manager.run_command(
+                        ["docker", "ps", "-q", "-f", f"name=^{candidate}$"]
+                    ):
+                        db_container = candidate
+                        break
+
+            if db_container and self.manager.run_command(
                 ["docker", "ps", "-q", "-f", f"name=^{db_container}$"]
             ):
                 db_snapshot_file = snap_dir / "database.sql"
@@ -476,12 +487,16 @@ class SnapshotService(BaseHandler):
             return
 
         # Standard LDM Layout
-        container_name = project_meta.get("container_name") or paths[
-            "root"
-        ].name.replace(".", "-")
+        container_name = (
+            project_meta.get("liferay_container_name")
+            or project_meta.get("container_name")
+            or paths["root"].name.replace(".", "-")
+        )
         if self.manager.run_command(
             ["docker", "ps", "-q", "-f", f"name=^{container_name}$"]
         ):
+            from ldm_core.utils import get_compose_cmd
+
             compose_base = get_compose_cmd()
             if not compose_base:
                 UI.die(
@@ -534,6 +549,89 @@ class SnapshotService(BaseHandler):
         if custom_env:
             project_meta["custom_env"] = custom_env
             self.manager.write_meta(paths["root"], project_meta)
+
+        # --- DATABASE RESTORE (Orchestrated) ---
+        sql_file = choice_path / "database.sql"
+        if sql_file.exists():
+            db_type = project_meta.get("db_type", "hypersonic")
+            UI.info(f"Triggering orchestrated database restore ({db_type})...")
+
+            # 1. Ensure DB container is running
+            # LDM-388: Priority: Metadata -> Explicit Heuristic
+            db_container = project_meta.get("db_container_name")
+            if not db_container:
+                for suffix in ["-db", "-db-1"]:
+                    candidate = f"{container_name}{suffix}"
+                    if self.manager.run_command(
+                        ["docker", "ps", "-q", "-f", f"name=^{candidate}$"]
+                    ):
+                        db_container = candidate
+                        break
+
+            if not db_container or not self.manager.run_command(
+                ["docker", "ps", "-q", "-f", f"name=^{db_container}$"]
+            ):
+                # Try starting it via Compose
+                from ldm_core.utils import get_compose_cmd
+
+                compose_base = get_compose_cmd()
+                if compose_base:
+                    UI.info("  + Starting database container for restore...")
+                    self.manager.run_command(
+                        [*compose_base, "up", "-d", "db"], cwd=str(paths["root"])
+                    )
+                    time.sleep(5)
+
+                    if not db_container:
+                        for suffix in ["-db", "-db-1"]:
+                            candidate = f"{container_name}{suffix}"
+                            if self.manager.run_command(
+                                ["docker", "ps", "-q", "-f", f"name=^{candidate}$"]
+                            ):
+                                db_container = candidate
+                                break
+
+            if db_container and self.manager.run_command(
+                ["docker", "ps", "-q", "-f", f"name=^{db_container}$"]
+            ):
+                import_cmd = []
+                if db_type == "postgresql":
+                    import_cmd = [
+                        "docker",
+                        "exec",
+                        "-i",
+                        db_container,
+                        "psql",
+                        "-U",
+                        "lportal",
+                        "lportal",
+                    ]
+                elif db_type in ["mysql", "mariadb"]:
+                    import_cmd = [
+                        "docker",
+                        "exec",
+                        "-i",
+                        db_container,
+                        "mysql",
+                        "-u",
+                        "lportal",
+                        "-ptest",
+                        "lportal",
+                    ]
+
+                if import_cmd:
+                    try:
+                        import subprocess
+
+                        with open(sql_file) as f:
+                            subprocess.run(
+                                import_cmd, stdin=f, check=True, capture_output=True
+                            )
+                        UI.success("  + Database restored successfully.")
+                    except Exception as e:
+                        UI.error(f"  ! Database restore failed: {e}")
+            else:
+                UI.error("  ! Could not find database container for restore.")
 
         if search_snapshot_name and search_snapshot_name != "None":
             if self.manager.run_command(

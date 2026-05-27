@@ -131,6 +131,13 @@ class RuntimeService:
             project_meta["root"] = str(root.resolve())
             project_meta["project_name"] = project_id
 
+            # Container Naming Persistence (LDM-388)
+            # Ensure container names are "frozen" in metadata for consistency
+            base_container_name = project_meta.get("container_name") or project_id
+            project_meta["container_name"] = base_container_name
+            project_meta["liferay_container_name"] = base_container_name
+            project_meta["db_container_name"] = f"{base_container_name}-db"
+
             paths = self.manager.setup_paths(root)
             ssl_val = self.manager.composer._is_ssl_active(host_name, project_meta)
 

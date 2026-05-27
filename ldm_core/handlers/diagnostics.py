@@ -1053,9 +1053,13 @@ class DoctorRunner:
             # --- Liferay Log Health ---
             from ldm_core.utils import sanitize_id
 
-            p_id = sanitize_id(meta.get("container_name") or p_path.name)
+            p_id = sanitize_id(
+                meta.get("liferay_container_name")
+                or meta.get("container_name")
+                or p_path.name
+            )
             liferay_container = None
-            possible_names = [f"{p_id}-liferay", f"{p_id}-liferay-1", p_id]
+            possible_names = [p_id, f"{p_id}-liferay", f"{p_id}-liferay-1"]
             for name in possible_names:
                 if run_command(
                     ["docker", "ps", "-q", "-f", f"name=^{name}$"], check=False
@@ -1401,7 +1405,7 @@ class DoctorRunner:
             # 7.2.5 Database Version Check
             db_type = meta.get("db_type", "postgresql")
             if db_type in ["mysql", "postgresql", "mariadb"]:
-                db_container = f"{p_id}-db"
+                db_container = meta.get("db_container_name") or f"{p_id}-db"
                 # Check if running
                 is_db_running = run_command(
                     ["docker", "ps", "-q", "-f", f"name=^{db_container}$"], check=False
@@ -1658,11 +1662,17 @@ class DiagnosticsService:
             UI.warning(f"No metadata found for project at {root}")
             return
 
-        UI.heading(f"Project Metadata: {meta.get('container_name', root.name)}")
+        UI.heading(
+            f"Project Metadata: {meta.get('liferay_container_name', meta.get('container_name', root.name))}"
+        )
         UI.raw(f"  {UI.WHITE}Path:{UI.COLOR_OFF}       {root}")
 
         # Add Status and URL
-        container_name = meta.get("container_name") or root.name.replace(".", "-")
+        container_name = (
+            meta.get("liferay_container_name")
+            or meta.get("container_name")
+            or root.name.replace(".", "-")
+        )
         from ldm_core.docker_service import DockerService
 
         status = DockerService.get_status(container_name)
@@ -1681,6 +1691,35 @@ class DiagnosticsService:
             UI.raw(
                 f"  {UI.WHITE}URL:{UI.COLOR_OFF}        {UI.CYAN}{UI.UNDERLINE}{url}{UI.COLOR_OFF}"
             )
+
+        # LDM-388: Explicit Container Names for reference
+        UI.raw("")
+        UI.raw(f"  {UI.WHITE}Provisioned Containers:{UI.COLOR_OFF}")
+        UI.raw(
+            f"    {UI.WHITE}Liferay:{UI.COLOR_OFF}    {UI.CYAN}{meta.get('liferay_container_name', 'N/A')}{UI.COLOR_OFF}"
+        )
+        UI.raw(
+            f"    {UI.WHITE}Database:{UI.COLOR_OFF}   {UI.CYAN}{meta.get('db_container_name', 'N/A')}{UI.COLOR_OFF}"
+        )
+
+        # Show extensions if present
+        extensions = meta.get("extensions", [])
+        if isinstance(extensions, str):
+            try:
+                import json
+
+                extensions = json.loads(extensions)
+            except Exception:
+                extensions = []
+
+        for ext in extensions:
+            if isinstance(ext, dict) and ext.get("is_service"):
+                ext_id = ext.get("id")
+                ext_name = f"{meta.get('container_name', root.name)}-{ext_id}"
+                UI.raw(
+                    f"    {UI.WHITE}Extension:{UI.COLOR_OFF}  {UI.CYAN}{ext_name}{UI.COLOR_OFF} ({ext_id})"
+                )
+
         UI.raw("")
 
         # Determine specific colors for known keys
@@ -1779,7 +1818,11 @@ class DiagnosticsService:
         for r in roots:
             path = r["path"]
             meta = self.manager.read_meta(path)
-            p_id = meta.get("container_name") or path.name
+            p_id = (
+                meta.get("liferay_container_name")
+                or meta.get("container_name")
+                or path.name
+            )
 
             running = run_command(
                 [
@@ -1787,7 +1830,7 @@ class DiagnosticsService:
                     "ps",
                     "-q",
                     "--filter",
-                    f"label=com.liferay.ldm.project={p_id}",
+                    f"name=^{p_id}$",
                     "--filter",
                     "status=running",
                 ],
@@ -2623,7 +2666,11 @@ pause
         for r in roots:
             path = r["path"]
             meta = self.manager.read_meta(path)
-            name = meta.get("container_name") or path.name
+            name = (
+                meta.get("liferay_container_name")
+                or meta.get("container_name")
+                or path.name
+            )
             version = r["version"]
 
             # Check container status
@@ -2633,7 +2680,7 @@ pause
                     "ps",
                     "-a",
                     "--filter",
-                    f"label=com.liferay.ldm.project={name}",
+                    f"name=^{name}$",
                     "--format",
                     "{{.State}}",
                 ],
