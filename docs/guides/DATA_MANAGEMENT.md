@@ -28,6 +28,14 @@ Backup and recover project states, including files, DB, and search indices.
 # Create a named snapshot
 ldm snapshot demo --name "post-setup-gold-standard"
 
+# Delete a specific snapshot by index or name
+ldm snapshot demo --delete 1
+ldm snapshot demo --delete "post-setup-gold-standard"
+
+# Bulk management/pruning
+ldm snapshot demo --keep-last 5   # Delete all but the 5 most recent snapshots
+ldm snapshot demo --older-than 30 # Delete all snapshots older than 30 days
+
 # List snapshots for a project
 ldm restore demo --list    # Non-interactive list of all snapshots
 ldm restore demo --index 1 # Restore to index 1

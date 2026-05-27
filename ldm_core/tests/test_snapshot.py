@@ -111,6 +111,10 @@ class TestSnapshotService(unittest.TestCase):
         }
         mock_meta.return_value = {"use_shared_search": "false"}
 
+        self.manager.args.delete = None
+        self.manager.args.keep_last = None
+        self.manager.args.older_than = None
+
         with (
             patch("tarfile.open"),
             patch("ldm_core.handlers.base.BaseHandler.write_meta"),

@@ -372,6 +372,20 @@ def get_parser():
     snap.add_argument("-n", "--name")
     snap.add_argument("--files-only", action="store_true")
     snap.add_argument(
+        "--delete",
+        help="Delete a snapshot by name or index",
+    )
+    snap.add_argument(
+        "--keep-last",
+        type=int,
+        help="Keep only the specified number of most recent snapshots",
+    )
+    snap.add_argument(
+        "--older-than",
+        type=int,
+        help="Delete snapshots older than the specified number of days",
+    )
+    snap.add_argument(
         "--verify",
         action="store_true",
         default=True,

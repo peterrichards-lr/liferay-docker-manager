@@ -15,6 +15,86 @@ class SnapshotService(BaseHandler):
         super().__init__(manager.args)
         self.manager = manager
 
+    def _manage_snapshots(self, paths, delete_arg, keep_last, older_than):
+        backups_dir = paths["backups"]
+        if not backups_dir.exists():
+            UI.warning("No snapshots found to manage.")
+            return
+
+        backups = sorted(
+            [d for d in backups_dir.iterdir() if d.is_dir()],
+            key=lambda x: x.name,
+            reverse=True,
+        )
+
+        if not backups:
+            UI.warning("No snapshots found to manage.")
+            return
+
+        to_delete = []
+
+        if delete_arg:
+            target = None
+            if delete_arg.isdigit():
+                idx = int(delete_arg) - 1
+                if 0 <= idx < len(backups):
+                    target = backups[idx]
+            else:
+                for b in backups:
+                    meta = self.manager.read_meta(b / "meta")
+                    if meta.get("name") == delete_arg:
+                        target = b
+                        break
+
+            if target:
+                to_delete.append(target)
+            else:
+                UI.die(f"Snapshot not found matching index or name: '{delete_arg}'")
+
+        if keep_last is not None:
+            if keep_last < len(backups):
+                to_delete.extend(backups[keep_last:])
+
+        if older_than is not None:
+            cutoff = time.time() - (older_than * 86400)
+            for b in backups:
+                if b.stat().st_mtime < cutoff and b not in to_delete:
+                    to_delete.append(b)
+
+        if not to_delete:
+            UI.info("No snapshots matched management criteria.")
+            return
+
+        for snap in to_delete:
+            meta = self.manager.read_meta(snap / "meta")
+            name = meta.get("name", "Untitled")
+            search_snap = meta.get("search_snapshot")
+
+            UI.info(f"Deleting snapshot: {name} ({snap.name})...")
+
+            # Delete global search snapshot if it exists
+            if search_snap:
+                search_name = "liferay-search-global"
+                if self.manager.run_command(
+                    ["docker", "ps", "-q", "-f", f"name={search_name}"]
+                ):
+                    self.manager.run_command(
+                        [
+                            "docker",
+                            "exec",
+                            search_name,
+                            "curl",
+                            "-s",
+                            "-X",
+                            "DELETE",
+                            f"localhost:9200/_snapshot/liferay_backup/{search_snap}",
+                        ]
+                    )
+
+            self.manager.safe_rmtree(snap)
+
+        UI.success(f"Successfully deleted {len(to_delete)} snapshot(s).")
+
     def cmd_snapshots(self, paths=None):
         """Lists snapshots for a project."""
         if not paths:
@@ -55,7 +135,7 @@ class SnapshotService(BaseHandler):
         return backups
 
     def cmd_snapshot(self, project_id=None):
-        """Creates a snapshot of the project state."""
+        """Creates or manages snapshots of the project state."""
         root = self.manager.detect_project_path(project_id)
         if not root:
             return
@@ -65,7 +145,21 @@ class SnapshotService(BaseHandler):
         # Reclaim permissions on potential root-owned files before starting
         self.manager.verify_runtime_environment(paths)
 
+        delete_arg = getattr(self.manager.args, "delete", None)
+        keep_last = getattr(self.manager.args, "keep_last", None)
+        older_than = getattr(self.manager.args, "older_than", None)
         name = getattr(self.manager.args, "name", None)
+
+        if delete_arg or keep_last is not None or older_than is not None:
+            self._manage_snapshots(paths, delete_arg, keep_last, older_than)
+            # If the user only provided management flags (no --name), exit after managing
+            if not name and not self.manager.non_interactive and not delete_arg:
+                # If they just said --keep-last 5, we shouldn't automatically create a new snapshot named "Manual Snapshot"
+                # unless they actually want to. It's safer to exit.
+                return
+            if delete_arg:
+                return  # Explicit delete command doesn't create a new snapshot
+
         if not name:
             if self.manager.non_interactive:
                 name = f"Auto-snapshot {datetime.now().strftime('%Y-%m-%d %H:%M')}"

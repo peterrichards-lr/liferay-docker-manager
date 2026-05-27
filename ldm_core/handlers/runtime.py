@@ -422,8 +422,12 @@ class RuntimeService:
         project_meta = self.manager.read_meta(root)
         tag = project_meta.get("tag")
         db_type = project_meta.get("db_type")
+
+        default_shared = (
+            "true" if self.manager.parse_version(tag) >= (2025, 1, 0) else "false"
+        )
         use_shared = (
-            str(project_meta.get("use_shared_search", "false")).lower() == "true"
+            str(project_meta.get("use_shared_search", default_shared)).lower() == "true"
         )
         search_mode = "shared" if use_shared else "sidecar"
 
