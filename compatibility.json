@@ -15,6 +15,20 @@
       }
     },
     {
+      "tag_range": ">=2025.q2.0",
+      "dependencies": {
+        "elasticsearch": "8.17.3",
+        "mysql": "8.0.36",
+        "postgresql": "15.6",
+        "mariadb": "10.11",
+        "java": "21",
+        "jdbc_driver_mysql": "org.mariadb.jdbc.Driver",
+        "jdbc_dialect_mysql": "org.hibernate.dialect.MariaDB103Dialect",
+        "jdbc_driver_postgresql": "org.postgresql.Driver",
+        "jdbc_dialect_postgresql": "org.hibernate.dialect.PostgreSQL10Dialect"
+      }
+    },
+    {
       "tag_range": ">=2025.q1.0",
       "dependencies": {
         "elasticsearch": "8.17.3",

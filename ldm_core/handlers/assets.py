@@ -161,11 +161,14 @@ class AssetService:
             return False
 
         sidecar_flag = getattr(self.manager.args, "sidecar", False)
-        search_mode = (
-            "sidecar"
-            if sidecar_flag or self.manager.parse_version(tag) < (2025, 1, 0)
-            else "shared"
-        )
+        if self.manager.parse_version(tag) >= (2025, 2, 0):
+            search_mode = "shared"
+        else:
+            search_mode = (
+                "sidecar"
+                if sidecar_flag or self.manager.parse_version(tag) < (2025, 1, 0)
+                else "shared"
+            )
 
         seed_start = time.time()
         if self._fetch_seed(tag, db_type or "hypersonic", search_mode, paths):

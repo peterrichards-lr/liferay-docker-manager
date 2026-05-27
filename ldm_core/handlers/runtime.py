@@ -314,6 +314,17 @@ class RuntimeService:
             if getattr(self.manager.args, "sidecar", False):
                 use_shared_search = False
 
+            if not use_shared_search and self.manager.parse_version(tag) >= (
+                2025,
+                2,
+                0,
+            ):
+                if getattr(self.manager.args, "sidecar", False):
+                    UI.warning(
+                        "Sidecar mode (ES7) is deprecated in Liferay 2025.Q2+. Ignoring --sidecar flag."
+                    )
+                use_shared_search = True
+
             self.manager.verify_runtime_environment(paths)
 
             # Proactive Search Lock Clearing (LDM-369)
