@@ -493,12 +493,12 @@ class ComposerService:
         db_type = meta.get("db_type", "postgresql")
         tag = str(meta.get("tag") or "latest")
         db_container = meta.get("db_container_name") or f"{project_name}-db"
+        scale = int(meta.get("scale_db", 1))
 
         if db_type in ["postgresql", "postgres"]:
             pg_ver = resolve_dependency_version(tag, "postgresql") or "16"
-            return {
+            service = {
                 "image": f"postgres:{pg_ver}",
-                "container_name": db_container,
                 "command": [
                     "postgres",
                     "-c",
@@ -520,6 +520,11 @@ class ComposerService:
                 },
                 "networks": ["liferay-net"],
             }
+            if scale == 1:
+                service["container_name"] = db_container
+            else:
+                service["deploy"] = {"replicas": scale}
+            return service
         if db_type in ["mysql", "mariadb"]:
             is_modern = False
             try:
@@ -559,9 +564,8 @@ class ComposerService:
                 if db_type == "mysql"
                 else (f"mariadb:{target_mariadb}" if target_mariadb else "mariadb:10.6")
             )
-            return {
+            service = {
                 "image": image,
-                "container_name": db_container,
                 "command": [
                     "mysqld",
                     "--character-set-server=utf8mb4",
@@ -596,6 +600,11 @@ class ComposerService:
                 },
                 "networks": ["liferay-net"],
             }
+            if scale == 1:
+                service["container_name"] = db_container
+            else:
+                service["deploy"] = {"replicas": scale}
+            return service
         return None
 
     def _build_extensions_services(
@@ -618,17 +627,25 @@ class ComposerService:
             )
         for ext in extensions:
             if ext.get("deploy") and ext.get("is_service"):
-                svc_id = f"{project_name}-{ext['id']}"
+                ext_id = ext.get("id")
+                svc_id = f"{project_name}-{ext_id}"
                 ms_port = ext.get("loadBalancer", {}).get("targetPort", 8080)
+                scale = int(meta.get(f"scale_{ext_id}", 1))
+
                 labels = ["traefik.enable=true"]
                 services[svc_id] = {
                     "image": f"{svc_id}:latest",
-                    "container_name": svc_id,
                     "build": {"context": Path(ext["path"]).as_posix()},
                     "pull_policy": "build",
                     "networks": ["liferay-net"],
                     "labels": labels,
                 }
+
+                if scale == 1:
+                    services[svc_id]["container_name"] = svc_id
+                else:
+                    services[svc_id]["deploy"] = {"replicas": scale}
+
                 if ssl_enabled:
                     traefik_svc_id = f"{svc_id}-svc"
                     labels.extend(
