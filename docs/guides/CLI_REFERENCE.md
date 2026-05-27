@@ -424,6 +424,14 @@ ldm status --all    # Show all managed projects (including stopped ones)
 ldm ps
 ```
 
+### `info`
+
+Displays a user-friendly, formatted view of a project's internal metadata (`.liferay-docker.meta`). This is incredibly useful for diagnosing configuration issues or verifying project state without opening the file manually.
+
+```bash
+ldm info [project]
+```
+
 ### `browser` (alias: `open`)
 
 Launch the project URL in your system browser. If no project is specified, LDM will present a list of currently running projects to select from.

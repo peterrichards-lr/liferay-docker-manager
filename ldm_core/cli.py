@@ -420,6 +420,9 @@ def get_parser():
 
     # Simple Commands
     subparsers.add_parser("init-common", parents=[base_sub_parent])
+    info = subparsers.add_parser("info", parents=[base_sub_parent])
+    info.add_argument("project", nargs="?")
+    info.add_argument("-p", "--project", dest="project_flag")
     reset = subparsers.add_parser("reset", parents=[base_sub_parent])
     reset.add_argument("project", nargs="?")
     reset.add_argument(
@@ -900,6 +903,7 @@ def main():
             getattr(args, "project", None)
         ),
         "restore": lambda: manager.snapshot.cmd_restore(getattr(args, "project", None)),
+        "info": lambda: manager.diagnostics.cmd_info(getattr(args, "project", None)),
         "init-common": manager.config.cmd_init_common,
         "reset": lambda: manager.runtime.cmd_reset(
             getattr(args, "project", None), getattr(args, "target", "state")

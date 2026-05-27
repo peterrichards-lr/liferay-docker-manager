@@ -1647,6 +1647,53 @@ class DiagnosticsService:
     def __init__(self, manager=None):
         self.manager = manager
 
+    def cmd_info(self, project_id=None):
+        """Displays user-friendly project metadata."""
+        root = self.manager.detect_project_path(project_id)
+        if not root:
+            return
+
+        meta = self.manager.read_meta(root)
+        if not meta:
+            UI.warning(f"No metadata found for project at {root}")
+            return
+
+        UI.heading(f"Project Metadata: {meta.get('container_name', root.name)}")
+        UI.raw(f"  {UI.WHITE}Path:{UI.COLOR_OFF}       {root}")
+
+        # Determine specific colors for known keys
+        keys_to_skip = ["root", "custom_env"]
+        for key, value in sorted(meta.items()):
+            if key in keys_to_skip:
+                continue
+
+            # Format value
+            val_str = str(value)
+            if val_str.lower() == "true":
+                val_str = f"{UI.GREEN}{val_str}{UI.COLOR_OFF}"
+            elif val_str.lower() == "false":
+                val_str = f"{UI.BYELLOW}{val_str}{UI.COLOR_OFF}"
+            else:
+                val_str = f"{UI.CYAN}{val_str}{UI.COLOR_OFF}"
+
+            UI.raw(f"  {UI.WHITE}{key:<15}{UI.COLOR_OFF} {val_str}")
+
+        # Pretty print custom_env if it exists
+        custom_env = meta.get("custom_env")
+        if custom_env and custom_env != "{}":
+            try:
+                import json
+
+                env_dict = json.loads(custom_env)
+                UI.raw(f"\n  {UI.WHITE}Custom Environment Variables:{UI.COLOR_OFF}")
+                for k, v in env_dict.items():
+                    UI.raw(
+                        f"    {UI.WHITE}{k:<20}{UI.COLOR_OFF} {UI.CYAN}{v}{UI.COLOR_OFF}"
+                    )
+            except Exception:
+                pass
+        UI.raw("")
+
     def cmd_status(self, project_id=None, all_projects=False):
         """Displays a summary of active global services and projects."""
         UI.heading("LDM Service Status")
