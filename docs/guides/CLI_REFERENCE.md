@@ -142,9 +142,13 @@ ldm init my-project --tag 2024.q4.0 --db mysql
 
 LDM uses smarter defaults for SSL based on your hostname. When a custom `--host-name` is used, SSL is enabled by default to support modern Liferay features like Client Extensions.
 
+> [!TIP]
+> **SSL Hostname Prompt**: If you explicitly pass the `--ssl` flag without providing a `--host-name`, LDM will interactively prompt you for a custom virtual hostname. This allows LDM to attempt to inject the custom domain into your `/etc/hosts` file automatically. (In non-interactive mode `-y`, it safely defaults to `localhost`).
+
 | Command | Host Name | SSL Default | Access URL |
 | :--- | :--- | :--- | :--- |
 | `ldm run` | `localhost` | `False` | `http://localhost:8080` |
+| `ldm run --ssl` | *Prompts User* | `True` | `https://<prompted-host>` |
 | `ldm run --host-name my.local` | `my.local` | `True` | `https://my.local` |
 | `ldm run --no-ssl` | `localhost` | `False` | `http://localhost:8080` |
 | `ldm run --host-name my.local --no-ssl` | `my.local` | `False` | `http://my.local:8080` |
