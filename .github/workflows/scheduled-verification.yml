@@ -38,6 +38,7 @@ jobs:
         if: matrix.distro == 'fedora'
         run: |
           docker run --rm --privileged \
+            --network host \
             -v /var/run/docker.sock:/var/run/docker.sock \
             -v ${{ github.workspace }}:${{ github.workspace }} \
             -w ${{ github.workspace }} \
