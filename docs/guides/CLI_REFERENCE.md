@@ -162,10 +162,6 @@ LDM automatically hardens modern environments (DXP 2024+ and modern Quarterly Re
   - Prioritizes `LIFERAY_JDBC_DEFAULT_*` environment variables ONLY for runtime user overrides; LDM baseline always uses `portal-ext.properties`.
 - **Proactive Boot Sequencing**: Configures `depends_on` with healthchecks to ensure Liferay only starts once the database is fully ready to accept connections.
 
-#### ⚡️ Performance Tuning (Startup Optimizations)
-
-... [Previous content kept] ...
-
 ### `init-from` (Live Link)
 
 Initialize a project from a source workspace and establish a **persistent link**. This command records the workspace path in the project metadata and automatically starts the `monitor` process to sync your code changes in real-time.
