@@ -103,6 +103,14 @@ class RuntimeService:
                 or project_meta.get("host_name")
                 or self.manager.defaults.get("host_name")
             )
+
+            # Interactive prompt if --ssl is passed but no explicit host-name is given
+            if getattr(self.manager.args, "ssl", None) is True and not getattr(
+                self.manager.args, "host_name", None
+            ):
+                if not self.manager.non_interactive:
+                    host_name = UI.ask("Enter project Virtual Hostname", host_name)
+
             db_type = (
                 getattr(self.manager.args, "db", None)
                 or project_meta.get("db_type")
