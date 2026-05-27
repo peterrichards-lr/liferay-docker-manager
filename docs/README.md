@@ -70,7 +70,7 @@ The badges below represent our verified support for various Docker providers. En
 - [Architecture Overview](LDM_ARCHITECTURE.md)
 - [Test & Validation Strategy](TESTING.md)
 - [Security Posture & Disclosures](SECURITY.md)
-- [Future Roadmap](roadmap.md)
+- [Future Roadmap](ROADMAP.md)
 
 ### In-Depth Guides
 

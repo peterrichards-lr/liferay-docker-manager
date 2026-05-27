@@ -6,7 +6,7 @@ This file serves as the main entry point for the **Liferay Docker Manager (LDM)*
 
 - **[Tracks Registry](./tracks.md)**: Overview of all implementation tracks and their status.
 - **[Product Definition](../docs/LDM_ARCHITECTURE.md)**: Technical architecture and design principles.
-- **[Roadmap](../docs/roadmap.md)**: High-level future vision for the project.
+- **[Roadmap](../docs/ROADMAP.md)**: High-level future vision for the project.
 
 ## 📝 Feature Specifications & Plans
 

@@ -119,7 +119,7 @@ class DoctorRunner:
             )
             self.add_hint(
                 f"Upgrade LDM from v{VERSION} to v{latest} by running '{UI.WHITE}ldm upgrade{UI.COLOR_OFF}'.",
-                "https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/installation.md#troubleshooting-version-loop--integrity-issues",
+                "https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/INSTALLATION.md#troubleshooting-version-loop--integrity-issues",
             )
         else:
             self.results.append(("LDM Version", f"{v_display} (Latest)", True))
@@ -151,7 +151,7 @@ class DoctorRunner:
             status = f"{status} {UI.WHITE}(Run 'ldm upgrade --repair'){UI.COLOR_OFF}"
             self.add_hint(
                 f"Repair your LDM installation by running '{UI.WHITE}ldm upgrade --repair{UI.COLOR_OFF}'.",
-                "https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/installation.md#troubleshooting-version-loop--integrity-issues",
+                "https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/INSTALLATION.md#troubleshooting-version-loop--integrity-issues",
             )
 
         self.results.append(("Executable Integrity", status, ok))
@@ -179,7 +179,7 @@ class DoctorRunner:
                 )
                 self.add_hint(
                     f"Enable tab-completion for {shell} by running '{UI.WHITE}ldm completion{UI.COLOR_OFF}'.",
-                    "https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/installation.md#3-shell-autocompletion",
+                    "https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/INSTALLATION.md#3-shell-autocompletion",
                 )
             else:
                 self.results.append(
@@ -316,7 +316,7 @@ class DoctorRunner:
                 if getattr(self, "_colima_mount_not_writable", False):
                     self.add_hint(
                         "Colima: Your mount is not explicitly marked as 'writable'. With 'sshfs', this often causes permission errors.",
-                        "https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/installation.md#colima-mount-permissions",
+                        "https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/INSTALLATION.md#colima-mount-permissions",
                     )
                     self.add_hint(
                         "Fix: 'colima stop' then 'colima start --mount [HOME]:w'"
@@ -332,7 +332,7 @@ class DoctorRunner:
                         )
                         self.add_hint(
                             "WSL: Your Docker socket is symlinked, likely by Docker Desktop 'WSL Integration'.",
-                            "https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/installation.md#wsl2-mixed-environments",
+                            "https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/INSTALLATION.md#wsl2-mixed-environments",
                         )
                         self.add_hint(
                             "To use 'Native' Docker in this distro, disable 'WSL Integration' in Docker Desktop settings and delete the symlink."
@@ -369,7 +369,7 @@ class DoctorRunner:
                         res_type = "CPU cores" if "CPU" in comp else "RAM"
                         self.add_hint(
                             f"Allocate more {res_type} in your Docker self.provider settings.",
-                            "https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/installation.md#docker-resource-alignment-windowswsl2macos",
+                            "https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/INSTALLATION.md#docker-resource-alignment-windowswsl2macos",
                         )
         else:
             # Trigger the detailed error reporting from base.py
@@ -377,12 +377,12 @@ class DoctorRunner:
             self.results.append(("Docker Engine", "Not reachable", False))
             self.add_hint(
                 "If Docker is running but LDM cannot connect, ensure your user is in the 'docker' group.",
-                "https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/installation.md#linux--wsl-docker-permissions",
+                "https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/INSTALLATION.md#linux--wsl-docker-permissions",
             )
             if self.is_wsl:
                 self.add_hint(
                     "WSL: To use Native Docker, run: 'sudo service docker start'",
-                    "https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/installation.md#wsl2-native-docker",
+                    "https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/INSTALLATION.md#wsl2-native-docker",
                 )
                 self.add_hint(
                     "WSL: To use Docker Desktop, ensure 'WSL Integration' is enabled in the Docker Desktop dashboard."
@@ -424,7 +424,7 @@ class DoctorRunner:
                     self.results.append(("Volume Permissions", "❌ Read-Only", False))
                     self.add_hint(
                         "Your Docker volume mounts are read-only for the 'liferay' user (UID 1000).",
-                        "https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/installation.md#troubleshooting-read-only-mounts",
+                        "https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/INSTALLATION.md#troubleshooting-read-only-mounts",
                     )
                     if self.provider == "Colima":
                         # Check for custom LaunchAgent setup
@@ -484,7 +484,7 @@ class DoctorRunner:
             if mkcert_status == "Not installed":
                 self.add_hint(
                     "Install 'mkcert' to enable local SSL (brew install mkcert / scoop install mkcert / apt install mkcert).",
-                    "https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/installation.md#prerequisites",
+                    "https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/INSTALLATION.md#prerequisites",
                 )
             elif "Permission Denied" in mkcert_status:
                 cert_dir = get_actual_home() / "liferay-docker-certs"
@@ -494,7 +494,7 @@ class DoctorRunner:
             else:
                 self.add_hint(
                     f"Run '{UI.WHITE}mkcert -install{UI.COLOR_OFF}' to initialize the local trust store.",
-                    "https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/installation.md#fixing-ssl-trust-issues-mkcert",
+                    "https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/INSTALLATION.md#fixing-ssl-trust-issues-mkcert",
                 )
         else:
             # Detect WSL
@@ -513,12 +513,12 @@ class DoctorRunner:
                 if not is_win_ca:
                     self.add_hint(
                         f"[WSL] Your browser won't trust WSL certificates. Run '{UI.WHITE}mkcert -install{UI.COLOR_OFF}' on Windows, then in WSL set: {UI.WHITE}export CAROOT=\"/mnt/c/Users/<user>/AppData/Local/mkcert\"{UI.COLOR_OFF}",
-                        "https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/installation.md#wsl2-ssl-trust",
+                        "https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/INSTALLATION.md#wsl2-ssl-trust",
                     )
                 else:
                     self.add_hint(
                         f"[WSL] To avoid 'Insecure' browser warnings, you must ALSO run '{UI.WHITE}mkcert -install{UI.COLOR_OFF}' on your Windows host (via PowerShell or CMD).",
-                        "https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/installation.md#wsl2-ssl-trust",
+                        "https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/INSTALLATION.md#wsl2-ssl-trust",
                     )
 
         # 4. OpenSSL Check
@@ -527,7 +527,7 @@ class DoctorRunner:
         if openssl_ok is not True:
             self.add_hint(
                 "Install OpenSSL (available via brew, macports, scoop, or apt).",
-                "https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/installation.md#prerequisites",
+                "https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/INSTALLATION.md#prerequisites",
             )
 
         # 4.1 Core Orchestration Tools & Path Integrity
@@ -669,7 +669,7 @@ class DoctorRunner:
             )
             self.add_hint(
                 f"Run '{UI.WHITE}ldm init-common{UI.COLOR_OFF}' to restore standard development assets.",
-                "https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/installation.md#global-configuration-the-common-folder",
+                "https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/INSTALLATION.md#global-configuration-the-common-folder",
             )
         else:
             try:
@@ -1237,7 +1237,7 @@ class DoctorRunner:
                     )
                     self.add_hint(
                         f"[{p_path.name}] Regenerate SSL certificates by running '{UI.WHITE}ldm run {p_path.name} --force-ssl{UI.COLOR_OFF}'.",
-                        "https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/installation.md#fixing-ssl-trust-issues-mkcert",
+                        "https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/INSTALLATION.md#fixing-ssl-trust-issues-mkcert",
                     )
 
                 if traefik_conf.exists():
@@ -1306,7 +1306,7 @@ class DoctorRunner:
                         )
                         self.add_hint(
                             f"[{p_path.name}] Fix Traefik labels by running '{UI.WHITE}ldm run {p_path.name}{UI.COLOR_OFF}'.",
-                            "https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/installation.md#dns--subdomain-configuration",
+                            "https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/INSTALLATION.md#dns--subdomain-configuration",
                         )
                     elif double_prefixed:
                         self.results.append(
@@ -1381,7 +1381,7 @@ class DoctorRunner:
                     )
                     self.add_hint(
                         f"[{p_path.name}] Hostname resolves to an external IP. Point it to 127.0.0.1 in your local hosts file or run '{UI.WHITE}ldm doctor --fix-hosts{UI.COLOR_OFF}'.",
-                        "https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/installation.md#dns--subdomain-configuration",
+                        "https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/INSTALLATION.md#dns--subdomain-configuration",
                     )
                 else:
                     self.results.append(
@@ -1393,7 +1393,7 @@ class DoctorRunner:
                     )
                     self.add_hint(
                         f"[{p_path.name}] Add missing hostnames to your local hosts file or run '{UI.WHITE}ldm doctor --fix-hosts{UI.COLOR_OFF}'.",
-                        "https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/installation.md#dns--subdomain-configuration",
+                        "https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/INSTALLATION.md#dns--subdomain-configuration",
                     )
                     for d in unresolved:
                         UI.raw(f"  {UI.RED}×{UI.COLOR_OFF} {d}")
@@ -1453,7 +1453,7 @@ class DoctorRunner:
                     self.add_hint(
                         f"[{p_path.name}] Using Windows-mounted paths (/mnt/c) in WSL2 causes severe permission and performance issues with Liferay. "
                         f"Move your project to the native Linux filesystem (e.g. ~/repos/{p_path.name}).",
-                        "https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/installation.md#linux--wsl-docker-permissions",
+                        "https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/INSTALLATION.md#linux--wsl-docker-permissions",
                     )
                 elif platform.system().lower() == "darwin":
                     if liferay_container:
@@ -1490,7 +1490,7 @@ class DoctorRunner:
                             )
                             self.add_hint(
                                 f"[{p_path.name}] Ensure Docker has permission to share your home directory.",
-                                "https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/installation.md#the-ghost-mount-issue",
+                                "https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/INSTALLATION.md#the-ghost-mount-issue",
                             )
                     finally:
                         if token_file.exists():
@@ -2528,7 +2528,7 @@ pause
                     f"  {UI.CYAN}ℹ{UI.COLOR_OFF} Hint: Allocate more CPU cores in your Docker provider settings."
                 )
                 UI.raw(
-                    f"    Doc: {UI.CYAN}https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/installation.md#docker-resource-alignment-windowswsl2macos{UI.COLOR_OFF}"
+                    f"    Doc: {UI.CYAN}https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/INSTALLATION.md#docker-resource-alignment-windowswsl2macos{UI.COLOR_OFF}"
                 )
 
             mem_ok: Any = True
@@ -2542,7 +2542,7 @@ pause
                     f"  {UI.CYAN}ℹ{UI.COLOR_OFF} Hint: Allocate more RAM in your Docker provider settings."
                 )
                 UI.raw(
-                    f"    Doc: {UI.CYAN}https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/installation.md#docker-resource-alignment-windowswsl2macos{UI.COLOR_OFF}"
+                    f"    Doc: {UI.CYAN}https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/INSTALLATION.md#docker-resource-alignment-windowswsl2macos{UI.COLOR_OFF}"
                 )
 
             return results

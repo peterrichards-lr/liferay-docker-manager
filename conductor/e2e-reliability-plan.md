@@ -60,7 +60,7 @@ The process for testing LDM and updating the compatibility matrix has been fully
         * Automatically moves all older or duplicate reports for that environment into `references/verification-results/history/`.
         * Parses the latest reports and regenerates the Markdown table in `docs/COMPATIBILITY_TABLE.md`.
         * Automatically updates the relative hyperlinks within the table to point directly to the raw, preserved `verify-*.txt` files in the `references/verification-results/` directory.
-        * Automatically chains to `scripts/sync_docs.py` to inject the updated table into `docs/README.md`, `docs/TESTING.md`, and `docs/installation.md`.
+        * Automatically chains to `scripts/sync_docs.py` to inject the updated table into `docs/README.md`, `docs/TESTING.md`, and `docs/INSTALLATION.md`.
 
 4. **Standalone UI Verification (Optional):**
     * If frontend validation is required, activate the virtual environment created by the verification script and run the standalone Playwright test:
