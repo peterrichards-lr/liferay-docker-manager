@@ -230,7 +230,7 @@ class SnapshotService(BaseHandler):
                 UI.info(f"Triggering orchestrated database snapshot ({db_type})...")
 
                 if db_type in ["mysql", "mariadb"]:
-                    # MySQL/MariaDB Dump
+                    # MySQL/MariaDB Dump (Explicitly include drop tables for rollback)
                     dump_cmd = [
                         "docker",
                         "exec",
@@ -240,10 +240,11 @@ class SnapshotService(BaseHandler):
                         "lportal",
                         "-ptest",
                         "--opt",
+                        "--add-drop-table",
                         "lportal",
                     ]
                 else:
-                    # PostgreSQL Dump
+                    # PostgreSQL Dump (Include clean/drop commands for rollback)
                     dump_cmd = [
                         "docker",
                         "exec",
@@ -251,6 +252,8 @@ class SnapshotService(BaseHandler):
                         "pg_dump",
                         "-U",
                         "lportal",
+                        "--clean",
+                        "--if-exists",
                         "lportal",
                     ]
 
@@ -679,6 +682,18 @@ class SnapshotService(BaseHandler):
                 )
 
         UI.success("Restore complete.")
+
+        # --- OPTIONAL STARTUP (LDM-388) ---
+        up_flag = getattr(self.manager.args, "up", False)
+        if up_flag or (
+            not self.manager.non_interactive
+            and UI.confirm("Do you want to start the project now?", "Y")
+        ):
+            self.manager.runtime.cmd_run(project_id)
+        else:
+            UI.info(
+                f"Run {UI.CYAN}ldm run {paths['root'].name}{UI.COLOR_OFF} to start the project."
+            )
 
     def _extract_snapshot_archive(self, files_tar, paths):
         """Extracts a snapshot tarball into the project root with security checks."""

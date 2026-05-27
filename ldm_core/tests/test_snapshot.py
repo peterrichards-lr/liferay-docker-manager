@@ -16,6 +16,7 @@ class MockSnapshotManager(BaseHandler):
         self.snapshot = SnapshotService(self)
         self.composer = MagicMock()
         self.composer.is_using_named_volumes.return_value = False
+        self.runtime = MagicMock()
 
     def run_command(self, *args, **kwargs):
         return ""

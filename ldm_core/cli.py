@@ -411,6 +411,11 @@ def get_parser():
         "--latest", action="store_true", help="Restore the most recent snapshot"
     )
     rest.add_argument("--list", action="store_true", help="List available snapshots")
+    rest.add_argument(
+        "--up",
+        action="store_true",
+        help="Automatically start the project after restore",
+    )
     rest.add_argument("--backup-dir")
     rest.add_argument(
         "--verify", action="store_true", default=True, help="Verify snapshot integrity"
