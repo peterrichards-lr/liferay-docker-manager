@@ -388,6 +388,7 @@ def get_parser():
     rest.add_argument("project", nargs="?")
     rest.add_argument("-p", "--project", dest="project_flag")
     rest.add_argument("-i", "--index", type=int)
+    rest.add_argument("-n", "--name")
     rest.add_argument(
         "--latest", action="store_true", help="Restore the most recent snapshot"
     )

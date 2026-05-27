@@ -31,6 +31,7 @@ ldm snapshot demo --name "post-setup-gold-standard"
 # List snapshots for a project
 ldm restore demo --list    # Non-interactive list of all snapshots
 ldm restore demo --index 1 # Restore to index 1
+ldm restore demo --name "post-setup-gold-standard" # Restore by name
 ```
 
 ## `hydrate` (Local Cloud Backup Hydration)

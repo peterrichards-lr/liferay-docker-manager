@@ -349,6 +349,15 @@ class SnapshotService(BaseHandler):
 
             if auto_index is not None:
                 choice = backups[auto_index - 1]
+            elif getattr(self.manager.args, "name", None):
+                target_name = self.manager.args.name
+                for b in backups:
+                    meta = self.manager.read_meta(b / "meta")
+                    if meta.get("name") == target_name:
+                        choice = b
+                        break
+                if not choice:
+                    UI.die(f"No snapshot found with name: '{target_name}'")
             elif getattr(self.manager.args, "index", None):
                 choice = backups[self.manager.args.index - 1]
             elif self.manager.non_interactive:
