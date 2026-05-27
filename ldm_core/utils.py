@@ -17,6 +17,73 @@ from ldm_core.constants import SCRIPT_DIR, TAG_PATTERN
 from ldm_core.ui import UI
 
 
+class Benchmarker:
+    """A global timer to benchmark LDM operations, separating human vs machine time."""
+
+    is_active = False
+    _start_time = 0.0
+    human_time = 0.0
+    download_time = 0.0
+
+    @classmethod
+    def start(cls):
+        cls.is_active = True
+        cls._start_time = time.time()
+        cls.human_time = 0.0
+        cls.download_time = 0.0
+
+    @classmethod
+    def add_human_time(cls, duration):
+        if cls.is_active:
+            cls.human_time += duration
+
+    @classmethod
+    def add_download_time(cls, duration):
+        if cls.is_active:
+            cls.download_time += duration
+
+    @classmethod
+    def print_report(cls):
+        if not cls.is_active or not cls._start_time:
+            return
+
+        total_time = time.time() - cls._start_time
+        machine_time = total_time - cls.human_time - cls.download_time
+        machine_time = max(machine_time, 0.0)
+
+        UI.heading("Benchmark Report")
+        UI._print(
+            f"  ● {UI.WHITE}Total Elapsed Time: {UI.BOLD}{UI.format_duration(total_time)}{UI.COLOR_OFF}"
+        )
+        UI._print(
+            f"  ● {UI.CYAN}Human Input Time:   {UI.format_duration(cls.human_time)}{UI.COLOR_OFF}"
+        )
+        UI._print(
+            f"  ● {UI.CYAN}Download Time:      {UI.format_duration(cls.download_time)}{UI.COLOR_OFF}"
+        )
+        UI._print(
+            f"  ● {UI.GREEN}LDM Processing:     {UI.format_duration(machine_time)}{UI.COLOR_OFF}\n"
+        )
+
+    @classmethod
+    @contextlib.contextmanager
+    def measure_human(cls):
+        start = time.time()
+        try:
+            yield
+        finally:
+            cls.add_human_time(time.time() - start)
+
+    @classmethod
+    @contextlib.contextmanager
+    def measure_download(cls):
+        start = time.time()
+        try:
+            yield
+        finally:
+            cls.add_download_time(time.time() - start)
+
+
 def get_resource_path(filename):
     """Resiliently locates internal resource files (supports source vs bundled)."""
     # 1. Check bundled package structure (site-packages/ldm_core/resources)
@@ -43,9 +110,10 @@ def download_file(url, destination):
         )
 
         response.raise_for_status()
-        with open(destination, "wb") as f:
-            for chunk in response.iter_content(chunk_size=8192):
-                f.write(chunk)
+        with Benchmarker.measure_download():
+            with open(destination, "wb") as f:
+                for chunk in response.iter_content(chunk_size=8192):
+                    f.write(chunk)
         return True
     except Exception as e:
         UI.error(f"Download failed: {e}")

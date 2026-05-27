@@ -204,11 +204,16 @@ class UI:
             sys.stdout.write(formatted_prompt)
             sys.stdout.flush()
 
-            try:
-                res = input()
-            except UnicodeEncodeError:
-                # Fallback prompt for CP1252 (Standard Windows CMD)
-                res = input(f"? {prompt} [{default}]: " if default else f"? {prompt}: ")
+            from ldm_core.utils import Benchmarker
+
+            with Benchmarker.measure_human():
+                try:
+                    res = input()
+                except UnicodeEncodeError:
+                    # Fallback prompt for CP1252 (Standard Windows CMD)
+                    res = input(
+                        f"? {prompt} [{default}]: " if default else f"? {prompt}: "
+                    )
 
             return res.strip() if res else default
         except (EOFError, KeyboardInterrupt):

@@ -1941,9 +1941,12 @@ class DiagnosticsService:
                 url, headers={"User-Agent": "ldm-cli"}, timeout=30, stream=True
             )
             response.raise_for_status()
-            with open(temp_new, "wb") as f:
-                for chunk in response.iter_content(chunk_size=8192):
-                    f.write(chunk)
+            from ldm_core.utils import Benchmarker
+
+            with Benchmarker.measure_download():
+                with open(temp_new, "wb") as f:
+                    for chunk in response.iter_content(chunk_size=8192):
+                        f.write(chunk)
         except requests.exceptions.HTTPError as e:
             if temp_new.exists():
                 temp_new.unlink()

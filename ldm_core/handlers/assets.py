@@ -106,17 +106,20 @@ class AssetService:
                     total_size = int(response.headers.get("content-length", 0))
 
                     downloaded = 0
-                    with open(temp_download, "wb") as f:
-                        for chunk in response.iter_content(chunk_size=8192 * 1024):
-                            if chunk:
-                                f.write(chunk)
-                                downloaded += len(chunk)
-                                if total_size:
-                                    percent = int((downloaded / total_size) * 100)
-                                    sys.stdout.write(
-                                        f"\rDownloading: [{percent}%] {UI.format_size(downloaded)} / {UI.format_size(total_size)}"
-                                    )
-                                    sys.stdout.flush()
+                    from ldm_core.utils import Benchmarker
+
+                    with Benchmarker.measure_download():
+                        with open(temp_download, "wb") as f:
+                            for chunk in response.iter_content(chunk_size=8192 * 1024):
+                                if chunk:
+                                    f.write(chunk)
+                                    downloaded += len(chunk)
+                                    if total_size:
+                                        percent = int((downloaded / total_size) * 100)
+                                        sys.stdout.write(
+                                            f"\rDownloading: [{percent}%] {UI.format_size(downloaded)} / {UI.format_size(total_size)}"
+                                        )
+                                        sys.stdout.flush()
                     print()
                     os.replace(temp_download, cached_seed)
                     tmp_path = cached_seed
@@ -208,9 +211,12 @@ class AssetService:
                     if response.status_code != 200:
                         continue
 
-                    with open(temp_zip, "wb") as f:
-                        for chunk in response.iter_content(chunk_size=8192):
-                            f.write(chunk)
+                    from ldm_core.utils import Benchmarker
+
+                    with Benchmarker.measure_download():
+                        with open(temp_zip, "wb") as f:
+                            for chunk in response.iter_content(chunk_size=8192):
+                                f.write(chunk)
 
                     success = True
                 except Exception as e:

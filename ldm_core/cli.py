@@ -32,6 +32,9 @@ def get_parser():
     )
     base_parent.add_argument("-v", "--verbose", action="store_true")
     base_parent.add_argument("-y", "--non-interactive", action="store_true")
+    base_parent.add_argument(
+        "--benchmark", action="store_true", help="Display performance benchmark"
+    )
 
     # For subparsers, we want the global flags but we SUPPRESS the default (False)
     # so they don't overwrite the value set by the main parser if provided before the command.
@@ -41,6 +44,7 @@ def get_parser():
     base_sub_parent.add_argument("--info", action="store_true")
     base_sub_parent.add_argument("-v", "--verbose", action="store_true")
     base_sub_parent.add_argument("-y", "--non-interactive", action="store_true")
+    base_sub_parent.add_argument("--benchmark", action="store_true")
 
     parser = argparse.ArgumentParser(
         prog="ldm",
@@ -972,7 +976,16 @@ def main():
             update_thread.start()
 
         try:
+            from ldm_core.utils import Benchmarker
+
+            if getattr(args, "benchmark", False):
+                Benchmarker.start()
+
             cmds[args.command]()
+
+            if getattr(args, "benchmark", False):
+                Benchmarker.print_report()
+
         except KeyboardInterrupt:
             print(f"\n{UI.WHITE}Aborted.{UI.COLOR_OFF}")
             sys.exit(130)
