@@ -146,9 +146,7 @@ class AssetService:
             success_msg = "Project bootstrapped from seed."
             if not getattr(self.manager.args, "no_osgi_seed", False):
                 success_msg = "Project bootstrapped from seed (including OSGi state)."
-            UI.success(
-                f"{success_msg} {UI.WHITE}(Saved ~15m of initialization time){UI.COLOR_OFF}"
-            )
+            UI.success(success_msg)
             return True
         except Exception as e:
             UI.warning(f"Failed to extract bootstrap seed: {e}")

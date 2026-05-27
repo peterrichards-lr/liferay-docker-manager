@@ -728,6 +728,16 @@ class RuntimeService:
         if ssl_enabled or getattr(self.manager.args, "search", False):
             infra_start = time.time()
             resolved_ip = self.manager.get_resolved_ip(host_name) or "127.0.0.1"
+
+            if ssl_enabled and not no_up:
+                ssl_start = time.time()
+                actual_home = get_actual_home()
+                cert_dir = actual_home / "liferay-docker-certs"
+                self.manager.infra.setup_ssl(cert_dir, host_name)
+                if self.manager.verbose:
+                    duration_str = UI.format_duration(time.time() - ssl_start)
+                    UI.debug(f"SSL certificate generation took: {duration_str}")
+
             self.manager.infra.setup_infrastructure(
                 resolved_ip,
                 ssl_port,
@@ -739,15 +749,6 @@ class RuntimeService:
             if self.manager.verbose:
                 duration_str = UI.format_duration(time.time() - infra_start)
                 UI.debug(f"Infrastructure setup took: {duration_str}")
-
-            if ssl_enabled and not no_up:
-                ssl_start = time.time()
-                actual_home = get_actual_home()
-                cert_dir = actual_home / "liferay-docker-certs"
-                self.manager.infra.setup_ssl(cert_dir, host_name)
-                if self.manager.verbose:
-                    duration_str = UI.format_duration(time.time() - ssl_start)
-                    UI.debug(f"SSL certificate generation took: {duration_str}")
 
         config_handler = self.manager.config
         config_handler.sync_common_assets(
