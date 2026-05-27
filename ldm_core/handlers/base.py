@@ -763,7 +763,11 @@ class BaseHandler:
 
     def detect_project_path(self, project_id=None, for_init=False, fatal=True):
         """Resolves a project ID or path to a full filesystem path."""
-        pid = project_id or getattr(self.args, "project", None)
+        pid = (
+            project_id
+            or getattr(self.args, "project", None)
+            or getattr(self.args, "project_flag", None)
+        )
 
         if pid:
             p = Path(pid).expanduser().resolve()

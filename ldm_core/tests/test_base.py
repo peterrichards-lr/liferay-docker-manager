@@ -127,6 +127,7 @@ class TestBaseDiscoveryPath(unittest.TestCase):
                     return_value={"path": Path("/selected")},
                 ):
                     self.handler.args.project = None
+                    self.handler.args.project_flag = None
                     res = self.handler.detect_project_path(None)
                     self.assertEqual(res, Path("/selected"))
 
