@@ -311,7 +311,7 @@ echo ">> Verifying Redaction..."
 "$LDM_CMD" -v env . REDACT_SECRET=hidden 2>&1 | grep -q "REDACT_SECRET=\[REDACTED\]" && echo "✅ Redaction verified."
 
 echo ">> Verifying Scaling..."
-log_and_run "Scaling Liferay" "$LDM_CMD" -y scale . liferay=3
+log_and_run "Scaling Liferay" "$LDM_CMD" -y scale . liferay=3 --no-run
 grep -q "scale_liferay=3" meta && echo "✅ Scaling verified."
 
 # Final

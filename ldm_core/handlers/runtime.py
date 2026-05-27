@@ -1332,7 +1332,7 @@ class RuntimeService:
         except KeyboardInterrupt:
             pass
 
-    def cmd_scale(self, project_id, scale_args):
+    def cmd_scale(self, project_id, scale_args, no_run=False):
         """Scales project services."""
         project_path = self.manager.detect_project_path(project_id)
         if not project_path:
@@ -1353,8 +1353,9 @@ class RuntimeService:
         self.manager.write_meta(project_path, meta)
         UI.success(f"Updated scale factors for project {project_path.name}")
 
-        # Trigger regeneration and restart (pass is_restart=True to bypass running check)
-        self.cmd_run(project_id, is_restart=True)
+        if not no_run:
+            # Trigger regeneration and restart (pass is_restart=True to bypass running check)
+            self.cmd_run(project_id, is_restart=True)
 
     def cmd_migrate_search(self, project_id=None):
         """Migrates a project from Sidecar to Global Elasticsearch."""

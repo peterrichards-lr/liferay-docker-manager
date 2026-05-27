@@ -663,6 +663,11 @@ def get_parser():
     scale.add_argument("service_scale", nargs="+")
     scale.add_argument("-p", "--project", dest="project_flag")
     scale.add_argument("--timeout", type=int, default=900)
+    scale.add_argument(
+        "--no-run",
+        action="store_true",
+        help="Update the metadata without automatically restarting the stack.",
+    )
 
     cloud = subparsers.add_parser("cloud-fetch", parents=[base_sub_parent])
     cloud.add_argument("project", nargs="?")
@@ -922,7 +927,9 @@ def main():
         "browser": lambda: manager.runtime.cmd_browser(getattr(args, "project", None)),
         "open": lambda: manager.runtime.cmd_browser(getattr(args, "project", None)),
         "scale": lambda: manager.runtime.cmd_scale(
-            getattr(args, "project", None), args.service_scale
+            getattr(args, "project", None),
+            args.service_scale,
+            getattr(args, "no_run", False),
         ),
         "cloud-fetch": lambda: manager.cloud.cmd_cloud_fetch(
             getattr(args, "project", None),
