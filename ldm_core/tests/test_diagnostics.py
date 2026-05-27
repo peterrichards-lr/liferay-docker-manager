@@ -282,12 +282,10 @@ class TestDiagnostics(unittest.TestCase):
 
             # 3. Verify
             self.assertIn("Project", output)
-            self.assertIn("Path", output)
             self.assertIn("proj1", output)
             self.assertIn("2024.q1.0", output)
             self.assertIn("Running", output)
             self.assertIn("http://localhost:8080", output)
-            self.assertIn("/tmp/proj1", output)
 
     @patch("ldm_core.handlers.diagnostics.run_command")
     @patch.object(

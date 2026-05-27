@@ -1661,6 +1661,28 @@ class DiagnosticsService:
         UI.heading(f"Project Metadata: {meta.get('container_name', root.name)}")
         UI.raw(f"  {UI.WHITE}Path:{UI.COLOR_OFF}       {root}")
 
+        # Add Status and URL
+        container_name = meta.get("container_name") or root.name.replace(".", "-")
+        from ldm_core.docker_service import DockerService
+
+        status = DockerService.get_status(container_name)
+        status_color = UI.GREEN if status == "running" else UI.BYELLOW
+        UI.raw(
+            f"  {UI.WHITE}Status:{UI.COLOR_OFF}     {status_color}{status}{UI.COLOR_OFF}"
+        )
+
+        host_name = meta.get("host_name")
+        if host_name:
+            ssl_enabled = self.manager.composer._is_ssl_active(host_name, meta)
+            port = meta.get("port", 8080)
+            url = (
+                f"https://{host_name}" if ssl_enabled else f"http://{host_name}:{port}"
+            )
+            UI.raw(
+                f"  {UI.WHITE}URL:{UI.COLOR_OFF}        {UI.CYAN}{UI.UNDERLINE}{url}{UI.COLOR_OFF}"
+            )
+        UI.raw("")
+
         # Determine specific colors for known keys
         keys_to_skip = ["root", "custom_env"]
         for key, value in sorted(meta.items()):
@@ -1699,9 +1721,9 @@ class DiagnosticsService:
         UI.heading("LDM Service Status")
 
         # 1. Global Infrastructure
-        UI.raw(f"{UI.WHITE}Global Infrastructure:{UI.COLOR_OFF}")
         from ldm_core.constants import INFRA_SERVICES
 
+        infra_rows = []
         any_infra = False
         for container, label in INFRA_SERVICES:
             res = run_command(
@@ -1720,12 +1742,19 @@ class DiagnosticsService:
                 )
                 if inspect:
                     status, image = inspect.split(" ", 1)
-                    UI.raw(
-                        f"  {UI.GREEN}●{UI.COLOR_OFF} {label:<25} {status.capitalize():<10} {image}"
+                    infra_rows.append(
+                        [
+                            f"{UI.GREEN}●{UI.COLOR_OFF} {label}",
+                            status.capitalize(),
+                            image,
+                        ]
                     )
                     any_infra = True
 
-        if not any_infra:
+        if infra_rows:
+            UI.raw(f"{UI.WHITE}Global Infrastructure:{UI.COLOR_OFF}")
+            UI.table(infra_rows)
+        else:
             UI.raw(
                 f"  {UI.WHITE}No global services are currently running.{UI.COLOR_OFF}"
             )
@@ -1733,18 +1762,10 @@ class DiagnosticsService:
         UI.raw("")
 
         # 2. Project Status
-        if all_projects:
-            UI.raw(f"{UI.WHITE}All Managed Projects:{UI.COLOR_OFF}")
-        elif project_id:
-            UI.raw(f"{UI.WHITE}Project Status: {project_id}{UI.COLOR_OFF}")
-        else:
-            UI.raw(f"{UI.WHITE}Active Projects:{UI.COLOR_OFF}")
-
         roots = []
         if project_id:
             root_path = self.manager.detect_project_path(project_id)
             if root_path:
-                # We need to match find_dxp_roots structure
                 roots = [{"path": root_path, "version": "unknown"}]
                 meta = self.manager.read_meta(root_path)
                 if meta.get("tag"):
@@ -1753,13 +1774,13 @@ class DiagnosticsService:
             roots = self.manager.find_dxp_roots()
 
         active_projects = False
+        project_rows = []
 
         for r in roots:
             path = r["path"]
             meta = self.manager.read_meta(path)
             p_id = meta.get("container_name") or path.name
 
-            # Check if any container for this project is running
             running = run_command(
                 [
                     "docker",
@@ -1787,42 +1808,32 @@ class DiagnosticsService:
                 if (ssl and port != "443") or (not ssl and port != "80"):
                     url += f":{port}"
 
-                UI.raw(
-                    f"  {UI.GREEN}●{UI.COLOR_OFF} {p_id:<25} {r['version']:<15} {url}"
+                project_rows.append(
+                    [
+                        f"{UI.GREEN}●{UI.COLOR_OFF} {UI.CYAN}{p_id}{UI.COLOR_OFF}",
+                        r["version"],
+                        f"{UI.UNDERLINE}{url}{UI.COLOR_OFF}",
+                    ]
                 )
-
-                # List active extensions
-                extensions = meta.get("extensions", [])
-                if extensions:
-                    for ext in extensions:
-                        ext_id = ext.get("id")
-                        # Check if this extension is running
-                        ext_running = run_command(
-                            [
-                                "docker",
-                                "ps",
-                                "-q",
-                                "--filter",
-                                f"label=com.liferay.ldm.project={p_id}",
-                                "--filter",
-                                f"label=com.docker.compose.service={ext_id}",
-                                "--filter",
-                                "status=running",
-                            ],
-                            check=False,
-                        )
-                        if ext_running:
-                            ext_url = ext.get("url", "N/A")
-                            UI.raw(
-                                f"    {UI.WHITE}└─{UI.COLOR_OFF} {ext_id:<23} {ext_url}"
-                            )
             elif all_projects:
-                UI.raw(
-                    f"  {UI.WHITE}○{UI.COLOR_OFF} {p_id:<25} {r['version']:<15} {UI.WHITE}Stopped{UI.COLOR_OFF}"
+                project_rows.append(
+                    [
+                        f"{UI.WHITE}○{UI.COLOR_OFF} {p_id}",
+                        r["version"],
+                        f"{UI.DIM}Stopped{UI.COLOR_OFF}",
+                    ]
                 )
                 active_projects = True
 
-        if not active_projects:
+        if project_rows:
+            label = (
+                "All Managed Projects"
+                if all_projects
+                else ("Project Status" if project_id else "Active Projects")
+            )
+            UI.raw(f"{UI.WHITE}{label}:{UI.COLOR_OFF}")
+            UI.table(project_rows)
+        else:
             UI.raw(f"  {UI.WHITE}No projects are currently running.{UI.COLOR_OFF}")
 
         if not any_infra and not active_projects:
@@ -2606,10 +2617,8 @@ pause
             UI.info("No projects found.")
             return
 
-        UI.raw(
-            f"{UI.WHITE}{'Project':<35} {'Version':<15} {'Status':<12} {'URL':<30} {'Path'}{UI.COLOR_OFF}"
-        )
-        UI.raw("-" * 120)
+        headers = ["Project", "Version", "Status", "URL"]
+        rows = []
 
         for r in roots:
             path = r["path"]
@@ -2658,39 +2667,41 @@ pause
             access_port = (
                 f":{ssl_port}"
                 if (ssl and ssl_port != "443")
-                else (f":{port}" if not ssl else "")
+                else (f":{port}" if not ssl and port != "80" else "")
             )
             url = f"{proto}://{host}{access_port}"
 
             # Seeded Indicator
             seeded = str(meta.get("seeded", "false")).lower() == "true"
-            seeded_indicator = f" {UI.GREEN}🌱{UI.COLOR_OFF}" if seeded else ""
+            seeded_indicator = " 🌱" if seeded else ""
 
-            # Truncate path for readability if too long, or use ~ for home
-            display_path = str(path)
-            home = str(Path.home())
-            if display_path.startswith(home):
-                display_path = display_path.replace(home, "~", 1)
-
-            print(
-                f"{name + seeded_indicator:<35} {version:<15} {status_color}{status:<12}{UI.COLOR_OFF} {UI.CYAN}{url:<30}{UI.COLOR_OFF} {UI.WHITE}{display_path}{UI.COLOR_OFF}"
+            rows.append(
+                [
+                    f"{UI.CYAN}{name}{UI.COLOR_OFF}{seeded_indicator}",
+                    version,
+                    f"{status_color}{status}{UI.COLOR_OFF}",
+                    f"{UI.UNDERLINE}{url}{UI.COLOR_OFF}",
+                ]
             )
 
-            if self.manager.verbose:
-                from datetime import datetime
+        UI.table(rows, headers=headers)
+        UI.raw("")
 
-                last_seen_ts = r.get("last_seen")
-                if last_seen_ts:
-                    try:
-                        dt = datetime.fromtimestamp(last_seen_ts)
-                        last_seen_str = dt.strftime("%Y-%m-%d %H:%M:%S")
-                    except Exception:
-                        last_seen_str = "Unknown"
-                else:
+        if self.manager.verbose:
+            from datetime import datetime
+
+            last_seen_ts = r.get("last_seen")
+            if last_seen_ts:
+                try:
+                    dt = datetime.fromtimestamp(last_seen_ts)
+                    last_seen_str = dt.strftime("%Y-%m-%d %H:%M:%S")
+                except Exception:
                     last_seen_str = "Unknown"
+            else:
+                last_seen_str = "Unknown"
 
-                print(f"    {UI.BYELLOW}Path:{UI.COLOR_OFF} {path}")
-                print(f"    {UI.BYELLOW}Last Seen:{UI.COLOR_OFF} {last_seen_str}\n")
+            print(f"    {UI.BYELLOW}Path:{UI.COLOR_OFF} {path}")
+            print(f"    {UI.BYELLOW}Last Seen:{UI.COLOR_OFF} {last_seen_str}\n")
 
     def cmd_prune(self):
         UI.heading("LDM Global Maintenance - Pruning Orphaned Resources")

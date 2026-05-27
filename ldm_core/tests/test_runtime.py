@@ -563,8 +563,14 @@ class TestRuntime(unittest.TestCase):
                 return_value={"tag": "2026.q1", "db_type": "mysql"},
             ),
             patch.object(self.handler.handler, "cmd_reset"),
-            patch.object(self.handler, "setup_paths", return_value={}),
+            patch.object(
+                self.handler,
+                "setup_paths",
+                return_value={"root": self.tmp_dir, "data": self.tmp_dir / "data"},
+            ),
             patch.object(self.handler.assets, "_fetch_seed", return_value=True),
+            patch.object(self.handler, "verify_runtime_environment"),
+            patch.object(self.handler.handler, "cmd_run"),
         ):
             self.handler.handler.cmd_reseed("test")
             mock_success.assert_called_with("Reseed complete.")

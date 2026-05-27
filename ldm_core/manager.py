@@ -26,6 +26,7 @@ class LiferayManager(
         self.args = args
         self.verbose = getattr(args, "verbose", False)
         self.info_mode = getattr(args, "info", False)
+        self.quiet_mode = getattr(args, "quiet", False)
         self.non_interactive = getattr(args, "non_interactive", False)
         self.defaults = DefaultsManager()
 
@@ -50,6 +51,7 @@ class LiferayManager(
         UI.NON_INTERACTIVE = self.non_interactive
         UI.VERBOSE = self.verbose
         UI.INFO_MODE = self.info_mode
+        UI.QUIET_MODE = self.quiet_mode
 
         # Ensure standard attributes exist on args
         for attr in RUN_ATTRS:

@@ -33,6 +33,9 @@ def get_parser():
     base_parent.add_argument("-v", "--verbose", action="store_true")
     base_parent.add_argument("-y", "--non-interactive", action="store_true")
     base_parent.add_argument(
+        "-q", "--quiet", action="store_true", help="Quiet mode (suppress info logs)"
+    )
+    base_parent.add_argument(
         "--benchmark", action="store_true", help="Display performance benchmark"
     )
 
@@ -44,6 +47,7 @@ def get_parser():
     base_sub_parent.add_argument("--info", action="store_true")
     base_sub_parent.add_argument("-v", "--verbose", action="store_true")
     base_sub_parent.add_argument("-y", "--non-interactive", action="store_true")
+    base_sub_parent.add_argument("-q", "--quiet", action="store_true")
     base_sub_parent.add_argument("--benchmark", action="store_true")
 
     parser = argparse.ArgumentParser(
@@ -437,6 +441,11 @@ def get_parser():
     reseed.add_argument("project", nargs="?")
     reseed.add_argument("-p", "--project", dest="project_flag")
     reseed.add_argument("--no-osgi-seed", action="store_true")
+    reseed.add_argument(
+        "--up",
+        action="store_true",
+        help="Automatically start the project after reseeding",
+    )
 
     renew_ssl = subparsers.add_parser("renew-ssl", parents=[base_sub_parent])
     renew_ssl.add_argument("project", nargs="?")

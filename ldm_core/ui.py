@@ -37,6 +37,7 @@ class UI:
     NON_INTERACTIVE = False
     VERBOSE = False
     INFO_MODE = False
+    QUIET_MODE = False
 
     @staticmethod
     def get_padding(icon=None):
@@ -102,6 +103,66 @@ class UI:
             safe_out = safe_out.encode("ascii", "replace").decode("ascii")
             print(safe_out, file=file, flush=True)
 
+    class Spinner:
+        """A simple animated spinner context manager."""
+
+        def __init__(self, message="Waiting..."):
+            self.message = message
+            self.is_running = False
+            self.thread = None
+            self.frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
+
+        def _spin(self):
+            import sys
+            import time
+
+            i = 0
+            while self.is_running:
+                sys.stdout.write(
+                    f"\r  {UI.CYAN}{self.frames[i]}{UI.COLOR_OFF}  {self.message}"
+                )
+                sys.stdout.flush()
+                time.sleep(0.1)
+                i = (i + 1) % len(self.frames)
+
+            # Clear line when done
+            sys.stdout.write("\r" + " " * (len(self.message) + 6) + "\r")
+            sys.stdout.flush()
+
+        def __enter__(self):
+            if getattr(UI, "NON_INTERACTIVE", False) or not sys.stdout.isatty():
+                UI.info(self.message)
+                return self
+
+            import threading
+
+            self.is_running = True
+            self.thread = threading.Thread(target=self._spin, daemon=True)
+            self.thread.start()
+            return self
+
+        def __exit__(self, exc_type, exc_val, exc_tb):
+            self.is_running = False
+            if self.thread:
+                self.thread.join()
+
+    @staticmethod
+    def spinner(message="Waiting..."):
+        return UI.Spinner(message)
+
+    @staticmethod
+    def print_banner():
+        """Prints a stylish ASCII banner for LDM initialization."""
+        banner = rf"""{UI.CYAN}
+    __    ____  __  ___
+   / /   / __ \/  |/  /
+  / /   / / / / /|_/ /
+ / /___/ /_/ / /  / /
+/_____/_____/_/  /_/
+{UI.BOLD}Liferay Docker Manager{UI.COLOR_OFF}
+"""
+        print(banner)
+
     @staticmethod
     def get_beta_label(version):
         """Returns a stylized BETA tag if the version contains a hyphen (pre-release)."""
@@ -110,13 +171,68 @@ class UI:
         return ""
 
     @staticmethod
+    def table(rows, headers=None):
+        """Prints a sleek, Unicode-based table with full separators."""
+        if not rows:
+            return
+
+        # Calculate column widths
+        num_cols = len(rows[0])
+        col_widths = [0] * num_cols
+
+        all_data = ([headers] if headers else []) + rows
+        import re
+
+        for row in all_data:
+            for i, val in enumerate(row):
+                # Strip ANSI for width calculation
+                clean_val = re.sub(r"\x1b\[[0-9;]*m", "", str(val))
+                col_widths[i] = max(col_widths[i], len(clean_val))
+
+        # Build Borders
+        def get_line(left, middle, right, cross):
+            line = left
+            for i, w in enumerate(col_widths):
+                line += middle * (w + 2)
+                if i < num_cols - 1:
+                    line += cross
+            return line + right
+
+        top = get_line("╭", "─", "╮", "┬")
+        bottom = get_line("╰", "─", "╯", "┴")
+        sep = get_line("├", "─", "┤", "┼")
+
+        UI.raw(f"{UI.DIM}{top}{UI.COLOR_OFF}")
+
+        if headers:
+            head_str = "│ "
+            for i, h in enumerate(headers):
+                head_str += (
+                    f"{UI.WHITE}{UI.BOLD}{h!s:<{col_widths[i]}}{UI.COLOR_OFF} │ "
+                )
+            UI.raw(head_str)
+            UI.raw(f"{UI.DIM}{sep}{UI.COLOR_OFF}")
+
+        for row in rows:
+            row_str = "│ "
+            for i, val in enumerate(row):
+                # We have to account for ANSI colors when padding
+                clean_val = re.sub(r"\x1b\[[0-9;]*m", "", str(val))
+                padding = " " * (col_widths[i] - len(clean_val))
+                row_str += f"{val}{padding} │ "
+            UI.raw(row_str)
+
+        UI.raw(f"{UI.DIM}{bottom}{UI.COLOR_OFF}")
+
+    @staticmethod
     def raw(msg):
         """Prints a raw string through the safety/redaction layer."""
         UI._print(msg)
 
     @staticmethod
     def info(msg):
-        UI._print(msg, UI.YELLOW, "ℹ")
+        if not UI.QUIET_MODE:
+            UI._print(msg, UI.YELLOW, "ℹ")
 
     @staticmethod
     def detail(msg):

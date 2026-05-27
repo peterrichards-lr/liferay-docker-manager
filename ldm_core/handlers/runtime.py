@@ -54,6 +54,9 @@ class RuntimeService:
         is_new_project = not any(
             (root / f).exists() for f in ["meta", ".liferay-docker.meta", ".ldm.meta"]
         )
+        if is_new_project:
+            UI.print_banner()
+
         init_success = False
         paths = self.manager.setup_paths(root)
         project_meta = self.manager.read_meta(paths["root"])
@@ -429,6 +432,8 @@ class RuntimeService:
         use_shared = (
             str(project_meta.get("use_shared_search", default_shared)).lower() == "true"
         )
+        if not use_shared and self.manager.parse_version(tag) >= (2025, 2, 0):
+            use_shared = True
         search_mode = "shared" if use_shared else "sidecar"
 
         if not tag:
@@ -442,6 +447,16 @@ class RuntimeService:
             paths = self.manager.setup_paths(root)
             if self.manager.assets._fetch_seed(tag, db_type, search_mode, paths):
                 UI.success("Reseed complete.")
+                up_flag = getattr(self.manager.args, "up", False)
+                if up_flag or (
+                    not self.manager.non_interactive
+                    and UI.confirm("Do you want to start the project now?", "Y")
+                ):
+                    self.cmd_run(project_id)
+                else:
+                    UI.info(
+                        f"Run {UI.CYAN}ldm run {root.name}{UI.COLOR_OFF} to start the project."
+                    )
             else:
                 UI.error("Reseed failed.")
 
@@ -546,143 +561,151 @@ class RuntimeService:
         """Wait for Liferay to become healthy and provide access information."""
         container_name = project_meta.get("container_name")
         start_time = time.time()
-        UI.info(f"Waiting for Liferay to become healthy ({container_name})...")
 
-        last_notified_time = 0
-        while time.time() - start_time < timeout:
-            elapsed = time.time() - start_time
-            # Notify every 30 seconds (Robust timestamp check)
-            # Move notification BEFORE blocking call for guaranteed feedback
-            if elapsed - last_notified_time >= 30:
-                timestamp = datetime.now().strftime("%H:%M:%S")
-                duration_str = UI.format_duration(elapsed)
-                UI.detail(
-                    f"[{timestamp}] Still waiting for Liferay to become healthy... ({duration_str})"
-                )
+        with UI.spinner(f"Waiting for Liferay to become healthy ({container_name})..."):
+            last_notified_time = 0
+            while time.time() - start_time < timeout:
+                elapsed = time.time() - start_time
+                # Notify every 30 seconds (Robust timestamp check)
+                # Move notification BEFORE blocking call for guaranteed feedback
+                if elapsed - last_notified_time >= 30:
+                    timestamp = datetime.now().strftime("%H:%M:%S")
+                    duration_str = UI.format_duration(elapsed)
+                    UI.detail(
+                        f"[{timestamp}] Still waiting for Liferay to become healthy... ({duration_str})"
+                    )
 
-                # Proactive Log Monitoring: Look for ERRORS
+                    # Proactive Log Monitoring: Look for ERRORS
+                    try:
+                        logs = self.manager.run_command(
+                            ["docker", "logs", "--tail", "100", container_name],
+                            check=False,
+                            capture_output=True,
+                        )
+                        if logs:
+                            error_lines = [
+                                line.strip()
+                                for line in logs.splitlines()
+                                if "ERROR" in line.upper()
+                                or "FATAL" in line.upper()
+                                or "CRITICAL" in line.upper()
+                            ]
+                            if error_lines:
+                                UI.warning(
+                                    f"LDM detected {len(error_lines)} error(s) in the logs."
+                                )
+                                # Display the most recent unique error
+                                last_unique_error = list(dict.fromkeys(error_lines))[-1]
+                                UI.info(
+                                    f"Recent log error: {UI.YELLOW}{last_unique_error[:120]}...{UI.COLOR_OFF}"
+                                )
+
+                                # --- Auto-Thaw & Hints Win ---
+                                if (
+                                    "ClusterBlockException" in last_unique_error
+                                    or "index.blocks.read_only" in last_unique_error
+                                ):
+                                    UI.warning(
+                                        "Detected Elasticsearch disk pressure blocking Liferay startup."
+                                    )
+                                    if self.manager.infra.thaw_elasticsearch():
+                                        UI.success(
+                                            "Auto-Thaw successful. Liferay should now proceed."
+                                        )
+                                    else:
+                                        UI.info(
+                                            f"💡 {UI.CYAN}Hint:{UI.COLOR_OFF} Your disk is likely full. Run '{UI.WHITE}ldm prune --seeds --samples{UI.COLOR_OFF}' to free space."
+                                        )
+
+                                UI.info(
+                                    f"Check full logs: {UI.WHITE}ldm logs -f {container_name}{UI.COLOR_OFF}"
+                                )
+                    except Exception:
+                        pass
+
+                    last_notified_time = elapsed
+
+                # LDM-385: Enhanced readiness check
+                # We look for the Tomcat 'Server startup' log marker as it's often
+                # faster/more reliable than the Docker healthcheck in CI.
+                ready_by_logs = False
                 try:
                     logs = self.manager.run_command(
                         ["docker", "logs", "--tail", "100", container_name],
                         check=False,
                         capture_output=True,
                     )
-                    if logs:
-                        error_lines = [
-                            line.strip()
-                            for line in logs.splitlines()
-                            if "ERROR" in line.upper()
-                            or "FATAL" in line.upper()
-                            or "CRITICAL" in line.upper()
-                        ]
-                        if error_lines:
-                            UI.warning(
-                                f"LDM detected {len(error_lines)} error(s) in the logs."
-                            )
-                            # Display the most recent unique error
-                            last_unique_error = list(dict.fromkeys(error_lines))[-1]
-                            UI.info(
-                                f"Recent log error: {UI.YELLOW}{last_unique_error[:120]}...{UI.COLOR_OFF}"
-                            )
-
-                            # --- Auto-Thaw & Hints Win ---
-                            if (
-                                "ClusterBlockException" in last_unique_error
-                                or "index.blocks.read_only" in last_unique_error
-                            ):
-                                UI.warning(
-                                    "Detected Elasticsearch disk pressure blocking Liferay startup."
-                                )
-                                if self.manager.infra.thaw_elasticsearch():
-                                    UI.success(
-                                        "Auto-Thaw successful. Liferay should now proceed."
-                                    )
-                                else:
-                                    UI.info(
-                                        f"💡 {UI.CYAN}Hint:{UI.COLOR_OFF} Your disk is likely full. Run '{UI.WHITE}ldm prune --seeds --samples{UI.COLOR_OFF}' to free space."
-                                    )
-
-                            UI.info(
-                                f"Check full logs: {UI.WHITE}ldm logs -f {container_name}{UI.COLOR_OFF}"
-                            )
+                    if (
+                        logs
+                        and "org.apache.catalina.startup.Catalina.start Server startup in"
+                        in logs
+                    ):
+                        ready_by_logs = True
                 except Exception:
                     pass
 
-                last_notified_time = elapsed
-
-            # LDM-385: Enhanced readiness check
-            # We look for the Tomcat 'Server startup' log marker as it's often
-            # faster/more reliable than the Docker healthcheck in CI.
-            ready_by_logs = False
-            try:
-                logs = self.manager.run_command(
-                    ["docker", "logs", "--tail", "100", container_name],
+                status = self.manager.run_command(
+                    [
+                        "docker",
+                        "inspect",
+                        "-f",
+                        "{{.State.Health.Status}}",
+                        container_name,
+                    ],
                     check=False,
-                    capture_output=True,
-                )
-                if (
-                    logs
-                    and "org.apache.catalina.startup.Catalina.start Server startup in"
-                    in logs
-                ):
-                    ready_by_logs = True
-            except Exception:
-                pass
-
-            status = self.manager.run_command(
-                ["docker", "inspect", "-f", "{{.State.Health.Status}}", container_name],
-                check=False,
-            )
-
-            if status == "healthy" or ready_by_logs:
-                # If we bypassed by logs, wait a tiny bit to ensure the port is truly bound
-                if status != "healthy":
-                    time.sleep(2)
-
-                ts = getattr(self.manager.args, "total_start", None)
-                duration_total = (
-                    time.time() - float(ts) if ts else time.time() - start_time
                 )
 
-                duration_str = UI.format_duration(duration_total)
+                if status == "healthy" or ready_by_logs:
+                    # If we bypassed by logs, wait a tiny bit to ensure the port is truly bound
+                    if status != "healthy":
+                        time.sleep(2)
 
-                UI.success(f"Liferay is ready! (Total time: {duration_str})")
-                access_url = (
-                    f"https://{host_name}"
-                    if host_name != "localhost"
-                    else f"http://localhost:{project_meta.get('port', 8080)}"
-                )
-                UI.info(
-                    f"Access your instance at: {UI.CYAN}{UI.BOLD}{access_url}{UI.COLOR_OFF}"
-                )
+                    ts = getattr(self.manager.args, "total_start", None)
+                    duration_total = (
+                        time.time() - float(ts) if ts else time.time() - start_time
+                    )
 
-                UI.detail("=== Useful Commands ===")
-                UI.detail(
-                    f"  {UI.CYAN}ldm logs -f {container_name}{UI.COLOR_OFF}  Tail logs"
-                )
-                UI.detail(
-                    f"  {UI.CYAN}ldm shell {container_name}{UI.COLOR_OFF}    Enter bash"
-                )
-                UI.detail(
-                    f"  {UI.CYAN}ldm status {container_name}{UI.COLOR_OFF}   Check health"
-                )
-                UI.detail(
-                    f"  {UI.CYAN}ldm stop {container_name}{UI.COLOR_OFF}     Stop stack"
-                )
-                UI.detail("")
+                    duration_str = UI.format_duration(duration_total)
 
-                if getattr(self.manager.args, "browser", False):
-                    UI.info(f"Launching browser: {access_url}/web/guest/home")
-                    open_browser(f"{access_url}/web/guest/home")
-                return True
+                    UI.success(f"Liferay is ready! (Total time: {duration_str})")
+                    access_url = (
+                        f"https://{host_name}"
+                        if host_name != "localhost"
+                        else f"http://localhost:{project_meta.get('port', 8080)}"
+                    )
+                    UI.info(
+                        f"Access your instance at: {UI.CYAN}{UI.BOLD}{access_url}{UI.COLOR_OFF}"
+                    )
 
-            # Fail fast if container exited
-            container_state = self.manager.get_container_status(container_name)
-            if container_state == "exited":
-                UI.error(f"Liferay container '{container_name}' exited unexpectedly.")
-                return False
+                    UI.detail("=== Useful Commands ===")
+                    UI.detail(
+                        f"  {UI.CYAN}ldm logs -f {container_name}{UI.COLOR_OFF}  Tail logs"
+                    )
+                    UI.detail(
+                        f"  {UI.CYAN}ldm shell {container_name}{UI.COLOR_OFF}    Enter bash"
+                    )
+                    UI.detail(
+                        f"  {UI.CYAN}ldm status {container_name}{UI.COLOR_OFF}   Check health"
+                    )
+                    UI.detail(
+                        f"  {UI.CYAN}ldm stop {container_name}{UI.COLOR_OFF}     Stop stack"
+                    )
+                    UI.detail("")
 
-            time.sleep(5)  # Shorter sleep for more responsive status checks
+                    if getattr(self.manager.args, "browser", False):
+                        UI.info(f"Launching browser: {access_url}/web/guest/home")
+                        open_browser(f"{access_url}/web/guest/home")
+                    return True
+
+                # Fail fast if container exited
+                container_state = self.manager.get_container_status(container_name)
+                if container_state == "exited":
+                    UI.error(
+                        f"Liferay container '{container_name}' exited unexpectedly."
+                    )
+                    return False
+
+                time.sleep(5)  # Shorter sleep for more responsive status checks
 
         UI.error("\nTimed out waiting for Liferay to become healthy.")
         return False
