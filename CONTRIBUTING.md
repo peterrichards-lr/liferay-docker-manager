@@ -65,6 +65,19 @@ source .venv/bin/activate
 - **Docker**: Required for runtime testing.
 - **Pre-commit**: Automatically installed by `dev-setup`. We use hooks to ensure code quality.
 
+### Maintainer Utilities
+
+LDM includes internal commands specifically for repository maintainers:
+
+- **`ldm dev-setup`**: Bootstraps the local development environment (venv, dependencies, pre-commit hooks).
+- **`ldm version`**: Internal CI/CD utility for managing LDM's semantic versioning.
+  - `--bump [major|minor|patch|beta]`: Increment the version logically.
+  - `--set <version>`: Explicitly hardcode a version string.
+  - `--promote`: Graduate a beta release to stable.
+  - `--build-info <string>`: Inject build metadata.
+  - `--check`: Verify version synchronization across the codebase.
+  - `--print`: Output only the current version string.
+
 ## 📜 Commit Message Conventions
 
 We prefer [Conventional Commits](https://www.conventionalcommits.org/):

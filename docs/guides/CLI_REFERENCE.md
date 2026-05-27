@@ -73,13 +73,19 @@ fi
 - **Bypass Prompts**: Use the `-y` or `--non-interactive` flag to skip all confirmations and use default values. This is ideal for scripts and CI/CD pipelines.
 - **Tag Prompt & Discovery**: When running `ldm run` without a tag, the interactive prompt will automatically fetch the latest release matching your default release type (usually LTS) and offer it as the default choice. You can simply press Enter to accept it, or type a specific release type (`lts`, `qr`, `u`), a prefix (`2025.q4`), or an exact tag name.
 - **Automated Latest Tags**: In non-interactive environments, LDM will automatically discover and use the latest tag matching your default release type (LTS) if no tag is explicitly provided. You can also force specific discovery using `--tag-latest` or `--tag-prefix`.
-- **Omni-Admin Captcha**: During testing or CI workflows, you can use the `--no-captcha` flag during initialization or run to automatically disable Liferay's mandatory Omni-Admin CAPTCHA checks. This is strictly opt-in and reversible; running without the flag will automatically re-enable CAPTCHA enforcement.
-- **Fast Login**: Use the `--fast-login` flag to automatically bypass typical post-startup prompts, such as the Terms of Use acceptance and the initial password reset screen. *Note: The password policy bypass component does not fully function if you explicitly use the embedded Hypersonic database (`--db hypersonic`). It works perfectly with the default PostgreSQL database.*
-- **Filesystem Resilience**: If your project is stored on an external SSD (common on macOS `/Volumes/` paths), Liferay's OSGi container can fail due to bind-mount locking limitations. LDM **automatically detects** these paths and uses a high-performance internal volume for the OSGi state to prevent these errors. You can also force this behavior using the `--internal-state` flag.
+- **Advanced Flags**: For information on pipeline automation flags (`--no-captcha`, `--fast-login`), JVM tuning (`--lean`), and filesystem overrides (`--internal-state`), please see the [Advanced Usage & Flags](ADVANCED_CLI.md) guide.
 
 ---
 
 ## Command Reference
+
+### Global Flags
+
+The following flags can be passed to almost any command:
+
+- **`-v`, `--verbose`**: Enable verbose debug logging to trace exact shell commands, API calls, and Docker interactions.
+- **`--info`**: Show informational logging (a middle tier between standard output and debug).
+- **`-y`, `--non-interactive`**: Accept all defaults and skip confirmation prompts.
 
 ### `list` (alias: `ls`)
 
@@ -101,12 +107,11 @@ ldm run --tag 2024.q4.0 --host-name demo.local
 # Automatically grab the latest Quarterly Release
 ldm run demo --tag-latest --release-type qr
 
-# Disable Omni-Admin Captchas for automated testing
-ldm run demo --tag-latest --no-captcha
+# Run with a resource-optimized JVM profile (great for laptops with less RAM)
+ldm run my-project --lean
 
-# Bypass typical startup prompts (Terms of Use, Password Reset)
-# Note: Password policy bypass works best with an external database (--db mysql)
-ldm run demo --fast-login --db mysql
+# Inject an environment variable directly
+ldm run my-project --env LIFERAY_COMPANY_DEFAULT_WEB_ID=my-domain.com
 
 # Enable specific Liferay feature flags
 ldm run demo --feature LPS-122920 dev beta
@@ -123,6 +128,14 @@ ldm run demo --samples
 # Interactive run (will prompt for version and project name)
 # Prompts are automatically pre-filled using the Cascading Defaults system
 ldm run
+```
+
+### `init`
+
+Initialize project scaffolding (creating `.liferay-docker.meta`, `portal-ext.properties`, etc.) without actually starting the Docker containers. Accepts many of the same configuration flags as `run`.
+
+```bash
+ldm init my-project --tag 2024.q4.0 --db mysql
 ```
 
 #### SSL Defaults (New Projects)
@@ -177,6 +190,15 @@ ldm import ~/repos/my-workspace my-static-project
 ldm import ~/repos/my-workspace my-static-project --tag-latest --release-type qr
 ```
 
+### Data Management Commands
+
+LDM includes powerful commands for managing your project's database, OSGi state, and Elasticsearch indices. For full details on the following commands, please see the [Data Management Guide](DATA_MANAGEMENT.md).
+
+- **`snapshot` / `restore`**: Backup and recover exact project states.
+- **`hydrate`**: Create or restore a project from a local Liferay Cloud backup.
+- **`cloud-fetch`**: Sync an existing local project directly with a live Liferay Cloud (LCP) environment.
+- **`reset` / `re-seed`**: Surgically clear data folders or completely wipe a project back to its original vanilla state.
+
 ### `monitor`
 
 Restarts the background watch process for a project linked to a Liferay workspace. This command can **only be used for projects created with `init-from`**. It automatically syncs built artifacts (`.jar`, `.war`, `.zip`) whenever they are updated in the workspace.
@@ -195,10 +217,12 @@ ldm logs [project] [service1] [service2] ...
 # Examples:
 ldm logs                  # All logs for current project
 ldm logs demo             # All logs for 'demo' project
+ldm logs -f               # Follow logs continuously
 ldm logs -n 250           # Show last 250 lines (default: 100)
 ldm logs -t               # Show timestamps
 ldm logs --since 1h       # Show logs from the last hour
-ldm logs --until 10m       # Show logs until 10 minutes ago
+ldm logs --until 10m      # Show logs until 10 minutes ago
+ldm logs --no-wait        # Tailing usually waits for containers to be ready; use this to tail immediately
 ldm logs --infra          # Show logs for all global infrastructure (ES, Proxy, etc.)
 ldm logs --infra es       # Show logs only for Global Elasticsearch
 ldm logs --infra proxy    # Show logs only for Global SSL Proxy
@@ -221,6 +245,8 @@ ldm stop --all            # Stop all running projects in the workspace
 ldm restart --all         # Restart all running projects
 ldm restart               # Full stack restart (graceful stop + run)
 ldm down --volumes        # Tear down stack and clear all database/data state
+ldm down --infra          # Also tear down the global infrastructure (Proxy, Search)
+ldm down --clean-hosts    # Remove project entries from your /etc/hosts file upon deletion
 ```
 
 ### `status`
@@ -305,7 +331,18 @@ Manage persistent environment variables in project metadata.
 ```bash
 ldm env [project] KEY=VALUE
 ldm env [project] --remove KEY
+ldm env [project] -s liferay KEY=VALUE  # Target a specific service instead of global
+ldm env [project] --import              # Import variables from a local .env file
 ldm env                   # Interactive manager (view and edit all)
+```
+
+### `feature`
+
+Quickly toggle Liferay feature flags without manually editing `portal-ext.properties`. Requires a project restart to take effect.
+
+```bash
+ldm feature [project] --enable LPS-122920
+ldm feature [project] --disable LPS-111111 LPS-222222
 ```
 
 ### `edit`
@@ -339,6 +376,10 @@ Verify host environment health, Docker resources (CPUs/Memory), disk space (warn
 ```bash
 ldm doctor          # Health check for current/selected project
 ldm doctor --all    # Batch validate every project in your workspace
+ldm doctor --detailed  # Show detailed troubleshooting hints and automatic fixes
+ldm doctor --fix       # Automatically apply recommended fixes (e.g., pruning, lifting memory watermarks)
+ldm doctor --bundle    # Generate a sanitized zip bundle of logs and config for bug reports
+ldm doctor --slug      # Output a machine-readable environment identifier string
 ldm doctor --fix-hosts # Automatically add missing domains to /etc/hosts (will prompt for sudo)
 ```
 
@@ -390,6 +431,11 @@ Launch the project URL in your system browser. If no project is specified, LDM w
 ```bash
 ldm browser [project]
 ldm open [project]
+ldm browser [project] -u /path # Open a specific path (e.g., /web/guest)
+ldm browser --list             # List available URLs without opening
+ldm browser --remove           # Remove saved custom URLs from history
+```
+
 ### `upgrade`
 
 Automatically download and install the latest version of LDM for your architecture. Includes integrity verification. If the automatic process fails, LDM will provide a manual `curl` or `PowerShell` command to complete the installation.
@@ -466,6 +512,7 @@ Independently manage global infrastructure services (Traefik proxy, Search sidec
 ```bash
 ldm infra-setup            # Start global services manually
 ldm infra-setup --search   # Also initialize the Global Search container
+ldm infra-setup --es7      # Force Global Search to use legacy Elasticsearch 7
 ldm infra-down             # Stop and remove global services
 ldm infra-restart          # Reset all global services in one go
 ldm infra-restart --search # Restart and also initialize/restart Global Search
@@ -497,6 +544,8 @@ Identify and reclaim disk space by safely removing orphaned resources. This comm
 ```bash
 ldm prune
 ldm prune --seeds --samples   # Also clear large pre-warmed asset caches
+ldm prune --all               # Run all pruning operations without asking (includes seeds, samples, and hosts)
+ldm prune --clean-hosts       # Remove all LDM-tagged entries from /etc/hosts
 ```
 
 **What it cleans:**
@@ -513,6 +562,14 @@ Clears the local Docker Hub tag cache. LDM caches Liferay tags for 24 hours to i
 
 ```bash
 ldm clear-cache
+```
+
+### `system relocate`
+
+Safely move your LDM global configuration, Docker volumes, and cached assets to an external drive (e.g., an external SSD). This is highly recommended for macOS users to save internal disk space and bypass filesystem locking issues.
+
+```bash
+ldm system relocate /Volumes/SanDisk
 ```
 
 ### `config`

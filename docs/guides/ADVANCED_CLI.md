@@ -1,0 +1,60 @@
+# Advanced CLI Usage & Flags
+
+This document covers advanced flags and commands intended for CI/CD automation, complex edge-cases, debugging, and extreme performance tuning. For standard workflow commands, see the [CLI Reference](CLI_REFERENCE.md).
+
+## Filesystem & Volumes (macOS / Windows)
+
+These flags control how LDM mounts volumes to bypass filesystem locking limitations on non-Linux hosts.
+
+- **`--internal-state`**: Forces the use of an internal Docker volume for the OSGi state folder (`osgi/state`). LDM enables this automatically if it detects the project is on an external drive (`/Volumes/`). Use this to manually bypass `access_denied_exception` lock errors on slow or external filesystems.
+- **`--no-vol-cache`**: Disables the `:cached` mount delegation flag on macOS and Windows. Use this if you are experiencing severe file synchronization delays between the host and the container.
+
+## Initialization & Seeding State
+
+These flags modify how LDM handles the initial startup of a Liferay environment.
+
+- **`--no-seed`**: Completely bypasses the pre-warmed database and OSGi cache. The project will start totally fresh, forcing Liferay to build its schema and resolve all OSGi bundles from scratch.
+- **`--no-osgi-seed`**: Bypasses only the OSGi cache seed. Useful if you are testing custom OSGi resolution logic or diagnosing a corrupted `.osgi_state_archive`.
+- **`--verify` / `--no-verify`**: Controls whether LDM generates or checks the integrity checksum of snapshots and imports. Defaults to true. Disabling can speed up local imports slightly.
+- **`--snapshot`**: Initialize a project directly from an external snapshot folder.
+- **`--portal`**: Forces the use of the Liferay Portal (CE) image instead of the default DXP image.
+- **`--refresh`**: Forces Docker to pull the latest image layers and refresh cached assets before startup.
+
+## Execution Flow & Networking
+
+These flags alter the standard startup behavior and networking defaults.
+
+- **`--no-up`**: Scaffolds the project folder and generates configurations, but skips starting the Docker containers. (Similar to `ldm init`).
+- **`--no-wait`**: Skips the readiness gating (health checks) after container startup, returning control to the terminal immediately.
+- **`--timeout <seconds>`**: Overrides the maximum wait time for health checks (default is 900 seconds).
+- **`-f`, `--follow`**: Automatically follows the container logs immediately after a successful startup.
+- **`--force-ssl`**: Forces SSL termination via Traefik even if the host is `localhost`.
+
+## CI/CD & Pipeline Automation
+
+These flags are ideal for automated testing pipelines where interactivity is impossible.
+
+- **`--no-captcha`**: Disables Liferay's mandatory Omni-Admin CAPTCHA requirement. Strictly opt-in and easily reversible; running without this flag on a subsequent start will re-enable CAPTCHA.
+- **`--fast-login`**: Automatically bypasses typical post-startup prompts (Terms of Use acceptance, initial password reset). Best used with an external database (`--db mysql` or `postgresql`), as password policy bypass has known limitations with the embedded Hypersonic database.
+- **`--target-env`**: (Used with `import` and `init-from`). Overrides the environment name metadata.
+- **`--build`**: (Used with `import` and `init-from`). Forces a full rebuild of any Server-Side Client Extensions found in the source workspace during initialization.
+
+## JVM & Tomcat Tuning
+
+Advanced options for memory constraints and Java-level debugging.
+
+- **`--lean`**: Enables a resource-optimized JVM profile. It caps memory and limits background threading. Highly recommended for laptops with less than 16GB of RAM or CI runners.
+- **`--no-jvm-verify`**: Disables the JVM bytecode verification skip (`-Xverify:none`). This skip is enabled by default to shave seconds off startup time. Disable it if you are encountering weird classloader errors or testing core JVM security features.
+- **`--no-tld-skip`**: Re-enables Tomcat's aggressive TLD (Tag Library Descriptor) scanning. LDM skips scanning non-Liferay jars by default to dramatically improve Tomcat initialization speed.
+- **`--jvm-args="<args>"`**: Pass raw JVM arguments directly to Liferay, completely overriding LDM's defaults. Example: `--jvm-args="-Xmx8g -Xms8g"`
+
+## Debugging & Diagnostics
+
+- **`--gogo-port <port>`**: Exposes the OSGi Gogo shell on a specific host port. Required if you plan to use `ldm gogo [project]`.
+- **`--mount-logs`**: By default, logs remain inside the container. This flag bind-mounts the `tomcat/logs` directory directly to the host for external log aggregator testing.
+- **`--delay <seconds>`**: (Used with `monitor` and `init-from`). Alters the debounce delay for the background file watcher. Useful on slow filesystems.
+
+## Search & Legacy Infrastructure
+
+- **`--sidecar`**: Forces the project to use Liferay's internal Sidecar search process rather than the shared Global Search container. LDM does this automatically if the global container is offline.
+- **`--es7`**: Forces the Global Search infrastructure to use Elasticsearch 7 (legacy) instead of the default Elasticsearch 8. Use with `ldm infra-setup --es7`.
