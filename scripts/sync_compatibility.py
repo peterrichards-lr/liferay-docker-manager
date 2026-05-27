@@ -394,7 +394,7 @@ def sync_reports():
 | Component | Verified Versions | Notes |
 | :--- | :--- | :--- |
 | **Traefik** | `v3.6.1+` | Automatic API version negotiation enabled. |
-| **Elasticsearch** | `8.19.1`, `7.17.24` | Dual support with auto-plugin installation and optimized Liferay config. |
+| **Elasticsearch** | `8.19.1`, `7.17.24` | Dual support. ES 8.17.x+ required for Liferay 2025.Q2+ (ES 7 deprecated). |
 """
     new_block = f"<!-- COMPATIBILITY_START -->\n{new_table}\n{infra_block}\n<!-- COMPATIBILITY_END -->"
     source_file.write_text(marker_regex.sub(new_block, content))

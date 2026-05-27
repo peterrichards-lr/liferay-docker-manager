@@ -33,7 +33,7 @@ def sync_table():
     targets = [
         script_dir / "docs" / "README.md",
         script_dir / "docs" / "TESTING.md",
-        script_dir / "docs" / "installation.md",
+        script_dir / "docs" / "INSTALLATION.md",
     ]
 
     for target in targets:
