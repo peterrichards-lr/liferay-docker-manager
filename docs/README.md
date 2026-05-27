@@ -111,16 +111,19 @@ For detailed instructions and Windows setup, see the **[Full Installation Guide]
 # 1. THE CONFIDENCE BOOSTER: Run Liferay with pre-configured samples
 ldm run my-sample-project --samples
 
-# 2. THE DEVELOPER FLOW: Initialize from a workspace and start monitoring
+# 2. THE SCAFFOLDING FLOW: Initialize a project folder without starting containers
+ldm init my-new-project --tag 2024.q4.0 --db mysql
+
+# 3. THE DEVELOPER FLOW: Initialize from a workspace and start monitoring
 ldm init-from /path/to/workspace my-project
 
-# 3. THE ARCHIVE FLOW: Import a static snapshot of a workspace
+# 4. THE ARCHIVE FLOW: Import a static snapshot of a workspace
 ldm import /path/to/workspace my-static-project
 
-# 4. THE RECOVERY FLOW: Re-create a deleted project from a snapshot folder
+# 5. THE RECOVERY FLOW: Re-create a deleted project from a snapshot folder
 ldm run my-recovered-project --snapshot ~/Desktop/old-baseline-snapshot
 
-# 5. THE SURGICAL FLOW: Instantly edit project metadata
+# 6. THE SURGICAL FLOW: Instantly edit project metadata
 ldm edit my-project
 
 # Monitor an existing project (manually)
