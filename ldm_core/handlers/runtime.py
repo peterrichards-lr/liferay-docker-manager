@@ -1083,13 +1083,16 @@ class RuntimeService:
 
         UI.warning(f"Resetting {UI.BOLD}{root.name}{UI.COLOR_OFF} ({target})...")
 
-        # 1. Stop containers if running
         meta = self.manager.read_meta(root)
         c_name = meta.get("container_name") or root.name
         from ldm_core.docker_service import DockerService
 
         is_running = DockerService.is_running(c_name)
-        if is_running:
+
+        # LDM-388: If target is 'all', we must 'down -v' to destroy anonymous DB volumes
+        if target == "all":
+            self.cmd_down(root.name, delete=False)
+        elif is_running:
             self.cmd_stop(root.name)
 
         # 2. Wipe directories
