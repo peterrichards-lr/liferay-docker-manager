@@ -495,19 +495,15 @@ class SnapshotService(BaseHandler):
             or project_meta.get("container_name")
             or paths["root"].name.replace(".", "-")
         )
-        if self.manager.run_command(
-            ["docker", "ps", "-q", "-f", f"name=^{container_name}$"]
-        ):
-            from ldm_core.utils import get_compose_cmd
-
-            compose_base = get_compose_cmd()
-            if not compose_base:
-                UI.die(
-                    "Docker Compose not found. Please run 'ldm doctor' for installation instructions."
-                )
+        if (
             self.manager.run_command(
-                [*compose_base, "stop"], check=True, cwd=str(paths["root"])
+                ["docker", "ps", "-q", "-f", f"name=^{container_name}$"], check=False
             )
+            or (paths["root"] / "docker-compose.yml").exists()
+        ):
+            # LDM-388/389: Do a FULL reset (wipe host volumes and down -v for anonymous DB volumes)
+            # This ensures the restore is a 100% clean slate, preventing leftover files or DB rows.
+            self.manager.runtime.cmd_reset(project_id=paths["root"].name, target="all")
             time.sleep(2)
 
         files_tar = choice_path / "files.tar.gz"
