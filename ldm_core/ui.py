@@ -182,12 +182,18 @@ class UI:
 
         all_data = ([headers] if headers else []) + rows
         import re
+        import unicodedata
+
+        def get_display_width(s):
+            clean_s = re.sub(r"\x1b\[[0-9;]*m", "", str(s))
+            return sum(
+                2 if unicodedata.east_asian_width(c) in ("W", "F") else 1
+                for c in clean_s
+            )
 
         for row in all_data:
             for i, val in enumerate(row):
-                # Strip ANSI for width calculation
-                clean_val = re.sub(r"\x1b\[[0-9;]*m", "", str(val))
-                col_widths[i] = max(col_widths[i], len(clean_val))
+                col_widths[i] = max(col_widths[i], get_display_width(val))
 
         # Build Borders
         def get_line(left, middle, right, cross):
@@ -207,19 +213,17 @@ class UI:
         if headers:
             head_str = "│ "
             for i, h in enumerate(headers):
-                head_str += (
-                    f"{UI.WHITE}{UI.BOLD}{h!s:<{col_widths[i]}}{UI.COLOR_OFF} │ "
-                )
+                pad_len = col_widths[i] - get_display_width(h)
+                head_str += f"{UI.WHITE}{UI.BOLD}{h!s}{' ' * pad_len}{UI.COLOR_OFF} │ "
             UI.raw(head_str)
             UI.raw(f"{UI.DIM}{sep}{UI.COLOR_OFF}")
 
         for row in rows:
             row_str = "│ "
             for i, val in enumerate(row):
-                # We have to account for ANSI colors when padding
-                clean_val = re.sub(r"\x1b\[[0-9;]*m", "", str(val))
-                padding = " " * (col_widths[i] - len(clean_val))
-                row_str += f"{val}{padding} │ "
+                # We have to account for visual width (emojis) and ANSI colors
+                pad_len = col_widths[i] - get_display_width(val)
+                row_str += f"{val}{' ' * pad_len} │ "
             UI.raw(row_str)
 
         UI.raw(f"{UI.DIM}{bottom}{UI.COLOR_OFF}")
