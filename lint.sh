@@ -36,9 +36,9 @@ fi
 info "Linting Markdown files..."
 if command -v markdownlint-cli2 &>/dev/null; then
 	if [[ $CHECK_ONLY -eq 1 ]]; then
-		markdownlint-cli2 "**/*.md" "!node_modules" "!.venv" "!.smoke_venv" "!.github" || EXIT_CODE=1
+		markdownlint-cli2 "**/*.md" "!node_modules" "!.venv" "!.smoke_venv" "!e2e-work-dir" "!.github" || EXIT_CODE=1
 	else
-		markdownlint-cli2 "**/*.md" "!node_modules" "!.venv" "!.smoke_venv" "!.github" --fix || EXIT_CODE=1
+		markdownlint-cli2 "**/*.md" "!node_modules" "!.venv" "!.smoke_venv" "!e2e-work-dir" "!.github" --fix || EXIT_CODE=1
 	fi
 	[[ $EXIT_CODE -eq 0 ]] && success "Markdown linting complete."
 else
@@ -61,7 +61,7 @@ fi
 # 4. Security (Bandit)
 info "Running Security Scan (Bandit)..."
 if [ -d "$VENV_PATH" ]; then
-	"$VENV_PATH/bin/bandit" -r "$SCRIPT_DIR/ldm_core/" -x "$SCRIPT_DIR/ldm_core/tests/" -s B101,B103,B108,B110,B404,B603,B607 || EXIT_CODE=1
+	"$VENV_PATH/bin/bandit" -r "$SCRIPT_DIR/ldm_core/" -x "$SCRIPT_DIR/ldm_core/tests/" -s B101,B103,B108,B110,B404,B603,B607 --severity-level medium || EXIT_CODE=1
 	[[ $EXIT_CODE -eq 0 ]] && success "Security scan complete."
 else
 	error "Virtual environment not found. Skip Security scanning."

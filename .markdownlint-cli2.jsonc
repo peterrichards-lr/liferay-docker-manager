@@ -6,6 +6,8 @@
   },
   "ignores": [
     ".venv",
+    ".smoke_venv",
+    "e2e-work-dir",
     "node_modules",
     ".github"
   ]
