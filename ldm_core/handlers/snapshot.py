@@ -481,15 +481,7 @@ class SnapshotService(BaseHandler):
         # At this point Mypy should know choice is a Path and not None
         choice_path = cast(Path, choice)
 
-        # 2. Handle Cloud Layout vs Standard Layout
-        if (choice_path / "database.gz").exists() or (
-            choice_path / "volume.tgz"
-        ).exists():
-            if self._restore_from_cloud_layout(choice_path, paths, project_meta):
-                UI.success("Cloud restoration successful.")
-            return
-
-        # Standard LDM Layout
+        # 2. Reset the Environment (Clean Slate)
         container_name = (
             project_meta.get("liferay_container_name")
             or project_meta.get("container_name")
@@ -506,7 +498,10 @@ class SnapshotService(BaseHandler):
             self.manager.runtime.cmd_reset(project_id=paths["root"].name, target="all")
             time.sleep(2)
 
+        # 3. File System Restore (Standard or Cloud)
         files_tar = choice_path / "files.tar.gz"
+        volume_tgz = choice_path / "volume.tgz"
+
         if files_tar.exists():
             # Verify Integrity (Mandate 6.2)
             sha_file = choice_path / "files.tar.gz.sha256"
@@ -535,8 +530,18 @@ class SnapshotService(BaseHandler):
                 UI.warning("Integrity verification disabled via --no-verify.")
 
             self._extract_snapshot_archive(files_tar, paths)
+        elif volume_tgz.exists():
+            UI.info("  + Extracting cloud data volume...")
+            target_data = paths["data"]
+            from ldm_core.utils import safe_mkdir
+
+            safe_mkdir(target_data, parents=True, exist_ok=True)
+            self.manager.run_command(
+                ["tar", "-xzf", str(volume_tgz), "-C", str(target_data)]
+            )
+            UI.success("Cloud volume restoration completed.")
         else:
-            UI.die(f"Standard snapshot files not found in {choice_path}")
+            UI.die(f"Snapshot files not found in {choice_path}")
 
         # --- SEARCH RESTORE (Orchestrated) ---
         snap_meta = self.manager.read_meta(choice_path / "meta")
@@ -551,6 +556,22 @@ class SnapshotService(BaseHandler):
 
         # --- DATABASE RESTORE (Orchestrated) ---
         sql_file = choice_path / "database.sql"
+        db_gz = choice_path / "database.gz"
+
+        # If cloud database dump exists but hasn't been extracted yet
+        if db_gz.exists() and not sql_file.exists():
+            UI.info("  + Decompressing cloud database dump...")
+            import gzip
+            import shutil
+
+            try:
+                with gzip.open(str(db_gz), "rb") as f_in:
+                    with open(str(sql_file), "wb") as f_out:
+                        shutil.copyfileobj(f_in, f_out)
+                UI.success("Cloud database dump decompressed.")
+            except Exception as e:
+                UI.warning(f"Failed to decompress {db_gz.name}: {e}")
+
         if sql_file.exists():
             db_type = project_meta.get("db_type", "hypersonic")
             UI.info(f"Triggering orchestrated database restore ({db_type})...")
@@ -913,35 +934,3 @@ class SnapshotService(BaseHandler):
 
                 safe_rmtree(host_path)
                 host_path.mkdir(parents=True, exist_ok=True)
-
-    def _restore_from_cloud_layout(self, choice, paths, project_meta):
-        """Restores a project from a Liferay Cloud backup layout."""
-        UI.info("Detected Liferay Cloud backup layout. Restoring...")
-
-        from ldm_core.utils import safe_mkdir
-
-        # 1. Database
-        db_gz = choice / "database.gz"
-        if db_gz.exists():
-            db_type = project_meta.get("db_type", "database")
-            UI.info(f"  + Extracting {db_type} dump...")
-            # We'll place it in the project root for now, or deploy/ if it's an SQL
-            # Better: if it's a seed, we might need a specific DB handler.
-            # For now, just ensure the dir exists.
-            safe_mkdir(paths["data"], parents=True, exist_ok=True)
-            # Cloud backups usually need manual intervention for DB import depending on DB type
-            UI.warning(
-                f"  ! Cloud {db_type} dump detected. Manual import may be required."
-            )
-
-        # 2. Volume (Document Library / etc)
-        volume_tgz = choice / "volume.tgz"
-        if volume_tgz.exists():
-            UI.info("  + Extracting data volume...")
-            target_data = paths["data"]
-            safe_mkdir(target_data, parents=True, exist_ok=True)
-            self.manager.run_command(
-                ["tar", "-xzf", str(volume_tgz), "-C", str(target_data)]
-            )
-
-        return True
