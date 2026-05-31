@@ -1174,7 +1174,19 @@ class WorkspaceService(BaseHandler):
         # because it requires an open file handle for every directory.
         # PollingObserver is much safer for large workspace monitoring.
         # Polling Optimization: Exclude massive dependencies to reduce file/stat overhead
-        ignored_dirs = {"node_modules", "build", ".gradle", ".git", ".idea", ".vscode"}
+        ignored_dirs = {
+            "node_modules",
+            "build",
+            ".gradle",
+            ".git",
+            ".idea",
+            ".vscode",
+            "backup",
+            "ci",
+            "database",
+            "search",
+            "webserver",
+        }
 
         def filtered_scandir(path=None):
             for entry in os.scandir(path):
