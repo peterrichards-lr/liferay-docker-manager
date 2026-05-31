@@ -608,8 +608,8 @@ class WorkspaceService(BaseHandler):
                         self.manager.args.sync_env = True
                         self.manager.cloud.cmd_cloud_fetch()
                     except SystemExit:
-                        UI.error(
-                            "Cloud hydration aborted or failed. Falling back to local runtime only."
+                        UI.warning(
+                            "Cloud hydration could not be completed. Falling back to local runtime only."
                         )
                     finally:
                         self.manager.args.download = old_download

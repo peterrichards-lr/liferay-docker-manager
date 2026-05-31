@@ -95,13 +95,23 @@ class CloudService:
 
     def _get_cloud_liferay_version(self, cp_id, target_env):
         """Attempts to detect the Liferay version from the cloud environment configuration."""
-        data = self._run_lcp_cmd(["service", "list"], project=cp_id, env=target_env)
-        if data:
-            # Look for liferay service
+        data = self._run_lcp_cmd(["list"], project=cp_id, env=target_env)
+        if not data:
+            return None
+
+        if isinstance(data, list):
             for service in data:
                 if service.get("id") == "liferay":
                     image = service.get("image")
                     if image and ":" in image:
+                        return image.split(":")[1]
+        elif isinstance(data, str):
+            lines = data.strip().split("\n")
+            for line in lines:
+                parts = [p.strip() for p in line.split()]
+                if len(parts) >= 3 and parts[1] == "liferay":
+                    image = parts[2]
+                    if ":" in image:
                         return image.split(":")[1]
         return None
 
@@ -233,9 +243,11 @@ class CloudService:
             backups = _parse_backups_text(data)
 
             if not backups:
-                if data:
-                    UI.error(data.strip())
-                UI.die("No backups found.")
+                # Soft failure: just warn and skip download if no backups exist yet
+                UI.warning(
+                    f"No backups found in environment '{target_env}'. Skipping download."
+                )
+                return
 
             latest = backups[0]
             backup_id = latest.get("id")
