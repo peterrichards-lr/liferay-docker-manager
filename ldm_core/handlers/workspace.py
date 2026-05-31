@@ -553,14 +553,8 @@ class WorkspaceService(BaseHandler):
             os.remove(dest_zip)
         safe_move(str(root_zip_path), str(dest_zip))
 
-    def cmd_init_from(self, source_path):
-        """Initialize project with a persistent link to a source workspace and start monitoring."""
-        # 1. Perform a standard import (but we will keep the link)
-        project_name = self.cmd_import(source_path, is_init_from=True)
-        if project_name:
-            self.manager.args.project = project_name
-
-        # PAAS Workspace Recognition
+    def _prompt_cloud_hydration(self, source_path, project_name=None):
+        """Helper to prompt for and orchestrate Liferay Cloud data hydration."""
         source = Path(source_path).resolve()
         is_cloud = (
             (source / "liferay" / "LCP.json").exists()
@@ -584,6 +578,10 @@ class WorkspaceService(BaseHandler):
                     old_restore = getattr(self.manager.args, "restore", False)
                     old_sync_env = getattr(self.manager.args, "sync_env", False)
                     old_env_id = getattr(self.manager.args, "env_id", None)
+                    old_project = getattr(self.manager.args, "project", None)
+
+                    if project_name:
+                        self.manager.args.project = project_name
 
                     try:
                         # Fetch Data & Restore
@@ -607,6 +605,14 @@ class WorkspaceService(BaseHandler):
                         self.manager.args.restore = old_restore
                         self.manager.args.sync_env = old_sync_env
                         self.manager.args.env_id = old_env_id
+                        self.manager.args.project = old_project
+
+    def cmd_init_from(self, source_path):
+        """Initialize project with a persistent link to a source workspace and start monitoring."""
+        # 1. Perform a standard import (but we will keep the link)
+        project_name = self.cmd_import(source_path, is_init_from=True)
+        if project_name:
+            self.manager.args.project = project_name
 
         # 2. Immediately start monitoring
         self.cmd_monitor(source_path)
@@ -1010,6 +1016,10 @@ class WorkspaceService(BaseHandler):
             self.manager.write_meta(project_path, project_meta)
             init_success = True
             UI.success(f"Project created at: {project_path}")
+
+            # Offer PaaS data hydration after code is imported
+            self._prompt_cloud_hydration(source_path, project_name=project_name)
+
             if not getattr(self.manager.args, "no_run", False):
                 self.manager.cmd_run(project_id=project_name, is_restart=True)
         finally:
