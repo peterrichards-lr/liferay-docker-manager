@@ -1040,7 +1040,7 @@ class WorkspaceService(BaseHandler):
         try:
             from watchdog.events import FileSystemEventHandler
             from watchdog.observers import Observer
-            from watchdog.observers.polling import PollingObserver
+            from watchdog.observers.polling import PollingObserverVFS
         except ImportError:
             UI.die("watchdog required: pip install watchdog")
 
@@ -1173,7 +1173,17 @@ class WorkspaceService(BaseHandler):
         # On macOS, Native Observer (Kqueue) often hits file descriptor limits
         # because it requires an open file handle for every directory.
         # PollingObserver is much safer for large workspace monitoring.
+        # Polling Optimization: Exclude massive dependencies to reduce file/stat overhead
+        ignored_dirs = {"node_modules", "build", ".gradle", ".git", ".idea", ".vscode"}
+
+        def filtered_scandir(path=None):
+            for entry in os.scandir(path):
+                if entry.is_dir(follow_symlinks=False) and entry.name in ignored_dirs:
+                    continue
+                yield entry
+
         is_mac = platform.system().lower() == "darwin"
+        delay = float(getattr(self.manager.args, "delay", 2.0))
 
         if is_mac:
             # Proactively increase file descriptor limits for this process
@@ -1193,7 +1203,9 @@ class WorkspaceService(BaseHandler):
 
             if self.manager.verbose:
                 UI.info("Using PollingObserver for macOS stability.")
-            observer = PollingObserver()
+            observer = PollingObserverVFS(
+                stat=os.stat, listdir=filtered_scandir, polling_interval=delay
+            )
         else:
             observer = Observer()
 
@@ -1229,9 +1241,13 @@ class WorkspaceService(BaseHandler):
                             "Hit system file limit. Switching to PollingObserver..."
                         )
                         # Switch to polling for this and future targets
-                        if not isinstance(observer, PollingObserver):
+                        if not isinstance(observer, PollingObserverVFS):
                             observer.stop()
-                            observer = PollingObserver()
+                            observer = PollingObserverVFS(
+                                stat=os.stat,
+                                listdir=filtered_scandir,
+                                polling_interval=delay,
+                            )
                             observer.schedule(handler, str(target), recursive=True)
                             observer.start()
                     else:
