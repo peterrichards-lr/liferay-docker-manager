@@ -124,7 +124,11 @@ class CloudService:
         )
 
         # Use provided env_id or positional arg
-        target_env = sanitize_id(env_id or getattr(self.manager.args, "env_id", None))
+        target_env = sanitize_id(
+            env_id
+            or getattr(self.manager.args, "env_id", None)
+            or project_meta.get("cloud_env_id")
+        )
 
         if getattr(self.manager.args, "list_envs", False) or not target_env:
             UI.heading(f"Available Liferay Cloud Environments (Project: {cp_id})")

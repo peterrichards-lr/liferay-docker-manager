@@ -573,6 +573,15 @@ class WorkspaceService(BaseHandler):
                     "Which environment would you like to mirror (e.g., prd, uat)"
                 )
                 if env_id:
+                    # Persist the chosen environment for future cloud operations
+                    project_path = self.manager.detect_project_path(
+                        project_name, for_init=True
+                    )
+                    if project_path:
+                        p_meta = self.manager.read_meta(project_path)
+                        p_meta["cloud_env_id"] = env_id
+                        self.manager.write_meta(project_path, p_meta)
+
                     UI.info(f"Fetching backups from '{env_id}'...")
                     old_download = getattr(self.manager.args, "download", False)
                     old_restore = getattr(self.manager.args, "restore", False)
