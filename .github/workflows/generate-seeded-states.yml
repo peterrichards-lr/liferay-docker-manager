@@ -27,6 +27,7 @@ jobs:
 
   generate-seeds:
     needs: get-tags
+    if: needs.get-tags.outputs.tags != '[]'
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -131,8 +132,8 @@ jobs:
           retention-days: 1
 
   publish-release:
-    needs: generate-seeds
-    if: success()
+    needs: [get-tags, generate-seeds]
+    if: success() && needs.get-tags.outputs.tags != '[]'
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
