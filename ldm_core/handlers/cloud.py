@@ -205,33 +205,44 @@ class CloudService:
 
         if getattr(self.manager.args, "sync_env", False):
             UI.heading(f"Syncing Cloud Environment Variables: {cp_id} / {target_env}")
-            data = self._run_lcp_cmd(["env", "list"], project=cp_id, env=target_env)
-            if data:
+
+            lcp_json_path = root_path / "liferay" / "LCP.json"
+            if not lcp_json_path.exists():
+                lcp_json_path = root_path / "liferay" / "lcp.json"
+            if not lcp_json_path.exists():
+                lcp_json_path = root_path / "LCP.json"
+            if not lcp_json_path.exists():
+                lcp_json_path = root_path / "lcp.json"
+
+            if not lcp_json_path.exists():
+                UI.warning(
+                    "LCP.json not found in the workspace. Skipping environment variable sync."
+                )
+                return
+
+            try:
+                lcp_data = json.loads(lcp_json_path.read_text())
                 custom_env = json.loads(project_meta.get("custom_env", "{}"))
 
-                if isinstance(data, list):
-                    for var in data:
-                        k, v = var.get("key"), var.get("value")
-                        if k and v:
-                            custom_env[k] = v
-                            UI.info(f"  Synced {k}")
-                elif isinstance(data, str):
-                    lines = data.strip().split("\n")
-                    in_data = False
-                    for line in lines:
-                        if line.startswith("----") or line.startswith("Key"):
-                            if line.startswith("----"):
-                                in_data = True
-                            continue
-                        if in_data:
-                            parts = [p.strip() for p in line.split("|", 1)]
-                            if len(parts) == 2 and parts[0]:
-                                custom_env[parts[0]] = parts[1]
-                                UI.info(f"  Synced {parts[0]}")
+                # Global envs
+                global_env = lcp_data.get("env", {})
+                for k, v in global_env.items():
+                    custom_env[k] = v
+                    UI.info(f"  Synced (Global) {k}")
+
+                # Environment specific envs
+                env_specific = (
+                    lcp_data.get("environments", {}).get(target_env, {}).get("env", {})
+                )
+                for k, v in env_specific.items():
+                    custom_env[k] = v
+                    UI.info(f"  Synced ({target_env}) {k}")
 
                 project_meta["custom_env"] = json.dumps(custom_env)
                 self.manager.write_meta(root_path, project_meta)
                 UI.success("Metadata updated.")
+            except Exception as e:
+                UI.error(f"Failed to parse LCP.json for environment variables: {e}")
             return
 
         if getattr(self.manager.args, "download", False) or getattr(

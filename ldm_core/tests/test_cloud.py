@@ -133,24 +133,25 @@ class TestCloudService(unittest.TestCase):
             mock_print.assert_called_with("env1, env2")
 
     @patch("ldm_core.handlers.cloud.CloudService.ensure_cloud_auth")
-    @patch("ldm_core.handlers.cloud.CloudService._run_lcp_cmd")
-    def test_cmd_cloud_fetch_sync_env(self, mock_run, mock_auth):
+    def test_cmd_cloud_fetch_sync_env(self, mock_auth):
         self.manager.args.list_envs = False
         self.manager.args.sync_env = True
         self.manager.args.env_id = "uat"
 
-        # Mock LCP env list response
-        mock_run.return_value = [
-            {"key": "LIFERAY_DEBUG", "value": "true"},
-            {"key": "CUSTOM_VAR", "value": "hello"},
-        ]
-
         mock_root = Path("/tmp/proj1")
+        mock_lcp_json = {
+            "env": {"GLOBAL_VAR": "global"},
+            "environments": {
+                "uat": {"env": {"LIFERAY_DEBUG": "true", "CUSTOM_VAR": "hello"}}
+            },
+        }
+
         with (
             patch.object(self.manager, "detect_project_path", return_value=mock_root),
             patch.object(self.manager, "read_meta", return_value={}),
             patch.object(self.manager, "write_meta") as mock_write,
-            patch.object(self.manager, "setup_paths", return_value={"root": mock_root}),
+            patch("pathlib.Path.exists", return_value=True),
+            patch("pathlib.Path.read_text", return_value=json.dumps(mock_lcp_json)),
         ):
             self.cloud.cmd_cloud_fetch("proj1")
 
@@ -158,6 +159,7 @@ class TestCloudService(unittest.TestCase):
             meta = mock_write.call_args[0][1]
             custom_env = json.loads(meta["custom_env"])
             self.assertEqual(custom_env["LIFERAY_DEBUG"], "true")
+            self.assertEqual(custom_env["GLOBAL_VAR"], "global")
 
     @patch("ldm_core.handlers.cloud.CloudService.ensure_cloud_auth")
     @patch("ldm_core.handlers.cloud.CloudService._run_lcp_cmd")
