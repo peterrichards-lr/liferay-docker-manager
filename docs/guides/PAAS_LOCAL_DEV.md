@@ -34,7 +34,7 @@ First, clone the prospect's Liferay Cloud Git repository to your local machine.
 git clone git@github.com:my-org/prospect-paas-repo.git
 ```
 
-### Step 2: Initialize the Local Runtime (LDM)
+### Step 2: Initialize the Local Runtime & Hydrate Data (LDM)
 
 Use LDM to ingest the code and start the local Docker containers. The `init-from` command will scan the repository, build any modules, and set up a live-syncing workspace.
 
@@ -43,25 +43,17 @@ Use LDM to ingest the code and start the local Docker containers. The `init-from
 ldm init-from ./prospect-paas-repo
 ```
 
-*LDM is now running the code, but it has a blank database.*
+Because LDM recognizes the Liferay Cloud workspace structure, it will automatically launch an interactive wizard during initialization:
 
-### Step 3: Hydrate the Data (LCP)
-
-Now, fetch the real data from the remote environment (e.g., `prd`, `uat`) and inject it into your local containers.
-
-```bash
-# Download the latest backup and immediately restore it to your local containers
-ldm cloud-fetch prd --download --restore
+```text
+> Detected Liferay Cloud Workspace structure.
+❓ Would you also like to pull the remote database and document library to complete the local replica? [Y]: y
+❓ Which environment would you like to mirror (e.g., prd, uat): prd
 ```
 
-### Step 4: Sync Environment Variables (LCP)
+*Note: If your repository does not contain an `LCP.json` file at its root, LDM will ask you to provide the Liferay Cloud Project ID manually.*
 
-Finally, ensure your local instance behaves exactly like production by syncing the remote environment variables.
-
-```bash
-# Pull remote environment variables into your local configuration
-ldm cloud-fetch prd --sync-env
-```
+By answering the prompts, LDM will automatically orchestrate the download and restoration of the real data and environment variables from the remote environment directly into your local containers.
 
 ---
 

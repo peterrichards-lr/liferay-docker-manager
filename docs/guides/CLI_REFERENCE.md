@@ -168,7 +168,7 @@ LDM automatically hardens modern environments (DXP 2024+ and modern Quarterly Re
 
 ### `init-from` (Live Link)
 
-Initialize a project from a source workspace and establish a **persistent link**. This command records the workspace path in the project metadata and automatically starts the `monitor` process to sync your code changes in real-time.
+Initialize a project from a source workspace and establish a **persistent link**. This command records the workspace path in the project metadata and automatically starts the `monitor` process to sync your code changes in real-time. If a Liferay Cloud Workspace is detected, it will also launch an interactive wizard to hydrate the data from the remote environment.
 
 ```bash
 # ldm init-from <source_path> [project_name] [--host-name custom.local]
@@ -176,11 +176,14 @@ ldm init-from ~/repos/my-workspace my-project --host-name forge.demo
 
 # Initialize with the latest tag and disable CAPTCHAs for CI testing
 ldm init-from ~/repos/my-workspace my-ci-project -y --tag-latest --no-captcha
+
+# Manually bind a Liferay Cloud project ID to the local workspace
+ldm init-from ~/repos/my-workspace my-project --cloud-project lctintranet
 ```
 
 ### `import` (Static Snapshot)
 
-Scaffold a new project by taking a **one-time static import** of an existing workspace. This project is detached from the source; changes to the source workspace will not be synced. Follows the same internal deployment sequence as `init-from`.
+Scaffold a new project by taking a **one-time static import** of an existing workspace. This project is detached from the source; changes to the source workspace will not be synced. Follows the same internal deployment sequence as `init-from`. If a Liferay Cloud Workspace is detected, it will also launch an interactive wizard to hydrate the data from the remote environment.
 
 ```bash
 # ldm import <source_path> [project_name] [--host-name custom.local]
@@ -188,6 +191,9 @@ ldm import ~/repos/my-workspace my-static-project
 
 # Import using a specific release type filter
 ldm import ~/repos/my-workspace my-static-project --tag-latest --release-type qr
+
+# Manually bind a Liferay Cloud project ID to the local workspace
+ldm import ~/repos/my-workspace my-project --cloud-project lctintranet
 ```
 
 ### Data Management Commands
