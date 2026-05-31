@@ -16,9 +16,11 @@ While the v2.4.0 release solidified the modular architecture, **v2.5.0** will fo
 - **Interactive Scaffolding**: Implement `ldm init` with guided templates for common use cases (e.g., "Commerce Demo," "Headless React Integration").
 - **Documentation Injection**: Automatically generate `README.md` and `setup.md` within new projects.
 
-### 2. CLI Simplification (Namespacing)
+### 2. CLI Simplification & Automation Standards
 
-- **Namespace Grouping**: Transition from flat commands to grouped namespaces (e.g., `ldm system`, `ldm infra`).
+- **Namespace Grouping**: Transition from flat commands to grouped namespaces (e.g., `ldm system`, `ldm infra`, `ldm cloud`).
+- **Cloud Orchestration**: Introduce `ldm cloud push` and `ldm cloud fetch` as a unified, two-way bridge for PaaS migration.
+- **Standardized Exit Codes**: Implement predictable, standardized exit codes (e.g., 0=Success, 1=Generic Error, 2=Auth Error, 3=Infra Error) across all commands to fully support CI/CD pipelines and headless automation.
 
 ### 3. Visual Health Dashboard
 
