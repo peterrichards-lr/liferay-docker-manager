@@ -67,7 +67,7 @@ source .venv/bin/activate
 
 ### Maintainer Utilities
 
-LDM includes internal commands specifically for repository maintainers:
+LDM includes internal commands specifically for repository maintainers. **Note:** Because these are internal utilities, they will prompt for a "Developer Mode" confirmation to prevent accidental execution. To bypass this prompt in CI/CD pipelines or automated scripts, you MUST run them in non-interactive mode using the `-y` or `--non-interactive` flag (or export `LDM_DEV_MODE=true`).
 
 - **`ldm dev-setup`**: Bootstraps the local development environment (venv, dependencies, pre-commit hooks).
 - **`ldm version`**: Internal CI/CD utility for managing LDM's semantic versioning.
