@@ -11,6 +11,7 @@ CONVENTION_DEFAULTS = {
     "host_name": "localhost",
     "port": "8080",
     "portal": "false",
+    "target_env": "prd",
 }
 
 

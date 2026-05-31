@@ -569,8 +569,10 @@ class WorkspaceService(BaseHandler):
                 "Would you also like to pull the remote database and document library to complete the local replica?",
                 "Y",
             ):
+                default_env = self.manager.defaults.get("target_env", "prd")
                 env_id = UI.ask(
-                    "Which environment would you like to mirror (e.g., prd, uat)"
+                    "Which environment would you like to mirror (e.g., prd, uat)",
+                    default_env,
                 )
                 if env_id:
                     # Persist the chosen environment for future cloud operations
