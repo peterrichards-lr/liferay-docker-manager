@@ -558,6 +558,49 @@ class WorkspaceService(BaseHandler):
         # 1. Perform a standard import (but we will keep the link)
         self.cmd_import(source_path, is_init_from=True)
 
+        # PAAS Workspace Recognition
+        source = Path(source_path).resolve()
+        is_cloud = (source / "liferay" / "LCP.json").exists()
+
+        if is_cloud and not self.manager.non_interactive:
+            UI.info("\n> Detected Liferay Cloud Workspace structure.")
+            if UI.confirm(
+                "Would you also like to pull the remote database and document library to complete the local replica?",
+                "Y",
+            ):
+                env_id = UI.ask(
+                    "Which environment would you like to mirror (e.g., prd, uat)"
+                )
+                if env_id:
+                    UI.info(f"Fetching backups from '{env_id}'...")
+                    old_download = getattr(self.manager.args, "download", False)
+                    old_restore = getattr(self.manager.args, "restore", False)
+                    old_sync_env = getattr(self.manager.args, "sync_env", False)
+                    old_env_id = getattr(self.manager.args, "env_id", None)
+
+                    try:
+                        # Fetch Data & Restore
+                        self.manager.args.download = True
+                        self.manager.args.restore = True
+                        self.manager.args.sync_env = False
+                        self.manager.args.env_id = env_id
+                        self.manager.cloud.cmd_cloud_fetch()
+
+                        # Sync Env Vars
+                        self.manager.args.download = False
+                        self.manager.args.restore = False
+                        self.manager.args.sync_env = True
+                        self.manager.cloud.cmd_cloud_fetch()
+                    except SystemExit:
+                        UI.error(
+                            "Cloud hydration aborted or failed. Falling back to local runtime only."
+                        )
+                    finally:
+                        self.manager.args.download = old_download
+                        self.manager.args.restore = old_restore
+                        self.manager.args.sync_env = old_sync_env
+                        self.manager.args.env_id = old_env_id
+
         # 2. Immediately start monitoring
         self.cmd_monitor(source_path)
 
@@ -813,6 +856,17 @@ class WorkspaceService(BaseHandler):
                         break
 
             if is_cloud:
+                root_lcp_path = source / "lcp.json"
+                if not root_lcp_path.exists():
+                    root_lcp_path = source / "LCP.json"
+                if root_lcp_path.exists():
+                    try:
+                        root_lcp = json.loads(root_lcp_path.read_text())
+                        if "id" in root_lcp:
+                            project_meta["cloud_project_id"] = root_lcp["id"]
+                    except Exception:
+                        pass
+
                 lcp_path = workspace_root / "LCP.json"
                 if lcp_path.exists():
                     try:

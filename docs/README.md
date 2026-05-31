@@ -74,6 +74,7 @@ The badges below represent our verified support for various Docker providers. En
 
 ### In-Depth Guides
 
+- [PaaS "Golden Path" & Demo Rescue](guides/PAAS_LOCAL_DEV.md)
 - [CLI Reference & Automation](guides/CLI_REFERENCE.md)
 - [Configuration & Environment Variables](guides/CONFIGURATION.md)
 - [Networking, DNS & SSL](guides/NETWORKING_DNS.md)
