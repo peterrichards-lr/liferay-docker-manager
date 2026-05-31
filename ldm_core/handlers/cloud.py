@@ -206,13 +206,22 @@ class CloudService:
         if getattr(self.manager.args, "sync_env", False):
             UI.heading(f"Syncing Cloud Environment Variables: {cp_id} / {target_env}")
 
-            lcp_json_path = root_path / "liferay" / "LCP.json"
+            # If called via import/init-from wizard, use the original source path.
+            # Otherwise use the local LDM project path.
+            search_path = root_path
+            source_arg = getattr(self.manager.args, "source_path", None)
+            if source_arg:
+                from pathlib import Path
+
+                search_path = Path(source_arg).resolve()
+
+            lcp_json_path = search_path / "liferay" / "LCP.json"
             if not lcp_json_path.exists():
-                lcp_json_path = root_path / "liferay" / "lcp.json"
+                lcp_json_path = search_path / "liferay" / "lcp.json"
             if not lcp_json_path.exists():
-                lcp_json_path = root_path / "LCP.json"
+                lcp_json_path = search_path / "LCP.json"
             if not lcp_json_path.exists():
-                lcp_json_path = root_path / "lcp.json"
+                lcp_json_path = search_path / "lcp.json"
 
             if not lcp_json_path.exists():
                 UI.warning(

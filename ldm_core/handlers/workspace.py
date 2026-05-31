@@ -595,6 +595,10 @@ class WorkspaceService(BaseHandler):
                         self.manager.args.project = project_name
 
                     try:
+                        # Pass the original source path down to cloud fetch
+                        # so sync_env can find the LCP.json file
+                        self.manager.args.source_path = str(source)
+
                         # Fetch Data & Restore
                         self.manager.args.download = True
                         self.manager.args.restore = True
@@ -617,6 +621,8 @@ class WorkspaceService(BaseHandler):
                         self.manager.args.sync_env = old_sync_env
                         self.manager.args.env_id = old_env_id
                         self.manager.args.project = old_project
+                        if hasattr(self.manager.args, "source_path"):
+                            delattr(self.manager.args, "source_path")
 
     def cmd_init_from(self, source_path):
         """Initialize project with a persistent link to a source workspace and start monitoring."""
