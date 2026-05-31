@@ -872,16 +872,34 @@ class WorkspaceService(BaseHandler):
                         break
 
             if is_cloud:
-                root_lcp_path = source / "lcp.json"
-                if not root_lcp_path.exists():
-                    root_lcp_path = source / "LCP.json"
-                if root_lcp_path.exists():
-                    try:
-                        root_lcp = json.loads(root_lcp_path.read_text())
-                        if "id" in root_lcp:
-                            project_meta["cloud_project_id"] = root_lcp["id"]
-                    except Exception:
-                        pass
+                cli_cloud_id = getattr(self.manager.args, "cloud_project", None)
+                if cli_cloud_id:
+                    project_meta["cloud_project_id"] = cli_cloud_id
+                else:
+                    root_lcp_path = source / "lcp.json"
+                    if not root_lcp_path.exists():
+                        root_lcp_path = source / "LCP.json"
+                    if root_lcp_path.exists():
+                        try:
+                            root_lcp = json.loads(root_lcp_path.read_text())
+                            if "id" in root_lcp:
+                                project_meta["cloud_project_id"] = root_lcp["id"]
+                        except Exception:
+                            pass
+
+                # If cloud_project_id still not found, prompt or error
+                if not project_meta.get("cloud_project_id"):
+                    default_id = source.name
+                    if self.manager.non_interactive:
+                        UI.die(
+                            "Liferay Cloud project ID could not be determined. Please specify it using --cloud-project."
+                        )
+                    else:
+                        UI.info(
+                            "Liferay Cloud project ID could not be automatically determined from a root LCP.json."
+                        )
+                        cloud_id = UI.ask("Liferay Cloud Project ID", default_id)
+                        project_meta["cloud_project_id"] = cloud_id
 
                 lcp_path = workspace_root / "LCP.json"
                 if lcp_path.exists():
