@@ -137,14 +137,46 @@ class CloudService:
                 print(data)  # Since it's plain text now, just print it
             return
 
+        def _parse_backups_text(data_in):
+            if not data_in:
+                return []
+            if isinstance(data_in, list):
+                return data_in
+            if isinstance(data_in, str):
+                if (
+                    "No backups found" in data_in
+                    or "Failed to fetch" in data_in
+                    or "Error" in data_in
+                ):
+                    return []
+
+                parsed = []
+                lines = data_in.strip().split("\n")
+                in_data = False
+                for line in lines:
+                    if line.startswith("----") or line.startswith("Backup Id"):
+                        if line.startswith("----"):
+                            in_data = True
+                        continue
+
+                    if in_data:
+                        parts = [p.strip() for p in line.split("|")]
+                        if len(parts) >= 3 and parts[0]:
+                            parsed.append({"id": parts[0], "created": parts[2]})
+                return parsed
+            return []
+
         if getattr(self.manager.args, "list_backups", False):
             UI.heading(f"Liferay Cloud Backups: {cp_id} / {target_env}")
             data = self._run_lcp_cmd(["backup", "list"], project=cp_id, env=target_env)
             if data:
-                for backup in data[:10]:  # Show latest 10
+                backups = _parse_backups_text(data)
+                for backup in backups[:10]:  # Show latest 10
                     date = backup.get("created", "unknown")
                     backup_id = backup.get("id")
                     print(f"  [{UI.CYAN}{backup_id}{UI.COLOR_OFF}] {date}")
+                if not backups:
+                    print(data.strip())
             return
 
         if getattr(self.manager.args, "logs", False):
@@ -166,11 +198,27 @@ class CloudService:
             data = self._run_lcp_cmd(["env", "list"], project=cp_id, env=target_env)
             if data:
                 custom_env = json.loads(project_meta.get("custom_env", "{}"))
-                for var in data:
-                    k, v = var.get("key"), var.get("value")
-                    if k and v:
-                        custom_env[k] = v
-                        UI.info(f"  Synced {k}")
+
+                if isinstance(data, list):
+                    for var in data:
+                        k, v = var.get("key"), var.get("value")
+                        if k and v:
+                            custom_env[k] = v
+                            UI.info(f"  Synced {k}")
+                elif isinstance(data, str):
+                    lines = data.strip().split("\n")
+                    in_data = False
+                    for line in lines:
+                        if line.startswith("----") or line.startswith("Key"):
+                            if line.startswith("----"):
+                                in_data = True
+                            continue
+                        if in_data:
+                            parts = [p.strip() for p in line.split("|", 1)]
+                            if len(parts) == 2 and parts[0]:
+                                custom_env[parts[0]] = parts[1]
+                                UI.info(f"  Synced {parts[0]}")
+
                 project_meta["custom_env"] = json.dumps(custom_env)
                 self.manager.write_meta(root_path, project_meta)
                 UI.success("Metadata updated.")
@@ -181,10 +229,12 @@ class CloudService:
         ):
             UI.heading(f"Downloading Cloud Backups: {cp_id} / {target_env}")
             # Find latest backup ID
-            backups = self._run_lcp_cmd(
-                ["backup", "list"], project=cp_id, env=target_env
-            )
+            data = self._run_lcp_cmd(["backup", "list"], project=cp_id, env=target_env)
+            backups = _parse_backups_text(data)
+
             if not backups:
+                if data:
+                    UI.error(data.strip())
                 UI.die("No backups found.")
 
             latest = backups[0]
