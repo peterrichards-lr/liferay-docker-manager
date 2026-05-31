@@ -556,11 +556,18 @@ class WorkspaceService(BaseHandler):
     def cmd_init_from(self, source_path):
         """Initialize project with a persistent link to a source workspace and start monitoring."""
         # 1. Perform a standard import (but we will keep the link)
-        self.cmd_import(source_path, is_init_from=True)
+        project_name = self.cmd_import(source_path, is_init_from=True)
+        if project_name:
+            self.manager.args.project = project_name
 
         # PAAS Workspace Recognition
         source = Path(source_path).resolve()
-        is_cloud = (source / "liferay" / "LCP.json").exists()
+        is_cloud = (
+            (source / "liferay" / "LCP.json").exists()
+            or (source / "liferay" / "lcp.json").exists()
+            or (source / "LCP.json").exists()
+            or (source / "lcp.json").exists()
+        )
 
         if is_cloud and not self.manager.non_interactive:
             UI.info("\n> Detected Liferay Cloud Workspace structure.")
@@ -671,11 +678,14 @@ class WorkspaceService(BaseHandler):
                         break
 
             workspace_root = (
-                source / "liferay"
-                if (source / "liferay" / "LCP.json").exists()
-                else source
+                source / "liferay" if (source / "liferay").exists() else source
             )
-            is_cloud = (source / "liferay" / "LCP.json").exists()
+            is_cloud = (
+                (source / "liferay" / "LCP.json").exists()
+                or (source / "liferay" / "lcp.json").exists()
+                or (source / "LCP.json").exists()
+                or (source / "lcp.json").exists()
+            )
 
             # Project Naming Logic (Standardized)
             project_name = getattr(self.manager.args, "project", None) or getattr(
@@ -1024,6 +1034,8 @@ class WorkspaceService(BaseHandler):
                     self.manager.safe_rmtree(project_path)
                 self.manager.unregister_project(project_name)
 
+        return project_name
+
     def cmd_monitor(self, source_path=None):
         try:
             from watchdog.events import FileSystemEventHandler
@@ -1179,9 +1191,8 @@ class WorkspaceService(BaseHandler):
             except Exception:
                 pass
 
-            UI.info(
-                "Using PollingObserver for macOS stability (avoids 'Too many open files')."
-            )
+            if self.manager.verbose:
+                UI.info("Using PollingObserver for macOS stability.")
             observer = PollingObserver()
         else:
             observer = Observer()
