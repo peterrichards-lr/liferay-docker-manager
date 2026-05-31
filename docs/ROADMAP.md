@@ -14,6 +14,7 @@ While the v2.4.0 release solidified the modular architecture, **v2.5.0** will fo
 ### 1. Guided Onboarding & Scaffolding
 
 - **Interactive Scaffolding**: Implement `ldm init` with guided templates for common use cases (e.g., "Commerce Demo," "Headless React Integration").
+- **PaaS Workspace Recognition**: Enhance `ldm init-from` to automatically detect cloned Liferay Cloud repositories and guide users through the data hydration process (`cloud-fetch`).
 - **Documentation Injection**: Automatically generate `README.md` and `setup.md` within new projects.
 
 ### 2. CLI Simplification & Automation Standards
