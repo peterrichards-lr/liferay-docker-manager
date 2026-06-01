@@ -81,6 +81,7 @@ class CloudService:
         if capture_json:
             cmd.extend(["--json"])
 
+        process = None
         try:
             if spinner:
                 process = subprocess.Popen(
@@ -107,7 +108,11 @@ class CloudService:
                 returncode = process.wait()
                 full_output = "\n".join(output)
                 if returncode != 0:
-                    UI.error(f"LCP command failed: {full_output}")
+                    # LDM-402: Handle silent failure or stall
+                    err_msg = (
+                        full_output if full_output else "Process exited with no output."
+                    )
+                    UI.error(f"LCP command failed (Code {returncode}): {err_msg}")
                     return None
                 return full_output
 
@@ -117,6 +122,11 @@ class CloudService:
             # For streaming or direct output
             res = subprocess.run(cmd, capture_output=True, text=True, check=True)
             return res.stdout
+        except (KeyboardInterrupt, SystemExit):
+            if process:
+                process.terminate()
+                process.wait()
+            raise
         except subprocess.CalledProcessError as e:
             UI.error(f"LCP command failed: {e.stderr or e.stdout}")
             return None
@@ -223,9 +233,9 @@ class CloudService:
                         backup_id = match.group(1)
                         # Extract date (rough heuristic for table columns)
                         parts = [p.strip() for p in re.split(r"\s{2,}|\|", line)]
-                        # Usually index 2 (if piped) or 4 (if spaced)
+                        # Skip the ID itself when looking for the date to avoid picking up year markers in the ID
                         created_date = "unknown"
-                        for p in parts:
+                        for p in parts[1:]:
                             if any(
                                 target in p
                                 for target in ["AM", "PM", "2024", "2025", "2026"]
@@ -349,7 +359,7 @@ class CloudService:
 
             # Download
             with UI.spinner(f"Downloading Cloud Backup: {backup_id}...") as s:
-                self._run_lcp_cmd(
+                download_res = self._run_lcp_cmd(
                     [
                         "backup",
                         "download",
@@ -363,6 +373,10 @@ class CloudService:
                     env=target_env,
                     spinner=s,
                 )
+
+            if download_res is None:
+                UI.die("Backup download failed. Aborting hydration.")
+
             UI.success(f"Backups downloaded to {snapshot_dir}")
 
             # Checksum Verification
