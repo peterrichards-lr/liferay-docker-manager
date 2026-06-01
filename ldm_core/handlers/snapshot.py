@@ -974,6 +974,7 @@ class SnapshotService(BaseHandler):
         self, db_container, db_type, sql_file, paths, project_meta
     ):
         """Internal helper to execute a robust SQL import into a running DB container."""
+        import platform
         import subprocess
 
         # 1. Clean Slate (LDM-410)
@@ -1053,45 +1054,30 @@ class SnapshotService(BaseHandler):
             )
 
         # 2. Build Import Command
-        import_cmd = []
+        import_cmd_str = ""
         if db_type == "postgresql":
             # LDM-410: Use standard user and enforce error stopping for reliability
-            import_cmd = [
-                "docker",
-                "exec",
-                "-i",
-                db_container,
-                "psql",
-                "-U",
-                "lportal",
-                "-d",
-                "lportal",
-                "-v",
-                "ON_ERROR_STOP=1",
-            ]
+            import_cmd_str = f'docker exec -i {db_container} psql -U lportal -d lportal -v ON_ERROR_STOP=1 < "{sql_file}"'
         elif db_type in ["mysql", "mariadb"]:
-            import_cmd = [
-                "docker",
-                "exec",
-                "-i",
-                db_container,
-                "mysql",
-                "-u",
-                "lportal",
-                "-ptest",
-                "lportal",
-            ]
+            import_cmd_str = f'docker exec -i {db_container} mysql -u lportal -ptest lportal < "{sql_file}"'
 
         # 3. Execute with Retry
-        if import_cmd:
+        if import_cmd_str:
             success = False
             for i in range(3):  # Retry up to 3 times for flaky Docker IO
                 try:
-                    # LDM-410: Use binary mode ("rb") to avoid UnicodeDecodeErrors with non-UTF8 dumps
-                    with open(sql_file, "rb") as f:
-                        subprocess.run(
-                            import_cmd, stdin=f, check=True, capture_output=True
-                        )
+                    # LDM-419: Use shell=True and OS-level redirection (<) instead of Python's stdin buffering.
+                    # Python's subprocess.run(stdin=f) truncates massive 50MB+ SQL files across the Docker boundary,
+                    # causing "Broken pipe" and incomplete schema restorations.
+                    subprocess.run(
+                        import_cmd_str,
+                        shell=True,
+                        check=True,
+                        capture_output=True,
+                        executable="/bin/bash"
+                        if platform.system() != "Windows"
+                        else None,
+                    )  # nosec B602 B604
                     success = True
                     break
                 except subprocess.CalledProcessError as e:
