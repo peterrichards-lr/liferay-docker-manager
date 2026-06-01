@@ -481,6 +481,13 @@ class SnapshotService(BaseHandler):
         # At this point Mypy should know choice is a Path and not None
         choice_path = cast(Path, choice)
 
+        # 1.5 Ensure Compose file exists (Mandate 2.1)
+        if not (paths["root"] / "docker-compose.yml").exists():
+            UI.info("Scaffolding Docker environment for restore...")
+            self.manager.runtime.sync_stack(
+                paths, project_meta, no_up=True, show_summary=False
+            )
+
         # 2. Reset the Environment (Clean Slate)
         container_name = (
             project_meta.get("liferay_container_name")

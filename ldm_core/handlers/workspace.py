@@ -608,12 +608,6 @@ class WorkspaceService(BaseHandler):
             self.manager.args.project = project_name
 
         try:
-            # LDM-402: Ensure compose file exists so restore can start DB container.
-            # We use no_up=True to only scaffold the environment and generate docker-compose.yml
-            self.manager.runtime.sync_stack(
-                paths, p_meta, no_up=True, show_summary=False
-            )
-
             # Pass the original source path down to cloud fetch
             # so sync_env can find the LCP.json file
             self.manager.args.source_path = str(source_path)
