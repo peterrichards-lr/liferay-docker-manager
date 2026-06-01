@@ -446,6 +446,9 @@ class ConfigService:
         target_ext = paths["files"] / "portal-ext.properties"
 
         if common_dir and common_dir.exists():
+            if self.manager.verbose:
+                UI.info(f"Checking global assets in: {common_dir}")
+
             history_file = paths["root"] / ".liferay-docker.deployed"
             history = (
                 set(history_file.read_text().splitlines())
@@ -601,7 +604,11 @@ class ConfigService:
                             should_copy_license = True
                             if project_licenses:
                                 for old_lic in project_licenses:
-                                    # If any existing license is BETTER than the one in common, skip copy
+                                    # LDM-408: Only skip if the 'old' license is actually IN the project
+                                    if "Global" in old_lic.get("location", ""):
+                                        continue
+
+                                    # If any project license is BETTER than the one in common, skip copy
                                     if not self.manager.license.is_better_license(
                                         new_lic_info, old_lic
                                     ):
@@ -609,6 +616,18 @@ class ConfigService:
                                         break
 
                             if should_copy_license:
+                                # LDM-408: Be aggressive. Remove other potential conflicting licenses
+                                if project_licenses:
+                                    for old_lic in project_licenses:
+                                        if "Project" in old_lic.get("location", ""):
+                                            old_path = Path(old_lic["path"])
+                                            if old_path.exists() and old_path != dest:
+                                                with contextlib.suppress(OSError):
+                                                    old_path.unlink()
+                                                    UI.info(
+                                                        f"  - Removed conflicting project license: {old_path.name}"
+                                                    )
+
                                 atomic_copy(match, dest)
                                 history.add(match.name)
                                 UI.info(
