@@ -291,9 +291,9 @@ class UI:
             UI._print(f"💡 Tip:      {tip}", color=UI.CYAN, file=sys.stderr)
 
     @staticmethod
-    def die(msg, details=None, tip=None):
+    def die(msg, details=None, tip=None, exit_code=1):
         UI.error(msg, details, tip)
-        sys.exit(1)
+        sys.exit(exit_code)
 
     @staticmethod
     def heading(msg):

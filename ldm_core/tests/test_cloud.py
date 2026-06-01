@@ -91,7 +91,8 @@ class TestCloudService(unittest.TestCase):
         mock_auth.return_value = (False, "LCP CLI not installed")
         self.cloud.ensure_cloud_auth()
         mock_die.assert_any_call(
-            "Liferay Cloud CLI (lcp) is not installed. Install it to use cloud features."
+            "Liferay Cloud CLI (lcp) is not installed. Install it to use cloud features.",
+            exit_code=2,
         )
 
     @patch("shutil.which")

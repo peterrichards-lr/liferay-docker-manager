@@ -99,6 +99,113 @@ def get_resource_path(filename):
     return None
 
 
+def strip_ansi(text):
+    """Removes ANSI escape sequences (colors, formatting) from a string."""
+    if not text:
+        return text
+    ansi_escape = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
+    return ansi_escape.sub("", text)
+
+
+def is_lcp_workspace(path):
+    """Detects if the given path is a Liferay Cloud Platform (LCP) workspace."""
+    p = Path(path).resolve()
+    return (
+        (p / "liferay" / "LCP.json").exists()
+        or (p / "liferay" / "lcp.json").exists()
+        or (p / "LCP.json").exists()
+        or (p / "lcp.json").exists()
+    )
+
+
+def parse_lcp_backups(data_in):
+    """
+    Robustly parses Liferay Cloud CLI backup table output using pattern recognition.
+    Supports both JSON list and plain text table formats.
+    """
+    if not data_in:
+        return []
+    if isinstance(data_in, list):
+        return data_in
+
+    if isinstance(data_in, str):
+        # 1. Clean output
+        text = strip_ansi(data_in)
+
+        if "No backups found" in text or "Failed to fetch" in text or "Error" in text:
+            return []
+
+        # 2. Regex for Liferay Cloud Backup IDs: dxpcloud-xxx-timestamp or bk123456
+        id_pattern = re.compile(r"\b(dxpcloud-[a-z0-9-]+|bk[0-9]{6,})\b")
+
+        parsed = []
+        lines = text.strip().splitlines()
+        for raw_line in lines:
+            line = raw_line.strip()
+            if not line or "Backup ID" in line or "Backup Id" in line or "----" in line:
+                continue
+
+            match = id_pattern.search(line)
+            if match:
+                backup_id = match.group(1)
+                # Extract date heuristic
+                parts = [p.strip() for p in re.split(r"\s{2,}|\|", line)]
+                # Skip the ID itself (index 0) to avoid picking up year markers in the ID
+                created_date = "unknown"
+                for p in parts[1:]:
+                    if any(
+                        target in p for target in ["AM", "PM", "2024", "2025", "2026"]
+                    ):
+                        created_date = p
+                        break
+
+                parsed.append({"id": backup_id, "created": created_date})
+        return parsed
+    return []
+
+
+def get_lcp_environment_variables(workspace_path, environment_id):
+    """
+    Parses a Liferay Cloud LCP.json file to extract environment variables.
+    Returns a dictionary of merged global and environment-specific variables.
+    """
+    p = Path(workspace_path).resolve()
+
+    # Heuristic for finding LCP.json
+    candidates = [
+        p / "liferay" / "LCP.json",
+        p / "liferay" / "lcp.json",
+        p / "LCP.json",
+        p / "lcp.json",
+    ]
+
+    lcp_json = None
+    for c in candidates:
+        if c.exists():
+            lcp_json = c
+            break
+
+    if not lcp_json:
+        return None
+
+    try:
+        data = json.loads(lcp_json.read_text())
+        envs = {}
+
+        # 1. Global variables
+        global_envs = data.get("env", {})
+        envs.update(global_envs)
+
+        # 2. Environment specific overrides
+        env_configs = data.get("environments", {}).get(environment_id, {})
+        env_specific = env_configs.get("env", {})
+        envs.update(env_specific)
+
+        return envs
+    except Exception:
+        return None
+
+
 def download_file(url, destination):
     """Downloads a file from a URL to a destination path."""
     try:
@@ -1309,14 +1416,6 @@ def calculate_sha256(file_path):
         for chunk in iter(lambda: f.read(4096), b""):
             sha.update(chunk)
     return sha.hexdigest()
-
-
-def strip_ansi(text):
-    """Removes ANSI escape sequences (colors) from a string."""
-    if not text:
-        return ""
-    ansi_escape = re.compile(r"\x1B(?:[@-Z\-_]|\[[0-?]*[ -/]*[@-~])")
-    return ansi_escape.sub("", text)
 
 
 def fetch_compatibility_metadata(force=False):

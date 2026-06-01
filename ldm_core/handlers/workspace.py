@@ -555,13 +555,10 @@ class WorkspaceService(BaseHandler):
 
     def _prompt_cloud_hydration(self, source_path, project_name=None):
         """Helper to prompt for and orchestrate Liferay Cloud data hydration."""
+        from ldm_core.utils import is_lcp_workspace
+
         source = Path(source_path).resolve()
-        is_cloud = (
-            (source / "liferay" / "LCP.json").exists()
-            or (source / "liferay" / "lcp.json").exists()
-            or (source / "LCP.json").exists()
-            or (source / "lcp.json").exists()
-        )
+        is_cloud = is_lcp_workspace(source)
 
         hydrate_env = getattr(self.manager.args, "hydrate_from", None)
 
@@ -734,12 +731,9 @@ class WorkspaceService(BaseHandler):
             workspace_root = (
                 source / "liferay" if (source / "liferay").exists() else source
             )
-            is_cloud = (
-                (source / "liferay" / "LCP.json").exists()
-                or (source / "liferay" / "lcp.json").exists()
-                or (source / "LCP.json").exists()
-                or (source / "lcp.json").exists()
-            )
+            from ldm_core.utils import is_lcp_workspace
+
+            is_cloud = is_lcp_workspace(source)
 
             # Project Naming Logic (Standardized)
             project_name = getattr(self.manager.args, "project", None) or getattr(
@@ -940,7 +934,8 @@ class WorkspaceService(BaseHandler):
                     default_id = source.name
                     if self.manager.non_interactive:
                         UI.die(
-                            "Liferay Cloud project ID could not be determined. Please specify it using --cloud-project."
+                            "Liferay Cloud project ID could not be determined. Please specify it using --cloud-project.",
+                            exit_code=2,
                         )
                     else:
                         UI.info(
@@ -1152,8 +1147,12 @@ class WorkspaceService(BaseHandler):
             UI.info(f"Using linked workspace: {source_path}")
 
         source = Path(source_path).resolve()
+        from ldm_core.utils import is_lcp_workspace
+
         workspace_root = (
-            source / "liferay" if (source / "liferay" / "LCP.json").exists() else source
+            source / "liferay"
+            if (source / "liferay").exists() and is_lcp_workspace(source)
+            else source
         )
         UI.heading(f"Monitoring: {workspace_root.name}")
 

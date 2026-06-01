@@ -39,11 +39,15 @@ class CloudService:
 
         if reason == "LCP CLI not installed":
             UI.die(
-                "Liferay Cloud CLI (lcp) is not installed. Install it to use cloud features."
+                "Liferay Cloud CLI (lcp) is not installed. Install it to use cloud features.",
+                exit_code=2,
             )
 
         if self.manager.non_interactive:
-            UI.die("Not logged into Liferay Cloud. Please run 'lcp login' first.")
+            UI.die(
+                "Not logged into Liferay Cloud. Please run 'lcp login' first.",
+                exit_code=2,
+            )
 
         UI.warning("You are not logged into Liferay Cloud.")
         if UI.confirm("Run 'lcp login' now?", "Y"):
@@ -198,62 +202,7 @@ class CloudService:
                 print(data)  # Since it's plain text now, just print it
             return
 
-        def _parse_backups_text(data_in):
-            if not data_in:
-                return []
-            if isinstance(data_in, list):
-                return data_in
-            if isinstance(data_in, str):
-                import re
-
-                # Strip ANSI escape sequences from LCP CLI output
-                ansi_escape = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
-                data_in = ansi_escape.sub("", data_in)
-
-                if (
-                    "No backups found" in data_in
-                    or "Failed to fetch" in data_in
-                    or "Error" in data_in
-                ):
-                    return []
-
-                parsed = []
-                lines = data_in.strip().splitlines()
-
-                # Regex for Liferay Cloud Backup IDs: dxpcloud-xxx-timestamp or bk123456
-                # Usually 20-50 chars, alphanumeric and hyphens
-                id_pattern = re.compile(r"\b(dxpcloud-[a-z0-9-]+|bk[0-9]{6,})\b")
-
-                for raw_line in lines:
-                    line = raw_line.strip()
-                    if (
-                        not line
-                        or "Backup ID" in line
-                        or "Backup Id" in line
-                        or "----" in line
-                    ):
-                        continue
-
-                    # Strategy 1: Greedy Regex (Most robust)
-                    match = id_pattern.search(line)
-                    if match:
-                        backup_id = match.group(1)
-                        # Extract date (rough heuristic for table columns)
-                        parts = [p.strip() for p in re.split(r"\s{2,}|\|", line)]
-                        # Skip the ID itself when looking for the date to avoid picking up year markers in the ID
-                        created_date = "unknown"
-                        for p in parts[1:]:
-                            if any(
-                                target in p
-                                for target in ["AM", "PM", "2024", "2025", "2026"]
-                            ):
-                                created_date = p
-                                break
-
-                        parsed.append({"id": backup_id, "created": created_date})
-
-                return parsed
-            return []
+        from ldm_core.utils import parse_lcp_backups
 
         if getattr(self.manager.args, "list_backups", False):
             UI.heading(f"Liferay Cloud Backups: {cp_id} / {target_env}")
@@ -262,7 +211,7 @@ class CloudService:
                     ["backup", "list"], project=cp_id, env=target_env, spinner=s
                 )
             if data:
-                backups = _parse_backups_text(data)
+                backups = parse_lcp_backups(data)
                 for backup in backups[:10]:  # Show latest 10
                     date = backup.get("created", "unknown")
                     backup_id = backup.get("id")
@@ -297,55 +246,37 @@ class CloudService:
 
                 search_path = Path(source_arg).resolve()
 
-            lcp_json_path = search_path / "liferay" / "LCP.json"
-            if not lcp_json_path.exists():
-                lcp_json_path = search_path / "liferay" / "lcp.json"
-            if not lcp_json_path.exists():
-                lcp_json_path = search_path / "LCP.json"
-            if not lcp_json_path.exists():
-                lcp_json_path = search_path / "lcp.json"
+            from ldm_core.utils import get_lcp_environment_variables
 
-            if not lcp_json_path.exists():
+            envs = get_lcp_environment_variables(search_path, target_env)
+            if envs is None:
                 UI.warning(
                     "LCP.json not found in the workspace. Skipping environment variable sync."
                 )
                 return
 
             try:
-                lcp_data = json.loads(lcp_json_path.read_text())
                 custom_env = json.loads(project_meta.get("custom_env", "{}"))
-
-                # Global envs
-                global_env = lcp_data.get("env", {})
-                for k, v in global_env.items():
+                for k, v in envs.items():
                     custom_env[k] = v
-                    UI.info(f"  Synced (Global) {k}")
-
-                # Environment specific envs
-                env_specific = (
-                    lcp_data.get("environments", {}).get(target_env, {}).get("env", {})
-                )
-                for k, v in env_specific.items():
-                    custom_env[k] = v
-                    UI.info(f"  Synced ({target_env}) {k}")
+                    UI.info(f"  Synced {k}")
 
                 project_meta["custom_env"] = json.dumps(custom_env)
                 self.manager.write_meta(root_path, project_meta)
                 UI.success("Metadata updated.")
             except Exception as e:
-                UI.error(f"Failed to parse LCP.json for environment variables: {e}")
+                UI.error(f"Failed to sync environment variables: {e}")
             return
 
         if getattr(self.manager.args, "download", False) or getattr(
             self.manager.args, "restore", False
         ):
             UI.heading(f"Downloading Cloud Backups: {cp_id} / {target_env}")
-            # Find latest backup ID
             with UI.spinner("Fetching backup list...") as s:
                 data = self._run_lcp_cmd(
                     ["backup", "list"], project=cp_id, env=target_env, spinner=s
                 )
-            backups = _parse_backups_text(data)
+            backups = parse_lcp_backups(data)
 
             if not backups:
                 if data and self.manager.verbose:
@@ -384,7 +315,7 @@ class CloudService:
                 )
 
             if download_res is None:
-                UI.die("Backup download failed. Aborting hydration.")
+                UI.die("Backup download failed. Aborting hydration.", exit_code=3)
 
             # LDM-405: Post-Download Flattening
             # LCP CLI creates a nested directory: {backup_id}-{timestamp}/{database|doclib}/UUID.{gz|extension}
