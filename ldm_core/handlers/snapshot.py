@@ -636,7 +636,11 @@ class SnapshotService(BaseHandler):
             db_type = project_meta.get("db_type", "hypersonic")
             UI.info(f"Triggering orchestrated database restore ({db_type})...")
 
-            # 1. Ensure DB container is running
+            # 1. Ensure DB container is running, but Liferay is STOPPED
+            # This is critical to prevent Liferay from locking the database or
+            # attempting to initialize schemas during the restore process.
+            self.manager.runtime.cmd_stop(project_id, service="liferay")
+
             db_container = project_meta.get("db_container_name")
             if not db_container:
                 for suffix in ["-db", "-db-1"]:
