@@ -944,11 +944,11 @@ class SnapshotService(BaseHandler):
                     db_container,
                     "psql",
                     "-U",
-                    "postgres",
+                    "lportal",
                     "-d",
                     "lportal",
                     "-c",
-                    "DROP SCHEMA public CASCADE; CREATE SCHEMA public; GRANT ALL ON SCHEMA public TO lportal; GRANT ALL ON SCHEMA public TO public;",
+                    "DROP SCHEMA public CASCADE; CREATE SCHEMA public;",
                 ],
                 check=False,
             )
@@ -964,7 +964,7 @@ class SnapshotService(BaseHandler):
                     "lportal",
                     "-ptest",
                     "-e",
-                    "DROP DATABASE IF EXISTS lportal; CREATE DATABASE lportal; GRANT ALL PRIVILEGES ON lportal.* TO 'lportal'@'%';",
+                    "DROP DATABASE IF EXISTS lportal; CREATE DATABASE lportal;",
                 ],
                 check=False,
             )
@@ -972,6 +972,7 @@ class SnapshotService(BaseHandler):
         # 2. Build Import Command
         import_cmd = []
         if db_type == "postgresql":
+            # LDM-410: Use standard user and allow non-fatal errors (e.g. missing LCP roles)
             import_cmd = [
                 "docker",
                 "exec",
@@ -980,6 +981,7 @@ class SnapshotService(BaseHandler):
                 "psql",
                 "-U",
                 "lportal",
+                "-d",
                 "lportal",
             ]
         elif db_type in ["mysql", "mariadb"]:
@@ -1032,7 +1034,6 @@ class SnapshotService(BaseHandler):
                 host_name = project_meta.get("host_name", "localhost")
                 if db_type == "postgresql":
                     UI.info(f"  - Synchronizing Virtual Host entries to: {host_name}")
-                    # Use postgres superuser for guaranteed permissions
                     self.manager.run_command(
                         [
                             "docker",
@@ -1040,17 +1041,16 @@ class SnapshotService(BaseHandler):
                             db_container,
                             "psql",
                             "-U",
-                            "postgres",
+                            "lportal",
                             "-d",
                             "lportal",
                             "-c",
-                            f"UPDATE virtualhost SET hostname = '{host_name}'; COMMIT;",  # nosec B608
+                            f"UPDATE virtualhost SET hostname = '{host_name}';",  # nosec B608
                         ],
                         check=False,
                     )
                 elif db_type in ["mysql", "mariadb"]:
                     UI.info(f"  - Synchronizing Virtual Host entries to: {host_name}")
-                    # Use root for guaranteed permissions
                     self.manager.run_command(
                         [
                             "docker",
@@ -1058,7 +1058,7 @@ class SnapshotService(BaseHandler):
                             db_container,
                             "mysql",
                             "-u",
-                            "root",
+                            "lportal",
                             "-ptest",
                             "-e",
                             f"UPDATE lportal.virtualhost SET hostname = '{host_name}';",  # nosec B608
