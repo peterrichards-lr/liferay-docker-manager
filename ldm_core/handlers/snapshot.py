@@ -984,24 +984,33 @@ class SnapshotService(BaseHandler):
             # We disconnect other sessions first (e.g. Liferay) to allow the drop.
             # LDM-415: We must also create the 'cloudsqlsuperuser' role to prevent
             # LCP production dumps from aborting when ON_ERROR_STOP=1 is active.
-            self.manager.run_command(
-                [
-                    "docker",
-                    "exec",
-                    db_container,
-                    "psql",
-                    "-U",
-                    "postgres",
-                    "-d",
-                    "postgres",
-                    "-c",
-                    "SELECT pg_terminate_backend(pg_stat_activity.pid) FROM pg_stat_activity WHERE pg_stat_activity.datname = 'lportal' AND pid <> pg_backend_pid(); "
-                    "DROP DATABASE IF EXISTS lportal; "
-                    "CREATE DATABASE lportal WITH OWNER lportal; "
-                    "DO $$ BEGIN IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = 'cloudsqlsuperuser') THEN CREATE ROLE cloudsqlsuperuser; END IF; END $$;",
-                ],
-                check=False,
-            )
+
+            # Note: We must execute these commands separately because psql -c wraps
+            # multiple statements in a transaction block, and DROP DATABASE cannot
+            # be executed inside a transaction block.
+            commands = [
+                "SELECT pg_terminate_backend(pg_stat_activity.pid) FROM pg_stat_activity WHERE pg_stat_activity.datname = 'lportal' AND pid <> pg_backend_pid();",
+                "DROP DATABASE IF EXISTS lportal;",
+                "CREATE DATABASE lportal WITH OWNER lportal;",
+                "DO $$ BEGIN IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = 'cloudsqlsuperuser') THEN CREATE ROLE cloudsqlsuperuser; END IF; END $$;",
+            ]
+
+            for cmd in commands:
+                self.manager.run_command(
+                    [
+                        "docker",
+                        "exec",
+                        db_container,
+                        "psql",
+                        "-U",
+                        "postgres",
+                        "-d",
+                        "postgres",
+                        "-c",
+                        cmd,
+                    ],
+                    check=False,
+                )
         elif db_type in ["mysql", "mariadb"]:
             UI.info("  - Wiping existing MySQL database...")
             self.manager.run_command(
