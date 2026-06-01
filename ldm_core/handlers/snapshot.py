@@ -978,6 +978,8 @@ class SnapshotService(BaseHandler):
             UI.info("  - Wiping existing PostgreSQL database...")
             # Use superuser to ensure we have permission to drop the database.
             # We disconnect other sessions first (e.g. Liferay) to allow the drop.
+            # LDM-415: We must also create the 'cloudsqlsuperuser' role to prevent
+            # LCP production dumps from aborting when ON_ERROR_STOP=1 is active.
             self.manager.run_command(
                 [
                     "docker",
@@ -989,7 +991,10 @@ class SnapshotService(BaseHandler):
                     "-d",
                     "postgres",
                     "-c",
-                    "SELECT pg_terminate_backend(pg_stat_activity.pid) FROM pg_stat_activity WHERE pg_stat_activity.datname = 'lportal' AND pid <> pg_backend_pid(); DROP DATABASE IF EXISTS lportal; CREATE DATABASE lportal WITH OWNER lportal;",
+                    "SELECT pg_terminate_backend(pg_stat_activity.pid) FROM pg_stat_activity WHERE pg_stat_activity.datname = 'lportal' AND pid <> pg_backend_pid(); "
+                    "DROP DATABASE IF EXISTS lportal; "
+                    "CREATE DATABASE lportal WITH OWNER lportal; "
+                    "DO $$ BEGIN IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = 'cloudsqlsuperuser') THEN CREATE ROLE cloudsqlsuperuser; END IF; END $$;",
                 ],
                 check=False,
             )
