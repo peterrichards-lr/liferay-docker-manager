@@ -592,6 +592,47 @@ class SnapshotService(BaseHandler):
                     with open(str(sql_file), "wb") as f_out:
                         shutil.copyfileobj(f_in, f_out)
                 UI.success("Cloud database dump decompressed.")
+
+                # LDM-413: Scrub proprietary LCP \restrict meta-commands
+                # These commands cause standard psql to fail when ON_ERROR_STOP=1 is active
+                UI.info("  + Scrubbing Cloud-specific meta-commands from SQL dump...")
+                try:
+                    import tempfile
+
+                    scrubbed = False
+                    # LDM-413: Use NamedTemporaryFile to avoid Bandit B306
+                    with tempfile.NamedTemporaryFile(
+                        dir=str(sql_file.parent),
+                        delete=False,
+                        mode="w",
+                        encoding="utf-8",
+                    ) as temp_file:
+                        temp_sql = Path(temp_file.name)
+
+                        with open(
+                            str(sql_file), encoding="utf-8", errors="ignore"
+                        ) as f_in:
+                            # Quick check: does it even have \restrict near the top?
+                            first_chunk = f_in.read(4096)
+                            if "\\restrict" in first_chunk:
+                                f_in.seek(0)
+                                for line in f_in:
+                                    if line.startswith("\\restrict"):
+                                        continue
+                                    temp_file.write(line)
+                                scrubbed = True
+
+                    if scrubbed:
+                        from ldm_core.utils import safe_move
+
+                        safe_move(str(temp_sql), str(sql_file))
+                    else:
+                        temp_sql.unlink(missing_ok=True)
+                except Exception as e:
+                    UI.debug(f"SQL scrub failed: {e}")
+                    if "temp_sql" in locals() and temp_sql.exists():
+                        temp_sql.unlink(missing_ok=True)
+
             except Exception as e:
                 UI.warning(f"Failed to decompress {db_gz.name}: {e}")
 
