@@ -972,11 +972,12 @@ class SnapshotService(BaseHandler):
 
         # 1. Clean Slate (LDM-410)
         # Cloud dumps often lack DROP TABLE commands. We must wipe the target DB first.
-        # We use a comprehensive DO block for PostgreSQL to drop all objects as the lportal user.
+        # We must DROP the entire database to clear Large Objects and prevent Liferay
+        # from background-initializing the schema before the restore begins.
         if db_type == "postgresql":
-            UI.info(
-                "  - Wiping existing PostgreSQL objects (Tables, Sequences, Views)..."
-            )
+            UI.info("  - Wiping existing PostgreSQL database...")
+            # Use superuser to ensure we have permission to drop the database.
+            # We disconnect other sessions first (e.g. Liferay) to allow the drop.
             self.manager.run_command(
                 [
                     "docker",
@@ -984,15 +985,11 @@ class SnapshotService(BaseHandler):
                     db_container,
                     "psql",
                     "-U",
-                    "lportal",
+                    "postgres",
                     "-d",
-                    "lportal",
+                    "postgres",
                     "-c",
-                    "DO $$ DECLARE r RECORD; BEGIN "
-                    "FOR r IN (SELECT tablename FROM pg_tables WHERE schemaname = 'public') LOOP EXECUTE 'DROP TABLE IF EXISTS ' || quote_ident(r.tablename) || ' CASCADE'; END LOOP; "
-                    "FOR r IN (SELECT relname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'public' AND c.relkind = 'S') LOOP EXECUTE 'DROP SEQUENCE IF EXISTS ' || quote_ident(r.relname) || ' CASCADE'; END LOOP; "
-                    "FOR r IN (SELECT viewname FROM pg_views WHERE schemaname = 'public') LOOP EXECUTE 'DROP VIEW IF EXISTS ' || quote_ident(r.viewname) || ' CASCADE'; END LOOP; "
-                    "END $$;",
+                    "SELECT pg_terminate_backend(pg_stat_activity.pid) FROM pg_stat_activity WHERE pg_stat_activity.datname = 'lportal' AND pid <> pg_backend_pid(); DROP DATABASE IF EXISTS lportal; CREATE DATABASE lportal WITH OWNER lportal;",
                 ],
                 check=False,
             )
