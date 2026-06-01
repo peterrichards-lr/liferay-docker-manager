@@ -976,41 +976,47 @@ class SnapshotService(BaseHandler):
 
         # 1. Clean Slate (LDM-410)
         # Cloud dumps often lack DROP TABLE commands. We must wipe the target DB first.
-        # We must DROP the entire database to clear Large Objects and prevent Liferay
-        # from background-initializing the schema before the restore begins.
         if db_type == "postgresql":
-            UI.info("  - Wiping existing PostgreSQL database...")
-            # Use superuser to ensure we have permission to drop the database.
-            # We disconnect other sessions first (e.g. Liferay) to allow the drop.
-            # LDM-415: We must also create the 'cloudsqlsuperuser' role to prevent
-            # LCP production dumps from aborting when ON_ERROR_STOP=1 is active.
+            UI.info("  - Wiping existing PostgreSQL database schema...")
+            # LDM-416: Liferay's official image sets POSTGRES_USER=lportal, meaning the
+            # default 'postgres' user DOES NOT EXIST. We must use lportal (which is granted superuser).
+            # We use a comprehensive DO block to drop all objects in the public schema
+            # to guarantee a clean slate without needing to drop the database itself.
+            wipe_script = """
+            DO $$ DECLARE
+                r RECORD;
+            BEGIN
+                FOR r IN (SELECT tablename FROM pg_tables WHERE schemaname = 'public') LOOP
+                    EXECUTE 'DROP TABLE IF EXISTS public.' || quote_ident(r.tablename) || ' CASCADE';
+                END LOOP;
+                FOR r IN (SELECT relname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'public' AND c.relkind = 'S') LOOP
+                    EXECUTE 'DROP SEQUENCE IF EXISTS public.' || quote_ident(r.relname) || ' CASCADE';
+                END LOOP;
+                FOR r IN (SELECT viewname FROM pg_views WHERE schemaname = 'public') LOOP
+                    EXECUTE 'DROP VIEW IF EXISTS public.' || quote_ident(r.viewname) || ' CASCADE';
+                END LOOP;
 
-            # Note: We must execute these commands separately because psql -c wraps
-            # multiple statements in a transaction block, and DROP DATABASE cannot
-            # be executed inside a transaction block.
-            commands = [
-                "SELECT pg_terminate_backend(pg_stat_activity.pid) FROM pg_stat_activity WHERE pg_stat_activity.datname = 'lportal' AND pid <> pg_backend_pid();",
-                "DROP DATABASE IF EXISTS lportal;",
-                "CREATE DATABASE lportal WITH OWNER lportal;",
-                "DO $$ BEGIN IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = 'cloudsqlsuperuser') THEN CREATE ROLE cloudsqlsuperuser; END IF; END $$;",
-            ]
-
-            for cmd in commands:
-                self.manager.run_command(
-                    [
-                        "docker",
-                        "exec",
-                        db_container,
-                        "psql",
-                        "-U",
-                        "postgres",
-                        "-d",
-                        "postgres",
-                        "-c",
-                        cmd,
-                    ],
-                    check=False,
-                )
+                -- Mock cloudsqlsuperuser to prevent ON_ERROR_STOP=1 from aborting LCP imports
+                IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = 'cloudsqlsuperuser') THEN
+                    CREATE ROLE cloudsqlsuperuser;
+                END IF;
+            END $$;
+            """
+            self.manager.run_command(
+                [
+                    "docker",
+                    "exec",
+                    db_container,
+                    "psql",
+                    "-U",
+                    "lportal",
+                    "-d",
+                    "lportal",
+                    "-c",
+                    wipe_script,
+                ],
+                check=False,
+            )
         elif db_type in ["mysql", "mariadb"]:
             UI.info("  - Wiping existing MySQL database...")
             self.manager.run_command(
