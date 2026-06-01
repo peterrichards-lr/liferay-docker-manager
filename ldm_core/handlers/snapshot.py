@@ -1019,101 +1019,103 @@ try {
         import platform
         import subprocess
 
-        # 1. Clean Slate (LDM-410)
-        # Cloud dumps often lack DROP TABLE commands. We must wipe the target DB first.
-        if db_type == "postgresql":
-            UI.info("  - Wiping existing PostgreSQL database schema...")
-            # LDM-416: Liferay's official image sets POSTGRES_USER=lportal, meaning the
-            # default 'postgres' user DOES NOT EXIST. We must use lportal (which is granted superuser).
-            # We use a comprehensive DO block to drop all objects in the public schema
-            # to guarantee a clean slate without needing to drop the database itself.
-            wipe_script = """
-            DO $$ DECLARE
-                r RECORD;
-            BEGIN
-                FOR r IN (SELECT tablename FROM pg_tables WHERE schemaname = 'public') LOOP
-                    EXECUTE 'DROP TABLE IF EXISTS public.' || quote_ident(r.tablename) || ' CASCADE';
-                END LOOP;
-                FOR r IN (SELECT relname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'public' AND c.relkind = 'S') LOOP
-                    EXECUTE 'DROP SEQUENCE IF EXISTS public.' || quote_ident(r.relname) || ' CASCADE';
-                END LOOP;
-                FOR r IN (SELECT viewname FROM pg_views WHERE schemaname = 'public') LOOP
-                    EXECUTE 'DROP VIEW IF EXISTS public.' || quote_ident(r.viewname) || ' CASCADE';
-                END LOOP;
+        def _wipe_db():
+            # 1. Clean Slate (LDM-410)
+            # Cloud dumps often lack DROP TABLE commands. We must wipe the target DB first.
+            if db_type == "postgresql":
+                UI.info("  - Wiping existing PostgreSQL database schema...")
+                # LDM-416: Liferay's official image sets POSTGRES_USER=lportal, meaning the
+                # default 'postgres' user DOES NOT EXIST. We must use lportal (which is granted superuser).
+                # We use a comprehensive DO block to drop all objects in the public schema
+                # to guarantee a clean slate without needing to drop the database itself.
+                wipe_script = """
+                DO $$ DECLARE
+                    r RECORD;
+                BEGIN
+                    FOR r IN (SELECT tablename FROM pg_tables WHERE schemaname = 'public') LOOP
+                        EXECUTE 'DROP TABLE IF EXISTS public.' || quote_ident(r.tablename) || ' CASCADE';
+                    END LOOP;
+                    FOR r IN (SELECT relname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'public' AND c.relkind = 'S') LOOP
+                        EXECUTE 'DROP SEQUENCE IF EXISTS public.' || quote_ident(r.relname) || ' CASCADE';
+                    END LOOP;
+                    FOR r IN (SELECT viewname FROM pg_views WHERE schemaname = 'public') LOOP
+                        EXECUTE 'DROP VIEW IF EXISTS public.' || quote_ident(r.viewname) || ' CASCADE';
+                    END LOOP;
 
-                -- LDM-416: Clear Large Objects to prevent pg_largeobject_metadata_oid_index collisions
-                -- 'lo_unlink' is insufficient for Liferay's usage pattern. We must directly delete.
-                DELETE FROM pg_largeobject_metadata;
-                DELETE FROM pg_largeobject;
+                    -- LDM-416: Clear Large Objects to prevent pg_largeobject_metadata_oid_index collisions
+                    -- 'lo_unlink' is insufficient for Liferay's usage pattern. We must directly delete.
+                    DELETE FROM pg_largeobject_metadata;
+                    DELETE FROM pg_largeobject;
 
-                -- Mock cloudsqlsuperuser to prevent ON_ERROR_STOP=1 from aborting LCP imports
-                IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = 'cloudsqlsuperuser') THEN
-                    CREATE ROLE cloudsqlsuperuser;
-                END IF;
-            END $$;
-            """
-            # LDM-418: Execute via stdin instead of -c to prevent multi-line parsing failures across docker exec
-            # We wrap this in a retry loop because a freshly created Postgres container
-            # will initialize and then restart itself, causing temporary connection refusals.
-            wipe_success = False
-            for _wipe_attempt in range(6):  # Up to ~30 seconds wait
-                try:
-                    import subprocess
+                    -- Mock cloudsqlsuperuser to prevent ON_ERROR_STOP=1 from aborting LCP imports
+                    IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = 'cloudsqlsuperuser') THEN
+                        CREATE ROLE cloudsqlsuperuser;
+                    END IF;
+                END $$;
+                """
+                # LDM-418: Execute via stdin instead of -c to prevent multi-line parsing failures across docker exec
+                # We wrap this in a retry loop because a freshly created Postgres container
+                # will initialize and then restart itself, causing temporary connection refusals.
+                wipe_success = False
+                for _wipe_attempt in range(6):  # Up to ~30 seconds wait
+                    try:
+                        subprocess.run(
+                            [
+                                "docker",
+                                "exec",
+                                "-i",
+                                db_container,
+                                "psql",
+                                "-U",
+                                "lportal",
+                                "-d",
+                                "lportal",
+                            ],
+                            input=wipe_script.encode("utf-8"),
+                            check=True,
+                            capture_output=True,
+                        )
+                        wipe_success = True
+                        break
+                    except subprocess.CalledProcessError as e:
+                        err_out = (
+                            e.stderr.decode(errors="ignore") if e.stderr else str(e)
+                        )
+                        if (
+                            "shutting down" in err_out.lower()
+                            or "starting up" in err_out.lower()
+                            or "does not exist" in err_out.lower()
+                        ):
+                            UI.debug(f"DB initializing, waiting... ({err_out.strip()})")
+                            time.sleep(5)
+                        else:
+                            UI.warning(f"  ! Non-fatal wipe error: {err_out}")
+                            break  # Other SQL error, stop retrying
+                    except Exception as e:
+                        UI.warning(f"  ! Wipe encountered an error: {e}")
+                        break
 
-                    subprocess.run(
-                        [
-                            "docker",
-                            "exec",
-                            "-i",
-                            db_container,
-                            "psql",
-                            "-U",
-                            "lportal",
-                            "-d",
-                            "lportal",
-                        ],
-                        input=wipe_script.encode("utf-8"),
-                        check=True,
-                        capture_output=True,
+                if not wipe_success:
+                    UI.warning(
+                        "  ! Could not confirm successful schema wipe. Restore may fail."
                     )
-                    wipe_success = True
-                    break
-                except subprocess.CalledProcessError as e:
-                    err_out = e.stderr.decode(errors="ignore") if e.stderr else str(e)
-                    if (
-                        "shutting down" in err_out.lower()
-                        or "starting up" in err_out.lower()
-                    ):
-                        UI.debug(f"DB initializing, waiting... ({err_out.strip()})")
-                        time.sleep(5)
-                    else:
-                        UI.warning(f"  ! Non-fatal wipe error: {err_out}")
-                        break  # Other SQL error, stop retrying
-                except Exception as e:
-                    UI.warning(f"  ! Wipe encountered an error: {e}")
-                    break
 
-            if not wipe_success:
-                UI.warning(
-                    "  ! Could not confirm successful schema wipe. Restore may fail."
+            elif db_type in ["mysql", "mariadb"]:
+                UI.info("  - Wiping existing MySQL database...")
+                self.manager.run_command(
+                    [
+                        "docker",
+                        "exec",
+                        db_container,
+                        "mysql",
+                        "-u",
+                        "lportal",
+                        "-ptest",
+                        "-e",
+                        "DROP DATABASE IF EXISTS lportal; CREATE DATABASE lportal;",
+                    ],
+                    check=False,
                 )
-
-        elif db_type in ["mysql", "mariadb"]:
-            UI.info("  - Wiping existing MySQL database...")
-            self.manager.run_command(
-                [
-                    "docker",
-                    "exec",
-                    db_container,
-                    "mysql",
-                    "-u",
-                    "lportal",
-                    "-ptest",
-                    "-e",
-                    "DROP DATABASE IF EXISTS lportal; CREATE DATABASE lportal;",
-                ],
-                check=False,
-            )
 
         # 2. Build Import Command
         import_cmd_str = ""
@@ -1127,6 +1129,10 @@ try {
         if import_cmd_str:
             success = False
             for i in range(3):  # Retry up to 3 times for flaky Docker IO
+                # LDM-422: We MUST wipe the DB at the start of EVERY retry attempt.
+                # If attempt 1 fails halfway through, the tables are created. Attempt 2 will instantly
+                # fail with "relation already exists" unless the schema is dropped again.
+                _wipe_db()
                 try:
                     # LDM-419: Use shell=True and OS-level redirection (<) instead of Python's stdin buffering.
                     # Python's subprocess.run(stdin=f) truncates massive 50MB+ SQL files across the Docker boundary,
@@ -1147,7 +1153,7 @@ try {
                     if i < 2:
                         UI.warning(f"  ! Restore attempt {i + 1} failed, retrying...")
                         UI.debug(f"  ! Error: {err_out}")
-                        time.sleep(3)
+                        time.sleep(5)
                     else:
                         UI.error(
                             f"  ! Database restore failed after 3 attempts: {err_out}"
@@ -1156,7 +1162,7 @@ try {
                     if i < 2:
                         UI.warning(f"  ! Restore attempt {i + 1} failed, retrying...")
                         UI.debug(f"  ! Error: {e}")
-                        time.sleep(3)
+                        time.sleep(5)
                     else:
                         UI.error(f"  ! Database restore failed after 3 attempts: {e}")
 
