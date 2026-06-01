@@ -905,6 +905,9 @@ class SnapshotService(BaseHandler):
         dst = "/vol" if direction == "to_volume" else "/host"
 
         # Note: We use 'cp -a' to copy directory contents without creating a nested subdir
+        # LDM-420: We MUST chown the files to 1000:1000 (liferay) when hydrating the volume,
+        # otherwise the Alpine container creates them as root, causing 404 access errors.
+        chown_cmd = f" && chown -R 1000:1000 {dst}/" if direction == "to_volume" else ""
         cmd = [
             "docker",
             "run",
@@ -916,7 +919,7 @@ class SnapshotService(BaseHandler):
             "alpine",
             "sh",
             "-c",
-            f"cp -a {src}/. {dst}/",
+            f"cp -a {src}/. {dst}/{chown_cmd}",
         ]
 
         try:
