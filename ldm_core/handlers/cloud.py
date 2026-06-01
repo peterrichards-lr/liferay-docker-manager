@@ -317,8 +317,8 @@ class CloudService:
             if download_res is None:
                 UI.die("Backup download failed. Aborting hydration.", exit_code=3)
 
-            # LDM-405: Post-Download Flattening
-            # LCP CLI creates a nested directory: {backup_id}-{timestamp}/{database|doclib}/UUID.{gz|extension}
+            # LDM-408: Post-Download Flattening & Organization
+            # LCP CLI creates a nested directory: {backup_id}-{timestamp}/{database|doclib}/UUID/...
             # We need to flatten this so LDM's standard restore logic can find the files.
             import shutil
 
@@ -331,16 +331,16 @@ class CloudService:
                 found_db = True
                 break
 
-            # For doclib, LCP downloads a folder structure.
-            # LDM cmd_restore expects a volume.tgz or a volume/ directory.
-            # We will move the nested UUID folder to snapshot_dir/volume/
+            # Liferay expects data/document_library/COMPANY_ID/...
+            # LCP CLI downloads wrapper/doclib/UUID/COMPANY_ID/...
             for item in snapshot_dir.glob("**/doclib/*"):
                 if item.is_dir():
-                    # Move the contents of the UUID folder to snapshot_dir/volume
-                    dest_vol = snapshot_dir / "volume"
-                    if dest_vol.exists():
-                        shutil.rmtree(dest_vol)
-                    shutil.move(str(item), str(dest_vol))
+                    # Move the contents of the UUID folder to snapshot_dir/volume/document_library/
+                    dest_vol_root = snapshot_dir / "volume" / "document_library"
+                    dest_vol_root.mkdir(parents=True, exist_ok=True)
+
+                    for subitem in item.iterdir():
+                        shutil.move(str(subitem), str(dest_vol_root / subitem.name))
                     found_vol = True
                     break
 

@@ -1043,7 +1043,7 @@ class SnapshotService(BaseHandler):
                             "-d",
                             "lportal",
                             "-c",
-                            f"UPDATE virtualhost SET hostname = '{host_name}' WHERE defaultvirtualhost = 't';",  # nosec B608
+                            f"UPDATE virtualhost SET hostname = '{host_name}';",  # nosec B608
                         ],
                         check=False,
                     )
@@ -1059,7 +1059,7 @@ class SnapshotService(BaseHandler):
                             "lportal",
                             "-ptest",
                             "-e",
-                            f"UPDATE lportal.virtualhost SET hostname = '{host_name}' WHERE defaultvirtualhost = '1';",  # nosec B608
+                            f"UPDATE lportal.virtualhost SET hostname = '{host_name}';",  # nosec B608
                         ],
                         check=False,
                     )
