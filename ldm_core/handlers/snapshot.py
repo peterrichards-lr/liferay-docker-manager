@@ -965,7 +965,7 @@ try {
             "alpine",
             "sh",
             "-c",
-            f"cd {src} && tar cf - . | (cd {dst} && tar xf -){chown_cmd}",
+            f"tar -cC {src} . | tar -xC {dst}{chown_cmd}",
         ]
 
         try:
