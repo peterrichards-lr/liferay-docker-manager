@@ -1,5 +1,16 @@
 import os
+import signal
 import sys
+
+
+# --- SIGINT / CTRL+C Graceful Exit Handler ---
+def _graceful_exit(sig, frame):
+    sys.stdout.write("\n\r")
+    sys.exit(0)
+
+
+signal.signal(signal.SIGINT, _graceful_exit)
+
 
 # --- Dev Environment Bootstrap Interceptor ---
 # Allow `python liferay_docker.py dev-setup` to run even if third-party
@@ -68,10 +79,15 @@ if getattr(sys, "frozen", False):
     if bundle_dir not in sys.path:
         sys.path.insert(0, bundle_dir)
 
-from ldm_core.cli import main
-from ldm_core.ui import UI
+from ldm_core.cli import main  # noqa: E402
+from ldm_core.ui import UI  # noqa: E402
 
 if __name__ == "__main__":
     if "-v" in sys.argv or "--verbose" in sys.argv:
         UI.info("LDM: Initializing core (Hardened Edition 2026.04.08)")
-    main()
+    try:
+        main()
+    except (KeyboardInterrupt, EOFError):
+        # Graceful exit for CTRL+C or CTRL+D
+        sys.stdout.write("\n\r")
+        sys.exit(0)

@@ -1,12 +1,23 @@
 import argparse
 import platform
+import signal
 import sys
 import warnings
 
-from ldm_core.constants import SCRIPT_DIR, VERSION
-from ldm_core.manager import LiferayManager
-from ldm_core.ui import UI
-from ldm_core.utils import check_for_updates
+
+# --- SIGINT / CTRL+C Graceful Exit Handler ---
+def _graceful_exit(sig, frame):
+    sys.stdout.write("\n\r")
+    sys.exit(0)
+
+
+signal.signal(signal.SIGINT, _graceful_exit)
+
+
+from ldm_core.constants import SCRIPT_DIR, VERSION  # noqa: E402
+from ldm_core.manager import LiferayManager  # noqa: E402
+from ldm_core.ui import UI  # noqa: E402
+from ldm_core.utils import check_for_updates  # noqa: E402
 
 try:
     import argcomplete
@@ -1045,4 +1056,11 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except (KeyboardInterrupt, EOFError):
+        # Graceful exit for CTRL+C or CTRL+D
+        import sys
+
+        sys.stdout.write("\n\r")
+        sys.exit(0)
