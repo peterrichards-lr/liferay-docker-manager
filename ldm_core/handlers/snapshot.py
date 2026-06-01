@@ -559,6 +559,10 @@ class SnapshotService(BaseHandler):
                 shutil.copytree(str(choice_path / "volume"), str(target_data))
 
             UI.success("Cloud volume restoration completed.")
+
+            # LDM-408: On macOS (Named Volumes), we must push the host data back into the Docker volume
+            if self.manager.composer.is_using_named_volumes():
+                self._hydrate_named_volumes(paths)
         else:
             UI.die(f"Snapshot files not found in {choice_path}")
 
