@@ -548,8 +548,26 @@ class SnapshotService(BaseHandler):
                 self.manager.run_command(
                     ["tar", "-xzf", str(volume_tgz), "-C", str(target_data)]
                 )
+            # LDM-408/422: Direct Volume Hydration (Performance & Reliability Win)
+            # On macOS (Named Volumes), we hydrate directly from the snapshot source
+            # to avoid hypervisor race conditions when copying via the host.
+            elif self.manager.composer.is_using_named_volumes():
+                UI.info("  + Hydrating Named Volumes directly from snapshot...")
+                self._sync_volume(
+                    choice_path / "volume",
+                    f"{paths['root'].name}-data",
+                    direction="to_volume",
+                )
+                # We still populate the host folder for developer visibility
+                if target_data.exists():
+                    from ldm_core.utils import safe_rmtree
+
+                    safe_rmtree(target_data)
+                import shutil
+
+                shutil.copytree(str(choice_path / "volume"), str(target_data))
             else:
-                # Move contents of volume/ directory
+                # Standard host-mapped hydration
                 import shutil
 
                 from ldm_core.utils import safe_rmtree
@@ -559,10 +577,6 @@ class SnapshotService(BaseHandler):
                 shutil.copytree(str(choice_path / "volume"), str(target_data))
 
             UI.success("Cloud volume restoration completed.")
-
-            # LDM-408: On macOS (Named Volumes), we must push the host data back into the Docker volume
-            if self.manager.composer.is_using_named_volumes():
-                self._hydrate_named_volumes(paths)
         else:
             UI.die(f"Snapshot files not found in {choice_path}")
 

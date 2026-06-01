@@ -1,8 +1,8 @@
 from pathlib import Path
 
 # --- Constants & Configuration ---
-# LDM_MAGIC_VERSION: 2.10.48
-VERSION = "2.10.48"
+# LDM_MAGIC_VERSION: 2.10.49
+VERSION = "2.10.49"
 
 
 BUILD_INFO = None

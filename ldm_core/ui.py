@@ -153,7 +153,7 @@ class UI:
             sys.stdout.write("\r\033[K")
             sys.stdout.flush()
 
-        def update_message(self, message):
+        def update(self, message):
             """Updates the message displayed next to the spinner."""
             self.message = message
 

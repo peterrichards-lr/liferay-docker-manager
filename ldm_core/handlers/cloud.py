@@ -112,7 +112,7 @@ class CloudService:
                                 or "Successfully" in msg
                                 or "[" in msg
                             ):
-                                spinner.update_message(msg)
+                                spinner.update(msg)
 
                             output.append(clean_line)
                     process.stdout.close()
