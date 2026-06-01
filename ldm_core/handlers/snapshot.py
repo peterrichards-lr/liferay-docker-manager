@@ -935,8 +935,9 @@ class SnapshotService(BaseHandler):
 
         # 1. Clean Slate (LDM-410)
         # Cloud dumps often lack DROP TABLE commands. We must wipe the target DB first.
+        # We use a DO block for PostgreSQL to drop all tables as the lportal user.
         if db_type == "postgresql":
-            UI.info("  - Wiping existing PostgreSQL schema...")
+            UI.info("  - Wiping existing PostgreSQL tables...")
             self.manager.run_command(
                 [
                     "docker",
@@ -948,7 +949,7 @@ class SnapshotService(BaseHandler):
                     "-d",
                     "lportal",
                     "-c",
-                    "DROP SCHEMA public CASCADE; CREATE SCHEMA public;",
+                    "DO $$ DECLARE r RECORD; BEGIN FOR r IN (SELECT tablename FROM pg_tables WHERE schemaname = 'public') LOOP EXECUTE 'DROP TABLE IF EXISTS ' || quote_ident(r.tablename) || ' CASCADE'; END LOOP; END $$;",
                 ],
                 check=False,
             )
@@ -972,7 +973,7 @@ class SnapshotService(BaseHandler):
         # 2. Build Import Command
         import_cmd = []
         if db_type == "postgresql":
-            # LDM-410: Use standard user and allow non-fatal errors (e.g. missing LCP roles)
+            # LDM-410: Use standard user and enforce error stopping for reliability
             import_cmd = [
                 "docker",
                 "exec",
@@ -983,6 +984,8 @@ class SnapshotService(BaseHandler):
                 "lportal",
                 "-d",
                 "lportal",
+                "-v",
+                "ON_ERROR_STOP=1",
             ]
         elif db_type in ["mysql", "mariadb"]:
             import_cmd = [
@@ -1004,7 +1007,7 @@ class SnapshotService(BaseHandler):
                 try:
                     # LDM-410: Use binary mode ("rb") to avoid UnicodeDecodeErrors with non-UTF8 dumps
                     with open(sql_file, "rb") as f:
-                        res = subprocess.run(
+                        subprocess.run(
                             import_cmd, stdin=f, check=True, capture_output=True
                         )
                     success = True
