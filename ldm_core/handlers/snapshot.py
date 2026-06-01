@@ -713,16 +713,19 @@ class SnapshotService(BaseHandler):
         UI.success("Restore complete.")
 
         # --- OPTIONAL STARTUP (LDM-388) ---
+        no_run = getattr(self.manager.args, "no_run", False)
         up_flag = getattr(self.manager.args, "up", False)
-        if up_flag or (
-            not self.manager.non_interactive
-            and UI.confirm("Do you want to start the project now?", "Y")
-        ):
-            self.manager.runtime.cmd_run(project_id)
-        else:
-            UI.info(
-                f"Run {UI.CYAN}ldm run {paths['root'].name}{UI.COLOR_OFF} to start the project."
-            )
+
+        if not no_run:
+            if up_flag or (
+                not self.manager.non_interactive
+                and UI.confirm("Do you want to start the project now?", "Y")
+            ):
+                self.manager.runtime.cmd_run(project_id)
+            else:
+                UI.info(
+                    f"Run {UI.CYAN}ldm run {paths['root'].name}{UI.COLOR_OFF} to start the project."
+                )
 
     def _extract_snapshot_archive(self, files_tar, paths):
         """Extracts a snapshot tarball into the project root with security checks."""

@@ -621,18 +621,27 @@ class WorkspaceService(BaseHandler):
             # so sync_env can find the LCP.json file
             self.manager.args.source_path = str(source_path)
 
-            # Fetch Data & Restore
-            self.manager.args.download = True
-            self.manager.args.restore = True
-            self.manager.args.sync_env = False
-            self.manager.args.env_id = env_id
-            self.manager.cloud.cmd_cloud_fetch()
-
-            # Sync Env Vars
+            # 1. Sync Env Vars (Do this first so they are in place for the restoration boot)
             self.manager.args.download = False
             self.manager.args.restore = False
             self.manager.args.sync_env = True
             self.manager.cloud.cmd_cloud_fetch()
+
+            # 2. Fetch Data & Restore
+            # We set no_run=True to prevent cmd_restore from starting the stack early.
+            # The outer cmd_import/cmd_init_from will handle the final startup.
+            self.manager.args.download = True
+            self.manager.args.restore = True
+            self.manager.args.sync_env = False
+            self.manager.args.env_id = env_id
+
+            old_no_run = getattr(self.manager.args, "no_run", False)
+            try:
+                self.manager.args.no_run = True
+                self.manager.cloud.cmd_cloud_fetch()
+            finally:
+                self.manager.args.no_run = old_no_run
+
         except SystemExit:
             UI.warning(
                 "Cloud hydration could not be completed. Falling back to local runtime only."
