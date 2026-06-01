@@ -616,7 +616,9 @@ class SnapshotService(BaseHandler):
                             )
                             f_in.seek(0)
                             for line in f_in:
-                                if line.startswith("\\restrict"):
+                                if line.startswith("\\restrict") or line.startswith(
+                                    "\\unrestrict"
+                                ):
                                     continue
                                 temp_file.write(line)
                             scrubbed = True
@@ -995,6 +997,11 @@ class SnapshotService(BaseHandler):
                 FOR r IN (SELECT viewname FROM pg_views WHERE schemaname = 'public') LOOP
                     EXECUTE 'DROP VIEW IF EXISTS public.' || quote_ident(r.viewname) || ' CASCADE';
                 END LOOP;
+
+                -- LDM-416: Clear Large Objects to prevent pg_largeobject_metadata_oid_index collisions
+                -- 'lo_unlink' is insufficient for Liferay's usage pattern. We must directly delete.
+                DELETE FROM pg_largeobject_metadata;
+                DELETE FROM pg_largeobject;
 
                 -- Mock cloudsqlsuperuser to prevent ON_ERROR_STOP=1 from aborting LCP imports
                 IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = 'cloudsqlsuperuser') THEN
