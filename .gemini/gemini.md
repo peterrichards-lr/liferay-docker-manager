@@ -71,9 +71,16 @@
   - [x] **Guided Hydration**: Implemented an interactive wizard (and `--hydrate-from` automation switch) to orchestrate data and env-var synchronization.
   - [x] **Robust Ingestion**: Engineered a "Greedy Regex" parser to reliably extract Backup IDs from the LCP CLI across various OS/terminal environments.
   - [x] **Post-Download Organization**: Built logic to automatically recursively flatten LCP's nested UUID backup structures into standard LDM snapshots.
-  - [x] **License Awareness**: Implemented expiration-aware license syncing to ensure valid developer licenses overwrite expired Cloud ones.
+  - [x] **License Awareness**: Implemented expiration-aware license syncing to ensure valid developer licenses aggressively overwrite expired Cloud trial licenses.
   - [x] **UI Hardening**: Re-engineered the `Spinner` engine with ANSI `\033[K` line-wiping and terminal-aware whitespace truncation.
   - [x] **Automation Standardization**: Established a project-wide exit code contract (0-4, 126) and enforced non-interactive `-y` modes for all developer utilities.
+  - [x] **PaaS Hydration Edge-Cases Resolved**:
+    - **SQL Scrubbing**: Removed proprietary `\restrict` and `\unrestrict` meta-commands from LCP dumps to prevent `ON_ERROR_STOP=1` import failures.
+    - **PostgreSQL Clean Slate**: Implemented a comprehensive `DO` block wipe loop (including `DELETE FROM pg_largeobject_metadata`) to guarantee a collision-free import environment without requiring the missing `postgres` superuser.
+    - **Volume Permissions & Sync**: Replaced Alpine `cp` with a robust `tar` pipeline and forced `chown -R 1000:1000` to guarantee hidden file preservation and correct Liferay read permissions across the VM boundary.
+    - **Virtual Host Override**: Enforced aggressive `UPDATE virtualhost` execution to map the local hostname dynamically.
+  - [x] **Automated Search Reindexing**: Injected a self-destructing `z_ldm_auto_reindex.groovy` script during the restore phase to force Liferay to programmatically rebuild its Elasticsearch index on first boot, preventing 404 errors for correctly restored physical files.
+  - [x] **macOS PTY Safety**: Refactored binary `sudo` updates to use `os.system` instead of Python subprocesses, permanently fixing the `unable to allocate pty` error on macOS terminal environments.
 
 - **Next Focus: Roadmap Execution & CLI Namespacing**
   - [ ] **CLI Simplification**: Refactor flat commands into grouped namespaces (e.g., `ldm cloud push`).
