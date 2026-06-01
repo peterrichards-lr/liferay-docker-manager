@@ -935,9 +935,11 @@ class SnapshotService(BaseHandler):
 
         # 1. Clean Slate (LDM-410)
         # Cloud dumps often lack DROP TABLE commands. We must wipe the target DB first.
-        # We use a DO block for PostgreSQL to drop all tables as the lportal user.
+        # We use a comprehensive DO block for PostgreSQL to drop all objects as the lportal user.
         if db_type == "postgresql":
-            UI.info("  - Wiping existing PostgreSQL tables...")
+            UI.info(
+                "  - Wiping existing PostgreSQL objects (Tables, Sequences, Views)..."
+            )
             self.manager.run_command(
                 [
                     "docker",
@@ -949,7 +951,11 @@ class SnapshotService(BaseHandler):
                     "-d",
                     "lportal",
                     "-c",
-                    "DO $$ DECLARE r RECORD; BEGIN FOR r IN (SELECT tablename FROM pg_tables WHERE schemaname = 'public') LOOP EXECUTE 'DROP TABLE IF EXISTS ' || quote_ident(r.tablename) || ' CASCADE'; END LOOP; END $$;",
+                    "DO $$ DECLARE r RECORD; BEGIN "
+                    "FOR r IN (SELECT tablename FROM pg_tables WHERE schemaname = 'public') LOOP EXECUTE 'DROP TABLE IF EXISTS ' || quote_ident(r.tablename) || ' CASCADE'; END LOOP; "
+                    "FOR r IN (SELECT relname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'public' AND c.relkind = 'S') LOOP EXECUTE 'DROP SEQUENCE IF EXISTS ' || quote_ident(r.relname) || ' CASCADE'; END LOOP; "
+                    "FOR r IN (SELECT viewname FROM pg_views WHERE schemaname = 'public') LOOP EXECUTE 'DROP VIEW IF EXISTS ' || quote_ident(r.viewname) || ' CASCADE'; END LOOP; "
+                    "END $$;",
                 ],
                 check=False,
             )

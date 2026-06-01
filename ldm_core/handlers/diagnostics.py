@@ -2200,30 +2200,38 @@ pause
                     )
                     try:
                         # Use sudo to copy the file from /tmp to system path
-                        # We use cp + rm instead of mv to avoid 'Invalid cross-device link' errors
-                        # on systems where /tmp is a different filesystem (like Fedora/tmpfs).
-                        sudo_prefix = (
-                            ["sudo", "-n"]
-                            if getattr(self.manager.args, "non_interactive", False)
-                            else ["sudo"]
-                        )
-                        subprocess.run(
-                            [*sudo_prefix, "cp", str(temp_new), str(exe_path)],
-                            check=True,
-                        )
-                        subprocess.run([*sudo_prefix, "rm", str(temp_new)], check=True)
+                        # LDM-412: On Unix, use os.system for the sudo command to ensure
+                        # a proper TTY is available for the interactive password prompt.
+                        # subprocess.run can sometimes fail with 'unable to allocate pty'.
+                        if platform.system() != "Windows" and not getattr(
+                            self.manager.args, "non_interactive", False
+                        ):
+                            cmd = f'sudo cp "{temp_new}" "{exe_path}" && sudo rm "{temp_new}"'
+                            ret = os.system(cmd)  # nosec B605
+                            if ret != 0:
+                                raise subprocess.CalledProcessError(ret, cmd)
+                        else:
+                            sudo_prefix = (
+                                ["sudo", "-n"]
+                                if getattr(self.manager.args, "non_interactive", False)
+                                else ["sudo"]
+                            )
+                            subprocess.run(
+                                [*sudo_prefix, "cp", str(temp_new), str(exe_path)],
+                                check=True,
+                            )
+                            subprocess.run(
+                                [*sudo_prefix, "rm", str(temp_new)], check=True
+                            )
+
                         UI.success(f"Successfully upgraded to v{latest}!")
-                    except subprocess.CalledProcessError:
+                    except Exception as e:
                         UI.error(
                             "Failed to replace binary. Elevated privileges were denied or incorrect."
                         )
+                        UI.debug(f"Details: {e}")
                         UI.info(
                             f'Please run manually: {UI.CYAN}sudo cp "{temp_new}" "{exe_path}" && sudo rm "{temp_new}"{UI.COLOR_OFF}'
-                        )
-                        return
-                    except Exception as e:
-                        UI.error(
-                            f"An unexpected error occurred during replacement: {e}"
                         )
                         return
 
