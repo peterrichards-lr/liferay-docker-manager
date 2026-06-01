@@ -377,7 +377,48 @@ class CloudService:
             if download_res is None:
                 UI.die("Backup download failed. Aborting hydration.")
 
-            UI.success(f"Backups downloaded to {snapshot_dir}")
+            # LDM-405: Post-Download Flattening
+            # LCP CLI creates a nested directory: {backup_id}-{timestamp}/{database|doclib}/UUID.{gz|extension}
+            # We need to flatten this so LDM's standard restore logic can find the files.
+            import shutil
+
+            UI.info("Organizing downloaded assets...")
+            found_db = False
+            found_vol = False
+
+            for item in snapshot_dir.glob("**/database/*.gz"):
+                shutil.move(str(item), str(snapshot_dir / "database.gz"))
+                found_db = True
+                break
+
+            # For doclib, LCP downloads a folder structure.
+            # LDM cmd_restore expects a volume.tgz or a volume/ directory.
+            # We will move the nested UUID folder to snapshot_dir/volume/
+            for item in snapshot_dir.glob("**/doclib/*"):
+                if item.is_dir():
+                    # Move the contents of the UUID folder to snapshot_dir/volume
+                    dest_vol = snapshot_dir / "volume"
+                    if dest_vol.exists():
+                        shutil.rmtree(dest_vol)
+                    shutil.move(str(item), str(dest_vol))
+                    found_vol = True
+                    break
+
+            # Cleanup LCP's timestamped wrapper folder
+            for item in snapshot_dir.iterdir():
+                if (
+                    item.is_dir()
+                    and item.name.startswith(backup_id)
+                    and "-" in item.name
+                ):
+                    shutil.rmtree(item)
+
+            if not found_db and not found_vol:
+                UI.die(
+                    f"Download completed but no valid assets found in {snapshot_dir}"
+                )
+
+            UI.success(f"Backups organized in {snapshot_dir}")
 
             # Checksum Verification
             self._verify_cloud_backup_checksums(snapshot_dir, latest)

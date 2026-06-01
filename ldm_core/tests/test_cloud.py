@@ -180,10 +180,31 @@ class TestCloudService(unittest.TestCase):
         ]
 
         mock_root = Path("/tmp/proj1")
+        mock_db = (
+            mock_root
+            / "snapshots"
+            / "cloud_uat_backup123"
+            / "nested"
+            / "database"
+            / "dump.gz"
+        )
+        mock_vol = (
+            mock_root
+            / "snapshots"
+            / "cloud_uat_backup123"
+            / "nested"
+            / "doclib"
+            / "uuid"
+        )
+
         with (
             patch.object(self.manager, "detect_project_path", return_value=mock_root),
             patch.object(self.manager, "read_meta", return_value={}),
             patch.object(self.manager, "setup_paths", return_value={"root": mock_root}),
+            patch("pathlib.Path.iterdir", return_value=[mock_db.parent.parent]),
+            patch("pathlib.Path.glob", side_effect=[[mock_db], [mock_vol]]),
+            patch("shutil.move"),
+            patch("shutil.rmtree"),
         ):
             self.cloud.cmd_cloud_fetch("proj1")
             self.assertTrue(mock_verify.called)

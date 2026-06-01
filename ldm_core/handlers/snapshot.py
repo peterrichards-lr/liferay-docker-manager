@@ -530,15 +530,27 @@ class SnapshotService(BaseHandler):
                 UI.warning("Integrity verification disabled via --no-verify.")
 
             self._extract_snapshot_archive(files_tar, paths)
-        elif volume_tgz.exists():
-            UI.info("  + Extracting cloud data volume...")
+        elif volume_tgz.exists() or (choice_path / "volume").is_dir():
+            UI.info("  + Restoring cloud data volume...")
             target_data = paths["data"]
             from ldm_core.utils import safe_mkdir
 
             safe_mkdir(target_data, parents=True, exist_ok=True)
-            self.manager.run_command(
-                ["tar", "-xzf", str(volume_tgz), "-C", str(target_data)]
-            )
+
+            if volume_tgz.exists():
+                self.manager.run_command(
+                    ["tar", "-xzf", str(volume_tgz), "-C", str(target_data)]
+                )
+            else:
+                # Move contents of volume/ directory
+                import shutil
+
+                from ldm_core.utils import safe_rmtree
+
+                if target_data.exists():
+                    safe_rmtree(target_data)
+                shutil.copytree(str(choice_path / "volume"), str(target_data))
+
             UI.success("Cloud volume restoration completed.")
         else:
             UI.die(f"Snapshot files not found in {choice_path}")
