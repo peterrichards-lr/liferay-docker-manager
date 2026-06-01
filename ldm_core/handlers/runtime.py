@@ -663,6 +663,47 @@ class RuntimeService:
                 )
 
                 if status == "healthy" or ready_by_logs:
+                    # LDM-422: If an automated reindex was scheduled, wait for it to complete
+                    # before giving the final green light.
+                    if (
+                        str(project_meta.get("reindex_required", "false")).lower()
+                        == "true"
+                    ):
+                        UI.info("  + Waiting for automated search reindex to finish...")
+                        reindex_start = time.time()
+                        reindex_timeout = 600  # 10 minutes max for reindex
+                        reindex_finished = False
+
+                        while time.time() - reindex_start < reindex_timeout:
+                            try:
+                                reindex_logs = self.manager.run_command(
+                                    ["docker", "logs", "--tail", "50", container_name],
+                                    check=False,
+                                    capture_output=True,
+                                )
+                                if reindex_logs and "Reindex Complete" in reindex_logs:
+                                    reindex_finished = True
+                                    break
+                            except Exception:
+                                pass
+                            time.sleep(5)
+
+                        if reindex_finished:
+                            UI.success("  + Automated search reindex complete.")
+                        else:
+                            UI.warning(
+                                "  ! Search reindex timed out. Content may still be indexing in the background."
+                            )
+
+                        # Clear the flag so we don't wait on future boots
+                        project_meta["reindex_required"] = "false"
+                        self.manager.write_meta(
+                            self.manager.detect_project_path(
+                                project_id=None, for_init=True
+                            ),
+                            project_meta,
+                        )
+
                     # If we bypassed by logs, wait a tiny bit to ensure the port is truly bound
                     if status != "healthy":
                         time.sleep(2)

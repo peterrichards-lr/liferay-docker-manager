@@ -732,62 +732,13 @@ class SnapshotService(BaseHandler):
 
         UI.success("Restore complete.")
 
-        # LDM-421: Inject one-time automatic reindex script
-        # Liferay won't automatically reindex imported databases. We drop a self-destructing
-        # Shell script into the scripts/ folder so Liferay processes it on next boot.
+        # LDM-422: Flag for one-time automatic reindex on next boot
+        # Liferay won't automatically reindex imported databases. We set a metadata
+        # flag that tells the composer to inject index.on.startup=true for the next run.
         try:
-            reindex_script_path = paths["scripts"] / "z_ldm_auto_reindex.sh"
-            script_content = """#!/bin/bash
-# LDM-421: Automated search reindex after database restore
-(
-    echo "[LDM] Waiting for Liferay startup to trigger automated reindex..."
-
-    # Wait for the logs to indicate startup is finished
-    # We check every 10 seconds for up to 10 minutes
-    for i in {1..60}; do
-        if grep -q "Server startup" /opt/liferay/logs/liferay*.log 2>/dev/null; then
-            break
-        fi
-        sleep 10
-    done
-
-    echo "[LDM] Liferay is up. Injecting reindex task into deploy folder..."
-
-    cat <<EOF > "/opt/liferay/deploy/z_ldm_reindex_task.groovy"
-import com.liferay.portal.kernel.search.IndexerRegistryUtil;
-import java.io.File;
-
-System.out.println("\\\\n=== [LDM] Starting Automated Post-Restore Reindex ===");
-long startTime = System.currentTimeMillis();
-
-try {
-    def indexers = IndexerRegistryUtil.getIndexers();
-    int total = indexers.size();
-    int current = 0;
-
-    indexers.each { indexer ->
-        current++;
-        try {
-            indexer.reindex();
-            System.out.println("[LDM] Reindexed " + current + "/" + total + ": " + indexer.getClassName());
-        } catch (Exception e) {
-            System.out.println("[LDM] Failed to reindex " + indexer.getClassName() + ": " + e.getMessage());
-        }
-    }
-    long duration = (System.currentTimeMillis() - startTime) / 1000;
-    System.out.println("=== [LDM] Reindex Complete (" + duration + "s) ===");
-} catch (Exception e) {
-    System.out.println("=== [LDM] Reindex Failed: " + e.getMessage() + " ===");
-}
-EOF
-
-    # Self-destruct the shell script
-    rm -- "$0"
-) &
-"""
-            from ldm_core.utils import safe_write_text
-
-            safe_write_text(reindex_script_path, script_content)
+            p_meta = self.manager.read_meta(paths["root"])
+            p_meta["reindex_required"] = "true"
+            self.manager.write_meta(paths["root"], p_meta)
             UI.info("  + Scheduled automatic search reindex for next boot.")
         except Exception as e:
             UI.warning(f"Could not schedule automatic reindex: {e}")

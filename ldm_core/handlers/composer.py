@@ -283,6 +283,11 @@ class ComposerService:
                     "LIFERAY_ELASTICSEARCH_PERIOD_OPERATION_PERIOD_MODE=EMBEDDED",
                 ]
             )
+
+        # LDM-422: Automatic Reindex on Startup
+        if str(meta.get("reindex_required", "false")).lower() == "true":
+            liferay_env.append("LIFERAY_INDEX_PERIOD_ON_PERIOD_STARTUP=true")
+            liferay_env.append("LIFERAY_INDEX_PERIOD_ON_PERIOD_STARTUP_PERIOD_DELAY=30")
         custom_env_str = meta.get("custom_env", "{}")
         try:
             custom_env_dict = json.loads(custom_env_str)
