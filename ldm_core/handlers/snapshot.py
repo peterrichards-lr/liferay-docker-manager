@@ -734,13 +734,30 @@ class SnapshotService(BaseHandler):
 
         # LDM-421: Inject one-time automatic reindex script
         # Liferay won't automatically reindex imported databases. We drop a self-destructing
-        # Groovy script into the scripts/ folder so Liferay processes it on next boot.
+        # Shell script into the scripts/ folder so Liferay processes it on next boot.
         try:
-            reindex_script_path = paths["scripts"] / "z_ldm_auto_reindex.groovy"
-            script_content = """import com.liferay.portal.kernel.search.IndexerRegistryUtil;
+            reindex_script_path = paths["scripts"] / "z_ldm_auto_reindex.sh"
+            script_content = """#!/bin/bash
+# LDM-421: Automated search reindex after database restore
+(
+    echo "[LDM] Waiting for Liferay startup to trigger automated reindex..."
+
+    # Wait for the logs to indicate startup is finished
+    # We check every 10 seconds for up to 10 minutes
+    for i in {1..60}; do
+        if grep -q "Server startup" /opt/liferay/logs/liferay*.log 2>/dev/null; then
+            break
+        fi
+        sleep 10
+    done
+
+    echo "[LDM] Liferay is up. Injecting reindex task into deploy folder..."
+
+    cat <<EOF > "/opt/liferay/deploy/z_ldm_reindex_task.groovy"
+import com.liferay.portal.kernel.search.IndexerRegistryUtil;
 import java.io.File;
 
-System.out.println("\\n=== [LDM] Starting Automated Post-Restore Reindex ===");
+System.out.println("\\\\n=== [LDM] Starting Automated Post-Restore Reindex ===");
 long startTime = System.currentTimeMillis();
 
 try {
@@ -761,14 +778,12 @@ try {
     System.out.println("=== [LDM] Reindex Complete (" + duration + "s) ===");
 } catch (Exception e) {
     System.out.println("=== [LDM] Reindex Failed: " + e.getMessage() + " ===");
-} finally {
-    // Self-destruct
-    File scriptFile = new File("/mnt/liferay/scripts/z_ldm_auto_reindex.groovy");
-    if (scriptFile.exists()) {
-        scriptFile.delete();
-        System.out.println("[LDM] Auto-reindex script removed.");
-    }
 }
+EOF
+
+    # Self-destruct the shell script
+    rm -- "$0"
+) &
 """
             from ldm_core.utils import safe_write_text
 

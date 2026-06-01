@@ -814,10 +814,14 @@ class RuntimeService:
             db_val = project_meta.get("db_type", "postgresql")
             port_val = project_meta.get("port", 8080)
 
-            UI.info(
-                f"{UI.WHITE}⚡{UI.COLOR_OFF} Starting {project_id} stack ({tag_val}, {db_val}, {host_name}:{port_val})..."
-            )
+            # LDM-413: Hide port 8080 if SSL is active
+            display_port = f":{port_val}"
+            if ssl_enabled and port_val == 8080:
+                display_port = ""
 
+            UI.info(
+                f"{UI.WHITE}⚡{UI.COLOR_OFF} Starting {project_id} stack ({tag_val}, {db_val}, {host_name}{display_port})..."
+            )
             UI.detail(f"=== Stack Configuration: {project_id} ===")
             UI.detail(f"  + Liferay: {UI.CYAN}{tag_val}{UI.COLOR_OFF}")
             UI.detail(f"  + DB Type: {UI.CYAN}{db_val}{UI.COLOR_OFF}")
