@@ -590,6 +590,32 @@ class ConfigService:
                                 history.add(match.name)
                         continue
 
+                    # LDM-408: Liferay License Logic
+                    # Prefer global common/ license if project one is missing or expired
+                    if pattern == "*.xml":
+                        new_lic_info = self.manager.license._parse_license_xml(match)
+                        if new_lic_info:
+                            # Find any existing licenses in the project (deploy/ or osgi/modules/)
+                            project_licenses = self.manager.license.find_license(paths)
+
+                            should_copy_license = True
+                            if project_licenses:
+                                for old_lic in project_licenses:
+                                    # If any existing license is BETTER than the one in common, skip copy
+                                    if not self.manager.license.is_better_license(
+                                        new_lic_info, old_lic
+                                    ):
+                                        should_copy_license = False
+                                        break
+
+                            if should_copy_license:
+                                atomic_copy(match, dest)
+                                history.add(match.name)
+                                UI.info(
+                                    f"  + Synced license from Global (common/): {match.name}"
+                                )
+                            continue
+
                     # Always copy if it doesn't exist
                     if not dest.exists():
                         atomic_copy(match, dest)

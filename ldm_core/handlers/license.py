@@ -116,3 +116,40 @@ class LicenseService:
             status += f" - Expires: {main_license['expiration']}"
 
         return status, True, details
+
+    def evaluate_license(self, info):
+        """
+        Determines if a license is currently valid.
+        Returns (is_valid, days_remaining)
+        """
+        if not info or not info.get("expiration"):
+            # If no expiration, assume it's a perpetual or special license
+            return True, 9999
+
+        try:
+            from datetime import datetime
+
+            exp_str = info["expiration"]
+            # Liferay date format: YYYY-MM-DD
+            exp_date = datetime.strptime(exp_str, "%Y-%m-%d")
+            now = datetime.now()
+
+            remaining = (exp_date - now).days
+            return remaining > 0, remaining
+        except Exception:
+            return False, -1
+
+    def is_better_license(self, new_info, old_info):
+        """
+        Returns True if new_info is 'better' than old_info.
+        'Better' means:
+        - new is valid and old is expired.
+        - both are valid, but new expires later.
+        """
+        new_valid, new_days = self.evaluate_license(new_info)
+        old_valid, old_days = self.evaluate_license(old_info)
+
+        if new_valid and not old_valid:
+            return True
+
+        return bool(new_valid and old_valid and new_days > old_days)

@@ -118,6 +118,25 @@ class TestLicenseHandler(unittest.TestCase):
         self.assertIn("Present (Liferay DXP)", status)
         self.assertIn("Expires: 2027-01-01", status)
 
+    def test_is_better_license(self):
+        new_lic = {"product": "DXP", "expiration": "2027-01-01"}
+        old_lic = {"product": "DXP", "expiration": "2025-01-01"}
+        expired_lic = {"product": "DXP", "expiration": "2020-01-01"}
+        perpetual_lic = {"product": "DXP", "expiration": None}
+
+        # New is better than old (expires later)
+        self.assertTrue(self.manager.is_better_license(new_lic, old_lic))
+
+        # New is better than expired
+        self.assertTrue(self.manager.is_better_license(new_lic, expired_lic))
+
+        # Old is NOT better than new
+        self.assertFalse(self.manager.is_better_license(old_lic, new_lic))
+
+        # Perpetual is 'best' (by heuristic 9999 days)
+        self.assertTrue(self.manager.is_better_license(perpetual_lic, new_lic))
+        self.assertFalse(self.manager.is_better_license(new_lic, perpetual_lic))
+
 
 if __name__ == "__main__":
     unittest.main()

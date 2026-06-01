@@ -980,6 +980,16 @@ class WorkspaceService(BaseHandler):
                     if count > 0:
                         UI.success(f"Imported {count} OSGi configs.")
 
+                deploy_src = config_src / "deploy"
+                if deploy_src.exists():
+                    count = 0
+                    for f in deploy_src.glob("*"):
+                        if f.is_file():
+                            safe_copy(f, paths["deploy"] / f.name)
+                            count += 1
+                    if count > 0:
+                        UI.success(f"Imported {count} assets from deploy/.")
+
             def import_zips(search_base, label, target_dir, overwrite=False):
                 count = 0
                 if not search_base.exists():
