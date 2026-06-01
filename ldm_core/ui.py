@@ -127,8 +127,14 @@ class UI:
 
                 # Ensure we don't exceed terminal width with the message
                 msg = self.message
-                if len(msg) > (columns - 10):
-                    msg = msg[: (columns - 13)] + "..."
+                if len(msg) > (columns - 12):
+                    truncated = msg[: (columns - 15)]
+                    # Heuristic: Try to snap to the last whitespace to avoid cutting words
+                    last_space = truncated.rfind(" ")
+                    if last_space > (columns // 2):
+                        msg = truncated[:last_space] + "..."
+                    else:
+                        msg = truncated + "..."
 
                 # Write frame and message
                 # \r moves to start of line

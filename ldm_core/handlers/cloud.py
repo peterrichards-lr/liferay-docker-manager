@@ -98,11 +98,8 @@ class CloudService:
                         clean_line = line.strip()
                         if clean_line:
                             # LDM-402: Improve progress visibility
-                            # If it's a known slow step or progress indicator, show it.
-                            # We increase the limit to 100 to allow the LCP version note to be seen.
+                            # We let the UI layer (Spinner) handle terminal-aware truncation.
                             msg = clean_line
-                            if len(msg) > 100:
-                                msg = msg[:97] + "..."
 
                             # Filter out useless noise but keep important notes
                             if (
