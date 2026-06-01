@@ -631,79 +631,10 @@ class SnapshotService(BaseHandler):
                         if db_container:
                             break
 
-            if db_container and self.manager.run_command(
-                ["docker", "ps", "-q", "-f", f"name=^{db_container}$"]
-            ):
-                import subprocess
-
-                # LDM-410: Wipe existing data before Cloud restore
-                # Cloud dumps often use 'search_path = ""' which doesn't DROP existing tables
-                if db_type == "postgresql":
-                    UI.info("  - Wiping existing PostgreSQL schema...")
-                    self.manager.run_command(
-                        [
-                            "docker",
-                            "exec",
-                            db_container,
-                            "psql",
-                            "-U",
-                            "lportal",
-                            "-d",
-                            "lportal",
-                            "-c",
-                            "DROP SCHEMA public CASCADE; CREATE SCHEMA public; GRANT ALL ON SCHEMA public TO lportal; GRANT ALL ON SCHEMA public TO public;",
-                        ],
-                        check=False,
-                    )
-
-                import_cmd = []
-                if db_type == "postgresql":
-                    import_cmd = [
-                        "docker",
-                        "exec",
-                        "-i",
-                        db_container,
-                        "psql",
-                        "-U",
-                        "lportal",
-                        "lportal",
-                    ]
-                elif db_type in ["mysql", "mariadb"]:
-                    import_cmd = [
-                        "docker",
-                        "exec",
-                        "-i",
-                        db_container,
-                        "mysql",
-                        "-u",
-                        "lportal",
-                        "-ptest",
-                        "lportal",
-                    ]
-
-                if import_cmd:
-                    success = False
-                    for i in range(3):  # Retry up to 3 times for flaky Docker IO
-                        try:
-                            with open(sql_file) as f:
-                                subprocess.run(
-                                    import_cmd, stdin=f, check=True, capture_output=True
-                                )
-                            success = True
-                            break
-                        except Exception as e:
-                            if i < 2:
-                                UI.warning(
-                                    f"  ! Restore attempt {i + 1} failed, retrying..."
-                                )
-                                time.sleep(3)
-                            else:
-                                UI.error(
-                                    f"  ! Database restore failed after 3 attempts: {e}"
-                                )
-
-                    if success:
-                        UI.success("  + Database restored successfully.")
+            if db_container:
+                self._execute_orchestrated_db_restore(
+                    db_container, db_type, sql_file, paths, project_meta
+                )
             else:
                 UI.error("  ! Could not find database container for restore.")
 
@@ -991,3 +922,92 @@ class SnapshotService(BaseHandler):
 
                 safe_rmtree(host_path)
                 host_path.mkdir(parents=True, exist_ok=True)
+
+    def _execute_orchestrated_db_restore(
+        self, db_container, db_type, sql_file, paths, project_meta
+    ):
+        """Internal helper to execute a robust SQL import into a running DB container."""
+        import subprocess
+
+        # 1. Clean Slate (LDM-410)
+        # Cloud dumps often lack DROP TABLE commands. We must wipe the target DB first.
+        if db_type == "postgresql":
+            UI.info("  - Wiping existing PostgreSQL schema...")
+            self.manager.run_command(
+                [
+                    "docker",
+                    "exec",
+                    db_container,
+                    "psql",
+                    "-U",
+                    "lportal",
+                    "-d",
+                    "lportal",
+                    "-c",
+                    "DROP SCHEMA public CASCADE; CREATE SCHEMA public; GRANT ALL ON SCHEMA public TO lportal; GRANT ALL ON SCHEMA public TO public;",
+                ],
+                check=False,
+            )
+        elif db_type in ["mysql", "mariadb"]:
+            UI.info("  - Wiping existing MySQL database...")
+            self.manager.run_command(
+                [
+                    "docker",
+                    "exec",
+                    db_container,
+                    "mysql",
+                    "-u",
+                    "lportal",
+                    "-ptest",
+                    "-e",
+                    "DROP DATABASE IF EXISTS lportal; CREATE DATABASE lportal; GRANT ALL PRIVILEGES ON lportal.* TO 'lportal'@'%';",
+                ],
+                check=False,
+            )
+
+        # 2. Build Import Command
+        import_cmd = []
+        if db_type == "postgresql":
+            import_cmd = [
+                "docker",
+                "exec",
+                "-i",
+                db_container,
+                "psql",
+                "-U",
+                "lportal",
+                "lportal",
+            ]
+        elif db_type in ["mysql", "mariadb"]:
+            import_cmd = [
+                "docker",
+                "exec",
+                "-i",
+                db_container,
+                "mysql",
+                "-u",
+                "lportal",
+                "-ptest",
+                "lportal",
+            ]
+
+        # 3. Execute with Retry
+        if import_cmd:
+            success = False
+            for i in range(3):  # Retry up to 3 times for flaky Docker IO
+                try:
+                    with open(sql_file) as f:
+                        subprocess.run(
+                            import_cmd, stdin=f, check=True, capture_output=True
+                        )
+                    success = True
+                    break
+                except Exception as e:
+                    if i < 2:
+                        UI.warning(f"  ! Restore attempt {i + 1} failed, retrying...")
+                        time.sleep(3)
+                    else:
+                        UI.error(f"  ! Database restore failed after 3 attempts: {e}")
+
+            if success:
+                UI.success("  + Database restored successfully.")

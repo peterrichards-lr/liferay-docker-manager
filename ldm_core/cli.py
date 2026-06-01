@@ -511,7 +511,15 @@ def get_parser():
         help="Target to clear: tags, seeds, samples, all (default: tags)",
     )
 
+    # Command: upgrade
     upgrade = subparsers.add_parser("upgrade", parents=[base_sub_parent])
+    upgrade.add_argument(
+        "--check",
+        "--status",
+        action="store_true",
+        dest="check_only",
+        help="Check for updates without performing the upgrade",
+    )
     upgrade.add_argument(
         "--repair",
         action="store_true",
@@ -526,14 +534,6 @@ def get_parser():
         help="Include pre-release (beta) versions during upgrade",
     )
 
-    update_check = subparsers.add_parser("update-check", parents=[base_sub_parent])
-    update_check.add_argument(
-        "--pre-release",
-        "--beta",
-        dest="pre_release",
-        action="store_true",
-        help="Include pre-release (beta) versions during check",
-    )
     subparsers.add_parser("migrate-search", parents=[base_sub_parent])
 
     doctor = subparsers.add_parser(
@@ -1002,7 +1002,6 @@ def main():
         "prune": manager.diagnostics.cmd_prune,
         "system": lambda: manager.infra.cmd_system(args.subcommand),
         "upgrade": manager.diagnostics.cmd_upgrade,
-        "update-check": manager.diagnostics.cmd_upgrade,
         "version": lambda: manager.dev.cmd_version(
             bump_type=args.bump,
             promote=args.promote,
@@ -1025,7 +1024,7 @@ def main():
             update_info["latest"] = latest
 
         update_thread = None
-        if args.command not in ["upgrade", "update-check", "completion"]:
+        if args.command not in ["upgrade", "completion"]:
             update_thread = threading.Thread(target=run_update_check, daemon=True)
             update_thread.start()
 

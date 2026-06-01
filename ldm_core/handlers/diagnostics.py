@@ -1987,6 +1987,20 @@ class DiagnosticsService:
                 return
 
             is_beta = "-" in VERSION
+            check_only = getattr(self.manager.args, "check_only", False)
+
+            if version_to_tuple(latest) <= version_to_tuple(VERSION):
+                tier = " (stable)" if not pre_release else " (pre-release)"
+                UI.success(f"LDM is already up to date v{VERSION}{tier}.")
+                return
+
+            if check_only:
+                UI.info(
+                    f"A new version of LDM is available: {UI.GREEN}v{latest}{UI.COLOR_OFF}"
+                )
+                UI.info(f"Run {UI.CYAN}ldm upgrade{UI.COLOR_OFF} to install it.")
+                return
+
             if is_beta and not pre_release:
                 # User is on beta but wants stable (Switching Tiers)
                 UI.info(
@@ -1997,10 +2011,6 @@ class DiagnosticsService:
                 )
                 if not UI.confirm("Switch back to the stable release tier?", "N"):
                     return
-            elif version_to_tuple(latest) <= version_to_tuple(VERSION):
-                tier = " (stable)" if not pre_release else " (pre-release)"
-                UI.success(f"LDM is already up to date v{VERSION}{tier}.")
-                return
 
         if is_repair:
             UI.info(f"Repairing current version: v{latest}")
