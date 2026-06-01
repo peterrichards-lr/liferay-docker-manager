@@ -591,10 +591,14 @@ class WorkspaceService(BaseHandler):
         """Internal helper to execute the cloud fetch/restore/sync sequence."""
         # Persist the chosen environment for future cloud operations
         project_path = self.manager.detect_project_path(project_name, for_init=True)
-        if project_path:
-            p_meta = self.manager.read_meta(project_path)
-            p_meta["cloud_env_id"] = env_id
-            self.manager.write_meta(project_path, p_meta)
+        if not project_path:
+            return
+
+        p_meta = self.manager.read_meta(project_path)
+        p_meta["cloud_env_id"] = env_id
+        self.manager.write_meta(project_path, p_meta)
+
+        paths = self.manager.setup_paths(project_path)
 
         UI.info(f"Fetching backups from '{env_id}'...")
         old_download = getattr(self.manager.args, "download", False)
@@ -607,8 +611,11 @@ class WorkspaceService(BaseHandler):
             self.manager.args.project = project_name
 
         try:
-            # LDM-402: Ensure compose file exists so restore can start DB container
-            self.manager.composer.cmd_compose(project_id=project_name)
+            # LDM-402: Ensure compose file exists so restore can start DB container.
+            # We use no_up=True to only scaffold the environment and generate docker-compose.yml
+            self.manager.runtime.sync_stack(
+                paths, p_meta, no_up=True, show_summary=False
+            )
 
             # Pass the original source path down to cloud fetch
             # so sync_env can find the LCP.json file
