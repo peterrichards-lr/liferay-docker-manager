@@ -60,7 +60,9 @@ class CloudService:
         UI.die("Authentication required for cloud operations.")
         return None
 
-    def _run_lcp_cmd(self, args, capture_json=True, project=None, env=None):
+    def _run_lcp_cmd(
+        self, args, capture_json=True, project=None, env=None, spinner=None
+    ):
         """Runs an LCP command and returns parsed JSON or output string."""
         lcp_bin = shutil.which("lcp")
         if not lcp_bin:
@@ -80,6 +82,35 @@ class CloudService:
             cmd.extend(["--json"])
 
         try:
+            if spinner:
+                process = subprocess.Popen(
+                    cmd,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    text=True,
+                    bufsize=1,
+                    universal_newlines=True,
+                )
+                output = []
+                if process.stdout:
+                    for line in iter(process.stdout.readline, ""):
+                        clean_line = line.strip()
+                        if clean_line:
+                            # Extract progress or interesting info if possible
+                            # e.g., "[1/100] Downloading" or "Backup ready"
+                            msg = clean_line
+                            if len(msg) > 60:
+                                msg = msg[:57] + "..."
+                            spinner.update_message(msg)
+                            output.append(clean_line)
+                    process.stdout.close()
+                returncode = process.wait()
+                full_output = "\n".join(output)
+                if returncode != 0:
+                    UI.error(f"LCP command failed: {full_output}")
+                    return None
+                return full_output
+
             if capture_json:
                 res = subprocess.run(cmd, capture_output=True, text=True, check=True)
                 return json.loads(res.stdout)
@@ -93,9 +124,11 @@ class CloudService:
             UI.error(f"LCP error: {e}")
             return None
 
-    def _get_cloud_liferay_version(self, cp_id, target_env):
+    def _get_cloud_liferay_version(self, cp_id, target_env, spinner=None):
         """Attempts to detect the Liferay version from the cloud environment configuration."""
-        data = self._run_lcp_cmd(["list"], project=cp_id, env=target_env)
+        data = self._run_lcp_cmd(
+            ["list"], project=cp_id, env=target_env, spinner=spinner
+        )
         if not data:
             return None
 
@@ -142,7 +175,8 @@ class CloudService:
 
         if getattr(self.manager.args, "list_envs", False) or not target_env:
             UI.heading(f"Available Liferay Cloud Environments (Project: {cp_id})")
-            data = self._run_lcp_cmd(["list"])
+            with UI.spinner("Fetching environments...") as s:
+                data = self._run_lcp_cmd(["list"], spinner=s)
             if data:
                 print(data)  # Since it's plain text now, just print it
             return
@@ -206,7 +240,10 @@ class CloudService:
 
         if getattr(self.manager.args, "list_backups", False):
             UI.heading(f"Liferay Cloud Backups: {cp_id} / {target_env}")
-            data = self._run_lcp_cmd(["backup", "list"], project=cp_id, env=target_env)
+            with UI.spinner("Fetching backup list...") as s:
+                data = self._run_lcp_cmd(
+                    ["backup", "list"], project=cp_id, env=target_env, spinner=s
+                )
             if data:
                 backups = _parse_backups_text(data)
                 for backup in backups[:10]:  # Show latest 10
@@ -287,7 +324,10 @@ class CloudService:
         ):
             UI.heading(f"Downloading Cloud Backups: {cp_id} / {target_env}")
             # Find latest backup ID
-            data = self._run_lcp_cmd(["backup", "list"], project=cp_id, env=target_env)
+            with UI.spinner("Fetching backup list...") as s:
+                data = self._run_lcp_cmd(
+                    ["backup", "list"], project=cp_id, env=target_env, spinner=s
+                )
             backups = _parse_backups_text(data)
 
             if not backups:
@@ -308,19 +348,21 @@ class CloudService:
             snapshot_dir.mkdir(parents=True, exist_ok=True)
 
             # Download
-            self._run_lcp_cmd(
-                [
-                    "backup",
-                    "download",
-                    "--backupId",
-                    backup_id,
-                    "--dest",
-                    str(snapshot_dir),
-                ],
-                capture_json=False,
-                project=cp_id,
-                env=target_env,
-            )
+            with UI.spinner(f"Downloading Cloud Backup: {backup_id}...") as s:
+                self._run_lcp_cmd(
+                    [
+                        "backup",
+                        "download",
+                        "--backupId",
+                        backup_id,
+                        "--dest",
+                        str(snapshot_dir),
+                    ],
+                    capture_json=False,
+                    project=cp_id,
+                    env=target_env,
+                    spinner=s,
+                )
             UI.success(f"Backups downloaded to {snapshot_dir}")
 
             # Checksum Verification
@@ -329,7 +371,10 @@ class CloudService:
             if getattr(self.manager.args, "restore", False):
                 tag_for_seed = None
                 if is_new_project:
-                    tag_for_seed = self._get_cloud_liferay_version(cp_id, target_env)
+                    with UI.spinner("Detecting remote Liferay version...") as s:
+                        tag_for_seed = self._get_cloud_liferay_version(
+                            cp_id, target_env, spinner=s
+                        )
                 self.hydrate_cloud_backup(
                     project_id, snapshot_dir, tag_for_seed=tag_for_seed
                 )

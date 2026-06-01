@@ -129,6 +129,10 @@ class UI:
             sys.stdout.write("\r" + " " * (len(self.message) + 6) + "\r")
             sys.stdout.flush()
 
+        def update_message(self, message):
+            """Updates the message displayed next to the spinner."""
+            self.message = message
+
         def __enter__(self):
             if getattr(UI, "NON_INTERACTIVE", False) or not sys.stdout.isatty():
                 UI.info(self.message)
