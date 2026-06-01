@@ -749,13 +749,10 @@ class SnapshotService(BaseHandler):
         # LDM-422: Flag for one-time automatic reindex on next boot
         # Liferay won't automatically reindex imported databases. We set a metadata
         # flag that tells the composer to inject index.on.startup=true for the next run.
-        try:
-            p_meta = self.manager.read_meta(paths["root"])
-            p_meta["reindex_required"] = "true"
-            self.manager.write_meta(paths["root"], p_meta)
+        if self.flag_reindex(paths["root"]):
             UI.info("  + Scheduled automatic search reindex for next boot.")
-        except Exception as e:
-            UI.warning(f"Could not schedule automatic reindex: {e}")
+        else:
+            UI.warning("  ! Could not schedule automatic reindex (metadata missing).")
 
         # --- OPTIONAL STARTUP (LDM-388) ---
         no_run = getattr(self.manager.args, "no_run", False)

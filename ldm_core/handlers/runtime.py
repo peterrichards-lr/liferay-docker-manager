@@ -6,14 +6,16 @@ import time
 from datetime import datetime
 from pathlib import Path
 
+from ldm_core.handlers.base import BaseHandler
 from ldm_core.ui import UI
 from ldm_core.utils import get_actual_home, get_compose_cmd, open_browser
 
 
-class RuntimeService:
+class RuntimeService(BaseHandler):
     """Service for container lifecycle and orchestration."""
 
     def __init__(self, manager=None):
+        super().__init__(manager.args if manager else None)
         self.manager = manager
 
     def cmd_run(self, project_id=None, is_restart=False):
@@ -153,6 +155,11 @@ class RuntimeService:
                 )
 
             project_meta["port"] = port
+
+            # LDM-422: Handle Manual Reindex Flag
+            if getattr(self.manager.args, "reindex", False):
+                self.flag_reindex(paths["root"])
+                project_meta["reindex_required"] = "true"
 
             # Performance Overrides
             no_vol_cache = (
@@ -1539,3 +1546,19 @@ class RuntimeService:
         if not self.manager.non_interactive:
             if UI.ask("Restart project now?", "Y").upper() == "Y":
                 self.cmd_run(project_id)
+
+    def cmd_reindex(self, project_id=None):
+        """Schedules a full search reindex for the next boot."""
+        root = self.manager.detect_project_path(project_id)
+        if not root:
+            return
+
+        if self.flag_reindex(root):
+            UI.success(
+                f"Project '{root.name}' scheduled for search reindex on next boot."
+            )
+            if not self.manager.non_interactive:
+                if UI.confirm("Do you want to restart the project now to apply?", "Y"):
+                    self.cmd_run(root.name)
+        else:
+            UI.error(f"Failed to schedule reindex for project '{root.name}'.")

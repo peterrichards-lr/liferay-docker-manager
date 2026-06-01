@@ -48,6 +48,16 @@ class BaseHandler:
     def cmd_edit(self, *args, **kwargs): ...
     def cmd_upgrade(self, *args, **kwargs): ...
     def cmd_version(self, *args, **kwargs): ...
+
+    def flag_reindex(self, project_path):
+        """Marks the project for a full search reindex on next boot."""
+        meta = self.manager.read_meta(project_path)
+        if meta:
+            meta["reindex_required"] = "true"
+            self.manager.write_meta(project_path, meta)
+            return True
+        return False
+
     def cmd_dev_setup(self, *args, **kwargs): ...
     def cmd_migrate_search(self, *args, **kwargs): ...
 

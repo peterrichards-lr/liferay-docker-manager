@@ -104,6 +104,11 @@ def get_parser():
     run.add_argument("--gogo-port", type=int)
     run.add_argument("--jvm-args", help="Override Liferay JVM arguments")
     run.add_argument(
+        "--reindex",
+        action="store_true",
+        help="Force a full search reindex on startup",
+    )
+    run.add_argument(
         "--no-vol-cache",
         action="store_true",
         help="Disable :cached volumes on macOS/Windows",
@@ -389,6 +394,11 @@ def get_parser():
     feat.add_argument("-p", "--project", dest="project_flag")
     feat.add_argument("--enable", nargs="+", help="Enable one or more feature flags")
     feat.add_argument("--disable", nargs="+", help="Disable one or more feature flags")
+
+    # Command: reindex
+    reindex = subparsers.add_parser("reindex", parents=[base_sub_parent])
+    reindex.add_argument("project", nargs="?")
+    reindex.add_argument("-p", "--project", dest="project_flag")
 
     # Command: snapshot, restore
     snap = subparsers.add_parser("snapshot", parents=[base_sub_parent])
@@ -934,6 +944,7 @@ def main():
             enable=getattr(args, "enable", None),
             disable=getattr(args, "disable", None),
         ),
+        "reindex": lambda: manager.runtime.cmd_reindex(getattr(args, "project", None)),
         "snapshot": lambda: manager.snapshot.cmd_snapshot(
             getattr(args, "project", None)
         ),
