@@ -168,30 +168,39 @@ class CloudService:
 
                 parsed = []
                 lines = data_in.strip().splitlines()
-                in_data = False
+
+                # Regex for Liferay Cloud Backup IDs: dxpcloud-xxx-timestamp or bk123456
+                # Usually 20-50 chars, alphanumeric and hyphens
+                id_pattern = re.compile(r"\b(dxpcloud-[a-z0-9-]+|bk[0-9]{6,})\b")
+
                 for raw_line in lines:
                     line = raw_line.strip()
-                    if not line:
+                    if (
+                        not line
+                        or "Backup ID" in line
+                        or "Backup Id" in line
+                        or "----" in line
+                    ):
                         continue
 
-                    if line.startswith("Backup ID") or line.startswith("Backup Id"):
-                        in_data = True
-                        continue
-                    if line.startswith("----"):
-                        continue
+                    # Strategy 1: Greedy Regex (Most robust)
+                    match = id_pattern.search(line)
+                    if match:
+                        backup_id = match.group(1)
+                        # Extract date (rough heuristic for table columns)
+                        parts = [p.strip() for p in re.split(r"\s{2,}|\|", line)]
+                        # Usually index 2 (if piped) or 4 (if spaced)
+                        created_date = "unknown"
+                        for p in parts:
+                            if any(
+                                target in p
+                                for target in ["AM", "PM", "2024", "2025", "2026"]
+                            ):
+                                created_date = p
+                                break
 
-                    if in_data:
-                        if "|" in line:
-                            parts = [p.strip() for p in line.split("|")]
-                            if len(parts) >= 3 and parts[0]:
-                                parsed.append({"id": parts[0], "created": parts[2]})
-                        else:
-                            parts = [p.strip() for p in re.split(r"\s{2,}", line)]
-                            if len(parts) >= 2 and parts[0]:
-                                created_idx = 4 if len(parts) > 4 else -1
-                                parsed.append(
-                                    {"id": parts[0], "created": parts[created_idx]}
-                                )
+                        parsed.append({"id": backup_id, "created": created_date})
+
                 return parsed
             return []
 
