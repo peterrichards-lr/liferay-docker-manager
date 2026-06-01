@@ -996,18 +996,66 @@ class SnapshotService(BaseHandler):
             success = False
             for i in range(3):  # Retry up to 3 times for flaky Docker IO
                 try:
-                    with open(sql_file) as f:
-                        subprocess.run(
+                    # LDM-410: Use binary mode ("rb") to avoid UnicodeDecodeErrors with non-UTF8 dumps
+                    with open(sql_file, "rb") as f:
+                        res = subprocess.run(
                             import_cmd, stdin=f, check=True, capture_output=True
                         )
                     success = True
                     break
+                except subprocess.CalledProcessError as e:
+                    err_out = e.stderr.decode(errors="ignore") if e.stderr else str(e)
+                    if i < 2:
+                        UI.warning(f"  ! Restore attempt {i + 1} failed, retrying...")
+                        UI.debug(f"  ! Error: {err_out}")
+                        time.sleep(3)
+                    else:
+                        UI.error(
+                            f"  ! Database restore failed after 3 attempts: {err_out}"
+                        )
                 except Exception as e:
                     if i < 2:
                         UI.warning(f"  ! Restore attempt {i + 1} failed, retrying...")
+                        UI.debug(f"  ! Error: {e}")
                         time.sleep(3)
                     else:
                         UI.error(f"  ! Database restore failed after 3 attempts: {e}")
 
             if success:
                 UI.success("  + Database restored successfully.")
+
+                # LDM-410: Auto-update virtualhost to match local hostname
+                host_name = project_meta.get("host_name", "localhost")
+                if db_type == "postgresql":
+                    UI.info(f"  - Synchronizing Virtual Host entries to: {host_name}")
+                    self.manager.run_command(
+                        [
+                            "docker",
+                            "exec",
+                            db_container,
+                            "psql",
+                            "-U",
+                            "lportal",
+                            "-d",
+                            "lportal",
+                            "-c",
+                            f"UPDATE virtualhost SET hostname = '{host_name}' WHERE defaultvirtualhost = 't';",  # nosec B608
+                        ],
+                        check=False,
+                    )
+                elif db_type in ["mysql", "mariadb"]:
+                    UI.info(f"  - Synchronizing Virtual Host entries to: {host_name}")
+                    self.manager.run_command(
+                        [
+                            "docker",
+                            "exec",
+                            db_container,
+                            "mysql",
+                            "-u",
+                            "lportal",
+                            "-ptest",
+                            "-e",
+                            f"UPDATE lportal.virtualhost SET hostname = '{host_name}' WHERE defaultvirtualhost = '1';",  # nosec B608
+                        ],
+                        check=False,
+                    )

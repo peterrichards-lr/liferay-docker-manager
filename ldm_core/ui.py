@@ -140,9 +140,9 @@ class UI:
                 # Write frame and message
                 # \r moves to start of line
                 # \033[K clears from cursor to end of line (ANSI standard)
-                # We also add 3 trailing spaces as a fallback for non-ANSI terminals
+                # We write \033[K twice (start and after msg) for maximum compatibility
                 sys.stdout.write(
-                    f"\r\033[K  {UI.CYAN}{self.frames[i]}{UI.COLOR_OFF}  {msg}   "
+                    f"\r\033[K  {UI.CYAN}{self.frames[i]}{UI.COLOR_OFF}  {msg}\033[K"
                 )
                 sys.stdout.flush()
 
