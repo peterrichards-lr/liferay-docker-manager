@@ -596,7 +596,6 @@ class SnapshotService(BaseHandler):
             UI.info(f"Triggering orchestrated database restore ({db_type})...")
 
             # 1. Ensure DB container is running
-            # LDM-388: Priority: Metadata -> Explicit Heuristic
             db_container = project_meta.get("db_container_name")
             if not db_container:
                 for suffix in ["-db", "-db-1"]:
@@ -610,7 +609,6 @@ class SnapshotService(BaseHandler):
             if not db_container or not self.manager.run_command(
                 ["docker", "ps", "-q", "-f", f"name=^{db_container}$"]
             ):
-                # Try starting it via Compose
                 from ldm_core.utils import get_compose_cmd
 
                 compose_base = get_compose_cmd()
@@ -619,9 +617,10 @@ class SnapshotService(BaseHandler):
                     self.manager.run_command(
                         [*compose_base, "up", "-d", "db"], cwd=str(paths["root"])
                     )
-                    time.sleep(5)
 
-                    if not db_container:
+                    # Wait for DB to be responsive
+                    for _i in range(10):
+                        time.sleep(2)
                         for suffix in ["-db", "-db-1"]:
                             candidate = f"{container_name}{suffix}"
                             if self.manager.run_command(
@@ -629,10 +628,34 @@ class SnapshotService(BaseHandler):
                             ):
                                 db_container = candidate
                                 break
+                        if db_container:
+                            break
 
             if db_container and self.manager.run_command(
                 ["docker", "ps", "-q", "-f", f"name=^{db_container}$"]
             ):
+                import subprocess
+
+                # LDM-410: Wipe existing data before Cloud restore
+                # Cloud dumps often use 'search_path = ""' which doesn't DROP existing tables
+                if db_type == "postgresql":
+                    UI.info("  - Wiping existing PostgreSQL schema...")
+                    self.manager.run_command(
+                        [
+                            "docker",
+                            "exec",
+                            db_container,
+                            "psql",
+                            "-U",
+                            "lportal",
+                            "-d",
+                            "lportal",
+                            "-c",
+                            "DROP SCHEMA public CASCADE; CREATE SCHEMA public; GRANT ALL ON SCHEMA public TO lportal; GRANT ALL ON SCHEMA public TO public;",
+                        ],
+                        check=False,
+                    )
+
                 import_cmd = []
                 if db_type == "postgresql":
                     import_cmd = [
@@ -659,16 +682,28 @@ class SnapshotService(BaseHandler):
                     ]
 
                 if import_cmd:
-                    try:
-                        import subprocess
+                    success = False
+                    for i in range(3):  # Retry up to 3 times for flaky Docker IO
+                        try:
+                            with open(sql_file) as f:
+                                subprocess.run(
+                                    import_cmd, stdin=f, check=True, capture_output=True
+                                )
+                            success = True
+                            break
+                        except Exception as e:
+                            if i < 2:
+                                UI.warning(
+                                    f"  ! Restore attempt {i + 1} failed, retrying..."
+                                )
+                                time.sleep(3)
+                            else:
+                                UI.error(
+                                    f"  ! Database restore failed after 3 attempts: {e}"
+                                )
 
-                        with open(sql_file) as f:
-                            subprocess.run(
-                                import_cmd, stdin=f, check=True, capture_output=True
-                            )
+                    if success:
                         UI.success("  + Database restored successfully.")
-                    except Exception as e:
-                        UI.error(f"  ! Database restore failed: {e}")
             else:
                 UI.error("  ! Could not find database container for restore.")
 
