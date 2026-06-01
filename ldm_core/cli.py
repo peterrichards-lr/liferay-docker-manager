@@ -174,6 +174,10 @@ def get_parser():
     imp.add_argument("-p", "--project", dest="project_flag")
     imp.add_argument("--cloud-project", help="Liferay Cloud project ID")
     imp.add_argument("--target-env", default="local")
+    imp.add_argument(
+        "--hydrate-from",
+        help="Automatically hydrate data from a Liferay Cloud environment",
+    )
     imp.add_argument("--no-run", action="store_true")
     imp.add_argument("--backup-dir")
     imp.add_argument("--build", action="store_true")
@@ -262,6 +266,10 @@ def get_parser():
     init_from.add_argument("-p", "--project", dest="project_flag")
     init_from.add_argument("--cloud-project", help="Liferay Cloud project ID")
     init_from.add_argument("--target-env", default="local")
+    init_from.add_argument(
+        "--hydrate-from",
+        help="Automatically hydrate data from a Liferay Cloud environment",
+    )
     init_from.add_argument("--build", action="store_true")
     init_from.add_argument("--host-name")
     init_from.add_argument("--ssl", action="store_true", default=None)

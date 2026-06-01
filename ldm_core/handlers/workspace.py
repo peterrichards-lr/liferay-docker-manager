@@ -563,6 +563,14 @@ class WorkspaceService(BaseHandler):
             or (source / "lcp.json").exists()
         )
 
+        hydrate_env = getattr(self.manager.args, "hydrate_from", None)
+
+        # Automation Path: If --hydrate-from is provided, we skip prompts
+        if is_cloud and hydrate_env:
+            self._execute_cloud_hydration(hydrate_env, source_path, project_name)
+            return
+
+        # Interactive Path
         if is_cloud and not self.manager.non_interactive:
             UI.info("\n> Detected Liferay Cloud Workspace structure.")
             if UI.confirm(
@@ -575,55 +583,58 @@ class WorkspaceService(BaseHandler):
                     default_env,
                 )
                 if env_id:
-                    env_id = env_id.strip()
-                    # Persist the chosen environment for future cloud operations
-                    project_path = self.manager.detect_project_path(
-                        project_name, for_init=True
+                    self._execute_cloud_hydration(
+                        env_id.strip(), source_path, project_name
                     )
-                    if project_path:
-                        p_meta = self.manager.read_meta(project_path)
-                        p_meta["cloud_env_id"] = env_id
-                        self.manager.write_meta(project_path, p_meta)
 
-                    UI.info(f"Fetching backups from '{env_id}'...")
-                    old_download = getattr(self.manager.args, "download", False)
-                    old_restore = getattr(self.manager.args, "restore", False)
-                    old_sync_env = getattr(self.manager.args, "sync_env", False)
-                    old_env_id = getattr(self.manager.args, "env_id", None)
-                    old_project = getattr(self.manager.args, "project", None)
+    def _execute_cloud_hydration(self, env_id, source_path, project_name):
+        """Internal helper to execute the cloud fetch/restore/sync sequence."""
+        # Persist the chosen environment for future cloud operations
+        project_path = self.manager.detect_project_path(project_name, for_init=True)
+        if project_path:
+            p_meta = self.manager.read_meta(project_path)
+            p_meta["cloud_env_id"] = env_id
+            self.manager.write_meta(project_path, p_meta)
 
-                    if project_name:
-                        self.manager.args.project = project_name
+        UI.info(f"Fetching backups from '{env_id}'...")
+        old_download = getattr(self.manager.args, "download", False)
+        old_restore = getattr(self.manager.args, "restore", False)
+        old_sync_env = getattr(self.manager.args, "sync_env", False)
+        old_env_id = getattr(self.manager.args, "env_id", None)
+        old_project = getattr(self.manager.args, "project", None)
 
-                    try:
-                        # Pass the original source path down to cloud fetch
-                        # so sync_env can find the LCP.json file
-                        self.manager.args.source_path = str(source)
+        if project_name:
+            self.manager.args.project = project_name
 
-                        # Fetch Data & Restore
-                        self.manager.args.download = True
-                        self.manager.args.restore = True
-                        self.manager.args.sync_env = False
-                        self.manager.args.env_id = env_id
-                        self.manager.cloud.cmd_cloud_fetch()
+        try:
+            # Pass the original source path down to cloud fetch
+            # so sync_env can find the LCP.json file
+            self.manager.args.source_path = str(source_path)
 
-                        # Sync Env Vars
-                        self.manager.args.download = False
-                        self.manager.args.restore = False
-                        self.manager.args.sync_env = True
-                        self.manager.cloud.cmd_cloud_fetch()
-                    except SystemExit:
-                        UI.warning(
-                            "Cloud hydration could not be completed. Falling back to local runtime only."
-                        )
-                    finally:
-                        self.manager.args.download = old_download
-                        self.manager.args.restore = old_restore
-                        self.manager.args.sync_env = old_sync_env
-                        self.manager.args.env_id = old_env_id
-                        self.manager.args.project = old_project
-                        if hasattr(self.manager.args, "source_path"):
-                            delattr(self.manager.args, "source_path")
+            # Fetch Data & Restore
+            self.manager.args.download = True
+            self.manager.args.restore = True
+            self.manager.args.sync_env = False
+            self.manager.args.env_id = env_id
+            self.manager.cloud.cmd_cloud_fetch()
+
+            # Sync Env Vars
+            self.manager.args.download = False
+            self.manager.args.restore = False
+            self.manager.args.sync_env = True
+            self.manager.cloud.cmd_cloud_fetch()
+        except SystemExit:
+            UI.warning(
+                "Cloud hydration could not be completed. Falling back to local runtime only."
+            )
+        finally:
+            self.manager.args.download = old_download
+            self.manager.args.restore = old_restore
+            self.manager.args.sync_env = old_sync_env
+            self.manager.args.env_id = old_env_id
+            self.manager.args.project = old_project
+            if hasattr(self.manager.args, "source_path"):
+                delattr(self.manager.args, "source_path")
 
     def cmd_init_from(self, source_path):
         """Initialize project with a persistent link to a source workspace and start monitoring."""
