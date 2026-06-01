@@ -732,6 +732,51 @@ class SnapshotService(BaseHandler):
 
         UI.success("Restore complete.")
 
+        # LDM-421: Inject one-time automatic reindex script
+        # Liferay won't automatically reindex imported databases. We drop a self-destructing
+        # Groovy script into the scripts/ folder so Liferay processes it on next boot.
+        try:
+            reindex_script_path = paths["scripts"] / "z_ldm_auto_reindex.groovy"
+            script_content = """import com.liferay.portal.kernel.search.IndexerRegistryUtil;
+import java.io.File;
+
+System.out.println("\\n=== [LDM] Starting Automated Post-Restore Reindex ===");
+long startTime = System.currentTimeMillis();
+
+try {
+    def indexers = IndexerRegistryUtil.getIndexers();
+    int total = indexers.size();
+    int current = 0;
+
+    indexers.each { indexer ->
+        current++;
+        try {
+            indexer.reindex();
+            System.out.println("[LDM] Reindexed " + current + "/" + total + ": " + indexer.getClassName());
+        } catch (Exception e) {
+            System.out.println("[LDM] Failed to reindex " + indexer.getClassName() + ": " + e.getMessage());
+        }
+    }
+    long duration = (System.currentTimeMillis() - startTime) / 1000;
+    System.out.println("=== [LDM] Reindex Complete (" + duration + "s) ===");
+} catch (Exception e) {
+    System.out.println("=== [LDM] Reindex Failed: " + e.getMessage() + " ===");
+} finally {
+    // Self-destruct
+    File scriptFile = new File("/mnt/liferay/scripts/z_ldm_auto_reindex.groovy");
+    if (scriptFile.exists()) {
+        scriptFile.delete();
+        System.out.println("[LDM] Auto-reindex script removed.");
+    }
+}
+"""
+            from ldm_core.utils import safe_write_text
+
+            safe_write_text(reindex_script_path, script_content)
+            UI.info("  + Scheduled automatic search reindex for next boot.")
+        except Exception as e:
+            UI.warning(f"Could not schedule automatic reindex: {e}")
+
         # --- OPTIONAL STARTUP (LDM-388) ---
         no_run = getattr(self.manager.args, "no_run", False)
         up_flag = getattr(self.manager.args, "up", False)
