@@ -183,6 +183,11 @@ def get_parser():
         "--hydrate-from",
         help="Automatically hydrate data from a Liferay Cloud environment",
     )
+    imp.add_argument(
+        "--no-env-sync",
+        action="store_true",
+        help="Skip syncing environment variables from Liferay Cloud",
+    )
     imp.add_argument("--no-run", action="store_true")
     imp.add_argument("--backup-dir")
     imp.add_argument("--build", action="store_true")
@@ -274,6 +279,11 @@ def get_parser():
     init_from.add_argument(
         "--hydrate-from",
         help="Automatically hydrate data from a Liferay Cloud environment",
+    )
+    init_from.add_argument(
+        "--no-env-sync",
+        action="store_true",
+        help="Skip syncing environment variables from Liferay Cloud",
     )
     init_from.add_argument("--build", action="store_true")
     init_from.add_argument("--host-name")
@@ -746,6 +756,11 @@ def get_parser():
     cloud.add_argument("--download", action="store_true")
     cloud.add_argument("--restore", action="store_true")
     cloud.add_argument("--sync-env", action="store_true")
+    cloud.add_argument(
+        "--no-env-sync",
+        action="store_true",
+        help="Skip syncing environment variables from Liferay Cloud",
+    )
     cloud.add_argument("--logs", action="store_true")
     cloud.add_argument("-f", "--follow", action="store_true")
 
