@@ -126,7 +126,14 @@ class UI:
                 i = (i + 1) % len(self.frames)
 
             # Clear line when done
-            sys.stdout.write("\r" + " " * (len(self.message) + 6) + "\r")
+            # LDM-402: Use a more robust way to clear the line
+            import shutil
+
+            try:
+                columns, _ = shutil.get_terminal_size()
+            except Exception:
+                columns = 80
+            sys.stdout.write("\r" + " " * (columns - 1) + "\r")
             sys.stdout.flush()
 
         def update_message(self, message):

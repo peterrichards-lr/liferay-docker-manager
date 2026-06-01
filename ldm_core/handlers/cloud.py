@@ -97,12 +97,22 @@ class CloudService:
                     for line in iter(process.stdout.readline, ""):
                         clean_line = line.strip()
                         if clean_line:
-                            # Extract progress or interesting info if possible
-                            # e.g., "[1/100] Downloading" or "Backup ready"
+                            # LDM-402: Improve progress visibility
+                            # If it's a known slow step or progress indicator, show it.
+                            # We increase the limit to 100 to allow the LCP version note to be seen.
                             msg = clean_line
-                            if len(msg) > 60:
-                                msg = msg[:57] + "..."
-                            spinner.update_message(msg)
+                            if len(msg) > 100:
+                                msg = msg[:97] + "..."
+
+                            # Filter out useless noise but keep important notes
+                            if (
+                                "require minimum service version" in msg
+                                or "✔" in msg
+                                or "Successfully" in msg
+                                or "[" in msg
+                            ):
+                                spinner.update_message(msg)
+
                             output.append(clean_line)
                     process.stdout.close()
                 returncode = process.wait()
@@ -367,6 +377,8 @@ class CloudService:
                         backup_id,
                         "--dest",
                         str(snapshot_dir),
+                        "--doclib",
+                        "--database",
                     ],
                     capture_json=False,
                     project=cp_id,
