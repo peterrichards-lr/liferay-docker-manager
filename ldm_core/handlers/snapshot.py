@@ -1007,30 +1007,50 @@ class SnapshotService(BaseHandler):
             END $$;
             """
             # LDM-418: Execute via stdin instead of -c to prevent multi-line parsing failures across docker exec
-            try:
-                import subprocess
+            # We wrap this in a retry loop because a freshly created Postgres container
+            # will initialize and then restart itself, causing temporary connection refusals.
+            wipe_success = False
+            for _wipe_attempt in range(6):  # Up to ~30 seconds wait
+                try:
+                    import subprocess
 
-                subprocess.run(
-                    [
-                        "docker",
-                        "exec",
-                        "-i",
-                        db_container,
-                        "psql",
-                        "-U",
-                        "lportal",
-                        "-d",
-                        "lportal",
-                    ],
-                    input=wipe_script.encode("utf-8"),
-                    check=True,
-                    capture_output=True,
+                    subprocess.run(
+                        [
+                            "docker",
+                            "exec",
+                            "-i",
+                            db_container,
+                            "psql",
+                            "-U",
+                            "lportal",
+                            "-d",
+                            "lportal",
+                        ],
+                        input=wipe_script.encode("utf-8"),
+                        check=True,
+                        capture_output=True,
+                    )
+                    wipe_success = True
+                    break
+                except subprocess.CalledProcessError as e:
+                    err_out = e.stderr.decode(errors="ignore") if e.stderr else str(e)
+                    if (
+                        "shutting down" in err_out.lower()
+                        or "starting up" in err_out.lower()
+                    ):
+                        UI.debug(f"DB initializing, waiting... ({err_out.strip()})")
+                        time.sleep(5)
+                    else:
+                        UI.warning(f"  ! Non-fatal wipe error: {err_out}")
+                        break  # Other SQL error, stop retrying
+                except Exception as e:
+                    UI.warning(f"  ! Wipe encountered an error: {e}")
+                    break
+
+            if not wipe_success:
+                UI.warning(
+                    "  ! Could not confirm successful schema wipe. Restore may fail."
                 )
-            except subprocess.CalledProcessError as e:
-                err_out = e.stderr.decode(errors="ignore") if e.stderr else str(e)
-                UI.warning(f"  ! Non-fatal wipe error: {err_out}")
-            except Exception as e:
-                UI.warning(f"  ! Wipe encountered an error: {e}")
 
         elif db_type in ["mysql", "mariadb"]:
             UI.info("  - Wiping existing MySQL database...")
