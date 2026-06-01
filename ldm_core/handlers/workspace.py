@@ -575,6 +575,7 @@ class WorkspaceService(BaseHandler):
                     default_env,
                 )
                 if env_id:
+                    env_id = env_id.strip()
                     # Persist the chosen environment for future cloud operations
                     project_path = self.manager.detect_project_path(
                         project_name, for_init=True
