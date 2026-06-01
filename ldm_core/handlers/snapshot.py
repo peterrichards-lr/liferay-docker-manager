@@ -944,7 +944,7 @@ class SnapshotService(BaseHandler):
                     db_container,
                     "psql",
                     "-U",
-                    "lportal",
+                    "postgres",
                     "-d",
                     "lportal",
                     "-c",
@@ -1032,6 +1032,7 @@ class SnapshotService(BaseHandler):
                 host_name = project_meta.get("host_name", "localhost")
                 if db_type == "postgresql":
                     UI.info(f"  - Synchronizing Virtual Host entries to: {host_name}")
+                    # Use postgres superuser for guaranteed permissions
                     self.manager.run_command(
                         [
                             "docker",
@@ -1039,16 +1040,17 @@ class SnapshotService(BaseHandler):
                             db_container,
                             "psql",
                             "-U",
-                            "lportal",
+                            "postgres",
                             "-d",
                             "lportal",
                             "-c",
-                            f"UPDATE virtualhost SET hostname = '{host_name}';",  # nosec B608
+                            f"UPDATE virtualhost SET hostname = '{host_name}'; COMMIT;",  # nosec B608
                         ],
                         check=False,
                     )
                 elif db_type in ["mysql", "mariadb"]:
                     UI.info(f"  - Synchronizing Virtual Host entries to: {host_name}")
+                    # Use root for guaranteed permissions
                     self.manager.run_command(
                         [
                             "docker",
@@ -1056,7 +1058,7 @@ class SnapshotService(BaseHandler):
                             db_container,
                             "mysql",
                             "-u",
-                            "lportal",
+                            "root",
                             "-ptest",
                             "-e",
                             f"UPDATE lportal.virtualhost SET hostname = '{host_name}';",  # nosec B608
