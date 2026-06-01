@@ -126,9 +126,10 @@ class UI:
                     columns = 80
 
                 # Ensure we don't exceed terminal width with the message
+                # We use a 15-char margin to be extremely safe with colors/frames
                 msg = self.message
-                if len(msg) > (columns - 12):
-                    truncated = msg[: (columns - 15)]
+                if len(msg) > (columns - 15):
+                    truncated = msg[: (columns - 18)]
                     # Heuristic: Try to snap to the last whitespace to avoid cutting words
                     last_space = truncated.rfind(" ")
                     if last_space > (columns // 2):
@@ -139,8 +140,9 @@ class UI:
                 # Write frame and message
                 # \r moves to start of line
                 # \033[K clears from cursor to end of line (ANSI standard)
+                # We also add 3 trailing spaces as a fallback for non-ANSI terminals
                 sys.stdout.write(
-                    f"\r\033[K  {UI.CYAN}{self.frames[i]}{UI.COLOR_OFF}  {msg}"
+                    f"\r\033[K  {UI.CYAN}{self.frames[i]}{UI.COLOR_OFF}  {msg}   "
                 )
                 sys.stdout.flush()
 
