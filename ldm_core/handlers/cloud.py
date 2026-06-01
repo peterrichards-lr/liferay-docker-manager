@@ -153,6 +153,12 @@ class CloudService:
             if isinstance(data_in, list):
                 return data_in
             if isinstance(data_in, str):
+                import re
+
+                # Strip ANSI escape sequences from LCP CLI output
+                ansi_escape = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
+                data_in = ansi_escape.sub("", data_in)
+
                 if (
                     "No backups found" in data_in
                     or "Failed to fetch" in data_in
@@ -161,18 +167,31 @@ class CloudService:
                     return []
 
                 parsed = []
-                lines = data_in.strip().split("\n")
+                lines = data_in.strip().splitlines()
                 in_data = False
-                for line in lines:
-                    if line.startswith("----") or line.startswith("Backup Id"):
-                        if line.startswith("----"):
-                            in_data = True
+                for raw_line in lines:
+                    line = raw_line.strip()
+                    if not line:
+                        continue
+
+                    if line.startswith("Backup ID") or line.startswith("Backup Id"):
+                        in_data = True
+                        continue
+                    if line.startswith("----"):
                         continue
 
                     if in_data:
-                        parts = [p.strip() for p in line.split("|")]
-                        if len(parts) >= 3 and parts[0]:
-                            parsed.append({"id": parts[0], "created": parts[2]})
+                        if "|" in line:
+                            parts = [p.strip() for p in line.split("|")]
+                            if len(parts) >= 3 and parts[0]:
+                                parsed.append({"id": parts[0], "created": parts[2]})
+                        else:
+                            parts = [p.strip() for p in re.split(r"\s{2,}", line)]
+                            if len(parts) >= 2 and parts[0]:
+                                created_idx = 4 if len(parts) > 4 else -1
+                                parsed.append(
+                                    {"id": parts[0], "created": parts[created_idx]}
+                                )
                 return parsed
             return []
 
@@ -263,6 +282,9 @@ class CloudService:
             backups = _parse_backups_text(data)
 
             if not backups:
+                if data and self.manager.verbose:
+                    UI.info("Raw LCP Output:")
+                    print(repr(data))
                 # Soft failure: just warn and skip download if no backups exist yet
                 UI.warning(
                     f"No backups found in environment '{target_env}'. Skipping download."
@@ -281,8 +303,9 @@ class CloudService:
                 [
                     "backup",
                     "download",
+                    "--backupId",
                     backup_id,
-                    "--destination",
+                    "--dest",
                     str(snapshot_dir),
                 ],
                 capture_json=False,
