@@ -17,6 +17,7 @@
 - **Predictable Layers**: Ensure logic stays within its designated layer (e.g., UI vs. Business Logic vs. Data) as defined in `spec.md`.
 - **Hybrid Volume Strategy**: Always use **Docker Named Volumes** for lock-sensitive directories (`data/`, `osgi/state/`) on macOS and external ExFAT storage. Use **Host Bind-Mounts** for directories requiring developer interaction (`deploy/`, `modules/`, `client-extensions/`). This ensures robust POSIX file locking while maintaining a smooth DX.
 - **Script Parity**: All cross-platform utility, verification, and wrapper scripts (e.g., `.sh` vs `.ps1` or `.bat`) MUST be kept in perfect functional parity. Any hardening check or logic update applied to one must be immediately synchronized to the others.
+- **Terminal UI Integrity**: When implementing long-running operations with spinners, you MUST use the `\033[K` ANSI code to clear the terminal line before each update to prevent character bleed. Truncation must be whitespace-aware to prevent word cutting.
 
 ## 3. Testing & Hard-Gates
 
@@ -65,17 +66,19 @@
 
 ## Gemini Added Memories
 
-- **Status: High-Performance Infrastructure & Multi-Drive Stability (v2.7.2)**
-  - [x] **Core Architecture**: Successfully pivoted LDM default stack to **PostgreSQL** and **Shared Global Search**.
-  - [x] **Multi-Drive Fix**: Resolved critical `Unable to create lock manager` and `access_denied_exception` crashes on macOS/ExFAT by implementing a **Hybrid Mount Strategy**.
-  - [x] **Named Volumes**: Refactored `ComposerService` to use named volumes for `data/` and `osgi/state/` while preserving bind-mounts for `deploy/`, `modules/`, and `client-extensions/`.
-  - [x] **Logging Force**: Injected `LIFERAY_LOG4J2_CONFIGURATION_FILE` environment variable to ensure hot-reloadable log overrides are honored immediately.
-  - [x] **Verification**: Conclusively verified the fix across internal SSD and SanDisk ExFAT drives using incremental isolation test scripts.
-  - [x] **Release**: Tagged and released **`v2.7.2-beta.20`** with finalized documentation.
+- **Status: Liferay Cloud Golden Path & Demo Rescue (v2.10.x)**
+  - [x] **Workspace Recognition**: Built heuristics into `ldm init-from` and `ldm import` to detect Liferay Cloud repositories automatically.
+  - [x] **Guided Hydration**: Implemented an interactive wizard (and `--hydrate-from` automation switch) to orchestrate data and env-var synchronization.
+  - [x] **Robust Ingestion**: Engineered a "Greedy Regex" parser to reliably extract Backup IDs from the LCP CLI across various OS/terminal environments.
+  - [x] **Post-Download Organization**: Built logic to automatically recursively flatten LCP's nested UUID backup structures into standard LDM snapshots.
+  - [x] **License Awareness**: Implemented expiration-aware license syncing to ensure valid developer licenses overwrite expired Cloud ones.
+  - [x] **UI Hardening**: Re-engineered the `Spinner` engine with ANSI `\033[K` line-wiping and terminal-aware whitespace truncation.
+  - [x] **Automation Standardization**: Established a project-wide exit code contract (0-4, 126) and enforced non-interactive `-y` modes for all developer utilities.
 
-- **Next Focus: Liferay Core Snippets & Feature Context**
-  - [ ] **Search Snapshots**: Investigate `SnapshotDetails` and converters for enhanced search engine adapter support.
-  - [ ] **Analytics & UI**: Process provided `LengthInput.tsx` and `AnalyticsFrame.tsx` context for upcoming feature development.
+- **Next Focus: Roadmap Execution & CLI Namespacing**
+  - [ ] **CLI Simplification**: Refactor flat commands into grouped namespaces (e.g., `ldm cloud push`).
+  - [ ] **Interactive Scaffolding**: Implement scenario-based project templates.
+  - [ ] **Visual Dashboard**: Develop the `localhost:19000` monitoring UI.
 
 ## 9. Founding Patterns of LDM
 
