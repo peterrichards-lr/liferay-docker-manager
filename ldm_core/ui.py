@@ -113,22 +113,39 @@ class UI:
             self.frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
 
         def _spin(self):
+            import shutil
             import sys
             import time
 
             i = 0
+            last_len = 0
             while self.is_running:
-                sys.stdout.write(
-                    f"\r  {UI.CYAN}{self.frames[i]}{UI.COLOR_OFF}  {self.message}"
-                )
+                # Use terminal width to ensure the line is fully cleared
+                try:
+                    columns, _ = shutil.get_terminal_size()
+                except Exception:
+                    columns = 80
+
+                # Ensure we don't exceed terminal width with the message
+                msg = self.message
+                if len(msg) > (columns - 10):
+                    msg = msg[: (columns - 13)] + "..."
+
+                # Write frame and message
+                # We use \r to return to start and then write enough spaces to clear old text
+                sys.stdout.write(f"\r  {UI.CYAN}{self.frames[i]}{UI.COLOR_OFF}  {msg}")
+
+                # Calculate how much space to clear
+                current_len = len(msg)
+                if last_len > current_len:
+                    sys.stdout.write(" " * (last_len - current_len))
+
                 sys.stdout.flush()
+                last_len = current_len
                 time.sleep(0.1)
                 i = (i + 1) % len(self.frames)
 
             # Clear line when done
-            # LDM-402: Use a more robust way to clear the line
-            import shutil
-
             try:
                 columns, _ = shutil.get_terminal_size()
             except Exception:

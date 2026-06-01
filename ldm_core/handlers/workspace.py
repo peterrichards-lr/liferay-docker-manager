@@ -607,6 +607,9 @@ class WorkspaceService(BaseHandler):
             self.manager.args.project = project_name
 
         try:
+            # LDM-402: Ensure compose file exists so restore can start DB container
+            self.manager.composer.cmd_compose(project_id=project_name)
+
             # Pass the original source path down to cloud fetch
             # so sync_env can find the LCP.json file
             self.manager.args.source_path = str(source_path)
