@@ -1009,21 +1009,32 @@ class SnapshotService(BaseHandler):
                 END IF;
             END $$;
             """
-            self.manager.run_command(
-                [
-                    "docker",
-                    "exec",
-                    db_container,
-                    "psql",
-                    "-U",
-                    "lportal",
-                    "-d",
-                    "lportal",
-                    "-c",
-                    wipe_script,
-                ],
-                check=False,
-            )
+            # LDM-418: Execute via stdin instead of -c to prevent multi-line parsing failures across docker exec
+            try:
+                import subprocess
+
+                subprocess.run(
+                    [
+                        "docker",
+                        "exec",
+                        "-i",
+                        db_container,
+                        "psql",
+                        "-U",
+                        "lportal",
+                        "-d",
+                        "lportal",
+                    ],
+                    input=wipe_script.encode("utf-8"),
+                    check=True,
+                    capture_output=True,
+                )
+            except subprocess.CalledProcessError as e:
+                err_out = e.stderr.decode(errors="ignore") if e.stderr else str(e)
+                UI.warning(f"  ! Non-fatal wipe error: {err_out}")
+            except Exception as e:
+                UI.warning(f"  ! Wipe encountered an error: {e}")
+
         elif db_type in ["mysql", "mariadb"]:
             UI.info("  - Wiping existing MySQL database...")
             self.manager.run_command(
