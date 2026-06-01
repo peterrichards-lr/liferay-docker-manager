@@ -129,9 +129,27 @@ class LicenseService:
         try:
             from datetime import datetime
 
-            exp_str = info["expiration"]
-            # Liferay date format: YYYY-MM-DD
-            exp_date = datetime.strptime(exp_str, "%Y-%m-%d")
+            exp_str = info["expiration"].strip()
+
+            # LDM-408: Support multiple Liferay date formats
+            formats = [
+                "%A, %B %d, %Y %I:%M:%S %p GMT",  # Standard Liferay XML format
+                "%A, %B %d, %Y %I:%M:%S %p UTC",
+                "%Y-%m-%d",  # Fallback short format
+            ]
+
+            exp_date = None
+            for fmt in formats:
+                try:
+                    exp_date = datetime.strptime(exp_str, fmt)
+                    break
+                except ValueError:
+                    continue
+
+            if not exp_date:
+                # If we still can't parse it, assume it's valid to be safe (perpetual heuristic)
+                return True, 9999
+
             now = datetime.now()
 
             remaining = (exp_date - now).days
