@@ -904,7 +904,7 @@ class SnapshotService(BaseHandler):
         src = "/host" if direction == "to_volume" else "/vol"
         dst = "/vol" if direction == "to_volume" else "/host"
 
-        # Note: We use 'cp -aT' to copy directory contents without creating a nested subdir
+        # Note: We use 'cp -a' to copy directory contents without creating a nested subdir
         cmd = [
             "docker",
             "run",
@@ -916,7 +916,7 @@ class SnapshotService(BaseHandler):
             "alpine",
             "sh",
             "-c",
-            f"cp -aT {src}/. {dst}/ 2>/dev/null || true",
+            f"cp -a {src}/. {dst}/",
         ]
 
         try:
@@ -962,13 +962,6 @@ class SnapshotService(BaseHandler):
                     f"  + Hydrating volume {UI.CYAN}{volume_name}{UI.COLOR_OFF} from host..."
                 )
                 self._sync_volume(host_path, volume_name, direction="to_volume")
-                # Clean up host-side files after hydration to avoid confusion (except for logs)
-                if self.manager.verbose:
-                    UI.info(f"  + Cleaning up host-side {target}...")
-                from ldm_core.utils import safe_rmtree
-
-                safe_rmtree(host_path)
-                host_path.mkdir(parents=True, exist_ok=True)
 
     def _execute_orchestrated_db_restore(
         self, db_container, db_type, sql_file, paths, project_meta
