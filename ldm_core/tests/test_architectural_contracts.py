@@ -228,6 +228,23 @@ class TestArchitecturalContracts(unittest.TestCase):
             "REDLINE VIOLATION: Search settings found in portal-ext.properties. MUST be in Env Vars or .config.",
         )
 
+    def test_get_samples_root_delegation_mandate(self):
+        """Mandate: LiferayManager MUST correctly delegate get_samples_root to ConfigService."""
+        samples_root = self.manager.get_samples_root()
+        self.assertIsNotNone(
+            samples_root, "get_samples_root returned None (delegation likely missing)."
+        )
+        self.assertIsInstance(
+            samples_root, Path, "get_samples_root did not return a Path object."
+        )
+        self.assertTrue(
+            samples_root.exists(), "The returned samples_root path does not exist."
+        )
+        self.assertTrue(
+            (samples_root / "metadata.json").exists(),
+            "The samples directory is missing metadata.json.",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

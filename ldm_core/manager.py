@@ -280,5 +280,8 @@ class LiferayManager(
     def get_samples_db_type(self, *args, **kwargs):
         return self.config.get_samples_db_type(*args, **kwargs)
 
+    def get_samples_root(self, *args, **kwargs):
+        return self.config.get_samples_root(*args, **kwargs)
+
     def download_samples(self, *args, **kwargs):
         return self.assets.download_samples(*args, **kwargs)
