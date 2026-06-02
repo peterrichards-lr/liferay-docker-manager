@@ -108,28 +108,24 @@ ldm --help
 - **Python**: 3.10+ (only if running from source)
 - **SSL Tools**: `mkcert` and `openssl` are required for HTTPS support.
 
+For a detailed breakdown of all third-party dependencies, why they are needed, and feature impact, see the [THIRD_PARTY_TOOLS.md](./THIRD_PARTY_TOOLS.md) guide.
+
 ### 🪟 Windows Setup & Tools
 
-Windows does not include the networking tools required for LDM log-level synchronization and Gogo shell access by default.
+Windows does not include all the optional developer tools by default.
 
 > [!IMPORTANT]
 > **Terminal Encoding:** Older Windows consoles (cmd.exe / PowerShell 5) may have trouble displaying Unicode symbols (●, ✅). LDM **v2.4.26-beta.37+** automatically detects these terminals and switches to safe ASCII fallbacks. For the best experience, we recommend using **Windows Terminal**.
 
 Run the following in an **Administrator PowerShell**:
 
-1. **Install Netcat (Ncat)**:
-
-   ```powershell
-   winget install Insecure.Nmap
-   ```
-
-2. **Enable Telnet Client**:
+1. **Enable Telnet Client** (Required for OSGi Gogo Shell access):
 
    ```powershell
    Enable-WindowsOptionalFeature -Online -FeatureName TelnetClient
    ```
 
-3. **Install SSL Tools** (via [Chocolatey](https://chocolatey.org/) or [Scoop](https://scoop.sh/)):
+2. **Install SSL Tools** (via [Chocolatey](https://chocolatey.org/) or [Scoop](https://scoop.sh/)):
 
    ```powershell
    choco install mkcert openssl

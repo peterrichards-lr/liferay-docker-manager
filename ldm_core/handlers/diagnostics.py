@@ -540,7 +540,7 @@ class DoctorRunner:
             ("mkcert", shutil.which("mkcert")),
             ("openssl", shutil.which("openssl")),
             ("telnet", shutil.which("telnet")),
-            ("nc/ncat", active_nc),
+            ("nc/ncat (Deprecated)", active_nc),
             ("lcp", shutil.which("lcp")),
         ]
 
@@ -555,6 +555,10 @@ class DoctorRunner:
             if tool_path:
                 self.results.append((f"Path: {tool_name}", str(tool_path), True))
             # Some are optional/warn only
+            elif tool_name == "nc/ncat (Deprecated)":
+                self.results.append(
+                    (f"Path: {tool_name}", "Not Found (Optional/Deprecated)", True)
+                )
             elif tool_name in ["telnet", "lcp", "mkcert", "nc/ncat"]:
                 self.results.append((f"Path: {tool_name}", "Not Found", "warn"))
             else:
@@ -602,23 +606,17 @@ class DoctorRunner:
                     "Install telnet for Gogo Shell support (e.g. 'brew install telnet' or 'apt-get install telnet')."
                 )
 
-        # Netcat / Ncat check
+        # Netcat / Ncat check (Deprecated - Log-level sync now uses native file hot-reloading)
         active_nc = nc_bin or ncat_bin
         self.results.append(
             (
                 "Tool: netcat (nc/ncat)",
-                "Installed" if active_nc else "Missing (Log Level sync disabled)",
-                True if active_nc else "warn",
+                "Installed (Deprecated/Unused)"
+                if active_nc
+                else "Missing (Deprecated/Unused - Native file hot-reloads used)",
+                True,
             )
         )
-        if not active_nc:
-            if platform.system().lower() == "windows":
-                self.add_hint(
-                    f"Install nmap for Windows to get '{UI.WHITE}ncat{UI.COLOR_OFF}': "
-                    f"'{UI.WHITE}winget install Insecure.Nmap{UI.COLOR_OFF}'"
-                )
-            else:
-                self.add_hint("Install netcat for log-level synchronization.")
 
         self.results.append(
             (

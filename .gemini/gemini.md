@@ -108,6 +108,12 @@
   - [ ] **Interactive Scaffolding**: Implement scenario-based project templates.
 
   - [ ] **Visual Dashboard**: Develop the `localhost:19000` monitoring UI.
+  - [x] **Document Third-Party Tools**:
+    - [x] Create `docs/THIRD_PARTY_TOOLS.md` detailing Docker, mkcert, openssl, telnet, nc/ncat, and lcp.
+    - [x] Explain why they are needed, which are optional, and what features break without them.
+    - [x] Clarify the specific diagnostic check of `nmap`/`ncat` (and its shift to Log4j file-based sync).
+    - [x] Link to the new file from `docs/INSTALLATION.md` and `docs/LDM_ARCHITECTURE.md`.
+    - [x] Update `ldm_core/handlers/diagnostics.py` to flag `nc/ncat` as Deprecated/Unused (status: True, no warnings/hints).
 
 ## 9. Founding Patterns of LDM
 

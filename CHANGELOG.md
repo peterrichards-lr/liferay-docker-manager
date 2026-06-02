@@ -178,6 +178,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added runtime state-awareness checks to commands (run, import) to prevent unexpected container collisions.
 - Enabled non-interactive bypass for internal developer utility prompts.
 
+## [v2.10.26] - 2026-06-02
+
+### Added
+
+- Added a dedicated third-party tool dependencies guide ([THIRD_PARTY_TOOLS.md](./docs/THIRD_PARTY_TOOLS.md)) detailing mandatory/optional status, purposes, and impacts of missing dependencies.
+
+### Changed
+
+- Deprecated legacy `nc`/`ncat` (netcat/nmap) diagnostic checks and retired related warnings and installation instructions, as log-level sync is now handled natively via Log4j2 file hot-reloading.
+
 ## [v2.10.25] - 2026-06-02
 
 ### Added

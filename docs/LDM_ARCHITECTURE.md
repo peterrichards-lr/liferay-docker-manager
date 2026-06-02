@@ -292,3 +292,11 @@ To ensure that projects using Liferay's internal search do not interfere with ot
 - **Network Stability**: All services use unique namespacing for Traefik routers and services (e.g., `[project-id]-main`), preventing routing collisions.
 - **Session Security**: Unique session cookie names are generated based on the project's virtual hostname to prevent session cross-talk.
 - **Standalone Services**: Arbitrary containers (like jBPM) placed in the `services/` folder are seamlessly orchestrated with the same routing and resource guardrails as Liferay.
+
+---
+
+## 6. Third-Party Tool Integration
+
+LDM coordinates several third-party binaries to perform system-level tasks (e.g., Docker, Docker Compose, mkcert, openssl, telnet, and the lcp CLI).
+
+For a complete breakdown of each third-party dependency, including their optional vs. mandatory statuses, feature impacts, and deprecation details (such as the deprecation of the `nc/ncat` check in favor of native Log4j hot-reloading), see the [THIRD_PARTY_TOOLS.md](./THIRD_PARTY_TOOLS.md) guide.
