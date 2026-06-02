@@ -17,6 +17,7 @@ To resolve critical filesystem locking deadlocks (e.g., `Unable to create lock m
   - `/opt/liferay/osgi/client-extensions`
   - `/opt/liferay/osgi/log4j`
 - **macOS Hypervisor Sync**: LDM MUST implement a minimum 2-second "Sync Wait" after extracting backups to the host and before hydrating Docker volumes. This compensates for VirtioFS/gRPC-FUSE sync lag, ensuring files created on the Mac are physically visible to the Linux VM.
+- **Volume Naming Consistency**: LDM MUST explicitly set the `name:` property for all Named Volumes in the generated `docker-compose.yml`. This prevents Docker Compose from automatically prefixing volumes with the project name, which causes hydration mismatches when LDM attempts to push data directly to the volume by its base name.
 
 ## 2. Infrastructure Enforcement
 
