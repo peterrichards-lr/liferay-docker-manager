@@ -6,14 +6,16 @@ import time
 from datetime import datetime
 from pathlib import Path
 
+from ldm_core.handlers.base import BaseHandler
 from ldm_core.ui import UI
 from ldm_core.utils import get_actual_home, get_compose_cmd, open_browser
 
 
-class RuntimeService:
+class RuntimeService(BaseHandler):
     """Service for container lifecycle and orchestration."""
 
     def __init__(self, manager=None):
+        super().__init__(manager.args if manager else None)
         self.manager = manager
 
     def cmd_run(self, project_id=None, is_restart=False):
@@ -153,6 +155,11 @@ class RuntimeService:
                 )
 
             project_meta["port"] = port
+
+            # LDM-422: Handle Manual Reindex Flag
+            if getattr(self.manager.args, "reindex", False):
+                self.flag_reindex(paths["root"])
+                project_meta["reindex_required"] = "true"
 
             # Performance Overrides
             no_vol_cache = (
@@ -569,15 +576,18 @@ class RuntimeService:
         container_name = project_meta.get("container_name")
         start_time = time.time()
 
-        with UI.spinner(f"Waiting for Liferay to become healthy ({container_name})..."):
+        with UI.spinner(
+            f"Waiting for Liferay to become healthy ({container_name})..."
+        ) as spinner:
             last_notified_time = 0
             while time.time() - start_time < timeout:
                 elapsed = time.time() - start_time
                 # Notify every 30 seconds (Robust timestamp check)
-                # Move notification BEFORE blocking call for guaranteed feedback
                 if elapsed - last_notified_time >= 30:
                     timestamp = datetime.now().strftime("%H:%M:%S")
                     duration_str = UI.format_duration(elapsed)
+                    spinner.update(f"Still waiting for Liferay ({duration_str})...")
+                    last_notified_time = elapsed
                     UI.detail(
                         f"[{timestamp}] Still waiting for Liferay to become healthy... ({duration_str})"
                     )
@@ -663,6 +673,70 @@ class RuntimeService:
                 )
 
                 if status == "healthy" or ready_by_logs:
+                    # LDM-422: Proactive Search Reindex Monitoring (UX Win)
+                    if (
+                        str(project_meta.get("reindex_required", "false")).lower()
+                        == "true"
+                    ):
+                        spinner.update("Search reindexing in progress...")
+                        reindex_start = time.time()
+                        reindex_timeout = 900  # 15 minutes max
+                        found_start = False
+
+                        while time.time() - reindex_start < reindex_timeout:
+                            try:
+                                # Fetch logs to catch the transition
+                                reindex_logs = self.manager.run_command(
+                                    ["docker", "logs", "--tail", "200", container_name],
+                                    check=False,
+                                    capture_output=True,
+                                )
+
+                                # Phase 1: Detect Start
+                                if not found_start and (
+                                    "reindexing all" in reindex_logs.lower()
+                                ):
+                                    spinner.update("Reindexing all search indexes...")
+                                    found_start = True
+
+                                # Phase 2: Detect Completion
+                                if "reindexing all" in reindex_logs.lower() and (
+                                    "completed in" in reindex_logs.lower()
+                                    or "finished" in reindex_logs.lower()
+                                ):
+                                    break
+
+                                # Fallback: Idle CPU check
+                                if time.time() - reindex_start > 120:
+                                    stats = self.manager.run_command(
+                                        [
+                                            "docker",
+                                            "stats",
+                                            "--no-stream",
+                                            "--format",
+                                            "{{.CPUPerc}}",
+                                            container_name,
+                                        ],
+                                        check=False,
+                                        capture_output=True,
+                                    )
+                                    if (
+                                        stats
+                                        and float(stats.strip().replace("%", "")) < 5.0
+                                    ):
+                                        break
+
+                            except Exception:
+                                pass
+                            time.sleep(5)
+
+                        # Clear the flag so we don't wait on future boots
+                        project_meta["reindex_required"] = "false"
+                        root_path = self.manager.detect_project_path(
+                            project_id=None, for_init=True
+                        )
+                        if root_path:
+                            self.manager.write_meta(root_path, project_meta)
                     # If we bypassed by logs, wait a tiny bit to ensure the port is truly bound
                     if status != "healthy":
                         time.sleep(2)
@@ -814,10 +888,14 @@ class RuntimeService:
             db_val = project_meta.get("db_type", "postgresql")
             port_val = project_meta.get("port", 8080)
 
-            UI.info(
-                f"{UI.WHITE}⚡{UI.COLOR_OFF} Starting {project_id} stack ({tag_val}, {db_val}, {host_name}:{port_val})..."
-            )
+            # LDM-413: Hide port 8080 if SSL is active
+            display_port = f":{port_val}"
+            if ssl_enabled and port_val == 8080:
+                display_port = ""
 
+            UI.info(
+                f"{UI.WHITE}⚡{UI.COLOR_OFF} Starting {UI.BYELLOW}{project_id}{UI.COLOR_OFF} stack ({tag_val}, {db_val}, {host_name}{display_port})..."
+            )
             UI.detail(f"=== Stack Configuration: {project_id} ===")
             UI.detail(f"  + Liferay: {UI.CYAN}{tag_val}{UI.COLOR_OFF}")
             UI.detail(f"  + DB Type: {UI.CYAN}{db_val}{UI.COLOR_OFF}")
@@ -876,8 +954,6 @@ class RuntimeService:
                             UI.error(f"Dependency '{dep}' exited unexpectedly.")
                             return False
                         time.sleep(2)
-
-            UI.info(f"Starting {UI.BOLD}{project_id}{UI.COLOR_OFF} stack...")
 
             # LDM-381: Reclaim volume permissions on Linux before starting
             # This prevents host-side 'Permission denied' errors when Liferay container
@@ -1468,3 +1544,19 @@ class RuntimeService:
         if not self.manager.non_interactive:
             if UI.ask("Restart project now?", "Y").upper() == "Y":
                 self.cmd_run(project_id)
+
+    def cmd_reindex(self, project_id=None):
+        """Schedules a full search reindex for the next boot."""
+        root = self.manager.detect_project_path(project_id)
+        if not root:
+            return
+
+        if self.flag_reindex(root):
+            UI.success(
+                f"Project '{root.name}' scheduled for search reindex on next boot."
+            )
+            if not self.manager.non_interactive:
+                if UI.confirm("Do you want to restart the project now to apply?", "Y"):
+                    self.cmd_run(root.name)
+        else:
+            UI.error(f"Failed to schedule reindex for project '{root.name}'.")

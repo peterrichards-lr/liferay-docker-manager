@@ -510,6 +510,41 @@ class TestRuntime(unittest.TestCase):
             self.assertEqual(call_kwargs.get("prefix_filter"), "2026.q1")
             self.assertEqual(call_kwargs.get("release_type"), "any")
 
+    def test_cmd_run_with_reindex_flag(self):
+        """Verify that --reindex flag sets the metadata flag."""
+        with (
+            patch.object(
+                self.handler, "detect_project_path", return_value=self.tmp_dir
+            ),
+            patch.object(
+                self.handler,
+                "setup_paths",
+                return_value={"root": self.tmp_dir, "data": self.tmp_dir / "data"},
+            ),
+            patch.object(self.handler, "read_meta", return_value={}),
+            patch.object(self.handler, "_pre_flight_checks", return_value=8080),
+            patch.object(self.handler, "verify_runtime_environment"),
+            patch.object(self.handler.handler, "sync_stack"),
+            patch.object(self.handler.handler, "flag_reindex") as mock_flag,
+        ):
+            self.handler.args.reindex = True
+            self.handler.args.project = "test"
+            self.handler.args.tag = "latest"
+            self.handler.args.tag_latest = False
+            self.handler.args.tag_prefix = None
+            self.handler.args.release_type = None
+            self.handler.args.no_up = True
+            self.handler.args.samples = False
+            self.handler.args.db = None
+            self.handler.args.host_name = None
+            self.handler.args.jvm_args = None
+            self.handler.args.port = None
+            self.handler.args.snapshot = None
+
+            self.handler.cmd_run("test")
+
+            mock_flag.assert_called_once_with(self.tmp_dir)
+
     @patch("ldm_core.ui.UI.die")
     def test_cmd_run_select_non_interactive_dies(self, mock_die):
         mock_die.side_effect = SystemExit
@@ -633,6 +668,72 @@ class TestRuntime(unittest.TestCase):
             )
             # Also it should break the loop and succeed
             mock_success.assert_any_call("Liferay is ready! (Total time: 2m 15s)")
+
+    @patch("ldm_core.ui.UI.success")
+    @patch("ldm_core.ui.UI.info")
+    def test_wait_for_ready_with_reindex(self, mock_info, mock_success):
+        """Verifies that LDM waits for reindex completion if flagged."""
+
+        def mock_run_command_side_effect(cmd, **kwargs):
+            cmd_str = " ".join(cmd)
+            if "logs" in cmd_str:
+                # First check: Healthy/Startup
+                if not hasattr(self, "_log_count"):
+                    self._log_count = 0
+                self._log_count += 1
+                if self._log_count == 1:
+                    return "Server startup in 123 ms"
+                if self._log_count == 2:
+                    return "Reindexing all search indexes starting..."
+                if self._log_count >= 3:
+                    return "Reindexing all search indexes completed in 5000 ms"
+            if "inspect" in cmd_str:
+                return "healthy"
+            return ""
+
+        self.handler.args.total_start = None
+        self.handler.args.browser = False
+        with (
+            patch("time.sleep"),
+            patch.object(
+                self.handler, "run_command", side_effect=mock_run_command_side_effect
+            ),
+        ):
+            project_meta = {
+                "container_name": "test-container",
+                "reindex_required": "true",
+            }
+            # Reset log count for fresh run
+            if hasattr(self, "_log_count"):
+                delattr(self, "_log_count")
+
+            self.handler.handler._wait_for_ready(project_meta, "test.local")
+
+            # Verify we saw the reindex message
+            mock_success.assert_any_call("Liferay is ready! (Total time: 0s)")
+            # Metadata should have been updated to clear flag
+            self.assertEqual(project_meta["reindex_required"], "false")
+
+    @patch("ldm_core.ui.UI.success")
+    @patch("ldm_core.ui.UI.confirm", return_value=True)
+    def test_cmd_reindex(self, mock_confirm, mock_success):
+        """Verify that ldm reindex flags the project correctly."""
+        # Enable interactive mode for this test to trigger confirm
+        self.handler.non_interactive = False
+        self.handler.handler.non_interactive = False
+        with (
+            patch.object(
+                self.handler, "detect_project_path", return_value=self.tmp_dir
+            ),
+            patch.object(self.handler.handler, "flag_reindex") as mock_flag,
+            patch.object(self.handler.handler, "cmd_run") as mock_run,
+        ):
+            self.handler.handler.cmd_reindex("test")
+            mock_flag.assert_called_once_with(self.tmp_dir)
+            mock_run.assert_called_once_with("runtime-project")
+            mock_success.assert_called_with(
+                "Project 'runtime-project' scheduled for search reindex on next boot."
+            )
 
 
 if __name__ == "__main__":

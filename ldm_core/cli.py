@@ -104,6 +104,11 @@ def get_parser():
     run.add_argument("--gogo-port", type=int)
     run.add_argument("--jvm-args", help="Override Liferay JVM arguments")
     run.add_argument(
+        "--reindex",
+        action="store_true",
+        help="Force a full search reindex on startup",
+    )
+    run.add_argument(
         "--no-vol-cache",
         action="store_true",
         help="Disable :cached volumes on macOS/Windows",
@@ -177,6 +182,11 @@ def get_parser():
     imp.add_argument(
         "--hydrate-from",
         help="Automatically hydrate data from a Liferay Cloud environment",
+    )
+    imp.add_argument(
+        "--no-env-sync",
+        action="store_true",
+        help="Skip syncing environment variables from Liferay Cloud",
     )
     imp.add_argument("--no-run", action="store_true")
     imp.add_argument("--backup-dir")
@@ -269,6 +279,11 @@ def get_parser():
     init_from.add_argument(
         "--hydrate-from",
         help="Automatically hydrate data from a Liferay Cloud environment",
+    )
+    init_from.add_argument(
+        "--no-env-sync",
+        action="store_true",
+        help="Skip syncing environment variables from Liferay Cloud",
     )
     init_from.add_argument("--build", action="store_true")
     init_from.add_argument("--host-name")
@@ -389,6 +404,11 @@ def get_parser():
     feat.add_argument("-p", "--project", dest="project_flag")
     feat.add_argument("--enable", nargs="+", help="Enable one or more feature flags")
     feat.add_argument("--disable", nargs="+", help="Disable one or more feature flags")
+
+    # Command: reindex
+    reindex = subparsers.add_parser("reindex", parents=[base_sub_parent])
+    reindex.add_argument("project", nargs="?")
+    reindex.add_argument("-p", "--project", dest="project_flag")
 
     # Command: snapshot, restore
     snap = subparsers.add_parser("snapshot", parents=[base_sub_parent])
@@ -736,6 +756,11 @@ def get_parser():
     cloud.add_argument("--download", action="store_true")
     cloud.add_argument("--restore", action="store_true")
     cloud.add_argument("--sync-env", action="store_true")
+    cloud.add_argument(
+        "--no-env-sync",
+        action="store_true",
+        help="Skip syncing environment variables from Liferay Cloud",
+    )
     cloud.add_argument("--logs", action="store_true")
     cloud.add_argument("-f", "--follow", action="store_true")
 
@@ -934,6 +959,7 @@ def main():
             enable=getattr(args, "enable", None),
             disable=getattr(args, "disable", None),
         ),
+        "reindex": lambda: manager.runtime.cmd_reindex(getattr(args, "project", None)),
         "snapshot": lambda: manager.snapshot.cmd_snapshot(
             getattr(args, "project", None)
         ),
