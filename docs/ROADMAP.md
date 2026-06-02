@@ -9,19 +9,16 @@ This document outlines potential enhancements to the Liferay Docker Manager (ldm
 
 ## 🚀 Future Roadmap: v2.9.0+ (Polished Diagnostics & Self-Healing)
 
-While the v2.4.0 release solidified the modular architecture, **v2.5.0** will focus on implementing the remaining Ecosystem features.
+While the v2.4.0 release solidified the modular architecture, the focus will now shift to implementing the remaining Ecosystem features.
 
 ### 1. Guided Onboarding & Scaffolding
 
 - **Interactive Scaffolding**: Implement `ldm init` with guided templates for common use cases (e.g., "Commerce Demo," "Headless React Integration").
-- **PaaS Workspace Recognition**: Enhance `ldm init-from` to automatically detect cloned Liferay Cloud repositories and guide users through the data hydration process (`cloud-fetch`).
-- **Documentation Injection**: Automatically generate `README.md` and `setup.md` within new projects.
 
 ### 2. CLI Simplification & Automation Standards
 
 - **Namespace Grouping**: Transition from flat commands to grouped namespaces (e.g., `ldm system`, `ldm infra`, `ldm cloud`).
 - **Cloud Orchestration**: Introduce `ldm cloud push` and `ldm cloud fetch` as a unified, two-way bridge for PaaS migration.
-- **Standardized Exit Codes**: Implement predictable, standardized exit codes (e.g., 0=Success, 1=Generic Error, 2=Auth Error, 3=Infra Error) across all commands to fully support CI/CD pipelines and headless automation.
 
 ### 3. Visual Health Dashboard
 
@@ -40,19 +37,31 @@ While the v2.4.0 release solidified the modular architecture, **v2.5.0** will fo
 - **High-Level RAG Status**: Transition `ldm doctor` to a concise Red/Amber/Green summary dashboard by default.
 - **Granular Subsection Flags**: Implement flags like `--docker`, `--system`, and `--project` to view deep-dive diagnostics for specific areas only when needed.
 
-### 7. Documentation Audit & Modularization
-
-- **Guide De-coupling**: Split the monolithic `README.md` into specialized guides (e.g., `guides/ENVIRONMENT.md`, `guides/DNS.md`) to improve readability and maintainability.
-- **Technical Deep-Dives**: Create dedicated docs for advanced topics like the "Zero-Race Atomic Deployment Strategy" and "Intelligent DNS Engine."
-
-### 8. Project Self-Healing (`ldm repair`)
+### 7. Project Self-Healing (`ldm repair`)
 
 - **Inconsistency Recovery**: Implement a command to restore projects in "half-baked" states (e.g., missing `docker-compose.yml` but valid `meta`).
 - **Permission Re-sync**: A dedicated trigger to re-apply the "Zero-Race" permission fixups across an entire existing project stack.
 
-### 9. Dry-Run Mode
+### 8. Dry-Run Mode
 
 - **Change Preview**: Support a `--dry-run` flag for destructive or configuration-heavy commands (`run`, `rm`, `import`, `scale`) to preview filesystem and Docker modifications without applying them.
+
+## ✅ Completed Improvements (v2.10.x - Liferay Cloud Golden Path & Hardening)
+
+### **Liferay Cloud Golden Path**
+
+- **Smart Workspace Recognition**: Added automatic heuristics in `init-from` and `import` to detect Liferay Cloud Git repositories.
+- **Guided Hydration Wizard**: Built an interactive setup wizard to retrieve and synchronize LCP backup databases and document library assets.
+- **Robust Backup Organization**: Programmatically flattens Cloud nested folder structures and automatically detects `AdvancedFileSystemStore` vs `FileSystemStore`.
+- **Database Scrubbing & Wipes**: Strips proprietary Cloud commands (e.g. `\restrict`) and implements schema wipe loops to ensure clean database imports without superuser privileges.
+- **Volume Extraction Permissions**: Hardened volume permission adjustments via tar pipelines, resolving macOS VirtioFS hypervisor synchronization lag (Sync Wait).
+
+### **Platform Hardening & Diagnostics**
+
+- **Self-Tuning JVM scaling**: Scales JVM resource settings proactively during search reindexing.
+- **CLI Automation Standardization**: Implemented standard exit codes (0-4, 126) and non-interactive (`-y`) mode flags across all developer utilities.
+- **PTY safety on macOS**: Refactored elevated privilege tasks to bypass sub-process allocation, ensuring macOS terminal stability.
+- **Documentation Restructure**: Decoupled monolithic README into specialized guides in `docs/guides/` and documented optional/mandatory third-party tool dependencies.
 
 ## ✅ Completed Improvements (v2.8.0 - Stability & Automation)
 

@@ -1,5 +1,8 @@
 # LDM Project Mandates
 
+> [!NOTE]
+> **Purpose of this file**: This file establishes the core **Project & Developer Mandates** for Liferay Docker Manager (LDM) development (including volume strategies, JVM tuning, exit codes, and release guidelines). All human and AI contributors MUST adhere to these architectural mandates.
+
 This file establishes the foundational mandates for Liferay Docker Manager development.
 
 ## 1. Hybrid Volume Strategy (macOS / ExFAT)
@@ -53,7 +56,12 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
 - **Data (LCP)**: LDM automates the retrieval and restoration of Cloud backups (`database.gz` and `volume.tgz`).
 - **Orchestration**: LDM must dynamically flatten LCP's nested backup structures into standard LDM snapshots during hydration.
 
-## 5. Reference Documentation
+## 6. Python Virtual Environment (venv)
+
+- **Mandatory Alignment**: All development, testing, linting, and Git operations MUST be conducted within the project's Python virtual environment (`.venv`).
+- **Hook Isolation**: Git hooks and pre-commit checks rely on packages installed in the virtual environment. Running operations outside the virtual environment (e.g. using global system Python) will trigger hook failures.
+
+## 7. Reference Documentation
 
 - [Architecture Guide](./docs/LDM_ARCHITECTURE.md)
 - [Troubleshooting](./docs/TROUBLESHOOTING.md)

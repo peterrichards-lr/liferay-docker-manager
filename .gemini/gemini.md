@@ -1,5 +1,8 @@
 # Gemini Rules of Engagement
 
+> [!NOTE]
+> **Purpose of this file**: This file defines the **Agent Rules of Engagement & Memories** specifically for AI coding assistants (like Gemini/Antigravity) operating in this repository. It tracks workflow guidelines, verification gates, and persistent task memories. Human developers do not need to edit this file.
+
 --- Context from: /users/peterrichards/.gemini/gemini.md ---
 
 ## 1. Permission, Scope & Workflow
@@ -8,6 +11,7 @@
 - **Atomic Changes**: Break down complex tasks into small, logical units. Do not move to "Step 2" until "Step 1" is verified.
 - **Visual Confirmation**: Always use the VS Code Diff view to present changes before applying them.
 - **Logic-First Planning**: For any function or logic block >10 lines, output a `<plan>` tag with the step-by-step algorithm. Wait for a "Proceed" command before writing code.
+- **Virtual Environment Execution**: The agent MUST run tests, linters, and git commit operations with the Python virtual environment (`.venv`) activated, or explicitly invoke the binaries inside `.venv/bin/` to prevent dependency mismatch and pre-commit hook failures on host environments.
 
 ## 2. Code Quality, Architecture & Deduplication
 
@@ -104,6 +108,10 @@
   - [x] **Actions Cleanup**: Delete failed/redundant GitHub Action workflow runs.
 
 - **Next Focus: Roadmap Execution & CLI Namespacing**
+  - [x] **Conductor Plans Cleanup**: Review, consolidate duplicates, and remove completed plans.
+  - [x] **Virtual Environment & Headers Mandate**: Add virtual environment developer mandates and agent rules, and clarify purpose headers in gemini configs.
+  - [x] **Organize Conductor Tracks**: Move all individual track plans to the tracks/ subfolder and update tracks.md links.
+  - [x] **Roadmap Synchronization**: Update docs/ROADMAP.md to align with completed v2.10.x features and restructure future roadmap items.
   - [ ] **CLI Simplification**: Refactor flat commands into grouped namespaces (e.g., `ldm cloud push`).
   - [ ] **Interactive Scaffolding**: Implement scenario-based project templates.
 
