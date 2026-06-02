@@ -472,10 +472,10 @@ class WorkspaceService(BaseHandler):
                     ):
                         dest = paths["modules"] / jar.name
                         if not overwrite and dest.exists():
-                            UI.info(f"  - Skipping existing module: {jar.name}")
+                            UI.detail(f"  - Skipping existing module: {jar.name}")
                             continue
                         atomic_copy(jar, dest)
-                        UI.info(f"  + Synced {folder.capitalize()[:-1]}: {jar.name}")
+                        UI.detail(f"  + Synced {folder.capitalize()[:-1]}: {jar.name}")
 
         # 3. Sync Fragments (ZIPs)
         frag_dir = workspace_root / "fragments"
@@ -490,12 +490,12 @@ class WorkspaceService(BaseHandler):
                         if "liferay-deploy-fragments.json" in zip_ref.namelist():
                             dest = paths["deploy"] / zip_file.name
                             if not overwrite and dest.exists():
-                                UI.info(
+                                UI.detail(
                                     f"  - Skipping existing fragment: {zip_file.name}"
                                 )
                                 continue
                             atomic_copy(zip_file, dest)
-                            UI.info(f"  + Synced Fragment: {zip_file.name}")
+                            UI.detail(f"  + Synced Fragment: {zip_file.name}")
                         else:
                             # If it's a ZIP in fragments but not a fragment, try syncing as CX
                             self._sync_cx_artifact(zip_file, paths, overwrite=overwrite)
@@ -514,7 +514,7 @@ class WorkspaceService(BaseHandler):
         # In 'no-overwrite' mode, we check if the final destination exists
         dest_zip = paths["cx"] / zip_path.name
         if not overwrite and dest_zip.exists():
-            UI.info(f"  - Skipping existing CX: {zip_path.name}")
+            UI.detail(f"  - Skipping existing CX: {zip_path.name}")
             return
 
         if zip_path.resolve() != root_zip_path.resolve():
@@ -540,7 +540,7 @@ class WorkspaceService(BaseHandler):
                     safe_extract(zip_ref, target_folder)
 
                 if overwrite or not dest_zip.exists():
-                    UI.info(f"  + Synced & Expanded CX: {zip_path.name}")
+                    UI.detail(f"  + Synced & Expanded CX: {zip_path.name}")
         except Exception as e:
             UI.error(f"  ! Failed to expand CX {zip_path.name}: {e}")
 
@@ -1186,8 +1186,7 @@ class WorkspaceService(BaseHandler):
                 ):
                     # We only care about the specific artifacts in 'dist' or 'libs'
                     if not any(x in p.parts for x in ["dist", "libs"]):
-                        if self.manager.verbose:
-                            UI.info(f"Monitor: Skipping deep build file: {p.name}")
+                        UI.detail(f"Monitor: Skipping deep build file: {p.name}")
                         return
 
                 # Refined Filtering Logic:
@@ -1205,16 +1204,15 @@ class WorkspaceService(BaseHandler):
                     is_valid = True
 
                 if is_valid:
-                    if self.manager.verbose:
-                        UI.info(f"Monitor: Detected valid artifact: {p.name}")
+                    UI.detail(f"Monitor: Detected valid artifact: {p.name}")
                     with self.lock:
                         self.pending_files.add(p)
                         if self.timer:
                             self.timer.cancel()
                         self.timer = threading.Timer(self.delay, self._process_pending)
                         self.timer.start()
-                elif self.manager.verbose:
-                    UI.info(f"Monitor: Ignoring non-artifact change: {p.name}")
+                else:
+                    UI.detail(f"Monitor: Ignoring non-artifact change: {p.name}")
 
             def _process_pending(self):
                 with self.lock:
@@ -1241,7 +1239,7 @@ class WorkspaceService(BaseHandler):
                     else:
                         # JARs for Liferay modules (sync to deploy)
                         dest_path = self.paths["deploy"] / f.name
-                        UI.info(f"Syncing Module: {f.name}")
+                        UI.detail(f"Syncing Module: {f.name}")
                         atomic_copy(f, dest_path)
 
                 # 3. Trigger deployment from the project's internal state
@@ -1312,7 +1310,7 @@ class WorkspaceService(BaseHandler):
             target = workspace_root / branch
             if target.exists():
                 watch_targets.append(target)
-                UI.info(f"  + Watching: {branch}")
+                UI.detail(f"  + Watching: {branch}")
 
         if not watch_targets:
             watch_targets = [workspace_root]

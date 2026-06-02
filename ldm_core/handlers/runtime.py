@@ -340,7 +340,7 @@ class RuntimeService(BaseHandler):
             use_volumes = self.manager.composer.is_using_named_volumes()
 
             if es_data.exists() and not use_volumes:
-                UI.info("Clearing stale search locks and enforcing permissions...")
+                UI.detail("Clearing stale search locks and enforcing permissions...")
                 for lock_file in es_data.rglob("write.lock"):
                     with contextlib.suppress(Exception):
                         lock_file.unlink()
@@ -1189,7 +1189,7 @@ class RuntimeService(BaseHandler):
                         check=False,
                     )
                     if res.strip():
-                        UI.info(
+                        UI.detail(
                             f"  - Removing Docker volume {UI.CYAN}{volume_name}{UI.COLOR_OFF}..."
                         )
                         self.manager.run_command(
@@ -1199,7 +1199,7 @@ class RuntimeService(BaseHandler):
                     pass
 
             if path and path.exists():
-                UI.info(f"  - Cleaning {t} (host)...")
+                UI.detail(f"  - Cleaning {t} (host)...")
                 shutil.rmtree(path)
                 path.mkdir(parents=True, exist_ok=True)
 
@@ -1413,7 +1413,7 @@ class RuntimeService(BaseHandler):
                 ext = t_path.suffix.lower()
                 if ext in [".jar", ".war"]:
                     dest = paths["modules"] / t_path.name
-                    UI.info(f"Syncing Module: {t_path.name}")
+                    UI.detail(f"Syncing Module: {t_path.name}")
                     atomic_copy(t_path, dest)
                 elif ext == ".zip":
                     # Potentially a CX or Fragment
@@ -1520,15 +1520,15 @@ class RuntimeService(BaseHandler):
         for es_dir in ["elasticsearch7", "elasticsearch8"]:
             target = data_dir / es_dir
             if target.exists():
-                UI.info(f"Removing internal index directory: {target}")
+                UI.detail(f"Removing internal index directory: {target}")
                 shutil.rmtree(target)
                 indices_found = True
 
         if not indices_found:
-            UI.info("No internal sidecar indices found. (Already clean?)")
+            UI.detail("No internal sidecar indices found. (Already clean?)")
 
         # 4. Sync configuration
-        UI.info("Applying Global Search configurations...")
+        UI.detail("Applying Global Search configurations...")
         # We force use_shared_search=True in meta
         project_meta = self.manager.read_meta(root)
         project_meta["use_shared_search"] = "true"

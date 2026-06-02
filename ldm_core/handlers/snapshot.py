@@ -338,8 +338,7 @@ class SnapshotService(BaseHandler):
                 if f_path.exists():
                     try:
                         # Re-verify specific path permissions before adding
-                        if self.manager.verbose:
-                            UI.info(f"Adding {f} to archive...")
+                        UI.detail(f"Adding {f} to archive...")
                         tar.add(f_path, arcname=f)
                     except (PermissionError, OSError) as e:
                         UI.warning(f"Skipping {f} due to permission error: {e}")
@@ -352,8 +351,7 @@ class SnapshotService(BaseHandler):
                     # Check if it's already in the tar to avoid duplicates
                     tar_names = [m.name for m in tar.getmembers()]
                     if "osgi/state" not in tar_names:
-                        if self.manager.verbose:
-                            UI.info("Adding missing osgi/state to archive...")
+                        UI.detail("Adding missing osgi/state to archive...")
                         tar.add(osgi_state, arcname="osgi/state")
                 except Exception:
                     pass
@@ -538,7 +536,7 @@ class SnapshotService(BaseHandler):
 
             self._extract_snapshot_archive(files_tar, paths)
         elif volume_tgz.exists() or (choice_path / "volume").is_dir():
-            UI.info("  + Restoring cloud data volume...")
+            UI.detail("  + Restoring cloud data volume...")
             target_data = paths["data"]
             from ldm_core.utils import safe_mkdir
 
@@ -559,7 +557,7 @@ class SnapshotService(BaseHandler):
                 if target_data.exists():
                     safe_rmtree(target_data)
 
-                UI.info("  + Unpacking volume to host...")
+                UI.detail("  + Unpacking volume to host...")
                 shutil.copytree(str(choice_path / "volume"), str(target_data))
 
                 # 2. On macOS (Named Volumes), we must push the host data into the Docker volume.
@@ -569,7 +567,7 @@ class SnapshotService(BaseHandler):
                     # can mount them into a container for the tar-sync.
                     time.sleep(2)
 
-                    UI.info("  + Hydrating internal Docker volumes...")
+                    UI.detail("  + Hydrating internal Docker volumes...")
 
                     self._hydrate_named_volumes(paths)
 
@@ -641,7 +639,7 @@ class SnapshotService(BaseHandler):
 
         # If cloud database dump exists but hasn't been extracted yet
         if db_gz.exists() and not sql_file.exists():
-            UI.info("  + Decompressing cloud database dump...")
+            UI.detail("  + Decompressing cloud database dump...")
             import gzip
             import shutil
 
@@ -1044,7 +1042,7 @@ class SnapshotService(BaseHandler):
             # 1. Clean Slate (LDM-410)
             # Cloud dumps often lack DROP TABLE commands. We must wipe the target DB first.
             if db_type == "postgresql":
-                UI.info("  - Wiping existing PostgreSQL database schema...")
+                UI.detail("  - Wiping existing PostgreSQL database schema...")
                 # LDM-416: Liferay's official image sets POSTGRES_USER=lportal, meaning the
                 # default 'postgres' user DOES NOT EXIST. We must use lportal (which is granted superuser).
                 # We use a comprehensive DO block to drop all objects in the public schema
@@ -1126,7 +1124,7 @@ class SnapshotService(BaseHandler):
                     )
 
             elif db_type in ["mysql", "mariadb"]:
-                UI.info("  - Wiping existing MySQL database...")
+                UI.detail("  - Wiping existing MySQL database...")
                 self.manager.run_command(
                     [
                         "docker",

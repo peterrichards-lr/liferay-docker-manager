@@ -107,7 +107,11 @@
   - [ ] **CLI Simplification**: Refactor flat commands into grouped namespaces (e.g., `ldm cloud push`).
   - [ ] **Interactive Scaffolding**: Implement scenario-based project templates.
 
-  - [ ] **Visual Dashboard**: Develop the `localhost:19000` monitoring UI.
+  - [x] **Verbosity Reduction**:
+    - [x] Move inner-loop sync and monitoring logs in `workspace.py` to `UI.detail`.
+    - [x] Move detailed SQL and archive progress statements in `snapshot.py` to `UI.detail`.
+    - [x] Clean up intermediate setup logs in `runtime.py`.
+
   - [x] **Document Third-Party Tools**:
     - [x] Create `docs/THIRD_PARTY_TOOLS.md` detailing Docker, mkcert, openssl, telnet, nc/ncat, and lcp.
     - [x] Explain why they are needed, which are optional, and what features break without them.
