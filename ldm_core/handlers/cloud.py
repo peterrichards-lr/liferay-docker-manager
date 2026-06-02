@@ -112,7 +112,7 @@ class CloudService:
                                 or "Successfully" in msg
                                 or "[" in msg
                             ):
-                                spinner.update_message(msg)
+                                spinner.update(msg)
 
                             output.append(clean_line)
                     process.stdout.close()
@@ -246,7 +246,11 @@ class CloudService:
 
                 search_path = Path(source_arg).resolve()
 
-            from ldm_core.utils import get_lcp_environment_variables
+            from ldm_core.utils import (
+                get_lcp_environment_variables,
+                is_env_var_blacklisted,
+                load_env_blacklist,
+            )
 
             envs = get_lcp_environment_variables(search_path, target_env)
             if envs is None:
@@ -255,9 +259,29 @@ class CloudService:
                 )
                 return
 
+            if getattr(self.manager.args, "no_env_sync", False):
+                UI.info("  - Skipping environment variable sync (--no-env-sync).")
+                return
+
             try:
+                # Load blacklist (Mandate 7.x)
+                from ldm_core.constants import SCRIPT_DIR
+
+                blacklist = load_env_blacklist(
+                    SCRIPT_DIR / "common" / "env-blacklist.txt"
+                )
+                if (root_path / "env-blacklist.txt").exists():
+                    blacklist.extend(
+                        load_env_blacklist(root_path / "env-blacklist.txt")
+                    )
+                blacklist = sorted(set(blacklist))
+
                 custom_env = json.loads(project_meta.get("custom_env", "{}"))
                 for k, v in envs.items():
+                    if is_env_var_blacklisted(k, blacklist):
+                        UI.info(f"  - Ignoring blacklisted cloud variable: {k}")
+                        continue
+
                     custom_env[k] = v
                     UI.info(f"  Synced {k}")
 

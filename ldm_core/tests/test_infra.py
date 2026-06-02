@@ -27,7 +27,11 @@ class TestInfraService(unittest.TestCase):
 
     @patch("ldm_core.ui.UI.confirm", return_value=True)
     def test_fix_cert_permissions_success(self, mock_confirm):
-        with patch.object(self.manager, "run_command") as mock_run:
+        with (
+            patch("os.getuid", return_value=1000, create=True),
+            patch("os.getgid", return_value=1000, create=True),
+            patch.object(self.manager, "run_command") as mock_run,
+        ):
             res = self.infra._fix_cert_permissions(Path("/tmp/certs"))
             self.assertTrue(res)
             self.assertTrue(mock_run.called)

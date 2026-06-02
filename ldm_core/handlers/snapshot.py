@@ -549,20 +549,78 @@ class SnapshotService(BaseHandler):
                     ["tar", "-xzf", str(volume_tgz), "-C", str(target_data)]
                 )
             else:
-                # Move contents of volume/ directory
+                # LDM-408/422/423: Robust Volume Hydration (Mac Sync Resilience)
+                # 1. First, synchronously copy the snapshot to the host project folder.
+                # This ensures the files are physically on the disk and owned by the user.
                 import shutil
 
                 from ldm_core.utils import safe_rmtree
 
                 if target_data.exists():
                     safe_rmtree(target_data)
+
+                UI.info("  + Unpacking volume to host...")
                 shutil.copytree(str(choice_path / "volume"), str(target_data))
+
+                # 2. On macOS (Named Volumes), we must push the host data into the Docker volume.
+                if self.manager.composer.is_using_named_volumes():
+                    # LDM-423: Critical 'Sync Wait'. On macOS, the Docker hypervisor (VirtioFS)
+                    # needs a moment to 'see' the files we just wrote to the host before we
+                    # can mount them into a container for the tar-sync.
+                    time.sleep(2)
+
+                    UI.info("  + Hydrating internal Docker volumes...")
+
+                    self._hydrate_named_volumes(paths)
 
             UI.success("Cloud volume restoration completed.")
 
-            # LDM-408: On macOS (Named Volumes), we must push the host data back into the Docker volume
-            if self.manager.composer.is_using_named_volumes():
-                self._hydrate_named_volumes(paths)
+            # LDM-424: Smart Store Detection (Automatic path resolution)
+            # We look at the physical folders in the document library to see if they follow
+            # the simplified FileSystemStore layout or the nested AdvancedFileSystemStore.
+            try:
+                doclib_root = target_data / "document_library"
+                if doclib_root.exists():
+                    is_simple = False
+                    for company_dir in doclib_root.iterdir():
+                        if company_dir.is_dir() and company_dir.name.isdigit():
+                            # If the company dir contains any folders that are NOT numbers (like ._*)
+                            # or if it contains folder IDs directly that are referenced in the DB
+                            # we assume it might be simple.
+                            # Better heuristic: Advanced store has repositoryId (Group ID) as 2nd level.
+                            # Simple store has folderId as 2nd level.
+                            # If we find a deep file at level 3 instead of level 4, it's simple.
+                            subdirs = [
+                                d
+                                for d in company_dir.iterdir()
+                                if d.is_dir() and d.name.isdigit()
+                            ]
+                            if subdirs:
+                                # Check if any of these subdirs contain further numbered subdirs
+                                for s in subdirs:
+                                    grandkids = [
+                                        d
+                                        for d in s.iterdir()
+                                        if d.is_dir() and d.name.isdigit()
+                                    ]
+                                    if not grandkids:
+                                        is_simple = True
+                                        break
+                        if is_simple:
+                            break
+
+                    if is_simple:
+                        UI.info("  + Detected simplified FileSystemStore layout.")
+                        project_meta["dl_store_impl"] = (
+                            "com.liferay.portal.store.file.system.FileSystemStore"
+                        )
+                    else:
+                        project_meta["dl_store_impl"] = (
+                            "com.liferay.portal.store.file.system.AdvancedFileSystemStore"
+                        )
+                    self.manager.write_meta(paths["root"], project_meta)
+            except Exception as e:
+                UI.debug(f"Store detection failed: {e}")
         else:
             UI.die(f"Snapshot files not found in {choice_path}")
 
@@ -596,10 +654,53 @@ class SnapshotService(BaseHandler):
                 UI.warning(f"Failed to decompress {db_gz.name}: {e}")
 
         if sql_file.exists():
+            # LDM-413: Scrub proprietary LCP \restrict meta-commands
+            # These commands cause standard psql to fail when ON_ERROR_STOP=1 is active
+            try:
+                import tempfile
+
+                scrubbed = False
+                with tempfile.NamedTemporaryFile(
+                    dir=str(sql_file.parent), delete=False, mode="w", encoding="utf-8"
+                ) as temp_file:
+                    temp_sql = Path(temp_file.name)
+
+                    with open(str(sql_file), encoding="utf-8", errors="ignore") as f_in:
+                        # Quick check: does it even have \restrict near the top?
+                        first_chunk = f_in.read(4096)
+                        if "\\restrict" in first_chunk:
+                            UI.info(
+                                "  + Scrubbing Cloud-specific meta-commands from SQL dump..."
+                            )
+                            f_in.seek(0)
+                            for line in f_in:
+                                if line.startswith("\\restrict") or line.startswith(
+                                    "\\unrestrict"
+                                ):
+                                    continue
+                                temp_file.write(line)
+                            scrubbed = True
+
+                # We must close the NamedTemporaryFile block before moving it to avoid file locks on some OSs
+                if scrubbed:
+                    from ldm_core.utils import safe_move
+
+                    safe_move(str(temp_sql), str(sql_file))
+                elif temp_sql.exists():
+                    temp_sql.unlink(missing_ok=True)
+            except Exception as e:
+                UI.debug(f"SQL scrub failed: {e}")
+                if "temp_sql" in locals() and temp_sql.exists():
+                    temp_sql.unlink(missing_ok=True)
+
             db_type = project_meta.get("db_type", "hypersonic")
             UI.info(f"Triggering orchestrated database restore ({db_type})...")
 
-            # 1. Ensure DB container is running
+            # 1. Ensure DB container is running, but Liferay is STOPPED
+            # This is critical to prevent Liferay from locking the database or
+            # attempting to initialize schemas during the restore process.
+            self.manager.runtime.cmd_stop(project_id, service="liferay")
+
             db_container = project_meta.get("db_container_name")
             if not db_container:
                 for suffix in ["-db", "-db-1"]:
@@ -688,6 +789,14 @@ class SnapshotService(BaseHandler):
                 )
 
         UI.success("Restore complete.")
+
+        # LDM-422: Flag for one-time automatic reindex on next boot
+        # Liferay won't automatically reindex imported databases. We set a metadata
+        # flag that tells the composer to inject index.on.startup=true for the next run.
+        if self.flag_reindex(paths["root"]):
+            UI.info("  + Scheduled automatic search reindex for next boot.")
+        else:
+            UI.warning("  ! Could not schedule automatic reindex (metadata missing).")
 
         # --- OPTIONAL STARTUP (LDM-388) ---
         no_run = getattr(self.manager.args, "no_run", False)
@@ -861,7 +970,11 @@ class SnapshotService(BaseHandler):
         src = "/host" if direction == "to_volume" else "/vol"
         dst = "/vol" if direction == "to_volume" else "/host"
 
-        # Note: We use 'cp -aT' to copy directory contents without creating a nested subdir
+        # Note: We use 'tar' piped to 'tar' to safely copy the entire directory structure
+        # (including hidden files and deep nesting) without relying on shell expansion quirks in Alpine.
+        # LDM-420: We MUST chown the files to 1000:1000 (liferay) when hydrating the volume,
+        # otherwise the Alpine container creates them as root, causing 404 access errors.
+        chown_cmd = f" && chown -R 1000:1000 {dst}" if direction == "to_volume" else ""
         cmd = [
             "docker",
             "run",
@@ -873,7 +986,7 @@ class SnapshotService(BaseHandler):
             "alpine",
             "sh",
             "-c",
-            f"cp -aT {src}/. {dst}/ 2>/dev/null || true",
+            f"tar -cC {src} . | tar -xC {dst}{chown_cmd}",
         ]
 
         try:
@@ -919,100 +1032,157 @@ class SnapshotService(BaseHandler):
                     f"  + Hydrating volume {UI.CYAN}{volume_name}{UI.COLOR_OFF} from host..."
                 )
                 self._sync_volume(host_path, volume_name, direction="to_volume")
-                # Clean up host-side files after hydration to avoid confusion (except for logs)
-                if self.manager.verbose:
-                    UI.info(f"  + Cleaning up host-side {target}...")
-                from ldm_core.utils import safe_rmtree
-
-                safe_rmtree(host_path)
-                host_path.mkdir(parents=True, exist_ok=True)
 
     def _execute_orchestrated_db_restore(
         self, db_container, db_type, sql_file, paths, project_meta
     ):
         """Internal helper to execute a robust SQL import into a running DB container."""
+        import platform
         import subprocess
 
-        # 1. Clean Slate (LDM-410)
-        # Cloud dumps often lack DROP TABLE commands. We must wipe the target DB first.
-        if db_type == "postgresql":
-            UI.info("  - Wiping existing PostgreSQL schema...")
-            self.manager.run_command(
-                [
-                    "docker",
-                    "exec",
-                    db_container,
-                    "psql",
-                    "-U",
-                    "lportal",
-                    "-d",
-                    "lportal",
-                    "-c",
-                    "DROP SCHEMA public CASCADE; CREATE SCHEMA public; GRANT ALL ON SCHEMA public TO lportal; GRANT ALL ON SCHEMA public TO public;",
-                ],
-                check=False,
-            )
-        elif db_type in ["mysql", "mariadb"]:
-            UI.info("  - Wiping existing MySQL database...")
-            self.manager.run_command(
-                [
-                    "docker",
-                    "exec",
-                    db_container,
-                    "mysql",
-                    "-u",
-                    "lportal",
-                    "-ptest",
-                    "-e",
-                    "DROP DATABASE IF EXISTS lportal; CREATE DATABASE lportal; GRANT ALL PRIVILEGES ON lportal.* TO 'lportal'@'%';",
-                ],
-                check=False,
-            )
+        def _wipe_db():
+            # 1. Clean Slate (LDM-410)
+            # Cloud dumps often lack DROP TABLE commands. We must wipe the target DB first.
+            if db_type == "postgresql":
+                UI.info("  - Wiping existing PostgreSQL database schema...")
+                # LDM-416: Liferay's official image sets POSTGRES_USER=lportal, meaning the
+                # default 'postgres' user DOES NOT EXIST. We must use lportal (which is granted superuser).
+                # We use a comprehensive DO block to drop all objects in the public schema
+                # to guarantee a clean slate without needing to drop the database itself.
+                wipe_script = """
+                DO $$ DECLARE
+                    r RECORD;
+                BEGIN
+                    FOR r IN (SELECT tablename FROM pg_tables WHERE schemaname = 'public') LOOP
+                        EXECUTE 'DROP TABLE IF EXISTS public.' || quote_ident(r.tablename) || ' CASCADE';
+                    END LOOP;
+                    FOR r IN (SELECT relname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'public' AND c.relkind = 'S') LOOP
+                        EXECUTE 'DROP SEQUENCE IF EXISTS public.' || quote_ident(r.relname) || ' CASCADE';
+                    END LOOP;
+                    FOR r IN (SELECT viewname FROM pg_views WHERE schemaname = 'public') LOOP
+                        EXECUTE 'DROP VIEW IF EXISTS public.' || quote_ident(r.viewname) || ' CASCADE';
+                    END LOOP;
+
+                    -- LDM-416: Clear Large Objects to prevent pg_largeobject_metadata_oid_index collisions
+                    -- 'lo_unlink' is insufficient for Liferay's usage pattern. We must directly delete.
+                    DELETE FROM pg_largeobject_metadata;
+                    DELETE FROM pg_largeobject;
+
+                    -- Mock cloudsqlsuperuser to prevent ON_ERROR_STOP=1 from aborting LCP imports
+                    IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = 'cloudsqlsuperuser') THEN
+                        CREATE ROLE cloudsqlsuperuser;
+                    END IF;
+                END $$;
+                """
+                # LDM-418: Execute via stdin instead of -c to prevent multi-line parsing failures across docker exec
+                # We wrap this in a retry loop because a freshly created Postgres container
+                # will initialize and then restart itself, causing temporary connection refusals.
+                wipe_success = False
+                for _wipe_attempt in range(6):  # Up to ~30 seconds wait
+                    try:
+                        subprocess.run(
+                            [
+                                "docker",
+                                "exec",
+                                "-i",
+                                db_container,
+                                "psql",
+                                "-U",
+                                "lportal",
+                                "-d",
+                                "lportal",
+                            ],
+                            input=wipe_script.encode("utf-8"),
+                            check=True,
+                            capture_output=True,
+                        )
+                        wipe_success = True
+                        break
+                    except subprocess.CalledProcessError as e:
+                        # LDM-423: Capture both stdout and stderr for robust error parsing
+                        # psql sometimes sends connection errors to stdout
+                        raw_err = (e.stderr or b"").decode(errors="ignore")
+                        raw_out = (e.stdout or b"").decode(errors="ignore")
+                        err_out = f"{raw_err} {raw_out}".lower()
+
+                        if (
+                            "shutting down" in err_out
+                            or "starting up" in err_out
+                            or "does not exist" in err_out
+                            or "no such file or directory" in err_out
+                        ):
+                            UI.debug(f"DB initializing, waiting... ({err_out.strip()})")
+                            time.sleep(5)
+                        else:
+                            UI.warning(f"  ! Non-fatal wipe error: {err_out.strip()}")
+                            break  # Other SQL error, stop retrying
+                    except Exception as e:
+                        UI.warning(f"  ! Wipe encountered an error: {e}")
+                        break
+
+                if not wipe_success:
+                    UI.warning(
+                        "  ! Could not confirm successful schema wipe. Restore may fail."
+                    )
+
+            elif db_type in ["mysql", "mariadb"]:
+                UI.info("  - Wiping existing MySQL database...")
+                self.manager.run_command(
+                    [
+                        "docker",
+                        "exec",
+                        db_container,
+                        "mysql",
+                        "-u",
+                        "lportal",
+                        "-ptest",
+                        "-e",
+                        "DROP DATABASE IF EXISTS lportal; CREATE DATABASE lportal;",
+                    ],
+                    check=False,
+                )
 
         # 2. Build Import Command
-        import_cmd = []
+        import_cmd_str = ""
         if db_type == "postgresql":
-            import_cmd = [
-                "docker",
-                "exec",
-                "-i",
-                db_container,
-                "psql",
-                "-U",
-                "lportal",
-                "lportal",
-            ]
+            # LDM-410: Use standard user and enforce error stopping for reliability
+            import_cmd_str = f'docker exec -i {db_container} psql -U lportal -d lportal -v ON_ERROR_STOP=1 < "{sql_file}"'
         elif db_type in ["mysql", "mariadb"]:
-            import_cmd = [
-                "docker",
-                "exec",
-                "-i",
-                db_container,
-                "mysql",
-                "-u",
-                "lportal",
-                "-ptest",
-                "lportal",
-            ]
+            import_cmd_str = f'docker exec -i {db_container} mysql -u lportal -ptest lportal < "{sql_file}"'
 
         # 3. Execute with Retry
-        if import_cmd:
+        if import_cmd_str:
             success = False
             for i in range(3):  # Retry up to 3 times for flaky Docker IO
+                # LDM-422: We MUST wipe the DB at the start of EVERY retry attempt.
+                # If attempt 1 fails halfway through, the tables are created. Attempt 2 will instantly
+                # fail with "relation already exists" unless the schema is dropped again.
+                _wipe_db()
                 try:
-                    # LDM-410: Use binary mode ("rb") to avoid UnicodeDecodeErrors with non-UTF8 dumps
-                    with open(sql_file, "rb") as f:
-                        res = subprocess.run(
-                            import_cmd, stdin=f, check=True, capture_output=True
-                        )
+                    # LDM-419: Use shell=True and OS-level redirection (<) instead of Python's stdin buffering.
+                    # Python's subprocess.run(stdin=f) truncates massive 50MB+ SQL files across the Docker boundary,
+                    # causing "Broken pipe" and incomplete schema restorations.
+                    subprocess.run(
+                        import_cmd_str,
+                        shell=True,
+                        check=True,
+                        capture_output=True,
+                        executable="/bin/bash"
+                        if platform.system() != "Windows"
+                        else None,
+                    )  # nosec B602 B604
                     success = True
                     break
                 except subprocess.CalledProcessError as e:
-                    err_out = e.stderr.decode(errors="ignore") if e.stderr else str(e)
+                    # LDM-423: Capture both for better debugging
+                    raw_err = (e.stderr or b"").decode(errors="ignore")
+                    raw_out = (e.stdout or b"").decode(errors="ignore")
+                    err_out = f"{raw_err} {raw_out}".strip()
+
                     if i < 2:
                         UI.warning(f"  ! Restore attempt {i + 1} failed, retrying...")
                         UI.debug(f"  ! Error: {err_out}")
-                        time.sleep(3)
+                        time.sleep(5)
                     else:
                         UI.error(
                             f"  ! Database restore failed after 3 attempts: {err_out}"
@@ -1021,7 +1191,7 @@ class SnapshotService(BaseHandler):
                     if i < 2:
                         UI.warning(f"  ! Restore attempt {i + 1} failed, retrying...")
                         UI.debug(f"  ! Error: {e}")
-                        time.sleep(3)
+                        time.sleep(5)
                     else:
                         UI.error(f"  ! Database restore failed after 3 attempts: {e}")
 

@@ -613,10 +613,14 @@ class WorkspaceService(BaseHandler):
             self.manager.args.source_path = str(source_path)
 
             # 1. Sync Env Vars (Do this first so they are in place for the restoration boot)
-            self.manager.args.download = False
-            self.manager.args.restore = False
-            self.manager.args.sync_env = True
-            self.manager.cloud.cmd_cloud_fetch()
+            # LDM-423: Skip env sync if --no-env-sync is provided
+            if not getattr(self.manager.args, "no_env_sync", False):
+                self.manager.args.download = False
+                self.manager.args.restore = False
+                self.manager.args.sync_env = True
+                self.manager.cloud.cmd_cloud_fetch()
+            else:
+                UI.info("  - Skipping environment variable sync (--no-env-sync).")
 
             # 2. Fetch Data & Restore
             # We set no_run=True to prevent cmd_restore from starting the stack early.
