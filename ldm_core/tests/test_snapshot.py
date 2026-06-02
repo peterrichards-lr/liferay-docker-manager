@@ -202,3 +202,187 @@ class TestSnapshotService(unittest.TestCase):
             with self.assertRaises(SystemExit):
                 self.manager.snapshot.cmd_restore("test")
             self.assertTrue(mock_die.called)
+
+    @patch("subprocess.run")
+    @patch("time.sleep")
+    def test_wipe_db_postgres_retries(self, mock_sleep, mock_sub_run):
+        import subprocess
+
+        mock_err = subprocess.CalledProcessError(
+            1, ["cmd"], stderr=b"starting up database"
+        )
+        mock_success_res = MagicMock()
+        mock_success_res.returncode = 0
+
+        mock_sub_run.side_effect = [
+            mock_err,
+            mock_err,
+            mock_err,
+            mock_success_res,
+            mock_success_res,
+        ]
+
+        self.manager.snapshot._execute_orchestrated_db_restore(
+            "db-container", "postgresql", "sql-file", {}, {"host_name": "localhost"}
+        )
+        self.assertEqual(mock_sub_run.call_count, 5)
+        self.assertEqual(mock_sleep.call_count, 3)
+
+    @patch("subprocess.run")
+    @patch("time.sleep")
+    def test_wipe_db_postgres_non_fatal_sql_error(self, mock_sleep, mock_sub_run):
+        import subprocess
+
+        mock_err = subprocess.CalledProcessError(
+            1, ["cmd"], stderr=b"relation public.some_table already exists"
+        )
+        mock_success_res = MagicMock()
+        mock_success_res.returncode = 0
+
+        mock_sub_run.side_effect = [mock_err, mock_success_res]
+
+        self.manager.snapshot._execute_orchestrated_db_restore(
+            "db-container", "postgresql", "sql-file", {}, {"host_name": "localhost"}
+        )
+        self.assertEqual(mock_sub_run.call_count, 2)
+        self.assertEqual(mock_sleep.call_count, 0)
+
+    @patch("subprocess.run")
+    @patch("platform.system", return_value="Darwin")
+    def test_execute_orchestrated_db_restore_success(self, mock_system, mock_sub_run):
+        mock_res = MagicMock()
+        mock_res.returncode = 0
+        mock_sub_run.return_value = mock_res
+
+        self.manager.snapshot._execute_orchestrated_db_restore(
+            "db-container", "postgresql", "sql-file", {}, {"host_name": "my-local-host"}
+        )
+
+        import_call = next(
+            c
+            for c in mock_sub_run.call_args_list
+            if isinstance(c.args[0], str) and "ON_ERROR_STOP=1" in c.args[0]
+        )
+        self.assertIn("ON_ERROR_STOP=1", import_call.args[0])
+        self.assertEqual(import_call.kwargs.get("shell"), True)
+        self.assertEqual(import_call.kwargs.get("executable"), "/bin/bash")
+
+    @patch("subprocess.run")
+    @patch("time.sleep")
+    def test_execute_orchestrated_db_restore_failure_retries(
+        self, mock_sleep, mock_sub_run
+    ):
+        import subprocess
+
+        mock_success = MagicMock()
+        mock_success.returncode = 0
+        mock_err = subprocess.CalledProcessError(1, ["cmd"], stderr=b"broken pipe")
+
+        mock_sub_run.side_effect = [
+            mock_success,
+            mock_err,
+            mock_success,
+            mock_err,
+            mock_success,
+            mock_err,
+        ]
+
+        self.manager.snapshot._execute_orchestrated_db_restore(
+            "db-container", "postgresql", "sql-file", {}, {}
+        )
+        self.assertEqual(mock_sub_run.call_count, 6)
+        self.assertEqual(mock_sleep.call_count, 2)
+
+    @patch("ldm_core.handlers.base.BaseHandler.detect_project_path")
+    @patch("ldm_core.handlers.base.BaseHandler.setup_paths")
+    def test_cmd_restore_smart_store_detection_simple(self, mock_paths, mock_detect):
+        mock_detect.return_value = self.test_dir
+        (self.test_dir / "snapshots").mkdir(exist_ok=True)
+
+        data_dir = self.test_dir / "data"
+        data_dir.mkdir(exist_ok=True)
+
+        doclib = data_dir / "document_library"
+        doclib.mkdir()
+        comp_dir = doclib / "20116"
+        comp_dir.mkdir()
+        folder_dir = comp_dir / "12345"
+        folder_dir.mkdir()
+
+        mock_paths.return_value = {
+            "root": self.test_dir,
+            "backups": self.test_dir / "snapshots",
+            "state": self.test_dir / "osgi" / "state",
+            "data": data_dir,
+        }
+
+        snap_dir = self.test_dir / "snapshots" / "20260512_120000"
+        snap_dir.mkdir(parents=True)
+        (snap_dir / "volume.tgz").touch()
+        (snap_dir / "meta").touch()
+
+        self.manager.args.latest = True
+        self.manager.args.verify = True
+        self.manager.args.list = False
+        self.manager.args.backup_dir = None
+
+        with (
+            patch.object(self.manager.snapshot, "_hydrate_named_volumes"),
+            patch("ldm_core.handlers.base.BaseHandler.read_meta", return_value={}),
+            patch("ldm_core.handlers.base.BaseHandler.write_meta") as mock_write_meta,
+        ):
+            self.manager.snapshot.cmd_restore("test")
+            mock_write_meta.assert_called_with(
+                self.test_dir,
+                {
+                    "dl_store_impl": "com.liferay.portal.store.file.system.FileSystemStore"
+                },
+            )
+
+    @patch("ldm_core.handlers.base.BaseHandler.detect_project_path")
+    @patch("ldm_core.handlers.base.BaseHandler.setup_paths")
+    def test_cmd_restore_smart_store_detection_advanced(self, mock_paths, mock_detect):
+        mock_detect.return_value = self.test_dir
+        (self.test_dir / "snapshots").mkdir(exist_ok=True)
+
+        data_dir = self.test_dir / "data"
+        data_dir.mkdir(exist_ok=True)
+
+        doclib = data_dir / "document_library"
+        doclib.mkdir()
+        comp_dir = doclib / "20116"
+        comp_dir.mkdir()
+        folder_dir = comp_dir / "12345"
+        folder_dir.mkdir()
+        grandkid = folder_dir / "67890"
+        grandkid.mkdir()
+
+        mock_paths.return_value = {
+            "root": self.test_dir,
+            "backups": self.test_dir / "snapshots",
+            "state": self.test_dir / "osgi" / "state",
+            "data": data_dir,
+        }
+
+        snap_dir = self.test_dir / "snapshots" / "20260512_120000"
+        snap_dir.mkdir(parents=True)
+        (snap_dir / "volume.tgz").touch()
+        (snap_dir / "meta").touch()
+
+        self.manager.args.latest = True
+        self.manager.args.verify = True
+        self.manager.args.list = False
+        self.manager.args.backup_dir = None
+
+        with (
+            patch.object(self.manager.snapshot, "_hydrate_named_volumes"),
+            patch("ldm_core.handlers.base.BaseHandler.read_meta", return_value={}),
+            patch("ldm_core.handlers.base.BaseHandler.write_meta") as mock_write_meta,
+        ):
+            self.manager.snapshot.cmd_restore("test")
+            mock_write_meta.assert_called_with(
+                self.test_dir,
+                {
+                    "dl_store_impl": "com.liferay.portal.store.file.system.AdvancedFileSystemStore"
+                },
+            )
