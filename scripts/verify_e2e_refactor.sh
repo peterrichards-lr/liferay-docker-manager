@@ -84,7 +84,7 @@ cleanup_test_projects() {
     fi
 
     local env_slug
-    env_slug=$("$LDM_CMD" doctor --slug 2>/dev/null | tr -d '\r' | tr ' ' '-')
+    env_slug=$("$LDM_CMD" system doctor --slug 2>/dev/null | tr -d '\r' | tr ' ' '-')
     local final_name
     final_name="verify-${env_slug:-unknown}-${status}-$(get_hash "$TIMESTAMP").txt"
     
@@ -169,11 +169,11 @@ echo "ℹ  Pre-pulling required Docker images..."
 docker pull liferay/dxp:2026.q1.7-lts --quiet
 docker pull postgres:16.2 --quiet
 
-log_and_run "Initializing Infrastructure" "$LDM_CMD" -y infra-setup --search
+log_and_run "Initializing Infrastructure" "$LDM_CMD" -y infra setup --search
 
 # 2. Guardrails
 echo ">> Verifying Dev Guardrails..."
-DEV_GUARD_OUT=$($LDM_CMD version --bump patch 2>&1 || true)
+DEV_GUARD_OUT=$($LDM_CMD system version --bump patch 2>&1 || true)
 if echo "$DEV_GUARD_OUT" | grep -qE "Error: Developer utility requires LDM_DEV_MODE=true|Action restricted"; then
     echo "✅ Dev Guardrails verified."
 else
@@ -185,12 +185,12 @@ if [ "$GITHUB_ACTIONS" = "true" ]; then
     echo "⚠️  Skipping behavioral Sudo Guard check (Sudo allowed in CI)."
 elif [[ "$OSTYPE" == "linux"* ]] && command -v unshare &>/dev/null; then
     # unshare -r runs the command as simulated root (UID 0) in a new namespace
-    SUDO_BLOCK_OUT=$(unshare -r "$LDM_CMD" version 2>&1 || true)
+    SUDO_BLOCK_OUT=$(unshare -r "$LDM_CMD" system version 2>&1 || true)
     if echo "$SUDO_BLOCK_OUT" | grep -q "Do not run LDM with 'sudo'"; then
         echo "✅ Sudo Guard verified (Blocked 'version')."
         
         # Verify that exempted commands are NOT blocked
-        if unshare -r "$LDM_CMD" fix-hosts --help >/dev/null 2>&1; then
+        if unshare -r "$LDM_CMD" system fix-hosts --help >/dev/null 2>&1; then
             echo "✅ Sudo Guard verified (Allowed 'fix-hosts')."
         else
             echo "❌ ERROR: Sudo Guard incorrectly blocked 'fix-hosts'!" && exit 1
@@ -286,17 +286,24 @@ else
 fi
 log_and_run "Bypassing Integrity" "$LDM_CMD" -y restore --latest --no-verify
 
+echo ">> Verifying Legacy Command Translation..."
+if "$LDM_CMD" doctor --help >/dev/null && "$LDM_CMD" infra-setup --help >/dev/null; then
+    echo "✅ Legacy command translation verified."
+else
+    echo "❌ ERROR: Legacy command translation failed." && exit 1
+fi
+
 # UX & Scaling
 echo ">> Verifying Cascading Defaults..."
-"$LDM_CMD" defaults test_key test_value >/dev/null
-if "$LDM_CMD" defaults | grep -q "test_key.*test_value.*User"; then
+"$LDM_CMD" config defaults test_key test_value >/dev/null
+if "$LDM_CMD" config defaults | grep -q "test_key.*test_value.*User"; then
     echo "✅ Set User Default verified."
 else
     echo "❌ ERROR: Set User Default failed." | tee -a "$RESULTS_FILE_TMP"
     exit 1
 fi
-"$LDM_CMD" defaults --remove test_key >/dev/null
-if ! "$LDM_CMD" defaults | grep -q "test_key.*test_value.*User"; then
+"$LDM_CMD" config defaults --remove test_key >/dev/null
+if ! "$LDM_CMD" config defaults | grep -q "test_key.*test_value.*User"; then
     echo "✅ Remove User Default verified."
 else
     echo "❌ ERROR: Remove User Default failed." | tee -a "$RESULTS_FILE_TMP"
@@ -304,20 +311,29 @@ else
 fi
 
 echo ">> Verifying Env Sync..."
-"$LDM_CMD" env . TEST_SECRET=supersecret123 >/dev/null
+"$LDM_CMD" config env . TEST_SECRET=supersecret123 >/dev/null
 grep -q "TEST_SECRET=supersecret123" docker-compose.yml && echo "✅ Env Sync verified."
 
 echo ">> Verifying Redaction..."
-"$LDM_CMD" -v env . REDACT_SECRET=hidden 2>&1 | grep -q "REDACT_SECRET=\[REDACTED\]" && echo "✅ Redaction verified."
+"$LDM_CMD" -v config env . REDACT_SECRET=hidden 2>&1 | grep -q "REDACT_SECRET=\[REDACTED\]" && echo "✅ Redaction verified."
 
 echo ">> Verifying Scaling..."
 log_and_run "Scaling Liferay" "$LDM_CMD" -y scale . liferay=3 --no-run
 grep -q "scale_liferay=3" meta && echo "✅ Scaling verified."
 
+echo ">> Verifying logs --instance..."
+# Scale is 3, so --instance 4 should be invalid, and --instance 2 should look for the container
+if "$LDM_CMD" logs . --instance 4 2>&1 | grep -q "Invalid instance index 4" && \
+   "$LDM_CMD" logs . --instance 2 2>&1 | grep -q "Container 'ldm-smoke-test-liferay-2' not found"; then
+    echo "✅ logs --instance routing verified."
+else
+    echo "❌ ERROR: logs --instance routing validation failed." && exit 1
+fi
+
 # Final
 log_and_run "Checking Status" "$LDM_CMD" -y status
 
 # Clean up any potential orphans from the run
-"$LDM_CMD" -y prune >/dev/null 2>&1 || true
+"$LDM_CMD" -y system prune >/dev/null 2>&1 || true
 
 echo -e "\n🎯 ALL E2E VERIFICATIONS PASSED!"

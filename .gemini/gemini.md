@@ -116,6 +116,7 @@
   - [x] **Diagnostics & Venv Hardening**: Implemented virtualenv environment verification, refactored ldm doctor to provide a RAG summary dashboard by default with granular section filters (`--system`, `--docker`, `--project`), and expanded test coverage.
   - [x] **Test Coverage Hardening**: Expanded unit test coverage for the Snapshot/Restore Service (specifically `_wipe_db()`, `_execute_orchestrated_db_restore()`, and Smart Store Detection heuristics).
   - [x] **CLI Simplification (Namespacing)**: Refactoring flat commands into grouped namespaces (infra, cloud, config, system) with 100% backward compatibility via preprocess_args.
+  - [x] **E2E Scripts Refactor**: Update verify_e2e_refactor.sh and verify_e2e_refactor.ps1 for CLI namespacing, legacy translations, and scaled instance logs.
   - [ ] **Interactive Scaffolding**: Implement scenario-based project templates.
 
   - [x] **Verbosity Reduction**:

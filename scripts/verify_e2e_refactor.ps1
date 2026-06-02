@@ -48,7 +48,7 @@ function Finalize-Verification {
     param($ExitCode)
     $status = if ($ExitCode -eq 0) { "pass" } else { "fail" }
     
-    $slugOut = & $LDM_CMD doctor --slug 2>$null
+    $slugOut = & $LDM_CMD system doctor --slug 2>$null
     if ($null -eq $slugOut) { 
         $slug = "unknown" 
     } else {
@@ -95,11 +95,11 @@ try {
     & docker pull liferay/dxp:2026.q1.7-lts --quiet
     & docker pull postgres:16.2 --quiet
 
-    Log-AndRun "Initializing Infrastructure" $LDM_CMD "-y infra-setup --search"
+    Log-AndRun "Initializing Infrastructure" $LDM_CMD "-y infra setup --search"
 
     # 2. Guardrails
     Write-Host ">> Verifying Dev Guardrails..."
-    $res = & $LDM_CMD version --bump patch -y 2>&1
+    $res = & $LDM_CMD system version --bump patch -y 2>&1
     if ($res -match "Developer utility requires LDM_DEV_MODE=true" -or $res -match "Action restricted") { 
         Write-Host "✅ Dev Guardrails verified." 
     } else { 
@@ -155,15 +155,33 @@ try {
     if ((& $LDM_CMD -y restore --latest 2>&1) -match "Integrity check failed") { Write-Host "✅ Integrity check verified." } else { throw "Integrity block failed" }
     Log-AndRun "Bypassing Integrity" $LDM_CMD "-y restore --latest --no-verify"
 
+    Write-Host ">> Verifying Legacy Command Translation..."
+    $legacyDoc = & $LDM_CMD doctor --help 2>&1
+    $legacySetup = & $LDM_CMD infra-setup --help 2>&1
+    if ($legacyDoc -match "Usage" -and $legacySetup -match "Usage") {
+        Write-Host "✅ Legacy command translation verified."
+    } else {
+        throw "Legacy command translation failed."
+    }
+
     # UX & Scaling
-    & $LDM_CMD env . TEST_SECRET=supersecret123 > $null 2>&1
+    & $LDM_CMD config env . TEST_SECRET=supersecret123 > $null 2>&1
     if ((Get-Content "docker-compose.yml" -Raw) -match "TEST_SECRET=supersecret123") { Write-Host "✅ Env Sync verified." }
-    if ((& $LDM_CMD -v env . REDACT_SECRET=hidden 2>&1) -match "REDACTED") { Write-Host "✅ Redaction verified." }
+    if ((& $LDM_CMD -v config env . REDACT_SECRET=hidden 2>&1) -match "REDACTED") { Write-Host "✅ Redaction verified." }
     & $LDM_CMD -y scale . liferay=3 > $null 2>&1
     if ((Get-Content "meta" -Raw) -match "scale_liferay=3") { Write-Host "✅ Scaling verified." }
 
+    Write-Host ">> Verifying logs --instance..."
+    $logErr4 = & $LDM_CMD logs . --instance 4 2>&1
+    $logErr2 = & $LDM_CMD logs . --instance 2 2>&1
+    if ($logErr4 -match "Invalid instance index 4" -and $logErr2 -match "Container 'ldm-smoke-test-liferay-2' not found") {
+        Write-Host "✅ logs --instance routing verified."
+    } else {
+        throw "logs --instance routing validation failed."
+    }
+
     # Clean up any potential orphans from the run
-    & $LDM_CMD -y prune > $null 2>&1
+    & $LDM_CMD -y system prune > $null 2>&1
 
     Write-Host "`n🎯 ALL E2E VERIFICATIONS PASSED!"
     Finalize-Verification 0
