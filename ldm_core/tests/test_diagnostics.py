@@ -387,6 +387,86 @@ class TestDiagnostics(unittest.TestCase):
             runner._check_global_config_and_network()
             self.assertTrue(any("Read-Only" in str(r[1]) for r in runner.results))
 
+    def test_check_tooling_and_integrity_venv_active(self):
+        runner = DoctorRunner(self.manager.diagnostics)
+        with (
+            patch("sys.prefix", "dummy_venv"),
+            patch("sys.base_prefix", "dummy_base"),
+            patch.dict("os.environ", {}, clear=True),
+        ):
+            runner._check_tooling_and_integrity()
+            venv_result = next(
+                r for r in runner.results if r[0] == "Virtual Environment"
+            )
+            self.assertEqual(venv_result[1], "Active (.venv)")
+            self.assertTrue(venv_result[2])
+
+    def test_check_tooling_and_integrity_venv_inactive(self):
+        runner = DoctorRunner(self.manager.diagnostics)
+        with (
+            patch("sys.prefix", "dummy_base"),
+            patch("sys.base_prefix", "dummy_base"),
+            patch.dict("os.environ", {}, clear=True),
+        ):
+            runner._check_tooling_and_integrity()
+            venv_result = next(
+                r for r in runner.results if r[0] == "Virtual Environment"
+            )
+            self.assertEqual(venv_result[1], "Not Activated")
+            self.assertEqual(venv_result[2], "warn")
+            self.assertTrue(any("globally" in h["text"] for h in runner.hints))
+
+    def test_doctor_runner_dashboard_view(self):
+        runner = DoctorRunner(self.manager.diagnostics)
+        runner.results = [
+            ("Python Version", "3.10.0", True),
+            ("Docker Engine", "24.0.0", True),
+            ("Project Initialization", "Vanilla", "warn"),
+        ]
+        self.manager.args.system = False
+        self.manager.args.docker = False
+        self.manager.args.project = False
+        self.manager.args.detailed = False
+        self.manager.args.verbose = False
+
+        import io
+        from contextlib import redirect_stdout
+
+        f = io.StringIO()
+        with redirect_stdout(f), patch("sys.exit") as mock_exit:
+            runner._check_dangling_and_print()
+            output = f.getvalue()
+            self.assertIn("System (Python, Executable, Venv)", output)
+            self.assertIn("Docker (Engine, Compose, Resources)", output)
+            self.assertIn("Project (Metadata, DNS, Mounts, SSL)", output)
+            self.assertIn("Project Initialization", output)
+            self.assertNotIn("Docker Engine", output)
+            self.assertNotIn("Python Version", output)
+
+    def test_doctor_runner_subsystem_filter(self):
+        runner = DoctorRunner(self.manager.diagnostics)
+        runner.results = [
+            ("Python Version", "3.10.0", True),
+            ("Docker Engine", "24.0.0", True),
+            ("Project Initialization", "Vanilla", "warn"),
+        ]
+        self.manager.args.system = True
+        self.manager.args.docker = False
+        self.manager.args.project = False
+        self.manager.args.detailed = False
+        self.manager.args.verbose = False
+
+        import io
+        from contextlib import redirect_stdout
+
+        f = io.StringIO()
+        with redirect_stdout(f), patch("sys.exit") as mock_exit:
+            runner._check_dangling_and_print()
+            output = f.getvalue()
+            self.assertIn("Python Version", output)
+            self.assertNotIn("Docker Engine", output)
+            self.assertNotIn("Project Initialization", output)
+
 
 class TestDiagnosticsCompletion(unittest.TestCase):
     def setUp(self):

@@ -113,8 +113,7 @@
   - [x] **Organize Conductor Tracks**: Move all individual track plans to the tracks/ subfolder and update tracks.md links.
   - [x] **Roadmap Synchronization**: Update docs/ROADMAP.md to align with completed v2.10.x features and restructure future roadmap items.
   - [x] **Fix Samples Flow**: Delegate get_samples_root in LiferayManager, add test coverage to verify it executes successfully, and test the CLI samples flag.
-  - [ ] **CLI Simplification**: Refactor flat commands into grouped namespaces (e.g., `ldm cloud push`).
-  - [ ] **Interactive Scaffolding**: Implement scenario-based project templates.
+  - [x] **Diagnostics & Venv Hardening**: Implemented virtualenv environment verification, refactored ldm doctor to provide a RAG summary dashboard by default with granular section filters (`--system`, `--docker`, `--project`), and expanded test coverage.
 
   - [x] **Verbosity Reduction**:
     - [x] Move inner-loop sync and monitoring logs in `workspace.py` to `UI.detail`.

@@ -11,13 +11,14 @@ This registry tracks the status and priority of independent development tracks f
 | `ai-orchestration` | AI-Assisted Orchestration (`ldm ai`) | Medium | 📝 Planned | [Plan](./tracks/ai-orchestration/plan.md) |
 | `cli-namespacing` | CLI Namespacing | Low | 📝 Planned | [Plan](./tracks/cli-namespacing/plan.md) |
 | `multi-os-e2e` | Multi-OS E2E Matrix & JVM | Medium | 📝 Planned | [Plan](./tracks/multi-os-e2e/plan.md) |
-| `diagnostics-dashboard` | Polished Diagnostics (`ldm doctor`) | Medium | 📝 Planned | [Plan](./tracks/diagnostics-dashboard/plan.md) |
 | `cloud-push` | Cloud Push (`ldm cloud-push`) | **High** | 📝 Planned | [Plan](./tracks/cloud-push/plan.md) |
 
 ---
 
 ## ✅ Completed Tracks
 
+- **Polished Diagnostics (`diagnostics-dashboard`)**: Refactored `ldm doctor` to display a concise 3-line RAG status summary dashboard by default with subsystem filtering flags.
+- **Virtual Env Gating (`venv-context-gating`)**: Implemented virtual environment checking in doctor run.
 - **StackHandler Modularization (`stack-refactor`)**: Extracted Liferay stack orchestration, generation, and assets into modular, testable components.
 - **Snapshot Integrity Verification (`snapshot-integrity`)**: Automatically generates and verifies SHA-256 hashes of database and data volumes.
 - **CLI Exit Code Standardization (`cli-exit-codes`)**: Configured LDM to return structured exit codes (0-4, 126) for CI/CD automation.

@@ -168,6 +168,22 @@ class DoctorRunner:
         self.results.append(("Python Version", sys.version.split()[0], True))
         self.results.append(("Platform", platform.platform(), True))
 
+        # 1.2 Virtual Environment Check
+        is_in_venv = (
+            sys.prefix != sys.base_prefix
+            or hasattr(sys, "real_prefix")
+            or "VIRTUAL_ENV" in os.environ
+        )
+        if is_in_venv:
+            self.results.append(("Virtual Environment", "Active (.venv)", True))
+        else:
+            self.results.append(("Virtual Environment", "Not Activated", "warn"))
+            self.add_hint(
+                "Virtual Environment: Running Python globally. It is highly recommended to run inside the virtualenv.",
+                "https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/GEMINI.md#6-python-virtual-environment-venv",
+            )
+            self.add_hint("Run: source .venv/bin/activate")
+
         # 1.1 Shell Completion Check
         if self.handler.is_completion_enabled():
             self.results.append(("Shell Completion", "Enabled (Active)", True))
@@ -1556,37 +1572,169 @@ class DoctorRunner:
                     f"You have over {reclaim_gb}GB of unused Docker resources. Run '{UI.WHITE}ldm prune{UI.COLOR_OFF}' and '{UI.WHITE}docker system prune --volumes{UI.COLOR_OFF}' to reclaim space and prevent disk watermark issues."
                 )
 
-        # Print Results Table
-        UI.raw(f"\n{'Component':<35} {'Status':<30}")
-        UI.raw("-" * 75)
+        # Determine subsystem categories
+        def get_subsystem(component_name: str) -> str:
+            system_comps = {
+                "LDM Version",
+                "Executable Integrity",
+                "Executable Path",
+                "Python Version",
+                "Platform",
+                "Shell Completion",
+                "Virtual Environment",
+            }
+            docker_comps = {
+                "Docker Engine",
+                "Docker Context",
+                "Docker Provider",
+                "Docker Socket",
+                "Docker Compose",
+                "Docker Creds Store",
+                "CPU Cores",
+                "RAM",
+                "Volume Permissions",
+                "OpenSSL",
+                "Docker Network",
+                "Global SSL Proxy",
+                "Global Search (ES8)",
+                "Global Search (ES7)",
+                "Docker Socket Bridge",
+                "Liferay Docker Tags",
+                "Disk Space",
+            }
+            if component_name in system_comps:
+                return "system"
+            if component_name in docker_comps:
+                return "docker"
+            if component_name.endswith(" Version") and component_name not in (
+                "LDM Version",
+                "Python Version",
+            ):
+                return "docker"
+            if (
+                component_name.startswith("Path: ")
+                or component_name.startswith("Client: ")
+                or component_name.startswith("Tool: ")
+                or component_name.startswith("Liferay Cloud Auth")
+            ):
+                return "docker"
+            return "project"
 
-        all_ok, has_warnings = True, False
+        # Categorize results
+        categorized: dict[str, list[tuple[str, str, Any]]] = {
+            "system": [],
+            "docker": [],
+            "project": [],
+        }
+        subsystem_status: dict[str, bool | str] = {
+            "system": True,
+            "docker": True,
+            "project": True,
+        }
+        all_ok = True
+        has_warnings = False
+
         for component, status, ok in self.results:
+            sub = get_subsystem(component)
+            categorized[sub].append((component, status, ok))
             if ok is True:
-                color = UI.GREEN
-                icon = "✅ "
+                pass
             elif ok == "warn":
-                color = UI.YELLOW
-                icon = "⚠️ "
                 has_warnings = True
+                if subsystem_status[sub] is True:
+                    subsystem_status[sub] = "warn"
             else:
-                color = UI.RED
-                icon = "❌ "
                 all_ok = False
-            UI.raw(f"{component:<35} {color}{icon} {status}{UI.COLOR_OFF}")
+                subsystem_status[sub] = False
+
+        # Read filter & verbosity flags
+        show_system = getattr(self.args, "system", False)
+        show_docker = getattr(self.args, "docker", False)
+        show_project = getattr(self.args, "project", False)
+        detailed_mode = getattr(self.args, "detailed", False) or getattr(
+            self.args, "verbose", False
+        )
+        has_subsystem_filter = show_system or show_docker or show_project
+
+        # Output Results Table or Dashboard Summary
+        if not has_subsystem_filter and not detailed_mode:
+            # Print Summary Dashboard View (Default)
+            UI.raw("\n--- Environment Health Summary ---")
+
+            def format_dashboard_line(label, status):
+                if status is True:
+                    color = UI.GREEN
+                    icon = "[ OK ]"
+                elif status == "warn":
+                    color = UI.YELLOW
+                    icon = "[WARN]"
+                else:
+                    color = UI.RED
+                    icon = "[FAIL]"
+                return f"{color}{icon:<6}{UI.COLOR_OFF} {label}"
+
+            UI.raw(
+                format_dashboard_line(
+                    "System (Python, Executable, Venv)", subsystem_status["system"]
+                )
+            )
+            UI.raw(
+                format_dashboard_line(
+                    "Docker (Engine, Compose, Resources)", subsystem_status["docker"]
+                )
+            )
+            UI.raw(
+                format_dashboard_line(
+                    "Project (Metadata, DNS, Mounts, SSL)", subsystem_status["project"]
+                )
+            )
+
+            # If there are failures or warnings, print the standard table with only the failing/warning checks
+            if not all_ok or has_warnings:
+                UI.raw(f"\n{'Component':<35} {'Status':<30}")
+                UI.raw("-" * 75)
+                for component, status, ok in self.results:
+                    if ok is not True:
+                        color = UI.YELLOW if ok == "warn" else UI.RED
+                        icon = "⚠️ " if ok == "warn" else "❌ "
+                        UI.raw(f"{component:<35} {color}{icon} {status}{UI.COLOR_OFF}")
+        else:
+            # Print Detailed View (Filtered or Full)
+            UI.raw(f"\n{'Component':<35} {'Status':<30}")
+            UI.raw("-" * 75)
+
+            subsystems_to_show = []
+            if has_subsystem_filter:
+                if show_system:
+                    subsystems_to_show.append("system")
+                if show_docker:
+                    subsystems_to_show.append("docker")
+                if show_project:
+                    subsystems_to_show.append("project")
+            else:
+                subsystems_to_show = ["system", "docker", "project"]
+
+            for sub in subsystems_to_show:
+                for component, status, ok in categorized[sub]:
+                    if ok is True:
+                        color = UI.GREEN
+                        icon = "✅ "
+                    elif ok == "warn":
+                        color = UI.YELLOW
+                        icon = "⚠️ "
+                    else:
+                        color = UI.RED
+                        icon = "❌ "
+                    UI.raw(f"{component:<35} {color}{icon} {status}{UI.COLOR_OFF}")
 
         # Print Actionable Hints at the end
-        detailed_mode = getattr(self.args, "detailed", False)
         auto_fix_mode = getattr(self.args, "fix", False)
-
-        if self.hints and detailed_mode:
+        if self.hints and (detailed_mode or has_subsystem_filter):
             UI.raw(f"\n{UI.CYAN}--- Recommended Actions ---{UI.COLOR_OFF}")
             for h in self.hints:
                 padding = UI.get_padding("ℹ")
                 UI.raw(f"{UI.CYAN}ℹ{padding}{UI.COLOR_OFF}Fix: {h['text']}")
                 if h["doc"]:
-                    # Align with the start of 'Fix:'
-                    # Icon(1) + Padding(2) = 3 spaces
                     UI.raw(f"   Doc: {UI.CYAN}{h['doc']}{UI.COLOR_OFF}")
                 UI.raw("")
 

@@ -562,7 +562,22 @@ def get_parser():
         help="Run comprehensive health checks on your Docker environment, mounts, connectivity, and disk space.",
     )
     doctor.add_argument("project", nargs="?")
-    doctor.add_argument("-p", "--project", dest="project_flag")
+    doctor.add_argument("-p", "--project-id", dest="project_flag")
+    doctor.add_argument(
+        "--system",
+        action="store_true",
+        help="Show detailed system diagnostic checks",
+    )
+    doctor.add_argument(
+        "--docker",
+        action="store_true",
+        help="Show detailed Docker diagnostic checks",
+    )
+    doctor.add_argument(
+        "--project",
+        action="store_true",
+        help="Show detailed Project diagnostic checks",
+    )
     doctor.add_argument(
         "--skip-project",
         action="store_true",
