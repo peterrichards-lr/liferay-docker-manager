@@ -574,6 +574,53 @@ class SnapshotService(BaseHandler):
                     self._hydrate_named_volumes(paths)
 
             UI.success("Cloud volume restoration completed.")
+
+            # LDM-424: Smart Store Detection (Automatic path resolution)
+            # We look at the physical folders in the document library to see if they follow
+            # the simplified FileSystemStore layout or the nested AdvancedFileSystemStore.
+            try:
+                doclib_root = target_data / "document_library"
+                if doclib_root.exists():
+                    is_simple = False
+                    for company_dir in doclib_root.iterdir():
+                        if company_dir.is_dir() and company_dir.name.isdigit():
+                            # If the company dir contains any folders that are NOT numbers (like ._*)
+                            # or if it contains folder IDs directly that are referenced in the DB
+                            # we assume it might be simple.
+                            # Better heuristic: Advanced store has repositoryId (Group ID) as 2nd level.
+                            # Simple store has folderId as 2nd level.
+                            # If we find a deep file at level 3 instead of level 4, it's simple.
+                            subdirs = [
+                                d
+                                for d in company_dir.iterdir()
+                                if d.is_dir() and d.name.isdigit()
+                            ]
+                            if subdirs:
+                                # Check if any of these subdirs contain further numbered subdirs
+                                for s in subdirs:
+                                    grandkids = [
+                                        d
+                                        for d in s.iterdir()
+                                        if d.is_dir() and d.name.isdigit()
+                                    ]
+                                    if not grandkids:
+                                        is_simple = True
+                                        break
+                        if is_simple:
+                            break
+
+                    if is_simple:
+                        UI.info("  + Detected simplified FileSystemStore layout.")
+                        project_meta["dl_store_impl"] = (
+                            "com.liferay.portal.store.file.system.FileSystemStore"
+                        )
+                    else:
+                        project_meta["dl_store_impl"] = (
+                            "com.liferay.portal.store.file.system.AdvancedFileSystemStore"
+                        )
+                    self.manager.write_meta(paths["root"], project_meta)
+            except Exception as e:
+                UI.debug(f"Store detection failed: {e}")
         else:
             UI.die(f"Snapshot files not found in {choice_path}")
 

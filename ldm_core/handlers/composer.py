@@ -299,6 +299,12 @@ class ComposerService:
         if str(meta.get("reindex_required", "false")).lower() == "true":
             liferay_env.append("LIFERAY_INDEX_PERIOD_ON_PERIOD_STARTUP=true")
             liferay_env.append("LIFERAY_INDEX_PERIOD_ON_PERIOD_STARTUP_PERIOD_DELAY=30")
+
+        # LDM-424: Inject Smart Store Implementation
+        dl_store = meta.get("dl_store_impl")
+        if dl_store:
+            liferay_env.append(f"LIFERAY_DL_PERIOD_STORE_PERIOD_IMPL={dl_store}")
+
         custom_env_str = meta.get("custom_env", "{}")
         try:
             custom_env_dict = json.loads(custom_env_str)
