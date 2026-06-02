@@ -1,13 +1,16 @@
-.TH LDM 1 "April 2026" "2.3.44" "Liferay Docker Manager Manual"
+.TH LDM 1 "June 2026" "2.11.0" "Liferay Docker Manager Manual"
 .SH NAME
 ldm \- Liferay Docker Manager orchestrator (Hardened Edition)
 .SH SYNOPSIS
 .B ldm
 [\fIOPTIONS\fR] \fICOMMAND\fR [\fIARGS\fR...]
+.br
+.B ldm
+[\fIOPTIONS\fR] \fINAMESPACE\fR \fISUBCOMMAND\fR [\fIARGS\fR...]
 .SH DESCRIPTION
 \fBldm\fR is a professional command-line orchestrator for Liferay Portal and DXP environments. It simplifies the creation, management, and synchronization of Liferay instances using Docker Compose, providing near-instant boot times via pre-warmed seeds and seamless integration with Liferay Workspace and Client Extensions.
 
-The tool uses a tiered configuration strategy to ensure maximum reliability and adheres to "Offline First" principles for all asset management.
+Commands are organized into logical \fBnamespaces\fR (\fBinfra\fR, \fBcloud\fR, \fBconfig\fR, \fBsystem\fR) for discoverability. All legacy flat-form commands (e.g. \fBldm prune\fR, \fBldm infra-setup\fR) remain fully supported as transparent aliases.
 
 .SH CONFIGURATION REDLINES
 .TP
@@ -18,7 +21,7 @@ All JDBC and Hibernate settings are injected into \fBportal-ext.properties\fR to
 Search (ES8), SSL, and Clustering settings are managed via high-priority \fBEnvironment Variables\fR and \fBOSGi .config\fR substitution to ensure project isolation and Sidecar suppression.
 
 .SH OFFLINE FIRST DESIGN
-LDM maintains a local cache of all downloaded assets (seeds, samples, configuration templates) in \fB~/.ldm/references\fR. If a project is started without an internet connection, LDM automatically reverts to its cached assets. If an asset is missing and unreachable, the tool flags the offline state and continues with a "Vanilla" (non-seeded) workflow.
+LDM maintains a local cache of all downloaded assets (seeds, samples, configuration templates) in \fB~/.ldm/references\fR. If a project is started without an internet connection, LDM automatically reverts to its cached assets.
 
 .SH CORE COMMANDS
 .TP
@@ -26,7 +29,7 @@ LDM maintains a local cache of all downloaded assets (seeds, samples, configurat
 Display an overview of all initialized LDM sandbox environments.
 .TP
 \fBrun\fR [\fIPROJECT\fR] (alias: \fBup\fR)
-Initialize and start a project stack. Automatically detects context if run inside a project folder.
+Initialize and start a project stack. Automatically detects context if run inside a project folder. Use \fB--open\fR to launch the browser automatically after startup. Use \fB--scale SERVICE=N\fR to boot a scaled stack in one command.
 .TP
 \fBstop\fR [\fIPROJECT\fR] [\fISERVICE\fR]
 Stop project containers gracefully. Use \fB--all\fR to stop all projects.
@@ -39,8 +42,53 @@ Remove project containers. Use \fB--volumes\fR to also remove data. Use \fB--del
 .TP
 \fBstatus\fR (alias: \fBps\fR)
 Show status of global infrastructure and projects. Use \fB--all\fR to see stopped projects.
+.TP
+\fBlogs\fR [\fIPROJECT\fR] [\fISERVICE...\fR]
+View real-time logs. Use \fB-f\fR to follow. Use \fB--infra\fR for global service logs. Use \fB--instance N\fR (or \fB-i N\fR) to target a specific replica of a scaled service.
+.TP
+\fBdeploy\fR [\fIPROJECT\fR]
+Hot-deploy built artifacts or rebuild extension images.
+.TP
+\fBscale\fR [\fIPROJECT\fR] \fISERVICE=N\fR
+Scale services within a running project for multi-node or clustering tests.
+.TP
+\fBbrowser\fR (alias: \fBopen\fR)
+Launch the project URL in your system browser.
+.TP
+\fBwait\fR [\fIPROJECT\fR]
+Block execution until Liferay is fully ready (log marker + HTTP 200/302 + CPU idle).
+.TP
+\fBshell\fR [\fIPROJECT\fR] [\fISERVICE\fR]
+Open an interactive bash session in a container.
+.TP
+\fBgogo\fR [\fIPROJECT\fR]
+Connect to the OSGi Gogo shell.
+.TP
+\fBsnapshot\fR / \fBrestore\fR
+Backup and recover exact project states.
+.TP
+\fBhydrate\fR \fIBACKUP_PATH\fR
+Create or restore a project from a local Liferay Cloud backup archive.
+.TP
+\fBreindex\fR [\fIPROJECT\fR]
+Trigger a full Elasticsearch reindex for a project.
+.TP
+\fBreset\fR [\fIPROJECT\fR]
+Clear OSGi state, search data, or database volumes.
+.TP
+\fBre-seed\fR [\fIPROJECT\fR]
+Fully wipe and re-initialize a project from its seed.
+.TP
+\fBcache\fR (alias: \fBclear-cache\fR, \fBclear-tags\fR)
+Clear the local Docker Hub tag cache.
+.TP
+\fBinfo\fR [\fIPROJECT\fR]
+Display formatted project metadata.
 
 .SH DEVELOPMENT COMMANDS
+.TP
+\fBinit\fR [\fIPROJECT\fR]
+Initialize project scaffolding without starting containers.
 .TP
 \fBinit-from\fR \fISOURCE_PATH\fR [\fINAME\fR]
 Initialize a project linked to a source workspace with real-time sync.
@@ -50,29 +98,90 @@ One-time static import of a Liferay workspace.
 .TP
 \fBmonitor\fR [\fIPROJECT\fR]
 Start/restart the background sync process for linked projects.
-.TP
-\fBdeploy\fR [\fIPROJECT\fR] [\fISERVICE\fR]
-Hot-deploy artifacts or rebuild extension images.
 
-.SH DIAGNOSTICS & MAINTENANCE
+.SH NAMESPACES
+Commands are grouped into namespaces. Legacy flat equivalents are shown in parentheses and remain fully functional.
+
+.SS infra \- Infrastructure Management
 .TP
-\fBdoctor\fR
-Verify host health, Docker resources, and project dependencies.
+\fBldm infra setup\fR [\fB--search\fR] [\fB--es7\fR]
+Start global infrastructure services (Traefik proxy, bridge network). (legacy: \fBldm infra-setup\fR)
 .TP
-\fBlogs\fR [\fIPROJECT\fR] [\fISERVICE...\fR]
-View real-time logs. Supports \fB-f\fR (follow) and \fB--infra\fR for system logs.
+\fBldm infra down\fR
+Stop and remove global infrastructure containers. (legacy: \fBldm infra-down\fR)
 .TP
-\fBupgrade\fR
-Automatically update \fBldm\fR to the latest version. Handles cross-device filesystem links automatically. Use \fB--beta\fR to opt-in to pre-releases. Provides manual recovery hints on failure.
+\fBldm infra restart\fR [\fB--search\fR]
+Reset all global services in one go. (legacy: \fBldm infra-restart\fR)
 .TP
-\fBupdate-check\fR
-Check for available stable or beta updates.
+\fBldm infra init-common\fR
+Recreate the baseline global configuration from internal resources. (legacy: \fBldm init-common\fR)
 .TP
-\fBfix-hosts\fR [\fIHOSTNAME\fR]
-Surgically append missing project hostnames to your local hosts file. Requires elevation.
+\fBldm infra renew-ssl\fR [\fIPROJECT\fR] [\fB--all\fR]
+Refresh project-specific SSL certificates. (legacy: \fBldm renew-ssl\fR)
 .TP
-\fBcompletion\fR
-Configure shell TAB completion (Bash, Zsh, Fish).
+\fBldm infra migrate-search\fR [\fIPROJECT\fR]
+Migrate a project from Sidecar to the shared Global Search container. (legacy: \fBldm migrate-search\fR)
+
+.SS cloud \- Liferay Cloud Integrations
+.TP
+\fBldm cloud fetch\fR [\fIPROJECT\fR] [\fIENV_ID\fR]
+Sync an existing local project directly with a live Liferay Cloud environment. (legacy: \fBldm cloud-fetch\fR)
+
+.SS config \- Configuration Management
+All subcommands have backward-compatible flat aliases (e.g. \fBldm env\fR, \fBldm defaults\fR, \fBldm feature\fR, \fBldm log-level\fR, \fBldm edit\fR).
+.TP
+\fBldm config get\fR [\fIKEY\fR]
+Show one or all generic project config values.
+.TP
+\fBldm config set\fR \fIKEY\fR \fIVALUE\fR
+Set a generic project config value.
+.TP
+\fBldm config remove\fR \fIKEY\fR
+Remove a generic project config value.
+.TP
+\fBldm config defaults\fR [\fIKEY\fR] [\fIVALUE\fR]
+View or manage the Cascading Configuration Defaults.
+.TP
+\fBldm config env\fR [\fIPROJECT\fR]
+Manage persistent environment variables in project metadata.
+.TP
+\fBldm config feature\fR [\fIPROJECT\fR] [\fB--enable\fR|\fB--disable\fR]
+Toggle Liferay feature flags.
+.TP
+\fBldm config log-level\fR [\fIPROJECT\fR]
+Manage Liferay internal Log4j2 logging levels without restarts.
+.TP
+\fBldm config edit\fR [\fIPROJECT\fR]
+Open project config files in \fB$EDITOR\fR.
+
+.SS system \- System Utilities & Diagnostics
+.TP
+\fBldm system doctor\fR
+Verify host health, Docker resources, and project dependencies. (legacy: \fBldm doctor\fR)
+.TP
+\fBldm system prune\fR
+Reclaim disk space by removing orphaned containers, search snapshots, and caches. (legacy: \fBldm prune\fR)
+.TP
+\fBldm system upgrade\fR [\fB--pre-release\fR]
+Automatically update \fBldm\fR to the latest stable or pre-release version. (legacy: \fBldm upgrade\fR)
+.TP
+\fBldm system completion\fR [\fIbash|zsh|fish|powershell\fR]
+Configure shell TAB completion. (legacy: \fBldm completion\fR)
+.TP
+\fBldm system man\fR
+Display this manual page. (legacy: \fBldm man\fR)
+.TP
+\fBldm system fix-hosts\fR [\fIHOSTNAME\fR]
+Append missing project hostnames to \fB/etc/hosts\fR. (legacy: \fBldm fix-hosts\fR)
+.TP
+\fBldm system dev-setup\fR
+Configure the LDM development environment. (legacy: \fBldm dev-setup\fR)
+.TP
+\fBldm system version\fR
+Internal version management utility.
+.TP
+\fBldm system relocate\fR \fITARGET_DIR\fR
+Safely move LDM Docker data to an external drive.
 
 .SH OPTIONS
 .TP
@@ -80,13 +189,28 @@ Configure shell TAB completion (Bash, Zsh, Fish).
 Enable detailed debug logging and granular timing info.
 .TP
 \fB\-y\fR, \fB\-\-non\-interactive\fR
-Bypass all prompts and use default values.
+Bypass all prompts and use default values. Ideal for CI/CD.
+.TP
+\fB\-\-info\fR
+Show informational logging (middle tier between standard and debug).
+.TP
+\fB\-q\fR, \fB\-\-quiet\fR
+Suppress informational output.
+.TP
+\fB\-\-benchmark\fR
+Display performance timing after command execution.
 .TP
 \fB\-\-tag\fR \fITAG\fR
 Specify Liferay image tag (e.g. 2025.q1.4-lts).
 .TP
 \fB\-\-tag\-latest\fR
 Automatically discover and use the latest stable Liferay tag.
+.TP
+\fB\-\-open\fR
+(run only) Automatically launch the project URL in your browser after startup.
+.TP
+\fB\-\-scale\fR \fISERVICE=N\fR [...]
+(run only) Boot a scaled stack in one command (e.g. \fB--scale liferay=2\fR).
 .TP
 \fB\-\-no\-captcha\fR
 Disable Omni-Admin CAPTCHA enforcement during initialization.
@@ -96,6 +220,19 @@ Set virtual hostname (defaults to localhost).
 .TP
 \fB\-\-db\fR \fI{mysql|postgresql|hypersonic}\fR
 Select database type.
+
+.SH BACKWARD COMPATIBILITY
+All legacy flat commands are automatically translated to their namespaced equivalents by the \fBpreprocess_args\fR layer and remain fully supported indefinitely. For example:
+.PP
+.nf
+ldm prune           \(->  ldm system prune
+ldm doctor          \(->  ldm system doctor
+ldm infra-setup     \(->  ldm infra setup
+ldm cloud-fetch     \(->  ldm cloud fetch
+ldm env             \(->  ldm config env
+ldm defaults        \(->  ldm config defaults
+ldm completion      \(->  ldm system completion
+.fi
 
 .SH FILES
 .TP
@@ -110,17 +247,29 @@ Global LDM configuration and preferences.
 
 .SH EXAMPLES
 .TP
-\fBldm run my-site --samples\fR
-Quick-start a project with example extensions.
+\fBldm run my-site --samples --open\fR
+Quick-start a project with sample extensions and auto-open the browser.
+.TP
+\fBldm run demo --scale liferay=2\fR
+Boot a 2-node Liferay cluster in one command.
 .TP
 \fBldm logs -f forge\fR
 Follow real-time logs for the 'forge' project.
 .TP
-\fBldm fix-hosts my-project.local\fR
-Surgically fix missing host entries.
+\fBldm infra setup --search\fR
+Start global infrastructure including the shared Elasticsearch container.
 .TP
-\fBldm doctor --fix-hosts\fR
-Verify environment and fix all missing host entries.
+\fBldm system doctor --fix\fR
+Run a full health check and apply automatic fixes.
+.TP
+\fBldm config defaults db_type postgresql\fR
+Set PostgreSQL as the default database for all new projects.
+.TP
+\fBldm cloud fetch my-project uat --restore\fR
+Download the latest UAT backup and restore it locally.
+.TP
+\fBldm system completion zsh\fR
+Output the Zsh TAB completion setup command.
 
 .SH AUTHOR
 Peter Richards <peter.richards@liferay.com>

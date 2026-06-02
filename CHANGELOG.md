@@ -178,6 +178,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added runtime state-awareness checks to commands (run, import) to prevent unexpected container collisions.
 - Enabled non-interactive bypass for internal developer utility prompts.
 
+## [v2.11.0-pre.1] - 2026-06-02
+
+### Added
+
+- **CLI Namespacing**: Restructured flat commands into logical namespaces (`ldm infra`, `ldm cloud`, `ldm config`, `ldm system`) for improved discoverability. All legacy flat commands remain fully supported as transparent aliases (e.g. `ldm prune` → `ldm system prune`).
+- **`--open` switch on `ldm run`**: Automatically launches the project URL in your system browser after startup completes.
+- **`--scale` switch on `ldm run`**: Boot a scaled multi-replica stack in a single command (e.g. `ldm run demo --scale liferay=2`), bypassing the separate `ldm scale` step.
+- **`ldm logs --instance N` / `-i N`**: Target a specific replica of a scaled service directly (e.g. `ldm logs demo liferay --instance 2`). Routes to `docker logs` for exact container targeting.
+- **Container naming pattern in metadata**: `ldm scale` now persists `container_name_pattern_{service}` to project metadata, enabling O(1) replica name resolution without a `docker ps` lookup.
+- **Updated man page and CLI reference**: Full documentation of all namespaced commands, new switches, backward-compatibility table, and `--instance` usage guide.
+
 ## [v2.10.27] - 2026-06-02
 
 ### Changed

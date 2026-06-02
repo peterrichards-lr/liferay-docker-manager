@@ -63,6 +63,15 @@ class RuntimeService(BaseHandler):
         paths = self.manager.setup_paths(root)
         project_meta = self.manager.read_meta(paths["root"])
 
+        scale_list = getattr(self.manager.args, "scale_list", None)
+        if scale_list:
+            for arg in scale_list:
+                if "=" in arg:
+                    service, count = arg.split("=", 1)
+                    if count.isdigit():
+                        project_meta[f"scale_{service}"] = count
+            self.manager.write_meta(paths["root"], project_meta)
+
         try:
             # Check if project is already running to prevent unexpected container conflicts
             from ldm_core.docker_service import DockerService
@@ -1226,6 +1235,94 @@ class RuntimeService(BaseHandler):
         except KeyboardInterrupt:
             pass
 
+    def _cmd_logs_instance(
+        self,
+        project_id=None,
+        service=None,
+        instance=1,
+        follow=False,
+        tail="100",
+        timestamps=False,
+        since=None,
+        until=None,
+    ):
+        """Stream logs from a single scaled replica via 'docker logs'.
+
+        Container name is resolved using the pattern stored in project metadata
+        (written by cmd_scale). Falls back to the Docker Compose v2 naming
+        convention: {project}-{service}-{index}.
+        """
+        root = self.manager.detect_project_path(project_id)
+        if not root:
+            UI.die("Project not found.")
+
+        meta = self.manager.read_meta(root)
+        project_name = meta.get("container_name") or root.name
+
+        # Default service to 'liferay' when not specified
+        svc = (
+            service[0]
+            if isinstance(service, list) and service
+            else (service or "liferay")
+        )
+
+        # Validate instance index against stored scale
+        scale_key = f"scale_{svc}"
+        max_instances = int(meta.get(scale_key, 1))
+        if instance < 1 or instance > max_instances:
+            if max_instances == 1:
+                UI.error(
+                    f"Service '{svc}' is not scaled (only 1 instance). "
+                    f"Use 'ldm logs' without --instance to view its logs."
+                )
+            else:
+                UI.error(
+                    f"Invalid instance index {instance} for service '{svc}'. "
+                    f"Valid range: 1–{max_instances} (current scale={max_instances})."
+                )
+            return
+
+        # Fast path: use pattern stored in metadata by cmd_scale
+        pattern_key = f"container_name_pattern_{svc}"
+        pattern = meta.get(pattern_key)
+        if pattern:
+            container_name = pattern.replace("{index}", str(instance))
+        else:
+            # Fallback: Docker Compose v2 standard naming convention
+            container_name = f"{project_name}-{svc}-{instance}"
+
+        # Confirm the container exists
+        check = self.manager.run_command(
+            ["docker", "ps", "-a", "-q", "-f", f"name=^{container_name}$"],
+            check=False,
+        )
+        if not check:
+            UI.error(
+                f"Container '{container_name}' not found. "
+                f"Is '{project_name}' running with {max_instances} replica(s)?"
+            )
+            return
+
+        UI.info(
+            f"Streaming logs for {UI.CYAN}{container_name}{UI.COLOR_OFF} "
+            f"(instance {instance} of {max_instances})..."
+        )
+
+        cmd = ["docker", "logs"]
+        if follow:
+            cmd.append("-f")
+        if tail:
+            cmd.extend(["--tail", str(tail)])
+        if timestamps:
+            cmd.append("-t")
+        if since:
+            cmd.extend(["--since", str(since)])
+        if until:
+            cmd.extend(["--until", str(until)])
+        cmd.append(container_name)
+
+        self.manager.run_command(cmd, capture_output=False, check=False)
+
     def cmd_logs(
         self,
         project_id=None,
@@ -1238,8 +1335,22 @@ class RuntimeService(BaseHandler):
         timestamps=False,
         since=None,
         until=None,
+        instance=None,
     ):
         """Shows logs for a project or global infrastructure."""
+        if instance is not None:
+            self._cmd_logs_instance(
+                project_id=project_id,
+                service=service,
+                instance=instance,
+                follow=follow,
+                tail=tail,
+                timestamps=timestamps,
+                since=since,
+                until=until,
+            )
+            return
+
         if infra:
             UI.info("Showing infrastructure logs...")
             containers = []
@@ -1461,6 +1572,7 @@ class RuntimeService(BaseHandler):
             UI.die("Project not found.")
 
         meta = self.manager.read_meta(project_path)
+        project_name = meta.get("container_name") or project_path.name
 
         for arg in scale_args:
             if "=" not in arg:
@@ -1471,6 +1583,11 @@ class RuntimeService(BaseHandler):
                 UI.error(f"Invalid scale count for {service}: {count}")
                 continue
             meta[f"scale_{service}"] = count
+            # Store the standard naming pattern so future lookups avoid docker ps.
+            # Docker Compose v2 convention: {compose_project}-{service}-{index}
+            meta[f"container_name_pattern_{service}"] = (
+                f"{project_name}-{service}-{{index}}"
+            )
 
         self.manager.write_meta(project_path, meta)
         UI.success(f"Updated scale factors for project {project_path.name}")

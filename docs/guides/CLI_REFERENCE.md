@@ -1,8 +1,11 @@
 # CLI Reference
 
+> [!NOTE]
+> **CLI Namespacing**: As of v2.11, commands are organized into logical namespaces (`infra`, `cloud`, `config`, `system`). All legacy flat-form commands (e.g. `ldm prune`, `ldm infra-setup`, `ldm doctor`) remain **fully supported as transparent aliases** and will continue to work indefinitely.
+
 ## Scripting & Automation
 
-LDM is designed to be pipeline-friendly. The `ldm doctor` command returns a non-zero exit code if critical environment issues are detected.
+LDM is designed to be pipeline-friendly. The `ldm system doctor` command returns a non-zero exit code if critical environment issues are detected.
 
 ### Automating Interactive Prompts (Piped Input)
 
@@ -38,7 +41,7 @@ Check if services are running before executing operations:
 
 ```bash
 # Start infrastructure only if it's not already running
-ldm ps || ldm infra-setup --search
+ldm ps || ldm infra setup --search  # (or legacy: ldm infra-setup --search)
 ```
 
 ### CI/CD Integration
@@ -125,9 +128,30 @@ ldm up demo
 # Initialize with "Confidence Booster" samples
 ldm run demo --samples
 
+# Auto-open the browser after startup
+ldm run demo --open
+
+# Boot a 2-node Liferay cluster in one command
+ldm run demo --scale liferay=2
+
+# Boot a scaled stack and open the browser
+ldm run demo --scale liferay=2 --open
+
 # Interactive run (will prompt for version and project name)
 # Prompts are automatically pre-filled using the Cascading Defaults system
 ldm run
+```
+
+#### `--open` Switch
+
+Use `--open` to automatically launch the Liferay URL in your system browser once the instance is ready. This is equivalent to running `ldm browser` immediately after startup, but in a single command.
+
+#### `--scale` Switch
+
+Use `--scale SERVICE=N` to boot a scaled stack without having to run `ldm scale` as a separate step. Multiple services can be scaled at once:
+
+```bash
+ldm run demo --scale liferay=2 --scale my-ext=3
 ```
 
 ### `init`
@@ -215,7 +239,7 @@ ldm monitor [project_name] --delay 2.0
 
 ### `logs`
 
-View real-time logs. Supports filtering by project, specific services, or global infrastructure components.
+View real-time logs. Supports filtering by project, specific services, global infrastructure, or individual scaled replicas.
 
 ```bash
 ldm logs [project] [service1] [service2] ...
@@ -233,8 +257,29 @@ ldm logs --infra          # Show logs for all global infrastructure (ES, Proxy, 
 ldm logs --infra es       # Show logs only for Global Elasticsearch
 ldm logs --infra proxy    # Show logs only for Global SSL Proxy
 ldm logs demo liferay     # Only Liferay logs for 'demo'
-ldm logs demo liferay my-ext # Multi-service tailing
+ldm logs demo liferay my-ext # Multi-service tailing (all replicas)
 ```
+
+#### Targeting a Specific Scaled Replica (`--instance N` / `-i N`)
+
+When a service is scaled to multiple replicas (e.g. `ldm scale demo liferay=3`), `ldm logs` streams from **all instances simultaneously** by default. Use `--instance N` to isolate a single replica:
+
+```bash
+# Stream logs from replica 2 of the liferay service only
+ldm logs demo liferay --instance 2
+
+# Short form, following in real time
+ldm logs demo liferay -i 2 -f
+
+# Tail the last 50 lines of replica 3
+ldm logs demo liferay -i 3 -n 50
+```
+
+> [!NOTE]
+> `--instance` routes to `docker logs` directly (bypassing Compose) so it targets the exact container. The container name is resolved from project metadata using the standard naming convention `{project}-{service}-{index}` (e.g. `demo-liferay-2`). This pattern is stored automatically when you run `ldm scale`, making subsequent lookups instant.
+>
+> [!TIP]
+> If you request an out-of-range instance (e.g. `--instance 5` when only 3 replicas are running), LDM will report the valid range and exit cleanly.
 
 ### `stop`, `restart`, `down` (alias: `rm`)
 
@@ -330,78 +375,96 @@ diag
 scr:list
 ```
 
-### `env`
+### `config env` (legacy: `env`)
 
 Manage persistent environment variables in project metadata.
 
 ```bash
+ldm config env [project] KEY=VALUE
+ldm config env [project] --remove KEY
+ldm config env [project] -s liferay KEY=VALUE  # Target a specific service instead of global
+ldm config env [project] --import              # Import variables from a local .env file
+ldm config env                                 # Interactive manager (view and edit all)
+
+# Legacy flat form (still works):
 ldm env [project] KEY=VALUE
-ldm env [project] --remove KEY
-ldm env [project] -s liferay KEY=VALUE  # Target a specific service instead of global
-ldm env [project] --import              # Import variables from a local .env file
-ldm env                   # Interactive manager (view and edit all)
 ```
 
-### `feature`
+### `config feature` (legacy: `feature`)
 
 Quickly toggle Liferay feature flags without manually editing `portal-ext.properties`. Requires a project restart to take effect.
 
 ```bash
+ldm config feature [project] --enable LPS-122920
+ldm config feature [project] --disable LPS-111111 LPS-222222
+
+# Legacy flat form (still works):
 ldm feature [project] --enable LPS-122920
-ldm feature [project] --disable LPS-111111 LPS-222222
 ```
 
-### `edit`
+### `config edit` (legacy: `edit`)
 
 Rapidly modify project configuration files in your system's `$EDITOR` (defaults to `vi` or `notepad`).
 
 ```bash
-ldm edit [project]              # Edit .liferay-docker.meta
-ldm edit [project] --target properties # Edit portal-ext.properties
+ldm config edit [project]                         # Edit .liferay-docker.meta
+ldm config edit [project] --target properties     # Edit portal-ext.properties
+
+# Legacy flat form (still works):
+ldm edit [project]
 ```
 
-### `log-level`
+### `config log-level` (legacy: `log-level`)
 
 Manage Liferay internal logging levels (Log4j2) without restarts.
 
 ```bash
 # List current custom levels
-ldm log-level --list
+ldm config log-level --list
 
 # Set a specific category to DEBUG
-ldm log-level [project] --bundle portal --category com.liferay.portal --level DEBUG
+ldm config log-level [project] --bundle portal --category com.liferay.portal --level DEBUG
 
 # Interactive configuration
-ldm log-level
+ldm config log-level
+
+# Legacy flat form (still works):
+ldm log-level [project] --list
 ```
 
-### `doctor`
+### `system doctor` (legacy: `doctor`)
 
-Verify host environment health, Docker resources (CPUs/Memory), disk space (warns on dangling volumes), and project dependencies. Now includes checks for required tools: `mkcert`, `telnet`, `nc`, `lcp`, and the Docker Compose V2 plugin.
+Verify host environment health, Docker resources (CPUs/Memory), disk space (warns on dangling volumes), and project dependencies. Includes checks for required tools: `mkcert`, `telnet`, `nc`, `lcp`, and the Docker Compose V2 plugin.
 
 ```bash
-ldm doctor          # Health check for current/selected project
-ldm doctor --all    # Batch validate every project in your workspace
-ldm doctor --detailed  # Show detailed troubleshooting hints and automatic fixes
-ldm doctor --fix       # Automatically apply recommended fixes (e.g., pruning, lifting memory watermarks)
-ldm doctor --bundle    # Generate a sanitized zip bundle of logs and config for bug reports
-ldm doctor --slug      # Output a machine-readable environment identifier string
-ldm doctor --fix-hosts # Automatically add missing domains to /etc/hosts (will prompt for sudo)
+ldm system doctor          # Health check for current/selected project
+ldm system doctor --all    # Batch validate every project in your workspace
+ldm system doctor --detailed  # Show detailed troubleshooting hints and automatic fixes
+ldm system doctor --fix       # Automatically apply recommended fixes
+ldm system doctor --bundle    # Generate a sanitized zip bundle of logs and config
+ldm system doctor --slug      # Output a machine-readable environment identifier string
+ldm system doctor --fix-hosts # Add missing domains to /etc/hosts (will prompt for sudo)
+
+# Legacy flat form (still works):
+ldm doctor --fix
 ```
 
-### `fix-hosts`
+### `system fix-hosts` (legacy: `fix-hosts`)
 
 Manually append missing project hostnames to your system's `/etc/hosts` file. This command is automatically triggered by `ldm run` if a resolution failure is detected, but can also be called surgically.
 
 ```bash
 # Fix all hostnames for a project (including extension subdomains)
-ldm fix-hosts my-project
+ldm system fix-hosts my-project
 
 # Add a specific raw hostname
-ldm fix-hosts custom.local
+ldm system fix-hosts custom.local
 
 # Run a full fix for all projects via doctor
-ldm doctor --fix-hosts
+ldm system doctor --fix-hosts
+
+# Legacy flat form (still works):
+ldm fix-hosts my-project
 ```
 
 ### `wait` (Readiness Gating)
@@ -450,46 +513,50 @@ ldm browser --list             # List available URLs without opening
 ldm browser --remove           # Remove saved custom URLs from history
 ```
 
-### `upgrade`
+### `system upgrade` (legacy: `upgrade`)
 
 Automatically download and install the latest version of LDM for your architecture. Includes integrity verification. If the automatic process fails, LDM will provide a manual `curl` or `PowerShell` command to complete the installation.
 
 ```bash
-ldm upgrade             # Standard upgrade to latest stable
-ldm upgrade --beta      # Upgrade to the latest pre-release/beta
-ldm upgrade --repair    # Re-download current version to fix integrity issues
+ldm system upgrade                   # Standard upgrade to latest stable
+ldm system upgrade --pre-release     # Upgrade to the latest pre-release/beta
+ldm system upgrade --repair          # Re-download current version to fix integrity issues
+ldm system upgrade --check           # Check for updates without installing
+
+# Legacy flat form (still works):
+ldm upgrade --beta
 ```
 
-### `update-check`
+### `system completion` (legacy: `completion`)
 
-Check for available updates without installing them.
-
-```bash
-ldm update-check        # Check for stable updates
-ldm update-check --beta # Check for beta/pre-release versions
-```
-
-### `completion`
-
-Configure shell autocompletion for `ldm`. Supports **Bash**, **Zsh**, and **Fish**.
+Configure shell autocompletion for `ldm`. Supports **Bash**, **Zsh**, **Fish**, and **PowerShell**.
 
 ```bash
+ldm system completion           # Auto-detect your shell
+ldm system completion zsh       # Generate setup for Zsh specifically
+ldm system completion bash      # Generate setup for Bash
+ldm system completion fish      # Generate setup for Fish
+
+# Legacy flat form (still works):
 ldm completion
 ```
 
 **Setup Summary:**
 
-1. Run `ldm completion` to get the command for your shell.
+1. Run `ldm system completion` to get the command for your shell.
 2. Add the provided command to your shell profile (`.zshrc`, `.bashrc`, or `config.fish`).
 3. Restart your terminal.
 
-This enables TAB completion for all commands and project names.
+This enables TAB completion for all commands, namespaces, subcommands, and project names.
 
-### `man`
+### `system man` (legacy: `man`)
 
 Display the comprehensive manual page for LDM. This provides an offline reference for all commands, options, and architecture details.
 
 ```bash
+ldm system man
+
+# Legacy flat form (still works):
 ldm man
 ```
 
@@ -501,45 +568,59 @@ To support the native system `man ldm` command, add this to your shell profile (
 export MANPATH="$MANPATH:$HOME/.ldm/man"
 ```
 
-### `renew-ssl`
+### `infra renew-ssl` (legacy: `renew-ssl`)
 
 Refresh project-specific SSL certificates immediately.
 
 ```bash
-ldm renew-ssl           # Interactive selector
-ldm renew-ssl demo      # Renew for 'demo' specifically
-ldm renew-ssl --all     # Renew certificates for every project
+ldm infra renew-ssl           # Interactive selector
+ldm infra renew-ssl demo      # Renew for 'demo' specifically
+ldm infra renew-ssl --all     # Renew certificates for every project
+
+# Legacy flat form (still works):
+ldm renew-ssl demo
 ```
 
-### `init-common`
+### `infra init-common` (legacy: `init-common`)
 
 Initialize or recreate the baseline global configuration (`common/` folder) from internal resources.
 
 ```bash
+ldm infra init-common
+
+# Legacy flat form (still works):
 ldm init-common
 ```
 
-### `infra-setup`, `infra-down`, `infra-restart`
+### `infra setup` / `infra down` / `infra restart` (legacy: `infra-setup`, `infra-down`, `infra-restart`)
 
 Independently manage global infrastructure services (Traefik proxy, Search sidecar, Bridge).
 
 ```bash
-ldm infra-setup            # Start global services manually
-ldm infra-setup --search   # Also initialize the Global Search container
-ldm infra-setup --es7      # Force Global Search to use legacy Elasticsearch 7
-ldm infra-down             # Stop and remove global services
-ldm infra-restart          # Reset all global services in one go
-ldm infra-restart --search # Restart and also initialize/restart Global Search
+ldm infra setup            # Start global services manually
+ldm infra setup --search   # Also initialize the Global Search container
+ldm infra setup --es7      # Force Global Search to use legacy Elasticsearch 7
+ldm infra down             # Stop and remove global services
+ldm infra restart          # Reset all global services in one go
+ldm infra restart --search # Restart and also initialize/restart Global Search
+
+# Legacy flat forms (still work):
+ldm infra-setup --search
+ldm infra-down
+ldm infra-restart
 ```
 
 > [!TIP]
 > **Sidecar Fallback**: If the Global Search (ES8) container is not running, `ldm` will automatically default to Liferay's internal **Sidecar** search. It also cleans up global ES configurations in your project to ensure the Sidecar initializes correctly.
 
-### `migrate-search`
+### `infra migrate-search` (legacy: `migrate-search`)
 
 Migrates a project from using the internal Sidecar search to the shared **Global Search container**.
 
 ```bash
+ldm infra migrate-search [project]
+
+# Legacy flat form (still works):
 ldm migrate-search [project]
 ```
 
@@ -551,15 +632,18 @@ ldm migrate-search [project]
 4. Re-syncs Global ES configurations from `common/`.
 5. Offers to restart the project immediately.
 
-### `prune`
+### `system prune` (legacy: `prune`)
 
-Identify and reclaim disk space by safely removing orphaned resources. This command scans your Docker environment for containers and global search snapshots that no longer have a matching project folder on your disk, as well as cleaning up temporary files and large asset caches. If `ldm doctor` warns you about low disk space, run this along with `docker system prune --volumes`.
+Identify and reclaim disk space by safely removing orphaned resources. This command scans your Docker environment for containers and global search snapshots that no longer have a matching project folder on your disk, as well as cleaning up temporary files and large asset caches. If `ldm system doctor` warns you about low disk space, run this along with `docker system prune --volumes`.
 
 ```bash
-ldm prune
-ldm prune --seeds --samples   # Also clear large pre-warmed asset caches
-ldm prune --all               # Run all pruning operations without asking (includes seeds, samples, and hosts)
-ldm prune --clean-hosts       # Remove all LDM-tagged entries from /etc/hosts
+ldm system prune
+ldm system prune --seeds --samples   # Also clear large pre-warmed asset caches
+ldm system prune --all               # Run all pruning operations without asking
+ldm system prune --clean-hosts       # Remove all LDM-tagged entries from /etc/hosts
+
+# Legacy flat form (still works):
+ldm prune --seeds --samples
 ```
 
 **What it cleans:**
@@ -586,32 +670,68 @@ Safely move your LDM global configuration, Docker volumes, and cached assets to 
 ldm system relocate /Volumes/SanDisk
 ```
 
-### `config`
+### `config` (get / set / remove)
 
-View or set generic custom environment variables inside a project's metadata. (For core LDM settings, see `ldm defaults`).
+View or set generic custom environment variables inside a project's metadata. The `config` command now has explicit subcommands for clarity, while the legacy positional form is still supported.
 
 ```bash
-ldm config                  # Interactive manager (view and edit all)
-ldm config MY_VAR "value"   # Set a project-level environment variable
-ldm config MY_VAR --remove  # Remove a custom environment variable
+# New namespaced form:
+ldm config get MY_VAR           # Get a project-level variable
+ldm config set MY_VAR "value"   # Set a project-level variable
+ldm config remove MY_VAR        # Remove a variable
+
+# Legacy positional form (still works):
+ldm config MY_VAR "value"       # Detected as 'set'
+ldm config MY_VAR --remove      # Detected as 'remove'
 ```
 
-### `defaults`
+### `config defaults` (legacy: `defaults`)
 
 View or manage LDM's Cascading Configuration Defaults. This system resolves settings (like the default DB type, search mode, or host name) using a hierarchy: Convention -> Global -> User -> Project.
 
 ```bash
 # View the resolved configuration tree and their sources
-ldm defaults
+ldm config defaults
 
 # Set a custom default just for your local user (~/.ldmrc)
-ldm defaults db_type mysql
+ldm config defaults db_type mysql
 
 # Remove a local user default to fall back to the convention
-ldm defaults --remove db_type
+ldm config defaults --remove db_type
 
 # Set a system-wide global default (requires permissions, writes to /etc/ldmrc)
-sudo ldm defaults port 9090 --global
+sudo ldm config defaults port 9090 --global
+
+# Legacy flat form (still works):
+ldm defaults db_type mysql
 ```
+
+---
+
+## Backward Compatibility Reference
+
+All legacy flat-form commands are automatically translated to their namespaced equivalents by the `preprocess_args` layer. Both forms are valid and permanent:
+
+| Legacy Command | New Canonical Form |
+| :--- | :--- |
+| `ldm prune` | `ldm system prune` |
+| `ldm doctor` | `ldm system doctor` |
+| `ldm upgrade` | `ldm system upgrade` |
+| `ldm completion` | `ldm system completion` |
+| `ldm man` | `ldm system man` |
+| `ldm fix-hosts` | `ldm system fix-hosts` |
+| `ldm dev-setup` | `ldm system dev-setup` |
+| `ldm infra-setup` | `ldm infra setup` |
+| `ldm infra-down` | `ldm infra down` |
+| `ldm infra-restart` | `ldm infra restart` |
+| `ldm init-common` | `ldm infra init-common` |
+| `ldm renew-ssl` | `ldm infra renew-ssl` |
+| `ldm migrate-search` | `ldm infra migrate-search` |
+| `ldm cloud-fetch` | `ldm cloud fetch` |
+| `ldm env` | `ldm config env` |
+| `ldm feature` | `ldm config feature` |
+| `ldm log-level` | `ldm config log-level` |
+| `ldm edit` | `ldm config edit` |
+| `ldm defaults` | `ldm config defaults` |
 
 ---

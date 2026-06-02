@@ -51,9 +51,10 @@ class TestCLIEntrypoint(unittest.TestCase):
         mock_get_parser,
         mock_manager_class,
     ):
-        # Setup mock parser to return 'completion' command
+        # Setup mock parser to return 'completion' command (now under system namespace)
         mock_args = MagicMock()
-        mock_args.command = "completion"
+        mock_args.command = "system"
+        mock_args.subcommand = "completion"
         mock_args.shell = "zsh"
         mock_args.verbose = False
         mock_args.non_interactive = True
