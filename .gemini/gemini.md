@@ -77,10 +77,17 @@
   - [x] **PaaS Hydration Edge-Cases Resolved**:
     - **SQL Scrubbing**: Removed proprietary `\restrict` and `\unrestrict` meta-commands from LCP dumps to prevent `ON_ERROR_STOP=1` import failures.
     - **PostgreSQL Clean Slate**: Implemented a comprehensive `DO` block wipe loop (including `DELETE FROM pg_largeobject_metadata`) to guarantee a collision-free import environment without requiring the missing `postgres` superuser.
+    - **PostgreSQL Socket Race**: Added `no such file or directory` to the silent retry loop in `_wipe_db`, ensuring LDM waits for the Docker Unix socket to appear before attempting schema wipes.
     - **Volume Permissions & Sync**: Replaced Alpine `cp` with a robust `tar` pipeline and forced `chown -R 1000:1000` to guarantee hidden file preservation and correct Liferay read permissions across the VM boundary.
     - **Virtual Host Override**: Enforced aggressive `UPDATE virtualhost` execution to map the local hostname dynamically.
-  - [x] **Automated Search Reindexing**: Injected a self-destructing `z_ldm_auto_reindex.groovy` script during the restore phase to force Liferay to programmatically rebuild its Elasticsearch index on first boot, preventing 404 errors for correctly restored physical files.
-  - [x] **macOS PTY Safety**: Refactored binary `sudo` updates to use `os.system` instead of Python subprocesses, permanently fixing the `unable to allocate pty` error on macOS terminal environments.
+    - **Direct Volume Hydration**: Optimized `cmd_restore` to hydrate Named Volumes directly from the snapshot source, bypassing hypervisor sync delays on macOS.
+  - [x] **Self-Tuning JVM & Proactive Monitoring**:
+    - **Auto-Tuning**: Built a resource scaling engine in `ComposerService` that automatically disables `TieredStopAtLevel=1` and increases `ReservedCodeCacheSize` during reindexing to prevent `CodeCache` exhaustion.
+    - **Proactive Reindexing**: Integrated real-time log parsing into the primary startup spinner to report reindex progress and block the "Ready" signal until completion.
+    - **Shared Engine**: Centralized reindex triggering in `BaseHandler.flag_reindex`, enabling the new `ldm reindex` command and `ldm run --reindex` flag.
+  - [x] **UI & UX Refinement**:
+    - **Consolidated Startup**: Unified redundant "Starting stack" lines into a single professional message with `BYELLOW` styling.
+    - **macOS PTY Safety**: Refactored binary `sudo` updates to use `os.system` instead of Python subprocesses, permanently fixing the `unable to allocate pty` error on macOS terminal environments.
 
 - **Next Focus: Roadmap Execution & CLI Namespacing**
   - [ ] **CLI Simplification**: Refactor flat commands into grouped namespaces (e.g., `ldm cloud push`).

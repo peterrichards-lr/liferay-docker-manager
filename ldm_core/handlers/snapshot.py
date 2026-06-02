@@ -1062,6 +1062,7 @@ class SnapshotService(BaseHandler):
                             "shutting down" in err_out.lower()
                             or "starting up" in err_out.lower()
                             or "does not exist" in err_out.lower()
+                            or "no such file or directory" in err_out.lower()
                         ):
                             UI.debug(f"DB initializing, waiting... ({err_out.strip()})")
                             time.sleep(5)

@@ -21,6 +21,7 @@ To resolve critical filesystem locking deadlocks (e.g., `Unable to create lock m
 
 - **Database**: Standardize on PostgreSQL with mandatory healthchecks.
 - **Search**: Use shared Global Search (ES8) by default; support Sidecar fallback isolation.
+- **Self-Tuning JVM**: LDM MUST proactively scale JVM resources (e.g. `ReservedCodeCacheSize=512m`) and disable restrictive optimizations (e.g. `TieredStopAtLevel=1`) during "Production-grade" workloads like full search reindexing to prevent `NoSuchMethodException` and `CodeCache` exhaustion.
 - **Logging**: Force `LIFERAY_LOG4J2_CONFIGURATION_FILE` injection to guarantee hot-reload capability.
 
 ## 3. Automation Standards

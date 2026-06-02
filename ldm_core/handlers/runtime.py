@@ -894,7 +894,7 @@ class RuntimeService(BaseHandler):
                 display_port = ""
 
             UI.info(
-                f"{UI.WHITE}⚡{UI.COLOR_OFF} Starting {project_id} stack ({tag_val}, {db_val}, {host_name}{display_port})..."
+                f"{UI.WHITE}⚡{UI.COLOR_OFF} Starting {UI.BYELLOW}{project_id}{UI.COLOR_OFF} stack ({tag_val}, {db_val}, {host_name}{display_port})..."
             )
             UI.detail(f"=== Stack Configuration: {project_id} ===")
             UI.detail(f"  + Liferay: {UI.CYAN}{tag_val}{UI.COLOR_OFF}")
@@ -954,8 +954,6 @@ class RuntimeService(BaseHandler):
                             UI.error(f"Dependency '{dep}' exited unexpectedly.")
                             return False
                         time.sleep(2)
-
-            UI.info(f"Starting {UI.BOLD}{project_id}{UI.COLOR_OFF} stack...")
 
             # LDM-381: Reclaim volume permissions on Linux before starting
             # This prevents host-side 'Permission denied' errors when Liferay container

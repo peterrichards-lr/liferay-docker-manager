@@ -214,7 +214,18 @@ class ComposerService:
         if "-Djdk.util.zip.disableZip64ExtraFieldValidation=true" not in jvm_opts:
             jvm_opts += " -Djdk.util.zip.disableZip64ExtraFieldValidation=true"
 
-        if "-Xms" in jvm_opts and "-XX:TieredStopAtLevel=1" not in jvm_opts:
+        # LDM-422/423: Self-Tuning JVM for Reindexing (Performance & Stability Win)
+        # If a reindex is scheduled, we must scale up the compiler resources.
+        reindex_active = str(meta.get("reindex_required", "false")).lower() == "true"
+        if reindex_active:
+            # 1. Disable TieredStopAtLevel (Enable C2 compiler for reindex performance)
+            if "-XX:TieredStopAtLevel=1" in jvm_opts:
+                jvm_opts = jvm_opts.replace("-XX:TieredStopAtLevel=1", "")
+
+            # 2. Increase CodeCache (Prevent NoSuchMethodException/VirtualMachineError)
+            if "-XX:ReservedCodeCacheSize" not in jvm_opts:
+                jvm_opts += " -XX:ReservedCodeCacheSize=512m"
+        elif "-Xms" in jvm_opts and "-XX:TieredStopAtLevel=1" not in jvm_opts:
             # ONLY apply these to Darwin/Windows VMs where bundle resolution is slow
             if platform.system().lower() in ["darwin", "windows"]:
                 jvm_opts += " -XX:TieredStopAtLevel=1"
