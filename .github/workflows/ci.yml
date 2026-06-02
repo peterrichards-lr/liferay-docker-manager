@@ -48,10 +48,6 @@ jobs:
           python3 scripts/sync_baseline.py
           python3 scripts/sync_colors.py
 
-      - name: Pre-pull ShellCheck Docker Image
-        run: |
-          docker pull koalaman/shellcheck:v0.10.0
-
       - name: Run Quality Gate (pre-commit)
         run: |
           # Use pre-commit to run all linting, types, and unit tests.

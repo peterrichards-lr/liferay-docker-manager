@@ -19,7 +19,9 @@ repos:
     rev: v0.10.0
     hooks:
       - id: shellcheck
-        exclude: ^ldm$
+        language: system
+        entry: shellcheck
+        files: \.sh$
 
   - repo: local
     hooks:
