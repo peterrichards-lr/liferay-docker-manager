@@ -38,3 +38,7 @@ ldm-debug-bundle*.zip
 e2e-work-dir/
 test-results/
 /verify-*.txt
+
+# Local LDM Working Directories
+/modern-intranet/
+
