@@ -155,7 +155,9 @@ class ComposerService:
                         or "/" in host_side
                         or "\\" in host_side
                     ):
-                        named_volumes[host_side] = {}
+                        # LDM-424: Force explicit volume naming to prevent Docker from prefixing
+                        # with the project name (which causes hydration mismatches).
+                        named_volumes[host_side] = {"name": host_side}
 
         if named_volumes:
             compose["volumes"] = named_volumes

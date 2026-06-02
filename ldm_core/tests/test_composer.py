@@ -1,6 +1,6 @@
 import unittest
 from pathlib import Path
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 from ldm_core.handlers.composer import ComposerService
 
@@ -121,6 +121,48 @@ class TestComposerService(unittest.TestCase):
             paths, meta, "localhost", "proj", False, None
         )
         self.assertEqual(service["image"], "liferay/dxp:2026.q1.4-lts")
+
+    def test_explicit_volume_naming(self):
+        """Verify that named volumes have an explicit 'name' property to prevent prefixing."""
+        paths = {
+            "root": Path("/tmp/proj"),
+            "compose": Path("/tmp/proj/docker-compose.yml"),
+            "deploy": Path("/tmp/proj/deploy"),
+            "files": Path("/tmp/proj/files"),
+            "data": Path("/tmp/proj/data"),
+            "configs": Path("/tmp/proj/osgi/configs"),
+            "modules": Path("/tmp/proj/osgi/modules"),
+            "cx": Path("/tmp/proj/osgi/client-extensions"),
+            "ce_dir": Path("/tmp/proj/client-extensions"),
+            "scripts": Path("/tmp/proj/scripts"),
+            "state": Path("/tmp/proj/osgi/state"),
+            "logs": Path("/tmp/proj/logs"),
+            "portal_log4j": Path("/tmp/proj/osgi/log4j"),
+        }
+        meta = {"tag": "7.4.13-u102", "container_name": "proj"}
+
+        # We need to mock dict_to_yaml to capture the dictionary
+        with (
+            patch(
+                "ldm_core.handlers.composer.dict_to_yaml", return_value="dummy: yaml"
+            ) as mock_yaml,
+            patch("ldm_core.utils.safe_write_text") as mock_write,
+            patch.object(self.composer, "is_using_named_volumes", return_value=True),
+        ):
+            self.composer.write_docker_compose(paths, meta)
+
+            # Check the dictionary passed to dict_to_yaml
+            if not mock_yaml.called:
+                self.fail("dict_to_yaml was not called")
+
+            compose_dict = mock_yaml.call_args[0][0]
+            self.assertIn("volumes", compose_dict)
+            self.assertIn("proj-data", compose_dict["volumes"])
+            # The critical check: does it have the 'name' attribute?
+            self.assertEqual(compose_dict["volumes"]["proj-data"]["name"], "proj-data")
+            self.assertEqual(
+                compose_dict["volumes"]["proj-state"]["name"], "proj-state"
+            )
 
 
 if __name__ == "__main__":
