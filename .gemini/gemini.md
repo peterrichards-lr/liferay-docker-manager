@@ -16,6 +16,8 @@
 - **Predictive Failure**: For every implementation, list two potential failure points (edge cases or performance) and how they were handled.
 - **Predictable Layers**: Ensure logic stays within its designated layer (e.g., UI vs. Business Logic vs. Data) as defined in `spec.md`.
 - **Hybrid Volume Strategy**: Always use **Docker Named Volumes** for lock-sensitive directories (`data/`, `osgi/state/`) on macOS and external ExFAT storage. Use **Host Bind-Mounts** for directories requiring developer interaction (`deploy/`, `modules/`, `client-extensions/`). This ensures robust POSIX file locking while maintaining a smooth DX.
+- **macOS Sync Wait**: When writing high volumes of files to the host (e.g. during backup extraction), LDM MUST wait at least 2 seconds before mounting those folders into a container. This prevents race conditions where the macOS VirtioFS driver reports a successful write to the host OS before the files are physically available to the Docker hypervisor.
+- **macOS VirtioFS Resilience**: When writing a large number of files to the host (e.g. during snapshot extraction) that must be immediately visible to a Docker container, you MUST implement a **Sync Wait** (minimum 2 seconds). On macOS, the Docker hypervisor (VirtioFS/gRPC-FUSE) lags behind the host OS's file creation; failing to wait results in empty directories inside the container.
 - **Script Parity**: All cross-platform utility, verification, and wrapper scripts (e.g., `.sh` vs `.ps1` or `.bat`) MUST be kept in perfect functional parity. Any hardening check or logic update applied to one must be immediately synchronized to the others.
 - **Terminal UI Integrity**: When implementing long-running operations with spinners, you MUST use the `\033[K` ANSI code to clear the terminal line before each update to prevent character bleed. Truncation must be whitespace-aware to prevent word cutting.
 
@@ -52,9 +54,11 @@
 
 - **Logical Squashing**: Avoid creating a commit for every minor bugfix. Group related fixes and features into single, descriptive commits.
 - **Release Automation**:
-  - Use `[release]` in the commit summary to trigger a stable GitHub Release.
-  - Use `[pre-release]` in the commit summary to trigger a Beta/Test build.
-  - Ensure version tags (e.g., `v2.4.26` or `v2.4.26-beta.1`) match the `VERSION` in `ldm_core/constants.py`.
+  - **Stable Strategy**: Use `[release]` in the commit summary to trigger a stable GitHub Release. This MUST be reserved for hardened features and verified bugfixes.
+  - **Pre-Release Strategy**: Use `[pre-release]` in the commit summary to trigger a Beta/Test build (e.g., `v2.10.x-pre.y`).
+  - **Experimental Mandate**: All brand new or experimental functionality (specifically the **Liferay Cloud Golden Path** / `ldm import from cloud`) MUST use pre-releases until a full E2E verification is completed by the user.
+  - **Bumping**: Use `./ldm version --bump pre` to start or increment a pre-release cycle, and `./ldm version --promote` to convert a successful pre-release to a stable version.
+  - Ensure version tags match the `VERSION` in `ldm_core/constants.py`.
 - **Branching Separation**:
   - **`master` / `main`**: Strictly for environmental hardening, stable maintenance, and verified hotfixes.
   - **Roadmap Items**: All large roadmap items, complex features, or experimental refactors MUST be developed in dedicated feature branches (e.g., `roadmap/feature-name`).
@@ -71,13 +75,38 @@
   - [x] **Guided Hydration**: Implemented an interactive wizard (and `--hydrate-from` automation switch) to orchestrate data and env-var synchronization.
   - [x] **Robust Ingestion**: Engineered a "Greedy Regex" parser to reliably extract Backup IDs from the LCP CLI across various OS/terminal environments.
   - [x] **Post-Download Organization**: Built logic to automatically recursively flatten LCP's nested UUID backup structures into standard LDM snapshots.
-  - [x] **License Awareness**: Implemented expiration-aware license syncing to ensure valid developer licenses overwrite expired Cloud ones.
+  - [x] **License Awareness**: Implemented expiration-aware license syncing to ensure valid developer licenses aggressively overwrite expired Cloud trial licenses.
   - [x] **UI Hardening**: Re-engineered the `Spinner` engine with ANSI `\033[K` line-wiping and terminal-aware whitespace truncation.
   - [x] **Automation Standardization**: Established a project-wide exit code contract (0-4, 126) and enforced non-interactive `-y` modes for all developer utilities.
+  - [x] **PaaS Hydration Edge-Cases Resolved**:
+    - **SQL Scrubbing**: Removed proprietary `\restrict` and `\unrestrict` meta-commands from LCP dumps to prevent `ON_ERROR_STOP=1` import failures.
+    - **PostgreSQL Clean Slate**: Implemented a comprehensive `DO` block wipe loop (including `DELETE FROM pg_largeobject_metadata`) to guarantee a collision-free import environment without requiring the missing `postgres` superuser.
+    - **PostgreSQL Socket Race**: Added `no such file or directory` to the silent retry loop in `_wipe_db`, ensuring LDM waits for the Docker Unix socket to appear before attempting schema wipes.
+    - **Volume Permissions & Sync**: Replaced Alpine `cp` with a robust `tar` pipeline and forced `chown -R 1000:1000` to guarantee hidden file preservation and correct Liferay read permissions across the VM boundary.
+    - **Virtual Host Override**: Enforced aggressive `UPDATE virtualhost` execution to map the local hostname dynamically.
+    - **Robust Volume Hydration**: Re-engineered `cmd_restore` to synchronously populate the host project folder FIRST, followed by a mandatory 2-second **Sync Wait** to allow the macOS hypervisor (VirtioFS) to catch up, before finally pushing the confirmed host data into Docker Named Volumes via a `tar` pipeline.
+    - **Volume Naming Consistency**: Implemented explicit naming in `ComposerService` to prevent Docker Compose from prefixing volumes with the project name (e.g. `modern-intranet_modern-intranet-data`), resolving critical hydration mismatches where LDM filled a "ghost" volume.
+    - **Smart Store Detection**: Implemented automatic detection of `FileSystemStore` (simplified paths) vs `AdvancedFileSystemStore` (nested repositoryId paths) during Cloud imports to prevent document library 404s.
+  - [x] **Self-Tuning JVM & Proactive Monitoring**:
+    - **Auto-Tuning**: Built a resource scaling engine in `ComposerService` that automatically disables `TieredStopAtLevel=1` and increases `ReservedCodeCacheSize` during reindexing to prevent `CodeCache` exhaustion.
+    - **Proactive Reindexing**: Integrated real-time log parsing into the primary startup spinner to report reindex progress and block the "Ready" signal until completion.
+    - **Shared Engine**: Centralized reindex triggering in `BaseHandler.flag_reindex`, enabling the new `ldm reindex` command and `ldm run --reindex` flag.
+  - [x] **UI & UX Refinement**:
+    - **Consolidated Startup**: Unified redundant "Starting stack" lines into a single professional message with `BYELLOW` styling.
+    - **macOS PTY Safety**: Refactored binary `sudo` updates to use `os.system` instead of Python subprocesses, permanently fixing the `unable to allocate pty` error on macOS terminal environments.
+  - [x] **Git History Cleanup & Secrets Purge (v2.10.x)**
+    - [x] **Secrets & Database Purge**: Perform interactive rebase from `ad00e868` to drop commit `1f262a59` and purge `modern-intranet` folder from `76ec299e`.
+    - [x] **Update Ignore Settings**: Add `modern-intranet/` to `.gitignore`.
+    - [x] **Tag and Push Hardening**: Purge and recreate release tags `v2.10.58` and `v2.10.59` on clean commits, then force push to remote.
+
+  - [x] **Git History Consolidation (v2.10.25)**: Soft reset to `80407b4c` (v2.10.24) and consolidate 45 micro-commits into 5 clean logical changesets.
+  - [x] **Release Cleanup**: Delete redundant tags/releases `v2.10.25` to `v2.10.59` locally and remotely on GitHub.
+  - [x] **Actions Cleanup**: Delete failed/redundant GitHub Action workflow runs.
 
 - **Next Focus: Roadmap Execution & CLI Namespacing**
   - [ ] **CLI Simplification**: Refactor flat commands into grouped namespaces (e.g., `ldm cloud push`).
   - [ ] **Interactive Scaffolding**: Implement scenario-based project templates.
+
   - [ ] **Visual Dashboard**: Develop the `localhost:19000` monitoring UI.
 
 ## 9. Founding Patterns of LDM

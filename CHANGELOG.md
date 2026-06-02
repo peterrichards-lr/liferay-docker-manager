@@ -178,6 +178,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added runtime state-awareness checks to commands (run, import) to prevent unexpected container collisions.
 - Enabled non-interactive bypass for internal developer utility prompts.
 
+## [v2.10.25] - 2026-06-02
+
+### Added
+
+- **Liferay Cloud Golden Path Hydration**: Automated database extraction, flattening, SQL scrubbing, and volume synchronization.
+- **PostgreSQL Restoration Hardening**: Complete wipe mechanism including Large Objects and UNIX socket retries, and high-performance streaming database import.
+- **Self-Tuning JVM & Search Indexing**: Automated code cache and heap scaling during reindexing, and real-time indexing progress spinner.
+- **Smart Store Detection**: Automatically detects and switches between FileSystemStore and AdvancedFileSystemStore configurations.
+- **Smart Volume Naming**: Bypasses Docker Compose prefixing lag and naming mismatches via explicit Named Volume properties.
+- **CI/CD Hardening**: Configured shellcheck using system binary to ensure stable GitHub Action runs.
+- **Local Dev Hardening**: Added `/modern-intranet/` to gitignore to prevent accidental credential and database leaks.
+
 ## [v2.10.24] - 2026-06-01
 
 ### Added
