@@ -22,6 +22,7 @@ repos:
         language: system
         entry: shellcheck
         files: \.sh$
+        args: [--external-binary-path=/usr/bin/shellcheck] # Explicitly tell pre-commit where to find shellcheck
 
   - repo: local
     hooks:
