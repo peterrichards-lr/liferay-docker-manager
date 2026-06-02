@@ -155,7 +155,9 @@ class ComposerService:
                         or "/" in host_side
                         or "\\" in host_side
                     ):
-                        named_volumes[host_side] = {}
+                        # LDM-424: Force explicit volume naming to prevent Docker from prefixing
+                        # with the project name (which causes hydration mismatches).
+                        named_volumes[host_side] = {"name": host_side}
 
         if named_volumes:
             compose["volumes"] = named_volumes
@@ -166,8 +168,8 @@ class ComposerService:
 
     def is_using_named_volumes(self):
         """Returns True if the current platform/configuration uses Docker Named Volumes for data/state."""
-        # Current policy: macOS always uses volumes to prevent locking errors.
-        return platform.system().lower() == "darwin"
+        # Current policy: Named Volumes are used on all platforms to prevent locking errors.
+        return True
 
     def _build_liferay_service(
         self, paths, meta, host_name, project_name, ssl_enabled, base_env
@@ -214,7 +216,18 @@ class ComposerService:
         if "-Djdk.util.zip.disableZip64ExtraFieldValidation=true" not in jvm_opts:
             jvm_opts += " -Djdk.util.zip.disableZip64ExtraFieldValidation=true"
 
-        if "-Xms" in jvm_opts and "-XX:TieredStopAtLevel=1" not in jvm_opts:
+        # LDM-422/423: Self-Tuning JVM for Reindexing (Performance & Stability Win)
+        # If a reindex is scheduled, we must scale up the compiler resources.
+        reindex_active = str(meta.get("reindex_required", "false")).lower() == "true"
+        if reindex_active:
+            # 1. Disable TieredStopAtLevel (Enable C2 compiler for reindex performance)
+            if "-XX:TieredStopAtLevel=1" in jvm_opts:
+                jvm_opts = jvm_opts.replace("-XX:TieredStopAtLevel=1", "")
+
+            # 2. Increase CodeCache (Prevent NoSuchMethodException/VirtualMachineError)
+            if "-XX:ReservedCodeCacheSize" not in jvm_opts:
+                jvm_opts += " -XX:ReservedCodeCacheSize=512m"
+        elif "-Xms" in jvm_opts and "-XX:TieredStopAtLevel=1" not in jvm_opts:
             # ONLY apply these to Darwin/Windows VMs where bundle resolution is slow
             if platform.system().lower() in ["darwin", "windows"]:
                 jvm_opts += " -XX:TieredStopAtLevel=1"
@@ -283,6 +296,17 @@ class ComposerService:
                     "LIFERAY_ELASTICSEARCH_PERIOD_OPERATION_PERIOD_MODE=EMBEDDED",
                 ]
             )
+
+        # LDM-422: Automatic Reindex on Startup
+        if str(meta.get("reindex_required", "false")).lower() == "true":
+            liferay_env.append("LIFERAY_INDEX_PERIOD_ON_PERIOD_STARTUP=true")
+            liferay_env.append("LIFERAY_INDEX_PERIOD_ON_PERIOD_STARTUP_PERIOD_DELAY=30")
+
+        # LDM-424: Inject Smart Store Implementation
+        dl_store = meta.get("dl_store_impl")
+        if dl_store:
+            liferay_env.append(f"LIFERAY_DL_PERIOD_STORE_PERIOD_IMPL={dl_store}")
+
         custom_env_str = meta.get("custom_env", "{}")
         try:
             custom_env_dict = json.loads(custom_env_str)

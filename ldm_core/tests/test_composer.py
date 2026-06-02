@@ -1,6 +1,6 @@
 import unittest
 from pathlib import Path
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 from ldm_core.handlers.composer import ComposerService
 
@@ -121,6 +121,39 @@ class TestComposerService(unittest.TestCase):
             paths, meta, "localhost", "proj", False, None
         )
         self.assertEqual(service["image"], "liferay/dxp:2026.q1.4-lts")
+
+    def test_explicit_volume_naming(self):
+        """Verify that named volumes have an explicit 'name' property to prevent prefixing."""
+        paths = {"root": Path("/tmp/proj"), "compose": Path("/tmp/proj/compose.yml")}
+        meta = {"container_name": "proj"}
+
+        with (
+            patch(
+                "ldm_core.handlers.composer.dict_to_yaml", return_value="yaml"
+            ) as mock_yaml,
+            patch("ldm_core.utils.safe_write_text"),
+            patch.object(
+                self.composer,
+                "_build_liferay_service",
+                return_value={
+                    "volumes": [
+                        "proj-data:/opt/liferay/data",
+                        "proj-state:/opt/liferay/osgi/state",
+                    ]
+                },
+            ),
+            patch.object(self.composer, "_build_db_service", return_value={}),
+            patch.object(self.composer, "_build_search_service", return_value={}),
+            patch.object(self.composer, "_build_extensions_services", return_value={}),
+        ):
+            self.composer.write_docker_compose(paths, meta)
+
+            compose_dict = mock_yaml.call_args[0][0]
+            self.assertIn("volumes", compose_dict)
+            self.assertEqual(compose_dict["volumes"]["proj-data"]["name"], "proj-data")
+            self.assertEqual(
+                compose_dict["volumes"]["proj-state"]["name"], "proj-state"
+            )
 
 
 if __name__ == "__main__":
