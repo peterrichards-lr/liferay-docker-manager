@@ -349,8 +349,20 @@ class UI:
             else:
                 formatted_prompt += f": {UI.COLOR_OFF}"
 
-            sys.stdout.write(formatted_prompt)
-            sys.stdout.flush()
+            try:
+                sys.stdout.write(formatted_prompt)
+                sys.stdout.flush()
+            except (UnicodeEncodeError, OSError):
+                # Fallback for Windows CP1252/piped input encoding limitations
+                safe_prompt = f"{UI.WHITE}[?]{padding}{prompt}"
+                if default:
+                    safe_prompt += f" [{UI.GREEN}{default}{UI.WHITE}]: {UI.COLOR_OFF}"
+                else:
+                    safe_prompt += f": {UI.COLOR_OFF}"
+                # Final safety wash to strip non-ascii if needed
+                safe_prompt = safe_prompt.encode("ascii", "replace").decode("ascii")
+                sys.stdout.write(safe_prompt)
+                sys.stdout.flush()
 
             from ldm_core.utils import Benchmarker
 

@@ -70,7 +70,7 @@ class TestUtils(unittest.TestCase):
 
         with patch.object(Path, "exists", return_value=True):
             home = get_actual_home()
-            self.assertEqual(str(home), "/Users/tester")
+            self.assertEqual(home.as_posix(), "/Users/tester")
 
     @patch("ldm_core.utils.get_raw")
     @patch("ldm_core.utils.get_actual_home")

@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 
 class TestSecurityPolicy(unittest.TestCase):
     @patch("ldm_core.cli.platform.system")
-    @patch("os.geteuid")
+    @patch("os.geteuid", create=True)
     @patch("sys.exit")
     @patch("ldm_core.cli.get_parser")
     @patch("ldm_core.cli.UI")
@@ -55,7 +55,7 @@ class TestSecurityPolicy(unittest.TestCase):
             )
 
     @patch("ldm_core.cli.platform.system")
-    @patch("os.geteuid")
+    @patch("os.geteuid", create=True)
     @patch("sys.exit")
     @patch("ldm_core.cli.get_parser")
     @patch("ldm_core.cli.UI")
@@ -101,7 +101,7 @@ class TestSecurityPolicy(unittest.TestCase):
             mock_ui.error.assert_not_called()
 
     @patch("ldm_core.cli.platform.system")
-    @patch("os.geteuid")
+    @patch("os.geteuid", create=True)
     @patch("sys.exit")
     @patch("ldm_core.cli.get_parser")
     def test_sudo_guard_allows_standard_user(

@@ -180,9 +180,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [v2.10.58] - 2026-06-02
 
-### Added
+### Fixed
 
--
+- **Multi-Platform Named Volume Hydration**: Corrected `is_using_named_volumes()` in `composer.py` to return `True` unconditionally, enabling proper volume hydration on Windows and Linux systems to resolve missing images/files in DXP imports.
+- **Platform-Dependent Tests**: Resolved test suite failures under Windows due to `os.geteuid` mocking, path separators format differences, and pipe writing encoding errors.
 
 ## [v2.10.57] - 2026-06-02
 

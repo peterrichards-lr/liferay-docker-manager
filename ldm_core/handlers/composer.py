@@ -168,8 +168,8 @@ class ComposerService:
 
     def is_using_named_volumes(self):
         """Returns True if the current platform/configuration uses Docker Named Volumes for data/state."""
-        # Current policy: macOS always uses volumes to prevent locking errors.
-        return platform.system().lower() == "darwin"
+        # Current policy: Named Volumes are used on all platforms to prevent locking errors.
+        return True
 
     def _build_liferay_service(
         self, paths, meta, host_name, project_name, ssl_enabled, base_env
