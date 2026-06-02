@@ -16,6 +16,7 @@
 - **Predictive Failure**: For every implementation, list two potential failure points (edge cases or performance) and how they were handled.
 - **Predictable Layers**: Ensure logic stays within its designated layer (e.g., UI vs. Business Logic vs. Data) as defined in `spec.md`.
 - **Hybrid Volume Strategy**: Always use **Docker Named Volumes** for lock-sensitive directories (`data/`, `osgi/state/`) on macOS and external ExFAT storage. Use **Host Bind-Mounts** for directories requiring developer interaction (`deploy/`, `modules/`, `client-extensions/`). This ensures robust POSIX file locking while maintaining a smooth DX.
+- **macOS VirtioFS Resilience**: When writing a large number of files to the host (e.g. during snapshot extraction) that must be immediately visible to a Docker container, you MUST implement a **Sync Wait** (minimum 2 seconds). On macOS, the Docker hypervisor (VirtioFS/gRPC-FUSE) lags behind the host OS's file creation; failing to wait results in empty directories inside the container.
 - **Script Parity**: All cross-platform utility, verification, and wrapper scripts (e.g., `.sh` vs `.ps1` or `.bat`) MUST be kept in perfect functional parity. Any hardening check or logic update applied to one must be immediately synchronized to the others.
 - **Terminal UI Integrity**: When implementing long-running operations with spinners, you MUST use the `\033[K` ANSI code to clear the terminal line before each update to prevent character bleed. Truncation must be whitespace-aware to prevent word cutting.
 
@@ -52,9 +53,11 @@
 
 - **Logical Squashing**: Avoid creating a commit for every minor bugfix. Group related fixes and features into single, descriptive commits.
 - **Release Automation**:
-  - Use `[release]` in the commit summary to trigger a stable GitHub Release.
-  - Use `[pre-release]` in the commit summary to trigger a Beta/Test build.
-  - Ensure version tags (e.g., `v2.4.26` or `v2.4.26-beta.1`) match the `VERSION` in `ldm_core/constants.py`.
+  - **Stable Strategy**: Use `[release]` in the commit summary to trigger a stable GitHub Release. This MUST be reserved for hardened features and verified bugfixes.
+  - **Pre-Release Strategy**: Use `[pre-release]` in the commit summary to trigger a Beta/Test build (e.g., `v2.10.x-pre.y`).
+  - **Experimental Mandate**: All brand new or experimental functionality (specifically the **Liferay Cloud Golden Path** / `ldm import from cloud`) MUST use pre-releases until a full E2E verification is completed by the user.
+  - **Bumping**: Use `./ldm version --bump pre` to start or increment a pre-release cycle, and `./ldm version --promote` to convert a successful pre-release to a stable version.
+  - Ensure version tags match the `VERSION` in `ldm_core/constants.py`.
 - **Branching Separation**:
   - **`master` / `main`**: Strictly for environmental hardening, stable maintenance, and verified hotfixes.
   - **Roadmap Items**: All large roadmap items, complex features, or experimental refactors MUST be developed in dedicated feature branches (e.g., `roadmap/feature-name`).
