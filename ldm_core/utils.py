@@ -288,8 +288,9 @@ def load_env_blacklist(path):
     try:
         with Path(path).open() as f:
             for line in f:
-                line = line.strip()
-                if line and not line.startswith("#"):
+                # LDM-423: Robustly strip whitespace and inline comments
+                line = line.split("#")[0].strip()
+                if line:
                     patterns.append(line)
     except Exception as e:
         UI.warning(f"Failed to load blacklist from {path}: {e}")

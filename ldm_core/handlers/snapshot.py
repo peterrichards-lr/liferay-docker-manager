@@ -548,33 +548,30 @@ class SnapshotService(BaseHandler):
                 self.manager.run_command(
                     ["tar", "-xzf", str(volume_tgz), "-C", str(target_data)]
                 )
-            # LDM-408/422: Direct Volume Hydration (Performance & Reliability Win)
-            # On macOS (Named Volumes), we hydrate directly from the snapshot source
-            # to avoid hypervisor race conditions when copying via the host.
-            elif self.manager.composer.is_using_named_volumes():
-                UI.info("  + Hydrating Named Volumes directly from snapshot...")
-                self._sync_volume(
-                    choice_path / "volume",
-                    f"{paths['root'].name}-data",
-                    direction="to_volume",
-                )
-                # We still populate the host folder for developer visibility
-                if target_data.exists():
-                    from ldm_core.utils import safe_rmtree
-
-                    safe_rmtree(target_data)
-                import shutil
-
-                shutil.copytree(str(choice_path / "volume"), str(target_data))
             else:
-                # Standard host-mapped hydration
+                # LDM-408/422/423: Robust Volume Hydration (Mac Sync Resilience)
+                # 1. First, synchronously copy the snapshot to the host project folder.
+                # This ensures the files are physically on the disk and owned by the user.
                 import shutil
 
                 from ldm_core.utils import safe_rmtree
 
                 if target_data.exists():
                     safe_rmtree(target_data)
+
+                UI.info("  + Unpacking volume to host...")
                 shutil.copytree(str(choice_path / "volume"), str(target_data))
+
+                # 2. On macOS (Named Volumes), we must push the host data into the Docker volume.
+                if self.manager.composer.is_using_named_volumes():
+                    # LDM-423: Critical 'Sync Wait'. On macOS, the Docker hypervisor (VirtioFS)
+                    # needs a moment to 'see' the files we just wrote to the host before we
+                    # can mount them into a container for the tar-sync.
+                    time.sleep(2)
+
+                    UI.info("  + Hydrating internal Docker volumes...")
+
+                    self._hydrate_named_volumes(paths)
 
             UI.success("Cloud volume restoration completed.")
         else:
@@ -1055,19 +1052,22 @@ class SnapshotService(BaseHandler):
                         wipe_success = True
                         break
                     except subprocess.CalledProcessError as e:
-                        err_out = (
-                            e.stderr.decode(errors="ignore") if e.stderr else str(e)
-                        )
+                        # LDM-423: Capture both stdout and stderr for robust error parsing
+                        # psql sometimes sends connection errors to stdout
+                        raw_err = (e.stderr or b"").decode(errors="ignore")
+                        raw_out = (e.stdout or b"").decode(errors="ignore")
+                        err_out = f"{raw_err} {raw_out}".lower()
+
                         if (
-                            "shutting down" in err_out.lower()
-                            or "starting up" in err_out.lower()
-                            or "does not exist" in err_out.lower()
-                            or "no such file or directory" in err_out.lower()
+                            "shutting down" in err_out
+                            or "starting up" in err_out
+                            or "does not exist" in err_out
+                            or "no such file or directory" in err_out
                         ):
                             UI.debug(f"DB initializing, waiting... ({err_out.strip()})")
                             time.sleep(5)
                         else:
-                            UI.warning(f"  ! Non-fatal wipe error: {err_out}")
+                            UI.warning(f"  ! Non-fatal wipe error: {err_out.strip()}")
                             break  # Other SQL error, stop retrying
                     except Exception as e:
                         UI.warning(f"  ! Wipe encountered an error: {e}")
@@ -1127,7 +1127,11 @@ class SnapshotService(BaseHandler):
                     success = True
                     break
                 except subprocess.CalledProcessError as e:
-                    err_out = e.stderr.decode(errors="ignore") if e.stderr else str(e)
+                    # LDM-423: Capture both for better debugging
+                    raw_err = (e.stderr or b"").decode(errors="ignore")
+                    raw_out = (e.stdout or b"").decode(errors="ignore")
+                    err_out = f"{raw_err} {raw_out}".strip()
+
                     if i < 2:
                         UI.warning(f"  ! Restore attempt {i + 1} failed, retrying...")
                         UI.debug(f"  ! Error: {err_out}")
