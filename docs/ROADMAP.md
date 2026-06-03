@@ -11,9 +11,10 @@ This document outlines potential enhancements to the Liferay Docker Manager (ldm
 
 While the v2.4.0 release solidified the modular architecture, the focus will now shift to implementing the remaining Ecosystem features.
 
-### 1. Guided Onboarding & Scaffolding
+### 1. Extensible Stack Profiles & External Database
 
-- **Interactive Scaffolding**: Implement `ldm init` with guided templates for common use cases (e.g., "Commerce Demo," "Headless React Integration").
+- **Extensible Stack Profiles**: Implement declarative stack profiles (e.g., `keycloak-sso`, `clustered`) that combine OSGi config overlays and Docker Compose service configurations.
+- **External Database Integration**: Implement a dedicated `--db external` database parameter switch to support connecting local Liferay orchestrations to remote or host-bound database instances.
 
 ### 2. CLI Simplification & Automation Standards
 

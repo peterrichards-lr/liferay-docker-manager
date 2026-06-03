@@ -117,7 +117,11 @@
   - [x] **Test Coverage Hardening**: Expanded unit test coverage for the Snapshot/Restore Service (specifically `_wipe_db()`, `_execute_orchestrated_db_restore()`, and Smart Store Detection heuristics).
   - [x] **CLI Simplification (Namespacing)**: Refactoring flat commands into grouped namespaces (infra, cloud, config, system) with 100% backward compatibility via preprocess_args.
   - [x] **E2E Scripts Refactor**: Update verify_e2e_refactor.sh and verify_e2e_refactor.ps1 for CLI namespacing, legacy translations, and scaled instance logs.
-  - [ ] **Interactive Scaffolding**: Implement scenario-based project templates.
+  - [ ] **Extensible Stack Profiles & External Database**:
+    - [ ] Create directory structure and loader logic for declarative stack profiles.
+    - [ ] Implement `keycloak-sso` profile (realm-export mapping and OSGi configs).
+    - [ ] Implement `clustered` profile (JGroups TCPPING and shared Named Volumes).
+    - [ ] Implement `--db external` database parameter switch.
   - [x] **Hardening Phase 2: Secrets, Compose Validation, and Dependabot**:
     - [x] Implement `detect-secrets` hook in pre-commit and dev-requirements.
     - [x] Create `scripts/validate_compose.py` to validate compose templates.
