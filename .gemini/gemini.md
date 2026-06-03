@@ -139,6 +139,11 @@
   - [x] **Automate Compatibility Sync Pipeline**:
     - [x] Create scripts/sync_reports_pipeline.sh to automate reports sync, lint, commit, and PR creation
     - [x] Make the script executable and run quality/lint checks
+  - [x] **Bugfixes for Showcase**:
+    - [x] Force console encoding check in UI._print to prevent silent backslashreplace escaping on Windows
+    - [x] Register missing fix-hosts subcommand in ldm_core/cli.py
+    - [x] Run pytest to verify all tests pass
+    - [x] Restore default SIGPIPE handler on Unix environments in cli.py to prevent BrokenPipeError tracebacks in pipelines
   - [ ] **Extensible Stack Profiles & External Database**:
     - [ ] Relocate plans folder to `docs/roadmap/plans/` (In Progress)
     - [ ] Create directory structure and loader logic for declarative stack profiles.

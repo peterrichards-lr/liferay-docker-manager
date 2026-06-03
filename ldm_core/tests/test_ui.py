@@ -47,6 +47,28 @@ class TestUI(unittest.TestCase):
         self.assertEqual(UI.format_size(1024 * 1024), "1.0 MB")
         self.assertEqual(UI.format_size(1024 * 1024 * 1024), "1.0 GB")
 
+    def test_print_unicode_fallback(self):
+        class MockASCIIStream:
+            def __init__(self):
+                self.encoding = "ascii"
+                self.written = []
+
+            def write(self, s):
+                self.written.append(s)
+
+            def flush(self):
+                pass
+
+        stream = MockASCIIStream()
+        # "❌" cannot be encoded in ASCII, so it should trigger fallback and be replaced with "[X]"
+        UI._print("❌ Test message", file=stream)
+
+        # Check if the fallback replacement happened
+        combined = "".join(stream.written)
+        self.assertIn("[X]", combined)
+        self.assertIn("Test message", combined)
+        self.assertNotIn("❌", combined)
+
 
 if __name__ == "__main__":
     unittest.main()

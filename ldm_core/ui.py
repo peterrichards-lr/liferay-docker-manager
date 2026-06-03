@@ -83,6 +83,13 @@ class UI:
             out = f"{color}{out}{UI.COLOR_OFF}"
 
         try:
+            # Test if the output can be encoded in the target file encoding
+            if (
+                hasattr(file, "encoding")
+                and isinstance(file.encoding, str)
+                and file.encoding
+            ):
+                out.encode(file.encoding)
             # Try printing with the current encoding
             print(out, file=file, flush=True)
         except (UnicodeEncodeError, OSError):
