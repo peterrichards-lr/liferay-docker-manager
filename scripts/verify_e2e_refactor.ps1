@@ -29,7 +29,7 @@ if (-not (Test-Path $TEST_VENV)) {
 
 if (-not (Test-Path $VENV_PYTEST)) {
     Write-Host ">> Installing test dependencies into virtual environment..."
-    & $VENV_PYTHON -m pip install pytest requests PyYAML --quiet
+    & $VENV_PYTHON -m pip install pytest requests PyYAML --quiet --disable-pip-version-check
 }
 
 # Header
