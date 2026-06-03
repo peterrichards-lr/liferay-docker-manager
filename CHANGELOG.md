@@ -178,6 +178,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added runtime state-awareness checks to commands (run, import) to prevent unexpected container collisions.
 - Enabled non-interactive bypass for internal developer utility prompts.
 
+## [v2.11.1] - 2026-06-03
+
+### Fixed
+
+- **Windows Console Unicode Output**: Added `isinstance(str)` guard to `UI._print` encoding pre-check to prevent `TypeError` when stdout is mocked, and ensures emoji symbols (e.g. `❌`) fall back to ASCII equivalents (`[X]`) on consoles that cannot encode UTF-8.
+- **`system fix-hosts` CLI Registration**: Registered the missing `fix-hosts` subcommand under `system_subparsers` in the CLI parser. Previously, `ldm system fix-hosts --help` caused argparse to exit with code 2, failing the WSL2 E2E Sudo Guard verification.
+- **SIGPIPE Broken Pipe Traceback**: Restored the default OS-level `SIGPIPE` signal handler (`SIG_DFL`) on Unix/macOS at startup. Python's override was causing `BrokenPipeError: [Errno 32] Broken pipe` tracebacks when `ldm` output was piped to tools like `grep -q` that exit early.
+- **Pre-commit Hook Python Resolution**: Added `scripts/run_python.sh` portable resolver so pre-commit hooks use `.venv/bin/python3` when available (local dev) and fall back to system `python3` (CI), preventing hook failures caused by Homebrew Python taking priority on macOS.
+
 ## [v2.11.0] - 2026-06-03
 
 ### Added
