@@ -317,6 +317,14 @@ class RuntimeService(BaseHandler):
                 tag = tag or snap_meta.get("tag")
                 db_type = db_type or snap_meta.get("db_type")
 
+            # Validate tag against official releases if it's new or user-provided
+            if tag and tag != project_meta.get("tag"):
+                from ldm_core.utils import validate_liferay_tag
+                if self.manager.verbose:
+                    UI.info(f"Validating tag '{tag}' against Liferay releases...")
+                if not validate_liferay_tag(tag):
+                    UI.warning(f"Tag '{tag}' is not listed in official Liferay releases. If this is not a custom image, the Docker pull may fail.")
+
             if is_new_project and self.manager.assets._ensure_seeded(
                 tag, db_type, paths
             ):
