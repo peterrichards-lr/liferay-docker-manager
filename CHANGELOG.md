@@ -178,6 +178,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added runtime state-awareness checks to commands (run, import) to prevent unexpected container collisions.
 - Enabled non-interactive bypass for internal developer utility prompts.
 
+## [v2.11.2] - 2026-06-03
+
+### Fixed
+
+- **Windows PowerShell Input Prompt Hang**: Refactored `UI.ask` to use native `input(prompt)` on Windows (`sys.platform == "win32"`) with a clean ASCII-only fallback prompt, preventing console host queue blocking and allowing user inputs and Ctrl+C abort sequences to process correctly in PowerShell and cmd.exe.
+
 ## [v2.11.1] - 2026-06-03
 
 ### Fixed
