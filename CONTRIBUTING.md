@@ -19,8 +19,8 @@ We love new ideas! Please use the Feature Request template when opening a new is
 
 1. **GitHub Issues**: A Github issue SHOULD be created for any bug fix or feature. This helps track progress and is required for generating the `CHANGELOG.md` entry.
 2. **Branching Strategy**:
-   - **`master`**: Strictly for environmental hardening, stable maintenance, and verified hotfixes.
-   - **Roadmap / Features**: Large roadmap items, complex features, or experimental refactors MUST use dedicated branches (e.g., `roadmap/feature-name`).
+   - **`master`**: Strictly for environmental hardening, stable maintenance, and verified hotfixes. No direct commits or pre-releases should be cut from master.
+   - **Roadmap / Features**: Large roadmap items, complex features, or experimental refactors MUST use dedicated branches (e.g., `roadmap/feature-name`). All testing and pre-releases (tags matching `v*-pre.*`) must be cut and built directly on these branches.
    - **Cleanup**: Delete your feature branch immediately after it has been merged into `master`.
 3. If you are working on a stability or hardening task, please align with our **Hardening Workflow**.
 4. **Pass the Lint Check**: Before submitting, you MUST run the local linting script:
@@ -93,9 +93,9 @@ We prefer [Conventional Commits](https://www.conventionalcommits.org/):
 
 LDM uses an explicit gating mechanism for GitHub Releases:
 
-- **Tags**: Pushing a tag (e.g., `v2.4.0`) automatically triggers a build.
-- **Stable Release**: To trigger a full production release, the commit message MUST contain the **`[release]`** keyword.
-- **Beta / Pre-release**: To trigger a pre-release (beta) build, the commit message MUST contain the **`[pre-release]`** keyword.
+- **Tags**: Pushing a tag (e.g., `v2.4.0` or `v2.11.0-pre.1`) automatically triggers a build.
+- **Pre-releases / Test Builds**: All pre-releases (versions containing `-pre` or `-beta`, such as `v2.11.0-pre.1`) MUST be tagged and pushed directly on their respective development/feature branches, not on `master`. This allows testing the build using the `verify-*` scripts before merging.
+- **Stable Releases**: Stable releases must only be tagged and published after a feature branch has been merged into `master`. To trigger a full production release, the commit message on master MUST contain the **`[release]`** keyword.
 
 ## ✅ Quality Assurance Standards
 
