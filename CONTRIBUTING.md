@@ -101,6 +101,36 @@ LDM uses an explicit gating mechanism for GitHub Releases:
 - **Pre-releases / Test Builds**: All pre-releases (versions containing `-pre` or `-beta`, such as `v2.11.0-pre.1`) MUST be tagged and pushed directly on their respective development/feature branches, not on `master`. This allows testing the build using the `verify-*` scripts before merging.
 - **Stable Releases**: Stable releases must only be tagged and published after a feature branch has been merged into `master`. To trigger a full production release, the commit message on master MUST contain the **`[release]`** keyword.
 
+#### 🛠️ Cutting a Pre-release (Beta Build)
+
+If you are developing a complex feature on a feature branch (e.g., `roadmap/my-feature`) and need to compile and verify the standalone binaries across platforms, you can trigger a pre-release build:
+
+1. **Increment the Pre-release Version**:
+   Use LDM's version utility to logically bump to the next beta version:
+
+   ```bash
+   ./ldm version --bump beta -y
+   ```
+
+2. **Commit the Version Change**:
+   Commit the files modified by the version bump (`CHANGELOG.md`, `ldm_core/constants.py`, and `pyproject.toml`):
+
+   ```bash
+   git add .
+   git commit -m "chore(release): bump version to v2.11.2-pre.1 [pre-release]"
+   git push origin roadmap/my-feature
+   ```
+
+3. **Tag and Push the Pre-release**:
+   Create and push a git tag matching the target version:
+
+   ```bash
+   git tag v2.11.2-pre.1
+   git push origin v2.11.2-pre.1
+   ```
+
+   *Note: Pushing a tag starting with `v*` triggers the GitHub Actions pipeline, which will build and publish standalone pre-release binaries for Windows, macOS, and Linux.*
+
 ## ✅ Quality Assurance Standards
 
 All significant changes to the orchestration or infrastructure handlers MUST be verified against our live-Docker suite:
