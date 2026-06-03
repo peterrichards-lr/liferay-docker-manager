@@ -193,6 +193,7 @@
     - [x] Update `scripts/sync_reports_pipeline.sh` status check regex to detect both staged and unstaged new, modified, or renamed reports (`A`, `M`, `R`, `?`).
     - [x] Fix `git add` pathspecs in `scripts/sync_reports_pipeline.sh` (remove incorrect root level `COMPATIBILITY_TABLE.md` and `README.md` pathspecs that cause atomic `git add` failures).
     - [x] Test the pipeline script execution to verify that it successfully detects the staged changes and proceeds with the flow.
+    - [x] Fix MD028/MD012 markdownlint error in `docs/INSTALLATION.md` by removing the blank lines surrounding the `<!-- -->` separator between the two blockquotes.
 
   - [x] **Fix COMPATIBILITY_TABLE.md from Parsed Reports** (Done):
     - Parsed all 6 report files and extracted accurate version data.
