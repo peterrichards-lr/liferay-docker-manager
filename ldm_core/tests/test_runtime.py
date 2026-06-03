@@ -545,6 +545,56 @@ class TestRuntime(unittest.TestCase):
 
             mock_flag.assert_called_once_with(self.tmp_dir)
 
+    @patch("ldm_core.ui.UI.warning")
+    @patch("ldm_core.utils.validate_liferay_tag")
+    def test_cmd_run_tag_validation_warning(self, mock_validate, mock_warning):
+        """Verify that a warning is logged if the tag is not an official Liferay tag."""
+        with (
+            patch.object(
+                self.handler, "detect_project_path", return_value=self.tmp_dir
+            ),
+            patch.object(
+                self.handler,
+                "setup_paths",
+                return_value={"root": self.tmp_dir, "data": self.tmp_dir / "data"},
+            ),
+            patch.object(
+                self.handler, "read_meta", return_value={"tag": "2026.q1.6-lts"}
+            ),
+            patch.object(self.handler, "_pre_flight_checks", return_value=8080),
+            patch.object(self.handler, "verify_runtime_environment"),
+            patch.object(self.handler.handler, "sync_stack"),
+        ):
+            # Setup args
+            self.handler.args.project = "test"
+            self.handler.args.tag = "invalid-tag"
+            self.handler.args.tag_latest = False
+            self.handler.args.tag_prefix = None
+            self.handler.args.release_type = None
+            self.handler.args.no_up = True
+            self.handler.args.samples = False
+            self.handler.args.db = None
+            self.handler.args.host_name = None
+            self.handler.args.jvm_args = None
+            self.handler.args.port = None
+            self.handler.args.snapshot = None
+
+            # Scenario 1: Tag is invalid -> should trigger warning
+            mock_validate.return_value = False
+            self.handler.cmd_run("test")
+            mock_warning.assert_any_call(
+                "Tag 'invalid-tag' is not listed in official Liferay releases. If this is not a custom image, the Docker pull may fail."
+            )
+            mock_warning.reset_mock()
+
+            # Scenario 2: Tag is valid -> should not trigger warning
+            self.handler.args.tag = "2026.q1.7-lts"
+            mock_validate.return_value = True
+            self.handler.cmd_run("test")
+            # Assert warning was not called for tag validation
+            for call in mock_warning.call_args_list:
+                self.assertNotIn("official Liferay releases", call[0][0])
+
     @patch("ldm_core.ui.UI.die")
     def test_cmd_run_select_non_interactive_dies(self, mock_die):
         mock_die.side_effect = SystemExit

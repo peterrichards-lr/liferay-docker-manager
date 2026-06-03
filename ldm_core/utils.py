@@ -672,6 +672,42 @@ def open_browser(url):
         return False
 
 
+def validate_liferay_tag(tag):
+    """
+    Validates if a tag exists in Liferay's official releases.json.
+    Returns True if valid, False if invalid, and True if the network request fails
+    (to prevent blocking users during offline usage).
+    """
+    if not tag:
+        return False
+
+    url = "https://releases.liferay.com/releases.json"
+    try:
+        # Use a short timeout so we don't delay the CLI experience
+        response = requests.get(url, headers={"User-Agent": "LDM-CLI"}, timeout=5)
+        if response.status_code != 200:
+            return True
+
+        data = response.json()
+        valid_tags = []
+        for entry in data:
+            entry_url = entry.get("url", "")
+            if entry_url:
+                # e.g., https://releases-cdn.liferay.com/dxp/2026.q1.7-lts -> 2026.q1.7-lts
+                valid_tags.append(entry_url.split("/")[-1])
+
+        # Some tags might not perfectly match the URL, so let's also check targetPlatformVersion
+        for entry in data:
+            target_plat = entry.get("targetPlatformVersion", "")
+            if target_plat:
+                valid_tags.append(target_plat)
+
+        return tag in valid_tags
+    except Exception:
+        # Don't fail the tool if the network request fails (e.g. offline, rate limited)
+        return True
+
+
 def discover_latest_tag(
     api_url, release_type="any", prefix_filter=None, verbose=False, refresh=False
 ):

@@ -110,10 +110,10 @@
 - **Next Focus: Roadmap Execution & CLI Namespacing**
   - [x] **Branch Cleanup**: Audit and delete fully merged roadmap branches (`cli-namespacing`, `guided-onboarding`, `extensible-profiles-architecture`).
   - [x] **Document Branching & Tagging Strategy**: Update CONTRIBUTING.md with branch-isolated pre-release rules.
-  - [x] **Roadmap Synchronization**: Update docs/ROADMAP.md to align with completed v2.10.x features and restructure future roadmap items.
   - [x] **Conductor Plans Cleanup**: Review, consolidate duplicates, and remove completed plans.
   - [x] **Virtual Environment & Headers Mandate**: Add virtual environment developer mandates and agent rules, and clarify purpose headers in gemini configs.
   - [x] **Organize Conductor Tracks**: Move all individual track plans to the tracks/ subfolder and update tracks.md links.
+  - [x] **Roadmap Synchronization**: Update docs/ROADMAP.md to align with completed v2.10.x features and restructure future roadmap items.
   - [x] **Fix Samples Flow**: Delegate get_samples_root in LiferayManager, add test coverage to verify it executes successfully, and test the CLI samples flag.
   - [x] **Diagnostics & Venv Hardening**: Implemented virtualenv environment verification, refactored ldm doctor to provide a RAG summary dashboard by default with granular section filters (`--system`, `--docker`, `--project`), and expanded test coverage.
   - [x] **Test Coverage Hardening**: Expanded unit test coverage for the Snapshot/Restore Service (specifically `_wipe_db()`, `_execute_orchestrated_db_restore()`, and Smart Store Detection heuristics).
@@ -123,7 +123,13 @@
   - [x] **Fix E2E Success Output**: Ensure E2E success marker is appended to the results report file in verify scripts.
   - [x] **Fix sync_compatibility.py**: Ensure the history directory is created if it does not exist.
   - [x] **Regenerate User Report**: Manually add the passing marker to the user's report and run sync_compatibility.py to rebuild the matrix.
-  - [ ] **Linting Documentation**: Clarify auto-fix and `--check` options for `lint.sh` in `CONTRIBUTING.md`.
+  - [x] **Linting Documentation**: Clarify auto-fix and `--check` options for `lint.sh` in `CONTRIBUTING.md`.
+  - [x] **Fix External PR Formatting**: Checkout PR #1, run linting/formatting fixes, and push to contributor fork.
+  - [x] **Fix External PR #1 Test Failure and Verification**:
+    - [x] Correct patch decorator in ldm_core/tests/test_runtime.py
+    - [x] Run pytest to verify all tests pass (including coverage check)
+    - [x] Run E2E script verify_e2e_refactor.sh to verify tag validation warning
+    - [x] Commit changes, run quality check/linters, and push to contributor's fork
   - [ ] **Extensible Stack Profiles & External Database**:
     - [ ] Relocate plans folder to `docs/roadmap/plans/` (In Progress)
     - [ ] Create directory structure and loader logic for declarative stack profiles.
