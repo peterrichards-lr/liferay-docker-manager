@@ -284,16 +284,16 @@ def get_report_metadata(report_path):
 def sync_reports():
     """Main synchronization logic."""
     results_dir = Path("references/verification-results")
-    history_dir = results_dir / "history"
-    history_dir.mkdir(parents=True, exist_ok=True)
+    archive_dir = results_dir / "archived_findings"
+    archive_dir.mkdir(parents=True, exist_ok=True)
     source_file = Path("docs/COMPATIBILITY_TABLE.md")
 
     if not results_dir.exists():
         UI.error(f"Directory not found: {results_dir}")
         return
 
-    # 1. Gather and Parse all reports (including history)
-    all_txt = list(results_dir.glob("*.txt")) + list(history_dir.glob("*.txt"))
+    # 1. Gather and Parse all reports (excluding archive directory)
+    all_txt = list(results_dir.glob("*.txt"))
     report_metas = []
     for r in all_txt:
         if r.name == ".gitkeep":
@@ -316,12 +316,7 @@ def sync_reports():
         is_latest = latest_by_env[meta["internal_slug"]] == meta
 
         expected_name = f"verify-{meta['internal_slug']}-{meta['status_slug']}"
-
-        # Generate a unique hash for the filename to prevent collisions if timestamps are identical
-        name_hash = hashlib.md5(
-            f"{meta['internal_slug']}{meta['timestamp']}".encode()
-        ).hexdigest()[:8]
-        new_name = f"{expected_name}-{name_hash}.txt"
+        new_name = f"{expected_name}.txt"
 
         if is_latest:
             target_path = results_dir / new_name
@@ -337,10 +332,15 @@ def sync_reports():
             target_path.write_text(clean_content)
             meta["report_path"] = target_path
         else:
-            UI.info(f"Archiving old report: {meta['report_path'].name}")
-            shutil.move(
-                str(meta["report_path"]), str(history_dir / meta["report_path"].name)
+            # Generate a unique hash for the filename to prevent collisions if timestamps are identical
+            name_hash = hashlib.md5(
+                f"{meta['internal_slug']}{meta['timestamp']}".encode()
+            ).hexdigest()[:8]
+            archived_name = f"{expected_name}-{name_hash}.txt"
+            UI.info(
+                f"Archiving old report: {meta['report_path'].name} -> {archived_name}"
             )
+            shutil.move(str(meta["report_path"]), str(archive_dir / archived_name))
 
     # 3. Table Generation Logic
     root_reports = list(results_dir.glob("*.txt"))
