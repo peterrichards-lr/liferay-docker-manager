@@ -27,14 +27,14 @@ repos:
     hooks:
       - id: pytest
         name: pytest
-        entry: .venv/bin/python3 -m pytest
+        entry: scripts/run_python.sh -m pytest
         language: system
         pass_filenames: false
         always_run: true
 
       - id: bandit
         name: bandit
-        entry: .venv/bin/python3 -m bandit
+        entry: scripts/run_python.sh -m bandit
         args: [ "-r", "ldm_core/", "-x", "ldm_core/tests/", "--severity-level", "medium" ]
         language: system
         pass_filenames: false
@@ -42,14 +42,14 @@ repos:
 
       - id: check-version-sync
         name: Check Version Synchronization
-        entry: .venv/bin/python3 scripts/check_version_sync.py
+        entry: scripts/run_python.sh scripts/check_version_sync.py
         language: system
         files: ^pyproject\.toml$|^ldm_core/constants\.py$
         pass_filenames: false
 
       - id: sync-docs
         name: Sync Documentation
-        entry: bash -c '.venv/bin/python3 scripts/sync_docs.py && git diff --exit-code docs/*.md'
+        entry: bash -c 'scripts/run_python.sh scripts/sync_docs.py && git diff --exit-code docs/*.md'
         language: system
         files: ^ldm_core/|^scripts/sync_docs\.py$|^docs/
         pass_filenames: false
@@ -64,7 +64,7 @@ repos:
 
       - id: validate-compose
         name: Validate Docker Compose Templates
-        entry: .venv/bin/python3 scripts/validate_compose.py
+        entry: scripts/run_python.sh scripts/validate_compose.py
         language: system
         files: ^ldm_core/resources/infra-compose\.yml$|^scripts/validate_compose\.py$
         pass_filenames: false
