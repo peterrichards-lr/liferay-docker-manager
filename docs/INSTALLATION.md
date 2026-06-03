@@ -4,7 +4,7 @@ LDM can be installed either as a standalone binary or manually via Python for de
 
 ## 1. Standalone Binary (Recommended)
 
-The standalone binary is a single-file executable that includes all dependencies.
+The standalone binary is a single-file executable. On Windows, it is fully self-contained (including Python itself). On macOS and Linux, it is packaged as a ZipApp (which includes all library dependencies but requires a host-installed Python 3.10+ interpreter).
 
 ### macOS / Linux / WSL2
 
@@ -28,7 +28,11 @@ sudo chmod +x /usr/local/bin/ldm
 ldm --version
 ```
 
+> [!IMPORTANT]
+> **macOS/Linux Runtime Requirement:** The standalone binaries for macOS and Linux require **Python 3.10 or higher** installed on the host machine. If running `ldm --version` fails with a traceback (e.g. `TypeError: unsupported operand type(s) for |`), please install or update Python (on macOS, you can run `brew install python@3.12`).
+<!-- -->
 > [!TIP]
+>
 > **WSL2 Users:** Use the `ldm-linux` binary within your WSL terminal. To enable SSL, you **must** install `mkcert` inside the Linux environment (`sudo apt update && sudo apt install libnss3-tools`).
 >
 > **Seamless WSL SSL (Green Lock):** To make your Windows browser (Edge/Chrome) trust LDM certificates generated inside WSL, you must share the Root CA:
@@ -105,7 +109,7 @@ ldm --help
 - **Docker Compose**: **v2 (Plugin)** is mandatory. Legacy v1 standalone is not supported.
 - **Resources**: Recommended **4 CPUs and 8GB RAM** allocated to Docker.
   - *Note*: `ldm doctor` expects these minimums. If you allocate exactly 8GB, Docker may report ~7.7GB due to system overhead; the tool accounts for this by allowing a 7.5GB threshold.
-- **Python**: 3.10+ (only if running from source)
+- **Python**: 3.10+ (required for source installations and for macOS/Linux standalone binaries, as they are packaged as ZipApps. Not required for Windows standalone binaries).
 - **SSL Tools**: `mkcert` and `openssl` are required for HTTPS support.
 
 For a detailed breakdown of all third-party dependencies, why they are needed, and feature impact, see the [THIRD_PARTY_TOOLS.md](./THIRD_PARTY_TOOLS.md) guide.
@@ -675,11 +679,13 @@ We maintain "Tier 1" support for the following physical lab configurations:
 <!-- COMPATIBILITY_START -->
 | Architecture | Host OS | Docker Provider | Docker Engine | Hardening | LDM Version | Verified | Report |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| **Apple Silicon** | macOS 15 Sequoia | **Colima** | `29.2.1` | ![Colima](https://img.shields.io/badge/Colima-Hardening-FFAB00?style=flat-square&logo=apple) | `2.7.2` | ✅ | [verify-apple-silicon-macos-15-sequoia-colima-pass-fa8565c6.txt](../references/verification-results/verify-apple-silicon-macos-15-sequoia-colima-pass-fa8565c6.txt) |
-| **Apple Silicon** | macOS 15 Sequoia | **OrbStack** `v2.1.1` | `29.4.0` | ![OrbStack](https://img.shields.io/badge/OrbStack-Hardening-00B0FF?style=flat-square&logo=apple) | `2.7.2` | ✅ | [verify-apple-silicon-macos-15-sequoia-orbstack-pass-6c4fb01e.txt](../references/verification-results/verify-apple-silicon-macos-15-sequoia-orbstack-pass-6c4fb01e.txt) |
-| **Linux Workstation** | Fedora 43 | **Native Docker** | `29.4.1` | ![Linux](https://img.shields.io/badge/Linux-Hardening-success?style=flat-square&logo=linux) | `2.7.2` | ✅ | [verify-linux-workstation-fedora-43-native-docker-pass-36c3ec33.txt](../references/verification-results/verify-linux-workstation-fedora-43-native-docker-pass-36c3ec33.txt) |
-| **Windows PC** | Windows 11 | **Docker Desktop** `v4.69.0` | `29.4.0` | ![DockerDesktop](https://img.shields.io/badge/Docker_Desktop-Hardening-00C853?style=flat-square&logo=windows) | `2.7.2` | ✅ | [verify-windows-pc-windows-11-docker-desktop-pass-9d1ea613.txt](../references/verification-results/verify-windows-pc-windows-11-docker-desktop-pass-9d1ea613.txt) |
-| **Windows PC** | Windows 11 | **Native WSL2** `WSL 2.4.4` | `29.3.0` | ![WSL2](https://img.shields.io/badge/WSL2-Hardening-blue?style=flat-square&logo=windows) | `2.7.2` | ✅ | [verify-windows-pc-windows-11-native-wsl2-pass-94cf79c3.txt](../references/verification-results/verify-windows-pc-windows-11-native-wsl2-pass-94cf79c3.txt) |
+| **Apple Silicon** | macOS 15 Sequoia | **Colima** | `29.4.0` | ![Colima](https://img.shields.io/badge/Colima-Hardening-FFAB00?style=flat-square&logo=apple) | `2.11.2` | ✅ | [verify-apple-silicon-macos-15-sequoia-colima-pass-708f2f1e.txt](../references/verification-results/verify-apple-silicon-macos-15-sequoia-colima-pass-708f2f1e.txt) |
+| **Apple Silicon** | macOS 15 Sequoia | **OrbStack** `v2.1.1` | `29.4.0` | ![OrbStack](https://img.shields.io/badge/OrbStack-Hardening-00B0FF?style=flat-square&logo=apple) | `2.7.2-beta.73` | ✅ | [verify-apple-silicon-macos-15-sequoia-orbstack-pass-6c4fb01e.txt](../references/verification-results/verify-apple-silicon-macos-15-sequoia-orbstack-pass-6c4fb01e.txt) |
+| **Linux Workstation** | Fedora | **Unknown** | `29.5.0` | `Unknown` | `2.11.2` | ✅ | [verify-linux-workstation-fedora-unknown-pass-df135842.txt](../references/verification-results/verify-linux-workstation-fedora-unknown-pass-df135842.txt) |
+| **Linux Workstation** | Fedora 43 | **Native Docker** | `29.4.1` | ![Linux](https://img.shields.io/badge/Linux-Hardening-success?style=flat-square&logo=linux) | `2.4.26` | ✅ | [verify-linux-workstation-fedora-43-native-docker-pass-491f7efb.txt](../references/verification-results/verify-linux-workstation-fedora-43-native-docker-pass-491f7efb.txt) |
+| **Linux Workstation** | Ubuntu 24.04 | **Unknown** | `29.3.0` | `Unknown` | `2.11.2` | ✅ | [verify-linux-workstation-ubuntu-24.04-unknown-pass-ad422129.txt](../references/verification-results/verify-linux-workstation-ubuntu-24.04-unknown-pass-ad422129.txt) |
+| **Windows PC** | Windows 11 | **Docker Desktop** `v4.35.0` | `29.4.0` | ![DockerDesktop](https://img.shields.io/badge/Docker_Desktop-Hardening-00C853?style=flat-square&logo=windows) | `2.11.2` | ❌ | [verify-windows-pc-windows-11-docker-desktop-fail-43079b65.txt](../references/verification-results/verify-windows-pc-windows-11-docker-desktop-fail-43079b65.txt) |
+| **Windows PC** | Windows 11 | **Native WSL2** `WSL 2.4.4` | `29.3.0` | ![WSL2](https://img.shields.io/badge/WSL2-Hardening-blue?style=flat-square&logo=windows) | `2.4.26` | ✅ | [verify-windows-pc-windows-11-native-wsl2-pass-ead4deec.txt](../references/verification-results/verify-windows-pc-windows-11-native-wsl2-pass-ead4deec.txt) |
 
 ## Global Infrastructure
 

@@ -24,7 +24,7 @@ fi
 
 # 1. Verification
 # Ensure working directory has untracked or modified files in references/verification-results/
-NEW_REPORTS=$(git status --porcelain references/verification-results/ | grep -E "^\?\?|^ M" || true)
+NEW_REPORTS=$(git status --porcelain references/verification-results/ | grep -E "^[AMR?][A-Z? ]|^.[AMR?]" || true)
 if [ -z "$NEW_REPORTS" ]; then
     echo "❌ ERROR: No new or modified reports found in references/verification-results/."
     echo "Please copy your E2E verification report files there first."
@@ -63,7 +63,7 @@ echo "ℹ  Running lint.sh to verify formatting and styling..."
 ./lint.sh
 
 echo "ℹ  Staging changes..."
-git add references/verification-results/ COMPATIBILITY_TABLE.md README.md docs/ 2>/dev/null || true
+git add references/verification-results/ docs/ 2>/dev/null || true
 
 # Check if there are changes staged for commit
 if git diff --cached --quiet; then

@@ -12,9 +12,9 @@ services:
       - "--providers.file.directory=/etc/traefik/certs"
       - "--providers.file.watch=true"
     ports:
-      - "80:80"
-      - "443:443"
-      - "18080:8080"
+      - "${LDM_HTTP_PORT:-80}:80"
+      - "${LDM_SSL_PORT:-443}:443"
+      - "${LDM_ADMIN_PORT:-18080}:8080"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - ${LDM_CERTS_DIR}:/etc/traefik/certs:ro

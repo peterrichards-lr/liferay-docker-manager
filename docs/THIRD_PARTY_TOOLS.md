@@ -10,6 +10,7 @@ To build trust and provide transparency to developers, this document details eve
 
 | Tool | Status | Key Purpose | Impact if Missing |
 | :--- | :--- | :--- | :--- |
+| **[Python](https://www.python.org/)** | **Conditional** | Runs macOS/Linux standalone binaries (ZipApp format) and source installs. | LDM cannot run macOS/Linux standalone binaries (not required for Windows). |
 | **[Docker Engine](https://www.docker.com/)** | **Mandatory** | Runs the containers for Liferay, DB, Search, and proxy. | LDM cannot start or manage any stack. |
 | **[Docker Compose v2](https://docs.docker.com/compose/)** | **Mandatory** | Orchestrates multi-container topologies. | LDM cannot deploy, stop, or structure stacks. |
 | **[mkcert](https://github.com/FiloSottile/mkcert)** | **Optional** | Generates trusted local Certificate Authority (CA) and wildcard SSL certificates. | Local virtual hosts will fall back to plain HTTP (`http://`) instead of HTTPS (`https://`). |
@@ -48,6 +49,11 @@ To build trust and provide transparency to developers, this document details eve
 
 * **Why it is needed**: Facilitates PaaS cloud synchronization. LDM automates the "Golden Path" to let you run a local replica of a Liferay Cloud environment. It calls `lcp` to authenticate, discover backups, and stream SQL dumps and volume files down to the host.
 * **Optionality**: Standard local-only projects do not require this. If missing, commands like `ldm cloud-fetch` will prompt you to install the CLI.
+
+### 6. Python (Interpreter)
+
+* **Why it is needed**: The Windows standalone binary is built with PyInstaller and contains its own bundled Python environment. However, to keep sizes lightweight (~1.2MB), the macOS and Linux binaries are packaged in **ZipApp (Shiv)** format, which requires a host-installed Python interpreter (version **3.10 or higher**).
+* **Optionality**: Only optional on Windows. On macOS and Linux, you must have Python 3.10+ installed on the host system to run the standalone binaries or when running from source.
 
 ---
 

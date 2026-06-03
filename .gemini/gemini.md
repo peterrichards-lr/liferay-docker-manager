@@ -174,6 +174,26 @@
   - [x] **Windows PowerShell Input Hang Fix**:
     - [x] Refactor `UI.ask` in `ldm_core/ui.py` to use native `input(prompt)` on Windows (`sys.platform == "win32"`) with a safe ASCII prompt, bypassing buffer-related console hangs.
     - [x] Add unit tests in `ldm_core/tests/test_ui.py` to verify `UI.ask` and `UI.confirm` behavior on Windows vs Unix.
+  - [x] **E2E PowerShell Verification Parity**:
+    - [x] Align `verify_e2e_refactor.ps1` to have 100% functional parity with `verify_e2e_refactor.sh`.
+    - [x] Fix the scaling command in `verify_e2e_refactor.ps1` to use `--no-run` to match `verify_e2e_refactor.sh` and prevent container health wait hangs.
+    - [x] Implement missing Cascading Defaults check and Status check in `verify_e2e_refactor.ps1`.
+  - [x] **Global Infrastructure Port Conflict Check**:
+    - [x] Check if ports 80, 443, and 18080 are in use on the host before starting `liferay-proxy-global` container.
+    - [x] Dynamically search for and select alternative ports if a conflict is detected.
+    - [x] Parameterize Traefik ports in `infra-compose.yml` using `LDM_HTTP_PORT`, `LDM_SSL_PORT`, and `LDM_ADMIN_PORT`.
+    - [x] Inspect running proxy container to retrieve mapped ports dynamically for subsequent commands/starts.
+    - [x] Print clear warnings about port changes, and display the correct access URL with the resolved port in the ready message.
+  - [x] **Python Version Enforcement at Startup**:
+    - [x] Enforce Python version >= 3.10 check at the very top of `ldm_core/cli.py` before any third-party or sub-package imports.
+    - [x] Print a clear, helpful error message showing the current version and instructions on how to run it with a newer Python (e.g. `python3.12 ldm <args>`).
+  - [x] **Dynamic Report Version Mapping in Sync Compatibility**:
+    - [x] Update `scripts/sync_compatibility.py` to use the dynamically extracted report version instead of the hardcoded `"2.7.2"`.
+  - [/] **Fix Sync Reports Pipeline Staged Status Check** (In Progress):
+    - [x] Update `scripts/sync_reports_pipeline.sh` status check regex to detect both staged and unstaged new, modified, or renamed reports (`A`, `M`, `R`, `?`).
+    - [ ] Fix `git add` pathspecs in `scripts/sync_reports_pipeline.sh` (remove incorrect root level `COMPATIBILITY_TABLE.md` and `README.md` pathspecs that cause atomic `git add` failures).
+    - [ ] Test the pipeline script execution to verify that it successfully detects the staged changes and proceeds with the flow.
+    - [x] Fix MD028/MD012 markdownlint error in `docs/INSTALLATION.md` by removing the blank lines surrounding the `<!-- -->` separator between the two blockquotes.
 
 ## 9. Founding Patterns of LDM
 

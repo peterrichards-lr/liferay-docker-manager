@@ -112,6 +112,25 @@ class TestCLIEntrypoint(unittest.TestCase):
         # Verify threading.Thread WAS called
         mock_thread.assert_called()
 
+    def test_cli_python_version_mismatch(self):
+        import importlib
+
+        import ldm_core.cli
+
+        with (
+            patch("sys.version_info", (3, 9, 0)),
+            patch("sys.stderr.write") as mock_write,
+            patch("sys.exit") as mock_exit,
+        ):
+            # Reload the module to trigger the early version check
+            importlib.reload(ldm_core.cli)
+            self.assertTrue(mock_write.called)
+            self.assertIn("LDM requires Python 3.10", mock_write.call_args[0][0])
+            mock_exit.assert_called_once_with(1)
+
+        # Clean up: reload the module again under normal Python to avoid side effects
+        importlib.reload(ldm_core.cli)
+
 
 if __name__ == "__main__":
     unittest.main()

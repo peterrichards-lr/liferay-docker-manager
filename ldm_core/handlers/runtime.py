@@ -769,11 +769,15 @@ class RuntimeService(BaseHandler):
                     duration_str = UI.format_duration(duration_total)
 
                     UI.success(f"Liferay is ready! (Total time: {duration_str})")
+                    proxy_ports = self.manager.infra.get_proxy_ports()
+                    active_ssl_port = proxy_ports["https"]
                     access_url = (
                         f"https://{host_name}"
                         if host_name != "localhost"
                         else f"http://localhost:{project_meta.get('port', 8080)}"
                     )
+                    if host_name != "localhost" and active_ssl_port != 443:
+                        access_url = f"https://{host_name}:{active_ssl_port}"
                     UI.info(
                         f"Access your instance at: {UI.CYAN}{UI.BOLD}{access_url}{UI.COLOR_OFF}"
                     )
@@ -866,13 +870,14 @@ class RuntimeService(BaseHandler):
                     duration_str = UI.format_duration(time.time() - ssl_start)
                     UI.debug(f"SSL certificate generation took: {duration_str}")
 
-            self.manager.infra.setup_infrastructure(
+            ssl_port = self.manager.infra.setup_infrastructure(
                 resolved_ip,
                 ssl_port,
                 use_ssl=ssl_enabled,
                 quiet=not show_summary,
                 use_shared_search=use_shared_search,
             )
+            project_meta["ssl_port"] = ssl_port
 
             if self.manager.verbose:
                 duration_str = UI.format_duration(time.time() - infra_start)
