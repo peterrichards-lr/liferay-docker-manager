@@ -208,11 +208,11 @@
     - Downloads ubuntu + fedora artifacts, removes stale Linux reports, copies only pass reports, runs `sync_compatibility.py`, opens a PR.
     - Validated clean with `actionlint`.
 
-  - [ ] **Static Compatibility Table Filenames**:
-    - [ ] Update `scripts/sync_compatibility.py` to use static filenames (`verify-{internal_slug}-{status_slug}.txt`) without hashes.
-    - [ ] Remove history directory tracking/archiving in `scripts/sync_compatibility.py` and delete stale files instead.
-    - [ ] Remove hash/timestamp suffix from `scripts/verify_e2e_refactor.sh` and `scripts/verify_e2e_refactor.ps1`.
-    - [ ] Clean up existing hashed files in `references/verification-results` and regenerate the table with static links.
+  - [x] **Static Compatibility Table Filenames**:
+    - [x] Update `scripts/sync_compatibility.py` to use static filenames (`verify-{internal_slug}-{status_slug}.txt`) without hashes.
+    - [x] Remove history directory tracking/archiving in `scripts/sync_compatibility.py` and delete stale files instead.
+    - [x] Remove hash/timestamp suffix from `scripts/verify_e2e_refactor.sh` and `scripts/verify_e2e_refactor.ps1`.
+    - [x] Clean up existing hashed files in `references/verification-results` and regenerate the table with static links.
 
 ## 9. Founding Patterns of LDM
 
