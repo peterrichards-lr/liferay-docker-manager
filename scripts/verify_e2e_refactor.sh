@@ -157,7 +157,7 @@ VENV_PYTEST="${TEST_VENV}/bin/pytest"
 # Install dependencies into venv
 if [ ! -f "$VENV_PYTEST" ]; then
     echo ">> Installing test dependencies into virtual environment..."
-    "$VENV_PIP" install pytest requests PyYAML --quiet
+    "$VENV_PIP" install pytest requests PyYAML --quiet --disable-pip-version-check
 fi
 
 # 1. Cleanup & Setup
