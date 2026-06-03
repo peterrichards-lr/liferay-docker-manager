@@ -133,6 +133,9 @@
   - [x] **Automated PR Tag Cleanup Workflow**:
     - [x] Create .github/workflows/cleanup-tags.yml to delete remote pre-release tags on PR merge
     - [x] Validate workflow configuration using actionlint
+  - [ ] **Release Stable Version v2.11.0**:
+    - [x] Run ldm version --promote to update CHANGELOG.md, pyproject.toml, and constants.py
+    - [ ] Commit and push to origin master to trigger stable GitHub Release
   - [ ] **Extensible Stack Profiles & External Database**:
     - [ ] Relocate plans folder to `docs/roadmap/plans/` (In Progress)
     - [ ] Create directory structure and loader logic for declarative stack profiles.
