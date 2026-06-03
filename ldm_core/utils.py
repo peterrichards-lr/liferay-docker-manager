@@ -680,14 +680,14 @@ def validate_liferay_tag(tag):
     """
     if not tag:
         return False
-        
+
     url = "https://releases.liferay.com/releases.json"
     try:
         # Use a short timeout so we don't delay the CLI experience
         response = requests.get(url, headers={"User-Agent": "LDM-CLI"}, timeout=5)
         if response.status_code != 200:
             return True
-            
+
         data = response.json()
         valid_tags = []
         for entry in data:
@@ -695,13 +695,13 @@ def validate_liferay_tag(tag):
             if entry_url:
                 # e.g., https://releases-cdn.liferay.com/dxp/2026.q1.7-lts -> 2026.q1.7-lts
                 valid_tags.append(entry_url.split("/")[-1])
-                
+
         # Some tags might not perfectly match the URL, so let's also check targetPlatformVersion
         for entry in data:
             target_plat = entry.get("targetPlatformVersion", "")
             if target_plat:
                 valid_tags.append(target_plat)
-                
+
         return tag in valid_tags
     except Exception:
         # Don't fail the tool if the network request fails (e.g. offline, rate limited)
