@@ -58,6 +58,9 @@ function Finalize-Verification {
     $FinalName = "verify-$slug-$status-$($Timestamp.Substring(10)).txt"
     
     if (Test-Path $RESULTS_FILE_TMP) {
+        if ($status -eq "pass") {
+            "`n🎯 ALL E2E VERIFICATIONS PASSED!" | Out-File -FilePath $RESULTS_FILE_TMP -Append -Encoding utf8
+        }
         Move-Item $RESULTS_FILE_TMP (Join-Path $ORIGINAL_PWD $FinalName) -Force
         Write-Host "`n✅ Verification Complete ($status)`n📊 Results: $FinalName"
         if ($status -eq "pass") {
