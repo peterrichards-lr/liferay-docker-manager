@@ -118,6 +118,7 @@
   - [x] **CLI Simplification (Namespacing)**: Refactoring flat commands into grouped namespaces (infra, cloud, config, system) with 100% backward compatibility via preprocess_args.
   - [x] **E2E Scripts Refactor**: Update verify_e2e_refactor.sh and verify_e2e_refactor.ps1 for CLI namespacing, legacy translations, and scaled instance logs.
   - [ ] **Extensible Stack Profiles & External Database**:
+    - [ ] Relocate plans folder to `docs/roadmap/plans/` (In Progress)
     - [ ] Create directory structure and loader logic for declarative stack profiles.
     - [ ] Implement `keycloak-sso` profile (realm-export mapping and OSGi configs).
     - [ ] Implement `clustered` profile (JGroups TCPPING and shared Named Volumes).
@@ -155,5 +156,21 @@
 
 - **Automating Prompts**: LDM supports receiving answers to interactive prompts via standard input piping (e.g., `echo -e "n\nmy-project\n\n\n" | ldm run`).
 - **Shell Precedence Pitfall**: When piping into a chained command, ensure the pipe binds directly to LDM. For example, `echo "y" | cd /tmp && ldm run` incorrectly pipes into `cd`. The correct syntax is `cd /tmp && echo "y" | ldm run`.
+
+## 11. Pull Request & Review Feedback Loop
+
+- **PR Creation**:
+  - After successfully pushing a feature or roadmap branch, the agent should check if the `gh` (GitHub) CLI is available and authenticated.
+  - If available, the agent should propose or create a Pull Request targeting the base branch (usually `master`) using `gh pr create --title "<summary>" --body "<details>"`.
+- **Review & Feedback Loop**:
+  - If the user rejects the PR or requests changes, they can specify this in the chat or ask the agent to inspect the PR feedback.
+  - The agent must retrieve PR feedback using the GitHub CLI:
+
+    ```bash
+    gh pr view --json reviews,comments,statusCheckRollup
+    ```
+
+  - The agent will parse the PR review comments, map them to specific source files, output an implementation plan to address the feedback, and apply the fixes.
+  - Once changes are committed and pushed, the agent should verify the PR status and notify the user that the feedback has been addressed.
 
 --- End of Context from: /users/peterrichards/.gemini/gemini.md ---
