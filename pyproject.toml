@@ -16,7 +16,7 @@ license = { text = "MIT" }
 readme = "docs/README.md"
 requires-python = ">=3.10"
 dependencies = [
-    "watchdog==4.0.2",
+    "watchdog==6.0.0",
     "requests==2.34.2",
     "PyYAML==6.0.3",
     "argcomplete==3.6.3",
