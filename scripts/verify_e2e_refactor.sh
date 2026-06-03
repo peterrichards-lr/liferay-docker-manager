@@ -92,6 +92,10 @@ cleanup_test_projects() {
         cp -r "e2e-work-dir/ldm-smoke-test/test-results" "${ORIGINAL_PWD}/" 2>/dev/null || true
     fi
 
+    if [ "$status" == "pass" ] && [ -f "$RESULTS_FILE_TMP" ]; then
+        echo -e "\n🎯 ALL E2E VERIFICATIONS PASSED!" >> "$RESULTS_FILE_TMP"
+    fi
+
     if [ -f "$RESULTS_FILE_TMP" ]; then
         mv "$RESULTS_FILE_TMP" "${ORIGINAL_PWD}/${final_name}"
         echo -e "\n✅ Verification Complete ($status)\n📊 Results: $final_name"
@@ -157,7 +161,7 @@ VENV_PYTEST="${TEST_VENV}/bin/pytest"
 # Install dependencies into venv
 if [ ! -f "$VENV_PYTEST" ]; then
     echo ">> Installing test dependencies into virtual environment..."
-    "$VENV_PIP" install pytest requests PyYAML --quiet
+    "$VENV_PIP" install pytest requests PyYAML --quiet --disable-pip-version-check
 fi
 
 # 1. Cleanup & Setup
