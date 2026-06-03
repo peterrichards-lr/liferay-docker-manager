@@ -1,0 +1,40 @@
+name: Cleanup PR Pre-release Tags
+
+on:
+  pull_request:
+    types: [closed]
+
+jobs:
+  cleanup-tags:
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v6
+
+      - name: Delete Remote Pre-release Tags
+        run: |
+          # Read version from constants.py
+          VERSION=$(python3 -c "import re; print(re.search(r'VERSION\s*=\s*[\"\']([^\"\']+)[\"\']', open('ldm_core/constants.py').read()).group(1))")
+          echo "Current LDM Version: $VERSION"
+
+          # Extract base version if it's a pre-release (e.g. 2.11.0-pre.2 -> 2.11.0)
+          BASE_VERSION=$(echo "$VERSION" | sed -E 's/-pre\.[0-9]+//')
+          echo "Base Version to clean: $BASE_VERSION"
+
+          # Fetch all tags from origin
+          git fetch --tags origin
+
+          # Find matching pre-release tags (v<BASE_VERSION>-pre.*)
+          TAGS_TO_DELETE=$(git tag -l "v${BASE_VERSION}-pre.*")
+          if [ -n "$TAGS_TO_DELETE" ]; then
+            for tag in $TAGS_TO_DELETE; do
+              echo "Deleting remote tag: $tag"
+              git push origin --delete "$tag" || true
+            done
+          else
+            echo "No matching remote pre-release tags found to delete."
+          fi

@@ -130,6 +130,9 @@
     - [x] Run pytest to verify all tests pass (including coverage check)
     - [x] Run E2E script verify_e2e_refactor.sh to verify tag validation warning
     - [x] Commit changes, run quality check/linters, and push to contributor's fork
+  - [x] **Automated PR Tag Cleanup Workflow**:
+    - [x] Create .github/workflows/cleanup-tags.yml to delete remote pre-release tags on PR merge
+    - [x] Validate workflow configuration using actionlint
   - [ ] **Extensible Stack Profiles & External Database**:
     - [ ] Relocate plans folder to `docs/roadmap/plans/` (In Progress)
     - [ ] Create directory structure and loader logic for declarative stack profiles.
