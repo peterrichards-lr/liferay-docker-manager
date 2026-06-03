@@ -230,6 +230,16 @@ else
 fi
 "$LDM_CMD" -y rm "collision-test" --delete >/dev/null 2>&1 && rm -rf "collision-test" col_init.log
 
+echo ">> Verifying Tag Validation Guardrail..."
+TAG_WARN_OUT=$("$LDM_CMD" -y run "tag-val-test" --tag invalid-tag --port 8099 --no-wait --no-up --no-seed 2>&1 || true)
+if echo "$TAG_WARN_OUT" | grep -q "not listed in official Liferay releases"; then
+    echo "✅ Tag Validation Guardrail verified."
+else
+    echo "❌ ERROR: Tag Validation Guardrail failed. Output was: $TAG_WARN_OUT" | tee -a "$RESULTS_FILE_TMP"
+    exit 1
+fi
+"$LDM_CMD" -y rm "tag-val-test" --delete >/dev/null 2>&1 && rm -rf "tag-val-test"
+
 # 3. Project Run
 echo "ℹ  Provisioning standalone test project..."
 mkdir -p "$LDM_WORKSPACE/ldm-smoke-test/files"

@@ -110,6 +110,18 @@ try {
         exit 1
     }
 
+    Write-Host ">> Verifying Tag Validation Guardrail..."
+    $tagRes = & $LDM_CMD -y run "tag-val-test" --tag "invalid-tag" --port 8099 --no-wait --no-up --no-seed 2>&1
+    if ($tagRes -match "not listed in official Liferay releases") {
+        Write-Host "✅ Tag Validation Guardrail verified."
+    } else {
+        Write-Host "❌ ERROR: Tag Validation Guardrail failed! Output was: $tagRes" -ForegroundColor Red
+        & $LDM_CMD -y rm "tag-val-test" --delete > $null 2>&1
+        exit 1
+    }
+    & $LDM_CMD -y rm "tag-val-test" --delete > $null 2>&1
+    if (Test-Path "tag-val-test") { Remove-Item -Recurse -Force "tag-val-test" }
+
     # 3. Project Run
     Write-Host "ℹ  Provisioning standalone test project..."
     $projectDir = Join-Path $LDM_WORKSPACE "ldm-smoke-test"

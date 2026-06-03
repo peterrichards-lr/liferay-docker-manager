@@ -258,6 +258,45 @@ class TestUpdateChecks(unittest.TestCase):
             self.assertIn("chown -R 1001:1001", docker_cmd)
             self.assertIn("chmod -R 777", docker_cmd)
 
+    @patch("ldm_core.utils.requests.get")
+    def test_validate_liferay_tag(self, mock_get):
+        from ldm_core.utils import validate_liferay_tag
+
+        # 1. Test None or empty tag
+        self.assertFalse(validate_liferay_tag(None))
+        self.assertFalse(validate_liferay_tag(""))
+
+        # Mock JSON data returned by Liferay releases API
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = [
+            {
+                "url": "https://releases-cdn.liferay.com/dxp/2026.q1.7-lts",
+                "targetPlatformVersion": "7.4.13",
+            },
+            {
+                "url": "https://releases-cdn.liferay.com/dxp/2026.q1.8-lts",
+                "targetPlatformVersion": "",
+            },
+        ]
+        mock_get.return_value = mock_response
+
+        # 2. Test valid tags
+        self.assertTrue(validate_liferay_tag("2026.q1.7-lts"))
+        self.assertTrue(validate_liferay_tag("7.4.13"))
+        self.assertTrue(validate_liferay_tag("2026.q1.8-lts"))
+
+        # 3. Test invalid tag
+        self.assertFalse(validate_liferay_tag("invalid-tag"))
+
+        # 4. Test API error status code (returns True fallback)
+        mock_response.status_code = 500
+        self.assertTrue(validate_liferay_tag("invalid-tag"))
+
+        # 5. Test network exception (returns True fallback)
+        mock_get.side_effect = Exception("Connection timeout")
+        self.assertTrue(validate_liferay_tag("invalid-tag"))
+
 
 if __name__ == "__main__":
     unittest.main()
