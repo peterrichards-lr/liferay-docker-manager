@@ -135,7 +135,7 @@ jobs:
 
       - name: Upload Smoke Test Artifacts
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: smoke-test-artifacts
           path: smoke-project/
@@ -201,7 +201,7 @@ jobs:
 
       - name: Upload Artifacts (Linux/Windows)
         if: matrix.os != 'macos-latest'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ldm-binary-${{ matrix.os }}
           path: ${{ env.BINARY_PATH }}
@@ -209,7 +209,7 @@ jobs:
 
       - name: Upload Artifacts (macOS Multi)
         if: matrix.os == 'macos-latest'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ldm-binary-macos
           path: |
@@ -241,7 +241,7 @@ jobs:
           fi
 
       - name: Download All Artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           path: bin-temp
           merge-multiple: true
@@ -259,7 +259,7 @@ jobs:
           sha256sum ldm-linux ldm-macos-arm64 ldm-macos-x86_64 ldm-windows.exe samples.zip ../compatibility.json > checksums.txt
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ github.ref_name }}
           files: |
