@@ -110,6 +110,34 @@ try {
         exit 1
     }
 
+    Write-Host ">> Verifying Sudo Guard (Behavioral)..."
+    Write-Host "⚠️  Skipping behavioral Sudo Guard check (Sudo allowed in CI/Windows environment)."
+
+    Write-Host ">> Verifying Project Collision Detection..."
+    $colRes = & $LDM_CMD -y run "collision-test" --tag "2026.q1.4-lts" --port 8099 --no-wait --no-up --no-seed 2>&1
+    # Check if collision-test directory exists
+    if (-not (Test-Path "collision-test")) {
+        Write-Host "❌ ERROR: Failed to initialize collision-test project." -ForegroundColor Red
+        exit 1
+    }
+    New-Item -ItemType Directory -Path "collision-test/nested" -Force | Out-Null
+    $nestedRes = & {
+        $prev = Get-Location
+        Set-Location "collision-test/nested"
+        $out = & $LDM_CMD -y run "collision-test" --port 8099 --no-wait --no-up --no-seed 2>&1
+        Set-Location $prev
+        $out
+    }
+    if ($nestedRes -match "Project collision" -or $nestedRes -match "already registered") {
+        Write-Host "✅ Project Collision verified."
+    } else {
+        Write-Host "❌ ERROR: Project Collision detection failed! Output was: $nestedRes" -ForegroundColor Red
+        & $LDM_CMD -y rm "collision-test" --delete > $null 2>&1
+        exit 1
+    }
+    & $LDM_CMD -y rm "collision-test" --delete > $null 2>&1
+    if (Test-Path "collision-test") { Remove-Item -Recurse -Force "collision-test" }
+
     Write-Host ">> Verifying Tag Validation Guardrail..."
     $tagRes = & $LDM_CMD -y run "tag-val-test" --tag "invalid-tag" --port 8099 --no-wait --no-up --no-seed 2>&1
     if ($tagRes -match "not listed in official Liferay releases") {
@@ -133,13 +161,7 @@ try {
     Log-AndRun "Running LDM Project" $LDM_CMD "-y run . --no-wait --no-tld-skip --no-jvm-verify"
 
     # Wait for Health
-    Write-Host ">> Waiting for Liferay health..."
-    for ($i=0; $i -lt 90; $i++) {
-        if ((docker logs ldm-smoke-test 2>&1) -match "org.apache.catalina.startup.Catalina.start Server startup in") {
-            Write-Host "`n✅ Liferay Tomcat started." ; break
-        }
-        Write-Host -NoNewline "." ; Start-Sleep 10
-    }
+    Log-AndRun "Waiting for Liferay health" $LDM_CMD "-y wait . --timeout 600"
 
     # Hot Deploy
     Write-Host ">> Deploying Test OSGi Bundle..."
@@ -150,24 +172,36 @@ try {
     # Secondary permission fix for Linux/WSL2 host side access (via Docker)
     & docker run --rm -v "$(Get-Location):/workspace" alpine chmod -R 777 /workspace/deploy /workspace/logs 2>$null
 
-    Copy-Item "delayed-deploy\test-bundle.jar" "deploy" -Force
-    Write-Host ">> Waiting 60s for auto-deploy processing..." ; Start-Sleep 60
+    Log-AndRun "Deploying artifact" $LDM_CMD "-y deploy . delayed-deploy/test-bundle.jar"
+    Write-Host ">> Waiting for auto-deploy processing (up to 10m)..."
 
-    # Verify Hot Deploy via Logs
-    Write-Host ">> Verifying Hot Deploy..."
-    if ((docker logs ldm-smoke-test --tail 100 2>&1) -match "STARTED com.liferay.test.bundle") {
-        Write-Host "✅ Hot Deploy verified."
-    } else {
-        Write-Host "❌ ERROR: Hot Deploy failed. Test Bundle did not start." -ForegroundColor Red
-        docker logs ldm-smoke-test --tail 50
+    $hotDeploySuccess = $false
+    for ($i=0; $i -lt 60; $i++) {
+        if ((docker logs ldm-smoke-test --tail 200 2>&1) -match "STARTED com.liferay.test.bundle") {
+            Write-Host "✅ Hot Deploy verified."
+            $hotDeploySuccess = $true
+            break
+        }
+        Write-Host -NoNewline "."
+        Start-Sleep 10
+    }
+    if (-not $hotDeploySuccess) {
+        Write-Host "`n❌ ERROR: Hot Deploy failed. Test Bundle did not start." -ForegroundColor Red
+        docker logs ldm-smoke-test --tail 100
         exit 1
     }
+    Write-Host ""
 
     # Integrity
     Log-AndRun "Creating Snapshot" $LDM_CMD "-y snapshot --name Binary-Verify"
-    $shaFile = Join-Path (Get-ChildItem snapshots | Sort LastWriteTime -Desc | Select -First 1).FullName "files.tar.gz.sha256"
+    $latestSnapshotDir = (Get-ChildItem snapshots | Sort LastWriteTime -Desc | Select -First 1).FullName
+    $shaFile = Join-Path $latestSnapshotDir "files.tar.gz.sha256"
     "CORRUPTED" | Out-File $shaFile -Encoding utf8
-    if ((& $LDM_CMD -y restore --latest 2>&1) -match "Integrity check failed") { Write-Host "✅ Integrity check verified." } else { throw "Integrity block failed" }
+    if ((& $LDM_CMD -y restore --latest 2>&1) -match "Integrity check failed") { 
+        Write-Host "✅ Integrity check verified." 
+    } else { 
+        throw "Integrity block failed" 
+    }
     Log-AndRun "Bypassing Integrity" $LDM_CMD "-y restore --latest --no-verify"
 
     Write-Host ">> Verifying Legacy Command Translation..."
@@ -179,12 +213,46 @@ try {
         throw "Legacy command translation failed."
     }
 
-    # UX & Scaling
+    # UX & Defaults & Scaling
+    Write-Host ">> Verifying Cascading Defaults..."
+    & $LDM_CMD config defaults test_key test_value > $null 2>&1
+    $defaultsOut = & $LDM_CMD config defaults 2>&1
+    if ($defaultsOut -match "test_key" -and $defaultsOut -match "test_value" -and $defaultsOut -match "User") {
+        Write-Host "✅ Set User Default verified."
+    } else {
+        throw "Set User Default failed. Output: $defaultsOut"
+    }
+    & $LDM_CMD config defaults --remove test_key > $null 2>&1
+    $defaultsOut2 = & $LDM_CMD config defaults 2>&1
+    if ($defaultsOut2 -notmatch "test_key") {
+        Write-Host "✅ Remove User Default verified."
+    } else {
+        throw "Remove User Default failed. Output: $defaultsOut2"
+    }
+
+    Write-Host ">> Verifying Env Sync..."
     & $LDM_CMD config env . TEST_SECRET=supersecret123 > $null 2>&1
-    if ((Get-Content "docker-compose.yml" -Raw) -match "TEST_SECRET=supersecret123") { Write-Host "✅ Env Sync verified." }
-    if ((& $LDM_CMD -v config env . REDACT_SECRET=hidden 2>&1) -match "REDACTED") { Write-Host "✅ Redaction verified." }
-    & $LDM_CMD -y scale . liferay=3 > $null 2>&1
-    if ((Get-Content "meta" -Raw) -match "scale_liferay=3") { Write-Host "✅ Scaling verified." }
+    if ((Get-Content "docker-compose.yml" -Raw) -match "TEST_SECRET=supersecret123") { 
+        Write-Host "✅ Env Sync verified." 
+    } else {
+        throw "Env Sync verification failed."
+    }
+
+    Write-Host ">> Verifying Redaction..."
+    $redactOut = & $LDM_CMD -v config env . REDACT_SECRET=hidden 2>&1
+    if ($redactOut -match "REDACT_SECRET=\[REDACTED\]") { 
+        Write-Host "✅ Redaction verified." 
+    } else {
+        throw "Redaction verification failed. Output: $redactOut"
+    }
+
+    Write-Host ">> Verifying Scaling..."
+    Log-AndRun "Scaling Liferay" $LDM_CMD "-y scale . liferay=3 --no-run"
+    if ((Get-Content "meta" -Raw) -match "scale_liferay=3") { 
+        Write-Host "✅ Scaling verified." 
+    } else {
+        throw "Scaling verification failed."
+    }
 
     Write-Host ">> Verifying logs --instance..."
     $logErr4 = & $LDM_CMD logs . --instance 4 2>&1
@@ -194,6 +262,8 @@ try {
     } else {
         throw "logs --instance routing validation failed."
     }
+
+    Log-AndRun "Checking Status" $LDM_CMD "-y status"
 
     # Clean up any potential orphans from the run
     & $LDM_CMD -y system prune > $null 2>&1

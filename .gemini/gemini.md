@@ -174,6 +174,16 @@
   - [x] **Windows PowerShell Input Hang Fix**:
     - [x] Refactor `UI.ask` in `ldm_core/ui.py` to use native `input(prompt)` on Windows (`sys.platform == "win32"`) with a safe ASCII prompt, bypassing buffer-related console hangs.
     - [x] Add unit tests in `ldm_core/tests/test_ui.py` to verify `UI.ask` and `UI.confirm` behavior on Windows vs Unix.
+  - [x] **E2E PowerShell Verification Parity**:
+    - [x] Align `verify_e2e_refactor.ps1` to have 100% functional parity with `verify_e2e_refactor.sh`.
+    - [x] Fix the scaling command in `verify_e2e_refactor.ps1` to use `--no-run` to match `verify_e2e_refactor.sh` and prevent container health wait hangs.
+    - [x] Implement missing Cascading Defaults check and Status check in `verify_e2e_refactor.ps1`.
+  - [x] **Global Infrastructure Port Conflict Check**:
+    - [x] Check if ports 80, 443, and 18080 are in use on the host before starting `liferay-proxy-global` container.
+    - [x] Dynamically search for and select alternative ports if a conflict is detected.
+    - [x] Parameterize Traefik ports in `infra-compose.yml` using `LDM_HTTP_PORT`, `LDM_SSL_PORT`, and `LDM_ADMIN_PORT`.
+    - [x] Inspect running proxy container to retrieve mapped ports dynamically for subsequent commands/starts.
+    - [x] Print clear warnings about port changes, and display the correct access URL with the resolved port in the ready message.
 
 ## 9. Founding Patterns of LDM
 

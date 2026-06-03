@@ -31,13 +31,42 @@ class InfraService:
         self.setup_infrastructure(resolved_ip, 443, use_ssl=True)
         UI.success("Infrastructure setup complete.")
 
+    def get_proxy_ports(self):
+        """Returns the active mapped host ports for liferay-proxy-global."""
+        ports = {"http": 80, "https": 443, "admin": 18080}
+        try:
+            # Inspect the running proxy container
+            inspect_raw = self.manager.run_command(
+                [
+                    "docker",
+                    "inspect",
+                    "liferay-proxy-global",
+                    "--format",
+                    "{{json .NetworkSettings.Ports}}",
+                ],
+                check=False,
+                capture_output=True,
+            )
+            if inspect_raw:
+                settings = json.loads(inspect_raw)
+                # settings is a dict like: {"443/tcp": [{"HostIp": "0.0.0.0", "HostPort": "443"}], ...}
+                if settings.get("80/tcp"):
+                    ports["http"] = int(settings["80/tcp"][0]["HostPort"])
+                if settings.get("443/tcp"):
+                    ports["https"] = int(settings["443/tcp"][0]["HostPort"])
+                if settings.get("8080/tcp"):
+                    ports["admin"] = int(settings["8080/tcp"][0]["HostPort"])
+        except Exception:
+            pass
+        return ports
+
     def setup_infrastructure(
         self, resolved_ip, ssl_port, use_ssl=True, quiet=False, use_shared_search=True
     ):
         """Initializes global Traefik proxy and search services."""
         self._ensure_network()
         if not use_ssl:
-            return True
+            return 443
 
         # Docker bridge proxy check (Traefik needs to talk to Docker socket securely)
         self._ensure_docker_proxy()
@@ -54,8 +83,47 @@ class InfraService:
                 "Infrastructure compose file 'infra-compose.yml' not found in resources."
             )
 
+        from ldm_core.docker_service import DockerService
+
+        is_proxy_running = DockerService.is_running("liferay-proxy-global")
+
+        http_port = int(os.getenv("LDM_HTTP_PORT", "80"))
+        ssl_port = int(ssl_port)
+        admin_port = int(os.getenv("LDM_ADMIN_PORT", "18080"))
+
+        if is_proxy_running:
+            # Use the currently running ports to keep compose state identical
+            ports = self.get_proxy_ports()
+            http_port = ports["http"]
+            ssl_port = ports["https"]
+            admin_port = ports["admin"]
+        else:
+            # Check HTTP port
+            if not self.manager.check_port("127.0.0.1", http_port):
+                orig_http = http_port
+                http_port = self.manager.find_available_port("127.0.0.1", http_port)
+                UI.warning(
+                    f"Port conflict detected! Global HTTP proxy port {orig_http} is in use on the host. Using {http_port} instead."
+                )
+
+            # Check HTTPS port
+            if not self.manager.check_port("127.0.0.1", ssl_port):
+                orig_ssl = ssl_port
+                ssl_port = self.manager.find_available_port("127.0.0.1", ssl_port)
+                UI.warning(
+                    f"Port conflict detected! Global HTTPS proxy port {orig_ssl} is in use on the host. Using {ssl_port} instead."
+                )
+
+            # Check Admin port
+            if not self.manager.check_port("127.0.0.1", admin_port):
+                orig_admin = admin_port
+                admin_port = self.manager.find_available_port("127.0.0.1", admin_port)
+                UI.warning(
+                    f"Port conflict detected! Global Admin proxy port {orig_admin} is in use on the host. Using {admin_port} instead."
+                )
+
         # Start infrastructure
-        env = self._get_infra_env(resolved_ip, ssl_port)
+        env = self._get_infra_env(resolved_ip, ssl_port, http_port, admin_port)
 
         self.manager.run_command(
             [
@@ -69,9 +137,11 @@ class InfraService:
             env=env,
             capture_output=quiet,
         )
-        return True
+        return ssl_port
 
-    def _get_infra_env(self, resolved_ip="127.0.0.1", ssl_port=443):
+    def _get_infra_env(
+        self, resolved_ip="127.0.0.1", ssl_port=443, http_port=80, admin_port=18080
+    ):
         """Generates the standard environment variables for the infrastructure stack."""
         actual_home = get_actual_home()
         cert_dir = (actual_home / "liferay-docker-certs").resolve()
@@ -79,6 +149,8 @@ class InfraService:
         env = os.environ.copy()
         env["LDM_CERTS_DIR"] = str(cert_dir)
         env["LDM_SSL_PORT"] = str(ssl_port)
+        env["LDM_HTTP_PORT"] = str(http_port)
+        env["LDM_ADMIN_PORT"] = str(admin_port)
         env["LDM_RESOLVED_IP"] = resolved_ip
         return env
 
