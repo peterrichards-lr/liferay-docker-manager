@@ -109,16 +109,21 @@
 
 - **Next Focus: Roadmap Execution & CLI Namespacing**
   - [x] **Branch Cleanup**: Audit and delete fully merged roadmap branches (`cli-namespacing`, `guided-onboarding`, `extensible-profiles-architecture`).
-  - [ ] **Document Branching & Tagging Strategy**: Update CONTRIBUTING.md with branch-isolated pre-release rules.
+  - [x] **Document Branching & Tagging Strategy**: Update CONTRIBUTING.md with branch-isolated pre-release rules.
+  - [x] **Roadmap Synchronization**: Update docs/ROADMAP.md to align with completed v2.10.x features and restructure future roadmap items.
   - [x] **Conductor Plans Cleanup**: Review, consolidate duplicates, and remove completed plans.
   - [x] **Virtual Environment & Headers Mandate**: Add virtual environment developer mandates and agent rules, and clarify purpose headers in gemini configs.
   - [x] **Organize Conductor Tracks**: Move all individual track plans to the tracks/ subfolder and update tracks.md links.
-  - [x] **Roadmap Synchronization**: Update docs/ROADMAP.md to align with completed v2.10.x features and restructure future roadmap items.
   - [x] **Fix Samples Flow**: Delegate get_samples_root in LiferayManager, add test coverage to verify it executes successfully, and test the CLI samples flag.
   - [x] **Diagnostics & Venv Hardening**: Implemented virtualenv environment verification, refactored ldm doctor to provide a RAG summary dashboard by default with granular section filters (`--system`, `--docker`, `--project`), and expanded test coverage.
   - [x] **Test Coverage Hardening**: Expanded unit test coverage for the Snapshot/Restore Service (specifically `_wipe_db()`, `_execute_orchestrated_db_restore()`, and Smart Store Detection heuristics).
   - [x] **CLI Simplification (Namespacing)**: Refactoring flat commands into grouped namespaces (infra, cloud, config, system) with 100% backward compatibility via preprocess_args.
   - [x] **E2E Scripts Refactor**: Update verify_e2e_refactor.sh and verify_e2e_refactor.ps1 for CLI namespacing, legacy translations, and scaled instance logs.
+  - [x] **Suppress Pip Warnings**: Add `--disable-pip-version-check` to E2E verification scripts.
+  - [x] **Fix E2E Success Output**: Ensure E2E success marker is appended to the results report file in verify scripts.
+  - [x] **Fix sync_compatibility.py**: Ensure the history directory is created if it does not exist.
+  - [x] **Regenerate User Report**: Manually add the passing marker to the user's report and run sync_compatibility.py to rebuild the matrix.
+  - [ ] **Linting Documentation**: Clarify auto-fix and `--check` options for `lint.sh` in `CONTRIBUTING.md`.
   - [ ] **Extensible Stack Profiles & External Database**:
     - [ ] Relocate plans folder to `docs/roadmap/plans/` (In Progress)
     - [ ] Create directory structure and loader logic for declarative stack profiles.
