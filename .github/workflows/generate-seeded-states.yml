@@ -6,7 +6,7 @@ on:
     - cron: '0 0 * * 0' # Weekly on Sunday
 
 permissions:
-  contents: write
+  contents: read
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -21,7 +21,7 @@ jobs:
       - id: set-tags
         run: |
           TAGS=$(python3 scripts/get_release_tags.py)
-          echo "tags=$TAGS" >> $GITHUB_OUTPUT
+          echo "tags=$TAGS" >> "$GITHUB_OUTPUT"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -41,6 +41,7 @@ jobs:
         uses: actions/setup-python@v6
         with:
           python-version: '3.12'
+          cache: 'pip'
 
       - name: Install LDM
         run: pip install -e .
@@ -70,10 +71,10 @@ jobs:
           echo "Waiting for Liferay to be healthy (this can take 5-10 minutes)..."
           MAX_RETRIES=60
           COUNT=0
-          until [ "$(docker inspect -f '{{.State.Health.Status}}' $PROJECT_ID)" == "healthy" ]; do
+          until [ "$(docker inspect -f '{{.State.Health.Status}}' "$PROJECT_ID")" == "healthy" ]; do
             if [ $COUNT -ge $MAX_RETRIES ]; then
               echo "Timeout waiting for Liferay"
-              docker logs $PROJECT_ID --tail 100
+              docker logs "$PROJECT_ID" --tail 100
               exit 1
             fi
             printf "."
@@ -96,17 +97,18 @@ jobs:
           PROJECT_ID="seeded-${SAFE_TAG}-${{ matrix.db_type }}"
           # Create marker file to allow root execution (bypasses sudo env scrubbing)
           touch .ldm_allow_root
-          sudo $(which python3) liferay_docker.py snapshot "$PROJECT_ID" --name "Seed: ${{ matrix.tag }} (${{ matrix.db_type }})"
+          sudo "$(which python3)" liferay_docker.py snapshot "$PROJECT_ID" --name "Seed: ${{ matrix.tag }} (${{ matrix.db_type }})"
           rm .ldm_allow_root
           
       - name: Package Seeded State
         id: package
         run: |
+          # shellcheck disable=SC2012,SC2086
           SAFE_TAG=$(echo "${{ matrix.tag }}" | tr '.' '_')
           PROJECT_ID="seeded-${SAFE_TAG}-${{ matrix.db_type }}"
           
           # Reclaim ownership from root (since snapshot was run via sudo)
-          sudo chown -R $USER:$USER $PROJECT_ID
+          sudo chown -R "$USER:$USER" "$PROJECT_ID"
           
           # Determine search mode
           SEARCH_MODE="shared"
@@ -117,12 +119,13 @@ jobs:
           # Get Seed Logic Version from constants
           SEED_VER=$(python3 -c "from ldm_core.constants import SEED_VERSION; print(SEED_VERSION)")
 
-          SNAP_DIR=$(ls -td $PROJECT_ID/snapshots/*/ | head -1)
+          # shellcheck disable=SC2012
+          SNAP_DIR=$(ls -td "$PROJECT_ID"/snapshots/*/ | head -1)
           cd "$SNAP_DIR"
           FILENAME="seeded-${{ matrix.tag }}-${{ matrix.db_type }}-${SEARCH_MODE}-v${SEED_VER}.tar.gz"
           mv files.tar.gz "$FILENAME"
-          echo "path=$SNAP_DIR$FILENAME" >> $GITHUB_OUTPUT
-          echo "filename=$FILENAME" >> $GITHUB_OUTPUT
+          echo "path=${SNAP_DIR}${FILENAME}" >> "$GITHUB_OUTPUT"
+          echo "filename=${FILENAME}" >> "$GITHUB_OUTPUT"
 
       - name: Upload Workspace Artifact
         uses: actions/upload-artifact@v4
@@ -135,10 +138,12 @@ jobs:
     needs: [get-tags, generate-seeds]
     if: success() && needs.get-tags.outputs.tags != '[]'
     runs-on: ubuntu-22.04
+    permissions:
+      contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Download all artifacts
-        uses: actions/download-artifact@v4.1.7
+        uses: actions/download-artifact@v4
         with:
           path: all-seeds
           pattern: seeded-*
@@ -147,7 +152,7 @@ jobs:
         id: ldm_version
         run: |
           VERSION=$(python3 -c "from ldm_core.constants import VERSION; print(VERSION)")
-          echo "version=v$VERSION" >> $GITHUB_OUTPUT
+          echo "version=v$VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Upload to Release
         uses: softprops/action-gh-release@v2

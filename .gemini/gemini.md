@@ -118,6 +118,15 @@
   - [x] **CLI Simplification (Namespacing)**: Refactoring flat commands into grouped namespaces (infra, cloud, config, system) with 100% backward compatibility via preprocess_args.
   - [x] **E2E Scripts Refactor**: Update verify_e2e_refactor.sh and verify_e2e_refactor.ps1 for CLI namespacing, legacy translations, and scaled instance logs.
   - [ ] **Interactive Scaffolding**: Implement scenario-based project templates.
+  - [x] **Hardening Phase 2: Secrets, Compose Validation, and Dependabot**:
+    - [x] Implement `detect-secrets` hook in pre-commit and dev-requirements.
+    - [x] Create `scripts/validate_compose.py` to validate compose templates.
+    - [x] Create `.github/dependabot.yml` configured to check actions and python packages.
+  - [x] **Workflow Hardening & Quality Gate Improvements**:
+    - [x] Add `actionlint` to pre-commit and dev dependencies.
+    - [x] Harden `ci.yml` (add dependency caching & `pip-audit`).
+    - [x] Harden `generate-seeded-states.yml` (least-privilege permissions, caching, update action versions).
+    - [x] Align `scheduled-verification.yml` with the virtualenv project mandate.
 
   - [x] **Verbosity Reduction**:
     - [x] Move inner-loop sync and monitoring logs in `workspace.py` to `UI.detail`.
