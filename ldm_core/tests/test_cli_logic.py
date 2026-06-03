@@ -126,6 +126,25 @@ class TestCLILogic(unittest.TestCase):
                     "Piping standard input should not force non-interactive mode",
                 )
 
+    def test_fix_hosts_parsing(self):
+        # Test: ldm fix-hosts (legacy alias -> system fix-hosts)
+        args = self.parser.parse_args(["fix-hosts"])
+        self.assertEqual(args.command, "system")
+        self.assertEqual(args.subcommand, "fix-hosts")
+        self.assertIsNone(args.host_name)
+
+        # Test: ldm system fix-hosts
+        args = self.parser.parse_args(["system", "fix-hosts"])
+        self.assertEqual(args.command, "system")
+        self.assertEqual(args.subcommand, "fix-hosts")
+        self.assertIsNone(args.host_name)
+
+        # Test: ldm system fix-hosts demo-project.local
+        args = self.parser.parse_args(["system", "fix-hosts", "demo-project.local"])
+        self.assertEqual(args.command, "system")
+        self.assertEqual(args.subcommand, "fix-hosts")
+        self.assertEqual(args.host_name, "demo-project.local")
+
 
 if __name__ == "__main__":
     unittest.main()

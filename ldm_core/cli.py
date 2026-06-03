@@ -1017,6 +1017,17 @@ def get_parser():
 
     system_subparsers.add_parser("dev-setup", parents=[base_sub_parent])
 
+    fix_hosts_cmd = system_subparsers.add_parser(
+        "fix-hosts",
+        parents=[base_sub_parent],
+        help="Append missing project hostnames/subdomains to the hosts file",
+    )
+    fix_hosts_cmd.add_argument(
+        "host_name",
+        nargs="?",
+        help="Optional hostname/project to fix",
+    )
+
     completion = system_subparsers.add_parser("completion", parents=[base_sub_parent])
     completion.add_argument(
         "shell", choices=["bash", "zsh", "fish", "powershell"], nargs="?"
@@ -1046,6 +1057,15 @@ def main():
     warnings.filterwarnings("ignore", message="Failed to import fsevents")
 
     import sys
+
+    # Restore default SIGPIPE handler to avoid BrokenPipeError traceback when using pipelines
+    if sys.platform != "win32":
+        import signal
+
+        try:
+            signal.signal(signal.SIGPIPE, signal.SIG_DFL)
+        except AttributeError:
+            pass
 
     sys.argv = preprocess_args(sys.argv)
 
