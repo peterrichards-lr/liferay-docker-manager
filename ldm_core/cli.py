@@ -4,6 +4,15 @@ import signal
 import sys
 import warnings
 
+if sys.version_info < (3, 10):  # noqa: UP036
+    sys.stderr.write(
+        f"Error: LDM requires Python 3.10 or higher.\n"
+        f"Current Python version is: {platform.python_version()}\n\n"
+        f"Please install Python 3.10+ (via Homebrew or python.org) and run LDM using a newer Python interpreter:\n"
+        f"  python3.12 /usr/local/bin/ldm [args]\n"
+    )
+    sys.exit(1)
+
 
 # --- SIGINT / CTRL+C Graceful Exit Handler ---
 def _graceful_exit(sig, frame):

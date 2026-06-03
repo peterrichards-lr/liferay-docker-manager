@@ -254,7 +254,7 @@ def get_report_metadata(report_path):
         "provider": provider,
         "engine_v": engine_v,
         "provider_v": provider_v,
-        "version": "2.7.2",
+        "version": version,
         "passed": passed,
         "status_slug": status_slug,
         "internal_slug": internal_slug,

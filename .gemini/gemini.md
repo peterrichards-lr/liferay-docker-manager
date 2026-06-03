@@ -184,6 +184,16 @@
     - [x] Parameterize Traefik ports in `infra-compose.yml` using `LDM_HTTP_PORT`, `LDM_SSL_PORT`, and `LDM_ADMIN_PORT`.
     - [x] Inspect running proxy container to retrieve mapped ports dynamically for subsequent commands/starts.
     - [x] Print clear warnings about port changes, and display the correct access URL with the resolved port in the ready message.
+  - [x] **Python Version Enforcement at Startup**:
+    - [x] Enforce Python version >= 3.10 check at the very top of `ldm_core/cli.py` before any third-party or sub-package imports.
+    - [x] Print a clear, helpful error message showing the current version and instructions on how to run it with a newer Python (e.g. `python3.12 ldm <args>`).
+  - [x] **Dynamic Report Version Mapping in Sync Compatibility**:
+    - [x] Update `scripts/sync_compatibility.py` to use the dynamically extracted report version instead of the hardcoded `"2.7.2"`.
+  - [/] **Fix Sync Reports Pipeline Staged Status Check** (In Progress):
+    - [x] Update `scripts/sync_reports_pipeline.sh` status check regex to detect both staged and unstaged new, modified, or renamed reports (`A`, `M`, `R`, `?`).
+    - [ ] Fix `git add` pathspecs in `scripts/sync_reports_pipeline.sh` (remove incorrect root level `COMPATIBILITY_TABLE.md` and `README.md` pathspecs that cause atomic `git add` failures).
+    - [ ] Test the pipeline script execution to verify that it successfully detects the staged changes and proceeds with the flow.
+    - [x] Fix MD028/MD012 markdownlint error in `docs/INSTALLATION.md` by removing the blank lines surrounding the `<!-- -->` separator between the two blockquotes.
 
 ## 9. Founding Patterns of LDM
 
