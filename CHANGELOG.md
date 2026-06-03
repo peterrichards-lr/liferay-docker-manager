@@ -178,6 +178,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added runtime state-awareness checks to commands (run, import) to prevent unexpected container collisions.
 - Enabled non-interactive bypass for internal developer utility prompts.
 
+## [v2.11.0] - 2026-06-03
+
+### Added
+
+- Proactive remote Liferay tag validation against the releases.json endpoint.
+- Automated cleanup of remote pre-release tags upon pull request merge.
+
 ## [v2.11.0-pre.2] - 2026-06-03
 
 ### Added
