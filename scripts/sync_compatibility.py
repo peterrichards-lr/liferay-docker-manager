@@ -268,6 +268,7 @@ def sync_reports():
     """Main synchronization logic."""
     results_dir = Path("references/verification-results")
     history_dir = results_dir / "history"
+    history_dir.mkdir(parents=True, exist_ok=True)
     source_file = Path("docs/COMPATIBILITY_TABLE.md")
 
     if not results_dir.exists():
