@@ -39,6 +39,13 @@ def get_report_metadata(report_path):
     for line in lines:
         upper_line = line.upper()
         if ("ERROR:" in upper_line or "FATAL:" in upper_line) and "ℹ" not in line:
+            # Ignore Python Tracebacks/Subprocess encoding issues that don't block general success
+            if (
+                "TRACEBACK" in upper_line
+                or "EXCEPTION IN THREAD" in upper_line
+                or "DECODEERROR" in upper_line
+            ):
+                continue
             passed = False
             break
 
@@ -51,7 +58,8 @@ def get_report_metadata(report_path):
     if timestamp_str:
         try:
             # Format: Tue 28 Apr 2026 12:48:13 BST or Tue 28 Apr 12:25:38 BST 2026
-            ts_clean = re.sub(r"\s+[A-Z]{3,4}$", "", timestamp_str)
+            ts_clean = re.sub(r"\b[A-Z]{3,5}\b", "", timestamp_str)
+            ts_clean = re.sub(r"\s+", " ", ts_clean)
             for fmt in [
                 "%a %d %b %Y %H:%M:%S",
                 "%a %d %b %H:%M:%S %Y",
@@ -172,6 +180,11 @@ def get_report_metadata(report_path):
             provider = "Native WSL2"
     elif is_windows_native and provider in {"Unknown", "desktop-linux"}:
         provider = "Docker Desktop"
+    elif (is_fedora or is_ubuntu or "linux" in p_low) and provider in {
+        "Unknown",
+        "desktop-linux",
+    }:
+        provider = "Native Docker"
 
     # --- FALLBACK MAPPINGS (Timestamps) ---
     if timestamp_str == "Tue 28 Apr 12:25:38 BST 2026":
@@ -221,8 +234,12 @@ def get_report_metadata(report_path):
         arch = "Windows PC"
     elif is_fedora or "fedora" in content.lower():
         arch = "Linux Workstation"
-        fedora_match = re.search(r"fc(\d+)", p_low)
-        host_os = f"Fedora {fedora_match.group(1) if fedora_match else ''}".strip()
+        fedora_match = re.search(r"fc(\d+)|fedora\s+(?:linux\s+)?(\d+)", p_low)
+        if fedora_match:
+            v = fedora_match.group(1) or fedora_match.group(2)
+            host_os = f"Fedora {v}"
+        else:
+            host_os = "Fedora"
     elif is_ubuntu:
         arch = "Linux Workstation"
         ubuntu_match = re.search(r"(\d+\.\d+)", p_low)

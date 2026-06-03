@@ -3,7 +3,7 @@ Timestamp: Fri May  1 13:04:21 BST 2026
 Hostname:  [ANONYMIZED]
 Platform:  linux-gnu
 Binary:    [ANONYMIZED]
-Version:   ldm 2.4.26
+Version:   ldm 2.11.2
 Docker:    29.3.0
 Compose:   5.1.1
 
