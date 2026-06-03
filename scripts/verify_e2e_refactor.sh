@@ -86,7 +86,7 @@ cleanup_test_projects() {
     local env_slug
     env_slug=$("$LDM_CMD" system doctor --slug 2>/dev/null | tr -d '\r' | tr ' ' '-')
     local final_name
-    final_name="verify-${env_slug:-unknown}-${status}-$(get_hash "$TIMESTAMP").txt"
+    final_name="verify-${env_slug:-unknown}-${status}.txt"
     
     if [ -d "e2e-work-dir/ldm-smoke-test/test-results" ]; then
         cp -r "e2e-work-dir/ldm-smoke-test/test-results" "${ORIGINAL_PWD}/" 2>/dev/null || true

@@ -55,7 +55,7 @@ function Finalize-Verification {
         $slug = ($slugOut -join "-") -replace '[^a-zA-Z0-9-]', '-'
     }
     
-    $FinalName = "verify-$slug-$status-$($Timestamp.Substring(10)).txt"
+    $FinalName = "verify-$slug-$status.txt"
     
     if (Test-Path $RESULTS_FILE_TMP) {
         if ($status -eq "pass") {
