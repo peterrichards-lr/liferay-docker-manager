@@ -1,4 +1,5 @@
 import unittest
+import unittest.mock
 
 from ldm_core.ui import UI
 
@@ -68,6 +69,47 @@ class TestUI(unittest.TestCase):
         self.assertIn("[X]", combined)
         self.assertIn("Test message", combined)
         self.assertNotIn("❌", combined)
+
+    @unittest.mock.patch("ldm_core.ui.sys.platform", "darwin")
+    @unittest.mock.patch("ldm_core.ui.sys.stdout")
+    @unittest.mock.patch("builtins.input", return_value="yes")
+    def test_ask_unix_interactive(self, mock_input, mock_stdout):
+        UI.NON_INTERACTIVE = False
+        res = UI.ask("Continue?", default="Y")
+        self.assertEqual(res, "yes")
+        mock_stdout.write.assert_called()
+        written = "".join([call.args[0] for call in mock_stdout.write.call_args_list])
+        self.assertIn("❓", written)
+        self.assertIn("Continue?", written)
+        mock_input.assert_called_once_with()
+
+    @unittest.mock.patch("ldm_core.ui.sys.platform", "win32")
+    @unittest.mock.patch("builtins.input", return_value="no")
+    def test_ask_windows_interactive(self, mock_input):
+        UI.NON_INTERACTIVE = False
+        res = UI.ask("Continue?", default="Y")
+        self.assertEqual(res, "no")
+        mock_input.assert_called_once()
+        called_prompt = mock_input.call_args[0][0]
+        self.assertNotIn("❓", called_prompt)
+        self.assertIn("[?]", called_prompt)
+        self.assertIn("Continue?", called_prompt)
+
+    def test_ask_non_interactive(self):
+        UI.NON_INTERACTIVE = True
+        try:
+            res = UI.ask("Continue?", default="Y")
+            self.assertEqual(res, "Y")
+        finally:
+            UI.NON_INTERACTIVE = False
+
+    @unittest.mock.patch("ldm_core.ui.sys.platform", "win32")
+    @unittest.mock.patch("builtins.input", side_effect=KeyboardInterrupt)
+    def test_ask_windows_abort(self, mock_input):
+        UI.NON_INTERACTIVE = False
+        with self.assertRaises(SystemExit) as cm:
+            UI.ask("Continue?")
+        self.assertEqual(cm.exception.code, 130)
 
 
 if __name__ == "__main__":

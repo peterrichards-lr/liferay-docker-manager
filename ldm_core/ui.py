@@ -347,9 +347,37 @@ class UI:
             return default
 
         prompt = prompt.strip()
-        icon = "❓"
-        padding = UI.get_padding(icon)
         try:
+            if sys.platform == "win32":
+                # Format a clean ASCII prompt for Windows Console host to avoid encoding issues and hangs
+                padding = UI.get_padding()
+                safe_prompt = f"[?]{padding}{prompt}"
+                if default:
+                    safe_prompt += f" [{default}]: "
+                else:
+                    safe_prompt += ": "
+
+                try:
+                    safe_prompt = safe_prompt.encode("ascii", "replace").decode("ascii")
+                except Exception:
+                    safe_prompt = (
+                        f"? {prompt} [{default}]: " if default else f"? {prompt}: "
+                    )
+
+                from ldm_core.utils import Benchmarker
+
+                with Benchmarker.measure_human():
+                    try:
+                        res = input(safe_prompt)
+                    except (EOFError, KeyboardInterrupt):
+                        raise
+                    except Exception:
+                        # In case of any unexpected console read errors, fall back to input() without prompt
+                        res = input()
+                return res.strip() if res else default
+
+            icon = "❓"
+            padding = UI.get_padding(icon)
             formatted_prompt = f"{UI.WHITE}{icon}{padding}{prompt}"
             if default:
                 formatted_prompt += f" [{UI.GREEN}{default}{UI.WHITE}]: {UI.COLOR_OFF}"
@@ -374,13 +402,7 @@ class UI:
             from ldm_core.utils import Benchmarker
 
             with Benchmarker.measure_human():
-                try:
-                    res = input()
-                except UnicodeEncodeError:
-                    # Fallback prompt for CP1252 (Standard Windows CMD)
-                    res = input(
-                        f"? {prompt} [{default}]: " if default else f"? {prompt}: "
-                    )
+                res = input()
 
             return res.strip() if res else default
         except (EOFError, KeyboardInterrupt):
