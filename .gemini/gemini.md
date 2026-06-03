@@ -59,7 +59,7 @@
 - **Logical Squashing**: Avoid creating a commit for every minor bugfix. Group related fixes and features into single, descriptive commits.
 - **Release Automation**:
   - **Stable Strategy**: Use `[release]` in the commit summary to trigger a stable GitHub Release. This MUST be reserved for hardened features and verified bugfixes.
-  - **Pre-Release Strategy**: Use `[pre-release]` in the commit summary to trigger a Beta/Test build (e.g., `v2.10.x-pre.y`).
+  - **Pre-Release Strategy**: Use `[pre-release]` in the commit summary to trigger a Beta/Test build (e.g., `v2.10.x-pre.y`). All pre-release tags (`v*.pre*`) MUST be created and pushed directly on their respective development/feature branches, never on `master`.
   - **Experimental Mandate**: All brand new or experimental functionality (specifically the **Liferay Cloud Golden Path** / `ldm import from cloud`) MUST use pre-releases until a full E2E verification is completed by the user.
   - **Bumping**: Use `./ldm version --bump pre` to start or increment a pre-release cycle, and `./ldm version --promote` to convert a successful pre-release to a stable version.
   - Ensure version tags match the `VERSION` in `ldm_core/constants.py`.
@@ -108,6 +108,8 @@
   - [x] **Actions Cleanup**: Delete failed/redundant GitHub Action workflow runs.
 
 - **Next Focus: Roadmap Execution & CLI Namespacing**
+  - [x] **Branch Cleanup**: Audit and delete fully merged roadmap branches (`cli-namespacing`, `guided-onboarding`, `extensible-profiles-architecture`).
+  - [ ] **Document Branching & Tagging Strategy**: Update CONTRIBUTING.md with branch-isolated pre-release rules.
   - [x] **Conductor Plans Cleanup**: Review, consolidate duplicates, and remove completed plans.
   - [x] **Virtual Environment & Headers Mandate**: Add virtual environment developer mandates and agent rules, and clarify purpose headers in gemini configs.
   - [x] **Organize Conductor Tracks**: Move all individual track plans to the tracks/ subfolder and update tracks.md links.
@@ -117,7 +119,21 @@
   - [x] **Test Coverage Hardening**: Expanded unit test coverage for the Snapshot/Restore Service (specifically `_wipe_db()`, `_execute_orchestrated_db_restore()`, and Smart Store Detection heuristics).
   - [x] **CLI Simplification (Namespacing)**: Refactoring flat commands into grouped namespaces (infra, cloud, config, system) with 100% backward compatibility via preprocess_args.
   - [x] **E2E Scripts Refactor**: Update verify_e2e_refactor.sh and verify_e2e_refactor.ps1 for CLI namespacing, legacy translations, and scaled instance logs.
-  - [ ] **Interactive Scaffolding**: Implement scenario-based project templates.
+  - [ ] **Extensible Stack Profiles & External Database**:
+    - [ ] Relocate plans folder to `docs/roadmap/plans/` (In Progress)
+    - [ ] Create directory structure and loader logic for declarative stack profiles.
+    - [ ] Implement `keycloak-sso` profile (realm-export mapping and OSGi configs).
+    - [ ] Implement `clustered` profile (JGroups TCPPING and shared Named Volumes).
+    - [ ] Implement `--db external` database parameter switch.
+  - [x] **Hardening Phase 2: Secrets, Compose Validation, and Dependabot**:
+    - [x] Implement `detect-secrets` hook in pre-commit and dev-requirements.
+    - [x] Create `scripts/validate_compose.py` to validate compose templates.
+    - [x] Create `.github/dependabot.yml` configured to check actions and python packages.
+  - [x] **Workflow Hardening & Quality Gate Improvements**:
+    - [x] Add `actionlint` to pre-commit and dev dependencies.
+    - [x] Harden `ci.yml` (add dependency caching & `pip-audit`).
+    - [x] Harden `generate-seeded-states.yml` (least-privilege permissions, caching, update action versions).
+    - [x] Align `scheduled-verification.yml` with the virtualenv project mandate.
 
   - [x] **Verbosity Reduction**:
     - [x] Move inner-loop sync and monitoring logs in `workspace.py` to `UI.detail`.
@@ -142,5 +158,21 @@
 
 - **Automating Prompts**: LDM supports receiving answers to interactive prompts via standard input piping (e.g., `echo -e "n\nmy-project\n\n\n" | ldm run`).
 - **Shell Precedence Pitfall**: When piping into a chained command, ensure the pipe binds directly to LDM. For example, `echo "y" | cd /tmp && ldm run` incorrectly pipes into `cd`. The correct syntax is `cd /tmp && echo "y" | ldm run`.
+
+## 11. Pull Request & Review Feedback Loop
+
+- **PR Creation**:
+  - After successfully pushing a feature or roadmap branch, the agent should check if the `gh` (GitHub) CLI is available and authenticated.
+  - If available, the agent should propose or create a Pull Request targeting the base branch (usually `master`) using `gh pr create --title "<summary>" --body "<details>"`.
+- **Review & Feedback Loop**:
+  - If the user rejects the PR or requests changes, they can specify this in the chat or ask the agent to inspect the PR feedback.
+  - The agent must retrieve PR feedback using the GitHub CLI:
+
+    ```bash
+    gh pr view --json reviews,comments,statusCheckRollup
+    ```
+
+  - The agent will parse the PR review comments, map them to specific source files, output an implementation plan to address the feedback, and apply the fixes.
+  - Once changes are committed and pushed, the agent should verify the PR status and notify the user that the feedback has been addressed.
 
 --- End of Context from: /users/peterrichards/.gemini/gemini.md ---

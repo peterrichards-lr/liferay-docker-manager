@@ -34,7 +34,9 @@ jobs:
           GITHUB_ACTIONS: "true"
         run: |
           sudo apt-get update && sudo apt-get install -y python3-pip git docker-compose python3-venv hostname
-          pip install . --break-system-packages
+          python3 -m venv .venv
+          source .venv/bin/activate
+          pip install .
           bash scripts/verify_e2e_refactor.sh --ci
           
       - name: Run E2E Verification Suite (Fedora)
@@ -43,11 +45,11 @@ jobs:
           docker run --rm --privileged \
             --network host \
             -v /var/run/docker.sock:/var/run/docker.sock \
-            -v ${{ github.workspace }}:${{ github.workspace }} \
-            -w ${{ github.workspace }} \
+            -v "${{ github.workspace }}:${{ github.workspace }}" \
+            -w "${{ github.workspace }}" \
             -e GITHUB_ACTIONS="true" \
             fedora:latest \
-            bash -c "dnf install -y python3-pip git docker-compose hostname which && pip install . --break-system-packages && bash scripts/verify_e2e_refactor.sh --ci"
+            bash -c "dnf install -y python3-pip git docker-compose hostname which && python3 -m venv .venv && source .venv/bin/activate && pip install . && bash scripts/verify_e2e_refactor.sh --ci"
 
       - name: Upload Test Results
         if: always()

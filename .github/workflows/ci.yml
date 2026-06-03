@@ -54,6 +54,10 @@ jobs:
           # This ensures local and CI checks are identical.
           pre-commit run --all-files --show-diff-on-failure
 
+      - name: Run Dependency Audit (pip-audit)
+        run: pip-audit
+
+
   smoke-test:
     needs: lint-and-test
     runs-on: ubuntu-latest
@@ -66,6 +70,7 @@ jobs:
         uses: actions/setup-python@v6
         with:
           python-version: "3.13"
+          cache: "pip"
 
       - name: Install dependencies
         run: |
@@ -152,6 +157,7 @@ jobs:
         uses: actions/setup-python@v6
         with:
           python-version: "3.13"
+          cache: "pip"
 
       - name: Install dependencies
         run: |
@@ -169,7 +175,7 @@ jobs:
           pip install .
           shiv -e ldm_core.cli:main -o ldm-linux -p '/usr/bin/env python3' .
           chmod +x ldm-linux
-          echo "BINARY_PATH=ldm-linux" >> $GITHUB_ENV
+          echo "BINARY_PATH=ldm-linux" >> "$GITHUB_ENV"
 
       - name: Build Standalone (macOS Multi-Arch)
         if: matrix.os == 'macos-latest'
@@ -183,15 +189,15 @@ jobs:
           shiv -e ldm_core.cli:main -o ldm-macos-x86_64 -p '/usr/bin/env python3' --no-deps --site-packages x86_64_site_packages .
           
           chmod +x ldm-macos-arm64 ldm-macos-x86_64
-          echo "BINARY_PATH_ARM=ldm-macos-arm64" >> $GITHUB_ENV
-          echo "BINARY_PATH_X86=ldm-macos-x86_64" >> $GITHUB_ENV
+          echo "BINARY_PATH_ARM=ldm-macos-arm64" >> "$GITHUB_ENV"
+          echo "BINARY_PATH_X86=ldm-macos-x86_64" >> "$GITHUB_ENV"
 
       - name: Build Standalone (Windows)
         if: matrix.os == 'windows-latest'
         shell: bash
         run: |
           pyinstaller --onefile --name ldm-windows --add-data "ldm_core/resources;ldm_core/resources" liferay_docker.py
-          echo "BINARY_PATH=dist/ldm-windows.exe" >> $GITHUB_ENV
+          echo "BINARY_PATH=dist/ldm-windows.exe" >> "$GITHUB_ENV"
 
       - name: Upload Artifacts (Linux/Windows)
         if: matrix.os != 'macos-latest'
@@ -227,10 +233,11 @@ jobs:
         id: check_release
         shell: bash
         run: |
+          # shellcheck disable=SC2193,SC2086
           if [[ "${{ github.ref_name }}" != *"-"* ]]; then
-            echo "is_release=true" >> $GITHUB_OUTPUT
+            echo "is_release=true" >> "$GITHUB_OUTPUT"
           else
-            echo "is_release=false" >> $GITHUB_OUTPUT
+            echo "is_release=false" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Download All Artifacts
