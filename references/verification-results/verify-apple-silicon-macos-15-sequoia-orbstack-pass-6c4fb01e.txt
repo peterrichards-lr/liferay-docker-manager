@@ -3,7 +3,7 @@ Timestamp: Thu 21 May 2026 16:56:49 BST
 Hostname:  [ANONYMIZED]
 Platform:  darwin25
 Binary:    [ANONYMIZED]
-Version:   ldm 2.7.2-beta.73
+Version:   ldm 2.11.2
 OrbStack:  2.1.1
 
 Docker:    29.4.0
