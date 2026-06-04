@@ -132,7 +132,6 @@ class RuntimeService(BaseHandler):
             )
 
             # --- Extensible Stack Archetypes (LDM-Guided-Onboarding) ---
-            UI.debug(f"DEBUG ARGS: {self.manager.args}")
             archetype_name = getattr(
                 self.manager.args, "archetype", None
             ) or project_meta.get("archetype")

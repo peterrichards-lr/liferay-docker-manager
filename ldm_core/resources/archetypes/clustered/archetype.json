@@ -1,5 +1,7 @@
 {
   "name": "Clustered HA",
   "description": "Spawns multiple Liferay containers with automated JGroups TCPPING unicast networking, shared Document Library volumes, and Traefik sticky sessions.",
-  "version": "1.0.0"
+  "version": "1.0.0",
+  "prompts": [],
+  "variables": {}
 }

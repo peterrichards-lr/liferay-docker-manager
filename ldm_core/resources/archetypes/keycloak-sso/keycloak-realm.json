@@ -22,7 +22,7 @@
       "clientId": "liferay-client",
       "enabled": true,
       "clientAuthenticatorType": "client-secret",
-      "secret": "secret",  // pragma: allowlist secret
+      "secret": "secret",
       "redirectUris": [
         "*"
       ],

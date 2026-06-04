@@ -197,6 +197,16 @@ class ComposerService:
                         or {}
                     )
                     compose = deep_merge(compose, overlay_data)
+
+                    # Dynamic Clustered Image Sync
+                    if (
+                        "liferay2" in compose["services"]
+                        and "liferay" in compose["services"]
+                    ):
+                        compose["services"]["liferay2"]["image"] = compose["services"][
+                            "liferay"
+                        ]["image"]
+
                 except Exception as e:
                     UI.error(f"Failed to merge archetype overlay: {e}")
 

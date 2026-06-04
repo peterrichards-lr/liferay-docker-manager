@@ -1,5 +1,7 @@
 {
   "name": "Keycloak SSO",
   "description": "Spins up a local Keycloak container and configures Liferay OpenID Connect for a zero-config SSO demo.",
-  "version": "1.0.0"
+  "version": "1.0.0",
+  "prompts": [],
+  "variables": {}
 }

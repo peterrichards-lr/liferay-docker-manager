@@ -11,8 +11,6 @@ services:
       - LIFERAY_CLUSTER_PERIOD_LINK_PERIOD_AUTODETECT_PERIOD_ADDRESS=liferay
 
   liferay2:
-    # liferay2 relies on the main liferay image being built/pulled
-    image: liferay/portal:latest
     depends_on:
       liferay:
         condition: service_healthy
@@ -22,14 +20,14 @@ services:
       - liferay-net
     volumes:
       - liferay-document-library:/opt/liferay/data/document_library
+      - ./files:/mnt/liferay/files
       - ./osgi/configs:/opt/liferay/osgi/configs
+      - ./osgi/client-extensions:/opt/liferay/osgi/client-extensions
+      - ./osgi/modules:/opt/liferay/osgi/modules
+      - ./deploy:/mnt/liferay/deploy
     environment:
       - LIFERAY_CLUSTER_PERIOD_LINK_PERIOD_ENABLED=true
       - LIFERAY_CLUSTER_PERIOD_LINK_PERIOD_AUTODETECT_PERIOD_ADDRESS=liferay2
-      - LIFERAY_JDBC_PERIOD_DEFAULT_PERIOD_URL=jdbc:postgresql://db:5432/lportal
-      - LIFERAY_JDBC_PERIOD_DEFAULT_PERIOD_USERNAME=lportal
-      - LIFERAY_JDBC_PERIOD_DEFAULT_PERIOD_PASSWORD=test
-      - LIFERAY_JDBC_PERIOD_DEFAULT_PERIOD_DRIVER_UPPERCASE_C_LASS_UPPERCASE_N_AME=org.postgresql.Driver
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.liferay-router.rule=HostRegexp(`{subdomain:.+}`)"
