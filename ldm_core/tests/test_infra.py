@@ -22,7 +22,7 @@ class MockInfraManager:
     def check_port(self, ip, port):
         pass
 
-    def find_available_port(self, ip, start_port):
+    def find_available_port(self, ip, start_port, exclude=None):
         pass
 
 
@@ -62,7 +62,7 @@ class TestInfraService(unittest.TestCase):
             patch.object(
                 self.manager,
                 "find_available_port",
-                side_effect=lambda _, port: port + 10,
+                side_effect=lambda _, port, exclude=None: port + 10,  # noqa: ARG005
             ),
             patch.object(self.manager, "run_command") as mock_run,
         ):

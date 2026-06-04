@@ -98,6 +98,8 @@ class InfraService:
             ssl_port = ports["https"]
             admin_port = ports["admin"]
         else:
+            allocated_ports = []
+
             # Check HTTP port
             if not self.manager.check_port("127.0.0.1", http_port):
                 orig_http = http_port
@@ -105,19 +107,29 @@ class InfraService:
                 UI.warning(
                     f"Port conflict detected! Global HTTP proxy port {orig_http} is in use on the host. Using {http_port} instead."
                 )
+            allocated_ports.append(http_port)
 
             # Check HTTPS port
-            if not self.manager.check_port("127.0.0.1", ssl_port):
+            if ssl_port in allocated_ports or not self.manager.check_port(
+                "127.0.0.1", ssl_port
+            ):
                 orig_ssl = ssl_port
-                ssl_port = self.manager.find_available_port("127.0.0.1", ssl_port)
+                ssl_port = self.manager.find_available_port(
+                    "127.0.0.1", ssl_port, exclude=allocated_ports
+                )
                 UI.warning(
                     f"Port conflict detected! Global HTTPS proxy port {orig_ssl} is in use on the host. Using {ssl_port} instead."
                 )
+            allocated_ports.append(ssl_port)
 
             # Check Admin port
-            if not self.manager.check_port("127.0.0.1", admin_port):
+            if admin_port in allocated_ports or not self.manager.check_port(
+                "127.0.0.1", admin_port
+            ):
                 orig_admin = admin_port
-                admin_port = self.manager.find_available_port("127.0.0.1", admin_port)
+                admin_port = self.manager.find_available_port(
+                    "127.0.0.1", admin_port, exclude=allocated_ports
+                )
                 UI.warning(
                     f"Port conflict detected! Global Admin proxy port {orig_admin} is in use on the host. Using {admin_port} instead."
                 )

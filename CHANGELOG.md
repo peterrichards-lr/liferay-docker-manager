@@ -178,6 +178,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added runtime state-awareness checks to commands (run, import) to prevent unexpected container collisions.
 - Enabled non-interactive bypass for internal developer utility prompts.
 
+## [v2.11.3] - 2026-06-04
+
+### Added
+
+- **Video Showcase**: Added a new video showcase to the documentation (`docs/showcase/`) featuring HTML5 video demonstrations of Fast Provisioning, Cloud Hydration, and Snapshots & Restoration with full text transcripts for SEO and accessibility (Fixes #21).
+
+### Fixed
+
+- **Port Allocation Conflict**: Resolved a bug in the proxy infrastructure where fallback logic could mistakenly assign the same available port (e.g., 1024) to multiple services (like HTTP and HTTPS) if the host's ports were already occupied and the first fallback port had not yet been bound (Fixes #21).
+
 ## [v2.11.2] - 2026-06-03
 
 ### Fixed
