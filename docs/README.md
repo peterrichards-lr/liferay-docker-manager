@@ -7,6 +7,12 @@ A professional command-line orchestrator for quickly standing up Liferay Portal 
 
 ---
 
+## 🎥 Seeing is Believing (Showcase)
+
+Check out our [Video Showcase](./showcase/README.md) to see short demonstrations of LDM in action, including Fast Provisioning, Cloud Hydration, and instant Snapshots & Restoration!
+
+---
+
 ## Why use LDM?
 
 `ldm` is designed to be both fast for power users and helpful for newcomers. It follows a consistent usage pattern:

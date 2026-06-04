@@ -398,10 +398,11 @@ class BaseHandler:
             except (OSError, OverflowError):
                 return False
 
-    def find_available_port(self, ip, start_port):
+    def find_available_port(self, ip, start_port, exclude=None):
         """Finds the next available port starting from a given number."""
         port = int(start_port)
-        while not self.check_port(ip, port):
+        exclude_ports = exclude or []
+        while port in exclude_ports or not self.check_port(ip, port):
             port += 1
             if port > 65535:
                 UI.die("No available ports found.")
