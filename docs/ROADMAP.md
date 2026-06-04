@@ -11,39 +11,34 @@ This document outlines potential enhancements to the Liferay Docker Manager (ldm
 
 While the v2.4.0 release solidified the modular architecture, the focus will now shift to implementing the remaining Ecosystem features.
 
-### 1. Extensible Stack Profiles & External Database
-
-- **Extensible Stack Profiles**: Implement declarative stack profiles (e.g., `keycloak-sso`, `clustered`) that combine OSGi config overlays and Docker Compose service configurations.
-- **External Database Integration**: Implement a dedicated `--db external` database parameter switch to support connecting local Liferay orchestrations to remote or host-bound database instances.
-
-### 2. CLI Simplification & Automation Standards
+### 1. CLI Simplification & Automation Standards
 
 - **Namespace Grouping**: Transition from flat commands to grouped namespaces (e.g., `ldm system`, `ldm infra`, `ldm cloud`).
 - **Cloud Orchestration**: Introduce `ldm cloud push` and `ldm cloud fetch` as a unified, two-way bridge for PaaS migration.
 
-### 3. Visual Health Dashboard
+### 2. Visual Health Dashboard
 
 - **Local Monitoring UI**: A lightweight, read-only dashboard accessible via `http://localhost:19000`.
 
-### 4. Shared Scenario Packs
+### 3. Shared Scenario Packs
 
 - **Portable Scenarios**: A formal specification for bundling Snapshots and Client Extensions into single distributable archives.
 
-### 5. AI-Assisted Orchestration
+### 4. AI-Assisted Orchestration
 
 - **The `ldm ai` Command**: Integrate a specialized AI handler (Gemini-powered) for troubleshooting.
 
-### 6. Polished Diagnostics Dashboard
+### 5. Polished Diagnostics Dashboard
 
 - **High-Level RAG Status**: Transition `ldm doctor` to a concise Red/Amber/Green summary dashboard by default.
 - **Granular Subsection Flags**: Implement flags like `--docker`, `--system`, and `--project` to view deep-dive diagnostics for specific areas only when needed.
 
-### 7. Project Self-Healing (`ldm repair`)
+### 6. Project Self-Healing (`ldm repair`)
 
 - **Inconsistency Recovery**: Implement a command to restore projects in "half-baked" states (e.g., missing `docker-compose.yml` but valid `meta`).
 - **Permission Re-sync**: A dedicated trigger to re-apply the "Zero-Race" permission fixups across an entire existing project stack.
 
-### 8. Dry-Run Mode
+### 7. Dry-Run Mode
 
 - **Change Preview**: Support a `--dry-run` flag for destructive or configuration-heavy commands (`run`, `rm`, `import`, `scale`) to preview filesystem and Docker modifications without applying them.
 
@@ -143,4 +138,6 @@ While the v2.4.0 release solidified the modular architecture, the focus will now
 
 ---
 
-## ✅ Completed Improvements (v2.1.x)
+## ✅ Completed Improvements (v2.1.x & v2.5.x)
+
+- **Extensible Stack Archetypes & External DB (v2.5.x)**: Replaced application scaffolding with a declarative overlay architecture via `ldm init -a <archetype>`. Includes full topology generation for `keycloak-sso` (OIDC injection) and `clustered` (JGroups TCPPING and Traefik sticky sessions), alongside a decoupled `--db external` workflow.
