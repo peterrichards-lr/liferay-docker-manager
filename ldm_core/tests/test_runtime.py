@@ -342,55 +342,58 @@ class TestRuntime(unittest.TestCase):
     def test_cmd_run_seeding_persistence(self, mock_gethost):
         mock_gethost.return_value = "127.0.0.1"
         # Case: New project initialization with seeding
-        root = Path("test-project")
-        all_paths = {
-            "root": root,
-            "data": root / "data",
-            "deploy": root / "deploy",
-            "files": root / "files",
-            "state": root / "osgi" / "state",
-            "cx": root / "osgi" / "client-extensions",
-            "ce_dir": root / "osgi" / "client-extensions",
-            "scripts": root / "scripts",
-            "configs": root / "osgi" / "configs",
-            "modules": root / "osgi" / "modules",
-            "backups": root / "snapshots",
-            "portal_log4j": root / "osgi" / "log4j",
-            "logs": root / "logs",
-            "compose": root / "docker-compose.yml",
-            "common": Path("/tmp/common"),
-        }
-
-        with (
-            patch.object(self.handler, "detect_project_path") as mock_detect,
-            patch.object(self.handler, "setup_paths") as mock_setup,
-            patch.object(self.handler, "read_meta") as mock_read,
-            patch.object(self.handler, "_ensure_seeded") as mock_seed,
-            patch.object(self.handler, "write_meta") as mock_write,
-            patch.object(self.handler, "verify_runtime_environment"),
-            patch.object(self.handler, "run_command"),
-        ):
-            mock_detect.return_value = root
-            mock_setup.return_value = all_paths
-            mock_read.return_value = {
-                "host_name": "localhost",
-                "container_name": "test-project",
+        with tempfile.TemporaryDirectory() as tmp_root:
+            root = Path(tmp_root)
+            all_paths = {
+                "root": root,
+                "data": root / "data",
+                "deploy": root / "deploy",
+                "files": root / "files",
+                "state": root / "osgi" / "state",
+                "cx": root / "osgi" / "client-extensions",
+                "ce_dir": root / "osgi" / "client-extensions",
+                "scripts": root / "scripts",
+                "configs": root / "osgi" / "configs",
+                "modules": root / "osgi" / "modules",
+                "backups": root / "snapshots",
+                "portal_log4j": root / "osgi" / "log4j",
+                "logs": root / "logs",
+                "compose": root / "docker-compose.yml",
+                "common": Path("/tmp/common"),
             }
-            mock_seed.return_value = True  # Seed successfully downloaded
 
-            # Force no_up to avoid full stack sync
-            self.handler.args.no_up = True
-            self.handler.args.host_name = None
-            self.handler.args.tag = "2026.q1.4-lts"
-            self.handler.args.samples = False
+            with (
+                patch.object(self.handler, "detect_project_path") as mock_detect,
+                patch.object(self.handler, "setup_paths") as mock_setup,
+                patch.object(self.handler, "read_meta") as mock_read,
+                patch.object(self.handler, "_ensure_seeded") as mock_seed,
+                patch.object(self.handler, "write_meta") as mock_write,
+                patch.object(self.handler, "verify_runtime_environment"),
+                patch.object(self.handler, "run_command"),
+                patch.object(self.handler.handler, "sync_stack"),
+            ):
+                mock_detect.return_value = root
+                mock_setup.return_value = all_paths
+                mock_read.return_value = {
+                    "host_name": "localhost",
+                    "container_name": "test-project",
+                }
+                mock_seed.return_value = True  # Seed successfully downloaded
 
-            self.handler.cmd_run("test-project")
+                # Force no_up to avoid full stack sync
+                self.handler.args.no_up = True
+                self.handler.args.host_name = None
+                self.handler.args.tag = "2026.q1.4-lts"
+                self.handler.args.samples = False
+                self.handler.args.archetype = None
 
-            # Verify that write_meta was called with the seeded status
-            self.assertTrue(mock_write.called)
-            written_meta = mock_write.call_args[0][1]
-            self.assertEqual(str(written_meta.get("seeded")).lower(), "true")
-            self.assertIn("seed_version", written_meta)
+                self.handler.cmd_run("test-project")
+
+                # Verify that write_meta was called with the seeded status
+                self.assertTrue(mock_write.called)
+                written_meta = mock_write.call_args[0][1]
+                self.assertEqual(str(written_meta.get("seeded")).lower(), "true")
+                self.assertIn("seed_version", written_meta)
 
     @patch("socket.gethostbyname")
     def test_cmd_run_duplicate_orchestration_suppressed(self, mock_gethost):
@@ -457,6 +460,7 @@ class TestRuntime(unittest.TestCase):
                 self.handler.args.host_name = None
                 self.handler.args.no_up = False
                 self.handler.args.sidecar = False
+                self.handler.args.archetype = None
                 self.handler.cmd_run("test-samples")
 
                 # Verify sync_stack was called twice
@@ -500,6 +504,7 @@ class TestRuntime(unittest.TestCase):
             self.handler.args.jvm_args = None
             self.handler.args.port = None
             self.handler.args.snapshot = None
+            self.handler.args.archetype = None
 
             # The test checks that we don't die and discover_latest_tag is called
             self.handler.cmd_run("test")
@@ -540,6 +545,7 @@ class TestRuntime(unittest.TestCase):
             self.handler.args.jvm_args = None
             self.handler.args.port = None
             self.handler.args.snapshot = None
+            self.handler.args.archetype = None
 
             self.handler.cmd_run("test")
 
@@ -578,6 +584,7 @@ class TestRuntime(unittest.TestCase):
             self.handler.args.jvm_args = None
             self.handler.args.port = None
             self.handler.args.snapshot = None
+            self.handler.args.archetype = None
 
             # Scenario 1: Tag is invalid -> should trigger warning
             mock_validate.return_value = False
@@ -594,6 +601,72 @@ class TestRuntime(unittest.TestCase):
             # Assert warning was not called for tag validation
             for call in mock_warning.call_args_list:
                 self.assertNotIn("official Liferay releases", call[0][0])
+
+    @patch("ldm_core.ui.UI.die")
+    def test_cmd_run_invalid_archetype(self, mock_die):
+        """Verify that an invalid archetype dies."""
+        mock_die.side_effect = SystemExit
+        with (
+            patch.object(
+                self.handler, "detect_project_path", return_value=self.tmp_dir
+            ),
+            patch.object(
+                self.handler,
+                "setup_paths",
+                return_value={"root": self.tmp_dir, "data": self.tmp_dir / "data"},
+            ),
+            patch.object(self.handler, "read_meta", return_value={}),
+        ):
+            self.handler.args.project = "test"
+            self.handler.args.archetype = "does-not-exist"
+            self.handler.args.db = None
+            with self.assertRaises(SystemExit):
+                self.handler.cmd_run("test")
+            mock_die.assert_called_once()
+
+    def test_cmd_run_valid_archetype(self):
+        """Verify that a valid archetype sets the project meta."""
+        with (
+            patch.object(
+                self.handler, "detect_project_path", return_value=self.tmp_dir
+            ),
+            patch.object(
+                self.handler,
+                "setup_paths",
+                return_value={"root": self.tmp_dir, "data": self.tmp_dir / "data"},
+            ),
+            patch.object(self.handler, "read_meta", return_value={}),
+            patch.object(self.handler, "write_meta") as mock_write,
+            patch.object(self.handler, "_pre_flight_checks", return_value=8080),
+            patch.object(self.handler, "verify_runtime_environment"),
+            patch.object(self.handler.handler, "sync_stack"),
+            patch("ldm_core.constants.SCRIPT_DIR", self.tmp_dir),
+        ):
+            # Scaffold fake archetype dir
+            arch_dir = (
+                self.tmp_dir / "ldm_core" / "resources" / "archetypes" / "keycloak-sso"
+            )
+            arch_dir.mkdir(parents=True, exist_ok=True)
+
+            self.handler.args.project = "test"
+            self.handler.args.archetype = "keycloak-sso"
+            self.handler.args.db = None
+            self.handler.args.tag = "latest"
+            self.handler.args.tag_latest = False
+            self.handler.args.tag_prefix = None
+            self.handler.args.release_type = None
+            self.handler.args.no_up = True
+            self.handler.args.samples = False
+            self.handler.args.host_name = None
+            self.handler.args.jvm_args = None
+            self.handler.args.port = None
+            self.handler.args.snapshot = None
+
+            self.handler.cmd_run("test")
+
+            # Verify the meta update call included the archetype
+            call_args = mock_write.call_args[0][1]
+            self.assertEqual(call_args.get("archetype"), "keycloak-sso")
 
     @patch("ldm_core.ui.UI.die")
     def test_cmd_run_select_non_interactive_dies(self, mock_die):

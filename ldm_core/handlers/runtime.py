@@ -18,6 +18,45 @@ class RuntimeService(BaseHandler):
         super().__init__(manager.args if manager else None)
         self.manager = manager
 
+    def _generate_keycloak_realm(self, project_root):
+        """Dynamically generates the keycloak-realm.json to avoid tracking secrets in git."""
+        import json
+
+        from ldm_core.utils import safe_write_text
+
+        realm_data = {
+            "realm": "liferay",
+            "enabled": True,
+            "users": [
+                {
+                    "username": "test",
+                    "enabled": True,
+                    "email": "test@liferay.com",
+                    "firstName": "Test",
+                    "lastName": "Test",
+                    "credentials": [
+                        {"type": "password", "value": "test", "temporary": False}
+                    ],
+                }
+            ],
+            "clients": [
+                {
+                    "clientId": "liferay-client",
+                    "enabled": True,
+                    "clientAuthenticatorType": "client-secret",
+                    "secret": "secret",  # pragma: allowlist secret
+                    "redirectUris": ["*"],
+                    "webOrigins": ["*"],
+                    "publicClient": False,
+                    "protocol": "openid-connect",
+                }
+            ],
+        }
+
+        safe_write_text(
+            project_root / "keycloak-realm.json", json.dumps(realm_data, indent=2)
+        )
+
     def cmd_run(self, project_id=None, is_restart=False):
         """Main entry point for starting or updating a project stack."""
         total_start = time.time()
@@ -130,6 +169,37 @@ class RuntimeService(BaseHandler):
                 or project_meta.get("db_type")
                 or self.manager.defaults.get("db_type")
             )
+
+            # --- Extensible Stack Archetypes (LDM-Guided-Onboarding) ---
+            archetype_name = getattr(
+                self.manager.args, "archetype", None
+            ) or project_meta.get("archetype")
+            if archetype_name:
+                from ldm_core.constants import SCRIPT_DIR
+
+                archetype_dir = (
+                    SCRIPT_DIR
+                    / "ldm_core"
+                    / "resources"
+                    / "archetypes"
+                    / archetype_name
+                )
+                if not archetype_dir.exists():
+                    UI.die(
+                        f"Archetype '{archetype_name}' not found. Available archetypes: {[d.name for d in (SCRIPT_DIR / 'ldm_core' / 'resources' / 'archetypes').iterdir() if d.is_dir()]}"
+                    )
+                project_meta["archetype"] = archetype_name
+
+            # --- External Database (LDM-Guided-Onboarding) ---
+            if db_type == "external" and not project_meta.get("jdbc_url"):
+                UI.heading("External Database Configuration")
+                project_meta["jdbc_url"] = UI.ask(
+                    "JDBC URL (e.g. jdbc:postgresql://host:5432/db)",
+                    "jdbc:postgresql://db:5432/lportal",
+                )
+                project_meta["jdbc_user"] = UI.ask("Database Username", "liferay")
+                project_meta["jdbc_pass"] = UI.ask("Database Password", "liferay")
+
             jvm_args = getattr(self.manager.args, "jvm_args", None) or project_meta.get(
                 "jvm_args"
             )
@@ -411,9 +481,37 @@ class RuntimeService(BaseHandler):
                     "env_type": env_type,
                     "cpu_limit": cpu_limit,
                     "mem_limit": mem_limit,
+                    "archetype": archetype_name or project_meta.get("archetype", ""),
                 }
             )
             self.manager.write_meta(paths["root"], project_meta)
+
+            # --- Extensible Stack Archetypes Asset Copy ---
+            if is_new_project and project_meta.get("archetype"):
+                from ldm_core.constants import SCRIPT_DIR
+
+                archetype_dir = (
+                    SCRIPT_DIR
+                    / "ldm_core"
+                    / "resources"
+                    / "archetypes"
+                    / project_meta["archetype"]
+                )
+                if archetype_dir.exists():
+                    import shutil
+
+                    # Copy everything except archetype.json and compose-overlay.yml
+                    for item in archetype_dir.iterdir():
+                        if item.name not in ["archetype.json", "compose-overlay.yml"]:
+                            dest = paths["root"] / item.name
+                            if item.is_dir():
+                                shutil.copytree(item, dest, dirs_exist_ok=True)
+                            else:
+                                shutil.copy2(item, dest)
+
+                    if project_meta["archetype"] == "keycloak-sso":
+                        self._generate_keycloak_realm(paths["root"])
+
             init_success = True
             self.manager.register_project(
                 project_id, paths["root"], host_name=host_name

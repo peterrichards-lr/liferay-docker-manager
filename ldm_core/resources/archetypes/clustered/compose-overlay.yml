@@ -1,0 +1,41 @@
+services:
+  liferay:
+    labels:
+      - "traefik.http.services.liferay-router.loadbalancer.sticky.cookie=true"
+      - "traefik.http.services.liferay-router.loadbalancer.sticky.cookie.name=LDM_STICKY"
+      - "traefik.http.services.liferay-router.loadbalancer.sticky.cookie.secure=true"
+    volumes:
+      - liferay-document-library:/opt/liferay/data/document_library
+    environment:
+      - LIFERAY_CLUSTER_PERIOD_LINK_PERIOD_ENABLED=true
+      - LIFERAY_CLUSTER_PERIOD_LINK_PERIOD_AUTODETECT_PERIOD_ADDRESS=liferay
+
+  liferay2:
+    depends_on:
+      liferay:
+        condition: service_healthy
+      db:
+        condition: service_healthy
+    networks:
+      - liferay-net
+    volumes:
+      - liferay-document-library:/opt/liferay/data/document_library
+      - ./files:/mnt/liferay/files
+      - ./osgi/configs:/opt/liferay/osgi/configs
+      - ./osgi/client-extensions:/opt/liferay/osgi/client-extensions
+      - ./osgi/modules:/opt/liferay/osgi/modules
+      - ./deploy:/mnt/liferay/deploy
+    environment:
+      - LIFERAY_CLUSTER_PERIOD_LINK_PERIOD_ENABLED=true
+      - LIFERAY_CLUSTER_PERIOD_LINK_PERIOD_AUTODETECT_PERIOD_ADDRESS=liferay2
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.liferay-router.rule=HostRegexp(`{subdomain:.+}`)"
+      - "traefik.http.services.liferay-router.loadbalancer.server.port=8080"
+      - "traefik.http.services.liferay-router.loadbalancer.sticky.cookie=true"
+      - "traefik.http.services.liferay-router.loadbalancer.sticky.cookie.name=LDM_STICKY"
+      - "traefik.http.services.liferay-router.loadbalancer.sticky.cookie.secure=true"
+      - "com.liferay.ldm.managed=true"
+
+volumes:
+  liferay-document-library:

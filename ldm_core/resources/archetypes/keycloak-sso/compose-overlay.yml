@@ -1,0 +1,14 @@
+services:
+  keycloak:
+    image: quay.io/keycloak/keycloak:24.0.4
+    command: start-dev --import-realm
+    environment:
+      KC_DB: dev-file
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin  # pragma: allowlist secret
+    ports:
+      - "8081:8080"
+    volumes:
+      - ./keycloak-realm.json:/opt/keycloak/data/import/realm.json
+    labels:
+      - "com.liferay.ldm.managed=true"

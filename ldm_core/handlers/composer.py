@@ -4,6 +4,7 @@ import os
 import platform
 from pathlib import Path
 
+from ldm_core.ui import UI
 from ldm_core.utils import dict_to_yaml, resolve_dependency_version
 
 
@@ -161,6 +162,53 @@ class ComposerService:
 
         if named_volumes:
             compose["volumes"] = named_volumes
+
+        # --- Extensible Stack Archetypes Merge ---
+        archetype_name = meta.get("archetype")
+        if archetype_name:
+            from ldm_core.constants import SCRIPT_DIR
+
+            archetype_overlay_path = (
+                SCRIPT_DIR
+                / "ldm_core"
+                / "resources"
+                / "archetypes"
+                / archetype_name
+                / "compose-overlay.yml"
+            )
+            if archetype_overlay_path.exists():
+                import yaml
+
+                def deep_merge(dict1, dict2):
+                    for key, val in dict2.items():
+                        if isinstance(val, dict):
+                            dict1[key] = deep_merge(dict1.get(key, {}), val)
+                        elif isinstance(val, list):
+                            dict1[key] = dict1.get(key, []) + val
+                        else:
+                            dict1[key] = val
+                    return dict1
+
+                try:
+                    overlay_data = (
+                        yaml.safe_load(
+                            archetype_overlay_path.read_text(encoding="utf-8")
+                        )
+                        or {}
+                    )
+                    compose = deep_merge(compose, overlay_data)
+
+                    # Dynamic Clustered Image Sync
+                    if (
+                        "liferay2" in compose["services"]
+                        and "liferay" in compose["services"]
+                    ):
+                        compose["services"]["liferay2"]["image"] = compose["services"][
+                            "liferay"
+                        ]["image"]
+
+                except Exception as e:
+                    UI.error(f"Failed to merge archetype overlay: {e}")
 
         from ldm_core.utils import safe_write_text
 
@@ -325,7 +373,18 @@ class ComposerService:
                 has_jdbc_env = True
 
         db_type = meta.get("db_type", "postgresql")
-        if db_type in ["mysql", "mariadb"]:
+        if db_type == "external":
+            if not has_jdbc_env:
+                self.manager.config.update_portal_ext(  # type: ignore[attr-defined]
+                    paths,
+                    {
+                        "jdbc.default.url": meta.get("jdbc_url", ""),
+                        "jdbc.default.username": meta.get("jdbc_user", ""),
+                        "jdbc.default.password": meta.get("jdbc_pass", ""),
+                    },
+                )
+            liferay_env.append("LIFERAY_HSQL_PERIOD_ENABLED=false")
+        elif db_type in ["mysql", "mariadb"]:
             driver = (
                 resolve_dependency_version(tag, "jdbc_driver_mysql")
                 or "org.mariadb.jdbc.Driver"
@@ -432,7 +491,7 @@ class ComposerService:
             image = f"{image_base}:{tag}{suffix}"
 
         depends_on = []
-        if db_type != "hypersonic":
+        if db_type not in ["hypersonic", "external"]:
             depends_on.append("db")
 
         # 80/20 DESIGN: SELinux compatibility for Fedora/RHEL
@@ -515,6 +574,9 @@ class ComposerService:
     def _build_db_service(self, meta, project_name):
         """Constructs the Database service (MySQL/PostgreSQL) if required."""
         db_type = meta.get("db_type", "postgresql")
+        if db_type == "external":
+            return None
+
         tag = str(meta.get("tag") or "latest")
         db_container = meta.get("db_container_name") or f"{project_name}-db"
         scale = int(meta.get("scale_db", 1))

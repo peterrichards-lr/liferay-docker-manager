@@ -438,6 +438,11 @@ def get_parser():
     # Command: init
     init = subparsers.add_parser("init", parents=[base_sub_parent])
     init.add_argument("project", nargs="?")
+    init.add_argument(
+        "-a",
+        "--archetype",
+        help="Apply an Extensible Stack Archetype (e.g. 'keycloak-sso', 'clustered')",
+    )
     init.add_argument("-t", "--tag", help="Liferay Tag (e.g. 2025.q1.0)")
     init.add_argument(
         "--tag-latest",
@@ -445,7 +450,7 @@ def get_parser():
         help="Automatically use the latest Liferay tag",
     )
     init.add_argument("--host-name", help="Virtual Hostname")
-    init.add_argument("--db", choices=["postgresql", "mysql", "hypersonic"])
+    init.add_argument("--db", choices=["postgresql", "mysql", "hypersonic", "external"])
     init.add_argument("--internal-state", action="store_true")
     init.add_argument(
         "--samples", action="store_true", help="Initialize with sample extensions"
