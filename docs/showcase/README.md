@@ -6,7 +6,7 @@ Seeing is believing. Check out these short demonstrations of Liferay Docker Mana
 
 Watch how quickly LDM provisions a fully functional Liferay environment, complete with SSL, automatic host file mapping, and an instant fast login token generation.
 
-<https://github.com/user-attachments/assets/3bf7e8e6-6740-4a6c-a350-28e44c9d5bde>
+<https://github.com/user-attachments/assets/8266af0f-f7a4-4040-91b1-f41cf2a28b39>
 
 ### Transcript: Fast Provisioning
 
@@ -26,7 +26,7 @@ Watch how quickly LDM provisions a fully functional Liferay environment, complet
 
 See how seamlessly LDM pulls backups directly from Liferay Cloud environments (like `prd` or `uat`) and restores them locally, giving you an exact replica for debugging.
 
-<https://github.com/user-attachments/assets/8266af0f-f7a4-4040-91b1-f41cf2a28b39>
+<https://github.com/user-attachments/assets/3bf7e8e6-6740-4a6c-a350-28e44c9d5bde>
 
 ### Transcript: Cloud Hydration
 
