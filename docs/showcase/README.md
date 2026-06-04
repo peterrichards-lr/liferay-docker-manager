@@ -6,9 +6,7 @@ Seeing is believing. Check out these short demonstrations of Liferay Docker Mana
 
 Watch how quickly LDM provisions a fully functional Liferay environment, complete with SSL, automatic host file mapping, and an instant fast login token generation.
 
-<video src="https://github.com/peterrichards-lr/liferay-docker-manager/raw/master/docs/showcase/LDM%20Run%20Command.mp4" width="100%" controls></video>
-
-*[If the video player doesn't load, click here to watch the Fast Provisioning Demo](./LDM%20Run%20Command.mp4)*
+<https://github.com/user-attachments/assets/3bf7e8e6-6740-4a6c-a350-28e44c9d5bde>
 
 ### Transcript: Fast Provisioning
 
@@ -28,9 +26,7 @@ Watch how quickly LDM provisions a fully functional Liferay environment, complet
 
 See how seamlessly LDM pulls backups directly from Liferay Cloud environments (like `prd` or `uat`) and restores them locally, giving you an exact replica for debugging.
 
-<video src="https://github.com/peterrichards-lr/liferay-docker-manager/raw/master/docs/showcase/LDM%20Cloud%20Hydration.mp4" width="100%" controls></video>
-
-*[If the video player doesn't load, click here to watch the Cloud Hydration Demo](./LDM%20Cloud%20Hydration.mp4)*
+<https://github.com/user-attachments/assets/8266af0f-f7a4-4040-91b1-f41cf2a28b39>
 
 ### Transcript: Cloud Hydration
 
@@ -50,9 +46,7 @@ See how seamlessly LDM pulls backups directly from Liferay Cloud environments (l
 
 Accidentally broke your environment? Watch how easy it is to list existing database and volume snapshots, and instantly roll back to a known good state.
 
-<video src="https://github.com/peterrichards-lr/liferay-docker-manager/raw/master/docs/showcase/LDM%20Snapshots.mp4" width="100%" controls></video>
-
-*[If the video player doesn't load, click here to watch the Snapshots & Restoration Demo](./LDM%20Snapshots.mp4)*
+<https://github.com/user-attachments/assets/7322c675-2c23-4f61-b0f2-f1d169e8a951>
 
 ### Transcript: Snapshots & Restoration
 
