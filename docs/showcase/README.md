@@ -6,10 +6,7 @@ Seeing is believing. Check out these short demonstrations of Liferay Docker Mana
 
 Watch how quickly LDM provisions a fully functional Liferay environment, complete with SSL, automatic host file mapping, and an instant fast login token generation.
 
-<video width="100%" controls>
-  <source src="./LDM%20Run%20Command.mp4" type="video/mp4">
-  Your browser does not support the video tag.
-</video>
+<https://github.com/user-attachments/assets/8266af0f-f7a4-4040-91b1-f41cf2a28b39>
 
 ### Transcript: Fast Provisioning
 
@@ -25,37 +22,11 @@ Watch how quickly LDM provisions a fully functional Liferay environment, complet
 
 ---
 
-## ☁️ Cloud Hydration
-
-See how seamlessly LDM pulls backups directly from Liferay Cloud environments (like `prd` or `uat`) and restores them locally, giving you an exact replica for debugging.
-
-<video width="100%" controls>
-  <source src="./LDM%20Cloud%20Hydration.mp4" type="video/mp4">
-  Your browser does not support the video tag.
-</video>
-
-### Transcript: Cloud Hydration
-
-1. The user executes `ldm --cloud-project lctmodernintranetpsql --host-name intranet.demo --hydrate-from prd --no-env-sync`.
-2. LDM scans the cloud workspace and automatically fetches the latest database and volume backups from the production (`prd`) environment.
-3. The backups are downloaded and organized into local snapshots, with PostgreSQL automatically detected as the database type.
-4. LDM triggers a local restore, tearing down any existing stack and scaffolding the Docker environment.
-5. Cloud data volumes are unpacked and internal Docker volumes are hydrated.
-6. The cloud database dump is decompressed and scrubbed of any cloud-specific meta-commands.
-7. An orchestrated database restore wipes the existing local schema and securely imports the production data.
-8. Virtual host entries are synchronized to `intranet.demo`.
-9. The environment starts up, and the user can browse their locally running, exact replica of the production Intranet site at `https://intranet.demo`.
-
----
-
 ## 📸 Snapshots & Restoration
 
 Accidentally broke your environment? Watch how easy it is to list existing database and volume snapshots, and instantly roll back to a known good state.
 
-<video width="100%" controls>
-  <source src="./LDM%20Snapshots.mp4" type="video/mp4">
-  Your browser does not support the video tag.
-</video>
+<https://github.com/user-attachments/assets/7322c675-2c23-4f61-b0f2-f1d169e8a951>
 
 ### Transcript: Snapshots & Restoration
 
@@ -68,3 +39,23 @@ Accidentally broke your environment? Watch how easy it is to list existing datab
 7. Once the database is successfully restored, LDM prompts the user to restart the project.
 8. The infrastructure and Liferay containers spin back up.
 9. The environment is fully reverted, allowing the user to browse the restored site exactly as it was when the snapshot was captured.
+
+---
+
+## ☁️ Cloud Hydration
+
+See how seamlessly LDM pulls backups directly from Liferay Cloud environments (like `prd` or `uat`) and restores them locally, giving you an exact replica for debugging.
+
+<https://github.com/user-attachments/assets/3bf7e8e6-6740-4a6c-a350-28e44c9d5bde>
+
+### Transcript: Cloud Hydration
+
+1. The user executes `ldm --cloud-project lctmodernintranetpsql --host-name intranet.demo --hydrate-from prd --no-env-sync`.
+2. LDM scans the cloud workspace and automatically fetches the latest database and volume backups from the production (`prd`) environment.
+3. The backups are downloaded and organized into local snapshots, with PostgreSQL automatically detected as the database type.
+4. LDM triggers a local restore, tearing down any existing stack and scaffolding the Docker environment.
+5. Cloud data volumes are unpacked and internal Docker volumes are hydrated.
+6. The cloud database dump is decompressed and scrubbed of any cloud-specific meta-commands.
+7. An orchestrated database restore wipes the existing local schema and securely imports the production data.
+8. Virtual host entries are synchronized to `intranet.demo`.
+9. The environment starts up, and the user can browse their locally running, exact replica of the production Intranet site at `https://intranet.demo`.
