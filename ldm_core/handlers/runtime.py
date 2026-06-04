@@ -130,6 +130,38 @@ class RuntimeService(BaseHandler):
                 or project_meta.get("db_type")
                 or self.manager.defaults.get("db_type")
             )
+
+            # --- Extensible Stack Archetypes (LDM-Guided-Onboarding) ---
+            UI.debug(f"DEBUG ARGS: {self.manager.args}")
+            archetype_name = getattr(
+                self.manager.args, "archetype", None
+            ) or project_meta.get("archetype")
+            if archetype_name:
+                from ldm_core.constants import SCRIPT_DIR
+
+                archetype_dir = (
+                    SCRIPT_DIR
+                    / "ldm_core"
+                    / "resources"
+                    / "archetypes"
+                    / archetype_name
+                )
+                if not archetype_dir.exists():
+                    UI.die(
+                        f"Archetype '{archetype_name}' not found. Available archetypes: {[d.name for d in (SCRIPT_DIR / 'ldm_core' / 'resources' / 'archetypes').iterdir() if d.is_dir()]}"
+                    )
+                project_meta["archetype"] = archetype_name
+
+            # --- External Database (LDM-Guided-Onboarding) ---
+            if db_type == "external" and not project_meta.get("jdbc_url"):
+                UI.heading("External Database Configuration")
+                project_meta["jdbc_url"] = UI.ask(
+                    "JDBC URL (e.g. jdbc:postgresql://host:5432/db)",
+                    "jdbc:postgresql://db:5432/lportal",
+                )
+                project_meta["jdbc_user"] = UI.ask("Database Username", "liferay")
+                project_meta["jdbc_pass"] = UI.ask("Database Password", "liferay")
+
             jvm_args = getattr(self.manager.args, "jvm_args", None) or project_meta.get(
                 "jvm_args"
             )
@@ -411,9 +443,34 @@ class RuntimeService(BaseHandler):
                     "env_type": env_type,
                     "cpu_limit": cpu_limit,
                     "mem_limit": mem_limit,
+                    "archetype": archetype_name or project_meta.get("archetype", ""),
                 }
             )
             self.manager.write_meta(paths["root"], project_meta)
+
+            # --- Extensible Stack Archetypes Asset Copy ---
+            if is_new_project and project_meta.get("archetype"):
+                from ldm_core.constants import SCRIPT_DIR
+
+                archetype_dir = (
+                    SCRIPT_DIR
+                    / "ldm_core"
+                    / "resources"
+                    / "archetypes"
+                    / project_meta["archetype"]
+                )
+                if archetype_dir.exists():
+                    import shutil
+
+                    # Copy everything except archetype.json and compose-overlay.yml
+                    for item in archetype_dir.iterdir():
+                        if item.name not in ["archetype.json", "compose-overlay.yml"]:
+                            dest = paths["root"] / item.name
+                            if item.is_dir():
+                                shutil.copytree(item, dest, dirs_exist_ok=True)
+                            else:
+                                shutil.copy2(item, dest)
+
             init_success = True
             self.manager.register_project(
                 project_id, paths["root"], host_name=host_name

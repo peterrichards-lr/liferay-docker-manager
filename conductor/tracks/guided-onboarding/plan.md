@@ -1,75 +1,69 @@
-# Track Implementation Plan: Guided Onboarding (`ldm init`)
+# Track Implementation Plan: Extensible Stack Archetypes (Guided Onboarding)
 
-This track focuses on implementing a guided, template-based setup experience for new LDM projects in LDM v2.5.0.
+This track implements **Extensible Stack Archetypes** and **External Database** support, moving away from simple application scaffolding to robust topology blueprints.
 
 ## 1. Objective
 
-Simplify the creation of new LDM projects through a guided CLI experience (`ldm init`) that provides templates for common Liferay use cases.
+Implement a fully declarative system for injecting complex architectural topologies (Archetypes) into a new LDM project via `ldm init --archetype <name>`, and decouple external database connections via `--db external`.
 
 ## 2. Key Requirements
 
-- **Interactive Prompts**: Ask the user for project name, Liferay version, database type, and search mode.
-- **Template Selection**: Allow users to choose from pre-defined templates (e.g., "Empty Workspace," "Commerce Demo," "Headless React").
-- **Asset Injection**: Automatically create folders (`client-extensions/`, `deploy/`, `osgi/configs/`) and populate them with standard boilerplate.
-- **Auto-Documentation**: Generate a project-specific `README.md` and `setup.md` based on the selected template.
+### Declarative Archetypes (`--archetype`)
 
-## 3. Technical Design
+- Archetypes are self-contained directories under `ldm_core/resources/archetypes/`.
+- **`archetype.json`**: Contains metadata, required variables, and interactive prompts.
+- **`compose-overlay.yml`**: A snippet that is programmatically merged into the base `docker-compose.yml`.
+- **Assets**: Any files in the archetype directory (e.g., `osgi/`, `client-extensions/`) are copied to the project root.
 
-### CLI Update (`ldm_core/cli.py`)
+### External Database (`--db external`)
 
-- Add `ldm init [project]` command.
-- Arguments:
-  - `--template`: Optional template name.
-  - `--interactive`: Force prompt-based setup (default).
+- When `--db external` is used, LDM prompts for the JDBC connection string, username, and password.
+- Injects these properties directly into `portal-ext.properties`.
+- Generates a `docker-compose.yml` that **omits** the local database container.
 
-### Handler Logic (`ldm_core/handlers/workspace.py`)
+## 3. Archetype Definitions
 
-- Implement `cmd_init(project_id, template=None)`.
-- Use `UI.ask_choices` and `UI.ask_text` for user input.
-- Create a `TemplateManager` to handle copying assets from `references/templates/`.
+### A. Keycloak SSO (`keycloak-sso`)
 
-### Template Storage (`references/templates/`)
+- **Docker Compose**: Adds a `keycloak` container.
+- **Assets**: Mounts a pre-configured `realm-export.json` into Keycloak.
+- **Liferay Integration**: Injects OSGi OpenID Connect config files into Liferay's `osgi/configs` folder.
 
-- Organize templates as subfolders:
-  - `references/templates/basic/`
-  - `references/templates/commerce/`
-  - `references/templates/headless/`
-- Each template should contain a `manifest.json` describing its structure and required files.
+### B. Clustered / HA (`clustered`)
+
+- **Docker Compose**: Spawns multiple Liferay containers (`liferay1`, `liferay2`).
+- **Networking**: Automates JGroups unicast configurations using `TCPPING` (multicast bypass).
+- **Storage**: Maps shared Named Docker Volumes for the Document Library.
+- **Routing**: Configures sticky session routing on the Traefik load balancer.
 
 ## 4. Implementation Steps & Status Checklist
 
-### Phase 1: Folder Structure & Basic Template
+### Phase 1: Core Architecture & External DB
 
-- [ ] Create `references/templates/` directory.
-- [ ] Implement `references/templates/basic/manifest.json`.
-- [ ] Add boilerplate assets (empty folders) for `basic` template.
+- [ ] Refactor `ldm init` to support `--archetype` and `--db external`.
+- [ ] Implement the interactive JDBC prompt logic for `--db external` in `WorkspaceHandler`.
+- [ ] Update `ComposerHandler` to support dropping the DB container and injecting `portal-ext.properties`.
 
-### Phase 2: CLI Refactor
+### Phase 2: The Archetype Engine
 
-- [ ] Update `ldm_core/cli.py` to support `ldm init` arguments (`--template`, `--interactive`).
-- [ ] Link `init` command to `WorkspaceHandler.cmd_init`.
+- [ ] Create `ldm_core/resources/archetypes/` directory structure.
+- [ ] Implement `ArchetypeManager` to parse `archetype.json`.
+- [ ] Implement `yaml` merging logic to combine `compose-overlay.yml` into the generated stack.
 
-### Phase 3: Core Logic (The Template Manager)
+### Phase 3: Archetype Implementation (Keycloak)
 
-- [ ] Implement `TemplateManager` in `ldm_core/handlers/workspace.py`.
-- [ ] Implement directory creation and asset copying logic.
+- [ ] Scaffold `keycloak-sso` archetype directory.
+- [ ] Create `compose-overlay.yml` for Keycloak service.
+- [ ] Provide `realm-export.json` and Liferay OpenID Connect OSGi configs.
 
-### Phase 4: Interactive Prompts
+### Phase 4: Archetype Implementation (Clustered)
 
-- [ ] Add metadata collection sequence (project name, Liferay version, database).
-- [ ] Integrate prompts with the scaffolding logic.
-
-### Phase 5: Documentation Generation
-
-- [ ] Implement `README.md` and `setup.md` generation.
-- [ ] Verify template-based documentation injection.
-
----
+- [ ] Scaffold `clustered` archetype directory.
+- [ ] Create `compose-overlay.yml` for secondary Liferay nodes and Traefik sticky sessions.
+- [ ] Provide JGroups `TCPPING` OSGi configurations.
 
 ## 5. Verification & Testing (Definition of Done)
 
-- [ ] Run `ldm init my-new-project` and follow the prompts.
-- [ ] Verify that the folder structure matches the selected template (e.g., scaffolds from "Basic" template).
-- [ ] Verify that the `.liferay-docker.meta` file is correctly populated.
-- [ ] Verify that the new project passes `ldm doctor`.
-- [ ] Verify that running `ldm run` in the new project works without further manual configuration.
+- [ ] `ldm init test-ext --db external` successfully prompts for JDBC and generates a stack without a local DB.
+- [ ] `ldm init test-sso --archetype keycloak-sso` successfully boots Liferay + Keycloak with SSO enabled.
+- [ ] `ldm init test-cluster --archetype clustered` successfully boots multiple nodes with shared storage and Traefik load balancing.

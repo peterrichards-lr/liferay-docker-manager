@@ -1,0 +1,36 @@
+{
+  "realm": "liferay",
+  "enabled": true,
+  "users": [
+    {
+      "username": "test",
+      "enabled": true,
+      "email": "test@liferay.com",
+      "firstName": "Test",
+      "lastName": "Test",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "test",
+          "temporary": false
+        }
+      ]
+    }
+  ],
+  "clients": [
+    {
+      "clientId": "liferay-client",
+      "enabled": true,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "secret",  // pragma: allowlist secret
+      "redirectUris": [
+        "*"
+      ],
+      "webOrigins": [
+        "*"
+      ],
+      "publicClient": false,
+      "protocol": "openid-connect"
+    }
+  ]
+}

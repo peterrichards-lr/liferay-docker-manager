@@ -383,6 +383,7 @@ class TestRuntime(unittest.TestCase):
             self.handler.args.host_name = None
             self.handler.args.tag = "2026.q1.4-lts"
             self.handler.args.samples = False
+            self.handler.args.archetype = None
 
             self.handler.cmd_run("test-project")
 
@@ -457,6 +458,7 @@ class TestRuntime(unittest.TestCase):
                 self.handler.args.host_name = None
                 self.handler.args.no_up = False
                 self.handler.args.sidecar = False
+                self.handler.args.archetype = None
                 self.handler.cmd_run("test-samples")
 
                 # Verify sync_stack was called twice
@@ -500,6 +502,7 @@ class TestRuntime(unittest.TestCase):
             self.handler.args.jvm_args = None
             self.handler.args.port = None
             self.handler.args.snapshot = None
+            self.handler.args.archetype = None
 
             # The test checks that we don't die and discover_latest_tag is called
             self.handler.cmd_run("test")
@@ -540,6 +543,7 @@ class TestRuntime(unittest.TestCase):
             self.handler.args.jvm_args = None
             self.handler.args.port = None
             self.handler.args.snapshot = None
+            self.handler.args.archetype = None
 
             self.handler.cmd_run("test")
 
@@ -578,6 +582,7 @@ class TestRuntime(unittest.TestCase):
             self.handler.args.jvm_args = None
             self.handler.args.port = None
             self.handler.args.snapshot = None
+            self.handler.args.archetype = None
 
             # Scenario 1: Tag is invalid -> should trigger warning
             mock_validate.return_value = False
