@@ -601,6 +601,72 @@ class TestRuntime(unittest.TestCase):
                 self.assertNotIn("official Liferay releases", call[0][0])
 
     @patch("ldm_core.ui.UI.die")
+    def test_cmd_run_invalid_archetype(self, mock_die):
+        """Verify that an invalid archetype dies."""
+        mock_die.side_effect = SystemExit
+        with (
+            patch.object(
+                self.handler, "detect_project_path", return_value=self.tmp_dir
+            ),
+            patch.object(
+                self.handler,
+                "setup_paths",
+                return_value={"root": self.tmp_dir, "data": self.tmp_dir / "data"},
+            ),
+            patch.object(self.handler, "read_meta", return_value={}),
+        ):
+            self.handler.args.project = "test"
+            self.handler.args.archetype = "does-not-exist"
+            self.handler.args.db = None
+            with self.assertRaises(SystemExit):
+                self.handler.cmd_run("test")
+            mock_die.assert_called_once()
+
+    def test_cmd_run_valid_archetype(self):
+        """Verify that a valid archetype sets the project meta."""
+        with (
+            patch.object(
+                self.handler, "detect_project_path", return_value=self.tmp_dir
+            ),
+            patch.object(
+                self.handler,
+                "setup_paths",
+                return_value={"root": self.tmp_dir, "data": self.tmp_dir / "data"},
+            ),
+            patch.object(self.handler, "read_meta", return_value={}),
+            patch.object(self.handler, "write_meta") as mock_write,
+            patch.object(self.handler, "_pre_flight_checks", return_value=8080),
+            patch.object(self.handler, "verify_runtime_environment"),
+            patch.object(self.handler.handler, "sync_stack"),
+            patch("ldm_core.constants.SCRIPT_DIR", self.tmp_dir),
+        ):
+            # Scaffold fake archetype dir
+            arch_dir = (
+                self.tmp_dir / "ldm_core" / "resources" / "archetypes" / "keycloak-sso"
+            )
+            arch_dir.mkdir(parents=True, exist_ok=True)
+
+            self.handler.args.project = "test"
+            self.handler.args.archetype = "keycloak-sso"
+            self.handler.args.db = None
+            self.handler.args.tag = "latest"
+            self.handler.args.tag_latest = False
+            self.handler.args.tag_prefix = None
+            self.handler.args.release_type = None
+            self.handler.args.no_up = True
+            self.handler.args.samples = False
+            self.handler.args.host_name = None
+            self.handler.args.jvm_args = None
+            self.handler.args.port = None
+            self.handler.args.snapshot = None
+
+            self.handler.cmd_run("test")
+
+            # Verify the meta update call included the archetype
+            call_args = mock_write.call_args[0][1]
+            self.assertEqual(call_args.get("archetype"), "keycloak-sso")
+
+    @patch("ldm_core.ui.UI.die")
     def test_cmd_run_select_non_interactive_dies(self, mock_die):
         mock_die.side_effect = SystemExit
         self.handler.args.select = True
