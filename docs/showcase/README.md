@@ -6,10 +6,9 @@ Seeing is believing. Check out these short demonstrations of Liferay Docker Mana
 
 Watch how quickly LDM provisions a fully functional Liferay environment, complete with SSL, automatic host file mapping, and an instant fast login token generation.
 
-<video width="100%" controls>
-  <source src="./LDM%20Run%20Command.mp4" type="video/mp4">
-  Your browser does not support the video tag.
-</video>
+<video src="https://github.com/peterrichards-lr/liferay-docker-manager/raw/master/docs/showcase/LDM%20Run%20Command.mp4" width="100%" controls></video>
+
+*[If the video player doesn't load, click here to watch the Fast Provisioning Demo](./LDM%20Run%20Command.mp4)*
 
 ### Transcript: Fast Provisioning
 
@@ -29,10 +28,9 @@ Watch how quickly LDM provisions a fully functional Liferay environment, complet
 
 See how seamlessly LDM pulls backups directly from Liferay Cloud environments (like `prd` or `uat`) and restores them locally, giving you an exact replica for debugging.
 
-<video width="100%" controls>
-  <source src="./LDM%20Cloud%20Hydration.mp4" type="video/mp4">
-  Your browser does not support the video tag.
-</video>
+<video src="https://github.com/peterrichards-lr/liferay-docker-manager/raw/master/docs/showcase/LDM%20Cloud%20Hydration.mp4" width="100%" controls></video>
+
+*[If the video player doesn't load, click here to watch the Cloud Hydration Demo](./LDM%20Cloud%20Hydration.mp4)*
 
 ### Transcript: Cloud Hydration
 
@@ -52,10 +50,9 @@ See how seamlessly LDM pulls backups directly from Liferay Cloud environments (l
 
 Accidentally broke your environment? Watch how easy it is to list existing database and volume snapshots, and instantly roll back to a known good state.
 
-<video width="100%" controls>
-  <source src="./LDM%20Snapshots.mp4" type="video/mp4">
-  Your browser does not support the video tag.
-</video>
+<video src="https://github.com/peterrichards-lr/liferay-docker-manager/raw/master/docs/showcase/LDM%20Snapshots.mp4" width="100%" controls></video>
+
+*[If the video player doesn't load, click here to watch the Snapshots & Restoration Demo](./LDM%20Snapshots.mp4)*
 
 ### Transcript: Snapshots & Restoration
 
