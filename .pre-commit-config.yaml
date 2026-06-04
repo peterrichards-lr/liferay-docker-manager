@@ -75,7 +75,6 @@ repos:
     hooks:
       - id: detect-secrets
         args: ['--baseline', '.secrets.baseline']
-        exclude: 'ldm_core/resources/archetypes/keycloak-sso/keycloak-realm.json'
 
   - repo: https://github.com/Mateusz-Grzelinski/actionlint-py
     rev: v1.7.12.24

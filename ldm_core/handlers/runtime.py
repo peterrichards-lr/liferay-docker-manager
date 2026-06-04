@@ -18,6 +18,45 @@ class RuntimeService(BaseHandler):
         super().__init__(manager.args if manager else None)
         self.manager = manager
 
+    def _generate_keycloak_realm(self, project_root):
+        """Dynamically generates the keycloak-realm.json to avoid tracking secrets in git."""
+        import json
+
+        from ldm_core.utils import safe_write_text
+
+        realm_data = {
+            "realm": "liferay",
+            "enabled": True,
+            "users": [
+                {
+                    "username": "test",
+                    "enabled": True,
+                    "email": "test@liferay.com",
+                    "firstName": "Test",
+                    "lastName": "Test",
+                    "credentials": [
+                        {"type": "password", "value": "test", "temporary": False}
+                    ],
+                }
+            ],
+            "clients": [
+                {
+                    "clientId": "liferay-client",
+                    "enabled": True,
+                    "clientAuthenticatorType": "client-secret",
+                    "secret": "secret",  # pragma: allowlist secret
+                    "redirectUris": ["*"],
+                    "webOrigins": ["*"],
+                    "publicClient": False,
+                    "protocol": "openid-connect",
+                }
+            ],
+        }
+
+        safe_write_text(
+            project_root / "keycloak-realm.json", json.dumps(realm_data, indent=2)
+        )
+
     def cmd_run(self, project_id=None, is_restart=False):
         """Main entry point for starting or updating a project stack."""
         total_start = time.time()
@@ -469,6 +508,9 @@ class RuntimeService(BaseHandler):
                                 shutil.copytree(item, dest, dirs_exist_ok=True)
                             else:
                                 shutil.copy2(item, dest)
+
+                    if project_meta["archetype"] == "keycloak-sso":
+                        self._generate_keycloak_realm(paths["root"])
 
             init_success = True
             self.manager.register_project(
