@@ -342,56 +342,58 @@ class TestRuntime(unittest.TestCase):
     def test_cmd_run_seeding_persistence(self, mock_gethost):
         mock_gethost.return_value = "127.0.0.1"
         # Case: New project initialization with seeding
-        root = Path("test-project")
-        all_paths = {
-            "root": root,
-            "data": root / "data",
-            "deploy": root / "deploy",
-            "files": root / "files",
-            "state": root / "osgi" / "state",
-            "cx": root / "osgi" / "client-extensions",
-            "ce_dir": root / "osgi" / "client-extensions",
-            "scripts": root / "scripts",
-            "configs": root / "osgi" / "configs",
-            "modules": root / "osgi" / "modules",
-            "backups": root / "snapshots",
-            "portal_log4j": root / "osgi" / "log4j",
-            "logs": root / "logs",
-            "compose": root / "docker-compose.yml",
-            "common": Path("/tmp/common"),
-        }
-
-        with (
-            patch.object(self.handler, "detect_project_path") as mock_detect,
-            patch.object(self.handler, "setup_paths") as mock_setup,
-            patch.object(self.handler, "read_meta") as mock_read,
-            patch.object(self.handler, "_ensure_seeded") as mock_seed,
-            patch.object(self.handler, "write_meta") as mock_write,
-            patch.object(self.handler, "verify_runtime_environment"),
-            patch.object(self.handler, "run_command"),
-        ):
-            mock_detect.return_value = root
-            mock_setup.return_value = all_paths
-            mock_read.return_value = {
-                "host_name": "localhost",
-                "container_name": "test-project",
+        with tempfile.TemporaryDirectory() as tmp_root:
+            root = Path(tmp_root)
+            all_paths = {
+                "root": root,
+                "data": root / "data",
+                "deploy": root / "deploy",
+                "files": root / "files",
+                "state": root / "osgi" / "state",
+                "cx": root / "osgi" / "client-extensions",
+                "ce_dir": root / "osgi" / "client-extensions",
+                "scripts": root / "scripts",
+                "configs": root / "osgi" / "configs",
+                "modules": root / "osgi" / "modules",
+                "backups": root / "snapshots",
+                "portal_log4j": root / "osgi" / "log4j",
+                "logs": root / "logs",
+                "compose": root / "docker-compose.yml",
+                "common": Path("/tmp/common"),
             }
-            mock_seed.return_value = True  # Seed successfully downloaded
 
-            # Force no_up to avoid full stack sync
-            self.handler.args.no_up = True
-            self.handler.args.host_name = None
-            self.handler.args.tag = "2026.q1.4-lts"
-            self.handler.args.samples = False
-            self.handler.args.archetype = None
+            with (
+                patch.object(self.handler, "detect_project_path") as mock_detect,
+                patch.object(self.handler, "setup_paths") as mock_setup,
+                patch.object(self.handler, "read_meta") as mock_read,
+                patch.object(self.handler, "_ensure_seeded") as mock_seed,
+                patch.object(self.handler, "write_meta") as mock_write,
+                patch.object(self.handler, "verify_runtime_environment"),
+                patch.object(self.handler, "run_command"),
+                patch.object(self.handler.handler, "sync_stack"),
+            ):
+                mock_detect.return_value = root
+                mock_setup.return_value = all_paths
+                mock_read.return_value = {
+                    "host_name": "localhost",
+                    "container_name": "test-project",
+                }
+                mock_seed.return_value = True  # Seed successfully downloaded
 
-            self.handler.cmd_run("test-project")
+                # Force no_up to avoid full stack sync
+                self.handler.args.no_up = True
+                self.handler.args.host_name = None
+                self.handler.args.tag = "2026.q1.4-lts"
+                self.handler.args.samples = False
+                self.handler.args.archetype = None
 
-            # Verify that write_meta was called with the seeded status
-            self.assertTrue(mock_write.called)
-            written_meta = mock_write.call_args[0][1]
-            self.assertEqual(str(written_meta.get("seeded")).lower(), "true")
-            self.assertIn("seed_version", written_meta)
+                self.handler.cmd_run("test-project")
+
+                # Verify that write_meta was called with the seeded status
+                self.assertTrue(mock_write.called)
+                written_meta = mock_write.call_args[0][1]
+                self.assertEqual(str(written_meta.get("seeded")).lower(), "true")
+                self.assertIn("seed_version", written_meta)
 
     @patch("socket.gethostbyname")
     def test_cmd_run_duplicate_orchestration_suppressed(self, mock_gethost):
