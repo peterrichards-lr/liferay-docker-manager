@@ -18,6 +18,35 @@ LDM prioritizes an **exact match** for your environment (e.g., `mysql` + `sideca
 
 ---
 
+## 🔗 External Database Connection
+
+If you want to use an external database (such as a shared development DB, an RDS instance, or a standalone local MySQL/PostgreSQL server) instead of generating an isolated database container inside your project's stack, you can use the `--db external` flag during initialization.
+
+```bash
+ldm init my-project --db external
+```
+
+### Interactive DB Wizard
+
+When this flag is detected, LDM runs an interactive wizard that prompts you for:
+
+1. **Database Type** (PostgreSQL, MySQL, Oracle, SQL Server, etc.)
+2. **JDBC Host** (e.g. `192.168.1.50` or `db.internal.network`)
+3. **JDBC Port** (Defaults based on type: 5432, 3306, 1521, 1433)
+4. **Database Name** (e.g., `lportal` or your custom schema)
+5. **Database Username & Password**
+
+### What Happens Under the Hood?
+
+- LDM formats your answers into standard Liferay JDBC properties (e.g. `jdbc.default.url`, `jdbc.default.driverClassName`) and securely appends them directly into your project's `portal-ext.properties`.
+- It completely excludes the `db` service block from the generated `docker-compose.yml`.
+- Liferay boots up normally, but opens a connection out to your specified external database instead of looking for a local container on the Docker bridge network.
+
+> [!WARNING]
+> Since the database lives outside of LDM's control, features like automatic **Seeding**, `reset db`, and complete `snapshot` backups will not capture the state of your external database.
+
+---
+
 ## `snapshot` & `restore`
 
 Backup and recover project states, including files, DB, and search indices.
