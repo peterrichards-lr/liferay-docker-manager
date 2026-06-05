@@ -2,6 +2,7 @@ import os
 
 from ldm_core.constants import RUN_ATTRS
 from ldm_core.defaults import DefaultsManager
+from ldm_core.handlers.ai import AiService
 from ldm_core.handlers.assets import AssetService
 from ldm_core.handlers.base import BaseHandler
 from ldm_core.handlers.cloud import CloudService
@@ -32,6 +33,7 @@ class LiferayManager(
         self.defaults = DefaultsManager()
 
         # Services via Composition
+        self.ai = AiService(self)
         self.license = LicenseService(self)
         self.assets = AssetService(self)
         self.config = ConfigService(self)
@@ -161,6 +163,9 @@ class LiferayManager(
 
     def cmd_mcp(self, *args, **kwargs):
         return self.mcp.cmd_mcp(*args, **kwargs)
+
+    def cmd_ai(self, *args, **kwargs):
+        return self.ai.cmd_ai(*args, **kwargs)
 
     def cmd_completion(self, *args, **kwargs):
         return self.diagnostics.cmd_completion(*args, **kwargs)

@@ -750,6 +750,14 @@ def get_parser():
         help="Starts the Model Context Protocol (MCP) JSON-RPC server",
     )
 
+    # Command: ai
+    ai = subparsers.add_parser(
+        "ai",
+        parents=[base_sub_parent],
+        help="Start an interactive troubleshooting session with LDM AI",
+    )
+    ai.add_argument("query", help="What do you want to ask LDM AI?")
+
     # ==================== NAMESPACES ====================
 
     # Namespace: infra
@@ -1235,6 +1243,7 @@ def main():
             args.backup_path, getattr(args, "project", None)
         ),
         ("mcp", None): manager.cmd_mcp,
+        ("ai", None): lambda: manager.cmd_ai(args.query),
         ("import", None): lambda: manager.workspace.cmd_import(args.source),
         ("init-from", None): lambda: manager.workspace.cmd_init_from(args.source),
         ("monitor", None): lambda: manager.workspace.cmd_monitor(args.source),
