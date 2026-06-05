@@ -485,7 +485,11 @@ class TestRuntime(unittest.TestCase):
             patch.object(
                 self.handler,
                 "setup_paths",
-                return_value={"root": self.tmp_dir, "data": self.tmp_dir / "data"},
+                return_value={
+                    "root": self.tmp_dir,
+                    "data": self.tmp_dir / "data",
+                    "state": self.tmp_dir / "osgi" / "state",
+                },
             ),
             patch.object(self.handler, "read_meta", return_value={}),
             patch.object(self.handler, "_pre_flight_checks", return_value=8080),
@@ -524,7 +528,11 @@ class TestRuntime(unittest.TestCase):
             patch.object(
                 self.handler,
                 "setup_paths",
-                return_value={"root": self.tmp_dir, "data": self.tmp_dir / "data"},
+                return_value={
+                    "root": self.tmp_dir,
+                    "data": self.tmp_dir / "data",
+                    "state": self.tmp_dir / "osgi" / "state",
+                },
             ),
             patch.object(self.handler, "read_meta", return_value={}),
             patch.object(self.handler, "_pre_flight_checks", return_value=8080),
@@ -562,7 +570,11 @@ class TestRuntime(unittest.TestCase):
             patch.object(
                 self.handler,
                 "setup_paths",
-                return_value={"root": self.tmp_dir, "data": self.tmp_dir / "data"},
+                return_value={
+                    "root": self.tmp_dir,
+                    "data": self.tmp_dir / "data",
+                    "state": self.tmp_dir / "osgi" / "state",
+                },
             ),
             patch.object(
                 self.handler, "read_meta", return_value={"tag": "2026.q1.6-lts"}
@@ -613,7 +625,11 @@ class TestRuntime(unittest.TestCase):
             patch.object(
                 self.handler,
                 "setup_paths",
-                return_value={"root": self.tmp_dir, "data": self.tmp_dir / "data"},
+                return_value={
+                    "root": self.tmp_dir,
+                    "data": self.tmp_dir / "data",
+                    "state": self.tmp_dir / "osgi" / "state",
+                },
             ),
             patch.object(self.handler, "read_meta", return_value={}),
         ):
@@ -633,7 +649,11 @@ class TestRuntime(unittest.TestCase):
             patch.object(
                 self.handler,
                 "setup_paths",
-                return_value={"root": self.tmp_dir, "data": self.tmp_dir / "data"},
+                return_value={
+                    "root": self.tmp_dir,
+                    "data": self.tmp_dir / "data",
+                    "state": self.tmp_dir / "osgi" / "state",
+                },
             ),
             patch.object(self.handler, "read_meta", return_value={}),
             patch.object(self.handler, "write_meta") as mock_write,
@@ -724,7 +744,11 @@ class TestRuntime(unittest.TestCase):
             patch.object(
                 self.handler,
                 "setup_paths",
-                return_value={"root": self.tmp_dir, "data": self.tmp_dir / "data"},
+                return_value={
+                    "root": self.tmp_dir,
+                    "data": self.tmp_dir / "data",
+                    "state": self.tmp_dir / "osgi" / "state",
+                },
             ),
             patch.object(self.handler.assets, "_fetch_seed", return_value=True),
             patch.object(self.handler, "verify_runtime_environment"),
