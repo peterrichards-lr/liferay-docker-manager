@@ -24,6 +24,7 @@ These flags modify how LDM handles the initial startup of a Liferay environment.
 
 These flags alter the standard startup behavior and networking defaults.
 
+- **`--expose`**: Injects an `ngrok` sidecar container into your stack to expose your local Liferay instance to the public internet securely over HTTPS. It requires a free ngrok Auth Token, which LDM will prompt for once and save globally. Perfect for testing webhooks, SaaS integrations, or sharing your local dev environment.
 - **`--no-up`**: Scaffolds the project folder and generates configurations, but skips starting the Docker containers. (Similar to `ldm init`).
 - **`--no-wait`**: Skips the readiness gating (health checks) after container startup, returning control to the terminal immediately.
 - **`--timeout <seconds>`**: Overrides the maximum wait time for health checks (default is 900 seconds).

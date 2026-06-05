@@ -131,6 +131,9 @@ ldm run demo --samples
 # Auto-open the browser after startup
 ldm run demo --open
 
+# Start an ngrok tunnel to expose Liferay to the public internet
+ldm run demo --expose
+
 # Boot a 2-node Liferay cluster in one command
 ldm run demo --scale liferay=2
 

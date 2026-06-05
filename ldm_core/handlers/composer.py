@@ -4,7 +4,6 @@ import os
 import platform
 from pathlib import Path
 
-from ldm_core.ui import UI
 from ldm_core.utils import dict_to_yaml, resolve_dependency_version
 
 
@@ -120,6 +119,30 @@ class ComposerService:
             paths, meta, host_name, project_name, ssl_enabled
         )
         services.update(ext_services)
+
+        is_expose = (
+            getattr(self.manager.args, "expose", False) is True
+            or str(meta.get("expose", "false")).lower() == "true"
+        )
+        if is_expose:
+            auth_token = self.manager.config.get_ngrok_auth_token()
+            if auth_token:
+                services["ngrok"] = {
+                    "image": "ngrok/ngrok:latest",
+                    "networks": ["liferay-net"],
+                    "environment": [f"NGROK_AUTHTOKEN={auth_token}"],
+                    "command": [
+                        "http",
+                        "https://proxy:443",
+                        f"--host-header={host_name}",
+                    ],
+                }
+            else:
+                from ldm_core.ui import UI
+
+                UI.warning(
+                    "ngrok authtoken not found, ngrok service will not be started."
+                )
 
         compose = {
             "services": services,
