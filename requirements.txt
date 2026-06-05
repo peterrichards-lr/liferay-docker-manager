@@ -3,3 +3,4 @@ pyobjc-framework-FSEvents; sys_platform == 'darwin'
 requests==2.34.2
 PyYAML==6.0.3
 argcomplete==3.6.3
+mcp==1.2.0
