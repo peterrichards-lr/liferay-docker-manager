@@ -10,7 +10,7 @@ This registry tracks the status and priority of independent development tracks f
 | `scenario-packs` | Shared Scenario Packs | High | 📝 Planned | [Plan](./tracks/scenario-packs/plan.md) |
 | `ai-orchestration` | AI-Assisted Orchestration (`ldm ai`) | Medium | 📝 Planned | [Plan](./tracks/ai-orchestration/plan.md) |
 | `cli-namespacing` | CLI Namespacing | Low | 📝 Planned | [Plan](./tracks/cli-namespacing/plan.md) |
-| `multi-os-e2e` | Multi-OS E2E Matrix & JVM | Medium | 📝 Planned | [Plan](./tracks/multi-os-e2e/plan.md) |
+| `multi-os-e2e` | Multi-OS E2E Matrix & JVM | Low (Blocked) | 📝 Planned | [Plan](./tracks/multi-os-e2e/plan.md) |
 | `cloud-push` | Cloud Push (`ldm cloud-push`) | **High** | 📝 Planned | [Plan](./tracks/cloud-push/plan.md) |
 
 ---
