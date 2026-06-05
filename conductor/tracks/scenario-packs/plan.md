@@ -1,5 +1,18 @@
 # Implementation Plan: Shared Scenario Packs
 
+## 🛑 Value Assessment (Status: Parked)
+
+*This track has been parked temporarily to prioritize other features, but its long-term value is recognized.*
+
+While users can theoretically share environments today by sending two separate files (a snapshot archive and a zipped client-extensions folder), doing so manually introduces significant friction and risk:
+
+1. **State Drift Prevention:** Liferay environments are highly stateful. Data in the database (e.g., Object definitions) is tightly coupled to code in the filesystem (e.g., Custom Element client extensions). Sending them separately makes it easy to accidentally mix an older snapshot with newer code, breaking the demo. A Scenario Pack guarantees the data and code are locked together in a single, versioned, immutable artifact (`.ldm-scenario`).
+2. **"Zero-Instruction" UX:** Sharing two files requires the recipient to manually create folders, place the files correctly, remember the exact Liferay version tag, and run a complex import command. With a Scenario Pack, the recipient only needs to run `ldm play demo.ldm-scenario`. LDM automatically parses the manifest, provisions the correct Liferay version, hydrates the data, injects the code, and boots the environment.
+
+*Next Steps:* When revived, this track will focus on building the `ldm pack` and `ldm play` commands to handle this automated extraction and scaffolding.
+
+---
+
 ## 1. Objective
 
 Create a formal specification for portable "Scenario Packs" that bundle a database snapshot, client extensions, and configuration into a single, distributable archive.
