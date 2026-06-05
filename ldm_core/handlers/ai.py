@@ -172,9 +172,7 @@ class AiService(BaseHandler):
         for part in message.get("parts", []):
             if "text" in part:
                 print(f"\n{UI.BOLD}{UI.CYAN}LDM AI:{UI.COLOR_OFF}\n")
-                print(
-                    UI.redact(part["text"])
-                )  # lgtm [py/clear-text-logging-sensitive-data]
+                print(UI.redact(part["text"]))  # fmt: skip # lgtm [py/clear-text-logging-sensitive-data]
 
     def cmd_ai(self, query):
         """Entry point for the ldm ai command."""

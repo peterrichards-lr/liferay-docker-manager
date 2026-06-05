@@ -91,9 +91,7 @@ class UI:
             ):
                 out.encode(file.encoding)
             # Try printing with the current encoding
-            print(
-                out, file=file, flush=True
-            )  # lgtm [py/clear-text-logging-sensitive-data]
+            print(out, file=file, flush=True)  # fmt: skip # lgtm [py/clear-text-logging-sensitive-data]
         except (UnicodeEncodeError, OSError):
             # Fallback for old Windows consoles (CP1252) or problematic streams
             # Replace known problematic symbols with ASCII equivalents
@@ -110,9 +108,7 @@ class UI:
             )
             # Final safety wash
             safe_out = safe_out.encode("ascii", "replace").decode("ascii")
-            print(
-                safe_out, file=file, flush=True
-            )  # lgtm [py/clear-text-logging-sensitive-data]
+            print(safe_out, file=file, flush=True)  # fmt: skip # lgtm [py/clear-text-logging-sensitive-data]
 
     class Spinner:
         """A simple animated spinner context manager."""
