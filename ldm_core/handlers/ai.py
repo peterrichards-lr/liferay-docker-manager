@@ -174,7 +174,7 @@ class AiService(BaseHandler):
                 print(f"\n{UI.BOLD}{UI.CYAN}LDM AI:{UI.COLOR_OFF}\n")
                 print(
                     UI.redact(part["text"])
-                )  # codeql[py/clear-text-logging-sensitive-data]
+                )  # lgtm [py/clear-text-logging-sensitive-data]
 
     def cmd_ai(self, query):
         """Entry point for the ldm ai command."""
