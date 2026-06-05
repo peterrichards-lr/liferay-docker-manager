@@ -112,6 +112,15 @@ def get_config(project_id: str) -> str:
     for r in roots:
         path = r["path"]
         meta = _manager.read_meta(path)
+
+        # Sanitize metadata passwords and secrets
+        sanitized_meta = {}
+        for k, v in meta.items():
+            if any(s in k.lower() for s in ["pass", "secret", "token", "key", "auth"]):
+                sanitized_meta[k] = "[REDACTED]"
+            else:
+                sanitized_meta[k] = v
+
         name = (
             meta.get("liferay_container_name")
             or meta.get("container_name")
@@ -119,12 +128,23 @@ def get_config(project_id: str) -> str:
         )
         if name == project_id:
             config_data = {
-                "metadata": meta,
+                "metadata": sanitized_meta,
             }
             # Try to grab portal-ext.properties if it exists
             portal_ext = path / "common" / "portal-ext.properties"
             if portal_ext.exists():
-                config_data["portal-ext"] = portal_ext.read_text(errors="ignore")
+                content = portal_ext.read_text(errors="ignore")
+                props = _manager.config._get_properties(content)
+                sanitized_props = {}
+                for k, v in props.items():
+                    if any(
+                        s in k.lower()
+                        for s in ["password", "secret", "token", "key", "auth"]
+                    ):
+                        sanitized_props[k] = "[REDACTED]"
+                    else:
+                        sanitized_props[k] = v
+                config_data["portal-ext"] = sanitized_props  # type: ignore[assignment]
 
             return json.dumps(config_data, indent=2)
 
