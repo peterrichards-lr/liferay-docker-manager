@@ -62,6 +62,16 @@ def get_projects() -> str:
 @mcp_server.tool()
 def get_logs(project_id: str, lines: int = 200) -> str:
     """Retrieves the recent logs for a specific Liferay project container."""
+    import re
+
+    if not re.match(r"^[a-zA-Z0-9_-]+$", str(project_id)):
+        return "Error: Invalid project ID format."
+
+    try:
+        lines_int = int(lines)
+    except ValueError:
+        return "Error: lines must be an integer."
+
     if not _manager:
         return "Error: Manager not initialized"
 
@@ -86,7 +96,7 @@ def get_logs(project_id: str, lines: int = 200) -> str:
         return f"Error: Project '{project_id}' not found."
 
     logs = run_command(
-        ["docker", "logs", "--tail", str(lines), container_name],
+        ["docker", "logs", "--tail", str(lines_int), container_name],
         check=False,
     )
     return logs or "No logs available or container not running."
