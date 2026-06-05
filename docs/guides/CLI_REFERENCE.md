@@ -162,6 +162,18 @@ Initialize project scaffolding (creating `.liferay-docker.meta`, `portal-ext.pro
 ldm init my-project --tag 2024.q4.0 --db mysql
 ```
 
+#### External Database Integration
+
+LDM supports connecting your local Liferay instance to an external database (e.g., a shared development database or a standalone local database server) instead of running a database container within the project's Docker Compose stack.
+
+To initialize a project with an external database:
+
+```bash
+ldm init my-project --db external
+```
+
+When you use `--db external`, LDM will launch an interactive wizard to gather your JDBC connection details (Host, Port, Database Name, Username, Password) and automatically generate the necessary properties in your `portal-ext.properties`. The database service container will be entirely omitted from the generated stack.
+
 #### SSL Defaults (New Projects)
 
 LDM uses smarter defaults for SSL based on your hostname. When a custom `--host-name` is used, SSL is enabled by default to support modern Liferay features like Client Extensions.
