@@ -77,7 +77,7 @@ def get_logs(project_id: str, lines: int = 200) -> str:
 
     roots = _manager.find_dxp_roots()
     project_path = None
-    container_name = project_id
+    container_name = None
 
     for r in roots:
         path = r["path"]
@@ -89,10 +89,10 @@ def get_logs(project_id: str, lines: int = 200) -> str:
         )
         if name == project_id:
             project_path = path
-            container_name = name
+            container_name = str(name)
             break
 
-    if not project_path:
+    if not project_path or not container_name:
         return f"Error: Project '{project_id}' not found."
 
     logs = run_command(
