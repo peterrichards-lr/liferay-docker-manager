@@ -6,7 +6,7 @@ This registry tracks the status and priority of independent development tracks f
 | :--- | :--- | :--- | :--- | :--- |
 | `guided-onboarding` | Extensible Stack Archetypes | P1 | Completed | [Plan](./tracks/guided-onboarding/plan.md) |
 | `visual-dashboard` | Visual Health Dashboard | Medium | 📝 Planned | [Plan](./tracks/visual-dashboard/plan.md) |
-| `osgi-performance` | OSGi State Persistence | **High** | 📝 Planned | [Plan](./tracks/osgi-performance/plan.md) |
+| `osgi-performance` | OSGi State Persistence | **High** | Completed | [Plan](./tracks/osgi-performance/plan.md) |
 | `scenario-packs` | Shared Scenario Packs | High | 📝 Planned | [Plan](./tracks/scenario-packs/plan.md) |
 | `ai-orchestration` | AI-Assisted Orchestration (`ldm ai`) | Medium | 📝 Planned | [Plan](./tracks/ai-orchestration/plan.md) |
 | `cli-namespacing` | CLI Namespacing | Low | 📝 Planned | [Plan](./tracks/cli-namespacing/plan.md) |
