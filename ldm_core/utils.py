@@ -731,6 +731,9 @@ def discover_latest_tag(
         print("Initial tag discovery (this may take a some seconds)...")
     start_time = time.time()
 
+    if prefix_filter:
+        prefix_filter = prefix_filter.lower()
+
     # Strategy:
     # 1. Fetch from Liferay Product Info (CDN) as a robust secondary/fast source
     from ldm_core.constants import LIFERAY_PRODUCT_INFO_URL
@@ -793,6 +796,9 @@ def discover_latest_tag(
             # HTML listings usually don't have "next" pages in the same way
             next_url = None
 
+        if page == 1:
+            current_page_tags.extend(cdn_tags)
+
         for name in current_page_tags:
             # 1. Local prefix check
             if prefix_filter and not name.startswith(prefix_filter):
@@ -812,8 +818,8 @@ def discover_latest_tag(
 
         url = next_url
 
-    # Merge and deduplicate with CDN tags
-    tags = list(set(tags + cdn_tags))
+    # Deduplicate tags
+    tags = list(set(tags))
 
     duration = time.time() - start_time
     if verbose:
