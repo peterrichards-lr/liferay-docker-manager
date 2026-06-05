@@ -70,6 +70,11 @@ def api_projects():
 
 @app.route("/api/logs/<project_name>")
 def api_logs(project_name):
+    import re
+
+    if not re.match(r"^[a-zA-Z0-9_-]+$", project_name):
+        return jsonify({"error": "Invalid project name format"}), 400
+
     manager = app.config["MANAGER"]
     # Verify the project exists
     roots = manager.find_dxp_roots()
