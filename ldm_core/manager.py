@@ -7,6 +7,7 @@ from ldm_core.handlers.base import BaseHandler
 from ldm_core.handlers.cloud import CloudService
 from ldm_core.handlers.composer import ComposerService
 from ldm_core.handlers.config import ConfigService
+from ldm_core.handlers.dashboard import DashboardService
 from ldm_core.handlers.dev import DevService
 from ldm_core.handlers.diagnostics import DiagnosticsService
 from ldm_core.handlers.infra import InfraService
@@ -34,6 +35,7 @@ class LiferayManager(
         self.license = LicenseService(self)
         self.assets = AssetService(self)
         self.config = ConfigService(self)
+        self.dashboard = DashboardService(self)
         self.dev = DevService(self)
         self.infra = InfraService(self)
         self.cloud = CloudService(self)
@@ -156,6 +158,9 @@ class LiferayManager(
 
     def cmd_status(self, *args, **kwargs):
         return self.diagnostics.cmd_status(*args, **kwargs)
+
+    def cmd_dashboard(self, *args, **kwargs):
+        return self.dashboard.cmd_dashboard(*args, **kwargs)
 
     def cmd_completion(self, *args, **kwargs):
         return self.diagnostics.cmd_completion(*args, **kwargs)
