@@ -79,7 +79,7 @@ def api_logs(project_name):
     # Verify the project exists
     roots = manager.find_dxp_roots()
     project_path = None
-    container_name = project_name
+    container_name = None
 
     for r in roots:
         path = r["path"]
@@ -91,10 +91,10 @@ def api_logs(project_name):
         )
         if name == project_name:
             project_path = path
-            container_name = name
+            container_name = str(name)
             break
 
-    if not project_path:
+    if not project_path or not container_name:
         return jsonify({"error": "Project not found"}), 404
 
     logs = run_command(
