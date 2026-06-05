@@ -1,49 +1,49 @@
-# Implementation Plan: AI-Assisted Orchestration (`ldm ai`)
+# Implementation Plan: AI-Assisted Orchestration (`ldm ai` & `ldm mcp`)
 
 ## 1. Objective
 
-Integrate a specialized AI handler (Gemini-powered) to provide interactive help, troubleshooting, and configuration generation within LDM.
+Provide intelligent, context-aware troubleshooting and orchestration for Liferay Docker environments using a dual-layer architecture: an open Model Context Protocol (MCP) server for IDE integration, and a built-in CLI chat client (`ldm ai`) for terminal users.
 
-## 2. Key Requirements
+## 2. Dual-Layer Architecture
+
+Instead of tightly coupling LLM API calls directly into the CLI commands, LDM will decouple the "knowledge" from the "chat interface".
+
+### Layer 1: The MCP Server (`ldm mcp`)
+
+LDM will expose a standard MCP JSON-RPC Server over `stdio` or HTTP. This acts as a read-only data layer that safely exposes the LDM environment to any AI tool (like Cursor, Claude Desktop, or Windsurf).
+
+**Exposed MCP Tools:**
+
+- `get_projects()`: Lists all managed workspaces.
+- `get_health(project_id)`: Executes `ldm doctor` logic and returns diagnostic JSON.
+- `get_logs(project_id, lines=200)`: Retrieves the tail of the Liferay container logs.
+- `get_config(project_id)`: Retrieves the project metadata and `portal-ext.properties`.
+
+### Layer 2: The CLI Client (`ldm ai`)
+
+A built-in chat session for Sales Engineers and developers who prefer the terminal.
+
+- It acts as an MCP Client connecting to its own `ldm mcp` server.
+- It manages the Gemini API key (`~/.ldmrc`).
+- It uses a lightweight REST client to send user queries and the MCP tool outputs to the Gemini 2.5 Flash API.
+- It streams the response back to the terminal.
+
+## 3. Key Requirements
 
 - **Interactive Help**: Ask questions like "How do I configure LDAP?" and get LDM-specific instructions.
-- **Context-Aware Troubleshooting**: Automatically inject `ldm doctor` reports and project metadata into AI queries.
-- **Recipe Generation**: Ask the AI to generate `portal-ext.properties` or `LCP.json` configurations based on natural language descriptions.
-- **Zero-Copy Support**: Directly fix small configuration issues identified by the AI (with user confirmation).
-
-## 3. Technical Design
-
-### AI Handler (`ldm_core/handlers/ai.py`)
-
-- Implement a `GeminiClient` that communicates with the Google Gemini API.
-- Use a dedicated prompt template that includes LDM architectural mandates and the current project state.
-- Implement "Context Injection" to include `ldm doctor` output, metadata, and logs in the prompt.
-
-### CLI Update (`ldm_core/cli.py`)
-
-- Add `ldm ai` command.
-- Arguments:
-  - `query`: The natural language question or request.
-  - `--doctor`: Explicitly include the full doctor report (default: summary).
-  - `--project`: Focus the AI on a specific project's context.
-
-### Security & Privacy
-
-- **Scrubbing**: Automatically remove sensitive information (passwords, tokens, custom URLs) from the context before sending to the AI.
-- **API Key Management**: Store the Gemini API key in the user's LDM config (`~/.ldm/config.json`).
+- **Context-Aware Troubleshooting**: Ask "Why did my server crash?" and the AI uses MCP tools to fetch the logs and diagnose the issue.
+- **IDE Portability**: Developers can configure their AI code editors to use `ldm mcp` to troubleshoot client extension issues directly in their IDE.
+- **Security**: The MCP server strictly exposes read-only diagnostic tools.
 
 ## 4. Implementation Steps
 
-1. **Step 1: API Integration**: Implement the basic `GeminiClient` and API key management.
-2. **Step 2: Context Gathering**: Create the context injection logic that collects metadata, doctor output, and logs.
-3. **Step 3: Prompt Engineering**: Develop and refine the "LDM Expert" prompt template.
-4. **Step 4: Interactive Command**: Implement the `ldm ai` interactive shell.
-5. **Step 5: Safe Fixes**: Implement the logic to apply AI-suggested file changes (with a diff view and confirmation).
+1. **Step 1: The MCP Server (`ldm_core/handlers/mcp.py`)**: Implement the JSON-RPC interface and expose the diagnostic functions as tools.
+2. **Step 2: API Integration (`ldm_core/handlers/ai.py`)**: Implement a lightweight REST client for the Gemini API that supports tool calling (function calling).
+3. **Step 3: The CLI Wrapper**: Add `ldm mcp` (starts the server) and `ldm ai` (starts the interactive chat session) to `cli.py`.
+4. **Step 4: System Prompts**: Define the internal system prompt that instructs Gemini on how to interpret LDM data and Liferay logs.
 
 ## 5. Verification & Testing
 
-1. Configure an API key: `ldm config gemini_api_key YOUR_KEY`.
-2. Ask a question: `ldm ai "How do I enable SSL for my project?"`.
-3. Ask for a fix: `ldm ai "My Liferay container is crashing, why?"` (verify it analyzes the logs).
-4. Request a configuration: `ldm ai "Generate a portal-ext.properties for a 2-node cluster."`.
-5. Verify that no sensitive data is leaked in the AI context.
+1. **Test MCP**: Connect an external tool (like the official MCP Inspector) to `ldm mcp` and verify it can list projects and fetch logs.
+2. **Test CLI Config**: Configure an API key: `ldm config gemini_api_key YOUR_KEY`.
+3. **Test CLI Chat**: Run `ldm ai "My forge project is crashing, can you look at the logs?"`. Verify the CLI automatically invokes the internal MCP tool, fetches the logs, sends them to Gemini, and prints the analysis.
