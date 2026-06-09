@@ -160,10 +160,12 @@
     - [x] Harden `generate-seeded-states.yml` (least-privilege permissions, caching, update action versions).
     - [x] Align `scheduled-verification.yml` with the virtualenv project mandate.
 
-  - [ ] **OSGi Performance Branch CI Fixes**:
-    - [ ] Pre-pull alpine in `ci.yml` to prevent connection timeouts/rate limits.
-    - [ ] Add `db_type=postgresql` to mock project metadata.
-    - [ ] Use block redirection to resolve ShellCheck SC2129 warnings in `ci.yml`.
+  - [x] **OSGi Performance Branch CI Fixes**:
+    - [x] Pre-pull alpine in `ci.yml` to prevent connection timeouts/rate limits.
+    - [x] Add `db_type=postgresql` to mock project metadata.
+    - [x] Use block redirection to resolve ShellCheck SC2129 warnings in `ci.yml`.
+    - [x] Add unit tests for `persist_osgi` validation in `test_runtime.py`.
+    - [x] Create OSGi state persistence verification shell script `scripts/verify_osgi_persistence.sh`.
 
   - [x] **Verbosity Reduction**:
     - [x] Move inner-loop sync and monitoring logs in `workspace.py` to `UI.detail`.

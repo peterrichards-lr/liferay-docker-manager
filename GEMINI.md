@@ -73,13 +73,17 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
 ### Status
 
 - Merged documentation PR 34 and PR 31 into master.
-- Working on `feature/osgi-performance` branch to resolve a CI smoke-test failure.
+- Resolved CI smoke-test failures, added unit tests for OSGi state persistence, and created `scripts/verify_osgi_persistence.sh` E2E verification script on `feature/osgi-performance`.
 
 ### Plan to resolve OSGi performance branch CI failures
 
-1. **Fix Metadata db_type warning**:
-   - In `.github/workflows/ci.yml`, add `db_type=postgresql` to the `smoke-project/.liferay-docker.meta` metadata file.
-2. **Pre-pull alpine container**:
-   - Add `docker pull alpine || true` to the smoke test step in `.github/workflows/ci.yml` to prevent docker daemon connection / pull timeout failures on alpine image during runtime environment checks.
-3. **Fix ShellCheck warning (SC2129)**:
-   - Combine metadata `echo` redirects inside `.github/workflows/ci.yml` into a block redirection to pass `actionlint` / `shellcheck`.
+1. **Fix Metadata db_type warning** [Completed]:
+   - In `.github/workflows/ci.yml`, added `db_type=postgresql` to the `smoke-project/.liferay-docker.meta` metadata file.
+2. **Pre-pull alpine container** [Completed]:
+   - Added `docker pull alpine || true` to the smoke test step in `.github/workflows/ci.yml`.
+3. **Fix ShellCheck warning (SC2129)** [Completed]:
+   - Combined metadata `echo` redirects inside `.github/workflows/ci.yml` into a block redirection.
+4. **Implement Unit Tests for OSGi State Persistence** [Completed]:
+   - Added `test_cmd_run_persist_osgi_logic` inside `ldm_core/tests/test_runtime.py` to cover tag matches, mismatches, and wiping behavior.
+5. **Create verification shell script** [Completed]:
+   - Added `scripts/verify_osgi_persistence.sh` to boot the stack, measure startup times, extract bundle resolution durations, and verify tag invalidation behavior.
