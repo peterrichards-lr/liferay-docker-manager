@@ -89,14 +89,14 @@ jobs:
           pip install --disable-pip-version-check -e .
 
       - name: Download Ubuntu verification report
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: verification-results-ubuntu
           path: ci-reports/
         continue-on-error: true
 
       - name: Download Fedora verification report
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: verification-results-fedora
           path: ci-reports/
