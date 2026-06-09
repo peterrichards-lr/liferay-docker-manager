@@ -17,6 +17,7 @@ This registry tracks the status and priority of independent development tracks f
 
 ## ✅ Completed Tracks
 
+- **AI-Assisted Orchestration (`ai-orchestration`)**: Exposes an MCP JSON-RPC server over stdio for AI IDEs and integrates a local `ldm ai` client command for troubleshooting stacks.
 - **Polished Diagnostics (`diagnostics-dashboard`)**: Refactored `ldm doctor` to display a concise 3-line RAG status summary dashboard by default with subsystem filtering flags.
 - **Virtual Env Gating (`venv-context-gating`)**: Implemented virtual environment checking in doctor run.
 - **StackHandler Modularization (`stack-refactor`)**: Extracted Liferay stack orchestration, generation, and assets into modular, testable components.
