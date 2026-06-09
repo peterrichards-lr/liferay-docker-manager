@@ -169,7 +169,8 @@
     - [x] Fix port conflict in `verify_osgi_persistence.sh` by using port 8085.
     - [x] Refine log parser and teardown in `verify_osgi_persistence.sh` to support DD-MMM-YYYY formats, use `Starting initial bundles`/`Started web bundles` as OSGi markers, and clear container logs via `down` between runs.
     - [x] Redirect `docker logs` stderr to stdout (`2>&1`) in `verify_osgi_persistence.sh` to capture ready logs and avoid console leakage.
-
+    - [ ] Create `docs/showcase/OSGI_STATE_PERSISTENCE.md` containing performance data and a Mermaid chart.
+    - [ ] Link the new performance page in `docs/showcase/README.md`.
   - [x] **Verbosity Reduction**:
     - [x] Move inner-loop sync and monitoring logs in `workspace.py` to `UI.detail`.
     - [x] Move detailed SQL and archive progress statements in `snapshot.py` to `UI.detail`.

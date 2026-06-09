@@ -59,3 +59,11 @@ See how seamlessly LDM pulls backups directly from Liferay Cloud environments (l
 7. An orchestrated database restore wipes the existing local schema and securely imports the production data.
 8. Virtual host entries are synchronized to `intranet.demo`.
 9. The environment starts up, and the user can browse their locally running, exact replica of the production Intranet site at `https://intranet.demo`.
+
+---
+
+## ⚡ OSGi State Persistence
+
+Minimize boot times on local development environments by persisting the OSGi bundle resolution state across container lifetimes.
+
+See the [OSGi State Persistence Performance Showcase](OSGI_STATE_PERSISTENCE.md) for timing comparisons, speed improvement metrics, and architectural details.

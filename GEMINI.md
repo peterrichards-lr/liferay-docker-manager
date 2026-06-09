@@ -94,3 +94,6 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
    - Use `down` instead of `stop` between Run 1 and Run 2 to clear container logs and prevent log reuse race conditions.
 8. **Redirect stderr of docker logs in verify_osgi_persistence.sh** [Completed]:
    - Redirect stderr to stdout using `2>&1` when dumping container logs to capture Catalina ready logs (which are printed to stderr) and avoid console leakage.
+9. **Document OSGi State Persistence Performance Showcase**:
+   - Create `docs/showcase/OSGI_STATE_PERSISTENCE.md` containing the timing results, business metrics, and a Mermaid visualization.
+   - Update `docs/showcase/README.md` to link to the new performance showcase page.
