@@ -72,13 +72,28 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
 
 ### Status
 
-- Merged Dependabot PR 32 and PR 33 successfully.
-- Resolved CodeQL security alerts on PR 31 (`feature/ai-orchestration`) and merged it successfully into `master`.
-- Cleaned up local workspace and verified master quality gate checks pass.
+- Merged documentation PR 34 and PR 31 into master.
+- Resolved CI smoke-test failures, added unit tests for OSGi state persistence, and created `scripts/verify_osgi_persistence.sh` E2E verification script on `feature/osgi-performance`.
 
-### Plan to update registry and developer docs
+### Plan to resolve OSGi performance branch CI failures
 
-1. **Update tracks registry**:
-   - In `conductor/tracks.md`, mark the `ai-orchestration` track as `Completed` and list it under completed tracks.
-2. **Update contributor documentation**:
-   - In `CONTRIBUTING.md`, document the PR artifact binary testing capability under the Pull Request checklist, making developers aware that executable binaries are automatically compiled for all PRs.
+1. **Fix Metadata db_type warning** [Completed]:
+   - In `.github/workflows/ci.yml`, added `db_type=postgresql` to the `smoke-project/.liferay-docker.meta` metadata file.
+2. **Pre-pull alpine container** [Completed]:
+   - Added `docker pull alpine || true` to the smoke test step in `.github/workflows/ci.yml`.
+3. **Fix ShellCheck warning (SC2129)** [Completed]:
+   - Combined metadata `echo` redirects inside `.github/workflows/ci.yml` into a block redirection.
+4. **Implement Unit Tests for OSGi State Persistence** [Completed]:
+   - Added `test_cmd_run_persist_osgi_logic` inside `ldm_core/tests/test_runtime.py` to cover tag matches, mismatches, and wiping behavior.
+5. **Create verification shell script** [Completed]:
+   - Added `scripts/verify_osgi_persistence.sh` to boot the stack, measure startup times, extract bundle resolution durations, and verify tag invalidation behavior.
+6. **Fix Port conflict in verify_osgi_persistence.sh** [Completed]:
+   - Write `port=8085` into the mock project metadata in the script to avoid binding conflicts on host port 8080.
+7. **Refine Log Parser and Teardown in verify_osgi_persistence.sh** [Completed]:
+   - Update regex to support `DD-MMM-YYYY` formats and search for `Starting initial bundles`/`Started web bundles` as OSGi markers.
+   - Use `down` instead of `stop` between Run 1 and Run 2 to clear container logs and prevent log reuse race conditions.
+8. **Redirect stderr of docker logs in verify_osgi_persistence.sh** [Completed]:
+   - Redirect stderr to stdout using `2>&1` when dumping container logs to capture Catalina ready logs (which are printed to stderr) and avoid console leakage.
+9. **Document OSGi State Persistence Performance Showcase**:
+   - Create `docs/showcase/OSGI_STATE_PERSISTENCE.md` containing the timing results, business metrics, and a Mermaid visualization.
+   - Update `docs/showcase/README.md` to link to the new performance showcase page.
