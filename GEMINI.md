@@ -72,13 +72,14 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
 
 ### Status
 
-- Merged Dependabot PR 32 and PR 33 successfully.
-- Resolved CodeQL security alerts on PR 31 (`feature/ai-orchestration`) and merged it successfully into `master`.
-- Cleaned up local workspace and verified master quality gate checks pass.
+- Merged documentation PR 34 and PR 31 into master.
+- Working on `feature/osgi-performance` branch to resolve a CI smoke-test failure.
 
-### Plan to update registry and developer docs
+### Plan to resolve OSGi performance branch CI failures
 
-1. **Update tracks registry**:
-   - In `conductor/tracks.md`, mark the `ai-orchestration` track as `Completed` and list it under completed tracks.
-2. **Update contributor documentation**:
-   - In `CONTRIBUTING.md`, document the PR artifact binary testing capability under the Pull Request checklist, making developers aware that executable binaries are automatically compiled for all PRs.
+1. **Fix Metadata db_type warning**:
+   - In `.github/workflows/ci.yml`, add `db_type=postgresql` to the `smoke-project/.liferay-docker.meta` metadata file.
+2. **Pre-pull alpine container**:
+   - Add `docker pull alpine || true` to the smoke test step in `.github/workflows/ci.yml` to prevent docker daemon connection / pull timeout failures on alpine image during runtime environment checks.
+3. **Fix ShellCheck warning (SC2129)**:
+   - Combine metadata `echo` redirects inside `.github/workflows/ci.yml` into a block redirection to pass `actionlint` / `shellcheck`.

@@ -160,6 +160,11 @@
     - [x] Harden `generate-seeded-states.yml` (least-privilege permissions, caching, update action versions).
     - [x] Align `scheduled-verification.yml` with the virtualenv project mandate.
 
+  - [ ] **OSGi Performance Branch CI Fixes**:
+    - [ ] Pre-pull alpine in `ci.yml` to prevent connection timeouts/rate limits.
+    - [ ] Add `db_type=postgresql` to mock project metadata.
+    - [ ] Use block redirection to resolve ShellCheck SC2129 warnings in `ci.yml`.
+
   - [x] **Verbosity Reduction**:
     - [x] Move inner-loop sync and monitoring logs in `workspace.py` to `UI.detail`.
     - [x] Move detailed SQL and archive progress statements in `snapshot.py` to `UI.detail`.
