@@ -166,6 +166,9 @@
     - [x] Use block redirection to resolve ShellCheck SC2129 warnings in `ci.yml`.
     - [x] Add unit tests for `persist_osgi` validation in `test_runtime.py`.
     - [x] Create OSGi state persistence verification shell script `scripts/verify_osgi_persistence.sh`.
+    - [x] Fix port conflict in `verify_osgi_persistence.sh` by using port 8085.
+    - [x] Refine log parser and teardown in `verify_osgi_persistence.sh` to support DD-MMM-YYYY formats, use `Starting initial bundles`/`Started web bundles` as OSGi markers, and clear container logs via `down` between runs.
+    - [x] Redirect `docker logs` stderr to stdout (`2>&1`) in `verify_osgi_persistence.sh` to capture ready logs and avoid console leakage.
 
   - [x] **Verbosity Reduction**:
     - [x] Move inner-loop sync and monitoring logs in `workspace.py` to `UI.detail`.

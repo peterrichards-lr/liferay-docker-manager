@@ -87,3 +87,10 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
    - Added `test_cmd_run_persist_osgi_logic` inside `ldm_core/tests/test_runtime.py` to cover tag matches, mismatches, and wiping behavior.
 5. **Create verification shell script** [Completed]:
    - Added `scripts/verify_osgi_persistence.sh` to boot the stack, measure startup times, extract bundle resolution durations, and verify tag invalidation behavior.
+6. **Fix Port conflict in verify_osgi_persistence.sh** [Completed]:
+   - Write `port=8085` into the mock project metadata in the script to avoid binding conflicts on host port 8080.
+7. **Refine Log Parser and Teardown in verify_osgi_persistence.sh** [Completed]:
+   - Update regex to support `DD-MMM-YYYY` formats and search for `Starting initial bundles`/`Started web bundles` as OSGi markers.
+   - Use `down` instead of `stop` between Run 1 and Run 2 to clear container logs and prevent log reuse race conditions.
+8. **Redirect stderr of docker logs in verify_osgi_persistence.sh** [Completed]:
+   - Redirect stderr to stdout using `2>&1` when dumping container logs to capture Catalina ready logs (which are printed to stderr) and avoid console leakage.
