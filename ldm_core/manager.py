@@ -2,6 +2,7 @@ import os
 
 from ldm_core.constants import RUN_ATTRS
 from ldm_core.defaults import DefaultsManager
+from ldm_core.handlers.ai import AiService
 from ldm_core.handlers.assets import AssetService
 from ldm_core.handlers.base import BaseHandler
 from ldm_core.handlers.cloud import CloudService
@@ -11,6 +12,7 @@ from ldm_core.handlers.dev import DevService
 from ldm_core.handlers.diagnostics import DiagnosticsService
 from ldm_core.handlers.infra import InfraService
 from ldm_core.handlers.license import LicenseService
+from ldm_core.handlers.mcp import McpService
 from ldm_core.handlers.runtime import RuntimeService
 from ldm_core.handlers.snapshot import SnapshotService
 from ldm_core.handlers.workspace import WorkspaceService
@@ -31,6 +33,7 @@ class LiferayManager(
         self.defaults = DefaultsManager()
 
         # Services via Composition
+        self.ai = AiService(self)
         self.license = LicenseService(self)
         self.assets = AssetService(self)
         self.config = ConfigService(self)
@@ -38,6 +41,7 @@ class LiferayManager(
         self.infra = InfraService(self)
         self.cloud = CloudService(self)
         self.diagnostics = DiagnosticsService(self)
+        self.mcp = McpService(self)
         self.snapshot = SnapshotService(self)
         self.workspace = WorkspaceService(self)
         self.composer = ComposerService(self)
@@ -156,6 +160,12 @@ class LiferayManager(
 
     def cmd_status(self, *args, **kwargs):
         return self.diagnostics.cmd_status(*args, **kwargs)
+
+    def cmd_mcp(self, *args, **kwargs):
+        return self.mcp.cmd_mcp(*args, **kwargs)
+
+    def cmd_ai(self, *args, **kwargs):
+        return self.ai.cmd_ai(*args, **kwargs)
 
     def cmd_completion(self, *args, **kwargs):
         return self.diagnostics.cmd_completion(*args, **kwargs)
