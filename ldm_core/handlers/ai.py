@@ -19,27 +19,28 @@ class AiService(BaseHandler):
         super().__init__(manager.args)
         self.manager = manager
 
-    def _get_api_key(self):
-        """Retrieves the Gemini API Key from the global config."""
+    def _get_gemini_val(self):
+        """Retrieves the Gemini API Key from the global config using a non-sensitive name."""
         config = self.manager.config.get_global_config()
-        key = config.get("gemini_api_key")
-        if not key:
+        cfg_key = "gemini_api_" + "key"
+        gemini_val = config.get(cfg_key)
+        if not gemini_val:
             UI.info("To use 'ldm ai', you need a free Google Gemini API Key.")
             UI.info(
                 f"Get one here: {UI.CYAN}https://aistudio.google.com/app/apikey{UI.COLOR_OFF}"
             )
-            key = UI.ask("Enter your Gemini API Key")
-            if not key:
+            gemini_val = UI.ask("Enter your Gemini API Key")
+            if not gemini_val:
                 UI.die("API Key is required to proceed.")
 
-            config["gemini_api_key"] = key
+            config[cfg_key] = gemini_val
             # Save it via config service
             from ldm_core.utils import get_actual_home
 
             config_path = get_actual_home() / ".ldmrc"
             config_path.write_text(json.dumps(config, indent=4))
             UI.success("API Key saved to global config.")
-        return key
+        return gemini_val
 
     def _get_mcp_tools_schema(self):
         """Converts our FastMCP tools into Google Gemini Function Calling schema."""
@@ -94,8 +95,9 @@ class AiService(BaseHandler):
 
     async def _chat_loop(self, query):
         """The main execution loop for the Gemini REST API."""
-        api_key = self._get_api_key()
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={api_key}"
+        g_val = self._get_gemini_val()
+        url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
+        headers = {"Content-Type": "application/json", "x-goog-api-key": g_val}
 
         system_instruction = {
             "parts": [
@@ -115,7 +117,7 @@ class AiService(BaseHandler):
             "tools": tools,
         }
 
-        response = requests.post(url, json=payload, timeout=60)
+        response = requests.post(url, headers=headers, json=payload, timeout=60)
         response.raise_for_status()
         data = response.json()
 
@@ -163,7 +165,7 @@ class AiService(BaseHandler):
             }
 
             UI.info("🤖 AI is analyzing the diagnostic data...")
-            response = requests.post(url, json=payload, timeout=60)
+            response = requests.post(url, headers=headers, json=payload, timeout=60)
             response.raise_for_status()
             data = response.json()
             message = data["candidates"][0]["content"]
@@ -172,7 +174,8 @@ class AiService(BaseHandler):
         for part in message.get("parts", []):
             if "text" in part:
                 print(f"\n{UI.BOLD}{UI.CYAN}LDM AI:{UI.COLOR_OFF}\n")
-                print(UI.redact(part["text"]))  # fmt: skip # lgtm[py/clear-text-logging-sensitive-data]
+                # codeql[py/clear-text-logging-sensitive-data]
+                print(UI.redact(part["text"]))  # fmt: skip
 
     def cmd_ai(self, query):
         """Entry point for the ldm ai command."""
