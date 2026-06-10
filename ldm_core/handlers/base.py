@@ -818,11 +818,14 @@ class BaseHandler:
             if custom_workspace:
                 search_dirs.append(Path(custom_workspace).expanduser().resolve())
             else:
-                search_dirs = [
-                    Path.cwd(),
-                    Path.cwd().parent,
-                    get_actual_home() / "ldm",
-                ]
+                from ldm_core.utils import safe_cwd
+
+                cwd = safe_cwd()
+                search_dirs = []
+                if cwd:
+                    search_dirs.extend([cwd, cwd.parent])
+                search_dirs.append(get_actual_home() / "ldm")
+
                 # Only fallback to SCRIPT_DIR if we are NOT initializing a new project
                 if not for_init:
                     search_dirs.append(SCRIPT_DIR)
@@ -912,33 +915,38 @@ class BaseHandler:
                 except Exception:  # nosec B112
                     continue
 
-        cwd = Path.cwd().resolve()
-        # Check for multiple metadata filenames
-        has_meta = any(
-            (cwd / f).exists() for f in ["meta", ".liferay-docker.meta", ".ldm.meta"]
-        )
+        from ldm_core.utils import safe_cwd
 
-        # LDM-383: If pid is provided, check if CWD metadata matches it
-        if pid and has_meta:
-            try:
-                meta = self.read_meta(cwd)
-                if (
-                    cwd.name == pid
-                    or meta.get("project_name") == pid
-                    or meta.get("container_name") == pid
-                ):
+        cwd = safe_cwd()
+        if cwd:
+            cwd = cwd.resolve()
+            # Check for multiple metadata filenames
+            has_meta = any(
+                (cwd / f).exists()
+                for f in ["meta", ".liferay-docker.meta", ".ldm.meta"]
+            )
+
+            # LDM-383: If pid is provided, check if CWD metadata matches it
+            if pid and has_meta:
+                try:
+                    meta = self.read_meta(cwd)
+                    if (
+                        cwd.name == pid
+                        or meta.get("project_name") == pid
+                        or meta.get("container_name") == pid
+                    ):
+                        return cwd
+                except Exception:
+                    pass
+
+            if (
+                (cwd / "files" / "portal-ext.properties").exists()
+                or (cwd / "deploy").exists()
+                or has_meta
+            ):
+                # If no pid or pid matches directory name, return CWD
+                if not pid or cwd.name == pid:
                     return cwd
-            except Exception:
-                pass
-
-        if (
-            (cwd / "files" / "portal-ext.properties").exists()
-            or (cwd / "deploy").exists()
-            or has_meta
-        ):
-            # If no pid or pid matches directory name, return CWD
-            if not pid or cwd.name == pid:
-                return cwd
 
         if pid:
             # If we reached here, a PID was specified but not found in any search dir or CWD
@@ -979,8 +987,11 @@ class BaseHandler:
         if isinstance(project_path, dict):
             project_path = project_path.get("root", ".")
 
-        common_path = Path.cwd() / "common"
-        if common_path.exists():
+        from ldm_core.utils import safe_cwd
+
+        cwd = safe_cwd()
+        common_path = (cwd / "common") if cwd else None
+        if common_path and common_path.exists():
             return common_path
 
         if project_path:
@@ -1004,7 +1015,7 @@ class BaseHandler:
         if global_common.exists():
             return global_common
 
-        return Path.cwd() / "common"
+        return (cwd / "common") if cwd else get_actual_home() / ".ldm" / "common"
 
     def setup_paths(self, project_path):
         """Initializes a standard path dictionary for a project."""
