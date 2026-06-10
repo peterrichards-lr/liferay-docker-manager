@@ -178,6 +178,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added runtime state-awareness checks to commands (run, import) to prevent unexpected container collisions.
 - Enabled non-interactive bypass for internal developer utility prompts.
 
+## [v2.11.5-pre.1] - 2026-06-10
+
+### Added
+
+- **lfr-tunnel Integration**: Integrated `lfr-tunnel` host-side Go client for wildcard subdomain routing (`*.lfr-demo.se` and `*.lfr-demo.online`).
+- **Unified Tunnel Provider Namespace**: Added `ldm share` subcommands (`start`, `status`, `stop`) to manage sharing tunnels under a single interface.
+- **Automated Container Sharing**: Integrated `--share`, `--share-subdomain`, and `--share-provider` flags into `ldm run` to automatically boot the sharing tunnel once Liferay is healthy.
+- **Expose Legacy Support**: Mapped the legacy `--expose` flag as a backward-compatible alias for `--share --share-provider ngrok`.
+
 ## [v2.11.4] - 2026-06-10
 
 ### Added

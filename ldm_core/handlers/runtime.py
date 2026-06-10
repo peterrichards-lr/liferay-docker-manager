@@ -398,9 +398,26 @@ class RuntimeService(BaseHandler):
                         f"Tag '{tag}' is not listed in official Liferay releases. If this is not a custom image, the Docker pull may fail."
                     )
 
+            is_share = (
+                getattr(self.manager.args, "share", False) is True
+                or getattr(self.manager.args, "expose", False) is True
+                or str(project_meta.get("share", "false")).lower() == "true"
+            )
+            share_subdomain = getattr(
+                self.manager.args, "share_subdomain", None
+            ) or project_meta.get("share_subdomain")
+            share_provider = getattr(
+                self.manager.args, "share_provider", None
+            ) or project_meta.get("share_provider")
+            if getattr(self.manager.args, "expose", False) is True:
+                share_provider = "ngrok"
+            if not share_provider:
+                share_provider = "lfr-tunnel"
+
             is_expose = (
                 getattr(self.manager.args, "expose", False) is True
                 or str(project_meta.get("expose", "false")).lower() == "true"
+                or (is_share and share_provider == "ngrok")
             )
             if is_expose:
                 auth_token = self.manager.config.get_ngrok_auth_token()
@@ -420,6 +437,7 @@ class RuntimeService(BaseHandler):
                         is_expose = False
                         if hasattr(self.manager.args, "expose"):
                             self.manager.args.expose = False
+                        is_share = False
 
             if is_new_project and self.manager.assets._ensure_seeded(
                 tag, db_type, paths
@@ -542,6 +560,9 @@ class RuntimeService(BaseHandler):
                     "cpu_limit": cpu_limit,
                     "mem_limit": mem_limit,
                     "expose": str(is_expose).lower(),
+                    "share": str(is_share).lower(),
+                    "share_subdomain": share_subdomain or "",
+                    "share_provider": share_provider,
                     "archetype": archetype_name or project_meta.get("archetype", ""),
                 }
             )
@@ -973,9 +994,27 @@ class RuntimeService(BaseHandler):
                     UI.info(
                         f"Access your instance at: {UI.CYAN}{UI.BOLD}{access_url}{UI.COLOR_OFF}"
                     )
-
-                    if str(project_meta.get("expose", "false")).lower() == "true":
+                    is_legacy_expose = (
+                        str(project_meta.get("expose", "false")).lower() == "true"
+                        and str(project_meta.get("share", "false")).lower() != "true"
+                    )
+                    if is_legacy_expose:
                         self._print_ngrok_url(project_meta.get("container_name"))
+
+                    if str(project_meta.get("share", "false")).lower() == "true":
+                        share_subdomain = project_meta.get(
+                            "share_subdomain"
+                        ) or project_meta.get("project_name")
+                        share_port = project_meta.get("port", 8080)
+                        share_provider = (
+                            project_meta.get("share_provider") or "lfr-tunnel"
+                        )
+                        self.manager.share.cmd_start(
+                            project_id=project_meta.get("project_name"),
+                            subdomain=share_subdomain,
+                            ports=str(share_port),
+                            provider=share_provider,
+                        )
 
                     UI.detail("=== Useful Commands ===")
                     UI.detail(
@@ -1208,6 +1247,18 @@ class RuntimeService(BaseHandler):
                 )
 
         if no_wait:
+            if str(project_meta.get("share", "false")).lower() == "true":
+                share_subdomain = project_meta.get(
+                    "share_subdomain"
+                ) or project_meta.get("project_name")
+                share_port = project_meta.get("port", 8080)
+                share_provider = project_meta.get("share_provider") or "lfr-tunnel"
+                self.manager.share.cmd_start(
+                    project_id=project_meta.get("project_name"),
+                    subdomain=share_subdomain,
+                    ports=str(share_port),
+                    provider=share_provider,
+                )
             UI.success(f"Project '{project_id}' started in background.")
             return True
 

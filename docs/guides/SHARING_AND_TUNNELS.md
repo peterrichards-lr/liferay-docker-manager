@@ -1,0 +1,110 @@
+# Sharing & Tunnels: Exposing Liferay to the Internet
+
+LDM provides a unified interface (`ldm share`) to securely expose your local Liferay environment or containers to the public internet. This is essential for:
+
+- Testing external webhooks (e.g., payment gateways, external CI pipelines).
+- Integrating with SaaS services that require a callback URL.
+- Sharing your local development environment with colleagues or clients.
+
+---
+
+## Sharing Providers
+
+LDM supports two distinct tunneling providers:
+
+### 1. lfr-tunnel (Default)
+
+`lfr-tunnel` is a lightweight, host-side Go client that routes traffic from public wildcard subdomains (`*.lfr-demo.se` and `*.lfr-demo.online`) directly to your local ports.
+
+- **Pros**: Runs on the host, extremely fast, no container footprint, supports wildcard routing.
+- **Installation**: LDM automatically downloads and updates the binary on the first invocation.
+
+### 2. ngrok
+
+`ngrok` runs as a sidecar container inside your project's Docker Compose stack, creating a secure tunnel to ngrok's edge servers.
+
+- **Pros**: Fully self-contained, isolated within the project stack.
+- **Requirements**: Requires a free ngrok account and Auth Token.
+
+---
+
+## Direct CLI Usage (`ldm share`)
+
+You can manage tunnels at any time using the `ldm share` command group.
+
+### Start a Tunnel
+
+To share a running project context:
+
+```bash
+ldm share start [project] --provider lfr-tunnel --subdomain my-subdomain --ports 8080
+```
+
+- If `--provider` is omitted, LDM defaults to `lfr-tunnel`.
+- If `--subdomain` is omitted, it defaults to the project name or your machine hostname.
+- If `--ports` is omitted, it defaults to port `8080`.
+
+### Check Tunnel Status
+
+To inspect the active tunnel and retrieve its public URL:
+
+```bash
+ldm share status [project]
+```
+
+### Stop a Tunnel
+
+To terminate the active sharing session:
+
+```bash
+ldm share stop [project]
+```
+
+---
+
+## Automatic Run Integration (`ldm run --share`)
+
+Instead of starting the tunnel manually, you can tell LDM to automatically boot the sharing tunnel as soon as your Liferay container becomes healthy using the `--share` flag:
+
+```bash
+ldm run my-project --share --share-subdomain custom-sub --share-provider lfr-tunnel
+```
+
+### Expose Alias (Ngrok Legacy)
+
+For backward compatibility, the `--expose` flag remains supported and behaves as an alias for `--share --share-provider ngrok`:
+
+```bash
+ldm run my-project --expose
+```
+
+---
+
+## Authentication for Ngrok
+
+Ngrok requires an Auth Token to bind custom host headers and use HTTPS upstreams. The first time you use ngrok, LDM will prompt you for your Auth Token:
+
+1. Sign up or log in at [dashboard.ngrok.com](https://dashboard.ngrok.com/).
+2. Navigate to **Getting Started** -> **Your Authtoken**.
+3. Paste the token into the LDM prompt.
+
+LDM will save this token securely in your global configuration (`~/.ldmrc`), so you will never be prompted for it again across any of your projects.
+
+---
+
+## Handling SaaS Callbacks (The Host Header)
+
+By default, the sharing tunnels rewrite the `Host` header to match your project's `--host-name` (e.g., `forge.demo`). This ensures that Traefik knows how to route the request to your specific Liferay container.
+
+However, because Liferay "thinks" it is running at `forge.demo`, it may dynamically generate callback URLs or pagination links using `forge.demo` instead of your public tunnel domain (e.g., `custom-sub.lfr-demo.se`). Since external SaaS services cannot resolve `forge.demo`, those links will fail.
+
+### How to Fix This
+
+If your SaaS integration requires Liferay to generate fully qualified URLs (e.g., OAuth redirects), you must temporarily tell Liferay to treat the public tunnel URL as its primary domain:
+
+1. Log into Liferay as an administrator.
+2. Go to **Control Panel** -> **Instance Settings** -> **Instance Configuration**.
+3. Under **Virtual Host**, enter your public tunnel domain (e.g., `custom-sub.lfr-demo.se` or `a1b2c3d4.ngrok.app`).
+4. Save the configuration.
+
+Liferay will now generate all callback URLs using the public tunnel address.

@@ -372,6 +372,20 @@ def get_parser():
         help="Start an ngrok container to expose Liferay to the public internet",
     )
     run.add_argument(
+        "--share",
+        action="store_true",
+        help="Automatically start a secure tunnel (lfr-tunnel) to share the instance",
+    )
+    run.add_argument(
+        "--share-subdomain",
+        help="Custom subdomain to use when sharing the instance",
+    )
+    run.add_argument(
+        "--share-provider",
+        choices=["lfr-tunnel", "ngrok"],
+        help="Sharing provider to use (defaults to lfr-tunnel)",
+    )
+    run.add_argument(
         "--persist-osgi",
         action="store_true",
         default=None,
@@ -863,6 +877,8 @@ def get_parser():
     share_subparsers = share.add_subparsers(dest="subcommand")
 
     share_start = share_subparsers.add_parser("start", parents=[base_sub_parent])
+    share_start.add_argument("project", nargs="?")
+    share_start.add_argument("-p", "--project", dest="project_flag")
     share_start.add_argument(
         "--subdomain",
         help="Custom subdomain prefix (defaults to machine hostname)",
@@ -871,9 +887,19 @@ def get_parser():
         "--ports",
         help="Comma-separated ports to expose (defaults to 8080)",
     )
+    share_start.add_argument(
+        "--provider",
+        choices=["lfr-tunnel", "ngrok"],
+        help="Tunnel provider (defaults to lfr-tunnel)",
+    )
 
-    share_subparsers.add_parser("status", parents=[base_sub_parent])
-    share_subparsers.add_parser("stop", parents=[base_sub_parent])
+    share_status = share_subparsers.add_parser("status", parents=[base_sub_parent])
+    share_status.add_argument("project", nargs="?")
+    share_status.add_argument("-p", "--project", dest="project_flag")
+
+    share_stop = share_subparsers.add_parser("stop", parents=[base_sub_parent])
+    share_stop.add_argument("project", nargs="?")
+    share_stop.add_argument("-p", "--project", dest="project_flag")
 
     # Namespace: cloud
     cloud = subparsers.add_parser(
@@ -1422,11 +1448,20 @@ def main():
         ),
         # share namespace:
         ("share", "start"): lambda: manager.share.cmd_start(
+            project_id=getattr(args, "project", None)
+            or getattr(args, "project_flag", None),
             subdomain=getattr(args, "subdomain", None),
             ports=getattr(args, "ports", None),
+            provider=getattr(args, "provider", None),
         ),
-        ("share", "status"): manager.share.cmd_status,
-        ("share", "stop"): manager.share.cmd_stop,
+        ("share", "status"): lambda: manager.share.cmd_status(
+            project_id=getattr(args, "project", None)
+            or getattr(args, "project_flag", None),
+        ),
+        ("share", "stop"): lambda: manager.share.cmd_stop(
+            project_id=getattr(args, "project", None)
+            or getattr(args, "project_flag", None),
+        ),
         # infra namespace:
         ("infra", "setup"): manager.infra.cmd_infra_setup,
         ("infra", "down"): manager.infra.cmd_infra_down,

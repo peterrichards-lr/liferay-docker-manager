@@ -244,6 +244,16 @@
     - [x] Fix Ruff linter errors (lambdas in `cli.py` and RET503 in `share.py`).
     - [x] Add `# nosec` to suppress Bandit warnings for unverified SSL context and urlopen schema in `share.py`.
     - [x] Fix Mypy `method-assign` warnings in `test_share.py` by adding `# type: ignore[method-assign]`.
+    - [x] Add `--share` and `--share-subdomain` arguments to `ldm run` command in `cli.py`.
+    - [x] Auto-start the tunnel in `sync_stack` / `_wait_for_ready` inside `runtime.py`.
+    - [x] Write unit tests for metadata persistence and auto-start in `test_runtime.py`.
+    - [ ] Document `lfr-tunnel` in `docs/THIRD_PARTY_TOOLS.md` and rename/rewrite `NGROK_INTEGRATION.md` to `SHARING_AND_TUNNELS.md`.
+    - [x] Refactor `ShareService` in `share.py` to support both `lfr-tunnel` and `ngrok` providers.
+    - [x] Add CLI arguments `--provider` to `ldm share start` and `--share-provider` to `ldm run` in `cli.py`.
+    - [ ] Integrate unified providers in `runtime.py` and write unit tests in `test_share.py` and `test_runtime.py`.
+      - [ ] Clean up duplicate block in `runtime.py` (lines 444-451).
+      - [ ] Fix tests in `test_runtime.py`.
+      - [ ] Update documentation (THIRD_PARTY_TOOLS.md, SHARING_AND_TUNNELS.md, README.md).
 
 ## 9. Founding Patterns of LDM
 

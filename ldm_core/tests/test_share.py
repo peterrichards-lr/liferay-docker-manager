@@ -18,6 +18,15 @@ class MockManager:
         self.config = MockConfig()
         self.args = MagicMock()
 
+    def detect_project_path(self, project_id=None):
+        return None
+
+    def read_meta(self, root):
+        return {}
+
+    def write_meta(self, root, meta):
+        pass
+
 
 class TestShareService(unittest.TestCase):
     def setUp(self):
@@ -86,16 +95,16 @@ class TestShareService(unittest.TestCase):
         mock_system.return_value = "Darwin"
         mock_machine.return_value = "arm64"
 
-        # Mock installed version query (returns None -> trigger download, then returns "0.1.0" after download)
+        # Mock installed version query (returns None -> trigger download, then returns "1.1.0" after download)
         mock_ver_res = MagicMock()
-        mock_ver_res.stdout = "v0.1.0"
+        mock_ver_res.stdout = "v1.1.0"
         mock_run.return_value = mock_ver_res
 
-        # We need _get_installed_version to return None first, then "0.1.0"
+        # We need _get_installed_version to return None first, then "1.1.0"
         with patch.object(
             self.service,
             "_get_installed_version",
-            side_effect=[None, "0.1.0"],
+            side_effect=[None, "1.1.0"],
         ) as mock_get_ver:
             # Mock file operations inside open()
             with patch("builtins.open", unittest.mock.mock_open()) as mock_file:
@@ -134,11 +143,11 @@ class TestShareService(unittest.TestCase):
         mock_system.return_value = "Linux"
         mock_machine.return_value = "x86_64"
 
-        # Mock installed version returns outdated "0.0.9", then "0.1.0" after update
+        # Mock installed version returns outdated "1.0.9", then "1.1.0" after update
         with patch.object(
             self.service,
             "_get_installed_version",
-            side_effect=["0.0.9", "0.1.0"],
+            side_effect=["1.0.9", "1.1.0"],
         ):
             with patch("builtins.open", unittest.mock.mock_open()):
                 with patch("pathlib.Path.chmod"):

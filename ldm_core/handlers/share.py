@@ -10,7 +10,7 @@ import urllib.request
 from ldm_core.ui import UI
 from ldm_core.utils import get_actual_home, version_to_tuple
 
-MIN_LFR_TUNNEL_VERSION = "0.1.0"
+MIN_LFR_TUNNEL_VERSION = "1.1.0"
 
 
 class ShareService:
@@ -149,61 +149,186 @@ class ShareService:
         )
         return None
 
-    def cmd_start(self, subdomain=None, ports=None):
-        """Starts the lfr-tunnel background client."""
-        bin_path = self._ensure_binary()
-        token = self._get_auth_token()
+    def cmd_start(self, project_id=None, subdomain=None, ports=None, provider=None):
+        """Starts the active sharing tunnel (lfr-tunnel or ngrok)."""
+        root = self.manager.detect_project_path(project_id)
+        project_id = root.name if root else None
+        project_meta = self.manager.read_meta(root) if root else {}
 
-        ports = ports or "8080"
+        # Resolve provider
+        if not provider:
+            provider = project_meta.get("share_provider") or "lfr-tunnel"
 
-        # Build command list
-        cmd = [str(bin_path), "-background", "-ports", ports]
-        if subdomain:
-            cmd += ["-subdomain", subdomain]
+        if provider == "lfr-tunnel":
+            bin_path = self._ensure_binary()
+            token = self._get_auth_token()
 
-        env = os.environ.copy()
-        env["LFT_CLIENT_TOKEN"] = token
+            ports = ports or "8080"
+            subdomain = subdomain or project_id
 
-        UI.info("Starting lfr-tunnel in the background...")
-        try:
+            cmd = [str(bin_path), "-background", "-ports", ports]
+            if subdomain:
+                cmd += ["-subdomain", subdomain]
+
+            env = os.environ.copy()
+            env["LFT_CLIENT_TOKEN"] = token
+
+            UI.info("Starting lfr-tunnel in the background...")
+            try:
+                res = subprocess.run(
+                    cmd, env=env, capture_output=True, text=True, check=False
+                )
+                if res.returncode == 0:
+                    UI.success("Tunnel started in the background.")
+                    if res.stdout:
+                        print(res.stdout.strip())
+                else:
+                    UI.error(f"Failed to start tunnel (Exit {res.returncode})")
+                    if res.stderr:
+                        print(res.stderr.strip())
+            except Exception as e:
+                UI.die(f"Process invocation error: {e}")
+
+        elif provider == "ngrok":
+            if not root:
+                UI.die(
+                    "Ngrok sharing requires a project context. Run from a project directory or specify -p <project>."
+                )
+
+            # Ensure ngrok auth token is set
+            auth_token = self.manager.config.get_ngrok_auth_token()
+            if not auth_token:
+                UI.info("An ngrok Auth Token is required to use the expose feature.")
+                UI.info(
+                    "You can find yours at: https://dashboard.ngrok.com/get-started/your-authtoken"
+                )
+                if not self.manager.non_interactive:
+                    auth_token = UI.ask("Enter your ngrok Auth Token")
+                if auth_token:
+                    self.manager.config.set_ngrok_auth_token(auth_token)
+                    UI.success("Saved ngrok token to global configuration.")
+                else:
+                    UI.die("No token provided. Ngrok cannot be configured.")
+
+            # Set metadata
+            project_meta["share"] = "true"
+            project_meta["share_provider"] = "ngrok"
+            project_meta["expose"] = "true"
+            if subdomain:
+                project_meta["share_subdomain"] = subdomain
+
+            self.manager.write_meta(root, project_meta)
+
+            # Regenerate compose file and boot ngrok service
+            paths = self.manager.setup_paths(root)
+            UI.info("Regenerating stack configuration with ngrok sidecar...")
+            self.manager.runtime.sync_stack(
+                paths, project_meta, no_up=True, show_summary=False
+            )
+
+            from ldm_core.utils import get_compose_cmd
+
+            compose_base = get_compose_cmd()
+            if not compose_base:
+                UI.die("Docker Compose not found.")
+
+            UI.info("Starting ngrok sidecar container...")
             res = subprocess.run(
-                cmd, env=env, capture_output=True, text=True, check=False
+                [*compose_base, "up", "-d", "ngrok"],
+                cwd=str(root),
+                capture_output=True,
+                text=True,
+                check=False,
             )
             if res.returncode == 0:
-                UI.success("Tunnel started in the background.")
-                if res.stdout:
-                    print(res.stdout.strip())
+                UI.success("Ngrok container started.")
+                self.manager.runtime._print_ngrok_url(
+                    project_meta.get("container_name") or project_id
+                )
             else:
-                UI.error(f"Failed to start tunnel (Exit {res.returncode})")
+                UI.error(f"Failed to start ngrok container (Exit {res.returncode})")
                 if res.stderr:
                     print(res.stderr.strip())
-        except Exception as e:
-            UI.die(f"Process invocation error: {e}")
 
-    def cmd_status(self):
-        """Queries the status of the running background tunnel."""
-        bin_path = self._ensure_binary()
-        cmd = [str(bin_path), "-status"]
+    def cmd_status(self, project_id=None):
+        """Queries the status of the active sharing tunnel."""
+        root = self.manager.detect_project_path(project_id)
+        project_meta = self.manager.read_meta(root) if root else {}
+        provider = project_meta.get("share_provider")
 
-        try:
-            res = subprocess.run(cmd, capture_output=True, text=True, check=False)
-            if res.stdout:
-                print(res.stdout.strip())
-            if res.stderr and res.returncode != 0:
-                print(res.stderr.strip())
-        except Exception as e:
-            UI.die(f"Process invocation error: {e}")
+        if (
+            provider == "ngrok"
+            or str(project_meta.get("expose", "false")).lower() == "true"
+        ):
+            container_name = project_meta.get("container_name") or (
+                root.name if root else None
+            )
+            if container_name:
+                self.manager.runtime._print_ngrok_url(container_name)
+            else:
+                UI.error("No active ngrok container context found.")
+        else:
+            # Default to lfr-tunnel
+            bin_path = self._ensure_binary()
+            cmd = [str(bin_path), "-status"]
+            try:
+                res = subprocess.run(cmd, capture_output=True, text=True, check=False)
+                if res.stdout:
+                    print(res.stdout.strip())
+                if res.stderr and res.returncode != 0:
+                    print(res.stderr.strip())
+            except Exception as e:
+                UI.die(f"Process invocation error: {e}")
 
-    def cmd_stop(self):
-        """Terminates the background tunnel client."""
-        bin_path = self._ensure_binary()
-        cmd = [str(bin_path), "-stop"]
+    def cmd_stop(self, project_id=None):
+        """Terminates the active sharing tunnel."""
+        root = self.manager.detect_project_path(project_id)
+        project_meta = self.manager.read_meta(root) if root else {}
+        provider = project_meta.get("share_provider")
 
-        try:
-            res = subprocess.run(cmd, capture_output=True, text=True, check=False)
-            if res.stdout:
-                print(res.stdout.strip())
-            if res.stderr and res.returncode != 0:
-                print(res.stderr.strip())
-        except Exception as e:
-            UI.die(f"Process invocation error: {e}")
+        if (
+            provider == "ngrok"
+            or str(project_meta.get("expose", "false")).lower() == "true"
+        ):
+            if not root:
+                UI.die(
+                    "Project context not found. Specify -p <project> to stop sharing."
+                )
+
+            # Disable expose in metadata
+            project_meta["share"] = "false"
+            project_meta["expose"] = "false"
+            self.manager.write_meta(root, project_meta)
+
+            from ldm_core.utils import get_compose_cmd
+
+            compose_base = get_compose_cmd()
+            if not compose_base:
+                UI.die("Docker Compose not found.")
+
+            UI.info("Stopping ngrok sidecar container...")
+            res = subprocess.run(
+                [*compose_base, "rm", "-fs", "ngrok"],
+                cwd=str(root),
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            if res.returncode == 0:
+                UI.success("Ngrok sharing stopped.")
+            else:
+                UI.error(f"Failed to stop ngrok container (Exit {res.returncode})")
+                if res.stderr:
+                    print(res.stderr.strip())
+        else:
+            # Default to lfr-tunnel
+            bin_path = self._ensure_binary()
+            cmd = [str(bin_path), "-stop"]
+            try:
+                res = subprocess.run(cmd, capture_output=True, text=True, check=False)
+                if res.stdout:
+                    print(res.stdout.strip())
+                if res.stderr and res.returncode != 0:
+                    print(res.stderr.strip())
+            except Exception as e:
+                UI.die(f"Process invocation error: {e}")
