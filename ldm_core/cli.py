@@ -365,6 +365,18 @@ def get_parser():
         dest="scale_list",
         help="Scale services (e.g. --scale liferay=2)",
     )
+    run.add_argument(
+        "--persist-osgi",
+        action="store_true",
+        default=None,
+        help="Persist the OSGi state folder across container restarts",
+    )
+    run.add_argument(
+        "--no-persist-osgi",
+        action="store_false",
+        dest="persist_osgi",
+        help="Do not persist the OSGi state folder",
+    )
 
     # Command: import
     imp = subparsers.add_parser("import", parents=[base_sub_parent])
@@ -420,6 +432,18 @@ def get_parser():
         action="store_false",
         dest="verify",
         help="Skip snapshot integrity verification",
+    )
+    imp.add_argument(
+        "--persist-osgi",
+        action="store_true",
+        default=None,
+        help="Persist the OSGi state folder across container restarts",
+    )
+    imp.add_argument(
+        "--no-persist-osgi",
+        action="store_false",
+        dest="persist_osgi",
+        help="Do not persist the OSGi state folder",
     )
     imp.add_argument("--env", action="append")
 
@@ -758,6 +782,21 @@ def get_parser():
     dashboard.add_argument(
         "--background", action="store_true", help="Run dashboard in background"
     )
+
+    # Command: mcp
+    subparsers.add_parser(
+        "mcp",
+        parents=[base_sub_parent],
+        help="Starts the Model Context Protocol (MCP) JSON-RPC server",
+    )
+
+    # Command: ai
+    ai = subparsers.add_parser(
+        "ai",
+        parents=[base_sub_parent],
+        help="Start an interactive troubleshooting session with LDM AI",
+    )
+    ai.add_argument("query", help="What do you want to ask LDM AI?")
 
     # ==================== NAMESPACES ====================
 
@@ -1248,6 +1287,8 @@ def main():
         ("hydrate", None): lambda: manager.cmd_hydrate(
             args.backup_path, getattr(args, "project", None)
         ),
+        ("mcp", None): manager.cmd_mcp,
+        ("ai", None): lambda: manager.cmd_ai(args.query),
         ("import", None): lambda: manager.workspace.cmd_import(args.source),
         ("init-from", None): lambda: manager.workspace.cmd_init_from(args.source),
         ("monitor", None): lambda: manager.workspace.cmd_monitor(args.source),

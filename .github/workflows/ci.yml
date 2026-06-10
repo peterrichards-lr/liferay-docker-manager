@@ -113,14 +113,20 @@ jobs:
       - name: LDM Run Smoke Test (Mock)
         shell: bash
         run: |
+          # Pre-pull alpine to prevent pull timeouts during verification
+          docker pull alpine || true
+
           # Create a mock project
           mkdir -p smoke-project/files
           touch smoke-project/files/portal-ext.properties
           # Using a modern LTS version for metadata
-          echo "tag=2026.q1.4-lts" > smoke-project/.liferay-docker.meta
-          echo "container_name=smoke-test" >> smoke-project/.liferay-docker.meta
-          # Use alpine as a lightweight mock image for logic verification
-          echo "image_tag=alpine" >> smoke-project/.liferay-docker.meta
+          {
+            echo "tag=2026.q1.4-lts"
+            echo "container_name=smoke-test"
+            echo "db_type=postgresql"
+            # Use alpine as a lightweight mock image for logic verification
+            echo "image_tag=alpine"
+          } > smoke-project/.liferay-docker.meta
 
           # Run LDM to generate compose
           pip install -e .
