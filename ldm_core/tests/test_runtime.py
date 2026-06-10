@@ -480,7 +480,11 @@ class TestRuntime(unittest.TestCase):
             patch.object(
                 self.handler,
                 "setup_paths",
-                return_value={"root": self.tmp_dir, "data": self.tmp_dir / "data"},
+                return_value={
+                    "root": self.tmp_dir,
+                    "data": self.tmp_dir / "data",
+                    "state": self.tmp_dir / "osgi" / "state",
+                },
             ),
             patch.object(self.handler, "read_meta", return_value={}),
             patch.object(self.handler, "_pre_flight_checks", return_value=8080),
@@ -519,7 +523,11 @@ class TestRuntime(unittest.TestCase):
             patch.object(
                 self.handler,
                 "setup_paths",
-                return_value={"root": self.tmp_dir, "data": self.tmp_dir / "data"},
+                return_value={
+                    "root": self.tmp_dir,
+                    "data": self.tmp_dir / "data",
+                    "state": self.tmp_dir / "osgi" / "state",
+                },
             ),
             patch.object(self.handler, "read_meta", return_value={}),
             patch.object(self.handler, "_pre_flight_checks", return_value=8080),
@@ -557,7 +565,11 @@ class TestRuntime(unittest.TestCase):
             patch.object(
                 self.handler,
                 "setup_paths",
-                return_value={"root": self.tmp_dir, "data": self.tmp_dir / "data"},
+                return_value={
+                    "root": self.tmp_dir,
+                    "data": self.tmp_dir / "data",
+                    "state": self.tmp_dir / "osgi" / "state",
+                },
             ),
             patch.object(
                 self.handler, "read_meta", return_value={"tag": "2026.q1.6-lts"}
@@ -608,7 +620,11 @@ class TestRuntime(unittest.TestCase):
             patch.object(
                 self.handler,
                 "setup_paths",
-                return_value={"root": self.tmp_dir, "data": self.tmp_dir / "data"},
+                return_value={
+                    "root": self.tmp_dir,
+                    "data": self.tmp_dir / "data",
+                    "state": self.tmp_dir / "osgi" / "state",
+                },
             ),
             patch.object(self.handler, "read_meta", return_value={}),
         ):
@@ -628,7 +644,11 @@ class TestRuntime(unittest.TestCase):
             patch.object(
                 self.handler,
                 "setup_paths",
-                return_value={"root": self.tmp_dir, "data": self.tmp_dir / "data"},
+                return_value={
+                    "root": self.tmp_dir,
+                    "data": self.tmp_dir / "data",
+                    "state": self.tmp_dir / "osgi" / "state",
+                },
             ),
             patch.object(self.handler, "read_meta", return_value={}),
             patch.object(self.handler, "write_meta") as mock_write,
@@ -719,7 +739,11 @@ class TestRuntime(unittest.TestCase):
             patch.object(
                 self.handler,
                 "setup_paths",
-                return_value={"root": self.tmp_dir, "data": self.tmp_dir / "data"},
+                return_value={
+                    "root": self.tmp_dir,
+                    "data": self.tmp_dir / "data",
+                    "state": self.tmp_dir / "osgi" / "state",
+                },
             ),
             patch.object(self.handler.assets, "_fetch_seed", return_value=True),
             patch.object(self.handler, "verify_runtime_environment"),
@@ -943,6 +967,102 @@ class TestRuntime(unittest.TestCase):
             mock_success.assert_called_with(
                 "Saved ngrok token to global configuration."
             )
+
+    @patch("socket.gethostbyname")
+    def test_cmd_run_persist_osgi_logic(self, mock_gethost):
+        mock_gethost.return_value = "127.0.0.1"
+        with tempfile.TemporaryDirectory() as tmp_root:
+            root = Path(tmp_root)
+            all_paths = {
+                "root": root,
+                "data": root / "data",
+                "deploy": root / "deploy",
+                "files": root / "files",
+                "state": root / "osgi" / "state",
+                "cx": root / "osgi" / "client-extensions",
+                "ce_dir": root / "osgi" / "client-extensions",
+                "configs": root / "osgi" / "configs",
+                "modules": root / "osgi" / "modules",
+                "backups": root / "snapshots",
+                "portal_log4j": root / "osgi" / "log4j",
+                "logs": root / "logs",
+                "compose": root / "docker-compose.yml",
+                "common": Path("/tmp/common"),
+            }
+
+            # Setup directory structure
+            all_paths["state"].mkdir(parents=True, exist_ok=True)
+            # Create a mock file in state dir to see if it gets wiped
+            mock_file = all_paths["state"] / "some_bundle.jar"
+            mock_file.write_text("dummy")
+
+            # 1. Test when saved tag is different
+            tag_marker = all_paths["state"] / ".ldm_tag"
+            tag_marker.write_text("old-tag-version")
+
+            with (
+                patch.object(self.handler, "detect_project_path", return_value=root),
+                patch.object(self.handler, "setup_paths", return_value=all_paths),
+                patch.object(self.handler, "read_meta") as mock_read,
+                patch.object(self.handler, "_ensure_seeded", return_value=False),
+                patch.object(self.handler, "write_meta") as mock_write,
+                patch.object(self.handler, "verify_runtime_environment"),
+                patch.object(self.handler, "run_command"),
+                patch.object(self.handler.handler, "sync_stack"),
+            ):
+                mock_read.return_value = {
+                    "host_name": "localhost",
+                    "container_name": "test-project",
+                    "persist_osgi": "true",
+                }
+
+                # Mock run arguments
+                self.handler.args.no_up = True
+                self.handler.args.host_name = None
+                self.handler.args.tag = "new-tag-version"
+                self.handler.args.samples = False
+                self.handler.args.archetype = None
+                self.handler.args.persist_osgi = True
+
+                self.handler.cmd_run("test-project")
+
+                # The state should be wiped since tag changed
+                self.assertFalse(mock_file.exists())
+                self.assertEqual(tag_marker.read_text().strip(), "new-tag-version")
+
+            # 2. Test when saved tag is the same
+            mock_file = all_paths["state"] / "some_bundle.jar"
+            mock_file.write_text("dummy")
+
+            with (
+                patch.object(self.handler, "detect_project_path", return_value=root),
+                patch.object(self.handler, "setup_paths", return_value=all_paths),
+                patch.object(self.handler, "read_meta") as mock_read,
+                patch.object(self.handler, "_ensure_seeded", return_value=False),
+                patch.object(self.handler, "write_meta") as mock_write,
+                patch.object(self.handler, "verify_runtime_environment"),
+                patch.object(self.handler, "run_command"),
+                patch.object(self.handler.handler, "sync_stack"),
+            ):
+                mock_read.return_value = {
+                    "host_name": "localhost",
+                    "container_name": "test-project",
+                    "persist_osgi": "true",
+                }
+
+                # Mock run arguments
+                self.handler.args.no_up = True
+                self.handler.args.host_name = None
+                self.handler.args.tag = "new-tag-version"
+                self.handler.args.samples = False
+                self.handler.args.archetype = None
+                self.handler.args.persist_osgi = True
+
+                self.handler.cmd_run("test-project")
+
+                # The mock file should NOT be wiped since tag is the same
+                self.assertTrue(mock_file.exists())
+                self.assertEqual(tag_marker.read_text().strip(), "new-tag-version")
 
 
 if __name__ == "__main__":

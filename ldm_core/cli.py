@@ -370,6 +370,18 @@ def get_parser():
         action="store_true",
         help="Start an ngrok container to expose Liferay to the public internet",
     )
+    run.add_argument(
+        "--persist-osgi",
+        action="store_true",
+        default=None,
+        help="Persist the OSGi state folder across container restarts",
+    )
+    run.add_argument(
+        "--no-persist-osgi",
+        action="store_false",
+        dest="persist_osgi",
+        help="Do not persist the OSGi state folder",
+    )
 
     # Command: import
     imp = subparsers.add_parser("import", parents=[base_sub_parent])
@@ -425,6 +437,18 @@ def get_parser():
         action="store_false",
         dest="verify",
         help="Skip snapshot integrity verification",
+    )
+    imp.add_argument(
+        "--persist-osgi",
+        action="store_true",
+        default=None,
+        help="Persist the OSGi state folder across container restarts",
+    )
+    imp.add_argument(
+        "--no-persist-osgi",
+        action="store_false",
+        dest="persist_osgi",
+        help="Do not persist the OSGi state folder",
     )
     imp.add_argument("--env", action="append")
 
@@ -752,6 +776,22 @@ def get_parser():
     status.add_argument("project", nargs="?")
     status.add_argument("--all", action="store_true", help="Show all managed projects")
     subparsers.add_parser("list", aliases=["ls"], parents=[base_sub_parent])
+
+    # Command: dashboard
+    dashboard = subparsers.add_parser(
+        "dashboard",
+        parents=[base_sub_parent],
+        help="Launch the visual health dashboard",
+    )
+    dashboard.add_argument(
+        "--port", type=int, default=19000, help="Port to run the dashboard on"
+    )
+    dashboard.add_argument(
+        "--host", default="127.0.0.1", help="Host address to bind to"
+    )
+    dashboard.add_argument(
+        "--background", action="store_true", help="Run dashboard in background"
+    )
 
     # Command: mcp
     subparsers.add_parser(
@@ -1249,6 +1289,11 @@ def main():
             if getattr(args, "open", False)
             else None,
         )[0],
+        ("dashboard", None): lambda: manager.cmd_dashboard(
+            port=getattr(args, "port", 19000),
+            host=getattr(args, "host", "127.0.0.1"),
+            background=getattr(args, "background", False),
+        ),
         ("hydrate", None): lambda: manager.cmd_hydrate(
             args.backup_path, getattr(args, "project", None)
         ),

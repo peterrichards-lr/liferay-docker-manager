@@ -444,7 +444,42 @@ class RuntimeService(BaseHandler):
             if getattr(self.manager.args, "sidecar", False):
                 use_shared_search = False
 
+            # Resolve persist_osgi flag
+            persist_osgi_arg = getattr(self.manager.args, "persist_osgi", None)
+            if persist_osgi_arg is not None:
+                persist_osgi = persist_osgi_arg
+            else:
+                persist_osgi = (
+                    str(project_meta.get("persist_osgi", "false")).lower() == "true"
+                )
+
             self.manager.verify_runtime_environment(paths)
+
+            # OSGi State Persistence Validation
+            if persist_osgi:
+                osgi_state_dir = paths["state"]
+                tag_marker = osgi_state_dir / ".ldm_tag"
+
+                if osgi_state_dir.exists():
+                    with contextlib.suppress(Exception):
+                        saved_tag = (
+                            tag_marker.read_text().strip()
+                            if tag_marker.exists()
+                            else None
+                        )
+                        if saved_tag != tag:
+                            UI.warning(
+                                f"OSGi state invalidation: Liferay tag changed from '{saved_tag}' to '{tag}'. Wiping state to prevent bundle conflicts."
+                            )
+                            import shutil
+
+                            for item in osgi_state_dir.iterdir():
+                                if item.is_dir():
+                                    shutil.rmtree(item, ignore_errors=True)
+                                else:
+                                    item.unlink(missing_ok=True)
+                osgi_state_dir.mkdir(parents=True, exist_ok=True)
+                tag_marker.write_text(tag)
 
             # Proactive Search Lock Clearing (LDM-369)
             # Stale lock files in sidecar indices cause 'access_denied_exception' and block indexing.
@@ -474,6 +509,7 @@ class RuntimeService(BaseHandler):
                 getattr(self.manager.args, "fast_login", False)
                 or str(project_meta.get("fast_login", "false")).lower() == "true"
             )
+
             features = getattr(self.manager.args, "feature", None)
             if features:
                 # Flatten potential comma-separated values
@@ -500,6 +536,7 @@ class RuntimeService(BaseHandler):
                     "no_tld_skip": str(no_tld_skip).lower(),
                     "no_captcha": str(no_captcha).lower(),
                     "fast_login": str(fast_login).lower(),
+                    "persist_osgi": str(persist_osgi).lower(),
                     "features": project_meta.get("features", ""),
                     "env_type": env_type,
                     "cpu_limit": cpu_limit,

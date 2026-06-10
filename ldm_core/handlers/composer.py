@@ -556,10 +556,19 @@ class ComposerService:
         if scale == 1:
             liferay_container = meta.get("liferay_container_name") or project_name
             service["container_name"] = liferay_container
-            # Host-mapped state and logs only for non-scaled instances
+
+            # Host-mapped state if requested
+            is_persist_osgi = str(meta.get("persist_osgi", "false")).lower() == "true"
+            if is_persist_osgi:
+                state_mapping = (
+                    f"{paths['state'].as_posix()}:/opt/liferay/osgi/state{z_label}"
+                )
+            else:
+                state_mapping = f"{liferay_container}-state:/opt/liferay/osgi/state"
+
             service["volumes"].extend(
                 [
-                    f"{liferay_container}-state:/opt/liferay/osgi/state",
+                    state_mapping,
                     f"{paths['logs'].as_posix()}:/opt/liferay/logs{z_label}",
                 ]
             )
