@@ -243,6 +243,7 @@
     - [x] Update `lint.sh` to use the python virtualenv executable for synchronizing scripts/docs to prevent ModuleNotFoundError.
     - [x] Fix Ruff linter errors (lambdas in `cli.py` and RET503 in `share.py`).
     - [x] Add `# nosec` to suppress Bandit warnings for unverified SSL context and urlopen schema in `share.py`.
+    - [x] Fix Mypy `method-assign` warnings in `test_share.py` by adding `# type: ignore[method-assign]`.
 
 ## 9. Founding Patterns of LDM
 
