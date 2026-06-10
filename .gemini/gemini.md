@@ -231,8 +231,8 @@
     - [x] Merge PR #27 to master via squash merge.
   - [x] **Document Secrets Prevention**:
     - [x] Update `docs/SECURITY.md` to document secrets prevention, Yelp's `detect-secrets` hooks, `.secrets.baseline` files, and `.gitleaksignore` patterns for developer projects.
-  - [ ] **Fix Dashboard Inline CSS**:
-    - [ ] Remove the unused `<style>` tag and replace inline `style="display: none;"` attributes with Alpine/Tailwind class bindings in `index.html` to prevent CSP violations.
+  - [x] **Fix Dashboard Inline CSS**:
+    - [x] Remove the unused `<style>` tag and replace inline `style="display: none;"` attributes with Alpine/Tailwind class bindings in `index.html` to prevent CSP violations.
   - [x] **Fix FileNotFoundError in Deleted CWD**:
     - [x] Handle `FileNotFoundError` gracefully when `Path.cwd()` is called in `find_dxp_roots()` and other path discovery/detection methods.
 

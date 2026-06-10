@@ -63,6 +63,61 @@ The tool utilizes a "Just-in-Time" elevation strategy. It runs as your standard 
 
 This ensures that all project data and temporary files remain owned by your local user, preventing permission-related lockouts.
 
+## 7. Secrets Prevention & Commit Gates
+
+LDM integrates Yelp's `detect-secrets` scanner into its pre-commit hook suite to block credentials, API keys, and passwords from ever being committed.
+
+- **Baseline Exceptions**: Legacy false positives or mock credentials required for unit testing are documented in `.secrets.baseline` (containing hashed values of the ignored strings) so they do not block development.
+- **Manual Scanning**: To scan all tracked files in the workspace at any time:
+
+  ```bash
+  .venv/bin/pre-commit run detect-secrets --all-files
+  ```
+
+- **Updating Exceptions**: If a new safe mock key is flagged as a false positive, append it to the baseline:
+
+  ```bash
+  detect-secrets scan --baseline .secrets.baseline
+  ```
+
+### 💡 Reusing Secrets Prevention in Other Projects
+
+To implement equivalent commit-blocking gates in your other repositories:
+
+#### Option A: Yelp's `detect-secrets` (Python/Baseline approach)
+
+Excellent for projects that already use Python or where you want a baseline file to manage exceptions. Add this to your `.pre-commit-config.yaml`:
+
+```yaml
+  - repo: https://github.com/Yelp/detect-secrets
+    rev: v1.5.0
+    hooks:
+      - id: detect-secrets
+        args: ['--baseline', '.secrets.baseline']
+```
+
+Generate the baseline file initially via `detect-secrets scan > .secrets.baseline` and track it in git.
+
+#### Option B: Gitleaks (Compiled Go Binary / Fingerprint approach)
+
+A fast, single-binary alternative that requires no Python runtime. Add this to your `.pre-commit-config.yaml`:
+
+```yaml
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.18.2
+    hooks:
+      - id: gitleaks
+```
+
+To ignore mock keys or false positives, create a `.gitleaksignore` file in the root of the project to catalog exceptions by fingerprint or commit hash:
+
+```ini
+# .gitleaksignore
+# Add mock tokens or hashes here to prevent them from blocking commits.
+# Format: [fingerprint_hash] OR [commit_hash]
+f7e5b56e5e4e6e94fe5de5424e66fef84be863f385
+```
+
 ---
 
 **LDM is not a production orchestrator.** Never use LDM to host publicly accessible Liferay instances or sensitive production data.
