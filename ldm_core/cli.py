@@ -107,6 +107,7 @@ def preprocess_args(args_list: list[str]) -> list[str]:
         "infra",
         "cloud",
         "system",
+        "share",
     }
 
     if first.startswith("-") or first in all_cmds:
@@ -853,6 +854,27 @@ def get_parser():
     migrate_search.add_argument("project", nargs="?")
     migrate_search.add_argument("-p", "--project", dest="project_flag")
 
+    # Namespace: share
+    share = subparsers.add_parser(
+        "share",
+        parents=[base_sub_parent],
+        help="Share local project runtime publicly via lfr-tunnel",
+    )
+    share_subparsers = share.add_subparsers(dest="subcommand")
+
+    share_start = share_subparsers.add_parser("start", parents=[base_sub_parent])
+    share_start.add_argument(
+        "--subdomain",
+        help="Custom subdomain prefix (defaults to machine hostname)",
+    )
+    share_start.add_argument(
+        "--ports",
+        help="Comma-separated ports to expose (defaults to 8080)",
+    )
+
+    share_subparsers.add_parser("status", parents=[base_sub_parent])
+    share_subparsers.add_parser("stop", parents=[base_sub_parent])
+
     # Namespace: cloud
     cloud = subparsers.add_parser(
         "cloud", parents=[base_sub_parent], help="Liferay Cloud integrations"
@@ -1398,6 +1420,13 @@ def main():
             args.service_scale,
             getattr(args, "no_run", False),
         ),
+        # share namespace:
+        ("share", "start"): lambda: manager.share.cmd_start(
+            subdomain=getattr(args, "subdomain", None),
+            ports=getattr(args, "ports", None),
+        ),
+        ("share", "status"): manager.share.cmd_status,
+        ("share", "stop"): manager.share.cmd_stop,
         # infra namespace:
         ("infra", "setup"): manager.infra.cmd_infra_setup,
         ("infra", "down"): manager.infra.cmd_infra_down,

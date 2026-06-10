@@ -237,6 +237,12 @@
     - [x] Handle `FileNotFoundError` gracefully when `Path.cwd()` is called in `find_dxp_roots()` and other path discovery/detection methods.
   - [x] **Implement Deletion Safety Checks**:
     - [x] Add robust safety validations in `safe_rmtree` to prevent deletion of git repositories, user home, system paths, active CWD, and LDM source files.
+  - [x] **lfr-tunnel Integration**:
+    - [x] Implement `lfr-tunnel` CLI integration under the `ldm share` subcommand namespace (including downloader, execution, status, and stop commands).
+    - [x] Implement version validation checks to ensure the binary is installed and meets the minimum version requirement (auto-updating if outdated).
+    - [x] Update `lint.sh` to use the python virtualenv executable for synchronizing scripts/docs to prevent ModuleNotFoundError.
+    - [x] Fix Ruff linter errors (lambdas in `cli.py` and RET503 in `share.py`).
+    - [x] Add `# nosec` to suppress Bandit warnings for unverified SSL context and urlopen schema in `share.py`.
 
 ## 9. Founding Patterns of LDM
 

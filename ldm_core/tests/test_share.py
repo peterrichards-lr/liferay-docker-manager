@@ -1,0 +1,252 @@
+import os
+import unittest
+from pathlib import Path
+from unittest.mock import MagicMock, patch
+
+from ldm_core.handlers.share import ShareService
+
+
+class MockConfig:
+    def get_global_config(self):
+        return {}
+
+
+class MockManager:
+    def __init__(self):
+        self.non_interactive = True
+        self.verbose = False
+        self.config = MockConfig()
+        self.args = MagicMock()
+
+
+class TestShareService(unittest.TestCase):
+    def setUp(self):
+        self.mock_manager = MockManager()
+        self.service = ShareService(self.mock_manager)
+
+    @patch("ldm_core.handlers.share.get_actual_home")
+    @patch("platform.system")
+    def test_get_binary_path(self, mock_system, mock_home):
+        mock_home.return_value = Path("/fake/home")
+
+        # Unix
+        mock_system.return_value = "Darwin"
+        self.assertEqual(
+            self.service._get_binary_path(),
+            Path("/fake/home/.ldm/bin/lfr-tunnel"),
+        )
+
+        # Windows
+        mock_system.return_value = "Windows"
+        self.assertEqual(
+            self.service._get_binary_path(),
+            Path("/fake/home/.ldm/bin/lfr-tunnel.exe"),
+        )
+
+    @patch("subprocess.run")
+    def test_get_installed_version(self, mock_run):
+        mock_bin = MagicMock()
+        mock_bin.exists.return_value = True
+
+        # Successful version query
+        mock_res = MagicMock()
+        mock_res.stdout = "lfr-tunnel version v1.2.3"
+        mock_res.stderr = ""
+        mock_res.returncode = 0
+        mock_run.return_value = mock_res
+
+        ver = self.service._get_installed_version(mock_bin)
+        self.assertEqual(ver, "1.2.3")
+
+        # Version query with leading version prefix or raw number
+        mock_res.stdout = "0.5.4"
+        ver = self.service._get_installed_version(mock_bin)
+        self.assertEqual(ver, "0.5.4")
+
+        # Missing binary
+        mock_bin.exists.return_value = False
+        self.assertIsNone(self.service._get_installed_version(mock_bin))
+
+    @patch("ldm_core.handlers.share.get_actual_home")
+    @patch("urllib.request.urlopen")
+    @patch("ssl._create_unverified_context")
+    @patch("subprocess.run")
+    @patch("platform.system")
+    @patch("platform.machine")
+    def test_ensure_binary_download(
+        self,
+        mock_machine,
+        mock_system,
+        mock_run,
+        mock_ssl,
+        mock_urlopen,
+        mock_home,
+    ):
+        mock_home.return_value = Path("/fake/home")
+        mock_system.return_value = "Darwin"
+        mock_machine.return_value = "arm64"
+
+        # Mock installed version query (returns None -> trigger download, then returns "0.1.0" after download)
+        mock_ver_res = MagicMock()
+        mock_ver_res.stdout = "v0.1.0"
+        mock_run.return_value = mock_ver_res
+
+        # We need _get_installed_version to return None first, then "0.1.0"
+        with patch.object(
+            self.service,
+            "_get_installed_version",
+            side_effect=[None, "0.1.0"],
+        ) as mock_get_ver:
+            # Mock file operations inside open()
+            with patch("builtins.open", unittest.mock.mock_open()) as mock_file:
+                with patch("pathlib.Path.chmod") as mock_chmod:
+                    with patch("pathlib.Path.mkdir") as mock_mkdir:
+                        with patch("pathlib.Path.stat") as mock_stat:
+                            mock_stat.return_value.st_mode = 0o100644
+                            bin_path = self.service._ensure_binary()
+
+                        self.assertEqual(
+                            bin_path,
+                            Path("/fake/home/.ldm/bin/lfr-tunnel"),
+                        )
+                        # Should request the correct Go binary for darwin-arm64
+                        mock_urlopen.assert_called_once()
+                        req_url = mock_urlopen.call_args[0][0]
+                        self.assertIn("lfr-tunnel-darwin-arm64", req_url)
+                        mock_chmod.assert_called_once()
+
+    @patch("ldm_core.handlers.share.get_actual_home")
+    @patch("urllib.request.urlopen")
+    @patch("ssl._create_unverified_context")
+    @patch("subprocess.run")
+    @patch("platform.system")
+    @patch("platform.machine")
+    def test_ensure_binary_outdated_trigger(
+        self,
+        mock_machine,
+        mock_system,
+        mock_run,
+        mock_ssl,
+        mock_urlopen,
+        mock_home,
+    ):
+        mock_home.return_value = Path("/fake/home")
+        mock_system.return_value = "Linux"
+        mock_machine.return_value = "x86_64"
+
+        # Mock installed version returns outdated "0.0.9", then "0.1.0" after update
+        with patch.object(
+            self.service,
+            "_get_installed_version",
+            side_effect=["0.0.9", "0.1.0"],
+        ):
+            with patch("builtins.open", unittest.mock.mock_open()):
+                with patch("pathlib.Path.chmod"):
+                    with patch("pathlib.Path.mkdir"):
+                        with patch("pathlib.Path.stat") as mock_stat:
+                            mock_stat.return_value.st_mode = 0o100644
+                            bin_path = self.service._ensure_binary()
+
+                        self.assertEqual(
+                            bin_path,
+                            Path("/fake/home/.ldm/bin/lfr-tunnel"),
+                        )
+                        mock_urlopen.assert_called_once()
+                        req_url = mock_urlopen.call_args[0][0]
+                        self.assertIn("lfr-tunnel-linux-amd64", req_url)
+
+    @patch("ldm_core.handlers.share.get_actual_home")
+    @patch.dict(os.environ, {"LFT_CLIENT_TOKEN": "env-token"})
+    def test_get_auth_token_env(self, mock_home):
+        # 1. From Env var
+        token = self.service._get_auth_token()
+        self.assertEqual(token, "env-token")
+
+    @patch("ldm_core.handlers.share.get_actual_home")
+    @patch.dict(os.environ, {})
+    def test_get_auth_token_file(self, mock_home):
+        mock_home.return_value = Path("/fake/home")
+
+        # 2. From file
+        with patch("pathlib.Path.exists", return_value=True):
+            with patch("pathlib.Path.read_text", return_value="file-token\n"):
+                token = self.service._get_auth_token()
+                self.assertEqual(token, "file-token")
+
+    @patch("ldm_core.handlers.share.get_actual_home")
+    @patch.dict(os.environ, {})
+    def test_get_auth_token_config(self, mock_home):
+        mock_home.return_value = Path("/fake/home")
+
+        # 3. From global config
+        with patch("pathlib.Path.exists", return_value=False):
+            self.mock_manager.config.get_global_config = MagicMock(  # type: ignore[method-assign]
+                return_value={"lfr_tunnel_token": "config-token"}
+            )
+            token = self.service._get_auth_token()
+            self.assertEqual(token, "config-token")
+
+    @patch("subprocess.run")
+    def test_cmd_start(self, mock_run):
+        # Mock ensures we have token and binary
+        self.service._ensure_binary = MagicMock(  # type: ignore[method-assign]
+            return_value=Path("/fake/bin/lfr-tunnel")
+        )
+        self.service._get_auth_token = MagicMock(return_value="my-token")  # type: ignore[method-assign]
+
+        mock_res = MagicMock()
+        mock_res.returncode = 0
+        mock_res.stdout = "Tunnel started successfully."
+        mock_run.return_value = mock_res
+
+        self.service.cmd_start(subdomain="custom-sub", ports="9090")
+
+        # Verify Popen/run invocation arguments
+        mock_run.assert_called_once()
+        cmd_args = mock_run.call_args[0][0]
+        self.assertEqual(cmd_args[0], "/fake/bin/lfr-tunnel")
+        self.assertIn("-background", cmd_args)
+        self.assertIn("custom-sub", cmd_args)
+        self.assertIn("9090", cmd_args)
+
+        # Check token passed in environment
+        env = mock_run.call_args[1]["env"]
+        self.assertEqual(env["LFT_CLIENT_TOKEN"], "my-token")
+
+    @patch("subprocess.run")
+    def test_cmd_status(self, mock_run):
+        self.service._ensure_binary = MagicMock(  # type: ignore[method-assign]
+            return_value=Path("/fake/bin/lfr-tunnel")
+        )
+
+        mock_res = MagicMock()
+        mock_res.returncode = 0
+        mock_res.stdout = "Tunnel is active."
+        mock_run.return_value = mock_res
+
+        self.service.cmd_status()
+        mock_run.assert_called_once_with(
+            ["/fake/bin/lfr-tunnel", "-status"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+    @patch("subprocess.run")
+    def test_cmd_stop(self, mock_run):
+        self.service._ensure_binary = MagicMock(  # type: ignore[method-assign]
+            return_value=Path("/fake/bin/lfr-tunnel")
+        )
+
+        mock_res = MagicMock()
+        mock_res.returncode = 0
+        mock_res.stdout = "Tunnel stopped."
+        mock_run.return_value = mock_res
+
+        self.service.cmd_stop()
+        mock_run.assert_called_once_with(
+            ["/fake/bin/lfr-tunnel", "-stop"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
