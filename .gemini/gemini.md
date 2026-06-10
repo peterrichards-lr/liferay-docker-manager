@@ -213,6 +213,11 @@
     - [x] Remove history directory tracking/archiving in `scripts/sync_compatibility.py` and delete stale files instead.
     - [x] Remove hash/timestamp suffix from `scripts/verify_e2e_refactor.sh` and `scripts/verify_e2e_refactor.ps1`.
     - [x] Clean up existing hashed files in `references/verification-results` and regenerate the table with static links.
+  - [x] **Fix Ngrok Tests and Merge PR #27**:
+    - [x] Mock `run_command` in `test_cmd_run_expose_prompt_save` to prevent Docker volume check failure.
+    - [x] Run `./lint.sh --check` to verify all unit tests and quality gates pass.
+    - [ ] Commit and push the test changes to `feature/ngrok-expose`.
+    - [ ] Merge PR #27 to master via squash merge.
 
 ## 9. Founding Patterns of LDM
 

@@ -438,6 +438,31 @@ class TestConfigService(unittest.TestCase):
         self.config.cmd_defaults("tag")
         mock_success.assert_called_with("Removed user default 'tag'.")
 
+    @patch("os.environ.get")
+    @patch("ldm_core.handlers.config.ConfigService.get_global_config")
+    def test_get_ngrok_auth_token_env(self, mock_get_global, mock_env_get):
+        mock_env_get.return_value = "env-token"
+        token = self.config.get_ngrok_auth_token()
+        self.assertEqual(token, "env-token")
+        mock_env_get.assert_called_with("NGROK_AUTHTOKEN")
+
+    @patch("os.environ.get")
+    @patch("ldm_core.handlers.config.ConfigService.get_global_config")
+    def test_get_ngrok_auth_token_config(self, mock_get_global, mock_env_get):
+        mock_env_get.return_value = None
+        mock_get_global.return_value = {"ngrok_authtoken": "config-token"}
+        token = self.config.get_ngrok_auth_token()
+        self.assertEqual(token, "config-token")
+
+    @patch("ldm_core.handlers.config.ConfigService.get_global_config")
+    @patch("pathlib.Path.write_text")
+    def test_set_ngrok_auth_token(self, mock_write, mock_get_global):
+        mock_get_global.return_value = {}
+        self.config.set_ngrok_auth_token("new-token")
+        self.assertTrue(mock_write.called)
+        written_content = mock_write.call_args[0][0]
+        self.assertIn("new-token", written_content)
+
 
 if __name__ == "__main__":
     unittest.main()  # type: ignore[misc]
