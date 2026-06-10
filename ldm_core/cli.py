@@ -366,6 +366,11 @@ def get_parser():
         help="Scale services (e.g. --scale liferay=2)",
     )
     run.add_argument(
+        "--expose",
+        action="store_true",
+        help="Start an ngrok container to expose Liferay to the public internet",
+    )
+    run.add_argument(
         "--persist-osgi",
         action="store_true",
         default=None,
@@ -480,6 +485,11 @@ def get_parser():
         "--samples", action="store_true", help="Initialize with sample extensions"
     )
     init.add_argument("--sidecar", action="store_true")
+    init.add_argument(
+        "--expose",
+        action="store_true",
+        help="Configure an ngrok container to expose Liferay to the public internet",
+    )
     init.add_argument(
         "--no-captcha",
         action="store_true",

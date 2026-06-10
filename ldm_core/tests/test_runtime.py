@@ -65,12 +65,7 @@ class MockRuntime(BaseHandler):
         return {"container_name": "test-runtime", "host_name": "localhost"}
 
     def setup_paths(self, root):
-        return {
-            "root": root,
-            "compose": root / "docker-compose.yml",
-            "logs": root / "logs",
-            "files": root / "files",
-        }
+        return super().setup_paths(root)
 
     def _ensure_seeded(self, *args, **kwargs):
         return False
@@ -880,6 +875,97 @@ class TestRuntime(unittest.TestCase):
             mock_run.assert_called_once_with("runtime-project")
             mock_success.assert_called_with(
                 "Project 'runtime-project' scheduled for search reindex on next boot."
+            )
+
+    @patch("ldm_core.ui.UI.success")
+    def test_print_ngrok_url_success(self, mock_success):
+        with patch.object(self.handler, "run_command") as mock_run:
+            mock_run.return_value = MagicMock(
+                stdout='{"tunnels": [{"public_url": "https://foo.ngrok.app"}]}'
+            )
+            self.handler.handler._print_ngrok_url("my-project")
+            mock_run.assert_called_once()
+            args = mock_run.call_args[0][0]
+            self.assertIn("docker", args)
+            self.assertIn("exec", args)
+            self.assertIn("my-project-ngrok-1", args)
+            mock_success.assert_called_with(
+                "🌍 Public ngrok Tunnel Active: \033[0;36mhttps://foo.ngrok.app\033[0m"
+            )
+
+    @patch("ldm_core.ui.UI.warning")
+    def test_print_ngrok_url_failure(self, mock_warning):
+        with patch.object(self.handler, "run_command") as mock_run:
+            mock_run.side_effect = Exception("failed")
+            self.handler.handler._print_ngrok_url("my-project")
+            mock_warning.assert_called_with(
+                "ngrok container is running, but failed to retrieve public URL."
+            )
+
+    @patch("ldm_core.ui.UI.ask")
+    @patch("ldm_core.ui.UI.success")
+    def test_cmd_run_expose_prompt_save(self, mock_success, mock_ask):
+        class Args:
+            expose = True
+            no_up = True
+            archetype = None
+            project = "test"
+            project_flag = None
+            select = False
+            scale_list = None
+            tag = None
+            portal = False
+            host_name = None
+            db = None
+            ssl = None
+            open = False
+
+        self.handler.args = Args()
+        self.handler.handler.args = Args()
+
+        print("DEBUG self.handler:", type(self.handler), self.handler)
+        print("DEBUG self.handler.args:", type(self.handler.args), self.handler.args)
+        print(
+            "DEBUG self.handler.handler.manager:",
+            type(self.handler.handler.manager),
+            self.handler.handler.manager,
+        )
+        print(
+            "DEBUG self.handler.handler.manager.args:",
+            type(self.handler.handler.manager.args),
+            self.handler.handler.manager.args,
+        )
+
+        # Mock config to have no token
+        self.handler.config.get_ngrok_auth_token = MagicMock(return_value=None)  # type: ignore[method-assign]
+        self.handler.config.set_ngrok_auth_token = MagicMock()  # type: ignore[method-assign]
+        mock_ask.return_value = "my-new-authtoken"
+
+        with (
+            patch.object(self.handler, "run_command", return_value="OK"),
+            patch.object(
+                self.handler.handler, "detect_project_path", return_value=self.tmp_dir
+            ),
+            patch.object(
+                self.handler.handler,
+                "read_meta",
+                return_value={"container_name": "test-project"},
+            ),
+            patch.object(
+                self.handler.handler.manager.assets,
+                "_ensure_seeded",
+                return_value=False,
+            ),
+            patch.object(self.handler.composer, "write_docker_compose"),
+            patch.object(self.handler.handler, "sync_stack"),
+        ):
+            self.handler.cmd_run("test")
+            mock_ask.assert_called_once_with("Enter your ngrok Auth Token")
+            self.handler.config.set_ngrok_auth_token.assert_called_with(
+                "my-new-authtoken"
+            )
+            mock_success.assert_called_with(
+                "Saved ngrok token to global configuration."
             )
 
     @patch("socket.gethostbyname")

@@ -398,6 +398,29 @@ class RuntimeService(BaseHandler):
                         f"Tag '{tag}' is not listed in official Liferay releases. If this is not a custom image, the Docker pull may fail."
                     )
 
+            is_expose = (
+                getattr(self.manager.args, "expose", False) is True
+                or str(project_meta.get("expose", "false")).lower() == "true"
+            )
+            if is_expose:
+                auth_token = self.manager.config.get_ngrok_auth_token()
+                if not auth_token:
+                    UI.info(
+                        "An ngrok Auth Token is required to use the expose feature (it enables custom host headers and HTTPS)."
+                    )
+                    UI.info(
+                        f"You can find yours at: {UI.CYAN}https://dashboard.ngrok.com/get-started/your-authtoken{UI.COLOR_OFF}"
+                    )
+                    auth_token = UI.ask("Enter your ngrok Auth Token")
+                    if auth_token:
+                        self.manager.config.set_ngrok_auth_token(auth_token)
+                        UI.success("Saved ngrok token to global configuration.")
+                    else:
+                        UI.warning("No token provided. Ngrok will not be configured.")
+                        is_expose = False
+                        if hasattr(self.manager.args, "expose"):
+                            self.manager.args.expose = False
+
             if is_new_project and self.manager.assets._ensure_seeded(
                 tag, db_type, paths
             ):
@@ -518,6 +541,7 @@ class RuntimeService(BaseHandler):
                     "env_type": env_type,
                     "cpu_limit": cpu_limit,
                     "mem_limit": mem_limit,
+                    "expose": str(is_expose).lower(),
                     "archetype": archetype_name or project_meta.get("archetype", ""),
                 }
             )
@@ -726,6 +750,39 @@ class RuntimeService(BaseHandler):
         )
         return True
 
+    def _print_ngrok_url(self, project_id):
+        """Fetches and prints the public ngrok URL from the running container."""
+        import json
+
+        from ldm_core.ui import UI
+
+        container_name = f"{project_id}-ngrok-1"
+        try:
+            result = self.manager.run_command(
+                [
+                    "docker",
+                    "exec",
+                    container_name,
+                    "curl",
+                    "-s",
+                    "http://localhost:4040/api/tunnels",
+                ],
+                capture_output=True,
+                check=False,
+            )
+            if result and result.stdout:
+                data = json.loads(result.stdout)
+                for tunnel in data.get("tunnels", []):
+                    if tunnel.get("public_url", "").startswith("https://"):
+                        public_url = tunnel["public_url"]
+                        UI.success(
+                            f"🌍 Public ngrok Tunnel Active: {UI.CYAN}{public_url}{UI.COLOR_OFF}"
+                        )
+                        return
+        except Exception:
+            pass
+        UI.warning("ngrok container is running, but failed to retrieve public URL.")
+
     def _wait_for_ready(self, project_meta, host_name, total_start=None, timeout=600):
         """Wait for Liferay to become healthy and provide access information."""
         container_name = project_meta.get("container_name")
@@ -916,6 +973,9 @@ class RuntimeService(BaseHandler):
                     UI.info(
                         f"Access your instance at: {UI.CYAN}{UI.BOLD}{access_url}{UI.COLOR_OFF}"
                     )
+
+                    if str(project_meta.get("expose", "false")).lower() == "true":
+                        self._print_ngrok_url(project_meta.get("container_name"))
 
                     UI.detail("=== Useful Commands ===")
                     UI.detail(
