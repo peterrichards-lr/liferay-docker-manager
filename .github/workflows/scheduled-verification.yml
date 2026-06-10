@@ -119,7 +119,11 @@ jobs:
       - name: Stage changes
         id: changes
         run: |
-          git add references/verification-results/ docs/COMPATIBILITY_TABLE.md README.md
+          git add references/verification-results/ docs/COMPATIBILITY_TABLE.md
+          # Stage README.md only if it exists (it may not be present on all branches)
+          if [ -f README.md ]; then
+            git add README.md
+          fi
           if git diff --staged --quiet; then
             echo "changed=false" >> "$GITHUB_OUTPUT"
             echo "No changes detected — compatibility table is already up to date."
