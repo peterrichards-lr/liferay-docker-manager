@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LDM Health Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    <style>
+        .status-running { color: #10B981; }
+        .status-stopped { color: #6B7280; }
+        .status-starting { color: #F59E0B; }
+    </style>
+</head>
+<body class="bg-gray-50 text-gray-900 font-sans" x-data="dashboard()">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <header class="mb-8 flex items-center justify-between">
+            <div>
+                <h1 class="text-3xl font-bold text-gray-900 flex items-center gap-3">
+                    <svg class="w-8 h-8 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 002-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path>
+                    </svg>
+                    LDM Visual Health Dashboard
+                </h1>
+                <p class="mt-2 text-sm text-gray-600">Real-time overview of all local Liferay Docker environments.</p>
+            </div>
+            <div>
+                <button @click="fetchProjects()" class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700">
+                    Refresh Status
+                </button>
+            </div>
+        </header>
+
+        <div x-show="loading" class="text-center py-12">
+            <svg class="animate-spin h-8 w-8 text-blue-600 mx-auto" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+            <p class="mt-2 text-gray-500">Scanning LDM workspaces...</p>
+        </div>
+
+        <div x-show="!loading && projects.length === 0" class="text-center py-12 bg-white rounded-lg shadow" style="display: none;">
+            <svg class="mx-auto h-12 w-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" />
+            </svg>
+            <h3 class="mt-2 text-sm font-medium text-gray-900">No projects found</h3>
+            <p class="mt-1 text-sm text-gray-500">Run <code class="text-xs bg-gray-100 p-1 rounded">ldm init my-project</code> to get started.</p>
+        </div>
+
+        <div class="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
+            <template x-for="project in projects" :key="project.name">
+                <div class="bg-white overflow-hidden shadow rounded-lg border border-gray-200">
+                    <div class="px-4 py-5 sm:p-6">
+                        <div class="flex items-center justify-between">
+                            <h3 class="text-lg leading-6 font-medium text-gray-900" x-text="project.name"></h3>
+                            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium"
+                                  :class="{
+                                      'bg-green-100 text-green-800': project.status === 'Running',
+                                      'bg-gray-100 text-gray-800': project.status === 'Stopped',
+                                      'bg-yellow-100 text-yellow-800': project.status !== 'Running' && project.status !== 'Stopped'
+                                  }" x-text="project.status">
+                            </span>
+                        </div>
+                        <div class="mt-4 border-t border-gray-100 pt-4">
+                            <dl class="grid grid-cols-1 gap-x-4 gap-y-4 sm:grid-cols-2">
+                                <div class="sm:col-span-1">
+                                    <dt class="text-sm font-medium text-gray-500">Version</dt>
+                                    <dd class="mt-1 text-sm text-gray-900" x-text="project.version"></dd>
+                                </div>
+                                <div class="sm:col-span-1">
+                                    <dt class="text-sm font-medium text-gray-500">Database</dt>
+                                    <dd class="mt-1 text-sm text-gray-900 uppercase" x-text="project.db_type"></dd>
+                                </div>
+                                <div class="sm:col-span-2">
+                                    <dt class="text-sm font-medium text-gray-500">Access URL</dt>
+                                    <dd class="mt-1 text-sm text-blue-600 hover:text-blue-500">
+                                        <a :href="project.url" target="_blank" x-text="project.url"></a>
+                                    </dd>
+                                </div>
+                                <div class="sm:col-span-2 mt-2">
+                                    <button @click="showLogs(project.name)" class="inline-flex items-center px-3 py-1 border border-gray-300 shadow-sm text-xs font-medium rounded text-gray-700 bg-white hover:bg-gray-50">
+                                        <svg class="mr-1.5 h-4 w-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+                                        View Logs
+                                    </button>
+                                </div>
+                            </dl>
+                        </div>
+                    </div>
+                </div>
+            </template>
+        </div>
+
+        <!-- Log Modal -->
+        <div x-show="logModalOpen" class="fixed z-10 inset-0 overflow-y-auto" style="display: none;" aria-labelledby="modal-title" role="dialog" aria-modal="true">
+            <div class="flex items-end justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
+                <div x-show="logModalOpen" x-transition.opacity class="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" @click="logModalOpen = false" aria-hidden="true"></div>
+                <span class="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true">&#8203;</span>
+                <div x-show="logModalOpen" x-transition class="inline-block align-bottom bg-white rounded-lg px-4 pt-5 pb-4 text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-4xl sm:w-full sm:p-6">
+                    <div class="sm:flex sm:items-start">
+                        <div class="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left w-full">
+                            <h3 class="text-lg leading-6 font-medium text-gray-900" id="modal-title">
+                                Logs: <span x-text="activeProjectLogs"></span>
+                            </h3>
+                            <div class="mt-4">
+                                <div x-show="logsLoading" class="text-center py-4">Loading logs...</div>
+                                <pre x-show="!logsLoading" class="bg-gray-900 text-green-400 p-4 rounded text-xs overflow-x-auto max-h-96" x-text="logsContent"></pre>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="mt-5 sm:mt-4 sm:flex sm:flex-row-reverse">
+                        <button type="button" class="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-blue-600 text-base font-medium text-white hover:bg-blue-700 sm:ml-3 sm:w-auto sm:text-sm" @click="logModalOpen = false">
+                            Close
+                        </button>
+                        <button type="button" class="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 sm:mt-0 sm:w-auto sm:text-sm" @click="showLogs(activeProjectLogs)">
+                            Refresh
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('alpine:init', () => {
+            Alpine.data('dashboard', () => ({
+                projects: [],
+                loading: true,
+                logModalOpen: false,
+                logsLoading: false,
+                logsContent: '',
+                activeProjectLogs: '',
+                
+                async init() {
+                    await this.fetchProjects();
+                    setInterval(() => this.fetchProjects(), 10000); // Poll every 10s
+                },
+
+                async fetchProjects() {
+                    try {
+                        const response = await fetch('/api/projects');
+                        this.projects = await response.json();
+                    } catch (error) {
+                        console.error("Failed to fetch projects:", error);
+                    } finally {
+                        this.loading = false;
+                    }
+                },
+                
+                async showLogs(projectName) {
+                    this.activeProjectLogs = projectName;
+                    this.logModalOpen = true;
+                    this.logsLoading = true;
+                    try {
+                        const response = await fetch('/api/logs/' + projectName);
+                        const data = await response.json();
+                        this.logsContent = data.logs || "No logs returned.";
+                    } catch (error) {
+                        this.logsContent = "Failed to load logs.";
+                    } finally {
+                        this.logsLoading = false;
+                    }
+                }
+            }))
+        })
+    </script>
+</body>
+</html>
