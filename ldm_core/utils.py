@@ -1557,9 +1557,67 @@ def safe_mkdir(path, parents=True, exist_ok=True):
             raise e
 
 
+def verify_safe_to_delete(path):
+    """Raises ValueError if the path matches safety-critical directories (home, system roots, active CWD, LDM source, or git repos)."""
+    import os
+
+    path_obj = Path(path).resolve()
+
+    # 1. Block home directory and system roots
+    actual_home = get_actual_home().resolve()
+    if path_obj == actual_home or path_obj == Path.home().resolve():
+        raise ValueError(f"Safety Violation: Cannot delete home directory: {path_obj}")
+
+    system_roots = [
+        Path("/"),
+        Path("/usr"),
+        Path("/var"),
+        Path("/etc"),
+        Path("/bin"),
+        Path("/lib"),
+        Path("/private"),
+        Path("/Users"),
+        Path("/Volumes"),
+    ]
+    if path_obj in system_roots or any(
+        path_obj == r.resolve() for r in system_roots if os.path.exists(r)
+    ):
+        raise ValueError(
+            f"Safety Violation: Cannot delete system directory: {path_obj}"
+        )
+
+    # 2. Block the current working directory or any of its parent folders
+    cwd = safe_cwd()
+    if cwd:
+        cwd_resolved = cwd.resolve()
+        if cwd_resolved == path_obj or path_obj in cwd_resolved.parents:
+            raise ValueError(
+                f"Safety Violation: Cannot delete current working directory or its parent: {path_obj}"
+            )
+
+    # 3. Block deletion of the LDM installation/source directory or any of its parents
+    try:
+        pkg_dir = Path(__file__).parent.parent.resolve()
+        if path_obj == pkg_dir or pkg_dir in path_obj.parents:
+            raise ValueError(
+                f"Safety Violation: Cannot delete LDM installation/source directory: {path_obj}"
+            )
+    except Exception as e:
+        if isinstance(e, ValueError):
+            raise e
+
+    # 4. Block directory if it contains .git
+    git_dir = path_obj / ".git"
+    if os.path.exists(git_dir):
+        raise ValueError(
+            f"Safety Violation: Cannot delete a git repository: {path_obj}"
+        )
+
+
 def safe_rmtree(path):
     """Deletes a directory tree safely, with JIT permission reclamation if needed."""
     path_obj = Path(path).resolve()
+    verify_safe_to_delete(path_obj)
     if not path_obj.exists():
         return
 

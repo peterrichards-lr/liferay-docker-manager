@@ -204,6 +204,69 @@ class TestUtils(unittest.TestCase):
         roots = find_dxp_roots()
         self.assertEqual(roots, [])
 
+    @patch("ldm_core.utils.get_actual_home")
+    @patch("pathlib.Path.cwd")
+    def test_safe_rmtree_safety_violations(self, mock_cwd, mock_home):
+        import tempfile
+
+        import ldm_core.utils
+        from ldm_core.utils import safe_rmtree
+
+        # Setup temp home and CWD mocks
+        temp_home = Path("/fake/home")
+        mock_home.return_value = temp_home
+        mock_cwd.return_value = Path("/fake/cwd")
+
+        # 1. Test home directory deletion block
+        with self.assertRaises(ValueError) as ctx:
+            safe_rmtree(temp_home)
+        self.assertIn(
+            "Safety Violation: Cannot delete home directory", str(ctx.exception)
+        )
+
+        # 2. Test system root directory deletion block
+        with self.assertRaises(ValueError) as ctx:
+            safe_rmtree(Path("/Users"))
+        self.assertIn(
+            "Safety Violation: Cannot delete system directory", str(ctx.exception)
+        )
+
+        # 3. Test active CWD deletion block
+        with self.assertRaises(ValueError) as ctx:
+            safe_rmtree(Path("/fake/cwd"))
+        self.assertIn(
+            "Safety Violation: Cannot delete current working directory",
+            str(ctx.exception),
+        )
+
+        # 4. Test active CWD parent deletion block
+        with self.assertRaises(ValueError) as ctx:
+            safe_rmtree(Path("/fake"))
+        self.assertIn(
+            "Safety Violation: Cannot delete current working directory",
+            str(ctx.exception),
+        )
+
+        # 5. Test git repository deletion block
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            (tmp_path / ".git").mkdir()
+
+            with self.assertRaises(ValueError) as ctx:
+                safe_rmtree(tmp_path)
+            self.assertIn(
+                "Safety Violation: Cannot delete a git repository", str(ctx.exception)
+            )
+
+        # 6. Test LDM package directory deletion block
+        pkg_dir = Path(ldm_core.utils.__file__).parent.parent.resolve()
+        with self.assertRaises(ValueError) as ctx:
+            safe_rmtree(pkg_dir)
+        self.assertIn(
+            "Safety Violation: Cannot delete LDM installation/source directory",
+            str(ctx.exception),
+        )
+
 
 class TestUpdateChecks(unittest.TestCase):
     @patch("requests.get")

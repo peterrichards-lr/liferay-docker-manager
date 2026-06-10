@@ -235,6 +235,8 @@
     - [x] Remove the unused `<style>` tag and replace inline `style="display: none;"` attributes with Alpine/Tailwind class bindings in `index.html` to prevent CSP violations.
   - [x] **Fix FileNotFoundError in Deleted CWD**:
     - [x] Handle `FileNotFoundError` gracefully when `Path.cwd()` is called in `find_dxp_roots()` and other path discovery/detection methods.
+  - [x] **Implement Deletion Safety Checks**:
+    - [x] Add robust safety validations in `safe_rmtree` to prevent deletion of git repositories, user home, system paths, active CWD, and LDM source files.
 
 ## 9. Founding Patterns of LDM
 
