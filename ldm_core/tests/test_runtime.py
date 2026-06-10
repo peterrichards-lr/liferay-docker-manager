@@ -21,6 +21,7 @@ class MockRuntime(BaseHandler):
         self.assets = MagicMock()
         self.infra = MagicMock()
         self.snapshot = MagicMock()
+        self.share = MagicMock()
         from ldm_core.defaults import DefaultsManager
         from ldm_core.handlers.composer import ComposerService
         from ldm_core.handlers.config import ConfigService
@@ -1063,6 +1064,112 @@ class TestRuntime(unittest.TestCase):
                 # The mock file should NOT be wiped since tag is the same
                 self.assertTrue(mock_file.exists())
                 self.assertEqual(tag_marker.read_text().strip(), "new-tag-version")
+
+    @patch("socket.gethostbyname")
+    def test_cmd_run_share_metadata(self, mock_gethost):
+        mock_gethost.return_value = "127.0.0.1"
+        with tempfile.TemporaryDirectory() as tmp_root:
+            root = Path(tmp_root)
+            all_paths = {
+                "root": root,
+                "data": root / "data",
+                "state": root / "state",
+                "deploy": root / "deploy",
+                "logs": root / "logs",
+                "osgi": root / "osgi",
+                "files": root / "files",
+            }
+            meta_file = root / ".liferay-docker.meta"
+            meta_file.write_text("{}")
+
+            class Args:
+                share = True
+                share_subdomain = "my-custom-sub"
+                no_up = True
+                project = "test-project"
+                project_flag = None
+                select = False
+                scale_list = None
+                tag = "2024.q4.0"
+                portal = False
+                host_name = None
+                db = None
+                ssl = None
+                open = False
+                expose = False
+                persist_osgi = False
+                reindex = False
+                no_vol_cache = False
+                internal_state = False
+                no_jvm_verify = False
+                no_tld_skip = False
+                env_type = "dev"
+                cpu_limit = None
+                mem_limit = None
+                archetype = None
+                samples = False
+                snapshot = None
+                timeout = 900
+
+            self.handler.args = Args()
+            self.handler.handler.args = Args()
+
+            with (
+                patch.object(
+                    self.handler.handler, "detect_project_path", return_value=root
+                ),
+                patch.object(
+                    self.handler.handler, "setup_paths", return_value=all_paths
+                ),
+                patch.object(self.handler.handler, "read_meta", return_value={}),
+                patch.object(
+                    self.handler.handler.manager.assets,
+                    "_ensure_seeded",
+                    return_value=False,
+                ),
+                patch.object(self.handler, "write_meta") as mock_write,
+                patch.object(
+                    self.handler.handler.manager, "verify_runtime_environment"
+                ),
+                patch.object(self.handler.handler, "run_command"),
+                patch.object(self.handler.handler, "sync_stack"),
+            ):
+                self.handler.handler.cmd_run("test-project")
+
+                mock_write.assert_called_once()
+                meta_arg = mock_write.call_args[0][1]
+                self.assertEqual(meta_arg["share"], "true")
+                self.assertEqual(meta_arg["share_subdomain"], "my-custom-sub")
+
+    def test_wait_for_ready_triggers_share(self):
+        project_meta = {
+            "project_name": "test-project",
+            "container_name": "test-project",
+            "port": 8080,
+            "share": "true",
+            "share_subdomain": "custom-tunnel",
+        }
+
+        with (
+            patch.object(self.handler, "run_command") as mock_run_cmd,
+            patch.object(self.handler.share, "cmd_start") as mock_share_start,
+        ):
+            mock_run_cmd.side_effect = [
+                "org.apache.catalina.startup.Catalina.start Server startup in 12000 ms",
+                "healthy",
+            ]
+
+            res = self.handler.handler._wait_for_ready(
+                project_meta, "localhost", timeout=10
+            )
+            self.assertTrue(res)
+
+            mock_share_start.assert_called_once_with(
+                project_id="test-project",
+                subdomain="custom-tunnel",
+                ports="8080",
+                provider="lfr-tunnel",
+            )
 
 
 if __name__ == "__main__":

@@ -49,6 +49,10 @@ class LiferayManager(
         self.composer = ComposerService(self)
         self.runtime = RuntimeService(self)
 
+        from ldm_core.handlers.share import ShareService
+
+        self.share = ShareService(self)
+
         # Automatic CI detection
         if os.getenv("CI") or os.getenv("GITHUB_ACTIONS") or os.getenv("GITLAB_CI"):
             self.non_interactive = True

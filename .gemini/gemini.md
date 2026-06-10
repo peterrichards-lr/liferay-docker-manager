@@ -237,6 +237,23 @@
     - [x] Handle `FileNotFoundError` gracefully when `Path.cwd()` is called in `find_dxp_roots()` and other path discovery/detection methods.
   - [x] **Implement Deletion Safety Checks**:
     - [x] Add robust safety validations in `safe_rmtree` to prevent deletion of git repositories, user home, system paths, active CWD, and LDM source files.
+  - [x] **lfr-tunnel Integration**:
+    - [x] Implement `lfr-tunnel` CLI integration under the `ldm share` subcommand namespace (including downloader, execution, status, and stop commands).
+    - [x] Implement version validation checks to ensure the binary is installed and meets the minimum version requirement (auto-updating if outdated).
+    - [x] Update `lint.sh` to use the python virtualenv executable for synchronizing scripts/docs to prevent ModuleNotFoundError.
+    - [x] Fix Ruff linter errors (lambdas in `cli.py` and RET503 in `share.py`).
+    - [x] Add `# nosec` to suppress Bandit warnings for unverified SSL context and urlopen schema in `share.py`.
+    - [x] Fix Mypy `method-assign` warnings in `test_share.py` by adding `# type: ignore[method-assign]`.
+    - [x] Add `--share` and `--share-subdomain` arguments to `ldm run` command in `cli.py`.
+    - [x] Auto-start the tunnel in `sync_stack` / `_wait_for_ready` inside `runtime.py`.
+    - [x] Write unit tests for metadata persistence and auto-start in `test_runtime.py`.
+    - [x] Document `lfr-tunnel` in `docs/THIRD_PARTY_TOOLS.md` and rename/rewrite `NGROK_INTEGRATION.md` to `SHARING_AND_TUNNELS.md`.
+    - [x] Refactor `ShareService` in `share.py` to support both `lfr-tunnel` and `ngrok` providers.
+    - [x] Add CLI arguments `--provider` to `ldm share start` and `--share-provider` to `ldm run` in `cli.py`.
+    - [x] Integrate unified providers in `runtime.py` and write unit tests in `test_share.py` and `test_runtime.py`.
+      - [x] Clean up duplicate block in `runtime.py` (lines 444-451).
+      - [x] Fix tests in `test_runtime.py`.
+      - [x] Update documentation (THIRD_PARTY_TOOLS.md, SHARING_AND_TUNNELS.md, README.md).
 
 ## 9. Founding Patterns of LDM
 

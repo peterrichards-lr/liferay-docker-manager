@@ -4,6 +4,10 @@
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 VENV_PATH="$SCRIPT_DIR/.venv"
+PYTHON_BIN="python3"
+if [ -d "$VENV_PATH" ]; then
+	PYTHON_BIN="$VENV_PATH/bin/python3"
+fi
 CHECK_ONLY=0
 
 if [[ "$1" == "--check" ]]; then
@@ -95,13 +99,13 @@ fi
 # 7. Baseline Resources Sync
 info "Synchronizing Baseline Resources..."
 export PYTHONPATH="$SCRIPT_DIR"
-python3 "$SCRIPT_DIR/scripts/sync_baseline.py" || EXIT_CODE=1
-python3 "$SCRIPT_DIR/scripts/sync_colors.py" || EXIT_CODE=1
+"$PYTHON_BIN" "$SCRIPT_DIR/scripts/sync_baseline.py" || EXIT_CODE=1
+"$PYTHON_BIN" "$SCRIPT_DIR/scripts/sync_colors.py" || EXIT_CODE=1
 
 # 8. Documentation Sync
 info "Synchronizing Documentation..."
 export PYTHONPATH="$SCRIPT_DIR"
-python3 "$SCRIPT_DIR/scripts/sync_docs.py" || EXIT_CODE=1
+"$PYTHON_BIN" "$SCRIPT_DIR/scripts/sync_docs.py" || EXIT_CODE=1
 
 if [[ $EXIT_CODE -eq 0 ]]; then
 	success "All linting tasks completed successfully."

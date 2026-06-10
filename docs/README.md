@@ -85,7 +85,7 @@ The badges below represent our verified support for various Docker providers. En
 - [CLI Reference & Automation](guides/CLI_REFERENCE.md)
 - [Configuration & Environment Variables](guides/CONFIGURATION.md)
 - [Networking, DNS & SSL](guides/NETWORKING_DNS.md)
-- [Ngrok & SaaS Integration](guides/NGROK_INTEGRATION.md)
+- [Sharing & Tunnels (lfr-tunnel & Ngrok)](guides/SHARING_AND_TUNNELS.md)
 - [Data Management (Snapshots, Seeds, Hydration)](guides/DATA_MANAGEMENT.md)
 - [Development & Building](guides/DEVELOPMENT.md)
 

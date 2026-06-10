@@ -17,8 +17,9 @@ To build trust and provide transparency to developers, this document details eve
 | **[openssl](https://www.openssl.org/)** | **Optional** | Performs cryptographic checks and verifies file formatting. | LDM cannot run diagnostic validation checks matching SSL certificates and keys. |
 | **[telnet](https://en.wikipedia.org/wiki/Telnet)** | **Optional** | Opens an interactive connection to Liferay's OSGi Gogo Shell console. | The `ldm gogo` command will fail to connect. |
 | **[lcp CLI](https://customer.liferay.com/downloads/-/download/liferay-cloud-cli)** | **Optional** | Retrieves DB and volume backups from Liferay Cloud (PaaS) environments. | Cloud golden-path integration (`ldm cloud-fetch` and automated environment imports) is disabled. |
+| **[lfr-tunnel](https://github.com/peterrichards-lr/lfr-tunnel)** | **Optional** | Exposes local Liferay instances to public wildcard domains. | The `ldm share` commands and `--share` automatic container sharing are disabled. |
 | **[mysql / psql](https://www.mysql.com/)** | **Optional** | Host-side CLI clients to query PostgreSQL/MySQL. | No impact on LDM operations (LDM performs internal tasks like database scrubs via containerized clients using `docker exec`). Recommended only for host-side manual inspection. |
-| **nc / ncat (Nmap)** | **Deprecated** | Historically checked for log-level synchronization. | **No impact**. Handled natively via Log4j2 file-based hot-reloading. |
+| nc / ncat (Nmap) | **Deprecated** | Historically checked for log-level synchronization. | **No impact**. Handled natively via Log4j2 file-based hot-reloading. |
 
 ---
 
@@ -54,6 +55,11 @@ To build trust and provide transparency to developers, this document details eve
 
 * **Why it is needed**: The Windows standalone binary is built with PyInstaller and contains its own bundled Python environment. However, to keep sizes lightweight (~1.2MB), the macOS and Linux binaries are packaged in **ZipApp (Shiv)** format, which requires a host-installed Python interpreter (version **3.10 or higher**).
 * **Optionality**: Only optional on Windows. On macOS and Linux, you must have Python 3.10+ installed on the host system to run the standalone binaries or when running from source.
+
+### 7. lfr-tunnel (Secure Tunneling Utility)
+
+* **Why it is needed**: Enables secure routing of public traffic from wildcard subdomains (`*.lfr-demo.se` and `*.lfr-demo.online`) to local Liferay/LDM stacks or containers. When developers run `ldm share` or start runtime instances with the `--share` flag, LDM downloads and manages the `lfr-tunnel` binary on the host to bridge traffic securely.
+* **Optionality**: Optional. If not installed, you can still develop and access stacks locally on `localhost`. Running share commands will automatically download the binary.
 
 ---
 
