@@ -145,6 +145,58 @@ class TestCLILogic(unittest.TestCase):
         self.assertEqual(args.subcommand, "fix-hosts")
         self.assertEqual(args.host_name, "demo-project.local")
 
+    def test_share_flags_and_subcommands(self):
+        # 1. Test: ldm run flags
+        args = self.parser.parse_args(
+            [
+                "run",
+                "demo",
+                "--share",
+                "--share-subdomain",
+                "my-sub",
+                "--share-provider",
+                "ngrok",
+            ]
+        )
+        self.assertEqual(args.command, "run")
+        self.assertEqual(args.project, "demo")
+        self.assertTrue(args.share)
+        self.assertEqual(args.share_subdomain, "my-sub")
+        self.assertEqual(args.share_provider, "ngrok")
+
+        # 2. Test: ldm share start
+        args = self.parser.parse_args(
+            [
+                "share",
+                "start",
+                "demo",
+                "--subdomain",
+                "custom-sub",
+                "--ports",
+                "8081",
+                "--provider",
+                "ngrok",
+            ]
+        )
+        self.assertEqual(args.command, "share")
+        self.assertEqual(args.subcommand, "start")
+        self.assertEqual(args.project, "demo")
+        self.assertEqual(args.subdomain, "custom-sub")
+        self.assertEqual(args.ports, "8081")
+        self.assertEqual(args.provider, "ngrok")
+
+        # 3. Test: ldm share status
+        args = self.parser.parse_args(["share", "status", "demo"])
+        self.assertEqual(args.command, "share")
+        self.assertEqual(args.subcommand, "status")
+        self.assertEqual(args.project, "demo")
+
+        # 4. Test: ldm share stop
+        args = self.parser.parse_args(["share", "stop", "demo"])
+        self.assertEqual(args.command, "share")
+        self.assertEqual(args.subcommand, "stop")
+        self.assertEqual(args.project, "demo")
+
 
 if __name__ == "__main__":
     unittest.main()

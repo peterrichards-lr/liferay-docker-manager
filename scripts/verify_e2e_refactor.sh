@@ -307,6 +307,16 @@ else
     echo "❌ ERROR: Legacy command translation failed." && exit 1
 fi
 
+echo ">> Verifying Share Command Layout..."
+if "$LDM_CMD" share --help >/dev/null && \
+   "$LDM_CMD" share start --help >/dev/null && \
+   "$LDM_CMD" share status --help >/dev/null && \
+   "$LDM_CMD" share stop --help >/dev/null; then
+    echo "✅ Share command layout verified."
+else
+    echo "❌ ERROR: Share command layout verification failed." && exit 1
+fi
+
 # UX & Scaling
 echo ">> Verifying Cascading Defaults..."
 "$LDM_CMD" config defaults test_key test_value >/dev/null
