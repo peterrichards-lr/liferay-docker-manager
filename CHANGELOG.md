@@ -178,6 +178,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added runtime state-awareness checks to commands (run, import) to prevent unexpected container collisions.
 - Enabled non-interactive bypass for internal developer utility prompts.
 
+## [v2.11.4] - 2026-06-10
+
+### Added
+
+- **Directory Deletion Safety Validator**: Integrated JIT validation in `safe_rmtree` to prevent accidental deletion of git repository roots, system directories, CWD, user home directories, and LDM source files.
+- **Ngrok Tunneling Integration**: Embedded Ngrok tunneling directly into the local LDM stack to facilitate seamless remote testing of client extensions (#27).
+- **Secrets Prevention Scanner**: Configured pre-commit secrets detection with Yelp's `detect-secrets` hook and baseline configurations (#36).
+- **OSGi State Persistence**: Added support for persisting OSGi state across container lifecycles (#28).
+
+### Fixed
+
+- **CWD FileNotFoundError Bug**: Resolved a CLI crash when running commands (like `ldm list`) inside a directory that has been deleted.
+- **CSP Compliance**: Removed inline styles and `<style>` tags from the developer dashboard to prevent Content Security Policy violations (#37).
+
 ## [v2.11.4-pre.1] - 2026-06-04
 
 ### Added
