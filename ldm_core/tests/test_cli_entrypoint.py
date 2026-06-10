@@ -131,6 +131,81 @@ class TestCLIEntrypoint(unittest.TestCase):
         # Clean up: reload the module again under normal Python to avoid side effects
         importlib.reload(ldm_core.cli)
 
+    @patch("ldm_core.cli.LiferayManager")
+    @patch("ldm_core.cli.get_parser")
+    @patch("ldm_core.cli.check_for_updates")
+    @patch("sys.exit")
+    def test_share_commands_delegate_to_share_service(
+        self, mock_exit, mock_update, mock_get_parser, mock_manager_class
+    ):
+        mock_update.return_value = (None, None)
+        mock_manager = mock_manager_class.return_value
+        mock_manager.check_docker.return_value = True
+
+        mock_parser = MagicMock()
+        mock_get_parser.return_value = (mock_parser, MagicMock())
+
+        # 1. Test 'share start'
+        mock_args = MagicMock()
+        mock_args.command = "share"
+        mock_args.subcommand = "start"
+        mock_args.project = "demo"
+        mock_args.project_flag = None
+        mock_args.subdomain = "my-sub"
+        mock_args.ports = "8082"
+        mock_args.provider = "ngrok"
+        mock_args.verbose = False
+        mock_args.non_interactive = True
+        mock_parser.parse_args.return_value = mock_args
+
+        with patch(
+            "sys.argv",
+            [
+                "ldm",
+                "share",
+                "start",
+                "demo",
+                "--subdomain",
+                "my-sub",
+                "--ports",
+                "8082",
+                "--provider",
+                "ngrok",
+            ],
+        ):
+            main()
+        mock_manager.share.cmd_start.assert_called_once_with(
+            project_id="demo", subdomain="my-sub", ports="8082", provider="ngrok"
+        )
+
+        # 2. Test 'share status'
+        mock_args = MagicMock()
+        mock_args.command = "share"
+        mock_args.subcommand = "status"
+        mock_args.project = "demo"
+        mock_args.project_flag = None
+        mock_args.verbose = False
+        mock_args.non_interactive = True
+        mock_parser.parse_args.return_value = mock_args
+
+        with patch("sys.argv", ["ldm", "share", "status", "demo"]):
+            main()
+        mock_manager.share.cmd_status.assert_called_once_with(project_id="demo")
+
+        # 3. Test 'share stop'
+        mock_args = MagicMock()
+        mock_args.command = "share"
+        mock_args.subcommand = "stop"
+        mock_args.project = "demo"
+        mock_args.project_flag = None
+        mock_args.verbose = False
+        mock_args.non_interactive = True
+        mock_parser.parse_args.return_value = mock_args
+
+        with patch("sys.argv", ["ldm", "share", "stop", "demo"]):
+            main()
+        mock_manager.share.cmd_stop.assert_called_once_with(project_id="demo")
+
 
 if __name__ == "__main__":
     unittest.main()

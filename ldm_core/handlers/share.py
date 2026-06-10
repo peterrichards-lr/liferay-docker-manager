@@ -10,7 +10,7 @@ import urllib.request
 from ldm_core.ui import UI
 from ldm_core.utils import get_actual_home, version_to_tuple
 
-MIN_LFR_TUNNEL_VERSION = "1.1.0"
+MIN_LFR_TUNNEL_VERSION = "1.3.0"
 
 
 class ShareService:
