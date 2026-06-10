@@ -144,12 +144,12 @@
     - [x] Register missing fix-hosts subcommand in ldm_core/cli.py
     - [x] Run pytest to verify all tests pass
     - [x] Restore default SIGPIPE handler on Unix environments in cli.py to prevent BrokenPipeError tracebacks in pipelines
-  - [ ] **Extensible Stack Profiles & External Database**:
-    - [ ] Relocate plans folder to `docs/roadmap/plans/` (In Progress)
-    - [ ] Create directory structure and loader logic for declarative stack profiles.
-    - [ ] Implement `keycloak-sso` profile (realm-export mapping and OSGi configs).
-    - [ ] Implement `clustered` profile (JGroups TCPPING and shared Named Volumes).
-    - [ ] Implement `--db external` database parameter switch.
+  - [x] **Extensible Stack Profiles & External Database**:
+    - [x] Relocate plans folder to `docs/roadmap/plans/` (In Progress)
+    - [x] Create directory structure and loader logic for declarative stack profiles.
+    - [x] Implement `keycloak-sso` profile (realm-export mapping and OSGi configs).
+    - [x] Implement `clustered` profile (JGroups TCPPING and shared Named Volumes).
+    - [x] Implement `--db external` database parameter switch.
   - [x] **Hardening Phase 2: Secrets, Compose Validation, and Dependabot**:
     - [x] Implement `detect-secrets` hook in pre-commit and dev-requirements.
     - [x] Create `scripts/validate_compose.py` to validate compose templates.
@@ -169,8 +169,8 @@
     - [x] Fix port conflict in `verify_osgi_persistence.sh` by using port 8085.
     - [x] Refine log parser and teardown in `verify_osgi_persistence.sh` to support DD-MMM-YYYY formats, use `Starting initial bundles`/`Started web bundles` as OSGi markers, and clear container logs via `down` between runs.
     - [x] Redirect `docker logs` stderr to stdout (`2>&1`) in `verify_osgi_persistence.sh` to capture ready logs and avoid console leakage.
-    - [ ] Create `docs/showcase/OSGI_STATE_PERSISTENCE.md` containing performance data and a Mermaid chart.
-    - [ ] Link the new performance page in `docs/showcase/README.md`.
+    - [x] Create `docs/showcase/OSGI_STATE_PERSISTENCE.md` containing performance data and a Mermaid chart.
+    - [x] Link the new performance page in `docs/showcase/README.md`.
   - [x] **Verbosity Reduction**:
     - [x] Move inner-loop sync and monitoring logs in `workspace.py` to `UI.detail`.
     - [x] Move detailed SQL and archive progress statements in `snapshot.py` to `UI.detail`.
@@ -227,8 +227,12 @@
   - [x] **Fix Ngrok Tests and Merge PR #27**:
     - [x] Mock `run_command` in `test_cmd_run_expose_prompt_save` to prevent Docker volume check failure.
     - [x] Run `./lint.sh --check` to verify all unit tests and quality gates pass.
-    - [ ] Commit and push the test changes to `feature/ngrok-expose`.
-    - [ ] Merge PR #27 to master via squash merge.
+    - [x] Commit and push the test changes to `feature/ngrok-expose`.
+    - [x] Merge PR #27 to master via squash merge.
+  - [x] **Document Secrets Prevention**:
+    - [x] Update `docs/SECURITY.md` to document secrets prevention, Yelp's `detect-secrets` hooks, `.secrets.baseline` files, and `.gitleaksignore` patterns for developer projects.
+  - [ ] **Fix Dashboard Inline CSS**:
+    - [ ] Remove the unused `<style>` tag and replace inline `style="display: none;"` attributes with Alpine/Tailwind class bindings in `index.html` to prevent CSP violations.
 
 ## 9. Founding Patterns of LDM
 

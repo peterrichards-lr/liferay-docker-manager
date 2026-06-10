@@ -6,11 +6,6 @@
     <title>LDM Health Dashboard</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
-    <style>
-        .status-running { color: #10B981; }
-        .status-stopped { color: #6B7280; }
-        .status-starting { color: #F59E0B; }
-    </style>
 </head>
 <body class="bg-gray-50 text-gray-900 font-sans" x-data="dashboard()">
     <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -39,7 +34,7 @@
             <p class="mt-2 text-gray-500">Scanning LDM workspaces...</p>
         </div>
 
-        <div x-show="!loading && projects.length === 0" class="text-center py-12 bg-white rounded-lg shadow" style="display: none;">
+        <div x-show="!loading && projects.length === 0" :class="(!loading && projects.length === 0) ? '' : 'hidden'" class="text-center py-12 bg-white rounded-lg shadow">
             <svg class="mx-auto h-12 w-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" />
             </svg>
@@ -91,7 +86,7 @@
         </div>
 
         <!-- Log Modal -->
-        <div x-show="logModalOpen" class="fixed z-10 inset-0 overflow-y-auto" style="display: none;" aria-labelledby="modal-title" role="dialog" aria-modal="true">
+        <div x-show="logModalOpen" :class="logModalOpen ? '' : 'hidden'" class="fixed z-10 inset-0 overflow-y-auto" aria-labelledby="modal-title" role="dialog" aria-modal="true">
             <div class="flex items-end justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
                 <div x-show="logModalOpen" x-transition.opacity class="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" @click="logModalOpen = false" aria-hidden="true"></div>
                 <span class="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true">&#8203;</span>
