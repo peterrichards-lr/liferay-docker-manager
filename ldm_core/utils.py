@@ -621,6 +621,14 @@ def get_actual_home():
     return Path.home()
 
 
+def safe_cwd():
+    """Returns the current working directory safely, returning None if deleted."""
+    try:
+        return Path.cwd()
+    except FileNotFoundError:
+        return None
+
+
 def open_browser(url):
     """Launches the system browser, with special handling for WSL to use the host browser."""
     # Safety: Do not open browser tabs during automated tests
@@ -1037,7 +1045,9 @@ def find_dxp_roots(search_dir=None):
         search_dirs = [Path(custom_workspace).expanduser().resolve()]
     # Priority 3: Default discovery logic (Multiple paths)
     else:
-        search_dirs.append(Path.cwd())
+        cwd = safe_cwd()
+        if cwd:
+            search_dirs.append(cwd)
 
         # Common default locations
         for common in [actual_home / "ldm", Path("/Volumes/SanDisk/ldm")]:

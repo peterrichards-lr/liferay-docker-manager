@@ -187,6 +187,23 @@ class TestUtils(unittest.TestCase):
             self.assertIn("project1", root_names)
             self.assertIn("project2", root_names)
 
+    @patch("pathlib.Path.cwd")
+    def test_safe_cwd_deleted(self, mock_cwd):
+        from ldm_core.utils import safe_cwd
+
+        mock_cwd.side_effect = FileNotFoundError("No such file or directory")
+        self.assertIsNone(safe_cwd())
+
+    @patch("ldm_core.utils.get_actual_home")
+    @patch("pathlib.Path.cwd")
+    def test_find_dxp_roots_deleted_cwd(self, mock_cwd, mock_home):
+        from ldm_core.utils import find_dxp_roots
+
+        mock_cwd.side_effect = FileNotFoundError("No such file or directory")
+        mock_home.return_value = Path("/nonexistent/home")
+        roots = find_dxp_roots()
+        self.assertEqual(roots, [])
+
 
 class TestUpdateChecks(unittest.TestCase):
     @patch("requests.get")
