@@ -416,6 +416,23 @@ class TestDiagnostics(unittest.TestCase):
             self.assertEqual(venv_result[2], "warn")
             self.assertTrue(any("globally" in h["text"] for h in runner.hints))
 
+    @patch("ldm_core.handlers.diagnostics.verify_executable_checksum")
+    def test_check_tooling_and_integrity_venv_inactive_binary(self, mock_verify):
+        mock_verify.return_value = ("Binary Checksum Valid", True, "2.11.7")
+        runner = DoctorRunner(self.manager.diagnostics)
+        with (
+            patch("sys.prefix", "dummy_base"),
+            patch("sys.base_prefix", "dummy_base"),
+            patch.dict("os.environ", {}, clear=True),
+        ):
+            runner._check_tooling_and_integrity()
+            venv_result = next(
+                r for r in runner.results if r[0] == "Virtual Environment"
+            )
+            self.assertEqual(venv_result[1], "Not Required (Binary)")
+            self.assertTrue(venv_result[2])
+            self.assertFalse(any("globally" in h["text"] for h in runner.hints))
+
     def test_doctor_runner_dashboard_view(self):
         runner = DoctorRunner(self.manager.diagnostics)
         runner.results = [

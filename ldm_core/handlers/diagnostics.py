@@ -126,6 +126,7 @@ class DoctorRunner:
 
         # 0.1 Executable Integrity
         status, ok, detected_version = verify_executable_checksum(VERSION)
+        is_source = status == "Source"
         if not status:
             status, ok = "Verification Unavailable", "warn"
 
@@ -176,13 +177,15 @@ class DoctorRunner:
         )
         if is_in_venv:
             self.results.append(("Virtual Environment", "Active (.venv)", True))
-        else:
+        elif is_source:
             self.results.append(("Virtual Environment", "Not Activated", "warn"))
             self.add_hint(
                 "Virtual Environment: Running Python globally. It is highly recommended to run inside the virtualenv.",
                 "https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/GEMINI.md#6-python-virtual-environment-venv",
             )
             self.add_hint("Run: source .venv/bin/activate")
+        else:
+            self.results.append(("Virtual Environment", "Not Required (Binary)", True))
 
         # 1.1 Shell Completion Check
         if self.handler.is_completion_enabled():
