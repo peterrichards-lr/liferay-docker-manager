@@ -2069,7 +2069,7 @@ class DiagnosticsService:
                 if count > 0:
                     import shutil
 
-                    shutil.rmtree(cache_dir)
+                    shutil.rmtree(cache_dir, ignore_errors=True)
                     cleared.append(f"Pre-warmed seeds ({count} files)")
 
         if target in ["samples", "all"]:
@@ -2077,7 +2077,7 @@ class DiagnosticsService:
             if cache_dir.exists():
                 import shutil
 
-                shutil.rmtree(cache_dir)
+                shutil.rmtree(cache_dir, ignore_errors=True)
                 cleared.append("Sample pack cache")
 
         if not cleared:
@@ -3110,7 +3110,7 @@ pause
                 ):
                     import shutil
 
-                    shutil.rmtree(seeds_cache)
+                    shutil.rmtree(seeds_cache, ignore_errors=True)
                     UI.success("Seed cache cleared.")
             else:
                 UI.detail("Seed cache is empty.")
@@ -3129,7 +3129,7 @@ pause
                 ):
                     import shutil
 
-                    shutil.rmtree(samples_cache)
+                    shutil.rmtree(samples_cache, ignore_errors=True)
                     UI.success("Sample cache cleared.")
             else:
                 UI.detail("Sample cache is empty.")

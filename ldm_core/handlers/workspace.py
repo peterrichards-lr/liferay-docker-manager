@@ -663,6 +663,8 @@ class WorkspaceService(BaseHandler):
     def cmd_import(self, source_path, is_init_from=False):
         source = Path(source_path).resolve()
         temp_extract_dir = None
+        is_brand_new = False
+        init_success = False
 
         try:
             if not source.exists():
@@ -705,7 +707,7 @@ class WorkspaceService(BaseHandler):
                     / ".ldm_temp"
                     / f"import_{datetime.now().strftime('%Y%m%d%H%M%S')}"
                 )
-                temp_extract_dir.mkdir(parents=True)
+                temp_extract_dir.mkdir(parents=True, exist_ok=True)
                 UI.info("Extracting source archive...")
                 from ldm_core.utils import safe_extract
 
