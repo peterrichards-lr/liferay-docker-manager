@@ -10,8 +10,6 @@ import urllib.request
 from ldm_core.ui import UI
 from ldm_core.utils import get_actual_home, version_to_tuple
 
-MIN_LFR_TUNNEL_VERSION = "1.3.0"
-
 
 class ShareService:
     """Service for lfr-tunnel management (downloader, start, status, stop)."""
@@ -49,16 +47,7 @@ class ShareService:
         bin_path = self._get_binary_path()
         installed_ver = self._get_installed_version(bin_path)
 
-        needs_download = False
-        if not installed_ver:
-            needs_download = True
-        elif version_to_tuple(installed_ver) < version_to_tuple(MIN_LFR_TUNNEL_VERSION):
-            UI.warning(
-                f"Installed lfr-tunnel version v{installed_ver} is outdated. Minimum required is v{MIN_LFR_TUNNEL_VERSION}."
-            )
-            needs_download = True
-
-        if not needs_download:
+        if installed_ver:
             return bin_path
 
         # Determine OS and Arch
@@ -111,6 +100,43 @@ class ShareService:
 
         return bin_path
 
+    def _verify_compatibility(self, bin_path, local_version):
+        """Checks the binary against the remote server for minimum and latest versions."""
+        if not local_version or not bin_path.exists():
+            return
+
+        try:
+            res = subprocess.run(
+                [str(bin_path), "-check-version"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            if res.returncode != 0 or not res.stdout:
+                return
+
+            data = json.loads(res.stdout.strip())
+            latest_version = data.get("latest_version")
+            min_version = data.get("min_version")
+
+            if not latest_version or not min_version:
+                return
+
+            local_tuple = version_to_tuple(local_version)
+            min_tuple = version_to_tuple(min_version)
+            latest_tuple = version_to_tuple(latest_version)
+
+            if local_tuple < min_tuple:
+                UI.die(
+                    f"Your Liferay Tunnel client is too old to connect to the server. Minimum required version is {min_version}."
+                )
+            elif local_tuple < latest_tuple:
+                UI.warning(
+                    f"A new version of Liferay Tunnel ({latest_version}) is available. You are running v{local_version}."
+                )
+        except Exception:
+            pass
+
     def _get_auth_token(self):
         """Retrieves the access token in priority order, prompting the user if missing."""
         # Priority 1: Env var
@@ -161,6 +187,9 @@ class ShareService:
 
         if provider == "lfr-tunnel":
             bin_path = self._ensure_binary()
+            installed_ver = self._get_installed_version(bin_path)
+            self._verify_compatibility(bin_path, installed_ver)
+
             token = self._get_auth_token()
 
             ports = ports or "8080"

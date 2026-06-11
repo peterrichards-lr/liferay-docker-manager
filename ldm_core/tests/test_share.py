@@ -124,45 +124,60 @@ class TestShareService(unittest.TestCase):
                         self.assertIn("lfr-tunnel-darwin-arm64", req_url)
                         mock_chmod.assert_called_once()
 
-    @patch("ldm_core.handlers.share.get_actual_home")
-    @patch("urllib.request.urlopen")
-    @patch("ssl._create_unverified_context")
     @patch("subprocess.run")
-    @patch("platform.system")
-    @patch("platform.machine")
-    def test_ensure_binary_outdated_trigger(
-        self,
-        mock_machine,
-        mock_system,
-        mock_run,
-        mock_ssl,
-        mock_urlopen,
-        mock_home,
-    ):
-        mock_home.return_value = Path("/fake/home")
-        mock_system.return_value = "Linux"
-        mock_machine.return_value = "x86_64"
+    @patch("ldm_core.handlers.share.UI")
+    def test_verify_compatibility_hard_blocker(self, mock_ui, mock_run):
+        mock_bin = MagicMock()
+        mock_bin.exists.return_value = True
 
-        # Mock installed version returns outdated "1.2.9", then "1.3.0" after update
-        with patch.object(
-            self.service,
-            "_get_installed_version",
-            side_effect=["1.2.9", "1.3.0"],
-        ):
-            with patch("builtins.open", unittest.mock.mock_open()):
-                with patch("pathlib.Path.chmod"):
-                    with patch("pathlib.Path.mkdir"):
-                        with patch("pathlib.Path.stat") as mock_stat:
-                            mock_stat.return_value.st_mode = 0o100644
-                            bin_path = self.service._ensure_binary()
+        mock_res = MagicMock()
+        mock_res.returncode = 0
+        mock_res.stdout = '{"latest_version": "v1.3.0", "min_version": "v1.0.0"}'
+        mock_run.return_value = mock_res
 
-                        self.assertEqual(
-                            bin_path,
-                            Path("/fake/home/.ldm/bin/lfr-tunnel"),
-                        )
-                        mock_urlopen.assert_called_once()
-                        req_url = mock_urlopen.call_args[0][0]
-                        self.assertIn("lfr-tunnel-linux-amd64", req_url)
+        # Local version is older than min_version -> Hard Blocker
+        self.service._verify_compatibility(mock_bin, "0.9.0")
+
+        mock_ui.die.assert_called_once_with(
+            "Your Liferay Tunnel client is too old to connect to the server. Minimum required version is v1.0.0."
+        )
+        mock_ui.warning.assert_not_called()
+
+    @patch("subprocess.run")
+    @patch("ldm_core.handlers.share.UI")
+    def test_verify_compatibility_soft_warning(self, mock_ui, mock_run):
+        mock_bin = MagicMock()
+        mock_bin.exists.return_value = True
+
+        mock_res = MagicMock()
+        mock_res.returncode = 0
+        mock_res.stdout = '{"latest_version": "v1.3.0", "min_version": "v1.0.0"}'
+        mock_run.return_value = mock_res
+
+        # Local version >= min_version but < latest_version -> Soft Warning
+        self.service._verify_compatibility(mock_bin, "1.2.0")
+
+        mock_ui.warning.assert_called_once_with(
+            "A new version of Liferay Tunnel (v1.3.0) is available. You are running v1.2.0."
+        )
+        mock_ui.die.assert_not_called()
+
+    @patch("subprocess.run")
+    @patch("ldm_core.handlers.share.UI")
+    def test_verify_compatibility_ok(self, mock_ui, mock_run):
+        mock_bin = MagicMock()
+        mock_bin.exists.return_value = True
+
+        mock_res = MagicMock()
+        mock_res.returncode = 0
+        mock_res.stdout = '{"latest_version": "v1.3.0", "min_version": "v1.0.0"}'
+        mock_run.return_value = mock_res
+
+        # Local version >= latest_version -> No Warning
+        self.service._verify_compatibility(mock_bin, "1.3.0")
+
+        mock_ui.warning.assert_not_called()
+        mock_ui.die.assert_not_called()
 
     @patch("ldm_core.handlers.share.get_actual_home")
     @patch.dict(os.environ, {"LFT_CLIENT_TOKEN": "env-token"})
