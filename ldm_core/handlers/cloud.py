@@ -439,15 +439,44 @@ class CloudService:
         if not backup_dir.exists() or not backup_dir.is_dir():
             UI.die(f"Backup directory not found or is not a directory: {backup_dir}")
 
-        if (
-            not (backup_dir / "database.gz").exists()
-            and not (backup_dir / "volume.tgz").exists()
-        ):
+        db_target = backup_dir / "database.gz"
+        vol_target = backup_dir / "volume.tgz"
+
+        # Allow flexible naming for downloaded LCP backups (e.g. NFC buckets)
+        if not db_target.exists():
+            db_matches = list(backup_dir.glob("*database*.gz"))
+            if db_matches:
+                UI.info(
+                    f"Auto-resolving database backup from {db_matches[0].name} to database.gz"
+                )
+                db_matches[0].rename(db_target)
+
+        if not vol_target.exists():
+            vol_matches = list(backup_dir.glob("*volume*.tgz")) + list(
+                backup_dir.glob("*volume*.tar.gz")
+            )
+            if vol_matches:
+                UI.info(
+                    f"Auto-resolving volume backup from {vol_matches[0].name} to volume.tgz"
+                )
+                vol_matches[0].rename(vol_target)
+
+        if not db_target.exists() and not vol_target.exists():
             UI.die(
-                f"Invalid cloud backup format in {backup_dir}. Missing database.gz or volume.tgz"
+                f"Invalid cloud backup format in {backup_dir}. Missing a database.gz or volume.tgz file."
             )
 
         tag = getattr(self.manager.args, "tag", None)
+        if not tag:
+            if self.manager.non_interactive:
+                tag = self.manager.defaults.get("tag")
+                if not tag:
+                    UI.die(
+                        "A Liferay tag must be provided in non-interactive mode via --tag."
+                    )
+            else:
+                tag = self.manager.assets.prompt_for_tag()
+
         self.hydrate_cloud_backup(project_id, backup_dir, tag_for_seed=tag)
 
     def _detect_db_type(self, backup_dir):

@@ -45,13 +45,13 @@ class AiService(BaseHandler):
     def _get_mcp_tools_schema(self):
         """Converts our FastMCP tools into Google Gemini Function Calling schema."""
         tools = []
-        for tool_name, tool in mcp_server._tools.items():
+        for tool_name, tool in mcp_server._tool_manager._tools.items():
             params: dict = {
                 "type": "object",
                 "properties": {},
             }
             # FastMCP uses Pydantic under the hood to generate schemas
-            schema = tool.parameters_schema
+            schema = tool.parameters
             if schema and "properties" in schema:
                 for prop_name, prop_details in schema["properties"].items():
                     params["properties"][prop_name] = {
