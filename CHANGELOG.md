@@ -178,6 +178,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added runtime state-awareness checks to commands (run, import) to prevent unexpected container collisions.
 - Enabled non-interactive bypass for internal developer utility prompts.
 
+## [v2.11.9] - 2026-06-15
+
+### Fixed
+
+- Resolved LDM self-upgrade failures due to unauthenticated GitHub API rate limiting by implementing a fallback check via HTML redirect.
+
 ## [v2.11.5] - 2026-06-10
 
 ### Added

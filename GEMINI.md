@@ -68,19 +68,26 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
 - [PaaS "Golden Path" Guide](./docs/guides/PAAS_LOCAL_DEV.md)
 - [Agent Rules of Engagement](./.gemini/gemini.md)
 
-## 8. Active Work State & Plan (June 11, 2026)
+## 8. Active Work State & Plan (June 15, 2026)
 
 ### Status
 
 - Merged documentation PR 34 and PR 31 into master.
 - Resolved CI smoke-test failures, added unit tests for OSGi state persistence, and created `scripts/verify_osgi_persistence.sh` E2E verification script on `feature/osgi-performance`.
-- **Hotfix**: Resolved an issue where standalone macOS/Linux binaries (`ldm-macos-x86_64`, `ldm-linux`) would crash with a `ModuleNotFoundError` (`pydantic_core._pydantic_core`) when run with a system Python version that did not match the GitHub CI build version (3.13).
+- Resolved an issue where standalone macOS/Linux binaries (`ldm-macos-x86_64`, `ldm-linux`) would crash with a `ModuleNotFoundError` (`pydantic_core._pydantic_core`) when run with Python versions other than 3.13.
+- **Current Issue**: Investigating `ldm upgrade` / `ldm system upgrade` check failures. The check fails when unauthenticated GitHub API rate limits (60 req/hour per IP) are reached, which commonly affects corporate offices or colleagues sharing public IP addresses.
 
-### Plan to resolve Python ABI incompatibility in LDM binaries
+### Plan to resolve LDM Upgrade Check Failures
 
-1. **Implement Lazy Initialization for MCP/AI Services** [Completed]:
-   - Refactored `ldm_core/manager.py` to remove top-level imports of `AiService` and `McpService`.
-   - Replaced immediate instantiation with lazy-loaded properties (`@property def ai`, `@property def mcp`).
-   - This ensures that `mcp` (and its C-extension dependency `pydantic-core`) is only loaded when a user explicitly invokes an AI/MCP command (`ldm ai` or `ldm mcp`), preventing fatal startup crashes for basic commands like `ldm list` or `ldm up`.
-2. **Verify Stability** [Completed]:
-   - Ran `pytest` to confirm all unit tests still pass successfully with the lazy loading approach.
+1. **Implement Fallback Upgrade Checking via HTML Redirect** [Completed]:
+   - If the unauthenticated GitHub API rate limit is exceeded (HTTP 403) or any other API request exception occurs during stable checks (`pre_release=False`), fallback to a HEAD request on `https://github.com/peterrichards-lr/liferay-docker-manager/releases/latest`.
+   - Inspect the returned `Location` header to parse the tag name of the latest stable version (e.g. `v2.11.8`).
+   - Dynamically build the asset download URL based on the user's OS and architecture (e.g., `ldm-macos-arm64` on Apple Silicon, `ldm-macos-x86_64` on Intel Mac, etc.), matching the format `https://github.com/peterrichards-lr/liferay-docker-manager/releases/download/v{version}/{asset_name}`.
+2. **Add Unit Tests for Fallback** [Completed]:
+   - Add unit tests verifying both successful fallback to HTML redirect and graceful failure when both mechanisms fail.
+3. **Fix Existing Broken Unit Test** [Completed]:
+   - Fix the failing test `test_check_tooling_and_integrity_venv_inactive` by correctly mocking `verify_executable_checksum` to return `"Source"`.
+4. **Verify stability & check-in** [Completed]:
+   - Run the full test suite with `pytest` to confirm all unit tests pass.
+5. **Update Troubleshooting Documentation**:
+   - Update `docs/INSTALLATION.md` and `docs/TROUBLESHOOTING.md` to document the GitHub API rate limit behavior and explain the automatic fallback mechanism.

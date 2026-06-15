@@ -323,6 +323,19 @@ To install a specific beta or pre-release version manually, replace `<tag>` in t
 
 Stable releases are always available via the `/releases/latest/download/` path, while pre-releases must be accessed via their specific tag path: `/releases/download/<tag>/`.
 
+### 5. GitHub API Rate Limiting (HTTP 403 / "Failed to check for updates")
+
+If you are running LDM behind a corporate proxy, VPN, or a shared public IP address, you might occasionally see the following error when checking for updates or upgrading:
+
+```text
+=== LDM Self-Upgrade ===
+❌  Failed to check for updates.
+```
+
+This occurs when the shared IP address hits the GitHub unauthenticated REST API limit (60 requests/hour).
+
+**The Solution:** LDM automatically falls back to an HTML redirect check on `https://github.com/peterrichards-lr/liferay-docker-manager/releases/latest` (which is not rate-limited). If the fallback also fails, verify your network connectivity or try again later.
+
 ## 🛠️ Troubleshooting: Sudo & Root Issues
 
 LDM strictly prohibits being run with `sudo` or as the `root` user (except for internal, just-in-time elevation).
