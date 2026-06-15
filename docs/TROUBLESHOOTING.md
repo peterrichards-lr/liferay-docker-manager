@@ -286,3 +286,21 @@ If the database and search index are completely desynchronized (often resulting 
 ldm stop <project>
 ldm reseed <project>
 ```
+
+---
+
+## 🚀 LDM Self-Upgrade
+
+### **Failed to check for updates (GitHub API Rate Limiting)**
+
+If you are running LDM behind a corporate proxy, VPN, or shared public IP address, you might occasionally see the following error when checking for updates or upgrading:
+
+```text
+=== LDM Self-Upgrade ===
+❌  Failed to check for updates.
+ℹ  Please check your internet connection or try again later.
+```
+
+This occurs when the shared IP address hits the GitHub unauthenticated REST API limit (60 requests/hour).
+
+**The Solution:** LDM automatically falls back to an HTML redirect check on `https://github.com/peterrichards-lr/liferay-docker-manager/releases/latest` (which is not rate-limited). If the fallback also fails, verify your network connectivity or try again later.

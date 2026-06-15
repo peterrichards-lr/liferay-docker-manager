@@ -297,6 +297,66 @@ class TestUpdateChecks(unittest.TestCase):
                 self.assertEqual(version, "2.6.0")
                 self.assertEqual(url, "http://dl")
 
+    @patch("requests.head")
+    @patch("requests.get")
+    @patch("pathlib.Path.home")
+    def test_check_for_updates_fallback_success(self, mock_home, mock_get, mock_head):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            mock_home.return_value = Path(tmp_dir)
+
+            # API returns rate-limited response (403)
+            mock_api_res = MagicMock()
+            mock_api_res.status_code = 403
+            mock_get.return_value = mock_api_res
+
+            # Fallback redirect HEAD request returns 302
+            mock_head_res = MagicMock()
+            mock_head_res.status_code = 302
+            mock_head_res.headers = {
+                "Location": "https://github.com/peterrichards-lr/liferay-docker-manager/releases/tag/v2.11.8"
+            }
+            mock_head.return_value = mock_head_res
+
+            from ldm_core.utils import check_for_updates
+
+            with (
+                patch("sys.platform", "darwin", create=True),
+                patch("platform.machine", return_value="arm64"),
+            ):
+                version, url = check_for_updates("2.11.7", force=True)
+                self.assertEqual(version, "2.11.8")
+                self.assertEqual(
+                    url,
+                    "https://github.com/peterrichards-lr/liferay-docker-manager/releases/download/v2.11.8/ldm-macos-arm64",
+                )
+
+    @patch("requests.head")
+    @patch("requests.get")
+    @patch("pathlib.Path.home")
+    def test_check_for_updates_fallback_failure(self, mock_home, mock_get, mock_head):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            mock_home.return_value = Path(tmp_dir)
+
+            # API returns 500
+            mock_api_res = MagicMock()
+            mock_api_res.status_code = 500
+            mock_get.return_value = mock_api_res
+
+            # Fallback returns 404
+            mock_head_res = MagicMock()
+            mock_head_res.status_code = 404
+            mock_head.return_value = mock_head_res
+
+            from ldm_core.utils import check_for_updates
+
+            version, url = check_for_updates("2.11.7", force=True)
+            self.assertIsNone(version)
+            self.assertIsNone(url)
+
     def test_atomic_copy(self):
         from ldm_core.utils import atomic_copy
 
