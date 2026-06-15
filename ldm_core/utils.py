@@ -1357,6 +1357,55 @@ def version_to_tuple(v):
     return (base_nums[0], base_nums[1], base_nums[2], weight, beta_num)
 
 
+def _check_updates_fallback(cache_file, now):
+    """Fallback check using HTML redirect to bypass GitHub API rate limiting."""
+    try:
+        headers = {"User-Agent": "ldm-cli", "Cache-Control": "no-cache"}
+        url = (
+            "https://github.com/peterrichards-lr/liferay-docker-manager/releases/latest"
+        )
+        response = requests.head(url, headers=headers, timeout=5, allow_redirects=False)
+        if response.status_code in [301, 302]:
+            location = response.headers.get("Location", "")
+            if "/releases/tag/" in location:
+                latest_version = location.split("/releases/tag/")[-1].lstrip("v")
+
+                # Architecture-aware asset resolution
+                system = sys.platform
+                machine = platform.machine().lower()
+
+                if system == "darwin":
+                    if machine == "arm64":
+                        target_asset = "ldm-macos-arm64"
+                    else:
+                        target_asset = "ldm-macos-x86_64"
+                elif system in ["win32", "windows"]:
+                    target_asset = "ldm-windows.exe"
+                else:
+                    target_asset = "ldm-linux"
+
+                release_url = f"https://github.com/peterrichards-lr/liferay-docker-manager/releases/download/v{latest_version}/{target_asset}"
+
+                # Update cache
+                try:
+                    cache_file.write_text(
+                        json.dumps(
+                            {
+                                "last_check": now,
+                                "latest_version": latest_version,
+                                "url": release_url,
+                            }
+                        )
+                    )
+                except Exception:
+                    pass
+
+                return latest_version, release_url
+    except Exception:
+        pass
+    return None, None
+
+
 def check_for_updates(current_version, force=False, pre_release=False):
     """Checks GitHub for the latest release of LDM."""
     cache_suffix = "_pre" if pre_release else ""
@@ -1456,8 +1505,24 @@ def check_for_updates(current_version, force=False, pre_release=False):
             )
 
             return latest_version, release_url
+
+        # Fallback if API status code is not 200 (e.g. 403 rate limited)
+        if not pre_release:
+            fallback_version, fallback_url = _check_updates_fallback(cache_file, now)
+            if fallback_version:
+                return fallback_version, fallback_url
+
     except Exception:
-        # Fail gracefully for background checks
+        # Fallback if request failed completely (e.g. API DNS/connection error)
+        if not pre_release:
+            try:
+                fallback_version, fallback_url = _check_updates_fallback(
+                    cache_file, now
+                )
+                if fallback_version:
+                    return fallback_version, fallback_url
+            except Exception:
+                pass
         return None, None
     return None, None
 

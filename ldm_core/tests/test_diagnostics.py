@@ -401,7 +401,9 @@ class TestDiagnostics(unittest.TestCase):
             self.assertEqual(venv_result[1], "Active (.venv)")
             self.assertTrue(venv_result[2])
 
-    def test_check_tooling_and_integrity_venv_inactive(self):
+    @patch("ldm_core.handlers.diagnostics.verify_executable_checksum")
+    def test_check_tooling_and_integrity_venv_inactive(self, mock_verify):
+        mock_verify.return_value = ("Source", True, "2.11.7")
         runner = DoctorRunner(self.manager.diagnostics)
         with (
             patch("sys.prefix", "dummy_base"),
