@@ -23,6 +23,7 @@ from ldm_core.utils import (
     atomic_copy,
     calculate_sha256,
     is_env_var_blacklisted,
+    is_within_root,
     load_env_blacklist,
     safe_copy,
     safe_move,
@@ -667,25 +668,29 @@ class WorkspaceService(BaseHandler):
         url = url.strip().split("?")[0].split("#")[0]
         if "github.com" not in url:
             return None
-        if url.endswith("/"):
-            url = url[:-1]
-        path = None
+
+        # Handle SSH format: git@github.com:owner/repo.git
         if url.startswith("git@"):
             parts = url.split(":", 1)
             if len(parts) == 2:
                 path = parts[1]
-        elif url.startswith(("http://", "https://")):
-            parts = url.split("/")
-            if len(parts) >= 2:
-                path = f"{parts[-2]}/{parts[-1]}"
-        if path:
-            if path.endswith(".git"):
-                path = path[:-4]
-            if path.endswith("/"):
-                path = path[:-1]
-            subparts = path.split("/")
-            if len(subparts) == 2:
-                return subparts[0], subparts[1]
+                if path.endswith(".git"):
+                    path = path[:-4]
+                subparts = [p for p in path.split("/") if p]
+                if len(subparts) >= 2:
+                    return subparts[0], subparts[1]
+            return None
+
+        # Handle HTTP/HTTPS format: https://github.com/owner/repo or https://github.com/owner/repo/tree/master
+        if "github.com/" in url:
+            path_part = url.split("github.com/", 1)[1]
+            subparts = [p for p in path_part.split("/") if p]
+            if len(subparts) >= 2:
+                owner = subparts[0]
+                repo = subparts[1]
+                if repo.endswith(".git"):
+                    repo = repo[:-4]
+                return owner, repo
         return None
 
     def cmd_import(self, source_path, is_init_from=False):
@@ -712,7 +717,13 @@ class WorkspaceService(BaseHandler):
                     source_path.split("?")[0].split("#")[0].split("/")[-1]
                     or "download.ldmp"
                 )
-                local_path = temp_dir / archive_name
+                archive_name = Path(archive_name).name
+                local_path = (temp_dir / archive_name).resolve()
+
+                if not is_within_root(local_path, temp_dir):
+                    if temp_dir.exists():
+                        shutil.rmtree(temp_dir)
+                    UI.die("Security Violation: Invalid remote archive path.")
 
                 UI.info(f"Downloading remote archive: {source_path}...")
                 try:
@@ -733,9 +744,15 @@ class WorkspaceService(BaseHandler):
                     try:
                         sha_resp = requests.get(sha_url, timeout=10)
                         if sha_resp.status_code == 200:
-                            sha_path = local_path.with_name(f"{local_path.name}.sha256")
-                            sha_path.write_text(sha_resp.text.strip())
-                            UI.info("Downloaded checksum signature.")
+                            sha_name = f"{local_path.name}.sha256"
+                            sha_path = (temp_dir / sha_name).resolve()
+                            if is_within_root(sha_path, temp_dir):
+                                sha_path.write_text(sha_resp.text.strip())
+                                UI.info("Downloaded checksum signature.")
+                            else:
+                                UI.warning(
+                                    "Security Warning: Signature file containment check failed."
+                                )
                     except Exception:
                         pass
 
@@ -811,7 +828,7 @@ class WorkspaceService(BaseHandler):
 
                 try:
                     res = subprocess.run(
-                        ["git", "clone", source_path, str(temp_git_dir)],
+                        ["git", "clone", "--", source_path, str(temp_git_dir)],
                         capture_output=True,
                         text=True,
                         check=False,
@@ -908,10 +925,22 @@ class WorkspaceService(BaseHandler):
                 )
                 temp_pkg_dir.mkdir(parents=True, exist_ok=True)
 
-                ldmp_path = temp_pkg_dir / ldmp_asset["name"]
-                sha_path = temp_pkg_dir / sha_asset["name"]
+                ldmp_name = Path(ldmp_asset["name"]).name
+                sha_name = Path(sha_asset["name"]).name
 
-                UI.info(f"Downloading LDM package: {ldmp_asset['name']}...")
+                ldmp_path = (temp_pkg_dir / ldmp_name).resolve()
+                sha_path = (temp_pkg_dir / sha_name).resolve()
+
+                if not is_within_root(ldmp_path, temp_pkg_dir) or not is_within_root(
+                    sha_path, temp_pkg_dir
+                ):
+                    if temp_pkg_dir.exists():
+                        shutil.rmtree(temp_pkg_dir)
+                    if temp_git_dir.exists():
+                        shutil.rmtree(temp_git_dir)
+                    UI.die("Security Violation: Invalid package asset name.")
+
+                UI.info(f"Downloading LDM package: {ldmp_name}...")
                 try:
                     headers_dl = {"Accept": "application/octet-stream"}
                     if github_token:

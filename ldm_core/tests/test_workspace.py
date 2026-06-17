@@ -5,7 +5,7 @@ import tempfile
 import unittest
 import zipfile
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import ANY, MagicMock, patch
 
 from ldm_core.handlers.assets import AssetService
 from ldm_core.handlers.base import BaseHandler
@@ -444,6 +444,10 @@ class TestWorkspaceRemoteImport(unittest.TestCase):
         self.assertEqual(
             ws._parse_github_repo("http://github.com/owner/repo/"), ("owner", "repo")
         )
+        self.assertEqual(
+            ws._parse_github_repo("https://github.com/owner/repo/tree/master/subpath"),
+            ("owner", "repo"),
+        )
         # SSH URLs
         self.assertEqual(
             ws._parse_github_repo("git@github.com:owner/repo.git"), ("owner", "repo")
@@ -565,6 +569,13 @@ class TestWorkspaceRemoteImport(unittest.TestCase):
         self.assertTrue("clone_" in calls[1])
         # Assert database / snapshot restore was triggered
         self.assertTrue(self.handler.snapshot.cmd_restore.called)
+        # Assert git clone was shielded with --
+        mock_sub_run.assert_any_call(
+            ["git", "clone", "--", "https://github.com/owner/repo", ANY],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
 
     @patch("subprocess.run")
     def test_cmd_import_git_clone_auth_failure(self, mock_sub_run):
