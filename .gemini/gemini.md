@@ -255,6 +255,12 @@
       - [x] Fix tests in `test_runtime.py`.
       - [x] Update documentation (THIRD_PARTY_TOOLS.md, SHARING_AND_TUNNELS.md, README.md).
 
+  - [x] **Remote Import & Packaging (v2.11.x)**:
+    - [x] Write design and packaging plan in `remote_import_and_packaging_plan.md` (updated with private repo auth).
+    - [x] Implement remote URL detection (Git / HTTPS / ZIP) in `WorkspaceService.cmd_import`.
+    - [x] Implement robust fail-fast checks for SSH and PAT authentication when accessing private repositories.
+    - [x] Create unit tests and integration tests for remote import scenarios.
+
 ## 9. Founding Patterns of LDM
 
 - **Sensible Defaults**: Whenever a standard Liferay convention exists, ldm uses it automatically (e.g., port 8080, managed DB name lportal).
