@@ -79,4 +79,4 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
 - Cleaned up 2 obsolete remote-tracking compatibility branches on `origin`.
 - Drafted Remote Import & Packaging design plan with private repository auth/fail-fast logic.
 - Implemented Remote Import & Packaging features in `ldm_core/handlers/workspace.py` and added unit tests.
-- Resolved `UnboundLocalError` on `calculate_sha256` and fixed all linting issues; all unit tests and linter checks pass clean.
+- Resolved `UnboundLocalError` on `calculate_sha256` and fixed all linting issues; all unit tests and linter checks pass clean. Bumped version to `2.11.10-pre.1` for pre-release verification.
