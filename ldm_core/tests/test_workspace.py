@@ -492,7 +492,20 @@ class TestWorkspaceRemoteImport(unittest.TestCase):
 
         def mock_import(source_path, *args, **kwargs):
             calls.append(source_path)
-            if "github.com" in source_path:
+            from urllib.parse import urlparse
+
+            is_github = False
+            try:
+                parsed = urlparse(source_path)
+                if parsed.netloc in (
+                    "github.com",
+                    "www.github.com",
+                ) or source_path.startswith("git@github.com:"):
+                    is_github = True
+            except Exception:
+                pass
+
+            if is_github:
                 return real_import(source_path, *args, **kwargs)
             return "my-project"
 

@@ -666,31 +666,34 @@ class WorkspaceService(BaseHandler):
         if not url:
             return None
         url = url.strip().split("?")[0].split("#")[0]
-        if "github.com" not in url:
-            return None
 
         # Handle SSH format: git@github.com:owner/repo.git
-        if url.startswith("git@"):
-            parts = url.split(":", 1)
-            if len(parts) == 2:
-                path = parts[1]
+        if url.startswith("git@github.com:"):
+            path = url.split("git@github.com:", 1)[1]
+            if path.endswith(".git"):
+                path = path[:-4]
+            subparts = [p for p in path.split("/") if p]
+            if len(subparts) >= 2:
+                return subparts[0], subparts[1]
+            return None
+
+        # Handle HTTP/HTTPS format: https://github.com/owner/repo or https://github.com/owner/repo/tree/master
+        from urllib.parse import urlparse
+
+        try:
+            parsed = urlparse(url)
+            if parsed.scheme in ("http", "https") and parsed.netloc in (
+                "github.com",
+                "www.github.com",
+            ):
+                path = parsed.path
                 if path.endswith(".git"):
                     path = path[:-4]
                 subparts = [p for p in path.split("/") if p]
                 if len(subparts) >= 2:
                     return subparts[0], subparts[1]
-            return None
-
-        # Handle HTTP/HTTPS format: https://github.com/owner/repo or https://github.com/owner/repo/tree/master
-        if "github.com/" in url:
-            path_part = url.split("github.com/", 1)[1]
-            subparts = [p for p in path_part.split("/") if p]
-            if len(subparts) >= 2:
-                owner = subparts[0]
-                repo = subparts[1]
-                if repo.endswith(".git"):
-                    repo = repo[:-4]
-                return owner, repo
+        except Exception:
+            pass
         return None
 
     def cmd_import(self, source_path, is_init_from=False):
@@ -820,8 +823,18 @@ class WorkspaceService(BaseHandler):
                     UI.detail(
                         "Using SSH protocol for clone. Assumes SSH agent or key is loaded."
                     )
-                elif source_path.startswith("https://") and "github.com" in source_path:
-                    if "GITHUB_TOKEN" not in os.environ:
+                elif source_path.startswith("https://"):
+                    from urllib.parse import urlparse
+
+                    is_github = False
+                    try:
+                        parsed = urlparse(source_path)
+                        if parsed.netloc in ("github.com", "www.github.com"):
+                            is_github = True
+                    except Exception:
+                        pass
+
+                    if is_github and "GITHUB_TOKEN" not in os.environ:
                         UI.info(
                             "Note: GITHUB_TOKEN environment variable is not set. If this is a private repository, cloning may fail."
                         )
