@@ -255,7 +255,10 @@ class TestWorkspaceImport(unittest.TestCase):
             self.handler.args.project_flag = None
 
             with (
-                patch("ldm_core.utils.calculate_sha256", return_value="match-sha"),
+                patch(
+                    "ldm_core.handlers.workspace.calculate_sha256",
+                    return_value="match-sha",
+                ),
                 patch("ldm_core.handlers.workspace.UI.success") as mock_success,
                 patch("zipfile.ZipFile"),
                 patch("ldm_core.utils.safe_extract"),
@@ -418,6 +421,178 @@ class TestWorkspaceScanners(unittest.TestCase):
         # We don't call cmd_monitor because it's blocking.
         # We just test the _hydrate_from_workspace logic again to be sure.
         pass
+
+
+class TestWorkspaceRemoteImport(unittest.TestCase):
+    def setUp(self):
+        self.handler = MockWorkspaceManager()
+
+    def test_parse_github_repo(self):
+        ws = self.handler.workspace
+        # GITHUB_URL parsing tests
+        self.assertEqual(
+            ws._parse_github_repo("https://github.com/owner/repo"), ("owner", "repo")
+        )
+        self.assertEqual(
+            ws._parse_github_repo("https://github.com/owner/repo.git"),
+            ("owner", "repo"),
+        )
+        self.assertEqual(
+            ws._parse_github_repo("https://github.com/owner/repo.git?ref=main"),
+            ("owner", "repo"),
+        )
+        self.assertEqual(
+            ws._parse_github_repo("http://github.com/owner/repo/"), ("owner", "repo")
+        )
+        # SSH URLs
+        self.assertEqual(
+            ws._parse_github_repo("git@github.com:owner/repo.git"), ("owner", "repo")
+        )
+        self.assertEqual(
+            ws._parse_github_repo("git@github.com:owner/repo"), ("owner", "repo")
+        )
+        # Invalid URLs
+        self.assertIsNone(ws._parse_github_repo(""))
+        self.assertIsNone(ws._parse_github_repo("https://example.com"))
+
+    @patch("requests.get")
+    @patch("ldm_core.handlers.workspace.WorkspaceService.cmd_import")
+    def test_cmd_import_remote_archive_url(self, mock_cmd_import, mock_get):
+        # Mock successful archive download
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.iter_content = lambda *_args, **_kwargs: [b"archive_data"]
+
+        mock_sha_response = MagicMock()
+        mock_sha_response.status_code = 200
+        mock_sha_response.text = "hash"
+
+        mock_get.side_effect = [mock_response, mock_sha_response]
+
+        self.handler.workspace.cmd_import("https://example.com/project.ldmp")
+
+        # Verify that cmd_import was recursively called
+        self.assertTrue(mock_cmd_import.called)
+        called_path = mock_cmd_import.call_args[0][0]
+        self.assertTrue(called_path.endswith("project.ldmp"))
+
+    @patch("subprocess.run")
+    @patch("requests.get")
+    @patch("ldm_core.handlers.workspace.calculate_sha256", return_value="matching_hash")
+    @patch("tarfile.open")
+    def test_cmd_import_git_url_success(
+        self, mock_tar_open, mock_calc_sha, mock_get, mock_sub_run
+    ):
+        real_import = self.handler.workspace.cmd_import
+        calls = []
+
+        def mock_import(source_path, *args, **kwargs):
+            calls.append(source_path)
+            if "github.com" in source_path:
+                return real_import(source_path, *args, **kwargs)
+            return "my-project"
+
+        self.handler.workspace.cmd_import = mock_import
+
+        # 1. Mock subprocess.run for git clone & git remote get-url origin
+        mock_clone_res = MagicMock()
+        mock_clone_res.returncode = 0
+
+        mock_origin_res = MagicMock()
+        mock_origin_res.returncode = 0
+        mock_origin_res.stdout = "git@github.com:owner/repo.git"
+
+        mock_sub_run.side_effect = [mock_clone_res, mock_origin_res]
+
+        # 2. Mock requests.get for GitHub Releases API and downloads
+        mock_release_resp = MagicMock()
+        mock_release_resp.status_code = 200
+        mock_release_resp.json.return_value = {
+            "assets": [
+                {"name": "project.ldmp", "url": "https://api.github.com/assets/1"},
+                {
+                    "name": "project.ldmp.sha256",
+                    "url": "https://api.github.com/assets/2",
+                },
+            ]
+        }
+
+        mock_ldmp_resp = MagicMock()
+        mock_ldmp_resp.status_code = 200
+        mock_ldmp_resp.iter_content = lambda *_args, **_kwargs: [b"package_data"]
+
+        mock_sha_resp = MagicMock()
+        mock_sha_resp.status_code = 200
+        mock_sha_resp.text = "matching_hash project.ldmp"
+
+        mock_get.side_effect = [mock_release_resp, mock_ldmp_resp, mock_sha_resp]
+
+        # 3. Mock reading the meta file extracted from package
+        mock_open = MagicMock()
+        mock_file = MagicMock()
+        mock_file.__iter__.return_value = [
+            "github_repository=owner/repo\n",
+            "tag=2024.q1.3\n",
+        ]
+        mock_open.return_value.__enter__.return_value = mock_file
+
+        # Patch Path.exists to selectively say meta exists but project does not
+        def mock_exists(self_path):
+            return "my-project" not in str(self_path)
+
+        with (
+            patch("builtins.open", mock_open),
+            patch.object(Path, "open", mock_open),
+            patch.object(Path, "write_text"),
+            patch.object(Path, "read_text", return_value="matching_hash project.ldmp"),
+            patch.object(Path, "exists", autospec=True, side_effect=mock_exists),
+            patch("pathlib.Path.mkdir"),
+            patch("shutil.rmtree"),
+            patch("ldm_core.utils.safe_extract"),
+            patch(
+                "ldm_core.handlers.base.BaseHandler.detect_project_path",
+                return_value=Path("/tmp/my-project"),
+            ),
+            patch("ldm_core.handlers.base.BaseHandler.read_meta", return_value={}),
+        ):
+            self.handler.args.project = "my-project"
+            self.handler.args.verify = True
+            self.handler.args.no_run = True
+            self.handler.workspace.cmd_import("https://github.com/owner/repo")
+
+        # Assert recursive import was called with cloned git repo path
+        self.assertEqual(len(calls), 2)
+        self.assertTrue("clone_" in calls[1])
+        # Assert database / snapshot restore was triggered
+        self.assertTrue(self.handler.snapshot.cmd_restore.called)
+
+    @patch("subprocess.run")
+    def test_cmd_import_git_clone_auth_failure(self, mock_sub_run):
+        # Mock git clone failure
+        mock_clone_res = MagicMock()
+        mock_clone_res.returncode = 1
+        mock_clone_res.stderr = "Permission denied (publickey)."
+        mock_sub_run.return_value = mock_clone_res
+
+        with self.assertRaises(SystemExit):
+            self.handler.workspace.cmd_import("git@github.com:owner/repo.git")
+
+    @patch("subprocess.run")
+    @patch("requests.get")
+    def test_cmd_import_git_url_release_missing(self, mock_get, mock_sub_run):
+        # Mock git clone success
+        mock_clone_res = MagicMock()
+        mock_clone_res.returncode = 0
+        mock_sub_run.return_value = mock_clone_res
+
+        # Mock release response missing LDMP files
+        mock_release_resp = MagicMock()
+        mock_release_resp.status_code = 200
+        mock_release_resp.json.return_value = {"assets": []}
+        mock_get.return_value = mock_release_resp
+
+        with self.assertRaises(SystemExit):
+            self.handler.workspace.cmd_import("https://github.com/owner/repo")
 
 
 if __name__ == "__main__":

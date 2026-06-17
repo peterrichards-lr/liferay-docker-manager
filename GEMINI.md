@@ -68,26 +68,15 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
 - [PaaS "Golden Path" Guide](./docs/guides/PAAS_LOCAL_DEV.md)
 - [Agent Rules of Engagement](./.gemini/gemini.md)
 
-## 8. Active Work State & Plan (June 15, 2026)
+## 8. Active Work State & Plan (June 17, 2026)
 
 ### Status
 
-- Merged documentation PR 34 and PR 31 into master.
-- Resolved CI smoke-test failures, added unit tests for OSGi state persistence, and created `scripts/verify_osgi_persistence.sh` E2E verification script on `feature/osgi-performance`.
-- Resolved an issue where standalone macOS/Linux binaries (`ldm-macos-x86_64`, `ldm-linux`) would crash with a `ModuleNotFoundError` (`pydantic_core._pydantic_core`) when run with Python versions other than 3.13.
-- **Current Issue**: Investigating `ldm upgrade` / `ldm system upgrade` check failures. The check fails when unauthenticated GitHub API rate limits (60 req/hour per IP) are reached, which commonly affects corporate offices or colleagues sharing public IP addresses.
-
-### Plan to resolve LDM Upgrade Check Failures
-
-1. **Implement Fallback Upgrade Checking via HTML Redirect** [Completed]:
-   - If the unauthenticated GitHub API rate limit is exceeded (HTTP 403) or any other API request exception occurs during stable checks (`pre_release=False`), fallback to a HEAD request on `https://github.com/peterrichards-lr/liferay-docker-manager/releases/latest`.
-   - Inspect the returned `Location` header to parse the tag name of the latest stable version (e.g. `v2.11.8`).
-   - Dynamically build the asset download URL based on the user's OS and architecture (e.g., `ldm-macos-arm64` on Apple Silicon, `ldm-macos-x86_64` on Intel Mac, etc.), matching the format `https://github.com/peterrichards-lr/liferay-docker-manager/releases/download/v{version}/{asset_name}`.
-2. **Add Unit Tests for Fallback** [Completed]:
-   - Add unit tests verifying both successful fallback to HTML redirect and graceful failure when both mechanisms fail.
-3. **Fix Existing Broken Unit Test** [Completed]:
-   - Fix the failing test `test_check_tooling_and_integrity_venv_inactive` by correctly mocking `verify_executable_checksum` to return `"Source"`.
-4. **Verify stability & check-in** [Completed]:
-   - Run the full test suite with `pytest` to confirm all unit tests pass.
-5. **Update Troubleshooting Documentation**:
-   - Update `docs/INSTALLATION.md` and `docs/TROUBLESHOOTING.md` to document the GitHub API rate limit behavior and explain the automatic fallback mechanism.
+- Resolved upgrade rate-limiting check issues by implementing HTML redirect fallback.
+- Merged Dependabot PRs (52, 53, 54, 55) and rate-limit fix (56).
+- All unit and linter tests are fully passing on `master`.
+- Cleaned up 14 obsolete local branches whose remotes were merged/squashed on GitHub.
+- Cleaned up 2 obsolete remote-tracking compatibility branches on `origin`.
+- Drafted Remote Import & Packaging design plan with private repository auth/fail-fast logic.
+- Implemented Remote Import & Packaging features in `ldm_core/handlers/workspace.py` and added unit tests.
+- Resolved `UnboundLocalError` on `calculate_sha256` and fixed all linting issues; all unit tests and linter checks pass clean.
