@@ -114,6 +114,35 @@ class TestCloudService(unittest.TestCase):
         res = self.cloud._run_lcp_cmd(["backup", "list"], capture_json=False)
         self.assertEqual(res, mock_res.stdout)
 
+    @patch("shutil.which")
+    @patch("subprocess.Popen")
+    @patch("ldm_core.ui.UI.die")
+    @patch("ldm_core.ui.UI.error")
+    def test_run_lcp_cmd_expired_token(
+        self, mock_error, mock_die, mock_popen, mock_which
+    ):
+        mock_which.return_value = "/usr/local/bin/lcp"
+
+        # Mock Popen to simulate a failed interactive prompt
+        mock_process = MagicMock()
+        mock_process.stdout.readline.side_effect = [
+            'You need to log in on liferay.cloud before using "lcp backup".\n',
+            "",
+        ]
+        mock_process.wait.return_value = 1
+        mock_popen.return_value = mock_process
+
+        # We must pass spinner=True to trigger the Popen stream branch
+        spinner_mock = MagicMock()
+        res = self.cloud._run_lcp_cmd(["backup", "list"], spinner=spinner_mock)
+
+        # Verify LDM intercepted it and ran UI.die with exit code 2
+        self.assertIsNone(res)
+        mock_error.assert_any_call("Your Liferay Cloud session has expired.")
+        mock_die.assert_called_with(
+            "Please run 'lcp login' to re-authenticate.", exit_code=2
+        )
+
     @patch("ldm_core.handlers.cloud.CloudService._run_lcp_cmd")
     def test_get_cloud_liferay_version(self, mock_run):
         mock_run.return_value = [
