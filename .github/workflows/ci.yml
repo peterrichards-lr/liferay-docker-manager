@@ -137,7 +137,7 @@ jobs:
           sed -i 's/curl -f http:\/\/localhost:8080\/c\/portal\/layout/true/g' smoke-project/docker-compose.yml
 
           # Now run without --no-up to verify it starts and exits quickly
-          python3 liferay_docker.py -y run smoke-project --no-wait
+          python3 liferay_docker.py -y run smoke-project --sidecar --no-wait
 
       - name: Upload Smoke Test Artifacts
         if: failure()
