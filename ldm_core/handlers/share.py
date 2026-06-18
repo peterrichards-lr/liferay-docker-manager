@@ -201,6 +201,7 @@ class ShareService:
 
             env = os.environ.copy()
             env["LFT_CLIENT_TOKEN"] = token
+            env["LFR_TUNNEL_TOKEN"] = token
 
             UI.info("Starting lfr-tunnel in the background...")
             try:

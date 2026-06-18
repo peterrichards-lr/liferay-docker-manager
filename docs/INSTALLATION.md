@@ -30,7 +30,9 @@ ldm --version
 
 > [!IMPORTANT]
 > **macOS/Linux Runtime Requirement:** The standalone binaries for macOS and Linux require **Python 3.10 or higher** installed on the host machine. If running `ldm --version` fails with a traceback (e.g. `TypeError: unsupported operand type(s) for |`), please install or update Python (on macOS, you can run `brew install python@3.12`).
+
 <!-- -->
+
 > [!TIP]
 >
 > **WSL2 Users:** Use the `ldm-linux` binary within your WSL terminal. To enable SSL, you **must** install `mkcert` inside the Linux environment (`sudo apt update && sudo apt install libnss3-tools`).
@@ -106,11 +108,10 @@ ldm --help
   - [Docker Desktop](https://www.docker.com/products/docker-desktop/) (Windows/Mac)
   - [Colima](https://github.com/abiosoft/colima) or [OrbStack](https://orbstack.dev/) (Mac alternatives)
   - [Native Docker Engine](https://docs.docker.com/engine/install/) (Linux)
-- **Docker Compose**: **v2 (Plugin)** is mandatory. Legacy v1 standalone is not supported.
+- **Docker Compose**: **v2 (Plugin)** is mandatory. Legacy v1 standalone is not supported. _(Note: Docker Desktop includes Docker Compose automatically)._
 - **Resources**: Recommended **4 CPUs and 8GB RAM** allocated to Docker.
-  - *Note*: `ldm doctor` expects these minimums. If you allocate exactly 8GB, Docker may report ~7.7GB due to system overhead; the tool accounts for this by allowing a 7.5GB threshold.
+  - _Note_: `ldm doctor` expects these minimums. If you allocate exactly 8GB, Docker may report ~7.7GB due to system overhead; the tool accounts for this by allowing a 7.5GB threshold.
 - **Python**: 3.10+ (required for source installations and for macOS/Linux standalone binaries, as they are packaged as ZipApps. Not required for Windows standalone binaries).
-- **SSL Tools**: `mkcert` and `openssl` are required for HTTPS support.
 
 For a detailed breakdown of all third-party dependencies, why they are needed, and feature impact, see the [THIRD_PARTY_TOOLS.md](./THIRD_PARTY_TOOLS.md) guide.
 
@@ -121,21 +122,48 @@ Windows does not include all the optional developer tools by default.
 > [!IMPORTANT]
 > **Terminal Encoding:** Older Windows consoles (cmd.exe / PowerShell 5) may have trouble displaying Unicode symbols (●, ✅). LDM **v2.4.26-beta.37+** automatically detects these terminals and switches to safe ASCII fallbacks. For the best experience, we recommend using **Windows Terminal**.
 
-Run the following in an **Administrator PowerShell**:
+#### 1. Enable Telnet Client (Administrator PowerShell)
 
-1. **Enable Telnet Client** (Required for OSGi Gogo Shell access):
+Open PowerShell **as an Administrator** to enable Telnet (required for OSGi Gogo Shell access):
 
-   ```powershell
-   Enable-WindowsOptionalFeature -Online -FeatureName TelnetClient
-   ```
+```powershell
+Enable-WindowsOptionalFeature -Online -FeatureName TelnetClient
+```
 
-2. **Install SSL Tools** (via [Chocolatey](https://chocolatey.org/) or [Scoop](https://scoop.sh/)):
+#### 2. Install SSL Tools (Chocolatey or Scoop)
 
-   ```powershell
-   choco install mkcert openssl
-   # OR
-   scoop install mkcert openssl
-   ```
+To enable "Green Lock" SSL on Windows, you must install `mkcert` and `openssl`. You can use either Chocolatey or Scoop.
+
+**Option A: Chocolatey** (Requires Administrator PowerShell)
+
+```powershell
+choco install mkcert openssl
+mkcert -install
+```
+
+**Option B: Scoop** (Run as a Standard User!)
+_Note: Scoop refuses to run as Administrator. Run these in a standard, non-elevated PowerShell:_
+
+```powershell
+# 1. Install Scoop (The Package Manager)
+Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser; iwr -useb get.scoop.sh | iex
+
+# 2. Install Git (Required for Scoop Buckets and OpenSSL)
+scoop install git
+
+# 3. Add the Extras Bucket (Required for mkcert)
+scoop bucket add extras
+
+# 4. Install SSL Tools
+scoop install mkcert openssl
+```
+
+_After Scoop finishes, open an **Administrator PowerShell** to initialize the trust store:_
+
+```powershell
+# 5. Initialize Local Trust Store (Requires Administrator)
+mkcert -install
+```
 
 ### 🍎 Install SSL Tools (macOS)
 
@@ -228,39 +256,18 @@ ldm config verbose --remove
 
 LDM is designed to be **self-healing**. Even if you do not use a `common/` folder, the tool will automatically ensure that every project's `portal-ext.properties` contains the essential settings for SSL and virtual hosting (`web.server.host`, `web.server.protocol`, etc.).
 
-### Windows: Installing SSL Tools (Scoop)
-
-To enable "Green Lock" SSL on Windows, we recommend using **Scoop** to manage `mkcert` and `openssl`. Run these commands in PowerShell:
-
-```powershell
-# 1. Install Scoop (The Package Manager)
-Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser; iwr -useb get.scoop.sh | iex
-
-# 2. Install Git (Required for Scoop Buckets and OpenSSL)
-scoop install git
-
-# 3. Add the Extras Bucket (Required for mkcert)
-scoop bucket add extras
-
-# 4. Install SSL Tools
-scoop install mkcert openssl
-
-# 5. Initialize Local Trust Store
-mkcert -install
-```
-
 ### Docker Resource Alignment (Windows/WSL2/macOS)
 
 If `ldm doctor` reports insufficient memory or CPU cores:
 
 1. **Align Docker Settings**:
-    - **Docker Desktop**: Go to **Settings > Resources** and ensure the slider is at least **8GB** and **4 CPUs**.
-    - **Colima**: Restart with higher limits: `colima stop && colima start --cpu 4 --memory 8`.
+   - **Docker Desktop**: Go to **Settings > Resources** and ensure the slider is at least **8GB** and **4 CPUs**.
+   - **Colima**: Restart with higher limits: `colima stop && colima start --cpu 4 --memory 8`.
 
 2. **The "Lenient" Threshold (LDM v1.6.36+)**:
-    - LDM is now more lenient for older hardware.
-    - **2-3 CPUs** or **4GB-7.5GB RAM** will now trigger a **Warning (⚠️)** instead of a hard failure.
-    - This allows LDM to function on dual-core Intel Macs, though performance may be degraded.
+   - LDM is now more lenient for older hardware.
+   - **2-3 CPUs** or **4GB-7.5GB RAM** will now trigger a **Warning (⚠️)** instead of a hard failure.
+   - This allows LDM to function on dual-core Intel Macs, though performance may be degraded.
 
 ## 🛠️ Troubleshooting: Version Loop & Integrity Issues
 
@@ -363,7 +370,7 @@ Standalone LDM binaries use a cache directory in your home folder (`~/.shiv`). R
    sudo usermod -aG docker $USER
    ```
 
-   *Note: You must log out and back in for this to take effect.*
+   _Note: You must log out and back in for this to take effect._
 
 ---
 
@@ -411,6 +418,29 @@ Add this to your `~/.config/fish/config.fish`:
 ldm completion fish | source
 ```
 
+#### **For PowerShell (Windows)**
+
+Standard `argcomplete` requires a community module to bridge with PowerShell.
+
+1. Install the `PowerShell-Argcomplete` module:
+
+   ```powershell
+   Install-Module -Name PowerShell-Argcomplete -Scope CurrentUser
+   ```
+
+2. Register the completion for `ldm` in your PowerShell Profile (`$PROFILE`):
+
+   ```powershell
+   # Open your profile in notepad
+   notepad $PROFILE
+   ```
+
+   Add this line to the file and save:
+
+   ```powershell
+   Register-Argcomplete ldm
+   ```
+
 ### Step 3: Restart your Terminal
 
 After adding the line to your profile, restart your terminal or source the file (e.g., `source ~/.zshrc`) for the changes to take effect.
@@ -423,7 +453,7 @@ Colima is a lightweight, open-source alternative to Docker Desktop. While highly
 
 ### 0. Installation
 
-**Homebrew**: `brew install colima`  
+**Homebrew**: `brew install colima`
 **MacPorts**: `sudo port install colima`
 
 ### 1. Recommended Start Command (Apple Silicon)
@@ -476,12 +506,12 @@ if [ -z "$HOME" ]; then
 fi
 
 function shutdown() {
-  colima stop 
+  colima stop
   exit 0
 }
 
-trap shutdown SIGTERM 
-trap shutdown SIGINT 
+trap shutdown SIGTERM
+trap shutdown SIGINT
 
 # 3. Detect Architecture and Set Optimized Parameters
 ARCH=$(uname -m)
@@ -660,10 +690,10 @@ Most LDM commands (like `run`, `stop`, `logs`) require a project context.
 1. **Implicit**: If you are inside a project folder, LDM will detect it automatically.
 2. **Explicit**: You can target a project from anywhere using `ldm run <project_name>` or a direct path `ldm run ./my-project`.
 3. **Workspace Support**: LDM automatically searches for projects in:
-    - The current directory.
-    - `~/ldm` (default).
-    - `/Volumes/SanDisk/ldm` (for external storage users).
-    - Any directory specified in the `LDM_WORKSPACE` environment variable.
+   - The current directory.
+   - `~/ldm` (default).
+   - `/Volumes/SanDisk/ldm` (for external storage users).
+   - Any directory specified in the `LDM_WORKSPACE` environment variable.
 
 **Pro-Tip**: Add `export LDM_WORKSPACE="/path/to/your/projects"` to your `.bashrc` or `.zshrc` to make your projects accessible from anywhere.
 
@@ -677,15 +707,15 @@ LDM binaries use **"Magic Byte" detection** to accurately report their checksum 
 
 We maintain "Tier 1" support for the following physical lab configurations:
 
-| Environment Type | Host OS | Docker Provider | Lab Hardware |
-| :--- | :--- | :--- | :--- |
-| **Legacy/Intel Mac** | macOS 12 Monterey | Colima | Apple Intel Core i7 (16GB) |
-| **Standard Mac** | macOS 15 Sequoia | Colima | Apple M1 Pro (32GB) |
-| **Modern Mac** | macOS 26 Tahoe | Colima | Apple M3 Max (36GB) |
-| **Modern Mac** | macOS 26 Tahoe | OrbStack | Apple M3 Max (36GB) |
-| **Linux Workstation** | Fedora 43 | Native Docker | MacBook Pro 11,3 (Intel i7) |
-| **Corporate Windows** | Windows 11 | Docker Desktop | Intel i7-7800X (16GB) |
-| **Corporate Windows** | Windows 11 | Native WSL2 | Intel i7-7800X (16GB) |
+| Environment Type      | Host OS           | Docker Provider | Lab Hardware                |
+| :-------------------- | :---------------- | :-------------- | :-------------------------- |
+| **Legacy/Intel Mac**  | macOS 12 Monterey | Colima          | Apple Intel Core i7 (16GB)  |
+| **Standard Mac**      | macOS 15 Sequoia  | Colima          | Apple M1 Pro (32GB)         |
+| **Modern Mac**        | macOS 26 Tahoe    | Colima          | Apple M3 Max (36GB)         |
+| **Modern Mac**        | macOS 26 Tahoe    | OrbStack        | Apple M3 Max (36GB)         |
+| **Linux Workstation** | Fedora 43         | Native Docker   | MacBook Pro 11,3 (Intel i7) |
+| **Corporate Windows** | Windows 11        | Docker Desktop  | Intel i7-7800X (16GB)       |
+| **Corporate Windows** | Windows 11        | Native WSL2     | Intel i7-7800X (16GB)       |
 
 ### Latest Verification Results
 
