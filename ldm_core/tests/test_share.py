@@ -304,3 +304,64 @@ class TestShareService(unittest.TestCase):
             text=True,
             check=False,
         )
+
+    @patch("subprocess.run")
+    @patch("ldm_core.ui.UI.info")
+    def test_cmd_status_docker_running(self, mock_info, mock_run):
+        self.mock_manager.detect_project_path = MagicMock(  # type: ignore[method-assign]
+            return_value=Path("/fake/myproj")
+        )
+        self.mock_manager.read_meta = MagicMock(  # type: ignore[method-assign]
+            return_value={"share_provider": "lfr-tunnel-docker"}
+        )
+
+        mock_res_ps = MagicMock()
+        mock_res_ps.stdout = "Up 2 minutes\n"
+        mock_res_logs = MagicMock()
+        mock_res_logs.stdout = "some logs"
+
+        # We need mock_run side effects for two runs: docker ps, then docker logs
+        mock_run.side_effect = [mock_res_ps, mock_res_logs]
+
+        self.service.cmd_status(project_id="myproj")
+
+        # Verify docker ps args
+        ps_args = mock_run.call_args_list[0][0][0]
+        self.assertEqual(
+            ps_args,
+            ["docker", "ps", "-f", "name=lfr-tunnel-myproj", "--format", "{{.Status}}"],
+        )
+
+        # Verify docker logs args
+        logs_args = mock_run.call_args_list[1][0][0]
+        self.assertEqual(
+            logs_args, ["docker", "logs", "--tail", "10", "lfr-tunnel-myproj"]
+        )
+
+        mock_info.assert_called_with(
+            "lfr-tunnel container (lfr-tunnel-myproj) is running: Up 2 minutes"
+        )
+
+    @patch("subprocess.run")
+    @patch("ldm_core.ui.UI.success")
+    def test_cmd_stop_docker(self, mock_success, mock_run):
+        self.mock_manager.detect_project_path = MagicMock(  # type: ignore[method-assign]
+            return_value=Path("/fake/myproj")
+        )
+        self.mock_manager.read_meta = MagicMock(  # type: ignore[method-assign]
+            return_value={"share_provider": "lfr-tunnel-docker"}
+        )
+
+        mock_res = MagicMock()
+        mock_res.returncode = 0
+        mock_run.return_value = mock_res
+
+        self.service.cmd_stop(project_id="myproj")
+
+        mock_run.assert_called_once_with(
+            ["docker", "rm", "-f", "lfr-tunnel-myproj"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        mock_success.assert_called_with("Tunnel container stopped and removed.")
