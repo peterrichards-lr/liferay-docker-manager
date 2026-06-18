@@ -306,7 +306,8 @@ def sanitize_id(identifier):
         return identifier
     import re
 
-    return re.sub(r"[^a-zA-Z0-9\-_.]", "", str(identifier))
+    ident = str(identifier).replace(" ", "-")
+    return re.sub(r"[^a-zA-Z0-9\-_.]", "", ident)
 
 
 def is_env_var_blacklisted(key, blacklist):

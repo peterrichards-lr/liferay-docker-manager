@@ -1284,10 +1284,20 @@ class WorkspaceService(BaseHandler):
                 if "db_type" in manifest:
                     project_meta["db_type"] = manifest["db_type"]
 
+                from ldm_core.utils import sanitize_id
+
+                safe_container_name = sanitize_id(project_name)
+                if project_name != safe_container_name and getattr(
+                    self.manager.args, "verbose", False
+                ):
+                    UI.info(
+                        f"Project name '{project_name}' contains invalid characters for Docker. Using '{safe_container_name}' for container names."
+                    )
+
                 project_meta.update(
                     {
                         "project_name": project_name,
-                        "container_name": project_name.replace(".", "-"),
+                        "container_name": safe_container_name,
                         "port": str(
                             getattr(self.manager.args, "port", None)
                             or project_meta.get("port")
@@ -1454,9 +1464,19 @@ class WorkspaceService(BaseHandler):
             if use_ssl:
                 self.manager.diagnostics.check_mkcert()
 
+            from ldm_core.utils import sanitize_id
+
+            safe_container_name = sanitize_id(project_name)
+            if project_name != safe_container_name and getattr(
+                self.manager.args, "verbose", False
+            ):
+                UI.info(
+                    f"Project name '{project_name}' contains invalid characters for Docker. Using '{safe_container_name}' for container names."
+                )
+
             project_meta = {
                 "project_name": project_name,
-                "container_name": project_name.replace(".", "-"),
+                "container_name": safe_container_name,
                 "port": str(getattr(self.manager.args, "port", None) or 8080),
                 "ssl": str(use_ssl).lower(),
                 "ssl_port": "443",
