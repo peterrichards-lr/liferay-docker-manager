@@ -236,6 +236,7 @@ class TestShareService(unittest.TestCase):
         # Check token passed in environment
         env = mock_run.call_args[1]["env"]
         self.assertEqual(env["LFT_CLIENT_TOKEN"], "my-token")
+        self.assertEqual(env["LFR_TUNNEL_TOKEN"], "my-token")
 
     @patch("subprocess.run")
     def test_cmd_status(self, mock_run):
