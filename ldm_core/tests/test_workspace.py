@@ -134,6 +134,46 @@ class TestWorkspaceImport(unittest.TestCase):
 
     @patch("ldm_core.handlers.runtime.RuntimeService.cmd_run")
     @patch("ldm_core.handlers.base.BaseHandler.run_command")
+    def test_cmd_import_spaces_in_name(self, mock_run, mock_cmd_run):
+        with tempfile.TemporaryDirectory() as tmp_base:
+            base_path = Path(tmp_base)
+            source_dir = base_path / "My Awesome Project"
+            source_dir.mkdir()
+            (source_dir / "configs").mkdir()
+            (source_dir / "client-extensions").mkdir()
+
+            project_dir = base_path / "My Awesome Project"
+
+            with (
+                patch.object(
+                    self.handler, "detect_project_path", return_value=project_dir
+                ),
+                patch.object(self.handler, "write_meta") as mock_write,
+                patch("ldm_core.handlers.workspace.UI.info") as mock_info,
+            ):
+                self.handler.non_interactive = True
+                self.handler.args.project = "My Awesome Project"
+                self.handler.args.project_flag = None
+                self.handler.workspace.cmd_import(str(source_dir))
+
+                mock_write.assert_called_once()
+                args, _ = mock_write.call_args
+                saved_meta = args[1]
+
+                # Verify LDM kept the original display name but sanitized the docker container name
+                self.assertEqual(saved_meta["project_name"], "My Awesome Project")
+                self.assertEqual(saved_meta["container_name"], "My-Awesome-Project")
+
+                # Verify we logged the verbose message (even if verbose is off, we can check the call isn't made, but if we mock verbose we can check it)
+                # Let's run it again with verbose=True to ensure the message triggers
+                self.handler.args.verbose = True
+                self.handler.workspace.cmd_import(str(source_dir))
+                mock_info.assert_any_call(
+                    "Project name 'My Awesome Project' contains invalid characters for Docker. Using 'My-Awesome-Project' for container names."
+                )
+
+    @patch("ldm_core.handlers.runtime.RuntimeService.cmd_run")
+    @patch("ldm_core.handlers.base.BaseHandler.run_command")
     def test_cmd_import_project_id_passing(self, mock_run, mock_cmd_run):
         with tempfile.TemporaryDirectory() as tmp_base:
             base_path = Path(tmp_base)
