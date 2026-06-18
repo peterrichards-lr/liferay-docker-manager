@@ -219,6 +219,49 @@ class ShareService:
             except Exception as e:
                 UI.die(f"Process invocation error: {e}")
 
+        elif provider == "lfr-tunnel-docker":
+            token = self._get_auth_token()
+            ports = ports or "8080"
+            subdomain = subdomain or project_id
+
+            c_name = f"lfr-tunnel-{project_id}" if project_id else "lfr-tunnel"
+
+            # Remove any existing container to prevent name conflicts
+            subprocess.run(
+                ["docker", "rm", "-f", c_name], capture_output=True, check=False
+            )
+
+            cmd = [
+                "docker",
+                "run",
+                "-d",
+                "--name",
+                c_name,
+                "--add-host",
+                "host.docker.internal:host-gateway",
+                "-e",
+                f"LFT_CLIENT_TOKEN={token}",
+                "peterrichards/lfr-tunnel:latest",
+                "-ports",
+                ports,
+            ]
+            if subdomain:
+                cmd += ["-subdomain", subdomain]
+
+            UI.info(f"Starting lfr-tunnel container ({c_name})...")
+            try:
+                res = subprocess.run(cmd, capture_output=True, text=True, check=False)
+                if res.returncode == 0:
+                    UI.success("Tunnel container started in the background.")
+                else:
+                    UI.error(
+                        f"Failed to start tunnel container (Exit {res.returncode})"
+                    )
+                    if res.stderr:
+                        print(res.stderr.strip())
+            except Exception as e:
+                UI.die(f"Docker invocation error: {e}")
+
         elif provider == "ngrok":
             if not root:
                 UI.die(
@@ -297,6 +340,29 @@ class ShareService:
                 self.manager.runtime._print_ngrok_url(container_name)
             else:
                 UI.error("No active ngrok container context found.")
+        elif provider == "lfr-tunnel-docker":
+            project_id = root.name if root else None
+            c_name = f"lfr-tunnel-{project_id}" if project_id else "lfr-tunnel"
+            res = subprocess.run(
+                ["docker", "ps", "-f", f"name={c_name}", "--format", "{{.Status}}"],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            if res.stdout.strip():
+                UI.info(
+                    f"lfr-tunnel container ({c_name}) is running: {res.stdout.strip()}"
+                )
+                logs = subprocess.run(
+                    ["docker", "logs", "--tail", "10", c_name],
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+                if logs.stdout:
+                    print(logs.stdout.strip())
+            else:
+                UI.error(f"lfr-tunnel container ({c_name}) is not running.")
         else:
             # Default to lfr-tunnel
             bin_path = self._ensure_binary()
@@ -348,6 +414,22 @@ class ShareService:
                 UI.success("Ngrok sharing stopped.")
             else:
                 UI.error(f"Failed to stop ngrok container (Exit {res.returncode})")
+                if res.stderr:
+                    print(res.stderr.strip())
+        elif provider == "lfr-tunnel-docker":
+            project_id = root.name if root else None
+            c_name = f"lfr-tunnel-{project_id}" if project_id else "lfr-tunnel"
+            UI.info(f"Stopping lfr-tunnel container ({c_name})...")
+            res = subprocess.run(
+                ["docker", "rm", "-f", c_name],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            if res.returncode == 0:
+                UI.success("Tunnel container stopped and removed.")
+            else:
+                UI.error(f"Failed to stop tunnel container (Exit {res.returncode})")
                 if res.stderr:
                     print(res.stderr.strip())
         else:

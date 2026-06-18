@@ -16,10 +16,17 @@ LDM supports two distinct tunneling providers:
 
 `lfr-tunnel` is a lightweight, host-side Go client that routes traffic from public wildcard subdomains (`*.lfr-demo.se` and `*.lfr-demo.online`) directly to your local ports.
 
-- **Pros**: Runs on the host, extremely fast, no container footprint, supports wildcard routing.
-- **Installation**: LDM automatically downloads and updates the binary on the first invocation.
+- **Pros**: Runs natively on the host, lowest CPU overhead, supports wildcard routing.
+- **Requirements**: LDM automatically downloads and updates the binary on the first invocation.
 
-### 2. ngrok
+### 2. lfr-tunnel-docker (Zero-Install)
+
+Runs the exact same `lfr-tunnel` client, but completely isolated inside a Docker container.
+
+- **Pros**: 100% immune to SentinelOne/EDR host-level alerts that block unknown Go binaries. Leaves zero footprint on the host system.
+- **Requirements**: Requires Docker to be running.
+
+### 3. ngrok
 
 `ngrok` runs as a sidecar container inside your project's Docker Compose stack, creating a secure tunnel to ngrok's edge servers.
 
