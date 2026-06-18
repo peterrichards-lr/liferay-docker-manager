@@ -1519,7 +1519,9 @@ class RuntimeService(BaseHandler):
             UI.die("Project not found.")
 
         meta = self.manager.read_meta(root)
-        project_name = meta.get("container_name") or root.name
+        from ldm_core.utils import sanitize_id
+
+        project_name = sanitize_id(meta.get("container_name") or root.name)
 
         # Default service to 'liferay' when not specified
         svc = (
@@ -1834,7 +1836,9 @@ class RuntimeService(BaseHandler):
             UI.die("Project not found.")
 
         meta = self.manager.read_meta(project_path)
-        project_name = meta.get("container_name") or project_path.name
+        from ldm_core.utils import sanitize_id
+
+        project_name = sanitize_id(meta.get("container_name") or project_path.name)
 
         for arg in scale_args:
             if "=" not in arg:

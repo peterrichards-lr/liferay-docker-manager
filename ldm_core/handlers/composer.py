@@ -93,7 +93,20 @@ class ComposerService:
         if not isinstance(paths, dict):
             paths = self.manager.setup_paths(paths)
 
-        project_name = meta.get("container_name") or paths["root"].name
+        from ldm_core.utils import sanitize_id
+
+        original_name = meta.get("container_name") or paths["root"].name
+        project_name = sanitize_id(original_name)
+
+        if original_name != project_name and getattr(
+            self.manager.args, "verbose", False
+        ):
+            from ldm_core.ui import UI
+
+            UI.info(
+                f"Project name '{original_name}' contains invalid characters for Docker. Using '{project_name}' for container names."
+            )
+
         host_name = meta.get("host_name", "localhost")
         ssl_enabled = self._is_ssl_active(host_name, meta)
 

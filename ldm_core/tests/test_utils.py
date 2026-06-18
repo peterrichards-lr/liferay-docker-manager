@@ -53,9 +53,9 @@ class TestUtils(unittest.TestCase):
         self.assertEqual(sanitize_id("my-project"), "my-project")
         self.assertEqual(sanitize_id("project.123"), "project.123")
         self.assertEqual(sanitize_id("project_123"), "project_123")
-        self.assertEqual(sanitize_id("my project!"), "myproject")
+        self.assertEqual(sanitize_id("my project!"), "my-project")
         self.assertEqual(sanitize_id("path/to/../../etc/passwd"), "pathto....etcpasswd")
-        self.assertEqual(sanitize_id("user; drop table users"), "userdroptableusers")
+        self.assertEqual(sanitize_id("user; drop table users"), "user-drop-table-users")
         self.assertEqual(sanitize_id(""), "")
         self.assertEqual(sanitize_id(None), None)
 

@@ -92,6 +92,7 @@ class CloudService:
                     cmd,
                     stdout=subprocess.PIPE,
                     stderr=subprocess.STDOUT,
+                    stdin=subprocess.DEVNULL,
                     text=True,
                     bufsize=1,
                     universal_newlines=True,
@@ -123,15 +124,32 @@ class CloudService:
                     err_msg = (
                         full_output if full_output else "Process exited with no output."
                     )
+                    if "You need to log in" in err_msg or "authenticate" in err_msg:
+                        UI.error("Your Liferay Cloud session has expired.")
+                        UI.die(
+                            "Please run 'lcp login' to re-authenticate.", exit_code=2
+                        )
                     UI.error(f"LCP command failed (Code {returncode}): {err_msg}")
                     return None
                 return full_output
 
             if capture_json:
-                res = subprocess.run(cmd, capture_output=True, text=True, check=True)
+                res = subprocess.run(
+                    cmd,
+                    capture_output=True,
+                    stdin=subprocess.DEVNULL,
+                    text=True,
+                    check=True,
+                )
                 return json.loads(res.stdout)
             # For streaming or direct output
-            res = subprocess.run(cmd, capture_output=True, text=True, check=True)
+            res = subprocess.run(
+                cmd,
+                capture_output=True,
+                stdin=subprocess.DEVNULL,
+                text=True,
+                check=True,
+            )
             return res.stdout
         except (KeyboardInterrupt, SystemExit):
             if process:
@@ -139,7 +157,11 @@ class CloudService:
                 process.wait()
             raise
         except subprocess.CalledProcessError as e:
-            UI.error(f"LCP command failed: {e.stderr or e.stdout}")
+            err_msg = str(e.stderr or e.stdout)
+            if "You need to log in" in err_msg or "authenticate" in err_msg:
+                UI.error("Your Liferay Cloud session has expired.")
+                UI.die("Please run 'lcp login' to re-authenticate.", exit_code=2)
+            UI.error(f"LCP command failed: {err_msg}")
             return None
         except Exception as e:
             UI.error(f"LCP error: {e}")
