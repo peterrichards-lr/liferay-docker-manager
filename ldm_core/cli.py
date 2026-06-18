@@ -382,7 +382,7 @@ def get_parser():
     )
     run.add_argument(
         "--share-provider",
-        choices=["lfr-tunnel", "ngrok"],
+        choices=["lfr-tunnel", "lfr-tunnel-docker", "ngrok"],
         help="Sharing provider to use (defaults to lfr-tunnel)",
     )
     run.add_argument(
@@ -889,7 +889,7 @@ def get_parser():
     )
     share_start.add_argument(
         "--provider",
-        choices=["lfr-tunnel", "ngrok"],
+        choices=["lfr-tunnel", "lfr-tunnel-docker", "ngrok"],
         help="Tunnel provider (defaults to lfr-tunnel)",
     )
 

@@ -239,6 +239,35 @@ class TestShareService(unittest.TestCase):
         self.assertEqual(env["LFR_TUNNEL_TOKEN"], "my-token")
 
     @patch("subprocess.run")
+    def test_cmd_start_docker(self, mock_run):
+        self.service._get_auth_token = MagicMock(return_value="my-token")  # type: ignore[method-assign]
+        self.mock_manager.detect_project_path = MagicMock(  # type: ignore[method-assign]
+            return_value=Path("/fake/myproj")
+        )
+        mock_res = MagicMock()
+        mock_res.returncode = 0
+        mock_run.return_value = mock_res
+
+        self.service.cmd_start(
+            project_id="myproj",
+            subdomain="custom-sub",
+            ports="9090",
+            provider="lfr-tunnel-docker",
+        )
+
+        # Two calls: rm -f, then run
+        self.assertEqual(mock_run.call_count, 2)
+        rm_args = mock_run.call_args_list[0][0][0]
+        self.assertEqual(rm_args, ["docker", "rm", "-f", "lfr-tunnel-myproj"])
+
+        run_args = mock_run.call_args_list[1][0][0]
+        self.assertEqual(run_args[0:3], ["docker", "run", "-d"])
+        self.assertIn("lfr-tunnel-myproj", run_args)
+        self.assertIn("LFT_CLIENT_TOKEN=my-token", run_args)
+        self.assertIn("custom-sub", run_args)
+        self.assertIn("9090", run_args)
+
+    @patch("subprocess.run")
     def test_cmd_status(self, mock_run):
         self.service._ensure_binary = MagicMock(  # type: ignore[method-assign]
             return_value=Path("/fake/bin/lfr-tunnel")
