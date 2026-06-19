@@ -72,26 +72,15 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
 
 ### Status
 
-- Implemented Remote Import & Packaging features in `ldm_core/handlers/workspace.py` and successfully tested. All unit tests and linter checks pass clean on master.
-- Implemented `lfr-tunnel-docker` integration directly into the project's generated `docker-compose.yml` to resolve SentinelOne/EDR friction and hostname routing. Merged to master as v2.11.14.
-- Documenting `LFT_CLIENT_TOKEN` authentication token priorities in `docs/guides/SHARING_AND_TUNNELS.md`.
-- Correcting `lfr-tunnel` Docker image namespace from `peterrichards` to `peterjrichards` in `composer.py` and `test_composer.py`.
-- Implemented `--share-image` and `--image` CLI flags to allow specifying custom tunnel Docker image sources, and verified all unit tests and lint checks.
-- Merged the patch release `v2.11.15` changes (`2275a518`) to `master` and successfully pushed the tag `v2.11.15` to trigger the build.
-- Merged PR #73 with branch/tag alignment check and validation.
+- Implemented public tunnel URLs and `.env` overrides support on `feature/public-tunnel-urls-env-overrides` and submitted PR #74.
+- Checks on PR #74 are passing.
 
-### Plan: Expose Public Tunnel URLs & Support .env Overrides
+### Plan: Stable Release of public tunnel URLs & .env overrides (v2.11.16)
 
-1. **Update `ldm_core/handlers/runtime.py`**:
-   - In `_wait_for_ready()`, if sharing is enabled (`share` or `expose` in meta, or `--share` on CLI), resolve the provider and subdomain.
-   - If the provider is `lfr-tunnel` or `lfr-tunnel-docker`, construct the public URL from the subdomain and `LFT_SERVER_URL` (defaulting to `lfr-demo.online`) and print it as the main access URL.
-2. **Update `ldm_core/handlers/share.py`**:
-   - Add a helper method `resolve_public_tunnel_url(subdomain)` to resolve the URL.
-   - In `cmd_start()`, when `lfr-tunnel` or `lfr-tunnel-docker` starts successfully, print the public URL using `UI.success("🌍 Public Tunnel Active: ...")` to align with ngrok.
-3. **Update `ldm_core/handlers/composer.py`**:
-   - Automatically write/update `LFT_SUBDOMAIN`, `LFT_CLIENT_TOKEN`, and `LFT_SERVER_URL` in the local `.env` file of the project when generating stack configuration for `lfr-tunnel-docker`.
-   - Update `lfr-tunnel` service environment definitions in `docker-compose.yml` to read from `.env` using `${VAR:-default}` syntax.
-4. **Update `ldm_core/tests/test_composer.py`**:
-   - Update the expected environment assertions to match the new dynamic fallback syntax.
-5. **Verify**:
-   - Run tests and linting to ensure compatibility and correctness.
+1. Merge PR #74.
+2. Sync `master` locally.
+3. Create release branch `release/v2.11.16`.
+4. Run version bump utility in the `.venv` (`python3 liferay_docker.py -y version --bump patch`) to update to `v2.11.16`.
+5. Commit the bump with description containing `[release]`.
+6. Open and merge PR for the release branch.
+7. Pull `master` locally, tag `v2.11.16` and push the tag to trigger stable release build.
