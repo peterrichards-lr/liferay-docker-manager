@@ -77,15 +77,21 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
 - Documenting `LFT_CLIENT_TOKEN` authentication token priorities in `docs/guides/SHARING_AND_TUNNELS.md`.
 - Correcting `lfr-tunnel` Docker image namespace from `peterrichards` to `peterjrichards` in `composer.py` and `test_composer.py`.
 - Implemented `--share-image` and `--image` CLI flags to allow specifying custom tunnel Docker image sources, and verified all unit tests and lint checks.
-- Merged the patch release `v2.11.15` changes (`2275a518`) to `master` but the release tag was not successfully pushed.
-- Investigating workflow triggers and planning tag validation checks to save GitHub Actions resources and prevent release mismatches.
+- Merged the patch release `v2.11.15` changes (`2275a518`) to `master` and successfully pushed the tag `v2.11.15` to trigger the build.
+- Merged PR #73 with branch/tag alignment check and validation.
 
-### Plan: Enforce Tag Validation & Update Release Docs
+### Plan: Expose Public Tunnel URLs & Support .env Overrides
 
-1. **Update documentation**:
-   - Update `CONTRIBUTING.md` to explain the branch rules for pre-release vs stable release tags.
-2. **Implement tag validation workflow guardrails**:
-   - Add a fast `validate-tag` pre-requisite job to `ci.yml`, `release-e2e.yml`, and `scheduled-verification.yml`.
-   - Enforce: stable tags (no hyphen) must be on `master`; pre-release tags (with hyphen) must NOT be on `master`.
-3. **Verify**:
-   - Verify workflow files pass validation schema and linting checks.
+1. **Update `ldm_core/handlers/runtime.py`**:
+   - In `_wait_for_ready()`, if sharing is enabled (`share` or `expose` in meta, or `--share` on CLI), resolve the provider and subdomain.
+   - If the provider is `lfr-tunnel` or `lfr-tunnel-docker`, construct the public URL from the subdomain and `LFT_SERVER_URL` (defaulting to `lfr-demo.online`) and print it as the main access URL.
+2. **Update `ldm_core/handlers/share.py`**:
+   - Add a helper method `resolve_public_tunnel_url(subdomain)` to resolve the URL.
+   - In `cmd_start()`, when `lfr-tunnel` or `lfr-tunnel-docker` starts successfully, print the public URL using `UI.success("🌍 Public Tunnel Active: ...")` to align with ngrok.
+3. **Update `ldm_core/handlers/composer.py`**:
+   - Automatically write/update `LFT_SUBDOMAIN`, `LFT_CLIENT_TOKEN`, and `LFT_SERVER_URL` in the local `.env` file of the project when generating stack configuration for `lfr-tunnel-docker`.
+   - Update `lfr-tunnel` service environment definitions in `docker-compose.yml` to read from `.env` using `${VAR:-default}` syntax.
+4. **Update `ldm_core/tests/test_composer.py`**:
+   - Update the expected environment assertions to match the new dynamic fallback syntax.
+5. **Verify**:
+   - Run tests and linting to ensure compatibility and correctness.

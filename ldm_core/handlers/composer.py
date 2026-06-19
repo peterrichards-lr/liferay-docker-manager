@@ -175,16 +175,73 @@ class ComposerService:
                     or project_name
                 )
                 import os
+                import re
 
                 server_url = os.environ.get("LFT_SERVER_URL")
 
+                # Update/write local .env file in project directory
+                # Update/write local .env file in project directory
+                if hasattr(self.manager, "detect_project_path"):
+                    project_path = self.manager.detect_project_path(project_name)
+                    if project_path and isinstance(project_path, (str, Path)):
+                        env_file = Path(project_path) / ".env"
+                        env_content = ""
+                        if env_file.exists():
+                            env_content = env_file.read_text()
+
+                        # Update LFT_SUBDOMAIN
+                        if "LFT_SUBDOMAIN=" in env_content:
+                            env_content = re.sub(
+                                r"LFT_SUBDOMAIN=.*",
+                                f"LFT_SUBDOMAIN={subdomain}",
+                                env_content,
+                            )
+                        else:
+                            env_content = (
+                                env_content.rstrip() + f"\nLFT_SUBDOMAIN={subdomain}\n"
+                            )
+
+                        # Update LFT_CLIENT_TOKEN
+                        if "LFT_CLIENT_TOKEN=" in env_content:
+                            env_content = re.sub(
+                                r"LFT_CLIENT_TOKEN=.*",
+                                f"LFT_CLIENT_TOKEN={token}",
+                                env_content,
+                            )
+                        else:
+                            env_content = (
+                                env_content.rstrip() + f"\nLFT_CLIENT_TOKEN={token}\n"
+                            )
+
+                        # Update LFT_SERVER_URL if custom
+                        if server_url:
+                            if "LFT_SERVER_URL=" in env_content:
+                                env_content = re.sub(
+                                    r"LFT_SERVER_URL=.*",
+                                    f"LFT_SERVER_URL={server_url}",
+                                    env_content,
+                                )
+                            else:
+                                env_content = (
+                                    env_content.rstrip()
+                                    + f"\nLFT_SERVER_URL={server_url}\n"
+                                )
+
+                        env_file.write_text(env_content.strip() + "\n")
+
                 lfr_env = [
-                    f"LFT_CLIENT_TOKEN={token}",
-                    "LFT_TARGET_HOST=http://liferay:8080",
-                    f"LFT_SUBDOMAIN={subdomain}",
+                    f"LFT_CLIENT_TOKEN=${{LFT_CLIENT_TOKEN:-{token}}}",
+                    "LFT_TARGET_HOST=liferay",
+                    f"LFT_CLIENT_SUBDOMAIN=${{LFT_SUBDOMAIN:-{subdomain}}}",
                 ]
                 if server_url:
-                    lfr_env.append(f"LFT_SERVER_URL={server_url}")
+                    lfr_env.append(
+                        f"LFT_CLIENT_SERVER=${{LFT_SERVER_URL:-{server_url}}}"
+                    )
+                else:
+                    lfr_env.append(
+                        "LFT_CLIENT_SERVER=${LFT_SERVER_URL:-https://tunnel.lfr-demo.online}"
+                    )
 
                 image = (
                     getattr(self.manager.args, "share_image", None)

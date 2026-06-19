@@ -284,14 +284,16 @@ class TestComposerService(unittest.TestCase):
                 tunnel_service = compose["services"]["lfr-tunnel"]
                 self.assertEqual(tunnel_service["image"], "custom/lfr-tunnel:latest")
                 self.assertIn(
-                    "LFT_CLIENT_TOKEN=my-token", tunnel_service["environment"]
+                    "LFT_CLIENT_TOKEN=${LFT_CLIENT_TOKEN:-my-token}",
+                    tunnel_service["environment"],
+                )
+                self.assertIn("LFT_TARGET_HOST=liferay", tunnel_service["environment"])
+                self.assertIn(
+                    "LFT_CLIENT_SUBDOMAIN=${LFT_SUBDOMAIN:-my-sub}",
+                    tunnel_service["environment"],
                 )
                 self.assertIn(
-                    "LFT_TARGET_HOST=http://liferay:8080", tunnel_service["environment"]
-                )
-                self.assertIn("LFT_SUBDOMAIN=my-sub", tunnel_service["environment"])
-                self.assertIn(
-                    "LFT_SERVER_URL=https://tunnel.lfr-demo.se",
+                    "LFT_CLIENT_SERVER=${LFT_SERVER_URL:-https://tunnel.lfr-demo.se}",
                     tunnel_service["environment"],
                 )
                 self.assertEqual(
