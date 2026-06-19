@@ -175,6 +175,22 @@ class ShareService:
         )
         return None
 
+    def resolve_public_tunnel_url(self, subdomain):
+        """Resolves the public tunnel URL using LFT_SERVER_URL or defaulting to lfr-demo.online."""
+        server_url = os.environ.get("LFT_SERVER_URL")
+        domain = "lfr-demo.online"
+        if server_url:
+            from urllib.parse import urlparse
+
+            parsed = urlparse(server_url)
+            netloc = parsed.netloc or parsed.path
+            host = netloc.split(":")[0]
+            if host.startswith("tunnel."):
+                domain = host[7:]
+            else:
+                domain = host
+        return f"https://{subdomain}.{domain}"
+
     def cmd_start(
         self, project_id=None, subdomain=None, ports=None, provider=None, image=None
     ):
@@ -212,6 +228,10 @@ class ShareService:
                 )
                 if res.returncode == 0:
                     UI.success("Tunnel started in the background.")
+                    public_url = self.resolve_public_tunnel_url(subdomain)
+                    UI.success(
+                        f"🌍 Public Tunnel Active: {UI.CYAN}{public_url}{UI.COLOR_OFF}"
+                    )
                     if res.stdout:
                         print(res.stdout.strip())
                 else:
@@ -267,6 +287,10 @@ class ShareService:
             )
             if res.returncode == 0:
                 UI.success("Tunnel container started in the background.")
+                public_url = self.resolve_public_tunnel_url(subdomain)
+                UI.success(
+                    f"🌍 Public Tunnel Active: {UI.CYAN}{public_url}{UI.COLOR_OFF}"
+                )
             else:
                 UI.error(f"Failed to start tunnel container (Exit {res.returncode})")
                 if res.stderr:

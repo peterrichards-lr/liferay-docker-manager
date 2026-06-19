@@ -986,15 +986,41 @@ class RuntimeService(BaseHandler):
                     duration_str = UI.format_duration(duration_total)
 
                     UI.success(f"Liferay is ready! (Total time: {duration_str})")
+                    share_enabled = (
+                        str(project_meta.get("share", "false")).lower() == "true"
+                        or str(project_meta.get("expose", "false")).lower() == "true"
+                        or getattr(self.manager.args, "share", False)
+                    )
                     proxy_ports = self.manager.infra.get_proxy_ports()
                     active_ssl_port = proxy_ports["https"]
-                    access_url = (
-                        f"https://{host_name}"
-                        if host_name != "localhost"
-                        else f"http://localhost:{project_meta.get('port', 8080)}"
-                    )
-                    if host_name != "localhost" and active_ssl_port != 443:
-                        access_url = f"https://{host_name}:{active_ssl_port}"
+
+                    access_url = None
+                    if share_enabled:
+                        share_provider = (
+                            project_meta.get("share_provider")
+                            or getattr(self.manager.args, "share_provider", None)
+                            or "lfr-tunnel"
+                        )
+                        share_subdomain = (
+                            project_meta.get("share_subdomain")
+                            or getattr(self.manager.args, "share_subdomain", None)
+                            or project_meta.get("project_name")
+                            or host_name
+                        )
+                        if share_provider in ["lfr-tunnel", "lfr-tunnel-docker"]:
+                            access_url = self.manager.share.resolve_public_tunnel_url(
+                                share_subdomain
+                            )
+
+                    if not access_url:
+                        access_url = (
+                            f"https://{host_name}"
+                            if host_name != "localhost"
+                            else f"http://localhost:{project_meta.get('port', 8080)}"
+                        )
+                        if host_name != "localhost" and active_ssl_port != 443:
+                            access_url = f"https://{host_name}:{active_ssl_port}"
+
                     UI.info(
                         f"Access your instance at: {UI.CYAN}{UI.BOLD}{access_url}{UI.COLOR_OFF}"
                     )
