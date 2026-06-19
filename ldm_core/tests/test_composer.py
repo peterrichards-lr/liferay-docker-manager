@@ -296,6 +296,11 @@ class TestComposerService(unittest.TestCase):
                     "LFT_CLIENT_SERVER=${LFT_SERVER_URL:-https://tunnel.lfr-demo.se}",
                     tunnel_service["environment"],
                 )
+                self.assertEqual(tunnel_service.get("ports"), ["4040:4040"])
+                self.assertIn(
+                    "LFT_INSPECTOR_BIND=${LFT_INSPECTOR_BIND:-0.0.0.0}",
+                    tunnel_service["environment"],
+                )
                 self.assertEqual(
                     tunnel_service["deploy"]["resources"]["limits"]["cpus"], "0.10"
                 )

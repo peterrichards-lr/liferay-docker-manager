@@ -227,12 +227,25 @@ class ComposerService:
                                     + f"\nLFT_SERVER_URL={server_url}\n"
                                 )
 
+                        # Update LFT_INSPECTOR_BIND
+                        if "LFT_INSPECTOR_BIND=" in env_content:
+                            env_content = re.sub(
+                                r"LFT_INSPECTOR_BIND=.*",
+                                "LFT_INSPECTOR_BIND=0.0.0.0",
+                                env_content,
+                            )
+                        else:
+                            env_content = (
+                                env_content.rstrip() + "\nLFT_INSPECTOR_BIND=0.0.0.0\n"
+                            )
+
                         env_file.write_text(env_content.strip() + "\n")
 
                 lfr_env = [
                     f"LFT_CLIENT_TOKEN=${{LFT_CLIENT_TOKEN:-{token}}}",
                     "LFT_TARGET_HOST=liferay",
                     f"LFT_CLIENT_SUBDOMAIN=${{LFT_SUBDOMAIN:-{subdomain}}}",
+                    "LFT_INSPECTOR_BIND=${LFT_INSPECTOR_BIND:-0.0.0.0}",
                 ]
                 if server_url:
                     lfr_env.append(
@@ -252,6 +265,7 @@ class ComposerService:
                 services["lfr-tunnel"] = {
                     "image": image,
                     "networks": ["liferay-net"],
+                    "ports": ["4040:4040"],
                     "environment": lfr_env,
                     "deploy": {
                         "resources": {

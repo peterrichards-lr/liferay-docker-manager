@@ -72,15 +72,17 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
 
 ### Status
 
-- Implemented public tunnel URLs and `.env` overrides support on `feature/public-tunnel-urls-env-overrides` and submitted PR #74.
-- Checks on PR #74 are passing.
+- Released `v2.11.16` successfully to master.
+- Received request to map port `4040` for the `lfr-tunnel` service sidecar to expose the local inspector dashboard.
 
-### Plan: Stable Release of public tunnel URLs & .env overrides (v2.11.16)
+### Plan: Map Inspector Port 4040 for lfr-tunnel Sidecar (v2.11.17)
 
-1. Merge PR #74.
-2. Sync `master` locally.
-3. Create release branch `release/v2.11.16`.
-4. Run version bump utility in the `.venv` (`python3 liferay_docker.py -y version --bump patch`) to update to `v2.11.16`.
-5. Commit the bump with description containing `[release]`.
-6. Open and merge PR for the release branch.
-7. Pull `master` locally, tag `v2.11.16` and push the tag to trigger stable release build.
+1. **Update `ldm_core/handlers/composer.py`**:
+   - Add `"ports": ["4040:4040"]` to `services["lfr-tunnel"]` in `_build_services`.
+   - Add `"LFT_INSPECTOR_BIND=${LFT_INSPECTOR_BIND:-0.0.0.0}"` to the container `environment` list.
+   - Automatically add/update `LFT_INSPECTOR_BIND=0.0.0.0` in the local `.env` file when generating the docker-compose stack configuration for the `lfr-tunnel-docker` sidecar.
+2. **Update `ldm_core/tests/test_composer.py`**:
+   - Add `self.assertEqual(tunnel_service.get("ports"), ["4040:4040"])` in `test_write_docker_compose_with_lfr_tunnel_docker`.
+   - Add `self.assertIn("LFT_INSPECTOR_BIND=${LFT_INSPECTOR_BIND:-0.0.0.0}", tunnel_service.get("environment"))`.
+3. **Verify**:
+   - Run tests and lint checks locally inside `.venv`.
