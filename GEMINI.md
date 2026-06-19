@@ -77,3 +77,12 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
 - Documenting `LFT_CLIENT_TOKEN` authentication token priorities in `docs/guides/SHARING_AND_TUNNELS.md`.
 - Correcting `lfr-tunnel` Docker image namespace from `peterrichards` to `peterjrichards` in `composer.py` and `test_composer.py`.
 - Implemented `--share-image` and `--image` CLI flags to allow specifying custom tunnel Docker image sources, and verified all unit tests and lint checks.
+
+### Plan: Bump Version to v2.11.15
+
+1. **Update version strings**:
+   - Update `2.11.14` to `2.11.15` in `pyproject.toml` and `ldm_core/constants.py`.
+   - Add version entry in `CHANGELOG.md`.
+2. **Verify and Commit**:
+   - Run pytest and lint tools to verify everything remains clean.
+   - Commit changes and tag the release `v2.11.15`.
