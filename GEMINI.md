@@ -72,18 +72,16 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
 
 ### Status
 
-- Implemented Remote Import & Packaging features in `ldm_core/handlers/workspace.py` and successfully tested. All unit tests and linter checks pass clean on master.
-- Starting implementation of `lfr-tunnel-docker` integration directly into the project's generated `docker-compose.yml` to resolve SentinelOne/EDR friction and hostname routing.
+- Implemented `--share-image` and `--image` CLI flags to allow specifying custom tunnel Docker image sources.
+- Custom image parameter passed from CLI to Share handler and persisted in project metadata.
+- Updated `Composer` to dynamically resolve custom/default image for the `lfr-tunnel` service in `docker-compose.yml`.
+- CLI delegation test `test_share_commands_delegate_to_share_service` is failing because of the newly introduced `image` argument in `cmd_start` delegation.
 
-### Plan: Integrated lfr-tunnel-docker Compose Service
+### Plan: Fix CLI Test and Verify
 
-1. **Update Composer**:
-   - Modify `ldm_core/handlers/composer.py` to add `lfr-tunnel` as a service in `docker-compose.yml` when `share_provider` is `lfr-tunnel-docker` and sharing is enabled.
-   - Pass environment variables: `LFT_CLIENT_TOKEN`, `LFT_TARGET_HOST` (pointing to `http://liferay:8080`), `LFT_SUBDOMAIN` (for the subdomain), and optionally `LFT_SERVER_URL`.
-   - Enforce minimal resource constraints: limit CPU to `0.10` and memory to `50M` (with reservations `0.05` CPU and `20M` memory).
-2. **Update Share Service**:
-   - Refactor `ldm_core/handlers/share.py` for the `lfr-tunnel-docker` provider to align with `ngrok`: save metadata, trigger `sync_stack`, and run `docker compose up -d lfr-tunnel`.
-   - Update `cmd_status` and `cmd_stop` to manage the container via `docker compose` commands instead of standalone `docker run/rm`.
-3. **Verify and Test**:
-   - Add unit tests verifying `lfr-tunnel` container configuration (environment variables and resource constraints) in the generated compose structure.
-   - Run tests using `pytest` to ensure all tests pass cleanly.
+1. **Fix CLI Test Assertion**:
+   - Update `ldm_core/tests/test_cli_entrypoint.py` to expect `image=None` when `manager.share.cmd_start` is invoked during CLI delegation testing.
+2. **Verify and Test**:
+   - Execute tests using `pytest` inside the virtual environment (`.venv`) to verify all tests and linters pass cleanly.
+3. **Commit & PR**:
+   - Commit changes to `feature/share-image-flag` and push.

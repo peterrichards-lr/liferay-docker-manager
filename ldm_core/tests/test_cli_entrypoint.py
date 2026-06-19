@@ -154,6 +154,7 @@ class TestCLIEntrypoint(unittest.TestCase):
         mock_args.subdomain = "my-sub"
         mock_args.ports = "8082"
         mock_args.provider = "ngrok"
+        mock_args.image = None
         mock_args.verbose = False
         mock_args.non_interactive = True
         mock_parser.parse_args.return_value = mock_args
@@ -175,7 +176,11 @@ class TestCLIEntrypoint(unittest.TestCase):
         ):
             main()
         mock_manager.share.cmd_start.assert_called_once_with(
-            project_id="demo", subdomain="my-sub", ports="8082", provider="ngrok"
+            project_id="demo",
+            subdomain="my-sub",
+            ports="8082",
+            provider="ngrok",
+            image=None,
         )
 
         # 2. Test 'share status'

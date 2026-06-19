@@ -259,6 +259,7 @@ class TestComposerService(unittest.TestCase):
         self.manager.args.share = True
         self.manager.args.share_provider = "lfr-tunnel-docker"
         self.manager.args.share_subdomain = "my-sub"
+        self.manager.args.share_image = "custom/lfr-tunnel:latest"
         self.manager.share._get_auth_token.return_value = "my-token"
 
         import os
@@ -281,9 +282,7 @@ class TestComposerService(unittest.TestCase):
                 compose = mock_yaml.call_args[0][0]
                 self.assertIn("lfr-tunnel", compose["services"])
                 tunnel_service = compose["services"]["lfr-tunnel"]
-                self.assertEqual(
-                    tunnel_service["image"], "peterrichards/lfr-tunnel:latest"
-                )
+                self.assertEqual(tunnel_service["image"], "custom/lfr-tunnel:latest")
                 self.assertIn(
                     "LFT_CLIENT_TOKEN=my-token", tunnel_service["environment"]
                 )

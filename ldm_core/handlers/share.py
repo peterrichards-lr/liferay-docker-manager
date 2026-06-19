@@ -175,7 +175,9 @@ class ShareService:
         )
         return None
 
-    def cmd_start(self, project_id=None, subdomain=None, ports=None, provider=None):
+    def cmd_start(
+        self, project_id=None, subdomain=None, ports=None, provider=None, image=None
+    ):
         """Starts the active sharing tunnel (lfr-tunnel or ngrok)."""
         root = self.manager.detect_project_path(project_id)
         project_id = root.name if root else None
@@ -237,6 +239,8 @@ class ShareService:
                 project_meta["share_subdomain"] = subdomain
             if ports:
                 project_meta["port"] = int(ports)
+            if image:
+                project_meta["share_image"] = image
 
             self.manager.write_meta(root, project_meta)
 
