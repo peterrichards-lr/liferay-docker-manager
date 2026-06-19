@@ -73,17 +73,5 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
 ### Status
 
 - Implemented Remote Import & Packaging features in `ldm_core/handlers/workspace.py` and successfully tested. All unit tests and linter checks pass clean on master.
-- Starting implementation of `lfr-tunnel-docker` integration directly into the project's generated `docker-compose.yml` to resolve SentinelOne/EDR friction and hostname routing.
-
-### Plan: Integrated lfr-tunnel-docker Compose Service
-
-1. **Update Composer**:
-   - Modify `ldm_core/handlers/composer.py` to add `lfr-tunnel` as a service in `docker-compose.yml` when `share_provider` is `lfr-tunnel-docker` and sharing is enabled.
-   - Pass environment variables: `LFT_CLIENT_TOKEN`, `LFT_TARGET_HOST` (pointing to `http://liferay:8080`), `LFT_SUBDOMAIN` (for the subdomain), and optionally `LFT_SERVER_URL`.
-   - Enforce minimal resource constraints: limit CPU to `0.10` and memory to `50M` (with reservations `0.05` CPU and `20M` memory).
-2. **Update Share Service**:
-   - Refactor `ldm_core/handlers/share.py` for the `lfr-tunnel-docker` provider to align with `ngrok`: save metadata, trigger `sync_stack`, and run `docker compose up -d lfr-tunnel`.
-   - Update `cmd_status` and `cmd_stop` to manage the container via `docker compose` commands instead of standalone `docker run/rm`.
-3. **Verify and Test**:
-   - Add unit tests verifying `lfr-tunnel` container configuration (environment variables and resource constraints) in the generated compose structure.
-   - Run tests using `pytest` to ensure all tests pass cleanly.
+- Implemented `lfr-tunnel-docker` integration directly into the project's generated `docker-compose.yml` to resolve SentinelOne/EDR friction and hostname routing. Merged to master as v2.11.14.
+- Documenting `LFT_CLIENT_TOKEN` authentication token priorities in `docs/guides/SHARING_AND_TUNNELS.md`.
