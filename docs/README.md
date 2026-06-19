@@ -144,7 +144,7 @@ To protect the integrity of the application cache (`~/.shiv`) and ensure consist
 LDM is designed to run as a standard user and will **automatically request elevation** (prompting for your password) only for specific tasks that require it:
 
 - **`ldm fix-hosts`**: Requires elevation to append entries to `/etc/hosts`. Can be called manually or triggered automatically during `ldm run`.
-- **`ldm upgrade`**: Automatically handles cross-device file systems (e.g. Fedora /tmpfs) by using a `cp` + `rm` pattern for system binary replacement. Requires elevation to replace the binary in system paths like `/usr/local/bin`.
+- **`ldm upgrade`**: Automatically handles cross-device file systems (e.g. Fedora /tmpfs) by using a `cp` + `rm` pattern for system binary replacement. Requires elevation to replace the binary in system paths like `/usr/local/bin`. On Windows, it utilizes PowerShell's User Account Control (UAC) to seamlessly request administrative privileges when replacing binaries in protected directories like `System32`.
 
 > [!NOTE]
 > **Non-Interactive Sudo**: When running with the `-y` or `--non-interactive` flag, LDM uses `sudo -n` to perform elevated tasks. If a password is required, the command will fail fast and cleanly instead of hanging the terminal. This is essential for CI/CD pipeline stability.

@@ -59,7 +59,7 @@ To protect the integrity of the application cache (`~/.shiv`) and ensure consist
 The tool utilizes a "Just-in-Time" elevation strategy. It runs as your standard user and only invokes `sudo` internally for specific system-level operations:
 
 - **`ldm fix-hosts`**: Requests elevation to append entries to `/etc/hosts`.
-- **`ldm upgrade`**: Requests elevation to replace the binary in system paths like `/usr/local/bin`. Uses a `cp` + `rm` pattern to handle cross-device links during replacement. Supports optional `--beta` flag for opting into pre-releases.
+- **`ldm upgrade`**: Requests elevation to replace the binary in system paths like `/usr/local/bin`. Uses a `cp` + `rm` pattern to handle cross-device links during replacement. On Windows, it seamlessly requests administrative privileges via UAC prompts when replacing the binary. Supports optional `--beta` flag for opting into pre-releases.
 
 This ensures that all project data and temporary files remain owned by your local user, preventing permission-related lockouts.
 
