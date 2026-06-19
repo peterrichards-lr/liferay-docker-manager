@@ -103,6 +103,22 @@ ldm run my-project --expose
 
 ---
 
+## Authentication for Liferay Tunnel (lfr-tunnel)
+
+The Liferay Tunnel (`lfr-tunnel` or `lfr-tunnel-docker`) requires a Client Token to authenticate with the server gateway. LDM looks for this token in the following order of priority:
+
+1. **Environment Variable**: `LFT_CLIENT_TOKEN` (highest priority). Useful for CI/CD or automated scripts:
+
+   ```bash
+   export LFT_CLIENT_TOKEN="your_lfr_tunnel_token"
+   ```
+
+2. **Token File**: A flat text file containing only the token saved at `~/.lfr-tunnel/token`.
+3. **LDM Global Config**: Stored in `~/.ldmrc` under the `lfr_tunnel_token` key.
+4. **Interactive Prompt**: If no token is found, LDM will prompt you to enter it interactively and save it to your `~/.ldmrc` global config for future commands.
+
+---
+
 ## Authentication for Ngrok
 
 Ngrok requires an Auth Token to bind custom host headers and use HTTPS upstreams. The first time you use ngrok, LDM will prompt you for your Auth Token:
