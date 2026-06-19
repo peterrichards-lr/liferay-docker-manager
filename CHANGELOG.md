@@ -178,6 +178,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added runtime state-awareness checks to commands (run, import) to prevent unexpected container collisions.
 - Enabled non-interactive bypass for internal developer utility prompts.
 
+## [v2.11.17] - 2026-06-19
+
+### Added
+
+- Mapped port `4040` for the `lfr-tunnel` container sidecar to allow host machine access to the web inspector dashboard.
+- Added support and automatic `.env` initialization for `LFT_INSPECTOR_BIND` binding address overrides.
+
 ## [v2.11.16] - 2026-06-19
 
 ### Added
