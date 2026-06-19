@@ -178,6 +178,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added runtime state-awareness checks to commands (run, import) to prevent unexpected container collisions.
 - Enabled non-interactive bypass for internal developer utility prompts.
 
+## [v2.11.16] - 2026-06-19
+
+### Added
+
+- Added support for resolving and printing public tunnel URLs when using share/expose providers.
+- Added support for `.env` overrides (`LFT_SUBDOMAIN`, `LFT_CLIENT_TOKEN`, and `LFT_SERVER_URL`) for the tunnel container.
+
 ## [v2.11.15] - 2026-06-19
 
 ### Added
