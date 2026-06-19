@@ -96,41 +96,56 @@ We prefer [Conventional Commits](https://www.conventionalcommits.org/):
 
 ### 🚀 Release Management
 
-LDM uses an explicit gating mechanism for GitHub Releases:
+LDM uses an explicit gating mechanism for GitHub Releases to enforce version hygiene and prevent GHA resource waste:
 
-- **Tags**: Pushing a tag (e.g., `v2.4.0` or `v2.11.0-pre.1`) automatically triggers a build.
-- **Pre-releases / Test Builds**: All pre-releases (versions containing `-pre` or `-beta`, such as `v2.11.0-pre.1`) MUST be tagged and pushed directly on their respective development/feature branches, not on `master`. This allows testing the build using the `verify-*` scripts before merging.
-- **Stable Releases**: Stable releases must only be tagged and published after a feature branch has been merged into `master`. To trigger a full production release, the commit message on master MUST contain the **`[release]`** keyword.
+- **Branch Alignment Guardrails**:
+  - **Stable Releases** (e.g., `v2.11.15` - tag has **no hyphen**): MUST be tagged and pushed **only on the `master` branch** (after merging the PR).
+  - **Pre-releases / Test Builds** (e.g., `v2.11.15-pre.1` - tag **contains a hyphen** like `-pre` or `-beta`): MUST be tagged and pushed **only on feature/roadmap branches** (never on `master`).
+  - *Note: Pushing a tag that violates these constraints (e.g., a stable tag on a feature branch, or a pre-release tag on master) will trigger an immediate build failure in GitHub Actions to reject the build.*
 
-#### 🛠️ Cutting a Pre-release (Beta Build)
+#### 🛠️ Cutting a Pre-release (Beta / Test Build)
 
-If you are developing a complex feature on a feature branch (e.g., `roadmap/my-feature`) and need to compile and verify the standalone binaries across platforms, you can trigger a pre-release build:
+If you are developing a complex feature on a feature branch (e.g., `roadmap/my-feature`) and need to compile and verify the standalone binaries across platforms, trigger a pre-release build:
 
 1. **Increment the Pre-release Version**:
-   Use LDM's version utility to logically bump to the next beta version:
+    Use LDM's version utility to logically bump to the next beta version:
 
-   ```bash
-   ./ldm version --bump beta -y
-   ```
+    ```bash
+    ./ldm version --bump beta -y
+    ```
 
 2. **Commit the Version Change**:
-   Commit the files modified by the version bump (`CHANGELOG.md`, `ldm_core/constants.py`, and `pyproject.toml`):
+    Commit the files modified by the version bump (`CHANGELOG.md`, `ldm_core/constants.py`, and `pyproject.toml`):
 
-   ```bash
-   git add .
-   git commit -m "chore(release): bump version to v2.11.2-pre.1 [pre-release]"
-   git push origin roadmap/my-feature
-   ```
+    ```bash
+    git add .
+    git commit -m "chore(release): bump version to v2.11.15-pre.1 [pre-release]"
+    git push origin roadmap/my-feature
+    ```
 
 3. **Tag and Push the Pre-release**:
-   Create and push a git tag matching the target version:
+    Create and push a git tag matching the target version:
 
-   ```bash
-   git tag v2.11.2-pre.1
-   git push origin v2.11.2-pre.1
-   ```
+    ```bash
+    git tag v2.11.15-pre.1
+    git push origin v2.11.15-pre.1
+    ```
 
-   *Note: Pushing a tag starting with `v*` triggers the GitHub Actions pipeline, which will build and publish standalone pre-release binaries for Windows, macOS, and Linux.*
+#### 🚀 Cutting a Stable Release
+
+Stable releases must only be cut and published after a feature branch has been merged into `master`.
+
+1. **Bump the Version on Master**:
+    Merge your PR to `master`. The commit message on `master` MUST contain the **`[release]`** keyword (e.g. `chore(release): bump version to v2.11.15 [release]`).
+2. **Tag and Push the Stable Release**:
+    On the `master` branch, pull the latest changes, then tag and push the stable release:
+
+    ```bash
+    git checkout master
+    git pull origin master
+    git tag v2.11.15
+    git push origin v2.11.15
+    ```
 
 ## ✅ Quality Assurance Standards
 

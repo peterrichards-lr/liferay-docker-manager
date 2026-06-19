@@ -20,7 +20,60 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
+  validate-tag:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Skip check if not a tag push
+        id: check_trigger
+        shell: bash
+        env:
+          GITHUB_REF: ${{ github.ref }}
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            echo "is_tag=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "is_tag=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout Code
+        if: steps.check_trigger.outputs.is_tag == 'true'
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Validate Tag and Branch Alignment
+        if: steps.check_trigger.outputs.is_tag == 'true'
+        shell: bash
+        run: |
+          TAG_NAME="${{ github.ref_name }}"
+          if [[ "$TAG_NAME" == *"-"* ]]; then
+            IS_PRERELEASE=true
+          else
+            IS_PRERELEASE=false
+          fi
+          
+          git fetch origin master
+          if git branch -r --contains ${{ github.sha }} | grep -E 'origin/master$' >/dev/null; then
+            ON_MASTER=true
+          else
+            ON_MASTER=false
+          fi
+          
+          echo "Tag: $TAG_NAME"
+          echo "Is Pre-release: $IS_PRERELEASE"
+          echo "Is on master: $ON_MASTER"
+          
+          if [ "$IS_PRERELEASE" = "true" ] && [ "$ON_MASTER" = "true" ]; then
+            echo "::error::Pre-release tags (containing '-') cannot be pushed on master branch!"
+            exit 1
+          elif [ "$IS_PRERELEASE" = "false" ] && [ "$ON_MASTER" = "false" ]; then
+            echo "::error::Stable release tags (no '-') must only be pushed on master branch!"
+            exit 1
+          fi
+          echo "Tag validation successful!"
+
   lint-and-test:
+    needs: validate-tag
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
