@@ -187,7 +187,7 @@ class ComposerService:
                     lfr_env.append(f"LFT_SERVER_URL={server_url}")
 
                 services["lfr-tunnel"] = {
-                    "image": "peterrichards/lfr-tunnel:latest",
+                    "image": "peterjrichards/lfr-tunnel:latest",
                     "networks": ["liferay-net"],
                     "environment": lfr_env,
                     "deploy": {
