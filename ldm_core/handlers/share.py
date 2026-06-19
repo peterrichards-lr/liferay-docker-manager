@@ -220,47 +220,53 @@ class ShareService:
                 UI.die(f"Process invocation error: {e}")
 
         elif provider == "lfr-tunnel-docker":
+            if not root:
+                UI.die(
+                    "lfr-tunnel-docker sharing requires a project context. Run from a project directory or specify -p <project>."
+                )
+
+            # Ensure tunnel auth token is set
             token = self._get_auth_token()
             ports = ports or "8080"
             subdomain = subdomain or project_id
 
-            c_name = f"lfr-tunnel-{project_id}" if project_id else "lfr-tunnel"
+            # Set metadata
+            project_meta["share"] = "true"
+            project_meta["share_provider"] = "lfr-tunnel-docker"
+            if subdomain:
+                project_meta["share_subdomain"] = subdomain
+            if ports:
+                project_meta["port"] = int(ports)
 
-            # Remove any existing container to prevent name conflicts
-            subprocess.run(
-                ["docker", "rm", "-f", c_name], capture_output=True, check=False
+            self.manager.write_meta(root, project_meta)
+
+            # Regenerate compose file and boot lfr-tunnel service
+            paths = self.manager.setup_paths(root)
+            UI.info("Regenerating stack configuration with lfr-tunnel sidecar...")
+            self.manager.runtime.sync_stack(
+                paths, project_meta, no_up=True, show_summary=False
             )
 
-            cmd = [
-                "docker",
-                "run",
-                "-d",
-                "--name",
-                c_name,
-                "--add-host",
-                "host.docker.internal:host-gateway",
-                "-e",
-                f"LFT_CLIENT_TOKEN={token}",
-                "peterrichards/lfr-tunnel:latest",
-                "-ports",
-                ports,
-            ]
-            if subdomain:
-                cmd += ["-subdomain", subdomain]
+            from ldm_core.utils import get_compose_cmd
 
-            UI.info(f"Starting lfr-tunnel container ({c_name})...")
-            try:
-                res = subprocess.run(cmd, capture_output=True, text=True, check=False)
-                if res.returncode == 0:
-                    UI.success("Tunnel container started in the background.")
-                else:
-                    UI.error(
-                        f"Failed to start tunnel container (Exit {res.returncode})"
-                    )
-                    if res.stderr:
-                        print(res.stderr.strip())
-            except Exception as e:
-                UI.die(f"Docker invocation error: {e}")
+            compose_base = get_compose_cmd()
+            if not compose_base:
+                UI.die("Docker Compose not found.")
+
+            UI.info("Starting lfr-tunnel container...")
+            res = subprocess.run(
+                [*compose_base, "up", "-d", "lfr-tunnel"],
+                cwd=str(root),
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            if res.returncode == 0:
+                UI.success("Tunnel container started in the background.")
+            else:
+                UI.error(f"Failed to start tunnel container (Exit {res.returncode})")
+                if res.stderr:
+                    print(res.stderr.strip())
 
         elif provider == "ngrok":
             if not root:
@@ -341,20 +347,27 @@ class ShareService:
             else:
                 UI.error("No active ngrok container context found.")
         elif provider == "lfr-tunnel-docker":
-            project_id = root.name if root else None
-            c_name = f"lfr-tunnel-{project_id}" if project_id else "lfr-tunnel"
+            if not root:
+                UI.die("lfr-tunnel-docker status requires a project context.")
+            from ldm_core.utils import get_compose_cmd
+
+            compose_base = get_compose_cmd()
+            if not compose_base:
+                UI.die("Docker Compose not found.")
+
             res = subprocess.run(
-                ["docker", "ps", "-f", f"name={c_name}", "--format", "{{.Status}}"],
+                [*compose_base, "ps", "lfr-tunnel", "--format", "{{.Status}}"],
+                cwd=str(root),
                 capture_output=True,
                 text=True,
                 check=False,
             )
-            if res.stdout.strip():
-                UI.info(
-                    f"lfr-tunnel container ({c_name}) is running: {res.stdout.strip()}"
-                )
+            status_output = res.stdout.strip()
+            if status_output:
+                UI.info(f"lfr-tunnel container is running: {status_output}")
                 logs = subprocess.run(
-                    ["docker", "logs", "--tail", "10", c_name],
+                    [*compose_base, "logs", "--tail", "10", "lfr-tunnel"],
+                    cwd=str(root),
                     capture_output=True,
                     text=True,
                     check=False,
@@ -362,7 +375,7 @@ class ShareService:
                 if logs.stdout:
                     print(logs.stdout.strip())
             else:
-                UI.error(f"lfr-tunnel container ({c_name}) is not running.")
+                UI.error("lfr-tunnel container is not running.")
         else:
             # Default to lfr-tunnel
             bin_path = self._ensure_binary()
@@ -417,11 +430,25 @@ class ShareService:
                 if res.stderr:
                     print(res.stderr.strip())
         elif provider == "lfr-tunnel-docker":
-            project_id = root.name if root else None
-            c_name = f"lfr-tunnel-{project_id}" if project_id else "lfr-tunnel"
-            UI.info(f"Stopping lfr-tunnel container ({c_name})...")
+            if not root:
+                UI.die(
+                    "Project context not found. Specify -p <project> to stop sharing."
+                )
+
+            # Disable sharing in metadata
+            project_meta["share"] = "false"
+            self.manager.write_meta(root, project_meta)
+
+            from ldm_core.utils import get_compose_cmd
+
+            compose_base = get_compose_cmd()
+            if not compose_base:
+                UI.die("Docker Compose not found.")
+
+            UI.info("Stopping lfr-tunnel container...")
             res = subprocess.run(
-                ["docker", "rm", "-f", c_name],
+                [*compose_base, "rm", "-fs", "lfr-tunnel"],
+                cwd=str(root),
                 capture_output=True,
                 text=True,
                 check=False,

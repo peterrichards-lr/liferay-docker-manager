@@ -21,10 +21,26 @@ LDM supports two distinct tunneling providers:
 
 ### 2. lfr-tunnel-docker (Zero-Install)
 
-Runs the exact same `lfr-tunnel` client, but completely isolated inside a Docker container.
+Runs the exact same `lfr-tunnel` client, but completely isolated as a service sidecar inside your project's `docker-compose.yml` stack.
 
-- **Pros**: 100% immune to SentinelOne/EDR host-level alerts that block unknown Go binaries. Leaves zero footprint on the host system.
-- **Requirements**: Requires Docker to be running.
+- **Pros**: 100% immune to SentinelOne/EDR host-level alerts that block unknown Go binaries on macOS/Windows. Runs in sync with the project's lifecycle (`ldm run` / `ldm stop`), requiring zero manual background process management.
+- **Resource Constraints**: Optimized to consume absolute minimal resources (CPU is restricted to a maximum of `0.10` cores with `0.05` reservations, and memory is bound to a maximum of `50M` with `20M` reservations).
+- **Direct Tomcat Bypass**: Directly connects to the `liferay` container internally on Tomcat's port `8080` (rather than routing through the Traefik proxy), which resolves Host header/Virtual Host url conflicts for external redirect services.
+
+#### Conceptual Flow
+
+```text
+  Public User
+      │ (HTTPS via leased subdomain: e.g., my-subdomain.lfr-demo.se)
+      ▼
+  VPS Server Gateway (lfr-tunneld)
+      │ (WebSockets over TCP)
+      ▼
+  lfr-tunnel Client (Docker Sidecar Service in Project Network)
+      │ (Bypasses local Nginx/Traefik proxy completely)
+      ▼ (Internal Docker Network Routing)
+  liferay Container (Tomcat Port 8080)
+```
 
 ### 3. ngrok
 

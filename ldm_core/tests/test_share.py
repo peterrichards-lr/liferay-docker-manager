@@ -17,6 +17,7 @@ class MockManager:
         self.verbose = False
         self.config = MockConfig()
         self.args = MagicMock()
+        self.runtime = MagicMock()
 
     def detect_project_path(self, project_id=None):
         return None
@@ -26,6 +27,9 @@ class MockManager:
 
     def write_meta(self, root, meta):
         pass
+
+    def setup_paths(self, root):
+        return {"root": Path(root)}
 
 
 class TestShareService(unittest.TestCase):
@@ -238,8 +242,9 @@ class TestShareService(unittest.TestCase):
         self.assertEqual(env["LFT_CLIENT_TOKEN"], "my-token")
         self.assertEqual(env["LFR_TUNNEL_TOKEN"], "my-token")
 
+    @patch("ldm_core.utils.get_compose_cmd", return_value=["docker-compose"])
     @patch("subprocess.run")
-    def test_cmd_start_docker(self, mock_run):
+    def test_cmd_start_docker(self, mock_run, mock_get_compose):
         self.service._get_auth_token = MagicMock(return_value="my-token")  # type: ignore[method-assign]
         self.mock_manager.detect_project_path = MagicMock(  # type: ignore[method-assign]
             return_value=Path("/fake/myproj")
@@ -255,17 +260,13 @@ class TestShareService(unittest.TestCase):
             provider="lfr-tunnel-docker",
         )
 
-        # Two calls: rm -f, then run
-        self.assertEqual(mock_run.call_count, 2)
-        rm_args = mock_run.call_args_list[0][0][0]
-        self.assertEqual(rm_args, ["docker", "rm", "-f", "lfr-tunnel-myproj"])
+        # Verify sync_stack call
+        self.mock_manager.runtime.sync_stack.assert_called_once()
 
-        run_args = mock_run.call_args_list[1][0][0]
-        self.assertEqual(run_args[0:3], ["docker", "run", "-d"])
-        self.assertIn("lfr-tunnel-myproj", run_args)
-        self.assertIn("LFT_CLIENT_TOKEN=my-token", run_args)
-        self.assertIn("custom-sub", run_args)
-        self.assertIn("9090", run_args)
+        # Verify subprocess.run call to start container via docker compose
+        mock_run.assert_called_once()
+        cmd_args = mock_run.call_args[0][0]
+        self.assertEqual(cmd_args, ["docker-compose", "up", "-d", "lfr-tunnel"])
 
     @patch("subprocess.run")
     def test_cmd_status(self, mock_run):
@@ -305,9 +306,10 @@ class TestShareService(unittest.TestCase):
             check=False,
         )
 
+    @patch("ldm_core.utils.get_compose_cmd", return_value=["docker-compose"])
     @patch("subprocess.run")
     @patch("ldm_core.ui.UI.info")
-    def test_cmd_status_docker_running(self, mock_info, mock_run):
+    def test_cmd_status_docker_running(self, mock_info, mock_run, mock_get_compose):
         self.mock_manager.detect_project_path = MagicMock(  # type: ignore[method-assign]
             return_value=Path("/fake/myproj")
         )
@@ -320,31 +322,30 @@ class TestShareService(unittest.TestCase):
         mock_res_logs = MagicMock()
         mock_res_logs.stdout = "some logs"
 
-        # We need mock_run side effects for two runs: docker ps, then docker logs
+        # We need mock_run side effects for two runs: docker compose ps, then docker compose logs
         mock_run.side_effect = [mock_res_ps, mock_res_logs]
 
         self.service.cmd_status(project_id="myproj")
 
-        # Verify docker ps args
+        # Verify docker compose ps args
         ps_args = mock_run.call_args_list[0][0][0]
         self.assertEqual(
             ps_args,
-            ["docker", "ps", "-f", "name=lfr-tunnel-myproj", "--format", "{{.Status}}"],
+            ["docker-compose", "ps", "lfr-tunnel", "--format", "{{.Status}}"],
         )
 
-        # Verify docker logs args
+        # Verify docker compose logs args
         logs_args = mock_run.call_args_list[1][0][0]
         self.assertEqual(
-            logs_args, ["docker", "logs", "--tail", "10", "lfr-tunnel-myproj"]
+            logs_args, ["docker-compose", "logs", "--tail", "10", "lfr-tunnel"]
         )
 
-        mock_info.assert_called_with(
-            "lfr-tunnel container (lfr-tunnel-myproj) is running: Up 2 minutes"
-        )
+        mock_info.assert_called_with("lfr-tunnel container is running: Up 2 minutes")
 
+    @patch("ldm_core.utils.get_compose_cmd", return_value=["docker-compose"])
     @patch("subprocess.run")
     @patch("ldm_core.ui.UI.success")
-    def test_cmd_stop_docker(self, mock_success, mock_run):
+    def test_cmd_stop_docker(self, mock_success, mock_run, mock_get_compose):
         self.mock_manager.detect_project_path = MagicMock(  # type: ignore[method-assign]
             return_value=Path("/fake/myproj")
         )
@@ -359,7 +360,8 @@ class TestShareService(unittest.TestCase):
         self.service.cmd_stop(project_id="myproj")
 
         mock_run.assert_called_once_with(
-            ["docker", "rm", "-f", "lfr-tunnel-myproj"],
+            ["docker-compose", "rm", "-fs", "lfr-tunnel"],
+            cwd="/fake/myproj",
             capture_output=True,
             text=True,
             check=False,
