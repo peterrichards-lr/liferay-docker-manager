@@ -282,7 +282,7 @@ class TestComposerService(unittest.TestCase):
                 self.assertIn("lfr-tunnel", compose["services"])
                 tunnel_service = compose["services"]["lfr-tunnel"]
                 self.assertEqual(
-                    tunnel_service["image"], "peterrichards/lfr-tunnel:latest"
+                    tunnel_service["image"], "peterjrichards/lfr-tunnel:latest"
                 )
                 self.assertIn(
                     "LFT_CLIENT_TOKEN=my-token", tunnel_service["environment"]
