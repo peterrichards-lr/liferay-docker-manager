@@ -268,6 +268,31 @@ class TestShareService(unittest.TestCase):
         cmd_args = mock_run.call_args[0][0]
         self.assertEqual(cmd_args, ["docker-compose", "up", "-d", "lfr-tunnel"])
 
+    @patch("ldm_core.utils.get_compose_cmd", return_value=["docker-compose"])
+    @patch("subprocess.run")
+    def test_cmd_start_docker_custom_image(self, mock_run, mock_get_compose):
+        self.service._get_auth_token = MagicMock(return_value="my-token")  # type: ignore[method-assign]
+        self.mock_manager.detect_project_path = MagicMock(  # type: ignore[method-assign]
+            return_value=Path("/fake/myproj")
+        )
+        self.mock_manager.write_meta = MagicMock()  # type: ignore[method-assign]
+        mock_res = MagicMock()
+        mock_res.returncode = 0
+        mock_run.return_value = mock_res
+
+        self.service.cmd_start(
+            project_id="myproj",
+            subdomain="custom-sub",
+            ports="9090",
+            provider="lfr-tunnel-docker",
+            image="custom/lfr-tunnel:latest",
+        )
+
+        # Verify metadata write contains custom image
+        self.mock_manager.write_meta.assert_called_once()
+        written_meta = self.mock_manager.write_meta.call_args[0][1]
+        self.assertEqual(written_meta["share_image"], "custom/lfr-tunnel:latest")
+
     @patch("subprocess.run")
     def test_cmd_status(self, mock_run):
         self.service._ensure_binary = MagicMock(  # type: ignore[method-assign]

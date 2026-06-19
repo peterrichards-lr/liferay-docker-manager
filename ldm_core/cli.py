@@ -386,6 +386,10 @@ def get_parser():
         help="Sharing provider to use (defaults to lfr-tunnel)",
     )
     run.add_argument(
+        "--share-image",
+        help="Custom Docker image to use for the sharing tunnel sidecar (defaults to peterjrichards/lfr-tunnel:latest)",
+    )
+    run.add_argument(
         "--persist-osgi",
         action="store_true",
         default=None,
@@ -891,6 +895,10 @@ def get_parser():
         "--provider",
         choices=["lfr-tunnel", "lfr-tunnel-docker", "ngrok"],
         help="Tunnel provider (defaults to lfr-tunnel)",
+    )
+    share_start.add_argument(
+        "--image",
+        help="Custom Docker image to use for the sharing tunnel sidecar (defaults to peterjrichards/lfr-tunnel:latest)",
     )
 
     share_status = share_subparsers.add_parser("status", parents=[base_sub_parent])
@@ -1453,6 +1461,7 @@ def main():
             subdomain=getattr(args, "subdomain", None),
             ports=getattr(args, "ports", None),
             provider=getattr(args, "provider", None),
+            image=getattr(args, "image", None),
         ),
         ("share", "status"): lambda: manager.share.cmd_status(
             project_id=getattr(args, "project", None)

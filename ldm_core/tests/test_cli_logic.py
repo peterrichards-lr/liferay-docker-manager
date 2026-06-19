@@ -156,6 +156,8 @@ class TestCLILogic(unittest.TestCase):
                 "my-sub",
                 "--share-provider",
                 "ngrok",
+                "--share-image",
+                "custom-run-img",
             ]
         )
         self.assertEqual(args.command, "run")
@@ -163,6 +165,7 @@ class TestCLILogic(unittest.TestCase):
         self.assertTrue(args.share)
         self.assertEqual(args.share_subdomain, "my-sub")
         self.assertEqual(args.share_provider, "ngrok")
+        self.assertEqual(args.share_image, "custom-run-img")
 
         # 2. Test: ldm share start
         args = self.parser.parse_args(
@@ -176,6 +179,8 @@ class TestCLILogic(unittest.TestCase):
                 "8081",
                 "--provider",
                 "ngrok",
+                "--image",
+                "custom-share-img",
             ]
         )
         self.assertEqual(args.command, "share")
@@ -184,6 +189,7 @@ class TestCLILogic(unittest.TestCase):
         self.assertEqual(args.subdomain, "custom-sub")
         self.assertEqual(args.ports, "8081")
         self.assertEqual(args.provider, "ngrok")
+        self.assertEqual(args.image, "custom-share-img")
 
         # 3. Test: ldm share status
         args = self.parser.parse_args(["share", "status", "demo"])

@@ -186,8 +186,14 @@ class ComposerService:
                 if server_url:
                     lfr_env.append(f"LFT_SERVER_URL={server_url}")
 
+                image = (
+                    getattr(self.manager.args, "share_image", None)
+                    or meta.get("share_image")
+                    or "peterjrichards/lfr-tunnel:latest"
+                )
+
                 services["lfr-tunnel"] = {
-                    "image": "peterjrichards/lfr-tunnel:latest",
+                    "image": image,
                     "networks": ["liferay-net"],
                     "environment": lfr_env,
                     "deploy": {

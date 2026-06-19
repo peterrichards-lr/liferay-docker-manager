@@ -409,6 +409,9 @@ class RuntimeService(BaseHandler):
             share_provider = getattr(
                 self.manager.args, "share_provider", None
             ) or project_meta.get("share_provider")
+            share_image = getattr(
+                self.manager.args, "share_image", None
+            ) or project_meta.get("share_image")
             if getattr(self.manager.args, "expose", False) is True:
                 share_provider = "ngrok"
             if not share_provider:
@@ -563,6 +566,7 @@ class RuntimeService(BaseHandler):
                     "share": str(is_share).lower(),
                     "share_subdomain": share_subdomain or "",
                     "share_provider": share_provider,
+                    "share_image": share_image or "",
                     "archetype": archetype_name or project_meta.get("archetype", ""),
                 }
             )
