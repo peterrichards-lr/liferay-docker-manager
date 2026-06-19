@@ -178,6 +178,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added runtime state-awareness checks to commands (run, import) to prevent unexpected container collisions.
 - Enabled non-interactive bypass for internal developer utility prompts.
 
+## [v2.11.15] - 2026-06-19
+
+### Added
+
+- **Custom share image flags**: Added `--share-image` (to `ldm run`) and `--image` (to `ldm share start`) CLI flags to specify custom tunnel Docker image sources.
+
+### Fixed
+
+- **lfr-tunnel Docker image namespace**: Updated default sidecar namespace from `peterrichards` to `peterjrichards` to match the official container repository.
+
 ## [v2.11.14] - 2026-06-19
 
 ### Added
