@@ -77,12 +77,15 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
 - Documenting `LFT_CLIENT_TOKEN` authentication token priorities in `docs/guides/SHARING_AND_TUNNELS.md`.
 - Correcting `lfr-tunnel` Docker image namespace from `peterrichards` to `peterjrichards` in `composer.py` and `test_composer.py`.
 - Implemented `--share-image` and `--image` CLI flags to allow specifying custom tunnel Docker image sources, and verified all unit tests and lint checks.
+- Merged the patch release `v2.11.15` changes (`2275a518`) to `master` but the release tag was not successfully pushed.
+- Investigating workflow triggers and planning tag validation checks to save GitHub Actions resources and prevent release mismatches.
 
-### Plan: Bump Version to v2.11.15
+### Plan: Enforce Tag Validation & Update Release Docs
 
-1. **Update version strings**:
-   - Update `2.11.14` to `2.11.15` in `pyproject.toml` and `ldm_core/constants.py`.
-   - Add version entry in `CHANGELOG.md`.
-2. **Verify and Commit**:
-   - Run pytest and lint tools to verify everything remains clean.
-   - Commit changes and tag the release `v2.11.15`.
+1. **Update documentation**:
+   - Update `CONTRIBUTING.md` to explain the branch rules for pre-release vs stable release tags.
+2. **Implement tag validation workflow guardrails**:
+   - Add a fast `validate-tag` pre-requisite job to `ci.yml`, `release-e2e.yml`, and `scheduled-verification.yml`.
+   - Enforce: stable tags (no hyphen) must be on `master`; pre-release tags (with hyphen) must NOT be on `master`.
+3. **Verify**:
+   - Verify workflow files pass validation schema and linting checks.
