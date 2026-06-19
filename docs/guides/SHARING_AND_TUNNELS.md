@@ -131,6 +131,32 @@ LDM will save this token securely in your global configuration (`~/.ldmrc`), so 
 
 ---
 
+## Tunnel Inspector Dashboard
+
+The Liferay Tunnel container exposes a local web-based Inspector Dashboard. This dashboard allows you to view active tunnels, request/response traffic, and WebSocket latency.
+
+### Accessing the Dashboard
+
+When running with `lfr-tunnel-docker` as your provider, LDM automatically maps port `4040` of the sidecar container to your host machine:
+
+- **Dashboard URL**: [http://localhost:4040](http://localhost:4040)
+
+### Custom Inspector Host Binding (`LFT_INSPECTOR_BIND`)
+
+By default, when running inside Docker, the tunnel client binds to `0.0.0.0:4040` to ensure port forwarding works out-of-the-box. When running natively outside Docker, it binds only to `127.0.0.1:4040` for local security.
+
+You can customize the network interfaces the dashboard binds to by setting the `LFT_INSPECTOR_BIND` environment variable in your local `.env` file:
+
+```env
+# Bind the inspector dashboard to loopback only (inside container)
+LFT_INSPECTOR_BIND=127.0.0.1
+
+# Bind to all interfaces (default inside Docker)
+LFT_INSPECTOR_BIND=0.0.0.0
+```
+
+---
+
 ## Handling SaaS Callbacks (The Host Header)
 
 By default, the sharing tunnels rewrite the `Host` header to match your project's `--host-name` (e.g., `forge.demo`). This ensures that Traefik knows how to route the request to your specific Liferay container.
