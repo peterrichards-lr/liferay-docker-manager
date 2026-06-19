@@ -68,15 +68,22 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
 - [PaaS "Golden Path" Guide](./docs/guides/PAAS_LOCAL_DEV.md)
 - [Agent Rules of Engagement](./.gemini/gemini.md)
 
-## 8. Active Work State & Plan (June 17, 2026)
+## 8. Active Work State & Plan (June 19, 2026)
 
 ### Status
 
-- Resolved upgrade rate-limiting check issues by implementing HTML redirect fallback.
-- Merged Dependabot PRs (52, 53, 54, 55) and rate-limit fix (56).
-- All unit and linter tests are fully passing on `master`.
-- Cleaned up 14 obsolete local branches whose remotes were merged/squashed on GitHub.
-- Cleaned up 2 obsolete remote-tracking compatibility branches on `origin`.
-- Drafted Remote Import & Packaging design plan with private repository auth/fail-fast logic.
-- Implemented Remote Import & Packaging features in `ldm_core/handlers/workspace.py` and added unit tests.
-- Resolved `UnboundLocalError` on `calculate_sha256` and fixed all linting issues; all unit tests and linter checks pass clean. Bumped version to `2.11.10-pre.1` for pre-release verification.
+- Implemented Remote Import & Packaging features in `ldm_core/handlers/workspace.py` and successfully tested. All unit tests and linter checks pass clean on master.
+- Starting implementation of `lfr-tunnel-docker` integration directly into the project's generated `docker-compose.yml` to resolve SentinelOne/EDR friction and hostname routing.
+
+### Plan: Integrated lfr-tunnel-docker Compose Service
+
+1. **Update Composer**:
+   - Modify `ldm_core/handlers/composer.py` to add `lfr-tunnel` as a service in `docker-compose.yml` when `share_provider` is `lfr-tunnel-docker` and sharing is enabled.
+   - Pass environment variables: `LFT_CLIENT_TOKEN`, `LFT_TARGET_HOST` (pointing to `http://liferay:8080`), `LFT_SUBDOMAIN` (for the subdomain), and optionally `LFT_SERVER_URL`.
+   - Enforce minimal resource constraints: limit CPU to `0.10` and memory to `50M` (with reservations `0.05` CPU and `20M` memory).
+2. **Update Share Service**:
+   - Refactor `ldm_core/handlers/share.py` for the `lfr-tunnel-docker` provider to align with `ngrok`: save metadata, trigger `sync_stack`, and run `docker compose up -d lfr-tunnel`.
+   - Update `cmd_status` and `cmd_stop` to manage the container via `docker compose` commands instead of standalone `docker run/rm`.
+3. **Verify and Test**:
+   - Add unit tests verifying `lfr-tunnel` container configuration (environment variables and resource constraints) in the generated compose structure.
+   - Run tests using `pytest` to ensure all tests pass cleanly.

@@ -178,6 +178,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added runtime state-awareness checks to commands (run, import) to prevent unexpected container collisions.
 - Enabled non-interactive bypass for internal developer utility prompts.
 
+## [v2.11.14] - 2026-06-19
+
+### Added
+
+- **Integrated lfr-tunnel-docker Compose Service**: Added support for running the containerized `lfr-tunnel` client as a service sidecar directly inside the generated `docker-compose.yml` stack.
+- **EDR & SentinelOne Bypass**: Encapsulating the client inside the Docker runtime space prevents host-native Go binary blockages.
+- **Resource Optimization**: Imposed minimal CPU (`0.10` limits, `0.05` reservations) and memory (`50M` limits, `20M` reservations) constraints on the sidecar service.
+- **Host Header & Redirection**: Directly routes external subdomain traffic internally to Tomcat at `http://liferay:8080`, facilitating correct absolute URL redirects.
+
 ## [v2.11.9] - 2026-06-15
 
 ### Fixed

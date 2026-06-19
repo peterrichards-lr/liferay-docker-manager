@@ -26,6 +26,7 @@ graph TD
             SSCE1[SSCE: Custom Elements]
             SSCE2[SSCE: Node etc]
             SERVICE[Standalone Service: e.g. jBPM]
+            Tunnel[lfr-tunnel sidecar]
         end
     end
 
@@ -36,6 +37,11 @@ graph TD
     Proxy -- "SNI Matching" --> DXP
     Proxy -- "SNI Matching" --> SSCE1
     Proxy -- "SNI Matching" --> SSCE2
+
+    %% Public Tunnel Routing
+    PublicUser((Public User)) -- "https://sub.lfr-demo.se" --> VPSGateway[VPS Gateway: lfr-tunneld]
+    VPSGateway -- "WebSocket TCP" --> Tunnel
+    Tunnel -- "Bypass Proxy (Direct Tomcat Port 8080)" --> DXP
 
     %% Communication
     DXP -- "Namespaced Indexing" --> Search

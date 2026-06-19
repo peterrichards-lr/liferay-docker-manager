@@ -157,6 +157,60 @@ class ComposerService:
                     "ngrok authtoken not found, ngrok service will not be started."
                 )
 
+        is_share = (
+            getattr(self.manager.args, "share", False) is True
+            or str(meta.get("share", "false")).lower() == "true"
+        )
+        share_provider = (
+            getattr(self.manager.args, "share_provider", None)
+            or meta.get("share_provider")
+            or "lfr-tunnel"
+        )
+        if is_share and share_provider == "lfr-tunnel-docker":
+            token = self.manager.share._get_auth_token()
+            if token:
+                subdomain = (
+                    getattr(self.manager.args, "share_subdomain", None)
+                    or meta.get("share_subdomain")
+                    or project_name
+                )
+                import os
+
+                server_url = os.environ.get("LFT_SERVER_URL")
+
+                lfr_env = [
+                    f"LFT_CLIENT_TOKEN={token}",
+                    "LFT_TARGET_HOST=http://liferay:8080",
+                    f"LFT_SUBDOMAIN={subdomain}",
+                ]
+                if server_url:
+                    lfr_env.append(f"LFT_SERVER_URL={server_url}")
+
+                services["lfr-tunnel"] = {
+                    "image": "peterrichards/lfr-tunnel:latest",
+                    "networks": ["liferay-net"],
+                    "environment": lfr_env,
+                    "deploy": {
+                        "resources": {
+                            "limits": {
+                                "cpus": "0.10",
+                                "memory": "50M",
+                            },
+                            "reservations": {
+                                "cpus": "0.05",
+                                "memory": "20M",
+                            },
+                        }
+                    },
+                    "depends_on": {"liferay": {"condition": "service_healthy"}},
+                }
+            else:
+                from ldm_core.ui import UI
+
+                UI.warning(
+                    "Liferay Tunnel token not found, lfr-tunnel service will not be started."
+                )
+
         compose = {
             "services": services,
             "networks": {"liferay-net": {"external": True}},
