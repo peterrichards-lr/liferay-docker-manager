@@ -72,16 +72,7 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
 
 ### Status
 
-- Implemented `--share-image` and `--image` CLI flags to allow specifying custom tunnel Docker image sources.
-- Custom image parameter passed from CLI to Share handler and persisted in project metadata.
-- Updated `Composer` to dynamically resolve custom/default image for the `lfr-tunnel` service in `docker-compose.yml`.
-- CLI delegation test `test_share_commands_delegate_to_share_service` is failing because of the newly introduced `image` argument in `cmd_start` delegation.
-
-### Plan: Fix CLI Test and Verify
-
-1. **Fix CLI Test Assertion**:
-   - Update `ldm_core/tests/test_cli_entrypoint.py` to expect `image=None` when `manager.share.cmd_start` is invoked during CLI delegation testing.
-2. **Verify and Test**:
-   - Execute tests using `pytest` inside the virtual environment (`.venv`) to verify all tests and linters pass cleanly.
-3. **Commit & PR**:
-   - Commit changes to `feature/share-image-flag` and push.
+- Implemented Remote Import & Packaging features in `ldm_core/handlers/workspace.py` and successfully tested. All unit tests and linter checks pass clean on master.
+- Implemented `lfr-tunnel-docker` integration directly into the project's generated `docker-compose.yml` to resolve SentinelOne/EDR friction and hostname routing. Merged to master as v2.11.14.
+- Documenting `LFT_CLIENT_TOKEN` authentication token priorities in `docs/guides/SHARING_AND_TUNNELS.md`.
+- Implemented `--share-image` and `--image` CLI flags to allow specifying custom tunnel Docker image sources, and verified all unit tests and lint checks.
