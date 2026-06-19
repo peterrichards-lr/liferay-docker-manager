@@ -1,4 +1,9 @@
+import os
 import sys
+
+if sys.platform == "win32":
+    # Enable ANSI escape sequence processing in Windows consoles
+    os.system("")
 
 try:
     from ldm_core.ui_colors import UIColors

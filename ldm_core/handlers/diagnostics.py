@@ -2291,7 +2291,7 @@ class DiagnosticsService:
             if platform.system().lower() == "windows":
                 # Windows replacement logic via temporary batch file with retry loop
                 # We need to ensure the calling process has exited before we can move the file.
-                bat_path = exe_path.with_suffix(".update.bat")
+                bat_path = temp_new.with_suffix(".update.bat")
                 bat_content = f"""@echo off
 setlocal enabledelayedexpansion
 set "RETRIES=0"
@@ -2326,9 +2326,26 @@ pause
                     "Update staged. LDM will restart in a new window to complete."
                 )
 
-                # Bandit: B602 (shell=True) is necessary here to launch the independent Windows batch updater.
-                # The path is internally generated and sanitized.
-                subprocess.Popen(["cmd.exe", "/c", str(bat_path)], shell=True)  # nosec B602
+                # Check if we have write access to the target directory
+                try:
+                    test_file = exe_path.parent / f".test_write_{os.getpid()}"
+                    test_file.touch()
+                    test_file.unlink()
+                    has_access = True
+                except (PermissionError, OSError):
+                    has_access = False
+
+                if has_access:
+                    # Bandit: B602 (shell=True) is necessary here to launch the independent Windows batch updater.
+                    # The path is internally generated and sanitized.
+                    subprocess.Popen(["cmd.exe", "/c", str(bat_path)], shell=True)  # nosec B602
+                else:
+                    UI.info(
+                        "\nRequesting administrative privileges to replace the binary in system path..."
+                    )
+                    ps_cmd = f"Start-Process cmd -ArgumentList '/c \"{bat_path}\"' -Verb RunAs"
+                    subprocess.Popen(["powershell.exe", "-Command", ps_cmd])
+
                 sys.exit(0)
             else:
                 # Unix atomic rename

@@ -350,7 +350,7 @@ LDM strictly prohibits being run with `sudo` or as the `root` user (except for i
 LDM runs as your standard user and only invokes `sudo` internally for specific system-level operations:
 
 - **`ldm fix-hosts`**: Requests elevation to append entries to `/etc/hosts`.
-- **`ldm upgrade`**: Requests elevation to replace the binary in system paths like `/usr/local/bin`. Uses a `cp` + `rm` pattern to handle cross-device links during replacement.
+- **`ldm upgrade`**: Requests elevation to replace the binary in system paths like `/usr/local/bin`. Uses a `cp` + `rm` pattern to handle cross-device links during replacement. On Windows, it seamlessly requests administrative privileges via UAC prompts when replacing the binary.
 
 Standalone LDM binaries use a cache directory in your home folder (`~/.shiv`). Running as root causes this cache to become owned by root, which prevents the tool from functioning correctly when run as a standard user later.
 
