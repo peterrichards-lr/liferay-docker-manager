@@ -1169,6 +1169,8 @@ class TestRuntime(unittest.TestCase):
                 subdomain="custom-tunnel",
                 ports="8080",
                 provider="lfr-tunnel",
+                image=None,
+                inspector=False,
             )
 
 

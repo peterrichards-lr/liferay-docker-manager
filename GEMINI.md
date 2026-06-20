@@ -68,16 +68,30 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
 - [PaaS "Golden Path" Guide](./docs/guides/PAAS_LOCAL_DEV.md)
 - [Agent Rules of Engagement](./.gemini/gemini.md)
 
-## 8. Active Work State & Plan (June 19, 2026)
+## 8. Active Work State & Plan (June 20, 2026)
 
 ### Status
 
-- Implemented port `4040` mapping, `LFT_INSPECTOR_BIND` environment mapping, and automatic `.env` config in master branch. Merged PR #76.
+- Released `v2.11.17` successfully to master.
+- Received feedback to make the tunnel inspector dashboard opt-in, clean up the local host-side `.env` files of `LFT_INSPECTOR_BIND`, and bind the dashboard to `127.0.0.1` inside the container by default (unless opted in).
 
-### Plan: Stable Release of Tunnel Inspector Port & Env Mapping (v2.11.17)
+### Plan: Opt-in Tunnel Inspector & Clean .env (v2.11.18)
 
-1. Create release branch `release/v2.11.17`.
-2. Run version bump utility in the `.venv` (`python3 liferay_docker.py -y version --bump patch`) to update to `v2.11.17`.
-3. Commit the bump with description containing `[release]`.
-4. Open and merge PR for the release branch.
-5. Pull `master` locally, tag `v2.11.17` and push the tag to trigger stable release build.
+1. **Update `ldm_core/cli.py`**:
+   - Add `--share-inspector` to the `ldm run` command parser.
+   - Add `--inspector` to the `ldm share start` subcommand parser.
+2. **Update `ldm_core/handlers/share.py`**:
+   - Update `cmd_start()` signature to accept `inspector=False` parameter.
+   - If `provider == "lfr-tunnel-docker"`, save `share_inspector` as `"true"` or `"false"` in `project_meta`.
+3. **Update `ldm_core/handlers/runtime.py`**:
+   - In `cmd_run` / `cmd_import`, parse `share_inspector` from `args` and `project_meta`, and save it to metadata.
+   - Pass `inspector=share_inspector` to `self.manager.share.cmd_start(...)` when sharing starts automatically.
+4. **Update `ldm_core/handlers/composer.py`**:
+   - Remove the block that writes `LFT_INSPECTOR_BIND` into `.env` file.
+   - If `share_inspector` is enabled: add `LFT_INSPECTOR_BIND=${LFT_INSPECTOR_BIND:-0.0.0.0}` to the container's env list, and map port `"4040:4040"`.
+   - If `share_inspector` is disabled (default): add `LFT_INSPECTOR_BIND=${LFT_INSPECTOR_BIND:-127.0.0.1}` to the container's env list, and do NOT map port `4040`.
+5. **Update `ldm_core/tests/test_composer.py`**:
+   - Update tests to reflect that `ports` and `LFT_INSPECTOR_BIND=0.0.0.0` are only mapped when `share_inspector` is True in metadata/args.
+   - Add test case verifying the default safe behavior (`ports` is absent, and `LFT_INSPECTOR_BIND=127.0.0.1`).
+6. **Verify**:
+   - Run tests and lint checks locally inside `.venv`.

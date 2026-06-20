@@ -412,6 +412,10 @@ class RuntimeService(BaseHandler):
             share_image = getattr(
                 self.manager.args, "share_image", None
             ) or project_meta.get("share_image")
+            share_inspector = (
+                getattr(self.manager.args, "share_inspector", False) is True
+                or str(project_meta.get("share_inspector", "false")).lower() == "true"
+            )
             if getattr(self.manager.args, "expose", False) is True:
                 share_provider = "ngrok"
             if not share_provider:
@@ -567,6 +571,7 @@ class RuntimeService(BaseHandler):
                     "share_subdomain": share_subdomain or "",
                     "share_provider": share_provider,
                     "share_image": share_image or "",
+                    "share_inspector": str(share_inspector).lower(),
                     "archetype": archetype_name or project_meta.get("archetype", ""),
                 }
             )
@@ -1044,6 +1049,11 @@ class RuntimeService(BaseHandler):
                             subdomain=share_subdomain,
                             ports=str(share_port),
                             provider=share_provider,
+                            image=project_meta.get("share_image"),
+                            inspector=str(
+                                project_meta.get("share_inspector", "false")
+                            ).lower()
+                            == "true",
                         )
 
                     UI.detail("=== Useful Commands ===")
@@ -1288,6 +1298,9 @@ class RuntimeService(BaseHandler):
                     subdomain=share_subdomain,
                     ports=str(share_port),
                     provider=share_provider,
+                    image=project_meta.get("share_image"),
+                    inspector=str(project_meta.get("share_inspector", "false")).lower()
+                    == "true",
                 )
             UI.success(f"Project '{project_id}' started in background.")
             return True

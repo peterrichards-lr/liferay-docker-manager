@@ -390,6 +390,11 @@ def get_parser():
         help="Custom Docker image to use for the sharing tunnel sidecar (defaults to peterjrichards/lfr-tunnel:latest)",
     )
     run.add_argument(
+        "--share-inspector",
+        action="store_true",
+        help="Expose the lfr-tunnel local inspector dashboard on port 4040",
+    )
+    run.add_argument(
         "--persist-osgi",
         action="store_true",
         default=None,
@@ -899,6 +904,11 @@ def get_parser():
     share_start.add_argument(
         "--image",
         help="Custom Docker image to use for the sharing tunnel sidecar (defaults to peterjrichards/lfr-tunnel:latest)",
+    )
+    share_start.add_argument(
+        "--inspector",
+        action="store_true",
+        help="Expose the lfr-tunnel local inspector dashboard on port 4040",
     )
 
     share_status = share_subparsers.add_parser("status", parents=[base_sub_parent])
@@ -1462,6 +1472,7 @@ def main():
             ports=getattr(args, "ports", None),
             provider=getattr(args, "provider", None),
             image=getattr(args, "image", None),
+            inspector=getattr(args, "inspector", False),
         ),
         ("share", "status"): lambda: manager.share.cmd_status(
             project_id=getattr(args, "project", None)
