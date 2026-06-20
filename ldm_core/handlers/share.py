@@ -268,6 +268,8 @@ class ShareService:
             if image:
                 project_meta["share_image"] = image
             project_meta["share_inspector"] = "true" if inspector else "false"
+            base_container = project_meta.get("container_name") or project_id
+            project_meta["tunnel_container_name"] = f"{base_container}-lfr-tunnel"
 
             self.manager.write_meta(root, project_meta)
 

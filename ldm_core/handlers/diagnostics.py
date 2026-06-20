@@ -1850,6 +1850,12 @@ class DiagnosticsService:
         UI.raw(
             f"    {UI.WHITE}Database:{UI.COLOR_OFF}   {UI.CYAN}{meta.get('db_container_name', 'N/A')}{UI.COLOR_OFF}"
         )
+        if meta.get("share_provider") == "lfr-tunnel-docker" or meta.get(
+            "tunnel_container_name"
+        ):
+            UI.raw(
+                f"    {UI.WHITE}Tunnel:{UI.COLOR_OFF}     {UI.CYAN}{meta.get('tunnel_container_name', 'N/A')}{UI.COLOR_OFF}"
+            )
 
         # Show extensions if present
         extensions = meta.get("extensions", [])
