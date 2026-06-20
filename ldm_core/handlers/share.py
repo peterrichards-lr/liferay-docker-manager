@@ -50,6 +50,9 @@ class ShareService:
         if installed_ver:
             return bin_path
 
+        if getattr(self.manager, "dry_run", False):
+            return bin_path
+
         # Determine OS and Arch
         sys_type = platform.system().lower()
         if sys_type == "darwin":
@@ -227,6 +230,17 @@ class ShareService:
             env["LFT_CLIENT_TOKEN"] = token
             env["LFR_TUNNEL_TOKEN"] = token
 
+            if getattr(self.manager, "dry_run", False):
+                UI.info(
+                    f"{UI.BYELLOW}[DRY RUN] Would execute:{UI.COLOR_OFF} {' '.join(cmd)}"
+                )
+                UI.success("Tunnel started in the background.")
+                public_url = self.resolve_public_tunnel_url(subdomain)
+                UI.success(
+                    f"🌍 Public Tunnel Active: {UI.CYAN}{public_url}{UI.COLOR_OFF}"
+                )
+                return
+
             UI.info("Starting lfr-tunnel in the background...")
             try:
                 res = subprocess.run(
@@ -285,6 +299,17 @@ class ShareService:
             compose_base = get_compose_cmd()
             if not compose_base:
                 UI.die("Docker Compose not found.")
+
+            if getattr(self.manager, "dry_run", False):
+                UI.info(
+                    f"{UI.BYELLOW}[DRY RUN] Would execute:{UI.COLOR_OFF} {' '.join(compose_base)} up -d lfr-tunnel"
+                )
+                UI.success("Tunnel container started in the background.")
+                public_url = self.resolve_public_tunnel_url(subdomain)
+                UI.success(
+                    f"🌍 Public Tunnel Active: {UI.CYAN}{public_url}{UI.COLOR_OFF}"
+                )
+                return
 
             UI.info("Starting lfr-tunnel container...")
             res = subprocess.run(
@@ -348,6 +373,13 @@ class ShareService:
             if not compose_base:
                 UI.die("Docker Compose not found.")
 
+            if getattr(self.manager, "dry_run", False):
+                UI.info(
+                    f"{UI.BYELLOW}[DRY RUN] Would execute:{UI.COLOR_OFF} {' '.join(compose_base)} up -d ngrok"
+                )
+                UI.success("Ngrok container started.")
+                return
+
             UI.info("Starting ngrok sidecar container...")
             res = subprocess.run(
                 [*compose_base, "up", "-d", "ngrok"],
@@ -392,6 +424,13 @@ class ShareService:
             if not compose_base:
                 UI.die("Docker Compose not found.")
 
+            if getattr(self.manager, "dry_run", False):
+                UI.info(
+                    f"{UI.BYELLOW}[DRY RUN] Would execute:{UI.COLOR_OFF} {' '.join(compose_base)} ps lfr-tunnel --format {{{{.Status}}}}"
+                )
+                UI.info("lfr-tunnel container is running: Up 1 second")
+                return
+
             res = subprocess.run(
                 [*compose_base, "ps", "lfr-tunnel", "--format", "{{.Status}}"],
                 cwd=str(root),
@@ -417,6 +456,12 @@ class ShareService:
             # Default to lfr-tunnel
             bin_path = self._ensure_binary()
             cmd = [str(bin_path), "-status"]
+            if getattr(self.manager, "dry_run", False):
+                UI.info(
+                    f"{UI.BYELLOW}[DRY RUN] Would execute:{UI.COLOR_OFF} {' '.join(cmd)}"
+                )
+                print("Tunnel Status: Active")
+                return
             try:
                 res = subprocess.run(cmd, capture_output=True, text=True, check=False)
                 if res.stdout:
@@ -452,6 +497,13 @@ class ShareService:
             if not compose_base:
                 UI.die("Docker Compose not found.")
 
+            if getattr(self.manager, "dry_run", False):
+                UI.info(
+                    f"{UI.BYELLOW}[DRY RUN] Would execute:{UI.COLOR_OFF} {' '.join(compose_base)} rm -fs ngrok"
+                )
+                UI.success("Ngrok sharing stopped.")
+                return
+
             UI.info("Stopping ngrok sidecar container...")
             res = subprocess.run(
                 [*compose_base, "rm", "-fs", "ngrok"],
@@ -482,6 +534,13 @@ class ShareService:
             if not compose_base:
                 UI.die("Docker Compose not found.")
 
+            if getattr(self.manager, "dry_run", False):
+                UI.info(
+                    f"{UI.BYELLOW}[DRY RUN] Would execute:{UI.COLOR_OFF} {' '.join(compose_base)} rm -fs lfr-tunnel"
+                )
+                UI.success("Tunnel container stopped and removed.")
+                return
+
             UI.info("Stopping lfr-tunnel container...")
             res = subprocess.run(
                 [*compose_base, "rm", "-fs", "lfr-tunnel"],
@@ -500,6 +559,12 @@ class ShareService:
             # Default to lfr-tunnel
             bin_path = self._ensure_binary()
             cmd = [str(bin_path), "-stop"]
+            if getattr(self.manager, "dry_run", False):
+                UI.info(
+                    f"{UI.BYELLOW}[DRY RUN] Would execute:{UI.COLOR_OFF} {' '.join(cmd)}"
+                )
+                UI.success("Tunnel stopped.")
+                return
             try:
                 res = subprocess.run(cmd, capture_output=True, text=True, check=False)
                 if res.stdout:
