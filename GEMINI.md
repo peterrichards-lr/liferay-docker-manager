@@ -72,26 +72,21 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
 
 ### Status
 
-- Released `v2.11.17` successfully to master.
-- Received feedback to make the tunnel inspector dashboard opt-in, clean up the local host-side `.env` files of `LFT_INSPECTOR_BIND`, and bind the dashboard to `127.0.0.1` inside the container by default (unless opted in).
+- Implement opt-in tunnel inspector & clean `.env` (v2.11.18) logic completed, reviewed, and merged to master.
+- Version bumped locally to `v2.11.18`.
 
-### Plan: Opt-in Tunnel Inspector & Clean .env (v2.11.18)
+### Plan: Finalize and Release v2.11.18
 
-1. **Update `ldm_core/cli.py`**:
-   - Add `--share-inspector` to the `ldm run` command parser.
-   - Add `--inspector` to the `ldm share start` subcommand parser.
-2. **Update `ldm_core/handlers/share.py`**:
-   - Update `cmd_start()` signature to accept `inspector=False` parameter.
-   - If `provider == "lfr-tunnel-docker"`, save `share_inspector` as `"true"` or `"false"` in `project_meta`.
-3. **Update `ldm_core/handlers/runtime.py`**:
-   - In `cmd_run` / `cmd_import`, parse `share_inspector` from `args` and `project_meta`, and save it to metadata.
-   - Pass `inspector=share_inspector` to `self.manager.share.cmd_start(...)` when sharing starts automatically.
-4. **Update `ldm_core/handlers/composer.py`**:
-   - Remove the block that writes `LFT_INSPECTOR_BIND` into `.env` file.
-   - If `share_inspector` is enabled: add `LFT_INSPECTOR_BIND=${LFT_INSPECTOR_BIND:-0.0.0.0}` to the container's env list, and map port `"4040:4040"`.
-   - If `share_inspector` is disabled (default): add `LFT_INSPECTOR_BIND=${LFT_INSPECTOR_BIND:-127.0.0.1}` to the container's env list, and do NOT map port `4040`.
-5. **Update `ldm_core/tests/test_composer.py`**:
-   - Update tests to reflect that `ports` and `LFT_INSPECTOR_BIND=0.0.0.0` are only mapped when `share_inspector` is True in metadata/args.
-   - Add test case verifying the default safe behavior (`ports` is absent, and `LFT_INSPECTOR_BIND=127.0.0.1`).
-6. **Verify**:
-   - Run tests and lint checks locally inside `.venv`.
+1. **Update `CHANGELOG.md`**:
+   - Detail the changes for `v2.11.18`.
+   - Remove any double blank lines before headings to ensure markdownlint checks pass.
+2. **Commit release changes**:
+   - Commit `CHANGELOG.md`, `ldm_core/constants.py`, and `pyproject.toml` with message: `chore(release): bump version to v2.11.18 [release]`.
+3. **Run local checks**:
+   - Run tests and lint checks inside the virtual environment (`.venv`).
+4. **Push and Create PR**:
+   - Push the `release/v2.11.18` branch and create a PR.
+5. **Merge PR**:
+   - Once tests pass, merge the PR into master.
+6. **Tag & Release**:
+   - Pull master, create tag `v2.11.18`, and push it to trigger the release workflow.

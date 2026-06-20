@@ -178,6 +178,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added runtime state-awareness checks to commands (run, import) to prevent unexpected container collisions.
 - Enabled non-interactive bypass for internal developer utility prompts.
 
+## [v2.11.18] - 2026-06-20
+
+### Added
+
+- Added `--share-inspector` option to `ldm run` command.
+- Added `--inspector` option to `ldm share start` subcommand.
+
+### Changed
+
+- Made the tunnel inspector dashboard opt-in and bound it to `127.0.0.1` inside the container by default (no exposed port `4040` unless opted in).
+- Cleaned the local host-side `.env` configuration files of the `LFT_INSPECTOR_BIND` setting.
+
 ## [v2.11.17] - 2026-06-19
 
 ### Added
