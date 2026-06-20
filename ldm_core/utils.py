@@ -16,6 +16,9 @@ import requests
 from ldm_core.constants import SCRIPT_DIR, TAG_PATTERN
 from ldm_core.ui import UI
 
+# Global virtual file system for Dry-Run mode to support read-after-write operations
+_DRY_RUN_VFS: dict[str, str] = {}
+
 
 class Benchmarker:
     """A global timer to benchmark LDM operations, separating human vs machine time."""
@@ -390,6 +393,24 @@ def run_command(
     if verbose:
         UI.debug(f"Executing: {display_cmd}")
 
+    is_dry_run = os.environ.get("LDM_DRY_RUN", "").lower() == "true"
+    if is_dry_run:
+        cmd_str = " ".join(cmd) if isinstance(cmd, list) else cmd
+        UI.info(f"{UI.BYELLOW}[DRY RUN] Would execute:{UI.COLOR_OFF} {display_cmd}")
+        mock_output = ""
+        if "MemTotal" in cmd_str:
+            mock_output = "17179869184"
+        elif "{{json .}}" in cmd_str or "info --format {{json" in cmd_str:
+            mock_output = '{"MemTotal": 17179869184}'
+        elif "context show" in cmd_str:
+            mock_output = "default"
+        elif "docker inspect" in cmd_str:
+            if "{{.State.Status}}" in cmd_str or "{{.State.Health.Status}}" in cmd_str:
+                mock_output = "running"
+            else:
+                mock_output = "[]"
+        return mock_output
+
     try:
         # Bandit: B602 (shell=True) is used for complex commands where needed,
         # B603 (subprocess_without_shell_equals_true) is safe as we now use absolute paths.
@@ -460,6 +481,11 @@ def get_raw(url):
 def safe_write_text(path, content, encoding="utf-8"):
     """Atomically writes text to a file using a temporary file and robust replacement."""
     path = Path(path).resolve()
+    is_dry_run = os.environ.get("LDM_DRY_RUN", "").lower() == "true"
+    if is_dry_run:
+        UI.info(f"{UI.BYELLOW}[DRY RUN] Would write file:{UI.COLOR_OFF} {path}")
+        _DRY_RUN_VFS[str(path)] = content
+        return
     tmp_path = path.with_suffix(".tmp" + path.suffix)
     try:
         try:
@@ -943,6 +969,35 @@ def read_meta(path):
     """Reads LDM project metadata from a file (supports JSON and Flat formats)."""
     meta: dict[str, Any] = {}
     path = Path(path)
+    is_dry_run = os.environ.get("LDM_DRY_RUN", "").lower() == "true"
+    resolved_path = str(path.resolve())
+    if is_dry_run and resolved_path in _DRY_RUN_VFS:
+        content = _DRY_RUN_VFS[resolved_path].strip()
+        try:
+            if content.startswith("{"):
+                return json.loads(content)
+            for line in content.splitlines():
+                stripped_line = line.strip()
+                if (
+                    stripped_line
+                    and not stripped_line.startswith("#")
+                    and "=" in stripped_line
+                ):
+                    k, v_str = stripped_line.split("=", 1)
+                    k, v_str = k.strip(), v_str.strip()
+                    dry_val: Any = v_str
+                    if v_str == "None":
+                        dry_val = None
+                    elif v_str.lower() == "true":
+                        dry_val = True
+                    elif v_str.lower() == "false":
+                        dry_val = False
+                    meta[k] = dry_val
+            return meta
+        except Exception as e:
+            UI.warning(f"Could not read dry-run metadata: {e}")
+            return meta
+
     if not path.exists():
         return meta
 
@@ -1610,6 +1665,12 @@ def resolve_dependency_version(liferay_tag, dependency_name):
 def safe_mkdir(path, parents=True, exist_ok=True):
     """Creates a directory safely, with JIT permission reclamation if needed."""
     path_obj = Path(path).resolve()
+    is_dry_run = os.environ.get("LDM_DRY_RUN", "").lower() == "true"
+    if is_dry_run:
+        UI.info(
+            f"{UI.BYELLOW}[DRY RUN] Would create directory:{UI.COLOR_OFF} {path_obj}"
+        )
+        return
     try:
         path_obj.mkdir(parents=parents, exist_ok=exist_ok)
     except (OSError, PermissionError) as e:

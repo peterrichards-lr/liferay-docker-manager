@@ -231,6 +231,9 @@ def get_parser():
         "-q", "--quiet", action="store_true", help="Quiet mode (suppress info logs)"
     )
     base_parent.add_argument(
+        "--dry-run", action="store_true", help="Preview execution without mutations"
+    )
+    base_parent.add_argument(
         "--benchmark", action="store_true", help="Display performance benchmark"
     )
 
@@ -243,6 +246,7 @@ def get_parser():
     base_sub_parent.add_argument("-v", "--verbose", action="store_true")
     base_sub_parent.add_argument("-y", "--non-interactive", action="store_true")
     base_sub_parent.add_argument("-q", "--quiet", action="store_true")
+    base_sub_parent.add_argument("--dry-run", action="store_true")
     base_sub_parent.add_argument("--benchmark", action="store_true")
 
     parser = argparse.ArgumentParser(
@@ -1276,6 +1280,10 @@ def main():
         sub_parser = subparsers.choices[args.command]
         sub_parser.print_help()
         return
+
+    # Set environment variable LDM_DRY_RUN if dry-run is specified
+    if getattr(args, "dry_run", False) is True:
+        os.environ["LDM_DRY_RUN"] = "true"
 
     manager = LiferayManager(args)
 
