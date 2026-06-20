@@ -448,16 +448,17 @@ class TestComposerService(unittest.TestCase):
         self.manager.config.update_portal_ext.assert_any_call(
             paths,
             {
-                "web.server.host": "my-sub.lfr-demo.se",
-                "web.server.https.port": "443",
-                "web.server.protocol": "https",
-                "virtual.hosts.valid.hosts": "localhost,127.0.0.1,localhost,liferay,my-sub.lfr-demo.se",
+                "web.server.forwarded.host.header": "X-Forwarded-Host",
+                "web.server.forwarded.port.header": "X-Forwarded-Port",
+                "web.server.forwarded.proto.header": "X-Forwarded-Proto",
+                "virtual.hosts.valid.hosts": "localhost,127.0.0.1,localhost,liferay,*.lfr-demo.online,*.lfr-demo.se",
+                "web.server.host": "",
+                "web.server.https.port": "",
+                "web.server.protocol": "",
             },
         )
 
-    @patch("pathlib.Path.exists")
-    @patch("pathlib.Path.read_text")
-    def test_build_liferay_service_cleanup_portal_ext(self, mock_read, mock_exists):
+    def test_build_liferay_service_cleanup_portal_ext(self):
         paths = {
             "root": Path("/tmp/proj"),
             "deploy": Path("/tmp/proj/deploy"),
@@ -474,14 +475,6 @@ class TestComposerService(unittest.TestCase):
         meta = {"tag": "2026.q1.7-lts", "container_name": "proj"}
 
         self.manager.args.share = False
-        mock_exists.return_value = True
-        mock_read.return_value = "web.server.host=my-sub.lfr-demo.se\nweb.server.https.port=443\nweb.server.protocol=https"
-
-        self.manager.config._get_properties.return_value = {
-            "web.server.host": "my-sub.lfr-demo.se",
-            "web.server.https.port": "443",
-            "web.server.protocol": "https",
-        }
 
         self.composer._build_liferay_service(
             paths, meta, "localhost", "proj", False, None
@@ -490,10 +483,13 @@ class TestComposerService(unittest.TestCase):
         self.manager.config.update_portal_ext.assert_any_call(
             paths,
             {
+                "web.server.forwarded.host.header": "X-Forwarded-Host",
+                "web.server.forwarded.port.header": "X-Forwarded-Port",
+                "web.server.forwarded.proto.header": "X-Forwarded-Proto",
+                "virtual.hosts.valid.hosts": "localhost,127.0.0.1,localhost,liferay,*.lfr-demo.online,*.lfr-demo.se",
                 "web.server.host": "",
                 "web.server.https.port": "",
                 "web.server.protocol": "",
-                "virtual.hosts.valid.hosts": "",
             },
         )
 
