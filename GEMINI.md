@@ -72,21 +72,18 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
 
 ### Status
 
-- Implement opt-in tunnel inspector & clean `.env` (v2.11.18) logic completed, reviewed, and merged to master.
-- Version bumped locally to `v2.11.18`.
+- Implemented auto-configuration of Liferay proxy settings for shared tunnels.
+- Run unit tests locally inside `.venv`, and they all passed successfully.
+- Ready to branch and release/bump version to `v2.11.19`.
 
-### Plan: Finalize and Release v2.11.18
+### Plan: Commit, Bump Version, and Release v2.11.19
 
-1. **Update `CHANGELOG.md`**:
-   - Detail the changes for `v2.11.18`.
-   - Remove any double blank lines before headings to ensure markdownlint checks pass.
-2. **Commit release changes**:
-   - Commit `CHANGELOG.md`, `ldm_core/constants.py`, and `pyproject.toml` with message: `chore(release): bump version to v2.11.18 [release]`.
-3. **Run local checks**:
-   - Run tests and lint checks inside the virtual environment (`.venv`).
-4. **Push and Create PR**:
-   - Push the `release/v2.11.18` branch and create a PR.
-5. **Merge PR**:
-   - Once tests pass, merge the PR into master.
-6. **Tag & Release**:
-   - Pull master, create tag `v2.11.18`, and push it to trigger the release workflow.
+1. **Create Feature Branch**:
+   - Create a feature branch named `feature/auto-configure-proxy-settings-shared-tunnels` and switch to it.
+2. **Update Version**:
+   - Update `pyproject.toml` version to `2.11.19`.
+   - Update `ldm_core/constants.py` VERSION and LDM_MAGIC_VERSION to `2.11.19`.
+   - Add entries in `CHANGELOG.md` detailing the proxy configuration feature under `## [v2.11.19] - 2026-06-20`.
+3. **Verify and Commit**:
+   - Run existing unit tests inside `.venv` to ensure everything is correct.
+   - Commit all changes (feature changes + version bump + changelog + gemini.md) to the feature branch.
