@@ -72,17 +72,12 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
 
 ### Status
 
-- Released `v2.11.16` successfully to master.
-- Received request to map port `4040` for the `lfr-tunnel` service sidecar to expose the local inspector dashboard.
+- Implemented port `4040` mapping, `LFT_INSPECTOR_BIND` environment mapping, and automatic `.env` config in master branch. Merged PR #76.
 
-### Plan: Map Inspector Port 4040 for lfr-tunnel Sidecar (v2.11.17)
+### Plan: Stable Release of Tunnel Inspector Port & Env Mapping (v2.11.17)
 
-1. **Update `ldm_core/handlers/composer.py`**:
-   - Add `"ports": ["4040:4040"]` to `services["lfr-tunnel"]` in `_build_services`.
-   - Add `"LFT_INSPECTOR_BIND=${LFT_INSPECTOR_BIND:-0.0.0.0}"` to the container `environment` list.
-   - Automatically add/update `LFT_INSPECTOR_BIND=0.0.0.0` in the local `.env` file when generating the docker-compose stack configuration for the `lfr-tunnel-docker` sidecar.
-2. **Update `ldm_core/tests/test_composer.py`**:
-   - Add `self.assertEqual(tunnel_service.get("ports"), ["4040:4040"])` in `test_write_docker_compose_with_lfr_tunnel_docker`.
-   - Add `self.assertIn("LFT_INSPECTOR_BIND=${LFT_INSPECTOR_BIND:-0.0.0.0}", tunnel_service.get("environment"))`.
-3. **Verify**:
-   - Run tests and lint checks locally inside `.venv`.
+1. Create release branch `release/v2.11.17`.
+2. Run version bump utility in the `.venv` (`python3 liferay_docker.py -y version --bump patch`) to update to `v2.11.17`.
+3. Commit the bump with description containing `[release]`.
+4. Open and merge PR for the release branch.
+5. Pull `master` locally, tag `v2.11.17` and push the tag to trigger stable release build.
