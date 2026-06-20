@@ -178,6 +178,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added runtime state-awareness checks to commands (run, import) to prevent unexpected container collisions.
 - Enabled non-interactive bypass for internal developer utility prompts.
 
+## [v2.11.19] - 2026-06-20
+
+### Added
+
+- Added automatic Liferay portal proxy configuration (`web.server.host`, `web.server.https.port`, and `web.server.protocol` in `portal-ext.properties`) when sharing a project via standard tunnel.
+
+### Fixed
+
+- Added automatic cleanup of previous `portal-ext.properties` proxy/tunnel overrides when neither sharing nor SSL proxy is active.
+
 ## [v2.11.18] - 2026-06-20
 
 ### Added

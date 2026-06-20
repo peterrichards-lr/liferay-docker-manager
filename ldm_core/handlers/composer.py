@@ -609,10 +609,46 @@ class ComposerService:
                 )
             liferay_env.append("LIFERAY_HSQL_PERIOD_ENABLED=false")
 
+        # Determine if we are sharing via a tunnel
+        is_share = (
+            getattr(self.manager.args, "share", False) is True
+            or str(meta.get("share", "false")).lower() == "true"
+        )
+        share_provider = (
+            getattr(self.manager.args, "share_provider", None)
+            or meta.get("share_provider")
+            or "lfr-tunnel"
+        )
+        share_subdomain = (
+            getattr(self.manager.args, "share_subdomain", None)
+            or meta.get("share_subdomain")
+            or project_name
+        )
+
+        share_host = None
+        if is_share and share_provider in ["lfr-tunnel", "lfr-tunnel-docker"]:
+            public_url = self.manager.share.resolve_public_tunnel_url(share_subdomain)
+            if public_url:
+                from urllib.parse import urlparse
+
+                parsed = urlparse(public_url)
+                share_host = parsed.netloc or parsed.path
+
         port_list = []
         if host_name == "localhost" or not ssl_enabled:
             bind_ip = self.manager.get_resolved_ip(host_name) or "127.0.0.1"
             port_list.append(f"{bind_ip}:{port}:8080")
+
+        # Dynamically configure Liferay web server proxy settings
+        if share_host:
+            self.manager.config.update_portal_ext(  # type: ignore[attr-defined]
+                paths,
+                {
+                    "web.server.host": share_host,
+                    "web.server.https.port": "443",
+                    "web.server.protocol": "https",
+                },
+            )
         elif ssl_enabled:
             self.manager.config.update_portal_ext(  # type: ignore[attr-defined]
                 paths,
@@ -622,6 +658,30 @@ class ComposerService:
                     "web.server.protocol": "https",
                 },
             )
+        else:
+            # If neither share nor SSL is active, check if we need to clean up prior tunnel/proxy overrides
+            pe_path = paths["files"] / "portal-ext.properties"
+            if pe_path.exists():
+                try:
+                    content = pe_path.read_text()
+                    props = self.manager.config._get_properties(content)
+                    current_host = props.get("web.server.host", "")
+                    # Clean up if it was a tunnel/proxy URL or if it matches the current host_name
+                    if current_host and (
+                        "lfr-demo" in current_host
+                        or "ngrok" in current_host
+                        or current_host == host_name
+                    ):
+                        self.manager.config.update_portal_ext(  # type: ignore[attr-defined]
+                            paths,
+                            {
+                                "web.server.host": "",
+                                "web.server.https.port": "",
+                                "web.server.protocol": "",
+                            },
+                        )
+                except Exception:
+                    pass
 
         # LDM-381: Determine base image and sanitized tag
         tag = str(meta.get("tag") or "latest")

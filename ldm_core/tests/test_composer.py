@@ -415,6 +415,83 @@ class TestComposerService(unittest.TestCase):
                     tunnel_service["environment"],
                 )
 
+    def test_build_liferay_service_with_share_host(self):
+        paths = {
+            "root": Path("/tmp/proj"),
+            "deploy": Path("/tmp/proj/deploy"),
+            "files": Path("/tmp/proj/files"),
+            "data": Path("/tmp/proj/data"),
+            "configs": Path("/tmp/proj/osgi/configs"),
+            "modules": Path("/tmp/proj/osgi/modules"),
+            "cx": Path("/tmp/proj/osgi/client-extensions"),
+            "scripts": Path("/tmp/proj/scripts"),
+            "state": Path("/tmp/proj/osgi/state"),
+            "logs": Path("/tmp/proj/logs"),
+            "portal_log4j": Path("/tmp/proj/osgi/log4j"),
+        }
+        meta = {"tag": "2026.q1.7-lts", "container_name": "proj"}
+
+        self.manager.args.share = True
+        self.manager.args.share_provider = "lfr-tunnel"
+        self.manager.args.share_subdomain = "my-sub"
+        self.manager.share.resolve_public_tunnel_url.return_value = (
+            "https://my-sub.lfr-demo.se"
+        )
+
+        self.composer._build_liferay_service(
+            paths, meta, "localhost", "proj", False, None
+        )
+
+        self.manager.config.update_portal_ext.assert_any_call(
+            paths,
+            {
+                "web.server.host": "my-sub.lfr-demo.se",
+                "web.server.https.port": "443",
+                "web.server.protocol": "https",
+            },
+        )
+
+    @patch("pathlib.Path.exists")
+    @patch("pathlib.Path.read_text")
+    def test_build_liferay_service_cleanup_portal_ext(self, mock_read, mock_exists):
+        paths = {
+            "root": Path("/tmp/proj"),
+            "deploy": Path("/tmp/proj/deploy"),
+            "files": Path("/tmp/proj/files"),
+            "data": Path("/tmp/proj/data"),
+            "configs": Path("/tmp/proj/osgi/configs"),
+            "modules": Path("/tmp/proj/osgi/modules"),
+            "cx": Path("/tmp/proj/osgi/client-extensions"),
+            "scripts": Path("/tmp/proj/scripts"),
+            "state": Path("/tmp/proj/osgi/state"),
+            "logs": Path("/tmp/proj/logs"),
+            "portal_log4j": Path("/tmp/proj/osgi/log4j"),
+        }
+        meta = {"tag": "2026.q1.7-lts", "container_name": "proj"}
+
+        self.manager.args.share = False
+        mock_exists.return_value = True
+        mock_read.return_value = "web.server.host=my-sub.lfr-demo.se\nweb.server.https.port=443\nweb.server.protocol=https"
+
+        self.manager.config._get_properties.return_value = {
+            "web.server.host": "my-sub.lfr-demo.se",
+            "web.server.https.port": "443",
+            "web.server.protocol": "https",
+        }
+
+        self.composer._build_liferay_service(
+            paths, meta, "localhost", "proj", False, None
+        )
+
+        self.manager.config.update_portal_ext.assert_any_call(
+            paths,
+            {
+                "web.server.host": "",
+                "web.server.https.port": "",
+                "web.server.protocol": "",
+            },
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
