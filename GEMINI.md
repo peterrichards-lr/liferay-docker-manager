@@ -72,12 +72,14 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
 
 ### Status
 
-- Released `v2.11.19` and `v2.11.20` successfully.
-- PR #82 (`feature/allow-liferay-valid-hosts` configuring `LFT_PRESERVE_HOST` for tunnel service) has been merged into master.
-- Bumped local version to `v2.11.21`, committed, and pushed version bump changes to the remote branch `chore/bump-version-2.11.21`.
+- Released `v2.11.19`, `v2.11.20`, and `v2.11.21` successfully.
+- Resolved the `java.lang.RuntimeException: Invalid host name liferay` issue by preserving host headers in `lfr-tunnel` via `LFT_PRESERVE_HOST=true`.
+- Successfully released `lfr-tunnel` version `v1.8.0` containing the new Subdomain Reservation System and host header preservation features.
 
 ### Plan
 
-1. **Merge version bump**: Confirm with user to merge the `chore/bump-version-2.11.21` pull request on GitHub to complete the stable `v2.11.21` release.
-2. **Tag v2.11.21**: Once merged, pull the master branch and tag/push `v2.11.21`.
-3. **lfr-tunnel Release**: Bump version in `pkg/server/static/whats-new.json` to `v1.8.0` in the `lfr-tunnel` repository, create a PR, merge it, and push the tag `v1.8.0` to trigger the automated release build.
+1. **CLI Parsing**: Introduce `--dry-run` / `-n` flag into `ldm_core/cli.py` and pass `dry_run` into `LiferayManager`.
+2. **Execution & Write Interceptors**: Implement `run_command` dry-run mocks and `safe_write_text` in `ldm_core/utils.py`.
+3. **Configure Proxy Header Forwarding & Wildcards**: Update `ldm_core/handlers/composer.py` to always inject `web.server.forwarded.*` settings and wildcard tunnel hosts into `portal-ext.properties`, and remove dynamic host overrides from share command start.
+4. **Refactor & Verification**: Route mutator calls in LDM handlers through safe utils, and add verification unit tests for both features.
+5. **Mypy Validation Fix**: Resolve the name definition conflict `v` in `ldm_core/utils.py` read_meta dry-run VFS code.

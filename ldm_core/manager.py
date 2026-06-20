@@ -29,6 +29,10 @@ class LiferayManager(
         self.info_mode = getattr(args, "info", False)
         self.quiet_mode = getattr(args, "quiet", False)
         self.non_interactive = getattr(args, "non_interactive", False)
+        self.dry_run = (
+            getattr(args, "dry_run", False)
+            or os.environ.get("LDM_DRY_RUN", "").lower() == "true"
+        )
         self.defaults = DefaultsManager()
 
         # Services via Composition
