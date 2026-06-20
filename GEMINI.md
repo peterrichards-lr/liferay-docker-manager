@@ -78,8 +78,6 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
 
 ### Plan
 
-1. **CLI Parsing**: Introduce `--dry-run` / `-n` flag into `ldm_core/cli.py` and pass `dry_run` into `LiferayManager`.
-2. **Execution & Write Interceptors**: Implement `run_command` dry-run mocks and `safe_write_text` in `ldm_core/utils.py`.
-3. **Configure Proxy Header Forwarding & Wildcards**: Update `ldm_core/handlers/composer.py` to always inject `web.server.forwarded.*` settings and wildcard tunnel hosts into `portal-ext.properties`, and remove dynamic host overrides from share command start.
-4. **Refactor & Verification**: Route mutator calls in LDM handlers through safe utils, and add verification unit tests for both features.
-5. **Mypy Validation Fix**: Resolve the name definition conflict `v` in `ldm_core/utils.py` read_meta dry-run VFS code.
+1. **Version Bump**: Bump version to `v2.11.22` in `pyproject.toml` and `ldm_core/constants.py`.
+2. **PR & Merge**: Create branch `chore/bump-version-2.11.22`, raise PR, verify tests, and merge into `master`.
+3. **Release Tag**: Pull `master`, tag `v2.11.22`, and push tag to origin to trigger deployment.
