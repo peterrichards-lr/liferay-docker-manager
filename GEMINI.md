@@ -72,18 +72,22 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
 
 ### Status
 
-- Implemented auto-configuration of Liferay proxy settings for shared tunnels.
-- Run unit tests locally inside `.venv`, and they all passed successfully.
-- Ready to branch and release/bump version to `v2.11.19`.
+- Released `v2.11.19` successfully.
+- Received user request to name the `lfr-tunnel` Docker container explicitly to include the LDM project name so that it is included when project containers are stopped/deleted/cleaned up.
 
-### Plan: Commit, Bump Version, and Release v2.11.19
+### Plan: Explicit lfr-tunnel Container Name (v2.11.20)
 
 1. **Create Feature Branch**:
-   - Create a feature branch named `feature/auto-configure-proxy-settings-shared-tunnels` and switch to it.
-2. **Update Version**:
-   - Update `pyproject.toml` version to `2.11.19`.
-   - Update `ldm_core/constants.py` VERSION and LDM_MAGIC_VERSION to `2.11.19`.
-   - Add entries in `CHANGELOG.md` detailing the proxy configuration feature under `## [v2.11.19] - 2026-06-20`.
-3. **Verify and Commit**:
-   - Run existing unit tests inside `.venv` to ensure everything is correct.
-   - Commit all changes (feature changes + version bump + changelog + gemini.md) to the feature branch.
+   - Create a feature branch named `feature/explicit-tunnel-container-name` and switch to it.
+2. **Update Metadata in `ldm_core/handlers/runtime.py`**:
+   - Inside `cmd_run` / `cmd_import`, persist `tunnel_container_name` = `f"{base_container_name}-lfr-tunnel"` in the project metadata.
+3. **Update Docker Compose Builder in `ldm_core/handlers/composer.py`**:
+   - In `_build_liferay_service`, set the `container_name` key of the `lfr-tunnel` service to `meta.get("tunnel_container_name") or f"{project_name}-lfr-tunnel"`.
+4. **Update Diagnostics Output in `ldm_core/handlers/diagnostics.py`**:
+   - Under `Provisioned Containers:`, if `tunnel_container_name` is present in metadata, print the tunnel container name.
+5. **Update Composer Tests in `ldm_core/tests/test_composer.py`**:
+   - Update tests to assert that the `container_name` property is set correctly for `lfr-tunnel`.
+6. **Bump Version to `v2.11.20`**:
+   - Update `pyproject.toml`, `ldm_core/constants.py`, and `CHANGELOG.md` with the new version `v2.11.20`.
+7. **Verify**:
+   - Run unit tests and lint check via `./lint.sh` locally in `.venv`.

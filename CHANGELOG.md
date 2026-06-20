@@ -178,6 +178,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added runtime state-awareness checks to commands (run, import) to prevent unexpected container collisions.
 - Enabled non-interactive bypass for internal developer utility prompts.
 
+## [v2.11.20] - 2026-06-20
+
+### Added
+
+- Added explicit container naming (e.g. `[project_name]-lfr-tunnel`) for the `lfr-tunnel-docker` sidecar service to improve clean container teardown.
+- Persisted `tunnel_container_name` in project metadata and included it in the `ldm status` diagnostics display.
+
 ## [v2.11.19] - 2026-06-20
 
 ### Added
