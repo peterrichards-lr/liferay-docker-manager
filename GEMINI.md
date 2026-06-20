@@ -73,21 +73,17 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
 ### Status
 
 - Released `v2.11.19` successfully.
-- Received user request to name the `lfr-tunnel` Docker container explicitly to include the LDM project name so that it is included when project containers are stopped/deleted/cleaned up.
+- Pushed PR #81 (branch `feature/explicit-tunnel-container-name`) for naming `lfr-tunnel` container explicitly.
+- Identified the root cause of `java.lang.RuntimeException: Invalid host name liferay`: the containerized `lfr-tunnel` proxy was rewriting the `Host` header to `"liferay"` instead of preserving the public subdomain host header.
+- Added `LFT_PRESERVE_HOST=true` environment variable support and `-preserve-host` CLI flag to `lfr-tunnel` client to preserve incoming Host headers, and committed to `lfr-tunnel` master.
+- Updated `liferay-docker-manager` to inject `LFT_PRESERVE_HOST=true` into the tunnel service environment, and updated unit tests.
 
-### Plan: Explicit lfr-tunnel Container Name (v2.11.20)
+### Plan: Verify, Commit, and Merge
 
-1. **Create Feature Branch**:
-   - Create a feature branch named `feature/explicit-tunnel-container-name` and switch to it.
-2. **Update Metadata in `ldm_core/handlers/runtime.py`**:
-   - Inside `cmd_run` / `cmd_import`, persist `tunnel_container_name` = `f"{base_container_name}-lfr-tunnel"` in the project metadata.
-3. **Update Docker Compose Builder in `ldm_core/handlers/composer.py`**:
-   - In `_build_liferay_service`, set the `container_name` key of the `lfr-tunnel` service to `meta.get("tunnel_container_name") or f"{project_name}-lfr-tunnel"`.
-4. **Update Diagnostics Output in `ldm_core/handlers/diagnostics.py`**:
-   - Under `Provisioned Containers:`, if `tunnel_container_name` is present in metadata, print the tunnel container name.
-5. **Update Composer Tests in `ldm_core/tests/test_composer.py`**:
-   - Update tests to assert that the `container_name` property is set correctly for `lfr-tunnel`.
-6. **Bump Version to `v2.11.20`**:
-   - Update `pyproject.toml`, `ldm_core/constants.py`, and `CHANGELOG.md` with the new version `v2.11.20`.
-7. **Verify**:
-   - Run unit tests and lint check via `./lint.sh` locally in `.venv`.
+1. **Verify changes**:
+   - Wait for `./lint.sh` and Go tests to complete successfully.
+2. **Commit LDM changes**:
+   - Commit the new changes (updated composer files and GEMINI.md) to `feature/allow-liferay-valid-hosts`.
+3. **Release & Merge**:
+   - Merge `feature/explicit-tunnel-container-name` as `v2.11.20`.
+   - Merge `feature/allow-liferay-valid-hosts` as `v2.11.21`.
