@@ -218,6 +218,7 @@ class RuntimeService(BaseHandler):
             project_meta["container_name"] = base_container_name
             project_meta["liferay_container_name"] = base_container_name
             project_meta["db_container_name"] = f"{base_container_name}-db"
+            project_meta["tunnel_container_name"] = f"{base_container_name}-lfr-tunnel"
 
             paths = self.manager.setup_paths(root)
             ssl_val = self.manager.composer._is_ssl_active(host_name, project_meta)

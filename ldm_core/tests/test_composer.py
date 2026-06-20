@@ -283,6 +283,7 @@ class TestComposerService(unittest.TestCase):
                 self.assertIn("lfr-tunnel", compose["services"])
                 tunnel_service = compose["services"]["lfr-tunnel"]
                 self.assertEqual(tunnel_service["image"], "custom/lfr-tunnel:latest")
+                self.assertEqual(tunnel_service["container_name"], "proj-lfr-tunnel")
                 self.assertIn(
                     "LFT_CLIENT_TOKEN=${LFT_CLIENT_TOKEN:-my-token}",
                     tunnel_service["environment"],
@@ -409,6 +410,7 @@ class TestComposerService(unittest.TestCase):
                 self.assertIn("lfr-tunnel", compose["services"])
                 tunnel_service = compose["services"]["lfr-tunnel"]
                 self.assertEqual(tunnel_service["image"], "custom/lfr-tunnel:latest")
+                self.assertEqual(tunnel_service["container_name"], "proj-lfr-tunnel")
                 self.assertEqual(tunnel_service.get("ports"), ["4040:4040"])
                 self.assertIn(
                     "LFT_INSPECTOR_BIND=${LFT_INSPECTOR_BIND:-0.0.0.0}",
