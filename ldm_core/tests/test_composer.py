@@ -289,6 +289,7 @@ class TestComposerService(unittest.TestCase):
                     tunnel_service["environment"],
                 )
                 self.assertIn("LFT_TARGET_HOST=liferay", tunnel_service["environment"])
+                self.assertIn("LFT_PRESERVE_HOST=true", tunnel_service["environment"])
                 self.assertIn(
                     "LFT_CLIENT_SUBDOMAIN=${LFT_SUBDOMAIN:-my-sub}",
                     tunnel_service["environment"],

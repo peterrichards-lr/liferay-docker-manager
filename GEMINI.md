@@ -73,16 +73,17 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
 ### Status
 
 - Released `v2.11.19` successfully.
-- Released `v2.11.19` successfully.
 - Pushed PR #81 (branch `feature/explicit-tunnel-container-name`) for naming `lfr-tunnel` container explicitly.
-- Investigating `ValidHostNameFilter` issue in Liferay where accessing via the tunnel container results in `java.lang.RuntimeException: Invalid host name liferay`.
+- Identified the root cause of `java.lang.RuntimeException: Invalid host name liferay`: the containerized `lfr-tunnel` proxy was rewriting the `Host` header to `"liferay"` instead of preserving the public subdomain host header.
+- Added `LFT_PRESERVE_HOST=true` environment variable support and `-preserve-host` CLI flag to `lfr-tunnel` client to preserve incoming Host headers, and committed to `lfr-tunnel` master.
+- Updated `liferay-docker-manager` to inject `LFT_PRESERVE_HOST=true` into the tunnel service environment, and updated unit tests.
 
-### Plan: Allow liferay as valid hostname (v2.11.21)
+### Plan: Verify, Commit, and Merge
 
-1. **Update `ldm_core/handlers/composer.py`**:
-   - In `_build_liferay_service`, set `virtual.hosts.valid.hosts` in `portal-ext.properties` when `share_host` or `ssl_enabled` is active, allowing `localhost,127.0.0.1,liferay,host_name,share_host`.
-   - Clean up `virtual.hosts.valid.hosts` if neither share nor SSL is active.
-2. **Update Unit Tests**:
-   - Update tests in `ldm_core/tests/test_composer.py` to assert that `virtual.hosts.valid.hosts` is correctly set and cleaned up.
-3. **Verify**:
-   - Run tests and lint check via `./lint.sh` locally in `.venv`.
+1. **Verify changes**:
+   - Wait for `./lint.sh` and Go tests to complete successfully.
+2. **Commit LDM changes**:
+   - Commit the new changes (updated composer files and GEMINI.md) to `feature/allow-liferay-valid-hosts`.
+3. **Release & Merge**:
+   - Merge `feature/explicit-tunnel-container-name` as `v2.11.20`.
+   - Merge `feature/allow-liferay-valid-hosts` as `v2.11.21`.

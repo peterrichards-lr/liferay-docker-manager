@@ -238,6 +238,7 @@ class ComposerService:
                     f"LFT_CLIENT_TOKEN=${{LFT_CLIENT_TOKEN:-{token}}}",
                     "LFT_TARGET_HOST=liferay",
                     f"LFT_CLIENT_SUBDOMAIN=${{LFT_SUBDOMAIN:-{subdomain}}}",
+                    "LFT_PRESERVE_HOST=true",
                 ]
                 if share_inspector:
                     lfr_env.append("LFT_INSPECTOR_BIND=${LFT_INSPECTOR_BIND:-0.0.0.0}")
