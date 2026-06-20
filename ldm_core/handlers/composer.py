@@ -642,52 +642,32 @@ class ComposerService:
             bind_ip = self.manager.get_resolved_ip(host_name) or "127.0.0.1"
             port_list.append(f"{bind_ip}:{port}:8080")
 
-        # Dynamically configure Liferay web server proxy settings
-        if share_host:
-            self.manager.config.update_portal_ext(  # type: ignore[attr-defined]
-                paths,
-                {
-                    "web.server.host": share_host,
-                    "web.server.https.port": "443",
-                    "web.server.protocol": "https",
-                    "virtual.hosts.valid.hosts": f"localhost,127.0.0.1,{host_name},liferay,{share_host}",
-                },
-            )
-        elif ssl_enabled:
-            self.manager.config.update_portal_ext(  # type: ignore[attr-defined]
-                paths,
+        # Configure Liferay web server proxy and header forwarding settings
+        forwarded_props = {
+            "web.server.forwarded.host.header": "X-Forwarded-Host",
+            "web.server.forwarded.port.header": "X-Forwarded-Port",
+            "web.server.forwarded.proto.header": "X-Forwarded-Proto",
+            "virtual.hosts.valid.hosts": f"localhost,127.0.0.1,{host_name},liferay,*.lfr-demo.online,*.lfr-demo.se",
+        }
+
+        if ssl_enabled:
+            forwarded_props.update(
                 {
                     "web.server.host": host_name,
                     "web.server.https.port": "443",
                     "web.server.protocol": "https",
-                    "virtual.hosts.valid.hosts": f"localhost,127.0.0.1,{host_name},liferay",
-                },
+                }
             )
         else:
-            # If neither share nor SSL is active, check if we need to clean up prior tunnel/proxy overrides
-            pe_path = paths["files"] / "portal-ext.properties"
-            if pe_path.exists():
-                try:
-                    content = pe_path.read_text()
-                    props = self.manager.config._get_properties(content)
-                    current_host = props.get("web.server.host", "")
-                    # Clean up if it was a tunnel/proxy URL or if it matches the current host_name
-                    if current_host and (
-                        "lfr-demo" in current_host
-                        or "ngrok" in current_host
-                        or current_host == host_name
-                    ):
-                        self.manager.config.update_portal_ext(  # type: ignore[attr-defined]
-                            paths,
-                            {
-                                "web.server.host": "",
-                                "web.server.https.port": "",
-                                "web.server.protocol": "",
-                                "virtual.hosts.valid.hosts": "",
-                            },
-                        )
-                except Exception:
-                    pass
+            forwarded_props.update(
+                {
+                    "web.server.host": "",
+                    "web.server.https.port": "",
+                    "web.server.protocol": "",
+                }
+            )
+
+        self.manager.config.update_portal_ext(paths, forwarded_props)
 
         # LDM-381: Determine base image and sanitized tag
         tag = str(meta.get("tag") or "latest")
