@@ -450,6 +450,7 @@ class TestComposerService(unittest.TestCase):
                 "web.server.host": "my-sub.lfr-demo.se",
                 "web.server.https.port": "443",
                 "web.server.protocol": "https",
+                "virtual.hosts.valid.hosts": "localhost,127.0.0.1,localhost,liferay,my-sub.lfr-demo.se",
             },
         )
 
@@ -491,6 +492,7 @@ class TestComposerService(unittest.TestCase):
                 "web.server.host": "",
                 "web.server.https.port": "",
                 "web.server.protocol": "",
+                "virtual.hosts.valid.hosts": "",
             },
         )
 

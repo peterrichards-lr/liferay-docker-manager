@@ -649,6 +649,7 @@ class ComposerService:
                     "web.server.host": share_host,
                     "web.server.https.port": "443",
                     "web.server.protocol": "https",
+                    "virtual.hosts.valid.hosts": f"localhost,127.0.0.1,{host_name},liferay,{share_host}",
                 },
             )
         elif ssl_enabled:
@@ -658,6 +659,7 @@ class ComposerService:
                     "web.server.host": host_name,
                     "web.server.https.port": "443",
                     "web.server.protocol": "https",
+                    "virtual.hosts.valid.hosts": f"localhost,127.0.0.1,{host_name},liferay",
                 },
             )
         else:
@@ -680,6 +682,7 @@ class ComposerService:
                                 "web.server.host": "",
                                 "web.server.https.port": "",
                                 "web.server.protocol": "",
+                                "virtual.hosts.valid.hosts": "",
                             },
                         )
                 except Exception:
