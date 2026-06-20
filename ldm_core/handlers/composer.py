@@ -227,26 +227,25 @@ class ComposerService:
                                     + f"\nLFT_SERVER_URL={server_url}\n"
                                 )
 
-                        # Update LFT_INSPECTOR_BIND
-                        if "LFT_INSPECTOR_BIND=" in env_content:
-                            env_content = re.sub(
-                                r"LFT_INSPECTOR_BIND=.*",
-                                "LFT_INSPECTOR_BIND=0.0.0.0",
-                                env_content,
-                            )
-                        else:
-                            env_content = (
-                                env_content.rstrip() + "\nLFT_INSPECTOR_BIND=0.0.0.0\n"
-                            )
-
                         env_file.write_text(env_content.strip() + "\n")
+
+                share_inspector = (
+                    getattr(self.manager.args, "share_inspector", False) is True
+                    or str(meta.get("share_inspector", "false")).lower() == "true"
+                )
 
                 lfr_env = [
                     f"LFT_CLIENT_TOKEN=${{LFT_CLIENT_TOKEN:-{token}}}",
                     "LFT_TARGET_HOST=liferay",
                     f"LFT_CLIENT_SUBDOMAIN=${{LFT_SUBDOMAIN:-{subdomain}}}",
-                    "LFT_INSPECTOR_BIND=${LFT_INSPECTOR_BIND:-0.0.0.0}",
                 ]
+                if share_inspector:
+                    lfr_env.append("LFT_INSPECTOR_BIND=${LFT_INSPECTOR_BIND:-0.0.0.0}")
+                else:
+                    lfr_env.append(
+                        "LFT_INSPECTOR_BIND=${LFT_INSPECTOR_BIND:-127.0.0.1}"
+                    )
+
                 if server_url:
                     lfr_env.append(
                         f"LFT_CLIENT_SERVER=${{LFT_SERVER_URL:-{server_url}}}"
@@ -265,7 +264,6 @@ class ComposerService:
                 services["lfr-tunnel"] = {
                     "image": image,
                     "networks": ["liferay-net"],
-                    "ports": ["4040:4040"],
                     "environment": lfr_env,
                     "deploy": {
                         "resources": {
@@ -281,6 +279,8 @@ class ComposerService:
                     },
                     "depends_on": {"liferay": {"condition": "service_healthy"}},
                 }
+                if share_inspector:
+                    services["lfr-tunnel"]["ports"] = ["4040:4040"]
             else:
                 from ldm_core.ui import UI
 

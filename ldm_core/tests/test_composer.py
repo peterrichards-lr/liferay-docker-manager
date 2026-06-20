@@ -296,9 +296,9 @@ class TestComposerService(unittest.TestCase):
                     "LFT_CLIENT_SERVER=${LFT_SERVER_URL:-https://tunnel.lfr-demo.se}",
                     tunnel_service["environment"],
                 )
-                self.assertEqual(tunnel_service.get("ports"), ["4040:4040"])
+                self.assertNotIn("ports", tunnel_service)
                 self.assertIn(
-                    "LFT_INSPECTOR_BIND=${LFT_INSPECTOR_BIND:-0.0.0.0}",
+                    "LFT_INSPECTOR_BIND=${LFT_INSPECTOR_BIND:-127.0.0.1}",
                     tunnel_service["environment"],
                 )
                 self.assertEqual(
@@ -353,6 +353,67 @@ class TestComposerService(unittest.TestCase):
             compose = mock_yaml.call_args[0][0]
             self.assertNotIn("lfr-tunnel", compose["services"])
             mock_warning.assert_called_once()
+
+    @patch("ldm_core.handlers.composer.dict_to_yaml")
+    @patch("ldm_core.utils.safe_write_text")
+    def test_generate_compose_with_lfr_tunnel_docker_opt_in_inspector(
+        self, mock_write, mock_yaml
+    ):
+        paths = {
+            "root": Path("/tmp/proj"),
+            "deploy": Path("/tmp/proj/deploy"),
+            "files": Path("/tmp/proj/files"),
+            "data": Path("/tmp/proj/data"),
+            "configs": Path("/tmp/proj/osgi/configs"),
+            "modules": Path("/tmp/proj/osgi/modules"),
+            "cx": Path("/tmp/proj/osgi/client-extensions"),
+            "scripts": Path("/tmp/proj/scripts"),
+            "state": Path("/tmp/proj/osgi/state"),
+            "logs": Path("/tmp/proj/logs"),
+            "portal_log4j": Path("/tmp/proj/osgi/log4j"),
+            "compose": Path("/tmp/proj/docker-compose.yml"),
+        }
+        meta = {
+            "tag": "2026.q1.7-lts",
+            "container_name": "proj",
+            "share": "true",
+            "share_provider": "lfr-tunnel-docker",
+            "share_inspector": "true",
+        }
+
+        self.manager.args.expose = False
+        self.manager.args.share = True
+        self.manager.args.share_provider = "lfr-tunnel-docker"
+        self.manager.args.share_subdomain = "my-sub"
+        self.manager.args.share_image = "custom/lfr-tunnel:latest"
+        self.manager.share._get_auth_token.return_value = "my-token"
+
+        import os
+
+        with patch.dict(os.environ, {"LFT_SERVER_URL": "https://tunnel.lfr-demo.se"}):
+            with (
+                patch.object(
+                    self.composer,
+                    "_build_liferay_service",
+                    return_value={"volumes": []},
+                ),
+                patch.object(self.composer, "_build_db_service", return_value=None),
+                patch.object(self.composer, "_build_search_service", return_value=None),
+                patch.object(
+                    self.composer, "_build_extensions_services", return_value={}
+                ),
+            ):
+                self.composer.write_docker_compose(paths, meta)
+                self.assertTrue(mock_yaml.called)
+                compose = mock_yaml.call_args[0][0]
+                self.assertIn("lfr-tunnel", compose["services"])
+                tunnel_service = compose["services"]["lfr-tunnel"]
+                self.assertEqual(tunnel_service["image"], "custom/lfr-tunnel:latest")
+                self.assertEqual(tunnel_service.get("ports"), ["4040:4040"])
+                self.assertIn(
+                    "LFT_INSPECTOR_BIND=${LFT_INSPECTOR_BIND:-0.0.0.0}",
+                    tunnel_service["environment"],
+                )
 
 
 if __name__ == "__main__":
