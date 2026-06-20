@@ -72,18 +72,12 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
 
 ### Status
 
-- Released `v2.11.19` successfully.
-- Pushed PR #81 (branch `feature/explicit-tunnel-container-name`) for naming `lfr-tunnel` container explicitly.
-- Identified the root cause of `java.lang.RuntimeException: Invalid host name liferay`: the containerized `lfr-tunnel` proxy was rewriting the `Host` header to `"liferay"` instead of preserving the public subdomain host header.
-- Added `LFT_PRESERVE_HOST=true` environment variable support and `-preserve-host` CLI flag to `lfr-tunnel` client to preserve incoming Host headers, and committed to `lfr-tunnel` master.
-- Updated `liferay-docker-manager` to inject `LFT_PRESERVE_HOST=true` into the tunnel service environment, and updated unit tests.
+- Released `v2.11.19` and `v2.11.20` successfully.
+- PR #82 (`feature/allow-liferay-valid-hosts` configuring `LFT_PRESERVE_HOST` for tunnel service) has been merged into master.
+- Bumped local version to `v2.11.21`, committed, and pushed version bump changes to the remote branch `chore/bump-version-2.11.21`.
 
-### Plan: Verify, Commit, and Merge
+### Plan
 
-1. **Verify changes**:
-   - Wait for `./lint.sh` and Go tests to complete successfully.
-2. **Commit LDM changes**:
-   - Commit the new changes (updated composer files and GEMINI.md) to `feature/allow-liferay-valid-hosts`.
-3. **Release & Merge**:
-   - Merge `feature/explicit-tunnel-container-name` as `v2.11.20`.
-   - Merge `feature/allow-liferay-valid-hosts` as `v2.11.21`.
+1. **Merge version bump**: Confirm with user to merge the `chore/bump-version-2.11.21` pull request on GitHub to complete the stable `v2.11.21` release.
+2. **Tag v2.11.21**: Once merged, pull the master branch and tag/push `v2.11.21`.
+3. **lfr-tunnel Release**: Bump version in `pkg/server/static/whats-new.json` to `v1.8.0` in the `lfr-tunnel` repository, create a PR, merge it, and push the tag `v1.8.0` to trigger the automated release build.
