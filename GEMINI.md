@@ -72,17 +72,25 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
 
 ### Status
 
-- Released `v2.11.22` successfully.
-- Implemented the active health validation loop in `ldm_core/handlers/share.py` querying `/api/healthz` (including unit tests).
+- Released `v2.11.24` successfully.
 - Added EDR/SentinelOne warnings to sharing and troubleshooting docs.
 - Split installation commands in README.md and INSTALLATION.md into OS-specific copy-paste blocks.
 - Added Default Stack & Conventions quick reference to README.md.
-- Bumped version to `v2.11.23` but tag validation failed because tag was pushed before PR merge. Bumping to `v2.11.24` to release on master.
+- Implemented active health checking on lfr-tunnel `/api/healthz` and `/api/info` endpoints.
+- Implemented `ldm share inspector` command and tunnel logs redirection/diagnostics (`v2.11.25`). All tests and pre-commit checks are passing.
 
 ### Plan
 
-1. **Checkout & Branch**: Create branch `chore/bump-version-2.11.24` from `master`.
-2. **Bump Version**: Bump version to `2.11.24` in `pyproject.toml` and `ldm_core/constants.py`.
-3. **Commit & Push**: Commit the version bump and push.
-4. **Pull Request & Squash Merge**: Open PR and squash merge it to master.
-5. **Tag & Release**: Checkout `master`, pull latest, tag `v2.11.24`, and push the tag.
+1. **New Branch**: Create branch `feature/share-inspector-command` from `master`. (Completed)
+2. **Implement `ldm share inspector`**:
+   - Add `share inspector` subcommand in `ldm_core/cli.py`. (Completed)
+   - Implement `cmd_inspector` in `ldm_core/handlers/share.py` using a temporary `alpine/socat` proxy container to bridge local port 4040 to the tunnel container. (Completed)
+   - Add unit tests in `ldm_core/tests/test_share.py`. (Completed)
+3. **Enhance Tunnel Diagnosis & Logging**:
+   - Update `_poll_tunnel_health` in `ldm_core/handlers/share.py` to inspect `docker logs` if the container exited, detecting specific issues (like 401 Unauthorized or subdomain conflicts) and reporting them. (Completed)
+   - Update `ldm_core/handlers/composer.py` to bind mount the project's logs directory to `/opt/liferay/logs` in the `lfr-tunnel` container and configure a shell/tee entrypoint so that all tunnel logs are written to `logs/lfr-tunnel.log`. (Completed)
+   - Update unit tests in `ldm_core/tests/test_composer.py` to assert the log volume and entrypoint. (Completed)
+4. **Bump Version**: Bump version to `2.11.25` in `pyproject.toml` and `ldm_core/constants.py`. (Completed)
+5. **Validation**: Run all pre-commit checks and tests locally. (Completed)
+6. **PR & Squash Merge**: Raise the PR and squash merge it to master. (Pending review)
+7. **Tag & Release**: Tag `v2.11.25` on master and push. (Pending verification)

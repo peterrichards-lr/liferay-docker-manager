@@ -914,6 +914,19 @@ def get_parser():
         action="store_true",
         help="Expose the lfr-tunnel local inspector dashboard on port 4040",
     )
+    share_inspector = share_subparsers.add_parser(
+        "inspector",
+        parents=[base_sub_parent],
+        help="Expose the lfr-tunnel local inspector dashboard on port 4040 after the fact",
+    )
+    share_inspector.add_argument("project", nargs="?")
+    share_inspector.add_argument("-p", "--project", dest="project_flag")
+    share_inspector.add_argument(
+        "--port",
+        type=int,
+        default=4040,
+        help="Local port to expose the inspector on (defaults to 4040)",
+    )
 
     share_status = share_subparsers.add_parser("status", parents=[base_sub_parent])
     share_status.add_argument("project", nargs="?")
@@ -1481,6 +1494,11 @@ def main():
             provider=getattr(args, "provider", None),
             image=getattr(args, "image", None),
             inspector=getattr(args, "inspector", False),
+        ),
+        ("share", "inspector"): lambda: manager.share.cmd_inspector(
+            project_id=getattr(args, "project", None)
+            or getattr(args, "project_flag", None),
+            port=getattr(args, "port", 4040),
         ),
         ("share", "status"): lambda: manager.share.cmd_status(
             project_id=getattr(args, "project", None)
