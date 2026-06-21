@@ -313,7 +313,7 @@ class TestComposerService(unittest.TestCase):
                 )
                 self.assertNotIn("ports", tunnel_service)
                 self.assertIn(
-                    "LFT_INSPECTOR_BIND=${LFT_INSPECTOR_BIND:-127.0.0.1}",
+                    "LFT_INSPECTOR_BIND=${LFT_INSPECTOR_BIND:-0.0.0.0}",
                     tunnel_service["environment"],
                 )
                 self.assertEqual(
