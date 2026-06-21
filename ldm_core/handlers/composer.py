@@ -240,12 +240,7 @@ class ComposerService:
                     f"LFT_CLIENT_SUBDOMAIN=${{LFT_SUBDOMAIN:-{subdomain}}}",
                     "LFT_PRESERVE_HOST=true",
                 ]
-                if share_inspector:
-                    lfr_env.append("LFT_INSPECTOR_BIND=${LFT_INSPECTOR_BIND:-0.0.0.0}")
-                else:
-                    lfr_env.append(
-                        "LFT_INSPECTOR_BIND=${LFT_INSPECTOR_BIND:-127.0.0.1}"
-                    )
+                lfr_env.append("LFT_INSPECTOR_BIND=${LFT_INSPECTOR_BIND:-0.0.0.0}")
 
                 if server_url:
                     lfr_env.append(

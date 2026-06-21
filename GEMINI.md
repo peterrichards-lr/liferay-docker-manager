@@ -81,15 +81,15 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
 - Fixed CI build failure due to flaky apt-get update Noble repo forbidden errors.
 - Implemented logs extraction and parsing fallback for running but unresponsive tunnel containers (`v2.11.26`).
 - Implemented container pull policy always and resolved BusyBox wget command argument incompatibilities (`v2.11.27`).
+- Implemented inspector bind address wildcard fix (`v2.11.28`).
 
 ### Plan
 
-1. **New Branch**: Create branch `feature/lfr-tunnel-image-pull-always` from `master`. (Completed)
-2. **Implement pull policy and wget compatibility**:
-   - Update `composer.py` to add `"pull_policy": "always"` to `lfr-tunnel` service configuration. (Completed)
-   - Update `share.py` to use BusyBox compatible `wget -qO- http://127.0.0.1:4040/api/healthz` and loopback IP. (Completed)
-   - Add/update unit tests in `test_composer.py` and `test_share.py`. (Completed)
-3. **Bump Version**: Bump version to `2.11.27` in `pyproject.toml` and `constants.py`. (Completed)
+1. **New Branch**: Create branch `feature/lfr-tunnel-inspector-bind-ip-fix` from `master`. (Completed)
+2. **Implement inspector bind fix**:
+   - Update `composer.py` to always default `LFT_INSPECTOR_BIND` to `0.0.0.0` in the generated container configuration, enabling post-facto container-to-container proxy connection. (Completed)
+   - Update `test_composer.py` to assert the updated `0.0.0.0` bind default. (Completed)
+3. **Bump Version**: Bump version to `2.11.28` in `pyproject.toml` and `constants.py`. (Pending)
 4. **Validation**: Run all pre-commit checks and tests locally. (Completed)
 5. **PR & Squash Merge**: Raise the PR and squash merge it to master. (Pending)
-6. **Tag & Release**: Tag `v2.11.27` on master and push. (Pending)
+6. **Tag & Release**: Tag `v2.11.28` on master and push. (Pending)
