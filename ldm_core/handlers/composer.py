@@ -265,6 +265,7 @@ class ComposerService:
                 logs_dir = str(paths["root"] / "logs")
                 services["lfr-tunnel"] = {
                     "image": image,
+                    "pull_policy": "always",
                     "container_name": meta.get("tunnel_container_name")
                     or f"{project_name}-lfr-tunnel",
                     "networks": ["liferay-net"],

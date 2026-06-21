@@ -80,14 +80,16 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
 - Implemented `ldm share inspector` command and tunnel logs redirection/diagnostics (`v2.11.25`). All tests and pre-commit checks are passing.
 - Fixed CI build failure due to flaky apt-get update Noble repo forbidden errors.
 - Implemented logs extraction and parsing fallback for running but unresponsive tunnel containers (`v2.11.26`).
+- Implemented container pull policy always and resolved BusyBox wget command argument incompatibilities (`v2.11.27`).
 
 ### Plan
 
-1. **New Branch**: Create branch `feature/running-tunnel-logs-fallback` from `master`. (Completed)
-2. **Implement logs fallback**:
-   - Update `_poll_tunnel_health` in `ldm_core/handlers/share.py` to check logs if the localhost `/api/info` endpoint is unreachable, even if container is in `Running` state. (Completed)
-   - Add unit tests in `ldm_core/tests/test_share.py`. (Completed)
-3. **Bump Version**: Bump version to `2.11.26` in `pyproject.toml` and `ldm_core/constants.py`. (Pending)
+1. **New Branch**: Create branch `feature/lfr-tunnel-image-pull-always` from `master`. (Completed)
+2. **Implement pull policy and wget compatibility**:
+   - Update `composer.py` to add `"pull_policy": "always"` to `lfr-tunnel` service configuration. (Completed)
+   - Update `share.py` to use BusyBox compatible `wget -qO- http://127.0.0.1:4040/api/healthz` and loopback IP. (Completed)
+   - Add/update unit tests in `test_composer.py` and `test_share.py`. (Completed)
+3. **Bump Version**: Bump version to `2.11.27` in `pyproject.toml` and `constants.py`. (Completed)
 4. **Validation**: Run all pre-commit checks and tests locally. (Completed)
 5. **PR & Squash Merge**: Raise the PR and squash merge it to master. (Pending)
-6. **Tag & Release**: Tag `v2.11.26` on master and push. (Pending)
+6. **Tag & Release**: Tag `v2.11.27` on master and push. (Pending)

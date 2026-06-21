@@ -283,6 +283,7 @@ class TestComposerService(unittest.TestCase):
                 self.assertIn("lfr-tunnel", compose["services"])
                 tunnel_service = compose["services"]["lfr-tunnel"]
                 self.assertEqual(tunnel_service["image"], "custom/lfr-tunnel:latest")
+                self.assertEqual(tunnel_service.get("pull_policy"), "always")
                 self.assertEqual(tunnel_service["container_name"], "proj-lfr-tunnel")
                 self.assertEqual(
                     tunnel_service.get("volumes"),
@@ -423,6 +424,7 @@ class TestComposerService(unittest.TestCase):
                 self.assertIn("lfr-tunnel", compose["services"])
                 tunnel_service = compose["services"]["lfr-tunnel"]
                 self.assertEqual(tunnel_service["image"], "custom/lfr-tunnel:latest")
+                self.assertEqual(tunnel_service.get("pull_policy"), "always")
                 self.assertEqual(tunnel_service["container_name"], "proj-lfr-tunnel")
                 self.assertEqual(
                     tunnel_service.get("volumes"),
