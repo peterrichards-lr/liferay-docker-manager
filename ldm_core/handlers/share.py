@@ -677,10 +677,32 @@ class ShareService:
                 inspect_res = subprocess.run(
                     inspect_cmd, capture_output=True, text=True, check=False
                 )
-                if (
-                    inspect_res.returncode == 0
-                    and "false" in inspect_res.stdout.lower()
-                ):
+                is_running = (
+                    inspect_res.returncode == 0 and "true" in inspect_res.stdout.lower()
+                )
+
+                info_parsed = False
+                if is_running:
+                    cmd = [
+                        "docker",
+                        "exec",
+                        container_name,
+                        "wget",
+                        "-qO-",
+                        "http://localhost:4040/api/info",
+                    ]
+                    sub_res = subprocess.run(
+                        cmd, capture_output=True, text=True, check=False
+                    )
+                    if sub_res.returncode == 0:
+                        try:
+                            info = json.loads(sub_res.stdout)
+                            error_reason = self._diagnose_tunnel_info(info, subdomain)
+                            info_parsed = True
+                        except Exception:
+                            pass
+
+                if not info_parsed:
                     log_cmd = ["docker", "logs", "--tail", "20", container_name]
                     log_res = subprocess.run(
                         log_cmd, capture_output=True, text=True, check=False
@@ -712,23 +734,17 @@ class ShareService:
                             error_reason = (
                                 "Gateway Registration Failed. Please check the logs."
                             )
+                    elif logs_str.strip():
+                        if is_running:
+                            error_reason = f"Tunnel connection timeout. Container is running but not responsive. Last logs:\n{logs_str.strip()}"
+                        else:
+                            error_reason = f"Container terminated unexpectedly. Last logs:\n{logs_str.strip()}"
+                    elif is_running:
+                        error_reason = "Tunnel connection timeout. Container is running but logs are empty."
                     else:
-                        error_reason = f"Container terminated unexpectedly. Last logs:\n{logs_str.strip()}"
-                else:
-                    cmd = [
-                        "docker",
-                        "exec",
-                        container_name,
-                        "wget",
-                        "-qO-",
-                        "http://localhost:4040/api/info",
-                    ]
-                    sub_res = subprocess.run(
-                        cmd, capture_output=True, text=True, check=False
-                    )
-                    if sub_res.returncode == 0:
-                        info = json.loads(sub_res.stdout)
-                        error_reason = self._diagnose_tunnel_info(info, subdomain)
+                        error_reason = (
+                            "Container terminated unexpectedly (no logs available)."
+                        )
             else:
                 req_res = requests.get("http://localhost:4040/api/info", timeout=2)
                 if req_res.status_code == 200:
