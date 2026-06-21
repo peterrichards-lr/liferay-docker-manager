@@ -667,20 +667,68 @@ class ShareService:
         error_reason = "Tunnel connection timeout."
         try:
             if container_name:
-                cmd = [
+                inspect_cmd = [
                     "docker",
-                    "exec",
+                    "inspect",
+                    "-f",
+                    "{{.State.Running}}",
                     container_name,
-                    "wget",
-                    "-qO-",
-                    "http://localhost:4040/api/info",
                 ]
-                sub_res = subprocess.run(
-                    cmd, capture_output=True, text=True, check=False
+                inspect_res = subprocess.run(
+                    inspect_cmd, capture_output=True, text=True, check=False
                 )
-                if sub_res.returncode == 0:
-                    info = json.loads(sub_res.stdout)
-                    error_reason = self._diagnose_tunnel_info(info, subdomain)
+                if (
+                    inspect_res.returncode == 0
+                    and "false" in inspect_res.stdout.lower()
+                ):
+                    log_cmd = ["docker", "logs", "--tail", "20", container_name]
+                    log_res = subprocess.run(
+                        log_cmd, capture_output=True, text=True, check=False
+                    )
+                    logs_str = (log_res.stdout or "") + (log_res.stderr or "")
+
+                    if "unauthorized" in logs_str.lower() or "401" in logs_str:
+                        error_reason = "Authentication Failed: Gateway returned 401 Unauthorized. Please verify your LFT_CLIENT_TOKEN."
+                    elif (
+                        "conflict" in logs_str.lower()
+                        or "already taken" in logs_str.lower()
+                    ):
+                        error_reason = f"Subdomain Conflict: Subdomain '{subdomain}' is already taken by another active tunnel."
+                    elif (
+                        "failed to register" in logs_str.lower()
+                        or "gateway error" in logs_str.lower()
+                    ):
+                        for line in logs_str.splitlines():
+                            if (
+                                "gateway error" in line.lower()
+                                or "failed to register" in line.lower()
+                                or "error" in line.lower()
+                            ):
+                                error_reason = (
+                                    f"Gateway Registration Failed: {line.strip()}"
+                                )
+                                break
+                        else:
+                            error_reason = (
+                                "Gateway Registration Failed. Please check the logs."
+                            )
+                    else:
+                        error_reason = f"Container terminated unexpectedly. Last logs:\n{logs_str.strip()}"
+                else:
+                    cmd = [
+                        "docker",
+                        "exec",
+                        container_name,
+                        "wget",
+                        "-qO-",
+                        "http://localhost:4040/api/info",
+                    ]
+                    sub_res = subprocess.run(
+                        cmd, capture_output=True, text=True, check=False
+                    )
+                    if sub_res.returncode == 0:
+                        info = json.loads(sub_res.stdout)
+                        error_reason = self._diagnose_tunnel_info(info, subdomain)
             else:
                 req_res = requests.get("http://localhost:4040/api/info", timeout=2)
                 if req_res.status_code == 200:
@@ -708,3 +756,75 @@ class ShareService:
 
         conn_state = info.get("connection", {}).get("state", "disconnected")
         return f"Tunnel Connection Error: Connection state is '{conn_state}'."
+
+    def cmd_inspector(self, project_id=None, port=4040):
+        """Launches a temporary port-forwarding container to expose the lfr-tunnel inspector dashboard on the specified host port."""
+        root = self.manager.detect_project_path(project_id)
+        if not root:
+            UI.die("Project context required to find tunnel container.")
+
+        project_meta = self.manager.read_meta(root)
+        provider = project_meta.get("share_provider")
+
+        if provider != "lfr-tunnel-docker":
+            if provider == "lfr-tunnel":
+                UI.die(
+                    "Inspector forwarding via docker is only supported for the 'lfr-tunnel-docker' provider. "
+                    "For native 'lfr-tunnel', the dashboard is already listening directly on the host (e.g. http://localhost:4040)."
+                )
+            UI.die(
+                f"Inspector forwarding is only supported for 'lfr-tunnel-docker' provider (current: '{provider}')."
+            )
+
+        container_name = f"{root.name}-lfr-tunnel"
+
+        # Check if the tunnel container is actually running
+        cmd = ["docker", "inspect", "-f", "{{.State.Running}}", container_name]
+        res = subprocess.run(cmd, capture_output=True, text=True, check=False)
+        if res.returncode != 0 or "true" not in res.stdout.lower():
+            UI.die(
+                f"Tunnel container '{container_name}' is not running. Please start the tunnel first "
+                "(e.g. using 'ldm run --share' or 'ldm share start')."
+            )
+
+        proxy_name = f"{root.name}-lfr-tunnel-inspector-proxy"
+        # In case a stale one exists, clean it up first
+        subprocess.run(
+            ["docker", "rm", "-f", proxy_name], capture_output=True, check=False
+        )
+
+        proxy_cmd = [
+            "docker",
+            "run",
+            "--rm",
+            "--name",
+            proxy_name,
+            "--network",
+            "liferay-net",
+            "-p",
+            f"{port}:4040",
+            "alpine/socat",
+            "tcp-listen:4040,fork,reuseaddr",
+            f"tcp-connect:{container_name}:4040",
+        ]
+
+        if getattr(self.manager, "dry_run", False):
+            UI.info(
+                f"{UI.BYELLOW}[DRY RUN] Would execute:{UI.COLOR_OFF} {' '.join(proxy_cmd)}"
+            )
+            return
+
+        UI.info(f"Forwarding local port {port} to {container_name}:4040...")
+        UI.success(f"Inspector dashboard is now accessible at: http://localhost:{port}")
+        UI.info("Press Ctrl+C to stop forwarding.")
+
+        try:
+            subprocess.run(proxy_cmd, check=True)
+        except KeyboardInterrupt:
+            UI.info("\nStopping port forwarding...")
+            subprocess.run(
+                ["docker", "stop", proxy_name], capture_output=True, check=False
+            )
+            UI.success("Port forwarding stopped.")
+        except subprocess.CalledProcessError as e:
+            UI.error(f"Failed to start port forwarding proxy: {e}")

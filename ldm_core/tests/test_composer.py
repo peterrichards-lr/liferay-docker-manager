@@ -284,6 +284,18 @@ class TestComposerService(unittest.TestCase):
                 tunnel_service = compose["services"]["lfr-tunnel"]
                 self.assertEqual(tunnel_service["image"], "custom/lfr-tunnel:latest")
                 self.assertEqual(tunnel_service["container_name"], "proj-lfr-tunnel")
+                self.assertEqual(
+                    tunnel_service.get("volumes"),
+                    ["/tmp/proj/logs:/opt/liferay/logs"],
+                )
+                self.assertEqual(
+                    tunnel_service.get("entrypoint"),
+                    [
+                        "/bin/sh",
+                        "-c",
+                        "./lfr-tunnel 2>&1 | tee /opt/liferay/logs/lfr-tunnel.log",
+                    ],
+                )
                 self.assertIn(
                     "LFT_CLIENT_TOKEN=${LFT_CLIENT_TOKEN:-my-token}",
                     tunnel_service["environment"],
@@ -412,6 +424,18 @@ class TestComposerService(unittest.TestCase):
                 tunnel_service = compose["services"]["lfr-tunnel"]
                 self.assertEqual(tunnel_service["image"], "custom/lfr-tunnel:latest")
                 self.assertEqual(tunnel_service["container_name"], "proj-lfr-tunnel")
+                self.assertEqual(
+                    tunnel_service.get("volumes"),
+                    ["/tmp/proj/logs:/opt/liferay/logs"],
+                )
+                self.assertEqual(
+                    tunnel_service.get("entrypoint"),
+                    [
+                        "/bin/sh",
+                        "-c",
+                        "./lfr-tunnel 2>&1 | tee /opt/liferay/logs/lfr-tunnel.log",
+                    ],
+                )
                 self.assertEqual(tunnel_service.get("ports"), ["4040:4040"])
                 self.assertIn(
                     "LFT_INSPECTOR_BIND=${LFT_INSPECTOR_BIND:-0.0.0.0}",

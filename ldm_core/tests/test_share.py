@@ -464,3 +464,190 @@ class TestShareService(unittest.TestCase):
         }
         res = self.service._diagnose_tunnel_info(info, "sub")
         self.assertIn("Downstream Offline", res)
+
+    @patch("subprocess.run")
+    def test_cmd_inspector_success(self, mock_run):
+        self.mock_manager.detect_project_path = MagicMock(  # type: ignore[method-assign]
+            return_value=Path("/fake/myproj")
+        )
+        self.mock_manager.read_meta = MagicMock(  # type: ignore[method-assign]
+            return_value={"share_provider": "lfr-tunnel-docker"}
+        )
+
+        mock_inspect_res = MagicMock()
+        mock_inspect_res.returncode = 0
+        mock_inspect_res.stdout = "true"
+
+        mock_rm_res = MagicMock()
+        mock_stop_res = MagicMock()
+
+        mock_run.side_effect = [
+            mock_inspect_res,
+            mock_rm_res,
+            KeyboardInterrupt(),
+            mock_stop_res,
+        ]
+
+        self.service.cmd_inspector("myproj")
+
+        mock_run.assert_any_call(
+            ["docker", "inspect", "-f", "{{.State.Running}}", "myproj-lfr-tunnel"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        mock_run.assert_any_call(
+            ["docker", "rm", "-f", "myproj-lfr-tunnel-inspector-proxy"],
+            capture_output=True,
+            check=False,
+        )
+        mock_run.assert_any_call(
+            [
+                "docker",
+                "run",
+                "--rm",
+                "--name",
+                "myproj-lfr-tunnel-inspector-proxy",
+                "--network",
+                "liferay-net",
+                "-p",
+                "4040:4040",
+                "alpine/socat",
+                "tcp-listen:4040,fork,reuseaddr",
+                "tcp-connect:myproj-lfr-tunnel:4040",
+            ],
+            check=True,
+        )
+        mock_run.assert_any_call(
+            ["docker", "stop", "myproj-lfr-tunnel-inspector-proxy"],
+            capture_output=True,
+            check=False,
+        )
+
+    @patch("subprocess.run")
+    def test_cmd_inspector_custom_port(self, mock_run):
+        self.mock_manager.detect_project_path = MagicMock(  # type: ignore[method-assign]
+            return_value=Path("/fake/myproj")
+        )
+        self.mock_manager.read_meta = MagicMock(  # type: ignore[method-assign]
+            return_value={"share_provider": "lfr-tunnel-docker"}
+        )
+
+        mock_inspect_res = MagicMock()
+        mock_inspect_res.returncode = 0
+        mock_inspect_res.stdout = "true"
+
+        mock_rm_res = MagicMock()
+        mock_stop_res = MagicMock()
+
+        mock_run.side_effect = [
+            mock_inspect_res,
+            mock_rm_res,
+            KeyboardInterrupt(),
+            mock_stop_res,
+        ]
+
+        self.service.cmd_inspector("myproj", port=4045)
+
+        mock_run.assert_any_call(
+            [
+                "docker",
+                "run",
+                "--rm",
+                "--name",
+                "myproj-lfr-tunnel-inspector-proxy",
+                "--network",
+                "liferay-net",
+                "-p",
+                "4045:4040",
+                "alpine/socat",
+                "tcp-listen:4040,fork,reuseaddr",
+                "tcp-connect:myproj-lfr-tunnel:4040",
+            ],
+            check=True,
+        )
+
+    def test_cmd_inspector_native_provider_error(self):
+        self.mock_manager.detect_project_path = MagicMock(  # type: ignore[method-assign]
+            return_value=Path("/fake/myproj")
+        )
+        self.mock_manager.read_meta = MagicMock(  # type: ignore[method-assign]
+            return_value={"share_provider": "lfr-tunnel"}
+        )
+
+        with self.assertRaises(SystemExit):
+            self.service.cmd_inspector("myproj")
+
+    @patch("subprocess.run")
+    def test_cmd_inspector_not_running_error(self, mock_run):
+        self.mock_manager.detect_project_path = MagicMock(  # type: ignore[method-assign]
+            return_value=Path("/fake/myproj")
+        )
+        self.mock_manager.read_meta = MagicMock(  # type: ignore[method-assign]
+            return_value={"share_provider": "lfr-tunnel-docker"}
+        )
+
+        mock_inspect_res = MagicMock()
+        mock_inspect_res.returncode = 1
+        mock_inspect_res.stdout = "false"
+        mock_run.return_value = mock_inspect_res
+
+        with self.assertRaises(SystemExit):
+            self.service.cmd_inspector("myproj")
+
+    @patch("subprocess.run")
+    def test_poll_tunnel_health_docker_logs_unauthorized(self, mock_run):
+        # Restore actual _poll_tunnel_health method for this test
+        self.service._poll_tunnel_health = ShareService._poll_tunnel_health.__get__(  # type: ignore[method-assign]
+            self.service, ShareService
+        )
+
+        mock_wget = MagicMock()
+        mock_wget.returncode = 1
+        mock_wget.stderr = "Connection refused"
+
+        mock_inspect = MagicMock()
+        mock_inspect.returncode = 0
+        mock_inspect.stdout = "false"
+
+        mock_logs = MagicMock()
+        mock_logs.returncode = 0
+        mock_logs.stdout = (
+            "[Error] Failed to register: gateway error (401): unauthorized"
+        )
+        mock_logs.stderr = ""
+
+        mock_run.side_effect = [mock_wget, mock_inspect, mock_logs]
+
+        success, err = self.service._poll_tunnel_health(
+            "custom-sub", container_name="myproj-lfr-tunnel", timeout=0.1
+        )
+        self.assertFalse(success)
+        self.assertIn("Authentication Failed", err)
+
+    @patch("subprocess.run")
+    def test_poll_tunnel_health_docker_logs_conflict(self, mock_run):
+        self.service._poll_tunnel_health = ShareService._poll_tunnel_health.__get__(  # type: ignore[method-assign]
+            self.service, ShareService
+        )
+
+        mock_wget = MagicMock()
+        mock_wget.returncode = 1
+        mock_wget.stderr = "Connection refused"
+
+        mock_inspect = MagicMock()
+        mock_inspect.returncode = 0
+        mock_inspect.stdout = "false"
+
+        mock_logs = MagicMock()
+        mock_logs.returncode = 0
+        mock_logs.stdout = "[Error] Failed to register: subdomain conflict"
+        mock_logs.stderr = ""
+
+        mock_run.side_effect = [mock_wget, mock_inspect, mock_logs]
+
+        success, err = self.service._poll_tunnel_health(
+            "custom-sub", container_name="myproj-lfr-tunnel", timeout=0.1
+        )
+        self.assertFalse(success)
+        self.assertIn("Subdomain Conflict", err)

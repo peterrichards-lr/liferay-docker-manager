@@ -262,12 +262,19 @@ class ComposerService:
                     or "peterjrichards/lfr-tunnel:latest"
                 )
 
+                logs_dir = str(paths["root"] / "logs")
                 services["lfr-tunnel"] = {
                     "image": image,
                     "container_name": meta.get("tunnel_container_name")
                     or f"{project_name}-lfr-tunnel",
                     "networks": ["liferay-net"],
                     "environment": lfr_env,
+                    "volumes": [f"{logs_dir}:/opt/liferay/logs"],
+                    "entrypoint": [
+                        "/bin/sh",
+                        "-c",
+                        "./lfr-tunnel 2>&1 | tee /opt/liferay/logs/lfr-tunnel.log",
+                    ],
                     "deploy": {
                         "resources": {
                             "limits": {

@@ -87,7 +87,8 @@ jobs:
         env:
           GITHUB_ACTIONS: "true"
         run: |
-          sudo apt-get update && sudo apt-get install -y python3-pip git docker-compose python3-venv hostname
+          sudo apt-get update || true
+          sudo apt-get install -y python3-pip git docker-compose python3-venv hostname
           python3 -m venv .venv
           source .venv/bin/activate
           pip install .
