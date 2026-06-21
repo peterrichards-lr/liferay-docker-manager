@@ -651,3 +651,42 @@ class TestShareService(unittest.TestCase):
         )
         self.assertFalse(success)
         self.assertIn("Subdomain Conflict", err)
+
+    @patch("subprocess.run")
+    def test_poll_tunnel_health_docker_logs_running_but_unresponsive(self, mock_run):
+        self.service._poll_tunnel_health = ShareService._poll_tunnel_health.__get__(  # type: ignore[method-assign]
+            self.service, ShareService
+        )
+
+        mock_wget_healthz = MagicMock()
+        mock_wget_healthz.returncode = 1
+        mock_wget_healthz.stderr = "Connection refused"
+
+        mock_inspect = MagicMock()
+        mock_inspect.returncode = 0
+        mock_inspect.stdout = "true"
+
+        mock_wget_info = MagicMock()
+        mock_wget_info.returncode = 1
+        mock_wget_info.stderr = "Connection refused"
+
+        mock_logs = MagicMock()
+        mock_logs.returncode = 0
+        mock_logs.stdout = "dial tcp: lookup tunnel.lfr-demo.online: no such host"
+        mock_logs.stderr = ""
+
+        mock_run.side_effect = [
+            mock_wget_healthz,
+            mock_inspect,
+            mock_wget_info,
+            mock_logs,
+        ]
+
+        success, err = self.service._poll_tunnel_health(
+            "custom-sub", container_name="myproj-lfr-tunnel", timeout=0.1
+        )
+        self.assertFalse(success)
+        self.assertIn(
+            "Tunnel connection timeout. Container is running but not responsive", err
+        )
+        self.assertIn("dial tcp: lookup tunnel.lfr-demo.online: no such host", err)

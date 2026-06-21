@@ -79,21 +79,15 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
 - Implemented active health checking on lfr-tunnel `/api/healthz` and `/api/info` endpoints.
 - Implemented `ldm share inspector` command and tunnel logs redirection/diagnostics (`v2.11.25`). All tests and pre-commit checks are passing.
 - Fixed CI build failure due to flaky apt-get update Noble repo forbidden errors.
+- Implemented logs extraction and parsing fallback for running but unresponsive tunnel containers (`v2.11.26`).
 
 ### Plan
 
-1. **New Branch**: Create branch `feature/share-inspector-command` from `master`. (Completed)
-2. **Implement `ldm share inspector`**:
-   - Add `share inspector` subcommand in `ldm_core/cli.py`. (Completed)
-   - Implement `cmd_inspector` in `ldm_core/handlers/share.py` using a temporary `alpine/socat` proxy container to bridge local port 4040 to the tunnel container. (Completed)
+1. **New Branch**: Create branch `feature/running-tunnel-logs-fallback` from `master`. (Completed)
+2. **Implement logs fallback**:
+   - Update `_poll_tunnel_health` in `ldm_core/handlers/share.py` to check logs if the localhost `/api/info` endpoint is unreachable, even if container is in `Running` state. (Completed)
    - Add unit tests in `ldm_core/tests/test_share.py`. (Completed)
-3. **Enhance Tunnel Diagnosis & Logging**:
-   - Update `_poll_tunnel_health` in `ldm_core/handlers/share.py` to inspect `docker logs` if the container exited, detecting specific issues (like 401 Unauthorized or subdomain conflicts) and reporting them. (Completed)
-   - Update `ldm_core/handlers/composer.py` to bind mount the project's logs directory to `/opt/liferay/logs` in the `lfr-tunnel` container and configure a shell/tee entrypoint so that all tunnel logs are written to `logs/lfr-tunnel.log`. (Completed)
-   - Update unit tests in `ldm_core/tests/test_composer.py` to assert the log volume and entrypoint. (Completed)
-4. **Bump Version**: Bump version to `2.11.25` in `pyproject.toml` and `ldm_core/constants.py`. (Completed)
-5. **Validation & CI Fixes**:
-   - Run all pre-commit checks and tests locally. (Completed)
-   - Fix flaky `apt-get update` errors in GitHub Action workflows (`ci.yml` and `scheduled-verification.yml`). (Completed)
-6. **PR & Squash Merge**: Raise the PR and squash merge it to master. (Pending review)
-7. **Tag & Release**: Tag `v2.11.25` on master and push. (Pending verification)
+3. **Bump Version**: Bump version to `2.11.26` in `pyproject.toml` and `ldm_core/constants.py`. (Pending)
+4. **Validation**: Run all pre-commit checks and tests locally. (Completed)
+5. **PR & Squash Merge**: Raise the PR and squash merge it to master. (Pending)
+6. **Tag & Release**: Tag `v2.11.26` on master and push. (Pending)
