@@ -452,9 +452,9 @@ class TestComposerService(unittest.TestCase):
                 "web.server.forwarded.port.header": "X-Forwarded-Port",
                 "web.server.forwarded.proto.header": "X-Forwarded-Proto",
                 "virtual.hosts.valid.hosts": "localhost,127.0.0.1,localhost,liferay,*.lfr-demo.online,*.lfr-demo.se",
-                "web.server.host": "",
-                "web.server.https.port": "",
-                "web.server.protocol": "",
+                "web.server.host": "my-sub.lfr-demo.se",
+                "web.server.https.port": "443",
+                "web.server.protocol": "https",
             },
         )
 

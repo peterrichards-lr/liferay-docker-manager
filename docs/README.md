@@ -24,6 +24,22 @@ Check out our [Video Showcase](./showcase/README.md) to see short demonstrations
 
 ---
 
+## 📋 Default Stack & Conventions (Quick Reference)
+
+When running `ldm run <project-name>` (or creating a fresh stack targeting the latest LTS) with default options, LDM sets up the environment using the following out-of-the-box profile:
+
+| Component | Default Configuration / Convention |
+| :--- | :--- |
+| **Liferay Version** | Automatically fetches and runs the latest **LTS** version if no specific tag is specified. |
+| **Database** | **PostgreSQL** running as a dedicated service container in the project's Docker network (configured with DB/user/password: `lportal`). <!-- pragma: allowlist secret --> |
+| **Search Engine** | **Shared Global Search** (Elasticsearch 8.x) running as a shared background service (minimizes CPU/RAM overhead compared to sidecar containers). |
+| **Routing & Proxy** | **Traefik** routing HTTP traffic (port `8080`) and HTTPS traffic (port `443` via auto-generated `mkcert` local trust certificates). |
+| **JVM Settings** | Self-Tuning JVM with optimal dev-mode settings (e.g., bytecode verification disabled via `-Xverify:none` to speed up start times). |
+| **Volumes & Mounts** | **Hybrid Volume Strategy**: POSIX-lock sensitive directories (`osgi/state`, `data`) use Named Docker Volumes to prevent locking deadlocks; hot-reloading directories (`deploy`, `modules`, `client-extensions`) are bind-mounted to the host. |
+| **Default Hostname** | Resolves to `localhost` (or `<project-name>.local`). |
+
+---
+
 ## 🛡️ Compatibility (Verified Environments)
 
 The badges below represent our verified support for various Docker providers. Environments marked as **Hardened** have received specific logic refinements to handle complex file-sharing and permission scenarios.
@@ -89,19 +105,26 @@ The badges below represent our verified support for various Docker providers. En
 
 ## Installation (Quick Start)
 
-The standalone binary is the recommended way to use LDM.
+The standalone binary is the recommended way to use LDM. Copy and run the block specific to your environment:
+
+### macOS (Apple Silicon)
 
 ```bash
-# For macOS (Apple Silicon)
 sudo curl -L https://github.com/peterrichards-lr/liferay-docker-manager/releases/latest/download/ldm-macos-arm64 -o /usr/local/bin/ldm
+sudo chmod +x /usr/local/bin/ldm
+```
 
-# For macOS (Apple Intel)
+### macOS (Apple Intel)
+
+```bash
 sudo curl -L https://github.com/peterrichards-lr/liferay-docker-manager/releases/latest/download/ldm-macos-x86_64 -o /usr/local/bin/ldm
+sudo chmod +x /usr/local/bin/ldm
+```
 
-# For Linux / WSL2
+### Linux / WSL2
+
+```bash
 sudo curl -L https://github.com/peterrichards-lr/liferay-docker-manager/releases/latest/download/ldm-linux -o /usr/local/bin/ldm
-
-# Make it executable
 sudo chmod +x /usr/local/bin/ldm
 ```
 

@@ -36,6 +36,8 @@ class TestShareService(unittest.TestCase):
     def setUp(self):
         self.mock_manager = MockManager()
         self.service = ShareService(self.mock_manager)
+        # Mock poll health check to prevent real HTTP loops in base cmd_start tests
+        self.service._poll_tunnel_health = MagicMock(return_value=(True, None))  # type: ignore[method-assign]
 
     @patch("ldm_core.handlers.share.get_actual_home")
     @patch("platform.system")
@@ -392,3 +394,73 @@ class TestShareService(unittest.TestCase):
             check=False,
         )
         mock_success.assert_called_with("Tunnel container stopped and removed.")
+
+    @patch("requests.get")
+    def test_poll_tunnel_health_native_success(self, mock_get):
+        # Un-mock _poll_tunnel_health for the check test
+        self.service._poll_tunnel_health = ShareService._poll_tunnel_health.__get__(  # type: ignore[method-assign]
+            self.service, ShareService
+        )
+
+        mock_res = MagicMock()
+        mock_res.status_code = 200
+        mock_res.json.return_value = {"status": "healthy"}
+        mock_get.return_value = mock_res
+
+        success, err = self.service._poll_tunnel_health("custom-sub", timeout=1)
+        self.assertTrue(success)
+        self.assertIsNone(err)
+
+    @patch("requests.get")
+    def test_poll_tunnel_health_native_legacy_fallback(self, mock_get):
+        self.service._poll_tunnel_health = ShareService._poll_tunnel_health.__get__(  # type: ignore[method-assign]
+            self.service, ShareService
+        )
+
+        mock_res = MagicMock()
+        mock_res.status_code = 404
+        mock_get.return_value = mock_res
+
+        success, err = self.service._poll_tunnel_health("custom-sub", timeout=1)
+        self.assertTrue(success)
+        self.assertIsNone(err)
+
+    @patch("subprocess.run")
+    def test_poll_tunnel_health_docker_success(self, mock_run):
+        self.service._poll_tunnel_health = ShareService._poll_tunnel_health.__get__(  # type: ignore[method-assign]
+            self.service, ShareService
+        )
+
+        mock_res = MagicMock()
+        mock_res.returncode = 0
+        mock_res.stderr = "HTTP/1.1 200 OK"
+        mock_run.return_value = mock_res
+
+        success, err = self.service._poll_tunnel_health(
+            "custom-sub", container_name="myproj-lfr-tunnel", timeout=1
+        )
+        self.assertTrue(success)
+        self.assertIsNone(err)
+
+    def test_diagnose_tunnel_info_auth_failure(self):
+        info = {"auth": {"valid": False, "error_message": "Invalid token"}}
+        res = self.service._diagnose_tunnel_info(info, "sub")
+        self.assertIn("Authentication Failed", res)
+        self.assertIn("Invalid token", res)
+
+    def test_diagnose_tunnel_info_conflict(self):
+        info = {
+            "auth": {"valid": True},
+            "subdomain": {"conflict": True, "leased": False},
+        }
+        res = self.service._diagnose_tunnel_info(info, "sub")
+        self.assertIn("Subdomain Conflict", res)
+
+    def test_diagnose_tunnel_info_destination_offline(self):
+        info = {
+            "auth": {"valid": True},
+            "subdomain": {"conflict": False, "leased": True},
+            "destination": {"responsive": False, "port": 8080},
+        }
+        res = self.service._diagnose_tunnel_info(info, "sub")
+        self.assertIn("Downstream Offline", res)

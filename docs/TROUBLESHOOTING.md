@@ -304,3 +304,31 @@ If you are running LDM behind a corporate proxy, VPN, or shared public IP addres
 This occurs when the shared IP address hits the GitHub unauthenticated REST API limit (60 requests/hour).
 
 **The Solution:** LDM automatically falls back to an HTML redirect check on `https://github.com/peterrichards-lr/liferay-docker-manager/releases/latest` (which is not rate-limited). If the fallback also fails, verify your network connectivity or try again later.
+
+---
+
+## 🛡️ EDR / SentinelOne Quarantine (lfr-tunnel)
+
+### **Issue: "Failed to verify lfr-tunnel installation after download"**
+
+When using `--share` or `ldm share start` with the default `--share-provider lfr-tunnel`, LDM downloads a native host-side Go client executable (`lfr-tunnel`). Because this binary is compiled and downloaded dynamically, corporate Endpoint Detection and Response (EDR) platforms like **SentinelOne** or **Microsoft Defender** may flag it as an unsigned/untrusted executable and quarantine it.
+
+This causes the executable to be deleted or blocked immediately after download, resulting in the error:
+`❌ Failed to verify lfr-tunnel installation after download.`
+
+### **Solution: Use the Containerized Provider (`lfr-tunnel-docker`)**
+
+The easiest and safest workaround is to run `lfr-tunnel` inside a Docker container sidecar instead. EDR tools do not inspect or quarantine binaries running inside the isolated Docker Compose network:
+
+1. Stop the current project.
+2. Run the project with the `--share-provider lfr-tunnel-docker` parameter:
+
+```bash
+ldm run <project> --share --share-provider lfr-tunnel-docker --share-subdomain <subdomain>
+```
+
+Alternatively, if you are sharing a running project using `ldm share start`, explicitly request the Docker-based provider:
+
+```bash
+ldm share start <project> --provider lfr-tunnel-docker --subdomain <subdomain>
+```

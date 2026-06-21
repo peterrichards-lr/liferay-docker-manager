@@ -650,7 +650,15 @@ class ComposerService:
             "virtual.hosts.valid.hosts": f"localhost,127.0.0.1,{host_name},liferay,*.lfr-demo.online,*.lfr-demo.se",
         }
 
-        if ssl_enabled:
+        if share_host:
+            forwarded_props.update(
+                {
+                    "web.server.host": share_host,
+                    "web.server.https.port": "443",
+                    "web.server.protocol": "https",
+                }
+            )
+        elif ssl_enabled:
             forwarded_props.update(
                 {
                     "web.server.host": host_name,

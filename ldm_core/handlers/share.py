@@ -247,13 +247,28 @@ class ShareService:
                     cmd, env=env, capture_output=True, text=True, check=False
                 )
                 if res.returncode == 0:
-                    UI.success("Tunnel started in the background.")
-                    public_url = self.resolve_public_tunnel_url(subdomain)
-                    UI.success(
-                        f"🌍 Public Tunnel Active: {UI.CYAN}{public_url}{UI.COLOR_OFF}"
-                    )
-                    if res.stdout:
-                        print(res.stdout.strip())
+                    success, err_msg = self._poll_tunnel_health(subdomain)
+                    if success:
+                        UI.success("Tunnel started in the background.")
+                        public_url = self.resolve_public_tunnel_url(subdomain)
+                        UI.success(
+                            f"🌍 Public Tunnel Active: {UI.CYAN}{public_url}{UI.COLOR_OFF}"
+                        )
+                        if res.stdout:
+                            print(res.stdout.strip())
+                    else:
+                        UI.error(f"Tunnel healthcheck failed: {err_msg}")
+                        # Clean up background process
+                        try:
+                            subprocess.run(
+                                [str(bin_path), "-stop"],
+                                capture_output=True,
+                                text=True,
+                                check=False,
+                            )
+                        except Exception:
+                            pass
+                        UI.die("Unable to establish tunnel connection.")
                 else:
                     UI.error(f"Failed to start tunnel (Exit {res.returncode})")
                     if res.stderr:
@@ -320,11 +335,33 @@ class ShareService:
                 check=False,
             )
             if res.returncode == 0:
-                UI.success("Tunnel container started in the background.")
-                public_url = self.resolve_public_tunnel_url(subdomain)
-                UI.success(
-                    f"🌍 Public Tunnel Active: {UI.CYAN}{public_url}{UI.COLOR_OFF}"
+                container_name = (
+                    project_meta.get("tunnel_container_name")
+                    or f"{base_container}-lfr-tunnel"
                 )
+                success, err_msg = self._poll_tunnel_health(
+                    subdomain, container_name=container_name
+                )
+                if success:
+                    UI.success("Tunnel container started in the background.")
+                    public_url = self.resolve_public_tunnel_url(subdomain)
+                    UI.success(
+                        f"🌍 Public Tunnel Active: {UI.CYAN}{public_url}{UI.COLOR_OFF}"
+                    )
+                else:
+                    UI.error(f"Tunnel container healthcheck failed: {err_msg}")
+                    # Remove container so we don't leave it running in unhealthy state
+                    try:
+                        subprocess.run(
+                            [*compose_base, "rm", "-fs", "lfr-tunnel"],
+                            cwd=str(root),
+                            capture_output=True,
+                            text=True,
+                            check=False,
+                        )
+                    except Exception:
+                        pass
+                    UI.die("Unable to establish tunnel connection.")
             else:
                 UI.error(f"Failed to start tunnel container (Exit {res.returncode})")
                 if res.stderr:
@@ -573,3 +610,101 @@ class ShareService:
                     print(res.stderr.strip())
             except Exception as e:
                 UI.die(f"Process invocation error: {e}")
+
+    def _poll_tunnel_health(self, subdomain, container_name=None, timeout=10):
+        """Polls the lfr-tunnel client inspector /api/healthz endpoint to verify connection health."""
+        import time
+
+        import requests
+
+        start_time = time.time()
+        url = "http://localhost:4040/api/healthz"
+
+        UI.info("Verifying tunnel connectivity and subdomain lease...")
+        while time.time() - start_time < timeout:
+            try:
+                if container_name:
+                    # Query inside the container using docker exec and wget
+                    cmd = [
+                        "docker",
+                        "exec",
+                        container_name,
+                        "wget",
+                        "-S",
+                        "--spider",
+                        "http://localhost:4040/api/healthz",
+                    ]
+                    sub_res = subprocess.run(
+                        cmd, capture_output=True, text=True, check=False
+                    )
+                    # wget -S headers go to stderr
+                    output = sub_res.stderr or ""
+                    if "200 OK" in output:
+                        return True, None
+                    if "404 Not Found" in output:
+                        UI.warning(
+                            "Legacy tunnel version detected. Skipping active health verification."
+                        )
+                        return True, None
+                else:
+                    # Query native localhost inspector API
+                    req_res = requests.get(url, timeout=2)
+                    if req_res.status_code == 200:
+                        data = req_res.json()
+                        if data.get("status") == "healthy":
+                            return True, None
+                    elif req_res.status_code == 404:
+                        UI.warning(
+                            "Legacy tunnel version detected. Skipping active health verification."
+                        )
+                        return True, None
+            except Exception:
+                # Ignore connection errors during initial boot phase
+                pass
+            time.sleep(0.5)
+
+        # Diagnosis fallback
+        error_reason = "Tunnel connection timeout."
+        try:
+            if container_name:
+                cmd = [
+                    "docker",
+                    "exec",
+                    container_name,
+                    "wget",
+                    "-qO-",
+                    "http://localhost:4040/api/info",
+                ]
+                sub_res = subprocess.run(
+                    cmd, capture_output=True, text=True, check=False
+                )
+                if sub_res.returncode == 0:
+                    info = json.loads(sub_res.stdout)
+                    error_reason = self._diagnose_tunnel_info(info, subdomain)
+            else:
+                req_res = requests.get("http://localhost:4040/api/info", timeout=2)
+                if req_res.status_code == 200:
+                    info = req_res.json()
+                    error_reason = self._diagnose_tunnel_info(info, subdomain)
+        except Exception:
+            pass
+
+        return False, error_reason
+
+    def _diagnose_tunnel_info(self, info, subdomain):
+        """Helper to extract clean diagnostic error messages from /api/info data."""
+        auth = info.get("auth", {})
+        if not auth.get("valid", True):
+            msg = auth.get("error_message") or "Invalid gateway authentication token."
+            return f"Authentication Failed: {msg}"
+
+        sub = info.get("subdomain", {})
+        if sub.get("conflict", False) or not sub.get("leased", True):
+            return f"Subdomain Conflict: Subdomain '{subdomain}' is already taken by another active tunnel."
+
+        dest = info.get("destination", {})
+        if not dest.get("responsive", True):
+            return f"Downstream Offline: Local target port {dest.get('port', 8080)} is not responsive."
+
+        conn_state = info.get("connection", {}).get("state", "disconnected")
+        return f"Tunnel Connection Error: Connection state is '{conn_state}'."
