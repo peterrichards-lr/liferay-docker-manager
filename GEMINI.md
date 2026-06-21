@@ -77,14 +77,12 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
 - Added EDR/SentinelOne warnings to sharing and troubleshooting docs.
 - Split installation commands in README.md and INSTALLATION.md into OS-specific copy-paste blocks.
 - Added Default Stack & Conventions quick reference to README.md.
-- Bumped version to `v2.11.23` in `pyproject.toml` and `ldm_core/constants.py`.
+- Bumped version to `v2.11.23` but tag validation failed because tag was pushed before PR merge. Bumping to `v2.11.24` to release on master.
 
 ### Plan
 
-1. **Fix Pre-commit / Mypy Errors**:
-   - Add `# type: ignore[method-assign]` to `ldm_core/tests/test_share.py`.
-   - Add `<!-- pragma: allowlist secret -->` to `docs/README.md`.
-   - Remove multiple blank lines in `GEMINI.md`.
-2. **Verify All Checks**: Run pre-commit and tests within `.venv`.
-3. **Commit & Push**: Commit the changes and push `feature/tunnel-healthcheck` to origin.
-4. **Pull Request & Release Tag**: Run `gh pr create` and tag `v2.11.23` for release.
+1. **Checkout & Branch**: Create branch `chore/bump-version-2.11.24` from `master`.
+2. **Bump Version**: Bump version to `2.11.24` in `pyproject.toml` and `ldm_core/constants.py`.
+3. **Commit & Push**: Commit the version bump and push.
+4. **Pull Request & Squash Merge**: Open PR and squash merge it to master.
+5. **Tag & Release**: Checkout `master`, pull latest, tag `v2.11.24`, and push the tag.
