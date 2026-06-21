@@ -8,23 +8,29 @@ The standalone binary is a single-file executable. On Windows, it is fully self-
 
 ### macOS / Linux / WSL2
 
-Download the latest `ldm` directly using your terminal:
+Download the latest `ldm` directly using your terminal. Copy and run the block specific to your environment:
+
+#### macOS (Apple Silicon)
 
 ```bash
-
-# For macOS (Apple Silicon)
 sudo curl -L https://github.com/peterrichards-lr/liferay-docker-manager/releases/latest/download/ldm-macos-arm64 -o /usr/local/bin/ldm
-
-# For macOS (Apple Intel)
-sudo curl -L https://github.com/peterrichards-lr/liferay-docker-manager/releases/latest/download/ldm-macos-x86_64 -o /usr/local/bin/ldm
-
-# For Linux / WSL2 (Native Linux)
-sudo curl -L https://github.com/peterrichards-lr/liferay-docker-manager/releases/latest/download/ldm-linux -o /usr/local/bin/ldm
-
-# Make it executable
 sudo chmod +x /usr/local/bin/ldm
+ldm --version
+```
 
-# Verify
+#### macOS (Apple Intel)
+
+```bash
+sudo curl -L https://github.com/peterrichards-lr/liferay-docker-manager/releases/latest/download/ldm-macos-x86_64 -o /usr/local/bin/ldm
+sudo chmod +x /usr/local/bin/ldm
+ldm --version
+```
+
+#### Linux / WSL2 (Native Linux)
+
+```bash
+sudo curl -L https://github.com/peterrichards-lr/liferay-docker-manager/releases/latest/download/ldm-linux -o /usr/local/bin/ldm
+sudo chmod +x /usr/local/bin/ldm
 ldm --version
 ```
 

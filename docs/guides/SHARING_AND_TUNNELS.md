@@ -19,6 +19,15 @@ LDM supports two distinct tunneling providers:
 - **Pros**: Runs natively on the host, lowest CPU overhead, supports wildcard routing.
 - **Requirements**: LDM automatically downloads and updates the binary on the first invocation.
 
+> [!WARNING]
+> **EDR / SentinelOne Quarantine:** Because `lfr-tunnel` (host-side) is a Go binary downloaded dynamically to the host, corporate endpoint protection tools (such as SentinelOne) may flag it as an untrusted threat and quarantine it. This will prevent LDM from starting the tunnel and cause the error: `❌ Failed to verify lfr-tunnel installation after download.`
+>
+> **The Solution:** If you encounter EDR interference, use the **`lfr-tunnel-docker`** (Zero-Install) provider instead. It runs the exact same client inside the isolated project Docker Compose network, bypassing host-level EDR checks entirely. Set it via `--share-provider lfr-tunnel-docker` on startup:
+>
+> ```bash
+> ldm run <project> --share --share-provider lfr-tunnel-docker --share-subdomain pjrtest
+> ```
+
 ### 2. lfr-tunnel-docker (Zero-Install)
 
 Runs the exact same `lfr-tunnel` client, but completely isolated as a service sidecar inside your project's `docker-compose.yml` stack.
@@ -173,3 +182,55 @@ If your SaaS integration requires Liferay to generate fully qualified URLs (e.g.
 4. Save the configuration.
 
 Liferay will now generate all callback URLs using the public tunnel address.
+
+---
+
+## 🛠️ LDM Sharing Command-Line Switches
+
+When starting or running projects via LDM, you can configure the sharing behavior using the following CLI flags:
+
+### 1. Stack Execution Flags (`ldm run`)
+
+- **`--share`**: Enables automatic sharing. Starts a tunnel when the Liferay container reaches a healthy state.
+- **`--share-provider <lfr-tunnel | lfr-tunnel-docker | ngrok>`**: Selects the sharing engine. (Defaults to `lfr-tunnel` host mode).
+- **`--share-subdomain <name>`**: Specifies a custom subdomain (e.g., `pjrtest`). If omitted, defaults to the project name.
+- **`--share-image <image>`**: Overrides the sidecar Docker image (useful for testing custom tunnel builds).
+- **`--share-inspector`**: Maps the tunnel's local web dashboard to host port `4040` (allows visiting [http://localhost:4040](http://localhost:4040)).
+
+### 2. Standalone Share Flags (`ldm share start`)
+
+- **`--provider <lfr-tunnel | lfr-tunnel-docker | ngrok>`**: Explicitly selects the provider.
+- **`--subdomain <name>`**: Requests a specific subdomain.
+- **`--ports <ports>`**: Overrides target downstream port mapping (e.g. `--ports 8080,3000`).
+- **`--image <image>`**: Overrides sidecar Docker image.
+- **`--inspector`**: Exposes the Web Inspector Dashboard on host port `4040`.
+
+---
+
+## 🚀 Advanced `lfr-tunnel` Binary Switches (Go Client Native Flags)
+
+If you are running the `lfr-tunnel` Go executable directly or writing custom scripts outside LDM's standard workflow, the native client binary supports the following switches:
+
+### 1. Connection & Routing
+
+- **`-server <url>`**: Specifies the `lfr-tunneld` gateway VPS URL (e.g. `-server https://tunnel.lfr-demo.se`).
+- **`-token <auth-token>`**: Authenticates client credentials against the gateway.
+- **`-subdomain <prefix>`**: Requests a prefix for public wildcard access (e.g. `-subdomain pjrtest`).
+- **`-ports <port,port,...>`**: Comma-separated downstream local ports to bind/expose (e.g., `-ports 8080,3000`).
+- **`-target-host <host/ip>`**: Points the tunnel upstream destination to a specific IP or hostname (defaults to `localhost`).
+- **`-preserve-host`**: Ingests incoming Host headers down the socket directly instead of rewriting them to target host.
+
+### 2. Dashboard & Security
+
+- **`-inspector-port <port>`**: Sets a custom port to run the web inspector dashboard on (defaults to `4040`).
+  - *Example:* `lfr-tunnel -ports 8080 -inspector-port 4045` runs dashboard on [http://localhost:4045](http://localhost:4045).
+- **`-basic-auth <user:pass>`**: Activates basic authentication on the public HTTPS endpoints to protect your shared sandbox environment from unauthorized public access.
+- **`-rate-limit <req/sec>`**: Restricts the maximum throughput routed down the tunnel to protect local servers (0 = unlimited).
+- **`-add-header "Name: Value"`**: Automatically injects standard HTTP headers into downstream packets (e.g. `-add-header "X-Bypass-CORS: true"`).
+
+### 3. Background Daemon Control
+
+- **`-background`**: Fork/daemonize the client process into the background. Output logs are redirected to `~/.lfr-tunnel/client.log` and the process ID is tracked in `~/.lfr-tunnel/lfr-tunnel.pid`.
+- **`-status`**: Introspects and outputs the running status/PID of the background daemon.
+- **`-stop`**: Sends a shutdown signal (`SIGINT`) to clean up and close the background tunnel daemon.
+- **`-upgrade`**: Triggers a self-upgrade sequence downloading the latest release binary.

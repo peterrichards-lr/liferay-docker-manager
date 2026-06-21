@@ -68,16 +68,23 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
 - [PaaS "Golden Path" Guide](./docs/guides/PAAS_LOCAL_DEV.md)
 - [Agent Rules of Engagement](./.gemini/gemini.md)
 
-## 8. Active Work State & Plan (June 20, 2026)
+## 8. Active Work State & Plan (June 21, 2026)
 
 ### Status
 
-- Released `v2.11.19`, `v2.11.20`, and `v2.11.21` successfully.
-- Resolved the `java.lang.RuntimeException: Invalid host name liferay` issue by preserving host headers in `lfr-tunnel` via `LFT_PRESERVE_HOST=true`.
-- Successfully released `lfr-tunnel` version `v1.8.0` containing the new Subdomain Reservation System and host header preservation features.
+- Released `v2.11.22` successfully.
+- Implemented the active health validation loop in `ldm_core/handlers/share.py` querying `/api/healthz` (including unit tests).
+- Added EDR/SentinelOne warnings to sharing and troubleshooting docs.
+- Split installation commands in README.md and INSTALLATION.md into OS-specific copy-paste blocks.
+- Added Default Stack & Conventions quick reference to README.md.
+- Bumped version to `v2.11.23` in `pyproject.toml` and `ldm_core/constants.py`.
 
 ### Plan
 
-1. **Version Bump**: Bump version to `v2.11.22` in `pyproject.toml` and `ldm_core/constants.py`.
-2. **PR & Merge**: Create branch `chore/bump-version-2.11.22`, raise PR, verify tests, and merge into `master`.
-3. **Release Tag**: Pull `master`, tag `v2.11.22`, and push tag to origin to trigger deployment.
+1. **Fix Pre-commit / Mypy Errors**:
+   - Add `# type: ignore[method-assign]` to `ldm_core/tests/test_share.py`.
+   - Add `<!-- pragma: allowlist secret -->` to `docs/README.md`.
+   - Remove multiple blank lines in `GEMINI.md`.
+2. **Verify All Checks**: Run pre-commit and tests within `.venv`.
+3. **Commit & Push**: Commit the changes and push `feature/tunnel-healthcheck` to origin.
+4. **Pull Request & Release Tag**: Run `gh pr create` and tag `v2.11.23` for release.
