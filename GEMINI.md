@@ -78,6 +78,7 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
 - Added Default Stack & Conventions quick reference to README.md.
 - Implemented active health checking on lfr-tunnel `/api/healthz` and `/api/info` endpoints.
 - Implemented `ldm share inspector` command and tunnel logs redirection/diagnostics (`v2.11.25`). All tests and pre-commit checks are passing.
+- Fixed CI build failure due to flaky apt-get update Noble repo forbidden errors.
 
 ### Plan
 
@@ -91,6 +92,8 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
    - Update `ldm_core/handlers/composer.py` to bind mount the project's logs directory to `/opt/liferay/logs` in the `lfr-tunnel` container and configure a shell/tee entrypoint so that all tunnel logs are written to `logs/lfr-tunnel.log`. (Completed)
    - Update unit tests in `ldm_core/tests/test_composer.py` to assert the log volume and entrypoint. (Completed)
 4. **Bump Version**: Bump version to `2.11.25` in `pyproject.toml` and `ldm_core/constants.py`. (Completed)
-5. **Validation**: Run all pre-commit checks and tests locally. (Completed)
+5. **Validation & CI Fixes**:
+   - Run all pre-commit checks and tests locally. (Completed)
+   - Fix flaky `apt-get update` errors in GitHub Action workflows (`ci.yml` and `scheduled-verification.yml`). (Completed)
 6. **PR & Squash Merge**: Raise the PR and squash merge it to master. (Pending review)
 7. **Tag & Release**: Tag `v2.11.25` on master and push. (Pending verification)

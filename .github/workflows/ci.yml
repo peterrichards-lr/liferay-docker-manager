@@ -138,7 +138,7 @@ jobs:
       - name: Install mkcert
         run: |
           # Install mkcert for SSL smoke tests
-          sudo apt-get update
+          sudo apt-get update || true
           sudo apt-get install -y libnss3-tools
           curl -Lf https://github.com/FiloSottile/mkcert/releases/download/v1.4.4/mkcert-v1.4.4-linux-amd64 -o mkcert
           chmod +x mkcert
