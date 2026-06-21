@@ -433,7 +433,8 @@ class TestShareService(unittest.TestCase):
 
         mock_res = MagicMock()
         mock_res.returncode = 0
-        mock_res.stderr = "HTTP/1.1 200 OK"
+        mock_res.stdout = "healthy"
+        mock_res.stderr = ""
         mock_run.return_value = mock_res
 
         success, err = self.service._poll_tunnel_health(
@@ -690,3 +691,33 @@ class TestShareService(unittest.TestCase):
             "Tunnel connection timeout. Container is running but not responsive", err
         )
         self.assertIn("dial tcp: lookup tunnel.lfr-demo.online: no such host", err)
+
+    @patch("subprocess.run")
+    def test_poll_tunnel_health_uses_busybox_args(self, mock_run):
+        self.service._poll_tunnel_health = ShareService._poll_tunnel_health.__get__(  # type: ignore[method-assign]
+            self.service, ShareService
+        )
+
+        mock_res = MagicMock()
+        mock_res.returncode = 0
+        mock_res.stdout = "healthy"
+        mock_res.stderr = ""
+        mock_run.return_value = mock_res
+
+        success, err = self.service._poll_tunnel_health(
+            "custom-sub", container_name="myproj-lfr-tunnel", timeout=0.1
+        )
+        self.assertTrue(success)
+        mock_run.assert_called_with(
+            [
+                "docker",
+                "exec",
+                "myproj-lfr-tunnel",
+                "wget",
+                "-qO-",
+                "http://127.0.0.1:4040/api/healthz",
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )

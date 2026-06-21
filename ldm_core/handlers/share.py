@@ -630,18 +630,16 @@ class ShareService:
                         "exec",
                         container_name,
                         "wget",
-                        "-S",
-                        "--spider",
-                        "http://localhost:4040/api/healthz",
+                        "-qO-",
+                        "http://127.0.0.1:4040/api/healthz",
                     ]
                     sub_res = subprocess.run(
                         cmd, capture_output=True, text=True, check=False
                     )
-                    # wget -S headers go to stderr
-                    output = sub_res.stderr or ""
-                    if "200 OK" in output:
+                    output = (sub_res.stdout or "") + (sub_res.stderr or "")
+                    if "healthy" in output:
                         return True, None
-                    if "404 Not Found" in output:
+                    if "404" in output:
                         UI.warning(
                             "Legacy tunnel version detected. Skipping active health verification."
                         )
@@ -689,7 +687,7 @@ class ShareService:
                         container_name,
                         "wget",
                         "-qO-",
-                        "http://localhost:4040/api/info",
+                        "http://127.0.0.1:4040/api/info",
                     ]
                     sub_res = subprocess.run(
                         cmd, capture_output=True, text=True, check=False
