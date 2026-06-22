@@ -178,6 +178,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added runtime state-awareness checks to commands (run, import) to prevent unexpected container collisions.
 - Enabled non-interactive bypass for internal developer utility prompts.
 
+## [v2.11.31] - 2026-06-22
+
+### Added
+
+- Support for custom quickstart templates overrides via `~/.ldm_templates.json`.
+- Automatic tunnel sharing exposure under `ldm import` when the `--share` flag is passed.
+- Robust unit test coverage for package commands and template overrides.
+
+### Fixed
+
+- Typo in workspace quickstart test patching (`AssetsService` -> `AssetService`).
+- Mock manager sharing helper verification in unit tests.
+- Standalone package export command (`ldm package`) snapshot listing and dynamic test path assertions.
+
 ## [v2.11.21] - 2026-06-20
 
 ### Added
