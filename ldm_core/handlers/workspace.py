@@ -1967,3 +1967,74 @@ class WorkspaceService(BaseHandler):
             observer.stop()
             UI.info("Monitor stopped.")
         observer.join()
+
+    def cmd_quickstart(self, template_name, share=False, share_subdomain=None):
+        """Bootstraps a predefined accelerator stack, imports, seeds, runs, and exposes it."""
+        templates = {
+            "aica": {
+                "repo": "https://github.com/peterrichards-lr/ai-commerce-accelerator.git",
+                "default_name": "ai-commerce-accelerator",
+            }
+        }
+
+        name_lower = template_name.lower()
+        if name_lower not in templates:
+            UI.die(f"Unrecognized quickstart template: {template_name}")
+            return
+
+        template_info = templates[name_lower]
+        repo_url = template_info["repo"]
+        project_name = template_info["default_name"]
+
+        # Ensure project argument is set so import target matches
+        self.manager.args.project = project_name
+
+        UI.heading(f"Starting Quickstart: {template_name.upper()}")
+
+        # 1. Import workspace repository
+        UI.info(f"Importing template workspace from: {repo_url}...")
+        self.cmd_import(repo_url)
+
+        # Detect paths after import
+        project_path = self.manager.detect_project_path(project_name)
+        if not project_path or not project_path.exists():
+            UI.die(f"Failed to locate imported workspace directory for {project_name}.")
+            return
+
+        project_meta = self.manager.read_meta(project_path)
+        tag = project_meta.get("tag")
+        db_type = project_meta.get("db_type", "postgresql")
+
+        if not tag:
+            tag = "2026.q1.4-lts"  # sensible fallback version
+            UI.warning(
+                f"Project metadata missing 'tag'. Falling back to default Liferay tag: {tag}"
+            )
+
+        # 2. Determine search mode
+        default_shared = (
+            "true" if self.manager.parse_version(tag) >= (2025, 1, 0) else "false"
+        )
+        use_shared = (
+            str(project_meta.get("use_shared_search", default_shared)).lower() == "true"
+        )
+        if not use_shared and self.manager.parse_version(tag) >= (2025, 2, 0):
+            use_shared = True
+        search_mode = "shared" if use_shared else "sidecar"
+
+        # 3. Apply fresh database seed
+        UI.info(f"Seeding database for {tag} ({db_type}/{search_mode})...")
+        paths = self.manager.setup_paths(project_path)
+        if not self.manager.assets._fetch_seed(tag, db_type, search_mode, paths):
+            UI.die("Failed to seed database during quickstart.")
+            return
+
+        # 4. Start stack and launch browser
+        UI.info("Starting quickstart services stack...")
+        self.manager.args.browser = True
+        self.manager.runtime.cmd_run(project_name)
+
+        # 5. Share via tunnel if requested
+        if share:
+            UI.info("Exposing quickstart tunnel...")
+            self.manager.share.cmd_start(project_name, subdomain=share_subdomain)
