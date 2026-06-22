@@ -419,9 +419,9 @@ class TestShareService(unittest.TestCase):
         self.service._poll_tunnel_health = ShareService._poll_tunnel_health.__get__(  # type: ignore[method-assign]
             self.service, ShareService
         )
-        self.service._ensure_binary = MagicMock(
+        self.service._ensure_binary = MagicMock(  # type: ignore[method-assign]
             return_value=Path("/fake/bin/lfr-tunnel")
-        )  # type: ignore[method-assign]
+        )
 
         mock_run_res = MagicMock()
         mock_run_res.stdout = ""  # Return empty so it falls back to requests
@@ -442,9 +442,9 @@ class TestShareService(unittest.TestCase):
         self.service._poll_tunnel_health = ShareService._poll_tunnel_health.__get__(  # type: ignore[method-assign]
             self.service, ShareService
         )
-        self.service._ensure_binary = MagicMock(
+        self.service._ensure_binary = MagicMock(  # type: ignore[method-assign]
             return_value=Path("/fake/bin/lfr-tunnel")
-        )  # type: ignore[method-assign]
+        )
 
         mock_run_res = MagicMock()
         mock_run_res.stdout = ""  # Return empty so it falls back to requests
@@ -760,9 +760,9 @@ class TestShareService(unittest.TestCase):
         self.service._poll_tunnel_health = ShareService._poll_tunnel_health.__get__(  # type: ignore[method-assign]
             self.service, ShareService
         )
-        self.service._ensure_binary = MagicMock(
+        self.service._ensure_binary = MagicMock(  # type: ignore[method-assign]
             return_value=Path("/fake/bin/lfr-tunnel")
-        )  # type: ignore[method-assign]
+        )
 
         mock_res = MagicMock()
         mock_res.returncode = 0

@@ -86,21 +86,16 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
 
 ### Plan
 
-1. **Integrate new lfr-tunnel CLI capabilities (P1)**:
-   - Add support for starting multiple tunnels with automatically resolved port conflicts.
-   - Update native and containerised `_poll_tunnel_health` to use `lfr-tunnel -status-json -subdomain <subdomain>`.
-   - Update native and containerised `cmd_status` to format and print structured JSON tunnel state cleanly.
-   - Update `cmd_stop` to cleanly terminate specific background subdomain tunnels.
-   - Add unit tests for the new tunnel functions.
-2. **Zero-Touch Autocomplete & Setup (P1)**:
+1. **Zero-Touch Autocomplete & Setup (P1)** [In Progress]:
    - Create `ldm system setup-completion` command to automate shell setup.
+   - Auto-detect shell types and safely inject autocompletion logic into shell profile configurations.
    - Auto-install `argcomplete` dependency if missing and prompt user for integration.
-3. **Predefined Quickstarts (P1)**:
+2. **Predefined Quickstarts (P1)**:
    - Implement shortcut `ldm quickstart aica --share`.
    - Setup project bootstrapping templates for golden-path quickstarts.
-4. **Dynamic JVM Self-Tuning (P2)**:
+3. **Dynamic JVM Self-Tuning (P2)**:
    - Auto-detect host memory and write optimized JVM flags before container boot.
-5. **Dry-Run Mode Expansion (P2)**:
+4. **Dry-Run Mode Expansion (P2)**:
    - Add safe `--dry-run` output formatting to orchestrations.
-6. **Visual Diagnostics Web Dashboard (P3)**:
+5. **Visual Diagnostics Web Dashboard (P3)**:
    - Upgrade local dashboard to visual web application with log/snapshot controls.

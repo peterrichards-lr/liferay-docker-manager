@@ -15,6 +15,7 @@ class MockConfigManager:
                 self.import_env = False
                 self.project = None
                 self.global_level = False
+                self.reset = False
 
         self.args = Args()
         self.verbose = False

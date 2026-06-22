@@ -69,6 +69,7 @@ def preprocess_args(args_list: list[str]) -> list[str]:
         "version",
         "dev-setup",
         "completion",
+        "setup-completion",
         "man",
         "fix-hosts",
         "config",
@@ -145,6 +146,7 @@ def preprocess_args(args_list: list[str]) -> list[str]:
             "version": ("system", "version"),
             "dev-setup": ("system", "dev-setup"),
             "completion": ("system", "completion"),
+            "setup-completion": ("system", "setup-completion"),
             "man": ("system", "man"),
             "fix-hosts": ("system", "fix-hosts"),
         }
@@ -1230,6 +1232,13 @@ def get_parser():
         "shell", choices=["bash", "zsh", "fish", "powershell"], nargs="?"
     )
 
+    setup_completion = system_subparsers.add_parser(
+        "setup-completion", parents=[base_sub_parent]
+    )
+    setup_completion.add_argument(
+        "shell", choices=["bash", "zsh", "fish", "powershell"], nargs="?"
+    )
+
     system_subparsers.add_parser("man", parents=[base_sub_parent])
 
     roi_cmd = system_subparsers.add_parser(
@@ -1614,6 +1623,9 @@ def main():
         ),
         ("system", "dev-setup"): manager.dev.cmd_dev_setup,
         ("system", "completion"): lambda: manager.cmd_completion(args.shell),
+        ("system", "setup-completion"): lambda: manager.cmd_setup_completion(
+            args.shell
+        ),
         ("system", "man"): manager.cmd_man,
         ("system", "fix-hosts"): lambda: manager.cmd_fix_hosts(
             getattr(args, "host_name", None)
@@ -1634,7 +1646,7 @@ def main():
         update_thread = None
         is_upgrade_or_completion = args.command == "system" and getattr(
             args, "subcommand", None
-        ) in ["upgrade", "completion"]
+        ) in ["upgrade", "completion", "setup-completion"]
         if not is_upgrade_or_completion:
             update_thread = threading.Thread(target=run_update_check, daemon=True)
             update_thread.start()
@@ -1656,10 +1668,9 @@ def main():
         except Exception as e:
             UI.die("An unexpected error occurred.", details=e)
 
-        is_completion = (
-            args.command == "system"
-            and getattr(args, "subcommand", None) == "completion"
-        )
+        is_completion = args.command == "system" and getattr(
+            args, "subcommand", None
+        ) in ["completion", "setup-completion"]
         if update_thread and not is_completion:
             update_thread.join(timeout=0.05)
             latest = update_info.get("latest")
