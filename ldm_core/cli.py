@@ -399,6 +399,10 @@ def get_parser():
         help="Expose the lfr-tunnel local inspector dashboard on port 4040",
     )
     run.add_argument(
+        "--share-domain",
+        help="Custom domain to use when sharing the instance (e.g. lfr-demo.online, lfr-demo.se)",
+    )
+    run.add_argument(
         "--persist-osgi",
         action="store_true",
         default=None,
@@ -428,6 +432,33 @@ def get_parser():
         help="Skip syncing environment variables from Liferay Cloud",
     )
     imp.add_argument("--no-run", action="store_true")
+    imp.add_argument(
+        "--share",
+        action="store_true",
+        help="Automatically start a secure tunnel (lfr-tunnel) to share the instance after import",
+    )
+    imp.add_argument(
+        "--share-subdomain",
+        help="Custom subdomain to use when sharing the instance",
+    )
+    imp.add_argument(
+        "--share-provider",
+        choices=["lfr-tunnel", "lfr-tunnel-docker", "ngrok"],
+        help="Sharing provider to use (defaults to lfr-tunnel)",
+    )
+    imp.add_argument(
+        "--share-image",
+        help="Custom Docker image to use for the sharing tunnel sidecar",
+    )
+    imp.add_argument(
+        "--share-inspector",
+        action="store_true",
+        help="Expose the lfr-tunnel local inspector dashboard on port 4040",
+    )
+    imp.add_argument(
+        "--share-domain",
+        help="Custom domain to use when sharing the instance (e.g. lfr-demo.online, lfr-demo.se)",
+    )
     imp.add_argument("--backup-dir")
     imp.add_argument("--build", action="store_true")
     imp.add_argument("--host-name")
@@ -913,6 +944,10 @@ def get_parser():
         "--inspector",
         action="store_true",
         help="Expose the lfr-tunnel local inspector dashboard on port 4040",
+    )
+    share_start.add_argument(
+        "--domain",
+        help="Custom domain prefix (e.g. lfr-demo.online, lfr-demo.se)",
     )
     share_inspector = share_subparsers.add_parser(
         "inspector",

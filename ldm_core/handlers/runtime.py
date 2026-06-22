@@ -407,9 +407,6 @@ class RuntimeService(BaseHandler):
             share_subdomain = getattr(
                 self.manager.args, "share_subdomain", None
             ) or project_meta.get("share_subdomain")
-            share_provider = getattr(
-                self.manager.args, "share_provider", None
-            ) or project_meta.get("share_provider")
             share_image = getattr(
                 self.manager.args, "share_image", None
             ) or project_meta.get("share_image")
@@ -417,8 +414,22 @@ class RuntimeService(BaseHandler):
                 getattr(self.manager.args, "share_inspector", False) is True
                 or str(project_meta.get("share_inspector", "false")).lower() == "true"
             )
-            if getattr(self.manager.args, "expose", False) is True:
+
+            share_domain = getattr(
+                self.manager.args, "share_domain", None
+            ) or project_meta.get("share_domain")
+            share_provider = getattr(
+                self.manager.args, "share_provider", None
+            ) or project_meta.get("share_provider")
+
+            if is_share and getattr(self.manager.args, "expose", False) is True:
                 share_provider = "ngrok"
+
+            if is_share and share_provider != "ngrok":
+                share_provider, share_domain = self.manager.share.resolve_share_config(
+                    project_meta
+                )
+
             if not share_provider:
                 share_provider = "lfr-tunnel"
 
@@ -573,6 +584,7 @@ class RuntimeService(BaseHandler):
                     "share_provider": share_provider,
                     "share_image": share_image or "",
                     "share_inspector": str(share_inspector).lower(),
+                    "share_domain": share_domain or "",
                     "archetype": archetype_name or project_meta.get("archetype", ""),
                 }
             )
@@ -1015,7 +1027,7 @@ class RuntimeService(BaseHandler):
                         )
                         if share_provider in ["lfr-tunnel", "lfr-tunnel-docker"]:
                             access_url = self.manager.share.resolve_public_tunnel_url(
-                                share_subdomain
+                                share_subdomain, project_meta.get("project_name")
                             )
 
                     if not access_url:

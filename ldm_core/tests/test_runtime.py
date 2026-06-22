@@ -22,6 +22,7 @@ class MockRuntime(BaseHandler):
         self.infra = MagicMock()
         self.snapshot = MagicMock()
         self.share = MagicMock()
+        self.share.resolve_share_config.return_value = ("lfr-tunnel", "lfr-demo.online")
         from ldm_core.defaults import DefaultsManager
         from ldm_core.handlers.composer import ComposerService
         from ldm_core.handlers.config import ConfigService

@@ -178,20 +178,102 @@ class ShareService:
         )
         return None
 
-    def resolve_public_tunnel_url(self, subdomain):
+    def resolve_share_config(self, project_meta=None, provider=None, domain=None):
+        """Resolves share provider and share domain, prompting the user if not configured."""
+        # 1. Resolve provider
+        if not provider:
+            provider = getattr(self.manager.args, "share_provider", None) or getattr(
+                self.manager.args, "provider", None
+            )
+            if provider and not isinstance(provider, str):
+                provider = None
+        if not provider and project_meta:
+            provider = project_meta.get("share_provider")
+        if not provider:
+            global_config = self.manager.config.get_global_config()
+            provider = global_config.get("share_provider")
+        if not provider:
+            if self.manager.non_interactive:
+                provider = "lfr-tunnel"
+            else:
+                provider = UI.ask(
+                    "Choose sharing provider (lfr-tunnel, lfr-tunnel-docker, ngrok)",
+                    "lfr-tunnel",
+                )
+                if provider not in ["lfr-tunnel", "lfr-tunnel-docker", "ngrok"]:
+                    provider = "lfr-tunnel"
+                self.manager.config.set_global_config("share_provider", provider)
+
+        # 2. Resolve domain
+        if not domain:
+            domain = getattr(self.manager.args, "share_domain", None) or getattr(
+                self.manager.args, "domain", None
+            )
+            if domain and not isinstance(domain, str):
+                domain = None
+        if not domain and project_meta:
+            domain = project_meta.get("share_domain")
+        if not domain:
+            global_config = self.manager.config.get_global_config()
+            domain = global_config.get("share_domain")
+        if not domain:
+            if provider in ["lfr-tunnel", "lfr-tunnel-docker"]:
+                if self.manager.non_interactive:
+                    domain = "lfr-demo.online"
+                else:
+                    domain = UI.ask(
+                        "Choose sharing domain (lfr-demo.online, lfr-demo.se)",
+                        "lfr-demo.online",
+                    )
+                    self.manager.config.set_global_config("share_domain", domain)
+            else:
+                domain = ""
+
+        return provider, domain
+
+    def resolve_public_tunnel_url(self, subdomain, project_id=None):
         """Resolves the public tunnel URL using LFT_SERVER_URL or defaulting to lfr-demo.online."""
         server_url = os.environ.get("LFT_SERVER_URL")
-        domain = "lfr-demo.online"
-        if server_url:
-            from urllib.parse import urlparse
+        domain = None
 
-            parsed = urlparse(server_url)
-            netloc = parsed.netloc or parsed.path
-            host = netloc.split(":")[0]
-            if host.startswith("tunnel."):
-                domain = host[7:]
+        if not server_url and project_id:
+            try:
+                root = self.manager.detect_project_path(project_id)
+                if root:
+                    # Try from metadata
+                    meta = self.manager.read_meta(root)
+                    if meta and meta.get("share_domain"):
+                        domain = meta["share_domain"]
+
+                    if not domain:
+                        # Try from .env file
+                        env_file = root / ".env"
+                        if env_file.exists():
+                            for line in env_file.read_text().splitlines():
+                                if line.startswith("LFT_SERVER_URL="):
+                                    server_url = line.split("=", 1)[1].strip()
+                                    break
+            except Exception:
+                pass
+
+        if not domain:
+            if server_url:
+                from urllib.parse import urlparse
+
+                parsed = urlparse(server_url)
+                netloc = parsed.netloc or parsed.path
+                host = netloc.split(":")[0]
+                if host.startswith("tunnel."):
+                    domain = host[7:]
+                else:
+                    domain = host
             else:
-                domain = host
+                # Load from share config resolution fallback
+                _, domain = self.resolve_share_config()
+
+        if not domain:
+            domain = "lfr-demo.online"
+
         return f"https://{subdomain}.{domain}"
 
     def cmd_start(
@@ -208,9 +290,14 @@ class ShareService:
         project_id = root.name if root else None
         project_meta = self.manager.read_meta(root) if root else {}
 
-        # Resolve provider
-        if not provider:
-            provider = project_meta.get("share_provider") or "lfr-tunnel"
+        # Resolve provider and domain
+        provider, share_domain = self.resolve_share_config(
+            project_meta, provider=provider
+        )
+        if root and share_domain:
+            project_meta["share_domain"] = share_domain
+            if provider == "lfr-tunnel":
+                self.manager.write_meta(root, project_meta)
 
         if provider == "lfr-tunnel":
             bin_path = self._ensure_binary()
@@ -229,13 +316,15 @@ class ShareService:
             env = os.environ.copy()
             env["LFT_CLIENT_TOKEN"] = token
             env["LFR_TUNNEL_TOKEN"] = token
+            if "LFT_SERVER_URL" not in env and share_domain:
+                env["LFT_SERVER_URL"] = f"https://tunnel.{share_domain}"
 
             if getattr(self.manager, "dry_run", False):
                 UI.info(
                     f"{UI.BYELLOW}[DRY RUN] Would execute:{UI.COLOR_OFF} {' '.join(cmd)}"
                 )
                 UI.success("Tunnel started in the background.")
-                public_url = self.resolve_public_tunnel_url(subdomain)
+                public_url = self.resolve_public_tunnel_url(subdomain, project_id)
                 UI.success(
                     f"🌍 Public Tunnel Active: {UI.CYAN}{public_url}{UI.COLOR_OFF}"
                 )
@@ -250,7 +339,9 @@ class ShareService:
                     success, err_msg = self._poll_tunnel_health(subdomain)
                     if success:
                         UI.success("Tunnel started in the background.")
-                        public_url = self.resolve_public_tunnel_url(subdomain)
+                        public_url = self.resolve_public_tunnel_url(
+                            subdomain, project_id
+                        )
                         UI.success(
                             f"🌍 Public Tunnel Active: {UI.CYAN}{public_url}{UI.COLOR_OFF}"
                         )
@@ -297,6 +388,8 @@ class ShareService:
             if image:
                 project_meta["share_image"] = image
             project_meta["share_inspector"] = "true" if inspector else "false"
+            if share_domain:
+                project_meta["share_domain"] = share_domain
             base_container = project_meta.get("container_name") or project_id
             project_meta["tunnel_container_name"] = f"{base_container}-lfr-tunnel"
 
@@ -320,7 +413,7 @@ class ShareService:
                     f"{UI.BYELLOW}[DRY RUN] Would execute:{UI.COLOR_OFF} {' '.join(compose_base)} up -d lfr-tunnel"
                 )
                 UI.success("Tunnel container started in the background.")
-                public_url = self.resolve_public_tunnel_url(subdomain)
+                public_url = self.resolve_public_tunnel_url(subdomain, project_id)
                 UI.success(
                     f"🌍 Public Tunnel Active: {UI.CYAN}{public_url}{UI.COLOR_OFF}"
                 )
@@ -344,7 +437,7 @@ class ShareService:
                 )
                 if success:
                     UI.success("Tunnel container started in the background.")
-                    public_url = self.resolve_public_tunnel_url(subdomain)
+                    public_url = self.resolve_public_tunnel_url(subdomain, project_id)
                     UI.success(
                         f"🌍 Public Tunnel Active: {UI.CYAN}{public_url}{UI.COLOR_OFF}"
                     )

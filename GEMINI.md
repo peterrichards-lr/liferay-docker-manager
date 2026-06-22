@@ -81,15 +81,22 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
 - Fixed CI build failure due to flaky apt-get update Noble repo forbidden errors.
 - Implemented logs extraction and parsing fallback for running but unresponsive tunnel containers (`v2.11.26`).
 - Implemented container pull policy always and resolved BusyBox wget command argument incompatibilities (`v2.11.27`).
-- Implemented inspector bind address wildcard fix (`v2.11.28`).
+- Implemented inspector bind address wildcard fix and released `v2.11.28`.
+- Implemented custom share domain (`--share-domain`/`--domain`) and cascading default prompt/fallback settings stored in global config.
+- Integrated full share configurations into `ldm import` to allow single-command importing and sharing.
 
 ### Plan
 
-1. **New Branch**: Create branch `feature/lfr-tunnel-inspector-bind-ip-fix` from `master`. (Completed)
-2. **Implement inspector bind fix**:
-   - Update `composer.py` to always default `LFT_INSPECTOR_BIND` to `0.0.0.0` in the generated container configuration, enabling post-facto container-to-container proxy connection. (Completed)
-   - Update `test_composer.py` to assert the updated `0.0.0.0` bind default. (Completed)
-3. **Bump Version**: Bump version to `2.11.28` in `pyproject.toml` and `constants.py`. (Pending)
-4. **Validation**: Run all pre-commit checks and tests locally. (Completed)
-5. **PR & Squash Merge**: Raise the PR and squash merge it to master. (Pending)
-6. **Tag & Release**: Tag `v2.11.28` on master and push. (Pending)
+1. **Commit Local Changes to Feature Branch**:
+   - Create local branch `feature/lfr-tunnel-custom-domain`.
+   - Stage and commit current working changes (custom domain & import sharing options).
+2. **Fast-forward Master**:
+   - Switch back to `master`.
+   - Pull `origin/master` (fast-forward ruff update).
+3. **Merge & Validate**:
+   - Merge `feature/lfr-tunnel-custom-domain` into `master`.
+   - Run verification tests.
+4. **Version Bump & Release (v2.11.29)**:
+   - Update version numbers in `ldm_core/constants.py` and `pyproject.toml`.
+   - Document `v2.11.29` release in `GEMINI.md`.
+   - Commit version bump and create git tag `v2.11.29`.
