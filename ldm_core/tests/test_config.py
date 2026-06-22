@@ -15,6 +15,7 @@ class MockConfigManager:
                 self.import_env = False
                 self.project = None
                 self.global_level = False
+                self.reset = False
 
         self.args = Args()
         self.verbose = False
@@ -462,6 +463,42 @@ class TestConfigService(unittest.TestCase):
         self.assertTrue(mock_write.called)
         written_content = mock_write.call_args[0][0]
         self.assertIn("new-token", written_content)
+
+    @patch("ldm_core.ui.UI.success")
+    @patch("ldm_core.ui.UI.detail")
+    @patch("ldm_core.handlers.config.ConfigService.get_global_config")
+    @patch("ldm_core.handlers.config.ConfigService.set_global_config")
+    def test_track_roi(self, mock_set, mock_get, mock_detail, mock_success):
+        mock_get.return_value = {"roi_seconds_saved": 100}
+
+        run_sec, cumulative = self.config.track_roi(200, "test-action")
+        self.assertEqual(run_sec, 200)
+        self.assertEqual(cumulative, 300)
+        mock_set.assert_called_with("roi_seconds_saved", 300)
+        mock_success.assert_called_once()
+        mock_detail.assert_called_once()
+
+    @patch("ldm_core.ui.UI.heading")
+    @patch("ldm_core.ui.UI.raw")
+    @patch("ldm_core.handlers.config.ConfigService.get_global_config")
+    def test_cmd_roi(self, mock_get, mock_raw, mock_heading):
+        mock_get.return_value = {"roi_seconds_saved": 3600}
+        self.manager.args.reset = False
+
+        self.config.cmd_roi()
+        mock_heading.assert_called_once_with("LDM Developer Productivity ROI")
+        mock_raw.assert_any_call(
+            "  ● \x1b[0;37mCumulative Time Saved: \x1b[0;32m\x1b[1m1h 0m 0s\x1b[0m"
+        )
+
+    @patch("ldm_core.ui.UI.success")
+    @patch("ldm_core.handlers.config.ConfigService.set_global_config")
+    def test_cmd_roi_reset(self, mock_set, mock_success):
+        self.manager.args.reset = True
+
+        self.config.cmd_roi()
+        mock_set.assert_called_with("roi_seconds_saved", 0)
+        mock_success.assert_called_with("ROI metrics reset successfully.")
 
 
 if __name__ == "__main__":

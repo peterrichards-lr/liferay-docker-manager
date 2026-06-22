@@ -195,6 +195,9 @@ class LiferayManager(
     def cmd_completion(self, *args, **kwargs):
         return self.diagnostics.cmd_completion(*args, **kwargs)
 
+    def cmd_setup_completion(self, *args, **kwargs):
+        return self.diagnostics.cmd_setup_completion(*args, **kwargs)
+
     def cmd_man(self, *args, **kwargs):
         return self.diagnostics.cmd_man(*args, **kwargs)
 

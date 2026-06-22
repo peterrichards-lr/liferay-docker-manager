@@ -467,6 +467,10 @@ class RuntimeService(BaseHandler):
                 project_meta["seeded"] = "true"
                 project_meta["seed_version"] = str(SEED_VERSION)
                 self.manager.write_meta(paths["root"], project_meta)
+                if hasattr(self.manager, "config") and hasattr(
+                    self.manager.config, "track_roi"
+                ):
+                    self.manager.config.track_roi(840, "first-boot seeding")
                 is_new_project = False
 
             default_shared = (

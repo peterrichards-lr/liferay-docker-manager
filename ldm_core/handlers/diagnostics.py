@@ -2216,7 +2216,7 @@ class DiagnosticsService:
         except requests.exceptions.HTTPError as e:
             if temp_new.exists():
                 temp_new.unlink()
-            if e.response.status_code == 404:
+            if e.response is not None and e.response.status_code == 404:
                 UI.die(
                     "A release build may be in progress. Please try again later. (HTTP 404: File not found)"
                 )
@@ -3709,3 +3709,156 @@ pause
         except Exception as e:
             UI.error(f"Failed to display manual: {e}")
             UI.info(f"You can view the raw manual file at: {man_path}")
+
+    def cmd_setup_completion(self, target_shell=None):
+        """Automates the setup of autocomplete for the detected or specified shell."""
+        # 1. Verify/install argcomplete
+        try:
+            import argcomplete  # noqa: F401
+        except ImportError:
+            UI.info("Module 'argcomplete' not found. Attempting to install via pip...")
+            try:
+                subprocess.run(
+                    [sys.executable, "-m", "pip", "install", "argcomplete"],
+                    check=True,
+                    capture_output=True,
+                )
+                UI.success("Successfully installed 'argcomplete'!")
+            except Exception as e:
+                UI.warning(f"Could not auto-install 'argcomplete': {e}")
+                UI.info("Please install it manually with: pip install argcomplete")
+
+        # 2. Shell detection
+        shell = target_shell
+        if not shell:
+            active_shell = os.environ.get("SHELL", "").split("/")[-1].lower()
+            if active_shell.endswith(".exe"):
+                active_shell = active_shell[:-4]
+            if active_shell == "pwsh":
+                active_shell = "powershell"
+
+            if not active_shell:
+                if "PSModulePath" in os.environ or sys.platform == "win32":
+                    active_shell = "powershell"
+                else:
+                    active_shell = (
+                        "zsh" if platform.system().lower() == "darwin" else "bash"
+                    )
+
+            shell = active_shell
+
+        shell = shell.lower()
+        if shell not in ["bash", "zsh", "fish", "powershell"]:
+            if sys.platform == "win32":
+                shell = "powershell"
+            elif platform.system().lower() == "darwin":
+                shell = "zsh"
+            else:
+                shell = "bash"
+
+        # 3. Determine profile path
+        profile_path = None
+        home = get_actual_home()
+
+        if shell == "zsh":
+            profile_path = home / ".zshrc"
+        elif shell == "bash":
+            bashrc = home / ".bashrc"
+            bash_profile = home / ".bash_profile"
+            if not bashrc.exists() and bash_profile.exists():
+                profile_path = bash_profile
+            else:
+                profile_path = bashrc
+        elif shell == "fish":
+            profile_path = home / ".config" / "fish" / "config.fish"
+        elif shell == "powershell":
+            for ps_exe in ["pwsh", "powershell"]:
+                try:
+                    res = subprocess.run(
+                        [ps_exe, "-NoProfile", "-Command", "$PROFILE"],
+                        capture_output=True,
+                        text=True,
+                        check=True,
+                    )
+                    out = res.stdout.strip()
+                    if out:
+                        profile_path = Path(out)
+                        break
+                except Exception:
+                    continue
+
+            if not profile_path:
+                if sys.platform == "win32":
+                    profile_path = (
+                        home
+                        / "Documents"
+                        / "PowerShell"
+                        / "Microsoft.PowerShell_profile.ps1"
+                    )
+                else:
+                    profile_path = (
+                        home
+                        / ".config"
+                        / "powershell"
+                        / "Microsoft.PowerShell_profile.ps1"
+                    )
+
+        if not profile_path:
+            UI.die(f"Could not determine the profile path for shell: {shell}")
+            return
+
+        # 4. Generate Autocomplete Content Block
+        start_marker = "# >>> LDM CLI AUTOCOMPLETE >>>"
+        end_marker = "# <<< LDM CLI AUTOCOMPLETE <<<"
+
+        if shell == "zsh":
+            inner_code = (
+                "    # LDM Zsh Completion Initialization\n"
+                "    (( $+functions[compdef] )) || { autoload -U compinit && compinit }\n"
+                '    eval "$(ldm completion zsh)"'
+            )
+        elif shell == "bash":
+            inner_code = '    eval "$(ldm completion bash)"'
+        elif shell == "fish":
+            inner_code = "    ldm completion fish | source"
+        elif shell == "powershell":
+            inner_code = (
+                "    ldm completion powershell | Out-String | Invoke-Expression"
+            )
+
+        block_content = f"{start_marker}\n{inner_code}\n{end_marker}"
+
+        # 5. Modify profile with safety checks & backups
+        try:
+            profile_path.parent.mkdir(parents=True, exist_ok=True)
+
+            if profile_path.exists():
+                bak_path = profile_path.with_suffix(profile_path.suffix + ".bak")
+                import shutil
+
+                shutil.copy2(profile_path, bak_path)
+                UI.info(f"Created profile backup at: {bak_path}")
+                content = profile_path.read_text(encoding="utf-8")
+            else:
+                content = ""
+
+            if start_marker in content and end_marker in content:
+                start_idx = content.find(start_marker)
+                end_idx = content.find(end_marker) + len(end_marker)
+                new_content = content[:start_idx] + block_content + content[end_idx:]
+                UI.info(f"Updating existing LDM completion block in {profile_path}...")
+            else:
+                if content and not content.endswith("\n"):
+                    new_content = content + "\n\n" + block_content + "\n"
+                else:
+                    new_content = content + "\n" + block_content + "\n"
+                UI.info(f"Appending LDM completion block to {profile_path}...")
+
+            profile_path.write_text(new_content, encoding="utf-8")
+            UI.success(f"Autocomplete setup complete for {shell}!")
+            UI.info(
+                f"Please source your profile or restart your terminal: source {profile_path}"
+            )
+
+        except Exception as e:
+            UI.die(f"Failed to setup completion in {profile_path}: {e}")

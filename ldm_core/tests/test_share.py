@@ -346,11 +346,13 @@ class TestShareService(unittest.TestCase):
 
         mock_res_ps = MagicMock()
         mock_res_ps.stdout = "Up 2 minutes\n"
+        mock_res_json = MagicMock()
+        mock_res_json.stdout = "not JSON"  # Fail json check so it falls back to logs
         mock_res_logs = MagicMock()
         mock_res_logs.stdout = "some logs"
 
-        # We need mock_run side effects for two runs: docker compose ps, then docker compose logs
-        mock_run.side_effect = [mock_res_ps, mock_res_logs]
+        # We need mock_run side effects for three runs: docker compose ps, status-json, then docker compose logs
+        mock_run.side_effect = [mock_res_ps, mock_res_json, mock_res_logs]
 
         self.service.cmd_status(project_id="myproj")
 
@@ -361,8 +363,23 @@ class TestShareService(unittest.TestCase):
             ["docker-compose", "ps", "lfr-tunnel", "--format", "{{.Status}}"],
         )
 
+        # Verify status-json args
+        json_args = mock_run.call_args_list[1][0][0]
+        self.assertEqual(
+            json_args,
+            [
+                "docker",
+                "exec",
+                "myproj-lfr-tunnel",
+                "./lfr-tunnel",
+                "-status-json",
+                "-subdomain",
+                "myproj",
+            ],
+        )
+
         # Verify docker compose logs args
-        logs_args = mock_run.call_args_list[1][0][0]
+        logs_args = mock_run.call_args_list[2][0][0]
         self.assertEqual(
             logs_args, ["docker-compose", "logs", "--tail", "10", "lfr-tunnel"]
         )
@@ -395,12 +412,20 @@ class TestShareService(unittest.TestCase):
         )
         mock_success.assert_called_with("Tunnel container stopped and removed.")
 
+    @patch("subprocess.run")
     @patch("requests.get")
-    def test_poll_tunnel_health_native_success(self, mock_get):
+    def test_poll_tunnel_health_native_success(self, mock_get, mock_run):
         # Un-mock _poll_tunnel_health for the check test
         self.service._poll_tunnel_health = ShareService._poll_tunnel_health.__get__(  # type: ignore[method-assign]
             self.service, ShareService
         )
+        self.service._ensure_binary = MagicMock(  # type: ignore[method-assign]
+            return_value=Path("/fake/bin/lfr-tunnel")
+        )
+
+        mock_run_res = MagicMock()
+        mock_run_res.stdout = ""  # Return empty so it falls back to requests
+        mock_run.return_value = mock_run_res
 
         mock_res = MagicMock()
         mock_res.status_code = 200
@@ -411,11 +436,19 @@ class TestShareService(unittest.TestCase):
         self.assertTrue(success)
         self.assertIsNone(err)
 
+    @patch("subprocess.run")
     @patch("requests.get")
-    def test_poll_tunnel_health_native_legacy_fallback(self, mock_get):
+    def test_poll_tunnel_health_native_legacy_fallback(self, mock_get, mock_run):
         self.service._poll_tunnel_health = ShareService._poll_tunnel_health.__get__(  # type: ignore[method-assign]
             self.service, ShareService
         )
+        self.service._ensure_binary = MagicMock(  # type: ignore[method-assign]
+            return_value=Path("/fake/bin/lfr-tunnel")
+        )
+
+        mock_run_res = MagicMock()
+        mock_run_res.stdout = ""  # Return empty so it falls back to requests
+        mock_run.return_value = mock_run_res
 
         mock_res = MagicMock()
         mock_res.status_code = 404
@@ -717,6 +750,166 @@ class TestShareService(unittest.TestCase):
                 "-qO-",
                 "http://127.0.0.1:4040/api/healthz",
             ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+    @patch("subprocess.run")
+    def test_poll_tunnel_health_native_status_json_success(self, mock_run):
+        self.service._poll_tunnel_health = ShareService._poll_tunnel_health.__get__(  # type: ignore[method-assign]
+            self.service, ShareService
+        )
+        self.service._ensure_binary = MagicMock(  # type: ignore[method-assign]
+            return_value=Path("/fake/bin/lfr-tunnel")
+        )
+
+        mock_res = MagicMock()
+        mock_res.returncode = 0
+        mock_res.stdout = (
+            '{"running": true, "status": "healthy", "connection_state": "connected"}'
+        )
+        mock_run.return_value = mock_res
+
+        success, err = self.service._poll_tunnel_health("custom-sub", timeout=1)
+        self.assertTrue(success)
+        self.assertIsNone(err)
+        mock_run.assert_called_with(
+            [
+                "/fake/bin/lfr-tunnel",
+                "-status-json",
+                "-subdomain",
+                "custom-sub",
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+    @patch("subprocess.run")
+    def test_poll_tunnel_health_docker_status_json_success(self, mock_run):
+        self.service._poll_tunnel_health = ShareService._poll_tunnel_health.__get__(  # type: ignore[method-assign]
+            self.service, ShareService
+        )
+
+        mock_res = MagicMock()
+        mock_res.returncode = 0
+        mock_res.stdout = (
+            '{"running": true, "status": "healthy", "connection_state": "connected"}'
+        )
+        mock_run.return_value = mock_res
+
+        success, err = self.service._poll_tunnel_health(
+            "custom-sub", container_name="myproj-lfr-tunnel", timeout=1
+        )
+        self.assertTrue(success)
+        self.assertIsNone(err)
+        mock_run.assert_called_with(
+            [
+                "docker",
+                "exec",
+                "myproj-lfr-tunnel",
+                "./lfr-tunnel",
+                "-status-json",
+                "-subdomain",
+                "custom-sub",
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+    @patch("subprocess.run")
+    @patch("ldm_core.ui.UI.heading")
+    @patch("ldm_core.ui.UI.raw")
+    def test_cmd_status_native_status_json_success(
+        self, mock_raw, mock_heading, mock_run
+    ):
+        self.service._ensure_binary = MagicMock(  # type: ignore[method-assign]
+            return_value=Path("/fake/bin/lfr-tunnel")
+        )
+        self.mock_manager.detect_project_path = MagicMock(  # type: ignore[method-assign]
+            return_value=Path("/fake/myproj")
+        )
+        self.mock_manager.read_meta = MagicMock(  # type: ignore[method-assign]
+            return_value={
+                "share_provider": "lfr-tunnel",
+                "share_subdomain": "custom-sub",
+            }
+        )
+
+        mock_res = MagicMock()
+        mock_res.returncode = 0
+        mock_res.stdout = '{"running": true, "status": "healthy", "connection_state": "connected", "public_urls": ["https://custom-sub.lfr-demo.online"], "inspector_port": 4041}'
+        mock_run.return_value = mock_res
+
+        self.service.cmd_status(project_id="myproj")
+
+        mock_run.assert_called_with(
+            ["/fake/bin/lfr-tunnel", "-status-json", "-subdomain", "custom-sub"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        mock_heading.assert_called_once_with("Liferay Tunnel Status")
+        mock_raw.assert_any_call("  ● \x1b[0;37mSubdomain: \x1b[0;36mcustom-sub\x1b[0m")
+        mock_raw.assert_any_call("  ● \x1b[0;37mStatus: \x1b[0;32mhealthy\x1b[0m")
+
+    @patch("ldm_core.utils.get_compose_cmd", return_value=["docker-compose"])
+    @patch("subprocess.run")
+    @patch("ldm_core.ui.UI.heading")
+    @patch("ldm_core.ui.UI.raw")
+    def test_cmd_status_docker_status_json_success(
+        self, mock_raw, mock_heading, mock_run, mock_get_compose
+    ):
+        self.mock_manager.detect_project_path = MagicMock(  # type: ignore[method-assign]
+            return_value=Path("/fake/myproj")
+        )
+        self.mock_manager.read_meta = MagicMock(  # type: ignore[method-assign]
+            return_value={
+                "share_provider": "lfr-tunnel-docker",
+                "share_subdomain": "custom-sub",
+                "tunnel_container_name": "myproj-lfr-tunnel",
+            }
+        )
+
+        mock_res_ps = MagicMock()
+        mock_res_ps.stdout = "Up 2 minutes\n"
+        mock_res_json = MagicMock()
+        mock_res_json.stdout = '{"running": true, "status": "healthy", "connection_state": "connected", "public_urls": ["https://custom-sub.lfr-demo.online"]}'
+        mock_run.side_effect = [mock_res_ps, mock_res_json]
+
+        self.service.cmd_status(project_id="myproj")
+
+        mock_heading.assert_called_once_with("Liferay Tunnel Container Status")
+        mock_raw.assert_any_call(
+            "  ● \x1b[0;37mContainer Name: \x1b[0;36mmyproj-lfr-tunnel\x1b[0m"
+        )
+        mock_raw.assert_any_call("  ● \x1b[0;37mStatus: \x1b[0;32mhealthy\x1b[0m")
+
+    @patch("subprocess.run")
+    def test_cmd_stop_with_subdomain(self, mock_run):
+        self.service._ensure_binary = MagicMock(  # type: ignore[method-assign]
+            return_value=Path("/fake/bin/lfr-tunnel")
+        )
+        self.mock_manager.detect_project_path = MagicMock(  # type: ignore[method-assign]
+            return_value=Path("/fake/myproj")
+        )
+        self.mock_manager.read_meta = MagicMock(  # type: ignore[method-assign]
+            return_value={
+                "share_provider": "lfr-tunnel",
+                "share_subdomain": "custom-sub",
+            }
+        )
+
+        mock_res = MagicMock()
+        mock_res.returncode = 0
+        mock_run.return_value = mock_res
+
+        self.service.cmd_stop(project_id="myproj")
+
+        mock_run.assert_called_once_with(
+            ["/fake/bin/lfr-tunnel", "-stop", "-subdomain", "custom-sub"],
             capture_output=True,
             text=True,
             check=False,

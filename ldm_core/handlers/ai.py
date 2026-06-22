@@ -83,7 +83,7 @@ class AiService(BaseHandler):
         # We spawn a subprocess connecting to our own `ldm mcp` command over stdio
         server_params = {"command": sys.executable, "args": [sys.argv[0], "mcp"]}
 
-        async with stdio_client(server_params) as (read, write):
+        async with stdio_client(server_params) as (read, write):  # type: ignore[arg-type]
             async with ClientSession(read, write) as session:
                 await session.initialize()
                 result = await session.call_tool(tool_name, arguments=tool_args)
@@ -185,6 +185,9 @@ class AiService(BaseHandler):
         try:
             asyncio.run(self._chat_loop(query))
         except requests.exceptions.HTTPError as e:
-            UI.error(f"API Error: {e.response.status_code} - {e.response.text}")
+            if e.response is not None:
+                UI.error(f"API Error: {e.response.status_code} - {e.response.text}")
+            else:
+                UI.error(f"API Error: {e}")
         except Exception as e:
             UI.error(f"Failed to execute AI flow: {e}")

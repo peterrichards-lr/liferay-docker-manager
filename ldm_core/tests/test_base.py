@@ -34,10 +34,10 @@ class MockBaseManager(BaseHandler):
     def check_ram(self, *args, **kwargs):
         pass
 
-    def check_hostname(self, host):
-        if host == "localhost":
+    def check_hostname(self, host_name, silent=False):
+        if host_name == "localhost":
             return True
-        return super().check_hostname(host)
+        return super().check_hostname(host_name, silent)
 
     def get_resolved_ip(self, host):
         return super().get_resolved_ip(host)

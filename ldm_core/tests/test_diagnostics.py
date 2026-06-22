@@ -34,7 +34,7 @@ class MockDiagManager(BaseHandler):
         self.license = MagicMock()
         self.license.check_license_health = MagicMock(return_value=("OK", True, []))
 
-    def detect_project_path(self, project_id=None, for_init=False):
+    def detect_project_path(self, project_id=None, for_init=False, fatal=True):
         return Path(f"/tmp/{project_id}") if project_id else Path("/tmp/default")
 
     def read_meta(self, *args, **kwargs):
@@ -42,6 +42,9 @@ class MockDiagManager(BaseHandler):
 
     def cmd_completion(self, *args, **kwargs):
         return self.diagnostics.cmd_completion(*args, **kwargs)
+
+    def cmd_setup_completion(self, *args, **kwargs):
+        return self.diagnostics.cmd_setup_completion(*args, **kwargs)
 
     def find_dxp_roots(self, *args, **kwargs):
         return [{"path": Path("/tmp/p1")}, {"path": Path("/tmp/p2")}]
@@ -506,6 +509,112 @@ class TestDiagnosticsCompletion(unittest.TestCase):
         with patch("builtins.print") as mock_print:
             self.manager.cmd_completion("zsh")
             self.assertTrue(mock_print.called)
+
+
+class TestDiagnosticsSetupCompletion(unittest.TestCase):
+    def setUp(self):
+        self.manager = MockDiagManager()
+        import tempfile
+
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.test_home = Path(self.temp_dir.name)
+
+    def tearDown(self):
+        self.temp_dir.cleanup()
+
+    @patch("ldm_core.handlers.diagnostics.get_actual_home")
+    @patch.dict("os.environ", {"SHELL": "/bin/zsh"})
+    def test_cmd_setup_completion_zsh(self, mock_home):
+        mock_home.return_value = self.test_home
+
+        # 1. Run first time (profile does not exist)
+        self.manager.cmd_setup_completion("zsh")
+        zshrc = self.test_home / ".zshrc"
+        self.assertTrue(zshrc.exists())
+        content = zshrc.read_text(encoding="utf-8")
+        self.assertIn("# >>> LDM CLI AUTOCOMPLETE >>>", content)
+        self.assertIn('eval "$(ldm completion zsh)"', content)
+        self.assertIn("# <<< LDM CLI AUTOCOMPLETE <<<", content)
+
+        # 2. Run second time (profile exists, should backup and update)
+        zshrc.write_text(content + "\n# dummy comment\n", encoding="utf-8")
+        self.manager.cmd_setup_completion("zsh")
+
+        bak_file = self.test_home / ".zshrc.bak"
+        self.assertTrue(bak_file.exists())
+        self.assertIn("# dummy comment", bak_file.read_text(encoding="utf-8"))
+
+        new_content = zshrc.read_text(encoding="utf-8")
+        self.assertIn("# >>> LDM CLI AUTOCOMPLETE >>>", new_content)
+
+    @patch("ldm_core.handlers.diagnostics.get_actual_home")
+    def test_cmd_setup_completion_bash(self, mock_home):
+        mock_home.return_value = self.test_home
+
+        # If .bash_profile exists but .bashrc does not, it should write to .bash_profile
+        bash_profile = self.test_home / ".bash_profile"
+        bash_profile.write_text("# existing profile", encoding="utf-8")
+
+        self.manager.cmd_setup_completion("bash")
+        self.assertTrue(bash_profile.exists())
+        content = bash_profile.read_text(encoding="utf-8")
+        self.assertIn('eval "$(ldm completion bash)"', content)
+        self.assertFalse((self.test_home / ".bashrc").exists())
+
+    @patch("ldm_core.handlers.diagnostics.get_actual_home")
+    def test_cmd_setup_completion_fish(self, mock_home):
+        mock_home.return_value = self.test_home
+        self.manager.cmd_setup_completion("fish")
+        fish_config = self.test_home / ".config" / "fish" / "config.fish"
+        self.assertTrue(fish_config.exists())
+        content = fish_config.read_text(encoding="utf-8")
+        self.assertIn("ldm completion fish | source", content)
+
+    @patch("ldm_core.handlers.diagnostics.get_actual_home")
+    @patch("subprocess.run")
+    def test_cmd_setup_completion_powershell(self, mock_run, mock_home):
+        mock_home.return_value = self.test_home
+        mock_run.side_effect = Exception("failed")
+
+        self.manager.cmd_setup_completion("powershell")
+        import sys
+
+        if sys.platform == "win32":
+            ps_profile = (
+                self.test_home
+                / "Documents"
+                / "PowerShell"
+                / "Microsoft.PowerShell_profile.ps1"
+            )
+        else:
+            ps_profile = (
+                self.test_home
+                / ".config"
+                / "powershell"
+                / "Microsoft.PowerShell_profile.ps1"
+            )
+
+        self.assertTrue(ps_profile.exists())
+        content = ps_profile.read_text(encoding="utf-8")
+        self.assertIn(
+            "ldm completion powershell | Out-String | Invoke-Expression", content
+        )
+
+    @patch("ldm_core.handlers.diagnostics.get_actual_home")
+    @patch("subprocess.run")
+    def test_cmd_setup_completion_argcomplete_fallback(self, mock_run, mock_home):
+        mock_home.return_value = self.test_home
+
+        with patch.dict("sys.modules", {"argcomplete": None}):
+            self.manager.cmd_setup_completion("zsh")
+
+        called_args = [call[0][0] for call in mock_run.call_args_list]
+        install_calls = [
+            arg
+            for arg in called_args
+            if "pip" in arg and "install" in arg and "argcomplete" in arg
+        ]
+        self.assertTrue(len(install_calls) > 0)
 
 
 if __name__ == "__main__":
