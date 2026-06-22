@@ -177,13 +177,24 @@ class ComposerService:
                 import os
                 import re
 
-                server_url = os.environ.get("LFT_SERVER_URL")
+                share_domain = getattr(
+                    self.manager.args, "share_domain", None
+                ) or meta.get("share_domain")
+                if not share_domain:
+                    _, share_domain = self.manager.share.resolve_share_config(meta)
 
-                # Update/write local .env file in project directory
+                server_url = os.environ.get("LFT_SERVER_URL")
+                if not server_url and share_domain:
+                    server_url = f"https://tunnel.{share_domain}"
+
                 # Update/write local .env file in project directory
                 if hasattr(self.manager, "detect_project_path"):
                     project_path = self.manager.detect_project_path(project_name)
                     if project_path and isinstance(project_path, (str, Path)):
+                        if share_domain:
+                            meta["share_domain"] = share_domain
+                            self.manager.write_meta(project_path, meta)
+
                         env_file = Path(project_path) / ".env"
                         env_content = ""
                         if env_file.exists():

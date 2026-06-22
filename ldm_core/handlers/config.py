@@ -41,14 +41,18 @@ class ConfigService:
         config = self.get_global_config()
         return config.get("ngrok_authtoken")
 
-    def set_ngrok_auth_token(self, token):
-        """Saves the NGROK_AUTHTOKEN to global config."""
+    def set_global_config(self, key, value):
+        """Saves a key-value pair to the global config (~/.ldmrc)."""
         from ldm_core.utils import get_actual_home
 
         config = self.get_global_config()
-        config["ngrok_authtoken"] = token
+        config[key] = value
         config_path = get_actual_home() / ".ldmrc"
         config_path.write_text(json.dumps(config, indent=4))
+
+    def set_ngrok_auth_token(self, token):
+        """Saves the NGROK_AUTHTOKEN to global config."""
+        self.set_global_config("ngrok_authtoken", token)
 
     def _get_properties(self, content):
         """Robustly extracts properties from a string, handling multi-line values."""

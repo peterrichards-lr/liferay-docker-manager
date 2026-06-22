@@ -72,7 +72,7 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
 
 ### Status
 
-- Released `v2.11.24` successfully.
+- Released `v2.11.29` successfully (integrated custom share domains and single-command `import` sharing options).
 - Added EDR/SentinelOne warnings to sharing and troubleshooting docs.
 - Split installation commands in README.md and INSTALLATION.md into OS-specific copy-paste blocks.
 - Added Default Stack & Conventions quick reference to README.md.
@@ -81,15 +81,11 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
 - Fixed CI build failure due to flaky apt-get update Noble repo forbidden errors.
 - Implemented logs extraction and parsing fallback for running but unresponsive tunnel containers (`v2.11.26`).
 - Implemented container pull policy always and resolved BusyBox wget command argument incompatibilities (`v2.11.27`).
-- Implemented inspector bind address wildcard fix (`v2.11.28`).
+- Implemented inspector bind address wildcard fix and released `v2.11.28`.
 
 ### Plan
 
-1. **New Branch**: Create branch `feature/lfr-tunnel-inspector-bind-ip-fix` from `master`. (Completed)
-2. **Implement inspector bind fix**:
-   - Update `composer.py` to always default `LFT_INSPECTOR_BIND` to `0.0.0.0` in the generated container configuration, enabling post-facto container-to-container proxy connection. (Completed)
-   - Update `test_composer.py` to assert the updated `0.0.0.0` bind default. (Completed)
-3. **Bump Version**: Bump version to `2.11.28` in `pyproject.toml` and `constants.py`. (Pending)
-4. **Validation**: Run all pre-commit checks and tests locally. (Completed)
-5. **PR & Squash Merge**: Raise the PR and squash merge it to master. (Pending)
-6. **Tag & Release**: Tag `v2.11.28` on master and push. (Pending)
+1. **Verify Release & Binary Installation**:
+   - Verify version synchronization.
+   - Run unit tests.
+   - Build and install the standalone binary using `package-shiv.sh --install`.
