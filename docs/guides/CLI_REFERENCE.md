@@ -235,11 +235,41 @@ ldm import ~/repos/my-workspace my-static-project --tag-latest --release-type qr
 ldm import ~/repos/my-workspace my-project --cloud-project lctintranet
 ```
 
+### `quickstart`
+
+Bootstrap and start a predefined accelerator demo stack in one command. Downloads target repositories, configures metadata, and automatically starts the environment.
+
+```bash
+# Bootstrap the AICA (AI Commerce Accelerator) template
+ldm quickstart aica
+
+# Bootstrap and expose the stack dynamically using lfr-tunnel
+ldm quickstart aica --share --share-subdomain my-custom-demo
+```
+
+Custom templates and repository mappings can be configured by defining overrides in `~/.ldm_templates.json`.
+
+### `package`
+
+Package a project snapshot (code elements, database, and volumes) into a portable LDM package (`.ldmp` archive) alongside a SHA-256 checksum signature (`.ldmp.sha256`).
+
+```bash
+# Package the current project
+ldm package
+
+# Package a specific project, outputting to a custom directory
+ldm package my-project -o /tmp/packages
+
+# Package using a specific repository manifest identifier and the latest snapshot
+ldm package my-project --repo my-owner/my-repo --use-latest
+```
+
 ### Data Management Commands
 
 LDM includes powerful commands for managing your project's database, OSGi state, and Elasticsearch indices. For full details on the following commands, please see the [Data Management Guide](DATA_MANAGEMENT.md).
 
 - **`snapshot` / `restore`**: Backup and recover exact project states.
+- **`package`**: Export a project snapshot into a portable `.ldmp` package.
 - **`hydrate`**: Create or restore a project from a local Liferay Cloud backup.
 - **`cloud-fetch`**: Sync an existing local project directly with a live Liferay Cloud (LCP) environment.
 - **`reset` / `re-seed`**: Surgically clear data folders or completely wipe a project back to its original vanilla state.
