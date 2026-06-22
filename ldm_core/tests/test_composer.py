@@ -1,3 +1,4 @@
+import json
 import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -9,18 +10,26 @@ class MockComposerManager:
     def __init__(self):
         self.args = MagicMock()
         self.args.ssl = None
+        self.args.lean = False
         self.verbose = False
         self.non_interactive = True
         self.workspace = MagicMock()
         self.config = MagicMock()
         self.share = MagicMock()
         self.get_resolved_ip = MagicMock(return_value="127.0.0.1")
+        self.run_command = MagicMock(return_value="")
 
 
 class TestComposerService(unittest.TestCase):
     def setUp(self):
         self.manager = MockComposerManager()
         self.composer = ComposerService(self.manager)
+        # Ensure GITHUB_ACTIONS is not "true" during testing so that adaptive tier tests pass
+        self.environ_patcher = patch.dict("os.environ", {"GITHUB_ACTIONS": "false"})
+        self.environ_patcher.start()
+
+    def tearDown(self):
+        self.environ_patcher.stop()
 
     def test_build_extensions_services_basic(self):
         paths = {"root": Path("/tmp"), "cx": Path("/tmp/cx"), "ce_dir": Path("/tmp/ce")}
@@ -565,6 +574,71 @@ class TestComposerService(unittest.TestCase):
                 "LFT_CLIENT_SERVER=${LFT_SERVER_URL:-https://tunnel.lfr-demo.se}",
                 tunnel_service["environment"],
             )
+
+    @patch("ldm_core.handlers.composer.ComposerService.get_physical_host_memory_bytes")
+    def test_get_default_jvm_args_low_memory_4gb(self, mock_host_mem):
+        # Simulated host memory 4 GB (in bytes)
+        mock_host_mem.return_value = 4 * 1024 * 1024 * 1024
+        self.manager.run_command.return_value = ""  # No docker info
+        args = self.composer.get_default_jvm_args()
+        self.assertIn("-Xmx2048m", args)
+        self.assertIn("-Xms1024m", args)
+        self.assertIn("-XX:MaxMetaspaceSize=384m", args)
+        self.assertNotIn("MaxMetadataSize", args)
+
+    @patch("ldm_core.handlers.composer.ComposerService.get_physical_host_memory_bytes")
+    def test_get_default_jvm_args_low_memory_8gb(self, mock_host_mem):
+        # Simulated host memory 8 GB
+        mock_host_mem.return_value = 8 * 1024 * 1024 * 1024
+        self.manager.run_command.return_value = ""  # No docker info
+        args = self.composer.get_default_jvm_args()
+        self.assertIn("-Xmx3072m", args)
+        self.assertIn("-Xms2048m", args)
+        self.assertIn("-XX:MaxMetaspaceSize=512m", args)
+        self.assertNotIn("MaxMetadataSize", args)
+
+    @patch("ldm_core.handlers.composer.ComposerService.get_physical_host_memory_bytes")
+    def test_get_default_jvm_args_high_memory_32gb(self, mock_host_mem):
+        # Simulated host memory 32 GB
+        mock_host_mem.return_value = 32 * 1024 * 1024 * 1024
+        self.manager.run_command.return_value = ""  # No docker info
+        args = self.composer.get_default_jvm_args()
+        self.assertIn("-Xmx16384m", args)
+        self.assertIn("-Xms4096m", args)
+        self.assertIn("-XX:MaxMetaspaceSize=1024m", args)
+        self.assertNotIn("MaxMetadataSize", args)
+
+    @patch("ldm_core.handlers.composer.ComposerService.get_physical_host_memory_bytes")
+    def test_get_default_jvm_args_min_logic(self, mock_host_mem):
+        # Simulated host memory is 32 GB, but Docker memory limit is 8 GB
+        mock_host_mem.return_value = 32 * 1024 * 1024 * 1024
+        self.manager.run_command.return_value = json.dumps(
+            {"MemTotal": 8 * 1024 * 1024 * 1024}
+        )
+        args = self.composer.get_default_jvm_args()
+        # Effective memory should be min(32, 8) = 8 GB, which lands in the 8GB tier.
+        self.assertIn("-Xmx3072m", args)
+        self.assertIn("-Xms2048m", args)
+        self.assertIn("-XX:MaxMetaspaceSize=512m", args)
+
+    def test_get_physical_host_memory_bytes_execution(self):
+        mem = self.composer.get_physical_host_memory_bytes()
+        self.assertGreater(mem, 0)
+        self.assertIsInstance(mem, int)
+
+    def test_get_default_jvm_args_lean_profile(self):
+        # 1. Test when manager.args.lean is True
+        self.manager.args.lean = True
+        args = self.composer.get_default_jvm_args()
+        self.assertIn("-Xmx2048m", args)
+        self.assertIn("-Xms1536m", args)
+
+        # 2. Test when GITHUB_ACTIONS env var is "true"
+        self.manager.args.lean = False
+        with patch.dict("os.environ", {"GITHUB_ACTIONS": "true"}):
+            args_ga = self.composer.get_default_jvm_args()
+            self.assertIn("-Xmx2048m", args_ga)
+            self.assertIn("-Xms1536m", args_ga)
 
 
 if __name__ == "__main__":

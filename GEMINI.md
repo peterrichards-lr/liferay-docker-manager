@@ -87,11 +87,11 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
 - Implemented core dry-run coverage for metadata writing, safe copy, safe move, archive extraction, and directory tree removal.
 - Completed integration of **lfr-tunnel with Multi-Tunnel Support** into LDM (P1), allowing non-conflicting concurrent background tunnels, subdomain-specific stopping, status queries, and dynamic inspector port routing.
 - Completed implementation of **Privileged Port Bind Check Fallback**, catching PermissionError / EACCES for non-root users when checking ports < 1024, falling back to connect_ex to allow starting projects on ports like 80/443 without false positive "in use" errors.
+- Investigating and fixing GitHub Action check failures (4 failing tests in `test_composer.py` due to `GITHUB_ACTIONS=true` environment variable forcing the lean JVM arguments profile, bypassing the simulated memory tiers).
 
 ### Plan
 
-1. **Dynamic JVM Self-Tuning (P2)**:
-   - Auto-detect host memory and write optimized JVM flags before container boot.
-   - Auto-detect host memory and write optimized JVM flags before container boot.
-2. **Visual Diagnostics Web Dashboard (P3)**:
-   - Upgrade local dashboard to visual web application with log/snapshot controls.
+1. **Project Self-Healing (ldm repair) (P2/P3)**:
+   - Implement `ldm repair` CLI entry point.
+   - Add self-healing logic to recover "half-baked" project states (missing compose config but valid meta).
+   - Re-sync permissions across existing project folders and volumes.

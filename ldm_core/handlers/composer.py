@@ -13,8 +13,50 @@ class ComposerService:
     def __init__(self, manager=None):
         self.manager = manager
 
+    def get_physical_host_memory_bytes(self) -> int:
+        """Auto-detects the host physical memory in bytes."""
+        import sys
+
+        # Unix-like platforms
+        try:
+            if hasattr(os, "sysconf"):
+                pagesize = os.sysconf("SC_PAGE_SIZE")
+                num_pages = os.sysconf("SC_PHYS_PAGES")
+                if pagesize > 0 and num_pages > 0:
+                    return pagesize * num_pages
+        except (ValueError, AttributeError, OSError):
+            pass
+
+        # Windows platform
+        if sys.platform == "win32":
+            try:
+                import ctypes
+
+                class MEMORYSTATUSEX(ctypes.Structure):
+                    _fields_ = [
+                        ("dwLength", ctypes.c_ulong),
+                        ("dwMemoryLoad", ctypes.c_ulong),
+                        ("ullTotalPhys", ctypes.c_ulonglong),
+                        ("ullAvailPhys", ctypes.c_ulonglong),
+                        ("ullTotalPageFile", ctypes.c_ulonglong),
+                        ("ullAvailPageFile", ctypes.c_ulonglong),
+                        ("ullTotalVirtual", ctypes.c_ulonglong),
+                        ("ullAvailVirtual", ctypes.c_ulonglong),
+                        ("ullAvailExtendedVirtual", ctypes.c_ulonglong),
+                    ]
+
+                stat = MEMORYSTATUSEX()
+                stat.dwLength = ctypes.sizeof(stat)
+                if ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(stat)):
+                    return stat.ullTotalPhys
+            except Exception:
+                pass
+
+        # Global fallback (16 GB)
+        return 16 * 1024 * 1024 * 1024
+
     def get_default_jvm_args(self):
-        """Calculates recommended JVM arguments based on available Docker RAM."""
+        """Calculates recommended JVM arguments based on available host and Docker RAM."""
         # LDM-385: Support 'Lean' profile for CI or low-memory environments
         is_lean = (
             getattr(self.manager.args, "lean", False)
@@ -29,27 +71,48 @@ class ComposerService:
             )
 
         try:
-            # We use self.manager.run_command from the base mixin
-            docker_info_raw = self.manager.run_command(
-                ["docker", "info", "--format", "{{json .}}"], check=False
-            )
-            if not docker_info_raw:
-                return "-Xms4g -Xmx12g -XX:MaxMetadataSize=768m -XX:MetaspaceSize=768m"
+            # Get Docker memory limit if available
+            docker_mem = 0
+            try:
+                # We use self.manager.run_command from the base mixin
+                docker_info_raw = self.manager.run_command(
+                    ["docker", "info", "--format", "{{json .}}"], check=False
+                )
+                if docker_info_raw:
+                    info = json.loads(docker_info_raw)
+                    docker_mem = info.get("MemTotal", 0)
+            except Exception:
+                pass
 
-            info = json.loads(docker_info_raw)
-            mem_bytes = info.get("MemTotal", 0)
-            if mem_bytes <= 0:
-                return "-Xms4g -Xmx12g -XX:MaxMetadataSize=768m -XX:MetaspaceSize=768m"
+            # Get host physical memory
+            host_mem = self.get_physical_host_memory_bytes()
+
+            # Effective memory is the minimum of both (or host_mem if docker_mem is zero/invalid)
+            if docker_mem > 0:
+                mem_bytes = min(host_mem, docker_mem)
+            else:
+                mem_bytes = host_mem
 
             mem_gb = mem_bytes / (1024**3)
-            # 80/20 DESIGN: Leave room for Sidecar and OS
-            max_heap_gb = max(4, math.floor(mem_gb * 0.50))
-            min_heap_gb = max(2, math.floor(mem_gb * 0.25))
-            max_heap_gb = min(max_heap_gb, 12 if mem_gb < 24 else 32)
-            min_heap_gb = min(min_heap_gb, 4)
 
-            metaspace = "768m" if mem_gb <= 16 else "1024m"
-            new_size_mb = max(1536, math.floor((max_heap_gb * 1024) * 0.33))
+            # Adaptive Tiers for Low-Memory environments
+            if mem_gb <= 4:
+                max_heap_gb = 2.0
+                min_heap_gb = 1.0
+                metaspace = "384m"
+            elif mem_gb <= 8:
+                max_heap_gb = 3.0
+                min_heap_gb = 2.0
+                metaspace = "512m"
+            else:
+                # 80/20 DESIGN: Leave room for Sidecar and OS
+                max_heap_gb = max(4.0, float(math.floor(mem_gb * 0.50)))
+                min_heap_gb = max(2.0, float(math.floor(mem_gb * 0.25)))
+                max_heap_gb = min(max_heap_gb, 12.0 if mem_gb < 24 else 32.0)
+                min_heap_gb = min(min_heap_gb, 4.0)
+                metaspace = "768m" if mem_gb <= 16 else "1024m"
+
+            new_size_mb = max(512, math.floor((max_heap_gb * 1024) * 0.33))
 
             jvm_base = ""
             os_name = platform.system().lower()
@@ -59,7 +122,7 @@ class ComposerService:
                 jvm_base += " -XX:TieredStopAtLevel=1"
 
             return (
-                f"-Xms{min_heap_gb * 1024}m -Xmx{max_heap_gb * 1024}m "
+                f"-Xms{int(min_heap_gb * 1024)}m -Xmx{int(max_heap_gb * 1024)}m "
                 f"-XX:MaxMetaspaceSize={metaspace} -XX:MetaspaceSize={metaspace} "
                 f"-XX:NewSize={new_size_mb}m -XX:MaxNewSize={new_size_mb}m"
                 f"{jvm_base}"
