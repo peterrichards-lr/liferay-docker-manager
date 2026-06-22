@@ -17,7 +17,7 @@ jobs:
     outputs:
       tags: ${{ steps.set-tags.outputs.tags }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - id: set-tags
         run: |
           TAGS=$(python3 scripts/get_release_tags.py)
@@ -35,7 +35,7 @@ jobs:
         db_type: [postgresql, mysql, hypersonic]
       fail-fast: false
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Set up Python
         uses: actions/setup-python@v6
@@ -141,7 +141,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: Download all artifacts
         uses: actions/download-artifact@v8
         with:
