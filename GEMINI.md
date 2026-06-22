@@ -90,8 +90,7 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
 
 ### Plan
 
-1. **Dynamic JVM Self-Tuning (P2)**:
-   - Auto-detect host memory and write optimized JVM flags before container boot.
-   - Auto-detect host memory and write optimized JVM flags before container boot.
-2. **Visual Diagnostics Web Dashboard (P3)**:
-   - Upgrade local dashboard to visual web application with log/snapshot controls.
+1. **Project Self-Healing (ldm repair) (P2/P3)**:
+   - Implement `ldm repair` CLI entry point.
+   - Add self-healing logic to recover "half-baked" project states (missing compose config but valid meta).
+   - Re-sync permissions across existing project folders and volumes.

@@ -284,6 +284,16 @@
     - [x] Implement `cmd_quickstart` in `workspace.py` handling repository import, database seeding, stack startup, and dynamic sharing.
     - [x] Add pytest unit tests for quickstart configurations and commands execution.
 
+  - [x] **Visual Diagnostics Web Dashboard (P3)**:
+    - [x] Implement start, stop, snapshot, snapshots list, and restore Flask API endpoints.
+    - [x] Upgrade dashboard UI with glassmorphic dark mode styling using Alpine.js and Tailwind CSS.
+    - [x] Add pytest unit tests covering new endpoints and execution paths.
+
+  - [x] **Dynamic JVM Self-Tuning (P2)**:
+    - [x] Implement host memory auto-detection and effective memory logic (`min(host, docker)`).
+    - [x] Add adaptive scale tiers for <= 4GB and <= 8GB RAM configurations.
+    - [x] Fix metadata typos in defaults/fallbacks and add unit test coverage in `test_composer.py`.
+
 ## 9. Founding Patterns of LDM
 
 - **Sensible Defaults**: Whenever a standard Liferay convention exists, ldm uses it automatically (e.g., port 8080, managed DB name lportal).

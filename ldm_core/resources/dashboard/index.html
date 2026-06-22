@@ -1,158 +1,591 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="h-full">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>LDM Health Dashboard</title>
+    <meta name="description" content="Premium LDM Diagnostics Visual Dashboard. Control your Liferay projects, live logs, and snapshot state.">
+    <title>LDM Visual Dashboard</title>
+    <!-- Premium Outfit & JetBrains Mono Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <!-- Tailwind CSS with custom font mapping -->
     <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Outfit', 'sans-serif'],
+                        mono: ['JetBrains Mono', 'monospace'],
+                    }
+                }
+            }
+        }
+    </script>
+    <!-- Alpine.js -->
     <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
 </head>
-<body class="bg-gray-50 text-gray-900 font-sans" x-data="dashboard()">
-    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <header class="mb-8 flex items-center justify-between">
+<body class="h-full text-slate-100 font-sans antialiased bg-[#070b13] bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-blue-950/20 via-[#070b13] to-[#04060b]" x-data="dashboard()">
+
+    <!-- Toast Notifications -->
+    <div class="fixed top-5 right-5 z-50 flex flex-col gap-3 max-w-md w-full">
+        <template x-for="toast in toasts" :key="toast.id">
+            <div class="flex items-center gap-3 p-4 rounded-xl shadow-2xl backdrop-blur-xl border transition-all duration-300"
+                 :class="{
+                     'bg-emerald-950/90 border-emerald-500/30 text-emerald-200': toast.type === 'success',
+                     'bg-rose-950/90 border-rose-500/30 text-rose-200': toast.type === 'error',
+                     'bg-blue-950/90 border-blue-500/30 text-blue-200': toast.type === 'info'
+                 }">
+                <div class="flex-1 text-sm font-medium" x-text="toast.message"></div>
+                <button @click="removeToast(toast.id)" class="text-slate-400 hover:text-white transition">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                    </svg>
+                </button>
+            </div>
+        </template>
+    </div>
+
+    <!-- Main Container -->
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 min-h-screen flex flex-col">
+        <!-- Header -->
+        <header class="mb-10 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-6 pb-6 border-b border-white/5">
             <div>
-                <h1 class="text-3xl font-bold text-gray-900 flex items-center gap-3">
-                    <svg class="w-8 h-8 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <h1 class="text-3xl font-extrabold tracking-tight bg-gradient-to-r from-indigo-200 via-slate-100 to-indigo-100 bg-clip-text text-transparent flex items-center gap-3">
+                    <svg class="w-8 h-8 text-indigo-500 drop-shadow-[0_0_10px_rgba(99,102,241,0.5)] animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 002-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path>
                     </svg>
-                    LDM Visual Health Dashboard
+                    LDM Visual Dashboard
                 </h1>
-                <p class="mt-2 text-sm text-gray-600">Real-time overview of all local Liferay Docker environments.</p>
+                <p class="mt-2 text-sm text-slate-400">Real-time control center for local Liferay Docker environments.</p>
             </div>
-            <div>
-                <button @click="fetchProjects()" class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700">
-                    Refresh Status
+            <div class="flex items-center gap-4">
+                <div class="text-xs text-slate-400 font-mono">
+                    Updated: <span x-text="lastUpdated">Never</span>
+                </div>
+                <button @click="fetchProjects(true)" 
+                        id="btn-refresh"
+                        class="inline-flex items-center gap-2 px-4 py-2 border border-white/10 rounded-xl bg-white/5 hover:bg-white/10 text-slate-200 hover:text-white transition duration-200 shadow-lg">
+                    <svg class="w-4 h-4" :class="{ 'animate-spin': loading }" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 1121.21 8H18.2"></path>
+                    </svg>
+                    Refresh
                 </button>
             </div>
         </header>
 
-        <div x-show="loading" class="text-center py-12">
-            <svg class="animate-spin h-8 w-8 text-blue-600 mx-auto" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+        <!-- Main Loading Indicator -->
+        <div x-show="loading && projects.length === 0" :class="{ 'hidden': !loading || projects.length > 0 }" class="flex-1 flex flex-col items-center justify-center py-24">
+            <svg class="animate-spin h-12 w-12 text-indigo-500 mb-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                 <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
                 <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
             </svg>
-            <p class="mt-2 text-gray-500">Scanning LDM workspaces...</p>
+            <p class="text-slate-400 animate-pulse text-sm">Discovering workspaces...</p>
         </div>
 
-        <div x-show="!loading && projects.length === 0" :class="(!loading && projects.length === 0) ? '' : 'hidden'" class="text-center py-12 bg-white rounded-lg shadow">
-            <svg class="mx-auto h-12 w-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" />
+        <!-- Empty State -->
+        <div x-show="!loading && projects.length === 0" :class="{ 'hidden': loading || projects.length > 0 }" class="flex-1 flex flex-col items-center justify-center py-20 bg-slate-900/25 border border-white/5 rounded-3xl backdrop-blur-sm text-center">
+            <svg class="h-16 w-16 text-slate-600 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" />
             </svg>
-            <h3 class="mt-2 text-sm font-medium text-gray-900">No projects found</h3>
-            <p class="mt-1 text-sm text-gray-500">Run <code class="text-xs bg-gray-100 p-1 rounded">ldm init my-project</code> to get started.</p>
+            <h3 class="text-lg font-medium text-slate-300">No active projects found</h3>
+            <p class="mt-2 text-sm text-slate-500 max-w-sm">Create a new workspace inside this directory or initialize one using the CLI tool.</p>
+            <div class="mt-6 font-mono text-xs text-indigo-400 bg-indigo-950/30 px-4 py-2 border border-indigo-500/20 rounded-xl">
+                ldm init my-project
+            </div>
         </div>
 
-        <div class="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
+        <!-- Grid of Projects -->
+        <div x-show="projects.length > 0" :class="{ 'hidden': projects.length === 0 }" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             <template x-for="project in projects" :key="project.name">
-                <div class="bg-white overflow-hidden shadow rounded-lg border border-gray-200">
-                    <div class="px-4 py-5 sm:p-6">
-                        <div class="flex items-center justify-between">
-                            <h3 class="text-lg leading-6 font-medium text-gray-900" x-text="project.name"></h3>
-                            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium"
-                                  :class="{
-                                      'bg-green-100 text-green-800': project.status === 'Running',
-                                      'bg-gray-100 text-gray-800': project.status === 'Stopped',
-                                      'bg-yellow-100 text-yellow-800': project.status !== 'Running' && project.status !== 'Stopped'
-                                  }" x-text="project.status">
-                            </span>
+                <div class="relative group bg-slate-900/60 hover:bg-slate-900/85 border border-white/10 hover:border-indigo-500/30 rounded-2xl p-6 backdrop-blur-xl shadow-xl hover:shadow-indigo-500/5 transition-all duration-300 hover:-translate-y-0.5">
+                    
+                    <!-- Glow effect under card on hover -->
+                    <div class="absolute inset-0 -z-10 bg-indigo-500/5 rounded-2xl opacity-0 group-hover:opacity-100 blur-xl transition-all duration-300"></div>
+                    
+                    <!-- Header of Project Card -->
+                    <div class="flex items-start justify-between mb-4">
+                        <div class="min-w-0">
+                            <h3 class="text-xl font-bold tracking-tight text-slate-100 truncate" x-text="project.name"></h3>
+                            <span class="inline-flex items-center gap-1.5 mt-1 px-2.5 py-0.5 rounded-full text-xs font-semibold uppercase tracking-wider bg-slate-800 text-slate-300" x-text="project.archetype"></span>
                         </div>
-                        <div class="mt-4 border-t border-gray-100 pt-4">
-                            <dl class="grid grid-cols-1 gap-x-4 gap-y-4 sm:grid-cols-2">
-                                <div class="sm:col-span-1">
-                                    <dt class="text-sm font-medium text-gray-500">Version</dt>
-                                    <dd class="mt-1 text-sm text-gray-900" x-text="project.version"></dd>
-                                </div>
-                                <div class="sm:col-span-1">
-                                    <dt class="text-sm font-medium text-gray-500">Database</dt>
-                                    <dd class="mt-1 text-sm text-gray-900 uppercase" x-text="project.db_type"></dd>
-                                </div>
-                                <div class="sm:col-span-2">
-                                    <dt class="text-sm font-medium text-gray-500">Access URL</dt>
-                                    <dd class="mt-1 text-sm text-blue-600 hover:text-blue-500">
-                                        <a :href="project.url" target="_blank" x-text="project.url"></a>
-                                    </dd>
-                                </div>
-                                <div class="sm:col-span-2 mt-2">
-                                    <button @click="showLogs(project.name)" class="inline-flex items-center px-3 py-1 border border-gray-300 shadow-sm text-xs font-medium rounded text-gray-700 bg-white hover:bg-gray-50">
-                                        <svg class="mr-1.5 h-4 w-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
-                                        View Logs
-                                    </button>
-                                </div>
-                            </dl>
+                        
+                        <!-- Glowing Status Badge -->
+                        <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold"
+                              :class="{
+                                  'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20': project.status === 'Running',
+                                  'bg-slate-500/10 text-slate-400 border border-slate-500/20': project.status === 'Stopped',
+                                  'bg-amber-500/10 text-amber-400 border border-amber-500/20': project.status !== 'Running' && project.status !== 'Stopped'
+                              }">
+                            <span class="h-2 w-2 rounded-full"
+                                  :class="{
+                                      'bg-emerald-400 animate-pulse': project.status === 'Running',
+                                      'bg-slate-400': project.status === 'Stopped',
+                                      'bg-amber-400 animate-ping': project.status !== 'Running' && project.status !== 'Stopped'
+                                  }"></span>
+                            <span x-text="project.status"></span>
+                        </span>
+                    </div>
+
+                    <!-- Details -->
+                    <div class="mt-4 space-y-3 text-sm text-slate-400 border-t border-white/5 pt-4">
+                        <div class="flex justify-between">
+                            <span>Liferay Version</span>
+                            <span class="font-mono text-slate-200" x-text="project.version"></span>
+                        </div>
+                        <div class="flex justify-between">
+                            <span>Database Connection</span>
+                            <span class="font-mono uppercase text-slate-200" x-text="project.db_type"></span>
+                        </div>
+                        <div class="flex flex-col gap-1">
+                            <span>Local Host Link</span>
+                            <div class="flex items-center gap-1">
+                                <a :href="project.url" target="_blank" class="text-indigo-400 hover:text-indigo-300 font-mono transition break-all flex items-center gap-1">
+                                    <span x-text="project.url"></span>
+                                    <svg class="w-3.5 h-3.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path>
+                                    </svg>
+                                </a>
+                            </div>
                         </div>
                     </div>
+
+                    <!-- Action Controls -->
+                    <div class="mt-6 grid grid-cols-2 gap-3 border-t border-white/5 pt-4">
+                        <!-- Start / Stop Toggle -->
+                        <button @click="toggleStack(project)" 
+                                :disabled="projectActionLoading[project.name]"
+                                class="w-full inline-flex items-center justify-center gap-2 px-3 py-2 border rounded-xl text-xs font-semibold shadow-sm transition duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                                :class="{
+                                    'border-rose-500/20 bg-rose-500/10 text-rose-300 hover:bg-rose-500/20': project.status === 'Running',
+                                    'border-emerald-500/20 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/20': project.status !== 'Running'
+                                }">
+                            <!-- Toggle icon -->
+                            <svg x-show="!projectActionLoading[project.name]" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
+                                      :d="project.status === 'Running' ? 'M21 12a9 9 0 11-18 0 9 9 0 0118 0z M9 10a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1v-4z' : 'M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z M21 12a9 9 0 11-18 0 9 9 0 0118 0z'"></path>
+                            </svg>
+                            <svg x-show="projectActionLoading[project.name]" class="animate-spin w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                            </svg>
+                            <span x-text="project.status === 'Running' ? 'Stop Environment' : 'Start Environment'"></span>
+                        </button>
+
+                        <!-- Open Logs Terminal -->
+                        <button @click="openLogs(project.name)" 
+                                class="w-full inline-flex items-center justify-center gap-2 px-3 py-2 border border-white/10 rounded-xl bg-white/5 hover:bg-white/10 text-xs font-semibold text-slate-200 transition duration-200">
+                            <svg class="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                            </svg>
+                            Logs Terminal
+                        </button>
+                    </div>
+
+                    <!-- Snapshot list button -->
+                    <button @click="openSnapshotDrawer(project.name)" 
+                            class="w-full mt-3 inline-flex items-center justify-center gap-2 px-3 py-2 border border-indigo-500/20 rounded-xl bg-indigo-500/5 hover:bg-indigo-500/10 text-xs font-semibold text-indigo-300 hover:text-indigo-200 transition duration-200">
+                        <svg class="w-4 h-4 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                        </svg>
+                        Snapshot Manager
+                    </button>
                 </div>
             </template>
         </div>
 
-        <!-- Log Modal -->
-        <div x-show="logModalOpen" :class="logModalOpen ? '' : 'hidden'" class="fixed z-10 inset-0 overflow-y-auto" aria-labelledby="modal-title" role="dialog" aria-modal="true">
-            <div class="flex items-end justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
-                <div x-show="logModalOpen" x-transition.opacity class="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" @click="logModalOpen = false" aria-hidden="true"></div>
-                <span class="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true">&#8203;</span>
-                <div x-show="logModalOpen" x-transition class="inline-block align-bottom bg-white rounded-lg px-4 pt-5 pb-4 text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-4xl sm:w-full sm:p-6">
-                    <div class="sm:flex sm:items-start">
-                        <div class="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left w-full">
-                            <h3 class="text-lg leading-6 font-medium text-gray-900" id="modal-title">
-                                Logs: <span x-text="activeProjectLogs"></span>
-                            </h3>
-                            <div class="mt-4">
-                                <div x-show="logsLoading" class="text-center py-4">Loading logs...</div>
-                                <pre x-show="!logsLoading" class="bg-gray-900 text-green-400 p-4 rounded text-xs overflow-x-auto max-h-96" x-text="logsContent"></pre>
-                            </div>
+        <!-- Log modal: Live terminal styled log tailer -->
+        <div x-show="logModalOpen" :class="{ 'hidden': !logModalOpen }" class="fixed inset-0 z-40 overflow-y-auto flex items-center justify-center p-4">
+            <!-- Backdrop with dynamic class bindings instead of inline styles -->
+            <div class="fixed inset-0 bg-[#020408]/80 backdrop-blur-sm transition-opacity" @click="closeLogs()"></div>
+            
+            <div class="relative bg-slate-950 border border-white/10 rounded-2xl shadow-2xl max-w-5xl w-full flex flex-col h-[600px] overflow-hidden" x-transition>
+                <!-- Header -->
+                <div class="flex items-center justify-between px-6 py-4 bg-slate-900 border-b border-white/5">
+                    <div class="flex items-center gap-3">
+                        <div class="h-3 w-3 rounded-full bg-indigo-500 shadow-[0_0_10px_rgba(99,102,241,0.5)]"></div>
+                        <h3 class="text-base font-bold text-slate-200">
+                            Terminal Logs: <span class="text-indigo-400 font-mono" x-text="activeProjectLogs"></span>
+                        </h3>
+                    </div>
+                    <div class="flex items-center gap-4">
+                        <label class="inline-flex items-center gap-2 text-xs text-slate-400 cursor-pointer">
+                            <input type="checkbox" x-model="autoRefreshLogs" class="rounded border-white/10 bg-white/5 text-indigo-600 focus:ring-indigo-500">
+                            Auto-refresh (3s)
+                        </label>
+                        <button @click="showLogs(activeProjectLogs)" 
+                                :disabled="logsLoading"
+                                class="p-1.5 rounded-lg border border-white/10 bg-white/5 text-slate-300 hover:text-white transition">
+                            <svg class="w-4 h-4" :class="{ 'animate-spin': logsLoading }" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 1121.21 8H18.2"></path>
+                            </svg>
+                        </button>
+                        <button @click="closeLogs()" class="text-slate-400 hover:text-white transition">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Logs view -->
+                <div class="flex-1 bg-black/95 p-6 overflow-y-auto font-mono text-xs leading-relaxed text-slate-300" id="logs-container">
+                    <div x-show="logsLoading && !logsContent" class="flex flex-col items-center justify-center h-full">
+                        <svg class="animate-spin h-8 w-8 text-indigo-500 mb-2" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                        <span class="text-slate-500">Retrieving standard logs output...</span>
+                    </div>
+                    <pre x-show="logsContent" class="whitespace-pre-wrap select-all selection:bg-indigo-500/30" x-text="logsContent"></pre>
+                </div>
+            </div>
+        </div>
+
+        <!-- Snapshot Manager Drawer -->
+        <div x-show="snapshotDrawerOpen" :class="{ 'hidden': !snapshotDrawerOpen }" class="fixed inset-0 z-40 overflow-hidden">
+            <div class="absolute inset-0 bg-[#020408]/80 backdrop-blur-sm transition-opacity" @click="snapshotDrawerOpen = false"></div>
+            
+            <div class="absolute inset-y-0 right-0 max-w-lg w-full flex">
+                <div class="relative w-full bg-slate-900 border-l border-white/10 shadow-2xl flex flex-col h-full overflow-hidden" x-transition:enter="transition ease-out duration-300" x-transition:enter-start="translate-x-full" x-transition:enter-end="translate-x-0" x-transition:leave="transition ease-in duration-300" x-transition:leave-start="translate-x-0" x-transition:leave-end="translate-x-full">
+                    <!-- Drawer Header -->
+                    <div class="px-6 py-5 bg-slate-950 border-b border-white/5 flex items-center justify-between">
+                        <div>
+                            <h3 class="text-lg font-bold text-slate-100">Snapshot Manager</h3>
+                            <p class="text-xs text-slate-400 mt-1">Manage restore states for project <span class="font-mono text-indigo-400" x-text="activeProject"></span></p>
+                        </div>
+                        <button @click="snapshotDrawerOpen = false" class="text-slate-400 hover:text-white transition">
+                            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                            </svg>
+                        </button>
+                    </div>
+
+                    <!-- Create Snapshot Form -->
+                    <div class="p-6 bg-slate-950/40 border-b border-white/5">
+                        <h4 class="text-sm font-semibold text-slate-300 mb-3">Create New Snapshot</h4>
+                        <div class="flex gap-3">
+                            <input type="text" x-model="newSnapshotName" placeholder="Snapshot Name (optional)" class="flex-1 px-4 py-2 text-sm bg-slate-900 border border-white/10 rounded-xl focus:border-indigo-500 focus:outline-none text-slate-200">
+                            <button @click="createSnapshot()" 
+                                    :disabled="snapshotCreating"
+                                    class="inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-800/50 text-white rounded-xl text-sm font-semibold transition">
+                                <svg x-show="snapshotCreating" class="animate-spin h-4 w-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                </svg>
+                                Create
+                            </button>
                         </div>
                     </div>
-                    <div class="mt-5 sm:mt-4 sm:flex sm:flex-row-reverse">
-                        <button type="button" class="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-blue-600 text-base font-medium text-white hover:bg-blue-700 sm:ml-3 sm:w-auto sm:text-sm" @click="logModalOpen = false">
-                            Close
-                        </button>
-                        <button type="button" class="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 sm:mt-0 sm:w-auto sm:text-sm" @click="showLogs(activeProjectLogs)">
-                            Refresh
-                        </button>
+
+                    <!-- Snapshots List -->
+                    <div class="flex-1 overflow-y-auto p-6 space-y-4">
+                        <div class="flex items-center justify-between mb-2">
+                            <span class="text-xs font-bold text-slate-400 uppercase tracking-wider">Available Snapshots</span>
+                            <span class="text-xs font-mono text-slate-500" x-text="snapshots.length + ' backup(s)'"></span>
+                        </div>
+
+                        <div x-show="snapshotsLoading" class="flex flex-col items-center justify-center py-12">
+                            <svg class="animate-spin h-8 w-8 text-indigo-500 mb-2" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                            </svg>
+                            <span class="text-xs text-slate-500">Loading backups catalog...</span>
+                        </div>
+
+                        <div x-show="!snapshotsLoading && snapshots.length === 0" :class="{ 'hidden': snapshotsLoading || snapshots.length > 0 }" class="text-center py-12 bg-slate-950/20 border border-white/5 rounded-2xl">
+                            <p class="text-slate-500 text-sm">No snapshots found for this environment.</p>
+                        </div>
+
+                        <template x-for="snap in snapshots" :key="snap.id">
+                            <div class="p-4 bg-slate-950/60 border border-white/5 hover:border-white/10 rounded-xl flex items-center justify-between gap-4 transition duration-200">
+                                <div class="min-w-0">
+                                    <div class="text-sm font-semibold text-slate-200 truncate" x-text="snap.name"></div>
+                                    <div class="text-xs text-slate-400 mt-1 flex items-center gap-2">
+                                        <span class="font-mono" x-text="snap.timestamp"></span>
+                                        <span>&bull;</span>
+                                        <span x-text="snap.size"></span>
+                                    </div>
+                                </div>
+                                <button @click="confirmRestore(snap)" 
+                                        class="flex-shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 border border-indigo-500/30 rounded-xl bg-indigo-500/10 text-indigo-300 hover:bg-indigo-500/20 text-xs font-semibold transition">
+                                    Restore
+                                </button>
+                            </div>
+                        </template>
                     </div>
                 </div>
             </div>
         </div>
+
+        <!-- Restore Confirmation Dialog -->
+        <div x-show="restoreConfirmOpen" :class="{ 'hidden': !restoreConfirmOpen }" class="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div class="fixed inset-0 bg-[#020408]/90 backdrop-blur-sm transition-opacity" @click="restoreConfirmOpen = false"></div>
+            
+            <div class="relative bg-slate-900 border border-rose-500/20 rounded-2xl shadow-2xl max-w-md w-full p-6 text-center" x-transition>
+                <div class="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-rose-500/10 text-rose-400 border border-rose-500/20 mb-4 animate-bounce">
+                    <svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>
+                    </svg>
+                </div>
+                
+                <h3 class="text-lg font-bold text-slate-100">Restore Snapshot?</h3>
+                <p class="text-sm text-slate-400 mt-2">
+                    This will halt running containers and overwrite existing database files for <span class="font-mono text-indigo-400" x-text="activeProject"></span> with data from backup <strong class="text-rose-400" x-text="activeSnapshotToRestore ? activeSnapshotToRestore.name : ''"></strong>. This action cannot be undone.
+                </p>
+
+                <div class="mt-6 flex justify-end gap-3">
+                    <button @click="restoreConfirmOpen = false" 
+                            class="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-sm font-semibold transition">
+                        Cancel
+                    </button>
+                    <button @click="restoreSnapshot()" 
+                            class="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-sm font-semibold transition flex items-center gap-2">
+                        <svg x-show="restoring" class="animate-spin h-4 w-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                        Confirm Restore
+                    </button>
+                </div>
+            </div>
+        </div>
+
     </div>
 
+    <!-- Scripting controls -->
     <script>
         document.addEventListener('alpine:init', () => {
             Alpine.data('dashboard', () => ({
                 projects: [],
                 loading: true,
+                toasts: [],
+                activeProject: null,
+                lastUpdated: 'Never',
+                toastIdSeq: 0,
+                
+                // Logs
                 logModalOpen: false,
                 logsLoading: false,
                 logsContent: '',
                 activeProjectLogs: '',
-                
+                autoRefreshLogs: true,
+                logIntervalId: null,
+
+                // Snapshots
+                snapshotDrawerOpen: false,
+                snapshotsLoading: false,
+                snapshots: [],
+                newSnapshotName: '',
+                snapshotCreating: false,
+
+                // Restore
+                restoreConfirmOpen: false,
+                activeSnapshotToRestore: null,
+                restoring: false,
+
+                // Loaders
+                projectActionLoading: {},
+
                 async init() {
-                    await this.fetchProjects();
-                    setInterval(() => this.fetchProjects(), 10000); // Poll every 10s
+                    await this.fetchProjects(true);
+                    
+                    // Poll projects list
+                    setInterval(() => {
+                        // Poll faster if something is transitioning or drawer/terminal is open
+                        const isTransitioning = this.projects.some(p => 
+                            p.status !== 'Running' && p.status !== 'Stopped'
+                        );
+                        
+                        // Execute poll
+                        this.fetchProjects(false);
+                    }, 5000);
                 },
 
-                async fetchProjects() {
+                showToast(message, type = 'info') {
+                    const id = ++this.toastIdSeq;
+                    this.toasts.push({ id, message, type });
+                    setTimeout(() => {
+                        this.removeToast(id);
+                    }, 4000);
+                },
+
+                removeToast(id) {
+                    this.toasts = this.toasts.filter(t => t.id !== id);
+                },
+
+                async fetchProjects(showLoader = false) {
+                    if (showLoader) this.loading = true;
                     try {
                         const response = await fetch('/api/projects');
-                        this.projects = await response.json();
+                        if (!response.ok) throw new Error('API server status failure');
+                        const data = await response.json();
+                        this.projects = data;
+                        this.lastUpdated = new Date().toLocaleTimeString();
                     } catch (error) {
-                        console.error("Failed to fetch projects:", error);
+                        console.error('Failed to load projects status:', error);
+                        this.showToast('Could not fetch environment updates', 'error');
                     } finally {
-                        this.loading = false;
+                        if (showLoader) this.loading = false;
                     }
                 },
-                
-                async showLogs(projectName) {
+
+                async toggleStack(project) {
+                    const name = project.name;
+                    const action = project.status === 'Running' ? 'stop' : 'start';
+                    
+                    this.projectActionLoading[name] = true;
+                    this.showToast(`Requesting ${action} command for ${name}...`, 'info');
+                    
+                    try {
+                        const response = await fetch(`/api/projects/${name}/${action}`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' }
+                        });
+                        
+                        if (!response.ok) throw new Error('Failed executing command');
+                        const data = await response.json();
+                        
+                        // Optimistically set status
+                        project.status = action === 'start' ? 'Starting' : 'Stopping';
+                        this.showToast(data.message, 'success');
+                    } catch (e) {
+                        this.showToast(`Failed to trigger stack ${action}`, 'error');
+                    } finally {
+                        this.projectActionLoading[name] = false;
+                    }
+                },
+
+                // Logs
+                openLogs(projectName) {
                     this.activeProjectLogs = projectName;
                     this.logModalOpen = true;
+                    this.logsContent = '';
+                    this.showLogs(projectName);
+
+                    // Setup auto-refresh polling
+                    if (this.logIntervalId) clearInterval(this.logIntervalId);
+                    this.logIntervalId = setInterval(() => {
+                        if (this.autoRefreshLogs && this.logModalOpen) {
+                            this.showLogs(projectName);
+                        }
+                    }, 3000);
+                },
+
+                closeLogs() {
+                    this.logModalOpen = false;
+                    if (this.logIntervalId) {
+                        clearInterval(this.logIntervalId);
+                        this.logIntervalId = null;
+                    }
+                },
+
+                async showLogs(projectName) {
                     this.logsLoading = true;
                     try {
-                        const response = await fetch('/api/logs/' + projectName);
+                        const response = await fetch(`/api/logs/${projectName}`);
+                        if (!response.ok) throw new Error('Could not fetch logs');
                         const data = await response.json();
-                        this.logsContent = data.logs || "No logs returned.";
-                    } catch (error) {
-                        this.logsContent = "Failed to load logs.";
+                        this.logsContent = data.logs;
+                        
+                        // Auto scroll logs container to bottom on next tick
+                        this.$nextTick(() => {
+                            const el = document.getElementById('logs-container');
+                            if (el) el.scrollTop = el.scrollHeight;
+                        });
+                    } catch (e) {
+                        this.logsContent = 'Could not load container logs.';
                     } finally {
                         this.logsLoading = false;
+                    }
+                },
+
+                // Snapshot Manager
+                openSnapshotDrawer(projectName) {
+                    this.activeProject = projectName;
+                    this.snapshotDrawerOpen = true;
+                    this.fetchSnapshots();
+                },
+
+                async fetchSnapshots() {
+                    this.snapshotsLoading = true;
+                    try {
+                        const response = await fetch(`/api/projects/${this.activeProject}/snapshots`);
+                        if (!response.ok) throw new Error('Catalog loading failed');
+                        this.snapshots = await response.json();
+                    } catch (e) {
+                        this.showToast('Could not fetch snapshot catalog', 'error');
+                    } finally {
+                        this.snapshotsLoading = false;
+                    }
+                },
+
+                async createSnapshot() {
+                    const name = this.newSnapshotName.trim();
+                    this.snapshotCreating = true;
+                    this.showToast('Snapshot background task initiated...', 'info');
+                    
+                    try {
+                        const response = await fetch(`/api/projects/${this.activeProject}/snapshot`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ name: name || undefined })
+                        });
+                        
+                        if (!response.ok) throw new Error('Snapshot creation trigger failure');
+                        const data = await response.json();
+                        
+                        this.showToast(data.message, 'success');
+                        this.newSnapshotName = '';
+                        
+                        // Close drawer and reload projects status in background
+                        this.snapshotDrawerOpen = false;
+                        setTimeout(() => this.fetchProjects(false), 2000);
+                    } catch (e) {
+                        this.showToast('Could not trigger snapshot backup creation', 'error');
+                    } finally {
+                        this.snapshotCreating = false;
+                    }
+                },
+
+                // Restore
+                confirmRestore(snapshot) {
+                    this.activeSnapshotToRestore = snapshot;
+                    this.restoreConfirmOpen = true;
+                },
+
+                async restoreSnapshot() {
+                    if (!this.activeSnapshotToRestore) return;
+                    this.restoring = true;
+                    
+                    const project = this.activeProject;
+                    const snapId = this.activeSnapshotToRestore.id;
+                    
+                    this.showToast(`Restoring backup ${this.activeSnapshotToRestore.name} in background...`, 'info');
+                    
+                    try {
+                        const response = await fetch(`/api/projects/${project}/restore/${snapId}`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' }
+                        });
+                        
+                        if (!response.ok) throw new Error('Snapshot restoration execution error');
+                        const data = await response.json();
+                        
+                        this.showToast(data.message, 'success');
+                        
+                        // Close all panels
+                        this.restoreConfirmOpen = false;
+                        this.snapshotDrawerOpen = false;
+                        
+                        // Reload status in background
+                        setTimeout(() => this.fetchProjects(false), 3000);
+                    } catch (e) {
+                        this.showToast('Failed to execute snapshot restoration', 'error');
+                    } finally {
+                        this.restoring = false;
+                        this.activeSnapshotToRestore = null;
                     }
                 }
             }))

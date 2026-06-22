@@ -108,3 +108,133 @@ class TestDashboard(unittest.TestCase):
         mock_exists.return_value = False
         response = self.client.get("/")
         self.assertEqual(response.status_code, 404)
+
+    @patch("ldm_core.dashboard.server.run_background_ldm_cmd")
+    def test_api_start_project_success(self, mock_run_background):
+        self.manager.find_dxp_roots.return_value = [
+            {"path": Path("/dummy/project1"), "version": "7.4"}
+        ]
+        self.manager.read_meta.return_value = {"liferay_container_name": "my-project1"}
+        response = self.client.post("/api/projects/my-project1/start")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json()["status"], "Starting")
+        mock_run_background.assert_called_once_with(["run", "my-project1", "-y"])
+
+    def test_api_start_project_not_found(self):
+        self.manager.find_dxp_roots.return_value = []
+        response = self.client.post("/api/projects/my-project1/start")
+        self.assertEqual(response.status_code, 404)
+
+    @patch("ldm_core.dashboard.server.run_background_ldm_cmd")
+    def test_api_stop_project_success(self, mock_run_background):
+        self.manager.find_dxp_roots.return_value = [
+            {"path": Path("/dummy/project1"), "version": "7.4"}
+        ]
+        self.manager.read_meta.return_value = {"liferay_container_name": "my-project1"}
+        response = self.client.post("/api/projects/my-project1/stop")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json()["status"], "Stopping")
+        mock_run_background.assert_called_once_with(["stop", "my-project1", "-y"])
+
+    def test_api_stop_project_not_found(self):
+        self.manager.find_dxp_roots.return_value = []
+        response = self.client.post("/api/projects/my-project1/stop")
+        self.assertEqual(response.status_code, 404)
+
+    @patch("ldm_core.dashboard.server.get_dir_size")
+    def test_api_list_snapshots_success(self, mock_get_size):
+        mock_get_size.return_value = "15.0 MB"
+        self.manager.find_dxp_roots.return_value = [
+            {"path": Path("/dummy/project1"), "version": "7.4"}
+        ]
+        self.manager.read_meta.side_effect = lambda x: (
+            {"liferay_container_name": "my-project1"}
+            if "dummy" in str(x)
+            else {"name": "Test Snap"}
+        )
+        # Mock paths setup
+        backups_dir = MagicMock()
+        backups_dir.exists.return_value = True
+
+        snap_dir = MagicMock()
+        snap_dir.is_dir.return_value = True
+        snap_dir.name = "2026-06-22T12-00-00Z"
+
+        backups_dir.iterdir.return_value = [snap_dir]
+        self.manager.setup_paths.return_value = {"backups": backups_dir}
+
+        response = self.client.get("/api/projects/my-project1/snapshots")
+        self.assertEqual(response.status_code, 200)
+        data = response.get_json()
+        self.assertEqual(len(data), 1)
+        self.assertEqual(data[0]["id"], "2026-06-22T12-00-00Z")
+        self.assertEqual(data[0]["name"], "Test Snap")
+        self.assertEqual(data[0]["size"], "15.0 MB")
+
+    def test_api_list_snapshots_not_found(self):
+        self.manager.find_dxp_roots.return_value = []
+        response = self.client.get("/api/projects/my-project1/snapshots")
+        self.assertEqual(response.status_code, 404)
+
+    @patch("ldm_core.dashboard.server.run_background_ldm_cmd")
+    def test_api_create_snapshot_success(self, mock_run_background):
+        self.manager.find_dxp_roots.return_value = [
+            {"path": Path("/dummy/project1"), "version": "7.4"}
+        ]
+        self.manager.read_meta.return_value = {"liferay_container_name": "my-project1"}
+
+        # Test default (no custom name)
+        response = self.client.post("/api/projects/my-project1/snapshot")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json()["status"], "Creating")
+        mock_run_background.assert_called_with(["snapshot", "my-project1", "-y"])
+
+        # Test with custom name
+        mock_run_background.reset_mock()
+        response = self.client.post(
+            "/api/projects/my-project1/snapshot", json={"name": "Custom Snap"}
+        )
+        self.assertEqual(response.status_code, 200)
+        mock_run_background.assert_called_with(
+            ["snapshot", "my-project1", "-y", "--name", "Custom Snap"]
+        )
+
+    @patch("ldm_core.dashboard.server.run_background_ldm_cmd")
+    def test_api_restore_snapshot_success(self, mock_run_background):
+        self.manager.find_dxp_roots.return_value = [
+            {"path": Path("/dummy/project1"), "version": "7.4"}
+        ]
+        self.manager.read_meta.return_value = {"liferay_container_name": "my-project1"}
+
+        backups_dir = MagicMock()
+        backups_dir.exists.return_value = True
+
+        snap_dir = MagicMock()
+        snap_dir.is_dir.return_value = True
+        snap_dir.name = "2026-06-22T12-00-00Z"
+
+        backups_dir.iterdir.return_value = [snap_dir]
+        self.manager.setup_paths.return_value = {"backups": backups_dir}
+
+        response = self.client.post(
+            "/api/projects/my-project1/restore/2026-06-22T12-00-00Z"
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json()["status"], "Restoring")
+        mock_run_background.assert_called_once_with(
+            ["restore", "my-project1", "--index", "1", "-y"]
+        )
+
+    def test_api_restore_snapshot_not_found(self):
+        self.manager.find_dxp_roots.return_value = [
+            {"path": Path("/dummy/project1"), "version": "7.4"}
+        ]
+        self.manager.read_meta.return_value = {"liferay_container_name": "my-project1"}
+
+        backups_dir = MagicMock()
+        backups_dir.exists.return_value = True
+        backups_dir.iterdir.return_value = []
+        self.manager.setup_paths.return_value = {"backups": backups_dir}
+
+        response = self.client.post("/api/projects/my-project1/restore/nonexistent")
+        self.assertEqual(response.status_code, 404)
