@@ -266,13 +266,19 @@
     - [ ] Support status query and health checking using `lfr-tunnel -status-json -subdomain <subdomain>`.
     - [ ] Support stopping specific subdomain tunnels with `lfr-tunnel -stop -subdomain <subdomain>`.
 
-  - [ ] **Zero-Touch Autocomplete & Setup (P1)**:
-    - [ ] Register `setup-completion` parser command under the `system` namespace and update fallback mappings.
-    - [ ] Add delegation method in `manager.py`.
-    - [ ] Implement robust auto-detection of the active shell and shell profile path verification.
-    - [ ] Implement `.bak` backup generation for edited configuration profiles.
-    - [ ] Safely inject bounded autocomplete blocks into configurations.
-    - [ ] Write pytest unit tests and run tests and lint script.
+  - [x] **Zero-Touch Autocomplete & Setup (P1)**:
+    - [x] Register `setup-completion` parser command under the `system` namespace and update fallback mappings.
+    - [x] Add delegation method in `manager.py`.
+    - [x] Implement robust auto-detection of the active shell and shell profile path verification.
+    - [x] Implement `.bak` backup generation for edited configuration profiles.
+    - [x] Safely inject bounded autocomplete blocks into configurations.
+    - [x] Write pytest unit tests and run tests and lint script.
+
+  - [ ] **Predefined Quickstarts (P1)**:
+    - [ ] Add `quickstart` top-level command parser and route mappings in `cli.py`.
+    - [ ] Create `QUICKSTART_TEMPLATES` accelerator mapping registry.
+    - [ ] Implement `cmd_quickstart` in `workspace.py` handling repository import, database seeding, stack startup, and dynamic sharing.
+    - [ ] Add pytest unit tests for quickstart configurations and commands execution.
 
 ## 9. Founding Patterns of LDM
 

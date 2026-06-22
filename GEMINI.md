@@ -86,11 +86,11 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
 
 ### Plan
 
-1. **Zero-Touch Autocomplete & Setup (P1)** [In Progress]:
+1. **Zero-Touch Autocomplete & Setup (P1)**:
    - Create `ldm system setup-completion` command to automate shell setup.
    - Auto-detect shell types and safely inject autocompletion logic into shell profile configurations.
    - Auto-install `argcomplete` dependency if missing and prompt user for integration.
-2. **Predefined Quickstarts (P1)**:
+2. **Predefined Quickstarts (P1)** [In Progress]:
    - Implement shortcut `ldm quickstart aica --share`.
    - Setup project bootstrapping templates for golden-path quickstarts.
 3. **Dynamic JVM Self-Tuning (P2)**:
