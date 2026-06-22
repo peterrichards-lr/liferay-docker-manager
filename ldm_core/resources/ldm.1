@@ -67,6 +67,9 @@ Connect to the OSGi Gogo shell.
 \fBsnapshot\fR / \fBrestore\fR
 Backup and recover exact project states.
 .TP
+\fBpackage\fR [\fIPROJECT\fR] [\fB--output\fR \fIDIR\fR] [\fB--repo\fR \fIREPO\fR] [\fB--use-latest\fR]
+Package a project snapshot into a portable LDM package (\fB.ldmp\fR) with SHA-256 signature.
+.TP
 \fBhydrate\fR \fIBACKUP_PATH\fR
 Create or restore a project from a local Liferay Cloud backup archive.
 .TP
@@ -95,6 +98,9 @@ Initialize a project linked to a source workspace with real-time sync.
 .TP
 \fBimport\fR \fISOURCE_PATH\fR [\fINAME\fR]
 One-time static import of a Liferay workspace.
+.TP
+\fBquickstart\fR \fITEMPLATE\fR [\fB--share\fR] [\fB--share-subdomain\fR \fISUBDOMAIN\fR]
+Bootstrap and start a predefined accelerator demo stack (e.g. \fBaica\fR).
 .TP
 \fBmonitor\fR [\fIPROJECT\fR]
 Start/restart the background sync process for linked projects.

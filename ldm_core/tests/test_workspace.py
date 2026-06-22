@@ -36,6 +36,7 @@ class MockWorkspaceManager(
         self.composer = ComposerService(self)
         self.runtime = RuntimeService(self)
         self.snapshot = MagicMock()
+        self.share = MagicMock()
 
     @property
     def verbose(self):
@@ -701,18 +702,68 @@ class TestWorkspaceQuickstart(unittest.TestCase):
         )
 
         mock_cmd_import.assert_called_once_with(
-            "https://github.com/peterrichards-lr/ai-commerce-accelerator.git"
+            "https://github.com/peterrichards-lr/liferay-ai-commerce-accelerator.git"
         )
         mock_fetch_seed.assert_called_once()
-        mock_cmd_run.assert_called_once_with("ai-commerce-accelerator")
+        mock_cmd_run.assert_called_once_with("liferay-ai-commerce-accelerator")
         self.manager.share.cmd_start.assert_called_once_with(
-            "ai-commerce-accelerator", subdomain="my-aica-sub"
+            "liferay-ai-commerce-accelerator", subdomain="my-aica-sub"
         )
         self.assertTrue(self.manager.args.browser)
 
     def test_cmd_quickstart_invalid_template(self):
         with self.assertRaises(SystemExit):
             self.manager.workspace.cmd_quickstart("invalid-template")
+
+    @patch("ldm_core.handlers.workspace.WorkspaceService.cmd_import")
+    @patch.object(MockWorkspaceManager, "detect_project_path")
+    @patch("ldm_core.handlers.base.BaseHandler.read_meta")
+    @patch.object(MockWorkspaceManager, "setup_paths")
+    @patch("ldm_core.handlers.assets.AssetService._fetch_seed")
+    @patch("ldm_core.handlers.runtime.RuntimeService.cmd_run")
+    @patch("pathlib.Path.exists")
+    @patch("pathlib.Path.read_text")
+    def test_cmd_quickstart_custom_templates_override(
+        self,
+        mock_read_text,
+        mock_exists,
+        mock_cmd_run,
+        mock_fetch_seed,
+        mock_setup_paths,
+        mock_read_meta,
+        mock_detect,
+        mock_cmd_import,
+    ):
+        self.test_project_dir.mkdir(parents=True, exist_ok=True)
+        mock_detect.return_value = self.test_project_dir
+        mock_read_meta.return_value = {
+            "tag": "2026.q1.4-lts",
+            "db_type": "postgresql",
+            "use_shared_search": "true",
+        }
+        mock_setup_paths.return_value = {}
+        mock_fetch_seed.return_value = True
+
+        # Simulate custom template config overrides
+        mock_exists.return_value = True
+        mock_read_text.return_value = json.dumps(
+            {
+                "custom_aica": {
+                    "repo": "https://github.com/custom/my-aica.git",
+                    "default_name": "custom-aica-project",
+                }
+            }
+        )
+
+        self.manager.workspace.cmd_quickstart(
+            "custom_aica", share=True, share_subdomain="custom-sub"
+        )
+
+        mock_cmd_import.assert_called_once_with("https://github.com/custom/my-aica.git")
+        mock_cmd_run.assert_called_once_with("custom-aica-project")
+        self.manager.share.cmd_start.assert_called_once_with(
+            "custom-aica-project", subdomain="custom-sub"
+        )
 
 
 if __name__ == "__main__":

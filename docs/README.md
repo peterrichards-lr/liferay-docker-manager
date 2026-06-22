@@ -156,6 +156,12 @@ ldm run my-recovered-project --snapshot ~/Desktop/old-baseline-snapshot
 # 6. THE SURGICAL FLOW: Instantly edit project metadata
 ldm edit my-project
 
+# 7. THE PREDEFINED QUICKSTART: Bootstrap an accelerator demo stack
+ldm quickstart aica
+
+# 8. THE PORTABLE PACKAGE: Export project snapshot into a .ldmp package
+ldm package my-project
+
 # Monitor an existing project (manually)
 ldm monitor /path/to/workspace
 ```

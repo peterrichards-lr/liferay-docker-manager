@@ -891,6 +891,32 @@ def get_parser():
         help="Custom subdomain to use when sharing the stack",
     )
 
+    # Command: package
+    package_cmd = subparsers.add_parser(
+        "package",
+        parents=[base_sub_parent],
+        help="Package a project snapshot into a portable LDM package (.ldmp)",
+    )
+    package_cmd.add_argument(
+        "project",
+        nargs="?",
+        help="Name of the project to package (defaults to current directory)",
+    )
+    package_cmd.add_argument(
+        "-o",
+        "--output",
+        help="Directory path to save the generated package (defaults to current working directory)",
+    )
+    package_cmd.add_argument(
+        "--repo",
+        help="GitHub Repository owner/repo identifier (defaults to git origin remote resolution)",
+    )
+    package_cmd.add_argument(
+        "--use-latest",
+        action="store_true",
+        help="Package the latest existing snapshot instead of creating a fresh snapshot",
+    )
+
     # ==================== NAMESPACES ====================
 
     # Namespace: infra
@@ -1467,6 +1493,12 @@ def main():
             args.template,
             share=args.share,
             share_subdomain=args.share_subdomain,
+        ),
+        ("package", None): lambda: manager.snapshot.cmd_package(
+            getattr(args, "project", None),
+            output_dir=getattr(args, "output", None),
+            repo=getattr(args, "repo", None),
+            use_latest=getattr(args, "use_latest", False),
         ),
         ("import", None): lambda: manager.workspace.cmd_import(args.source),
         ("init-from", None): lambda: manager.workspace.cmd_init_from(args.source),

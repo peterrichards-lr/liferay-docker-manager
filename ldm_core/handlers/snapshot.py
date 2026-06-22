@@ -1246,3 +1246,110 @@ class SnapshotService(BaseHandler):
                         ],
                         check=False,
                     )
+
+    def _list_backups(self, paths):
+        """Helper to list available snapshots for a project, returning a list of dicts with paths."""
+        backups_dir = paths["backups"]
+        if not backups_dir.exists():
+            return []
+
+        # Find all directories in the snapshots folder, sorted by name
+        subdirs = sorted(
+            [d for d in backups_dir.iterdir() if d.is_dir()],
+            key=lambda x: x.name,
+        )
+
+        return [{"path": d, "name": d.name} for d in subdirs]
+
+    def cmd_package(
+        self, project_id=None, output_dir=None, repo=None, use_latest=False
+    ):
+        """Bundles a project snapshot into a .ldmp package for GitHub release."""
+        is_dry_run = os.environ.get("LDM_DRY_RUN", "").lower() == "true"
+        if is_dry_run:
+            UI.info(f"[DRY RUN] Would package project: {project_id}")
+            return
+
+        root = self.manager.detect_project_path(project_id)
+        if not root:
+            UI.die("Failed to locate project directory.")
+            return
+
+        project_name = root.name
+        paths = self.manager.setup_paths(root)
+
+        # 1. Obtain or create the snapshot
+        if use_latest:
+            # Locate latest snapshot
+            backups = self._list_backups(paths)
+            if not backups:
+                UI.info("No existing snapshots found. Creating a new one...")
+                self.cmd_snapshot(project_id)
+                backups = self._list_backups(paths)
+            if not backups:
+                UI.die("Failed to locate or create a project snapshot.")
+                return
+            latest_snap_dir = backups[-1]["path"]
+        else:
+            # Create a fresh snapshot
+            UI.info("Creating a fresh snapshot for the package...")
+            self.cmd_snapshot(project_id)
+            backups = self._list_backups(paths)
+            if not backups:
+                UI.die("Failed to create project snapshot.")
+                return
+            latest_snap_dir = backups[-1]["path"]
+
+        # 2. Resolve repository identifier
+        if not repo:
+            # Try to read git remote from project's linked workspace
+            project_meta = self.manager.read_meta(root)
+            workspace_path = project_meta.get("workspace_path")
+            if workspace_path and Path(workspace_path).exists():
+                try:
+                    origin_url = self.manager.run_command(
+                        ["git", "remote", "get-url", "origin"], cwd=workspace_path
+                    ).strip()
+
+                    parsed = self.manager.workspace._parse_github_repo(origin_url)
+                    if parsed:
+                        repo = f"{parsed[0]}/{parsed[1]}"
+                except Exception:
+                    pass
+
+        if not repo:
+            if self.manager.non_interactive:
+                UI.die(
+                    "GitHub repository identifier required. Use --repo <owner/repo>."
+                )
+            else:
+                repo = UI.ask(
+                    "GitHub Repository (owner/repo)",
+                    "peterrichards-lr/liferay-ai-commerce-accelerator",
+                )
+
+        # 3. Write repo manifest to meta file in snapshot directory
+        meta = self.manager.read_meta(latest_snap_dir)
+        meta["github_repository"] = repo
+        self.manager.write_meta(latest_snap_dir, meta)
+
+        # 4. Generate package tarball (.ldmp)
+        output_path = Path(output_dir or Path.cwd()).resolve()
+        package_file = output_path / f"{project_name}.ldmp"
+        sha_file = output_path / f"{project_name}.ldmp.sha256"
+
+        UI.info(f"Generating LDM package at: {package_file}...")
+        try:
+            with tarfile.open(package_file, "w:gz") as tar:
+                for item in latest_snap_dir.iterdir():
+                    tar.add(item, arcname=item.name)
+        except Exception as e:
+            UI.die(f"Failed to generate package archive: {e}")
+
+        # 5. Generate checksum
+        from ldm_core.utils import calculate_sha256
+
+        sha = calculate_sha256(package_file)
+        sha_file.write_text(f"{sha}  {package_file.name}\n")
+
+        UI.success(f"Successfully created LDM package: {package_file}")

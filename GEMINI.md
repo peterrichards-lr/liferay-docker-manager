@@ -88,11 +88,17 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
 - Implemented core dry-run coverage for metadata writing, safe copy, safe move, archive extraction, and directory tree removal.
 - Completed integration of **lfr-tunnel with Multi-Tunnel Support** into LDM (P1), allowing non-conflicting concurrent background tunnels, subdomain-specific stopping, status queries, and dynamic inspector port routing.
 - Completed implementation of **Privileged Port Bind Check Fallback**, catching PermissionError / EACCES for non-root users when checking ports < 1024, falling back to connect_ex to allow starting projects on ports like 80/443 without false positive "in use" errors.
-- Investigating and fixing GitHub Action check failures (4 failing tests in `test_composer.py` due to `GITHUB_ACTIONS=true` environment variable forcing the lean JVM arguments profile, bypassing the simulated memory tiers).
+- Fixing test failures: test_cmd_quickstart_custom_templates_override (AssetsService typo), test_cmd_import_project_id_passing (mock share service), and test_cmd_package_success (missing `_list_backups` helper in SnapshotService).
+- Documenting quickstart and package CLI commands.
 
 ### Plan
 
-1. **Project Self-Healing (ldm repair) (P2/P3)**:
-   - Implement `ldm repair` CLI entry point.
-   - Add self-healing logic to recover "half-baked" project states (missing compose config but valid meta).
-   - Re-sync permissions across existing project folders and volumes.
+1. **Fix Test Suite Failures**:
+   - Correct patch decorator in `test_workspace.py` to point to `AssetService`.
+   - Implement `_list_backups` helper in `SnapshotService` within `ldm_core/handlers/snapshot.py`.
+   - Add `share` property to `MockWorkspaceManager` or check `hasattr(self.manager, "share")` in `WorkspaceService.cmd_import`.
+2. **Update CLI Documentation and Man Pages**:
+   - Update `ldm_core/resources/ldm.1` man page with `quickstart` and `package` commands.
+   - Update `docs/guides/CLI_REFERENCE.md` and `docs/README.md` to document the new options.
+3. **Verify and Validate**:
+   - Run the entire test suite and the pre-commit lint check.

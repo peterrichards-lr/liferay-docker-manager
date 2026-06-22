@@ -71,6 +71,21 @@ ldm restore demo --index 1 # Restore to index 1
 ldm restore demo --name "post-setup-gold-standard" # Restore by name
 ```
 
+## `package` (Portable Package Export)
+
+Bundles a project snapshot (code elements, database backup, document library, and Elasticsearch indices) into a single portable `.ldmp` package (tarball) alongside a `.ldmp.sha256` checksum file. This package is ideal for sharing local environments with other developers or releasing template stacks via GitHub Releases.
+
+```bash
+# Create a fresh snapshot and package the environment
+ldm package
+
+# Package using the latest existing snapshot (skips snapshot generation step)
+ldm package --use-latest
+
+# Specify a custom directory output path and bind a GitHub repository identifier
+ldm package my-project --output /tmp/packages --repo my-owner/my-repo
+```
+
 ## `hydrate` (Local Cloud Backup Hydration)
 
 Creates or restores a project from a local Liferay Cloud backup layout (`database.gz` and `volume.tgz`).

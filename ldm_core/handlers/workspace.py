@@ -1734,6 +1734,15 @@ class WorkspaceService(BaseHandler):
 
             if not getattr(self.manager.args, "no_run", False):
                 self.manager.cmd_run(project_id=project_name, is_restart=True)
+                if getattr(self.manager.args, "share", False):
+                    UI.info("Exposing imported workspace tunnel...")
+                    share_subdomain = getattr(
+                        self.manager.args, "share_subdomain", None
+                    )
+                    if hasattr(self.manager, "share"):
+                        self.manager.share.cmd_start(
+                            project_name, subdomain=share_subdomain
+                        )
         finally:
             if temp_extract_dir:
                 self.manager.safe_rmtree(temp_extract_dir)
@@ -2008,10 +2017,31 @@ class WorkspaceService(BaseHandler):
         """Bootstraps a predefined accelerator stack, imports, seeds, runs, and exposes it."""
         templates = {
             "aica": {
-                "repo": "https://github.com/peterrichards-lr/ai-commerce-accelerator.git",
-                "default_name": "ai-commerce-accelerator",
+                "repo": "https://github.com/peterrichards-lr/liferay-ai-commerce-accelerator.git",
+                "default_name": "liferay-ai-commerce-accelerator",
             }
         }
+
+        # Load user templates overrides if file exists
+        from ldm_core.utils import get_actual_home
+
+        user_templates_path = get_actual_home() / ".ldm_templates.json"
+        if user_templates_path.exists():
+            try:
+                import json
+
+                overrides = json.loads(user_templates_path.read_text())
+                for key, val in overrides.items():
+                    if (
+                        isinstance(val, dict)
+                        and "repo" in val
+                        and "default_name" in val
+                    ):
+                        templates[key.lower()] = val
+            except Exception as e:
+                UI.warning(
+                    f"Failed to load quickstart templates from {user_templates_path}: {e}"
+                )
 
         name_lower = template_name.lower()
         if name_lower not in templates:
