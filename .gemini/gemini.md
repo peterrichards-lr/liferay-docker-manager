@@ -261,10 +261,14 @@
     - [x] Implement robust fail-fast checks for SSH and PAT authentication when accessing private repositories.
     - [x] Create unit tests and integration tests for remote import scenarios.
 
-  - [ ] **Liferay Tunnel Enhancement (v2.11.x)**:
-    - [ ] Integrate updated `lfr-tunnel` supporting multiple background tunnels concurrently.
-    - [ ] Support status query and health checking using `lfr-tunnel -status-json -subdomain <subdomain>`.
-    - [ ] Support stopping specific subdomain tunnels with `lfr-tunnel -stop -subdomain <subdomain>`.
+  - [x] **Liferay Tunnel Enhancement (v2.11.x)**:
+    - [x] Integrate updated `lfr-tunnel` supporting multiple background tunnels concurrently.
+    - [x] Support status query and health checking using `lfr-tunnel -status-json -subdomain <subdomain>`.
+    - [x] Support stopping specific subdomain tunnels with `lfr-tunnel -stop -subdomain <subdomain>`.
+  - [x] **Privileged Port Bind Check Fallback (v2.11.x)**:
+    - [x] Catch PermissionError / EACCES in BaseHandler.check_port for non-root users.
+    - [x] Implement connect_ex check fallback to verify if the port is actually in use.
+    - [x] Add unit tests for privileged port check fallback in test_base.py.
 
   - [x] **Zero-Touch Autocomplete & Setup (P1)**:
     - [x] Register `setup-completion` parser command under the `system` namespace and update fallback mappings.
@@ -274,11 +278,11 @@
     - [x] Safely inject bounded autocomplete blocks into configurations.
     - [x] Write pytest unit tests and run tests and lint script.
 
-  - [ ] **Predefined Quickstarts (P1)**:
-    - [ ] Add `quickstart` top-level command parser and route mappings in `cli.py`.
-    - [ ] Create `QUICKSTART_TEMPLATES` accelerator mapping registry.
-    - [ ] Implement `cmd_quickstart` in `workspace.py` handling repository import, database seeding, stack startup, and dynamic sharing.
-    - [ ] Add pytest unit tests for quickstart configurations and commands execution.
+  - [x] **Predefined Quickstarts (P1)**:
+    - [x] Add `quickstart` top-level command parser and route mappings in `cli.py`.
+    - [x] Create `QUICKSTART_TEMPLATES` accelerator mapping registry.
+    - [x] Implement `cmd_quickstart` in `workspace.py` handling repository import, database seeding, stack startup, and dynamic sharing.
+    - [x] Add pytest unit tests for quickstart configurations and commands execution.
 
 ## 9. Founding Patterns of LDM
 

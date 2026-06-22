@@ -388,6 +388,7 @@ class BaseHandler:
 
     def check_port(self, ip, port):
         """Checks if a port is available on a specific IP."""
+        import errno
         import socket
 
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
@@ -395,7 +396,21 @@ class BaseHandler:
             try:
                 s.bind((ip, int(port)))
                 return True
-            except (OSError, OverflowError):
+            except PermissionError:
+                # EACCES: non-root trying to bind to privileged port (< 1024).
+                # Fall back to connect_ex check to see if a process is already listening.
+                with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as conn_s:
+                    conn_s.settimeout(0.5)
+                    res = conn_s.connect_ex((ip, int(port)))
+                    return res != 0
+            except OSError as e:
+                if e.errno in (errno.EACCES, errno.EPERM):
+                    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as conn_s:
+                        conn_s.settimeout(0.5)
+                        res = conn_s.connect_ex((ip, int(port)))
+                        return res != 0
+                return False
+            except OverflowError:
                 return False
 
     def find_available_port(self, ip, start_port, exclude=None):

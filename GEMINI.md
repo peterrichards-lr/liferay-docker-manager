@@ -85,16 +85,13 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
 - Completed Implementation of **CLI 'Time Saved' ROI Logger** (P1) including test coverage and global rc persistence.
 - Completed Implementation of **Predefined Quickstarts (P1)** including test coverage and `ldm quickstart aica` capability.
 - Implemented core dry-run coverage for metadata writing, safe copy, safe move, archive extraction, and directory tree removal.
+- Completed integration of **lfr-tunnel with Multi-Tunnel Support** into LDM (P1), allowing non-conflicting concurrent background tunnels, subdomain-specific stopping, status queries, and dynamic inspector port routing.
+- Completed implementation of **Privileged Port Bind Check Fallback**, catching PermissionError / EACCES for non-root users when checking ports < 1024, falling back to connect_ex to allow starting projects on ports like 80/443 without false positive "in use" errors.
 
 ### Plan
 
-1. **Dry-Run Mode Expansion (P2)** [In Progress]:
-   - Wrap unsafe file/directory mutations (`safe_copy`, `safe_move`, `safe_extract`, `safe_rmtree`, `write_meta`, `reclaim_volume_permissions`) in dry-run checks.
-   - Bypass real git clones and downloads inside `WorkspaceService.cmd_import` during dry-run.
-   - Standardize preview reporting for dry-runs.
-2. **Zero-Touch Autocomplete & Setup (P1)**: Completed.
-3. **Predefined Quickstarts (P1)**: Completed.
-4. **Dynamic JVM Self-Tuning (P2)**:
+1. **Dynamic JVM Self-Tuning (P2)**:
    - Auto-detect host memory and write optimized JVM flags before container boot.
-5. **Visual Diagnostics Web Dashboard (P3)**:
+   - Auto-detect host memory and write optimized JVM flags before container boot.
+2. **Visual Diagnostics Web Dashboard (P3)**:
    - Upgrade local dashboard to visual web application with log/snapshot controls.

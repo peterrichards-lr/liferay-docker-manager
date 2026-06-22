@@ -501,5 +501,82 @@ class TestBaseCompletion(unittest.TestCase):
                 )
 
 
+class TestBasePortChecking(unittest.TestCase):
+    def setUp(self):
+        from ldm_core.handlers.base import BaseHandler
+
+        self.handler = BaseHandler(MagicMock())
+
+    @patch("socket.socket")
+    def test_check_port_available(self, mock_socket_class):
+        mock_socket = MagicMock()
+        mock_socket_class.return_value.__enter__.return_value = mock_socket
+        # bind succeeds, returns True
+        res = self.handler.check_port("127.0.0.1", 8080)
+        self.assertTrue(res)
+        mock_socket.bind.assert_called_with(("127.0.0.1", 8080))
+
+    @patch("socket.socket")
+    def test_check_port_in_use(self, mock_socket_class):
+        mock_socket = MagicMock()
+        mock_socket_class.return_value.__enter__.return_value = mock_socket
+        mock_socket.bind.side_effect = OSError(11, "Address already in use")
+        res = self.handler.check_port("127.0.0.1", 8080)
+        self.assertFalse(res)
+
+    @patch("socket.socket")
+    def test_check_port_permission_denied_free(self, mock_socket_class):
+        mock_bind_socket = MagicMock()
+        mock_conn_socket = MagicMock()
+        # The first socket created is for bind, the second is for connect_ex
+        mock_socket_class.return_value.__enter__.side_effect = [
+            mock_bind_socket,
+            mock_conn_socket,
+        ]
+
+        mock_bind_socket.bind.side_effect = PermissionError(13, "Permission denied")
+        # connect_ex returns ECONNREFUSED or similar non-zero
+        mock_conn_socket.connect_ex.return_value = 61
+
+        res = self.handler.check_port("127.0.0.1", 80)
+        self.assertTrue(res)
+
+    @patch("socket.socket")
+    def test_check_port_permission_denied_occupied(self, mock_socket_class):
+        mock_bind_socket = MagicMock()
+        mock_conn_socket = MagicMock()
+        mock_socket_class.return_value.__enter__.side_effect = [
+            mock_bind_socket,
+            mock_conn_socket,
+        ]
+
+        mock_bind_socket.bind.side_effect = PermissionError(13, "Permission denied")
+        # connect_ex returns 0 (occupied)
+        mock_conn_socket.connect_ex.return_value = 0
+
+        res = self.handler.check_port("127.0.0.1", 80)
+        self.assertFalse(res)
+
+    @patch("socket.socket")
+    def test_check_port_oserror_permission_denied_free(self, mock_socket_class):
+        import errno
+
+        mock_bind_socket = MagicMock()
+        mock_conn_socket = MagicMock()
+        mock_socket_class.return_value.__enter__.side_effect = [
+            mock_bind_socket,
+            mock_conn_socket,
+        ]
+
+        # Raise OSError with errno EACCES
+        err = OSError("Permission denied")
+        err.errno = errno.EACCES
+        mock_bind_socket.bind.side_effect = err
+        mock_conn_socket.connect_ex.return_value = errno.ECONNREFUSED
+
+        res = self.handler.check_port("127.0.0.1", 80)
+        self.assertTrue(res)
+
+
 if __name__ == "__main__":
     unittest.main()

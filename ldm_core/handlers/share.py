@@ -233,6 +233,27 @@ class ShareService:
 
     def resolve_public_tunnel_url(self, subdomain, project_id=None):
         """Resolves the public tunnel URL using LFT_SERVER_URL or defaulting to lfr-demo.online."""
+        if not getattr(self.manager, "dry_run", False):
+            try:
+                bin_path = self._get_binary_path()
+                if bin_path and os.path.exists(bin_path):
+                    import json
+                    import subprocess
+
+                    result = subprocess.run(
+                        [str(bin_path), "-status-json", "-subdomain", subdomain],
+                        capture_output=True,
+                        text=True,
+                        timeout=3,
+                    )
+                    if result.returncode == 0:
+                        status_data = json.loads(result.stdout)
+                        urls = status_data.get("public_urls")
+                        if urls and isinstance(urls, list):
+                            return urls[0]
+            except Exception:
+                pass
+
         server_url = os.environ.get("LFT_SERVER_URL")
         domain = None
 
@@ -312,6 +333,11 @@ class ShareService:
             cmd = [str(bin_path), "-background", "-ports", ports]
             if subdomain:
                 cmd += ["-subdomain", subdomain]
+
+            # Pass custom target host if configured
+            host_name = project_meta.get("host_name", "localhost")
+            if host_name and host_name != "localhost":
+                cmd += ["-target-host", host_name]
 
             env = os.environ.copy()
             env["LFT_CLIENT_TOKEN"] = token
@@ -857,7 +883,12 @@ class ShareService:
 
                 res = subprocess.run(cmd, capture_output=True, text=True, check=False)
                 output = (res.stdout or "").strip()
-                if output and output.startswith("{") and output.endswith("}"):
+                err_out = (res.stderr or "").strip()
+                is_legacy = not (
+                    output and output.startswith("{") and output.endswith("}")
+                )
+
+                if not is_legacy:
                     data = json.loads(output)
                     if (
                         data.get("running") is True
@@ -865,40 +896,41 @@ class ShareService:
                         and data.get("connection_state") == "connected"
                     ):
                         return True, None
-                # Fallback to legacy checks
-                elif container_name:
-                    cmd_legacy = [
-                        "docker",
-                        "exec",
-                        container_name,
-                        "wget",
-                        "-qO-",
-                        "http://127.0.0.1:4040/api/healthz",
-                    ]
-                    sub_res = subprocess.run(
-                        cmd_legacy, capture_output=True, text=True, check=False
-                    )
-                    output_legacy = (sub_res.stdout or "") + (sub_res.stderr or "")
-                    if "healthy" in output_legacy:
-                        return True, None
-                    if "404" in output_legacy:
-                        UI.warning(
-                            "Legacy tunnel version detected. Skipping active health verification."
+                # Fallback to legacy checks ONLY if legacy binary was explicitly detected
+                elif is_legacy:
+                    if container_name:
+                        cmd_legacy = [
+                            "docker",
+                            "exec",
+                            container_name,
+                            "wget",
+                            "-qO-",
+                            "http://127.0.0.1:4040/api/healthz",
+                        ]
+                        sub_res = subprocess.run(
+                            cmd_legacy, capture_output=True, text=True, check=False
                         )
-                        return True, None
-                else:
-                    req_res = requests.get(
-                        "http://localhost:4040/api/healthz", timeout=2
-                    )
-                    if req_res.status_code == 200:
-                        data = req_res.json()
-                        if data.get("status") == "healthy":
+                        output_legacy = (sub_res.stdout or "") + (sub_res.stderr or "")
+                        if "healthy" in output_legacy:
                             return True, None
-                    elif req_res.status_code == 404:
-                        UI.warning(
-                            "Legacy tunnel version detected. Skipping active health verification."
+                        if "404" in output_legacy:
+                            UI.warning(
+                                "Legacy tunnel version detected. Skipping active health verification."
+                            )
+                            return True, None
+                    else:
+                        req_res = requests.get(
+                            "http://localhost:4040/api/healthz", timeout=2
                         )
-                        return True, None
+                        if req_res.status_code == 200:
+                            data = req_res.json()
+                            if data.get("status") == "healthy":
+                                return True, None
+                        elif req_res.status_code == 404:
+                            UI.warning(
+                                "Legacy tunnel version detected. Skipping active health verification."
+                            )
+                            return True, None
             except Exception:
                 # Ignore connection errors during initial boot phase
                 pass
@@ -987,7 +1019,33 @@ class ShareService:
                             "Container terminated unexpectedly (no logs available)."
                         )
             else:
-                req_res = requests.get("http://localhost:4040/api/info", timeout=2)
+                # Query inspector_port first using status-json for native tunnel diagnostics fallback
+                inspector_port = 4040
+                try:
+                    bin_path = self._ensure_binary()
+                    status_cmd = [
+                        str(bin_path),
+                        "-status-json",
+                        "-subdomain",
+                        subdomain,
+                    ]
+                    status_res = subprocess.run(
+                        status_cmd, capture_output=True, text=True, check=False
+                    )
+                    status_out = (status_res.stdout or "").strip()
+                    if (
+                        status_out
+                        and status_out.startswith("{")
+                        and status_out.endswith("}")
+                    ):
+                        status_data = json.loads(status_out)
+                        inspector_port = status_data.get("inspector_port", 4040)
+                except Exception:
+                    pass
+
+                req_res = requests.get(
+                    f"http://localhost:{inspector_port}/api/info", timeout=2
+                )
                 if req_res.status_code == 200:
                     info = req_res.json()
                     error_reason = self._diagnose_tunnel_info(info, subdomain)
