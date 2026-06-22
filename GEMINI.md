@@ -72,6 +72,7 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
 
 ### Status
 
+- Released `v2.11.30` successfully (integrated Visual Diagnostics Web Dashboard (P3), Dynamic JVM Self-Tuning (P2), and solved GITHUB_ACTIONS env var mock test coverage mismatch).
 - Released `v2.11.29` successfully (integrated custom share domains and single-command `import` sharing options).
 - Added EDR/SentinelOne warnings to sharing and troubleshooting docs.
 - Split installation commands in README.md and INSTALLATION.md into OS-specific copy-paste blocks.
