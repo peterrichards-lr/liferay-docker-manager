@@ -697,6 +697,42 @@ class WorkspaceService(BaseHandler):
         return None
 
     def cmd_import(self, source_path, is_init_from=False):
+        is_dry_run = os.environ.get("LDM_DRY_RUN", "").lower() == "true"
+        if is_dry_run:
+            project_name = getattr(self.manager.args, "project", None) or getattr(
+                self.manager.args, "project_flag", None
+            )
+            if not project_name:
+                parsed = self._parse_github_repo(source_path)
+                if parsed:
+                    project_name = parsed[1]
+                else:
+                    project_name = source_path.split("/")[-1]
+                    if project_name.endswith(".git"):
+                        project_name = project_name[:-4]
+                    if project_name.endswith(".zip") or project_name.endswith(".ldmp"):
+                        project_name = project_name.split(".")[0]
+
+            if not project_name:
+                project_name = "demo-project"
+
+            UI.info(
+                f"{UI.BYELLOW}[DRY RUN] Would import workspace:{UI.COLOR_OFF} {source_path} -> project: {project_name}"
+            )
+
+            project_path = self.manager.detect_project_path(project_name)
+            project_meta = {
+                "project_name": project_name,
+                "container_name": project_name,
+                "port": "8080",
+                "ssl": "false",
+                "host_name": "localhost",
+                "tag": "2026.q1.4-lts",
+                "db_type": "postgresql",
+            }
+            self.manager.write_meta(project_path, project_meta)
+            return project_name
+
         # Remote URL check (http://, https://, git@)
         if source_path.startswith(("http://", "https://", "git@")):
             import subprocess

@@ -84,17 +84,17 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
 - Implemented inspector bind address wildcard fix and released `v2.11.28`.
 - Completed Implementation of **CLI 'Time Saved' ROI Logger** (P1) including test coverage and global rc persistence.
 - Completed Implementation of **Predefined Quickstarts (P1)** including test coverage and `ldm quickstart aica` capability.
+- Implemented core dry-run coverage for metadata writing, safe copy, safe move, archive extraction, and directory tree removal.
 
 ### Plan
 
-1. **Zero-Touch Autocomplete & Setup (P1)** [In Progress]:
-   - Create `ldm system setup-completion` command to automate shell setup.
-   - Auto-detect shell types and safely inject autocompletion logic into shell profile configurations.
-   - Auto-install `argcomplete` dependency if missing and prompt user for integration.
-2. **Predefined Quickstarts (P1)**: Completed.
-3. **Dynamic JVM Self-Tuning (P2)**:
+1. **Dry-Run Mode Expansion (P2)** [In Progress]:
+   - Wrap unsafe file/directory mutations (`safe_copy`, `safe_move`, `safe_extract`, `safe_rmtree`, `write_meta`, `reclaim_volume_permissions`) in dry-run checks.
+   - Bypass real git clones and downloads inside `WorkspaceService.cmd_import` during dry-run.
+   - Standardize preview reporting for dry-runs.
+2. **Zero-Touch Autocomplete & Setup (P1)**: Completed.
+3. **Predefined Quickstarts (P1)**: Completed.
+4. **Dynamic JVM Self-Tuning (P2)**:
    - Auto-detect host memory and write optimized JVM flags before container boot.
-4. **Dry-Run Mode Expansion (P2)**:
-   - Add safe `--dry-run` output formatting to orchestrations.
 5. **Visual Diagnostics Web Dashboard (P3)**:
    - Upgrade local dashboard to visual web application with log/snapshot controls.
