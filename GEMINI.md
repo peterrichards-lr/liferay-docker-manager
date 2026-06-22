@@ -87,6 +87,7 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
 - Implemented core dry-run coverage for metadata writing, safe copy, safe move, archive extraction, and directory tree removal.
 - Completed integration of **lfr-tunnel with Multi-Tunnel Support** into LDM (P1), allowing non-conflicting concurrent background tunnels, subdomain-specific stopping, status queries, and dynamic inspector port routing.
 - Completed implementation of **Privileged Port Bind Check Fallback**, catching PermissionError / EACCES for non-root users when checking ports < 1024, falling back to connect_ex to allow starting projects on ports like 80/443 without false positive "in use" errors.
+- Investigating and fixing GitHub Action check failures (4 failing tests in `test_composer.py` due to `GITHUB_ACTIONS=true` environment variable forcing the lean JVM arguments profile, bypassing the simulated memory tiers).
 
 ### Plan
 

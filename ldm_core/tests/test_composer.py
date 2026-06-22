@@ -24,6 +24,12 @@ class TestComposerService(unittest.TestCase):
     def setUp(self):
         self.manager = MockComposerManager()
         self.composer = ComposerService(self.manager)
+        # Ensure GITHUB_ACTIONS is not "true" during testing so that adaptive tier tests pass
+        self.environ_patcher = patch.dict("os.environ", {"GITHUB_ACTIONS": "false"})
+        self.environ_patcher.start()
+
+    def tearDown(self):
+        self.environ_patcher.stop()
 
     def test_build_extensions_services_basic(self):
         paths = {"root": Path("/tmp"), "cx": Path("/tmp/cx"), "ce_dir": Path("/tmp/ce")}
@@ -619,6 +625,20 @@ class TestComposerService(unittest.TestCase):
         mem = self.composer.get_physical_host_memory_bytes()
         self.assertGreater(mem, 0)
         self.assertIsInstance(mem, int)
+
+    def test_get_default_jvm_args_lean_profile(self):
+        # 1. Test when manager.args.lean is True
+        self.manager.args.lean = True
+        args = self.composer.get_default_jvm_args()
+        self.assertIn("-Xmx2048m", args)
+        self.assertIn("-Xms1536m", args)
+
+        # 2. Test when GITHUB_ACTIONS env var is "true"
+        self.manager.args.lean = False
+        with patch.dict("os.environ", {"GITHUB_ACTIONS": "true"}):
+            args_ga = self.composer.get_default_jvm_args()
+            self.assertIn("-Xmx2048m", args_ga)
+            self.assertIn("-Xms1536m", args_ga)
 
 
 if __name__ == "__main__":
