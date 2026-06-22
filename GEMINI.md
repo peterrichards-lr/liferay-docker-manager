@@ -72,7 +72,7 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
 
 ### Status
 
-- Released `v2.11.24` successfully.
+- Released `v2.11.29` successfully (integrated custom share domains and single-command `import` sharing options).
 - Added EDR/SentinelOne warnings to sharing and troubleshooting docs.
 - Split installation commands in README.md and INSTALLATION.md into OS-specific copy-paste blocks.
 - Added Default Stack & Conventions quick reference to README.md.
@@ -82,21 +82,10 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
 - Implemented logs extraction and parsing fallback for running but unresponsive tunnel containers (`v2.11.26`).
 - Implemented container pull policy always and resolved BusyBox wget command argument incompatibilities (`v2.11.27`).
 - Implemented inspector bind address wildcard fix and released `v2.11.28`.
-- Implemented custom share domain (`--share-domain`/`--domain`) and cascading default prompt/fallback settings stored in global config.
-- Integrated full share configurations into `ldm import` to allow single-command importing and sharing.
 
 ### Plan
 
-1. **Commit Local Changes to Feature Branch**:
-   - Create local branch `feature/lfr-tunnel-custom-domain`.
-   - Stage and commit current working changes (custom domain & import sharing options).
-2. **Fast-forward Master**:
-   - Switch back to `master`.
-   - Pull `origin/master` (fast-forward ruff update).
-3. **Merge & Validate**:
-   - Merge `feature/lfr-tunnel-custom-domain` into `master`.
-   - Run verification tests.
-4. **Version Bump & Release (v2.11.29)**:
-   - Update version numbers in `ldm_core/constants.py` and `pyproject.toml`.
-   - Document `v2.11.29` release in `GEMINI.md`.
-   - Commit version bump and create git tag `v2.11.29`.
+1. **Verify Release & Binary Installation**:
+   - Verify version synchronization.
+   - Run unit tests.
+   - Build and install the standalone binary using `package-shiv.sh --install`.
