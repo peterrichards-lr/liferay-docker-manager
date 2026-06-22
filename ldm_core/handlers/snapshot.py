@@ -1195,8 +1195,13 @@ class SnapshotService(BaseHandler):
 
             if success:
                 UI.success("  + Database restored successfully.")
+                if hasattr(self.manager, "config") and hasattr(
+                    self.manager.config, "track_roi"
+                ):
+                    self.manager.config.track_roi(300, "database restore")
 
                 # LDM-410: Auto-update virtualhost to match local hostname
+
                 host_name = project_meta.get("host_name", "localhost")
                 if db_type == "postgresql":
                     UI.info(f"  - Synchronizing Virtual Host entries to: {host_name}")

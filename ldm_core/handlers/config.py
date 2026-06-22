@@ -993,3 +993,47 @@ class ConfigService:
                     UI.raw(f"  {UI.GREEN}✓{UI.COLOR_OFF} {UI.WHITE}{f}{UI.COLOR_OFF}")
 
         UI.raw("")
+
+    def track_roi(self, seconds_saved: int, activity: str) -> tuple[int, int]:
+        """Tracks the ROI by adding the saved time to the global metrics."""
+        config = self.get_global_config()
+        cumulative = int(config.get("roi_seconds_saved", 0))
+        cumulative += seconds_saved
+        self.set_global_config("roi_seconds_saved", cumulative)
+
+        from ldm_core.ui import UI
+
+        run_formatted = UI.format_duration(seconds_saved)
+        total_formatted = UI.format_duration(cumulative)
+        UI.success(
+            f"✨ LDM {activity} saved you {UI.BOLD}{run_formatted}{UI.COLOR_OFF} of manual work!"
+        )
+        UI.detail(
+            f"📈 Cumulative developer time saved: {UI.CYAN}{total_formatted}{UI.COLOR_OFF}"
+        )
+
+        return seconds_saved, cumulative
+
+    def cmd_roi(self):
+        """Displays cumulative time saved using LDM."""
+        from ldm_core.ui import UI
+
+        if getattr(self.manager.args, "reset", False):
+            self.set_global_config("roi_seconds_saved", 0)
+            UI.success("ROI metrics reset successfully.")
+            return
+
+        config = self.get_global_config()
+        cumulative = int(config.get("roi_seconds_saved", 0))
+        formatted_time = UI.format_duration(cumulative)
+
+        UI.heading("LDM Developer Productivity ROI")
+        UI.raw(
+            f"  ● {UI.WHITE}Cumulative Time Saved: {UI.GREEN}{UI.BOLD}{formatted_time}{UI.COLOR_OFF}"
+        )
+        UI.raw("")
+        UI.detail("This metric is aggregated automatically from high-value actions:")
+        UI.detail("  - Workspace Seeding / First Boot (saves 14 minutes)")
+        UI.detail("  - Snapshot Restore / Import (saves 5 minutes)")
+        UI.detail("  - Local Tunnel sharing (saves 3 minutes)")
+        UI.raw("")

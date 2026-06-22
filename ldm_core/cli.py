@@ -1232,6 +1232,17 @@ def get_parser():
 
     system_subparsers.add_parser("man", parents=[base_sub_parent])
 
+    roi_cmd = system_subparsers.add_parser(
+        "roi",
+        parents=[base_sub_parent],
+        help="Display cumulative developer time saved by using LDM",
+    )
+    roi_cmd.add_argument(
+        "--reset",
+        action="store_true",
+        help="Reset cumulative ROI metrics back to zero",
+    )
+
     # Overwrite parse_known_args of the parser to run preprocess_args automatically:
     orig_parse_known_args = parser.parse_known_args
 
@@ -1607,6 +1618,7 @@ def main():
         ("system", "fix-hosts"): lambda: manager.cmd_fix_hosts(
             getattr(args, "host_name", None)
         ),
+        ("system", "roi"): manager.config.cmd_roi,
     }
 
     if current_cmd in cmds:

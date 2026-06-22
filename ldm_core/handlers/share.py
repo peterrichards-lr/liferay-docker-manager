@@ -339,6 +339,10 @@ class ShareService:
                     success, err_msg = self._poll_tunnel_health(subdomain)
                     if success:
                         UI.success("Tunnel started in the background.")
+                        if hasattr(self.manager, "config") and hasattr(
+                            self.manager.config, "track_roi"
+                        ):
+                            self.manager.config.track_roi(180, "secure sharing tunnel")
                         public_url = self.resolve_public_tunnel_url(
                             subdomain, project_id
                         )
@@ -351,8 +355,11 @@ class ShareService:
                         UI.error(f"Tunnel healthcheck failed: {err_msg}")
                         # Clean up background process
                         try:
+                            stop_cmd = [str(bin_path), "-stop"]
+                            if subdomain:
+                                stop_cmd += ["-subdomain", subdomain]
                             subprocess.run(
-                                [str(bin_path), "-stop"],
+                                stop_cmd,
                                 capture_output=True,
                                 text=True,
                                 check=False,
@@ -437,6 +444,10 @@ class ShareService:
                 )
                 if success:
                     UI.success("Tunnel container started in the background.")
+                    if hasattr(self.manager, "config") and hasattr(
+                        self.manager.config, "track_roi"
+                    ):
+                        self.manager.config.track_roi(180, "secure sharing tunnel")
                     public_url = self.resolve_public_tunnel_url(subdomain, project_id)
                     UI.success(
                         f"🌍 Public Tunnel Active: {UI.CYAN}{public_url}{UI.COLOR_OFF}"
@@ -571,6 +582,57 @@ class ShareService:
             status_output = res.stdout.strip()
             if status_output:
                 UI.info(f"lfr-tunnel container is running: {status_output}")
+
+                # Query status-json inside the container
+                subdomain = (
+                    project_meta.get("share_subdomain") or project_id or root.name
+                )
+                container_name = (
+                    project_meta.get("tunnel_container_name")
+                    or f"{root.name}-lfr-tunnel"
+                )
+                json_cmd = [
+                    "docker",
+                    "exec",
+                    container_name,
+                    "./lfr-tunnel",
+                    "-status-json",
+                    "-subdomain",
+                    subdomain,
+                ]
+                try:
+                    json_res = subprocess.run(
+                        json_cmd, capture_output=True, text=True, check=False
+                    )
+                    json_out = (json_res.stdout or "").strip()
+                    if json_out and json_out.startswith("{") and json_out.endswith("}"):
+                        data = json.loads(json_out)
+                        running = data.get("running", False)
+                        status = data.get("status", "unknown")
+                        conn_state = data.get("connection_state", "disconnected")
+                        public_urls = data.get("public_urls", [])
+
+                        UI.heading("Liferay Tunnel Container Status")
+                        status_color = UI.GREEN if status == "healthy" else UI.RED
+                        UI.raw(
+                            f"  ● {UI.WHITE}Container Name: {UI.CYAN}{container_name}{UI.COLOR_OFF}"
+                        )
+                        UI.raw(
+                            f"  ● {UI.WHITE}Status: {status_color}{status}{UI.COLOR_OFF}"
+                        )
+                        UI.raw(
+                            f"  ● {UI.WHITE}Connection State: {UI.WHITE if conn_state == 'connected' else UI.RED}{conn_state}{UI.COLOR_OFF}"
+                        )
+                        if public_urls:
+                            UI.raw(f"  ● {UI.WHITE}Public URLs:{UI.COLOR_OFF}")
+                            for url in public_urls:
+                                UI.raw(f"    - {UI.GREEN}{url}{UI.COLOR_OFF}")
+                        UI.raw("")
+                        return
+                except Exception:
+                    pass
+
+                # Fallback to logs if status-json fails
                 logs = subprocess.run(
                     [*compose_base, "logs", "--tail", "10", "lfr-tunnel"],
                     cwd=str(root),
@@ -585,6 +647,57 @@ class ShareService:
         else:
             # Default to lfr-tunnel
             bin_path = self._ensure_binary()
+            subdomain = (
+                project_meta.get("share_subdomain")
+                or project_id
+                or (root.name if root else None)
+            )
+
+            if subdomain:
+                cmd = [str(bin_path), "-status-json", "-subdomain", subdomain]
+                if getattr(self.manager, "dry_run", False):
+                    UI.info(
+                        f"{UI.BYELLOW}[DRY RUN] Would execute:{UI.COLOR_OFF} {' '.join(cmd)}"
+                    )
+                    print("Tunnel Status: Active")
+                    return
+                try:
+                    res = subprocess.run(
+                        cmd, capture_output=True, text=True, check=False
+                    )
+                    output = (res.stdout or "").strip()
+                    if output and output.startswith("{") and output.endswith("}"):
+                        data = json.loads(output)
+                        running = data.get("running", False)
+                        status = data.get("status", "unknown")
+                        conn_state = data.get("connection_state", "disconnected")
+                        public_urls = data.get("public_urls", [])
+                        inspector_port = data.get("inspector_port", 4040)
+
+                        UI.heading("Liferay Tunnel Status")
+                        UI.raw(
+                            f"  ● {UI.WHITE}Subdomain: {UI.CYAN}{subdomain}{UI.COLOR_OFF}"
+                        )
+                        status_color = UI.GREEN if status == "healthy" else UI.RED
+                        UI.raw(
+                            f"  ● {UI.WHITE}Status: {status_color}{status}{UI.COLOR_OFF}"
+                        )
+                        UI.raw(
+                            f"  ● {UI.WHITE}Connection State: {UI.WHITE if conn_state == 'connected' else UI.RED}{conn_state}{UI.COLOR_OFF}"
+                        )
+                        if public_urls:
+                            UI.raw(f"  ● {UI.WHITE}Public URLs:{UI.COLOR_OFF}")
+                            for url in public_urls:
+                                UI.raw(f"    - {UI.GREEN}{url}{UI.COLOR_OFF}")
+                        UI.raw(
+                            f"  ● {UI.WHITE}Inspector Dashboard: {UI.CYAN}http://localhost:{inspector_port}{UI.COLOR_OFF}"
+                        )
+                        UI.raw("")
+                        return
+                except Exception:
+                    pass
+
+            # Fallback to legacy status check
             cmd = [str(bin_path), "-status"]
             if getattr(self.manager, "dry_run", False):
                 UI.info(
@@ -688,7 +801,14 @@ class ShareService:
         else:
             # Default to lfr-tunnel
             bin_path = self._ensure_binary()
+            subdomain = (
+                project_meta.get("share_subdomain")
+                or project_id
+                or (root.name if root else None)
+            )
             cmd = [str(bin_path), "-stop"]
+            if subdomain:
+                cmd += ["-subdomain", subdomain]
             if getattr(self.manager, "dry_run", False):
                 UI.info(
                     f"{UI.BYELLOW}[DRY RUN] Would execute:{UI.COLOR_OFF} {' '.join(cmd)}"
@@ -705,20 +825,49 @@ class ShareService:
                 UI.die(f"Process invocation error: {e}")
 
     def _poll_tunnel_health(self, subdomain, container_name=None, timeout=10):
-        """Polls the lfr-tunnel client inspector /api/healthz endpoint to verify connection health."""
+        """Polls the lfr-tunnel status to verify connection health using -status-json."""
         import time
 
         import requests
 
         start_time = time.time()
-        url = "http://localhost:4040/api/healthz"
-
         UI.info("Verifying tunnel connectivity and subdomain lease...")
         while time.time() - start_time < timeout:
             try:
                 if container_name:
-                    # Query inside the container using docker exec and wget
+                    # Query inside the container using docker exec and status-json
                     cmd = [
+                        "docker",
+                        "exec",
+                        container_name,
+                        "./lfr-tunnel",
+                        "-status-json",
+                        "-subdomain",
+                        subdomain,
+                    ]
+                else:
+                    # Query native localhost status-json
+                    bin_path = self._ensure_binary()
+                    cmd = [
+                        str(bin_path),
+                        "-status-json",
+                        "-subdomain",
+                        subdomain,
+                    ]
+
+                res = subprocess.run(cmd, capture_output=True, text=True, check=False)
+                output = (res.stdout or "").strip()
+                if output and output.startswith("{") and output.endswith("}"):
+                    data = json.loads(output)
+                    if (
+                        data.get("running") is True
+                        and data.get("status") == "healthy"
+                        and data.get("connection_state") == "connected"
+                    ):
+                        return True, None
+                # Fallback to legacy checks
+                elif container_name:
+                    cmd_legacy = [
                         "docker",
                         "exec",
                         container_name,
@@ -727,19 +876,20 @@ class ShareService:
                         "http://127.0.0.1:4040/api/healthz",
                     ]
                     sub_res = subprocess.run(
-                        cmd, capture_output=True, text=True, check=False
+                        cmd_legacy, capture_output=True, text=True, check=False
                     )
-                    output = (sub_res.stdout or "") + (sub_res.stderr or "")
-                    if "healthy" in output:
+                    output_legacy = (sub_res.stdout or "") + (sub_res.stderr or "")
+                    if "healthy" in output_legacy:
                         return True, None
-                    if "404" in output:
+                    if "404" in output_legacy:
                         UI.warning(
                             "Legacy tunnel version detected. Skipping active health verification."
                         )
                         return True, None
                 else:
-                    # Query native localhost inspector API
-                    req_res = requests.get(url, timeout=2)
+                    req_res = requests.get(
+                        "http://localhost:4040/api/healthz", timeout=2
+                    )
                     if req_res.status_code == 200:
                         data = req_res.json()
                         if data.get("status") == "healthy":

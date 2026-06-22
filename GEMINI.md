@@ -68,7 +68,7 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
 - [PaaS "Golden Path" Guide](./docs/guides/PAAS_LOCAL_DEV.md)
 - [Agent Rules of Engagement](./.gemini/gemini.md)
 
-## 8. Active Work State & Plan (June 21, 2026)
+## 8. Active Work State & Plan (June 22, 2026)
 
 ### Status
 
@@ -82,10 +82,25 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
 - Implemented logs extraction and parsing fallback for running but unresponsive tunnel containers (`v2.11.26`).
 - Implemented container pull policy always and resolved BusyBox wget command argument incompatibilities (`v2.11.27`).
 - Implemented inspector bind address wildcard fix and released `v2.11.28`.
+- Completed Implementation of **CLI 'Time Saved' ROI Logger** (P1) including test coverage and global rc persistence.
 
 ### Plan
 
-1. **Verify Release & Binary Installation**:
-   - Verify version synchronization.
-   - Run unit tests.
-   - Build and install the standalone binary using `package-shiv.sh --install`.
+1. **Integrate new lfr-tunnel CLI capabilities (P1)**:
+   - Add support for starting multiple tunnels with automatically resolved port conflicts.
+   - Update native and containerised `_poll_tunnel_health` to use `lfr-tunnel -status-json -subdomain <subdomain>`.
+   - Update native and containerised `cmd_status` to format and print structured JSON tunnel state cleanly.
+   - Update `cmd_stop` to cleanly terminate specific background subdomain tunnels.
+   - Add unit tests for the new tunnel functions.
+2. **Zero-Touch Autocomplete & Setup (P1)**:
+   - Create `ldm system setup-completion` command to automate shell setup.
+   - Auto-install `argcomplete` dependency if missing and prompt user for integration.
+3. **Predefined Quickstarts (P1)**:
+   - Implement shortcut `ldm quickstart aica --share`.
+   - Setup project bootstrapping templates for golden-path quickstarts.
+4. **Dynamic JVM Self-Tuning (P2)**:
+   - Auto-detect host memory and write optimized JVM flags before container boot.
+5. **Dry-Run Mode Expansion (P2)**:
+   - Add safe `--dry-run` output formatting to orchestrations.
+6. **Visual Diagnostics Web Dashboard (P3)**:
+   - Upgrade local dashboard to visual web application with log/snapshot controls.

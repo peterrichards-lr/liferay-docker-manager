@@ -261,6 +261,11 @@
     - [x] Implement robust fail-fast checks for SSH and PAT authentication when accessing private repositories.
     - [x] Create unit tests and integration tests for remote import scenarios.
 
+  - [ ] **Liferay Tunnel Enhancement (v2.11.x)**:
+    - [ ] Integrate updated `lfr-tunnel` supporting multiple background tunnels concurrently.
+    - [ ] Support status query and health checking using `lfr-tunnel -status-json -subdomain <subdomain>`.
+    - [ ] Support stopping specific subdomain tunnels with `lfr-tunnel -stop -subdomain <subdomain>`.
+
 ## 9. Founding Patterns of LDM
 
 - **Sensible Defaults**: Whenever a standard Liferay convention exists, ldm uses it automatically (e.g., port 8080, managed DB name lportal).
