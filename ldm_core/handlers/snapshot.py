@@ -1,4 +1,5 @@
 import json
+import os
 import tarfile
 import time
 from datetime import datetime
@@ -136,6 +137,12 @@ class SnapshotService(BaseHandler):
 
     def cmd_snapshot(self, project_id=None):
         """Creates or manages snapshots of the project state."""
+        is_dry_run = os.environ.get("LDM_DRY_RUN", "").lower() == "true"
+        if is_dry_run:
+            UI.info(
+                f"{UI.BYELLOW}[DRY RUN] Would create or manage snapshots for project: {project_id}{UI.COLOR_OFF}"
+            )
+            return
         root = self.manager.detect_project_path(project_id)
         if not root:
             return
@@ -304,10 +311,7 @@ class SnapshotService(BaseHandler):
 
         # LDM-388: Proactively reclaim ownership of the project directories to ensure we can read all files for archiving.
         # We use 1000:1000 (Liferay standard) and 777 for bind mounts so LDM (host user) can read them.
-        # CRITICAL: For named volumes (data, state) we use 755 and host UID to prevent breaking Elasticsearch which refuses 777.
         try:
-            import os
-
             from ldm_core.utils import reclaim_volume_permissions
 
             UI.info("Reclaiming project permissions before snapshot...")
@@ -418,6 +422,12 @@ class SnapshotService(BaseHandler):
         UI.success(f"Snapshot saved: {snap_dir}")
 
     def cmd_restore(self, project_id=None, auto_index=None, backup_dir=None):
+        is_dry_run = os.environ.get("LDM_DRY_RUN", "").lower() == "true"
+        if is_dry_run:
+            UI.info(
+                f"{UI.BYELLOW}[DRY RUN] Would restore snapshot for project: {project_id}{UI.COLOR_OFF}"
+            )
+            return
         root_path = self.manager.detect_project_path(project_id, for_init=True)
         if not root_path:
             return

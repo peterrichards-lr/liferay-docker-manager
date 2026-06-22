@@ -70,6 +70,7 @@ def preprocess_args(args_list: list[str]) -> list[str]:
         "dev-setup",
         "completion",
         "setup-completion",
+        "quickstart",
         "man",
         "fix-hosts",
         "config",
@@ -869,6 +870,27 @@ def get_parser():
     )
     ai.add_argument("query", help="What do you want to ask LDM AI?")
 
+    # Command: quickstart
+    quickstart_cmd = subparsers.add_parser(
+        "quickstart",
+        parents=[base_sub_parent],
+        help="Bootstrap and start a predefined accelerator demo stack",
+    )
+    quickstart_cmd.add_argument(
+        "template",
+        choices=["aica"],
+        help="Predefined accelerator template to bootstrap",
+    )
+    quickstart_cmd.add_argument(
+        "--share",
+        action="store_true",
+        help="Expose the bootstrap stack dynamically using lfr-tunnel",
+    )
+    quickstart_cmd.add_argument(
+        "--share-subdomain",
+        help="Custom subdomain to use when sharing the stack",
+    )
+
     # ==================== NAMESPACES ====================
 
     # Namespace: infra
@@ -1441,6 +1463,11 @@ def main():
         ),
         ("mcp", None): manager.cmd_mcp,
         ("ai", None): lambda: manager.cmd_ai(args.query),
+        ("quickstart", None): lambda: manager.cmd_quickstart(
+            args.template,
+            share=args.share,
+            share_subdomain=args.share_subdomain,
+        ),
         ("import", None): lambda: manager.workspace.cmd_import(args.source),
         ("init-from", None): lambda: manager.workspace.cmd_init_from(args.source),
         ("monitor", None): lambda: manager.workspace.cmd_monitor(args.source),

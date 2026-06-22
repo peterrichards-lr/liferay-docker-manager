@@ -697,6 +697,42 @@ class WorkspaceService(BaseHandler):
         return None
 
     def cmd_import(self, source_path, is_init_from=False):
+        is_dry_run = os.environ.get("LDM_DRY_RUN", "").lower() == "true"
+        if is_dry_run:
+            project_name = getattr(self.manager.args, "project", None) or getattr(
+                self.manager.args, "project_flag", None
+            )
+            if not project_name:
+                parsed = self._parse_github_repo(source_path)
+                if parsed:
+                    project_name = parsed[1]
+                else:
+                    project_name = source_path.split("/")[-1]
+                    if project_name.endswith(".git"):
+                        project_name = project_name[:-4]
+                    if project_name.endswith(".zip") or project_name.endswith(".ldmp"):
+                        project_name = project_name.split(".")[0]
+
+            if not project_name:
+                project_name = "demo-project"
+
+            UI.info(
+                f"{UI.BYELLOW}[DRY RUN] Would import workspace:{UI.COLOR_OFF} {source_path} -> project: {project_name}"
+            )
+
+            project_path = self.manager.detect_project_path(project_name)
+            project_meta = {
+                "project_name": project_name,
+                "container_name": project_name,
+                "port": "8080",
+                "ssl": "false",
+                "host_name": "localhost",
+                "tag": "2026.q1.4-lts",
+                "db_type": "postgresql",
+            }
+            self.manager.write_meta(project_path, project_meta)
+            return project_name
+
         # Remote URL check (http://, https://, git@)
         if source_path.startswith(("http://", "https://", "git@")):
             import subprocess
@@ -1967,3 +2003,74 @@ class WorkspaceService(BaseHandler):
             observer.stop()
             UI.info("Monitor stopped.")
         observer.join()
+
+    def cmd_quickstart(self, template_name, share=False, share_subdomain=None):
+        """Bootstraps a predefined accelerator stack, imports, seeds, runs, and exposes it."""
+        templates = {
+            "aica": {
+                "repo": "https://github.com/peterrichards-lr/ai-commerce-accelerator.git",
+                "default_name": "ai-commerce-accelerator",
+            }
+        }
+
+        name_lower = template_name.lower()
+        if name_lower not in templates:
+            UI.die(f"Unrecognized quickstart template: {template_name}")
+            return
+
+        template_info = templates[name_lower]
+        repo_url = template_info["repo"]
+        project_name = template_info["default_name"]
+
+        # Ensure project argument is set so import target matches
+        self.manager.args.project = project_name
+
+        UI.heading(f"Starting Quickstart: {template_name.upper()}")
+
+        # 1. Import workspace repository
+        UI.info(f"Importing template workspace from: {repo_url}...")
+        self.cmd_import(repo_url)
+
+        # Detect paths after import
+        project_path = self.manager.detect_project_path(project_name)
+        if not project_path or not project_path.exists():
+            UI.die(f"Failed to locate imported workspace directory for {project_name}.")
+            return
+
+        project_meta = self.manager.read_meta(project_path)
+        tag = project_meta.get("tag")
+        db_type = project_meta.get("db_type", "postgresql")
+
+        if not tag:
+            tag = "2026.q1.4-lts"  # sensible fallback version
+            UI.warning(
+                f"Project metadata missing 'tag'. Falling back to default Liferay tag: {tag}"
+            )
+
+        # 2. Determine search mode
+        default_shared = (
+            "true" if self.manager.parse_version(tag) >= (2025, 1, 0) else "false"
+        )
+        use_shared = (
+            str(project_meta.get("use_shared_search", default_shared)).lower() == "true"
+        )
+        if not use_shared and self.manager.parse_version(tag) >= (2025, 2, 0):
+            use_shared = True
+        search_mode = "shared" if use_shared else "sidecar"
+
+        # 3. Apply fresh database seed
+        UI.info(f"Seeding database for {tag} ({db_type}/{search_mode})...")
+        paths = self.manager.setup_paths(project_path)
+        if not self.manager.assets._fetch_seed(tag, db_type, search_mode, paths):
+            UI.die("Failed to seed database during quickstart.")
+            return
+
+        # 4. Start stack and launch browser
+        UI.info("Starting quickstart services stack...")
+        self.manager.args.browser = True
+        self.manager.runtime.cmd_run(project_name)
+
+        # 5. Share via tunnel if requested
+        if share:
+            UI.info("Exposing quickstart tunnel...")
+            self.manager.share.cmd_start(project_name, subdomain=share_subdomain)

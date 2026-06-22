@@ -914,3 +914,58 @@ class TestShareService(unittest.TestCase):
             text=True,
             check=False,
         )
+
+    @patch("subprocess.run")
+    def test_cmd_start_with_custom_host_name(self, mock_run):
+        self.service._ensure_binary = MagicMock(  # type: ignore[method-assign]
+            return_value=Path("/fake/bin/lfr-tunnel")
+        )
+        self.service._get_installed_version = MagicMock(return_value="v1.2.3")  # type: ignore[method-assign]
+        self.service._verify_compatibility = MagicMock()  # type: ignore[method-assign]
+        self.service._get_auth_token = MagicMock(return_value="my-token")  # type: ignore[method-assign]
+        self.service._poll_tunnel_health = MagicMock(return_value=(True, None))  # type: ignore[method-assign]
+
+        self.mock_manager.detect_project_path = MagicMock(  # type: ignore[method-assign]
+            return_value=Path("/fake/myproj")
+        )
+        self.mock_manager.read_meta = MagicMock(  # type: ignore[method-assign]
+            return_value={
+                "share_provider": "lfr-tunnel",
+                "host_name": "custom.domain.local",
+            }
+        )
+
+        mock_res = MagicMock()
+        mock_res.returncode = 0
+        mock_run.return_value = mock_res
+
+        self.service.cmd_start(project_id="myproj")
+
+        run_args = mock_run.call_args[0][0]
+        self.assertIn("-target-host", run_args)
+        self.assertIn("custom.domain.local", run_args)
+
+    @patch("subprocess.run")
+    def test_resolve_public_tunnel_url_status_json(self, mock_run):
+        self.service._get_binary_path = MagicMock(  # type: ignore[method-assign]
+            return_value=Path("/fake/bin/lfr-tunnel")
+        )
+
+        with patch("os.path.exists", return_value=True):
+            mock_res = MagicMock()
+            mock_res.returncode = 0
+            mock_res.stdout = (
+                '{"public_urls": ["https://my-subdomain.custom.server.com"]}'
+            )
+            mock_run.return_value = mock_res
+
+            url = self.service.resolve_public_tunnel_url(
+                "my-subdomain", project_id="myproj"
+            )
+            self.assertEqual(url, "https://my-subdomain.custom.server.com")
+            mock_run.assert_called_with(
+                ["/fake/bin/lfr-tunnel", "-status-json", "-subdomain", "my-subdomain"],
+                capture_output=True,
+                text=True,
+                timeout=3,
+            )
