@@ -76,6 +76,9 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
 ### Plan
 
 1. **Fix Test Suite Failures**:
+   - [x] Patch `get_compose_cmd` in `TestArchitecturalContracts` setUp to isolate it from external Docker installations.
+   - [x] Correct the mock path in `test_sync_stack_readiness_timeout` (`test_stack.py`) from `ldm_core.utils.get_compose_cmd` to `ldm_core.handlers.runtime.get_compose_cmd`.
+   - [x] Pass `LDM_IGNORE_DOCKER=true` to the subprocess env in `test_interactive_prune_piped_input` (`test_e2e_diagnostics.py`).
    - [x] Identify root cause of `test_detect_project_path_iterative_search` and `test_detect_project_path_cwd_home_warning` failures.
    - [x] Import `safe_cwd` at module level in `ldm_core/handlers/base.py` to allow patching.
    - [x] Initialize `self.manager = self` in `MockBaseManager` in `test_base.py` to support the warn-once flag check on `self.manager`.
