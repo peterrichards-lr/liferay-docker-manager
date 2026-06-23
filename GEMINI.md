@@ -121,4 +121,6 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
 10. **Validate pre-commit checks in release script**:
     - [x] Modify `scripts/release.py` to run `pre-commit run --all-files` before committing to catch non-Python format and lint failures.
 11. **Automate tag creation after PR merge in release script**:
-    - [ ] Modify `scripts/release.py` to poll the PR merge status, checkout master, pull, and push the release tag automatically.
+    - [x] Modify `scripts/release.py` to poll the PR merge status, checkout master, pull, and push the release tag automatically.
+12. **Fix E2E verification scripts for project collision check**:
+    - [ ] Pipe "n" to `ldm run` instead of passing `-y` in `verify_e2e_refactor.sh` and `verify_e2e_refactor.ps1` to trigger the collision check error.
