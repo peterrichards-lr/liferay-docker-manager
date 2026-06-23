@@ -228,7 +228,7 @@ class DevService:
                         f"Semantic Versioning](https://semver.org/spec/v2.0.0.html).\n{new_block}",
                     )
                 else:
-                    new_block = f"{header}\n\n### Added\n\n- \n\n"
+                    new_block = f"{header}\n\n### Added\n\n- \n"
                     lines.insert(insert_idx, new_block)
                     content = "\n".join(lines).strip() + "\n"
                     # Final safety: remove trailing spaces from the empty list item

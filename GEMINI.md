@@ -110,3 +110,8 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
    - [x] Add CLI flag `--overwrite-registry` to automatically resolve registry collisions when the path exists.
    - [x] Prompt the user interactively to overwrite the registry collision if they are not in non-interactive mode.
    - [x] Add unit tests verifying auto-cleanup of non-existent paths, overwrite-registry flag, and interactive prompts.
+8. **Implement Automated Release Script**:
+   - [x] Create `scripts/release.py` to automate getting latest master, checking uncommitted files, bumping version, committing, pushing, and auto-merging the PR.
+   - [x] Ensure only documentation changes (`.md` files) and version changes (`ldm_core/constants.py`, `pyproject.toml`) are allowed when running the script.
+   - [ ] Verify script works correctly and handles clean/unclean workspace states.
+   - [ ] Fix LDM CHANGELOG version bump extra blank line bug in `ldm_core/handlers/dev.py`.
