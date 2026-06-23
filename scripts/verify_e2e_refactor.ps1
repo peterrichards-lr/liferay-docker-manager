@@ -124,7 +124,16 @@ try {
     $nestedRes = & {
         $prev = Get-Location
         Set-Location "collision-test/nested"
-        $out = "n" | & $LDM_CMD run "collision-test" --port 8099 --no-wait --no-up --no-seed 2>&1
+        $origGA = $env:GITHUB_ACTIONS
+        $origCI = $env:CI
+        $origGL = $env:GITLAB_CI
+        $env:GITHUB_ACTIONS = $null
+        $env:CI = $null
+        $env:GITLAB_CI = $null
+        $out = "n" | & $LDM_CMD run "./collision-test" --port 8099 --no-wait --no-up --no-seed 2>&1
+        $env:GITHUB_ACTIONS = $origGA
+        $env:CI = $origCI
+        $env:GITLAB_CI = $origGL
         Set-Location $prev
         $out
     }
