@@ -19,6 +19,7 @@ class MockBaseManager(BaseHandler):
         self.non_interactive = True
         self.workspace = WorkspaceService(self)
         self.diagnostics = DiagnosticsService(self)
+        self.manager = self  # type: ignore
 
     def cmd_completion(self, *args, **kwargs):
         return self.diagnostics.cmd_completion(*args, **kwargs)
@@ -188,6 +189,32 @@ class TestBaseDiscoveryPath(unittest.TestCase):
             ):
                 res = self.handler.detect_project_path("p1")
                 self.assertEqual(res.name, "p_match")
+
+    @patch("ldm_core.handlers.base.get_actual_home")
+    @patch("ldm_core.handlers.base.safe_cwd")
+    @patch("ldm_core.ui.UI.warning")
+    def test_detect_project_path_cwd_home_warning(self, mock_warn, mock_cwd, mock_home):
+        with tempfile.TemporaryDirectory() as base_tmp:
+            base_path = Path(base_tmp)
+            mock_home.return_value = base_path
+            mock_cwd.return_value = base_path
+
+            # Clean flag
+            if hasattr(self.handler, "_warned_home"):
+                delattr(self.handler, "_warned_home")
+
+            # First run: should warn
+            self.handler.detect_project_path("some-proj", for_init=True)
+            mock_warn.assert_called_once()
+            self.assertIn(
+                "You are running LDM from your Home directory",
+                mock_warn.call_args[0][0],
+            )
+
+            # Reset mock and run again: should NOT warn because _warned_home is True
+            mock_warn.reset_mock()
+            self.handler.detect_project_path("some-proj", for_init=True)
+            self.assertFalse(mock_warn.called)
 
 
 class TestBaseProject(unittest.TestCase):

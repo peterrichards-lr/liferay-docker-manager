@@ -86,6 +86,26 @@ ldm package --use-latest
 ldm package my-project --output /tmp/packages --repo my-owner/my-repo
 ```
 
+### ⚠️ CI/CD Release Pipelines vs. Local DB Packaging
+
+When packaging an `.ldmp` release using automated CI/CD pipelines (e.g. GitHub Actions), it is important to note that the database containers are typically **offline/not running** in the headless CI environment.
+
+If your repository contains custom build/packaging hooks that query active Docker containers (for example, checking for running databases to export schemas), the resulting `.ldmp` package will be generated with a vanilla or blank database, resulting in a default welcome site when other developers import it.
+
+#### Case Study: Liferay AI Commerce Accelerator (AICA)
+
+- **The Issue**: AICA's packaging script (`scripts/package-ldmp.sh`) checks for the running database container using `docker ps | grep -q "aica-db"`.
+- **Headless CI Failure**: In GitHub Actions (`release.yml`), the database container `aica-db` is not running. The packaging hook falls back to generating a blank `database.sql` and an empty `files.tar.gz`. The resulting `.ldmp` package uploaded to the GitHub Release is empty.
+- **The Solution**:
+
+  1. Build the package **locally on your host machine** where your active database container is running:
+
+     ```bash
+     ldm package
+     ```
+
+  2. Manually upload the populated `.ldmp` package and its `.ldmp.sha256` checksum directly to your GitHub Release assets, replacing the empty files created by the headless CI builder.
+
 ## `hydrate` (Local Cloud Backup Hydration)
 
 Creates or restores a project from a local Liferay Cloud backup layout (`database.gz` and `volume.tgz`).

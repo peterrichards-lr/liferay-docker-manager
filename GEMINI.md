@@ -76,9 +76,25 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
 ### Plan
 
 1. **Fix Test Suite Failures**:
-   - Patch `get_compose_cmd` in `TestArchitecturalContracts` setUp to isolate it from external Docker installations.
-   - Correct the mock path in `test_sync_stack_readiness_timeout` (`test_stack.py`) from `ldm_core.utils.get_compose_cmd` to `ldm_core.handlers.runtime.get_compose_cmd`.
-   - Pass `LDM_IGNORE_DOCKER=true` to the subprocess env in `test_interactive_prune_piped_input` (`test_e2e_diagnostics.py`).
+   - [x] Patch `get_compose_cmd` in `TestArchitecturalContracts` setUp to isolate it from external Docker installations.
+   - [x] Correct the mock path in `test_sync_stack_readiness_timeout` (`test_stack.py`) from `ldm_core.utils.get_compose_cmd` to `ldm_core.handlers.runtime.get_compose_cmd`.
+   - [x] Pass `LDM_IGNORE_DOCKER=true` to the subprocess env in `test_interactive_prune_piped_input` (`test_e2e_diagnostics.py`).
+   - [x] Identify root cause of `test_detect_project_path_iterative_search` and `test_detect_project_path_cwd_home_warning` failures.
+   - [x] Import `safe_cwd` at module level in `ldm_core/handlers/base.py` to allow patching.
+   - [x] Initialize `self.manager = self` in `MockBaseManager` in `test_base.py` to support the warn-once flag check on `self.manager`.
 2. **Verify user local environment boot:**
    - Wait for the user to resume tomorrow, free up port 8080 or try with `--port 8081`, and verify the import + sharing tunnel E2E.
    - Run manual verification steps to ensure the tunnel exposes the imported repository cleanly under the `pjrtest` subdomain.
+3. **[x] Implement --stop-running flag for import:**
+   - [x] Add `--stop-running` to the `import` command parser in `cli.py`.
+   - [x] Refactor `cmd_import` in `workspace.py` to extract checking and stopping of running instances into a shared helper method `_ensure_stopped`.
+   - [x] Handle the `--stop-running` flag in `_ensure_stopped` to automatically stop running containers.
+   - [x] Update error messages in non-interactive mode to hint about the new `--stop-running` flag.
+   - [x] Add unit tests verifying stop-running behavior under interactive/non-interactive conditions.
+4. **Implement Home Directory CWD Warning**:
+   - [x] Add a check at the start of `detect_project_path` in `base.py` to check if `CWD` matches the user's home directory.
+   - [x] If it matches, print the standard warning message warning about cluttering the home folder.
+   - [x] Ensure it is warned at most once per execution by keeping a flag on `self.manager`.
+   - [x] Make warning unit tests pass by fixing mock reference patching.
+5. **Update Portable Packaging Documentation**:
+   - [x] Add a note in `docs/guides/DATA_MANAGEMENT.md` clarifying that database container states must be active when running packaging commands, and use AICA as an example of how empty packages are generated in headless CI environments.

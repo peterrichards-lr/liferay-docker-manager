@@ -436,6 +436,11 @@ def get_parser():
     )
     imp.add_argument("--no-run", action="store_true")
     imp.add_argument(
+        "--stop-running",
+        action="store_true",
+        help="Automatically stop the project if it is currently running",
+    )
+    imp.add_argument(
         "--share",
         action="store_true",
         help="Automatically start a secure tunnel (lfr-tunnel) to share the instance after import",
