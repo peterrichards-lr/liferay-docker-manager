@@ -165,6 +165,61 @@ class TestComposerService(unittest.TestCase):
                 compose_dict["volumes"]["proj-state"]["name"], "proj-state"
             )
 
+    def test_windows_drive_letter_volumes_not_named(self):
+        """Verify that Windows drive letter paths are not incorrectly classified as named volume C."""
+        paths = {"root": Path("/tmp/proj"), "compose": Path("/tmp/proj/compose.yml")}
+        meta = {"container_name": "proj"}
+
+        with (
+            patch(
+                "ldm_core.handlers.composer.dict_to_yaml", return_value="yaml"
+            ) as mock_yaml,
+            patch("ldm_core.utils.safe_write_text"),
+            patch.object(
+                self.composer,
+                "_build_liferay_service",
+                return_value={
+                    "volumes": [
+                        "C:/Liferay/Projects/Zukunft Digital/deploy:/mnt/liferay/deploy",
+                        "proj-data:/opt/liferay/data",
+                    ]
+                },
+            ),
+            patch.object(self.composer, "_build_db_service", return_value={}),
+            patch.object(self.composer, "_build_search_service", return_value={}),
+            patch.object(self.composer, "_build_extensions_services", return_value={}),
+        ):
+            self.composer.write_docker_compose(paths, meta)
+
+            compose_dict = mock_yaml.call_args[0][0]
+            self.assertIn("volumes", compose_dict)
+            self.assertNotIn("C", compose_dict["volumes"])
+            self.assertIn("proj-data", compose_dict["volumes"])
+
+    def test_spaces_in_volume_names_are_sanitized(self):
+        """Verify that projects with spaces in their name do not generate named volumes with spaces."""
+        paths = {
+            "root": Path("/tmp/Zukunft Digital"),
+            "deploy": Path("/tmp/Zukunft Digital/deploy"),
+            "files": Path("/tmp/Zukunft Digital/files"),
+            "scripts": Path("/tmp/Zukunft Digital/scripts"),
+            "modules": Path("/tmp/Zukunft Digital/modules"),
+            "cx": Path("/tmp/Zukunft Digital/cx"),
+            "portal_log4j": Path("/tmp/Zukunft Digital/portal_log4j"),
+            "state": Path("/tmp/Zukunft Digital/state"),
+            "logs": Path("/tmp/Zukunft Digital/logs"),
+        }
+        meta = {"container_name": "Zukunft Digital"}
+
+        service = self.composer._build_liferay_service(
+            paths, meta, "localhost", "Zukunft-Digital", False, None
+        )
+        volumes = service["volumes"]
+        self.assertTrue(
+            any(v.startswith("Zukunft-Digital-state:/opt/liferay/osgi/state") for v in volumes),
+            f"State mapping was: {volumes}"
+        )
+
     @patch("ldm_core.handlers.composer.dict_to_yaml")
     @patch("ldm_core.utils.safe_write_text")
     def test_generate_compose_with_ngrok(self, mock_write, mock_yaml):

@@ -395,7 +395,16 @@ class ComposerService:
         for svc in services.values():
             for vol in svc.get("volumes", []):
                 if ":" in vol:
-                    host_side = vol.split(":")[0]
+                    parts = vol.split(":")
+                    if len(parts) >= 2:
+                        # Handle Windows drive letters (e.g., C:/path or C:\path)
+                        if len(parts[0]) == 1 and parts[0].isalpha() and (parts[1].startswith("/") or parts[1].startswith("\\")):
+                            host_side = parts[0] + ":" + parts[1]
+                        else:
+                            host_side = parts[0]
+                    else:
+                        host_side = vol
+
                     # If it doesn't look like a path, it's a named volume
                     if not (
                         host_side.startswith(".")
@@ -403,9 +412,11 @@ class ComposerService:
                         or "/" in host_side
                         or "\\" in host_side
                     ):
+                        # Ensure the volume identifier contains no spaces
+                        safe_vol_key = sanitize_id(host_side)
                         # LDM-424: Force explicit volume naming to prevent Docker from prefixing
                         # with the project name (which causes hydration mismatches).
-                        named_volumes[host_side] = {"name": host_side}
+                        named_volumes[safe_vol_key] = {"name": safe_vol_key}
 
         if named_volumes:
             compose["volumes"] = named_volumes
@@ -839,7 +850,9 @@ class ComposerService:
                     f"{paths['state'].as_posix()}:/opt/liferay/osgi/state{z_label}"
                 )
             else:
-                state_mapping = f"{liferay_container}-state:/opt/liferay/osgi/state"
+                from ldm_core.utils import sanitize_id
+                safe_volume_prefix = sanitize_id(liferay_container)
+                state_mapping = f"{safe_volume_prefix}-state:/opt/liferay/osgi/state"
 
             service["volumes"].extend(
                 [
