@@ -465,15 +465,18 @@ class BaseHandler:
                         registry = {}
                 else:
                     overwrite = getattr(self.args, "overwrite_registry", False)
-                    if not overwrite and not self.non_interactive:
-                        ans = UI.ask(
-                            f"Project '{project_name}' is already registered at:\n"
-                            f"  {existing_path}\n"
-                            f"Unregister the old project and register at the new path? [y/N]",
-                            "N",
-                        ).upper()
-                        if ans == "Y":
+                    if not overwrite:
+                        if self.non_interactive:
                             overwrite = True
+                        else:
+                            ans = UI.ask(
+                                f"Project '{project_name}' is already registered at:\n"
+                                f"  {existing_path}\n"
+                                f"Unregister the old project and register at the new path? [y/N]",
+                                "N",
+                            ).upper()
+                            if ans == "Y":
+                                overwrite = True
 
                     if overwrite:
                         UI.info(
