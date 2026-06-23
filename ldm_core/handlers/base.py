@@ -454,13 +454,45 @@ class BaseHandler:
             abs_current = str(current_root_path)
 
             if abs_existing != abs_current:
-                UI.die(
-                    f"Project collision: '{project_name}' is already registered at:\n"
-                    f"  {UI.CYAN}{existing_path}{UI.COLOR_OFF}\n"
-                    f"Current path:\n"
-                    f"  {UI.CYAN}{abs_current}{UI.COLOR_OFF}\n\n"
-                    f"Run {UI.BOLD}ldm down --delete{UI.COLOR_OFF} in the original folder to remove it."
-                )
+                if not Path(abs_existing).exists():
+                    UI.info(
+                        f"Stale registry entry found for project '{project_name}' at: {existing_path} (path no longer exists). Cleaning up..."
+                    )
+                    self.unregister_project(project_name)
+                    try:
+                        registry = json.loads(registry_path.read_text())
+                    except Exception:
+                        registry = {}
+                else:
+                    overwrite = getattr(self.args, "overwrite_registry", False)
+                    if not overwrite and not self.non_interactive:
+                        ans = UI.ask(
+                            f"Project '{project_name}' is already registered at:\n"
+                            f"  {existing_path}\n"
+                            f"Unregister the old project and register at the new path? [y/N]",
+                            "N",
+                        ).upper()
+                        if ans == "Y":
+                            overwrite = True
+
+                    if overwrite:
+                        UI.info(
+                            f"Unregistering existing project '{project_name}' from: {existing_path}"
+                        )
+                        self.unregister_project(project_name)
+                        try:
+                            registry = json.loads(registry_path.read_text())
+                        except Exception:
+                            registry = {}
+                    else:
+                        UI.die(
+                            f"Project collision: '{project_name}' is already registered at:\n"
+                            f"  {UI.CYAN}{existing_path}{UI.COLOR_OFF}\n"
+                            f"Current path:\n"
+                            f"  {UI.CYAN}{abs_current}{UI.COLOR_OFF}\n\n"
+                            f"Run {UI.BOLD}ldm down --delete{UI.COLOR_OFF} in the original folder to remove it, "
+                            f"or run with {UI.BOLD}--overwrite-registry{UI.COLOR_OFF} to automatically overwrite the registry."
+                        )
 
         # 2. Check Hostname (if provided and not localhost)
         if host_name and host_name != "localhost":

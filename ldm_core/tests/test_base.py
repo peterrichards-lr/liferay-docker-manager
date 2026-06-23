@@ -263,8 +263,85 @@ class TestBaseProject(unittest.TestCase):
             mock_home.return_value = base_path
 
             # No registry file exists
-            self.handler.check_registry_collisions("p1", base_path / "p1")
+            BaseHandler.check_registry_collisions(self.handler, "p1", base_path / "p1")
             # Should not die
+
+    @patch("ldm_core.handlers.base.get_actual_home")
+    @patch("ldm_core.ui.UI.ask")
+    @patch("ldm_core.ui.UI.die")
+    def test_check_registry_collisions_scenarios(self, mock_die, mock_ask, mock_home):
+        import json
+
+        from ldm_core.constants import REGISTRY_FILE
+
+        with tempfile.TemporaryDirectory() as base_tmp:
+            base_path = Path(base_tmp)
+            mock_home.return_value = base_path
+
+            ldm_dir = base_path / ".ldm"
+            ldm_dir.mkdir()
+            registry_path = ldm_dir / REGISTRY_FILE
+
+            # Case 1: Same path -> no collision
+            registry = {"p1": {"path": str(base_path / "p1")}}
+            registry_path.write_text(json.dumps(registry))
+            BaseHandler.check_registry_collisions(self.handler, "p1", base_path / "p1")
+            mock_die.assert_not_called()
+
+            # Case 2: Stale path (does not exist on disk) -> should auto-clean and not die
+            p2_old_path = base_path / "p2_old"
+            registry = {"p2": {"path": str(p2_old_path)}}
+            registry_path.write_text(json.dumps(registry))
+            BaseHandler.check_registry_collisions(self.handler, "p2", base_path / "p2")
+            mock_die.assert_not_called()
+            # Assert p2 is removed from registry
+            updated_reg = json.loads(registry_path.read_text())
+            self.assertNotIn("p2", updated_reg)
+
+            # Case 3: Different path (exists on disk), non-interactive, no overwrite_registry -> should die
+            p3_old_path = base_path / "p3_old"
+            p3_old_path.mkdir()
+            registry = {"p3": {"path": str(p3_old_path)}}
+            registry_path.write_text(json.dumps(registry))
+            self.handler.non_interactive = True
+            self.handler.args.overwrite_registry = False
+
+            BaseHandler.check_registry_collisions(self.handler, "p3", base_path / "p3")
+            mock_die.assert_called_once()
+            mock_die.reset_mock()
+
+            # Case 4: Different path (exists on disk), non-interactive, overwrite_registry=True -> should unregister & not die
+            self.handler.args.overwrite_registry = True
+            BaseHandler.check_registry_collisions(self.handler, "p3", base_path / "p3")
+            mock_die.assert_not_called()
+            # Assert p3 is removed from registry
+            updated_reg = json.loads(registry_path.read_text())
+            self.assertNotIn("p3", updated_reg)
+
+            # Case 5: Different path (exists on disk), interactive, user says Yes -> should unregister & not die
+            p4_old_path = base_path / "p4_old"
+            p4_old_path.mkdir()
+            registry = {"p4": {"path": str(p4_old_path)}}
+            registry_path.write_text(json.dumps(registry))
+            self.handler.non_interactive = False
+            self.handler.args.overwrite_registry = False
+            mock_ask.return_value = "y"
+
+            BaseHandler.check_registry_collisions(self.handler, "p4", base_path / "p4")
+            mock_ask.assert_called_once()
+            mock_die.assert_not_called()
+            updated_reg = json.loads(registry_path.read_text())
+            self.assertNotIn("p4", updated_reg)
+            mock_ask.reset_mock()
+
+            # Case 6: Different path (exists on disk), interactive, user says No -> should die
+            registry = {"p4": {"path": str(p4_old_path)}}
+            registry_path.write_text(json.dumps(registry))
+            mock_ask.return_value = "n"
+
+            BaseHandler.check_registry_collisions(self.handler, "p4", base_path / "p4")
+            mock_ask.assert_called_once()
+            mock_die.assert_called_once()
 
     def test_migrate_layout_basic(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
