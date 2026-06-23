@@ -352,6 +352,96 @@ class TestWorkspaceImport(unittest.TestCase):
             self.assertTrue(res)
             self.assertTrue(mock_copy.called)
 
+    @patch("ldm_core.docker_service.DockerService.is_running")
+    @patch("ldm_core.handlers.workspace.UI.confirm")
+    @patch("ldm_core.handlers.workspace.UI.die")
+    @patch("ldm_core.handlers.workspace.UI.info")
+    def test_ensure_stopped_not_running(
+        self, mock_info, mock_die, mock_confirm, mock_is_running
+    ):
+        mock_is_running.return_value = False
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            project_path = Path(tmp_dir) / "proj"
+            project_path.mkdir()
+            self.handler.workspace._ensure_stopped("proj", project_path)
+            self.assertFalse(mock_die.called)
+            self.assertFalse(mock_confirm.called)
+
+    @patch("ldm_core.docker_service.DockerService.is_running")
+    @patch("ldm_core.handlers.workspace.UI.confirm")
+    @patch("ldm_core.handlers.workspace.UI.die")
+    @patch("ldm_core.handlers.workspace.UI.info")
+    @patch.object(MockWorkspaceManager, "cmd_stop")
+    def test_ensure_stopped_stop_running_flag(
+        self, mock_stop, mock_info, mock_die, mock_confirm, mock_is_running
+    ):
+        mock_is_running.return_value = True
+        self.handler.args.stop_running = True
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            project_path = Path(tmp_dir) / "proj"
+            project_path.mkdir()
+            self.handler.workspace._ensure_stopped("proj", project_path)
+            mock_stop.assert_called_once_with(project_id="proj")
+            self.assertFalse(mock_die.called)
+            self.assertFalse(mock_confirm.called)
+
+    @patch("ldm_core.docker_service.DockerService.is_running")
+    @patch("ldm_core.handlers.workspace.UI.confirm")
+    @patch("ldm_core.handlers.workspace.UI.die")
+    def test_ensure_stopped_non_interactive_die(
+        self, mock_die, mock_confirm, mock_is_running
+    ):
+        mock_is_running.return_value = True
+        self.handler.args.stop_running = False
+        self.handler.non_interactive = True
+        mock_die.side_effect = SystemExit(1)
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            project_path = Path(tmp_dir) / "proj"
+            project_path.mkdir()
+            with self.assertRaises(SystemExit):
+                self.handler.workspace._ensure_stopped("proj", project_path)
+            mock_die.assert_called_once()
+            self.assertIn("--stop-running", mock_die.call_args[0][0])
+            self.assertFalse(mock_confirm.called)
+
+    @patch("ldm_core.docker_service.DockerService.is_running")
+    @patch("ldm_core.handlers.workspace.UI.confirm")
+    @patch("ldm_core.handlers.workspace.UI.die")
+    @patch.object(MockWorkspaceManager, "cmd_stop")
+    def test_ensure_stopped_interactive_confirm_yes(
+        self, mock_stop, mock_die, mock_confirm, mock_is_running
+    ):
+        mock_is_running.return_value = True
+        self.handler.args.stop_running = False
+        self.handler.non_interactive = False
+        mock_confirm.return_value = True
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            project_path = Path(tmp_dir) / "proj"
+            project_path.mkdir()
+            self.handler.workspace._ensure_stopped("proj", project_path)
+            mock_stop.assert_called_once_with(project_id="proj")
+            self.assertFalse(mock_die.called)
+
+    @patch("ldm_core.docker_service.DockerService.is_running")
+    @patch("ldm_core.handlers.workspace.UI.confirm")
+    @patch("ldm_core.handlers.workspace.UI.die")
+    @patch.object(MockWorkspaceManager, "cmd_stop")
+    def test_ensure_stopped_interactive_confirm_no(
+        self, mock_stop, mock_die, mock_confirm, mock_is_running
+    ):
+        mock_is_running.return_value = True
+        self.handler.args.stop_running = False
+        self.handler.non_interactive = False
+        mock_confirm.return_value = False
+        mock_die.side_effect = SystemExit(1)
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            project_path = Path(tmp_dir) / "proj"
+            project_path.mkdir()
+            with self.assertRaises(SystemExit):
+                self.handler.workspace._ensure_stopped("proj", project_path)
+            self.assertFalse(mock_stop.called)
+            mock_die.assert_called_once()
+
 
 class TestWorkspaceScanners(unittest.TestCase):
     def setUp(self):

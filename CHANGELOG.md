@@ -178,6 +178,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added runtime state-awareness checks to commands (run, import) to prevent unexpected container collisions.
 - Enabled non-interactive bypass for internal developer utility prompts.
 
+## [v2.11.32-pre.1] - 2026-06-23
+
+### Added
+
+- Added `--stop-running` flag to `ldm import` command to automatically stop a running instance.
+
 ## [v2.11.31] - 2026-06-22
 
 ### Added

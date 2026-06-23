@@ -37,6 +37,31 @@ class WorkspaceService(BaseHandler):
         super().__init__(manager.args)
         self.manager = manager
 
+    def _ensure_stopped(self, project_name, project_path):
+        """Ensures that the project is not running, stopping it if requested or possible."""
+        if not project_path.exists():
+            return
+
+        from ldm_core.docker_service import DockerService
+
+        meta = self.manager.read_meta(project_path)
+        c_name = meta.get("container_name") or project_name
+        if DockerService.is_running(c_name):
+            if getattr(self.manager.args, "stop_running", False):
+                UI.info(f"Stopping running project '{project_name}' automatically...")
+                self.manager.cmd_stop(project_id=project_name)
+            elif self.manager.non_interactive:
+                UI.die(
+                    f"Project '{project_name}' is currently running. Please stop it first with 'ldm stop' or use '--stop-running' before importing."
+                )
+            elif UI.confirm(
+                f"Project '{project_name}' is currently running. Stop it before continuing?",
+                "Y",
+            ):
+                self.manager.cmd_stop(project_id=project_name)
+            else:
+                UI.die("Import aborted. Cannot modify a running project's foundation.")
+
     def cmd_init(self, project_id=None):
         """Scaffolds a project without starting it."""
         # Set the no_up flag on args to ensure it doesn't try to start
@@ -825,25 +850,7 @@ class WorkspaceService(BaseHandler):
                 project_path = self.manager.detect_project_path(
                     project_name, for_init=True
                 )
-                if project_path.exists():
-                    from ldm_core.docker_service import DockerService
-
-                    meta = self.manager.read_meta(project_path)
-                    c_name = meta.get("container_name") or project_name
-                    if DockerService.is_running(c_name):
-                        if self.manager.non_interactive:
-                            UI.die(
-                                f"Project '{project_name}' is currently running. Please stop it first with 'ldm stop' before importing."
-                            )
-                        elif UI.confirm(
-                            f"Project '{project_name}' is currently running. Stop it before continuing?",
-                            "Y",
-                        ):
-                            self.manager.cmd_stop(project_id=project_name)
-                        else:
-                            UI.die(
-                                "Import aborted. Cannot modify a running project's foundation."
-                            )
+                self._ensure_stopped(project_name, project_path)
 
                 temp_git_dir = (
                     Path.cwd()
@@ -1253,25 +1260,7 @@ class WorkspaceService(BaseHandler):
                     project_name, for_init=True
                 )
 
-                if project_path.exists():
-                    from ldm_core.docker_service import DockerService
-
-                    meta = self.manager.read_meta(project_path)
-                    c_name = meta.get("container_name") or project_name
-                    if DockerService.is_running(c_name):
-                        if self.manager.non_interactive:
-                            UI.die(
-                                f"Project '{project_name}' is currently running. Please stop it first with 'ldm stop' before importing."
-                            )
-                        elif UI.confirm(
-                            f"Project '{project_name}' is currently running. Stop it before continuing?",
-                            "Y",
-                        ):
-                            self.manager.cmd_stop(project_id=project_name)
-                        else:
-                            UI.die(
-                                "Import aborted. Cannot modify a running project's foundation."
-                            )
+                self._ensure_stopped(project_name, project_path)
 
                 overwrite = True
                 is_brand_new = not project_path.exists()
@@ -1380,25 +1369,7 @@ class WorkspaceService(BaseHandler):
             project_path = self.manager.detect_project_path(project_name, for_init=True)
 
             # Check if project is currently running to prevent filesystem corruption during import
-            if project_path.exists():
-                from ldm_core.docker_service import DockerService
-
-                meta = self.manager.read_meta(project_path)
-                c_name = meta.get("container_name") or project_name
-                if DockerService.is_running(c_name):
-                    if self.manager.non_interactive:
-                        UI.die(
-                            f"Project '{project_name}' is currently running. Please stop it first with 'ldm stop' before importing."
-                        )
-                    elif UI.confirm(
-                        f"Project '{project_name}' is currently running. Stop it before continuing?",
-                        "Y",
-                    ):
-                        self.manager.cmd_stop(project_id=project_name)
-                    else:
-                        UI.die(
-                            "Import aborted. Cannot modify a running project's foundation."
-                        )
+            self._ensure_stopped(project_name, project_path)
 
             overwrite = True
             is_brand_new = not project_path.exists()

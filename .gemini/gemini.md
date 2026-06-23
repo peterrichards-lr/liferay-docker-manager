@@ -289,10 +289,12 @@
     - [x] Upgrade dashboard UI with glassmorphic dark mode styling using Alpine.js and Tailwind CSS.
     - [x] Add pytest unit tests covering new endpoints and execution paths.
 
-  - [x] **Dynamic JVM Self-Tuning (P2)**:
-    - [x] Implement host memory auto-detection and effective memory logic (`min(host, docker)`).
-    - [x] Add adaptive scale tiers for <= 4GB and <= 8GB RAM configurations.
-    - [x] Fix metadata typos in defaults/fallbacks and add unit test coverage in `test_composer.py`.
+  - [x] **Import Stop-Running Flag Support**:
+    - [x] Add `--stop-running` to the `import` command parser in `cli.py`.
+    - [x] Refactor `cmd_import` in `workspace.py` to extract checking/stopping of running instances into a shared helper method `_ensure_stopped`.
+    - [x] Handle the `--stop-running` flag in `_ensure_stopped` to automatically stop running containers.
+    - [x] Update error messages in non-interactive mode to hint about the new `--stop-running` flag.
+    - [x] Add unit tests verifying stop-running behavior under interactive/non-interactive conditions.
 
 ## 9. Founding Patterns of LDM
 

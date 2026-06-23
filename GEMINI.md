@@ -82,3 +82,9 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
 2. **Verify user local environment boot:**
    - Wait for the user to resume tomorrow, free up port 8080 or try with `--port 8081`, and verify the import + sharing tunnel E2E.
    - Run manual verification steps to ensure the tunnel exposes the imported repository cleanly under the `pjrtest` subdomain.
+3. **[x] Implement --stop-running flag for import:**
+   - [x] Add `--stop-running` to the `import` command parser in `cli.py`.
+   - [x] Refactor `cmd_import` in `workspace.py` to extract checking and stopping of running instances into a shared helper method `_ensure_stopped`.
+   - [x] Handle the `--stop-running` flag in `_ensure_stopped` to automatically stop running containers.
+   - [x] Update error messages in non-interactive mode to hint about the new `--stop-running` flag.
+   - [x] Add unit tests verifying stop-running behavior under interactive/non-interactive conditions.
