@@ -296,6 +296,11 @@
     - [x] Update error messages in non-interactive mode to hint about the new `--stop-running` flag.
     - [x] Add unit tests verifying stop-running behavior under interactive/non-interactive conditions.
 
+  - [ ] **Home Directory CWD Warning**:
+    - [x] Add check at start of `detect_project_path` in `base.py` to check if `CWD` is home directory and warn.
+    - [x] Enforce warn-once-per-execution constraint using a manager flag.
+    - [ ] Add unit tests verifying warning is printed when CWD is home directory (and fix mock patching).
+
 ## 9. Founding Patterns of LDM
 
 - **Sensible Defaults**: Whenever a standard Liferay convention exists, ldm uses it automatically (e.g., port 8080, managed DB name lportal).

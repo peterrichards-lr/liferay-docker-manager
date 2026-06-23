@@ -16,7 +16,7 @@ import contextlib
 
 from ldm_core.constants import SCRIPT_DIR
 from ldm_core.ui import UI
-from ldm_core.utils import get_actual_home
+from ldm_core.utils import get_actual_home, safe_cwd
 
 
 class BaseHandler:
@@ -793,6 +793,22 @@ class BaseHandler:
 
     def detect_project_path(self, project_id=None, for_init=False, fatal=True):
         """Resolves a project ID or path to a full filesystem path."""
+        cwd = safe_cwd()
+        if cwd:
+            try:
+                resolved_cwd = cwd.resolve()
+                home = get_actual_home().resolve()
+                if resolved_cwd == home:
+                    if not getattr(self.manager, "_warned_home", False):
+                        self.manager._warned_home = True  # type: ignore[attr-defined]
+                        UI.warning(
+                            "You are running LDM from your Home directory. "
+                            "For better performance and to avoid noise, it is recommended to "
+                            "run LDM from a dedicated workspace folder (e.g. ~/ldm)."
+                        )
+            except Exception:
+                pass
+
         pid = (
             project_id
             or getattr(self.args, "project", None)
@@ -837,8 +853,6 @@ class BaseHandler:
             if custom_workspace:
                 search_dirs.append(Path(custom_workspace).expanduser().resolve())
             else:
-                from ldm_core.utils import safe_cwd
-
                 cwd = safe_cwd()
                 search_dirs = []
                 if cwd:
@@ -933,8 +947,6 @@ class BaseHandler:
                                 continue
                 except Exception:  # nosec B112
                     continue
-
-        from ldm_core.utils import safe_cwd
 
         cwd = safe_cwd()
         if cwd:
