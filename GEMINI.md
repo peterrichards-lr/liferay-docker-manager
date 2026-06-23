@@ -97,6 +97,6 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
    - [x] Update `run_command` in `ldm_core/utils.py` to explicitly specify `encoding="utf-8"`. This prevents crashes on Windows when subprocesses (like `mkcert` or Docker) output UTF-8 symbols (like `✓` checkmarks) in `cp1252` locale environments.
    - [x] Run pre-commit format and full test suite to verify stability.
 5. **Release Stable v2.11.35**:
-   - [ ] Bump version to v2.11.35, push release branch, and open PR.
+   - [x] Bump version to v2.11.35, push release branch, and open PR.
    - [ ] Wait for PR checks to pass and auto-merge to complete.
    - [ ] Checkout master, pull, tag `v2.11.34` -> `v2.11.35` locally, push tag, and verify release.
