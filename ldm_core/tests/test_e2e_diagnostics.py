@@ -26,12 +26,17 @@ class TestE2EDiagnostics(unittest.TestCase):
         # 6. Samples cache
         # 7. Hosts
         test_input = "n\nn\nn\nn\nn\nn\nn\n"
+        import os
+
+        env = os.environ.copy()
+        env["LDM_IGNORE_DOCKER"] = "true"
         process = subprocess.run(
             [*ldm_executable, "prune", "--seeds", "--samples", "--clean-hosts"],
             input=test_input,
             capture_output=True,
             text=True,
             cwd="/tmp",
+            env=env,
         )
 
         # Verify the command executes successfully without hanging

@@ -278,7 +278,7 @@ class TestStackOrchestration(unittest.TestCase):
 
     @patch("time.time")
     @patch("time.sleep")
-    @patch("ldm_core.utils.get_compose_cmd")
+    @patch("ldm_core.handlers.runtime.get_compose_cmd")
     def test_sync_stack_readiness_timeout(self, mock_compose, mock_sleep, mock_time):
         """Verifies that the Service Readiness Gate correctly times out if a dependency hangs."""
         import tempfile
