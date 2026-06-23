@@ -178,6 +178,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added runtime state-awareness checks to commands (run, import) to prevent unexpected container collisions.
 - Enabled non-interactive bypass for internal developer utility prompts.
 
+## [v2.11.34] - 2026-06-23
+
+### Added
+
+- Added `--leave-running` option for the `import` command to keep the running project active and abort the import cleanly.
+
+### Changed
+
+- Automatically stop running projects in non-interactive/yes (`-y`) mode during `import` commands.
+
 ## [v2.11.33] - 2026-06-23
 
 ### Added
