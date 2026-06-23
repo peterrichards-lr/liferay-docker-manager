@@ -10,6 +10,8 @@ from ldm_core.handlers.runtime import RuntimeService
 class MockRuntime(BaseHandler):
     def __init__(self):
         self.args = MagicMock()
+        self.args.tag_latest = False
+        self.args.tag_prefix = None
         self.verbose = False
         self.non_interactive = True
 
@@ -515,6 +517,47 @@ class TestRuntime(unittest.TestCase):
             call_kwargs = mock_discover.call_args[1]
             self.assertEqual(call_kwargs.get("prefix_filter"), "2026.q1")
             self.assertEqual(call_kwargs.get("release_type"), "any")
+
+    @patch("ldm_core.utils.discover_latest_tag")
+    def test_cmd_run_tag_latest_overrides_metadata(self, mock_discover):
+        mock_discover.return_value = "2026.q1.10-lts"
+        with (
+            patch.object(
+                self.handler, "detect_project_path", return_value=self.tmp_dir
+            ),
+            patch.object(
+                self.handler,
+                "setup_paths",
+                return_value={
+                    "root": self.tmp_dir,
+                    "data": self.tmp_dir / "data",
+                    "state": self.tmp_dir / "osgi" / "state",
+                },
+            ),
+            patch.object(
+                self.handler, "read_meta", return_value={"tag": "2026.q1.9-lts"}
+            ),
+            patch.object(self.handler, "_pre_flight_checks", return_value=8080),
+            patch.object(self.handler, "verify_runtime_environment"),
+            patch.object(self.handler.handler, "sync_stack"),
+        ):
+            self.handler.args.project = "test"
+            self.handler.args.tag = None
+            self.handler.args.tag_latest = True
+            self.handler.args.tag_prefix = None
+            self.handler.args.release_type = None
+            self.handler.args.no_up = True
+            self.handler.args.samples = False
+            self.handler.args.db = None
+            self.handler.args.host_name = None
+            self.handler.args.jvm_args = None
+            self.handler.args.port = None
+            self.handler.args.snapshot = None
+            self.handler.args.archetype = None
+
+            self.handler.cmd_run("test")
+
+            mock_discover.assert_called_once()
 
     def test_cmd_run_with_reindex_flag(self):
         """Verify that --reindex flag sets the metadata flag."""

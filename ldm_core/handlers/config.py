@@ -462,7 +462,22 @@ class ConfigService:
                 else:
                     host_updates[f"feature.flag.{f}"] = "true"
 
-        # Use the binary-aware 'common' path from setup_paths
+        # Handle Preferred Admin User Details from Global Configuration
+        admin_mappings = {
+            "admin_password": "default.admin.password",
+            "admin_screen_name": "default.admin.screen.name",
+            "admin_email_prefix": "default.admin.email.address.prefix",
+            "admin_first_name": "default.admin.first.name",
+            "admin_middle_name": "default.admin.middle.name",
+            "admin_last_name": "default.admin.last.name",
+        }
+        for config_key, portal_key in admin_mappings.items():
+            val = global_config.get(config_key)
+            if val is not None:
+                if host_updates is None:
+                    host_updates = {}
+                host_updates[portal_key] = val
+
         common_dir = paths.get("common")
         target_ext = paths["files"] / "portal-ext.properties"
 

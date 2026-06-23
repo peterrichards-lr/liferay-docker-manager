@@ -70,21 +70,36 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
 
 ## 8. Active Work State & Plan (June 23, 2026)
 
+- Released `v2.11.34` successfully (integrated automatic stop in non-interactive/yes mode and `--leave-running` option for workspace imports).
 - Released `v2.11.33` successfully (integrated CWD home directory warning, `--stop-running` flag for import, and portable packaging documentation updates).
 - Released `v2.11.31` successfully (integrated quickstart templates overrides, automatically start sharing under `ldm import`, standalone `ldmp` package exports, and test suite/pre-commit fixes).
 - Released `v2.11.30` successfully (integrated Visual Diagnostics Web Dashboard (P3), Dynamic JVM Self-Tuning (P2), and solved GITHUB_ACTIONS env var mock test coverage mismatch).
 
 ### Plan
 
-1. **Auto-Stop Running Projects on Import under Non-Interactive Mode (`-y`)**:
-   - [x] Modify `_ensure_stopped` in `ldm_core/handlers/workspace.py` to automatically stop running containers when `self.manager.non_interactive` is `True`.
-   - [x] Modify the corresponding unit test `test_ensure_stopped_non_interactive_die` in `ldm_core/tests/test_workspace.py` to assert that it automatically stops the container instead of dying.
-   - [x] Run unit tests to verify they all pass.
-2. **Implement `--leave-running` option for import**:
-   - [x] Add `--leave-running` option to the `import` command parser in `ldm_core/cli.py`.
-   - [x] Add logic in `_ensure_stopped` in `ldm_core/handlers/workspace.py` to abort immediately if `--leave-running` is specified.
-   - [x] Add unit test in `ldm_core/tests/test_workspace.py` verifying `--leave-running` behavior.
-3. **Release Stable v2.11.34**:
-   - [ ] Create a release branch `release/v2.11.34`, bump the version, and push.
-   - [ ] Create Pull Request and wait for CI checks to pass and auto-merge.
-   - [ ] Checkout master, pull, locally tag `v2.11.34` on master, push tag, and verify release.
+1. **Fix `--tag-latest` / `--tag-prefix` Overrides**:
+   - [x] Modify tag resolution in `cmd_run` in `ldm_core/handlers/runtime.py` to bypass project metadata tag if `tag_latest` or `prefix` is specified.
+   - [x] Add unit test in `ldm_core/tests/test_runtime.py` verifying that `--tag-latest` properly overrides metadata-stored tags.
+   - [x] Run all unit tests to ensure they are green.
+2. **Safe lfr-tunnel Path Check & User-Controlled Installation**:
+   - [x] Support custom binary path resolution via `LDM_LFR_TUNNEL_BIN`/`LFR_TUNNEL_BIN` env vars, `lfr_tunnel_bin` config, system `PATH` check (`shutil.which`), and fallback to `~/.ldm/bin/lfr-tunnel`.
+   - [x] Avoid automatic downloads. Require user instruction via CLI flag `--auto-install-lfr-tunnel` or interactive prompt.
+   - [x] Support custom installation command via `LDM_LFR_TUNNEL_INSTALL_CMD`/`LFR_TUNNEL_INSTALL_CMD` env vars or `lfr_tunnel_install_cmd` config.
+   - [x] Add CLI arguments in `ldm_core/cli.py` for `--auto-install-lfr-tunnel`.
+   - [x] Add unit tests verifying path resolution priority and interactive/non-interactive prompt behaviors.
+
+3. **Preferred Admin Details Global Configuration**:
+   - [x] Retrieve preferred admin settings (`admin_password`, `admin_screen_name`, etc.) from global config in `sync_common_assets` in `ldm_core/handlers/config.py`.
+   - [x] Map and inject these settings into `host_updates` written to `portal-ext.properties`.
+   - [x] Add support in `cmd_config` for setting these config keys.
+   - [x] Add unit tests verifying global config admin properties are correctly mapped and written.
+
+4. **Fix Windows Subprocess `UnicodeDecodeError`**:
+   - [ ] Update `run_command` in `ldm_core/utils.py` to explicitly specify `encoding="utf-8"`. This prevents crashes on Windows when subprocesses (like `mkcert` or Docker) output UTF-8 symbols (like `✓` checkmarks) in `cp1252` locale environments.
+   - [ ] Run pre-commit format and full test suite to verify stability.
+5. **Release Stable v2.11.35**:
+   - [ ] Bump version to v2.11.35, push release branch, and open PR.
+   - [ ] Wait for PR checks to pass and auto-merge to complete.
+   - [ ] Checkout master, pull, tag `v2.11.34` -> `v2.11.35` locally, push tag, and verify release.
+
+

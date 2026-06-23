@@ -3,9 +3,11 @@ import json
 import os
 import platform
 import re
+import shutil
 import ssl
 import subprocess
 import urllib.request
+from pathlib import Path
 
 from ldm_core.ui import UI
 from ldm_core.utils import get_actual_home, version_to_tuple
@@ -17,8 +19,48 @@ class ShareService:
     def __init__(self, manager):
         self.manager = manager
 
+    def _resolve_existing_binary(self):
+        """Resolves the path to an existing, working lfr-tunnel binary if available."""
+        is_windows = platform.system().lower() == "windows"
+        bin_name = "lfr-tunnel.exe" if is_windows else "lfr-tunnel"
+
+        # 1. Environment variables
+        env_bin = os.environ.get("LDM_LFR_TUNNEL_BIN") or os.environ.get(
+            "LFR_TUNNEL_BIN"
+        )
+        if env_bin:
+            path = Path(env_bin)
+            if self._get_installed_version(path):
+                return path
+
+        # 2. Global config
+        config = self.manager.config.get_global_config()
+        config_bin = config.get("lfr_tunnel_bin")
+        if config_bin:
+            path = Path(config_bin)
+            if self._get_installed_version(path):
+                return path
+
+        # 3. System PATH check
+        sys_path = shutil.which(bin_name)
+        if sys_path:
+            path = Path(sys_path)
+            if self._get_installed_version(path):
+                return path
+
+        # 4. Fallback default location
+        default_path = get_actual_home() / ".ldm" / "bin" / bin_name
+        if default_path.exists() and self._get_installed_version(default_path):
+            return default_path
+
+        return None
+
     def _get_binary_path(self):
-        """Returns the local path for the lfr-tunnel binary."""
+        """Returns the local path for the lfr-tunnel binary, checking PATH/custom locations first."""
+        existing = self._resolve_existing_binary()
+        if existing:
+            return existing
+
         is_windows = platform.system().lower() == "windows"
         bin_name = "lfr-tunnel.exe" if is_windows else "lfr-tunnel"
         return get_actual_home() / ".ldm" / "bin" / bin_name
@@ -53,7 +95,57 @@ class ShareService:
         if getattr(self.manager, "dry_run", False):
             return bin_path
 
-        # Determine OS and Arch
+        # Check if user authorized installation
+        auto_install = getattr(self.manager.args, "auto_install_lfr_tunnel", False)
+        authorized = auto_install
+
+        if not authorized and not self.manager.non_interactive:
+            # Interactive prompt fallback
+            custom_cmd = (
+                os.environ.get("LDM_LFR_TUNNEL_INSTALL_CMD")
+                or os.environ.get("LFR_TUNNEL_INSTALL_CMD")
+                or self.manager.config.get_global_config().get("lfr_tunnel_install_cmd")
+            )
+            if custom_cmd:
+                prompt_msg = f"lfr-tunnel not found. Run custom installation command '{custom_cmd}'? [Y/n]"
+            else:
+                prompt_msg = "lfr-tunnel not found. Download and install it from GitHub to ~/.ldm/bin/lfr-tunnel? [Y/n]"
+
+            authorized = UI.confirm(prompt_msg, default="Y")
+
+        if not authorized:
+            UI.die(
+                "lfr-tunnel binary not found.\n"
+                "To automatically install it, run with --auto-install-lfr-tunnel or in interactive mode.\n"
+                "Alternatively, configure a custom binary path using 'lfr_tunnel_bin' in ~/.ldmrc or the LDM_LFR_TUNNEL_BIN env var."
+            )
+
+        # Run custom installer command if configured
+        custom_cmd = (
+            os.environ.get("LDM_LFR_TUNNEL_INSTALL_CMD")
+            or os.environ.get("LFR_TUNNEL_INSTALL_CMD")
+            or self.manager.config.get_global_config().get("lfr_tunnel_install_cmd")
+        )
+
+        if custom_cmd:
+            UI.info(f"Running custom installation command: {custom_cmd}")
+            try:
+                subprocess.run(custom_cmd, shell=True, check=True)
+            except Exception as e:
+                UI.die(f"Custom installation command failed: {e}")
+
+            resolved_bin = self._resolve_existing_binary()
+            if resolved_bin:
+                new_ver = self._get_installed_version(resolved_bin)
+                UI.success(
+                    f"lfr-tunnel v{new_ver} ready (installed via custom command)."
+                )
+                return resolved_bin
+            UI.die(
+                "Failed to locate lfr-tunnel binary after running the custom installation command."
+            )
+
+        # Default fallback: GitHub download
         sys_type = platform.system().lower()
         if sys_type == "darwin":
             os_name = "darwin"
@@ -70,7 +162,6 @@ class ShareService:
         elif machine in ["arm64", "aarch64"]:
             arch_name = "arm64"
         else:
-            # Default fallback
             arch_name = "amd64"
 
         # Construct download URL

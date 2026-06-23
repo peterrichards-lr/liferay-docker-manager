@@ -129,11 +129,16 @@ class RuntimeService(BaseHandler):
                         return
                     is_restart = True
 
-            tag = (
-                self.manager.args.tag
-                or project_meta.get("tag")
-                or self.manager.defaults.get("tag")
-            )
+            tag_latest = getattr(self.manager.args, "tag_latest", False)
+            prefix = getattr(self.manager.args, "tag_prefix", None)
+            if tag_latest or prefix:
+                tag = None
+            else:
+                tag = (
+                    self.manager.args.tag
+                    or project_meta.get("tag")
+                    or self.manager.defaults.get("tag")
+                )
             is_portal = (
                 getattr(self.manager.args, "portal", False)
                 or str(

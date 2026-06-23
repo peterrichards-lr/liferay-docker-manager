@@ -178,6 +178,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added runtime state-awareness checks to commands (run, import) to prevent unexpected container collisions.
 - Enabled non-interactive bypass for internal developer utility prompts.
 
+## [v2.11.35] - 2026-06-23
+
+### Added
+
+- Added `--auto-install-lfr-tunnel` command-line argument and `lfr_tunnel_bin` / `lfr_tunnel_install_cmd` settings to configure custom paths or commands for the `lfr-tunnel` binary.
+- Added mapping and propagation of global configuration preferred admin user details (e.g. `admin_password`, `admin_first_name`, etc.) directly into target `portal-ext.properties`.
+
+### Fixed
+
+- Fixed `--tag-latest` and `--tag-prefix` to correctly override the project's locally stored metadata tag during run commands.
+- Fixed subprocess invocation to use `encoding="utf-8"`, preventing `UnicodeDecodeError` exceptions on Windows environments under non-UTF-8 locale encodings.
+
 ## [v2.11.34] - 2026-06-23
 
 ### Added

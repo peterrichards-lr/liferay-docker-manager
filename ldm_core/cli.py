@@ -406,6 +406,11 @@ def get_parser():
         help="Custom domain to use when sharing the instance (e.g. lfr-demo.online, lfr-demo.se)",
     )
     run.add_argument(
+        "--auto-install-lfr-tunnel",
+        action="store_true",
+        help="Automatically install lfr-tunnel if not found in PATH",
+    )
+    run.add_argument(
         "--persist-osgi",
         action="store_true",
         default=None,
@@ -471,6 +476,11 @@ def get_parser():
     imp.add_argument(
         "--share-domain",
         help="Custom domain to use when sharing the instance (e.g. lfr-demo.online, lfr-demo.se)",
+    )
+    imp.add_argument(
+        "--auto-install-lfr-tunnel",
+        action="store_true",
+        help="Automatically install lfr-tunnel if not found in PATH",
     )
     imp.add_argument("--backup-dir")
     imp.add_argument("--build", action="store_true")
@@ -1008,6 +1018,11 @@ def get_parser():
     share_start.add_argument(
         "--domain",
         help="Custom domain prefix (e.g. lfr-demo.online, lfr-demo.se)",
+    )
+    share_start.add_argument(
+        "--auto-install-lfr-tunnel",
+        action="store_true",
+        help="Automatically install lfr-tunnel if not found in PATH",
     )
     share_inspector = share_subparsers.add_parser(
         "inspector",

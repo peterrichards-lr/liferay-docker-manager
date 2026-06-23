@@ -322,6 +322,39 @@ class TestConfigService(unittest.TestCase):
             self.assertEqual(host_updates["feature.flag.ui.visible[dev]"], "true")
             self.assertEqual(host_updates["feature.flag.ui.visible[beta]"], "true")
 
+    def test_sync_common_assets_preferred_admin(self):
+        """Verify global admin preferences are merged into host_updates."""
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            configs_dir = tmp_path / "osgi" / "configs"
+            configs_dir.mkdir(parents=True)
+            files_dir = tmp_path / "files"
+            files_dir.mkdir(parents=True)
+
+            paths = {
+                "root": tmp_path,
+                "configs": configs_dir,
+                "files": files_dir,
+                "common": tmp_path / "common",
+            }
+            host_updates: dict[str, str] = {}
+
+            with patch.object(self.config, "get_global_config") as mock_global:
+                mock_global.return_value = {
+                    "admin_password": "secretpassword",
+                    "admin_first_name": "John",
+                    "admin_last_name": "Doe",
+                }
+
+                self.config.sync_common_assets(paths, host_updates=host_updates)
+
+            self.assertEqual(host_updates["default.admin.password"], "secretpassword")
+            self.assertEqual(host_updates["default.admin.first.name"], "John")
+            self.assertEqual(host_updates["default.admin.last.name"], "Doe")
+            self.assertNotIn("default.admin.middle.name", host_updates)
+
     def test_cmd_feature(self):
         """Verify cmd_feature manages and lists feature flags."""
         import tempfile
