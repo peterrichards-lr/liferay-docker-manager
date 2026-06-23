@@ -99,5 +99,9 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
 5. **Release Stable v2.11.35**:
    - [x] Bump version to v2.11.35, push release branch, and open PR.
    - [x] Fix mypy method-assign type check errors in unit tests.
-   - [ ] Wait for PR checks to pass and auto-merge to complete.
-   - [ ] Checkout master, pull, tag `v2.11.34` -> `v2.11.35` locally, push tag, and verify release.
+   - [x] Wait for PR checks to pass and auto-merge to complete.
+   - [x] Checkout master, pull, tag `v2.11.34` -> `v2.11.35` locally, push tag, and verify release.
+6. **Release Stable v2.11.36 (Spaces in Named Volumes & Windows Path Parsing)**:
+   - [/] Fix volume path parsing in `ldm_core/handlers/composer.py` to support drive letters and sanitize named volumes with spaces.
+   - [ ] Add unit tests verifying parsing logic and volume name sanitization.
+   - [ ] Bump version to v2.11.36, run tests, open PR, and tag release.
