@@ -124,7 +124,7 @@ try {
     $nestedRes = & {
         $prev = Get-Location
         Set-Location "collision-test/nested"
-        $out = & $LDM_CMD -y run "collision-test" --port 8099 --no-wait --no-up --no-seed 2>&1
+        $out = "n" | & $LDM_CMD run "collision-test" --port 8099 --no-wait --no-up --no-seed 2>&1
         Set-Location $prev
         $out
     }
