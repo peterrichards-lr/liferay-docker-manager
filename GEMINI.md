@@ -118,3 +118,5 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
 9. **Auto-resolve Project Registry Collision in Non-Interactive/Yes Mode**:
    - [x] Allow `-y` / `--non-interactive` flag to automatically overwrite registry collisions (acting as auto-confirm).
    - [x] Update unit tests in `ldm_core/tests/test_base.py` to assert that non-interactive mode auto-overwrites.
+10. **Validate pre-commit checks in release script**:
+    - [x] Modify `scripts/release.py` to run `pre-commit run --all-files` before committing to catch non-Python format and lint failures.

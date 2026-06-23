@@ -126,36 +126,49 @@ def main():
 
     # Quality Gate check: Format and Lint
     print("Running code formatting and lint checks...")
-    ruff_bin = project_root / ".venv" / "bin" / "ruff"
-    if ruff_bin.exists():
-        print("Formatting Python files with Ruff...")
-        run_cmd([str(ruff_bin), "format", "."])
-        print("Linting and fixing Python files with Ruff...")
-        run_cmd([str(ruff_bin), "check", ".", "--fix"], check=False)
-        # Double check checks pass
-        res = run_cmd([str(ruff_bin), "check", "."], check=False, capture=True)
+    pre_commit_bin = project_root / ".venv" / "bin" / "pre-commit"
+    if pre_commit_bin.exists():
+        print("Running pre-commit quality gate checks...")
+        res = run_cmd(
+            [str(pre_commit_bin), "run", "--all-files"], check=False, capture=True
+        )
         if res.returncode != 0:
             print(
-                f"\n❌ Error: Ruff lint checks failed. Please resolve lint issues before release:\n{res.stdout}"
+                f"\n❌ Error: Pre-commit quality gate checks failed. Please resolve lint issues before release:\n{res.stdout}\n{res.stderr or ''}"
             )
             sys.exit(res.returncode)
+        print("✅ Pre-commit quality gate checks passed.")
     else:
-        import shutil
-
-        sys_ruff = shutil.which("ruff")
-        if sys_ruff:
-            run_cmd([sys_ruff, "format", "."])
-            run_cmd([sys_ruff, "check", ".", "--fix"], check=False)
-            res = run_cmd([sys_ruff, "check", "."], check=False, capture=True)
+        ruff_bin = project_root / ".venv" / "bin" / "ruff"
+        if ruff_bin.exists():
+            print("Formatting Python files with Ruff...")
+            run_cmd([str(ruff_bin), "format", "."])
+            print("Linting and fixing Python files with Ruff...")
+            run_cmd([str(ruff_bin), "check", ".", "--fix"], check=False)
+            # Double check checks pass
+            res = run_cmd([str(ruff_bin), "check", "."], check=False, capture=True)
             if res.returncode != 0:
                 print(
                     f"\n❌ Error: Ruff lint checks failed. Please resolve lint issues before release:\n{res.stdout}"
                 )
                 sys.exit(res.returncode)
         else:
-            print(
-                "⚠️ Warning: Ruff formatter/linter not found. Skipping code formatting check."
-            )
+            import shutil
+
+            sys_ruff = shutil.which("ruff")
+            if sys_ruff:
+                run_cmd([sys_ruff, "format", "."])
+                run_cmd([sys_ruff, "check", ".", "--fix"], check=False)
+                res = run_cmd([sys_ruff, "check", "."], check=False, capture=True)
+                if res.returncode != 0:
+                    print(
+                        f"\n❌ Error: Ruff lint checks failed. Please resolve lint issues before release:\n{res.stdout}"
+                    )
+                    sys.exit(res.returncode)
+            else:
+                print(
+                    "⚠️ Warning: Ruff formatter/linter not found. Skipping code formatting check."
+                )
 
     # 7. Add, commit, and push
     print("Staging and committing files...")
