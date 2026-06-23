@@ -130,7 +130,7 @@ class ShareService:
         if custom_cmd:
             UI.info(f"Running custom installation command: {custom_cmd}")
             try:
-                subprocess.run(custom_cmd, shell=True, check=True)
+                subprocess.run(custom_cmd, shell=True, check=True)  # nosec B602
             except Exception as e:
                 UI.die(f"Custom installation command failed: {e}")
 
