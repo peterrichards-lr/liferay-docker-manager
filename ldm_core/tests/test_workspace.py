@@ -24,6 +24,8 @@ class MockWorkspaceManager(
         self.args = MagicMock()
         self.args.host_name = "localhost"
         self.args.ssl = False
+        self.args.stop_running = False
+        self.args.leave_running = False
 
         from ldm_core.defaults import DefaultsManager
 
@@ -388,20 +390,42 @@ class TestWorkspaceImport(unittest.TestCase):
     @patch("ldm_core.docker_service.DockerService.is_running")
     @patch("ldm_core.handlers.workspace.UI.confirm")
     @patch("ldm_core.handlers.workspace.UI.die")
-    def test_ensure_stopped_non_interactive_die(
-        self, mock_die, mock_confirm, mock_is_running
+    @patch("ldm_core.handlers.workspace.UI.info")
+    @patch.object(MockWorkspaceManager, "cmd_stop")
+    def test_ensure_stopped_non_interactive_auto_stop(
+        self, mock_stop, mock_info, mock_die, mock_confirm, mock_is_running
     ):
         mock_is_running.return_value = True
         self.handler.args.stop_running = False
         self.handler.non_interactive = True
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            project_path = Path(tmp_dir) / "proj"
+            project_path.mkdir()
+            self.handler.workspace._ensure_stopped("proj", project_path)
+            mock_stop.assert_called_once_with(project_id="proj")
+            self.assertFalse(mock_die.called)
+            self.assertFalse(mock_confirm.called)
+
+    @patch("ldm_core.docker_service.DockerService.is_running")
+    @patch("ldm_core.handlers.workspace.UI.confirm")
+    @patch("ldm_core.handlers.workspace.UI.die")
+    @patch.object(MockWorkspaceManager, "cmd_stop")
+    def test_ensure_stopped_leave_running(
+        self, mock_stop, mock_die, mock_confirm, mock_is_running
+    ):
+        mock_is_running.return_value = True
+        self.handler.args.leave_running = True
+        self.handler.args.stop_running = False
+        self.handler.non_interactive = False
         mock_die.side_effect = SystemExit(1)
         with tempfile.TemporaryDirectory() as tmp_dir:
             project_path = Path(tmp_dir) / "proj"
             project_path.mkdir()
             with self.assertRaises(SystemExit):
                 self.handler.workspace._ensure_stopped("proj", project_path)
+            self.assertFalse(mock_stop.called)
             mock_die.assert_called_once()
-            self.assertIn("--stop-running", mock_die.call_args[0][0])
+            self.assertIn("`--leave-running` was specified", mock_die.call_args[0][0])
             self.assertFalse(mock_confirm.called)
 
     @patch("ldm_core.docker_service.DockerService.is_running")

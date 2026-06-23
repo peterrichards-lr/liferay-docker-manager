@@ -47,13 +47,16 @@ class WorkspaceService(BaseHandler):
         meta = self.manager.read_meta(project_path)
         c_name = meta.get("container_name") or project_name
         if DockerService.is_running(c_name):
-            if getattr(self.manager.args, "stop_running", False):
+            if getattr(self.manager.args, "leave_running", False):
+                UI.die(
+                    f"Project '{project_name}' is currently running. `--leave-running` was specified, so the project remains running. Aborting import."
+                )
+            elif (
+                getattr(self.manager.args, "stop_running", False)
+                or self.manager.non_interactive
+            ):
                 UI.info(f"Stopping running project '{project_name}' automatically...")
                 self.manager.cmd_stop(project_id=project_name)
-            elif self.manager.non_interactive:
-                UI.die(
-                    f"Project '{project_name}' is currently running. Please stop it first with 'ldm stop' or use '--stop-running' before importing."
-                )
             elif UI.confirm(
                 f"Project '{project_name}' is currently running. Stop it before continuing?",
                 "Y",

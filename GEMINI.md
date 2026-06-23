@@ -70,31 +70,21 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
 
 ## 8. Active Work State & Plan (June 23, 2026)
 
+- Released `v2.11.33` successfully (integrated CWD home directory warning, `--stop-running` flag for import, and portable packaging documentation updates).
 - Released `v2.11.31` successfully (integrated quickstart templates overrides, automatically start sharing under `ldm import`, standalone `ldmp` package exports, and test suite/pre-commit fixes).
 - Released `v2.11.30` successfully (integrated Visual Diagnostics Web Dashboard (P3), Dynamic JVM Self-Tuning (P2), and solved GITHUB_ACTIONS env var mock test coverage mismatch).
 
 ### Plan
 
-1. **Fix Test Suite Failures**:
-   - [x] Patch `get_compose_cmd` in `TestArchitecturalContracts` setUp to isolate it from external Docker installations.
-   - [x] Correct the mock path in `test_sync_stack_readiness_timeout` (`test_stack.py`) from `ldm_core.utils.get_compose_cmd` to `ldm_core.handlers.runtime.get_compose_cmd`.
-   - [x] Pass `LDM_IGNORE_DOCKER=true` to the subprocess env in `test_interactive_prune_piped_input` (`test_e2e_diagnostics.py`).
-   - [x] Identify root cause of `test_detect_project_path_iterative_search` and `test_detect_project_path_cwd_home_warning` failures.
-   - [x] Import `safe_cwd` at module level in `ldm_core/handlers/base.py` to allow patching.
-   - [x] Initialize `self.manager = self` in `MockBaseManager` in `test_base.py` to support the warn-once flag check on `self.manager`.
-2. **Verify user local environment boot:**
-   - Wait for the user to resume tomorrow, free up port 8080 or try with `--port 8081`, and verify the import + sharing tunnel E2E.
-   - Run manual verification steps to ensure the tunnel exposes the imported repository cleanly under the `pjrtest` subdomain.
-3. **[x] Implement --stop-running flag for import:**
-   - [x] Add `--stop-running` to the `import` command parser in `cli.py`.
-   - [x] Refactor `cmd_import` in `workspace.py` to extract checking and stopping of running instances into a shared helper method `_ensure_stopped`.
-   - [x] Handle the `--stop-running` flag in `_ensure_stopped` to automatically stop running containers.
-   - [x] Update error messages in non-interactive mode to hint about the new `--stop-running` flag.
-   - [x] Add unit tests verifying stop-running behavior under interactive/non-interactive conditions.
-4. **Implement Home Directory CWD Warning**:
-   - [x] Add a check at the start of `detect_project_path` in `base.py` to check if `CWD` matches the user's home directory.
-   - [x] If it matches, print the standard warning message warning about cluttering the home folder.
-   - [x] Ensure it is warned at most once per execution by keeping a flag on `self.manager`.
-   - [x] Make warning unit tests pass by fixing mock reference patching.
-5. **Update Portable Packaging Documentation**:
-   - [x] Add a note in `docs/guides/DATA_MANAGEMENT.md` clarifying that database container states must be active when running packaging commands, and use AICA as an example of how empty packages are generated in headless CI environments.
+1. **Auto-Stop Running Projects on Import under Non-Interactive Mode (`-y`)**:
+   - [x] Modify `_ensure_stopped` in `ldm_core/handlers/workspace.py` to automatically stop running containers when `self.manager.non_interactive` is `True`.
+   - [x] Modify the corresponding unit test `test_ensure_stopped_non_interactive_die` in `ldm_core/tests/test_workspace.py` to assert that it automatically stops the container instead of dying.
+   - [x] Run unit tests to verify they all pass.
+2. **Implement `--leave-running` option for import**:
+   - [x] Add `--leave-running` option to the `import` command parser in `ldm_core/cli.py`.
+   - [x] Add logic in `_ensure_stopped` in `ldm_core/handlers/workspace.py` to abort immediately if `--leave-running` is specified.
+   - [x] Add unit test in `ldm_core/tests/test_workspace.py` verifying `--leave-running` behavior.
+3. **Release Stable v2.11.34**:
+   - [ ] Create a release branch `release/v2.11.34`, bump the version, and push.
+   - [ ] Create Pull Request and wait for CI checks to pass and auto-merge.
+   - [ ] Checkout master, pull, locally tag `v2.11.34` on master, push tag, and verify release.
