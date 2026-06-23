@@ -464,7 +464,7 @@ class ConfigService:
 
         # Handle Preferred Admin User Details from Global Configuration
         admin_mappings = {
-            "admin_password": "default.admin.password",
+            "admin_password": "default.admin.password",  # pragma: allowlist secret
             "admin_screen_name": "default.admin.screen.name",
             "admin_email_prefix": "default.admin.email.address.prefix",
             "admin_first_name": "default.admin.first.name",
@@ -504,10 +504,31 @@ class ConfigService:
                     project_props = self._get_properties(target_ext.read_text())
                     common_props = self._get_properties(common_ext.read_text())
 
-                    # Identify keys from common that are missing in project
-                    to_add = {
-                        k: v for k, v in common_props.items() if k not in project_props
-                    }
+                    # Load baseline properties to distinguish between vanilla defaults and custom local overrides
+                    baseline_ext = (
+                        Path(__file__).parent.parent
+                        / "resources"
+                        / "common_baseline"
+                        / "portal-ext.properties"
+                    )
+                    baseline_props = {}
+                    if baseline_ext.exists():
+                        baseline_props = self._get_properties(baseline_ext.read_text())
+
+                    to_add = {}
+                    for k, v in common_props.items():
+                        if k not in project_props:
+                            to_add[k] = v
+                        else:
+                            # If the project key is still the vanilla default, overwrite it with the custom common value
+                            baseline_val = baseline_props.get(k)
+                            if (
+                                baseline_val is not None
+                                and project_props[k] == baseline_val
+                            ):
+                                if v != project_props[k]:
+                                    to_add[k] = v
+
                     if to_add:
                         self.manager.update_portal_ext(target_ext, to_add)
 

@@ -87,19 +87,16 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
    - [x] Support custom installation command via `LDM_LFR_TUNNEL_INSTALL_CMD`/`LFR_TUNNEL_INSTALL_CMD` env vars or `lfr_tunnel_install_cmd` config.
    - [x] Add CLI arguments in `ldm_core/cli.py` for `--auto-install-lfr-tunnel`.
    - [x] Add unit tests verifying path resolution priority and interactive/non-interactive prompt behaviors.
-
 3. **Preferred Admin Details Global Configuration**:
    - [x] Retrieve preferred admin settings (`admin_password`, `admin_screen_name`, etc.) from global config in `sync_common_assets` in `ldm_core/handlers/config.py`.
    - [x] Map and inject these settings into `host_updates` written to `portal-ext.properties`.
    - [x] Add support in `cmd_config` for setting these config keys.
    - [x] Add unit tests verifying global config admin properties are correctly mapped and written.
-
+   - [x] Fix merging collision: ensure custom values in global `common/portal-ext.properties` override vanilla defaults in project `portal-ext.properties` while preserving project-specific custom overrides.
 4. **Fix Windows Subprocess `UnicodeDecodeError`**:
-   - [ ] Update `run_command` in `ldm_core/utils.py` to explicitly specify `encoding="utf-8"`. This prevents crashes on Windows when subprocesses (like `mkcert` or Docker) output UTF-8 symbols (like `✓` checkmarks) in `cp1252` locale environments.
-   - [ ] Run pre-commit format and full test suite to verify stability.
+   - [x] Update `run_command` in `ldm_core/utils.py` to explicitly specify `encoding="utf-8"`. This prevents crashes on Windows when subprocesses (like `mkcert` or Docker) output UTF-8 symbols (like `✓` checkmarks) in `cp1252` locale environments.
+   - [x] Run pre-commit format and full test suite to verify stability.
 5. **Release Stable v2.11.35**:
    - [ ] Bump version to v2.11.35, push release branch, and open PR.
    - [ ] Wait for PR checks to pass and auto-merge to complete.
    - [ ] Checkout master, pull, tag `v2.11.34` -> `v2.11.35` locally, push tag, and verify release.
-
-
