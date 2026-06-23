@@ -115,4 +115,6 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
    - [x] Ensure only documentation changes (`.md` files) and version changes (`ldm_core/constants.py`, `pyproject.toml`) are allowed when running the script.
    - [x] Verify script works correctly and handles clean/unclean workspace states.
    - [x] Fix LDM CHANGELOG version bump extra blank line bug in `ldm_core/handlers/dev.py`.
-
+9. **Auto-resolve Project Registry Collision in Non-Interactive/Yes Mode**:
+   - [x] Allow `-y` / `--non-interactive` flag to automatically overwrite registry collisions (acting as auto-confirm).
+   - [x] Update unit tests in `ldm_core/tests/test_base.py` to assert that non-interactive mode auto-overwrites.

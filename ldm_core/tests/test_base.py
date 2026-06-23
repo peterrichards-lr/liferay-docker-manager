@@ -298,7 +298,7 @@ class TestBaseProject(unittest.TestCase):
             updated_reg = json.loads(registry_path.read_text())
             self.assertNotIn("p2", updated_reg)
 
-            # Case 3: Different path (exists on disk), non-interactive, no overwrite_registry -> should die
+            # Case 3: Different path (exists on disk), non-interactive, no overwrite_registry -> should unregister & not die
             p3_old_path = base_path / "p3_old"
             p3_old_path.mkdir()
             registry = {"p3": {"path": str(p3_old_path)}}
@@ -307,13 +307,20 @@ class TestBaseProject(unittest.TestCase):
             self.handler.args.overwrite_registry = False
 
             BaseHandler.check_registry_collisions(self.handler, "p3", base_path / "p3")
-            mock_die.assert_called_once()
-            mock_die.reset_mock()
+            mock_die.assert_not_called()
+            # Assert p3 is removed from registry
+            updated_reg = json.loads(registry_path.read_text())
+            self.assertNotIn("p3", updated_reg)
 
-            # Case 4: Different path (exists on disk), non-interactive, overwrite_registry=True -> should unregister & not die
+            # Case 4: Different path (exists on disk), interactive, overwrite_registry=True -> should unregister & not die
+            p3_old_path.mkdir(exist_ok=True)
+            registry = {"p3": {"path": str(p3_old_path)}}
+            registry_path.write_text(json.dumps(registry))
+            self.handler.non_interactive = False
             self.handler.args.overwrite_registry = True
             BaseHandler.check_registry_collisions(self.handler, "p3", base_path / "p3")
             mock_die.assert_not_called()
+            mock_ask.assert_not_called()
             # Assert p3 is removed from registry
             updated_reg = json.loads(registry_path.read_text())
             self.assertNotIn("p3", updated_reg)
