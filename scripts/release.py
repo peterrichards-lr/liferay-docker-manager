@@ -229,6 +229,53 @@ def main():
     run_cmd(["gh", "pr", "merge", pr_num, "--auto", "--squash", "--delete-branch"])
     print("🎉 Release PR successfully pushed and set to auto-merge!")
 
+    # 10. Poll for PR to be merged
+    print("Waiting for PR checks to pass and auto-merge to complete...")
+    import json
+    import time
+
+    while True:
+        try:
+            pr_state_res = run_cmd(
+                ["gh", "pr", "view", pr_num, "--json", "state"],
+                capture=True,
+                check=False,
+            )
+            if pr_state_res.returncode == 0:
+                state_data = json.loads(pr_state_res.stdout)
+                state = state_data.get("state")
+            else:
+                state = "OPEN"
+        except Exception:
+            state = "OPEN"
+
+        if state == "MERGED":
+            print(f"\n🎉 PR #{pr_num} successfully merged!")
+            break
+        if state == "CLOSED":
+            print(f"\n❌ PR #{pr_num} was closed without merging!")
+            sys.exit(1)
+
+        sys.stdout.write(".")
+        sys.stdout.flush()
+        time.sleep(15)
+
+    # 11. Pull latest master locally, create tag, and push
+    print("\nChecking out master locally and pulling latest changes...")
+    run_cmd(["git", "checkout", "master"])
+    run_cmd(["git", "pull", "origin", "master"])
+
+    tag_name = f"v{new_version}"
+    print(f"Creating release tag: {tag_name}...")
+    run_cmd(["git", "tag", "-d", tag_name], check=False)
+    run_cmd(["git", "tag", "-a", tag_name, "-m", f"Release {tag_name}"])
+
+    print("Pushing release tag to remote origin...")
+    run_cmd(["git", "push", "origin", tag_name])
+    print(
+        f"🎉 Release {tag_name} successfully tagged and pushed! Release run triggered on GitHub."
+    )
+
 
 if __name__ == "__main__":
     main()
