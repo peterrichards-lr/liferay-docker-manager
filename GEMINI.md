@@ -68,37 +68,17 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
 - [PaaS "Golden Path" Guide](./docs/guides/PAAS_LOCAL_DEV.md)
 - [Agent Rules of Engagement](./.gemini/gemini.md)
 
-## 8. Active Work State & Plan (June 22, 2026)
+## 8. Active Work State & Plan (June 23, 2026)
 
-### Status
-
+- Released `v2.11.31` successfully (integrated quickstart templates overrides, automatically start sharing under `ldm import`, standalone `ldmp` package exports, and test suite/pre-commit fixes).
 - Released `v2.11.30` successfully (integrated Visual Diagnostics Web Dashboard (P3), Dynamic JVM Self-Tuning (P2), and solved GITHUB_ACTIONS env var mock test coverage mismatch).
-- Released `v2.11.29` successfully (integrated custom share domains and single-command `import` sharing options).
-- Added EDR/SentinelOne warnings to sharing and troubleshooting docs.
-- Split installation commands in README.md and INSTALLATION.md into OS-specific copy-paste blocks.
-- Added Default Stack & Conventions quick reference to README.md.
-- Implemented active health checking on lfr-tunnel `/api/healthz` and `/api/info` endpoints.
-- Implemented `ldm share inspector` command and tunnel logs redirection/diagnostics (`v2.11.25`). All tests and pre-commit checks are passing.
-- Fixed CI build failure due to flaky apt-get update Noble repo forbidden errors.
-- Implemented logs extraction and parsing fallback for running but unresponsive tunnel containers (`v2.11.26`).
-- Implemented container pull policy always and resolved BusyBox wget command argument incompatibilities (`v2.11.27`).
-- Implemented inspector bind address wildcard fix and released `v2.11.28`.
-- Completed Implementation of **CLI 'Time Saved' ROI Logger** (P1) including test coverage and global rc persistence.
-- Completed Implementation of **Predefined Quickstarts (P1)** including test coverage and `ldm quickstart aica` capability.
-- Implemented core dry-run coverage for metadata writing, safe copy, safe move, archive extraction, and directory tree removal.
-- Completed integration of **lfr-tunnel with Multi-Tunnel Support** into LDM (P1), allowing non-conflicting concurrent background tunnels, subdomain-specific stopping, status queries, and dynamic inspector port routing.
-- Completed implementation of **Privileged Port Bind Check Fallback**, catching PermissionError / EACCES for non-root users when checking ports < 1024, falling back to connect_ex to allow starting projects on ports like 80/443 without false positive "in use" errors.
-- Fixing test failures: test_cmd_quickstart_custom_templates_override (AssetsService typo), test_cmd_import_project_id_passing (mock share service), and test_cmd_package_success (missing `_list_backups` helper in SnapshotService).
-- Documenting quickstart and package CLI commands.
 
 ### Plan
 
 1. **Fix Test Suite Failures**:
-   - Correct patch decorator in `test_workspace.py` to point to `AssetService`.
-   - Implement `_list_backups` helper in `SnapshotService` within `ldm_core/handlers/snapshot.py`.
-   - Add `share` property to `MockWorkspaceManager` or check `hasattr(self.manager, "share")` in `WorkspaceService.cmd_import`.
-2. **Update CLI Documentation and Man Pages**:
-   - Update `ldm_core/resources/ldm.1` man page with `quickstart` and `package` commands.
-   - Update `docs/guides/CLI_REFERENCE.md` and `docs/README.md` to document the new options.
-3. **Verify and Validate**:
-   - Run the entire test suite and the pre-commit lint check.
+   - Patch `get_compose_cmd` in `TestArchitecturalContracts` setUp to isolate it from external Docker installations.
+   - Correct the mock path in `test_sync_stack_readiness_timeout` (`test_stack.py`) from `ldm_core.utils.get_compose_cmd` to `ldm_core.handlers.runtime.get_compose_cmd`.
+   - Pass `LDM_IGNORE_DOCKER=true` to the subprocess env in `test_interactive_prune_piped_input` (`test_e2e_diagnostics.py`).
+2. **Verify user local environment boot:**
+   - Wait for the user to resume tomorrow, free up port 8080 or try with `--port 8081`, and verify the import + sharing tunnel E2E.
+   - Run manual verification steps to ensure the tunnel exposes the imported repository cleanly under the `pjrtest` subdomain.

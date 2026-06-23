@@ -70,8 +70,17 @@ class TestArchitecturalContracts(unittest.TestCase):
                         )
 
     def setUp(self):
+        from unittest.mock import patch
+
         self.tmp_dir = tempfile.TemporaryDirectory()
         self.root = Path(self.tmp_dir.name)
+
+        # Patch get_compose_cmd to avoid dependencies on external docker bin in unit tests
+        self.patcher_compose = patch(
+            "ldm_core.handlers.runtime.get_compose_cmd",
+            return_value=["docker", "compose"],
+        )
+        self.mock_compose = self.patcher_compose.start()
 
         # Setup a dummy project
         self.project_path = self.root / "contract-test"
@@ -90,6 +99,7 @@ class TestArchitecturalContracts(unittest.TestCase):
         self.manager = LiferayManager(Args())
 
     def tearDown(self):
+        self.patcher_compose.stop()
         self.tmp_dir.cleanup()
 
     def test_docker_compose_labels_mandate(self):
