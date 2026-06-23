@@ -322,6 +322,82 @@ class TestConfigService(unittest.TestCase):
             self.assertEqual(host_updates["feature.flag.ui.visible[dev]"], "true")
             self.assertEqual(host_updates["feature.flag.ui.visible[beta]"], "true")
 
+    def test_sync_common_assets_preferred_admin(self):
+        """Verify global admin preferences are merged into host_updates."""
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            configs_dir = tmp_path / "osgi" / "configs"
+            configs_dir.mkdir(parents=True)
+            files_dir = tmp_path / "files"
+            files_dir.mkdir(parents=True)
+
+            paths = {
+                "root": tmp_path,
+                "configs": configs_dir,
+                "files": files_dir,
+                "common": tmp_path / "common",
+            }
+            host_updates: dict[str, str] = {}
+
+            with patch.object(self.config, "get_global_config") as mock_global:
+                mock_global.return_value = {
+                    "admin_password": "secretpassword",  # pragma: allowlist secret
+                    "admin_first_name": "John",
+                    "admin_last_name": "Doe",
+                }
+
+                self.config.sync_common_assets(paths, host_updates=host_updates)
+
+            self.assertEqual(host_updates["default.admin.password"], "secretpassword")
+            self.assertEqual(host_updates["default.admin.first.name"], "John")
+            self.assertEqual(host_updates["default.admin.last.name"], "Doe")
+            self.assertNotIn("default.admin.middle.name", host_updates)
+
+    def test_sync_common_assets_smart_merge(self):
+        """Verify global common portal properties override vanilla defaults but not project overrides."""
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            files_dir = tmp_path / "files"
+            files_dir.mkdir(parents=True)
+            common_dir = tmp_path / "common"
+            common_dir.mkdir(parents=True)
+
+            project_pe = files_dir / "portal-ext.properties"
+            common_pe = common_dir / "portal-ext.properties"
+
+            paths = {
+                "root": tmp_path,
+                "configs": tmp_path / "osgi" / "configs",
+                "files": files_dir,
+                "common": common_dir,
+                "deploy": tmp_path / "deploy",
+            }
+            self.manager.update_portal_ext = self.config.update_portal_ext  # type: ignore[method-assign]
+
+            # 1. Scenario: Overwrite vanilla default value
+            project_pe.write_text("default.admin.password=test\n")
+            common_pe.write_text("default.admin.password=D3mo!\n")
+
+            self.config.sync_common_assets(paths)
+
+            # Since the project password matched the baseline default "test", it should be overridden by "D3mo!"
+            project_props = self.config._get_properties(project_pe.read_text())
+            self.assertEqual(project_props["default.admin.password"], "D3mo!")
+
+            # 2. Scenario: Do not overwrite custom local override
+            project_pe.write_text("default.admin.password=myprojpass\n")
+            common_pe.write_text("default.admin.password=D3mo!\n")
+
+            self.config.sync_common_assets(paths)
+
+            # Since the project password was "myprojpass" (different from baseline default "test"), it should not be overridden
+            project_props = self.config._get_properties(project_pe.read_text())
+            self.assertEqual(project_props["default.admin.password"], "myprojpass")
+
     def test_cmd_feature(self):
         """Verify cmd_feature manages and lists feature flags."""
         import tempfile

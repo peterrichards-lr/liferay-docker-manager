@@ -38,6 +38,8 @@ class TestShareService(unittest.TestCase):
         self.service = ShareService(self.mock_manager)
         # Mock poll health check to prevent real HTTP loops in base cmd_start tests
         self.service._poll_tunnel_health = MagicMock(return_value=(True, None))  # type: ignore[method-assign]
+        # Mock resolve existing binary by default to keep unit tests isolated from host environment
+        self.service._resolve_existing_binary = MagicMock(return_value=None)  # type: ignore[method-assign]
 
     @patch("ldm_core.handlers.share.get_actual_home")
     @patch("platform.system")
@@ -969,3 +971,71 @@ class TestShareService(unittest.TestCase):
                 text=True,
                 timeout=3,
             )
+
+    @patch.dict(os.environ, {"LDM_LFR_TUNNEL_BIN": "/env/bin/lfr-tunnel"})
+    def test_resolve_existing_binary_env_var(self):
+        with patch.object(self.service, "_get_installed_version", return_value="1.0.0"):
+            res = ShareService._resolve_existing_binary(self.service)
+            self.assertEqual(res, Path("/env/bin/lfr-tunnel"))
+
+    def test_resolve_existing_binary_config(self):
+        self.mock_manager.config.get_global_config = MagicMock(  # type: ignore[method-assign]
+            return_value={"lfr_tunnel_bin": "/config/bin/lfr-tunnel"}
+        )
+        with patch.object(self.service, "_get_installed_version", return_value="1.0.0"):
+            res = ShareService._resolve_existing_binary(self.service)
+            self.assertEqual(res, Path("/config/bin/lfr-tunnel"))
+
+    @patch("shutil.which")
+    def test_resolve_existing_binary_path(self, mock_which):
+        mock_which.return_value = "/sys/path/bin/lfr-tunnel"
+        with patch.object(self.service, "_get_installed_version", return_value="1.0.0"):
+            res = ShareService._resolve_existing_binary(self.service)
+            self.assertEqual(res, Path("/sys/path/bin/lfr-tunnel"))
+
+    @patch("shutil.which")
+    @patch("ldm_core.handlers.share.get_actual_home")
+    def test_resolve_existing_binary_fallback(self, mock_home, mock_which):
+        mock_which.return_value = None
+        mock_home.return_value = Path("/fake/home")
+        with patch("pathlib.Path.exists", return_value=True):
+            with patch.object(
+                self.service, "_get_installed_version", return_value="1.0.0"
+            ):
+                res = ShareService._resolve_existing_binary(self.service)
+                self.assertEqual(res, Path("/fake/home/.ldm/bin/lfr-tunnel"))
+
+    @patch("ldm_core.handlers.share.UI")
+    def test_ensure_binary_non_interactive_no_flag_fails(self, mock_ui):
+        mock_ui.die.side_effect = SystemExit("Terminated")
+        self.service._get_binary_path = MagicMock(  # type: ignore[method-assign]
+            return_value=Path("/fake/bin/lfr-tunnel")
+        )
+        self.service._get_installed_version = MagicMock(return_value=None)  # type: ignore[method-assign]
+        self.mock_manager.non_interactive = True
+        self.mock_manager.args.auto_install_lfr_tunnel = False
+
+        with self.assertRaises(SystemExit):
+            self.service._ensure_binary()
+        mock_ui.die.assert_called_once()
+
+    @patch("subprocess.run")
+    @patch("ldm_core.handlers.share.UI")
+    def test_ensure_binary_custom_install_cmd(self, mock_ui, mock_run):
+        self.service._get_binary_path = MagicMock(  # type: ignore[method-assign]
+            return_value=Path("/fake/bin/lfr-tunnel")
+        )
+        self.service._get_installed_version = MagicMock(side_effect=[None, "1.0.0"])  # type: ignore[method-assign]
+        self.mock_manager.non_interactive = True
+        self.mock_manager.args.auto_install_lfr_tunnel = True
+        self.mock_manager.config.get_global_config = MagicMock(  # type: ignore[method-assign]
+            return_value={"lfr_tunnel_install_cmd": "install.sh"}
+        )
+
+        self.service._resolve_existing_binary = MagicMock(  # type: ignore[method-assign]
+            return_value=Path("/resolved/lfr-tunnel")
+        )
+
+        res = self.service._ensure_binary()
+        mock_run.assert_called_once_with("install.sh", shell=True, check=True)
+        self.assertEqual(res, Path("/resolved/lfr-tunnel"))

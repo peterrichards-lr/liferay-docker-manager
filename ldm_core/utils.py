@@ -418,7 +418,7 @@ def run_command(
             cmd,
             shell=shell,
             capture_output=capture_output,
-            text=True,
+            encoding="utf-8",
             check=check,
             env=env,
             cwd=cwd,
@@ -1244,7 +1244,7 @@ def get_compose_cmd():
             res = subprocess.run(
                 [docker_bin, "compose", "version"],
                 capture_output=True,
-                text=True,
+                encoding="utf-8",
                 check=False,
             )
             if res.returncode == 0 and "Docker Compose version" in res.stdout:
@@ -1268,7 +1268,7 @@ def get_docker_socket_path():
         res = subprocess.run(
             ["docker", "context", "inspect", "--format", "{{.Endpoints.docker.Host}}"],
             capture_output=True,
-            text=True,
+            encoding="utf-8",
             check=False,
         )
         if res.returncode == 0 and res.stdout.strip():
