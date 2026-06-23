@@ -178,13 +178,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added runtime state-awareness checks to commands (run, import) to prevent unexpected container collisions.
 - Enabled non-interactive bypass for internal developer utility prompts.
 
-## [v2.11.32] - 2026-06-23
+## [v2.11.33] - 2026-06-23
 
 ### Added
 
 - Added warning check when running LDM commands directly from the Home directory (CWD is `~`) to prevent folder clutter.
 - Documented database container online requirements for `.ldmp` package exports (with AICA CI case study details in `DATA_MANAGEMENT.md`).
 - Consolidated `--stop-running` flag support from the pre-release.
+
+## [v2.11.32] - 2026-06-23
+
+### Added
+
+- Skipped due to pre-squash release tag mismatch.
 
 ## [v2.11.32-pre.1] - 2026-06-23
 
