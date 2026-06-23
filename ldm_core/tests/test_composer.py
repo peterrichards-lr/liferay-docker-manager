@@ -216,8 +216,11 @@ class TestComposerService(unittest.TestCase):
         )
         volumes = service["volumes"]
         self.assertTrue(
-            any(v.startswith("Zukunft-Digital-state:/opt/liferay/osgi/state") for v in volumes),
-            f"State mapping was: {volumes}"
+            any(
+                v.startswith("Zukunft-Digital-state:/opt/liferay/osgi/state")
+                for v in volumes
+            ),
+            f"State mapping was: {volumes}",
         )
 
     @patch("ldm_core.handlers.composer.dict_to_yaml")

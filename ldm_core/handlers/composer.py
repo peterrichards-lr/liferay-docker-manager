@@ -398,7 +398,11 @@ class ComposerService:
                     parts = vol.split(":")
                     if len(parts) >= 2:
                         # Handle Windows drive letters (e.g., C:/path or C:\path)
-                        if len(parts[0]) == 1 and parts[0].isalpha() and (parts[1].startswith("/") or parts[1].startswith("\\")):
+                        if (
+                            len(parts[0]) == 1
+                            and parts[0].isalpha()
+                            and (parts[1].startswith("/") or parts[1].startswith("\\"))
+                        ):
                             host_side = parts[0] + ":" + parts[1]
                         else:
                             host_side = parts[0]
@@ -851,6 +855,7 @@ class ComposerService:
                 )
             else:
                 from ldm_core.utils import sanitize_id
+
                 safe_volume_prefix = sanitize_id(liferay_container)
                 state_mapping = f"{safe_volume_prefix}-state:/opt/liferay/osgi/state"
 
