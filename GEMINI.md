@@ -77,8 +77,8 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
 
 1. **Fix Test Suite Failures**:
    - [x] Identify root cause of `test_detect_project_path_iterative_search` and `test_detect_project_path_cwd_home_warning` failures.
-   - [ ] Import `safe_cwd` at module level in `ldm_core/handlers/base.py` to allow patching.
-   - [ ] Initialize `self.manager = self` in `MockBaseManager` in `test_base.py` to support the warn-once flag check on `self.manager`.
+   - [x] Import `safe_cwd` at module level in `ldm_core/handlers/base.py` to allow patching.
+   - [x] Initialize `self.manager = self` in `MockBaseManager` in `test_base.py` to support the warn-once flag check on `self.manager`.
 2. **Verify user local environment boot:**
    - Wait for the user to resume tomorrow, free up port 8080 or try with `--port 8081`, and verify the import + sharing tunnel E2E.
    - Run manual verification steps to ensure the tunnel exposes the imported repository cleanly under the `pjrtest` subdomain.
@@ -92,4 +92,6 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
    - [x] Add a check at the start of `detect_project_path` in `base.py` to check if `CWD` matches the user's home directory.
    - [x] If it matches, print the standard warning message warning about cluttering the home folder.
    - [x] Ensure it is warned at most once per execution by keeping a flag on `self.manager`.
-   - [ ] Make warning unit tests pass by fixing mock reference patching.
+   - [x] Make warning unit tests pass by fixing mock reference patching.
+5. **Update Portable Packaging Documentation**:
+   - [x] Add a note in `docs/guides/DATA_MANAGEMENT.md` clarifying that database container states must be active when running packaging commands, and use AICA as an example of how empty packages are generated in headless CI environments.
