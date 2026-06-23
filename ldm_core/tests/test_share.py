@@ -979,7 +979,7 @@ class TestShareService(unittest.TestCase):
             self.assertEqual(res, Path("/env/bin/lfr-tunnel"))
 
     def test_resolve_existing_binary_config(self):
-        self.mock_manager.config.get_global_config = MagicMock(
+        self.mock_manager.config.get_global_config = MagicMock(  # type: ignore[method-assign]
             return_value={"lfr_tunnel_bin": "/config/bin/lfr-tunnel"}
         )
         with patch.object(self.service, "_get_installed_version", return_value="1.0.0"):
@@ -1008,10 +1008,10 @@ class TestShareService(unittest.TestCase):
     @patch("ldm_core.handlers.share.UI")
     def test_ensure_binary_non_interactive_no_flag_fails(self, mock_ui):
         mock_ui.die.side_effect = SystemExit("Terminated")
-        self.service._get_binary_path = MagicMock(
+        self.service._get_binary_path = MagicMock(  # type: ignore[method-assign]
             return_value=Path("/fake/bin/lfr-tunnel")
         )
-        self.service._get_installed_version = MagicMock(return_value=None)
+        self.service._get_installed_version = MagicMock(return_value=None)  # type: ignore[method-assign]
         self.mock_manager.non_interactive = True
         self.mock_manager.args.auto_install_lfr_tunnel = False
 
@@ -1022,17 +1022,17 @@ class TestShareService(unittest.TestCase):
     @patch("subprocess.run")
     @patch("ldm_core.handlers.share.UI")
     def test_ensure_binary_custom_install_cmd(self, mock_ui, mock_run):
-        self.service._get_binary_path = MagicMock(
+        self.service._get_binary_path = MagicMock(  # type: ignore[method-assign]
             return_value=Path("/fake/bin/lfr-tunnel")
         )
-        self.service._get_installed_version = MagicMock(side_effect=[None, "1.0.0"])
+        self.service._get_installed_version = MagicMock(side_effect=[None, "1.0.0"])  # type: ignore[method-assign]
         self.mock_manager.non_interactive = True
         self.mock_manager.args.auto_install_lfr_tunnel = True
-        self.mock_manager.config.get_global_config = MagicMock(
+        self.mock_manager.config.get_global_config = MagicMock(  # type: ignore[method-assign]
             return_value={"lfr_tunnel_install_cmd": "install.sh"}
         )
 
-        self.service._resolve_existing_binary = MagicMock(
+        self.service._resolve_existing_binary = MagicMock(  # type: ignore[method-assign]
             return_value=Path("/resolved/lfr-tunnel")
         )
 

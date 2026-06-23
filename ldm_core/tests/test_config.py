@@ -376,7 +376,7 @@ class TestConfigService(unittest.TestCase):
                 "common": common_dir,
                 "deploy": tmp_path / "deploy",
             }
-            self.manager.update_portal_ext = self.config.update_portal_ext
+            self.manager.update_portal_ext = self.config.update_portal_ext  # type: ignore[method-assign]
 
             # 1. Scenario: Overwrite vanilla default value
             project_pe.write_text("default.admin.password=test\n")

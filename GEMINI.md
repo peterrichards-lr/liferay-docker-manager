@@ -98,5 +98,6 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
    - [x] Run pre-commit format and full test suite to verify stability.
 5. **Release Stable v2.11.35**:
    - [x] Bump version to v2.11.35, push release branch, and open PR.
+   - [x] Fix mypy method-assign type check errors in unit tests.
    - [ ] Wait for PR checks to pass and auto-merge to complete.
    - [ ] Checkout master, pull, tag `v2.11.34` -> `v2.11.35` locally, push tag, and verify release.
