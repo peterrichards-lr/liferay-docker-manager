@@ -105,3 +105,8 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
    - [x] Fix volume path parsing in `ldm_core/handlers/composer.py` to support drive letters and sanitize named volumes with spaces.
    - [x] Add unit tests verifying parsing logic and volume name sanitization.
    - [/] Bump version to v2.11.36, run tests, open PR, and tag release.
+7. **Handle Project Collisions During Import / Run**:
+   - [x] Auto-unregister project from registry if its registered path does not exist on disk.
+   - [x] Add CLI flag `--overwrite-registry` to automatically resolve registry collisions when the path exists.
+   - [x] Prompt the user interactively to overwrite the registry collision if they are not in non-interactive mode.
+   - [x] Add unit tests verifying auto-cleanup of non-existent paths, overwrite-registry flag, and interactive prompts.

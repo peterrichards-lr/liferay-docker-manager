@@ -178,6 +178,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added runtime state-awareness checks to commands (run, import) to prevent unexpected container collisions.
 - Enabled non-interactive bypass for internal developer utility prompts.
 
+## [v2.11.37] - 2026-06-23
+
+### Added
+
+- Added automated resolution for project registry collisions, including auto-cleaning stale paths, interactive prompts, and the `--overwrite-registry` CLI flag.
+
 ## [v2.11.35] - 2026-06-23
 
 ### Added
