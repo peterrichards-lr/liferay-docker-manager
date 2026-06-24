@@ -203,6 +203,37 @@ class TestCLILogic(unittest.TestCase):
         self.assertEqual(args.subcommand, "stop")
         self.assertEqual(args.project, "demo")
 
+    def test_flat_command_aliases(self):
+        # Test ldm rebuild-properties translates to config rebuild-properties
+        args = self.parser.parse_args(["rebuild-properties"])
+        self.assertEqual(args.command, "config")
+        self.assertEqual(args.subcommand, "rebuild-properties")
+
+        # Test ldm config rebuild-properties behaves correctly
+        args = self.parser.parse_args(["config", "rebuild-properties"])
+        self.assertEqual(args.command, "config")
+        self.assertEqual(args.subcommand, "rebuild-properties")
+
+        # Test ldm revert-properties translates to config revert-properties
+        args = self.parser.parse_args(["revert-properties"])
+        self.assertEqual(args.command, "config")
+        self.assertEqual(args.subcommand, "revert-properties")
+
+        # Test ldm reset-properties translates to config reset-properties
+        args = self.parser.parse_args(["reset-properties"])
+        self.assertEqual(args.command, "config")
+        self.assertEqual(args.subcommand, "reset-properties")
+
+        # Test ldm rescue translates to system rescue
+        args = self.parser.parse_args(["rescue"])
+        self.assertEqual(args.command, "system")
+        self.assertEqual(args.subcommand, "rescue")
+
+        # Test ldm nuke translates to system nuke
+        args = self.parser.parse_args(["nuke"])
+        self.assertEqual(args.command, "system")
+        self.assertEqual(args.subcommand, "nuke")
+
 
 if __name__ == "__main__":
     unittest.main()

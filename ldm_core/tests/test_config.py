@@ -81,6 +81,26 @@ class TestConfigService(unittest.TestCase):
             self.assertIn("key1=new", content)
             self.assertIn("key2=val2", content)
 
+    @patch("ldm_core.handlers.config.safe_write_text")
+    def test_update_portal_ext_multiline_whitespace(self, mock_write):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            pe_path = Path(tmp_dir) / "portal-ext.properties"
+            # Note the trailing space after the first backslash
+            pe_path.write_text("multiline=val1\\ \n    val2\\\n    val3\nkey2=val2")
+
+            self.config.update_portal_ext(pe_path, {"multiline": "new"})
+            self.assertTrue(mock_write.called)
+            content = mock_write.call_args[0][1]
+            self.assertIn("multiline=new", content)
+            self.assertIn("key2=val2", content)
+            # Verify continuation lines were correctly skipped and not duplicated
+            lines = content.splitlines()
+            self.assertEqual(len(lines), 2)
+            self.assertEqual(lines[0], "multiline=new")
+            self.assertEqual(lines[1], "key2=val2")
+
     def test_sync_logging(self):
         import tempfile
 

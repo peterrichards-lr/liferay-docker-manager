@@ -63,6 +63,9 @@ def preprocess_args(args_list: list[str]) -> list[str]:
         "feature",
         "log-level",
         "edit",
+        "rebuild-properties",
+        "revert-properties",
+        "reset-properties",
         "prune",
         "doctor",
         "upgrade",
@@ -70,6 +73,8 @@ def preprocess_args(args_list: list[str]) -> list[str]:
         "dev-setup",
         "completion",
         "setup-completion",
+        "nuke",
+        "rescue",
         "quickstart",
         "man",
         "fix-hosts",
@@ -110,6 +115,19 @@ def preprocess_args(args_list: list[str]) -> list[str]:
         "cloud",
         "system",
         "share",
+        "dashboard",
+        "mcp",
+        "ai",
+        "package",
+        "relocate",
+        "roi",
+        "start",
+        "inspector",
+        "setup",
+        "fetch",
+        "get",
+        "set",
+        "remove",
     }
 
     if first.startswith("-") or first in all_cmds:
@@ -141,6 +159,9 @@ def preprocess_args(args_list: list[str]) -> list[str]:
             "feature": ("config", "feature"),
             "log-level": ("config", "log-level"),
             "edit": ("config", "edit"),
+            "rebuild-properties": ("config", "rebuild-properties"),
+            "revert-properties": ("config", "revert-properties"),
+            "reset-properties": ("config", "reset-properties"),
             "prune": ("system", "prune"),
             "doctor": ("system", "doctor"),
             "upgrade": ("system", "upgrade"),
@@ -150,6 +171,8 @@ def preprocess_args(args_list: list[str]) -> list[str]:
             "setup-completion": ("system", "setup-completion"),
             "man": ("system", "man"),
             "fix-hosts": ("system", "fix-hosts"),
+            "nuke": ("system", "nuke"),
+            "rescue": ("system", "rescue"),
         }
 
         if cmd in legacy_map:
@@ -168,6 +191,9 @@ def preprocess_args(args_list: list[str]) -> list[str]:
                 "feature",
                 "log-level",
                 "edit",
+                "rebuild-properties",
+                "revert-properties",
+                "reset-properties",
             ]
             if (
                 cmd_idx + 1 < len(processed_list)

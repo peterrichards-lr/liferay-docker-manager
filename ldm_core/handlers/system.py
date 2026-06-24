@@ -102,6 +102,22 @@ class SystemService(BaseHandler):
             # 1. Global Traefik SSL/Host rescue
             UI.info("Executing LDM Global Infrastructure Rescue...")
 
+            # Auto-repair global properties
+            from pathlib import Path
+
+            from ldm_core.utils import get_actual_home
+
+            actual_home = get_actual_home()
+            global_pe = actual_home / ".ldm" / "common" / "portal-ext.properties"
+            if global_pe.exists():
+                UI.info("Checking global common properties syntax...")
+                self._rescue_properties_file(global_pe)
+
+            local_common_pe = Path.cwd() / "common" / "portal-ext.properties"
+            if local_common_pe.exists():
+                UI.info("Checking workspace common properties syntax...")
+                self._rescue_properties_file(local_common_pe)
+
             # Port conflict scan
             UI.info("Checking for port conflicts on 80 and 443...")
             import socket
@@ -147,6 +163,17 @@ class SystemService(BaseHandler):
         root = self.detect_project_path(project_id, fatal=False)
         if not root:
             UI.die(f"Project '{project_id}' not found.")
+
+        # Check and rescue properties files for this project
+        project_pe = root / "files" / "portal-ext.properties"
+        if project_pe.exists():
+            UI.info("Checking project portal-ext.properties syntax...")
+            self._rescue_properties_file(project_pe)
+
+        workspace_pe = root.parent / "common" / "portal-ext.properties"
+        if workspace_pe.exists():
+            UI.info("Checking project's workspace common properties syntax...")
+            self._rescue_properties_file(workspace_pe)
 
         meta = self.read_meta(root)
         name = (
@@ -205,3 +232,71 @@ class SystemService(BaseHandler):
 
         UI.success(f"Project '{root.name}' rescue completed successfully!")
         return True
+
+    def _rescue_properties_file(self, file_path):
+        """Checks and auto-repairs broken trailing backslash continuations in a properties file."""
+        import re
+        from pathlib import Path
+
+        file_path = Path(file_path)
+        if not file_path.exists():
+            return False
+
+        try:
+            content = file_path.read_text(encoding="utf-8")
+        except Exception as e:
+            UI.warning(f"Could not read {file_path.name} for properties rescue: {e}")
+            return False
+
+        lines = content.splitlines()
+        if not lines:
+            return False
+
+        new_prop_regex = re.compile(r"^[a-zA-Z0-9._-]+\s*=")
+        modified = False
+        new_lines = []
+
+        for i in range(len(lines)):
+            line = lines[i]
+            stripped_line = line.rstrip()
+            # Check if this line ends with a backslash
+            if stripped_line.endswith("\\"):
+                is_broken = False
+                # Condition 1: Last line of file
+                if i + 1 >= len(lines):
+                    is_broken = True
+                else:
+                    next_line = lines[i + 1]
+                    next_stripped = next_line.strip()
+                    # Condition 2: Followed by an empty line
+                    if (
+                        not next_stripped
+                        or next_stripped.startswith(("#", "!"))
+                        or (
+                            new_prop_regex.match(next_stripped)
+                            and not next_line.startswith((" ", "\t"))
+                        )
+                    ):
+                        is_broken = True
+
+                if is_broken:
+                    # Strip the trailing backslash and trailing whitespace
+                    idx = line.rfind("\\")
+                    line = line[:idx].rstrip()
+                    modified = True
+                    UI.success(
+                        f"🔧 [Self-Healing] Repaired broken properties continuation at {file_path.name}:{i + 1}"
+                    )
+            new_lines.append(line)
+
+        if modified:
+            try:
+                from ldm_core.utils import safe_write_text
+
+                safe_write_text(file_path, "\n".join(new_lines).strip() + "\n")
+                return True
+            except Exception as e:
+                UI.warning(
+                    f"Failed to write repaired properties to {file_path.name}: {e}"
+                )
+        return False

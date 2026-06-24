@@ -255,6 +255,82 @@ class TestArchitecturalContracts(unittest.TestCase):
             "The samples directory is missing metadata.json.",
         )
 
+    def test_cli_preprocess_gating_contracts(self):
+        """Mandate: All registered CLI subparsers/commands MUST be synchronized with preprocess_args."""
+        import argparse
+        import ast
+        import inspect
+
+        from ldm_core.cli import get_parser, preprocess_args
+
+        # 1. Extract sets and lists from preprocess_args AST
+        source = inspect.getsource(preprocess_args)
+        tree = ast.parse(source)
+
+        all_cmds_val = set()
+        subcmds_val = []
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Assign):
+                for target in node.targets:
+                    if isinstance(target, ast.Name):
+                        if target.id == "all_cmds":
+                            if isinstance(node.value, ast.Set):
+                                all_cmds_val = {
+                                    elt.value
+                                    for elt in node.value.elts
+                                    if isinstance(elt, ast.Constant)
+                                }
+                        elif target.id == "subcmds":
+                            if isinstance(node.value, ast.List):
+                                subcmds_val = [
+                                    elt.value
+                                    for elt in node.value.elts
+                                    if isinstance(elt, ast.Constant)
+                                ]
+
+        self.assertTrue(
+            all_cmds_val, "Failed to parse all_cmds from preprocess_args source."
+        )
+        self.assertTrue(
+            subcmds_val, "Failed to parse subcmds from preprocess_args source."
+        )
+
+        # 2. Extract registered choices from the Parser
+        parser, _ = get_parser()
+
+        for action in parser._actions:
+            if isinstance(action, argparse._SubParsersAction):
+                for choice, subparser in action.choices.items():
+                    # The namespace command itself must be recognized (e.g. 'config', 'system')
+                    self.assertIn(
+                        choice,
+                        all_cmds_val,
+                        f"Top-level namespace/command '{choice}' is not registered in all_cmds in preprocess_args!",
+                    )
+
+                    # Inspect nested subparsers (e.g. subcommands of config, system, etc.)
+                    for sub_action in subparser._actions:
+                        if isinstance(sub_action, argparse._SubParsersAction):
+                            for sub_choice in sub_action.choices:
+                                # Every nested subcommand MUST be registered in all_cmds
+                                self.assertIn(
+                                    sub_choice,
+                                    all_cmds_val,
+                                    f"Subcommand '{sub_choice}' under namespace '{choice}' is not registered in all_cmds in preprocess_args!",
+                                )
+
+                                # For 'config' namespace, it MUST also be in the subcmds list to prevent key get/set collision
+                                if choice == "config" and sub_choice not in [
+                                    "get",
+                                    "set",
+                                    "remove",
+                                ]:
+                                    self.assertIn(
+                                        sub_choice,
+                                        subcmds_val,
+                                        f"Subcommand '{sub_choice}' under namespace '{choice}' is missing from the subcmds bypass list in preprocess_args!",
+                                    )
+
 
 if __name__ == "__main__":
     unittest.main()
