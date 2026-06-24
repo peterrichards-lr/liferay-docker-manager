@@ -127,13 +127,16 @@ try {
         $origGA = $env:GITHUB_ACTIONS
         $origCI = $env:CI
         $origGL = $env:GITLAB_CI
+        $origAR = $env:LDM_ALLOW_ROOT
         $env:GITHUB_ACTIONS = $null
         $env:CI = $null
         $env:GITLAB_CI = $null
+        $env:LDM_ALLOW_ROOT = "true"
         $out = "n" | & $LDM_CMD run "./collision-test" --port 8099 --no-wait --no-up --no-seed 2>&1
         $env:GITHUB_ACTIONS = $origGA
         $env:CI = $origCI
         $env:GITLAB_CI = $origGL
+        $env:LDM_ALLOW_ROOT = $origAR
         Set-Location $prev
         $out
     }
