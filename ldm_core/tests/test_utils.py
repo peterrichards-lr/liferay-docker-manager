@@ -286,6 +286,67 @@ class TestUtils(unittest.TestCase):
             safe_rmtree(parent)
             self.assertFalse(parent.exists())
 
+    @patch("ldm_core.utils.platform.system")
+    @patch("ldm_core.utils.reclaim_volume_permissions")
+    @patch("shutil.rmtree")
+    def test_safe_rmtree_permission_denied_trigger_reclaim(
+        self, mock_rmtree, mock_reclaim, mock_system
+    ):
+        from ldm_core.utils import safe_rmtree
+
+        mock_system.return_value = "Linux"
+        mock_reclaim.return_value = True
+
+        # Mock shutil.rmtree to raise PermissionError on first call, then succeed
+        call_count = 0
+
+        def rmtree_side_effect(path, onerror=None):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                # Trigger onerror
+                if onerror:
+                    try:
+                        raise PermissionError("[Errno 13] Permission denied")
+                    except PermissionError:
+                        import sys
+
+                        onerror(None, path, sys.exc_info())
+                raise PermissionError("[Errno 13] Permission denied")
+
+        mock_rmtree.side_effect = rmtree_side_effect
+
+        with (
+            patch("pathlib.Path.exists", return_value=True),
+            patch("ldm_core.utils.verify_safe_to_delete"),
+        ):
+            safe_rmtree(Path("/fake/project"))
+
+            self.assertEqual(call_count, 2)
+            mock_reclaim.assert_called_once_with(Path("/fake/project").resolve())
+
+    @patch("ldm_core.utils.run_command")
+    @patch("ldm_core.utils.platform.system")
+    def test_reclaim_volume_permissions_dynamic_uid_gid(self, mock_system, mock_run):
+        from ldm_core.utils import reclaim_volume_permissions
+
+        mock_system.return_value = "Linux"
+        mock_run.return_value = MagicMock()
+
+        with (
+            patch("os.getuid", return_value=1234, create=True),
+            patch("os.getgid", return_value=5678, create=True),
+            patch("pathlib.Path.exists", return_value=True),
+        ):
+            reclaim_volume_permissions(Path("/fake/path"))
+
+            mock_run.assert_called_once()
+            args = mock_run.call_args[0][0]
+            self.assertIn("docker", args)
+            self.assertIn("alpine", args)
+            cmd_str = args[-1]
+            self.assertIn("chown -R 1234:5678 /workspace", cmd_str)
+
 
 class TestUpdateChecks(unittest.TestCase):
     @patch("requests.get")

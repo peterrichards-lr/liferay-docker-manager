@@ -1786,7 +1786,9 @@ def safe_rmtree(path):
             os.chmod(p, stat.S_IWRITE)
             func(p)
         except Exception:
-            pass
+            if excinfo and len(excinfo) > 1 and excinfo[1] is not None:
+                raise excinfo[1]
+            raise
 
     try:
         shutil.rmtree(path_obj, onerror=remove_readonly)
@@ -1800,7 +1802,7 @@ def safe_rmtree(path):
             raise e
 
 
-def reclaim_volume_permissions(path, uid="1000", gid="1000", chmod_val="777"):
+def reclaim_volume_permissions(path, uid=None, gid=None, chmod_val="777"):
     """Forces ownership and permissions of a directory via Docker (Linux/macOS)."""
     is_dry_run = os.environ.get("LDM_DRY_RUN", "").lower() == "true"
     if is_dry_run:
@@ -1814,6 +1816,11 @@ def reclaim_volume_permissions(path, uid="1000", gid="1000", chmod_val="777"):
 
     if not Path(path).exists():
         return True
+
+    if uid is None:
+        uid = str(os.getuid()) if hasattr(os, "getuid") else "1000"
+    if gid is None:
+        gid = str(os.getgid()) if hasattr(os, "getgid") else "1000"
 
     from ldm_core.ui import UI
 
