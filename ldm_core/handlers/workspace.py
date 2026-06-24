@@ -829,12 +829,241 @@ class WorkspaceService(BaseHandler):
                     if temp_dir.exists():
                         shutil.rmtree(temp_dir)
             else:
-                # Git URL
+                # Git URL / GitHub Repo URL
                 project_name = getattr(self.manager.args, "project", None) or getattr(
                     self.manager.args, "project_flag", None
                 )
+                parsed = self._parse_github_repo(source_path)
+                github_token = os.environ.get("GITHUB_TOKEN")
+                clone_only = getattr(self.manager.args, "clone_only", False)
+                has_ldmp = False
+                ldmp_asset = None
+                sha_asset = None
+                owner, repo = None, None
+
+                if parsed and not clone_only:
+                    import requests
+
+                    owner, repo = parsed
+                    headers = {}
+                    if github_token:
+                        headers["Authorization"] = f"token {github_token}"
+                    api_url = (
+                        f"https://api.github.com/repos/{owner}/{repo}/releases/latest"
+                    )
+                    try:
+                        api_resp = requests.get(api_url, headers=headers, timeout=20)
+                        if api_resp.status_code == 200:
+                            release_data = api_resp.json()
+                            assets = release_data.get("assets", [])
+                            for asset in assets:
+                                name = asset.get("name", "")
+                                if name.endswith(".ldmp"):
+                                    ldmp_asset = asset
+                                elif name.endswith(".ldmp.sha256"):
+                                    sha_asset = asset
+                            if ldmp_asset and sha_asset:
+                                has_ldmp = True
+                    except Exception as e:
+                        UI.debug(f"GitHub Release API query failed: {e}")
+
+                if has_ldmp:
+                    # 1. Download and restore standalone LDMP package without cloning
+                    if not project_name:
+                        project_name = repo
+                        if self.manager.non_interactive:
+                            UI.info(f"Using default project name: {project_name}")
+                        else:
+                            project_name = UI.ask("Project Name", project_name)
+                        self.manager.args.project = project_name
+
+                    project_path = self.manager.detect_project_path(
+                        project_name, for_init=True
+                    )
+                    self._ensure_stopped(project_name, project_path)
+
+                    temp_pkg_dir = (
+                        Path.cwd()
+                        / ".ldm_temp"
+                        / f"package_{datetime.now().strftime('%Y%m%d%H%M%S')}"
+                    )
+                    temp_pkg_dir.mkdir(parents=True, exist_ok=True)
+
+                    ldmp_name = Path(ldmp_asset["name"]).name
+                    sha_name = Path(sha_asset["name"]).name
+
+                    ldmp_path = (temp_pkg_dir / ldmp_name).resolve()
+                    sha_path = (temp_pkg_dir / sha_name).resolve()
+
+                    if not is_within_root(
+                        ldmp_path, temp_pkg_dir
+                    ) or not is_within_root(sha_path, temp_pkg_dir):
+                        if temp_pkg_dir.exists():
+                            shutil.rmtree(temp_pkg_dir)
+                        UI.die("Security Violation: Invalid package asset name.")
+
+                    UI.info(f"Downloading LDM package: {ldmp_name}...")
+                    try:
+                        headers_dl = {"Accept": "application/octet-stream"}
+                        if github_token:
+                            headers_dl["Authorization"] = f"token {github_token}"
+
+                        dl_url = ldmp_asset["url"]
+                        r = requests.get(
+                            dl_url, headers=headers_dl, stream=True, timeout=60
+                        )
+                        r.raise_for_status()
+                        with open(ldmp_path, "wb") as f:
+                            for chunk in r.iter_content(chunk_size=8192):
+                                f.write(chunk)
+
+                        dl_sha_url = sha_asset["url"]
+                        r_sha = requests.get(dl_sha_url, headers=headers_dl, timeout=20)
+                        r_sha.raise_for_status()
+                        sha_path.write_text(r_sha.text.strip())
+                    except Exception as e:
+                        if temp_pkg_dir.exists():
+                            shutil.rmtree(temp_pkg_dir)
+                        UI.die(f"Failed to download LDM Package assets: {e}")
+
+                    # Checksum Verify
+                    actual_sha = calculate_sha256(ldmp_path)
+                    expected_sha = sha_path.read_text().strip().split()[0]
+
+                    if actual_sha != expected_sha:
+                        if temp_pkg_dir.exists():
+                            shutil.rmtree(temp_pkg_dir)
+                        UI.die("Security Violation: SHA-256 verification failed.")
+
+                    UI.success("LDM package checksum verified successfully.")
+
+                    temp_extract_dir = (
+                        Path.cwd()
+                        / ".ldm_temp"
+                        / f"extract_{datetime.now().strftime('%Y%m%d%H%M%S')}"
+                    )
+                    temp_extract_dir.mkdir(parents=True, exist_ok=True)
+
+                    UI.info("Extracting LDM package...")
+                    try:
+                        with tarfile.open(ldmp_path, "r:gz") as tar:
+                            from ldm_core.utils import safe_extract
+
+                            safe_extract(tar, temp_extract_dir)
+                    except Exception as e:
+                        if temp_pkg_dir.exists():
+                            shutil.rmtree(temp_pkg_dir)
+                        if temp_extract_dir.exists():
+                            shutil.rmtree(temp_extract_dir)
+                        UI.die(f"Failed to extract LDM package: {e}")
+
+                    # Verify manifest meta
+                    manifest_file = temp_extract_dir / "meta"
+                    if not manifest_file.exists():
+                        if temp_pkg_dir.exists():
+                            shutil.rmtree(temp_pkg_dir)
+                        if temp_extract_dir.exists():
+                            shutil.rmtree(temp_extract_dir)
+                        UI.die("Invalid LDM Package: Missing manifest 'meta' file.")
+
+                    manifest = {}
+                    with open(manifest_file) as f:
+                        for line in f:
+                            line = line.strip()
+                            if line and not line.startswith("#") and "=" in line:
+                                k, v = line.split("=", 1)
+                                manifest[k.strip()] = v.strip()
+
+                    github_repo_manifest = manifest.get("github_repository")
+                    if not github_repo_manifest:
+                        if temp_pkg_dir.exists():
+                            shutil.rmtree(temp_pkg_dir)
+                        if temp_extract_dir.exists():
+                            shutil.rmtree(temp_extract_dir)
+                        UI.die(
+                            "Security Violation: Manifest is missing 'github_repository' attribute."
+                        )
+
+                    if github_repo_manifest.lower() != f"{owner}/{repo}".lower():
+                        if temp_pkg_dir.exists():
+                            shutil.rmtree(temp_pkg_dir)
+                        if temp_extract_dir.exists():
+                            shutil.rmtree(temp_extract_dir)
+                        UI.die("Security Violation: Repository origin mismatch.")
+
+                    # Save original settings and restore
+                    original_no_run = getattr(self.manager.args, "no_run", False)
+                    self.manager.args.no_run = True
+                    original_backup_dir = getattr(self.manager.args, "backup_dir", None)
+
+                    try:
+                        # Extract LDMP contents directly into the project directory
+                        paths = self.manager.setup_paths(project_path)
+                        for p in [
+                            v
+                            for v in paths.values()
+                            if isinstance(v, Path) and not v.suffix
+                        ]:
+                            p.mkdir(parents=True, exist_ok=True)
+                        self.manager.verify_runtime_environment(paths)
+
+                        UI.info(
+                            "Restoring database and volume assets from LDM package..."
+                        )
+                        self.manager.snapshot.cmd_restore(
+                            project_name, backup_dir=temp_extract_dir
+                        )
+
+                        project_meta = self.manager.read_meta(project_path) or {}
+                        if "tag" in manifest:
+                            project_meta["tag"] = manifest["tag"]
+                        if "db_type" in manifest:
+                            project_meta["db_type"] = manifest["db_type"]
+
+                        from ldm_core.utils import sanitize_id
+
+                        safe_container_name = sanitize_id(project_name)
+
+                        project_meta.update(
+                            {
+                                "project_name": project_name,
+                                "container_name": safe_container_name,
+                                "port": str(
+                                    getattr(self.manager.args, "port", None)
+                                    or project_meta.get("port")
+                                    or 8080
+                                ),
+                                "ssl": str(
+                                    getattr(self.manager.args, "ssl", None)
+                                    or project_meta.get("ssl")
+                                    or "false"
+                                ).lower(),
+                                "host_name": getattr(
+                                    self.manager.args, "host_name", None
+                                )
+                                or project_meta.get("host_name")
+                                or "localhost",
+                                "last_run": datetime.now().isoformat(),
+                            }
+                        )
+                        self.manager.write_meta(project_path, project_meta)
+                        UI.success(f"Project created at: {project_path}")
+                    finally:
+                        self.manager.args.no_run = original_no_run
+                        self.manager.args.backup_dir = original_backup_dir
+                        if temp_pkg_dir.exists():
+                            shutil.rmtree(temp_pkg_dir)
+                        if temp_extract_dir.exists():
+                            shutil.rmtree(temp_extract_dir)
+
+                    # Boot stack if needed
+                    if not original_no_run:
+                        self.manager.cmd_run(project_id=project_name, is_restart=True)
+
+                    return project_name
+
+                # Standard clone path (no .ldmp package available, or --clone-only is specified)
                 if not project_name:
-                    parsed = self._parse_github_repo(source_path)
                     if parsed:
                         project_name = parsed[1]
                     else:
@@ -846,10 +1075,8 @@ class WorkspaceService(BaseHandler):
                         UI.info(f"Using default project name: {project_name}")
                     else:
                         project_name = UI.ask("Project Name", project_name)
-
                     self.manager.args.project = project_name
 
-                # Check if currently running to fail fast before any clone/download
                 project_path = self.manager.detect_project_path(
                     project_name, for_init=True
                 )
@@ -874,8 +1101,8 @@ class WorkspaceService(BaseHandler):
 
                     is_github = False
                     try:
-                        parsed = urlparse(source_path)
-                        if parsed.netloc in ("github.com", "www.github.com"):
+                        parsed_url = urlparse(source_path)
+                        if parsed_url.netloc in ("github.com", "www.github.com"):
                             is_github = True
                     except Exception:
                         pass
@@ -915,223 +1142,6 @@ class WorkspaceService(BaseHandler):
                 except Exception as e:
                     UI.die(f"Failed to execute git clone: {e}")
 
-                # Retrieve Assets
-                parsed = self._parse_github_repo(source_path)
-                if not parsed:
-                    UI.die(
-                        f"Could not parse GitHub repository owner and name from: {source_path}"
-                    )
-
-                owner, repo = parsed
-                github_token = os.environ.get("GITHUB_TOKEN")
-
-                headers = {}
-                if github_token:
-                    headers["Authorization"] = f"token {github_token}"
-
-                UI.info("Checking latest GitHub release for LDM package...")
-                api_url = f"https://api.github.com/repos/{owner}/{repo}/releases/latest"
-
-                try:
-                    api_resp = requests.get(api_url, headers=headers, timeout=20)
-                    if api_resp.status_code == 404:
-                        UI.die(
-                            "GitHub Release not found or repository metadata is inaccessible.\n"
-                            "If this is a private repository, a valid GITHUB_TOKEN is required.\n"
-                            "Guide: export GITHUB_TOKEN=your_pat"
-                        )
-                    elif api_resp.status_code == 401:
-                        UI.die(
-                            "GitHub API unauthorized. The provided GITHUB_TOKEN might be invalid.\n"
-                            "Guide: export GITHUB_TOKEN=your_pat"
-                        )
-                    api_resp.raise_for_status()
-                    release_data = api_resp.json()
-                except requests.exceptions.RequestException as e:
-                    if (
-                        hasattr(e, "response")
-                        and e.response is not None
-                        and e.response.status_code == 403
-                    ):
-                        UI.die(
-                            "GitHub API rate limit exceeded or access forbidden.\n"
-                            "Guide: Please export a valid GITHUB_TOKEN to increase rate limits."
-                        )
-                    UI.die(f"Failed to query GitHub Releases API: {e}")
-
-                assets = release_data.get("assets", [])
-                ldmp_asset = None
-                sha_asset = None
-
-                for asset in assets:
-                    name = asset.get("name", "")
-                    if name.endswith(".ldmp"):
-                        ldmp_asset = asset
-                    elif name.endswith(".ldmp.sha256"):
-                        sha_asset = asset
-
-                if not ldmp_asset or not sha_asset:
-                    UI.die(
-                        "Error: Missing required LDM Package (.ldmp) or checksum signature (.ldmp.sha256) in the latest repository release.\n"
-                        "Guide: The repository needs to package its environment using the LDM packaging GitHub Action.\n"
-                        "For more details, see: https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/guides/PACKAGING.md"
-                    )
-
-                temp_pkg_dir = (
-                    Path.cwd()
-                    / ".ldm_temp"
-                    / f"package_{datetime.now().strftime('%Y%m%d%H%M%S')}"
-                )
-                temp_pkg_dir.mkdir(parents=True, exist_ok=True)
-
-                ldmp_name = Path(ldmp_asset["name"]).name
-                sha_name = Path(sha_asset["name"]).name
-
-                ldmp_path = (temp_pkg_dir / ldmp_name).resolve()
-                sha_path = (temp_pkg_dir / sha_name).resolve()
-
-                if not is_within_root(ldmp_path, temp_pkg_dir) or not is_within_root(
-                    sha_path, temp_pkg_dir
-                ):
-                    if temp_pkg_dir.exists():
-                        shutil.rmtree(temp_pkg_dir)
-                    if temp_git_dir.exists():
-                        shutil.rmtree(temp_git_dir)
-                    UI.die("Security Violation: Invalid package asset name.")
-
-                UI.info(f"Downloading LDM package: {ldmp_name}...")
-                try:
-                    headers_dl = {"Accept": "application/octet-stream"}
-                    if github_token:
-                        headers_dl["Authorization"] = f"token {github_token}"
-
-                    dl_url = ldmp_asset["url"]
-                    r = requests.get(
-                        dl_url, headers=headers_dl, stream=True, timeout=60
-                    )
-                    r.raise_for_status()
-                    with open(ldmp_path, "wb") as f:
-                        for chunk in r.iter_content(chunk_size=8192):
-                            f.write(chunk)
-
-                    dl_sha_url = sha_asset["url"]
-                    r_sha = requests.get(dl_sha_url, headers=headers_dl, timeout=20)
-                    r_sha.raise_for_status()
-                    sha_path.write_text(r_sha.text.strip())
-                except Exception as e:
-                    if temp_pkg_dir.exists():
-                        shutil.rmtree(temp_pkg_dir)
-                    if temp_git_dir.exists():
-                        shutil.rmtree(temp_git_dir)
-                    UI.die(f"Failed to download LDM Package assets: {e}")
-
-                # Checksum Verify
-                actual_sha = calculate_sha256(ldmp_path)
-                expected_sha = sha_path.read_text().strip().split()[0]
-
-                if actual_sha != expected_sha:
-                    if temp_pkg_dir.exists():
-                        shutil.rmtree(temp_pkg_dir)
-                    if temp_git_dir.exists():
-                        shutil.rmtree(temp_git_dir)
-                    UI.die(
-                        "Security Violation: SHA-256 verification failed.\n"
-                        f"Expected: {expected_sha}\n"
-                        f"Actual:   {actual_sha}\n"
-                        "The downloaded package may have been corrupted or tampered with."
-                    )
-
-                UI.success("LDM package checksum verified successfully.")
-
-                temp_extract_dir = (
-                    Path.cwd()
-                    / ".ldm_temp"
-                    / f"extract_{datetime.now().strftime('%Y%m%d%H%M%S')}"
-                )
-                temp_extract_dir.mkdir(parents=True, exist_ok=True)
-
-                UI.info("Extracting LDM package...")
-                try:
-                    with tarfile.open(ldmp_path, "r:gz") as tar:
-                        from ldm_core.utils import safe_extract
-
-                        safe_extract(tar, temp_extract_dir)
-                except Exception as e:
-                    if temp_pkg_dir.exists():
-                        shutil.rmtree(temp_pkg_dir)
-                    if temp_git_dir.exists():
-                        shutil.rmtree(temp_git_dir)
-                    if temp_extract_dir.exists():
-                        shutil.rmtree(temp_extract_dir)
-                    UI.die(f"Failed to extract LDM package: {e}")
-
-                # Verify manifest meta
-                manifest_file = temp_extract_dir / "meta"
-                if not manifest_file.exists():
-                    if temp_pkg_dir.exists():
-                        shutil.rmtree(temp_pkg_dir)
-                    if temp_git_dir.exists():
-                        shutil.rmtree(temp_git_dir)
-                    if temp_extract_dir.exists():
-                        shutil.rmtree(temp_extract_dir)
-                    UI.die("Invalid LDM Package: Missing manifest 'meta' file.")
-
-                manifest = {}
-                with open(manifest_file) as f:
-                    for line in f:
-                        line = line.strip()
-                        if line and not line.startswith("#") and "=" in line:
-                            k, v = line.split("=", 1)
-                            manifest[k.strip()] = v.strip()
-
-                github_repo_manifest = manifest.get("github_repository")
-                if not github_repo_manifest:
-                    if temp_pkg_dir.exists():
-                        shutil.rmtree(temp_pkg_dir)
-                    if temp_git_dir.exists():
-                        shutil.rmtree(temp_git_dir)
-                    if temp_extract_dir.exists():
-                        shutil.rmtree(temp_extract_dir)
-                    UI.die(
-                        "Security Violation: Manifest is missing the required 'github_repository' attribute."
-                    )
-
-                try:
-                    origin_url = subprocess.run(
-                        ["git", "remote", "get-url", "origin"],
-                        cwd=str(temp_git_dir),
-                        capture_output=True,
-                        text=True,
-                        check=True,
-                    ).stdout.strip()
-
-                    parsed_origin = self._parse_github_repo(origin_url)
-                    if parsed_origin:
-                        origin_owner, origin_repo = parsed_origin
-                        git_origin_name = f"{origin_owner}/{origin_repo}"
-                    else:
-                        git_origin_name = ""
-
-                    if github_repo_manifest.lower() != git_origin_name.lower():
-                        if temp_pkg_dir.exists():
-                            shutil.rmtree(temp_pkg_dir)
-                        if temp_git_dir.exists():
-                            shutil.rmtree(temp_git_dir)
-                        if temp_extract_dir.exists():
-                            shutil.rmtree(temp_extract_dir)
-                        UI.die(
-                            f"Security Violation: Repository origin mismatch.\n"
-                            f"Manifest declares repository '{github_repo_manifest}', but clone originated from '{git_origin_name}'."
-                        )
-                except Exception as e:
-                    if temp_pkg_dir.exists():
-                        shutil.rmtree(temp_pkg_dir)
-                    if temp_git_dir.exists():
-                        shutil.rmtree(temp_git_dir)
-                    if temp_extract_dir.exists():
-                        shutil.rmtree(temp_extract_dir)
-                    UI.die(f"Failed to verify repository origin: {e}")
-
                 # Save original settings and call recursive cmd_import
                 original_no_run = getattr(self.manager.args, "no_run", False)
                 self.manager.args.no_run = True
@@ -1140,22 +1150,12 @@ class WorkspaceService(BaseHandler):
                 try:
                     # Import the code elements
                     self.cmd_import(str(temp_git_dir), is_init_from=is_init_from)
-
-                    # Restore database and volume assets
-                    UI.info("Restoring database and volume assets from LDM package...")
-                    self.manager.snapshot.cmd_restore(
-                        project_name, backup_dir=temp_extract_dir
-                    )
                 finally:
                     self.manager.args.no_run = original_no_run
                     self.manager.args.backup_dir = original_backup_dir
 
                     if temp_git_dir.exists():
                         shutil.rmtree(temp_git_dir)
-                    if temp_pkg_dir.exists():
-                        shutil.rmtree(temp_pkg_dir)
-                    if temp_extract_dir.exists():
-                        shutil.rmtree(temp_extract_dir)
 
                 # Boot stack if needed
                 if not original_no_run:

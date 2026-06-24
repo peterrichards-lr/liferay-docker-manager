@@ -82,14 +82,10 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
 
 ### Plan
 
-- **Fix Gitleaks Hook Version Panic**:
-  - Update Gitleaks hook version from `v8.23.3` to `v8.30.1` in `.pre-commit-config.yaml` to fix the wazero Go 1.24 panic. [Done]
-  - Run pre-commit hooks locally (`.venv/bin/pre-commit run --all-files`) to verify the update. [Done]
-  - Commit the fix, push to master via PR. [Done]
-- **Clean up Failed/Hung Release Jobs**:
-  - Cancel the in-progress `LDM Release E2E` workflow run `28087208752`. [Done]
-- **Re-trigger the Release**:
-  - Since remote tag deletion for `v2.11.45` is blocked by repository rules, bump the version to `v2.11.46` using `.venv/bin/python scripts/release.py --bump patch` to trigger a clean release cycle. [Done]
+- **Refactor Workspace Remote Import Tests to use Real Filesystems**:
+  - Replace dangerous global patches of `builtins.open`, `pathlib.Path.exists`, `Path.read_text`, `Path.mkdir`, and `shutil.rmtree` in `ldm_core/tests/test_workspace.py` with real temporary directories using `tempfile.TemporaryDirectory`.
+  - Let tests write actual files for downloaded packages and checksums, and extract them natively using a side-effect mock on `safe_extract` that writes the required `meta` file to disk.
+  - Verify that the tests pass locally, run formatting/lint checks, and push the fixes to `release/v2.11.51` to re-trigger and successfully complete the CI release pipeline.
 
 1. **Sequential Property Overrides Hierarchy (5-Layers) with `!important` Precedence**:
    - [x] Sourcing layers in order of lowest to highest precedence:
@@ -213,3 +209,8 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
 26. **Implement properties syntax auto-repair in ldm rescue**:
     - [x] Update `cmd_rescue` in `ldm_core/handlers/system.py` to check and auto-repair broken trailing backslash continuations in `portal-ext.properties` files.
     - [x] Add corresponding unit tests in `ldm_core/tests/test_system.py` to verify self-healing properties rescue functionality.
+27. **Clone-Bypassing `.ldmp` Workspace Import**:
+    - [x] Add `--clone-only` CLI flag to `ldm import` command to force standard clone behavior.
+    - [x] Implement remote checking for `.ldmp` package in GitHub Releases when importing from remote Git URL.
+    - [x] Bypass cloning and pre-seeding when `.ldmp` is found, directly downloading and restoring it.
+    - [x] Fix failing unit tests in `test_workspace.py` (releases API mock setup and missing release fallback validation).

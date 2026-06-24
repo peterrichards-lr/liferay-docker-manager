@@ -538,6 +538,11 @@ def get_parser():
     imp.add_argument("--no-jvm-verify", action="store_true")
     imp.add_argument("--no-tld-skip", action="store_true")
     imp.add_argument("--no-seed", action="store_true")
+    imp.add_argument(
+        "--clone-only",
+        action="store_true",
+        help="Force cloning the Git repository instead of downloading the LDM package (.ldmp)",
+    )
     imp.add_argument("--no-osgi-seed", action="store_true")
     imp.add_argument("--sidecar", action="store_true")
     imp.add_argument("--no-captcha", action="store_true")
