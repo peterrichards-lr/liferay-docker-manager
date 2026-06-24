@@ -220,3 +220,9 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
     - [x] Update `workspace_root` Liferay Workspace version resolution in `ldm_core/handlers/workspace.py` to use `resolve_liferay_docker_tag`.
     - [x] Update CLI/meta version parsing in `ldm_core/handlers/runtime.py` to also resolve user-supplied or meta-defined tags to their official Docker tags.
     - [x] Add unit tests verifying the version resolution and caching logic.
+
+29. **Enhance 'ldm reindex' to Support Immediate Runtime Reindexing**:
+    - [x] Add CLI arguments `--force-boot` / `--reboot` in `ldm_core/cli.py`.
+    - [x] Update `cmd_reindex` in `ldm_core/handlers/runtime.py` to check container state.
+    - [x] Implement telnet Gogo execution helper to trigger immediate reindex on running containers.
+    - [x] Add unit tests verifying runtime immediate reindexing and fallback reboot options.
