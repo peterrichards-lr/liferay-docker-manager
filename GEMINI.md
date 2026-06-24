@@ -71,6 +71,7 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
 
 ## 8. Active Work State & Plan (June 24, 2026)
 
+- Released `v2.11.45` failed during the CI/CD pipeline due to Gitleaks pre-commit hook panic under Go 1.24 (wasm invalid table access).
 - Released `v2.11.43` successfully (implemented sequential properties override hierarchy (5-Layers) with CSS-style `# !important` precedence, CLI command overrides, and web dashboard diagnostics).
 - Released `v2.11.42` successfully (resolved the GITHUB_ACTIONS env var root check in E2E tests).
 - Released `v2.11.34` successfully (integrated automatic stop in non-interactive/yes mode and `--leave-running` option for workspace imports).
@@ -79,6 +80,16 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
 - Released `v2.11.30` successfully (integrated Visual Diagnostics Web Dashboard (P3), Dynamic JVM Self-Tuning (P2), and solved GITHUB_ACTIONS env var mock test coverage mismatch).
 
 ### Plan
+
+- **Fix Gitleaks Hook Version Panic**:
+  - Update Gitleaks hook version from `v8.23.3` to `v8.30.1` in `.pre-commit-config.yaml` to fix the wazero Go 1.24 panic.
+  - Run pre-commit hooks locally (`.venv/bin/pre-commit run --all-files`) to verify the update.
+  - Commit the fix, push to master.
+- **Clean up Failed/Hung Release Jobs**:
+  - Cancel the in-progress `LDM Release E2E` workflow run `28087208752`.
+- **Re-trigger the Release**:
+  - Delete the failed remote/local `v2.11.45` tag.
+  - Re-create and push the `v2.11.45` tag pointing to master HEAD containing the Gitleaks fix, triggering a clean and successful CI & Release build.
 
 1. **Sequential Property Overrides Hierarchy (5-Layers) with `!important` Precedence**:
    - [x] Sourcing layers in order of lowest to highest precedence:
