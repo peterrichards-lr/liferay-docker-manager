@@ -36,12 +36,38 @@ body:
         3. See error...
     validations:
       required: true
-  - type: textarea
-    id: logs
+  - type: dropdown
+    id: liferay_version
     attributes:
-      label: Relevant Logs
-      description: Please paste any error output from `ldm logs` or `ldm doctor`.
+      label: Liferay CE/DXP Version
+      description: What Liferay version is the target environment running?
+      options:
+        - Liferay DXP 2025.Q1
+        - Liferay DXP 2024.Qx
+        - Liferay DXP 7.4
+        - Liferay Portal CE 7.4
+        - Not Applicable / General CLI Issue
+    validations:
+      required: true
+  - type: dropdown
+    id: environment_type
+    attributes:
+      label: Environment Type
+      description: How is the environment provisioned?
+      options:
+        - Docker Compose (via LDM)
+        - Native OSGi Bundle / Local Tomcat
+        - Liferay Cloud (PaaS)
+    validations:
+      required: true
+  - type: textarea
+    id: debug_logs
+    attributes:
+      label: Verbose Debug Logs
+      description: Please paste/attach verbose debug logs (e.g., from running `ldm -v` or using the `-v` flag / `LOG_LEVEL=debug`).
       render: shell
+    validations:
+      required: true
   - type: textarea
     id: additional
     attributes:

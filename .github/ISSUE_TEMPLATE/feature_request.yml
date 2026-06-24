@@ -31,9 +31,26 @@ body:
     validations:
       required: false
   - type: textarea
+    id: business_impact
+    attributes:
+      label: Business or Proof-of-Concept (POC) Impact
+      description: Please describe the business case, POC urgency, or productivity impact of this feature to help us measure value.
+      placeholder: e.g., This feature is required for the UK GTM demonstration on July 10...
+    validations:
+      required: true
+  - type: textarea
     id: additional
     attributes:
       label: Additional context
       description: Add any other context or screenshots about the feature request here.
     validations:
       required: false
+  - type: markdown
+    attributes:
+      value: |
+        ### 👍 Community Voting & Prioritization
+        Please ask your team/colleagues to upvote this issue using GitHub's native 👍 reaction.
+        Our automated prioritization engine runs daily and updates issue tracking labels:
+        - **priority: p1**: 10+ upvotes
+        - **priority: p2**: 5-9 upvotes
+        - **priority: p3**: Less than 5 upvotes
