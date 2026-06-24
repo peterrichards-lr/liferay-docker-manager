@@ -161,3 +161,18 @@ UI health checks have been decoupled from the strict binary E2E suite to prevent
 | 7.2 | **SSL Hygiene** | Check `~/.ldm/infra/proxy/` | Configs removed after project teardown. |
 | 7.3 | **Non-Interactive Prune** | `ldm prune -y` | Silently removes orphaned containers. |
 | 7.4 | **Self-Healing Reg** | Delete project folder manually | Dead path detected and pruned from registry. |
+
+---
+
+## 🧪 Unit Testing & Mocking Guidelines
+
+To prevent test-runner hangs, memory exhaustion, and side-effect leakage in CI pipelines, follow these guidelines when writing unit tests:
+
+1. **Avoid Global built-in / Path Mocking**:
+   * Do not globally mock classes or standard libraries like `pathlib.Path.exists`, `pathlib.Path.read_text`, `builtins.open`, or `shutil.rmtree`.
+   * Patching standard library methods globally can corrupt Python's internal mechanisms (such as timezone updates in `time.strftime` or mock tracking in `unittest.mock`) and lead to infinite recursion.
+2. **Prefer Real Filesystem Sandboxing**:
+   * Use `tempfile.TemporaryDirectory` to create actual sandbox environments for tests.
+   * Let LDM interact with real, lightweight files on disk. The cleanups inside LDM and `TemporaryDirectory` contexts will automatically ensure that no files are left behind.
+3. **Use Mock Side-Effects for Specific Interceptions**:
+   * If files need to be simulated, write a side effect for a specific dependency (like mocking `safe_extract` to write dummy meta files directly to the temporary directory).
