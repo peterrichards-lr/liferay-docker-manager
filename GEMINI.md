@@ -152,3 +152,7 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
     - [ ] Ensure that on subprocess startup exit code 1, stderr is fully printed and client logs are read.
     - [ ] Add unit tests verifying error output logic and log reading functionality.
 14. **Implement Unified Project Management & Automation Playbook**: Save `docs/PLAYBOOK.md`, add project-scoped rule to `.agents/AGENTS.md`, and align `bug_report.yml` and `feature_request.yml` templates with the playbook standard. [Completed]
+15. **Sanitize Container Names Containing Spaces**:
+    - [ ] Update `ComposerService` to sanitize container names for Liferay, Database, and Tunnel sidecar services (e.g. replacing spaces with hyphens).
+    - [ ] Add unit tests in `ldm_core/tests/test_composer.py` to assert correct sanitization of space-separated container names (e.g., `Zukunft Digital` to `Zukunft-Digital`).
+    - [ ] Run test suite to verify success.

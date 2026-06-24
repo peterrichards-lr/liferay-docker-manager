@@ -4,7 +4,7 @@ import os
 import platform
 from pathlib import Path
 
-from ldm_core.utils import dict_to_yaml, resolve_dependency_version
+from ldm_core.utils import dict_to_yaml, resolve_dependency_version, sanitize_id
 
 
 class ComposerService:
@@ -335,8 +335,10 @@ class ComposerService:
                 services["lfr-tunnel"] = {
                     "image": image,
                     "pull_policy": "always",
-                    "container_name": meta.get("tunnel_container_name")
-                    or f"{project_name}-lfr-tunnel",
+                    "container_name": sanitize_id(
+                        meta.get("tunnel_container_name")
+                        or f"{project_name}-lfr-tunnel"
+                    ),
                     "networks": ["liferay-net"],
                     "environment": lfr_env,
                     "volumes": [f"{logs_dir}:/opt/liferay/logs"],
@@ -844,7 +846,9 @@ class ComposerService:
                 )
 
         if scale == 1:
-            liferay_container = meta.get("liferay_container_name") or project_name
+            liferay_container = sanitize_id(
+                meta.get("liferay_container_name") or project_name
+            )
             service["container_name"] = liferay_container
 
             # Host-mapped state if requested
@@ -854,8 +858,6 @@ class ComposerService:
                     f"{paths['state'].as_posix()}:/opt/liferay/osgi/state{z_label}"
                 )
             else:
-                from ldm_core.utils import sanitize_id
-
                 safe_volume_prefix = sanitize_id(liferay_container)
                 state_mapping = f"{safe_volume_prefix}-state:/opt/liferay/osgi/state"
 
@@ -903,7 +905,9 @@ class ComposerService:
             return None
 
         tag = str(meta.get("tag") or "latest")
-        db_container = meta.get("db_container_name") or f"{project_name}-db"
+        db_container = sanitize_id(
+            meta.get("db_container_name") or f"{project_name}-db"
+        )
         scale = int(meta.get("scale_db", 1))
 
         if db_type in ["postgresql", "postgres"]:
