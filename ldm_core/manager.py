@@ -14,6 +14,7 @@ from ldm_core.handlers.infra import InfraService
 from ldm_core.handlers.license import LicenseService
 from ldm_core.handlers.runtime import RuntimeService
 from ldm_core.handlers.snapshot import SnapshotService
+from ldm_core.handlers.system import SystemService
 from ldm_core.handlers.workspace import WorkspaceService
 from ldm_core.ui import UI
 
@@ -48,6 +49,7 @@ class LiferayManager(
         self.workspace = WorkspaceService(self)
         self.composer = ComposerService(self)
         self.runtime = RuntimeService(self)
+        self.system = SystemService(self)
 
         from ldm_core.handlers.share import ShareService
 
@@ -133,6 +135,12 @@ class LiferayManager(
 
     def cmd_reset(self, *args, **kwargs):
         return self.runtime.cmd_reset(*args, **kwargs)
+
+    def cmd_nuke(self, *args, **kwargs):
+        return self.system.cmd_nuke(*args, **kwargs)
+
+    def cmd_rescue(self, *args, **kwargs):
+        return self.system.cmd_rescue(*args, **kwargs)
 
     def cmd_hydrate(self, *args, **kwargs):
         return self.cloud.cmd_hydrate(*args, **kwargs)

@@ -1391,6 +1391,37 @@ def get_parser():
         help="Reset cumulative ROI metrics back to zero",
     )
 
+    nuke_cmd = system_subparsers.add_parser(
+        "nuke",
+        parents=[base_sub_parent],
+        help="Completely reset/wipe all global LDM state, caches, certificates, registry, and docker infrastructure.",
+    )
+    nuke_cmd.add_argument(
+        "--force",
+        "-f",
+        action="store_true",
+        help="Nuke all resources without asking for confirmation",
+    )
+    nuke_cmd.add_argument(
+        "--keep-config",
+        action="store_true",
+        help="Retain global config file ~/.ldmrc",
+    )
+
+    rescue_cmd = system_subparsers.add_parser(
+        "rescue",
+        parents=[base_sub_parent],
+        help="Recover/self-heal local LDM global proxy or specific project environments.",
+    )
+    rescue_cmd.add_argument(
+        "project",
+        nargs="?",
+        help="Optional specific project ID or container name to rescue",
+    )
+    rescue_cmd.add_argument(
+        "-p", "--project-id", dest="project_flag", help="Specific project ID to rescue"
+    )
+
     # Overwrite parse_known_args of the parser to run preprocess_args automatically:
     orig_parse_known_args = parser.parse_known_args
 
@@ -1794,6 +1825,14 @@ def main():
             getattr(args, "host_name", None)
         ),
         ("system", "roi"): manager.config.cmd_roi,
+        ("system", "nuke"): lambda: manager.cmd_nuke(
+            force=getattr(args, "force", False),
+            keep_config=getattr(args, "keep_config", False),
+        ),
+        ("system", "rescue"): lambda: manager.cmd_rescue(
+            project_id=getattr(args, "project", None)
+            or getattr(args, "project_flag", None)
+        ),
     }
 
     if current_cmd in cmds:
