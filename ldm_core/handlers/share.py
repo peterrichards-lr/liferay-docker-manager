@@ -488,6 +488,19 @@ class ShareService:
                     UI.error(f"Failed to start tunnel (Exit {res.returncode})")
                     if res.stderr:
                         print(res.stderr.strip())
+                    log_file = (
+                        get_actual_home() / ".lfr-tunnel" / f"client-{subdomain}.log"
+                    )
+                    if log_file.exists():
+                        try:
+                            logs_str = log_file.read_text(encoding="utf-8").strip()
+                            if logs_str:
+                                UI.error("Tunnel Log Output:")
+                                print("-" * 40)
+                                print(logs_str)
+                                print("-" * 40)
+                        except Exception:
+                            pass
             except Exception as e:
                 UI.die(f"Process invocation error: {e}")
 
@@ -1083,20 +1096,32 @@ class ShareService:
                     elif (
                         "failed to register" in logs_str.lower()
                         or "gateway error" in logs_str.lower()
+                        or "reservation" in logs_str.lower()
+                        or "limit" in logs_str.lower()
                     ):
-                        for line in logs_str.splitlines():
-                            if (
-                                "gateway error" in line.lower()
-                                or "failed to register" in line.lower()
-                                or "error" in line.lower()
+                        lines = logs_str.splitlines()
+                        relevant_lines = []
+                        for line in lines:
+                            if any(
+                                k in line.lower()
+                                for k in [
+                                    "error",
+                                    "client",
+                                    "register",
+                                    "limit",
+                                    "portal",
+                                    "👉",
+                                    "http",
+                                ]
                             ):
-                                error_reason = (
-                                    f"Gateway Registration Failed: {line.strip()}"
-                                )
-                                break
+                                relevant_lines.append(line.strip())
+                        if relevant_lines:
+                            error_reason = "Gateway Registration Failed:\n" + "\n".join(
+                                relevant_lines
+                            )
                         else:
                             error_reason = (
-                                "Gateway Registration Failed. Please check the logs."
+                                f"Gateway Registration Failed:\n{logs_str.strip()}"
                             )
                     elif logs_str.strip():
                         if is_running:
@@ -1112,6 +1137,7 @@ class ShareService:
             else:
                 # Query inspector_port first using status-json for native tunnel diagnostics fallback
                 inspector_port = 4040
+                info_parsed = False
                 try:
                     bin_path = self._ensure_binary()
                     status_cmd = [
@@ -1134,12 +1160,70 @@ class ShareService:
                 except Exception:
                     pass
 
-                req_res = requests.get(
-                    f"http://localhost:{inspector_port}/api/info", timeout=2
-                )
-                if req_res.status_code == 200:
-                    info = req_res.json()
-                    error_reason = self._diagnose_tunnel_info(info, subdomain)
+                try:
+                    req_res = requests.get(
+                        f"http://localhost:{inspector_port}/api/info", timeout=2
+                    )
+                    if req_res.status_code == 200:
+                        info = req_res.json()
+                        error_reason = self._diagnose_tunnel_info(info, subdomain)
+                        info_parsed = True
+                except Exception:
+                    pass
+
+                if not info_parsed:
+                    log_file = (
+                        get_actual_home() / ".lfr-tunnel" / f"client-{subdomain}.log"
+                    )
+                    if log_file.exists():
+                        try:
+                            logs_str = log_file.read_text(encoding="utf-8").strip()
+                            if logs_str:
+                                if (
+                                    "unauthorized" in logs_str.lower()
+                                    or "401" in logs_str
+                                ):
+                                    error_reason = "Authentication Failed: Gateway returned 401 Unauthorized. Please verify your LFT_CLIENT_TOKEN."
+                                elif (
+                                    "conflict" in logs_str.lower()
+                                    or "already taken" in logs_str.lower()
+                                ):
+                                    error_reason = f"Subdomain Conflict: Subdomain '{subdomain}' is already taken by another active tunnel."
+                                elif (
+                                    "failed to register" in logs_str.lower()
+                                    or "gateway error" in logs_str.lower()
+                                    or "reservation" in logs_str.lower()
+                                    or "limit" in logs_str.lower()
+                                ):
+                                    lines = logs_str.splitlines()
+                                    relevant_lines = []
+                                    for line in lines:
+                                        if any(
+                                            k in line.lower()
+                                            for k in [
+                                                "error",
+                                                "client",
+                                                "register",
+                                                "limit",
+                                                "portal",
+                                                "👉",
+                                                "http",
+                                            ]
+                                        ):
+                                            relevant_lines.append(line.strip())
+                                    if relevant_lines:
+                                        error_reason = (
+                                            "Gateway Registration Failed:\n"
+                                            + "\n".join(relevant_lines)
+                                        )
+                                    else:
+                                        error_reason = (
+                                            f"Gateway Registration Failed:\n{logs_str}"
+                                        )
+                                else:
+                                    error_reason = f"Tunnel connection timeout. Last logs:\n{logs_str}"
+                        except Exception as le:
+                            error_reason = f"Tunnel connection timeout. (Unable to read logs: {le})"
         except Exception:
             pass
 

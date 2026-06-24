@@ -1039,3 +1039,115 @@ class TestShareService(unittest.TestCase):
         res = self.service._ensure_binary()
         mock_run.assert_called_once_with("install.sh", shell=True, check=True)
         self.assertEqual(res, Path("/resolved/lfr-tunnel"))
+
+    @patch("ldm_core.handlers.share.get_actual_home")
+    @patch("pathlib.Path.exists")
+    @patch("pathlib.Path.read_text")
+    @patch("subprocess.run")
+    @patch("requests.get")
+    def test_poll_tunnel_health_native_log_extraction_reservation_failure(
+        self, mock_get, mock_run, mock_read, mock_exists, mock_home
+    ):
+        # Restore actual _poll_tunnel_health method for this test
+        self.service._poll_tunnel_health = ShareService._poll_tunnel_health.__get__(  # type: ignore[method-assign]
+            self.service, ShareService
+        )
+        self.service._ensure_binary = MagicMock(  # type: ignore[method-assign]
+            return_value=Path("/fake/bin/lfr-tunnel")
+        )
+
+        mock_home.return_value = Path("/fake/home")
+        mock_exists.return_value = True
+
+        # mock requests to fail (crashed daemon)
+        mock_get.side_effect = Exception("Connection refused")
+
+        # mock subprocess.run for status-json to fail
+        status_res = MagicMock()
+        status_res.stdout = ""
+        mock_run.return_value = status_res
+
+        # mock log file reading
+        mock_read.return_value = (
+            "[Error] Failed to register: gateway error (403): Custom subdomains must be reserved in the portal prior to connecting.\n"
+            "[Client] Subdomain reservation or limit issue detected.\n"
+            "[Client] Please visit the User Portal to resolve it:\n"
+            "         👉 https://portal.lfr-demo.se (Cmd/Ctrl+Click to open)"
+        )
+
+        success, err = self.service._poll_tunnel_health("custom-sub", timeout=0.1)
+        self.assertFalse(success)
+        self.assertIn("Gateway Registration Failed:", err)
+        self.assertIn("Custom subdomains must be reserved", err)
+        self.assertIn("👉 https://portal.lfr-demo.se", err)
+
+    @patch("subprocess.run")
+    def test_poll_tunnel_health_docker_logs_multiline_reservation_failure(
+        self, mock_run
+    ):
+        # Restore actual _poll_tunnel_health method for this test
+        self.service._poll_tunnel_health = ShareService._poll_tunnel_health.__get__(  # type: ignore[method-assign]
+            self.service, ShareService
+        )
+
+        mock_wget = MagicMock()
+        mock_wget.returncode = 1
+        mock_wget.stderr = "Connection refused"
+
+        mock_inspect = MagicMock()
+        mock_inspect.returncode = 0
+        mock_inspect.stdout = "false"
+
+        mock_logs = MagicMock()
+        mock_logs.returncode = 0
+        mock_logs.stdout = (
+            "[Error] Failed to register: gateway error (403): Custom subdomains must be reserved in the portal prior to connecting.\n"
+            "[Client] Subdomain reservation or limit issue detected.\n"
+            "[Client] Please visit the User Portal to resolve it:\n"
+            "         👉 https://portal.lfr-demo.se (Cmd/Ctrl+Click to open)"
+        )
+        mock_logs.stderr = ""
+
+        mock_run.side_effect = [mock_wget, mock_inspect, mock_logs]
+
+        success, err = self.service._poll_tunnel_health(
+            "custom-sub", container_name="myproj-lfr-tunnel", timeout=0.1
+        )
+        self.assertFalse(success)
+        self.assertIn("Gateway Registration Failed:", err)
+        self.assertIn("Custom subdomains must be reserved", err)
+        self.assertIn("👉 https://portal.lfr-demo.se", err)
+
+    @patch("ldm_core.handlers.share.get_actual_home")
+    @patch("pathlib.Path.exists")
+    @patch("pathlib.Path.read_text")
+    @patch("subprocess.run")
+    @patch("ldm_core.handlers.share.UI")
+    def test_cmd_start_native_error_handling_prints_logs(
+        self, mock_ui, mock_run, mock_read, mock_exists, mock_home
+    ):
+        mock_home.return_value = Path("/fake/home")
+        mock_exists.return_value = True
+        mock_read.return_value = (
+            "Client Error: Subdomain limit reached.\n👉 https://portal.lfr-demo.se"
+        )
+
+        # Mock dependencies in cmd_start
+        self.service._ensure_binary = MagicMock(  # type: ignore[method-assign]
+            return_value=Path("/fake/bin/lfr-tunnel")
+        )
+        self.service._get_installed_version = MagicMock(return_value="1.0.0")  # type: ignore[method-assign]
+        self.service._verify_compatibility = MagicMock()  # type: ignore[method-assign]
+        self.service._get_auth_token = MagicMock(return_value="mock-token")  # type: ignore[method-assign]
+
+        # Process starts but exits with 1 (immediate failure)
+        mock_run_res = MagicMock()
+        mock_run_res.returncode = 1
+        mock_run_res.stderr = "Subprocess immediate crash"
+        mock_run.return_value = mock_run_res
+
+        self.service.cmd_start(project_id="demo", subdomain="custom-sub")
+
+        # Verify that UI.error was called for exit failure and logs printed
+        mock_ui.error.assert_any_call("Failed to start tunnel (Exit 1)")
+        mock_ui.error.assert_any_call("Tunnel Log Output:")

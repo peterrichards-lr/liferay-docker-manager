@@ -146,3 +146,9 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
     - [x] Modify `scripts/release.py` to poll the PR merge status, checkout master, pull, and push the release tag automatically.
 12. **Fix E2E verification scripts for project collision check**:
     - [x] Pipe "n" to `ldm run` instead of passing `-y` in `verify_e2e_refactor.sh` and `verify_e2e_refactor.ps1` to trigger the collision check error.
+13. **Improve lfr-tunnel error reporting and log propagation**:
+    - [ ] Update `_poll_tunnel_health` in `ldm_core/handlers/share.py` to extract and print the local `~/.lfr-tunnel/client-<subdomain>.log` content on failure when using the native `lfr-tunnel` provider.
+    - [ ] Improve docker container log extraction in `_poll_tunnel_health` to print full registration error/instructions instead of only the first line.
+    - [ ] Ensure that on subprocess startup exit code 1, stderr is fully printed and client logs are read.
+    - [ ] Add unit tests verifying error output logic and log reading functionality.
+14. **Implement Unified Project Management & Automation Playbook**: Save `docs/PLAYBOOK.md`, add project-scoped rule to `.agents/AGENTS.md`, and align `bug_report.yml` and `feature_request.yml` templates with the playbook standard. [Completed]
