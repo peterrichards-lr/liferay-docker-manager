@@ -40,6 +40,9 @@ class MockConfigManager:
     def sync_stack(self, *args, **kwargs):
         pass
 
+    def verify_runtime_environment(self, *args, **kwargs):
+        pass
+
     def setup_paths(self, root):
         return {"root": Path(root)}
 
@@ -575,6 +578,97 @@ class TestConfigService(unittest.TestCase):
         self.config.cmd_roi()
         mock_set.assert_called_with("roi_seconds_saved", 0)
         mock_success.assert_called_with("ROI metrics reset successfully.")
+
+    def test_sync_common_assets_cascade_and_important(self):
+        """Verify the 5-layer properties merge cascade and !important override precedence."""
+        import tempfile
+        from pathlib import Path
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            files_dir = tmp_path / "files"
+            files_dir.mkdir(parents=True)
+
+            paths = {
+                "root": tmp_path,
+                "configs": tmp_path / "osgi" / "configs",
+                "files": files_dir,
+                "common_dirs": [],
+                "deploy": tmp_path / "deploy",
+            }
+
+            global_common = tmp_path / "global_common"
+            global_common.mkdir()
+            local_common = tmp_path / "local_common"
+            local_common.mkdir()
+
+            paths["common_dirs"] = [global_common, local_common]
+            target_pe = files_dir / "portal-ext.properties"
+
+            self.manager.update_portal_ext = self.config.update_portal_ext  # type: ignore[method-assign]
+
+            seed_pe_content = "default.admin.password=seed_val\n"
+            global_pe_content = "default.admin.password=global_val\n"
+            local_pe_content = "default.admin.password=local_val\n"
+
+            (global_common / "portal-ext.properties").write_text(global_pe_content)
+            (local_common / "portal-ext.properties").write_text(local_pe_content)
+
+            self.config.sync_common_assets(paths)
+
+            project_props, _ = self.config._get_properties_with_metadata(
+                target_pe.read_text()
+            )
+            self.assertEqual(project_props["default.admin.password"], "local_val")
+
+            global_pe_content = (
+                "# !important\ndefault.admin.password=global_important_val\n"
+            )
+            (global_common / "portal-ext.properties").write_text(global_pe_content)
+
+            self.config.sync_common_assets(paths)
+
+            project_props, project_imp = self.config._get_properties_with_metadata(
+                target_pe.read_text()
+            )
+            self.assertEqual(
+                project_props["default.admin.password"], "global_important_val"
+            )
+            self.assertIn("default.admin.password", project_imp)
+
+    def test_cmd_rebuild_revert_reset_properties(self):
+        """Verify CLI subcommand handlers: rebuild, revert, and reset properties."""
+        import tempfile
+        from pathlib import Path
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            files_dir = tmp_path / "files"
+            files_dir.mkdir(parents=True)
+
+            paths = {
+                "root": tmp_path,
+                "configs": tmp_path / "osgi" / "configs",
+                "files": files_dir,
+                "common_dirs": [],
+                "deploy": tmp_path / "deploy",
+            }
+
+            self.manager.detect_project_path = MagicMock(return_value=tmp_path)  # type: ignore[method-assign]
+            self.manager.setup_paths = MagicMock(return_value=paths)  # type: ignore[method-assign]
+            self.manager.read_meta = MagicMock(return_value={})  # type: ignore[method-assign]
+            self.manager.verify_runtime_environment = MagicMock()  # type: ignore[method-assign]
+
+            ldm_dir = tmp_path / ".liferay-docker"
+            ldm_dir.mkdir()
+            orig_pe = ldm_dir / "original-portal-ext.properties"
+            target_pe = files_dir / "portal-ext.properties"
+
+            orig_pe.write_text("my.prop=original\n")
+            target_pe.write_text("my.prop=customized\n")
+
+            self.config.cmd_revert_properties("project")
+            self.assertEqual(target_pe.read_text().strip(), "my.prop=original")
 
 
 if __name__ == "__main__":

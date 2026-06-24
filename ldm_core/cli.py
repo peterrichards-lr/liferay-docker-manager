@@ -1145,6 +1145,30 @@ def get_parser():
         help="Which file to edit (default: meta)",
     )
 
+    rebuild_props = config_subparsers.add_parser(
+        "rebuild-properties",
+        parents=[base_sub_parent],
+        help="Reconstruct/sync properties cleanly, preserving project customizations",
+    )
+    rebuild_props.add_argument("project", nargs="?")
+    rebuild_props.add_argument("-p", "--project", dest="project_flag")
+
+    revert_props = config_subparsers.add_parser(
+        "revert-properties",
+        parents=[base_sub_parent],
+        help="Restore files/portal-ext.properties from original-portal-ext.properties",
+    )
+    revert_props.add_argument("project", nargs="?")
+    revert_props.add_argument("-p", "--project", dest="project_flag")
+
+    reset_props = config_subparsers.add_parser(
+        "reset-properties",
+        parents=[base_sub_parent],
+        help="Discard project customizations and rebuild properties purely from layers",
+    )
+    reset_props.add_argument("project", nargs="?")
+    reset_props.add_argument("-p", "--project", dest="project_flag")
+
     # Namespace: system
     system = subparsers.add_parser(
         "system",
@@ -1695,6 +1719,15 @@ def main():
         ),
         ("config", "edit"): lambda: manager.config.cmd_edit(
             getattr(args, "project", None), args.target
+        ),
+        ("config", "rebuild-properties"): lambda: manager.config.cmd_rebuild_properties(
+            getattr(args, "project", None)
+        ),
+        ("config", "revert-properties"): lambda: manager.config.cmd_revert_properties(
+            getattr(args, "project", None)
+        ),
+        ("config", "reset-properties"): lambda: manager.config.cmd_reset_properties(
+            getattr(args, "project", None)
         ),
         # system namespace:
         ("system", "relocate"): lambda: manager.infra.cmd_system("relocate"),

@@ -545,6 +545,16 @@ class SnapshotService(BaseHandler):
                 UI.warning("Integrity verification disabled via --no-verify.")
 
             self._extract_snapshot_archive(files_tar, paths)
+
+            # Back up the restored/imported portal-ext.properties to serve as .ldmp/snapshot baseline
+            if "files" in paths:
+                target_pe = paths["files"] / "portal-ext.properties"
+                if target_pe.exists():
+                    ldm_dir = paths["root"] / ".liferay-docker"
+                    ldm_dir.mkdir(parents=True, exist_ok=True)
+                    import shutil
+
+                    shutil.copy2(target_pe, ldm_dir / "ldmp-portal-ext.properties")
         elif volume_tgz.exists() or (choice_path / "volume").is_dir():
             UI.detail("  + Restoring cloud data volume...")
             target_data = paths["data"]

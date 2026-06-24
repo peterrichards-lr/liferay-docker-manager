@@ -91,7 +91,79 @@ class ConfigService:
 
         return props
 
-    def update_portal_ext(self, paths, updates):
+    def _get_properties_with_metadata(self, content):
+        """Robustly extracts properties and their metadata (like !important) from a string.
+        Returns a tuple: (properties_dict, important_keys_set)
+        """
+        props: dict[str, str] = {}
+        important_keys: set[str] = set()
+        if not content:
+            return props, important_keys
+
+        lines = content.splitlines()
+        i = 0
+        last_comment_was_important = False
+
+        while i < len(lines):
+            line = lines[i]
+            stripped = line.strip()
+
+            if not stripped:
+                i += 1
+                continue
+
+            if stripped.startswith(("#", "!")):
+                comment_text = stripped[1:].strip().lower()
+                if comment_text == "!important" or comment_text.startswith(
+                    "!important"
+                ):
+                    last_comment_was_important = True
+                else:
+                    last_comment_was_important = False
+                i += 1
+                continue
+
+            if "=" in line:
+                key, val = line.split("=", 1)
+                key = key.strip()
+                full_val = [val]
+
+                is_important = last_comment_was_important
+                # Reset comment state
+                last_comment_was_important = False
+
+                # Handle continuation lines
+                temp_val = val
+                while temp_val.strip().endswith("\\") and i + 1 < len(lines):
+                    i += 1
+                    temp_val = lines[i]
+                    full_val.append(temp_val)
+
+                # Check if the last line has an inline comment with !important
+                last_line_stripped = temp_val.strip()
+                if " #" in last_line_stripped:
+                    parts = last_line_stripped.split(" #", 1)
+                    inline_comment = parts[1].strip().lower()
+                    if inline_comment == "!important" or inline_comment.startswith(
+                        "!important"
+                    ):
+                        is_important = True
+                        # Strip inline comment from value representation
+                        idx = full_val[-1].rfind(" #")
+                        full_val[-1] = full_val[-1][:idx]
+
+                value = "\n".join(full_val).strip()
+                props[key] = value
+                if is_important:
+                    important_keys.add(key)
+            else:
+                last_comment_was_important = False
+
+            i += 1
+
+        return props, important_keys
+
+    def update_portal_ext(self, paths, updates, important_keys=None):
         """Updates or adds properties in portal-ext.properties, handling multi-line values."""
         if not updates:
             return
@@ -122,8 +194,24 @@ class ConfigService:
                 line = lines[i]
                 stripped = line.strip()
 
-                # Preserve comments and empty lines
-                if not stripped or stripped.startswith(("#", "!")):
+                # Clean up existing preceding !important comments if the key is in updates
+                if stripped.startswith(("#", "!")):
+                    comment_text = stripped[1:].strip().lower()
+                    if comment_text == "!important" or comment_text.startswith(
+                        "!important"
+                    ):
+                        # Peek ahead to see if the next property is being updated
+                        next_i = i + 1
+                        while next_i < len(lines) and lines[next_i].strip().startswith(
+                            ("#", "!")
+                        ):
+                            next_i += 1
+                        if next_i < len(lines) and "=" in lines[next_i]:
+                            next_key = lines[next_i].split("=", 1)[0].strip()
+                            if next_key in updates:
+                                # Skip this comment line, it will be regenerated or discarded
+                                i += 1
+                                continue
                     new_lines.append(line)
                     i += 1
                     continue
@@ -131,6 +219,10 @@ class ConfigService:
                 if "=" in line:
                     key = line.split("=", 1)[0].strip()
                     if key in props:
+                        # Write preceding !important if key is important
+                        if important_keys and key in important_keys:
+                            new_lines.append("# !important")
+
                         # Replace the entire block
                         new_lines.append(f"{key}={props[key]}")
                         original_keys_found.add(key)
@@ -152,6 +244,8 @@ class ConfigService:
         # Add any new keys that weren't in the original file
         for k, v in props.items():
             if k not in original_keys_found:
+                if important_keys and k in important_keys:
+                    new_lines.append("# !important")
                 new_lines.append(f"{k}={v}")
 
         safe_write_text(pe_path, "\n".join(new_lines).strip() + "\n")
@@ -380,6 +474,13 @@ class ConfigService:
         if not isinstance(paths, dict):
             paths = self.manager.setup_paths(paths)
 
+        # Backward compatibility: populate common_dirs if missing
+        if "common_dirs" not in paths:
+            if paths.get("common"):
+                paths["common_dirs"] = [paths["common"]]
+            else:
+                paths["common_dirs"] = []
+
         # Handle Captcha Configuration
         if project_meta:
             no_captcha = str(project_meta.get("no_captcha", "false")).lower() == "true"
@@ -478,59 +579,198 @@ class ConfigService:
                     host_updates = {}
                 host_updates[portal_key] = val
 
-        common_dir = paths.get("common")
         target_ext = paths["files"] / "portal-ext.properties"
 
-        if common_dir and common_dir.exists():
-            if self.manager.verbose:
-                UI.info(f"Checking global assets in: {common_dir}")
+        # 1. Load Pre-warmed Seed properties (Layer 1)
+        seed_ext = (
+            Path(__file__).parent.parent
+            / "resources"
+            / "common_baseline"
+            / "portal-ext.properties"
+        )
+        seed_props, seed_imp = {}, set()
+        if seed_ext.exists():
+            try:
+                seed_props, seed_imp = self._get_properties_with_metadata(
+                    seed_ext.read_text()
+                )
+            except (FileNotFoundError, OSError):
+                pass
 
-            history_file = paths["root"] / ".liferay-docker.deployed"
-            history = (
-                set(history_file.read_text().splitlines())
-                if history_file.exists()
-                else set()
-            )
+        # 2. Load LDMP overrides (Layer 2)
+        ldmp_ext = paths["root"] / ".liferay-docker" / "ldmp-portal-ext.properties"
+        ldmp_props, ldmp_imp = {}, set()
+        if ldmp_ext.exists():
+            try:
+                ldmp_props, ldmp_imp = self._get_properties_with_metadata(
+                    ldmp_ext.read_text()
+                )
+            except (FileNotFoundError, OSError):
+                pass
 
-            common_ext = common_dir / "portal-ext.properties"
-            if common_ext.exists():
+        # 3. Load Global & Local Common properties (Layers 3 & 4)
+        global_props, global_imp = {}, set()
+        local_props, local_imp = {}, set()
+
+        for cd in paths.get("common_dirs", []):
+            cd_ext = cd / "portal-ext.properties"
+            if cd_ext.exists():
+                try:
+                    c_props, c_imp = self._get_properties_with_metadata(
+                        cd_ext.read_text()
+                    )
+                    if (
+                        ".ldm" in str(cd.resolve())
+                        or "home" in str(cd.resolve())
+                        or "global" in str(cd.resolve()).lower()
+                    ):
+                        global_props, global_imp = c_props, c_imp
+                    else:
+                        local_props, local_imp = c_props, c_imp
+                except (FileNotFoundError, OSError):
+                    pass
+
+        # 4. Load Project-level customizations (Layer 5)
+        project_props, project_imp = {}, set()
+        if target_ext.exists():
+            try:
+                project_props, project_imp = self._get_properties_with_metadata(
+                    target_ext.read_text()
+                )
+            except (FileNotFoundError, OSError):
+                pass
+
+        # Compute Project Baseline = Seed + LDMP
+        baseline_props = dict(seed_props)
+        baseline_props.update(ldmp_props)
+        baseline_imp = set(seed_imp)
+        for k in ldmp_props:
+            if k in ldmp_imp:
+                baseline_imp.add(k)
+            else:
+                baseline_imp.discard(k)
+
+        # Compute Project Customizations (Layer 5 effective)
+        project_custom_props = {}
+        project_custom_imp = set()
+        for k, v in project_props.items():
+            if k not in baseline_props:
+                project_custom_props[k] = v
+                if k in project_imp:
+                    project_custom_imp.add(k)
+            else:
+                val_differs = v != baseline_props[k]
+                imp_differs = (k in project_imp) != (k in baseline_imp)
+                if val_differs or imp_differs:
+                    project_custom_props[k] = v
+                    if k in project_imp:
+                        project_custom_imp.add(k)
+
+        # 5. Resolve cascade winner using CSS-style !important rule
+        all_keys = (
+            set(seed_props.keys())
+            | set(ldmp_props.keys())
+            | set(global_props.keys())
+            | set(local_props.keys())
+            | set(project_custom_props.keys())
+        )
+
+        winning_props = {}
+        winning_imp = set()
+
+        for k in all_keys:
+            entries = []
+            if k in seed_props:
+                entries.append((1, "seed", seed_props[k], k in seed_imp))
+            if k in ldmp_props:
+                entries.append((2, "ldmp", ldmp_props[k], k in ldmp_imp))
+            if k in global_props:
+                entries.append((3, "global", global_props[k], k in global_imp))
+            if k in local_props:
+                entries.append((4, "local", local_props[k], k in local_imp))
+            if k in project_custom_props:
+                entries.append(
+                    (5, "project", project_custom_props[k], k in project_custom_imp)
+                )
+
+            important_entries = [e for e in entries if e[3]]
+            if important_entries:
+                winner = max(important_entries, key=lambda x: x[0])
+            else:
+                winner = max(entries, key=lambda x: x[0])
+
+            winning_props[k] = winner[2]
+            if winner[3]:
+                winning_imp.add(k)
+
+        # Merge System/Runtime Injections (host_updates) as highest priority normal overrides
+        if host_updates:
+            for k, v in host_updates.items():
+                winning_props[k] = v
+                winning_imp.discard(k)
+
+        # Diff and apply changes to target_ext
+        current_props, current_imp = {}, set()
+        if target_ext.exists():
+            try:
+                current_props, current_imp = self._get_properties_with_metadata(
+                    target_ext.read_text()
+                )
+            except (FileNotFoundError, OSError):
+                pass
+
+        to_update = {}
+        for k, v in winning_props.items():
+            if current_props.get(k) != v or (k in current_imp) != (k in winning_imp):
+                to_update[k] = v
+
+        is_dry_run = (
+            getattr(self.manager.args, "dry_run_properties", False)
+            or getattr(self.manager.args, "dry_run", False)
+            or os.environ.get("LDM_DRY_RUN", "").lower() == "true"
+        )
+
+        if to_update:
+            if is_dry_run:
+                UI.info("[DRY RUN] Would update portal-ext.properties with:")
+                for k, v in to_update.items():
+                    imp_str = " # !important" if k in winning_imp else ""
+                    UI.info(f"  {k}={v}{imp_str}")
+            else:
                 if not target_ext.exists():
                     with contextlib.suppress(PermissionError, OSError):
                         target_ext.parent.mkdir(parents=True, exist_ok=True)
-                    atomic_copy(common_ext, target_ext)
+                self.manager.update_portal_ext(
+                    target_ext, to_update, important_keys=winning_imp
+                )
 
-                else:
-                    # Robust extraction of project and common properties
-                    project_props = self._get_properties(target_ext.read_text())
-                    common_props = self._get_properties(common_ext.read_text())
+        # Save copy as original-portal-ext.properties if not exists
+        if not is_dry_run:
+            ldm_dir = paths["root"] / ".liferay-docker"
+            orig_pe = ldm_dir / "original-portal-ext.properties"
+            if not orig_pe.exists():
+                ldm_dir.mkdir(parents=True, exist_ok=True)
+                import shutil
 
-                    # Load baseline properties to distinguish between vanilla defaults and custom local overrides
-                    baseline_ext = (
-                        Path(__file__).parent.parent
-                        / "resources"
-                        / "common_baseline"
-                        / "portal-ext.properties"
-                    )
-                    baseline_props = {}
-                    if baseline_ext.exists():
-                        baseline_props = self._get_properties(baseline_ext.read_text())
+                if target_ext.exists():
+                    shutil.copy2(target_ext, orig_pe)
 
-                    to_add = {}
-                    for k, v in common_props.items():
-                        if k not in project_props:
-                            to_add[k] = v
-                        else:
-                            # If the project key is still the vanilla default, overwrite it with the custom common value
-                            baseline_val = baseline_props.get(k)
-                            if (
-                                baseline_val is not None
-                                and project_props[k] == baseline_val
-                            ):
-                                if v != project_props[k]:
-                                    to_add[k] = v
+        # Copy other common assets (license, configs, xml etc.) from multiple common dirs
+        history_file = paths["root"] / ".liferay-docker.deployed"
+        history = set()
+        if history_file.exists():
+            try:
+                history = set(history_file.read_text().splitlines())
+            except (FileNotFoundError, OSError):
+                pass
 
-                    if to_add:
-                        self.manager.update_portal_ext(target_ext, to_add)
+        has_any_common = False
+        for common_dir in paths.get("common_dirs", []):
+            if not common_dir.exists():
+                continue
+            has_any_common = True
+            if self.manager.verbose:
+                UI.info(f"Checking global assets in: {common_dir}")
 
             patterns = [
                 ("*.xml", paths["deploy"]),
@@ -546,7 +786,6 @@ class ConfigService:
                 )
                 use_sidecar = not use_shared_search
 
-            # Determine if global search is actually active and what version it is
             search_inspect = None
             if not use_sidecar:
                 search_inspect = run_command(
@@ -566,35 +805,25 @@ class ConfigService:
 
             for pattern, target in patterns:
                 for match in common_dir.glob(pattern):
-                    # LDM-388: Prevent portal-log4j-ext.xml from entering deploy/
-                    # This file is handled surgically by sync_logging.
                     if match.name == "portal-log4j-ext.xml":
                         continue
 
-                    # Skip ES-specific configs if the global search container isn't running
                     if "elasticsearch" in match.name.lower():
                         if not search_running:
-                            # If the file already exists in project, remove it to allow sidecar to work correctly
                             dest = target / match.name
                             if dest.exists():
                                 dest.unlink()
                             continue
 
-                        # Cleanup: If this is a legacy config (no -REMOTE), ensure it's GONE from project
-                        # to avoid Liferay defaulting to localhost.
                         if "-REMOTE" not in match.name and "Connection" in match.name:
                             dest = target / match.name
                             if dest.exists():
                                 dest.unlink()
                             continue
 
-                        # If search is running, only copy the ones matching the search version
                         is_es7_file = "elasticsearch7" in match.name
                         is_es8_file = "elasticsearch8" in match.name
 
-                        # Logic:
-                        # - If ES7 is running: ONLY ES7 files.
-                        # - If ES8 is running: BOTH ES7 and ES8 files (for compatibility mode).
                         should_copy = False
                         if search_version == 7 and is_es7_file:
                             should_copy = True
@@ -608,12 +837,9 @@ class ConfigService:
                                 dest.unlink()
                             continue
 
-                    # Standardize destination name (remove -REMOTE suffix if present)
                     dest_name = match.name.replace("-REMOTE", "")
                     dest = target / dest_name
 
-                    # 80/20 DESIGN: Static Template + Dynamic Substitution
-                    # Exact filenames required by Liferay to manage search mode precedence
                     sidecar_conflicts = [
                         "com.liferay.portal.search.elasticsearch7.configuration.ElasticsearchConfiguration.config",
                         "com.liferay.portal.search.elasticsearch8.configuration.ElasticsearchConfiguration.config",
@@ -632,16 +858,11 @@ class ConfigService:
                         )
 
                         if use_sidecar:
-                            # CRITICAL: Sidecar projects MUST NOT have these specific .config files
-                            # if they contain REMOTE settings, as they override portal-ext.
-                            # We delete any existing one to force fallback to LDM's property overrides.
                             if dest.exists():
                                 dest.unlink()
                             continue
 
                         content = match.read_text()
-
-                        # Write the substituted config
                         if not dest.exists() or dest.read_text() != content:
                             from ldm_core.utils import safe_write_text
 
@@ -650,22 +871,15 @@ class ConfigService:
                                 history.add(match.name)
                         continue
 
-                    # LDM-408: Liferay License Logic
-                    # Prefer global common/ license if project one is missing or expired
                     if pattern == "*.xml":
                         new_lic_info = self.manager.license._parse_license_xml(match)
                         if new_lic_info:
-                            # Find any existing licenses in the project (deploy/ or osgi/modules/)
                             project_licenses = self.manager.license.find_license(paths)
-
                             should_copy_license = True
                             if project_licenses:
                                 for old_lic in project_licenses:
-                                    # LDM-408: Only skip if the 'old' license is actually IN the project
                                     if "Global" in old_lic.get("location", ""):
                                         continue
-
-                                    # If any project license is BETTER than the one in common, skip copy
                                     if not self.manager.license.is_better_license(
                                         new_lic_info, old_lic
                                     ):
@@ -673,7 +887,6 @@ class ConfigService:
                                         break
 
                             if should_copy_license:
-                                # LDM-408: Be aggressive. Remove other potential conflicting licenses
                                 if project_licenses:
                                     for old_lic in project_licenses:
                                         if "Project" in old_lic.get("location", ""):
@@ -684,37 +897,30 @@ class ConfigService:
                                                     UI.info(
                                                         f"  - Removed conflicting project license: {old_path.name}"
                                                     )
-
                                 atomic_copy(match, dest)
                                 history.add(match.name)
-                                UI.info(
-                                    f"  + Synced license from Global (common/): {match.name}"
-                                )
+                                UI.info(f"  + Synced license from Common: {match.name}")
                             continue
 
-                    # Always copy if it doesn't exist
                     if not dest.exists():
                         atomic_copy(match, dest)
                         history.add(match.name)
-                    # For OSGi configs, overwrite if it's a managed file (to apply baseline updates)
                     elif match.name in history and (
                         pattern.endswith("config") or pattern.endswith("cfg")
                     ):
                         atomic_copy(match, dest)
 
+        if has_any_common:
             from ldm_core.utils import safe_write_text
 
             safe_write_text(history_file, "\n".join(sorted(history)))
         else:
             UI.warning(
-                "Global 'common/' folder not found. Some baseline assets may be missing."
+                "Global or local 'common/' folder not found. Some baseline assets may be missing."
             )
             UI.info(
                 f"You can recreate the baseline by running: {UI.CYAN}ldm init-common{UI.COLOR_OFF}"
             )
-
-        if host_updates:
-            self.manager.update_portal_ext(target_ext, host_updates)
 
     def cmd_log_level(self, project_id=None):
         """Manage Liferay internal logging levels via file-based hot-reloading."""
@@ -887,6 +1093,106 @@ class ConfigService:
             subprocess.run([editor, str(file_to_edit)])
         except Exception as e:
             UI.error(f"Failed to open editor '{editor}': {e}")
+
+    def cmd_rebuild_properties(self, project_id=None):
+        """Reconstruct/sync properties cleanly, preserving project customizations."""
+        root_path = self.manager.detect_project_path(project_id)
+        if not root_path:
+            return
+
+        paths = self.manager.setup_paths(root_path)
+        project_meta = self.manager.read_meta(root_path) or {}
+
+        # Verify environment first (required to construct runtime/DB host updates properly)
+        self.manager.verify_runtime_environment(paths)
+
+        is_dry_run = getattr(self.manager.args, "dry_run", False)
+
+        UI.heading(f"Rebuilding Properties for project: {root_path.name}")
+        if is_dry_run:
+            UI.info("Running in DRY RUN mode. Showing properties changes:")
+
+        self.sync_common_assets(paths, project_meta=project_meta)
+
+        if not is_dry_run:
+            UI.success("Properties successfully rebuilt.")
+
+    def cmd_revert_properties(self, project_id=None):
+        """Restore files/portal-ext.properties from original-portal-ext.properties."""
+        root_path = self.manager.detect_project_path(project_id)
+        if not root_path:
+            return
+
+        paths = self.manager.setup_paths(root_path)
+        ldm_dir = paths["root"] / ".liferay-docker"
+        orig_pe = ldm_dir / "original-portal-ext.properties"
+        target_pe = paths["files"] / "portal-ext.properties"
+
+        if not orig_pe.exists():
+            UI.die(f"Revert failed: No original properties backup found at {orig_pe}.")
+            return
+
+        UI.heading(f"Reverting Properties for project: {root_path.name}")
+
+        import shutil
+
+        try:
+            target_pe.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(orig_pe, target_pe)
+            UI.success(f"Properties reverted to original version: {target_pe}")
+        except Exception as e:
+            UI.die(f"Failed to revert properties: {e}")
+
+    def cmd_reset_properties(self, project_id=None):
+        """Discard project customizations and rebuild properties purely from layers."""
+        root_path = self.manager.detect_project_path(project_id)
+        if not root_path:
+            return
+
+        paths = self.manager.setup_paths(root_path)
+        project_meta = self.manager.read_meta(root_path) or {}
+
+        # Verify environment first
+        self.manager.verify_runtime_environment(paths)
+
+        target_pe = paths["files"] / "portal-ext.properties"
+        is_dry_run = getattr(self.manager.args, "dry_run", False)
+
+        UI.heading(f"Resetting Properties for project: {root_path.name}")
+        if is_dry_run:
+            UI.info("Running in DRY RUN mode. Showing properties reset cascade:")
+
+        temp_backup = None
+        if target_pe.exists() and not is_dry_run:
+            temp_backup = target_pe.with_suffix(".properties.reset_tmp")
+            try:
+                target_pe.rename(temp_backup)
+            except Exception as e:
+                UI.die(f"Failed to start properties reset: {e}")
+                return
+
+        try:
+            if is_dry_run:
+                # In dry run, temporarily move out project customizations and run dry-run sync
+                os.environ["LDM_DRY_RUN"] = "true"
+                if target_pe.exists():
+                    temp_backup = target_pe.with_suffix(".properties.reset_tmp")
+                    target_pe.rename(temp_backup)
+                try:
+                    self.sync_common_assets(paths, project_meta=project_meta)
+                finally:
+                    if temp_backup and temp_backup.exists():
+                        temp_backup.rename(target_pe)
+                    os.environ.pop("LDM_DRY_RUN", None)
+            else:
+                self.sync_common_assets(paths, project_meta=project_meta)
+                UI.success("Properties successfully reset.")
+        finally:
+            if temp_backup and temp_backup.exists() and not is_dry_run:
+                try:
+                    temp_backup.unlink()
+                except Exception:
+                    pass
 
     def cmd_env(self, project_id=None):
         pid = project_id

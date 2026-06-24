@@ -1083,6 +1083,46 @@ class BaseHandler:
 
         return (cwd / "common") if cwd else get_actual_home() / ".ldm" / "common"
 
+    def get_common_dirs(self, project_path=None):
+        """Finds all active 'common' directories in order of priority (Global first, then Local)."""
+        dirs = []
+
+        # 1. Global User Home common dir
+        global_common = get_actual_home() / ".ldm" / "common"
+        if global_common.exists():
+            dirs.append(global_common.resolve())
+
+        # 2. Local / Env common dir
+        env_common = os.environ.get("LDM_COMMON_DIR")
+        if env_common:
+            env_path = Path(env_common).resolve()
+            if env_path.exists() and env_path not in dirs:
+                dirs.append(env_path)
+        else:
+            if isinstance(project_path, dict):
+                project_path = project_path.get("root", ".")
+
+            from ldm_core.utils import safe_cwd
+
+            cwd = safe_cwd()
+
+            candidates = []
+            if cwd:
+                candidates.append(cwd / "common")
+            if project_path:
+                p_path = Path(project_path).resolve()
+                candidates.append(p_path.parent / "common")
+                candidates.append(p_path.parent.parent / "common")
+
+            for cand in candidates:
+                cand_res = cand.resolve()
+                if cand_res.exists():
+                    if cand_res not in dirs:
+                        dirs.append(cand_res)
+                    break  # Only take the first matching local common dir
+
+        return dirs
+
     def setup_paths(self, project_path):
         """Initializes a standard path dictionary for a project."""
         # Safety: If passed a dict (common error in refactored handlers), extract root
@@ -1092,10 +1132,12 @@ class BaseHandler:
             project_path = str(project_path)
 
         root = Path(project_path).resolve()
-        common_path = self.get_common_dir(root)
+        common_dirs = self.get_common_dirs(root)
+        common_path = common_dirs[-1] if common_dirs else self.get_common_dir(root)
         return {
             "root": root,
             "common": common_path,
+            "common_dirs": common_dirs,
             "data": root / "data",
             "deploy": root / "deploy",
             "files": root / "files",
