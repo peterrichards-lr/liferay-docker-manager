@@ -149,3 +149,20 @@ def test_restart_project(mock_manager):
     mock_manager.runtime.cmd_restart.assert_called_with(
         project_id="project1", service="liferay"
     )
+
+
+def test_get_cli_help():
+    from ldm_core.handlers.mcp import get_cli_help
+
+    # Test overall help
+    res = get_cli_help()
+    assert "usage:" in res.lower()
+
+    # Test subcommand help
+    res_sub = get_cli_help("run")
+    assert "run" in res_sub.lower()
+
+    # Test non-existent command error
+    res_err = get_cli_help("non-existent-subcommand")
+    assert "Error" in res_err
+    assert "Available commands" in res_err

@@ -834,8 +834,8 @@ class BaseHandler:
                 resolved_cwd = cwd.resolve()
                 home = get_actual_home().resolve()
                 if resolved_cwd == home:
-                    if not getattr(self.manager, "_warned_home", False):
-                        self.manager._warned_home = True  # type: ignore[attr-defined]
+                    if not getattr(BaseHandler, "_warned_home", False):
+                        BaseHandler._warned_home = True  # type: ignore[attr-defined]
                         UI.warning(
                             "You are running LDM from your Home directory. "
                             "For better performance and to avoid noise, it is recommended to "

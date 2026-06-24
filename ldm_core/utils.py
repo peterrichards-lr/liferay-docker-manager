@@ -1779,12 +1779,21 @@ def safe_rmtree(path):
     if not path_obj.exists():
         return
 
+    import stat
+
+    def remove_readonly(func, p, excinfo):
+        try:
+            os.chmod(p, stat.S_IWRITE)
+            func(p)
+        except Exception:
+            pass
+
     try:
-        shutil.rmtree(path_obj)
+        shutil.rmtree(path_obj, onerror=remove_readonly)
     except (OSError, PermissionError) as e:
         if platform.system().lower() != "windows":
             if reclaim_volume_permissions(path_obj):
-                shutil.rmtree(path_obj)
+                shutil.rmtree(path_obj, onerror=remove_readonly)
             else:
                 raise e
         else:

@@ -200,8 +200,10 @@ class TestBaseDiscoveryPath(unittest.TestCase):
             mock_cwd.return_value = base_path
 
             # Clean flag
-            if hasattr(self.handler, "_warned_home"):
-                delattr(self.handler, "_warned_home")
+            from ldm_core.handlers.base import BaseHandler
+
+            if hasattr(BaseHandler, "_warned_home"):
+                delattr(BaseHandler, "_warned_home")
 
             # First run: should warn
             self.handler.detect_project_path("some-proj", for_init=True)

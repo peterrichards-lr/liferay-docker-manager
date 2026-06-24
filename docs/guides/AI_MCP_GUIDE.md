@@ -54,6 +54,9 @@ If you prefer to use your own MCP-compatible client (like Claude Desktop, Cursor
     * `project_id` (string, required): The project ID or container name.
     * `service` (string, optional): The name of a service to restart (e.g., `liferay`, `db`). Restarts the entire stack if omitted.
 * `get_config`: Retrieves properties, configuration metadata, and environment details for a project.
+* `get_cli_help`: Retrieves LDM CLI subcommand manual and flags usage description to prevent command option hallucinations.
+  * **Arguments:**
+    * `command` (string, optional): A specific LDM subcommand (e.g., `run`, `hydrate`, `logs`, `config`) to retrieve usage and flags for. Returns overall LDM CLI help if omitted.
 
 **Usage:**
 
