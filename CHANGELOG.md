@@ -182,7 +182,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
--
+- Added support for immediate search reindexing on running containers via OSGi Gogo telnet command.
 
 ## [v2.11.51] - 2026-06-24
 
