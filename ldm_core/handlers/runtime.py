@@ -2171,10 +2171,43 @@ class RuntimeService(BaseHandler):
                 self.cmd_run(project_id)
 
     def cmd_reindex(self, project_id=None):
-        """Schedules a full search reindex for the next boot."""
+        """Triggers search reindexing (immediately if running, otherwise on next boot)."""
         root = self.manager.detect_project_path(project_id)
         if not root:
             return
+
+        from ldm_core.docker_service import DockerService
+
+        meta = self.manager.read_meta(root)
+        container_name = (
+            meta.get("liferay_container_name")
+            or meta.get("container_name")
+            or root.name
+        )
+        force_boot = getattr(self.manager.args, "force_boot", False)
+
+        is_running = DockerService.is_running(container_name)
+
+        if is_running and not force_boot:
+            UI.info(
+                f"Liferay container '{container_name}' is running. Triggering immediate runtime reindex..."
+            )
+            groovy_code = 'com.liferay.portal.kernel.search.IndexWriterHelperUtil.reindex(0, "reindex", [com.liferay.portal.kernel.util.PortalUtil.getDefaultCompanyId()] as long[], null)'
+            command_list = [
+                "sh",
+                "-c",
+                f"echo '{groovy_code}' | telnet localhost 11311",
+            ]
+            try:
+                DockerService.exec(container_name, command_list, check=True)
+                UI.success(
+                    f"Successfully triggered immediate runtime reindex on '{container_name}'."
+                )
+                return
+            except Exception as e:
+                UI.warning(
+                    f"Failed to execute immediate reindex via Gogo shell ({e}). Falling back to boot-time scheduling."
+                )
 
         if self.flag_reindex(root):
             UI.success(

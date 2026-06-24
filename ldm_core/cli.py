@@ -789,6 +789,13 @@ def get_parser():
     reindex = subparsers.add_parser("reindex", parents=[base_sub_parent])
     reindex.add_argument("project", nargs="?")
     reindex.add_argument("-p", "--project", dest="project_flag")
+    reindex.add_argument(
+        "--reboot",
+        "--force-boot",
+        action="store_true",
+        dest="force_boot",
+        help="Force a container reboot instead of immediate runtime reindexing",
+    )
 
     # Command: snapshot, restore
     snap = subparsers.add_parser("snapshot", parents=[base_sub_parent])
