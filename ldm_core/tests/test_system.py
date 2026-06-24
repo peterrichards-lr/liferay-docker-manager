@@ -203,6 +203,41 @@ class TestSystemService(unittest.TestCase):
             self.system.cmd_rescue(project_id="nonexistent")
         mock_die.assert_called_once_with("Project 'nonexistent' not found.")
 
+    def test_properties_file_auto_repair_success(self):
+        # Create a properties file with syntax errors
+        pe_file = Path(self.temp_home) / "portal-ext.properties"
+        content = (
+            "key1=val1\\\n"
+            "    # Comments here\n"
+            "key2=val2\\\n"
+            "    \n"
+            "key3=val3\\\n"
+            "company.security.auth.type=email\n"
+            "key4=val4\\\n"
+            "  param1=value1;\\\n"  # Valid multiline - indented
+            "  param2=value2;\n"
+            "key5=val5\\"  # Ends with backslash at end of file
+        )
+        pe_file.write_text(content)
+
+        # Run properties rescue helper
+        repaired = self.system._rescue_properties_file(pe_file)
+        self.assertTrue(repaired)
+
+        # Read back content and verify corrections
+        new_content = pe_file.read_text()
+
+        # Verify line 1 backslash is stripped (followed by comment)
+        self.assertIn("key1=val1\n", new_content)
+        # Verify line 3 backslash is stripped (followed by empty line)
+        self.assertIn("key2=val2\n", new_content)
+        # Verify line 5 backslash is stripped (followed by key3 starting key4)
+        self.assertIn("key3=val3\n", new_content)
+        # Verify key4 multiline is PRESERVED (since next lines start with spaces)
+        self.assertIn("key4=val4\\\n  param1=value1;\\\n  param2=value2;", new_content)
+        # Verify key5 backslash is stripped (last line of file)
+        self.assertIn("key5=val5\n", new_content)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -229,7 +229,7 @@ class ConfigService:
 
                         # Skip the original block's continuations
                         temp_val = line.split("=", 1)[1]
-                        while temp_val.endswith("\\") and i + 1 < len(lines):
+                        while temp_val.strip().endswith("\\") and i + 1 < len(lines):
                             i += 1
                             temp_val = lines[i]
                     else:

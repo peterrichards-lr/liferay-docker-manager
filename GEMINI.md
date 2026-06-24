@@ -210,3 +210,6 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
     - [x] Update `safe_rmtree` in `ldm_core/utils.py` to propagate exceptions in `remove_readonly` if deletion fails on retry, allowing JIT permission reclamation to trigger.
     - [x] Dynamically resolve `uid` and `gid` in `reclaim_volume_permissions` to the current user's UID/GID (using `os.getuid()` / `os.getgid()`) when on Unix platforms.
     - [x] Add unit tests in `ldm_core/tests/test_utils.py` to verify this behavior.
+26. **Implement properties syntax auto-repair in ldm rescue**:
+    - [x] Update `cmd_rescue` in `ldm_core/handlers/system.py` to check and auto-repair broken trailing backslash continuations in `portal-ext.properties` files.
+    - [x] Add corresponding unit tests in `ldm_core/tests/test_system.py` to verify self-healing properties rescue functionality.
