@@ -183,10 +183,12 @@ class SnapshotService(BaseHandler):
         # --- SEARCH SNAPSHOT (Orchestrated) ---
         search_snapshot_name = None
         search_name = "liferay-search-global"
-        container_name = (
+        from ldm_core.utils import sanitize_id
+
+        container_name = sanitize_id(
             project_meta.get("liferay_container_name")
             or project_meta.get("container_name")
-            or root.name.replace(".", "-")
+            or root.name
         )
 
         # Check if project uses shared search and service is running
@@ -497,10 +499,12 @@ class SnapshotService(BaseHandler):
             )
 
         # 2. Reset the Environment (Clean Slate)
-        container_name = (
+        from ldm_core.utils import sanitize_id
+
+        container_name = sanitize_id(
             project_meta.get("liferay_container_name")
             or project_meta.get("container_name")
-            or paths["root"].name.replace(".", "-")
+            or paths["root"].name
         )
         if (
             self.manager.run_command(
@@ -1164,9 +1168,9 @@ class SnapshotService(BaseHandler):
         import_cmd_str = ""
         if db_type == "postgresql":
             # LDM-410: Use standard user and enforce error stopping for reliability
-            import_cmd_str = f'docker exec -i {db_container} psql -U lportal -d lportal -v ON_ERROR_STOP=1 < "{sql_file}"'
+            import_cmd_str = f'docker exec -i "{db_container}" psql -U lportal -d lportal -v ON_ERROR_STOP=1 < "{sql_file}"'
         elif db_type in ["mysql", "mariadb"]:
-            import_cmd_str = f'docker exec -i {db_container} mysql -u lportal -ptest lportal < "{sql_file}"'
+            import_cmd_str = f'docker exec -i "{db_container}" mysql -u lportal -ptest lportal < "{sql_file}"'
 
         # 3. Execute with Retry
         if import_cmd_str:

@@ -713,6 +713,42 @@ def get_parser():
                 metavar="N",
                 help="Target a specific scaled replica by index (e.g. --instance 2 targets liferay-2)",
             )
+            p.add_argument(
+                "-g",
+                "--grep",
+                type=str,
+                help="Grep search pattern for filtering log lines",
+            )
+            p.add_argument(
+                "--grep-i",
+                action="store_true",
+                help="Case-insensitive grep search",
+            )
+            p.add_argument(
+                "--grep-v",
+                action="store_true",
+                help="Inverted grep search (select non-matching lines)",
+            )
+            p.add_argument(
+                "-l",
+                "--level",
+                type=str,
+                choices=[
+                    "DEBUG",
+                    "INFO",
+                    "WARN",
+                    "WARNING",
+                    "ERROR",
+                    "FATAL",
+                    "debug",
+                    "info",
+                    "warn",
+                    "warning",
+                    "error",
+                    "fatal",
+                ],
+                help="Filter log lines at or above this severity level",
+            )
         if cmd in ["stop", "restart", "down", "logs"]:
             p.add_argument(
                 "--all", action="store_true", help="Apply to all running projects"
@@ -1599,6 +1635,10 @@ def main():
             since=getattr(args, "since", None),
             until=getattr(args, "until", None),
             instance=getattr(args, "instance", None),
+            grep=getattr(args, "grep", None),
+            grep_i=getattr(args, "grep_i", False),
+            grep_v=getattr(args, "grep_v", False),
+            level=getattr(args, "level", None),
         ),
         ("deploy", None): lambda: manager.cmd_deploy(
             getattr(args, "project", None), targets=getattr(args, "targets", [])

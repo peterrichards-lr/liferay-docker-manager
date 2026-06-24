@@ -1572,6 +1572,10 @@ class RuntimeService(BaseHandler):
         timestamps=False,
         since=None,
         until=None,
+        grep=None,
+        grep_i=False,
+        grep_v=False,
+        level=None,
     ):
         """Stream logs from a single scaled replica via 'docker logs'.
 
@@ -1650,7 +1654,151 @@ class RuntimeService(BaseHandler):
             cmd.extend(["--until", str(until)])
         cmd.append(container_name)
 
-        self.manager.run_command(cmd, capture_output=False, check=False)
+        self._run_log_command(
+            cmd,
+            grep=grep,
+            grep_i=grep_i,
+            grep_v=grep_v,
+            level=level,
+        )
+
+    def _run_log_command(
+        self, cmd, env=None, cwd=None, grep=None, grep_i=False, grep_v=False, level=None
+    ):
+        """Runs the log command, streaming and filtering if filtering args are set."""
+        if not grep and not level:
+            self.manager.run_command(
+                cmd, env=env, cwd=cwd, capture_output=False, check=False
+            )
+            return
+
+        import os
+        import re
+        import shutil
+        import subprocess
+        import sys
+
+        # Build regex pattern if grep is specified
+        pattern = None
+        if grep:
+            flags = re.IGNORECASE if grep_i else 0
+            try:
+                pattern = re.compile(grep, flags)
+            except re.error as e:
+                UI.die(f"Invalid grep regular expression: {e}")
+
+        # Severity level configuration
+        SEVERITY_LEVELS = {
+            "DEBUG": 10,
+            "INFO": 20,
+            "WARN": 30,
+            "WARNING": 30,
+            "ERROR": 40,
+            "FATAL": 50,
+        }
+
+        target_severity = None
+        if level:
+            norm_level = level.upper()
+            target_severity = SEVERITY_LEVELS.get(norm_level)
+            if target_severity is None:
+                UI.die(f"Invalid log level: {level}")
+
+        LEVEL_PATTERNS = {
+            "FATAL": re.compile(r"\bFATAL\b|\[FATAL\]"),
+            "ERROR": re.compile(r"\bERROR\b|\[ERROR\]"),
+            "WARN": re.compile(r"\bWARN(?:ING)?\b|\[WARN(?:ING)?\]"),
+            "INFO": re.compile(r"\bINFO\b|\[INFO\]"),
+            "DEBUG": re.compile(r"\bDEBUG\b|\[DEBUG\]"),
+        }
+
+        def get_line_level(line):
+            for lvl in ["FATAL", "ERROR", "WARN", "INFO", "DEBUG"]:
+                if LEVEL_PATTERNS[lvl].search(line):
+                    return lvl
+            return None
+
+        # Resolve path to command executable (Bandit B607)
+        if isinstance(cmd, list) and len(cmd) > 0:
+            executable = shutil.which(cmd[0])
+            if executable:
+                cmd[0] = executable
+
+        display_cmd = UI.redact(" ".join(cmd) if isinstance(cmd, list) else cmd)
+        if self.manager.verbose:
+            UI.debug(f"Executing log command: {display_cmd}")
+
+        if getattr(self.manager, "dry_run", False):
+            UI.info(
+                f"{UI.BYELLOW}[DRY RUN] Would execute log command:{UI.COLOR_OFF} {display_cmd}"
+            )
+            return
+
+        run_env = os.environ.copy() if env is None else env.copy()
+        run_env["DOCKER_CLI_HINTS"] = "false"
+        if "DOCKER_API_VERSION" not in run_env:
+            run_env["DOCKER_API_VERSION"] = "1.44"
+
+        try:
+            process = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                encoding="utf-8",
+                env=run_env,
+                cwd=cwd,
+                bufsize=1,
+            )
+
+            # Default print_subsequent state.
+            # If level filtering is active, default to False to hide startup noise.
+            print_subsequent = level is None
+
+            try:
+                while True:
+                    line = process.stdout.readline()
+                    if not line and process.poll() is not None:
+                        break
+                    if line:
+                        stripped_line = line.rstrip("\r\n")
+
+                        # 1. Level Filter evaluation
+                        if target_severity is not None:
+                            line_level = get_line_level(stripped_line)
+                            if line_level is not None:
+                                level_severity = SEVERITY_LEVELS[line_level]
+                                print_subsequent = level_severity >= target_severity
+                                match_level = print_subsequent
+                            else:
+                                match_level = print_subsequent
+                        else:
+                            match_level = True
+
+                        # 2. Grep Filter evaluation
+                        if match_level:
+                            if pattern is not None:
+                                match_grep = bool(pattern.search(stripped_line))
+                                if grep_v:
+                                    match_grep = not match_grep
+                            else:
+                                match_grep = True
+                        else:
+                            match_grep = False
+
+                        if match_grep:
+                            print(stripped_line)
+                            sys.stdout.flush()
+            finally:
+                if process.stdout:
+                    process.stdout.close()
+            process.wait()
+        except KeyboardInterrupt:
+            if process.poll() is None:
+                process.terminate()
+                try:
+                    process.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    process.kill()
 
     def cmd_logs(
         self,
@@ -1665,6 +1813,10 @@ class RuntimeService(BaseHandler):
         since=None,
         until=None,
         instance=None,
+        grep=None,
+        grep_i=False,
+        grep_v=False,
+        level=None,
     ):
         """Shows logs for a project or global infrastructure."""
         if instance is not None:
@@ -1677,6 +1829,10 @@ class RuntimeService(BaseHandler):
                 timestamps=timestamps,
                 since=since,
                 until=until,
+                grep=grep,
+                grep_i=grep_i,
+                grep_v=grep_v,
+                level=level,
             )
             return
 
@@ -1714,7 +1870,14 @@ class RuntimeService(BaseHandler):
                 cmd.extend(["--until", str(until)])
 
             env = self.manager.infra._get_infra_env()
-            self.manager.run_command(cmd, env=env, capture_output=False, check=False)
+            self._run_log_command(
+                cmd,
+                env=env,
+                grep=grep,
+                grep_i=grep_i,
+                grep_v=grep_v,
+                level=level,
+            )
         else:
             targets = []
             if all_projects:
@@ -1819,8 +1982,13 @@ class RuntimeService(BaseHandler):
                         cmd.extend(service)
                     else:
                         cmd.append(service)
-                self.manager.run_command(
-                    cmd, capture_output=False, cwd=str(root), check=False
+                self._run_log_command(
+                    cmd,
+                    cwd=str(root),
+                    grep=grep,
+                    grep_i=grep_i,
+                    grep_v=grep_v,
+                    level=level,
                 )
 
     def cmd_deploy(self, project_id=None, targets=None, service=None):

@@ -167,3 +167,18 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
     - [x] Update `ComposerService` to sanitize container names for Liferay, Database, and Tunnel sidecar services (e.g. replacing spaces with hyphens).
     - [x] Add unit tests in `ldm_core/tests/test_composer.py` to assert correct sanitization of space-separated container names (e.g., `Zukunft Digital` to `Zukunft-Digital`).
     - [x] Run test suite to verify success. [Completed]
+16. **Implement Simple Log Grep & Level Filter Option**:
+    - [x] Add CLI arguments `--grep` / `-g` for matching log lines to `ldm logs` parser in `ldm_core/cli.py`.
+    - [x] Add CLI arguments `--level` / `-l` (with values: DEBUG, INFO, WARN, WARNING, ERROR, FATAL) to `ldm logs` parser in `ldm_core/cli.py`.
+    - [x] Update `cmd_logs` in `ldm_core/handlers/runtime.py` to stream and filter the logs.
+    - [x] Support `--grep-i` for case-insensitivity, and `--grep-v` for inverted matching.
+    - [x] Support severity threshold filtering for `--level`, preserving stack traces (multi-line logs).
+    - [x] Handle streaming/filtering safely for both follow (`-f`) and non-follow modes.
+    - [x] Add unit tests verifying log filtering logic. [Completed]
+17. **Fix Cloud Hydration & DB Restore Issues (Tim's Colleague Report)**:
+    - [x] Implement the missing `prompt_for_tag` method in `AssetService` to prompt the user interactively when `--tag` is not passed during hydration.
+    - [x] Sanitize resolved database container names in `snapshot.py` via `sanitize_id` to replace spaces with hyphens (e.g. `zukunft-digital-db`).
+    - [x] Add double quotes around the `db_container` variable in database restore shell commands to prevent command parameter split failures.
+    - [x] Add corresponding unit tests in `test_assets.py` and `test_snapshot.py` to verify prompt behavior and container quoting. [Completed]
+18. **Secure Liferay Tunnel PAT Documentation**:
+    - [x] Add a detailed guide on securing LFT_CLIENT_TOKEN (Restricted Secrets File and OS Credential Manager alternatives) to `docs/guides/SHARING_AND_TUNNELS.md`. [Completed]

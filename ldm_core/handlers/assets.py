@@ -269,3 +269,36 @@ class AssetService:
         except Exception as e:
             UI.error(f"Failed to extract samples: {e}")
             return False
+
+    def prompt_for_tag(self):
+        """Prompts the user to select or enter a Liferay tag."""
+        from ldm_core.constants import API_BASE_DXP
+        from ldm_core.utils import discover_latest_tag
+
+        UI.info("Discovering default Liferay tag...")
+        default_tag = (
+            discover_latest_tag(
+                API_BASE_DXP,
+                release_type="lts",
+                verbose=self.manager.verbose if self.manager else False,
+            )
+            or "2026.q1.4-lts"
+        )
+
+        ans = UI.ask(
+            "Release type (lts|u|qr), prefix, or specific tag",
+            default_tag,
+        )
+
+        if ans == default_tag:
+            return default_tag
+        if ans.lower() in ["any", "u", "lts", "qr"]:
+            resolved = discover_latest_tag(
+                API_BASE_DXP,
+                release_type=ans.lower(),
+                verbose=self.manager.verbose if self.manager else False,
+            )
+            if not resolved:
+                UI.die(f"Could not find any tags for release type: {ans}")
+            return resolved
+        return ans
