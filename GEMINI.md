@@ -213,3 +213,8 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
 26. **Implement properties syntax auto-repair in ldm rescue**:
     - [x] Update `cmd_rescue` in `ldm_core/handlers/system.py` to check and auto-repair broken trailing backslash continuations in `portal-ext.properties` files.
     - [x] Add corresponding unit tests in `ldm_core/tests/test_system.py` to verify self-healing properties rescue functionality.
+27. **Clone-Bypassing `.ldmp` Workspace Import**:
+    - [x] Add `--clone-only` CLI flag to `ldm import` command to force standard clone behavior.
+    - [x] Implement remote checking for `.ldmp` package in GitHub Releases when importing from remote Git URL.
+    - [x] Bypass cloning and pre-seeding when `.ldmp` is found, directly downloading and restoring it.
+    - [x] Fix failing unit tests in `test_workspace.py` (releases API mock setup and missing release fallback validation).
