@@ -220,12 +220,12 @@ if ! "$LDM_CMD" -y run "collision-test" --tag 2026.q1.4-lts --port 8099 --no-wai
 fi
 
 mkdir -p "collision-test/nested"
-if (cd collision-test/nested && echo "n" | env -u GITHUB_ACTIONS -u CI -u GITLAB_CI "$LDM_CMD" run "./collision-test" --port 8099 --no-wait --no-up --no-seed 2>&1 | grep -qE "Project collision|already registered"); then
+if (cd collision-test/nested && echo "n" | env -u GITHUB_ACTIONS -u CI -u GITLAB_CI LDM_ALLOW_ROOT=true "$LDM_CMD" run "./collision-test" --port 8099 --no-wait --no-up --no-seed 2>&1 | grep -qE "Project collision|already registered"); then
     echo "✅ Project Collision verified."
 else
     echo "❌ ERROR: Collision detection failed." | tee -a "$RESULTS_FILE_TMP"
     # Print the log of the failed second run for debugging
-    (cd collision-test/nested && echo "n" | env -u GITHUB_ACTIONS -u CI -u GITLAB_CI "$LDM_CMD" run "./collision-test" --port 8099 --no-wait --no-up --no-seed 2>&1) | tee -a "$RESULTS_FILE_TMP"
+    (cd collision-test/nested && echo "n" | env -u GITHUB_ACTIONS -u CI -u GITLAB_CI LDM_ALLOW_ROOT=true "$LDM_CMD" run "./collision-test" --port 8099 --no-wait --no-up --no-seed 2>&1) | tee -a "$RESULTS_FILE_TMP"
     exit 1
 fi
 "$LDM_CMD" -y rm "collision-test" --delete >/dev/null 2>&1 && rm -rf "collision-test" col_init.log
