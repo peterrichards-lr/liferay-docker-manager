@@ -700,45 +700,30 @@ class TestWorkspaceRemoteImport(unittest.TestCase):
 
         mock_get.side_effect = [mock_release_resp, mock_ldmp_resp, mock_sha_resp]
 
-        # 3. Mock reading the meta file extracted from package
-        mock_open = MagicMock()
-        mock_file = MagicMock()
-        mock_file.__iter__.return_value = [
-            "github_repository=owner/repo\n",
-            "tag=2024.q1.3\n",
-        ]
-        mock_open.return_value.__enter__.return_value = mock_file
+        import tempfile
 
-        # Patch Path.exists to selectively say meta exists but project does not
-        original_exists = Path.exists
+        with tempfile.TemporaryDirectory() as tmpdir:
+            project_path = Path(tmpdir) / "my-project"
 
-        def mock_exists(self_path):
-            path_str = str(self_path)
-            if "my-project" in path_str:
-                return False
-            if ".ldm_temp" in path_str:
-                return True
-            return original_exists(self_path)
+            def mock_safe_extract(tar, extract_dir):
+                extract_path = Path(extract_dir)
+                extract_path.mkdir(parents=True, exist_ok=True)
+                (extract_path / "meta").write_text(
+                    "github_repository=owner/repo\ntag=2024.q1.3\n", encoding="utf-8"
+                )
 
-        with (
-            patch("builtins.open", mock_open),
-            patch.object(Path, "open", mock_open),
-            patch.object(Path, "write_text"),
-            patch.object(Path, "read_text", return_value="matching_hash project.ldmp"),
-            patch.object(Path, "exists", autospec=True, side_effect=mock_exists),
-            patch("pathlib.Path.mkdir"),
-            patch("shutil.rmtree"),
-            patch("ldm_core.utils.safe_extract"),
-            patch(
-                "ldm_core.handlers.base.BaseHandler.detect_project_path",
-                return_value=Path("/tmp/my-project"),
-            ),
-            patch("ldm_core.handlers.base.BaseHandler.read_meta", return_value={}),
-        ):
-            self.handler.args.project = "my-project"
-            self.handler.args.verify = True
-            self.handler.args.no_run = True
-            self.handler.workspace.cmd_import("https://github.com/owner/repo")
+            with (
+                patch("ldm_core.utils.safe_extract", side_effect=mock_safe_extract),
+                patch(
+                    "ldm_core.handlers.base.BaseHandler.detect_project_path",
+                    return_value=project_path,
+                ),
+                patch("ldm_core.handlers.base.BaseHandler.read_meta", return_value={}),
+            ):
+                self.handler.args.project = "my-project"
+                self.handler.args.verify = True
+                self.handler.args.no_run = True
+                self.handler.workspace.cmd_import("https://github.com/owner/repo")
 
         # Assert recursive import was NOT called (clone bypassed)
         self.assertEqual(len(calls), 1)
@@ -785,33 +770,23 @@ class TestWorkspaceRemoteImport(unittest.TestCase):
         mock_clone_res.returncode = 0
         mock_sub_run.return_value = mock_clone_res
 
-        # Patch Path.exists to selectively say meta exists but project does not
-        original_exists = Path.exists
+        import tempfile
 
-        def mock_exists(self_path):
-            path_str = str(self_path)
-            if "my-project" in path_str:
-                return False
-            if ".ldm_temp" in path_str:
-                return True
-            return original_exists(self_path)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            project_path = Path(tmpdir) / "my-project"
 
-        with (
-            patch.object(Path, "write_text"),
-            patch.object(Path, "exists", autospec=True, side_effect=mock_exists),
-            patch("pathlib.Path.mkdir"),
-            patch("shutil.rmtree"),
-            patch(
-                "ldm_core.handlers.base.BaseHandler.detect_project_path",
-                return_value=Path("/tmp/my-project"),
-            ),
-            patch("ldm_core.handlers.base.BaseHandler.read_meta", return_value={}),
-        ):
-            self.handler.args.project = "my-project"
-            self.handler.args.verify = True
-            self.handler.args.no_run = True
-            self.handler.args.clone_only = True
-            self.handler.workspace.cmd_import("https://github.com/owner/repo")
+            with (
+                patch(
+                    "ldm_core.handlers.base.BaseHandler.detect_project_path",
+                    return_value=project_path,
+                ),
+                patch("ldm_core.handlers.base.BaseHandler.read_meta", return_value={}),
+            ):
+                self.handler.args.project = "my-project"
+                self.handler.args.verify = True
+                self.handler.args.no_run = True
+                self.handler.args.clone_only = True
+                self.handler.workspace.cmd_import("https://github.com/owner/repo")
 
         # Assert recursive import was called with cloned git repo path
         self.assertEqual(len(calls), 2)
@@ -873,32 +848,22 @@ class TestWorkspaceRemoteImport(unittest.TestCase):
         mock_release_resp.json.return_value = {"assets": []}
         mock_get.return_value = mock_release_resp
 
-        # Patch Path.exists to selectively say meta exists but project does not
-        original_exists = Path.exists
+        import tempfile
 
-        def mock_exists(self_path):
-            path_str = str(self_path)
-            if "my-project" in path_str:
-                return False
-            if ".ldm_temp" in path_str:
-                return True
-            return original_exists(self_path)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            project_path = Path(tmpdir) / "my-project"
 
-        with (
-            patch.object(Path, "write_text"),
-            patch.object(Path, "exists", autospec=True, side_effect=mock_exists),
-            patch("pathlib.Path.mkdir"),
-            patch("shutil.rmtree"),
-            patch(
-                "ldm_core.handlers.base.BaseHandler.detect_project_path",
-                return_value=Path("/tmp/my-project"),
-            ),
-            patch("ldm_core.handlers.base.BaseHandler.read_meta", return_value={}),
-        ):
-            self.handler.args.project = "my-project"
-            self.handler.args.verify = True
-            self.handler.args.no_run = True
-            self.handler.workspace.cmd_import("https://github.com/owner/repo")
+            with (
+                patch(
+                    "ldm_core.handlers.base.BaseHandler.detect_project_path",
+                    return_value=project_path,
+                ),
+                patch("ldm_core.handlers.base.BaseHandler.read_meta", return_value={}),
+            ):
+                self.handler.args.project = "my-project"
+                self.handler.args.verify = True
+                self.handler.args.no_run = True
+                self.handler.workspace.cmd_import("https://github.com/owner/repo")
 
         # Assert recursive import was called with cloned git repo path (fallback succeeded)
         self.assertEqual(len(calls), 2)
