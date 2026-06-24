@@ -71,6 +71,7 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
 
 ## 8. Active Work State & Plan (June 24, 2026)
 
+- Released `v2.11.52` successfully (immediate search reindexing on running containers via OSGi Gogo telnet command).
 - Released `v2.11.46` successfully (upgraded Gitleaks hook to `v8.30.1` to resolve the Go 1.24 WASM panic in CI runners, and canceled hung jobs).
 - Released `v2.11.45` failed during the CI/CD pipeline due to Gitleaks pre-commit hook panic under Go 1.24 (wasm invalid table access).
 - Released `v2.11.43` successfully (implemented sequential properties override hierarchy (5-Layers) with CSS-style `# !important` precedence, CLI command overrides, and web dashboard diagnostics).
