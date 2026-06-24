@@ -182,3 +182,7 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
     - [x] Add corresponding unit tests in `test_assets.py` and `test_snapshot.py` to verify prompt behavior and container quoting. [Completed]
 18. **Secure Liferay Tunnel PAT Documentation**:
     - [x] Add a detailed guide on securing LFT_CLIENT_TOKEN (Restricted Secrets File and OS Credential Manager alternatives) to `docs/guides/SHARING_AND_TUNNELS.md`. [Completed]
+19. **Extend LDM MCP Server**:
+    - [x] Add `grep` and `level` log filtering support to the `get_logs` FastMCP tool in `ldm_core/handlers/mcp.py`.
+    - [x] Expose container lifecycle control FastMCP tools: `start_project`, `stop_project`, and `restart_project`.
+    - [x] Add unit tests verifying the new FastMCP tools and parameters.

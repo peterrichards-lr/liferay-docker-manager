@@ -60,7 +60,14 @@ def get_projects() -> str:
 
 
 @mcp_server.tool()
-def get_logs(project_id: str, lines: int = 200) -> str:
+def get_logs(
+    project_id: str,
+    lines: int = 200,
+    grep: str | None = None,
+    grep_i: bool = False,
+    grep_v: bool = False,
+    level: str | None = None,
+) -> str:
     """Retrieves the recent logs for a specific Liferay project container."""
     import re
 
@@ -99,7 +106,173 @@ def get_logs(project_id: str, lines: int = 200) -> str:
         ["docker", "logs", "--tail", str(lines_int), container_name],
         check=False,
     )
-    return logs or "No logs available or container not running."
+    if not logs:
+        return "No logs available or container not running."
+
+    if not grep and not level:
+        return logs
+
+    # Apply regex filter if grep is specified
+    pattern = None
+    if grep:
+        flags = re.IGNORECASE if grep_i else 0
+        try:
+            pattern = re.compile(grep, flags)
+        except re.error as e:
+            return f"Error: Invalid grep regex: {e}"
+
+    # Severity level filter configuration
+    SEVERITY_LEVELS = {
+        "DEBUG": 10,
+        "INFO": 20,
+        "WARN": 30,
+        "WARNING": 30,
+        "ERROR": 40,
+        "FATAL": 50,
+    }
+
+    target_severity = None
+    if level:
+        target_severity = SEVERITY_LEVELS.get(level.upper())
+        if target_severity is None:
+            return f"Error: Invalid log level: {level}"
+
+    LEVEL_PATTERNS = {
+        "FATAL": re.compile(r"\bFATAL\b|\[FATAL\]"),
+        "ERROR": re.compile(r"\bERROR\b|\[ERROR\]"),
+        "WARN": re.compile(r"\bWARN(?:ING)?\b|\[WARN(?:ING)?\]"),
+        "INFO": re.compile(r"\bINFO\b|\[INFO\]"),
+        "DEBUG": re.compile(r"\bDEBUG\b|\[DEBUG\]"),
+    }
+
+    def get_line_level(line):
+        for lvl in ["FATAL", "ERROR", "WARN", "INFO", "DEBUG"]:
+            if LEVEL_PATTERNS[lvl].search(line):
+                return lvl
+        return None
+
+    filtered_lines = []
+    print_subsequent = level is None
+
+    for line in logs.splitlines():
+        # 1. Level Filter evaluation
+        if target_severity is not None:
+            line_level = get_line_level(line)
+            if line_level is not None:
+                print_subsequent = SEVERITY_LEVELS[line_level] >= target_severity
+                match_level = print_subsequent
+            else:
+                match_level = print_subsequent
+        else:
+            match_level = True
+
+        # 2. Grep Filter evaluation
+        if match_level:
+            if pattern is not None:
+                match_grep = bool(pattern.search(line))
+                if grep_v:
+                    match_grep = not match_grep
+            else:
+                match_grep = True
+        else:
+            match_grep = False
+
+        if match_grep:
+            filtered_lines.append(line)
+
+    return "\n".join(filtered_lines)
+
+
+@mcp_server.tool()
+def start_project(project_id: str) -> str:
+    """Starts the Liferay stack (containers) for a specific project."""
+    if not _manager:
+        return "Error: Manager not initialized"
+
+    roots = _manager.find_dxp_roots()
+    project_path = None
+    for r in roots:
+        path = r["path"]
+        meta = _manager.read_meta(path)
+        name = (
+            meta.get("liferay_container_name")
+            or meta.get("container_name")
+            or path.name
+        )
+        if project_id in (name, path.name):
+            project_path = path
+            break
+
+    if not project_path:
+        return f"Error: Project '{project_id}' not found."
+
+    try:
+        _manager.runtime.cmd_run(project_id=project_path.name)
+        return f"Success: Started project '{project_id}'."
+    except Exception as e:
+        return f"Error: Failed to start project '{project_id}': {e}"
+
+
+@mcp_server.tool()
+def stop_project(project_id: str) -> str:
+    """Stops the Liferay stack (containers) for a specific project."""
+    if not _manager:
+        return "Error: Manager not initialized"
+
+    roots = _manager.find_dxp_roots()
+    project_path = None
+    for r in roots:
+        path = r["path"]
+        meta = _manager.read_meta(path)
+        name = (
+            meta.get("liferay_container_name")
+            or meta.get("container_name")
+            or path.name
+        )
+        if project_id in (name, path.name):
+            project_path = path
+            break
+
+    if not project_path:
+        return f"Error: Project '{project_id}' not found."
+
+    try:
+        _manager.runtime.cmd_stop(project_id=project_path.name)
+        return f"Success: Stopped project '{project_id}'."
+    except Exception as e:
+        return f"Error: Failed to stop project '{project_id}': {e}"
+
+
+@mcp_server.tool()
+def restart_project(project_id: str, service: str | None = None) -> str:
+    """Restarts specific services or the entire stack for a project."""
+    if not _manager:
+        return "Error: Manager not initialized"
+
+    roots = _manager.find_dxp_roots()
+    project_path = None
+    for r in roots:
+        path = r["path"]
+        meta = _manager.read_meta(path)
+        name = (
+            meta.get("liferay_container_name")
+            or meta.get("container_name")
+            or path.name
+        )
+        if project_id in (name, path.name):
+            project_path = path
+            break
+
+    if not project_path:
+        return f"Error: Project '{project_id}' not found."
+
+    try:
+        _manager.runtime.cmd_restart(project_id=project_path.name, service=service)
+        return (
+            f"Success: Restarted project '{project_id}' (service: {service or 'all'})."
+        )
+    except Exception as e:
+        return f"Error: Failed to restart project '{project_id}': {e}"
 
 
 @mcp_server.tool()

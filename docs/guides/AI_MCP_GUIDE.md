@@ -36,6 +36,23 @@ If you prefer to use your own MCP-compatible client (like Claude Desktop, Cursor
 
 * `get_projects`: Lists all managed Liferay Docker environments and their status.
 * `get_logs`: Retrieves recent logs for a specific Liferay project container.
+  * **Arguments:**
+    * `project_id` (string, required): The project ID or container name.
+    * `lines` (integer, optional, default: `200`): Number of trailing log lines to retrieve.
+    * `grep` (string, optional): A regular expression pattern to filter logs.
+    * `grep_i` (boolean, optional, default: `false`): Run a case-insensitive regex match.
+    * `grep_v` (boolean, optional, default: `false`): Invert regex match logic (exclude matches).
+    * `level` (string, optional): Severity threshold filter (e.g., `WARN`, `ERROR`, `FATAL`). Shows lines matching or exceeding this level, preserving stack traces.
+* `start_project`: Starts the Liferay stack (containers) for a specific project.
+  * **Arguments:**
+    * `project_id` (string, required): The project ID or container name.
+* `stop_project`: Stops the Liferay stack (containers) for a specific project.
+  * **Arguments:**
+    * `project_id` (string, required): The project ID or container name.
+* `restart_project`: Restarts specific services or the entire stack for a project.
+  * **Arguments:**
+    * `project_id` (string, required): The project ID or container name.
+    * `service` (string, optional): The name of a service to restart (e.g., `liferay`, `db`). Restarts the entire stack if omitted.
 * `get_config`: Retrieves properties, configuration metadata, and environment details for a project.
 
 **Usage:**
