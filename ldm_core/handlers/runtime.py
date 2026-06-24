@@ -149,7 +149,15 @@ class RuntimeService(BaseHandler):
 
             # LDM-381: Sanitize tag and auto-detect image type from prefix
             if tag:
-                if tag.startswith("dxp-"):
+                from ldm_core.utils import resolve_liferay_docker_tag
+
+                resolved_tag, resolved_is_portal = resolve_liferay_docker_tag(
+                    tag, self.manager
+                )
+                if resolved_tag:
+                    tag = resolved_tag
+                    is_portal = resolved_is_portal
+                elif tag.startswith("dxp-"):
                     is_portal = False
                     tag = tag[4:]
                 elif tag.startswith("portal-"):

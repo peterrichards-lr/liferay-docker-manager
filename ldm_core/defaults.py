@@ -12,6 +12,7 @@ CONVENTION_DEFAULTS = {
     "port": "8080",
     "portal": "false",
     "target_env": "prd",
+    "tag_heuristics": {r"\.q1\.\d+$": "-lts"},
 }
 
 

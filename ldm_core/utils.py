@@ -751,6 +751,132 @@ def validate_liferay_tag(tag):
         return True
 
 
+def resolve_liferay_docker_tag(tag, manager=None):
+    """
+    Resolves a partial or user-supplied tag (e.g., '2026.q1.7', 'dxp-2026.q1.7')
+    to the official Docker image tag (e.g., '2026.q1.7-lts') using releases.json.
+
+    If offline or no match is found, falls back to applying configurable tag_heuristics.
+
+    Returns (resolved_tag, is_portal) if resolved, otherwise (None, None).
+    """
+    if not tag:
+        return None, None
+
+    # Load tag heuristics rules
+    heuristics = None
+    if manager:
+        heuristics = manager.defaults.get("tag_heuristics")
+    else:
+        # Avoid circular imports by loading config directly
+        try:
+            user_path = get_actual_home() / ".ldmrc"
+            if user_path.exists():
+                data = json.loads(user_path.read_text())
+                defaults = data.get("defaults", {}) if "defaults" in data else data
+                heuristics = defaults.get("tag_heuristics")
+        except Exception:
+            pass
+
+    if heuristics is None:
+        heuristics = {r"\.q1\.\d+$": "-lts"}
+
+    def normalize(t):
+        if not t:
+            return ""
+        return re.sub(r"^(dxp|portal)-", "", str(t)).lower().strip()
+
+    normalized_query = normalize(tag)
+
+    # 1. Check cache first
+    cache_path = get_actual_home() / ".liferay_docker_cache.json"
+    cache_key = f"resolve_tag_{tag}"
+    if cache_path.exists():
+        try:
+            with open(cache_path) as f:
+                cache = json.load(f)
+                if cache_key in cache:
+                    entry = cache[cache_key]
+                    if time.time() - entry.get("timestamp", 0) < 86400:
+                        return entry.get("tag"), entry.get("is_portal")
+        except Exception:
+            pass
+
+    # 2. Fetch releases.json online
+    url = "https://releases.liferay.com/releases.json"
+    online_resolved_tag = None
+    is_portal = False
+    online_success = False
+
+    try:
+        response = requests.get(url, headers={"User-Agent": "LDM-CLI"}, timeout=5)
+        if response.status_code == 200:
+            data = response.json()
+            online_success = True
+            for entry in data:
+                entry_url = entry.get("url", "")
+                entry_tag = entry_url.split("/")[-1] if entry_url else ""
+                entry_release_key = entry.get("releaseKey", "")
+                entry_target_platform = entry.get("targetPlatformVersion", "")
+
+                # Check if matches normalized or exact
+                matches = False
+                if tag in [
+                    entry_tag,
+                    entry_release_key,
+                    entry_target_platform,
+                ] or normalized_query in [
+                    normalize(entry_tag),
+                    normalize(entry_release_key),
+                    normalize(entry_target_platform),
+                ]:
+                    matches = True
+
+                if matches and entry_tag:
+                    product = entry.get("product", "")
+                    is_portal = (
+                        product.lower() == "portal"
+                        or "portal" in entry_url.lower()
+                        or entry_release_key.startswith("portal-")
+                    )
+                    online_resolved_tag = entry_tag
+                    break
+    except Exception:
+        pass
+
+    # 3. If online success and resolved, cache and return
+    if online_resolved_tag:
+        try:
+            cache = {}
+            if cache_path.exists():
+                with open(cache_path) as f:
+                    cache = json.load(f)
+            cache[cache_key] = {
+                "tag": online_resolved_tag,
+                "is_portal": is_portal,
+                "timestamp": time.time(),
+            }
+            with open(cache_path, "w") as f:
+                json.dump(cache, f)
+        except Exception:
+            pass
+        return online_resolved_tag, is_portal
+
+    # 4. If online check failed / returned no match, apply heuristics
+    for pattern, suffix in heuristics.items():
+        try:
+            if re.search(pattern, normalized_query, re.IGNORECASE):
+                if not normalized_query.endswith(suffix.lower()):
+                    resolved_tag = f"{normalized_query}{suffix}"
+                    is_portal = tag.lower().startswith("portal-")
+                    return resolved_tag, is_portal
+        except Exception:
+            # Handle potential invalid regex in config
+            pass
+
+    return None, None
+
+
 def discover_latest_tag(
     api_url, release_type="any", prefix_filter=None, verbose=False, refresh=False
 ):
