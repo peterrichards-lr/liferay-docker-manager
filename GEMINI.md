@@ -193,8 +193,12 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
     - [x] Add unit tests for `get_cli_help` tool in `ldm_core/tests/test_mcp.py`.
     - [x] Update `docs/guides/AI_MCP_GUIDE.md` to document the `get_cli_help` tool. [Completed]
 21. **Fix safe_rmtree Windows read-only file permission errors**:
-    - [ ] Update `safe_rmtree` in `ldm_core/utils.py` to handle read-only files by passing an `onerror` handler to `shutil.rmtree` on Windows.
-    - [ ] Add a unit test in `ldm_core/tests/test_utils.py` to verify deletion of read-only files.
+    - [x] Update `safe_rmtree` in `ldm_core/utils.py` to handle read-only files by passing an `onerror` handler to `shutil.rmtree` on Windows.
+    - [x] Add a unit test in `ldm_core/tests/test_utils.py` to verify deletion of read-only files.
 22. **Restore Home Directory CWD Warning**:
-    - [ ] Update `detect_project_path` in `ldm_core/handlers/base.py` to use `BaseHandler._warned_home` instead of `self.manager._warned_home` to avoid attribute crashes that suppress the warning.
-    - [ ] Add a unit test verifying that the home directory CWD warning is triggered.
+    - [x] Update `detect_project_path` in `ldm_core/handlers/base.py` to use `BaseHandler._warned_home` instead of `self.manager._warned_home` to avoid attribute crashes that suppress the warning.
+    - [x] Add a unit test verifying that the home directory CWD warning is triggered.
+23. **Create Unit Tests for System Services (Nuke and Rescue)**:
+    - [ ] Create `ldm_core/tests/test_system.py` to test system commands.
+    - [ ] Verify `nuke` behavior (forced, aborted config deletion).
+    - [ ] Verify `rescue` behavior (global, project-specific, lockfile cleanup).
