@@ -26,6 +26,7 @@ class MockWorkspaceManager(
         self.args.ssl = False
         self.args.stop_running = False
         self.args.leave_running = False
+        self.args.clone_only = False
 
         from ldm_core.defaults import DefaultsManager
 
@@ -732,12 +733,76 @@ class TestWorkspaceRemoteImport(unittest.TestCase):
             self.handler.args.no_run = True
             self.handler.workspace.cmd_import("https://github.com/owner/repo")
 
+        # Assert recursive import was NOT called (clone bypassed)
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(calls[0], "https://github.com/owner/repo")
+        # Assert database / snapshot restore was triggered
+        self.assertTrue(self.handler.snapshot.cmd_restore.called)
+        # Assert git clone was NOT called
+        for call_args in mock_sub_run.call_args_list:
+            if call_args[0] and len(call_args[0][0]) > 1:
+                self.assertNotIn("clone", call_args[0][0])
+
+    @patch("subprocess.run")
+    @patch("requests.get")
+    @patch("ldm_core.handlers.workspace.calculate_sha256", return_value="matching_hash")
+    @patch("tarfile.open")
+    def test_cmd_import_git_url_clone_only(
+        self, mock_tar_open, mock_calc_sha, mock_get, mock_sub_run
+    ):
+        real_import = self.handler.workspace.cmd_import
+        calls = []
+
+        def mock_import(source_path, *args, **kwargs):
+            calls.append(source_path)
+            from urllib.parse import urlparse
+
+            is_github = False
+            try:
+                parsed = urlparse(source_path)
+                if parsed.netloc in (
+                    "github.com",
+                    "www.github.com",
+                ) or source_path.startswith("git@github.com:"):
+                    is_github = True
+            except Exception:
+                pass
+
+            if is_github:
+                return real_import(source_path, *args, **kwargs)
+            return "my-project"
+
+        self.handler.workspace.cmd_import = mock_import
+
+        mock_clone_res = MagicMock()
+        mock_clone_res.returncode = 0
+        mock_sub_run.return_value = mock_clone_res
+
+        # Patch Path.exists to selectively say meta exists but project does not
+        def mock_exists(self_path):
+            return "my-project" not in str(self_path)
+
+        with (
+            patch.object(Path, "write_text"),
+            patch.object(Path, "exists", autospec=True, side_effect=mock_exists),
+            patch("pathlib.Path.mkdir"),
+            patch("shutil.rmtree"),
+            patch(
+                "ldm_core.handlers.base.BaseHandler.detect_project_path",
+                return_value=Path("/tmp/my-project"),
+            ),
+            patch("ldm_core.handlers.base.BaseHandler.read_meta", return_value={}),
+        ):
+            self.handler.args.project = "my-project"
+            self.handler.args.verify = True
+            self.handler.args.no_run = True
+            self.handler.args.clone_only = True
+            self.handler.workspace.cmd_import("https://github.com/owner/repo")
+
         # Assert recursive import was called with cloned git repo path
         self.assertEqual(len(calls), 2)
         self.assertTrue("clone_" in calls[1])
-        # Assert database / snapshot restore was triggered
-        self.assertTrue(self.handler.snapshot.cmd_restore.called)
-        # Assert git clone was shielded with --
+        # Assert git clone was triggered
         mock_sub_run.assert_any_call(
             ["git", "clone", "--", "https://github.com/owner/repo", ANY],
             capture_output=True,
@@ -759,6 +824,30 @@ class TestWorkspaceRemoteImport(unittest.TestCase):
     @patch("subprocess.run")
     @patch("requests.get")
     def test_cmd_import_git_url_release_missing(self, mock_get, mock_sub_run):
+        real_import = self.handler.workspace.cmd_import
+        calls = []
+
+        def mock_import(source_path, *args, **kwargs):
+            calls.append(source_path)
+            from urllib.parse import urlparse
+
+            is_github = False
+            try:
+                parsed = urlparse(source_path)
+                if parsed.netloc in (
+                    "github.com",
+                    "www.github.com",
+                ) or source_path.startswith("git@github.com:"):
+                    is_github = True
+            except Exception:
+                pass
+
+            if is_github:
+                return real_import(source_path, *args, **kwargs)
+            return "my-project"
+
+        self.handler.workspace.cmd_import = mock_import
+
         # Mock git clone success
         mock_clone_res = MagicMock()
         mock_clone_res.returncode = 0
@@ -770,8 +859,36 @@ class TestWorkspaceRemoteImport(unittest.TestCase):
         mock_release_resp.json.return_value = {"assets": []}
         mock_get.return_value = mock_release_resp
 
-        with self.assertRaises(SystemExit):
+        # Patch Path.exists to selectively say meta exists but project does not
+        def mock_exists(self_path):
+            return "my-project" not in str(self_path)
+
+        with (
+            patch.object(Path, "write_text"),
+            patch.object(Path, "exists", autospec=True, side_effect=mock_exists),
+            patch("pathlib.Path.mkdir"),
+            patch("shutil.rmtree"),
+            patch(
+                "ldm_core.handlers.base.BaseHandler.detect_project_path",
+                return_value=Path("/tmp/my-project"),
+            ),
+            patch("ldm_core.handlers.base.BaseHandler.read_meta", return_value={}),
+        ):
+            self.handler.args.project = "my-project"
+            self.handler.args.verify = True
+            self.handler.args.no_run = True
             self.handler.workspace.cmd_import("https://github.com/owner/repo")
+
+        # Assert recursive import was called with cloned git repo path (fallback succeeded)
+        self.assertEqual(len(calls), 2)
+        self.assertTrue("clone_" in calls[1])
+        # Assert git clone was triggered
+        mock_sub_run.assert_any_call(
+            ["git", "clone", "--", "https://github.com/owner/repo", ANY],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
 
 
 class TestWorkspaceQuickstart(unittest.TestCase):
