@@ -16,31 +16,29 @@ While the v2.4.0 release solidified the modular architecture, the focus will now
 - **Namespace Grouping**: Transition from flat commands to grouped namespaces (e.g., `ldm system`, `ldm infra`, `ldm cloud`).
 - **Cloud Orchestration**: Introduce `ldm cloud push` and `ldm cloud fetch` as a unified, two-way bridge for PaaS migration.
 
-### 2. Visual Health Dashboard
-
-- **Local Monitoring UI**: A lightweight, read-only dashboard accessible via `http://localhost:19000`.
-
-### 3. Shared Scenario Packs
-
-- **Portable Scenarios**: A formal specification for bundling Snapshots and Client Extensions into single distributable archives.
-
-### 4. AI-Assisted Orchestration
+### 2. AI-Assisted Orchestration
 
 - **The `ldm ai` Command**: Integrate a specialized AI handler (Gemini-powered) for troubleshooting.
 
-### 5. Polished Diagnostics Dashboard
-
-- **High-Level RAG Status**: Transition `ldm doctor` to a concise Red/Amber/Green summary dashboard by default.
-- **Granular Subsection Flags**: Implement flags like `--docker`, `--system`, and `--project` to view deep-dive diagnostics for specific areas only when needed.
-
-### 6. Project Self-Healing (`ldm repair`)
+### 3. Project Self-Healing (`ldm repair`)
 
 - **Inconsistency Recovery**: Implement a command to restore projects in "half-baked" states (e.g., missing `docker-compose.yml` but valid `meta`).
 - **Permission Re-sync**: A dedicated trigger to re-apply the "Zero-Race" permission fixups across an entire existing project stack.
 
-### 7. Dry-Run Mode
+## ✅ Completed Improvements (v2.11.x - Sequential Overrides & Web Diagnostics)
 
-- **Change Preview**: Support a `--dry-run` flag for destructive or configuration-heavy commands (`run`, `rm`, `import`, `scale`) to preview filesystem and Docker modifications without applying them.
+### **Visual Properties Cascade Hierarchy**
+
+- **5-Layer Overrides Cascade**: Integrated a strict precedence hierarchy (Seed, LDMP overrides, Global Common, Workspace Common, and Project manual edits).
+- **CSS-style Precedence**: Added support for inline and preceding `# !important` markers to override standard precedence cascading rules.
+- **Diagnostics Web Dashboard Inspector**: Created a color-coded visual drawer in the UI displaying winning property origins, active values, and full cascade override history.
+- **CLI Properties Management**: Implemented `--rebuild-properties`, `--reset-properties`, and `--revert-properties` configuration management subcommands.
+
+### **Diagnostics Web Dashboard & Dry Run**
+
+- **Lightweight Diagnostics Dashboard**: Built a responsive visual web dashboard showing high-level RAG status, container states, and system information.
+- **Dry-Run Mode Configuration**: Added simulated change preview outputs (`--dry-run`) across properties sync and resetting utilities.
+- **Shared Scenario Bundles**: Fully standardized `.ldmp` package archives to restore workspace snapshots and Liferay properties baselines.
 
 ## ✅ Completed Improvements (v2.10.x - Liferay Cloud Golden Path & Hardening)
 
