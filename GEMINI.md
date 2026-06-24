@@ -71,6 +71,7 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
 
 ## 8. Active Work State & Plan (June 24, 2026)
 
+- Released `v2.11.46` successfully (upgraded Gitleaks hook to `v8.30.1` to resolve the Go 1.24 WASM panic in CI runners, and canceled hung jobs).
 - Released `v2.11.45` failed during the CI/CD pipeline due to Gitleaks pre-commit hook panic under Go 1.24 (wasm invalid table access).
 - Released `v2.11.43` successfully (implemented sequential properties override hierarchy (5-Layers) with CSS-style `# !important` precedence, CLI command overrides, and web dashboard diagnostics).
 - Released `v2.11.42` successfully (resolved the GITHUB_ACTIONS env var root check in E2E tests).
@@ -88,7 +89,7 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
 - **Clean up Failed/Hung Release Jobs**:
   - Cancel the in-progress `LDM Release E2E` workflow run `28087208752`. [Done]
 - **Re-trigger the Release**:
-  - Since remote tag deletion for `v2.11.45` is blocked by repository rules, bump the version to `v2.11.46` using `.venv/bin/python scripts/release.py --bump patch` to trigger a clean release cycle.
+  - Since remote tag deletion for `v2.11.45` is blocked by repository rules, bump the version to `v2.11.46` using `.venv/bin/python scripts/release.py --bump patch` to trigger a clean release cycle. [Done]
 
 1. **Sequential Property Overrides Hierarchy (5-Layers) with `!important` Precedence**:
    - [x] Sourcing layers in order of lowest to highest precedence:
