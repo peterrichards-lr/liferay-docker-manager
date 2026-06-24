@@ -324,6 +324,43 @@ def get_config(project_id: str) -> str:
     return json.dumps({"error": f"Project '{project_id}' not found."})
 
 
+@mcp_server.tool()
+def get_cli_help(command: str | None = None) -> str:
+    """Retrieves the CLI usage and help manual for LDM commands to prevent flag hallucinations.
+
+    Args:
+        command: The specific subcommand (e.g., 'run', 'hydrate', 'logs', 'config') to get help for.
+    """
+    import io
+
+    from ldm_core.cli import get_parser
+
+    parser, _ = get_parser()
+    if not command:
+        f = io.StringIO()
+        parser.print_help(f)
+        return f.getvalue()
+
+    # Find subcommand parser
+    subparsers_actions = [
+        action
+        for action in parser._actions
+        if action.__class__.__name__ == "_SubParsersAction"
+    ]
+    for action in subparsers_actions:
+        if command in action.choices:
+            sub_parser = action.choices[command]
+            f = io.StringIO()
+            sub_parser.print_help(f)
+            return f.getvalue()
+
+    # If subcommand wasn't found, list available ones
+    available = []
+    for action in subparsers_actions:
+        available.extend(action.choices.keys())
+    return f"Error: Command '{command}' not found. Available commands: {', '.join(available)}"
+
+
 class McpService:
     """Service to handle the MCP JSON-RPC Server lifecycle."""
 

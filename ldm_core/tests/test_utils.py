@@ -267,6 +267,25 @@ class TestUtils(unittest.TestCase):
             str(ctx.exception),
         )
 
+    def test_safe_rmtree_read_only_files(self):
+        import stat
+        import tempfile
+
+        from ldm_core.utils import safe_rmtree
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            parent = Path(tmp_dir) / "sub"
+            parent.mkdir()
+            test_file = parent / "readonly.txt"
+            test_file.write_text("content")
+
+            # Make the file read-only
+            test_file.chmod(stat.S_IREAD)
+
+            # Deleting parent should succeed
+            safe_rmtree(parent)
+            self.assertFalse(parent.exists())
+
 
 class TestUpdateChecks(unittest.TestCase):
     @patch("requests.get")

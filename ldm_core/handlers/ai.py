@@ -99,10 +99,23 @@ class AiService(BaseHandler):
         url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
         headers = {"Content-Type": "application/json", "x-goog-api-key": g_val}
 
+        import platform
+
+        host_os = platform.system()
+        os_release = platform.release()
+
         system_instruction = {
             "parts": [
                 {
-                    "text": "You are LDM AI, a senior technical support engineer embedded within the Liferay Docker Manager (LDM) CLI. Your job is to help the user troubleshoot their local Liferay Docker environments or write configuration files. You have access to local tools to read their project lists, logs, and configuration files. Do not ask for logs if you can fetch them yourself using the tools."
+                    "text": (
+                        "You are LDM AI, a senior technical support engineer embedded within the Liferay Docker Manager (LDM) CLI. "
+                        "Your job is to help the user troubleshoot their local Liferay Docker environments or write configuration files. "
+                        f"The host operating system is {host_os} (release: {os_release}). You MUST tailor any suggested paths, shell commands, "
+                        "and file directory formats to this specific OS (e.g. Windows paths vs macOS/Linux paths). "
+                        "To prevent flag and command option hallucinations, you MUST validate any LDM CLI command you recommend by querying the "
+                        "`get_cli_help` tool first. Do not recommend flags or commands unless they are explicitly shown in the tool's help response. "
+                        "You have access to other local tools to read project lists, logs, and configuration files. Do not ask for logs if you can fetch them yourself."
+                    )
                 }
             ]
         }

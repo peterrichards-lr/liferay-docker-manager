@@ -186,3 +186,15 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
     - [x] Add `grep` and `level` log filtering support to the `get_logs` FastMCP tool in `ldm_core/handlers/mcp.py`.
     - [x] Expose container lifecycle control FastMCP tools: `start_project`, `stop_project`, and `restart_project`.
     - [x] Add unit tests verifying the new FastMCP tools and parameters.
+20. **Prevent LDM AI Command Hallucinations**:
+    - [x] Add `get_cli_help` FastMCP tool in `ldm_core/handlers/mcp.py` to retrieve LDM CLI usage.
+    - [x] Dynamically inject host operating system metadata into `system_instruction` in `ldm_core/handlers/ai.py`.
+    - [x] Update `system_instruction` in `ldm_core/handlers/ai.py` to command the model to validate CLI commands against `get_cli_help`.
+    - [x] Add unit tests for `get_cli_help` tool in `ldm_core/tests/test_mcp.py`.
+    - [x] Update `docs/guides/AI_MCP_GUIDE.md` to document the `get_cli_help` tool. [Completed]
+21. **Fix safe_rmtree Windows read-only file permission errors**:
+    - [ ] Update `safe_rmtree` in `ldm_core/utils.py` to handle read-only files by passing an `onerror` handler to `shutil.rmtree` on Windows.
+    - [ ] Add a unit test in `ldm_core/tests/test_utils.py` to verify deletion of read-only files.
+22. **Restore Home Directory CWD Warning**:
+    - [ ] Update `detect_project_path` in `ldm_core/handlers/base.py` to use `BaseHandler._warned_home` instead of `self.manager._warned_home` to avoid attribute crashes that suppress the warning.
+    - [ ] Add a unit test verifying that the home directory CWD warning is triggered.
