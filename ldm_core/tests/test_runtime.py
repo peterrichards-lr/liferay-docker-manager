@@ -284,6 +284,23 @@ class TestRuntime(unittest.TestCase):
                 ],
             )
 
+        # Test ANSI color filtering (matches despite escape sequences, and prints the colored version)
+        mock_process.poll.return_value = 0
+        colored_log_lines = [
+            "\x1b[36m10:00:00.000 INFO  [main] colored portal starting...\x1b[0m",
+            "\x1b[31m10:00:01.000 ERROR [main] Database connection failed\x1b[0m",
+        ]
+        mock_process.stdout.readline.side_effect = [*colored_log_lines, ""]
+        with patch("builtins.print") as mock_print:
+            self.handler.handler._run_log_command(
+                ["docker", "logs", "container"], level="ERROR"
+            )
+            printed_calls = [c[0][0] for c in mock_print.call_args_list]
+            self.assertEqual(
+                printed_calls,
+                ["\x1b[31m10:00:01.000 ERROR [main] Database connection failed\x1b[0m"],
+            )
+
     @patch("ldm_core.handlers.base.BaseHandler.detect_project_path")
     def test_cmd_logs_service_aware(self, mock_detect):
         with tempfile.TemporaryDirectory() as tmp_dir:

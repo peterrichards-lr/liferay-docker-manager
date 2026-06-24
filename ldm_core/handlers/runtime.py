@@ -8,7 +8,7 @@ from pathlib import Path
 
 from ldm_core.handlers.base import BaseHandler
 from ldm_core.ui import UI
-from ldm_core.utils import get_actual_home, get_compose_cmd, open_browser
+from ldm_core.utils import get_actual_home, get_compose_cmd, open_browser, strip_ansi
 
 
 class RuntimeService(BaseHandler):
@@ -1761,10 +1761,11 @@ class RuntimeService(BaseHandler):
                         break
                     if line:
                         stripped_line = line.rstrip("\r\n")
+                        clean_line = strip_ansi(stripped_line)
 
                         # 1. Level Filter evaluation
                         if target_severity is not None:
-                            line_level = get_line_level(stripped_line)
+                            line_level = get_line_level(clean_line)
                             if line_level is not None:
                                 level_severity = SEVERITY_LEVELS[line_level]
                                 print_subsequent = level_severity >= target_severity
@@ -1777,7 +1778,7 @@ class RuntimeService(BaseHandler):
                         # 2. Grep Filter evaluation
                         if match_level:
                             if pattern is not None:
-                                match_grep = bool(pattern.search(stripped_line))
+                                match_grep = bool(pattern.search(clean_line))
                                 if grep_v:
                                     match_grep = not match_grep
                             else:
