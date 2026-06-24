@@ -29,6 +29,7 @@ class MockManager:
         from ldm_core.defaults import DefaultsManager
 
         self.defaults = DefaultsManager()
+        self.assets = MagicMock()
 
     def detect_project_path(self, *args, **kwargs):
         return Path("/tmp/proj")
@@ -356,6 +357,75 @@ class TestCloudService(unittest.TestCase):
             self.cloud._resolve_hydrate_db_type(backup_dir)
             mock_die.assert_called_once()
             self.assertIn("Could not determine database type", mock_die.call_args[0][0])
+
+    @patch("ldm_core.ui.UI.ask_choices")
+    @patch(
+        "ldm_core.handlers.cloud.CloudService._resolve_hydrate_db_type",
+        return_value="postgresql",
+    )
+    @patch("ldm_core.handlers.cloud.CloudService.hydrate_cloud_backup")
+    @patch("ldm_core.handlers.cloud.PROJECT_META_FILE", "meta_fake")
+    def test_cmd_hydrate_existing_project(self, mock_hydrate, mock_db_type, mock_ask):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            backup_dir = Path(tmp_dir).resolve()
+            (backup_dir / "database.gz").write_text("db")
+            (backup_dir / "volume.tgz").write_text("vol")
+
+            project_dir = Path(tmp_dir) / "my_project"
+            project_dir.mkdir()
+            # Create metadata file to mark it as existing
+            (project_dir / "meta_fake").write_text("key=value")
+
+            with patch.object(
+                self.manager, "detect_project_path", return_value=project_dir
+            ):
+                with patch.object(
+                    self.cloud.manager.assets, "prompt_for_tag"
+                ) as mock_prompt_tag:
+                    self.cloud.cmd_hydrate(str(backup_dir), project_id="my_project")
+
+                    # prompt_for_tag should NOT have been called
+                    mock_prompt_tag.assert_not_called()
+                    # hydrate_cloud_backup should be called with tag_for_seed=None
+                    mock_hydrate.assert_called_once_with(
+                        "my_project", backup_dir, tag_for_seed=None
+                    )
+
+    @patch("ldm_core.ui.UI.ask_choices")
+    @patch(
+        "ldm_core.handlers.cloud.CloudService._resolve_hydrate_db_type",
+        return_value="postgresql",
+    )
+    @patch("ldm_core.handlers.cloud.CloudService.hydrate_cloud_backup")
+    @patch("ldm_core.handlers.cloud.PROJECT_META_FILE", "meta_fake")
+    def test_cmd_hydrate_new_project(self, mock_hydrate, mock_db_type, mock_ask):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            backup_dir = Path(tmp_dir).resolve()
+            (backup_dir / "database.gz").write_text("db")
+            (backup_dir / "volume.tgz").write_text("vol")
+
+            project_dir = Path(tmp_dir) / "new_project"
+            # Do NOT create project_dir / "meta_fake" (so it's a new project)
+            project_dir.mkdir()
+
+            with patch.object(
+                self.manager, "detect_project_path", return_value=project_dir
+            ):
+                with patch.object(
+                    self.cloud.manager.assets, "prompt_for_tag", return_value="7.4"
+                ) as mock_prompt_tag:
+                    self.cloud.cmd_hydrate(str(backup_dir), project_id="new_project")
+
+                    # prompt_for_tag should have been called
+                    mock_prompt_tag.assert_called_once()
+                    # hydrate_cloud_backup should be called with tag_for_seed="7.4"
+                    mock_hydrate.assert_called_once_with(
+                        "new_project", backup_dir, tag_for_seed="7.4"
+                    )
 
 
 if __name__ == "__main__":

@@ -430,6 +430,7 @@ class CloudService:
         root_path = self.manager.detect_project_path(project_id, for_init=True)
         if not root_path:
             return False
+        project_id = root_path.name
 
         is_new_project = not (root_path / PROJECT_META_FILE).exists()
         project_meta = self.manager.read_meta(root_path)
@@ -488,8 +489,14 @@ class CloudService:
                 f"Invalid cloud backup format in {backup_dir}. Missing a database.gz or volume.tgz file."
             )
 
+        root_path = self.manager.detect_project_path(project_id, for_init=True)
+        if not root_path:
+            return
+        project_id = root_path.name
+        is_new_project = not (root_path / PROJECT_META_FILE).exists()
+
         tag = getattr(self.manager.args, "tag", None)
-        if not tag:
+        if not tag and is_new_project:
             if self.manager.non_interactive:
                 tag = self.manager.defaults.get("tag")
                 if not tag:
@@ -498,6 +505,8 @@ class CloudService:
                     )
             else:
                 tag = self.manager.assets.prompt_for_tag()
+        elif not is_new_project:
+            tag = None
 
         self.hydrate_cloud_backup(project_id, backup_dir, tag_for_seed=tag)
 

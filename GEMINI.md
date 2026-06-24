@@ -199,6 +199,10 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
     - [x] Update `detect_project_path` in `ldm_core/handlers/base.py` to use `BaseHandler._warned_home` instead of `self.manager._warned_home` to avoid attribute crashes that suppress the warning.
     - [x] Add a unit test verifying that the home directory CWD warning is triggered.
 23. **Create Unit Tests for System Services (Nuke and Rescue)**:
-    - [ ] Create `ldm_core/tests/test_system.py` to test system commands.
-    - [ ] Verify `nuke` behavior (forced, aborted config deletion).
-    - [ ] Verify `rescue` behavior (global, project-specific, lockfile cleanup).
+    - [x] Create `ldm_core/tests/test_system.py` to test system commands.
+    - [x] Verify `nuke` behavior (forced, aborted config deletion).
+    - [x] Verify `rescue` behavior (global, project-specific, lockfile cleanup).
+24. **Optimize Hydration Prompts (Avoid Redundant Project/Version Selects)**:
+    - [x] Resolve project_id early in `cmd_hydrate` and propagate it to sub-calls (`hydrate_cloud_backup`, `cmd_restore`, `cmd_reset`, `cmd_stop`, `cmd_run`).
+    - [x] Avoid prompting for version/tag on existing project hydration.
+    - [x] Add unit tests verifying prompt/version bypass behavior.
