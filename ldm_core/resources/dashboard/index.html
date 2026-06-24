@@ -191,6 +191,15 @@
                         </svg>
                         Snapshot Manager
                     </button>
+
+                    <!-- Properties Inspector button -->
+                    <button @click="openPropertiesDrawer(project.name)" 
+                            class="w-full mt-2 inline-flex items-center justify-center gap-2 px-3 py-2 border border-emerald-500/20 rounded-xl bg-emerald-500/5 hover:bg-emerald-500/10 text-xs font-semibold text-emerald-300 hover:text-emerald-200 transition duration-200">
+                        <svg class="w-4 h-4 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"></path>
+                        </svg>
+                        Properties Inspector
+                    </button>
                 </div>
             </template>
         </div>
@@ -319,6 +328,157 @@
             </div>
         </div>
 
+        </div>
+
+        <!-- Properties Inspector Drawer -->
+        <div x-show="propertiesDrawerOpen" :class="{ 'hidden': !propertiesDrawerOpen }" class="fixed inset-0 z-40 overflow-hidden">
+            <div class="absolute inset-0 bg-[#020408]/80 backdrop-blur-sm transition-opacity" @click="propertiesDrawerOpen = false"></div>
+            
+            <div class="absolute inset-y-0 right-0 max-w-2xl w-full flex">
+                <div class="relative w-full bg-slate-900 border-l border-white/10 shadow-2xl flex flex-col h-full overflow-hidden" x-transition:enter="transition ease-out duration-300" x-transition:enter-start="translate-x-full" x-transition:enter-end="translate-x-0" x-transition:leave="transition ease-in duration-300" x-transition:leave-start="translate-x-0" x-transition:leave-end="translate-x-full">
+                    <!-- Drawer Header -->
+                    <div class="px-6 py-5 bg-slate-950 border-b border-white/5 flex items-center justify-between">
+                        <div>
+                            <h3 class="text-lg font-bold text-slate-100">Properties Inspector</h3>
+                            <p class="text-xs text-slate-400 mt-1">Cascading overrides cascade for project <span class="font-mono text-indigo-400" x-text="activeProject"></span></p>
+                        </div>
+                        <button @click="propertiesDrawerOpen = false" class="text-slate-400 hover:text-white transition">
+                            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                            </svg>
+                        </button>
+                    </div>
+
+                    <!-- Search Filter -->
+                    <div class="p-6 bg-slate-950/40 border-b border-white/5 flex gap-4">
+                        <input type="text" x-model="propertiesFilter" placeholder="Filter by property key or value..." class="flex-1 px-4 py-2 text-sm bg-slate-900 border border-white/10 rounded-xl focus:border-indigo-500 focus:outline-none text-slate-200">
+                    </div>
+
+                    <!-- Properties Cascade Tree View -->
+                    <div class="flex-1 overflow-y-auto p-6 space-y-3">
+                        <div x-show="propertiesLoading" class="flex flex-col items-center justify-center py-12">
+                            <svg class="animate-spin h-8 w-8 text-indigo-500 mb-2" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                            </svg>
+                            <span class="text-xs text-slate-500">Parsing properties cascade...</span>
+                        </div>
+
+                        <div x-show="!propertiesLoading && filteredProperties().length === 0" class="text-center py-12 bg-slate-950/20 border border-white/5 rounded-2xl">
+                            <p class="text-slate-500 text-sm">No matching properties found.</p>
+                        </div>
+
+                        <div class="space-y-3" x-show="!propertiesLoading">
+                            <template x-for="prop in filteredProperties()" :key="prop.key">
+                                <div class="bg-slate-950/60 border border-white/5 rounded-xl transition duration-200 overflow-hidden">
+                                    <!-- Main Row -->
+                                    <div @click="togglePropExpand(prop.key)" class="p-4 flex flex-col md:flex-row md:items-center justify-between gap-3 cursor-pointer hover:bg-white/[0.02] transition">
+                                        <div class="min-w-0 flex-1">
+                                            <div class="flex items-center gap-2 flex-wrap">
+                                                <span class="text-sm font-semibold font-mono text-slate-200 break-all" x-text="prop.key"></span>
+                                                <template x-if="prop.important">
+                                                    <span class="px-1.5 py-0.5 text-[10px] font-bold bg-rose-500/20 text-rose-400 border border-rose-500/30 rounded uppercase">!important</span>
+                                                </template>
+                                            </div>
+                                            <div class="text-xs font-mono text-slate-400 mt-1 truncate" x-text="prop.value"></div>
+                                        </div>
+                                        <div class="flex items-center gap-3 flex-shrink-0">
+                                            <span class="px-2.5 py-1 rounded-full text-xs font-bold uppercase tracking-wider border"
+                                                  :class="{
+                                                      'bg-slate-500/10 text-slate-400 border-slate-500/20': prop.source === 'seed',
+                                                      'bg-indigo-500/10 text-indigo-400 border-indigo-500/20': prop.source === 'ldmp',
+                                                      'bg-amber-500/10 text-amber-400 border-amber-500/20': prop.source === 'global',
+                                                      'bg-cyan-500/10 text-cyan-400 border-cyan-500/20': prop.source === 'local',
+                                                      'bg-emerald-500/10 text-emerald-400 border-emerald-500/20': prop.source === 'project',
+                                                      'bg-purple-500/10 text-purple-400 border-purple-500/20': prop.source === 'system'
+                                                  }"
+                                                  x-text="prop.source === 'seed' ? 'Seed' : prop.source === 'ldmp' ? 'LDMP' : prop.source === 'global' ? 'Global Common' : prop.source === 'local' ? 'Local Common' : prop.source === 'project' ? 'Project Custom' : 'System Injection'">
+                                            </span>
+                                            <svg class="w-4 h-4 text-slate-500 transition-transform duration-200" :class="{ 'rotate-180': isPropExpanded(prop.key) }" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+                                            </svg>
+                                        </div>
+                                    </div>
+
+                                    <!-- Expanded Details -->
+                                    <div x-show="isPropExpanded(prop.key)" class="px-4 pb-4 pt-2 border-t border-white/5 bg-black/30 space-y-2">
+                                        <div class="text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1">Cascade Overrides History:</div>
+                                        <div class="grid grid-cols-1 gap-2 text-xs">
+                                            <!-- Seed Layer -->
+                                            <template x-if="prop.history.seed.defined">
+                                                <div class="flex justify-between items-center bg-slate-900/40 p-2 rounded border border-white/5">
+                                                    <span class="text-slate-400 font-medium">Seed Baseline</span>
+                                                    <div class="flex items-center gap-2">
+                                                        <span class="font-mono text-slate-300" x-text="prop.history.seed.val"></span>
+                                                        <span x-show="prop.history.seed.imp" class="px-1 py-0.2 bg-rose-500/10 text-[9px] text-rose-400 border border-rose-500/20 rounded font-bold uppercase">!important</span>
+                                                        <span class="px-1.5 py-0.5 rounded text-[10px] font-semibold" :class="prop.source === 'seed' ? 'bg-slate-500/10 text-slate-400 border border-slate-500/20' : 'bg-slate-800 text-slate-600'">Winner</span>
+                                                    </div>
+                                                </div>
+                                            </template>
+                                            <!-- LDMP Layer -->
+                                            <template x-if="prop.history.ldmp.defined">
+                                                <div class="flex justify-between items-center bg-slate-900/40 p-2 rounded border border-white/5">
+                                                    <span class="text-slate-400 font-medium">LDMP Override</span>
+                                                    <div class="flex items-center gap-2">
+                                                        <span class="font-mono text-slate-300" x-text="prop.history.ldmp.val"></span>
+                                                        <span x-show="prop.history.ldmp.imp" class="px-1 py-0.2 bg-rose-500/10 text-[9px] text-rose-400 border border-rose-500/20 rounded font-bold uppercase">!important</span>
+                                                        <span class="px-1.5 py-0.5 rounded text-[10px] font-semibold" :class="prop.source === 'ldmp' ? 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/20' : 'bg-slate-800 text-slate-600'">Winner</span>
+                                                    </div>
+                                                </div>
+                                            </template>
+                                            <!-- Global Layer -->
+                                            <template x-if="prop.history.global.defined">
+                                                <div class="flex justify-between items-center bg-slate-900/40 p-2 rounded border border-white/5">
+                                                    <span class="text-slate-400 font-medium">Global Common</span>
+                                                    <div class="flex items-center gap-2">
+                                                        <span class="font-mono text-slate-300" x-text="prop.history.global.val"></span>
+                                                        <span x-show="prop.history.global.imp" class="px-1 py-0.2 bg-rose-500/10 text-[9px] text-rose-400 border border-rose-500/20 rounded font-bold uppercase">!important</span>
+                                                        <span class="px-1.5 py-0.5 rounded text-[10px] font-semibold" :class="prop.source === 'global' ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20' : 'bg-slate-800 text-slate-600'">Winner</span>
+                                                    </div>
+                                                </div>
+                                            </template>
+                                            <!-- Local Layer -->
+                                            <template x-if="prop.history.local.defined">
+                                                <div class="flex justify-between items-center bg-slate-900/40 p-2 rounded border border-white/5">
+                                                    <span class="text-slate-400 font-medium">Local Common</span>
+                                                    <div class="flex items-center gap-2">
+                                                        <span class="font-mono text-slate-300" x-text="prop.history.local.val"></span>
+                                                        <span x-show="prop.history.local.imp" class="px-1 py-0.2 bg-rose-500/10 text-[9px] text-rose-400 border border-rose-500/20 rounded font-bold uppercase">!important</span>
+                                                        <span class="px-1.5 py-0.5 rounded text-[10px] font-semibold" :class="prop.source === 'local' ? 'bg-cyan-500/10 text-cyan-400 border border-cyan-500/20' : 'bg-slate-800 text-slate-600'">Winner</span>
+                                                    </div>
+                                                </div>
+                                            </template>
+                                            <!-- Project Layer -->
+                                            <template x-if="prop.history.project.defined">
+                                                <div class="flex justify-between items-center bg-slate-900/40 p-2 rounded border border-white/5">
+                                                    <span class="text-slate-400 font-medium">Project Custom</span>
+                                                    <div class="flex items-center gap-2">
+                                                        <span class="font-mono text-slate-300" x-text="prop.history.project.val"></span>
+                                                        <span x-show="prop.history.project.imp" class="px-1 py-0.2 bg-rose-500/10 text-[9px] text-rose-400 border border-rose-500/20 rounded font-bold uppercase">!important</span>
+                                                        <span class="px-1.5 py-0.5 rounded text-[10px] font-semibold" :class="prop.source === 'project' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-slate-800 text-slate-600'">Winner</span>
+                                                    </div>
+                                                </div>
+                                            </template>
+                                            <!-- System Layer -->
+                                            <template x-if="prop.history.system.defined">
+                                                <div class="flex justify-between items-center bg-slate-900/40 p-2 rounded border border-white/5">
+                                                    <span class="text-slate-400 font-medium">System Injection</span>
+                                                    <div class="flex items-center gap-2">
+                                                        <span class="font-mono text-slate-300" x-text="prop.history.system.val"></span>
+                                                        <span class="px-1.5 py-0.5 rounded text-[10px] font-semibold" :class="prop.source === 'system' ? 'bg-purple-500/10 text-purple-400 border border-purple-500/20' : 'bg-slate-800 text-slate-600'">Winner</span>
+                                                    </div>
+                                                </div>
+                                            </template>
+                                        </div>
+                                    </div>
+                                </div>
+                            </template>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <!-- Restore Confirmation Dialog -->
         <div x-show="restoreConfirmOpen" :class="{ 'hidden': !restoreConfirmOpen }" class="fixed inset-0 z-50 flex items-center justify-center p-4">
             <div class="fixed inset-0 bg-[#020408]/90 backdrop-blur-sm transition-opacity" @click="restoreConfirmOpen = false"></div>
@@ -384,6 +544,13 @@
                 restoreConfirmOpen: false,
                 activeSnapshotToRestore: null,
                 restoring: false,
+
+                // Properties Inspector
+                propertiesDrawerOpen: false,
+                propertiesLoading: false,
+                properties: [],
+                propertiesFilter: '',
+                expandedProperties: [],
 
                 // Loaders
                 projectActionLoading: {},
@@ -587,6 +754,48 @@
                         this.restoring = false;
                         this.activeSnapshotToRestore = null;
                     }
+                },
+
+                async openPropertiesDrawer(projectName) {
+                    this.activeProject = projectName;
+                    this.propertiesDrawerOpen = true;
+                    this.propertiesLoading = true;
+                    this.properties = [];
+                    this.propertiesFilter = '';
+                    this.expandedProperties = [];
+                    try {
+                        const response = await fetch(`/api/projects/${projectName}/properties`);
+                        if (!response.ok) throw new Error('API server properties failure');
+                        const data = await response.json();
+                        this.properties = data;
+                    } catch (error) {
+                        console.error('Failed to load project properties cascade:', error);
+                        this.showToast('Could not fetch properties overrides catalog', 'error');
+                        this.propertiesDrawerOpen = false;
+                    } finally {
+                        this.propertiesLoading = false;
+                    }
+                },
+
+                filteredProperties() {
+                    const filter = this.propertiesFilter.trim().toLowerCase();
+                    if (!filter) return this.properties;
+                    return this.properties.filter(p => 
+                        p.key.toLowerCase().includes(filter) || 
+                        p.value.toLowerCase().includes(filter)
+                    );
+                },
+
+                togglePropExpand(key) {
+                    if (this.expandedProperties.includes(key)) {
+                        this.expandedProperties = this.expandedProperties.filter(k => k !== key);
+                    } else {
+                        this.expandedProperties.push(key);
+                    }
+                },
+
+                isPropExpanded(key) {
+                    return this.expandedProperties.includes(key);
                 }
             }))
         })

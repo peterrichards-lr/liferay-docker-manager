@@ -295,6 +295,223 @@ def api_logs(project_name):
     return jsonify({"logs": logs or "No logs available or container not running."})
 
 
+@app.route("/api/projects/<project_name>/properties")
+def api_project_properties(project_name):
+    import re
+
+    if not re.match(r"^[a-zA-Z0-9_-]+$", project_name):
+        return jsonify({"error": "Invalid project name format"}), 400
+
+    path = _find_project_path(project_name)
+    if not path:
+        return jsonify({"error": "Project not found"}), 404
+
+    manager = app.config["MANAGER"]
+    paths = manager.setup_paths(path)
+    project_meta = manager.read_meta(path) or {}
+
+    try:
+        # Load layers
+        seed_ext = (
+            Path(manager.__file__).parent
+            / "resources"
+            / "common_baseline"
+            / "portal-ext.properties"
+        )
+        seed_props, seed_imp = {}, set()
+        if seed_ext.exists():
+            seed_props, seed_imp = manager.config._get_properties_with_metadata(
+                seed_ext.read_text()
+            )
+
+        ldmp_ext = paths["root"] / ".liferay-docker" / "ldmp-portal-ext.properties"
+        ldmp_props, ldmp_imp = {}, set()
+        if ldmp_ext.exists():
+            ldmp_props, ldmp_imp = manager.config._get_properties_with_metadata(
+                ldmp_ext.read_text()
+            )
+
+        global_props, global_imp = {}, set()
+        local_props, local_imp = {}, set()
+        for cd in paths.get("common_dirs", []):
+            cd_ext = cd / "portal-ext.properties"
+            if cd_ext.exists():
+                c_props, c_imp = manager.config._get_properties_with_metadata(
+                    cd_ext.read_text()
+                )
+                if (
+                    ".ldm" in str(cd.resolve())
+                    or "home" in str(cd.resolve())
+                    or "global" in str(cd.resolve()).lower()
+                ):
+                    global_props, global_imp = c_props, c_imp
+                else:
+                    local_props, local_imp = c_props, c_imp
+
+        target_ext = paths["files"] / "portal-ext.properties"
+        project_props, project_imp = {}, set()
+        if target_ext.exists():
+            project_props, project_imp = manager.config._get_properties_with_metadata(
+                target_ext.read_text()
+            )
+
+        # Compute Project Baseline = Seed + LDMP
+        baseline_props = dict(seed_props)
+        baseline_props.update(ldmp_props)
+        baseline_imp = set(seed_imp)
+        for k in ldmp_props:
+            if k in ldmp_imp:
+                baseline_imp.add(k)
+            else:
+                baseline_imp.discard(k)
+
+        # Compute Project Customizations (Layer 5 effective)
+        project_custom_props = {}
+        project_custom_imp = set()
+        for k, v in project_props.items():
+            if k not in baseline_props:
+                project_custom_props[k] = v
+                if k in project_imp:
+                    project_custom_imp.add(k)
+            else:
+                val_differs = v != baseline_props[k]
+                imp_differs = (k in project_imp) != (k in baseline_imp)
+                if val_differs or imp_differs:
+                    project_custom_props[k] = v
+                    if k in project_imp:
+                        project_custom_imp.add(k)
+
+        # Build system/runtime injections (host_updates)
+        host_updates = {}
+        no_captcha = str(project_meta.get("no_captcha", "false")).lower() == "true"
+        host_updates["captcha.enforce.disabled"] = "true" if no_captcha else "false"
+        fast_login = str(project_meta.get("fast_login", "false")).lower() == "true"
+        if fast_login:
+            host_updates.update(
+                {
+                    "captcha.check.portal.create_account": "false",
+                    "captcha.check.portal.send_password": "false",  # pragma: allowlist secret
+                    "company.security.strangers.verify": "false",
+                    "enterprise.product.notification.enabled": "false",
+                    "live.users.enabled": "true",
+                    "passwords.default.policy.change.required": "false",
+                    "passwords.passwordpolicytoolkit.generator": "static",
+                    "passwords.passwordpolicytoolkit.static": "test",
+                    "setup.wizard.enabled": "false",
+                    "terms.of.use.required": "false",
+                    "users.last.name.required": "false",
+                    "users.reminder.queries.custom.question.enabled": "false",
+                    "users.reminder.queries.enabled": "false",
+                }
+            )
+
+        global_config = manager.config.get_global_config()
+        global_features = global_config.get("features", "")
+        project_features = project_meta.get("features", "")
+        all_features = set()
+        for f_list in [global_features, project_features]:
+            if f_list:
+                for f in f_list.split(","):
+                    if f.strip():
+                        all_features.add(f.strip())
+        for f in sorted(all_features):
+            if f.lower() in ["dev", "beta", "release"]:
+                host_updates[f"feature.flag.ui.visible[{f.lower()}]"] = "true"
+            else:
+                host_updates[f"feature.flag.{f}"] = "true"
+
+        admin_mappings = {
+            "admin_password": "default.admin.password",  # pragma: allowlist secret
+            "admin_screen_name": "default.admin.screen.name",
+            "admin_email_prefix": "default.admin.email.address.prefix",
+            "admin_first_name": "default.admin.first.name",
+            "admin_middle_name": "default.admin.middle.name",
+            "admin_last_name": "default.admin.last.name",
+        }
+        for config_key, portal_key in admin_mappings.items():
+            val = global_config.get(config_key)
+            if val is not None:
+                host_updates[portal_key] = val
+
+        # Merge all keys
+        all_keys = (
+            set(seed_props.keys())
+            | set(ldmp_props.keys())
+            | set(global_props.keys())
+            | set(local_props.keys())
+            | set(project_custom_props.keys())
+            | set(host_updates.keys())
+        )
+
+        result = []
+        for k in sorted(all_keys):
+            entries = []
+            if k in seed_props:
+                entries.append((1, "seed", seed_props[k], k in seed_imp))
+            if k in ldmp_props:
+                entries.append((2, "ldmp", ldmp_props[k], k in ldmp_imp))
+            if k in global_props:
+                entries.append((3, "global", global_props[k], k in global_imp))
+            if k in local_props:
+                entries.append((4, "local", local_props[k], k in local_imp))
+            if k in project_custom_props:
+                entries.append(
+                    (5, "project", project_custom_props[k], k in project_custom_imp)
+                )
+            if k in host_updates:
+                entries.append((6, "system", host_updates[k], False))
+
+            important_entries = [e for e in entries if e[3]]
+            if important_entries:
+                winner = max(important_entries, key=lambda x: x[0])
+            else:
+                winner = max(entries, key=lambda x: x[0])
+
+            result.append(
+                {
+                    "key": k,
+                    "value": winner[2],
+                    "important": winner[3],
+                    "source": winner[1],
+                    "history": {
+                        "seed": {
+                            "val": seed_props.get(k),
+                            "imp": k in seed_imp,
+                            "defined": k in seed_props,
+                        },
+                        "ldmp": {
+                            "val": ldmp_props.get(k),
+                            "imp": k in ldmp_imp,
+                            "defined": k in ldmp_props,
+                        },
+                        "global": {
+                            "val": global_props.get(k),
+                            "imp": k in global_imp,
+                            "defined": k in global_props,
+                        },
+                        "local": {
+                            "val": local_props.get(k),
+                            "imp": k in local_imp,
+                            "defined": k in local_props,
+                        },
+                        "project": {
+                            "val": project_custom_props.get(k),
+                            "imp": k in project_custom_imp,
+                            "defined": k in project_custom_props,
+                        },
+                        "system": {
+                            "val": host_updates.get(k),
+                            "imp": False,
+                            "defined": k in host_updates,
+                        },
+                    },
+                }
+            )
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route("/")
 def index():
     from ldm_core.constants import SCRIPT_DIR

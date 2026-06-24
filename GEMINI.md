@@ -61,15 +61,18 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
 - **Mandatory Alignment**: All development, testing, linting, and Git operations MUST be conducted within the project's Python virtual environment (`.venv`).
 - **Hook Isolation**: Git hooks and pre-commit checks rely on packages installed in the virtual environment. Running operations outside the virtual environment (e.g. using global system Python) will trigger hook failures.
 
-## 7. Reference Documentation
+### 7. Reference Documentation
 
 - [Architecture Guide](./docs/LDM_ARCHITECTURE.md)
 - [Troubleshooting](./docs/TROUBLESHOOTING.md)
 - [PaaS "Golden Path" Guide](./docs/guides/PAAS_LOCAL_DEV.md)
 - [Agent Rules of Engagement](./.gemini/gemini.md)
+- [Properties Override Hierarchy Guide](./docs/guides/PROPERTIES_HIERARCHY.md)
 
-## 8. Active Work State & Plan (June 23, 2026)
+## 8. Active Work State & Plan (June 24, 2026)
 
+- Released `v2.11.43` successfully (implemented sequential properties override hierarchy (5-Layers) with CSS-style `# !important` precedence, CLI command overrides, and web dashboard diagnostics).
+- Released `v2.11.42` successfully (resolved the GITHUB_ACTIONS env var root check in E2E tests).
 - Released `v2.11.34` successfully (integrated automatic stop in non-interactive/yes mode and `--leave-running` option for workspace imports).
 - Released `v2.11.33` successfully (integrated CWD home directory warning, `--stop-running` flag for import, and portable packaging documentation updates).
 - Released `v2.11.31` successfully (integrated quickstart templates overrides, automatically start sharing under `ldm import`, standalone `ldmp` package exports, and test suite/pre-commit fixes).
@@ -77,10 +80,29 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
 
 ### Plan
 
-1. **Fix `--tag-latest` / `--tag-prefix` Overrides**:
-   - [x] Modify tag resolution in `cmd_run` in `ldm_core/handlers/runtime.py` to bypass project metadata tag if `tag_latest` or `prefix` is specified.
-   - [x] Add unit test in `ldm_core/tests/test_runtime.py` verifying that `--tag-latest` properly overrides metadata-stored tags.
-   - [x] Run all unit tests to ensure they are green.
+1. **Sequential Property Overrides Hierarchy (5-Layers) with `!important` Precedence**:
+   - [x] Sourcing layers in order of lowest to highest precedence:
+     1. **Pre-warmed Seed** (built-in baseline `portal-ext.properties`)
+     2. **`.ldmp` package overrides** (stored in `[project]/.liferay-docker/ldmp-portal-ext.properties` on import/restore)
+     3. **Global Common properties** (`~/.ldm/common/portal-ext.properties`)
+     4. **Local Workspace Common properties** (`[workspace]/common/portal-ext.properties`)
+     5. **Project-level Customizations** (`[project]/files/portal-ext.properties`)
+   - [x] Support CSS-style `# !important` overrides:
+     - Properties marked with `# !important` or `!important` (preceding comment or inline comment) in any layer take priority over non-important properties.
+     - If multiple layers mark the same property as `!important`, the highest layer in the hierarchy wins.
+   - [x] Implement `.ldmp-portal-ext.properties` backup creation inside `[project]/.liferay-docker/` directory on `.ldmp` workspace import / snapshot restore.
+   - [x] Save a backup of the initial properties as `[project]/.liferay-docker/original-portal-ext.properties` during project creation/import to support revert capabilities.
+   - [x] Refactor `sync_common_assets` to read and merge properties dynamically from all active layers in precedence order with `!important` logic.
+   - [x] Add CLI commands/switches for property management:
+     - `--revert-properties`: Restore `files/portal-ext.properties` from `original-portal-ext.properties`.
+     - `--reset-properties`: Discard project-level manual edits and rebuild purely from current active layers (Seed + LDMP + Global Common + Local Common).
+     - `--rebuild-properties`: Reconstruct/sync the project's properties cleanly, preserving project customizations.
+     - `--dry-run-properties` / `--dry-run`: Show how properties will be built/merged without writing to disk.
+   - [x] Integrate a visual `Properties Inspector` in the Diagnostics Web Dashboard displaying:
+     - The current active properties and their values.
+     - The winning source layer name (color-coded).
+     - The override cascade history (every layer's value/importance).
+   - [x] Add unit tests verifying merging priority, `!important` overrides, and management switches.
 2. **Safe lfr-tunnel Path Check & User-Controlled Installation**:
    - [x] Support custom binary path resolution via `LDM_LFR_TUNNEL_BIN`/`LFR_TUNNEL_BIN` env vars, `lfr_tunnel_bin` config, system `PATH` check (`shutil.which`), and fallback to `~/.ldm/bin/lfr-tunnel`.
    - [x] Avoid automatic downloads. Require user instruction via CLI flag `--auto-install-lfr-tunnel` or interactive prompt.
