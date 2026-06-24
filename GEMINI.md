@@ -227,3 +227,9 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
     - [x] Update `cmd_reindex` in `ldm_core/handlers/runtime.py` to check container state.
     - [x] Implement telnet Gogo execution helper to trigger immediate reindex on running containers.
     - [x] Add unit tests verifying runtime immediate reindexing and fallback reboot options.
+
+30. **Simplify release.py script**:
+    - [x] Restrict release initiation to master branch.
+    - [x] Stage, commit, and tag directly on master.
+    - [x] Remove release branch creation and PR workflows.
+    - [ ] Commit script updates to a feature branch, raise PR, auto-merge.
