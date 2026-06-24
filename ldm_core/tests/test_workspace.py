@@ -710,8 +710,15 @@ class TestWorkspaceRemoteImport(unittest.TestCase):
         mock_open.return_value.__enter__.return_value = mock_file
 
         # Patch Path.exists to selectively say meta exists but project does not
+        original_exists = Path.exists
+
         def mock_exists(self_path):
-            return "my-project" not in str(self_path)
+            path_str = str(self_path)
+            if "my-project" in path_str:
+                return False
+            if ".ldm_temp" in path_str:
+                return True
+            return original_exists(self_path)
 
         with (
             patch("builtins.open", mock_open),
@@ -779,8 +786,15 @@ class TestWorkspaceRemoteImport(unittest.TestCase):
         mock_sub_run.return_value = mock_clone_res
 
         # Patch Path.exists to selectively say meta exists but project does not
+        original_exists = Path.exists
+
         def mock_exists(self_path):
-            return "my-project" not in str(self_path)
+            path_str = str(self_path)
+            if "my-project" in path_str:
+                return False
+            if ".ldm_temp" in path_str:
+                return True
+            return original_exists(self_path)
 
         with (
             patch.object(Path, "write_text"),
@@ -860,8 +874,15 @@ class TestWorkspaceRemoteImport(unittest.TestCase):
         mock_get.return_value = mock_release_resp
 
         # Patch Path.exists to selectively say meta exists but project does not
+        original_exists = Path.exists
+
         def mock_exists(self_path):
-            return "my-project" not in str(self_path)
+            path_str = str(self_path)
+            if "my-project" in path_str:
+                return False
+            if ".ldm_temp" in path_str:
+                return True
+            return original_exists(self_path)
 
         with (
             patch.object(Path, "write_text"),
