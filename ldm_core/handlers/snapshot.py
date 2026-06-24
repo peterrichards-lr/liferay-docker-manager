@@ -433,6 +433,7 @@ class SnapshotService(BaseHandler):
         root_path = self.manager.detect_project_path(project_id, for_init=True)
         if not root_path:
             return
+        project_id = root_path.name
         paths = self.manager.setup_paths(root_path)
         # For new projects (seeding), meta might not exist yet
         project_meta = self.manager.read_meta(paths["root"]) or {}
