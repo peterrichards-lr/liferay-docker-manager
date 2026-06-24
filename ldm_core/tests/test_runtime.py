@@ -198,6 +198,92 @@ class TestRuntime(unittest.TestCase):
             self.assertIn("--until", logs_call)
             self.assertIn("2024-01-02", logs_call)
 
+    @patch("subprocess.Popen")
+    def test_cmd_logs_filtering(self, mock_popen):
+        # We mock Popen's stdout stream with log lines
+        mock_process = MagicMock()
+        mock_process.poll.return_value = 0
+
+        log_lines = [
+            "Startup message (no level)",
+            "10:00:00.000 INFO  [main] portal starting...",
+            "10:00:01.000 WARN  [main] deprecated config",
+            "10:00:02.000 ERROR [main] Database connection failed",
+            "java.sql.SQLException: Connection refused",
+            "    at MyClass.run(MyClass.java:10)",
+        ]
+
+        # readline should yield log lines, then EOF ("")
+        mock_process.stdout.readline.side_effect = [*log_lines, ""]
+        mock_popen.return_value = mock_process
+
+        # Test simple grep matching "Database"
+        with patch("sys.stdout"), patch("builtins.print") as mock_print:
+            self.handler.handler._run_log_command(
+                ["docker", "logs", "container"], grep="Database"
+            )
+            # Verify only matched lines are printed
+            printed_calls = [c[0][0] for c in mock_print.call_args_list]
+            self.assertEqual(
+                printed_calls, ["10:00:02.000 ERROR [main] Database connection failed"]
+            )
+
+        # Test level matching (INFO and above)
+        mock_process.poll.return_value = 0
+        mock_process.stdout.readline.side_effect = [*log_lines, ""]
+        with patch("builtins.print") as mock_print:
+            self.handler.handler._run_log_command(
+                ["docker", "logs", "container"], level="INFO"
+            )
+            printed_calls = [c[0][0] for c in mock_print.call_args_list]
+            # Since level=INFO, it should filter out the startup message (no level),
+            # but allow INFO, WARN, ERROR, and all subsequent lines (stack traces) for ERROR.
+            self.assertEqual(
+                printed_calls,
+                [
+                    "10:00:00.000 INFO  [main] portal starting...",
+                    "10:00:01.000 WARN  [main] deprecated config",
+                    "10:00:02.000 ERROR [main] Database connection failed",
+                    "java.sql.SQLException: Connection refused",
+                    "    at MyClass.run(MyClass.java:10)",
+                ],
+            )
+
+        # Test level matching (ERROR and above)
+        mock_process.poll.return_value = 0
+        mock_process.stdout.readline.side_effect = [*log_lines, ""]
+        with patch("builtins.print") as mock_print:
+            self.handler.handler._run_log_command(
+                ["docker", "logs", "container"], level="ERROR"
+            )
+            printed_calls = [c[0][0] for c in mock_print.call_args_list]
+            # Should filter out startup, INFO, WARN, and keep ERROR + stack trace.
+            self.assertEqual(
+                printed_calls,
+                [
+                    "10:00:02.000 ERROR [main] Database connection failed",
+                    "java.sql.SQLException: Connection refused",
+                    "    at MyClass.run(MyClass.java:10)",
+                ],
+            )
+
+        # Test inverted grep matching (v)
+        mock_process.poll.return_value = 0
+        mock_process.stdout.readline.side_effect = [*log_lines, ""]
+        with patch("builtins.print") as mock_print:
+            self.handler.handler._run_log_command(
+                ["docker", "logs", "container"], grep="main", grep_v=True
+            )
+            printed_calls = [c[0][0] for c in mock_print.call_args_list]
+            self.assertEqual(
+                printed_calls,
+                [
+                    "Startup message (no level)",
+                    "java.sql.SQLException: Connection refused",
+                    "    at MyClass.run(MyClass.java:10)",
+                ],
+            )
+
     @patch("ldm_core.handlers.base.BaseHandler.detect_project_path")
     def test_cmd_logs_service_aware(self, mock_detect):
         with tempfile.TemporaryDirectory() as tmp_dir:

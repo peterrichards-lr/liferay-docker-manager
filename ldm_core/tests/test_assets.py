@@ -84,6 +84,28 @@ class TestAssetService(unittest.TestCase):
                 res = self.assets._fetch_seed("7.4", "mysql", "local", paths)
                 self.assertTrue(res)
 
+    @patch("ldm_core.ui.UI.ask")
+    @patch("ldm_core.utils.discover_latest_tag")
+    def test_prompt_for_tag(self, mock_discover, mock_ask):
+        # Case 1: user accepts the default resolved tag
+        mock_discover.return_value = "2026.q1.4-lts"
+        mock_ask.return_value = "2026.q1.4-lts"
+        tag = self.assets.prompt_for_tag()
+        self.assertEqual(tag, "2026.q1.4-lts")
+
+        # Case 2: user types a specific release type like 'u'
+        mock_ask.return_value = "u"
+        mock_discover.side_effect = ["2026.q1.4-lts", "2026.q2.1-u"]
+        tag = self.assets.prompt_for_tag()
+        self.assertEqual(tag, "2026.q2.1-u")
+
+        # Case 3: user typed a manual tag
+        mock_discover.side_effect = None
+        mock_discover.return_value = "2026.q1.4-lts"
+        mock_ask.return_value = "7.4.13-dxp-4"
+        tag = self.assets.prompt_for_tag()
+        self.assertEqual(tag, "7.4.13-dxp-4")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -452,3 +452,27 @@ class TestSnapshotService(unittest.TestCase):
         self.assertEqual(
             sha_file.read_text().strip(), f"dummy-sha-value  {proj_name}.ldmp"
         )
+
+    @patch("subprocess.run")
+    @patch("platform.system", return_value="Darwin")
+    def test_execute_orchestrated_db_restore_space_in_container_name(
+        self, mock_system, mock_sub_run
+    ):
+        mock_res = MagicMock()
+        mock_res.returncode = 0
+        mock_sub_run.return_value = mock_res
+
+        self.manager.snapshot._execute_orchestrated_db_restore(
+            "zukunft digital-db",
+            "postgresql",
+            "sql-file",
+            {},
+            {"host_name": "my-local-host"},
+        )
+
+        import_call = next(
+            c
+            for c in mock_sub_run.call_args_list
+            if isinstance(c.args[0], str) and "ON_ERROR_STOP=1" in c.args[0]
+        )
+        self.assertIn('docker exec -i "zukunft digital-db" psql', import_call.args[0])

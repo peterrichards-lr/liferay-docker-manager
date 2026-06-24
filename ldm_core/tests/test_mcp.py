@@ -96,3 +96,56 @@ def test_get_config_not_found(mock_manager):
     res = get_config("non-existent")
     data = json.loads(res)
     assert "error" in data
+
+
+@patch("ldm_core.handlers.mcp.run_command")
+def test_get_logs_filtering(mock_run_command, mock_manager):
+    log_output = (
+        "Startup log\n"
+        "10:00:00 INFO  [main] portal starting\n"
+        "10:00:01 WARN  [main] configuration warning\n"
+        "10:00:02 ERROR [main] database failed\n"
+        "java.sql.SQLException\n"
+        "    at MyClass.run"
+    )
+    mock_run_command.return_value = log_output
+
+    # Test grep
+    res = get_logs("liferay-project1", 200, grep="database")
+    assert "database failed" in res
+    assert "portal starting" not in res
+
+    # Test level ERROR
+    res = get_logs("liferay-project1", 200, level="ERROR")
+    # Should keep ERROR log and subsequent traceback lines
+    assert "database failed" in res
+    assert "java.sql.SQLException" in res
+    assert "portal starting" not in res
+    assert "configuration warning" not in res
+    assert "Startup log" not in res
+
+
+def test_start_project(mock_manager):
+    from ldm_core.handlers.mcp import start_project
+
+    res = start_project("liferay-project1")
+    assert "Success" in res
+    mock_manager.runtime.cmd_run.assert_called_with(project_id="project1")
+
+
+def test_stop_project(mock_manager):
+    from ldm_core.handlers.mcp import stop_project
+
+    res = stop_project("liferay-project1")
+    assert "Success" in res
+    mock_manager.runtime.cmd_stop.assert_called_with(project_id="project1")
+
+
+def test_restart_project(mock_manager):
+    from ldm_core.handlers.mcp import restart_project
+
+    res = restart_project("liferay-project1", service="liferay")
+    assert "Success" in res
+    mock_manager.runtime.cmd_restart.assert_called_with(
+        project_id="project1", service="liferay"
+    )

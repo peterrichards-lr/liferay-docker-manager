@@ -126,6 +126,113 @@ The Liferay Tunnel (`lfr-tunnel` or `lfr-tunnel-docker`) requires a Client Token
 3. **LDM Global Config**: Stored in `~/.ldmrc` under the `lfr_tunnel_token` key.
 4. **Interactive Prompt**: If no token is found, LDM will prompt you to enter it interactively and save it to your `~/.ldmrc` global config for future commands.
 
+### Securing the Liferay Tunnel Personal Access Token (PAT)
+
+Because `LFT_CLIENT_TOKEN` grants access to tunnel your local environments, it should be stored securely on your machine.
+
+#### Option 1: The Restricted Secrets File (Recommended)
+
+This approach stores the token in a startup configuration file but restricts its POSIX/Windows ACL permissions so other users or unauthorized local processes cannot read it.
+
+##### On Linux / macOS (Zsh & Bash)
+
+1. **Create the restricted directory and file:**
+
+   ```bash
+   mkdir -p ~/.config/lfr
+   touch ~/.config/lfr/secrets
+   chmod 600 ~/.config/lfr/secrets
+   ```
+
+   *(The `chmod 600` command ensures only the owner can read or write to this file).*
+
+2. **Add the token variable to the file:**
+
+   ```bash
+   echo 'export LFT_CLIENT_TOKEN="your_actual_token_here"' >> ~/.config/lfr/secrets
+   ```
+
+3. **Source it on shell startup:**
+
+   Add this to the bottom of your `~/.zshrc` or `~/.bashrc`:
+
+   ```bash
+   [ -f ~/.config/lfr/secrets ] && source ~/.config/lfr/secrets
+   ```
+
+##### On Windows (PowerShell)
+
+1. **Create the secret file and restrict its ACLs:**
+
+   Run these commands in PowerShell to create the file and strip away all permissions except for your explicit user account:
+
+   ```powershell
+   # Create the directory and file
+   New-Item -ItemType Directory -Path "$HOME\.config\lfr" -Force
+   $SecretFile = New-Item -ItemType File -Path "$HOME\.config\lfr\secrets.ps1" -Force
+
+   # Restrict permissions so ONLY you can access it
+   $Acl = Get-Acl $SecretFile.FullName
+   $Acl.SetAccessRuleProtection($true, $false) # Break inheritance
+   $User = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
+   $Rule = New-Object System.Security.AccessControl.FileSystemAccessRule($User, "FullControl", "Allow")
+   $Acl.AddAccessRule($Rule)
+   Set-Acl $SecretFile.FullName $Acl
+   ```
+
+2. **Add the token to the file:**
+
+   ```powershell
+   Set-Content -Path "$HOME\.config\lfr\secrets.ps1" -Value '$env:LFT_CLIENT_TOKEN="your_actual_token_here"'
+   ```
+
+3. **Load the secret automatically on startup:**
+
+   Open your PowerShell profile (create it if missing via `New-Item -Type File -Path $PROFILE -Force`):
+
+   ```powershell
+   notepad $PROFILE
+   ```
+
+   Add this line to it:
+
+   ```powershell
+   if (Test-Path "$HOME\.config\lfr\secrets.ps1") { . "$HOME\.config\lfr\secrets.ps1" }
+   ```
+
+#### Option 2: The OS Credential Manager Route (Alternative)
+
+This approach stores the token in the OS native credential store (encrypted at rest).
+
+##### On Linux (Secret Service API / GNOME Keyring)
+
+1. **Store the token:**
+
+   ```bash
+   secret-tool store --label="LFT Token" lfr tunnel_token
+   # You will be securely prompted to enter the token
+   ```
+
+2. **Retrieve it automatically on shell startup:**
+
+   Add this to your `~/.bashrc` or `~/.zshrc`:
+
+   ```bash
+   export LFT_CLIENT_TOKEN=$(secret-tool lookup lfr tunnel_token)
+   ```
+
+##### On Windows (Credential Manager)
+
+1. **Store the token:**
+
+   ```powershell
+   cmdkey /generic:"LFT_CLIENT_TOKEN" /user:"$env:USERNAME" /pass:"your_actual_token_here"
+   ```
+
+2. **Retrieve it in your `$PROFILE`:**
+
+   Since retrieving generic credentials in plain text via PowerShell can be verbose, the **Restricted Secrets File** approach (Option 1) is generally recommended for Windows CLI environments.
+
 ---
 
 ## Authentication for Ngrok
