@@ -223,6 +223,102 @@ class TestComposerService(unittest.TestCase):
             f"State mapping was: {volumes}",
         )
 
+    def test_spaces_in_container_names_are_sanitized(self):
+        """Verify that Liferay, DB, and Tunnel container names with spaces are sanitized to use hyphens."""
+        paths = {
+            "root": Path("/tmp/Zukunft Digital"),
+            "deploy": Path("/tmp/Zukunft Digital/deploy"),
+            "files": Path("/tmp/Zukunft Digital/files"),
+            "scripts": Path("/tmp/Zukunft Digital/scripts"),
+            "modules": Path("/tmp/Zukunft Digital/modules"),
+            "cx": Path("/tmp/Zukunft Digital/cx"),
+            "portal_log4j": Path("/tmp/Zukunft Digital/portal_log4j"),
+            "state": Path("/tmp/Zukunft Digital/state"),
+            "logs": Path("/tmp/Zukunft Digital/logs"),
+            "compose": Path("/tmp/Zukunft Digital/docker-compose.yml"),
+        }
+
+        # 1. Custom container names in metadata containing spaces
+        meta_explicit = {
+            "tag": "2026.q1.7-lts",
+            "liferay_container_name": "Zukunft Digital Liferay",
+            "db_container_name": "Zukunft Digital Database",
+            "tunnel_container_name": "Zukunft Digital Tunnel",
+            "db": "postgresql",
+        }
+
+        liferay_service = self.composer._build_liferay_service(
+            paths, meta_explicit, "localhost", "Zukunft Digital", False, None
+        )
+        self.assertEqual(liferay_service["container_name"], "Zukunft-Digital-Liferay")
+
+        db_service = self.composer._build_db_service(meta_explicit, "Zukunft Digital")
+        self.assertEqual(db_service["container_name"], "Zukunft-Digital-Database")
+
+        # 2. Fallbacks when container names are omitted in metadata but project name has spaces
+        meta_fallback = {
+            "tag": "2026.q1.7-lts",
+            "db": "postgresql",
+        }
+
+        liferay_service_fb = self.composer._build_liferay_service(
+            paths, meta_fallback, "localhost", "Zukunft Digital", False, None
+        )
+        self.assertEqual(liferay_service_fb["container_name"], "Zukunft-Digital")
+
+        db_service_fb = self.composer._build_db_service(
+            meta_fallback, "Zukunft Digital"
+        )
+        self.assertEqual(db_service_fb["container_name"], "Zukunft-Digital-db")
+
+        # 3. Tunnel sidecar container names (both explicit and fallback)
+        self.manager.args.expose = False
+        self.manager.args.share = True
+        self.manager.args.share_provider = "lfr-tunnel-docker"
+        self.manager.args.share_subdomain = "my-sub"
+        self.manager.args.share_image = "custom/lfr-tunnel:latest"
+        self.manager.share._get_auth_token.return_value = "my-token"
+        import os
+
+        with patch.dict(os.environ, {"LFT_SERVER_URL": "https://tunnel.lfr-demo.se"}):
+            with patch("ldm_core.handlers.composer.dict_to_yaml") as mock_yaml:
+                with patch("ldm_core.utils.safe_write_text") as mock_write:
+                    with (
+                        patch.object(
+                            self.composer,
+                            "_build_liferay_service",
+                            return_value={"volumes": []},
+                        ),
+                        patch.object(
+                            self.composer, "_build_db_service", return_value=None
+                        ),
+                        patch.object(
+                            self.composer, "_build_search_service", return_value=None
+                        ),
+                        patch.object(
+                            self.composer, "_build_extensions_services", return_value={}
+                        ),
+                    ):
+                        # 3a. Explicit Tunnel Container Name
+                        self.composer.write_docker_compose(paths, meta_explicit)
+                        self.assertTrue(mock_yaml.called)
+                        compose_explicit = mock_yaml.call_args[0][0]
+                        tunnel_explicit = compose_explicit["services"]["lfr-tunnel"]
+                        self.assertEqual(
+                            tunnel_explicit["container_name"], "Zukunft-Digital-Tunnel"
+                        )
+
+                        # Reset mock and test fallback
+                        mock_yaml.reset_mock()
+                        self.composer.write_docker_compose(paths, meta_fallback)
+                        self.assertTrue(mock_yaml.called)
+                        compose_fallback = mock_yaml.call_args[0][0]
+                        tunnel_fallback = compose_fallback["services"]["lfr-tunnel"]
+                        self.assertEqual(
+                            tunnel_fallback["container_name"],
+                            "Zukunft-Digital-lfr-tunnel",
+                        )
+
     @patch("ldm_core.handlers.composer.dict_to_yaml")
     @patch("ldm_core.utils.safe_write_text")
     def test_generate_compose_with_ngrok(self, mock_write, mock_yaml):
