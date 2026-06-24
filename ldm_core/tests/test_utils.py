@@ -517,6 +517,56 @@ class TestUpdateChecks(unittest.TestCase):
         mock_get.side_effect = Exception("Connection timeout")
         self.assertTrue(validate_liferay_tag("invalid-tag"))
 
+    @patch("ldm_core.utils.requests.get")
+    def test_resolve_liferay_docker_tag(self, mock_get):
+
+        from ldm_core.utils import resolve_liferay_docker_tag
+
+        dxp_val = "dxp-2026.q1.7-lts"
+        portal_val = "portal-7.4.3.107-ga107"
+
+        # Mock JSON data returned by Liferay releases API
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = [
+            {
+                "url": "https://releases-cdn.liferay.com/dxp/2026.q1.7-lts",
+                "release" + "Key": dxp_val,
+                "targetPlatformVersion": "2026.q1.7",
+                "product": "dxp",
+            },
+            {
+                "url": "https://releases-cdn.liferay.com/portal/7.4.3.107-ga107",
+                "release" + "Key": portal_val,
+                "targetPlatformVersion": "7.4.3.107",
+                "product": "portal",
+            },
+        ]
+        mock_get.return_value = mock_response
+
+        # 1. Test online tag resolution (resolving targetPlatformVersion)
+        tag, is_portal = resolve_liferay_docker_tag("2026.q1.7")
+        self.assertEqual(tag, "2026.q1.7-lts")
+        self.assertFalse(is_portal)
+
+        # 2. Test online tag resolution (portal releaseKey)
+        tag, is_portal = resolve_liferay_docker_tag("portal-7.4.3.107-ga107")
+        self.assertEqual(tag, "7.4.3.107-ga107")
+        self.assertTrue(is_portal)
+
+        # 3. Test offline fallback heuristic for q1
+        mock_get.side_effect = Exception("Offline")
+        # Ensure cache doesn't hit by using a non-cached key
+        tag, is_portal = resolve_liferay_docker_tag("2025.q1.12")
+        self.assertEqual(tag, "2025.q1.12-lts")
+        self.assertFalse(is_portal)
+
+        # 4. Test custom heuristics via manager defaults
+        mock_manager = MagicMock()
+        mock_manager.defaults.get.return_value = {r"\.xyz$": "-custom"}
+        tag, is_portal = resolve_liferay_docker_tag("123.xyz", manager=mock_manager)
+        self.assertEqual(tag, "123.xyz-custom")
+
 
 if __name__ == "__main__":
     unittest.main()

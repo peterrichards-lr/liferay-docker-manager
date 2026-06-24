@@ -1507,9 +1507,17 @@ class WorkspaceService(BaseHandler):
             if gradle_props.exists():
                 for line in gradle_props.read_text().splitlines():
                     if "liferay.workspace.product" in line and "=" in line:
-                        tag = re.sub(
-                            r"^(dxp|portal)-", "", line.split("=", 1)[1].strip()
+                        raw_product = line.split("=", 1)[1].strip()
+                        from ldm_core.utils import resolve_liferay_docker_tag
+
+                        resolved_tag, is_portal = resolve_liferay_docker_tag(
+                            raw_product, self.manager
                         )
+                        if resolved_tag:
+                            tag = resolved_tag
+                            project_meta["portal"] = "true" if is_portal else "false"
+                        else:
+                            tag = re.sub(r"^(dxp|portal)-", "", raw_product)
                         # Workspace product always wins
                         project_meta["tag"] = tag
                         self.manager.args.tag = tag

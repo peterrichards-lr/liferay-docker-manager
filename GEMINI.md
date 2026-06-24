@@ -214,3 +214,9 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
     - [x] Implement remote checking for `.ldmp` package in GitHub Releases when importing from remote Git URL.
     - [x] Bypass cloning and pre-seeding when `.ldmp` is found, directly downloading and restoring it.
     - [x] Fix failing unit tests in `test_workspace.py` (releases API mock setup and missing release fallback validation).
+
+28. **Resolve Workspace/CLI Liferay version tags using official releases.json mapping**:
+    - [x] Implement `resolve_liferay_docker_tag` in `ldm_core/utils.py` to match partial/product versions (e.g. `2026.q1.7` or `dxp-2026.q1.7`) against `releases.json` and return the correct Docker image tag (e.g. `2026.q1.7-lts`).
+    - [x] Update `workspace_root` Liferay Workspace version resolution in `ldm_core/handlers/workspace.py` to use `resolve_liferay_docker_tag`.
+    - [x] Update CLI/meta version parsing in `ldm_core/handlers/runtime.py` to also resolve user-supplied or meta-defined tags to their official Docker tags.
+    - [x] Add unit tests verifying the version resolution and caching logic.
