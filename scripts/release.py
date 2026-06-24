@@ -37,7 +37,7 @@ def main():
 
     # 2. Check for uncommitted/untracked files
     status_res = run_cmd(["git", "status", "--porcelain"], capture=True)
-    status_lines = status_res.stdout.strip().splitlines()
+    status_lines = status_res.stdout.splitlines()
 
     allowed_patterns = [
         re.compile(r"^.*\.md$", re.IGNORECASE),
@@ -186,7 +186,7 @@ def main():
 
     # Also stage any other modified/untracked .md files
     status_res2 = run_cmd(["git", "status", "--porcelain"], capture=True)
-    for line in status_res2.stdout.strip().splitlines():
+    for line in status_res2.stdout.splitlines():
         if not line.strip():
             continue
         path_part = line[3:].strip().strip('"')

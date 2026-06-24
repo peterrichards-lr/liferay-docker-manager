@@ -178,6 +178,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added runtime state-awareness checks to commands (run, import) to prevent unexpected container collisions.
 - Enabled non-interactive bypass for internal developer utility prompts.
 
+## [v2.11.52] - 2026-06-24
+
+### Added
+
+- Added support for immediate search reindexing on running containers via OSGi Gogo telnet command.
+
 ## [v2.11.51] - 2026-06-24
 
 ### Added
