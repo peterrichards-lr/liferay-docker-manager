@@ -71,6 +71,8 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
 
 ## 8. Active Work State & Plan (June 25, 2026)
 
+- Implemented Config Integrity & Validation (Pre-Flight Properties Analyzer) for Issue #127 (statically checks unclosed quotes, malformed JDBC URLs, conflicting database configs, and missing mount paths during properties rebuilding).
+
 - **Interactive Configuration Management (Web Dashboard & TUI) for Issue #126**:
   - [x] Implement backend REST API endpoints for property edits and deletions in `ldm_core/dashboard/server.py`.
   - [x] Update frontend Properties Inspector drawer in `ldm_core/resources/dashboard/index.html` to support inline editing and additions.
@@ -83,6 +85,17 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
   - [x] Remove duplicate quickstart execution in test suite.
   - [x] Run test suite and pre-commit checks to confirm everything is clean.
   - [x] Commit, push, and create PR for `bugfix/160-empty-ldmp-import-fallback` (PR #161, squash-merged).
+
+- Released `v2.11.53` successfully (restored release PR workflow and resolved hypersonic workspace database restore bypass).
+- Released `v2.11.52` successfully (immediate search reindexing on running containers via OSGi Gogo telnet command).
+- Released `v2.11.46` successfully (upgraded Gitleaks hook to `v8.30.1` to resolve the Go 1.24 WASM panic in CI runners, and canceled hung jobs).
+- Released `v2.11.45` failed during the CI/CD pipeline due to Gitleaks pre-commit hook panic under Go 1.24 (wasm invalid table access).
+- Released `v2.11.43` successfully (implemented sequential properties override hierarchy (5-Layers) with CSS-style `# !important` precedence, CLI command overrides, and web dashboard diagnostics).
+- Released `v2.11.42` successfully (resolved the GITHUB_ACTIONS env var root check in E2E tests).
+- Released `v2.11.34` successfully (integrated automatic stop in non-interactive/yes mode and `--leave-running` option for workspace imports).
+- Released `v2.11.33` successfully (integrated CWD home directory warning, `--stop-running` flag for import, and portable packaging documentation updates).
+- Released `v2.11.31` successfully (integrated quickstart templates overrides, automatically start sharing under `ldm import`, standalone `ldmp` package exports, and test suite/pre-commit fixes).
+- Released `v2.11.30` successfully (integrated Visual Diagnostics Web Dashboard (P3), Dynamic JVM Self-Tuning (P2), and solved GITHUB_ACTIONS env var mock test coverage mismatch).
 
 ### Plan
 
