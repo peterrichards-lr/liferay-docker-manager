@@ -71,6 +71,7 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
 
 ## 8. Active Work State & Plan (June 25, 2026)
 
+- Released `v2.11.53` successfully (restored release PR workflow and resolved hypersonic workspace database restore bypass).
 - Released `v2.11.52` successfully (immediate search reindexing on running containers via OSGi Gogo telnet command).
 - Released `v2.11.46` successfully (upgraded Gitleaks hook to `v8.30.1` to resolve the Go 1.24 WASM panic in CI runners, and canceled hung jobs).
 - Released `v2.11.45` failed during the CI/CD pipeline due to Gitleaks pre-commit hook panic under Go 1.24 (wasm invalid table access).
@@ -83,11 +84,15 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
 
 ### Plan
 
-- **Fix database restore skip on workspace import of `.ldmp` package**:
-  - Update `ldm_core/handlers/workspace.py` to write/save the imported project's `meta.json` file *before* executing `cmd_restore`.
-  - Ensure both the remote import and the local file import paths are updated.
-  - Run the unit tests to verify correctness.
-  - Run all pre-commit formatting and lint checks.
+- [x] **Fix database restore skip on workspace import of `.ldmp` package**:
+  - [x] Update `ldm_core/handlers/workspace.py` to write/save the imported project's `meta.json` file *before* executing `cmd_restore`.
+  - [x] Ensure both the remote import and the local file import paths are updated.
+  - [x] Run the unit tests to verify correctness.
+  - [x] Run all pre-commit formatting and lint checks.
+
+- [x] **Restore PR workflow in scripts/release.py to bypass master branch protection**:
+  - [x] Update `scripts/release.py` to create a `release/v<version>` branch, commit, push, open a PR via `gh CLI`, enable auto-merge, poll for merge success, checkout `master` locally, pull, tag, and push the tag.
+  - [x] Ensure release initiation is still restricted to the `master` branch.
 
 1. **Sequential Property Overrides Hierarchy (5-Layers) with `!important` Precedence**:
    - [x] Sourcing layers in order of lowest to highest precedence:
