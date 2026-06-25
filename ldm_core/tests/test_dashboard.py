@@ -308,3 +308,59 @@ class TestDashboard(unittest.TestCase):
             self.manager.config.cmd_rebuild_properties.assert_called_once_with(
                 "my-project1"
             )
+
+    @patch("ldm_core.dashboard.server._find_project_path")
+    def test_api_project_properties_error(self, mock_find_path):
+        mock_find_path.return_value = Path("/dummy/project1")
+        self.manager.setup_paths.side_effect = Exception(
+            "Sensitive filesystem path error: /opt/liferay/data"
+        )
+
+        response = self.client.get("/api/projects/my-project1/properties")
+        self.assertEqual(response.status_code, 500)
+        json_data = response.get_json()
+        self.assertEqual(json_data["error"], "Failed to retrieve properties: Exception")
+
+    @patch("ldm_core.dashboard.server._find_project_path")
+    def test_api_update_project_property_error(self, mock_find_path):
+        mock_find_path.return_value = Path("/dummy/project1")
+        self.manager.setup_paths.return_value = {
+            "files": Path("/dummy/project1/files"),
+            "root": Path("/dummy/project1"),
+            "common_dirs": [],
+        }
+        self.manager.config.update_portal_ext.side_effect = Exception(
+            "Sensitive update error"
+        )
+
+        payload = {
+            "key": "portal.security.manager.enabled",
+            "value": "true",
+            "important": True,
+        }
+        with patch("pathlib.Path.exists", return_value=True):
+            response = self.client.put(
+                "/api/projects/my-project1/properties", json=payload
+            )
+            self.assertEqual(response.status_code, 500)
+            json_data = response.get_json()
+            self.assertEqual(json_data["error"], "Failed to update property: Exception")
+
+    @patch("ldm_core.dashboard.server._find_project_path")
+    def test_api_delete_project_property_error(self, mock_find_path):
+        mock_find_path.return_value = Path("/dummy/project1")
+        self.manager.setup_paths.return_value = {
+            "files": Path("/dummy/project1/files"),
+            "root": Path("/dummy/project1"),
+            "common_dirs": [],
+        }
+        self.manager.config.remove_portal_ext.side_effect = Exception(
+            "Sensitive delete error"
+        )
+
+        response = self.client.delete(
+            "/api/projects/my-project1/properties/portal.security.manager.enabled"
+        )
+        self.assertEqual(response.status_code, 500)
+        json_data = response.get_json()
+        self.assertEqual(json_data["error"], "Failed to delete property: Exception")

@@ -306,11 +306,10 @@ def api_project_properties(project_name):
     if not path:
         return jsonify({"error": "Project not found"}), 404
 
-    manager = app.config["MANAGER"]
-    paths = manager.setup_paths(path)
-    project_meta = manager.read_meta(path) or {}
-
     try:
+        manager = app.config["MANAGER"]
+        paths = manager.setup_paths(path)
+        project_meta = manager.read_meta(path) or {}
         # Load layers
         seed_ext = (
             Path(manager.__file__).parent
@@ -509,7 +508,12 @@ def api_project_properties(project_name):
             )
         return jsonify(result)
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        import traceback
+
+        traceback.print_exc()
+        return jsonify(
+            {"error": f"Failed to retrieve properties: {e.__class__.__name__}"}
+        ), 500
 
 
 @app.route("/api/projects/<project_name>/properties", methods=["PUT"])
@@ -536,10 +540,9 @@ def api_update_project_property(project_name):
     if value is None:
         return jsonify({"error": "Property value is required"}), 400
 
-    manager = app.config["MANAGER"]
-    paths = manager.setup_paths(path)
-
     try:
+        manager = app.config["MANAGER"]
+        paths = manager.setup_paths(path)
         # Update the properties file
         updates = {key: str(value)}
         important_keys = {key} if important else None
@@ -556,7 +559,12 @@ def api_update_project_property(project_name):
         # Return updated properties list
         return api_project_properties(project_name)
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        import traceback
+
+        traceback.print_exc()
+        return jsonify(
+            {"error": f"Failed to update property: {e.__class__.__name__}"}
+        ), 500
 
 
 @app.route("/api/projects/<project_name>/properties/<key>", methods=["DELETE"])
@@ -573,10 +581,9 @@ def api_delete_project_property(project_name, key):
     if not key or not re.match(r"^[a-zA-Z0-9_.-]+$", key):
         return jsonify({"error": "Invalid property key format"}), 400
 
-    manager = app.config["MANAGER"]
-    paths = manager.setup_paths(path)
-
     try:
+        manager = app.config["MANAGER"]
+        paths = manager.setup_paths(path)
         # Surgically remove property override from files/portal-ext.properties
         manager.config.remove_portal_ext(paths, {key})
 
@@ -586,7 +593,12 @@ def api_delete_project_property(project_name, key):
         # Return updated properties list
         return api_project_properties(project_name)
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        import traceback
+
+        traceback.print_exc()
+        return jsonify(
+            {"error": f"Failed to delete property: {e.__class__.__name__}"}
+        ), 500
 
 
 @app.route("/")
