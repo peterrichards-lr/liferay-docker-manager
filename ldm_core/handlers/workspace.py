@@ -863,7 +863,17 @@ class WorkspaceService(BaseHandler):
                                 elif name.endswith(".ldmp.sha256"):
                                     sha_asset = asset
                             if ldmp_asset and sha_asset:
-                                has_ldmp = True
+                                # Safety Check: If the remote package is empty/vanilla (e.g. created by headless CI),
+                                # its size will be extremely small (typically <10KB). In this case, do not use it
+                                # and fall back to standard cloning to ensure the user gets the workspace code.
+                                asset_size = ldmp_asset.get("size", 0)
+                                if asset_size > 10240:
+                                    has_ldmp = True
+                                else:
+                                    UI.warning(
+                                        f"Remote LDM package '{ldmp_asset.get('name')}' is too small ({asset_size} bytes) "
+                                        "and appears to be empty/vanilla. Falling back to standard clone and build."
+                                    )
                     except Exception as e:
                         UI.debug(f"GitHub Release API query failed: {e}")
 
