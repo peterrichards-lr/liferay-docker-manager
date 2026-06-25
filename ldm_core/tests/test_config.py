@@ -690,6 +690,53 @@ class TestConfigService(unittest.TestCase):
             self.config.cmd_revert_properties("project")
             self.assertEqual(target_pe.read_text().strip(), "my.prop=original")
 
+    @patch("builtins.input")
+    def test_cmd_edit_tui(self, mock_input):
+        import tempfile
+        from pathlib import Path
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            files_dir = tmp_path / "files"
+            files_dir.mkdir(parents=True)
+
+            paths = {
+                "root": tmp_path,
+                "configs": tmp_path / "osgi" / "configs",
+                "files": files_dir,
+                "common_dirs": [],
+                "deploy": tmp_path / "deploy",
+            }
+
+            self.manager.detect_project_path = MagicMock(return_value=tmp_path)  # type: ignore[method-assign]
+            self.manager.setup_paths = MagicMock(return_value=paths)  # type: ignore[method-assign]
+            self.manager.read_meta = MagicMock(return_value={})  # type: ignore[method-assign]
+
+            # Setup input sequence
+            mock_input.side_effect = [
+                "a",
+                "prop.one",
+                "val.one",
+                "y",
+                "e",
+                "1",
+                "val.one.edited",
+                "n",
+                "t",
+                "1",
+                "d",
+                "1",
+                "y",
+                "q",
+            ]
+
+            # Invoke cmd_edit in TUI mode
+            self.config.cmd_edit("project", target="properties", tui=True)
+
+            target_pe = files_dir / "portal-ext.properties"
+            self.assertTrue(target_pe.exists())
+            self.assertEqual(target_pe.read_text().strip(), "")
+
 
 if __name__ == "__main__":
     unittest.main()  # type: ignore[misc]
