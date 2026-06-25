@@ -248,3 +248,9 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
 31. **Fix CodeQL stack trace exposure vulnerabilities (py/stack-trace-exposure)**:
     - [x] Catch Exception in dashboard API endpoints (`api_project_properties`, `api_update_project_property`, `api_delete_project_property`) and log them on the server while returning sanitized/safe messages to the client.
     - [x] Add corresponding unit tests in `ldm_core/tests/test_dashboard.py` to verify that these endpoints correctly return sanitized/safe error messages on failure.
+
+32. **Implement ldm config ssl-mode command (Issue #165)**:
+    - [x] Add CLI parser logic in `cli.py` for `ldm config ssl-mode [hosts|share]`.
+    - [x] Implement `cmd_ssl_mode` in `config.py` supporting swapping properties and syncing client extension `.env` files.
+    - [x] Add unit tests in `test_config.py` verifying correct functionality.
+    - [x] Add documentation for `ssl-mode` in `docs/guides/SHARING_AND_TUNNELS.md`.

@@ -1696,3 +1696,126 @@ class ConfigService:
         UI.detail("  - Snapshot Restore / Import (saves 5 minutes)")
         UI.detail("  - Local Tunnel sharing (saves 3 minutes)")
         UI.raw("")
+
+    def cmd_ssl_mode(self, mode, project_id=None, subdomain=None, domain=None):
+        """Switch project network routing between hosts-based SSL and share tunnel."""
+        from ldm_core.ui import UI
+
+        root_path = self.manager.detect_project_path(project_id)
+        if not root_path:
+            return
+
+        project_name = root_path.name
+        paths = self.manager.setup_paths(root_path)
+        project_meta = self.manager.read_meta(root_path) or {}
+
+        # 1. Determine running state
+        is_running = False
+        container_name = (
+            project_meta.get("liferay_container_name")
+            or project_meta.get("container_name")
+            or project_name
+        )
+        try:
+            import subprocess
+
+            inspect_res = subprocess.run(
+                ["docker", "inspect", "-f", "{{.State.Running}}", container_name],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            is_running = inspect_res.stdout.strip() == "true"
+        except Exception:
+            is_running = False
+
+        UI.heading(f"Switching SSL Mode to '{mode}' for project: {project_name}")
+
+        # If running, stop (unless --no-restart is passed)
+        no_restart = getattr(self.manager.args, "no_restart", False)
+        if is_running and not no_restart:
+            UI.warning(
+                f"Stopping running project container stack '{project_name}' (downtime initiated)..."
+            )
+            self.manager.cmd_stop(project_id=project_name)
+
+        if mode == "hosts":
+            # Switch to local hosts-based SSL
+            project_meta["ssl"] = "true"
+            # Keep existing host_name if it is not localhost/empty, otherwise default
+            existing_host = project_meta.get("host_name", "localhost")
+            if existing_host == "localhost":
+                project_meta["host_name"] = f"{project_name}.local"
+
+            self.manager.write_meta(root_path, project_meta)
+
+            # Synchronize environment files (.env)
+            target_url = f"https://{project_meta['host_name']}"
+            self._sync_env_files(root_path, target_url)
+            UI.info(
+                "Tip: You can run 'ldm system fix-hosts' to update your local /etc/hosts file if needed."
+            )
+
+        elif mode == "share":
+            # Switch to public share tunnel
+            project_meta["ssl"] = "false"
+            project_meta["host_name"] = "localhost"
+
+            if subdomain:
+                project_meta["share_subdomain"] = subdomain
+            if domain:
+                project_meta["share_domain"] = domain
+
+            self.manager.write_meta(root_path, project_meta)
+
+            # Determine public URL
+            sub = subdomain or project_meta.get("share_subdomain") or project_name
+            dom = domain or project_meta.get("share_domain") or "lfr-demo.online"
+            public_url = f"https://{sub}.{dom}"
+
+            # Synchronize environment files (.env)
+            self._sync_env_files(root_path, public_url)
+
+        # 2. Rebuild properties
+        self.cmd_rebuild_properties(project_name)
+
+        # 3. Start back up if it was running and not --no-restart
+        if is_running and not no_restart:
+            UI.info(
+                f"Starting project container stack '{project_name}' in mode '{mode}'..."
+            )
+            self.manager.cmd_run(project_id=project_name)
+
+    def _sync_env_files(self, project_path, target_url):
+        """Find and update LIFERAY_URL/LIFERAY_PORTAL_URL/AICA_LIFERAY_URL in client extension .env files."""
+        from ldm_core.ui import UI
+
+        env_files = list(project_path.rglob(".env"))
+        if not env_files:
+            return
+
+        import re
+
+        url_patterns = [
+            re.compile(r"^(LIFERAY_URL\s*=\s*).*$", re.MULTILINE),
+            re.compile(r"^(LIFERAY_PORTAL_URL\s*=\s*).*$", re.MULTILINE),
+            re.compile(r"^(AICA_LIFERAY_URL\s*=\s*).*$", re.MULTILINE),
+        ]
+
+        updated_count = 0
+        for env_file in env_files:
+            try:
+                content = env_file.read_text(encoding="utf-8")
+                new_content = content
+                for pattern in url_patterns:
+                    new_content = pattern.sub(rf"\g<1>{target_url}", new_content)
+                if new_content != content:
+                    env_file.write_text(new_content, encoding="utf-8")
+                    updated_count += 1
+            except Exception as e:
+                UI.debug(f"Failed to update env file {env_file}: {e}")
+
+        if updated_count > 0:
+            UI.success(
+                f"Synchronized Liferay URL configuration in {updated_count} local environment file(s) to: {target_url}"
+            )

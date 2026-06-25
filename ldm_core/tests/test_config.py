@@ -16,6 +16,7 @@ class MockConfigManager:
                 self.project = None
                 self.global_level = False
                 self.reset = False
+                self.no_restart = False
 
         self.args = Args()
         self.verbose = False
@@ -41,6 +42,12 @@ class MockConfigManager:
         pass
 
     def verify_runtime_environment(self, *args, **kwargs):
+        pass
+
+    def cmd_stop(self, *args, **kwargs):
+        pass
+
+    def cmd_run(self, *args, **kwargs):
         pass
 
     def setup_paths(self, root):
@@ -844,6 +851,179 @@ class TestConfigService(unittest.TestCase):
             target_pe = files_dir / "portal-ext.properties"
             self.assertTrue(target_pe.exists())
             self.assertEqual(target_pe.read_text().strip(), "")
+
+    @patch("subprocess.run")
+    def test_cmd_ssl_mode_hosts(self, mock_run):
+        """Verify cmd_ssl_mode configures project for hosts-based SSL and syncs .env files."""
+        import tempfile
+        from pathlib import Path
+        from unittest.mock import MagicMock
+
+        # Mock subprocess.run to return Running=true
+        mock_inspect = MagicMock()
+        mock_inspect.stdout = "true\n"
+        mock_run.return_value = mock_inspect
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            files_dir = tmp_path / "files"
+            files_dir.mkdir(parents=True)
+
+            # Create a mock env file
+            env_file = tmp_path / "client-extensions" / "my-cx" / ".env"
+            env_file.parent.mkdir(parents=True)
+            env_file.write_text(
+                "LIFERAY_URL=http://localhost:8080\nAICA_LIFERAY_URL=http://localhost:8080\n"
+            )
+
+            paths = {
+                "root": tmp_path,
+                "configs": tmp_path / "osgi" / "configs",
+                "files": files_dir,
+                "common_dirs": [],
+                "deploy": tmp_path / "deploy",
+            }
+
+            self.manager.detect_project_path = MagicMock(return_value=tmp_path)  # type: ignore[method-assign]
+            self.manager.setup_paths = MagicMock(return_value=paths)  # type: ignore[method-assign]
+            self.manager.read_meta = MagicMock(  # type: ignore[method-assign]
+                return_value={"container_name": "test-c"}
+            )
+            self.manager.write_meta = MagicMock()  # type: ignore[method-assign]
+            self.manager.cmd_stop = MagicMock()  # type: ignore[method-assign]
+            self.manager.cmd_run = MagicMock()  # type: ignore[method-assign]
+            self.config.cmd_rebuild_properties = MagicMock()  # type: ignore[method-assign]
+            self.manager.args.no_restart = False
+
+            # Run ssl-mode hosts
+            self.config.cmd_ssl_mode("hosts", project_id="test-p")
+
+            # Check meta write
+            self.manager.write_meta.assert_called_once()
+            meta_arg = self.manager.write_meta.call_args[0][1]
+            self.assertEqual(meta_arg["ssl"], "true")
+            self.assertEqual(meta_arg["host_name"], f"{tmp_path.name}.local")
+
+            # Check .env sync
+            env_content = env_file.read_text()
+            self.assertIn(f"LIFERAY_URL=https://{tmp_path.name}.local", env_content)
+            self.assertIn(
+                f"AICA_LIFERAY_URL=https://{tmp_path.name}.local", env_content
+            )
+
+            # Check stop/start and rebuild
+            self.manager.cmd_stop.assert_called_once_with(project_id=tmp_path.name)
+            self.manager.cmd_run.assert_called_once_with(project_id=tmp_path.name)
+            self.config.cmd_rebuild_properties.assert_called_once_with(tmp_path.name)
+
+    @patch("subprocess.run")
+    def test_cmd_ssl_mode_share(self, mock_run):
+        """Verify cmd_ssl_mode configures project for share tunnel routing."""
+        import tempfile
+        from pathlib import Path
+        from unittest.mock import MagicMock
+
+        # Mock subprocess.run to return Running=true
+        mock_inspect = MagicMock()
+        mock_inspect.stdout = "true\n"
+        mock_run.return_value = mock_inspect
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            files_dir = tmp_path / "files"
+            files_dir.mkdir(parents=True)
+
+            # Create a mock env file
+            env_file = tmp_path / ".env"
+            env_file.write_text("LIFERAY_PORTAL_URL=http://localhost:8080\n")
+
+            paths = {
+                "root": tmp_path,
+                "configs": tmp_path / "osgi" / "configs",
+                "files": files_dir,
+                "common_dirs": [],
+                "deploy": tmp_path / "deploy",
+            }
+
+            self.manager.detect_project_path = MagicMock(return_value=tmp_path)  # type: ignore[method-assign]
+            self.manager.setup_paths = MagicMock(return_value=paths)  # type: ignore[method-assign]
+            self.manager.read_meta = MagicMock(return_value={})  # type: ignore[method-assign]
+            self.manager.write_meta = MagicMock()  # type: ignore[method-assign]
+            self.manager.cmd_stop = MagicMock()  # type: ignore[method-assign]
+            self.manager.cmd_run = MagicMock()  # type: ignore[method-assign]
+            self.config.cmd_rebuild_properties = MagicMock()  # type: ignore[method-assign]
+            self.manager.args.no_restart = False
+
+            # Run ssl-mode share
+            self.config.cmd_ssl_mode(
+                "share",
+                project_id="test-p",
+                subdomain="pjrsub",
+                domain="lfr-demo.online",
+            )
+
+            # Check meta write
+            self.manager.write_meta.assert_called_once()
+            meta_arg = self.manager.write_meta.call_args[0][1]
+            self.assertEqual(meta_arg["ssl"], "false")
+            self.assertEqual(meta_arg["host_name"], "localhost")
+            self.assertEqual(meta_arg["share_subdomain"], "pjrsub")
+            self.assertEqual(meta_arg["share_domain"], "lfr-demo.online")
+
+            # Check .env sync
+            env_content = env_file.read_text()
+            self.assertIn(
+                "LIFERAY_PORTAL_URL=https://pjrsub.lfr-demo.online", env_content
+            )
+
+            # Check stop/start and rebuild
+            self.manager.cmd_stop.assert_called_once_with(project_id=tmp_path.name)
+            self.manager.cmd_run.assert_called_once_with(project_id=tmp_path.name)
+            self.config.cmd_rebuild_properties.assert_called_once_with(tmp_path.name)
+
+    @patch("subprocess.run")
+    def test_cmd_ssl_mode_no_restart(self, mock_run):
+        """Verify cmd_ssl_mode bypasses container restarts when --no-restart is set."""
+        import tempfile
+        from pathlib import Path
+        from unittest.mock import MagicMock
+
+        # Mock subprocess.run to return Running=true
+        mock_inspect = MagicMock()
+        mock_inspect.stdout = "true\n"
+        mock_run.return_value = mock_inspect
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            files_dir = tmp_path / "files"
+            files_dir.mkdir(parents=True)
+
+            paths = {
+                "root": tmp_path,
+                "configs": tmp_path / "osgi" / "configs",
+                "files": files_dir,
+                "common_dirs": [],
+                "deploy": tmp_path / "deploy",
+            }
+
+            self.manager.detect_project_path = MagicMock(return_value=tmp_path)  # type: ignore[method-assign]
+            self.manager.setup_paths = MagicMock(return_value=paths)  # type: ignore[method-assign]
+            self.manager.read_meta = MagicMock(return_value={})  # type: ignore[method-assign]
+            self.manager.write_meta = MagicMock()  # type: ignore[method-assign]
+            self.manager.cmd_stop = MagicMock()  # type: ignore[method-assign]
+            self.manager.cmd_run = MagicMock()  # type: ignore[method-assign]
+            self.config.cmd_rebuild_properties = MagicMock()  # type: ignore[method-assign]
+
+            # Force no_restart on args
+            self.manager.args.no_restart = True
+
+            # Run ssl-mode hosts
+            self.config.cmd_ssl_mode("hosts", project_id="test-p")
+
+            # Check stop/start were NOT called
+            self.manager.cmd_stop.assert_not_called()
+            self.manager.cmd_run.assert_not_called()
+            self.config.cmd_rebuild_properties.assert_called_once_with(tmp_path.name)
 
 
 if __name__ == "__main__":

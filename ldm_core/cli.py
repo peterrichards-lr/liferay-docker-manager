@@ -128,6 +128,7 @@ def preprocess_args(args_list: list[str]) -> list[str]:
         "get",
         "set",
         "remove",
+        "ssl-mode",
     }
 
     if first.startswith("-") or first in all_cmds:
@@ -162,6 +163,7 @@ def preprocess_args(args_list: list[str]) -> list[str]:
             "rebuild-properties": ("config", "rebuild-properties"),
             "revert-properties": ("config", "revert-properties"),
             "reset-properties": ("config", "reset-properties"),
+            "ssl-mode": ("config", "ssl-mode"),
             "prune": ("system", "prune"),
             "doctor": ("system", "doctor"),
             "upgrade": ("system", "upgrade"),
@@ -194,6 +196,7 @@ def preprocess_args(args_list: list[str]) -> list[str]:
                 "rebuild-properties",
                 "revert-properties",
                 "reset-properties",
+                "ssl-mode",
             ]
             if (
                 cmd_idx + 1 < len(processed_list)
@@ -1249,6 +1252,32 @@ def get_parser():
     reset_props.add_argument("project", nargs="?")
     reset_props.add_argument("-p", "--project", dest="project_flag")
 
+    ssl_mode = config_subparsers.add_parser(
+        "ssl-mode",
+        parents=[base_sub_parent],
+        help="Switch project network routing between hosts-based SSL and share tunnel",
+    )
+    ssl_mode.add_argument(
+        "mode",
+        choices=["hosts", "share"],
+        help="Desired SSL/routing mode",
+    )
+    ssl_mode.add_argument("project", nargs="?")
+    ssl_mode.add_argument("-p", "--project", dest="project_flag")
+    ssl_mode.add_argument(
+        "--subdomain",
+        help="Subdomain to use for share mode (optional)",
+    )
+    ssl_mode.add_argument(
+        "--domain",
+        help="Domain to use for share mode (optional)",
+    )
+    ssl_mode.add_argument(
+        "--no-restart",
+        action="store_true",
+        help="Do not automatically stop and restart the containers",
+    )
+
     # Namespace: system
     system = subparsers.add_parser(
         "system",
@@ -1615,6 +1644,7 @@ def main():
         ("cloud", "fetch"),
         ("config", "env"),
         ("config", "log-level"),
+        ("config", "ssl-mode"),
         ("system", "doctor"),
         ("system", "prune"),
     ]
@@ -1843,6 +1873,12 @@ def main():
         ),
         ("config", "reset-properties"): lambda: manager.config.cmd_reset_properties(
             getattr(args, "project", None)
+        ),
+        ("config", "ssl-mode"): lambda: manager.config.cmd_ssl_mode(
+            args.mode,
+            getattr(args, "project", None),
+            subdomain=getattr(args, "subdomain", None),
+            domain=getattr(args, "domain", None),
         ),
         # system namespace:
         ("system", "relocate"): lambda: manager.infra.cmd_system("relocate"),
