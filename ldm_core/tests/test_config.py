@@ -690,6 +690,114 @@ class TestConfigService(unittest.TestCase):
             self.config.cmd_revert_properties("project")
             self.assertEqual(target_pe.read_text().strip(), "my.prop=original")
 
+    def test_validate_properties_success(self):
+        """Test properties validation with correct settings."""
+        paths = {
+            "root": Path("/tmp"),
+            "deploy": MagicMock(exists=MagicMock(return_value=True)),
+            "files": MagicMock(exists=MagicMock(return_value=True)),
+        }
+        props = {
+            "jdbc.default.driverClassName": "org.postgresql.Driver",
+            "jdbc.default.url": "jdbc:postgresql://localhost:5432/lportal",
+            "normal.prop": "value",
+            "quoted.prop": '"valid quoted value"',
+        }
+        meta = {"db_type": "postgresql"}
+        # Should not raise any exception
+        self.config.validate_properties(paths, props, meta, is_dry_run=True)
+
+    def test_validate_properties_unclosed_quotes(self):
+        """Test that unclosed quotes trigger validation error."""
+        paths = {
+            "root": Path("/tmp"),
+        }
+        props = {
+            "my.prop": '"unclosed val',
+        }
+        with self.assertRaises(SystemExit):
+            self.config.validate_properties(paths, props, {}, is_dry_run=True)
+
+    def test_validate_properties_malformed_url(self):
+        """Test that malformed JDBC URLs trigger validation error."""
+        paths = {
+            "root": Path("/tmp"),
+        }
+        props = {
+            "jdbc.default.url": "postgresql://localhost:5432/lportal",  # missing jdbc: prefix
+        }
+        with self.assertRaises(SystemExit):
+            self.config.validate_properties(paths, props, {}, is_dry_run=True)
+
+        props2 = {
+            "jdbc.default.url": "jdbc:postgresql:localhost:5432/lportal",  # missing //
+        }
+        with self.assertRaises(SystemExit):
+            self.config.validate_properties(paths, props2, {}, is_dry_run=True)
+
+        props3 = {
+            "jdbc.default.url": "jdbc:postgresql://localhost:5432/lportal[param",  # mismatched brackets
+        }
+        with self.assertRaises(SystemExit):
+            self.config.validate_properties(paths, props3, {}, is_dry_run=True)
+
+    def test_validate_properties_conflicting_db(self):
+        """Test that conflicting database types trigger validation error."""
+        paths = {
+            "root": Path("/tmp"),
+        }
+        # project is hypersonic, but properties define postgresql driver
+        props = {
+            "jdbc.default.driverClassName": "org.postgresql.Driver",
+            "jdbc.default.url": "jdbc:postgresql://localhost:5432/lportal",
+        }
+        meta = {"db_type": "hypersonic"}
+        with self.assertRaises(SystemExit):
+            self.config.validate_properties(paths, props, meta, is_dry_run=True)
+
+        # project is postgresql, but properties define hypersonic driver
+        props2 = {
+            "jdbc.default.driverClassName": "org.hsqldb.jdbc.JDBCDriver",
+            "jdbc.default.url": "jdbc:hsqldb:mem:lportal",
+        }
+        meta2 = {"db_type": "postgresql"}
+        with self.assertRaises(SystemExit):
+            self.config.validate_properties(paths, props2, meta2, is_dry_run=True)
+
+        # Mismatch within properties (PostgreSQL driver with HSQLDB URL)
+        props3 = {
+            "jdbc.default.driverClassName": "org.postgresql.Driver",
+            "jdbc.default.url": "jdbc:hsqldb:mem:lportal",
+        }
+        with self.assertRaises(SystemExit):
+            self.config.validate_properties(paths, props3, {}, is_dry_run=True)
+
+    def test_validate_properties_missing_mounts_dry_run(self):
+        """Test that missing mount paths are reported as warnings in dry run."""
+        paths = {
+            "root": Path("/tmp"),
+            "deploy": MagicMock(exists=MagicMock(return_value=False)),
+            "files": MagicMock(exists=MagicMock(return_value=False)),
+        }
+        with patch("ldm_core.ui.UI.warning") as mock_warn:
+            self.config.validate_properties(paths, {}, {}, is_dry_run=True)
+            self.assertTrue(mock_warn.called)
+
+    def test_validate_properties_missing_mounts_creation(self):
+        """Test that missing mount paths are created in normal run."""
+        mock_deploy = MagicMock()
+        mock_deploy.exists.return_value = False
+        paths = {
+            "root": Path("/tmp"),
+            "deploy": mock_deploy,
+        }
+        with patch("ldm_core.ui.UI.info") as mock_info:
+            self.config.validate_properties(paths, {}, {}, is_dry_run=False)
+            mock_deploy.mkdir.assert_called_once_with(parents=True, exist_ok=True)
+            mock_info.assert_called_with(
+                f"Created missing mount directory: {mock_deploy}"
+            )
+
 
 if __name__ == "__main__":
     unittest.main()  # type: ignore[misc]

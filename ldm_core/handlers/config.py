@@ -163,6 +163,149 @@ class ConfigService:
 
         return props, important_keys
 
+    def validate_properties(
+        self, paths, properties_dict, project_meta, is_dry_run=False
+    ):
+        """Statically verifies properties for quotes, JDBC structure, database compatibility, and mount paths."""
+        errors = []
+        project_meta = project_meta or {}
+
+        # 1. Unclosed quotes check
+        for k, v in properties_dict.items():
+            if not isinstance(v, str):
+                continue
+            if v.startswith(('"', "'")):
+                quote_char = v[0]
+                if len(v) < 2 or not v.endswith(quote_char):
+                    errors.append(f"Property '{k}' has an unclosed quote: {v}")
+
+        # 2. Malformed JDBC URLs check
+        jdbc_url = properties_dict.get("jdbc.default.url")
+        if jdbc_url:
+            if not jdbc_url.startswith("jdbc:"):
+                errors.append(
+                    f"Property 'jdbc.default.url' is malformed (must start with 'jdbc:'): {jdbc_url}"
+                )
+            else:
+                parts = jdbc_url.split(":", 2)
+                if len(parts) >= 2:
+                    subprotocol = parts[1]
+                    if subprotocol in ["postgresql", "mysql", "mariadb"]:
+                        if "//" not in jdbc_url:
+                            errors.append(
+                                f"Property 'jdbc.default.url' coordinates are malformed (missing '//'): {jdbc_url}"
+                            )
+                        if jdbc_url.count("[") != jdbc_url.count("]"):
+                            errors.append(
+                                f"Property 'jdbc.default.url' has mismatched bracket symbols: {jdbc_url}"
+                            )
+                        if jdbc_url.count("{") != jdbc_url.count("}"):
+                            errors.append(
+                                f"Property 'jdbc.default.url' has mismatched braces symbols: {jdbc_url}"
+                            )
+
+        # 3. Conflicting Database Configuration check
+        driver_class = properties_dict.get("jdbc.default.driverClassName")
+        db_type = project_meta.get("db_type")
+
+        if db_type:
+            db_type_lower = db_type.lower()
+            if db_type_lower == "hypersonic":
+                if driver_class and not any(
+                    x in driver_class.lower() for x in ["hsqldb", "hypersonic"]
+                ):
+                    errors.append(
+                        f"Database conflict: project is configured for Hypersonic in meta.json, "
+                        f"but portal-ext.properties driver class is '{driver_class}'"
+                    )
+                if jdbc_url and "hsqldb" not in jdbc_url.lower():
+                    errors.append(
+                        f"Database conflict: project is configured for Hypersonic in meta.json, "
+                        f"but portal-ext.properties jdbc.default.url is '{jdbc_url}'"
+                    )
+            elif db_type_lower == "postgresql":
+                if driver_class and "postgresql" not in driver_class.lower():
+                    errors.append(
+                        f"Database conflict: project is configured for PostgreSQL in meta.json, "
+                        f"but portal-ext.properties driver class is '{driver_class}'"
+                    )
+                if jdbc_url and "postgresql" not in jdbc_url.lower():
+                    errors.append(
+                        f"Database conflict: project is configured for PostgreSQL in meta.json, "
+                        f"but portal-ext.properties jdbc.default.url is '{jdbc_url}'"
+                    )
+            elif db_type_lower in ["mysql", "mariadb"]:
+                if driver_class and not any(
+                    x in driver_class.lower() for x in ["mysql", "mariadb"]
+                ):
+                    errors.append(
+                        f"Database conflict: project is configured for {db_type} in meta.json, "
+                        f"but portal-ext.properties driver class is '{driver_class}'"
+                    )
+                if jdbc_url and not any(
+                    x in jdbc_url.lower() for x in ["mysql", "mariadb"]
+                ):
+                    errors.append(
+                        f"Database conflict: project is configured for {db_type} in meta.json, "
+                        f"but portal-ext.properties jdbc.default.url is '{jdbc_url}'"
+                    )
+
+        # Internal consistency check within properties
+        if driver_class and jdbc_url:
+            dc_lower = driver_class.lower()
+            ju_lower = jdbc_url.lower()
+            if "postgresql" in dc_lower and "postgresql" not in ju_lower:
+                errors.append(
+                    f"Driver-URL mismatch: driver is PostgreSQL ('{driver_class}') "
+                    f"but jdbc.default.url is '{jdbc_url}'"
+                )
+            elif any(x in dc_lower for x in ["mysql", "mariadb"]) and not any(
+                x in ju_lower for x in ["mysql", "mariadb"]
+            ):
+                errors.append(
+                    f"Driver-URL mismatch: driver is MySQL/MariaDB ('{driver_class}') "
+                    f"but jdbc.default.url is '{jdbc_url}'"
+                )
+            elif "hsqldb" in dc_lower and "hsqldb" not in ju_lower:
+                errors.append(
+                    f"Driver-URL mismatch: driver is HSQLDB ('{driver_class}') "
+                    f"but jdbc.default.url is '{jdbc_url}'"
+                )
+
+        # 4. Missing Mount Paths check
+        mount_dirs = [
+            ("deploy", paths.get("deploy")),
+            ("files", paths.get("files")),
+            ("configs", paths.get("configs")),
+            ("modules", paths.get("modules")),
+            ("cx", paths.get("cx")),
+            ("scripts", paths.get("scripts")),
+            ("log4j", paths.get("log4j")),
+            ("portal_log4j", paths.get("portal_log4j")),
+        ]
+
+        for name, path in mount_dirs:
+            if not path:
+                continue
+            if not path.exists():
+                if is_dry_run:
+                    UI.warning(f"Mount directory '{name}' is missing at: {path}")
+                else:
+                    try:
+                        path.mkdir(parents=True, exist_ok=True)
+                        UI.info(f"Created missing mount directory: {path}")
+                    except Exception as e:
+                        UI.warning(
+                            f"Could not create missing mount directory '{name}' at {path}: {e}"
+                        )
+
+        if errors:
+            for err in errors:
+                UI.error(err)
+            UI.die(
+                "Config Integrity check failed: properties validation errors detected."
+            )
+
     def update_portal_ext(self, paths, updates, important_keys=None):
         """Updates or adds properties in portal-ext.properties, handling multi-line values."""
         if not updates:
@@ -709,6 +852,17 @@ class ConfigService:
                 winning_props[k] = v
                 winning_imp.discard(k)
 
+        is_dry_run = (
+            getattr(self.manager.args, "dry_run_properties", False)
+            or getattr(self.manager.args, "dry_run", False)
+            or os.environ.get("LDM_DRY_RUN", "").lower() == "true"
+        )
+
+        # Pre-Flight static properties verification
+        self.validate_properties(
+            paths, winning_props, project_meta, is_dry_run=is_dry_run
+        )
+
         # Diff and apply changes to target_ext
         current_props, current_imp = {}, set()
         if target_ext.exists():
@@ -723,12 +877,6 @@ class ConfigService:
         for k, v in winning_props.items():
             if current_props.get(k) != v or (k in current_imp) != (k in winning_imp):
                 to_update[k] = v
-
-        is_dry_run = (
-            getattr(self.manager.args, "dry_run_properties", False)
-            or getattr(self.manager.args, "dry_run", False)
-            or os.environ.get("LDM_DRY_RUN", "").lower() == "true"
-        )
 
         if to_update:
             if is_dry_run:
