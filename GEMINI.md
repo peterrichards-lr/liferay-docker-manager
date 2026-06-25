@@ -82,7 +82,7 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
   - [x] Implement fallback to git clone when release package is <10KB.
   - [x] Remove duplicate quickstart execution in test suite.
   - [x] Run test suite and pre-commit checks to confirm everything is clean.
-  - [x] Commit, push, and create PR for `bugfix/160-empty-ldmp-import-fallback` (PR #161, auto-merge enabled).
+  - [x] Commit, push, and create PR for `bugfix/160-empty-ldmp-import-fallback` (PR #161, squash-merged).
 
 ### Plan
 
