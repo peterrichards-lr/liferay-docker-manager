@@ -112,6 +112,50 @@ ldm run my-project --expose
 
 ---
 
+## Toggling Routing Modes (`ldm config ssl-mode`)
+
+When developing with LDM, you may want to toggle your project network routing between:
+
+- **Local Hosts-based SSL Mode**: Testing offline using a local custom domain name (e.g. `https://my-project.local` mapped in `/etc/hosts` with certificates managed via `mkcert`).
+- **Public Share Tunnel Mode**: Exposing Liferay publicly via a leased subdomain on a secure tunnel gateway (e.g. `https://my-project.lfr-demo.online`).
+
+Manually updating Liferay virtual hosts, rebuilding project properties, and updating environment config files inside your client extensions can be error-prone. LDM automates this using the `ssl-mode` command:
+
+```bash
+ldm config ssl-mode <hosts | share> [project] [--subdomain <subdomain>] [--domain <domain>] [--no-restart]
+```
+
+### Modes
+
+#### 1. Hosts Mode (`hosts`)
+
+- Switches the project's metadata `ssl` parameter to `true`.
+- Sets the project's `host_name` to `<project_name>.local` (or retains your custom local domain).
+- Surgically searches for and updates all local `.env` files (e.g., `LIFERAY_URL`, `LIFERAY_PORTAL_URL`, `AICA_LIFERAY_URL`) to point to `https://<project_name>.local`.
+- Rebuilds project properties so Liferay aligns its internal virtual host settings.
+
+#### 2. Share Mode (`share`)
+
+- Switches the project's metadata `ssl` parameter to `false` (since SSL termination happens at the public tunnel edge).
+- Sets `host_name` to `localhost`.
+- Configures your optional `--subdomain` (defaults to project name) and `--domain` (defaults to `lfr-demo.online`).
+- Surgically searches for and updates all local `.env` files to point to the public tunnel URL (e.g. `https://<subdomain>.<domain>`).
+- Rebuilds project properties so Liferay maps internal endpoints to the public gateway URL.
+
+> [!WARNING]
+>
+> **Container Stack Downtime Warning:**
+>
+> Changing routing modes modifies Traefik reverse-proxy bindings, project metadata, and `portal-ext.properties`. By default, if the project container stack is currently running, changing the routing mode will **briefly stop and restart** the container stack to apply the changes (causing a short downtime of the Liferay instance).
+>
+> If you prefer to change the configuration offline or manually manage the container lifecycle later, pass the **`--no-restart`** flag:
+>
+> ```bash
+> ldm config ssl-mode hosts my-project --no-restart
+> ```
+
+---
+
 ## Authentication for Liferay Tunnel (lfr-tunnel)
 
 The Liferay Tunnel (`lfr-tunnel` or `lfr-tunnel-docker`) requires a Client Token to authenticate with the server gateway. LDM looks for this token in the following order of priority:
