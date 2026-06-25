@@ -966,13 +966,22 @@ class WorkspaceService(BaseHandler):
                             shutil.rmtree(temp_extract_dir)
                         UI.die("Invalid LDM Package: Missing manifest 'meta' file.")
 
-                    manifest = {}
-                    with open(manifest_file) as f:
-                        for line in f:
-                            line = line.strip()
-                            if line and not line.startswith("#") and "=" in line:
-                                k, v = line.split("=", 1)
-                                manifest[k.strip()] = v.strip()
+                    manifest = self.manager.read_meta(temp_extract_dir) or {}
+
+                    db_type = manifest.get("db_type")
+                    if db_type and db_type not in [
+                        "postgresql",
+                        "mysql",
+                        "mariadb",
+                        "hypersonic",
+                    ]:
+                        if temp_pkg_dir.exists():
+                            shutil.rmtree(temp_pkg_dir)
+                        if temp_extract_dir.exists():
+                            shutil.rmtree(temp_extract_dir)
+                        UI.die(
+                            f"Unsupported database type '{db_type}' in LDM package manifest."
+                        )
 
                     github_repo_manifest = manifest.get("github_repository")
                     if not github_repo_manifest:
@@ -1007,13 +1016,6 @@ class WorkspaceService(BaseHandler):
                             p.mkdir(parents=True, exist_ok=True)
                         self.manager.verify_runtime_environment(paths)
 
-                        UI.info(
-                            "Restoring database and volume assets from LDM package..."
-                        )
-                        self.manager.snapshot.cmd_restore(
-                            project_name, backup_dir=temp_extract_dir
-                        )
-
                         project_meta = self.manager.read_meta(project_path) or {}
                         if "tag" in manifest:
                             project_meta["tag"] = manifest["tag"]
@@ -1047,6 +1049,13 @@ class WorkspaceService(BaseHandler):
                             }
                         )
                         self.manager.write_meta(project_path, project_meta)
+
+                        UI.info(
+                            "Restoring database and volume assets from LDM package..."
+                        )
+                        self.manager.snapshot.cmd_restore(
+                            project_name, backup_dir=temp_extract_dir
+                        )
                         UI.success(f"Project created at: {project_path}")
                     finally:
                         self.manager.args.no_run = original_no_run
@@ -1240,13 +1249,20 @@ class WorkspaceService(BaseHandler):
             # Check if this is an LDM Package (.ldmp)
             is_ldmp = temp_extract_dir and (temp_extract_dir / "meta").exists()
             if is_ldmp:
-                manifest = {}
-                with open(temp_extract_dir / "meta") as f:
-                    for line in f:
-                        line = line.strip()
-                        if line and not line.startswith("#") and "=" in line:
-                            k, v = line.split("=", 1)
-                            manifest[k.strip()] = v.strip()
+                manifest = self.manager.read_meta(temp_extract_dir) or {}
+
+                db_type = manifest.get("db_type")
+                if db_type and db_type not in [
+                    "postgresql",
+                    "mysql",
+                    "mariadb",
+                    "hypersonic",
+                ]:
+                    if temp_extract_dir.exists():
+                        shutil.rmtree(temp_extract_dir)
+                    UI.die(
+                        f"Unsupported database type '{db_type}' in LDM package manifest."
+                    )
 
                 # Resolve project name
                 project_name = getattr(self.manager.args, "project", None) or getattr(
@@ -1300,12 +1316,6 @@ class WorkspaceService(BaseHandler):
 
                 self.manager.verify_runtime_environment(paths)
 
-                # Restore database and volume assets
-                UI.info("Restoring database and volume assets from LDM package...")
-                self.manager.snapshot.cmd_restore(
-                    project_name, backup_dir=temp_extract_dir
-                )
-
                 project_meta = self.manager.read_meta(project_path) or {}
                 if "tag" in manifest:
                     project_meta["tag"] = manifest["tag"]
@@ -1343,6 +1353,12 @@ class WorkspaceService(BaseHandler):
                     }
                 )
                 self.manager.write_meta(project_path, project_meta)
+
+                # Restore database and volume assets
+                UI.info("Restoring database and volume assets from LDM package...")
+                self.manager.snapshot.cmd_restore(
+                    project_name, backup_dir=temp_extract_dir
+                )
 
                 UI.success(f"Project created at: {project_path}")
 

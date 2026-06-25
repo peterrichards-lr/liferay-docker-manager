@@ -578,6 +578,36 @@ class TestWorkspaceScanners(unittest.TestCase):
         # We just test the _hydrate_from_workspace logic again to be sure.
         pass
 
+    def test_cmd_import_unsupported_db_type(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            source_ldmp = tmp_path / "project.ldmp"
+            source_ldmp.touch()
+
+            self.handler.args.verify = False
+            self.handler.args.project = "test-proj"
+
+            # Create mock meta file in extract directory
+            def mock_safe_extract(tar_or_zip, extract_dir):
+                extract_path = Path(extract_dir)
+                extract_path.mkdir(parents=True, exist_ok=True)
+                (extract_path / "meta").write_text(
+                    "db_type=oracle\ntag=2026.q1.4-lts\n", encoding="utf-8"
+                )
+
+            with (
+                patch("tarfile.open"),
+                patch("ldm_core.utils.safe_extract", side_effect=mock_safe_extract),
+                patch(
+                    "ldm_core.handlers.workspace.UI.die", side_effect=SystemExit
+                ) as mock_die,
+            ):
+                with self.assertRaises(SystemExit):
+                    self.handler.workspace.cmd_import(str(source_ldmp))
+                mock_die.assert_called_once_with(
+                    "Unsupported database type 'oracle' in LDM package manifest."
+                )
+
 
 class TestWorkspaceRemoteImport(unittest.TestCase):
     def setUp(self):
@@ -718,7 +748,6 @@ class TestWorkspaceRemoteImport(unittest.TestCase):
                     "ldm_core.handlers.base.BaseHandler.detect_project_path",
                     return_value=project_path,
                 ),
-                patch("ldm_core.handlers.base.BaseHandler.read_meta", return_value={}),
             ):
                 self.handler.args.project = "my-project"
                 self.handler.args.verify = True
@@ -875,6 +904,83 @@ class TestWorkspaceRemoteImport(unittest.TestCase):
             text=True,
             check=False,
         )
+
+    @patch("subprocess.run")
+    @patch("requests.get")
+    @patch("ldm_core.handlers.workspace.calculate_sha256", return_value="matching_hash")
+    @patch("tarfile.open")
+    def test_cmd_import_remote_unsupported_db_type(
+        self, mock_tar_open, mock_calc_sha, mock_get, mock_sub_run
+    ):
+        real_import = self.handler.workspace.cmd_import
+
+        def mock_import(source_path, *args, **kwargs):
+            return real_import(source_path, *args, **kwargs)
+
+        self.handler.workspace.cmd_import = mock_import
+
+        # 1. Mock subprocess.run for git clone & git remote get-url origin
+        mock_clone_res = MagicMock()
+        mock_clone_res.returncode = 0
+        mock_origin_res = MagicMock()
+        mock_origin_res.returncode = 0
+        mock_origin_res.stdout = "git@github.com:owner/repo.git"
+        mock_sub_run.side_effect = [mock_clone_res, mock_origin_res]
+
+        # 2. Mock requests.get for GitHub Releases API and downloads
+        mock_release_resp = MagicMock()
+        mock_release_resp.status_code = 200
+        mock_release_resp.json.return_value = {
+            "assets": [
+                {"name": "project.ldmp", "url": "https://api.github.com/assets/1"},
+                {
+                    "name": "project.ldmp.sha256",
+                    "url": "https://api.github.com/assets/2",
+                },
+            ]
+        }
+
+        mock_ldmp_resp = MagicMock()
+        mock_ldmp_resp.status_code = 200
+        mock_ldmp_resp.iter_content = lambda *_args, **_kwargs: [b"package_data"]
+
+        mock_sha_resp = MagicMock()
+        mock_sha_resp.status_code = 200
+        mock_sha_resp.text = "matching_hash project.ldmp"
+
+        mock_get.side_effect = [mock_release_resp, mock_ldmp_resp, mock_sha_resp]
+
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            project_path = Path(tmpdir) / "my-project"
+
+            def mock_safe_extract(tar, extract_dir):
+                extract_path = Path(extract_dir)
+                extract_path.mkdir(parents=True, exist_ok=True)
+                (extract_path / "meta").write_text(
+                    "github_repository=owner/repo\ntag=2024.q1.3\ndb_type=sqlserver\n",
+                    encoding="utf-8",
+                )
+
+            with (
+                patch("ldm_core.utils.safe_extract", side_effect=mock_safe_extract),
+                patch(
+                    "ldm_core.handlers.base.BaseHandler.detect_project_path",
+                    return_value=project_path,
+                ),
+                patch(
+                    "ldm_core.handlers.workspace.UI.die", side_effect=SystemExit
+                ) as mock_die,
+            ):
+                self.handler.args.project = "my-project"
+                self.handler.args.verify = True
+                self.handler.args.no_run = True
+                with self.assertRaises(SystemExit):
+                    self.handler.workspace.cmd_import("https://github.com/owner/repo")
+                mock_die.assert_called_once_with(
+                    "Unsupported database type 'sqlserver' in LDM package manifest."
+                )
 
 
 class TestWorkspaceQuickstart(unittest.TestCase):
