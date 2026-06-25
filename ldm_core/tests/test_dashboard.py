@@ -11,6 +11,7 @@ class TestDashboard(unittest.TestCase):
         self.manager = MagicMock()
         # Ensure CLI args exist on manager
         self.manager.args = MagicMock()
+        self.manager.config.get_global_config.return_value = {}
         self.dashboard_service = DashboardService(self.manager)
         app.config["MANAGER"] = self.manager
         self.client = app.test_client()
@@ -238,3 +239,72 @@ class TestDashboard(unittest.TestCase):
 
         response = self.client.post("/api/projects/my-project1/restore/nonexistent")
         self.assertEqual(response.status_code, 404)
+
+    @patch("ldm_core.dashboard.server._find_project_path")
+    def test_api_update_project_property_success(self, mock_find_path):
+        mock_find_path.return_value = Path("/dummy/project1")
+        self.manager.setup_paths.return_value = {
+            "files": Path("/dummy/project1/files"),
+            "root": Path("/dummy/project1"),
+            "common_dirs": [],
+        }
+        self.manager.__file__ = "/dummy/manager.py"
+        self.manager.config._get_properties_with_metadata.return_value = ({}, set())
+
+        # Mock meta reads for properties GET return
+        self.manager.read_meta.return_value = {
+            "liferay_container_name": "my-project1",
+        }
+
+        # Test PUT payload
+        payload = {
+            "key": "portal.security.manager.enabled",
+            "value": "true",
+            "important": True,
+        }
+
+        with (
+            patch("pathlib.Path.exists", return_value=True),
+            patch("pathlib.Path.read_text", return_value=""),
+            patch("pathlib.Path.mkdir"),
+            patch("ldm_core.handlers.config.safe_write_text"),
+        ):
+            response = self.client.put(
+                "/api/projects/my-project1/properties", json=payload
+            )
+
+            self.assertEqual(response.status_code, 200)
+            self.manager.config.update_portal_ext.assert_called_once()
+            self.manager.config.cmd_rebuild_properties.assert_called_once_with(
+                "my-project1"
+            )
+
+    @patch("ldm_core.dashboard.server._find_project_path")
+    def test_api_delete_project_property_success(self, mock_find_path):
+        mock_find_path.return_value = Path("/dummy/project1")
+        self.manager.setup_paths.return_value = {
+            "files": Path("/dummy/project1/files"),
+            "root": Path("/dummy/project1"),
+            "common_dirs": [],
+        }
+        self.manager.__file__ = "/dummy/manager.py"
+        self.manager.config._get_properties_with_metadata.return_value = ({}, set())
+
+        # Mock meta reads for properties GET return
+        self.manager.read_meta.return_value = {
+            "liferay_container_name": "my-project1",
+        }
+
+        with (
+            patch("pathlib.Path.exists", return_value=True),
+            patch("pathlib.Path.read_text", return_value=""),
+        ):
+            response = self.client.delete(
+                "/api/projects/my-project1/properties/portal.security.manager.enabled"
+            )
+
+            self.assertEqual(response.status_code, 200)
+            self.manager.config.remove_portal_ext.assert_called_once()
+            self.manager.config.cmd_rebuild_properties.assert_called_once_with(
+                "my-project1"
+            )

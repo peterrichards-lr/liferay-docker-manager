@@ -73,11 +73,19 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
 
 - Implemented Config Integrity & Validation (Pre-Flight Properties Analyzer) for Issue #127 (statically checks unclosed quotes, malformed JDBC URLs, conflicting database configs, and missing mount paths during properties rebuilding).
 
+- **Interactive Configuration Management (Web Dashboard & TUI) for Issue #126**:
+  - [x] Implement backend REST API endpoints for property edits and deletions in `ldm_core/dashboard/server.py`.
+  - [x] Update frontend Properties Inspector drawer in `ldm_core/resources/dashboard/index.html` to support inline editing and additions.
+  - [x] Add `--tui` / `-t` CLI option to `ldm config edit` command in `ldm_core/cli.py`.
+  - [x] Implement TUI interactive configuration menu in `ldm_core/handlers/config.py`.
+  - [x] Add unit tests for API endpoints and TUI logic.
+
 - **Bypassing git clone for empty/vanilla .ldmp remote packages (Issue #160)**:
   - [x] Implement fallback to git clone when release package is <10KB.
   - [x] Remove duplicate quickstart execution in test suite.
   - [x] Run test suite and pre-commit checks to confirm everything is clean.
   - [x] Commit, push, and create PR for `bugfix/160-empty-ldmp-import-fallback` (PR #161, squash-merged).
+
 - Released `v2.11.53` successfully (restored release PR workflow and resolved hypersonic workspace database restore bypass).
 - Released `v2.11.52` successfully (immediate search reindexing on running containers via OSGi Gogo telnet command).
 - Released `v2.11.46` successfully (upgraded Gitleaks hook to `v8.30.1` to resolve the Go 1.24 WASM panic in CI runners, and canceled hung jobs).
@@ -90,13 +98,6 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
 - Released `v2.11.30` successfully (integrated Visual Diagnostics Web Dashboard (P3), Dynamic JVM Self-Tuning (P2), and solved GITHUB_ACTIONS env var mock test coverage mismatch).
 
 ### Plan
-
-- [ ] **Interactive Configuration Management (Web Dashboard & TUI) for Issue #126**:
-  - [ ] Implement backend REST API endpoints for property edits and deletions in `ldm_core/dashboard/server.py`.
-  - [ ] Update frontend Properties Inspector drawer in `ldm_core/resources/dashboard/index.html` to support inline editing and additions.
-  - [ ] Add `--tui` / `-t` CLI option to `ldm config edit` command in `ldm_core/cli.py`.
-  - [ ] Implement TUI interactive configuration menu in `ldm_core/handlers/config.py`.
-  - [ ] Add unit tests for API endpoints and TUI logic.
 
 1. **Sequential Property Overrides Hierarchy (5-Layers) with `!important` Precedence**:
    - [x] Sourcing layers in order of lowest to highest precedence:

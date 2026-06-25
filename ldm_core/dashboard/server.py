@@ -512,6 +512,83 @@ def api_project_properties(project_name):
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/api/projects/<project_name>/properties", methods=["PUT"])
+def api_update_project_property(project_name):
+    import contextlib
+    import re
+
+    if not re.match(r"^[a-zA-Z0-9_-]+$", project_name):
+        return jsonify({"error": "Invalid project name format"}), 400
+
+    path = _find_project_path(project_name)
+    if not path:
+        return jsonify({"error": "Project not found"}), 404
+
+    data = request.get_json() or {}
+    key = data.get("key")
+    value = data.get("value")
+    important = bool(data.get("important", False))
+
+    if not key or not isinstance(key, str):
+        return jsonify({"error": "Property key is required and must be a string"}), 400
+    if not re.match(r"^[a-zA-Z0-9_.-]+$", key):
+        return jsonify({"error": "Invalid property key format"}), 400
+    if value is None:
+        return jsonify({"error": "Property value is required"}), 400
+
+    manager = app.config["MANAGER"]
+    paths = manager.setup_paths(path)
+
+    try:
+        # Update the properties file
+        updates = {key: str(value)}
+        important_keys = {key} if important else None
+
+        # Ensure 'files' directory exists
+        with contextlib.suppress(PermissionError, OSError):
+            paths["files"].mkdir(exist_ok=True)
+
+        manager.config.update_portal_ext(paths, updates, important_keys=important_keys)
+
+        # Rebuild/sync properties
+        manager.config.cmd_rebuild_properties(project_name)
+
+        # Return updated properties list
+        return api_project_properties(project_name)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/projects/<project_name>/properties/<key>", methods=["DELETE"])
+def api_delete_project_property(project_name, key):
+    import re
+
+    if not re.match(r"^[a-zA-Z0-9_-]+$", project_name):
+        return jsonify({"error": "Invalid project name format"}), 400
+
+    path = _find_project_path(project_name)
+    if not path:
+        return jsonify({"error": "Project not found"}), 404
+
+    if not key or not re.match(r"^[a-zA-Z0-9_.-]+$", key):
+        return jsonify({"error": "Invalid property key format"}), 400
+
+    manager = app.config["MANAGER"]
+    paths = manager.setup_paths(path)
+
+    try:
+        # Surgically remove property override from files/portal-ext.properties
+        manager.config.remove_portal_ext(paths, {key})
+
+        # Rebuild/sync properties
+        manager.config.cmd_rebuild_properties(project_name)
+
+        # Return updated properties list
+        return api_project_properties(project_name)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route("/")
 def index():
     from ldm_core.constants import SCRIPT_DIR
