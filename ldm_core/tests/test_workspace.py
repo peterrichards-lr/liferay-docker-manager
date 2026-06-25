@@ -712,10 +712,15 @@ class TestWorkspaceRemoteImport(unittest.TestCase):
         mock_release_resp.status_code = 200
         mock_release_resp.json.return_value = {
             "assets": [
-                {"name": "project.ldmp", "url": "https://api.github.com/assets/1"},
+                {
+                    "name": "project.ldmp",
+                    "url": "https://api.github.com/assets/1",
+                    "size": 50000,
+                },
                 {
                     "name": "project.ldmp.sha256",
                     "url": "https://api.github.com/assets/2",
+                    "size": 65,
                 },
             ]
         }
@@ -932,10 +937,15 @@ class TestWorkspaceRemoteImport(unittest.TestCase):
         mock_release_resp.status_code = 200
         mock_release_resp.json.return_value = {
             "assets": [
-                {"name": "project.ldmp", "url": "https://api.github.com/assets/1"},
+                {
+                    "name": "project.ldmp",
+                    "url": "https://api.github.com/assets/1",
+                    "size": 50000,
+                },
                 {
                     "name": "project.ldmp.sha256",
                     "url": "https://api.github.com/assets/2",
+                    "size": 65,
                 },
             ]
         }
@@ -981,6 +991,98 @@ class TestWorkspaceRemoteImport(unittest.TestCase):
                 mock_die.assert_called_once_with(
                     "Unsupported database type 'sqlserver' in LDM package manifest."
                 )
+
+    @patch("subprocess.run")
+    @patch("requests.get")
+    @patch("ldm_core.handlers.workspace.calculate_sha256", return_value="matching_hash")
+    @patch("tarfile.open")
+    def test_cmd_import_git_url_empty_ldmp_fallback(
+        self, mock_tar_open, mock_calc_sha, mock_get, mock_sub_run
+    ):
+        real_import = self.handler.workspace.cmd_import
+        calls = []
+
+        def mock_import(source_path, *args, **kwargs):
+            calls.append(source_path)
+            from urllib.parse import urlparse
+
+            is_github = False
+            try:
+                parsed = urlparse(source_path)
+                if parsed.netloc in (
+                    "github.com",
+                    "www.github.com",
+                ) or source_path.startswith("git@github.com:"):
+                    is_github = True
+            except Exception:
+                pass
+
+            if is_github:
+                return real_import(source_path, *args, **kwargs)
+            return "my-project"
+
+        self.handler.workspace.cmd_import = mock_import
+
+        # 1. Mock subprocess.run for git clone & git remote get-url origin
+        mock_clone_res = MagicMock()
+        mock_clone_res.returncode = 0
+
+        mock_origin_res = MagicMock()
+        mock_origin_res.returncode = 0
+        mock_origin_res.stdout = "git@github.com:owner/repo.git"
+
+        # The git clone command should be run, and then the metadata read or get-url
+        mock_sub_run.side_effect = [mock_clone_res, mock_origin_res, mock_clone_res]
+
+        # 2. Mock requests.get to return a release with an empty/vanilla .ldmp asset (size 562 bytes)
+        mock_release_resp = MagicMock()
+        mock_release_resp.status_code = 200
+        mock_release_resp.json.return_value = {
+            "assets": [
+                {
+                    "name": "project.ldmp",
+                    "url": "https://api.github.com/assets/1",
+                    "size": 562,  # < 10KB, empty/vanilla package!
+                },
+                {
+                    "name": "project.ldmp.sha256",
+                    "url": "https://api.github.com/assets/2",
+                    "size": 65,
+                },
+            ]
+        }
+
+        mock_get.side_effect = [mock_release_resp]
+
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            project_path = Path(tmpdir) / "my-project"
+
+            with (
+                patch(
+                    "ldm_core.handlers.base.BaseHandler.detect_project_path",
+                    return_value=project_path,
+                ),
+                patch("shutil.rmtree"),  # Avoid deleting temp directories during test
+                patch("ldm_core.handlers.workspace.WorkspaceService._ensure_stopped"),
+            ):
+                self.handler.args.project = "my-project"
+                self.handler.args.verify = True
+                self.handler.args.no_run = True
+                # This should log warning and trigger git clone fallback path
+                self.handler.workspace.cmd_import("https://github.com/owner/repo")
+
+        # Verify that it fell back to clone (git clone was called)
+        clone_called = False
+        for call_args in mock_sub_run.call_args_list:
+            if call_args[0] and len(call_args[0][0]) > 1:
+                if "clone" in call_args[0][0]:
+                    clone_called = True
+                    break
+        self.assertTrue(clone_called)
+        # Assert database restore was NOT triggered on the downloaded empty package
+        self.assertFalse(self.handler.snapshot.cmd_restore.called)
 
 
 class TestWorkspaceQuickstart(unittest.TestCase):

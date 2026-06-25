@@ -71,6 +71,12 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
 
 ## 8. Active Work State & Plan (June 25, 2026)
 
+- **Bypassing git clone for empty/vanilla .ldmp remote packages (Issue #160)**:
+  - [x] Implement fallback to git clone when release package is <10KB.
+  - [x] Remove duplicate quickstart execution in test suite.
+  - [x] Run test suite and pre-commit checks to confirm everything is clean.
+  - [ ] Commit, push, and create PR for `bugfix/160-empty-ldmp-import-fallback`.
+
 - Released `v2.11.53` successfully (restored release PR workflow and resolved hypersonic workspace database restore bypass).
 - Released `v2.11.52` successfully (immediate search reindexing on running containers via OSGi Gogo telnet command).
 - Released `v2.11.46` successfully (upgraded Gitleaks hook to `v8.30.1` to resolve the Go 1.24 WASM panic in CI runners, and canceled hung jobs).
@@ -84,15 +90,12 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
 
 ### Plan
 
-- [x] **Fix database restore skip on workspace import of `.ldmp` package**:
-  - [x] Update `ldm_core/handlers/workspace.py` to write/save the imported project's `meta.json` file *before* executing `cmd_restore`.
-  - [x] Ensure both the remote import and the local file import paths are updated.
-  - [x] Run the unit tests to verify correctness.
-  - [x] Run all pre-commit formatting and lint checks.
-
-- [x] **Restore PR workflow in scripts/release.py to bypass master branch protection**:
-  - [x] Update `scripts/release.py` to create a `release/v<version>` branch, commit, push, open a PR via `gh CLI`, enable auto-merge, poll for merge success, checkout `master` locally, pull, tag, and push the tag.
-  - [x] Ensure release initiation is still restricted to the `master` branch.
+- [ ] **Interactive Configuration Management (Web Dashboard & TUI) for Issue #126**:
+  - [ ] Implement backend REST API endpoints for property edits and deletions in `ldm_core/dashboard/server.py`.
+  - [ ] Update frontend Properties Inspector drawer in `ldm_core/resources/dashboard/index.html` to support inline editing and additions.
+  - [ ] Add `--tui` / `-t` CLI option to `ldm config edit` command in `ldm_core/cli.py`.
+  - [ ] Implement TUI interactive configuration menu in `ldm_core/handlers/config.py`.
+  - [ ] Add unit tests for API endpoints and TUI logic.
 
 1. **Sequential Property Overrides Hierarchy (5-Layers) with `!important` Precedence**:
    - [x] Sourcing layers in order of lowest to highest precedence:
