@@ -259,7 +259,7 @@ class ConfigService:
         from ldm_core.utils import safe_write_text
 
         lines = pe_path.read_text().splitlines()
-        new_lines = []
+        new_lines: list[str] = []
         i = 0
 
         while i < len(lines):
@@ -275,6 +275,11 @@ class ConfigService:
                         i += 1
                         temp_val = lines[i]
                     i += 1
+                    if new_lines and new_lines[-1].strip().lower() in (
+                        "# !important",
+                        "!important",
+                    ):
+                        new_lines.pop()
                     continue
 
             new_lines.append(line)
@@ -1068,9 +1073,173 @@ class ConfigService:
             UI.raw(f"  {k.ljust(15)}: {display_v.ljust(20)} [{source}]")
         UI.raw("")
 
-    def cmd_edit(self, project_id=None, target="meta"):
+    def cmd_edit(self, project_id=None, target="meta", tui=False):
         root_path = self.manager.detect_project_path(project_id)
         if not root_path:
+            return
+
+        if tui:
+            if target != "properties":
+                UI.warning(
+                    "Interactive TUI is only supported for editing properties. Switching target to 'properties'."
+                )
+                target = "properties"
+
+            paths = self.manager.setup_paths(root_path)
+            pe_path = paths["files"] / "portal-ext.properties"
+            with contextlib.suppress(PermissionError, OSError):
+                paths["files"].mkdir(exist_ok=True)
+            if not pe_path.exists():
+                from ldm_core.utils import safe_write_text
+
+                safe_write_text(pe_path, "")
+
+            # Run TUI loop
+            while True:
+                UI.raw("\n" + "=" * 60)
+                UI.raw(
+                    f" LDM Interactive Properties Editor (TUI) - Project: {project_id or root_path.name}"
+                )
+                UI.raw("=" * 60)
+
+                # Load current overrides
+                content = pe_path.read_text() if pe_path.exists() else ""
+                props, important_keys = self._get_properties_with_metadata(content)
+
+                sorted_keys = sorted(props.keys())
+
+                if sorted_keys:
+                    UI.raw("\nCurrent Custom Overrides:")
+                    for idx, k in enumerate(sorted_keys, 1):
+                        imp_str = " [!important]" if k in important_keys else ""
+                        UI.raw(f"  {idx:2d}. {k} = {props[k]}{imp_str}")
+                else:
+                    UI.raw("\nNo custom property overrides defined yet.")
+
+                UI.raw("\nOptions:")
+                UI.raw("  [A] Add a new override")
+                if sorted_keys:
+                    UI.raw("  [E] Edit an override (by index)")
+                    UI.raw("  [D] Delete an override (by index)")
+                    UI.raw("  [T] Toggle !important on an override")
+                UI.raw("  [R] Rebuild & Sync properties to containers")
+                UI.raw("  [Q] Quit / Exit")
+
+                try:
+                    choice = input("\nSelect an option: ").strip().lower()
+                except (KeyboardInterrupt, EOFError):
+                    UI.raw("\nExiting TUI.")
+                    break
+
+                if choice == "q":
+                    break
+                if choice == "a":
+                    try:
+                        key = input("Enter property key: ").strip()
+                        if not key or not re.match(r"^[a-zA-Z0-9_.-]+$", key):
+                            UI.error("Invalid property key format.")
+                            continue
+                        val = input("Enter property value: ").strip()
+                        imp_choice = (
+                            input("Mark as !important? (y/N): ").strip().lower()
+                        )
+                        is_important = imp_choice in ("y", "yes")
+
+                        important_set = {key} if is_important else None
+                        self.update_portal_ext(
+                            paths, {key: val}, important_keys=important_set
+                        )
+                        UI.success(f"Added override: {key}={val}")
+                    except Exception as e:
+                        UI.error(f"Error adding override: {e}")
+                elif choice == "e" and sorted_keys:
+                    try:
+                        idx_str = input("Enter override index to edit: ").strip()
+                        idx = int(idx_str) - 1
+                        if idx < 0 or idx >= len(sorted_keys):
+                            UI.error("Invalid index.")
+                            continue
+                        key = sorted_keys[idx]
+                        old_val = props[key]
+                        old_imp = key in important_keys
+
+                        UI.raw(f"Editing: {key} (current value: {old_val})")
+                        val = input(
+                            f"Enter new value (press Enter to keep '{old_val}'): "
+                        ).strip()
+                        if not val:
+                            val = old_val
+
+                        imp_choice = (
+                            input(f"Mark as !important? (current: {old_imp}) (y/N): ")
+                            .strip()
+                            .lower()
+                        )
+                        is_important = (
+                            imp_choice in ("y", "yes") if imp_choice else old_imp
+                        )
+
+                        important_set = {key} if is_important else None
+                        self.update_portal_ext(
+                            paths, {key: val}, important_keys=important_set
+                        )
+                        UI.success(f"Updated override: {key}={val}")
+                    except Exception as e:
+                        UI.error(f"Error editing override: {e}")
+                elif choice == "d" and sorted_keys:
+                    try:
+                        idx_str = input("Enter override index to delete: ").strip()
+                        idx = int(idx_str) - 1
+                        if idx < 0 or idx >= len(sorted_keys):
+                            UI.error("Invalid index.")
+                            continue
+                        key = sorted_keys[idx]
+                        confirm = (
+                            input(
+                                f"Are you sure you want to delete override '{key}'? (y/N): "
+                            )
+                            .strip()
+                            .lower()
+                        )
+                        if confirm in ("y", "yes"):
+                            self.remove_portal_ext(paths, {key})
+                            UI.success(f"Removed override '{key}'")
+                    except Exception as e:
+                        UI.error(f"Error deleting override: {e}")
+                elif choice == "t" and sorted_keys:
+                    try:
+                        idx_str = input(
+                            "Enter override index to toggle !important: "
+                        ).strip()
+                        idx = int(idx_str) - 1
+                        if idx < 0 or idx >= len(sorted_keys):
+                            UI.error("Invalid index.")
+                            continue
+                        key = sorted_keys[idx]
+                        is_important = key not in important_keys
+
+                        # Load all current important keys and toggle this one
+                        new_important_keys = set(important_keys)
+                        if is_important:
+                            new_important_keys.add(key)
+                        else:
+                            new_important_keys.discard(key)
+
+                        self.update_portal_ext(
+                            paths, {key: props[key]}, important_keys=new_important_keys
+                        )
+                        status_str = "important" if is_important else "not important"
+                        UI.success(f"Toggled '{key}' to {status_str}")
+                    except Exception as e:
+                        UI.error(f"Error toggling !important: {e}")
+                elif choice == "r":
+                    try:
+                        self.cmd_rebuild_properties(project_id)
+                        UI.success("Properties rebuilt and synced successfully.")
+                    except Exception as e:
+                        UI.error(f"Error rebuilding properties: {e}")
+                else:
+                    UI.error("Invalid option selection.")
             return
 
         import subprocess

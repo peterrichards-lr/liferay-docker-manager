@@ -1218,6 +1218,12 @@ def get_parser():
         default="meta",
         help="Which file to edit (default: meta)",
     )
+    edit_cmd.add_argument(
+        "--tui",
+        "-t",
+        action="store_true",
+        help="Launch interactive terminal menu to configure property overrides",
+    )
 
     rebuild_props = config_subparsers.add_parser(
         "rebuild-properties",
@@ -1827,7 +1833,7 @@ def main():
             getattr(args, "project", None)
         ),
         ("config", "edit"): lambda: manager.config.cmd_edit(
-            getattr(args, "project", None), args.target
+            getattr(args, "project", None), args.target, getattr(args, "tui", False)
         ),
         ("config", "rebuild-properties"): lambda: manager.config.cmd_rebuild_properties(
             getattr(args, "project", None)
