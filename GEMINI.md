@@ -69,7 +69,7 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
 - [Agent Rules of Engagement](./.gemini/gemini.md)
 - [Properties Override Hierarchy Guide](./docs/guides/PROPERTIES_HIERARCHY.md)
 
-## 8. Active Work State & Plan (June 24, 2026)
+## 8. Active Work State & Plan (June 25, 2026)
 
 - Released `v2.11.52` successfully (immediate search reindexing on running containers via OSGi Gogo telnet command).
 - Released `v2.11.46` successfully (upgraded Gitleaks hook to `v8.30.1` to resolve the Go 1.24 WASM panic in CI runners, and canceled hung jobs).
@@ -83,10 +83,11 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
 
 ### Plan
 
-- **Refactor Workspace Remote Import Tests to use Real Filesystems**:
-  - Replace dangerous global patches of `builtins.open`, `pathlib.Path.exists`, `Path.read_text`, `Path.mkdir`, and `shutil.rmtree` in `ldm_core/tests/test_workspace.py` with real temporary directories using `tempfile.TemporaryDirectory`.
-  - Let tests write actual files for downloaded packages and checksums, and extract them natively using a side-effect mock on `safe_extract` that writes the required `meta` file to disk.
-  - Verify that the tests pass locally, run formatting/lint checks, and push the fixes to `release/v2.11.51` to re-trigger and successfully complete the CI release pipeline.
+- **Fix database restore skip on workspace import of `.ldmp` package**:
+  - Update `ldm_core/handlers/workspace.py` to write/save the imported project's `meta.json` file *before* executing `cmd_restore`.
+  - Ensure both the remote import and the local file import paths are updated.
+  - Run the unit tests to verify correctness.
+  - Run all pre-commit formatting and lint checks.
 
 1. **Sequential Property Overrides Hierarchy (5-Layers) with `!important` Precedence**:
    - [x] Sourcing layers in order of lowest to highest precedence:

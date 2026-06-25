@@ -476,3 +476,48 @@ class TestSnapshotService(unittest.TestCase):
             if isinstance(c.args[0], str) and "ON_ERROR_STOP=1" in c.args[0]
         )
         self.assertIn('docker exec -i "zukunft digital-db" psql', import_call.args[0])
+
+    @patch("ldm_core.handlers.base.BaseHandler.detect_project_path")
+    @patch("ldm_core.handlers.base.BaseHandler.setup_paths")
+    def test_cmd_restore_hypersonic_success(self, mock_paths, mock_detect):
+        mock_detect.return_value = self.test_dir
+        (self.test_dir / "snapshots").mkdir(exist_ok=True)
+
+        mock_paths.return_value = {
+            "root": self.test_dir,
+            "backups": self.test_dir / "snapshots",
+            "state": self.test_dir / "osgi" / "state",
+        }
+
+        snap_dir = self.test_dir / "snapshots" / "20260512_120000"
+        snap_dir.mkdir(parents=True)
+        (snap_dir / "files.tar.gz").touch()
+        (snap_dir / "files.tar.gz.sha256").write_text("match-sha")
+        (snap_dir / "meta").touch()
+
+        # Set latest flag
+        self.manager.args.latest = True
+        self.manager.args.verify = True
+        self.manager.args.list = False
+        self.manager.args.backup_dir = None
+
+        with (
+            patch("ldm_core.utils.calculate_sha256", return_value="match-sha"),
+            patch.object(self.manager.snapshot, "_extract_snapshot_archive"),
+            patch("ldm_core.ui.UI.success") as mock_success,
+            patch(
+                "ldm_core.handlers.base.BaseHandler.read_meta",
+                return_value={"db_type": "hypersonic"},
+            ),
+            patch.object(self.manager.runtime, "cmd_stop") as mock_stop,
+            patch.object(
+                self.manager.snapshot, "_execute_orchestrated_db_restore"
+            ) as mock_db_restore,
+        ):
+            self.manager.snapshot.cmd_restore("test")
+            mock_success.assert_any_call(
+                "  + Hypersonic database restored successfully (file-based)."
+            )
+            # Verify we bypassed stopping Liferay and executing DB restore since it is file-based
+            mock_stop.assert_not_called()
+            mock_db_restore.assert_not_called()

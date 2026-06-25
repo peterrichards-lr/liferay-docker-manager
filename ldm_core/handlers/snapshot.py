@@ -676,7 +676,10 @@ class SnapshotService(BaseHandler):
             except Exception as e:
                 UI.warning(f"Failed to decompress {db_gz.name}: {e}")
 
-        if sql_file.exists():
+        db_type = project_meta.get("db_type", "hypersonic")
+        if db_type == "hypersonic":
+            UI.success("  + Hypersonic database restored successfully (file-based).")
+        elif sql_file.exists():
             # LDM-413: Scrub proprietary LCP \restrict meta-commands
             # These commands cause standard psql to fail when ON_ERROR_STOP=1 is active
             try:
@@ -716,7 +719,6 @@ class SnapshotService(BaseHandler):
                 if "temp_sql" in locals() and temp_sql.exists():
                     temp_sql.unlink(missing_ok=True)
 
-            db_type = project_meta.get("db_type", "hypersonic")
             UI.info(f"Triggering orchestrated database restore ({db_type})...")
 
             # 1. Ensure DB container is running, but Liferay is STOPPED
