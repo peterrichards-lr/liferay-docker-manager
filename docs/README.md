@@ -87,21 +87,33 @@ The badges below represent our verified support for various Docker providers. En
 
 ## Documentation
 
-- [Installation Guide](INSTALLATION.md)
-- [Architecture Overview](LDM_ARCHITECTURE.md)
-- [Test & Validation Strategy](TESTING.md)
-- [Security Posture & Disclosures](SECURITY.md)
-- [Future Roadmap](ROADMAP.md)
+### 1. Getting Started & Core Reference
 
-### In-Depth Guides
+- [Installation Guide](INSTALLATION.md) — Detailed environment setup for macOS (Colima/OrbStack), Linux, and Windows (WSL2).
+- [CLI Reference & Automation](guides/CLI_REFERENCE.md) — CLI commands, global options, and scripting parameters.
+- [Troubleshooting & Diagnostics](TROUBLESHOOTING.md) — Core error handling guides, Docker locks, and common overrides.
+- [Compatibility Table](COMPATIBILITY_TABLE.md) — Matrix of tested Docker engines, providers, and host OS versions.
 
-- [PaaS "Golden Path" & Demo Rescue](guides/PAAS_LOCAL_DEV.md)
-- [CLI Reference & Automation](guides/CLI_REFERENCE.md)
-- [Configuration & Environment Variables](guides/CONFIGURATION.md)
-- [Networking, DNS & SSL](guides/NETWORKING_DNS.md)
-- [Sharing & Tunnels (lfr-tunnel & Ngrok)](guides/SHARING_AND_TUNNELS.md)
-- [Data Management (Snapshots, Seeds, Hydration)](guides/DATA_MANAGEMENT.md)
-- [Development & Building](guides/DEVELOPMENT.md)
+### 2. Operational & Feature Guides
+
+- [PaaS "Golden Path" & Demo Rescue](guides/PAAS_LOCAL_DEV.md) — Replicating and debugging remote Liferay Cloud environments locally.
+- [Workspace Import & Portable Packaging](guides/WORKSPACE_IMPORT_AND_PACKAGING.md) — Exporting, sharing, and restoring portable `.ldmp` release packages.
+- [Properties Override Hierarchy](guides/PROPERTIES_HIERARCHY.md) — Understanding the 5-layer cascading properties and `# !important` override rules.
+- [Sharing & Tunnels (lfr-tunnel & Ngrok)](guides/SHARING_AND_TUNNELS.md) — Exposing local projects securely to public subdomains for client reviews.
+- [Data Management (Snapshots, Seeds, Hydration)](guides/DATA_MANAGEMENT.md) — Database/volume backup structures and remote asset fetching.
+- [Networking, DNS & Zero-Config SSL](guides/NETWORKING_DNS.md) — Traefik configurations, custom domains, and local cert trust.
+
+### 3. Integration & Developer Guides
+
+- [Development & Building](guides/DEVELOPMENT.md) — Local building, egg info packaging, and developer setup.
+- [AI Command Center & LDM MCP Server](guides/AI_MCP_GUIDE.md) — Extending AI developer tooling with LDM FastMCP tools.
+- [Advanced CLI Tuning](guides/ADVANCED_CLI.md) — Tuning global switches, terminal coloring, and ASCII formatting overrides.
+- [Operational Playbook & Automation Specs](PLAYBOOK.md) — Pipelines, release procedures, and issue management.
+- [Testing & E2E Validation Strategy](TESTING.md) — Running unit, mock, and full integration E2E test suites.
+- [Architecture Overview](LDM_ARCHITECTURE.md) — Micro-architecture, layers of abstraction, and boundary constraints.
+- [Security Posture & Disclosures](SECURITY.md) — Restricted secrets management.
+- [Third-Party Tools list](THIRD_PARTY_TOOLS.md) — Internal utilities, mkcert, and docker dependencies.
+- [Future Roadmap](ROADMAP.md) — Planned features and strategic GTM tools.
 
 ## Installation (Quick Start)
 
