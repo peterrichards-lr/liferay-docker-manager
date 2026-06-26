@@ -151,7 +151,13 @@ class TestDashboard(unittest.TestCase):
         self.manager.read_meta.side_effect = lambda x: (
             {"liferay_container_name": "my-project1"}
             if "dummy" in str(x)
-            else {"name": "Test Snap"}
+            else {
+                "name": "Test Snap",
+                "includes_database": "true",
+                "includes_volume_assets": "true",
+                "includes_client_extensions": "false",
+                "includes_osgi_modules": "false",
+            }
         )
         # Mock paths setup
         backups_dir = MagicMock()
@@ -171,6 +177,43 @@ class TestDashboard(unittest.TestCase):
         self.assertEqual(data[0]["id"], "2026-06-22T12-00-00Z")
         self.assertEqual(data[0]["name"], "Test Snap")
         self.assertEqual(data[0]["size"], "15.0 MB")
+        self.assertTrue(data[0]["includes_database"])
+        self.assertTrue(data[0]["includes_volume_assets"])
+        self.assertFalse(data[0]["includes_client_extensions"])
+        self.assertFalse(data[0]["includes_osgi_modules"])
+
+    @patch("ldm_core.dashboard.server.get_dir_size")
+    def test_api_list_snapshots_missing_flags_default_false(self, mock_get_size):
+        mock_get_size.return_value = "1.0 MB"
+        self.manager.find_dxp_roots.return_value = [
+            {"path": Path("/dummy/project1"), "version": "7.4"}
+        ]
+        self.manager.read_meta.side_effect = lambda x: (
+            {"liferay_container_name": "my-project1"}
+            if "dummy" in str(x)
+            else {"name": "Legacy Snap"}
+        )
+        # Mock paths setup
+        backups_dir = MagicMock()
+        backups_dir.exists.return_value = True
+
+        snap_dir = MagicMock()
+        snap_dir.is_dir.return_value = True
+        snap_dir.name = "2026-06-22T12-00-00Z"
+
+        backups_dir.iterdir.return_value = [snap_dir]
+        self.manager.setup_paths.return_value = {"backups": backups_dir}
+
+        response = self.client.get("/api/projects/my-project1/snapshots")
+        self.assertEqual(response.status_code, 200)
+        data = response.get_json()
+        self.assertEqual(len(data), 1)
+        self.assertEqual(data[0]["name"], "Legacy Snap")
+        # Missing flags should be assumed false
+        self.assertFalse(data[0]["includes_database"])
+        self.assertFalse(data[0]["includes_volume_assets"])
+        self.assertFalse(data[0]["includes_client_extensions"])
+        self.assertFalse(data[0]["includes_osgi_modules"])
 
     def test_api_list_snapshots_not_found(self):
         self.manager.find_dxp_roots.return_value = []

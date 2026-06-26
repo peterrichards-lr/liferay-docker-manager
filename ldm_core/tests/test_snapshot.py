@@ -39,6 +39,60 @@ class TestSnapshotService(unittest.TestCase):
             self.assertEqual(backups, [])
             mock_info.assert_called_with("No snapshots found.")
 
+    @patch("ldm_core.handlers.base.BaseHandler.detect_project_path")
+    @patch("builtins.print")
+    def test_cmd_snapshots_with_elements(self, mock_print, mock_detect):
+        mock_detect.return_value = self.test_dir
+
+        # Setup backup dirs
+        backups_dir = self.test_dir / "snapshots"
+        backups_dir.mkdir(parents=True, exist_ok=True)
+
+        # Snapshot 1: All resources included
+        snap1 = backups_dir / "2026-06-26T12-00-00Z"
+        snap1.mkdir()
+
+        # Snapshot 2: No resources, missing metadata keys (should assume false)
+        snap2 = backups_dir / "2026-06-26T11-00-00Z"
+        snap2.mkdir()
+
+        def mock_read_meta_side_effect(path):
+            if "2026-06-26T12-00-00Z" in str(path):
+                return {
+                    "name": "Full Backup",
+                    "includes_database": "true",
+                    "includes_volume_assets": "true",
+                    "includes_client_extensions": "true",
+                    "includes_osgi_modules": "true",
+                }
+            return {
+                "name": "Empty Backup",
+            }
+
+        with patch.object(
+            MockSnapshotManager, "read_meta", side_effect=mock_read_meta_side_effect
+        ):
+            backups = self.manager.snapshot.cmd_snapshots()
+            self.assertEqual(len(backups), 2)
+
+        printed_args = [call[0][0] for call in mock_print.call_args_list]
+
+        # Check first printed snapshot (Full Backup) has [DB,VOL,CX,MOD]
+        self.assertTrue(
+            any(
+                "Full Backup" in line and "[DB,VOL,CX,MOD]" in line
+                for line in printed_args
+            )
+        )
+        # Check second printed snapshot (Empty Backup) does not print any resource tags
+        self.assertTrue(
+            any(
+                "Empty Backup" in line
+                and not any(p in line for p in ["DB", "VOL", "CX", "MOD"])
+                for line in printed_args
+            )
+        )
+
     def test_dehydrate_hydration_hooks(self):
         # Test that dehydration/hydration are triggered when is_using_named_volumes is True
         paths = {
@@ -118,10 +172,16 @@ class TestSnapshotService(unittest.TestCase):
 
         with (
             patch("tarfile.open"),
-            patch("ldm_core.handlers.base.BaseHandler.write_meta"),
+            patch("ldm_core.handlers.base.BaseHandler.write_meta") as mock_write,
             patch("ldm_core.utils.calculate_sha256", return_value="dummy-sha"),
         ):
             self.manager.snapshot.cmd_snapshot("proj")
+            mock_write.assert_called_once()
+            written_meta = mock_write.call_args[0][1]
+            self.assertEqual(written_meta["includes_database"], "false")
+            self.assertEqual(written_meta["includes_volume_assets"], "false")
+            self.assertEqual(written_meta["includes_client_extensions"], "false")
+            self.assertEqual(written_meta["includes_osgi_modules"], "false")
 
         snap_dirs = [d for d in (self.test_dir / "snapshots").iterdir() if d.is_dir()]
         self.assertTrue(len(snap_dirs) >= 1)

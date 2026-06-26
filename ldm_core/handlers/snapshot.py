@@ -125,12 +125,29 @@ class SnapshotService(BaseHandler):
 
         UI.heading(f"Snapshots for {paths['root'].name}")
         for i, b in enumerate(backups):
-            meta = self.manager.read_meta(b / "meta")
+            meta = self.manager.read_meta(b / "meta") or {}
             name = meta.get("name", "Untitled")
             timestamp = b.name
             size = self._get_dir_size(b)
+
+            inc_db = meta.get("includes_database") in [True, "true"]
+            inc_vol = meta.get("includes_volume_assets") in [True, "true"]
+            inc_cx = meta.get("includes_client_extensions") in [True, "true"]
+            inc_modules = meta.get("includes_osgi_modules") in [True, "true"]
+
+            parts = []
+            if inc_db:
+                parts.append("DB")
+            if inc_vol:
+                parts.append("VOL")
+            if inc_cx:
+                parts.append("CX")
+            if inc_modules:
+                parts.append("MOD")
+
+            inc_str = f" [{','.join(parts)}]" if parts else ""
             print(
-                f"[{i + 1}] {UI.CYAN}{timestamp}{UI.COLOR_OFF} - {UI.BOLD}{name}{UI.COLOR_OFF} ({size})"
+                f"[{i + 1}] {UI.CYAN}{timestamp}{UI.COLOR_OFF} - {UI.BOLD}{name}{UI.COLOR_OFF} ({size}){UI.DIM}{inc_str}{UI.COLOR_OFF}"
             )
 
         return backups
@@ -400,6 +417,57 @@ class SnapshotService(BaseHandler):
                     f"Could not parse docker-compose.yml for environment variables: {e}"
                 )
 
+        # Determine included resources dynamically
+        db_included = db_snapshot_file is not None and db_snapshot_file.exists()
+
+        has_data = False
+        data_dir = paths.get("data")
+        if data_dir and data_dir.exists() and data_dir.is_dir():
+            try:
+                has_data = any(data_dir.iterdir())
+            except Exception:
+                pass
+
+        has_cx = False
+        for d in ["cx", "deploy"]:
+            dir_path = paths.get(d)
+            if dir_path and dir_path.exists() and dir_path.is_dir():
+                try:
+                    if any(dir_path.glob("*.zip")):
+                        has_cx = True
+                        break
+                except Exception:
+                    pass
+        if not has_cx:
+            ce_dir = paths.get("ce_dir")
+            if ce_dir and ce_dir.exists() and ce_dir.is_dir():
+                try:
+                    if any(ce_dir.glob("*.zip")) or any(ce_dir.glob("*/dist/*.zip")):
+                        has_cx = True
+                except Exception:
+                    pass
+
+        has_modules = False
+        for d in ["modules", "deploy"]:
+            dir_path = paths.get(d)
+            if dir_path and dir_path.exists() and dir_path.is_dir():
+                try:
+                    if any(dir_path.glob("*.jar")) or any(dir_path.glob("*.war")):
+                        has_modules = True
+                        break
+                except Exception:
+                    pass
+        if not has_modules:
+            for s_folder in ["modules", "themes"]:
+                base = paths["root"] / s_folder
+                if base.exists() and base.is_dir():
+                    try:
+                        if any(base.glob("**/build/libs/*.[jw]ar")):
+                            has_modules = True
+                            break
+                    except Exception:
+                        pass
+
         # Save metadata
         meta = {
             "name": name,
@@ -409,6 +477,10 @@ class SnapshotService(BaseHandler):
             "host_name": project_meta.get("host_name"),
             "search_snapshot": search_snapshot_name,
             "custom_env": json.dumps(custom_env_dict) if custom_env_dict else None,
+            "includes_database": str(db_included).lower(),
+            "includes_volume_assets": str(has_data).lower(),
+            "includes_client_extensions": str(has_cx).lower(),
+            "includes_osgi_modules": str(has_modules).lower(),
         }
         self.manager.write_meta(snap_dir, meta)
 

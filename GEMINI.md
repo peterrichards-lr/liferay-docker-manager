@@ -74,6 +74,12 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
 
 - Implemented Config Integrity & Validation (Pre-Flight Properties Analyzer) for Issue #127 (statically checks unclosed quotes, malformed JDBC URLs, conflicting database configs, and missing mount paths during properties rebuilding).
 
+- **Fix compilation bypassing in generated GitHub Actions workflow (Issue #182)**:
+  - [x] Update `cmd_init_ci` in `ldm_core/handlers/system.py` to add `setup-java` (JDK 21) and `setup-node` (Node.js 22) steps, and change environment start step to `ldm import . --non-interactive --build` to ensure workspace code is built and synced before packaging.
+
+- **Implement resource inclusion metadata flags in snapshot/package manifest (Issue #183)**:
+  - [x] Update `cmd_snapshot` in `ldm_core/handlers/snapshot.py` to dynamically check and write `includes_database`, `includes_volume_assets`, `includes_client_extensions`, and `includes_osgi_modules` keys in the snapshot `meta` file.
+
 - **Interactive Configuration Management (Web Dashboard & TUI) for Issue #126**:
   - [x] Implement backend REST API endpoints for property edits and deletions in `ldm_core/dashboard/server.py`.
   - [x] Update frontend Properties Inspector drawer in `ldm_core/resources/dashboard/index.html` to support inline editing and additions.
@@ -312,7 +318,7 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
     - [x] Patch `sys.argv` in `test_upgrade_downgrade_non_interactive_with_force` and `test_upgrade_downgrade_interactive_confirm` to ensure the `.py` suffix check triggers properly when running under `py.test` / venv.
 
 44. **Restructure documentation entry points**:
-    - [ ] Create a root `README.md` with a clean, concise introduction, macOS/Linux quick installation, quick start commands, and signposts.
-    - [ ] Move detailed Conventions and Key Features out of the main index to `docs/guides/CONVENTIONS_AND_FEATURES.md`.
-    - [ ] Simplify `docs/README.md` to be a categorized table of contents and documentation index, removing duplicate sections.
-    - [ ] Run pre-commit checks to verify markdown formatting and link integrity.
+    - [x] Create a root `README.md` with a clean, concise introduction, macOS/Linux quick installation, quick start commands, and signposts.
+    - [x] Move detailed Conventions and Key Features out of the main index to `docs/guides/CONVENTIONS_AND_FEATURES.md`.
+    - [x] Simplify `docs/README.md` to be a categorized table of contents and documentation index, removing duplicate sections.
+    - [x] Run pre-commit checks to verify markdown formatting and link integrity.
