@@ -466,6 +466,60 @@ class TestBaseProject(unittest.TestCase):
                     Path("/tmp/home/.ldm/common"),
                 )
 
+    def test_check_uncommitted_changes(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            proj_path = Path(tmp_dir)
+
+            # Case A: No .git directory -> returns True
+            self.assertTrue(self.handler.check_uncommitted_changes(proj_path))
+
+            # Create .git directory to simulate a git repo
+            (proj_path / ".git").mkdir()
+
+            with patch("subprocess.run") as mock_run:
+                # Case B: Clean git status -> returns True
+                mock_run.return_value = MagicMock(returncode=0, stdout="")
+                self.assertTrue(self.handler.check_uncommitted_changes(proj_path))
+
+                # Case C: Changes only in non-critical paths -> returns True
+                mock_run.return_value = MagicMock(
+                    returncode=0, stdout=" M README.md\n?? foo.txt"
+                )
+                self.assertTrue(self.handler.check_uncommitted_changes(proj_path))
+
+                # Case D: Changes in critical files, force=True -> returns True
+                self.handler.args.force = True
+                mock_run.return_value = MagicMock(
+                    returncode=0, stdout=" M files/portal-ext.properties"
+                )
+                self.assertTrue(self.handler.check_uncommitted_changes(proj_path))
+
+                # Reset force flag
+                self.handler.args.force = False
+
+                # Case E: Changes in critical files, force=False, non_interactive=True -> raises SystemExit
+                self.handler.non_interactive = True
+                with self.assertRaises(SystemExit):
+                    self.handler.check_uncommitted_changes(proj_path)
+
+                # Reset non_interactive
+                self.handler.non_interactive = False
+
+                # Case F: Changes in critical files, force=False, non_interactive=False, user answers Yes -> returns True
+                with (
+                    patch("ldm_core.ui.UI.ask", return_value="y"),
+                    patch("ldm_core.ui.UI.warning"),
+                ):
+                    self.assertTrue(self.handler.check_uncommitted_changes(proj_path))
+
+                # Case G: Changes in critical files, force=False, non_interactive=False, user answers No -> raises SystemExit
+                with (
+                    patch("ldm_core.ui.UI.ask", return_value="n"),
+                    patch("ldm_core.ui.UI.warning"),
+                    self.assertRaises(SystemExit),
+                ):
+                    self.handler.check_uncommitted_changes(proj_path)
+
 
 class TestBaseEnvironment(unittest.TestCase):
     def setUp(self):

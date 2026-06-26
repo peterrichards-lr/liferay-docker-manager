@@ -278,6 +278,23 @@ def get_parser():
         action="store_true",
         help="Suppress warning when running LDM from the root of the user's home directory",
     )
+    base_parent.add_argument(
+        "-f",
+        "--force",
+        action="store_true",
+        help="Force execution of destructive or risky operations without safety checks or prompts",
+    )
+    base_parent.add_argument(
+        "--no-color",
+        action="store_true",
+        help="Disable ANSI color codes in output",
+    )
+    base_parent.add_argument(
+        "--no-unicode",
+        "--ascii",
+        action="store_true",
+        help="Disable Unicode characters in output and force ASCII safe-replacements",
+    )
 
     # For subparsers, we want the global flags but we SUPPRESS the default (False)
     # so they don't overwrite the value set by the main parser if provided before the command.
@@ -292,6 +309,9 @@ def get_parser():
     base_sub_parent.add_argument("--benchmark", action="store_true")
     base_sub_parent.add_argument("--overwrite-registry", action="store_true")
     base_sub_parent.add_argument("--no-home-warn", action="store_true")
+    base_sub_parent.add_argument("-f", "--force", action="store_true")
+    base_sub_parent.add_argument("--no-color", action="store_true")
+    base_sub_parent.add_argument("--no-unicode", "--ascii", action="store_true")
 
     parser = argparse.ArgumentParser(
         prog="ldm",
@@ -302,7 +322,9 @@ def get_parser():
     subparsers = parser.add_subparsers(dest="command")
 
     # Command: run (alias: up)
-    run = subparsers.add_parser("run", aliases=["up"], parents=[base_sub_parent])
+    run = subparsers.add_parser(
+        "run", aliases=["up"], parents=[base_sub_parent], conflict_handler="resolve"
+    )
     run.add_argument("project", nargs="?")
     run.add_argument("-t", "--tag")
     run.add_argument(
@@ -685,7 +707,9 @@ def get_parser():
         aliases = []
         if cmd == "down":
             aliases = ["rm"]
-        p = subparsers.add_parser(cmd, aliases=aliases, parents=[base_sub_parent])
+        p = subparsers.add_parser(
+            cmd, aliases=aliases, parents=[base_sub_parent], conflict_handler="resolve"
+        )
         p.add_argument("project", nargs="?")
 
         if cmd == "deploy":
@@ -1141,7 +1165,9 @@ def get_parser():
     )
     cloud_subparsers = cloud.add_subparsers(dest="subcommand")
 
-    cloud_fetch = cloud_subparsers.add_parser("fetch", parents=[base_sub_parent])
+    cloud_fetch = cloud_subparsers.add_parser(
+        "fetch", parents=[base_sub_parent], conflict_handler="resolve"
+    )
     cloud_fetch.add_argument("project", nargs="?")
     cloud_fetch.add_argument("env_id", nargs="?")
     cloud_fetch.add_argument("service", nargs="?")
@@ -1474,12 +1500,6 @@ def get_parser():
         "nuke",
         parents=[base_sub_parent],
         help="Completely reset/wipe all global LDM state, caches, certificates, registry, and docker infrastructure.",
-    )
-    nuke_cmd.add_argument(
-        "--force",
-        "-f",
-        action="store_true",
-        help="Nuke all resources without asking for confirmation",
     )
     nuke_cmd.add_argument(
         "--keep-config",

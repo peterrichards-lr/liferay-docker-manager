@@ -65,6 +65,26 @@ class LiferayManager(
         UI.INFO_MODE = self.info_mode
         UI.QUIET_MODE = self.quiet_mode
 
+        # Resolve NO_COLOR and NO_UNICODE from CLI, Config, or Env
+        no_color_cfg = self.defaults.get("no_color")
+        no_color_val = (
+            getattr(args, "no_color", False)
+            or "NO_COLOR" in os.environ
+            or "LDM_NO_COLOR" in os.environ
+            or (isinstance(no_color_cfg, str) and no_color_cfg.lower() == "true")
+            or (isinstance(no_color_cfg, bool) and no_color_cfg)
+        )
+        UI.NO_COLOR = bool(no_color_val)
+
+        no_unicode_cfg = self.defaults.get("no_unicode")
+        no_unicode_val = (
+            getattr(args, "no_unicode", False)
+            or "LDM_NO_UNICODE" in os.environ
+            or (isinstance(no_unicode_cfg, str) and no_unicode_cfg.lower() == "true")
+            or (isinstance(no_unicode_cfg, bool) and no_unicode_cfg)
+        )
+        UI.NO_UNICODE = bool(no_unicode_val)
+
         # Ensure standard attributes exist on args
         for attr in RUN_ATTRS:
             if not hasattr(args, attr):
