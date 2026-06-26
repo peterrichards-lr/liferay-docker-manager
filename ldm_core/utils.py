@@ -1613,14 +1613,14 @@ def _check_updates_fallback(cache_file, now):
     return None, None
 
 
-def check_for_updates(current_version, force=False, pre_release=False):
+def check_for_updates(current_version, force=False, pre_release=False, tag=None):
     """Checks GitHub for the latest release of LDM."""
     cache_suffix = "_pre" if pre_release else ""
     cache_file = Path.home() / f".ldm_update_cache{cache_suffix}"
     cache_duration = 86400  # 24 hours
     now = time.time()
 
-    if not force and cache_file.exists():
+    if not tag and not force and cache_file.exists():
         try:
             data = json.loads(cache_file.read_text())
             if now - data.get("last_check", 0) < cache_duration:
@@ -1630,10 +1630,15 @@ def check_for_updates(current_version, force=False, pre_release=False):
 
     try:
         headers = {"User-Agent": "ldm-cli"}
-        if force:
+        if force or tag:
             headers["Cache-Control"] = "no-cache"
 
-        if pre_release:
+        if tag:
+            # Specific release tag lookup
+            if not tag.startswith("v"):
+                tag = f"v{tag}"
+            url = f"https://api.github.com/repos/peterrichards-lr/liferay-docker-manager/releases/tags/{tag}"
+        elif pre_release:
             # Get more releases to ensure we find the latest SemVer even with re-tagging
             url = "https://api.github.com/repos/peterrichards-lr/liferay-docker-manager/releases?per_page=100"
         else:
@@ -1700,18 +1705,22 @@ def check_for_updates(current_version, force=False, pre_release=False):
             if found_url:
                 release_url = found_url
 
-            # Update cache
-            cache_file.write_text(
-                json.dumps(
-                    {
-                        "last_check": now,
-                        "latest_version": latest_version,
-                        "url": release_url,
-                    }
+            # Update cache (only for general update checks, not tag lookups)
+            if not tag:
+                cache_file.write_text(
+                    json.dumps(
+                        {
+                            "last_check": now,
+                            "latest_version": latest_version,
+                            "url": release_url,
+                        }
+                    )
                 )
-            )
 
             return latest_version, release_url
+
+        if tag:
+            return None, None
 
         # Fallback if API status code is not 200 (e.g. 403 rate limited)
         if not pre_release:
@@ -1720,6 +1729,8 @@ def check_for_updates(current_version, force=False, pre_release=False):
                 return fallback_version, fallback_url
 
     except Exception:
+        if tag:
+            return None, None
         # Fallback if request failed completely (e.g. API DNS/connection error)
         if not pre_release:
             try:

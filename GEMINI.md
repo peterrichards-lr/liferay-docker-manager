@@ -69,7 +69,7 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
 - [Agent Rules of Engagement](./.gemini/gemini.md)
 - [Properties Override Hierarchy Guide](./docs/guides/PROPERTIES_HIERARCHY.md)
 
-## 8. Active Work State & Plan (June 25, 2026)
+## 8. Active Work State & Plan (June 26, 2026)
 
 - Implemented Config Integrity & Validation (Pre-Flight Properties Analyzer) for Issue #127 (statically checks unclosed quotes, malformed JDBC URLs, conflicting database configs, and missing mount paths during properties rebuilding).
 
@@ -285,3 +285,8 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
     - [x] Add regex-based ANSI escape sequence stripping in `UI._print` and `UI.ask` when `UI.NO_COLOR` is active.
     - [x] Add ASCII character fallback forcing in `UI._print` and `UI.ask`, and character replacements for `UI.Spinner` when `UI.NO_UNICODE` is active.
     - [x] Add unit tests verifying colorless and ASCII formatting output.
+39. **Support downgrades and targeting specific versions in ldm system upgrade (Issue #179)**:
+    - [x] Add `conflict_handler="resolve"` to `upgrade` parser in `ldm_core/cli.py` and add `--version` option.
+    - [x] Update `check_for_updates` in `ldm_core/utils.py` to support specific version tag checks.
+    - [x] Update `cmd_upgrade` in `ldm_core/handlers/diagnostics.py` to support validation, downgrade checks, warnings, and confirm prompts.
+    - [x] Add unit tests in `ldm_core/tests/test_diagnostics.py` to verify formatting, downgrade behavior, prompts, and force flag requirements.

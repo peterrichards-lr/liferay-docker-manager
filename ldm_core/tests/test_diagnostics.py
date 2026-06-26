@@ -489,6 +489,125 @@ class TestDiagnostics(unittest.TestCase):
             self.assertNotIn("Docker Engine", output)
             self.assertNotIn("Project Initialization", output)
 
+    @patch("ldm_core.handlers.diagnostics.UI.die", side_effect=SystemExit)
+    def test_upgrade_version_and_repair_conflict(self, mock_die):
+        self.manager.args.repair = True
+        self.manager.args.version = "v2.11.53"
+        with self.assertRaises(SystemExit):
+            self.manager.diagnostics.cmd_upgrade()
+        mock_die.assert_called_once_with(
+            "Cannot specify both --repair and --version. Please choose one."
+        )
+
+    @patch("ldm_core.handlers.diagnostics.UI.die", side_effect=SystemExit)
+    def test_upgrade_invalid_version_format(self, mock_die):
+        self.manager.args.repair = False
+        self.manager.args.version = "invalid.1.0"
+        with self.assertRaises(SystemExit):
+            self.manager.diagnostics.cmd_upgrade()
+        mock_die.assert_called_once()
+        self.assertIn("Invalid version format", mock_die.call_args[0][0])
+
+    @patch("ldm_core.handlers.diagnostics.check_for_updates", return_value=(None, None))
+    @patch("ldm_core.handlers.diagnostics.UI.die", side_effect=SystemExit)
+    def test_upgrade_version_not_found(self, mock_die, mock_updates):
+        self.manager.args.repair = False
+        self.manager.args.version = "v2.11.99"
+        with self.assertRaises(SystemExit):
+            self.manager.diagnostics.cmd_upgrade()
+        mock_updates.assert_called_once_with(
+            mock_updates.call_args[0][0], force=True, tag="v2.11.99"
+        )
+        mock_die.assert_called_once_with(
+            "Version 'v2.11.99' not found on GitHub Releases."
+        )
+
+    @patch("ldm_core.handlers.diagnostics.check_for_updates")
+    @patch("ldm_core.handlers.diagnostics.UI.die", side_effect=SystemExit)
+    def test_upgrade_downgrade_non_interactive_no_force(self, mock_die, mock_updates):
+        mock_updates.return_value = (
+            "2.11.53",
+            "https://github.com/releases/download/v2.11.53/ldm-macos",
+        )
+        self.manager.args.repair = False
+        self.manager.args.version = "v2.11.53"
+        self.manager.non_interactive = True
+        self.manager.args.force = False
+
+        with self.assertRaises(SystemExit):
+            self.manager.diagnostics.cmd_upgrade()
+
+        mock_die.assert_called_once_with(
+            "Downgrade aborted: --force is required in non-interactive mode."
+        )
+
+    @patch("ldm_core.handlers.diagnostics.check_for_updates")
+    @patch("ldm_core.handlers.diagnostics.UI.die", side_effect=SystemExit)
+    def test_upgrade_downgrade_non_interactive_with_force(self, mock_die, mock_updates):
+        mock_updates.return_value = (
+            "2.11.53",
+            "https://github.com/releases/download/v2.11.53/ldm-macos",
+        )
+        self.manager.args.repair = False
+        self.manager.args.version = "v2.11.53"
+        self.manager.non_interactive = True
+        self.manager.args.force = True
+
+        with self.assertRaises(SystemExit):
+            self.manager.diagnostics.cmd_upgrade()
+
+        # Verify it passed the downgrade check and hit the standalone binary safeguard
+        mock_die.assert_called_once_with(
+            "Self-upgrade is only supported for standalone binaries. Please use 'git pull' for source installations."
+        )
+
+    @patch("ldm_core.handlers.diagnostics.check_for_updates")
+    @patch("ldm_core.handlers.diagnostics.UI.confirm", return_value=False)
+    @patch("ldm_core.handlers.diagnostics.UI.die", side_effect=SystemExit)
+    def test_upgrade_downgrade_interactive_reject(
+        self, mock_die, mock_confirm, mock_updates
+    ):
+        mock_updates.return_value = (
+            "2.11.53",
+            "https://github.com/releases/download/v2.11.53/ldm-macos",
+        )
+        self.manager.args.repair = False
+        self.manager.args.version = "v2.11.53"
+        self.manager.non_interactive = False
+
+        # In interactive mode, if confirm returns False, it prints "Operation aborted." and returns (no die)
+        self.manager.diagnostics.cmd_upgrade()
+
+        mock_confirm.assert_called_once()
+        self.assertIn(
+            "Are you sure you want to proceed with the downgrade?",
+            mock_confirm.call_args[0][0],
+        )
+        mock_die.assert_not_called()
+
+    @patch("ldm_core.handlers.diagnostics.check_for_updates")
+    @patch("ldm_core.handlers.diagnostics.UI.confirm", return_value=True)
+    @patch("ldm_core.handlers.diagnostics.UI.die", side_effect=SystemExit)
+    def test_upgrade_downgrade_interactive_confirm(
+        self, mock_die, mock_confirm, mock_updates
+    ):
+        mock_updates.return_value = (
+            "2.11.53",
+            "https://github.com/releases/download/v2.11.53/ldm-macos",
+        )
+        self.manager.args.repair = False
+        self.manager.args.version = "v2.11.53"
+        self.manager.non_interactive = False
+
+        with self.assertRaises(SystemExit):
+            self.manager.diagnostics.cmd_upgrade()
+
+        mock_confirm.assert_called_once()
+        # Verify it got past the confirm and hit the standalone binary check
+        mock_die.assert_called_once_with(
+            "Self-upgrade is only supported for standalone binaries. Please use 'git pull' for source installations."
+        )
+
 
 class TestDiagnosticsCompletion(unittest.TestCase):
     def setUp(self):
