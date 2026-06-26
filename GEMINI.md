@@ -340,3 +340,6 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
     - [x] Fix NameError bug in `snapshot.py` line 509 by replacing the global `run_command` call with `self.manager.run_command`.
     - [x] Add `test_cmd_snapshot_component_lists` in `ldm_core/tests/test_snapshot.py` to assert correct discovery/metadata writing for client extensions, OSGi modules, and active services.
     - [x] Run full test suite and pre-commit checks.
+
+47. **Update CONTRIBUTING.md with Structured Issue Tracking and PR Linking Workflow**:
+    - [x] Update `CONTRIBUTING.md` to make issue creation mandatory, define the plan/review steps, and document branching and commit auto-close conventions.
