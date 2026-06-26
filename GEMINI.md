@@ -244,7 +244,7 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
     - [x] Restrict release initiation to master branch.
     - [x] Stage, commit, and tag directly on master.
     - [x] Remove release branch creation and PR workflows.
-    - [ ] Commit script updates to a feature branch, raise PR, auto-merge.
+    - [x] Commit script updates to master, finalize execution flow, and update documentation.
 
 31. **Fix CodeQL stack trace exposure vulnerabilities (py/stack-trace-exposure)**:
     - [x] Catch Exception in dashboard API endpoints (`api_project_properties`, `api_update_project_property`, `api_delete_project_property`) and log them on the server while returning sanitized/safe messages to the client.
@@ -297,7 +297,6 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
     - [x] Implement local scan logic to detect bundle Symbolic Names from manifests and client extensions from YAML configs in `ldm_core/handlers/runtime.py`.
     - [x] Implement deployable directory check and OSGi Gogo shell poller in `cmd_wait` inside `ldm_core/handlers/runtime.py`.
     - [x] Fix unit tests in `ldm_core/tests/test_runtime.py` to resolve StopIteration on time.time() mock due to mock exhaustion/extra checks.
-
 41. **Scaffold GitHub Actions workflow for LDM package releases (Issue #187 & Issue #188)**:
     - [x] Register `system init-ci` subcommand and its arguments (`--repo`, `--workflow-name`, `--trigger`, `project`) in `ldm_core/cli.py`.
     - [x] Add `--snapshot` argument to `package` parser in `ldm_core/cli.py` (Issue #188).
@@ -309,3 +308,5 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
     - [x] Update `docs/README.md` to categorize documentation into Core Reference, Operational Guides, and Developer Guides.
     - [x] Add missing links to recently introduced documentation (Import & Packaging, properties hierarchy, AI MCP guide, advanced CLI options, playbook, compatibility, etc.).
     - [x] Verify that all links are correct and the markdown file passes pre-commit checks.
+43. **Fix diagnostics upgrade/downgrade unit tests**:
+    - [/] Patch `sys.argv` in `test_upgrade_downgrade_non_interactive_with_force` and `test_upgrade_downgrade_interactive_confirm` to ensure the `.py` suffix check triggers properly when running under `py.test` / venv.

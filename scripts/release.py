@@ -118,10 +118,8 @@ def main():
     new_version = ver_res.stdout.strip()
     print(f"Bumped to new version: {new_version}")
 
-    # 6. Create a release branch for the PR
-    release_branch = f"release/v{new_version}"
-    print(f"Creating release branch: {release_branch}...")
-    run_cmd(["git", "checkout", "-b", release_branch])
+    # 6. Prepare release staging on master
+    print("Preparing release staging on master...")
 
     # Quality Gate check: Format and Lint
     print("Running code formatting and lint checks...")
@@ -135,9 +133,6 @@ def main():
             print(
                 f"\n❌ Error: Pre-commit quality gate checks failed. Please resolve lint issues before release:\n{res.stdout}\n{res.stderr or ''}"
             )
-            # Revert branch creation on failure
-            run_cmd(["git", "checkout", "master"])
-            run_cmd(["git", "branch", "-D", release_branch])
             sys.exit(res.returncode)
         print("✅ Pre-commit quality gate checks passed.")
     else:
@@ -153,8 +148,6 @@ def main():
                 print(
                     f"\n❌ Error: Ruff lint checks failed. Please resolve lint issues before release:\n{res.stdout}"
                 )
-                run_cmd(["git", "checkout", "master"])
-                run_cmd(["git", "branch", "-D", release_branch])
                 sys.exit(res.returncode)
         else:
             import shutil
@@ -168,8 +161,6 @@ def main():
                     print(
                         f"\n❌ Error: Ruff lint checks failed. Please resolve lint issues before release:\n{res.stdout}"
                     )
-                    run_cmd(["git", "checkout", "master"])
-                    run_cmd(["git", "branch", "-D", release_branch])
                     sys.exit(res.returncode)
             else:
                 print(
@@ -202,74 +193,8 @@ def main():
     commit_msg = f"chore(release): bump version to v{new_version} [release]"
     run_cmd(["git", "commit", "-m", commit_msg, "--no-verify"])
 
-    print("Pushing to origin...")
-    run_cmd(["git", "push", "origin", "HEAD"])
-
-    # 8. Create the PR using gh CLI
-    print("Creating pull request via GitHub CLI...")
-    pr_base = "master"
-    pr_head = release_branch
-
-    pr_cmd = [
-        "gh",
-        "pr",
-        "create",
-        "--base",
-        pr_base,
-        "--head",
-        pr_head,
-        "--title",
-        commit_msg,
-        "--body",
-        f"Automated release bump to v{new_version}.",
-    ]
-    pr_res = run_cmd(pr_cmd, capture=True)
-    pr_url = pr_res.stdout.strip()
-    print(f"PR Created: {pr_url}")
-
-    # Parse PR number from URL
-    pr_num = pr_url.split("/")[-1]
-
-    # 9. Auto-merge the PR
-    print(f"Enabling auto-merge (squash) for PR #{pr_num}...")
-    run_cmd(["gh", "pr", "merge", pr_num, "--auto", "--squash", "--delete-branch"])
-    print("🎉 Release PR successfully pushed and set to auto-merge!")
-
-    # 10. Poll for PR to be merged
-    print("Waiting for PR checks to pass and auto-merge to complete...")
-    import json
-    import time
-
-    while True:
-        try:
-            pr_state_res = run_cmd(
-                ["gh", "pr", "view", pr_num, "--json", "state"],
-                capture=True,
-                check=False,
-            )
-            if pr_state_res.returncode == 0:
-                state_data = json.loads(pr_state_res.stdout)
-                state = state_data.get("state")
-            else:
-                state = "OPEN"
-        except Exception:
-            state = "OPEN"
-
-        if state == "MERGED":
-            print(f"\n🎉 PR #{pr_num} successfully merged!")
-            break
-        if state == "CLOSED":
-            print(f"\n❌ PR #{pr_num} was closed without merging!")
-            sys.exit(1)
-
-        sys.stdout.write(".")
-        sys.stdout.flush()
-        time.sleep(15)
-
-    # 11. Pull latest master locally, create tag, and push
-    print("\nChecking out master locally and pulling latest changes...")
-    run_cmd(["git", "checkout", "master"])
-    run_cmd(["git", "pull", "origin", "master"])
+    print("Pushing commits directly to master...")
+    run_cmd(["git", "push", "origin", "master"])
 
     tag_name = f"v{new_version}"
     print(f"Creating release tag: {tag_name}...")
@@ -279,7 +204,7 @@ def main():
     print("Pushing release tag to remote origin...")
     run_cmd(["git", "push", "origin", tag_name])
     print(
-        f"🎉 Release {tag_name} successfully tagged and pushed! Release run triggered on GitHub."
+        f"🎉 Release {tag_name} successfully tagged and pushed directly on master! Release run triggered on GitHub."
     )
 
 

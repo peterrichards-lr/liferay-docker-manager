@@ -541,6 +541,7 @@ class TestDiagnostics(unittest.TestCase):
             "Downgrade aborted: --force is required in non-interactive mode."
         )
 
+    @patch("sys.argv", ["liferay_docker.py"])
     @patch("ldm_core.handlers.diagnostics.check_for_updates")
     @patch("ldm_core.handlers.diagnostics.UI.die", side_effect=SystemExit)
     def test_upgrade_downgrade_non_interactive_with_force(self, mock_die, mock_updates):
@@ -585,6 +586,7 @@ class TestDiagnostics(unittest.TestCase):
         )
         mock_die.assert_not_called()
 
+    @patch("sys.argv", ["liferay_docker.py"])
     @patch("ldm_core.handlers.diagnostics.check_for_updates")
     @patch("ldm_core.handlers.diagnostics.UI.confirm", return_value=True)
     @patch("ldm_core.handlers.diagnostics.UI.die", side_effect=SystemExit)
