@@ -890,6 +890,7 @@ class WorkspaceService(BaseHandler):
                     project_path = self.manager.detect_project_path(
                         project_name, for_init=True
                     )
+                    self.manager.check_uncommitted_changes(project_path)
                     self._ensure_stopped(project_name, project_path)
 
                     temp_pkg_dir = (
@@ -1063,9 +1064,14 @@ class WorkspaceService(BaseHandler):
                         UI.info(
                             "Restoring database and volume assets from LDM package..."
                         )
-                        self.manager.snapshot.cmd_restore(
-                            project_name, backup_dir=temp_extract_dir
-                        )
+                        self.manager._skip_git_check = True
+                        try:
+                            self.manager.snapshot.cmd_restore(
+                                project_name, backup_dir=temp_extract_dir
+                            )
+                        finally:
+                            if hasattr(self.manager, "_skip_git_check"):
+                                delattr(self.manager, "_skip_git_check")
                         UI.success(f"Project created at: {project_path}")
                     finally:
                         self.manager.args.no_run = original_no_run
@@ -1099,6 +1105,7 @@ class WorkspaceService(BaseHandler):
                 project_path = self.manager.detect_project_path(
                     project_name, for_init=True
                 )
+                self.manager.check_uncommitted_changes(project_path)
                 self._ensure_stopped(project_name, project_path)
 
                 temp_git_dir = (
@@ -1289,6 +1296,7 @@ class WorkspaceService(BaseHandler):
                     project_name, for_init=True
                 )
 
+                self.manager.check_uncommitted_changes(project_path)
                 self._ensure_stopped(project_name, project_path)
 
                 overwrite = True

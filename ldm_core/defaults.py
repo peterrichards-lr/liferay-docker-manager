@@ -13,6 +13,8 @@ CONVENTION_DEFAULTS = {
     "portal": "false",
     "target_env": "prd",
     "tag_heuristics": {r"\.q1\.\d+$": "-lts"},
+    "no_color": "false",
+    "no_unicode": "false",
 }
 
 

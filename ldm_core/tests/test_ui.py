@@ -111,6 +111,50 @@ class TestUI(unittest.TestCase):
             UI.ask("Continue?")
         self.assertEqual(cm.exception.code, 130)
 
+    def test_no_color_strips_color(self):
+        class MockStream:
+            def __init__(self):
+                self.written = []
+
+            def write(self, s):
+                self.written.append(s)
+
+            def flush(self):
+                pass
+
+        UI.NO_COLOR = True
+        try:
+            stream = MockStream()
+            UI._print("Test", color=UI.CYAN, file=stream)
+            combined = "".join(stream.written)
+            self.assertNotIn("\033", combined)
+            self.assertIn("Test", combined)
+        finally:
+            UI.NO_COLOR = False
+
+    def test_no_unicode_forces_ascii_replacements(self):
+        class MockStream:
+            def __init__(self):
+                self.written = []
+
+            def write(self, s):
+                self.written.append(s)
+
+            def flush(self):
+                pass
+
+        UI.NO_UNICODE = True
+        try:
+            stream = MockStream()
+            UI._print("❌ Error ✅ OK", file=stream)
+            combined = "".join(stream.written)
+            self.assertIn("[X]", combined)
+            self.assertIn("[OK]", combined)
+            self.assertNotIn("❌", combined)
+            self.assertNotIn("✅", combined)
+        finally:
+            UI.NO_UNICODE = False
+
 
 if __name__ == "__main__":
     unittest.main()

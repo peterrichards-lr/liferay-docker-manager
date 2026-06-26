@@ -1208,6 +1208,56 @@ class RuntimeService(BaseHandler):
             check=True,
         )
 
+        # Check for port collisions across all exposed host ports in docker-compose.yml
+        compose_file = paths["root"] / "docker-compose.yml"
+        if (
+            compose_file.exists()
+            and not no_up
+            and not getattr(self.manager.args, "no_up", False)
+        ):
+            import yaml
+
+            try:
+                with open(compose_file) as f:
+                    compose_data = yaml.safe_load(f) or {}
+
+                ports_to_check = []
+                services = compose_data.get("services", {})
+                for svc_name, svc_conf in services.items():
+                    ports = svc_conf.get("ports", [])
+                    for port_entry in ports:
+                        if isinstance(port_entry, str):
+                            parts = port_entry.split(":")
+                            if len(parts) >= 2:
+                                host_port = parts[-2]
+                                if host_port.isdigit():
+                                    ports_to_check.append((svc_name, int(host_port)))
+                        elif isinstance(port_entry, dict):
+                            published = port_entry.get("published")
+                            if published:
+                                ports_to_check.append((svc_name, int(published)))
+
+                for svc_name, host_port in ports_to_check:
+                    container_name = services[svc_name].get("container_name")
+                    if not container_name:
+                        container_name = f"{project_id}-{svc_name}-1"
+
+                    from ldm_core.docker_service import DockerService
+
+                    if not DockerService.is_running(container_name):
+                        if not self.manager.check_port("127.0.0.1", host_port):
+                            UI.die(
+                                f"Port conflict detected: Port {host_port} is already in use on the host "
+                                f"and is required by service '{svc_name}' in your compose configuration.\n"
+                                f"Please stop the service currently using port {host_port} before starting LDM."
+                            )
+            except SystemExit:
+                raise
+            except Exception as e:
+                UI.debug(
+                    f"Failed to check port collisions from docker-compose.yml: {e}"
+                )
+
         cmd = [*compose_base, "up", "-d", "--remove-orphans"]
         if rebuild:
             cmd.append("--build")

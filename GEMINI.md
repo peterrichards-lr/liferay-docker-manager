@@ -267,3 +267,21 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
 35. **Tear down conflicting stack on project registry collision overwrite (Issue #178)**:
     - [x] Update `check_registry_collisions` in `ldm_core/handlers/base.py` to stop/down the old project stack if `overwrite` is `True` and `docker-compose.yml` exists.
     - [x] Update unit tests in `ldm_core/tests/test_base.py` to assert that `run_command` is called with `down` when overwriting project registry entries.
+36. **Implement Uncommitted Git Changes Protection (#170)**:
+    - [x] Create `check_uncommitted_changes` in `ldm_core/handlers/base.py` running git status porcelain checks.
+    - [x] Trigger checks in `cmd_import` and `cmd_restore` handlers, prompting or requiring `--force` if dirty.
+    - [x] Add unit tests verifying git status warning and force override behavior.
+
+37. **Implement Pre-Flight Network & Port Collision Checks (#172)**:
+    - [x] Add port conflict parsing and checking logic in `cmd_run` before executing docker compose up.
+    - [x] Loop over exposed host ports in `docker-compose.yml` and check availability if container is not running.
+    - [x] Add global `--force` flag with `-f` option resolving parser conflicts via `conflict_handler="resolve"` for subcommands.
+    - [x] Add unit tests verifying port collision detection and clean halting.
+
+38. **Implement Colorless (--no-color) and ASCII (--no-unicode) Switches (#181)**:
+    - [x] Add `--no-color` and `--no-unicode` / `--ascii` to CLI parsers (`base_parent`, `base_sub_parent`).
+    - [x] Declare `"no_color": "false"` and `"no_unicode": "false"` defaults in `CONVENTION_DEFAULTS`.
+    - [x] Resolve settings from CLI arguments, config files, and environment variables (`NO_COLOR`, `LDM_NO_COLOR`, `LDM_NO_UNICODE`) in `LiferayManager.__init__`.
+    - [x] Add regex-based ANSI escape sequence stripping in `UI._print` and `UI.ask` when `UI.NO_COLOR` is active.
+    - [x] Add ASCII character fallback forcing in `UI._print` and `UI.ask`, and character replacements for `UI.Spinner` when `UI.NO_UNICODE` is active.
+    - [x] Add unit tests verifying colorless and ASCII formatting output.

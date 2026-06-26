@@ -1605,3 +1605,73 @@ class BaseHandler:
             mounts.add(f"--mount {mount_point}:w")
 
         return " ".join(sorted(mounts))
+
+    def check_uncommitted_changes(self, project_path):
+        """Checks if a project has uncommitted git changes in critical paths."""
+        if getattr(self, "_skip_git_check", False):
+            return True
+
+        p = Path(project_path).resolve()
+        if not p.exists() or not (p / ".git").exists():
+            return True
+
+        import subprocess
+
+        try:
+            res = subprocess.run(
+                ["git", "status", "--porcelain"],
+                capture_output=True,
+                text=True,
+                cwd=str(p),
+                check=False,
+            )
+            if res.returncode != 0 or not res.stdout.strip():
+                return True
+
+            lines = res.stdout.strip().split("\n")
+            critical_changes = []
+            for line in lines:
+                parts = line.strip().split(None, 1)
+                if len(parts) < 2:
+                    continue
+                filepath = parts[1]
+                # Critical folders or files
+                if (
+                    filepath.startswith("files/")
+                    or filepath.startswith("configs/")
+                    or filepath in {".env", "docker-compose.yml"}
+                ):
+                    critical_changes.append(filepath)
+
+            if not critical_changes:
+                return True
+
+            force = getattr(self.args, "force", False)
+            if force:
+                return True
+
+            UI.warning(
+                "You have uncommitted changes in critical project files:\n"
+                + "\n".join(f"  - {f}" for f in critical_changes[:10])
+                + (
+                    f"\n  ... and {len(critical_changes) - 10} more"
+                    if len(critical_changes) > 10
+                    else ""
+                )
+            )
+
+            if self.non_interactive:
+                UI.die(
+                    "Aborting to protect uncommitted changes. "
+                    "Run with --force to overwrite these files."
+                )
+
+            ans = UI.ask(
+                "Do you want to proceed and overwrite these changes? [y/N]", "N"
+            ).upper()
+            if ans != "Y":
+                UI.die("Aborting operation to protect uncommitted changes.")
+
+        except Exception as e:
+            UI.debug(f"Failed to check git status: {e}")
+        return True

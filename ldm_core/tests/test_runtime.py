@@ -1432,6 +1432,117 @@ class TestRuntime(unittest.TestCase):
                 inspector=False,
             )
 
+    def test_preflight_port_collision_check(self):
+        with tempfile.TemporaryDirectory() as tmp_root:
+            root = Path(tmp_root)
+            compose_file = root / "docker-compose.yml"
+            # Write a mock docker-compose.yml
+            compose_file.write_text("""
+services:
+  liferay:
+    container_name: test-project-liferay-1
+    ports:
+      - "8080:8080"
+            """)
+
+            all_paths = {
+                "root": root,
+                "data": root / "data",
+                "deploy": root / "deploy",
+                "files": root / "files",
+                "scripts": root / "scripts",
+                "state": root / "osgi" / "state",
+                "cx": root / "osgi" / "client-extensions",
+                "ce_dir": root / "osgi" / "client-extensions",
+                "configs": root / "osgi" / "configs",
+                "modules": root / "osgi" / "modules",
+                "backups": root / "snapshots",
+                "portal_log4j": root / "osgi" / "log4j",
+                "logs": root / "logs",
+                "compose": compose_file,
+                "common": Path("/tmp/common"),
+            }
+
+            from ldm_core.docker_service import DockerService
+
+            self.handler.args.no_wait = True
+            self.handler.args.timeout = 900
+            self.handler.args.no_up = False
+
+            # Case A: Container is already running -> passes (doesn't check port)
+            with (
+                patch.object(
+                    DockerService, "is_running", return_value=True
+                ) as mock_is_running,
+                patch.object(
+                    self.handler, "check_port", return_value=False
+                ) as mock_check_port,
+                patch.object(self.handler, "run_command"),
+                patch.object(self.handler, "setup_infrastructure"),
+                patch.object(
+                    self.handler, "get_container_status", return_value="healthy"
+                ),
+                patch("ldm_core.ui.UI.die") as mock_die,
+            ):
+                self.handler.handler.sync_stack(
+                    all_paths,
+                    {"container_name": "test-project-liferay-1"},
+                    no_up=False,
+                    no_wait=True,
+                )
+                mock_is_running.assert_called_with("test-project-liferay-1")
+                mock_check_port.assert_not_called()
+                mock_die.assert_not_called()
+
+            # Case B: Container is not running, port is bound -> dies
+            with (
+                patch.object(
+                    DockerService, "is_running", return_value=False
+                ) as mock_is_running,
+                patch.object(
+                    self.handler, "check_port", return_value=False
+                ) as mock_check_port,
+                patch.object(self.handler, "run_command"),
+                patch.object(self.handler, "setup_infrastructure"),
+                patch("ldm_core.ui.UI.die", side_effect=SystemExit("died")) as mock_die,
+            ):
+                with self.assertRaises(SystemExit) as cm:
+                    self.handler.handler.sync_stack(
+                        all_paths,
+                        {"container_name": "test-project-liferay-1"},
+                        no_up=False,
+                        no_wait=True,
+                    )
+                self.assertEqual(str(cm.exception), "died")
+                mock_is_running.assert_called_with("test-project-liferay-1")
+                mock_check_port.assert_called_once_with("127.0.0.1", 8080)
+                mock_die.assert_called_once()
+
+            # Case C: Container is not running, port is free -> passes
+            with (
+                patch.object(
+                    DockerService, "is_running", return_value=False
+                ) as mock_is_running,
+                patch.object(
+                    self.handler, "check_port", return_value=True
+                ) as mock_check_port,
+                patch.object(self.handler, "run_command"),
+                patch.object(self.handler, "setup_infrastructure"),
+                patch.object(
+                    self.handler, "get_container_status", return_value="healthy"
+                ),
+                patch("ldm_core.ui.UI.die") as mock_die,
+            ):
+                self.handler.handler.sync_stack(
+                    all_paths,
+                    {"container_name": "test-project-liferay-1"},
+                    no_up=False,
+                    no_wait=True,
+                )
+                mock_is_running.assert_called_with("test-project-liferay-1")
+                mock_check_port.assert_called_once_with("127.0.0.1", 8080)
+                mock_die.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -43,6 +43,8 @@ class UI:
     VERBOSE = False
     INFO_MODE = False
     QUIET_MODE = False
+    NO_COLOR = False
+    NO_UNICODE = False
 
     @staticmethod
     def get_padding(icon=None):
@@ -84,8 +86,30 @@ class UI:
         # Format the output string
         padding = UI.get_padding(icon)
         out = f"{icon}{padding}{msg}" if icon else msg
-        if color:
+        if color and not getattr(UI, "NO_COLOR", False):
             out = f"{color}{out}{UI.COLOR_OFF}"
+
+        if getattr(UI, "NO_COLOR", False):
+            import re
+
+            ansi_escape = re.compile(r"\x1b\[[0-9;]*[a-zA-Z]")
+            out = ansi_escape.sub("", out)
+
+        if getattr(UI, "NO_UNICODE", False):
+            safe_out = (
+                out.replace("✅", "[OK]")
+                .replace("❌", "[X]")
+                .replace("⚠️", "[!]")
+                .replace("ℹ", "[i]")
+                .replace("●", "*")
+                .replace("○", "o")
+                .replace("×", "x")
+                .replace("└─", "  +-")
+                .replace("❓", "[?]")
+            )
+            safe_out = safe_out.encode("ascii", "replace").decode("ascii")
+            print(safe_out, file=file, flush=True)
+            return
 
         try:
             # Test if the output can be encoded in the target file encoding
@@ -124,7 +148,10 @@ class UI:
             self.message = message
             self.is_running = False
             self.thread = None
-            self.frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
+            if getattr(UI, "NO_UNICODE", False):
+                self.frames = ["|", "/", "-", "\\"]
+            else:
+                self.frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
 
         def _spin(self):
             import shutil
@@ -155,11 +182,13 @@ class UI:
                 # \r moves to start of line
                 # \033[K clears from cursor to end of line (ANSI standard)
                 # We write \033[K twice (start and after msg) for maximum compatibility
+                frame = self.frames[i]
+                color_start = UI.CYAN if not getattr(UI, "NO_COLOR", False) else ""
+                color_end = UI.COLOR_OFF if not getattr(UI, "NO_COLOR", False) else ""
                 sys.stdout.write(
-                    f"\r\033[K  {UI.CYAN}{self.frames[i]}{UI.COLOR_OFF}  {msg}\033[K"
+                    f"\r\033[K  {color_start}{frame}{color_end}  {msg}\033[K"
                 )
                 sys.stdout.flush()
-
                 time.sleep(0.1)
                 i = (i + 1) % len(self.frames)
 
@@ -383,13 +412,25 @@ class UI:
                         res = input()
                 return res.strip() if res else default
 
-            icon = "❓"
+            icon = "[?]" if getattr(UI, "NO_UNICODE", False) else "❓"
             padding = UI.get_padding(icon)
             formatted_prompt = f"{UI.WHITE}{icon}{padding}{prompt}"
             if default:
                 formatted_prompt += f" [{UI.GREEN}{default}{UI.WHITE}]: {UI.COLOR_OFF}"
             else:
                 formatted_prompt += f": {UI.COLOR_OFF}"
+
+            if getattr(UI, "NO_COLOR", False):
+                import re
+
+                ansi_escape = re.compile(r"\x1b\[[0-9;]*[a-zA-Z]")
+                formatted_prompt = ansi_escape.sub("", formatted_prompt)
+
+            if getattr(UI, "NO_UNICODE", False):
+                # If unicode is disabled, we must safe-wash the prompt as ASCII
+                formatted_prompt = formatted_prompt.encode("ascii", "replace").decode(
+                    "ascii"
+                )
 
             try:
                 sys.stdout.write(formatted_prompt)
