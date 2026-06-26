@@ -982,6 +982,12 @@ def get_parser():
     status = subparsers.add_parser("status", aliases=["ps"], parents=[base_sub_parent])
     status.add_argument("project", nargs="?")
     status.add_argument("--all", action="store_true", help="Show all managed projects")
+    status.add_argument(
+        "-d",
+        "--detailed",
+        action="store_true",
+        help="Show detailed container listing",
+    )
     subparsers.add_parser("list", aliases=["ls"], parents=[base_sub_parent])
 
     # Command: dashboard
@@ -1855,10 +1861,14 @@ def main():
             wait_for_bundles=getattr(args, "wait_for_bundles", None),
         ),
         ("status", None): lambda: manager.diagnostics.cmd_status(
-            getattr(args, "project", None), all_projects=args.all
+            getattr(args, "project", None),
+            all_projects=args.all,
+            detailed=getattr(args, "detailed", False),
         ),
         ("ps", None): lambda: manager.diagnostics.cmd_status(
-            getattr(args, "project", None), all_projects=args.all
+            getattr(args, "project", None),
+            all_projects=args.all,
+            detailed=getattr(args, "detailed", False),
         ),
         ("list", None): manager.diagnostics.cmd_list,
         ("ls", None): manager.diagnostics.cmd_list,

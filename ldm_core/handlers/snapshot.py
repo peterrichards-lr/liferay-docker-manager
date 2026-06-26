@@ -334,8 +334,15 @@ class SnapshotService(BaseHandler):
             from ldm_core.utils import reclaim_volume_permissions
 
             UI.info("Reclaiming project permissions before snapshot...")
-            for d in ["deploy", "files", "logs", "configs", "modules"]:
-                if paths[d].exists():
+            for d in [
+                "deploy",
+                "files",
+                "logs",
+                "configs",
+                "modules",
+                "client-extensions",
+            ]:
+                if paths.get(d) and paths[d].exists():
                     reclaim_volume_permissions(
                         paths[d], uid="1000", gid="1000", chmod_val="777"
                     )
@@ -356,7 +363,15 @@ class SnapshotService(BaseHandler):
         files_tar = snap_dir / "files.tar.gz"
 
         with tarfile.open(files_tar, "w:gz") as tar:
-            for f in ["files", "scripts", "osgi", "data", "deploy", "routes"]:
+            for f in [
+                "files",
+                "scripts",
+                "osgi",
+                "data",
+                "deploy",
+                "routes",
+                "client-extensions",
+            ]:
                 f_path = paths["root"] / f
                 if f_path.exists():
                     try:
@@ -468,6 +483,53 @@ class SnapshotService(BaseHandler):
                     except Exception:
                         pass
 
+        # Collect client extensions list
+        cx_list = []
+        ce_dir = paths.get("ce_dir")
+        if ce_dir and ce_dir.exists() and ce_dir.is_dir():
+            try:
+                cx_list = [f.name for f in ce_dir.glob("*.zip")]
+                if not cx_list:
+                    cx_list = [f.name for f in ce_dir.glob("*/dist/*.zip")]
+            except Exception:
+                pass
+
+        # Collect OSGi modules list
+        modules_list = []
+        for d in ["modules", "deploy", "themes"]:
+            dir_path = paths.get(d)
+            if dir_path and dir_path.exists() and dir_path.is_dir():
+                try:
+                    for ext in ["*.jar", "*.war"]:
+                        modules_list.extend([f.name for f in dir_path.glob(ext)])
+                except Exception:
+                    pass
+        modules_list = sorted(set(modules_list))
+
+        # Collect active services list
+        active_services = []
+        try:
+            from ldm_core.utils import sanitize_id
+
+            safe_name = sanitize_id(project_meta.get("container_name") or root.name)
+            cmd = [
+                "docker",
+                "ps",
+                "--filter",
+                f"label=com.liferay.ldm.project={safe_name}",
+                "--filter",
+                "status=running",
+                "--format",
+                '{{.Label "com.docker.compose.service"}}',
+            ]
+            res = self.manager.run_command(cmd, check=False)
+            if res and res.strip():
+                active_services = sorted(
+                    {line.strip() for line in res.strip().splitlines() if line.strip()}
+                )
+        except Exception:
+            pass
+
         # Save metadata
         meta = {
             "name": name,
@@ -481,6 +543,9 @@ class SnapshotService(BaseHandler):
             "includes_volume_assets": str(has_data).lower(),
             "includes_client_extensions": str(has_cx).lower(),
             "includes_osgi_modules": str(has_modules).lower(),
+            "client_extensions": ",".join(cx_list) if cx_list else "",
+            "osgi_modules": ",".join(modules_list) if modules_list else "",
+            "active_services": ",".join(active_services) if active_services else "",
         }
         self.manager.write_meta(snap_dir, meta)
 

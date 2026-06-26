@@ -729,3 +729,65 @@ class TestSnapshotService(unittest.TestCase):
         self.assertTrue(non_existent_output.exists())
         proj_name = self.test_dir.name
         self.assertTrue((non_existent_output / f"{proj_name}.ldmp.sha256").exists())
+
+    @patch("ldm_core.handlers.base.BaseHandler.detect_project_path")
+    @patch("ldm_core.handlers.base.BaseHandler.setup_paths")
+    @patch("ldm_core.handlers.base.BaseHandler.verify_runtime_environment")
+    @patch("ldm_core.utils.reclaim_volume_permissions")
+    def test_cmd_snapshot_component_lists(
+        self, mock_reclaim, mock_verify, mock_paths, mock_detect
+    ):
+        mock_detect.return_value = self.test_dir
+
+        # Setup mock project files & directories
+        (self.test_dir / "snapshots").mkdir(exist_ok=True)
+        (self.test_dir / "osgi" / "state").mkdir(parents=True, exist_ok=True)
+        (self.test_dir / "docker-compose.yml").touch()
+
+        ce_dir = self.test_dir / "client-extensions"
+        ce_dir.mkdir()
+        (ce_dir / "test-ce.zip").touch()
+
+        deploy_dir = self.test_dir / "deploy"
+        deploy_dir.mkdir()
+        (deploy_dir / "test-mod.jar").touch()
+
+        modules_dir = self.test_dir / "modules"
+        modules_dir.mkdir()
+        (modules_dir / "another-mod.war").touch()
+
+        mock_paths.return_value = {
+            "root": self.test_dir,
+            "backups": self.test_dir / "snapshots",
+            "state": self.test_dir / "osgi" / "state",
+            "ce_dir": ce_dir,
+            "deploy": deploy_dir,
+            "modules": modules_dir,
+        }
+
+        self.manager.args.delete = None
+        self.manager.args.keep_last = None
+        self.manager.args.older_than = None
+
+        with (
+            patch("tarfile.open"),
+            patch.object(
+                self.manager, "run_command", return_value="liferay\ndb\ntunnel\n"
+            ),
+            patch("ldm_core.handlers.base.BaseHandler.write_meta") as mock_write_meta,
+            patch("ldm_core.utils.calculate_sha256", return_value="dummy-sha"),
+        ):
+            self.manager.snapshot.cmd_snapshot("proj")
+            mock_write_meta.assert_called_once()
+            written_meta = mock_write_meta.call_args[0][1]
+
+            # Assert standard inclusion flags
+            self.assertEqual(written_meta["includes_client_extensions"], "true")
+            self.assertEqual(written_meta["includes_osgi_modules"], "true")
+
+            # Assert lists are correctly extracted and sorted
+            self.assertEqual(written_meta["client_extensions"], "test-ce.zip")
+            self.assertEqual(
+                written_meta["osgi_modules"], "another-mod.war,test-mod.jar"
+            )
+            self.assertEqual(written_meta["active_services"], "db,liferay,tunnel")
