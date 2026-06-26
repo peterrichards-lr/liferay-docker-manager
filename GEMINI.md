@@ -305,3 +305,8 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
     - [x] Implement `cmd_init_ci` in `ldm_core/handlers/system.py` to auto-detect git remotes and generate a customized release workflow YAML.
     - [x] Enhance `cmd_package` in `ldm_core/handlers/snapshot.py` to create the output directory automatically and resolve specific snapshot targets (Issue #188).
     - [x] Add unit tests verifying `init-ci` execution and targeted snapshot packaging logic.
+
+42. **Reorganize LDM documentation index (Issue #189)**:
+    - [x] Update `docs/README.md` to categorize documentation into Core Reference, Operational Guides, and Developer Guides.
+    - [x] Add missing links to recently introduced documentation (Import & Packaging, properties hierarchy, AI MCP guide, advanced CLI options, playbook, compatibility, etc.).
+    - [x] Verify that all links are correct and the markdown file passes pre-commit checks.
