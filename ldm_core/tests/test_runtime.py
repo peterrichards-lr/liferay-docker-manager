@@ -3,6 +3,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+from ldm_core.docker_service import DockerService
 from ldm_core.handlers.base import BaseHandler
 from ldm_core.handlers.runtime import RuntimeService
 
@@ -1542,6 +1543,143 @@ services:
                 mock_is_running.assert_called_with("test-project-liferay-1")
                 mock_check_port.assert_called_once_with("127.0.0.1", 8080)
                 mock_die.assert_not_called()
+
+    def test_scan_for_expected_deployables(self):
+        """Test _scan_for_expected_deployables detects jar manifests and client extensions."""
+        import tempfile
+        import zipfile
+
+        import yaml
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root_path = Path(tmp_dir)
+
+            # Create directories
+            configs_deploy = root_path / "configs" / "common" / "deploy"
+            configs_deploy.mkdir(parents=True)
+            deploy = root_path / "deploy"
+            deploy.mkdir(parents=True)
+            cx_dir = root_path / "client-extensions"
+            cx_dir.mkdir(parents=True)
+
+            # Write a normal jar bundle
+            jar_path = configs_deploy / "my-bundle.jar"
+            with zipfile.ZipFile(jar_path, "w") as z:
+                manifest = (
+                    "Manifest-Version: 1.0\n"
+                    "Bundle-SymbolicName: com.liferay.commerce.payment.card;singleton:=true\n"
+                )
+                z.writestr("META-INF/MANIFEST.MF", manifest)
+
+            # Write a fragment jar bundle (with wrapped Symbolic Name line to test unfolding)
+            frag_path = deploy / "my-fragment.jar"
+            with zipfile.ZipFile(frag_path, "w") as z:
+                manifest_frag = (
+                    "Manifest-Version: 1.0\n"
+                    "Bundle-SymbolicName: com.liferay.commerce.payment.\n"
+                    " fragment\n"
+                    "Fragment-Host: com.liferay.commerce\n"
+                )
+                z.writestr("META-INF/MANIFEST.MF", manifest_frag)
+
+            # Write a client extension yaml
+            cx_proj = cx_dir / "my-cx"
+            cx_proj.mkdir()
+            yaml_content = {
+                "my-cx-id": {
+                    "name": "My Custom Element",
+                    "type": "customElement",
+                }
+            }
+            with open(cx_proj / "client-extension.yaml", "w") as f:
+                yaml.dump(yaml_content, f)
+
+            # Call scanner
+            targets = self.handler.handler._scan_for_expected_deployables(root_path)
+
+            self.assertEqual(targets.get("com.liferay.commerce.payment.card"), "Active")
+            self.assertEqual(
+                targets.get("com.liferay.commerce.payment.fragment"), "Resolved"
+            )
+            self.assertEqual(targets.get("my-cx-id"), "Active")
+
+    @patch("requests.get")
+    @patch("time.sleep")
+    @patch("ldm_core.handlers.runtime.time.time")
+    def test_cmd_wait_with_deployables_success(self, mock_time, mock_sleep, mock_get):
+        """Test cmd_wait checks deploy folder and Gogo console successfully."""
+        from ldm_core.docker_service import DockerService
+
+        mock_get.return_value.status_code = 200
+        mock_time.side_effect = [100.0 + i for i in range(100)]
+
+        mock_targets = {
+            "com.liferay.commerce.payment.card": "Active",
+            "my-cx-id": "Active",
+        }
+
+        with (
+            patch.object(self.handler.handler, "_wait_for_ready", return_value=True),
+            patch.object(
+                self.handler.handler,
+                "_scan_for_expected_deployables",
+                return_value=mock_targets,
+            ),
+            patch.object(DockerService, "exec") as mock_exec,
+            patch.object(
+                self.handler, "run_command", return_value="10%"
+            ) as mock_run_cmd,
+            patch("ldm_core.ui.UI.die") as mock_die,
+        ):
+            mock_exec.side_effect = [
+                # deploy folder check 1
+                "my-module.jar\n",
+                # deploy folder check 2
+                "",
+                # Gogo check 1 (missing client extension)
+                "ID|State|Level|Symbolic name\n284|Active|10|com.liferay.commerce.payment.card\n",
+                # Gogo check 2 (all active)
+                "ID|State|Level|Symbolic name\n284|Active|10|com.liferay.commerce.payment.card\n"
+                "285|Active|10|com.liferay.portal.osgi.web.client.extension.internal.model.WebClientExtensionOSGiBundle-my-cx-id\n",
+            ]
+
+            res = self.handler.handler.cmd_wait(
+                "test-project", timeout=600, wait_for_deployables=True
+            )
+            self.assertTrue(res)
+            mock_die.assert_not_called()
+
+    @patch("requests.get")
+    @patch("time.sleep")
+    @patch("ldm_core.handlers.runtime.time.time")
+    def test_cmd_wait_with_deployables_gogo_fallback(
+        self, mock_time, mock_sleep, mock_get
+    ):
+        """Test cmd_wait falls back gracefully if Gogo Shell telnet is unavailable."""
+        mock_get.return_value.status_code = 200
+        mock_time.side_effect = [100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 1000.0] + [
+            1000.0
+        ] * 10
+
+        with (
+            patch.object(self.handler.handler, "_wait_for_ready", return_value=True),
+            patch.object(DockerService, "exec") as mock_exec,
+            patch.object(
+                self.handler, "run_command", return_value="10%"
+            ) as mock_run_cmd,
+            patch("ldm_core.ui.UI.die") as mock_die,
+            patch("ldm_core.ui.UI.warning") as mock_warning,
+        ):
+            mock_exec.side_effect = ["", Exception("telnet not found")]
+
+            res = self.handler.handler.cmd_wait(
+                "test-project", timeout=600, wait_for_bundles="com.liferay.commerce"
+            )
+            self.assertTrue(res)
+            mock_die.assert_not_called()
+            mock_warning.assert_called_with(
+                "Some deployable targets did not reach active state via Gogo console verification."
+            )
 
 
 if __name__ == "__main__":

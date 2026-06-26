@@ -1,0 +1,122 @@
+# Workspace Import and Packaging Guide
+
+Liferay Docker Manager (LDM) offers a portable mechanism to export, share, and import full development stacks—including code, configurations, database snapshots, and volume assets. This guide explains how to package your workspace and import it on any machine.
+
+---
+
+## 1. Unified Import Workflow (`ldm import`)
+
+The `ldm import` command is a polymorphic entry point. It automatically detects the type of source you provide and configures the environment accordingly.
+
+```bash
+ldm import <source-path-or-url>
+```
+
+### Supported Source Types
+
+| Source Type | Example Command | Behavior & Details |
+| :--- | :--- | :--- |
+| **Local LDM Package (`.ldmp`)** | `ldm import ~/Downloads/my-project.ldmp` | Extracts the archive, restores the database snapshot and named volumes, writes metadata, and boots the Docker stack. |
+| **Remote `.ldmp` URL** | `ldm import https://example.com/assets/my-project.ldmp` | Downloads the remote archive, verifies the `.sha256` signature if available, and performs a local package import. |
+| **GitHub Release Package** | `ldm import https://github.com/my-org/my-repo` | Automatically queries the GitHub Release API. If a `.ldmp` asset exists, it downloads and restores it directly, bypassing standard cloning. |
+| **Git Repository URL** | `ldm import https://github.com/my-org/my-repo.git` | Clones the repository to a temporary folder, builds modules via Gradle, and sets up a standard workspace path. |
+| **Local Liferay Workspace** | `ldm import /path/to/local/liferay-workspace` | Maps folders, executes `gradlew` build (if `--build` is specified), and configures the container paths. |
+| **Local Cloud Workspace** | `ldm import /path/to/local/lcp-workspace` | Detects `LCP.json`, resolves the nested `liferay/` folder structure, and configures the environment variables/properties. |
+
+---
+
+## 2. Packaging Workspaces (`ldm package`)
+
+The `ldm package` command bundles a project's files, configurations, database, and volume assets into a single portable `.ldmp` tarball, complete with a `.sha256` signature.
+
+### Step-by-Step: Creating an `.ldmp` Package
+
+You can create `.ldmp` packages locally using three main packaging strategies:
+
+#### Method A: Fresh Snapshot & Package (Standard)
+
+If your Liferay Docker stack is currently running and contains the data state you want to distribute, you can build a new snapshot and package it in a single command:
+
+1. Ensure your container stack is active: `ldm status`
+2. Run the package command:
+
+   ```bash
+   ldm package --output ./dist
+   ```
+
+   *This command automatically triggers a fresh snapshot creation (`ldm snapshot`), generates the package tarball, calculates its SHA-256 hash, and saves both files into the `./dist` folder.*
+
+#### Method B: Package the Latest Existing Snapshot
+
+If you already took a snapshot earlier (e.g. using `ldm snapshot`) and want to package it without waiting to take a new one:
+
+1. Run the package command with the `--use-latest` flag:
+
+   ```bash
+   ldm package --use-latest --output ./dist
+   ```
+
+   *LDM will query your project's `snapshots/` directory, locate the most recently created snapshot directory, and package it directly.*
+
+#### Method C: Package a Specific Target Snapshot
+
+If you want to package a specific snapshot directory from your historical backups:
+
+1. List all available snapshots to find the target name:
+
+   ```bash
+   ldm snapshots
+   ```
+
+   *(e.g., output shows `20260626_114522`)*
+
+2. Target the specific snapshot name using the `--snapshot` parameter:
+
+   ```bash
+   ldm package --snapshot 20260626_114522 --output ./dist
+   ```
+
+   *LDM will bundle only that specific snapshot, ignoring all other snapshot directories.*
+
+---
+
+### Integrity Verification (Checksum Files)
+
+Every time you package a workspace, LDM automatically writes a companion `.sha256` checksum file (e.g. `my-project.ldmp.sha256`).
+
+To verify the integrity of your `.ldmp` package manually on the target machine:
+
+```bash
+# Verify using system checksum utilities
+shasum -a 256 -c ./dist/my-project.ldmp.sha256
+```
+
+When importing, LDM automatically looks for this checksum file to perform the check for you.
+
+---
+
+## 3. Scaffolding CI/CD Pipelines (`ldm system init-ci`)
+
+To automate the generation of `.ldmp` packages on code changes or releases, you can scaffold a GitHub Actions workflow inside your Git repository.
+
+```bash
+ldm system init-ci [project] [--trigger release|tag|push|manual] [--repo owner/repo]
+```
+
+### Trigger Presets
+
+- **`release` (Default)**: Triggers only when a GitHub Release is published. Useful for production-grade builds.
+- **`tag`**: Triggers whenever a tag starting with `v*` is pushed.
+- **`push`**: Triggers on every commit pushed to the `master` branch.
+- **`manual`**: Only runs when triggered manually via the GitHub Actions tab (`workflow_dispatch`).
+
+### Workflow Output
+
+This scaffolds a `.github/workflows/ldm-package-release.yml` file which:
+
+1. Provisions a clean Ubuntu environment.
+2. Installs LDM from PyPI.
+3. Boots up your local Liferay environment.
+4. Waits for all OSGi modules and Client Extensions to deploy cleanly.
+5. Bundles the database and volume into a `.ldmp` package.
+6. Automatically attaches the package and its checksum as GitHub Release assets.

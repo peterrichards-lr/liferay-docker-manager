@@ -521,3 +521,151 @@ class TestSnapshotService(unittest.TestCase):
             # Verify we bypassed stopping Liferay and executing DB restore since it is file-based
             mock_stop.assert_not_called()
             mock_db_restore.assert_not_called()
+
+    @patch("ldm_core.handlers.base.BaseHandler.detect_project_path")
+    @patch("ldm_core.handlers.base.BaseHandler.setup_paths")
+    @patch("ldm_core.handlers.snapshot.SnapshotService._list_backups")
+    @patch("ldm_core.handlers.snapshot.SnapshotService.cmd_snapshot")
+    @patch("ldm_core.handlers.base.BaseHandler.read_meta")
+    @patch("ldm_core.handlers.base.BaseHandler.write_meta")
+    @patch("ldm_core.utils.calculate_sha256")
+    @patch("tarfile.open")
+    def test_cmd_package_snapshot_specific(
+        self,
+        mock_tar_open,
+        mock_calc_sha,
+        mock_write_meta,
+        mock_read_meta,
+        mock_cmd_snapshot,
+        mock_list_backups,
+        mock_paths,
+        mock_detect,
+    ):
+        mock_detect.return_value = self.test_dir
+        mock_paths.return_value = {
+            "root": self.test_dir,
+            "backups": self.test_dir / "snapshots",
+        }
+
+        # Mock snapshots list
+        snap_dir = self.test_dir / "snapshots" / "my-custom-snapshot"
+        mock_list_backups.return_value = [
+            {"name": "my-custom-snapshot", "path": snap_dir}
+        ]
+
+        mock_read_meta.return_value = {
+            "tag": "2026.q1.4-lts",
+            "db_type": "postgresql",
+        }
+        mock_calc_sha.return_value = "dummy-sha-value"
+
+        # Ensure directory structures mock behaves nicely
+        snap_dir.mkdir(parents=True, exist_ok=True)
+        (snap_dir / "meta").touch()
+
+        self.manager.args.non_interactive = True
+
+        # Call command targeting the specific snapshot name
+        self.manager.snapshot.cmd_package(
+            project_id="test",
+            output_dir=str(self.test_dir),
+            repo="my-owner/my-repo",
+            snapshot="my-custom-snapshot",
+        )
+
+        mock_write_meta.assert_called_with(
+            snap_dir,
+            {
+                "tag": "2026.q1.4-lts",
+                "db_type": "postgresql",
+                "github_repository": "my-owner/my-repo",
+            },
+        )
+        # Check that we did not run a new snapshot command
+        mock_cmd_snapshot.assert_not_called()
+
+    @patch("ldm_core.handlers.base.BaseHandler.detect_project_path")
+    @patch("ldm_core.handlers.base.BaseHandler.setup_paths")
+    @patch("ldm_core.handlers.snapshot.SnapshotService._list_backups")
+    @patch("ldm_core.ui.UI.die", side_effect=SystemExit)
+    def test_cmd_package_snapshot_missing(
+        self,
+        mock_die,
+        mock_list_backups,
+        mock_paths,
+        mock_detect,
+    ):
+        mock_detect.return_value = self.test_dir
+        mock_paths.return_value = {
+            "root": self.test_dir,
+            "backups": self.test_dir / "snapshots",
+        }
+
+        # Mock empty snapshots list
+        mock_list_backups.return_value = []
+
+        with self.assertRaises(SystemExit):
+            self.manager.snapshot.cmd_package(
+                project_id="test",
+                output_dir=str(self.test_dir),
+                snapshot="missing-snapshot",
+            )
+        mock_die.assert_called_once_with(
+            f"Snapshot 'missing-snapshot' not found for project '{self.test_dir.name}'."
+        )
+
+    @patch("ldm_core.handlers.base.BaseHandler.detect_project_path")
+    @patch("ldm_core.handlers.base.BaseHandler.setup_paths")
+    @patch("ldm_core.handlers.snapshot.SnapshotService._list_backups")
+    @patch("ldm_core.handlers.snapshot.SnapshotService.cmd_snapshot")
+    @patch("ldm_core.handlers.base.BaseHandler.read_meta")
+    @patch("ldm_core.handlers.base.BaseHandler.write_meta")
+    @patch("ldm_core.utils.calculate_sha256")
+    @patch("tarfile.open")
+    def test_cmd_package_creates_output_dir(
+        self,
+        mock_tar_open,
+        mock_calc_sha,
+        mock_write_meta,
+        mock_read_meta,
+        mock_cmd_snapshot,
+        mock_list_backups,
+        mock_paths,
+        mock_detect,
+    ):
+        mock_detect.return_value = self.test_dir
+        mock_paths.return_value = {
+            "root": self.test_dir,
+            "backups": self.test_dir / "snapshots",
+        }
+
+        snap_dir = self.test_dir / "snapshots" / "20260512_120000"
+        mock_list_backups.return_value = [{"path": snap_dir}]
+
+        mock_read_meta.return_value = {
+            "tag": "2026.q1.4-lts",
+            "db_type": "postgresql",
+        }
+        mock_calc_sha.return_value = "dummy-sha-value"
+
+        snap_dir.mkdir(parents=True, exist_ok=True)
+        (snap_dir / "meta").touch()
+
+        self.manager.args.non_interactive = True
+
+        # Output directory does not exist yet
+        non_existent_output = self.test_dir / "new_dist_dir"
+        self.assertFalse(non_existent_output.exists())
+
+        # Call command
+        self.manager.snapshot.cmd_package(
+            project_id="test",
+            output_dir=str(non_existent_output),
+            repo="my-owner/my-repo",
+            use_latest=True,
+        )
+
+        # Verify that output directory was created dynamically
+        self.assertTrue(non_existent_output.exists())
+        proj_name = self.test_dir.name
+        self.assertTrue((non_existent_output / f"{proj_name}.ldmp.sha256").exists())

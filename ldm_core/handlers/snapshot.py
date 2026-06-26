@@ -1280,7 +1280,12 @@ class SnapshotService(BaseHandler):
         return [{"path": d, "name": d.name} for d in subdirs]
 
     def cmd_package(
-        self, project_id=None, output_dir=None, repo=None, use_latest=False
+        self,
+        project_id=None,
+        output_dir=None,
+        repo=None,
+        use_latest=False,
+        snapshot=None,
     ):
         """Bundles a project snapshot into a .ldmp package for GitHub release."""
         is_dry_run = os.environ.get("LDM_DRY_RUN", "").lower() == "true"
@@ -1297,7 +1302,25 @@ class SnapshotService(BaseHandler):
         paths = self.manager.setup_paths(root)
 
         # 1. Obtain or create the snapshot
-        if use_latest:
+        if snapshot:
+            # Resolve specific snapshot path
+            latest_snap_dir = paths["backups"] / snapshot
+            if not latest_snap_dir.exists():
+                # Try locating it in backups list (e.g. by name match or partial name)
+                backups = self._list_backups(paths)
+                found = None
+                for b in backups:
+                    if b["name"] == snapshot or b["path"].name == snapshot:
+                        found = b["path"]
+                        break
+                if found:
+                    latest_snap_dir = found
+                else:
+                    UI.die(
+                        f"Snapshot '{snapshot}' not found for project '{project_name}'."
+                    )
+                    return
+        elif use_latest:
             # Locate latest snapshot
             backups = self._list_backups(paths)
             if not backups:
@@ -1353,6 +1376,7 @@ class SnapshotService(BaseHandler):
 
         # 4. Generate package tarball (.ldmp)
         output_path = Path(output_dir or Path.cwd()).resolve()
+        output_path.mkdir(parents=True, exist_ok=True)
         package_file = output_path / f"{project_name}.ldmp"
         sha_file = output_path / f"{project_name}.ldmp.sha256"
 
