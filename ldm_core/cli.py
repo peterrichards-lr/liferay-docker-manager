@@ -273,6 +273,11 @@ def get_parser():
         action="store_true",
         help="Automatically overwrite existing project registry entries in case of collisions",
     )
+    base_parent.add_argument(
+        "--no-home-warn",
+        action="store_true",
+        help="Suppress warning when running LDM from the root of the user's home directory",
+    )
 
     # For subparsers, we want the global flags but we SUPPRESS the default (False)
     # so they don't overwrite the value set by the main parser if provided before the command.
@@ -286,6 +291,7 @@ def get_parser():
     base_sub_parent.add_argument("--dry-run", action="store_true")
     base_sub_parent.add_argument("--benchmark", action="store_true")
     base_sub_parent.add_argument("--overwrite-registry", action="store_true")
+    base_sub_parent.add_argument("--no-home-warn", action="store_true")
 
     parser = argparse.ArgumentParser(
         prog="ldm",

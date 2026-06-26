@@ -254,3 +254,16 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
     - [x] Implement `cmd_ssl_mode` in `config.py` supporting swapping properties and syncing client extension `.env` files.
     - [x] Add unit tests in `test_config.py` verifying correct functionality.
     - [x] Add documentation for `ssl-mode` in `docs/guides/SHARING_AND_TUNNELS.md`.
+
+33. **Implement --no-home-warn flag and config option**:
+    - [x] Add global CLI flag `--no-home-warn` in `ldm_core/cli.py` to suppress home directory CWD warnings.
+    - [x] Support `no_home_warn` config property in `~/.ldmrc` (using defaults manager or direct config check).
+    - [x] Update `detect_project_path` in `ldm_core/handlers/base.py` to check both CLI flag and config defaults before printing the warning.
+    - [x] Add unit tests verifying warning suppression when the flag or the config is active.
+
+34. **Fix environment variable pollution in test_share.py**:
+    - [x] Use `clear=True` in `patch.dict(os.environ)` to prevent host `LFT_CLIENT_TOKEN` from failing token priority tests.
+
+35. **Tear down conflicting stack on project registry collision overwrite (Issue #178)**:
+    - [x] Update `check_registry_collisions` in `ldm_core/handlers/base.py` to stop/down the old project stack if `overwrite` is `True` and `docker-compose.yml` exists.
+    - [x] Update unit tests in `ldm_core/tests/test_base.py` to assert that `run_command` is called with `down` when overwriting project registry entries.

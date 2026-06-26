@@ -479,6 +479,28 @@ class BaseHandler:
                                 overwrite = True
 
                     if overwrite:
+                        # Automatically stop/down the old project stack if docker-compose.yml exists
+                        old_root = Path(existing_path).resolve()
+                        if (old_root / "docker-compose.yml").exists():
+                            from ldm_core.utils import get_compose_cmd
+
+                            compose_base = get_compose_cmd()
+                            UI.info(
+                                f"Tearing down conflicting stack at: {existing_path}..."
+                            )
+                            try:
+                                capture = not (UI.INFO_MODE or UI.VERBOSE)
+                                self.run_command(
+                                    [*compose_base, "down", "-v", "--remove-orphans"],
+                                    check=False,
+                                    capture_output=capture,
+                                    cwd=str(old_root),
+                                )
+                            except Exception as e:
+                                UI.warning(
+                                    f"Failed to run compose down for old project stack: {e}"
+                                )
+
                         UI.info(
                             f"Unregistering existing project '{project_name}' from: {existing_path}"
                         )
@@ -487,6 +509,7 @@ class BaseHandler:
                             registry = json.loads(registry_path.read_text())
                         except Exception:
                             registry = {}
+
                     else:
                         UI.die(
                             f"Project collision: '{project_name}' is already registered at:\n"
@@ -828,13 +851,25 @@ class BaseHandler:
 
     def detect_project_path(self, project_id=None, for_init=False, fatal=True):
         """Resolves a project ID or path to a full filesystem path."""
+        no_home_warn = False
+        if hasattr(self, "args") and self.args is not None:
+            val = getattr(self.args, "no_home_warn", False)
+            if not hasattr(val, "_mock_return_value"):
+                no_home_warn = bool(val)
+        if not no_home_warn and hasattr(self, "defaults") and self.defaults is not None:
+            val = self.defaults.get("no_home_warn", "false")
+            if not hasattr(val, "_mock_return_value"):
+                no_home_warn = str(val).lower() == "true"
+
         cwd = safe_cwd()
         if cwd:
             try:
                 resolved_cwd = cwd.resolve()
                 home = get_actual_home().resolve()
                 if resolved_cwd == home:
-                    if not getattr(BaseHandler, "_warned_home", False):
+                    if not no_home_warn and not getattr(
+                        BaseHandler, "_warned_home", False
+                    ):
                         BaseHandler._warned_home = True  # type: ignore[attr-defined]
                         UI.warning(
                             "You are running LDM from your Home directory. "
@@ -861,7 +896,7 @@ class BaseHandler:
                 )
                 if has_meta:
                     # If the project path IS the home directory, warn the user
-                    if p == Path.home().resolve():
+                    if p == Path.home().resolve() and not no_home_warn:
                         UI.warning(
                             "You are running LDM from your Home directory. "
                             "For better performance and to avoid noise, it is recommended to "

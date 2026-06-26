@@ -195,7 +195,7 @@ class TestShareService(unittest.TestCase):
         self.assertEqual(token, "env-token")
 
     @patch("ldm_core.handlers.share.get_actual_home")
-    @patch.dict(os.environ, {})
+    @patch.dict(os.environ, {}, clear=True)
     def test_get_auth_token_file(self, mock_home):
         mock_home.return_value = Path("/fake/home")
 
@@ -206,7 +206,7 @@ class TestShareService(unittest.TestCase):
                 self.assertEqual(token, "file-token")
 
     @patch("ldm_core.handlers.share.get_actual_home")
-    @patch.dict(os.environ, {})
+    @patch.dict(os.environ, {}, clear=True)
     def test_get_auth_token_config(self, mock_home):
         mock_home.return_value = Path("/fake/home")
 
