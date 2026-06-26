@@ -300,3 +300,185 @@ class SystemService(BaseHandler):
                     f"Failed to write repaired properties to {file_path.name}: {e}"
                 )
         return False
+
+    def cmd_init_ci(
+        self,
+        repo=None,
+        workflow_name="ldm-package-release.yml",
+        trigger=None,
+        project_id=None,
+    ):
+        """Scaffolds a GitHub Actions workflow to build and package LDM releases."""
+        from pathlib import Path
+
+        from ldm_core.constants import VERSION
+
+        # 1. Resolve repository root
+        repo_root = None
+        try:
+            res = self.manager.run_command(
+                ["git", "rev-parse", "--show-toplevel"], check=False
+            )
+            if res and res.strip():
+                repo_root = Path(res.strip())
+        except Exception:
+            pass
+
+        if not repo_root:
+            curr = Path.cwd().resolve()
+            for parent in [curr, *curr.parents]:
+                if (parent / ".git").exists():
+                    repo_root = parent
+                    break
+
+        if not repo_root:
+            repo_root = Path.cwd().resolve()
+
+        # 2. Auto-detect origin repository identifier
+        if not repo:
+            try:
+                origin_url = self.manager.run_command(
+                    ["git", "remote", "get-url", "origin"],
+                    cwd=str(repo_root),
+                    check=False,
+                ).strip()
+                if origin_url:
+                    parsed = self.manager.workspace._parse_github_repo(origin_url)
+                    if parsed:
+                        repo = f"{parsed[0]}/{parsed[1]}"
+            except Exception:
+                pass
+
+        if not repo:
+            if self.manager.non_interactive:
+                repo = "owner/repo"
+            else:
+                repo = UI.ask(
+                    "Enter GitHub Repository Identifier (owner/repo)",
+                    "my-org/my-repo",
+                )
+                if not repo:
+                    repo = "owner/repo"
+
+        # 3. Resolve Trigger preset (using defaults configuration as fallback)
+        resolved_trigger = (
+            trigger or self.manager.defaults.get("ci_trigger") or "release"
+        )
+
+        triggers_yaml = {
+            "release": """on:
+  release:
+    types: [published]
+  workflow_dispatch:""",
+            "tag": """on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:""",
+            "push": """on:
+  push:
+    branches:
+      - master
+  workflow_dispatch:""",
+            "manual": """on:
+  workflow_dispatch:""",
+        }
+        trigger_block = triggers_yaml.get(resolved_trigger, triggers_yaml["release"])
+
+        # 4. Resolve project argument string
+        project_arg = ""
+        if project_id:
+            project_arg = f"{project_id} "
+
+        # 5. Build workflow YAML content
+        workflow_content = f"""name: LDM Package Release
+
+{trigger_block}
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-package:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install LDM
+        run: |
+          python -m pip install --upgrade pip
+          pip install liferay-docker-manager=={VERSION}
+
+      - name: Start Liferay Environment
+        run: |
+          ldm run --non-interactive
+
+      - name: Wait for Liferay & Deployments
+        run: |
+          ldm wait --non-interactive --wait-for-deployables
+
+      - name: Create LDM Package
+        run: |
+          mkdir -p ./dist
+          ldm package {project_arg}--non-interactive --repo "{repo}" --output ./dist
+
+      - name: Stop Liferay Environment
+        run: |
+          ldm down --non-interactive
+
+      - name: Upload Package as Action Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ldm-package
+          path: |
+            dist/*.ldmp
+            dist/*.ldmp.sha256
+
+      - name: Upload LDM Package to Release
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'release'
+        with:
+          files: |
+            dist/*.ldmp
+            dist/*.ldmp.sha256
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+"""
+
+        # 6. Save workflow file with collision check
+        workflows_dir = repo_root / ".github" / "workflows"
+        target_file = workflows_dir / workflow_name
+
+        if target_file.exists():
+            if self.manager.non_interactive:
+                UI.warning(
+                    f"Workflow file '{workflow_name}' already exists. Overwriting in non-interactive mode."
+                )
+            else:
+                confirm = UI.confirm(
+                    f"Workflow file '{workflow_name}' already exists. Overwrite?",
+                    "N",
+                )
+                if not confirm:
+                    UI.info("Aborted. Scaffolding canceled.")
+                    return False
+
+        try:
+            from ldm_core.utils import safe_write_text
+
+            # Ensure parent directories exist
+            workflows_dir.mkdir(parents=True, exist_ok=True)
+            safe_write_text(target_file, workflow_content)
+            UI.success(
+                f"Successfully generated GitHub Actions release workflow: {target_file}"
+            )
+            return True
+        except Exception as e:
+            UI.die(f"Failed to write workflow file: {e}")
+            return False

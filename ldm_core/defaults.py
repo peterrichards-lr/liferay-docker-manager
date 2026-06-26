@@ -15,6 +15,7 @@ CONVENTION_DEFAULTS = {
     "tag_heuristics": {r"\.q1\.\d+$": "-lts"},
     "no_color": "false",
     "no_unicode": "false",
+    "ci_trigger": "release",
 }
 
 

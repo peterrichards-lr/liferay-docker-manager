@@ -55,6 +55,7 @@ def preprocess_args(args_list: list[str]) -> list[str]:
         "infra-down",
         "infra-restart",
         "init-common",
+        "init-ci",
         "renew-ssl",
         "migrate-search",
         "cloud-fetch",
@@ -966,6 +967,17 @@ def get_parser():
         default=900,
         help="Maximum time to wait in seconds (default: 900)",
     )
+    wait_cmd.add_argument(
+        "-d",
+        "--wait-for-deployables",
+        action="store_true",
+        dest="wait_for_deployables",
+        help="Scan local workspace for JARs/YAMLs and block until they are deployed in Liferay",
+    )
+    wait_cmd.add_argument(
+        "--wait-for-bundles",
+        help="Comma-separated list of expected OSGi bundle symbolic names to wait for",
+    )
 
     status = subparsers.add_parser("status", aliases=["ps"], parents=[base_sub_parent])
     status.add_argument("project", nargs="?")
@@ -1048,6 +1060,10 @@ def get_parser():
         "--use-latest",
         action="store_true",
         help="Package the latest existing snapshot instead of creating a fresh snapshot",
+    )
+    package_cmd.add_argument(
+        "--snapshot",
+        help="Target a specific snapshot name or directory to package",
     )
 
     # ==================== NAMESPACES ====================
@@ -1528,6 +1544,33 @@ def get_parser():
         "-p", "--project-id", dest="project_flag", help="Specific project ID to rescue"
     )
 
+    init_ci = system_subparsers.add_parser(
+        "init-ci",
+        parents=[base_sub_parent],
+        help="Generate a GitHub Actions workflow to build and package LDM (.ldmp) releases",
+    )
+    init_ci.add_argument(
+        "--repo",
+        help="GitHub Repository Identifier (owner/repo). Auto-detects from git remote if omitted.",
+    )
+    init_ci.add_argument(
+        "--workflow-name",
+        default="ldm-package-release.yml",
+        help="Name of the workflow file (defaults to ldm-package-release.yml)",
+    )
+    init_ci.add_argument(
+        "--trigger",
+        choices=["release", "tag", "push", "manual"],
+        default=None,
+        help="Event trigger for the release package generation workflow",
+    )
+    init_ci.add_argument(
+        "project",
+        nargs="?",
+        help="Optional specific project ID to package (defaults to current directory workspace)",
+    )
+    init_ci.add_argument("-p", "--project", dest="project_flag")
+
     # Overwrite parse_known_args of the parser to run preprocess_args automatically:
     orig_parse_known_args = parser.parse_known_args
 
@@ -1728,6 +1771,7 @@ def main():
             output_dir=getattr(args, "output", None),
             repo=getattr(args, "repo", None),
             use_latest=getattr(args, "use_latest", False),
+            snapshot=getattr(args, "snapshot", None),
         ),
         ("import", None): lambda: manager.workspace.cmd_import(args.source),
         ("init-from", None): lambda: manager.workspace.cmd_init_from(args.source),
@@ -1805,7 +1849,10 @@ def main():
         ("clear-cache", None): lambda: manager.diagnostics.cmd_cache("tags"),
         ("clear-tags", None): lambda: manager.diagnostics.cmd_cache("tags"),
         ("wait", None): lambda: manager.cmd_wait(
-            getattr(args, "project", None), timeout=getattr(args, "timeout", 600)
+            getattr(args, "project", None),
+            timeout=getattr(args, "timeout", 600),
+            wait_for_deployables=getattr(args, "wait_for_deployables", False),
+            wait_for_bundles=getattr(args, "wait_for_bundles", None),
         ),
         ("status", None): lambda: manager.diagnostics.cmd_status(
             getattr(args, "project", None), all_projects=args.all
@@ -1942,9 +1989,16 @@ def main():
             force=getattr(args, "force", False),
             keep_config=getattr(args, "keep_config", False),
         ),
-        ("system", "rescue"): lambda: manager.cmd_rescue(
+        ("system", "rescue"): lambda: manager.system.cmd_rescue(
             project_id=getattr(args, "project", None)
             or getattr(args, "project_flag", None)
+        ),
+        ("system", "init-ci"): lambda: manager.cmd_init_ci(
+            repo=getattr(args, "repo", None),
+            workflow_name=getattr(args, "workflow_name", "ldm-package-release.yml"),
+            trigger=getattr(args, "trigger", None),
+            project_id=getattr(args, "project", None)
+            or getattr(args, "project_flag", None),
         ),
     }
 

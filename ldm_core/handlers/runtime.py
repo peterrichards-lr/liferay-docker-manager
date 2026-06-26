@@ -6,6 +6,7 @@ import time
 from datetime import datetime
 from pathlib import Path
 
+from ldm_core.docker_service import DockerService
 from ldm_core.handlers.base import BaseHandler
 from ldm_core.ui import UI
 from ldm_core.utils import get_actual_home, get_compose_cmd, open_browser, strip_ansi
@@ -713,7 +714,89 @@ class RuntimeService(BaseHandler):
             else:
                 UI.error("Reseed failed.")
 
-    def cmd_wait(self, project_id=None, timeout=900):
+    def _scan_for_expected_deployables(self, root_path):
+        """Scans workspace deploy and client-extensions paths for deployable targets.
+
+        Returns a dict of {bundle_symbolic_name_or_cx_id: expected_state}
+        """
+        import zipfile
+
+        import yaml
+
+        targets = {}
+
+        # 1. Scan configs/common/deploy and deploy directories
+        deploy_dirs = [
+            root_path / "configs" / "common" / "deploy",
+            root_path / "deploy",
+        ]
+
+        for d in deploy_dirs:
+            if not d.exists() or not d.is_dir():
+                continue
+            for item in d.glob("*"):
+                if item.suffix.lower() in [".jar", ".war"]:
+                    try:
+                        with zipfile.ZipFile(item) as z:
+                            try:
+                                manifest_content = z.read(
+                                    "META-INF/MANIFEST.MF"
+                                ).decode("utf-8", errors="ignore")
+                                # Unfold manifest lines
+                                unfolded_lines = []
+                                for line in manifest_content.splitlines():
+                                    if line.startswith(" ") and unfolded_lines:
+                                        unfolded_lines[-1] += line[1:]
+                                    else:
+                                        unfolded_lines.append(line)
+
+                                symbolic_name = None
+                                is_fragment = False
+                                for line in unfolded_lines:
+                                    if line.startswith("Bundle-SymbolicName:"):
+                                        val = line.split(":", 1)[1].strip()
+                                        symbolic_name = val.split(";")[0].strip()
+                                    elif line.startswith("Fragment-Host:"):
+                                        is_fragment = True
+
+                                if symbolic_name:
+                                    expected_state = (
+                                        "Resolved" if is_fragment else "Active"
+                                    )
+                                    targets[symbolic_name] = expected_state
+                            except KeyError:
+                                pass
+                    except Exception as e:
+                        UI.debug(f"Failed to scan manifest for {item.name}: {e}")
+
+        # 2. Scan client-extensions directory
+        cx_dir = root_path / "client-extensions"
+        if cx_dir.exists() and cx_dir.is_dir():
+            for item in cx_dir.glob("*"):
+                if item.is_dir():
+                    yaml_file = item / "client-extension.yaml"
+                    if yaml_file.exists():
+                        try:
+                            with open(yaml_file) as f:
+                                cx_yaml = yaml.safe_load(f)
+                                if cx_yaml and isinstance(cx_yaml, dict):
+                                    for key, val in cx_yaml.items():
+                                        if isinstance(val, dict):
+                                            targets[key] = "Active"
+                        except Exception as e:
+                            UI.debug(
+                                f"Failed to parse client-extension.yaml in {item.name}: {e}"
+                            )
+
+        return targets
+
+    def cmd_wait(
+        self,
+        project_id=None,
+        timeout=900,
+        wait_for_deployables=False,
+        wait_for_bundles=None,
+    ):
         """Block execution until project is fully ready (HTTP 200/302)."""
         if timeout is None:
             timeout = 900
@@ -727,6 +810,14 @@ class RuntimeService(BaseHandler):
         # 1. Wait for Container/Log Readiness
         if not self._wait_for_ready(meta, host_name, timeout=timeout):
             UI.die(f"Project '{project_id}' failed to become ready within {timeout}s.")
+
+        # Determine target expected deployables
+        expected_targets = {}
+        if wait_for_deployables:
+            expected_targets.update(self._scan_for_expected_deployables(root))
+        if wait_for_bundles:
+            for b in wait_for_bundles.split(","):
+                expected_targets[b.strip()] = "Active"
 
         # 2. Wait for HTTP Availability
         UI.info(
@@ -764,6 +855,110 @@ class RuntimeService(BaseHandler):
             UI.die(
                 f"Project '{project_id}' is running but HTTP {url} is not responding correctly."
             )
+
+        # 2b. Wait for Deployables (OSGi & Client Extensions) if any targets exist
+        if expected_targets:
+            UI.info(
+                f"Waiting for {len(expected_targets)} deployable targets to be fully active..."
+            )
+            container_name = (
+                meta.get("liferay_container_name")
+                or meta.get("container_name")
+                or root.name
+            )
+
+            # Wait for deploy directory inside container to clear
+            UI.info("Checking deploy directory queue status...")
+            deploy_clear = False
+            deploy_start = time.time()
+            while time.time() - deploy_start < timeout:
+                try:
+                    res = DockerService.exec(
+                        container_name,
+                        ["ls", "/opt/liferay/deploy"],
+                        check=False,
+                    )
+                    if res:
+                        files = [f.strip() for f in res.splitlines() if f.strip()]
+                        deployables = [
+                            f for f in files if f.endswith((".jar", ".zip", ".war"))
+                        ]
+                        if not deployables:
+                            deploy_clear = True
+                            break
+                    else:
+                        deploy_clear = True
+                        break
+                except Exception:
+                    pass
+                time.sleep(2)
+
+            if not deploy_clear:
+                UI.warning(
+                    "Deploy directory queue did not clear, proceeding to Gogo console verification..."
+                )
+
+            # Wait for targets via Gogo Shell
+            UI.info("Verifying target OSGi bundle and Client Extension states...")
+            gogo_ready = False
+            gogo_start = time.time()
+            while time.time() - gogo_start < timeout:
+                try:
+                    res = DockerService.exec(
+                        container_name,
+                        ["sh", "-c", "echo 'lb -s' | telnet localhost 11311"],
+                        check=False,
+                    )
+                    if res and "|" in res:
+                        # Parse lb -s output
+                        bundles = {}
+                        for line in res.splitlines():
+                            parts = [p.strip() for p in line.split("|")]
+                            if len(parts) >= 4:
+                                state = parts[1]
+                                sym_name = parts[3]
+                                bundles[sym_name] = state
+
+                        satisfied = True
+                        for target, expected in expected_targets.items():
+                            # Direct match
+                            if target in bundles:
+                                if bundles[target] != expected:
+                                    satisfied = False
+                                    break
+                            else:
+                                # Client Extension match: symbolic name contains the target ID and "client.extension"
+                                cx_bundle_found = False
+                                for sym_name, state in bundles.items():
+                                    if (
+                                        target in sym_name
+                                        and "client.extension" in sym_name
+                                    ):
+                                        cx_bundle_found = True
+                                        if state != expected:
+                                            satisfied = False
+                                        break
+                                if not cx_bundle_found or not satisfied:
+                                    satisfied = False
+                                    break
+
+                        if satisfied:
+                            UI.success(
+                                "All deployables and client extensions are fully started."
+                            )
+                            gogo_ready = True
+                            break
+                    elif res:
+                        # Gogo console responded but not with the bundle table (e.g. error/command not found)
+                        break
+                except Exception as e:
+                    UI.debug(f"Gogo shell query failed: {e}")
+                time.sleep(3)
+
+            if not gogo_ready:
+                UI.warning(
+                    "Some deployable targets did not reach active state via Gogo console verification."
+                )
 
         # 3. Wait for System to become Idle (CPU Drop)
         UI.info("Waiting for background initialization to complete (CPU Idle)...")

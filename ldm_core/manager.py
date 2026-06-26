@@ -162,6 +162,9 @@ class LiferayManager(
     def cmd_rescue(self, *args, **kwargs):
         return self.system.cmd_rescue(*args, **kwargs)
 
+    def cmd_init_ci(self, *args, **kwargs):
+        return self.system.cmd_init_ci(*args, **kwargs)
+
     def cmd_hydrate(self, *args, **kwargs):
         return self.cloud.cmd_hydrate(*args, **kwargs)
 

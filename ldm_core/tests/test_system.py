@@ -7,6 +7,9 @@ from ldm_core.handlers.system import SystemService
 
 
 class MockSystemManager:
+    defaults: MagicMock
+    workspace: MagicMock
+
     def __init__(self):
         self.args = MagicMock()
         self.args.project = None
@@ -237,6 +240,156 @@ class TestSystemService(unittest.TestCase):
         self.assertIn("key4=val4\\\n  param1=value1;\\\n  param2=value2;", new_content)
         # Verify key5 backslash is stripped (last line of file)
         self.assertIn("key5=val5\n", new_content)
+
+    @patch("ldm_core.ui.UI.success")
+    def test_cmd_init_ci_success(self, mock_success):
+        self.manager.defaults = MagicMock()
+        self.manager.defaults.get.return_value = "release"
+        self.manager.workspace = MagicMock()
+        self.manager.workspace._parse_github_repo.return_value = ("my-org", "my-repo")
+
+        def run_cmd_side_effect(args, **kwargs):
+            if "rev-parse" in args:
+                return str(self.temp_home)
+            if "remote" in args:
+                return "https://github.com/my-org/my-repo.git"
+            return ""
+
+        self.manager.run_command.side_effect = run_cmd_side_effect
+
+        res = self.system.cmd_init_ci()
+        self.assertTrue(res)
+
+        target_file = (
+            self.temp_home / ".github" / "workflows" / "ldm-package-release.yml"
+        )
+        self.assertTrue(target_file.exists())
+        content = target_file.read_text()
+        self.assertIn("name: LDM Package Release", content)
+        self.assertIn("on:\n  release:", content)
+        self.assertIn('--repo "my-org/my-repo"', content)
+
+    @patch("ldm_core.ui.UI.success")
+    def test_cmd_init_ci_trigger_presets(self, mock_success):
+        self.manager.defaults = MagicMock()
+        self.manager.defaults.get.return_value = "release"
+        self.manager.workspace = MagicMock()
+        self.manager.workspace._parse_github_repo.return_value = ("my-org", "my-repo")
+
+        def run_cmd_side_effect(args, **kwargs):
+            if "rev-parse" in args:
+                return str(self.temp_home)
+            if "remote" in args:
+                return "https://github.com/my-org/my-repo.git"
+            return ""
+
+        self.manager.run_command.side_effect = run_cmd_side_effect
+
+        # Test tag trigger
+        res = self.system.cmd_init_ci(trigger="tag", workflow_name="tag.yml")
+        self.assertTrue(res)
+        content = (self.temp_home / ".github" / "workflows" / "tag.yml").read_text()
+        self.assertIn("tags:\n      - 'v*'", content)
+
+        # Test push trigger
+        res = self.system.cmd_init_ci(trigger="push", workflow_name="push.yml")
+        self.assertTrue(res)
+        content = (self.temp_home / ".github" / "workflows" / "push.yml").read_text()
+        self.assertIn("branches:\n      - master", content)
+
+        # Test manual trigger
+        res = self.system.cmd_init_ci(trigger="manual", workflow_name="manual.yml")
+        self.assertTrue(res)
+        content = (self.temp_home / ".github" / "workflows" / "manual.yml").read_text()
+        self.assertIn("on:\n  workflow_dispatch:", content)
+        self.assertNotIn("push:", content)
+
+    @patch("ldm_core.ui.UI.success")
+    def test_cmd_init_ci_defaults_preset(self, mock_success):
+        self.manager.defaults = MagicMock()
+        self.manager.defaults.get.return_value = "manual"
+        self.manager.workspace = MagicMock()
+        self.manager.workspace._parse_github_repo.return_value = ("my-org", "my-repo")
+
+        def run_cmd_side_effect(args, **kwargs):
+            if "rev-parse" in args:
+                return str(self.temp_home)
+            if "remote" in args:
+                return "https://github.com/my-org/my-repo.git"
+            return ""
+
+        self.manager.run_command.side_effect = run_cmd_side_effect
+
+        res = self.system.cmd_init_ci()
+        self.assertTrue(res)
+        content = (
+            self.temp_home / ".github" / "workflows" / "ldm-package-release.yml"
+        ).read_text()
+        self.assertIn("on:\n  workflow_dispatch:", content)
+        self.assertNotIn("release:", content)
+
+    @patch("ldm_core.ui.UI.confirm")
+    @patch("ldm_core.ui.UI.success")
+    def test_cmd_init_ci_collision_interactive(self, mock_success, mock_confirm):
+        self.manager.defaults = MagicMock()
+        self.manager.defaults.get.return_value = "release"
+        self.manager.workspace = MagicMock()
+        self.manager.workspace._parse_github_repo.return_value = ("my-org", "my-repo")
+        self.manager.non_interactive = False
+
+        def run_cmd_side_effect(args, **kwargs):
+            if "rev-parse" in args:
+                return str(self.temp_home)
+            if "remote" in args:
+                return "https://github.com/my-org/my-repo.git"
+            return ""
+
+        self.manager.run_command.side_effect = run_cmd_side_effect
+
+        workflows_dir = self.temp_home / ".github" / "workflows"
+        workflows_dir.mkdir(parents=True)
+        target_file = workflows_dir / "ldm-package-release.yml"
+        target_file.write_text("existing content")
+
+        # 1. Reject prompt
+        mock_confirm.return_value = False
+        res = self.system.cmd_init_ci()
+        self.assertFalse(res)
+        self.assertEqual(target_file.read_text(), "existing content")
+
+        # 2. Accept prompt
+        mock_confirm.return_value = True
+        res = self.system.cmd_init_ci()
+        self.assertTrue(res)
+        self.assertNotEqual(target_file.read_text(), "existing content")
+
+    @patch("ldm_core.ui.UI.warning")
+    @patch("ldm_core.ui.UI.success")
+    def test_cmd_init_ci_collision_non_interactive(self, mock_success, mock_warning):
+        self.manager.defaults = MagicMock()
+        self.manager.defaults.get.return_value = "release"
+        self.manager.workspace = MagicMock()
+        self.manager.workspace._parse_github_repo.return_value = ("my-org", "my-repo")
+        self.manager.non_interactive = True
+
+        def run_cmd_side_effect(args, **kwargs):
+            if "rev-parse" in args:
+                return str(self.temp_home)
+            if "remote" in args:
+                return "https://github.com/my-org/my-repo.git"
+            return ""
+
+        self.manager.run_command.side_effect = run_cmd_side_effect
+
+        workflows_dir = self.temp_home / ".github" / "workflows"
+        workflows_dir.mkdir(parents=True)
+        target_file = workflows_dir / "ldm-package-release.yml"
+        target_file.write_text("existing content")
+
+        res = self.system.cmd_init_ci()
+        self.assertTrue(res)
+        self.assertNotEqual(target_file.read_text(), "existing content")
+        mock_warning.assert_called_once()
 
 
 if __name__ == "__main__":

@@ -66,6 +66,7 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
 - [Architecture Guide](./docs/LDM_ARCHITECTURE.md)
 - [Troubleshooting](./docs/TROUBLESHOOTING.md)
 - [PaaS "Golden Path" Guide](./docs/guides/PAAS_LOCAL_DEV.md)
+- [Workspace Import & Packaging Guide](./docs/guides/WORKSPACE_IMPORT_AND_PACKAGING.md)
 - [Agent Rules of Engagement](./.gemini/gemini.md)
 - [Properties Override Hierarchy Guide](./docs/guides/PROPERTIES_HIERARCHY.md)
 
@@ -290,3 +291,17 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
     - [x] Update `check_for_updates` in `ldm_core/utils.py` to support specific version tag checks.
     - [x] Update `cmd_upgrade` in `ldm_core/handlers/diagnostics.py` to support validation, downgrade checks, warnings, and confirm prompts.
     - [x] Add unit tests in `ldm_core/tests/test_diagnostics.py` to verify formatting, downgrade behavior, prompts, and force flag requirements.
+
+40. **Support waiting for asynchronous OSGi and Client Extension deployments in ldm wait (Issue #186)**:
+    - [x] Add CLI arguments `--wait-for-deployables` and `--wait-for-bundles` to the `wait` parser in `ldm_core/cli.py`.
+    - [x] Implement local scan logic to detect bundle Symbolic Names from manifests and client extensions from YAML configs in `ldm_core/handlers/runtime.py`.
+    - [x] Implement deployable directory check and OSGi Gogo shell poller in `cmd_wait` inside `ldm_core/handlers/runtime.py`.
+    - [x] Fix unit tests in `ldm_core/tests/test_runtime.py` to resolve StopIteration on time.time() mock due to mock exhaustion/extra checks.
+
+41. **Scaffold GitHub Actions workflow for LDM package releases (Issue #187 & Issue #188)**:
+    - [x] Register `system init-ci` subcommand and its arguments (`--repo`, `--workflow-name`, `--trigger`, `project`) in `ldm_core/cli.py`.
+    - [x] Add `--snapshot` argument to `package` parser in `ldm_core/cli.py` (Issue #188).
+    - [x] Define default `"ci_trigger": "release"` in `CONVENTION_DEFAULTS` inside `ldm_core/defaults.py` to allow global configuration overrides.
+    - [x] Implement `cmd_init_ci` in `ldm_core/handlers/system.py` to auto-detect git remotes and generate a customized release workflow YAML.
+    - [x] Enhance `cmd_package` in `ldm_core/handlers/snapshot.py` to create the output directory automatically and resolve specific snapshot targets (Issue #188).
+    - [x] Add unit tests verifying `init-ci` execution and targeted snapshot packaging logic.
