@@ -242,9 +242,9 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
 
 30. **Simplify release.py script**:
     - [x] Restrict release initiation to master branch.
-    - [x] Stage, commit, and tag directly on master.
-    - [x] Remove release branch creation and PR workflows.
-    - [x] Commit script updates to master, finalize execution flow, and update documentation.
+    - [x] Stage, commit, and tag directly on master (Failed due to master branch protection rules).
+    - [x] Restore release branch creation and PR workflows to comply with branch protection.
+    - [x] Commit script updates to a feature branch, raise PR, auto-merge.
 
 31. **Fix CodeQL stack trace exposure vulnerabilities (py/stack-trace-exposure)**:
     - [x] Catch Exception in dashboard API endpoints (`api_project_properties`, `api_update_project_property`, `api_delete_project_property`) and log them on the server while returning sanitized/safe messages to the client.
