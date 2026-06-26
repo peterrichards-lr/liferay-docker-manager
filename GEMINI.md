@@ -309,4 +309,10 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
     - [x] Add missing links to recently introduced documentation (Import & Packaging, properties hierarchy, AI MCP guide, advanced CLI options, playbook, compatibility, etc.).
     - [x] Verify that all links are correct and the markdown file passes pre-commit checks.
 43. **Fix diagnostics upgrade/downgrade unit tests**:
-    - [/] Patch `sys.argv` in `test_upgrade_downgrade_non_interactive_with_force` and `test_upgrade_downgrade_interactive_confirm` to ensure the `.py` suffix check triggers properly when running under `py.test` / venv.
+    - [x] Patch `sys.argv` in `test_upgrade_downgrade_non_interactive_with_force` and `test_upgrade_downgrade_interactive_confirm` to ensure the `.py` suffix check triggers properly when running under `py.test` / venv.
+
+44. **Restructure documentation entry points**:
+    - [ ] Create a root `README.md` with a clean, concise introduction, macOS/Linux quick installation, quick start commands, and signposts.
+    - [ ] Move detailed Conventions and Key Features out of the main index to `docs/guides/CONVENTIONS_AND_FEATURES.md`.
+    - [ ] Simplify `docs/README.md` to be a categorized table of contents and documentation index, removing duplicate sections.
+    - [ ] Run pre-commit checks to verify markdown formatting and link integrity.
