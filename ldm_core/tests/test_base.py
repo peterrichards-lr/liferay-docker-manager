@@ -1,3 +1,4 @@
+import json
 import os
 import socket
 import subprocess
@@ -218,6 +219,61 @@ class TestBaseDiscoveryPath(unittest.TestCase):
             self.handler.detect_project_path("some-proj", for_init=True)
             self.assertFalse(mock_warn.called)
 
+    @patch("ldm_core.handlers.base.get_actual_home")
+    @patch("ldm_core.handlers.base.safe_cwd")
+    @patch("ldm_core.ui.UI.warning")
+    def test_detect_project_path_cwd_home_warning_suppressed_by_arg(
+        self, mock_warn, mock_cwd, mock_home
+    ):
+        with tempfile.TemporaryDirectory() as base_tmp:
+            base_path = Path(base_tmp)
+            mock_home.return_value = base_path
+            mock_cwd.return_value = base_path
+
+            # Clean flag
+            from ldm_core.handlers.base import BaseHandler
+
+            if hasattr(BaseHandler, "_warned_home"):
+                delattr(BaseHandler, "_warned_home")
+
+            # Set CLI arg to suppress
+            self.handler.args.no_home_warn = True
+
+            try:
+                self.handler.detect_project_path("some-proj", for_init=True)
+                mock_warn.assert_not_called()
+            finally:
+                self.handler.args.no_home_warn = False
+
+    @patch("ldm_core.handlers.base.get_actual_home")
+    @patch("ldm_core.handlers.base.safe_cwd")
+    @patch("ldm_core.ui.UI.warning")
+    def test_detect_project_path_cwd_home_warning_suppressed_by_config(
+        self, mock_warn, mock_cwd, mock_home
+    ):
+        with tempfile.TemporaryDirectory() as base_tmp:
+            base_path = Path(base_tmp)
+            mock_home.return_value = base_path
+            mock_cwd.return_value = base_path
+
+            # Clean flag
+            from ldm_core.handlers.base import BaseHandler
+
+            if hasattr(BaseHandler, "_warned_home"):
+                delattr(BaseHandler, "_warned_home")
+
+            # Set configuration defaults to suppress warning
+            self.handler.defaults = MagicMock()  # type: ignore[attr-defined]
+            self.handler.defaults.get.return_value = "true"  # type: ignore[attr-defined]
+
+            try:
+                self.handler.detect_project_path("some-proj", for_init=True)
+                mock_warn.assert_not_called()
+                self.handler.defaults.get.assert_called_with("no_home_warn", "false")  # type: ignore[attr-defined]
+            finally:
+                if hasattr(self.handler, "defaults"):
+                    delattr(self.handler, "defaults")
+
 
 class TestBaseProject(unittest.TestCase):
     def setUp(self):
@@ -272,8 +328,6 @@ class TestBaseProject(unittest.TestCase):
     @patch("ldm_core.ui.UI.ask")
     @patch("ldm_core.ui.UI.die")
     def test_check_registry_collisions_scenarios(self, mock_die, mock_ask, mock_home):
-        import json
-
         from ldm_core.constants import REGISTRY_FILE
 
         with tempfile.TemporaryDirectory() as base_tmp:
@@ -284,73 +338,105 @@ class TestBaseProject(unittest.TestCase):
             ldm_dir.mkdir()
             registry_path = ldm_dir / REGISTRY_FILE
 
-            # Case 1: Same path -> no collision
-            registry = {"p1": {"path": str(base_path / "p1")}}
-            registry_path.write_text(json.dumps(registry))
-            BaseHandler.check_registry_collisions(self.handler, "p1", base_path / "p1")
-            mock_die.assert_not_called()
+            with patch.object(self.handler, "run_command") as mock_run_cmd:
+                # Case 1: Same path -> no collision
+                registry = {"p1": {"path": str(base_path / "p1")}}
+                registry_path.write_text(json.dumps(registry))
+                BaseHandler.check_registry_collisions(
+                    self.handler, "p1", base_path / "p1"
+                )
+                mock_die.assert_not_called()
+                mock_run_cmd.assert_not_called()
 
-            # Case 2: Stale path (does not exist on disk) -> should auto-clean and not die
-            p2_old_path = base_path / "p2_old"
-            registry = {"p2": {"path": str(p2_old_path)}}
-            registry_path.write_text(json.dumps(registry))
-            BaseHandler.check_registry_collisions(self.handler, "p2", base_path / "p2")
-            mock_die.assert_not_called()
-            # Assert p2 is removed from registry
-            updated_reg = json.loads(registry_path.read_text())
-            self.assertNotIn("p2", updated_reg)
+                # Case 2: Stale path (does not exist on disk) -> should auto-clean and not die
+                p2_old_path = base_path / "p2_old"
+                registry = {"p2": {"path": str(p2_old_path)}}
+                registry_path.write_text(json.dumps(registry))
+                BaseHandler.check_registry_collisions(
+                    self.handler, "p2", base_path / "p2"
+                )
+                mock_die.assert_not_called()
+                mock_run_cmd.assert_not_called()
+                # Assert p2 is removed from registry
+                updated_reg = json.loads(registry_path.read_text())
+                self.assertNotIn("p2", updated_reg)
 
-            # Case 3: Different path (exists on disk), non-interactive, no overwrite_registry -> should unregister & not die
-            p3_old_path = base_path / "p3_old"
-            p3_old_path.mkdir()
-            registry = {"p3": {"path": str(p3_old_path)}}
-            registry_path.write_text(json.dumps(registry))
-            self.handler.non_interactive = True
-            self.handler.args.overwrite_registry = False
+                # Case 3: Different path (exists on disk), non-interactive, no overwrite_registry -> should unregister & not die
+                # and should trigger stack teardown if docker-compose.yml exists
+                p3_old_path = base_path / "p3_old"
+                p3_old_path.mkdir()
+                (p3_old_path / "docker-compose.yml").touch()
+                registry = {"p3": {"path": str(p3_old_path)}}
+                registry_path.write_text(json.dumps(registry))
+                self.handler.non_interactive = True
+                self.handler.args.overwrite_registry = False
 
-            BaseHandler.check_registry_collisions(self.handler, "p3", base_path / "p3")
-            mock_die.assert_not_called()
-            # Assert p3 is removed from registry
-            updated_reg = json.loads(registry_path.read_text())
-            self.assertNotIn("p3", updated_reg)
+                BaseHandler.check_registry_collisions(
+                    self.handler, "p3", base_path / "p3"
+                )
+                mock_die.assert_not_called()
+                # Assert compose down was executed on p3_old_path
+                mock_run_cmd.assert_called_once()
+                cmd_args = mock_run_cmd.call_args[0][0]
+                self.assertIn("down", cmd_args)
+                self.assertEqual(
+                    mock_run_cmd.call_args[1].get("cwd"), str(p3_old_path.resolve())
+                )
+                mock_run_cmd.reset_mock()
 
-            # Case 4: Different path (exists on disk), interactive, overwrite_registry=True -> should unregister & not die
-            p3_old_path.mkdir(exist_ok=True)
-            registry = {"p3": {"path": str(p3_old_path)}}
-            registry_path.write_text(json.dumps(registry))
-            self.handler.non_interactive = False
-            self.handler.args.overwrite_registry = True
-            BaseHandler.check_registry_collisions(self.handler, "p3", base_path / "p3")
-            mock_die.assert_not_called()
-            mock_ask.assert_not_called()
-            # Assert p3 is removed from registry
-            updated_reg = json.loads(registry_path.read_text())
-            self.assertNotIn("p3", updated_reg)
+                # Assert p3 is removed from registry
+                updated_reg = json.loads(registry_path.read_text())
+                self.assertNotIn("p3", updated_reg)
 
-            # Case 5: Different path (exists on disk), interactive, user says Yes -> should unregister & not die
-            p4_old_path = base_path / "p4_old"
-            p4_old_path.mkdir()
-            registry = {"p4": {"path": str(p4_old_path)}}
-            registry_path.write_text(json.dumps(registry))
-            self.handler.non_interactive = False
-            self.handler.args.overwrite_registry = False
-            mock_ask.return_value = "y"
+                # Case 4: Different path (exists on disk), interactive, overwrite_registry=True -> should unregister & not die
+                p3_old_path.mkdir(exist_ok=True)
+                # No docker-compose.yml in this case
+                if (p3_old_path / "docker-compose.yml").exists():
+                    (p3_old_path / "docker-compose.yml").unlink()
+                registry = {"p3": {"path": str(p3_old_path)}}
+                registry_path.write_text(json.dumps(registry))
+                self.handler.non_interactive = False
+                self.handler.args.overwrite_registry = True
+                BaseHandler.check_registry_collisions(
+                    self.handler, "p3", base_path / "p3"
+                )
+                mock_die.assert_not_called()
+                mock_ask.assert_not_called()
+                mock_run_cmd.assert_not_called()
+                # Assert p3 is removed from registry
+                updated_reg = json.loads(registry_path.read_text())
+                self.assertNotIn("p3", updated_reg)
 
-            BaseHandler.check_registry_collisions(self.handler, "p4", base_path / "p4")
-            mock_ask.assert_called_once()
-            mock_die.assert_not_called()
-            updated_reg = json.loads(registry_path.read_text())
-            self.assertNotIn("p4", updated_reg)
-            mock_ask.reset_mock()
+                # Case 5: Different path (exists on disk), interactive, user says Yes -> should unregister & not die
+                p4_old_path = base_path / "p4_old"
+                p4_old_path.mkdir()
+                registry = {"p4": {"path": str(p4_old_path)}}
+                registry_path.write_text(json.dumps(registry))
+                self.handler.non_interactive = False
+                self.handler.args.overwrite_registry = False
+                mock_ask.return_value = "y"
 
-            # Case 6: Different path (exists on disk), interactive, user says No -> should die
-            registry = {"p4": {"path": str(p4_old_path)}}
-            registry_path.write_text(json.dumps(registry))
-            mock_ask.return_value = "n"
+                BaseHandler.check_registry_collisions(
+                    self.handler, "p4", base_path / "p4"
+                )
+                mock_ask.assert_called_once()
+                mock_die.assert_not_called()
+                mock_run_cmd.assert_not_called()
+                updated_reg = json.loads(registry_path.read_text())
+                self.assertNotIn("p4", updated_reg)
+                mock_ask.reset_mock()
 
-            BaseHandler.check_registry_collisions(self.handler, "p4", base_path / "p4")
-            mock_ask.assert_called_once()
-            mock_die.assert_called_once()
+                # Case 6: Different path (exists on disk), interactive, user says No -> should die
+                registry = {"p4": {"path": str(p4_old_path)}}
+                registry_path.write_text(json.dumps(registry))
+                mock_ask.return_value = "n"
+
+                BaseHandler.check_registry_collisions(
+                    self.handler, "p4", base_path / "p4"
+                )
+                mock_ask.assert_called_once()
+                mock_die.assert_called_once()
+                mock_run_cmd.assert_not_called()
 
     def test_migrate_layout_basic(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
