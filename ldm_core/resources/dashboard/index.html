@@ -316,6 +316,20 @@
                                         <span>&bull;</span>
                                         <span x-text="snap.size"></span>
                                     </div>
+                                    <div class="flex flex-wrap gap-1.5 mt-2">
+                                        <template x-if="snap.includes_database">
+                                            <span class="px-1.5 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-[10px] font-bold uppercase tracking-wider">DB</span>
+                                        </template>
+                                        <template x-if="snap.includes_volume_assets">
+                                            <span class="px-1.5 py-0.5 rounded bg-blue-500/10 border border-blue-500/30 text-blue-400 text-[10px] font-bold uppercase tracking-wider">VOL</span>
+                                        </template>
+                                        <template x-if="snap.includes_client_extensions">
+                                            <span class="px-1.5 py-0.5 rounded bg-purple-500/10 border border-purple-500/30 text-purple-400 text-[10px] font-bold uppercase tracking-wider">CX</span>
+                                        </template>
+                                        <template x-if="snap.includes_osgi_modules">
+                                            <span class="px-1.5 py-0.5 rounded bg-amber-500/10 border border-amber-500/30 text-amber-400 text-[10px] font-bold uppercase tracking-wider">MOD</span>
+                                        </template>
+                                    </div>
                                 </div>
                                 <button @click="confirmRestore(snap)" 
                                         class="flex-shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 border border-indigo-500/30 rounded-xl bg-indigo-500/10 text-indigo-300 hover:bg-indigo-500/20 text-xs font-semibold transition">

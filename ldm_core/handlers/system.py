@@ -405,6 +405,17 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -417,7 +428,7 @@ jobs:
 
       - name: Start Liferay Environment
         run: |
-          ldm run --non-interactive
+          ldm import . --non-interactive --build
 
       - name: Wait for Liferay & Deployments
         run: |

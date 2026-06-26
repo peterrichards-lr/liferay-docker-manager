@@ -189,6 +189,13 @@ def api_list_snapshots(project_name):
                 "name": meta.get("name", "Untitled"),
                 "timestamp": b.name,
                 "size": size,
+                "includes_database": meta.get("includes_database") in [True, "true"],
+                "includes_volume_assets": meta.get("includes_volume_assets")
+                in [True, "true"],
+                "includes_client_extensions": meta.get("includes_client_extensions")
+                in [True, "true"],
+                "includes_osgi_modules": meta.get("includes_osgi_modules")
+                in [True, "true"],
             }
         )
 
