@@ -72,6 +72,13 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
 
 ## 8. Active Work State & Plan (June 26, 2026)
 
+- **Bypass SSL/certificate generation during .ldmp packaging and local builds**:
+  - [x] Add a `--no-ssl` flag to `run-e2e-ldm.sh` in the AICA repository, allowing users and CI workflows to run LDM in plain HTTP mode and bypass local `mkcert` CA trust issues.
+  - [x] Add `release_tag` input to `package-ldmp.yml` workflow_dispatch to allow manually rebuilding and attaching the `.ldmp` package to a specific release tag.
+  - [x] Update `package-ldmp.yml` workflow to use `--no-ssl` and plain HTTP, and remove `mkcert` installation step.
+  - [ ] Update `package-ldmp.sh` in AICA to stage client extension zip files under `client-extensions/` instead of `deploy/` so LDM can scan and auto-deploy them.
+  - [ ] Update `package-ldmp.yml` to use `http://localhost:8080` instead of `http://aica-e2e.local` to bypass Traefik plain-HTTP routing limitations.
+
 - Implemented Config Integrity & Validation (Pre-Flight Properties Analyzer) for Issue #127 (statically checks unclosed quotes, malformed JDBC URLs, conflicting database configs, and missing mount paths during properties rebuilding).
 
 - **Fix compilation bypassing in generated GitHub Actions workflow (Issue #182)**:
@@ -322,3 +329,17 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
     - [x] Move detailed Conventions and Key Features out of the main index to `docs/guides/CONVENTIONS_AND_FEATURES.md`.
     - [x] Simplify `docs/README.md` to be a categorized table of contents and documentation index, removing duplicate sections.
     - [x] Run pre-commit checks to verify markdown formatting and link integrity.
+
+45. **Enhance ldm ps / status command with detailed view and exit codes**:
+    - [x] Add `-d` / `--detailed` option to the `status` parser in `ldm_core/cli.py`.
+    - [x] Update `cmd_status` in `ldm_core/handlers/diagnostics.py` to support `detailed` container listing.
+    - [x] Update `cmd_status` to exit with code `0` if the specified project is running, and `1` if stopped or not found.
+    - [x] Add unit tests verifying detailed output format and specific exit codes.
+
+46. **Add Unit Tests for Snapshot Component Lists and Metadata Tracking (Issue #197)**:
+    - [x] Fix NameError bug in `snapshot.py` line 509 by replacing the global `run_command` call with `self.manager.run_command`.
+    - [x] Add `test_cmd_snapshot_component_lists` in `ldm_core/tests/test_snapshot.py` to assert correct discovery/metadata writing for client extensions, OSGi modules, and active services.
+    - [x] Run full test suite and pre-commit checks.
+
+47. **Update CONTRIBUTING.md with Structured Issue Tracking and PR Linking Workflow**:
+    - [x] Update `CONTRIBUTING.md` to make issue creation mandatory, define the plan/review steps, and document branching and commit auto-close conventions.

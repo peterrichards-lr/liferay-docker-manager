@@ -1910,90 +1910,227 @@ class DiagnosticsService:
                 pass
         UI.raw("")
 
-    def cmd_status(self, project_id=None, all_projects=False):
+    def cmd_status(self, project_id=None, all_projects=False, detailed=False):
         """Displays a summary of active global services and projects."""
         UI.heading("LDM Service Status")
 
-        # 1. Global Infrastructure
+        # 1. Global Infrastructure (skipped in detailed project view to avoid clutter if a specific project was asked,
+        # but shown by default otherwise)
         from ldm_core.constants import INFRA_SERVICES
 
         infra_rows = []
         any_infra = False
-        for container, label in INFRA_SERVICES:
-            res = run_command(
-                ["docker", "ps", "-q", "-f", f"name=^{container}$"], check=False
-            )
-            if res:
-                inspect = run_command(
-                    [
-                        "docker",
-                        "inspect",
-                        "--format",
-                        "{{.State.Status}} {{.Config.Image}}",
-                        container,
-                    ],
-                    check=False,
+        if not detailed or not project_id:
+            for container, label in INFRA_SERVICES:
+                res = run_command(
+                    ["docker", "ps", "-q", "-f", f"name=^{container}$"], check=False
                 )
-                if inspect:
-                    status, image = inspect.split(" ", 1)
-                    infra_rows.append(
+                if res:
+                    inspect = run_command(
                         [
-                            f"{UI.GREEN}●{UI.COLOR_OFF} {label}",
-                            status.capitalize(),
-                            image,
-                        ]
+                            "docker",
+                            "inspect",
+                            "--format",
+                            "{{.State.Status}} {{.Config.Image}}",
+                            container,
+                        ],
+                        check=False,
                     )
-                    any_infra = True
+                    if inspect:
+                        status, image = inspect.split(" ", 1)
+                        infra_rows.append(
+                            [
+                                f"{UI.GREEN}●{UI.COLOR_OFF} {label}",
+                                status.capitalize(),
+                                image,
+                            ]
+                        )
+                        any_infra = True
 
-        if infra_rows:
-            UI.raw(f"{UI.WHITE}Global Infrastructure:{UI.COLOR_OFF}")
-            UI.table(infra_rows)
-        else:
-            UI.raw(
-                f"  {UI.WHITE}No global services are currently running.{UI.COLOR_OFF}"
-            )
+            if infra_rows:
+                UI.raw(f"{UI.WHITE}Global Infrastructure:{UI.COLOR_OFF}")
+                UI.table(infra_rows)
+            elif not project_id or not detailed:
+                UI.raw(
+                    f"  {UI.WHITE}No global services are currently running.{UI.COLOR_OFF}"
+                )
+            UI.raw("")
 
-        UI.raw("")
+        # Helper functions for detailed view formatting
+        def clean_ports(ports_str):
+            if not ports_str:
+                return "-"
+            parts = [p.strip() for p in ports_str.split(",") if p.strip()]
+            cleaned = []
+            seen = set()
+            for part in parts:
+                if "->" in part:
+                    left, right = part.split("->")
+                    host_port = left.split(":")[-1]
+                    container_port = right.split("/")[0]
+                    mapping = f"{host_port}->{container_port}"
+                    if mapping not in seen:
+                        seen.add(mapping)
+                        cleaned.append(mapping)
+                else:
+                    port_val = part.split("/")[0]
+                    if port_val not in seen:
+                        seen.add(port_val)
+                        cleaned.append(port_val)
+            return ", ".join(cleaned) if cleaned else "-"
+
+        def format_status(status_str):
+            status_lower = status_str.lower()
+            if "unhealthy" in status_lower:
+                return f"{UI.RED}●{UI.COLOR_OFF} {UI.RED}{status_str}{UI.COLOR_OFF}"
+            if "healthy" in status_lower:
+                return f"{UI.GREEN}●{UI.COLOR_OFF} {UI.GREEN}{status_str}{UI.COLOR_OFF}"
+            if "starting" in status_lower or "health:" in status_lower:
+                return (
+                    f"{UI.YELLOW}●{UI.COLOR_OFF} {UI.YELLOW}{status_str}{UI.COLOR_OFF}"
+                )
+            if "up" in status_lower:
+                return f"{UI.GREEN}●{UI.COLOR_OFF} {UI.GREEN}{status_str}{UI.COLOR_OFF}"
+            if "exited" in status_lower:
+                return f"{UI.DIM}○ {status_str}{UI.COLOR_OFF}"
+            return f"{UI.WHITE}{status_str}{UI.COLOR_OFF}"
 
         # 2. Project Status
+        from ldm_core.utils import sanitize_id
+
         roots = []
         if project_id:
-            root_path = self.manager.detect_project_path(project_id)
-            if root_path:
-                roots = [{"path": root_path, "version": "unknown"}]
-                meta = self.manager.read_meta(root_path)
-                if meta.get("tag"):
-                    roots[0]["version"] = meta["tag"]
+            root_path = self.manager.detect_project_path(project_id, fatal=False)
+            if not root_path:
+                UI.error(f"Project '{project_id}' not found.")
+                sys.exit(1)
+            roots = [{"path": root_path, "version": "unknown"}]
+            meta = self.manager.read_meta(root_path)
+            if meta.get("tag"):
+                roots[0]["version"] = meta["tag"]
         else:
             roots = self.manager.find_dxp_roots()
 
         active_projects = False
         project_rows = []
+        is_requested_project_running = False
 
-        for r in roots:
-            path = r["path"]
-            meta = self.manager.read_meta(path)
-            p_id = (
-                meta.get("liferay_container_name")
-                or meta.get("container_name")
-                or path.name
-            )
+        if detailed:
+            # Detailed view display
+            any_detailed_printed = False
+            for r in roots:
+                path = r["path"]
+                meta = self.manager.read_meta(path)
+                p_id = (
+                    meta.get("liferay_container_name")
+                    or meta.get("container_name")
+                    or path.name
+                )
+                safe_name = sanitize_id(p_id)
 
-            running = run_command(
-                [
+                # Query all containers matching label com.liferay.ldm.project={safe_name}
+                cmd = [
+                    "docker",
+                    "ps",
+                    "-a",
+                    "--filter",
+                    f"label=com.liferay.ldm.project={safe_name}",
+                    "--format",
+                    '{{.Names}}\t{{.Status}}\t{{.Image}}\t{{.Ports}}\t{{.Label "com.docker.compose.service"}}',
+                ]
+                res = run_command(cmd, check=False)
+
+                # Check if this project is running
+                project_running = False
+                detailed_rows = []
+                if res and res.strip():
+                    for line in res.strip().splitlines():
+                        parts = line.split("\t")
+                        if len(parts) >= 2:
+                            c_names = parts[0]
+                            c_status = parts[1]
+                            c_image = parts[2] if len(parts) > 2 else ""
+                            c_ports = parts[3] if len(parts) > 3 else ""
+                            c_service = parts[4] if len(parts) > 4 else ""
+
+                            if "up" in c_status.lower():
+                                project_running = True
+                                active_projects = True
+
+                            # Derive service name
+                            svc = (
+                                c_service
+                                or c_names.replace(f"{safe_name}-", "").rsplit("-", 1)[
+                                    0
+                                ]
+                            )
+                            if not svc or svc == c_names:
+                                svc = c_names
+
+                            detailed_rows.append(
+                                [
+                                    svc,
+                                    format_status(c_status),
+                                    clean_ports(c_ports),
+                                    c_image,
+                                ]
+                            )
+
+                if project_id:
+                    is_requested_project_running = project_running
+
+                # Only print if we requested a specific project, or if we have containers,
+                # or if all_projects is set.
+                if project_id or detailed_rows or all_projects:
+                    UI.raw(f"{UI.WHITE}Project: {UI.CYAN}{p_id}{UI.COLOR_OFF}")
+                    if detailed_rows:
+                        UI.table(detailed_rows)
+                    else:
+                        UI.raw(
+                            f"  {UI.DIM}No containers found for this project.{UI.COLOR_OFF}"
+                        )
+                    UI.raw("")
+                    any_detailed_printed = True
+
+            if not any_detailed_printed:
+                UI.raw(f"  {UI.WHITE}No projects are currently running.{UI.COLOR_OFF}")
+
+            # Exit logic for detailed view
+            if project_id:
+                sys.exit(0 if is_requested_project_running else 1)
+            else:
+                if not any_infra and not active_projects:
+                    sys.exit(1)
+                sys.exit(0)
+
+        else:
+            # Standard non-detailed view
+            for r in roots:
+                path = r["path"]
+                meta = self.manager.read_meta(path)
+                p_id = (
+                    meta.get("liferay_container_name")
+                    or meta.get("container_name")
+                    or path.name
+                )
+                safe_name = sanitize_id(p_id)
+
+                # Query all containers matching label com.liferay.ldm.project={safe_name}
+                # A project is running if any of its containers are active/running
+                cmd = [
                     "docker",
                     "ps",
                     "-q",
                     "--filter",
-                    f"name=^{p_id}$",
+                    f"label=com.liferay.ldm.project={safe_name}",
                     "--filter",
                     "status=running",
-                ],
-                check=False,
-            )
+                ]
+                running_containers = run_command(cmd, check=False)
+                project_running = bool(
+                    running_containers and running_containers.strip()
+                )
 
-            if running:
-                active_projects = True
                 host = meta.get("host_name", "localhost")
                 ssl = str(meta.get("ssl")).lower() == "true"
                 proto = "https" if ssl else "http"
@@ -2006,37 +2143,49 @@ class DiagnosticsService:
                 if (ssl and port != "443") or (not ssl and port != "80"):
                     url += f":{port}"
 
-                project_rows.append(
-                    [
-                        f"{UI.GREEN}●{UI.COLOR_OFF} {UI.CYAN}{p_id}{UI.COLOR_OFF}",
-                        r["version"],
-                        f"{UI.UNDERLINE}{url}{UI.COLOR_OFF}",
-                    ]
-                )
-            elif all_projects:
-                project_rows.append(
-                    [
-                        f"{UI.WHITE}○{UI.COLOR_OFF} {p_id}",
-                        r["version"],
-                        f"{UI.DIM}Stopped{UI.COLOR_OFF}",
-                    ]
-                )
-                active_projects = True
+                if project_id:
+                    is_requested_project_running = project_running
 
-        if project_rows:
-            label = (
-                "All Managed Projects"
-                if all_projects
-                else ("Project Status" if project_id else "Active Projects")
-            )
-            UI.raw(f"{UI.WHITE}{label}:{UI.COLOR_OFF}")
-            UI.table(project_rows)
-        else:
-            UI.raw(f"  {UI.WHITE}No projects are currently running.{UI.COLOR_OFF}")
+                if project_running:
+                    active_projects = True
+                    project_rows.append(
+                        [
+                            f"{UI.GREEN}●{UI.COLOR_OFF} {UI.CYAN}{p_id}{UI.COLOR_OFF}",
+                            r["version"],
+                            f"{UI.UNDERLINE}{url}{UI.COLOR_OFF}",
+                        ]
+                    )
+                # If this is the specific project requested, or we requested all projects, show it stopped
+                elif project_id or all_projects:
+                    project_rows.append(
+                        [
+                            f"{UI.WHITE}○{UI.COLOR_OFF} {p_id}",
+                            r["version"],
+                            f"{UI.DIM}Stopped{UI.COLOR_OFF}",
+                        ]
+                    )
+                    # Mark active_projects as true if we show at least one row, to prevent error exit
+                    if all_projects:
+                        active_projects = True
 
-        if not any_infra and not active_projects:
-            sys.exit(1)
-        sys.exit(0)
+            if project_rows:
+                label = (
+                    "All Managed Projects"
+                    if all_projects
+                    else ("Project Status" if project_id else "Active Projects")
+                )
+                UI.raw(f"{UI.WHITE}{label}:{UI.COLOR_OFF}")
+                UI.table(project_rows)
+            else:
+                UI.raw(f"  {UI.WHITE}No projects are currently running.{UI.COLOR_OFF}")
+
+            # Exit logic
+            if project_id:
+                sys.exit(0 if is_requested_project_running else 1)
+            else:
+                if not any_infra and not active_projects:
+                    sys.exit(1)
+                sys.exit(0)
 
     def cmd_update_check(self, force=True):
         UI.heading("LDM Update Check")

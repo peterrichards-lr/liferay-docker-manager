@@ -737,6 +737,70 @@ class TestDiagnosticsSetupCompletion(unittest.TestCase):
         ]
         self.assertTrue(len(install_calls) > 0)
 
+    @patch("ldm_core.handlers.diagnostics.run_command")
+    def test_cmd_status_project_not_found(self, mock_run):
+        mock_run.return_value = ""
+        with patch.object(self.manager, "detect_project_path", return_value=None):
+            with self.assertRaises(SystemExit) as cm:
+                self.manager.diagnostics.cmd_status(project_id="nonexistent")
+            self.assertEqual(cm.exception.code, 1)
+
+    @patch("ldm_core.handlers.diagnostics.run_command")
+    def test_cmd_status_running_standard(self, mock_run):
+        mock_run.side_effect = [
+            "",  # liferay-proxy-global
+            "",  # liferay-search-global
+            "",  # liferay-docker-proxy
+            "some-running-container-id\n",  # project running check
+        ]
+        with patch.object(
+            self.manager, "detect_project_path", return_value=Path("/tmp/myproj")
+        ):
+            with patch.object(
+                self.manager,
+                "read_meta",
+                return_value={"tag": "2024.q1.3", "container_name": "myproj"},
+            ):
+                with self.assertRaises(SystemExit) as cm:
+                    self.manager.diagnostics.cmd_status(project_id="myproj")
+                self.assertEqual(cm.exception.code, 0)
+
+    @patch("ldm_core.handlers.diagnostics.run_command")
+    def test_cmd_status_stopped_standard(self, mock_run):
+        mock_run.return_value = ""
+        with patch.object(
+            self.manager, "detect_project_path", return_value=Path("/tmp/myproj")
+        ):
+            with patch.object(
+                self.manager,
+                "read_meta",
+                return_value={"tag": "2024.q1.3", "container_name": "myproj"},
+            ):
+                with self.assertRaises(SystemExit) as cm:
+                    self.manager.diagnostics.cmd_status(project_id="myproj")
+                self.assertEqual(cm.exception.code, 1)
+
+    @patch("ldm_core.handlers.diagnostics.run_command")
+    def test_cmd_status_detailed_running(self, mock_run):
+        # We query container list: Name, Status, Image, Ports, Service
+        mock_run.return_value = (
+            "myproj-liferay-1\tUp 5 minutes (healthy)\tliferay/portal\t0.0.0.0:8080->8080/tcp, :::8080->8080/tcp\tliferay\n"
+            "myproj-db-1\tUp 5 minutes\tpostgres:15\t0.0.0.0:5432->5432/tcp\tdb\n"
+        )
+        with patch.object(
+            self.manager, "detect_project_path", return_value=Path("/tmp/myproj")
+        ):
+            with patch.object(
+                self.manager,
+                "read_meta",
+                return_value={"tag": "2024.q1.3", "container_name": "myproj"},
+            ):
+                with self.assertRaises(SystemExit) as cm:
+                    self.manager.diagnostics.cmd_status(
+                        project_id="myproj", detailed=True
+                    )
+                self.assertEqual(cm.exception.code, 0)
+
 
 if __name__ == "__main__":
     unittest.main()
