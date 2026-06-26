@@ -343,3 +343,6 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
 
 47. **Update CONTRIBUTING.md with Structured Issue Tracking and PR Linking Workflow**:
     - [x] Update `CONTRIBUTING.md` to make issue creation mandatory, define the plan/review steps, and document branching and commit auto-close conventions.
+
+48. **Update AICA package-ldmp.sh to Dynamically Generate Component Metadata**:
+    - [ ] Update `scripts/package-ldmp.sh` in the `liferay-ai-commerce-accelerator` repository to extract lists of staging zip/jar files and active services, writing them to the `meta` file.
