@@ -1412,7 +1412,9 @@ def get_parser():
         help="Automatically apply recommended fixes (e.g., pruning, lifting watermarks)",
     )
 
-    upgrade = system_subparsers.add_parser("upgrade", parents=[base_sub_parent])
+    upgrade = system_subparsers.add_parser(
+        "upgrade", parents=[base_sub_parent], conflict_handler="resolve"
+    )
     upgrade.add_argument(
         "--check",
         "--status",
@@ -1432,6 +1434,11 @@ def get_parser():
         dest="pre_release",
         action="store_true",
         help="Include pre-release (beta) versions during upgrade",
+    )
+    upgrade.add_argument(
+        "-v",
+        "--version",
+        help="Target a specific version of LDM (e.g. v2.11.53)",
     )
 
     version_cmd = system_subparsers.add_parser("version", parents=[base_sub_parent])

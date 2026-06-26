@@ -2114,6 +2114,19 @@ class DiagnosticsService:
         UI.heading("LDM Self-Upgrade")
         is_repair = getattr(self.manager.args, "repair", False)
         pre_release = getattr(self.manager.args, "pre_release", False)
+        target_version_str = getattr(self.manager.args, "version", None)
+
+        if is_repair and target_version_str:
+            UI.die("Cannot specify both --repair and --version. Please choose one.")
+
+        if target_version_str:
+            import re
+
+            semver_regex = re.compile(r"^v?\d+\.\d+\.\d+(-[a-zA-Z0-9.]+)?$")
+            if not semver_regex.match(target_version_str):
+                UI.die(
+                    f"Invalid version format: '{target_version_str}'. Must be a valid semantic version (e.g. v2.11.53 or 2.11.53)."
+                )
 
         if is_repair:
             latest = VERSION
@@ -2130,33 +2143,47 @@ class DiagnosticsService:
                 target_asset = "ldm-windows.exe"
             url = f"https://github.com/peterrichards-lr/liferay-docker-manager/releases/download/v{VERSION}/{target_asset}"
         else:
-            # 1. Check for updates
-            # Force is True for manual upgrade requests to ensure we bypass cache
-            latest, url = check_for_updates(
-                VERSION, force=True, pre_release=pre_release
-            )
+            # 1. Check for updates / specific version tag
+            if target_version_str:
+                latest, url = check_for_updates(
+                    VERSION, force=True, tag=target_version_str
+                )
+                if not latest:
+                    UI.die(
+                        f"Version '{target_version_str}' not found on GitHub Releases."
+                    )
+            else:
+                latest, url = check_for_updates(
+                    VERSION, force=True, pre_release=pre_release
+                )
 
-            if not latest:
-                UI.error("Failed to check for updates.")
-                UI.info("Please check your internet connection or try again later.")
-                return
+                if not latest:
+                    UI.error("Failed to check for updates.")
+                    UI.info("Please check your internet connection or try again later.")
+                    return
 
             is_beta = "-" in VERSION
             check_only = getattr(self.manager.args, "check_only", False)
 
-            if version_to_tuple(latest) <= version_to_tuple(VERSION):
+            # Only check "up to date" if NOT specifically targeting a version
+            if not target_version_str and version_to_tuple(latest) <= version_to_tuple(
+                VERSION
+            ):
                 tier = " (stable)" if not pre_release else " (pre-release)"
                 UI.success(f"LDM is already up to date v{VERSION}{tier}.")
                 return
 
             if check_only:
-                UI.info(
-                    f"A new version of LDM is available: {UI.GREEN}v{latest}{UI.COLOR_OFF}"
-                )
+                if target_version_str:
+                    UI.info(f"Target version v{latest} is available.")
+                else:
+                    UI.info(
+                        f"A new version of LDM is available: {UI.GREEN}v{latest}{UI.COLOR_OFF}"
+                    )
                 UI.info(f"Run {UI.CYAN}ldm upgrade{UI.COLOR_OFF} to install it.")
                 return
 
-            if is_beta and not pre_release:
+            if is_beta and not pre_release and not target_version_str:
                 # User is on beta but wants stable (Switching Tiers)
                 UI.info(
                     f"You are currently on a beta build ({UI.BYELLOW}v{VERSION}{UI.COLOR_OFF})."
@@ -2167,22 +2194,42 @@ class DiagnosticsService:
                 if not UI.confirm("Switch back to the stable release tier?", "N"):
                     return
 
+        is_downgrade = version_to_tuple(latest) < version_to_tuple(VERSION)
+
         if is_repair:
             UI.info(f"Repairing current version: v{latest}")
+        elif is_downgrade:
+            UI.info(f"Target version (downgrade): v{latest}")
         else:
             UI.info(f"New version found: v{latest}")
 
         if not url or not url.startswith("http"):
             UI.die("Download URL not found for your architecture.")
 
-        prompt = (
-            f"Repair v{latest}?"
-            if is_repair
-            else f"Upgrade from v{VERSION} to v{latest}?"
-        )
-        if not self.manager.non_interactive and not UI.confirm(prompt, "Y"):
-            UI.info("Operation aborted.")
-            return
+        if is_downgrade:
+            UI.warning(
+                f"Downgrading from v{VERSION} to v{latest} may not support properties hierarchy features or metadata formats of your current LDM setups."
+            )
+            UI.warning("This could cause project registry or schema incompatibility.")
+            if self.manager.non_interactive:
+                if not getattr(self.manager.args, "force", False):
+                    UI.die(
+                        "Downgrade aborted: --force is required in non-interactive mode."
+                    )
+            elif not UI.confirm(
+                "Are you sure you want to proceed with the downgrade?", "N"
+            ):
+                UI.info("Operation aborted.")
+                return
+        else:
+            prompt = (
+                f"Repair v{latest}?"
+                if is_repair
+                else f"Upgrade from v{VERSION} to v{latest}?"
+            )
+            if not self.manager.non_interactive and not UI.confirm(prompt, "Y"):
+                UI.info("Operation aborted.")
+                return
 
         # 2. Preparation
         exe_path = Path(sys.argv[0]).resolve()

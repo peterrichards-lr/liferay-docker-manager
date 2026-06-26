@@ -437,6 +437,60 @@ class TestUpdateChecks(unittest.TestCase):
             self.assertIsNone(version)
             self.assertIsNone(url)
 
+    @patch("requests.get")
+    @patch("pathlib.Path.home")
+    def test_check_for_updates_tag_success(self, mock_home, mock_get):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            mock_home.return_value = Path(tmp_dir)
+
+            mock_res = MagicMock()
+            mock_res.status_code = 200
+            mock_res.json.return_value = {
+                "tag_name": "v2.11.53",
+                "html_url": "http://release/v2.11.53",
+                "assets": [
+                    {
+                        "name": "ldm-macos-arm64",
+                        "browser_download_url": "http://dl/v2.11.53",
+                    }
+                ],
+            }
+            mock_get.return_value = mock_res
+
+            from ldm_core.utils import check_for_updates
+
+            with (
+                patch("sys.platform", "darwin", create=True),
+                patch("platform.machine", return_value="arm64"),
+            ):
+                version, url = check_for_updates("2.11.56", tag="v2.11.53")
+                self.assertEqual(version, "2.11.53")
+                self.assertEqual(url, "http://dl/v2.11.53")
+
+                # Check that calling without the v prefix also works
+                version_no_v, url_no_v = check_for_updates("2.11.56", tag="2.11.53")
+                self.assertEqual(version_no_v, "2.11.53")
+
+    @patch("requests.get")
+    @patch("pathlib.Path.home")
+    def test_check_for_updates_tag_not_found(self, mock_home, mock_get):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            mock_home.return_value = Path(tmp_dir)
+
+            mock_res = MagicMock()
+            mock_res.status_code = 404
+            mock_get.return_value = mock_res
+
+            from ldm_core.utils import check_for_updates
+
+            version, url = check_for_updates("2.11.56", tag="v2.11.99")
+            self.assertIsNone(version)
+            self.assertIsNone(url)
+
     def test_atomic_copy(self):
         from ldm_core.utils import atomic_copy
 
