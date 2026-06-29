@@ -72,6 +72,42 @@ jobs:
           fi
           echo "Tag validation successful!"
 
+  pr-sprawl-check:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Verify PR Size Guardrail (Scope Sprawl Check)
+        shell: bash
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+          BRANCH_NAME: ${{ github.head_ref }}
+        run: |
+          if echo "$PR_TITLE $PR_BODY" | grep -qi -E '\[bypass[ -]sprawl\]|\[bypass[ -]limit\]'; then
+            echo "Scope sprawl check bypassed via keyword."
+            exit 0
+          fi
+          
+          IS_BUGFIX=false
+          if [[ "$BRANCH_NAME" =~ ^(fix|bugfix)/ ]] || [[ "$PR_TITLE" =~ ^(fix|bugfix|bug): ]]; then
+            IS_BUGFIX=true
+          fi
+          
+          if [ "$IS_BUGFIX" = "true" ]; then
+            git fetch origin master
+            CHANGED_FILES_COUNT=$(git diff --name-only origin/master... | wc -l)
+            echo "Changed files: $CHANGED_FILES_COUNT"
+            if [ "$CHANGED_FILES_COUNT" -gt 10 ]; then
+              echo "::error::Scope Sprawl Gate: Bugfix PR modifies $CHANGED_FILES_COUNT files (limit is 10). Please break down changes or include '[bypass sprawl]' in the PR title/description."
+              exit 1
+            fi
+          fi
+
+
   lint-and-test:
     needs: validate-tag
     runs-on: ubuntu-latest

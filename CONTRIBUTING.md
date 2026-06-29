@@ -55,6 +55,14 @@ We encourage the use of AI to help improve LDM.
 - **Verification**: AI-generated code must still pass all local linting and unit tests (`./lint.sh`) before being submitted.
 - **Documentation**: AI-assisted changes MUST include corresponding documentation updates where applicable (e.g., README updates for new flags or behavior changes).
 
+### 🛡️ Scope Sprawl & Anti-Churn Guardrails
+
+To prevent massive, out-of-scope code refactoring and "code churn" from AI or manual changes, we enforce a strict blast radius limit:
+
+- **Bugfixes** (PR branches starting with `fix/` or `bugfix/`, or PR titles starting with `fix:`/`bugfix:`) **MUST NOT** modify more than **10 files**.
+- Edits exceeding this limit will fail the automated `pr-sprawl-check` status check on Pull Requests.
+- **Bypass**: If a bugfix genuinely requires changing more than 10 files, you can bypass this gate by adding `[bypass sprawl]` or `[bypass limit]` to the PR title or description. Use this sparingly to keep reviews atomic.
+
 ## 🛠️ Development Environment
 
 The easiest way to set up your environment is to use the built-in developer utility:
