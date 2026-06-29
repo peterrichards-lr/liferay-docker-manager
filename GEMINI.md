@@ -349,3 +349,9 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
     - [x] Update `scripts/package-ldmp.sh` in the `liferay-ai-commerce-accelerator` repository to extract lists of staging zip/jar files and active services, writing them to the `meta` file.
     - [x] Resolve CodeMirror 6 esbuild bundling regression by downgrading package.json/yarn.lock to CodeMirror 5.65.16.
     - [x] Add dependabot ignore rules for `codemirror` and add `./gradlew build -x test` compilation step to CI workflow to prevent future bundling regressions.
+
+49. **Fix SSL Certificate Sync Lag for Docker Desktop on Windows/macOS (Issue #204)**:
+    - [ ] Implement `new_files_written` tracking in `setup_ssl` (inside `infra.py`).
+    - [ ] Add a 2-second synchronization delay in `setup_ssl` when new SSL certificates or Traefik configs are generated.
+    - [ ] Ensure the delay is only triggered on Windows, macOS, or WSL to compensate for hypervisor/gRPC-FUSE/VirtioFS filesystem sync lag.
+    - [ ] Update unit tests in `ldm_core/tests/test_stack.py` to assert that `time.sleep(2)` is called.
