@@ -397,3 +397,9 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
     - [x] Implement `--dry-run` short-circuiting in `cmd_down`, `cmd_reset`, and `cmd_reseed` (in `runtime.py`).
     - [x] Add comprehensive unit tests verifying dry-run actions for nuke, rescue, prune, down, reset, and reseed without making any modifications.
     - [x] Ensure all unit tests, pre-commit checks, and style guidelines pass.
+
+57. **Guardrail: AI Action Circuit Breaker & Rate Limiting for MCP Server (Issue #171)**:
+    - [x] Define global variables for tracking mutation timestamps and tripped status in `ldm_core/handlers/mcp.py`.
+    - [x] Implement sliding window rate limit handler `_check_circuit_breaker()` resolving limit and window values from environment variables.
+    - [x] Secure mutating MCP tools `start_project`, `stop_project`, and `restart_project` with circuit breaker guards while allowing diagnostic tool calls to function.
+    - [x] Add comprehensive unit tests verifying rate limits, custom threshold/window configurations, and tripped state lockouts.
