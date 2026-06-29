@@ -2084,3 +2084,38 @@ def verify_cli_drift():
 
     print("✅ No CLI documentation drift detected.")
     return 0
+
+
+def check_troubleshooting_signatures(line):
+    """Checks a log line against known error signatures and returns advice.
+
+    Args:
+        line (str): The log line to analyze.
+
+    Returns:
+        str | None: The troubleshooting advice, or None if no match.
+    """
+    import re
+
+    SIGNATURES = {
+        r"Unable to create lock manager|access_denied_exception|LockManager": (
+            "Host POSIX filesystem lock conflict detected. macOS/Windows hypervisors sometimes deadlock volume directories. Run 'ldm rescue' to release stale POSIX locks."
+        ),
+        r"Connection to .* refused|Connection refused|psycopg2\.OperationalError": (
+            "Database connection refused. The database container might still be starting up or unhealthy. Verify its status via 'ldm status'."
+        ),
+        r"database .* does not exist|FATAL:\s+database .* does not exist": (
+            "Target database does not exist. Your LDM stack is running in PostgreSQL mode but the schema has not been initialized. Run 'ldm hydrate' to import a snapshot."
+        ),
+        r"ReservedCodeCacheSize|CodeCache|OutOfMemory": (
+            "JVM CodeCache or heap space exhausted. Set 'ReservedCodeCacheSize=512m' in portal properties or upgrade LDM JVM self-tuning configurations."
+        ),
+        r"ClusterBlockException|index\.blocks\.read_only": (
+            "Elasticsearch write block detected due to low disk space threshold. LDM will attempt to auto-thaw or you can clear disk space."
+        ),
+    }
+
+    for pattern, advice in SIGNATURES.items():
+        if re.search(pattern, line, re.IGNORECASE):
+            return advice
+    return None

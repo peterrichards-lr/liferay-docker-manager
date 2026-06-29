@@ -1737,6 +1737,80 @@ services:
                 "Some deployable targets did not reach active state via Gogo console verification."
             )
 
+    def test_check_troubleshooting_signatures(self):
+        """Test that check_troubleshooting_signatures utility matches error signatures correctly."""
+        from ldm_core.utils import check_troubleshooting_signatures
+
+        # POSIX locks
+        self.assertIn(
+            "POSIX filesystem lock conflict",
+            check_troubleshooting_signatures("Unable to create lock manager"),
+        )
+        self.assertIn(
+            "POSIX filesystem lock conflict",
+            check_troubleshooting_signatures("access_denied_exception on state file"),
+        )
+
+        # Connection refused
+        self.assertIn(
+            "Database connection refused",
+            check_troubleshooting_signatures("Connection to localhost:5432 refused"),
+        )
+        self.assertIn(
+            "Database connection refused",
+            check_troubleshooting_signatures(
+                "psycopg2.OperationalError: could not connect"
+            ),
+        )
+
+        # Database missing
+        self.assertIn(
+            "Target database does not exist",
+            check_troubleshooting_signatures('database "lportal" does not exist'),
+        )
+
+        # JVM cache
+        self.assertIn(
+            "JVM CodeCache",
+            check_troubleshooting_signatures("ReservedCodeCacheSize=512m exceeded"),
+        )
+
+        # Elasticsearch blocks
+        self.assertIn(
+            "Elasticsearch write block",
+            check_troubleshooting_signatures("ClusterBlockException index blocked"),
+        )
+
+        # Non-matching line
+        self.assertIsNone(
+            check_troubleshooting_signatures("Everything is running fine")
+        )
+
+    @patch("subprocess.Popen")
+    def test_log_troubleshooting_advice_stream(self, mock_popen):
+        """Test that log streaming prints matching troubleshooting advice."""
+        mock_process = MagicMock()
+        mock_process.poll.return_value = 0
+        log_lines = [
+            "Liferay is initializing...",
+            'FATAL: database "lportal" does not exist',
+            "Shutdown requested",
+        ]
+        mock_process.stdout.readline.side_effect = [*log_lines, ""]
+        mock_popen.return_value = mock_process
+
+        with patch("builtins.print") as mock_print:
+            self.handler.handler._run_log_command(
+                ["docker", "logs", "container"], follow=True
+            )
+
+            # Verify the output contains the troubleshooting advice
+            printed_calls = [c[0][0] for c in mock_print.call_args_list]
+            advice_calls = [
+                c for c in printed_calls if "Target database does not exist" in c
+            ]
+            self.assertTrue(len(advice_calls) > 0)
+
 
 if __name__ == "__main__":
     unittest.main()

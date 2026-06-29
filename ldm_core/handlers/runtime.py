@@ -1105,6 +1105,19 @@ class RuntimeService(BaseHandler):
                                 )
 
                                 # --- Auto-Thaw & Hints Win ---
+                                from ldm_core.utils import (
+                                    check_troubleshooting_signatures,
+                                )
+
+                                advice = None
+                                for err_line in reversed(error_lines):
+                                    advice = check_troubleshooting_signatures(err_line)
+                                    if advice:
+                                        break
+
+                                if advice:
+                                    UI.warning(f"Troubleshooting Advice:\n  {advice}")
+
                                 if (
                                     "ClusterBlockException" in last_unique_error
                                     or "index.blocks.read_only" in last_unique_error
@@ -2126,13 +2139,22 @@ class RuntimeService(BaseHandler):
             grep_i=grep_i,
             grep_v=grep_v,
             level=level,
+            follow=follow,
         )
 
     def _run_log_command(
-        self, cmd, env=None, cwd=None, grep=None, grep_i=False, grep_v=False, level=None
+        self,
+        cmd,
+        env=None,
+        cwd=None,
+        grep=None,
+        grep_i=False,
+        grep_v=False,
+        level=None,
+        follow=False,
     ):
-        """Runs the log command, streaming and filtering if filtering args are set."""
-        if not grep and not level:
+        """Runs the log command, streaming, filtering, and performing troubleshooting diagnostics."""
+        if not grep and not level and not follow:
             self.manager.run_command(
                 cmd, env=env, cwd=cwd, capture_output=False, check=False
             )
@@ -2143,6 +2165,10 @@ class RuntimeService(BaseHandler):
         import shutil
         import subprocess
         import sys
+
+        from ldm_core.utils import check_troubleshooting_signatures
+
+        seen_troubleshooting = set()
 
         # Build regex pattern if grep is specified
         pattern = None
@@ -2252,6 +2278,19 @@ class RuntimeService(BaseHandler):
                         else:
                             match_grep = False
 
+                        advice = (
+                            check_troubleshooting_signatures(clean_line)
+                            if follow
+                            else None
+                        )
+                        if advice and advice not in seen_troubleshooting:
+                            seen_troubleshooting.add(advice)
+                            print(
+                                f"\n{UI.BYELLOW}⚠️  LDM TROUBLESHOOTING ADVICE:{UI.COLOR_OFF}"
+                            )
+                            print(f"👉 {UI.BWHITE}{advice}{UI.COLOR_OFF}\n")
+                            sys.stdout.flush()
+
                         if match_grep:
                             print(stripped_line)
                             sys.stdout.flush()
@@ -2344,6 +2383,7 @@ class RuntimeService(BaseHandler):
                 grep_i=grep_i,
                 grep_v=grep_v,
                 level=level,
+                follow=follow,
             )
         else:
             targets = []
@@ -2456,6 +2496,7 @@ class RuntimeService(BaseHandler):
                     grep_i=grep_i,
                     grep_v=grep_v,
                     level=level,
+                    follow=follow,
                 )
 
     def cmd_deploy(self, project_id=None, targets=None, service=None):

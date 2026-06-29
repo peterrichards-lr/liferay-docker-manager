@@ -30,10 +30,13 @@ class UI:
     GREEN = UIColors.GREEN
     YELLOW = UIColors.YELLOW
     WHITE = UIColors.WHITE
+    BWHITE = UIColors.BWHITE
     BYELLOW = UIColors.BYELLOW
     RED = UIColors.RED
     BRED = UIColors.BRED
     CYAN = UIColors.CYAN
+    BCYAN = UIColors.BCYAN
+    BGREEN = UIColors.BGREEN
     BLUE = UIColors.BLUE
     BOLD = UIColors.BOLD
     DIM = UIColors.DIM
