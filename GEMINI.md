@@ -368,7 +368,12 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
     - [x] Create comprehensive unit tests in `test_downgrade.py` verifying detection, force flag, and metadata update.
 
 52. **Guardrail: Automated CLI Arguments & Documentation Drift Detection (Issue #174)**:
-    - [ ] Create introspection script `scripts/check_cli_drift.py` that extracts all CLI option strings from `get_parser()`.
-    - [ ] Compare CLI option strings against documentation files (`docs/guides/CLI_REFERENCE.md`) and fail if undocumented.
-    - [ ] Add the drift check to pre-commit hook config.
-    - [ ] Add pytest unit tests for the drift checking logic.
+    - [x] Create introspection script `scripts/check_cli_drift.py` that extracts all CLI option strings from `get_parser()`.
+    - [x] Compare CLI option strings against documentation files (`docs/guides/CLI_REFERENCE.md`) and fail if undocumented.
+    - [x] Add the drift check to pre-commit hook config.
+    - [x] Add pytest unit tests for the drift checking logic.
+
+53. **Guardrail: Pre-Flight System Resource & Disk Space Checks for Hydration (Issue #168)**:
+    - [x] Implement available free disk space check before extracting snapshot archives.
+    - [x] Raise a descriptive error and abort execution if free space is less than 1.5x the compressed archive size.
+    - [x] Add pytest unit tests verifying pre-flight check failure and success pathways.
