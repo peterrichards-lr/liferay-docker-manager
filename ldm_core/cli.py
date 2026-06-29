@@ -309,6 +309,7 @@ def get_parser():
     base_sub_parent.add_argument("--dry-run", action="store_true")
     base_sub_parent.add_argument("--benchmark", action="store_true")
     base_sub_parent.add_argument("--overwrite-registry", action="store_true")
+    base_sub_parent.add_argument("--force-downgrade", action="store_true")
     base_sub_parent.add_argument("--no-home-warn", action="store_true")
     base_sub_parent.add_argument("-f", "--force", action="store_true")
     base_sub_parent.add_argument("--no-color", action="store_true")
