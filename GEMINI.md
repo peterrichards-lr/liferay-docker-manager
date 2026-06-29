@@ -360,3 +360,8 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
     - [x] Add a 2-second synchronization delay in `setup_ssl` when new SSL certificates or Traefik configs are generated.
     - [x] Ensure the delay is only triggered on Windows, macOS, or WSL to compensate for hypervisor/gRPC-FUSE/VirtioFS filesystem sync lag.
     - [x] Update unit tests in `ldm_core/tests/test_stack.py` to assert that `time.sleep(2)` is called.
+
+51. **Guardrail: Pre-Flight System Resource & Disk Space Checks for Hydration (Issue #168)**:
+    - [x] Implement available free disk space check before extracting snapshot archives.
+    - [x] Raise a descriptive error and abort execution if free space is less than 1.5x the compressed archive size.
+    - [x] Add pytest unit tests verifying pre-flight check failure and success pathways.

@@ -982,6 +982,23 @@ class SnapshotService(BaseHandler):
         if not isinstance(paths, dict):
             paths = self.manager.setup_paths(paths)
 
+        # Guardrail: Pre-Flight System Resource & Disk Space Checks for Hydration (Issue #168)
+        target_root = paths["root"].resolve()
+        import shutil
+
+        try:
+            free_space = shutil.disk_usage(target_root).free
+            archive_size = Path(files_tar).stat().st_size
+            if free_space < archive_size * 1.5:
+                free_mb = round(free_space / (1024 * 1024), 2)
+                required_mb = round((archive_size * 1.5) / (1024 * 1024), 2)
+                UI.die(
+                    f"Insufficient disk space on target partition to safely extract backup. "
+                    f"Required: {required_mb} MB (1.5x archive size), Available: {free_mb} MB."
+                )
+        except OSError as e:
+            UI.warning(f"Could not verify available disk space: {e}")
+
         no_osgi = getattr(self.manager.args, "no_osgi_seed", False)
 
         with tarfile.open(files_tar, "r:gz") as tar:

@@ -791,3 +791,47 @@ class TestSnapshotService(unittest.TestCase):
                 written_meta["osgi_modules"], "another-mod.war,test-mod.jar"
             )
             self.assertEqual(written_meta["active_services"], "db,liferay,tunnel")
+
+    @patch("ldm_core.handlers.runtime.UI.die", side_effect=SystemExit(1))
+    @patch("shutil.disk_usage")
+    def test_extract_snapshot_low_disk_space_fails(self, mock_disk_usage, mock_die):
+        # 100 bytes free space
+        from collections import namedtuple
+
+        Usage = namedtuple("Usage", "total used free")
+        mock_disk_usage.return_value = Usage(1000, 900, 100)
+
+        paths = {
+            "root": Path(self.test_dir),
+        }
+        # Create a dummy tar archive of size 500 bytes
+        archive = Path(self.test_dir) / "dummy.tgz"
+        archive.write_bytes(b"0" * 500)
+
+        with self.assertRaises(SystemExit):
+            self.manager.snapshot._extract_snapshot_archive(archive, paths)
+
+        mock_die.assert_called_once()
+        self.assertIn("Insufficient disk space", mock_die.call_args[0][0])
+
+    @patch("ldm_core.handlers.runtime.UI.die", side_effect=SystemExit(1))
+    @patch("shutil.disk_usage")
+    @patch("tarfile.open")
+    def test_extract_snapshot_sufficient_disk_space_succeeds(
+        self, mock_tar_open, mock_disk_usage, mock_die
+    ):
+        # ample free space
+        from collections import namedtuple
+
+        Usage = namedtuple("Usage", "total used free")
+        mock_disk_usage.return_value = Usage(10**10, 10**9, 10**9)
+
+        paths = {
+            "root": Path(self.test_dir),
+        }
+        archive = Path(self.test_dir) / "dummy.tgz"
+        archive.write_bytes(b"0" * 50)
+
+        self.manager.snapshot._extract_snapshot_archive(archive, paths)
+        mock_die.assert_not_called()
+        mock_tar_open.assert_called_once_with(archive, "r:gz")
