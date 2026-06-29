@@ -3,6 +3,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+from ldm_core.constants import VERSION
 from ldm_core.handlers.base import BaseHandler
 from ldm_core.handlers.diagnostics import DiagnosticsService, DoctorRunner
 
@@ -438,6 +439,29 @@ class TestDiagnostics(unittest.TestCase):
             self.assertTrue(venv_result[2])
             self.assertFalse(any("globally" in h["text"] for h in runner.hints))
 
+    @patch("ldm_core.handlers.diagnostics.verify_executable_checksum")
+    def test_check_tooling_and_integrity_dependency_failure(self, mock_verify):
+        mock_verify.return_value = ("Source", True, VERSION)
+        runner = DoctorRunner(self.manager.diagnostics)
+        with (
+            patch("sys.prefix", "dummy_venv"),
+            patch("sys.base_prefix", "dummy_base"),
+            patch.dict("os.environ", {}, clear=True),
+            patch.object(
+                self.manager.diagnostics, "_verify_dependency_integrity"
+            ) as mock_verify_dep,
+        ):
+            mock_verify_dep.return_value = ("Tampered: pkg/__init__.py", "error")
+            runner._check_tooling_and_integrity()
+            dep_result = next(
+                r for r in runner.results if r[0] == "Dependency Integrity"
+            )
+            self.assertTrue(dep_result[1].startswith("Failed"))
+            self.assertEqual(dep_result[2], "error")
+            self.assertTrue(
+                any("failed integrity verification" in h["text"] for h in runner.hints)
+            )
+
     def test_doctor_runner_dashboard_view(self):
         runner = DoctorRunner(self.manager.diagnostics)
         runner.results = [
@@ -609,6 +633,82 @@ class TestDiagnostics(unittest.TestCase):
         mock_die.assert_called_once_with(
             "Self-upgrade is only supported for standalone binaries. Please use 'git pull' for source installations."
         )
+
+    @patch("ldm_core.handlers.diagnostics.distribution")
+    def test_verify_dependency_integrity_all_ok(self, mock_distribution):
+        mock_dist = MagicMock()
+        mock_dist.version = "1.0.0"
+        mock_dist.read_text.return_value = (
+            "pkg/__init__.py,sha256=47DEQpj8HBSa-_TImW-5JCeuQeRkm5NMpJWZG3hSuFU,0\n"
+        )
+        mock_file = MagicMock()
+        mock_file.exists.return_value = True
+        mock_file.read_bytes.return_value = b""
+        mock_dist.locate_file.return_value = mock_file
+        mock_distribution.return_value = mock_dist
+
+        res, status = self.manager.diagnostics._verify_dependency_integrity("some-pkg")
+        self.assertEqual(res, "OK")
+        self.assertTrue(status)
+
+    @patch(
+        "ldm_core.handlers.diagnostics.distribution", side_effect=Exception("Not found")
+    )
+    def test_verify_dependency_integrity_missing_package(self, mock_distribution):
+        res, status = self.manager.diagnostics._verify_dependency_integrity("some-pkg")
+        self.assertEqual(res, "Missing")
+        self.assertEqual(status, "error")
+
+    @patch("ldm_core.handlers.diagnostics.distribution")
+    def test_verify_dependency_integrity_hash_mismatch(self, mock_distribution):
+        mock_dist = MagicMock()
+        mock_dist.version = "1.0.0"
+        mock_dist.read_text.return_value = (
+            "pkg/__init__.py,sha256=expected_hash_value,0\n"
+        )
+        mock_file = MagicMock()
+        mock_file.exists.return_value = True
+        mock_file.read_bytes.return_value = b"modified content"
+        mock_dist.locate_file.return_value = mock_file
+        mock_distribution.return_value = mock_dist
+
+        res, status = self.manager.diagnostics._verify_dependency_integrity("some-pkg")
+        self.assertTrue(res.startswith("Tampered"))
+        self.assertEqual(status, "error")
+
+    @patch("ldm_core.handlers.diagnostics.distribution")
+    def test_verify_dependency_integrity_missing_critical_file(self, mock_distribution):
+        mock_dist = MagicMock()
+        mock_dist.version = "1.0.0"
+        mock_dist.read_text.return_value = (
+            "pkg/__init__.py,sha256=expected_hash_value,0\n"
+        )
+        mock_file = MagicMock()
+        mock_file.exists.return_value = False
+        mock_dist.locate_file.return_value = mock_file
+        mock_distribution.return_value = mock_dist
+
+        res, status = self.manager.diagnostics._verify_dependency_integrity("some-pkg")
+        self.assertTrue(res.startswith("Corrupted"))
+        self.assertEqual(status, "error")
+
+    @patch("ldm_core.handlers.diagnostics.distribution")
+    def test_verify_dependency_integrity_missing_non_critical_file(
+        self, mock_distribution
+    ):
+        mock_dist = MagicMock()
+        mock_dist.version = "1.0.0"
+        mock_dist.read_text.return_value = (
+            "../../../bin/pytest,sha256=expected_hash_value,0\n"
+        )
+        mock_file = MagicMock()
+        mock_file.exists.return_value = False
+        mock_dist.locate_file.return_value = mock_file
+        mock_distribution.return_value = mock_dist
+
+        res, status = self.manager.diagnostics._verify_dependency_integrity("some-pkg")
+        self.assertEqual(res, "OK")
+        self.assertTrue(status)
 
 
 class TestDiagnosticsCompletion(unittest.TestCase):

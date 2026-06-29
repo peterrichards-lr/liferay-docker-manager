@@ -7,6 +7,7 @@ import shutil
 import subprocess
 import sys
 from datetime import datetime
+from importlib.metadata import distribution
 from pathlib import Path
 from typing import Any
 
@@ -186,6 +187,54 @@ class DoctorRunner:
             self.add_hint("Run: source .venv/bin/activate")
         else:
             self.results.append(("Virtual Environment", "Not Required (Binary)", True))
+
+        # 1.3 Dependency Integrity Check
+        if is_source and (is_in_venv or os.path.exists(".venv")):
+            packages = []
+            for req_filename in ["requirements.txt", "requirements-dev.txt"]:
+                req_file = SCRIPT_DIR / req_filename
+                if not req_file.exists():
+                    continue
+                try:
+                    for line in req_file.read_text().splitlines():
+                        line = line.strip()
+                        if not line or line.startswith("#"):
+                            continue
+                        name = line.split("==")[0].split(";")[0].strip()
+                        if name:
+                            packages.append((name, req_filename))
+                except Exception:
+                    pass
+
+            dep_failures = []
+            for pkg, _ in packages:
+                res, status = self.handler._verify_dependency_integrity(pkg)
+                if status is not True:
+                    dep_failures.append((pkg, res, status))
+
+            if dep_failures:
+                worst_status = (
+                    "error" if any(f[2] == "error" for f in dep_failures) else "warn"
+                )
+                first_failed_pkg, first_failed_reason, _ = dep_failures[0]
+                self.results.append(
+                    (
+                        "Dependency Integrity",
+                        f"Failed ({first_failed_pkg} - {first_failed_reason})",
+                        worst_status,
+                    )
+                )
+                self.add_hint(
+                    f"Virtual environment dependencies failed integrity verification: {first_failed_pkg} is {first_failed_reason.lower()}.",
+                    "https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/SECURITY.md",
+                )
+                self.add_hint(
+                    f"Re-install dependencies using: {UI.WHITE}pip install --force-reinstall -r requirements.txt{UI.COLOR_OFF}"
+                )
+            else:
+                self.results.append(
+                    ("Dependency Integrity", "Verified (All packages OK)", True)
+                )
 
         # 1.1 Shell Completion Check
         if self.handler.is_completion_enabled():
@@ -2841,6 +2890,57 @@ pause
         """Verify host environment health and project dependencies."""
         runner = DoctorRunner(self, project_id, all_projects)
         runner.run()
+
+    def _verify_dependency_integrity(self, package_name: str) -> tuple[str, str | bool]:
+        """Verify the file integrity of a dependency against its RECORD metadata."""
+        import base64
+        import hashlib
+
+        try:
+            dist = distribution(package_name)
+        except Exception:
+            return "Missing", "error"
+
+        record_content = dist.read_text("RECORD")
+        if not record_content:
+            return "No RECORD found", "warn"
+
+        for line in record_content.splitlines():
+            parts = line.split(",")
+            if len(parts) < 3:
+                continue
+
+            rel_path, hash_info, _ = parts[0], parts[1], parts[2]
+            if not hash_info or not hash_info.startswith("sha256="):
+                continue
+
+            expected_hash = hash_info.split("=", 1)[1]
+            path: Any
+            locate_res = dist.locate_file(rel_path)
+            if type(locate_res).__name__ in ("MagicMock", "Mock"):
+                path = locate_res
+            else:
+                path = Path(str(locate_res))
+
+            if not path.exists():
+                # We skip missing bin wrappers/metadata files to avoid false positives,
+                # but flag any missing Python source files as corrupted.
+                if rel_path.endswith(".py"):
+                    return f"Corrupted: {rel_path} missing", "error"
+                continue
+
+            try:
+                h = hashlib.sha256()
+                h.update(path.read_bytes())
+                actual_hash = (
+                    base64.urlsafe_b64encode(h.digest()).decode("utf-8").rstrip("=")
+                )
+                if actual_hash != expected_hash:
+                    return f"Tampered: {rel_path} modified", "error"
+            except Exception as e:
+                return f"Error reading {rel_path}: {e}", "error"
+
+        return "OK", True
 
     def check_mkcert(self):
         """Checks for mkcert installation, root CA trust, and write permissions."""
