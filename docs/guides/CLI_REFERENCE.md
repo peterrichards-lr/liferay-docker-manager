@@ -81,6 +81,20 @@ fi
 
 ---
 
+## Liferay Version Upgrades
+
+LDM supports changing Liferay Docker image tags on existing projects seamlessly. If you run a project with a newer version tag (e.g., `ldm run --tag 2026.q2.5-lts` on a project that was previously running `2026.q2.4-lts`), LDM will orchestrate the transition safely.
+
+### How it Works & Data Persistence
+
+1. **Volume Preservation**: LDM's hybrid volume strategy keeps your database data and document library assets in named Docker volumes, ensuring that changing the Liferay Docker image version tag **does not delete or reset** your database or files.
+2. **Upgrade Detection**: LDM automatically detects version upgrades during startup by comparing the new tag with `last_run_liferay_version` stored in the project's metadata.
+3. **Automated Database Backup**: If an upgrade is detected and neither `--backup-on-upgrade` nor `--no-backup-on-upgrade` is specified, LDM will ask if you want to take a database backup snapshot first. If you confirm (or pass `--backup-on-upgrade`), LDM will temporarily start the database service (if stopped) and execute an orchestrated SQL dump backup (`Pre-upgrade snapshot to {tag}`) before Liferay starts.
+4. **Database Auto-Upgrade**: New Liferay versions often make underlying database schema changes. If an upgrade is detected and neither `--upgrade-db` nor `--no-upgrade-db` is specified, LDM will ask: `"Do you want to run Liferay's database auto-upgrade tool on startup?"`. If you confirm (or pass `--upgrade-db`), LDM will inject the `LIFERAY_UPGRADE_PERIOD_DATABASE_PERIOD_AUTO_PERIOD_RUN=true` environment variable, enabling Liferay to perform a schema upgrade on boot. LDM will omit this environment variable on subsequent runs to prevent repeating the upgrade.
+5. **Downgrade Safety**: Downgrading Liferay or PostgreSQL versions can cause database corruption. By default, LDM blocks version downgrades. To override this protection, you must explicitly pass the `--force-downgrade` flag.
+
+---
+
 ## Command Reference
 
 ### Global Flags
