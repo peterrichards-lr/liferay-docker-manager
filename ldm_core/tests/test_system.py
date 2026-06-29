@@ -15,6 +15,7 @@ class MockSystemManager:
         self.args.project = None
         self.verbose = False
         self.non_interactive = True
+        self.dry_run = False
 
         # Mock services
         self.runtime = MagicMock()
@@ -390,6 +391,73 @@ class TestSystemService(unittest.TestCase):
         self.assertTrue(res)
         self.assertNotEqual(target_file.read_text(), "existing content")
         mock_warning.assert_called_once()
+
+    def test_cmd_nuke_dry_run(self):
+        self.manager.dry_run = True
+        # Setup mock project directories
+        project_dir = Path(self.temp_home) / "mock_project"
+        project_dir.mkdir()
+
+        self.manager.find_dxp_roots.return_value = [{"path": project_dir}]
+        self.manager.read_meta.return_value = {
+            "liferay_container_name": "test-project-liferay"
+        }
+
+        # Setup global caches and configs
+        ldm_dir = self.temp_home / ".ldm"
+        ldm_dir.mkdir()
+        (ldm_dir / "certs").mkdir()
+
+        ldmrc = self.temp_home / ".ldmrc"
+        ldmrc.write_text("config=true")
+
+        res = self.system.cmd_nuke(force=False, keep_config=False)
+        self.assertTrue(res)
+
+        # Assert no deletions happened
+        self.assertTrue(project_dir.exists())
+        self.assertTrue((ldm_dir / "certs").exists())
+        self.assertTrue(ldmrc.exists())
+        # Assert no mutating helper calls
+        self.assertFalse(self.manager.runtime.cmd_down.called)
+
+    def test_cmd_rescue_global_dry_run(self):
+        self.manager.dry_run = True
+        res = self.system.cmd_rescue(project_id=None)
+        self.assertTrue(res)
+
+        # Assert no shared network creation or ssl renewal called
+        self.assertFalse(self.manager.run_command.called)
+        self.assertFalse(self.manager.runtime.cmd_renew_ssl.called)
+        self.assertFalse(self.manager.infra.cmd_infra_setup.called)
+
+    @patch("ldm_core.handlers.system.SystemService.detect_project_path")
+    @patch("ldm_core.handlers.system.SystemService.read_meta")
+    def test_cmd_rescue_project_dry_run(self, mock_read_meta, mock_detect_path):
+        self.manager.dry_run = True
+        # Create temp project root
+        project_root = Path(self.temp_home) / "my_project"
+        project_root.mkdir()
+
+        # Create postgres lock
+        pg_data = project_root / "data"
+        pg_data.mkdir()
+        postmaster_pid = pg_data / "postmaster.pid"
+        postmaster_pid.write_text("12345")
+
+        mock_detect_path.return_value = project_root
+        mock_read_meta.return_value = {"liferay_container_name": "my-project-liferay"}
+
+        res = self.system.cmd_rescue(project_id="my_project")
+        self.assertTrue(res)
+
+        # Assert postmaster.pid lock file was NOT deleted
+        self.assertTrue(postmaster_pid.exists())
+        # Assert cmd_down, cmd_renew_ssl, cmd_run, cmd_doctor were NOT called
+        self.assertFalse(self.manager.runtime.cmd_down.called)
+        self.assertFalse(self.manager.runtime.cmd_renew_ssl.called)
+        self.assertFalse(self.manager.runtime.cmd_run.called)
+        self.assertFalse(self.manager.cmd_doctor.called)
 
 
 if __name__ == "__main__":

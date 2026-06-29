@@ -15,6 +15,7 @@ class MockRuntime(BaseHandler):
         self.args.tag_prefix = None
         self.verbose = False
         self.non_interactive = True
+        self.dry_run = False
 
         # Self-referential manager for service compatibility
         from typing import Any, cast
@@ -426,6 +427,19 @@ class TestRuntime(unittest.TestCase):
             self.handler.cmd_down("test", delete=True)
             # Verify down command AND directory deletion
             self.assertTrue(mock_rmtree.called)
+
+    @patch("ldm_core.handlers.runtime.get_compose_cmd")
+    @patch("ldm_core.handlers.runtime.shutil.rmtree")
+    def test_cmd_down_dry_run(self, mock_rmtree, mock_compose):
+        mock_compose.return_value = ["docker", "compose"]
+        self.handler.dry_run = True
+        with (
+            patch.object(self.handler, "run_command") as mock_run,
+            patch.object(Path, "exists", return_value=True),
+        ):
+            self.handler.cmd_down("test", delete=True)
+            self.assertFalse(mock_rmtree.called)
+            self.assertFalse(mock_run.called)
 
     @patch("ldm_core.handlers.runtime.datetime")
     @patch("time.sleep")
@@ -900,6 +914,48 @@ class TestRuntime(unittest.TestCase):
         ):
             self.handler.handler.cmd_reseed("test")
             mock_success.assert_called_with("Reseed complete.")
+
+    def test_cmd_reseed_dry_run(self):
+        self.handler.dry_run = True
+        with (
+            patch.object(
+                self.handler, "detect_project_path", return_value=self.tmp_dir
+            ),
+            patch.object(
+                self.handler,
+                "read_meta",
+                return_value={"tag": "2026.q1", "db_type": "mysql"},
+            ),
+            patch.object(self.handler.handler, "cmd_reset") as mock_reset,
+            patch.object(self.handler.assets, "_fetch_seed") as mock_fetch,
+        ):
+            res = self.handler.handler.cmd_reseed("test")
+            self.assertTrue(res)
+            self.assertFalse(mock_reset.called)
+            self.assertFalse(mock_fetch.called)
+
+    @patch("ldm_core.handlers.runtime.shutil.rmtree")
+    def test_cmd_reset_dry_run(self, mock_rmtree):
+        self.handler.dry_run = True
+        with (
+            patch.object(
+                self.handler, "detect_project_path", return_value=self.tmp_dir
+            ),
+            patch.object(
+                self.handler,
+                "setup_paths",
+                return_value={"data": self.tmp_dir / "data"},
+            ),
+            patch.object(self.handler.handler, "cmd_down") as mock_down,
+        ):
+            # Create data folder to simulate existence
+            data_dir = self.tmp_dir / "data"
+            data_dir.mkdir(exist_ok=True)
+
+            res = self.handler.handler.cmd_reset("test", target="data")
+            self.assertTrue(res)
+            self.assertFalse(mock_rmtree.called)
+            self.assertFalse(mock_down.called)
 
     @patch("ldm_core.ui.UI.error")
     @patch("ldm_core.ui.UI.confirm", return_value=True)
