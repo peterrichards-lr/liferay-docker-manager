@@ -3238,6 +3238,7 @@ pause
 
     def cmd_prune(self):
         UI.heading("LDM Global Maintenance - Pruning Orphaned Resources")
+        is_dry_run = getattr(self.manager, "dry_run", False)
         prune_all = getattr(self.manager.args, "all", False)
         clean_hosts = getattr(self.manager.args, "clean_hosts", False) or prune_all
         prune_seeds = getattr(self.manager.args, "seeds", False) or prune_all
@@ -3294,7 +3295,11 @@ pause
             if UI.INFO_MODE or UI.VERBOSE:
                 for o in orphans:
                     print(f"  - {o}")
-            if (
+            if is_dry_run:
+                UI.info(
+                    f"{UI.BYELLOW}[Dry Run] Would remove orphaned containers: {', '.join(orphans)}{UI.COLOR_OFF}"
+                )
+            elif (
                 prune_all
                 or self.manager.non_interactive
                 or UI.confirm("Remove them? (y/n/q)", "N")
@@ -3344,7 +3349,11 @@ pause
                         if UI.INFO_MODE or UI.VERBOSE:
                             for s in orphaned_snaps:
                                 print(f"  - {s}")
-                        if (
+                        if is_dry_run:
+                            UI.info(
+                                f"{UI.BYELLOW}[Dry Run] Would remove orphaned search snapshots: {', '.join(orphaned_snaps)}{UI.COLOR_OFF}"
+                            )
+                        elif (
                             prune_all
                             or self.manager.non_interactive
                             or UI.confirm("Remove them from global vault?", "N")
@@ -3373,7 +3382,11 @@ pause
         tmp_files = list(SCRIPT_DIR.glob("**/.*.tmp"))
         if tmp_files:
             UI.info(f"Found {len(tmp_files)} temporary files.")
-            if (
+            if is_dry_run:
+                UI.info(
+                    f"{UI.BYELLOW}[Dry Run] Would remove temporary files: {', '.join(str(f.relative_to(SCRIPT_DIR)) for f in tmp_files)}{UI.COLOR_OFF}"
+                )
+            elif (
                 prune_all
                 or self.manager.non_interactive
                 or UI.confirm("Remove them? (y/n/q)", "Y")
@@ -3407,7 +3420,11 @@ pause
                 if UI.INFO_MODE or UI.VERBOSE:
                     for c in orphaned_certs:
                         print(f"  - {c.name}")
-                if (
+                if is_dry_run:
+                    UI.info(
+                        f"{UI.BYELLOW}[Dry Run] Would remove orphaned SSL certificates: {', '.join(f.name for f in orphaned_certs)}{UI.COLOR_OFF}"
+                    )
+                elif (
                     prune_all
                     or self.manager.non_interactive
                     or UI.confirm("Remove them from global cert store?", "N")
@@ -3426,7 +3443,11 @@ pause
                 size_bytes = sum(f.stat().st_size for f in seed_files)
                 size_str = UI.format_size(size_bytes)
                 UI.info(f"Found {len(seed_files)} pre-warmed seeds ({size_str}).")
-                if prune_seeds or (
+                if is_dry_run:
+                    UI.info(
+                        f"{UI.BYELLOW}[Dry Run] Would clear pre-warmed seed cache at {seeds_cache}{UI.COLOR_OFF}"
+                    )
+                elif prune_seeds or (
                     not self.manager.non_interactive
                     and UI.confirm("Clear pre-warmed seed cache?", "N")
                 ):
@@ -3445,7 +3466,11 @@ pause
                 size_bytes = sum(f.stat().st_size for f in sample_files)
                 size_str = UI.format_size(size_bytes)
                 UI.info(f"Found sample extension cache ({size_str}).")
-                if prune_samples or (
+                if is_dry_run:
+                    UI.info(
+                        f"{UI.BYELLOW}[Dry Run] Would clear sample extension cache at {samples_cache}{UI.COLOR_OFF}"
+                    )
+                elif prune_samples or (
                     not self.manager.non_interactive
                     and UI.confirm("Clear sample extension cache?", "N")
                 ):
@@ -3457,7 +3482,11 @@ pause
                 UI.detail("Sample cache is empty.")
 
         # 7. Global Docker Pruning (Dangling Volumes)
-        if prune_all or (
+        if is_dry_run:
+            UI.info(
+                f"{UI.BYELLOW}[Dry Run] Would run volume prune (docker volume prune -f).{UI.COLOR_OFF}"
+            )
+        elif prune_all or (
             not self.manager.non_interactive
             and UI.confirm("Remove all dangling Docker volumes? (y/n/q)", "N")
         ):
@@ -3474,7 +3503,11 @@ pause
 
         # 7. DNS Cleanup (Explicitly requested via --clean-hosts)
         if clean_hosts:
-            if prune_all or (
+            if is_dry_run:
+                UI.info(
+                    f"{UI.BYELLOW}[Dry Run] Would remove ALL LDM-managed entries from hosts file.{UI.COLOR_OFF}"
+                )
+            elif prune_all or (
                 not self.manager.non_interactive
                 and UI.confirm(
                     "Remove ALL LDM-managed entries from your hosts file?", "N"

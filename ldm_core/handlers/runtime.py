@@ -675,7 +675,7 @@ class RuntimeService(BaseHandler):
         """Triggers a re-bootstrap of the project from a fresh seed."""
         root = self.manager.detect_project_path(project_id)
         if not root:
-            return
+            return None
         project_meta = self.manager.read_meta(root)
         tag = project_meta.get("tag")
         db_type = project_meta.get("db_type")
@@ -692,6 +692,25 @@ class RuntimeService(BaseHandler):
 
         if not tag:
             UI.die("Project missing tag metadata. Cannot reseed.")
+
+        is_dry_run = getattr(self.manager, "dry_run", False)
+        if is_dry_run:
+            UI.info(f"Reseed {root.name} from {tag} ({db_type}/{search_mode})...")
+            UI.info(
+                f"  {UI.BYELLOW}- [Dry Run] Would reset project stack (cmd_reset all).{UI.COLOR_OFF}"
+            )
+            UI.info(
+                f"  {UI.BYELLOW}- [Dry Run] Would fetch and extract new seed for tag: {tag}.{UI.COLOR_OFF}"
+            )
+            up_flag = getattr(self.manager.args, "up", False)
+            if up_flag:
+                UI.info(
+                    f"  {UI.BYELLOW}- [Dry Run] Would start the project containers (cmd_run).{UI.COLOR_OFF}"
+                )
+            UI.success(
+                f"[Dry Run] Project {root.name} reseed completed (no changes made)."
+            )
+            return True
 
         if UI.confirm(
             f"Reseed {root.name} from {tag} ({db_type}/{search_mode})? ALL LOCAL DATA WILL BE LOST.",
@@ -713,6 +732,7 @@ class RuntimeService(BaseHandler):
                     )
             else:
                 UI.error("Reseed failed.")
+        return None
 
     def _scan_for_expected_deployables(self, root_path):
         """Scans workspace deploy and client-extensions paths for deployable targets.
@@ -1777,8 +1797,15 @@ class RuntimeService(BaseHandler):
         clean_hosts=False,
     ):
         """Tears down project containers and volumes."""
+        is_dry_run = getattr(self.manager, "dry_run", False)
+
         if infra:
-            self.manager.infra.cmd_infra_down()
+            if is_dry_run:
+                UI.info(
+                    f"{UI.BYELLOW}[Dry Run] Would tear down global Traefik infrastructure.{UI.COLOR_OFF}"
+                )
+            else:
+                self.manager.infra.cmd_infra_down()
 
         targets = []
         if all_projects:
@@ -1792,8 +1819,6 @@ class RuntimeService(BaseHandler):
             UI.info("No projects found to tear down.")
             return
 
-        compose_base = get_compose_cmd()
-        capture = not (UI.INFO_MODE or UI.VERBOSE)
         for root in targets:
             UI.warning(f"Tearing down stack: {root.name}")
 
@@ -1806,23 +1831,37 @@ class RuntimeService(BaseHandler):
                     unresolved, _non_local = self.manager.validate_project_dns(root)[1:]
                     # We remove the primary host and any unresolved subdomains
                     to_clean = [host, *unresolved]
-                    self.manager._remove_hosts_entries(hostnames=to_clean)
+                    if is_dry_run:
+                        UI.info(
+                            f"  {UI.BYELLOW}- [Dry Run] Would remove hosts entries: {', '.join(to_clean)}{UI.COLOR_OFF}"
+                        )
+                    else:
+                        self.manager._remove_hosts_entries(hostnames=to_clean)
 
-            # DOWN always tears down the whole project to ensure networks and orphans are handled.
-            # If the user wants to stop a specific service, they should use 'ldm stop [svc]'.
-            cmd = [*compose_base, "down", "-v", "--remove-orphans"]
-
-            if (root / "docker-compose.yml").exists():
-                self.manager.run_command(cmd, capture_output=capture, cwd=str(root))
-            else:
-                UI.debug(
-                    f"No docker-compose.yml found in {root}. Skipping docker-compose down."
+            if is_dry_run:
+                UI.info(
+                    f"  {UI.BYELLOW}- [Dry Run] Would run docker compose down -v --remove-orphans in {root.name}{UI.COLOR_OFF}"
                 )
+            else:
+                compose_base = get_compose_cmd()
+                capture = not (UI.INFO_MODE or UI.VERBOSE)
+                cmd = [*compose_base, "down", "-v", "--remove-orphans"]
+                if (root / "docker-compose.yml").exists():
+                    self.manager.run_command(cmd, capture_output=capture, cwd=str(root))
+                else:
+                    UI.debug(
+                        f"No docker-compose.yml found in {root}. Skipping docker-compose down."
+                    )
 
             if delete:
-                UI.warning(f"Permanently deleting project directory: {root.name}")
-                self.manager.unregister_project(root.name)
-                self.manager.safe_rmtree(root)
+                if is_dry_run:
+                    UI.warning(
+                        f"  {UI.BYELLOW}- [Dry Run] Would unregister project {root.name} and permanently delete directory {root}{UI.COLOR_OFF}"
+                    )
+                else:
+                    UI.warning(f"Permanently deleting project directory: {root.name}")
+                    self.manager.unregister_project(root.name)
+                    self.manager.safe_rmtree(root)
 
     def cmd_browser(self, project_id=None):
         """Opens the project's URL in the default browser."""
@@ -1883,7 +1922,41 @@ class RuntimeService(BaseHandler):
         """Wipes local state (data, logs, osgi/state) for a project."""
         root = self.manager.detect_project_path(project_id)
         if not root:
-            return
+            return None
+
+        is_dry_run = getattr(self.manager, "dry_run", False)
+        if is_dry_run:
+            UI.warning(
+                f"[Dry Run] Resetting {UI.BOLD}{root.name}{UI.COLOR_OFF} ({target})..."
+            )
+            meta = self.manager.read_meta(root)
+            c_name = meta.get("container_name") or root.name
+            if target == "all":
+                UI.info(
+                    f"  {UI.BYELLOW}- Would stop/tear down project stack (down).{UI.COLOR_OFF}"
+                )
+            else:
+                UI.info(
+                    f"  {UI.BYELLOW}- Would stop project stack if running.{UI.COLOR_OFF}"
+                )
+
+            targets = ["data", "logs", "state"] if target == "all" else [target]
+            for t in targets:
+                if t in ["data", "state"]:
+                    volume_name = f"{c_name}-{t}"
+                    UI.info(
+                        f"  {UI.BYELLOW}- Would delete Docker named volume: {volume_name}{UI.COLOR_OFF}"
+                    )
+                paths = self.manager.setup_paths(root)
+                path = paths.get(t)
+                if path and path.exists():
+                    UI.info(
+                        f"  {UI.BYELLOW}- Would delete host directory: {path.relative_to(root) if path.is_relative_to(root) else path}{UI.COLOR_OFF}"
+                    )
+            UI.success(
+                f"[Dry Run] Project {root.name} reset completed (no changes made)."
+            )
+            return True
 
         UI.warning(f"Resetting {UI.BOLD}{root.name}{UI.COLOR_OFF} ({target})...")
 
@@ -1932,6 +2005,7 @@ class RuntimeService(BaseHandler):
                 path.mkdir(parents=True, exist_ok=True)
 
         UI.success(f"Project {root.name} reset successful.")
+        return None
 
     def cmd_gogo(self, project_id=None):
         """Connects to the OSGi Gogo shell."""

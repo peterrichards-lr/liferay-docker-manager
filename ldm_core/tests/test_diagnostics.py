@@ -27,6 +27,7 @@ class MockDiagManager(BaseHandler):
     def __init__(self):
         self.verbose = False
         self.non_interactive = True
+        self.dry_run = False
         self.args = MockArgs()
         self.diagnostics = DiagnosticsService(self)
         self.cloud = MagicMock()
@@ -301,6 +302,18 @@ class TestDiagnostics(unittest.TestCase):
         with patch("ldm_core.docker_service.DockerService.rm") as mock_rm:
             self.manager.diagnostics.cmd_prune()
             self.assertTrue(mock_rm.called)
+
+    @patch("ldm_core.handlers.diagnostics.run_command")
+    @patch.object(
+        MockDiagManager, "find_dxp_roots", return_value=[{"path": Path("/tmp/p1")}]
+    )
+    @patch("ldm_core.docker_service.DockerService.is_running", return_value=False)
+    def test_cmd_prune_dry_run(self, mock_running, mock_roots, mock_run):
+        mock_run.return_value = "orphan-container|deleted-project"
+        self.manager.dry_run = True
+        with patch("ldm_core.docker_service.DockerService.rm") as mock_rm:
+            self.manager.diagnostics.cmd_prune()
+            self.assertFalse(mock_rm.called)
 
     @patch("ldm_core.handlers.diagnostics.get_actual_home", return_value=Path("/tmp"))
     @patch("pathlib.Path.exists", return_value=True)

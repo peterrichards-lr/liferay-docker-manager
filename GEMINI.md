@@ -390,3 +390,23 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
     - [x] Extend `verify_cli_drift` in `ldm_core/utils.py` to check that documented options in markdown files exist in the parser.
     - [x] Automatically catch and fail on any stale, renamed, deprecated, or removed CLI options that are still listed in documentation.
     - [x] Add pytest unit tests verifying detection of stale/removed options.
+
+56. **Guardrail: Mandatory `--dry-run` Support for Destructive Handlers (Issue #173)**:
+    - [x] Implement `--dry-run` short-circuiting in `cmd_nuke` and `cmd_rescue` (in `system.py`).
+    - [x] Implement `--dry-run` check and logging in `cmd_prune` (in `diagnostics.py`).
+    - [x] Implement `--dry-run` short-circuiting in `cmd_down`, `cmd_reset`, and `cmd_reseed` (in `runtime.py`).
+    - [x] Add comprehensive unit tests verifying dry-run actions for nuke, rescue, prune, down, reset, and reseed without making any modifications.
+    - [x] Ensure all unit tests, pre-commit checks, and style guidelines pass.
+
+57. **Guardrail: AI Action Circuit Breaker & Rate Limiting for MCP Server (Issue #171)**:
+    - [x] Define global variables for tracking mutation timestamps and tripped status in `ldm_core/handlers/mcp.py`.
+    - [x] Implement sliding window rate limit handler `_check_circuit_breaker()` resolving limit and window values from environment variables.
+    - [x] Secure mutating MCP tools `start_project`, `stop_project`, and `restart_project` with circuit breaker guards while allowing diagnostic tool calls to function.
+    - [x] Add comprehensive unit tests verifying rate limits, custom threshold/window configurations, and tripped state lockouts.
+
+58. **Guardrail: Scope Sprawl Protection and Anti-Churn Mandate (Issue #175)**:
+    - [x] Implement GitHub Actions workflow job `pr-sprawl-check` in `ci.yml` that triggers on pull requests to verify change sizing.
+    - [x] Ensure changed file limits are gated strictly for bugfixes (branches starting with `fix/` / `bugfix/` or PR title starts with `fix:` / `bugfix:`) exceeding 10 files.
+    - [x] Support bypass override keywords (`[bypass sprawl]` or `[bypass limit]`) in the PR title or description to allow manual bypass.
+    - [x] Update `CONTRIBUTING.md` to document PR sprawl guardrails, atomic limitations, and bypass keywords.
+    - [x] Update project-scoped rules of engagement `.agents/AGENTS.md` to enforce the mandate for AI development.

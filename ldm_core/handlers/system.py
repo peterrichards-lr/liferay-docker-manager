@@ -11,6 +11,29 @@ class SystemService(BaseHandler):
 
     def cmd_nuke(self, force=False, keep_config=False):
         """Completely wipes LDM state, caches, certificates, hosts, and containers."""
+        if getattr(self.manager, "dry_run", False):
+            UI.info(
+                f"{UI.BYELLOW}[Dry Run] Would stop and tear down all registered projects.{UI.COLOR_OFF}"
+            )
+            UI.info(
+                f"{UI.BYELLOW}[Dry Run] Would tear down global Traefik infrastructure.{UI.COLOR_OFF}"
+            )
+            UI.info(
+                f"{UI.BYELLOW}[Dry Run] Would clean up LDM entries in hosts file.{UI.COLOR_OFF}"
+            )
+            UI.info(
+                f"{UI.BYELLOW}[Dry Run] Would prune dangling Docker volumes and networks.{UI.COLOR_OFF}"
+            )
+            UI.info(
+                f"{UI.BYELLOW}[Dry Run] Would delete global certificates, registry, and cache directories.{UI.COLOR_OFF}"
+            )
+            if not keep_config:
+                UI.info(
+                    f"{UI.BYELLOW}[Dry Run] Would delete ~/.ldmrc config file.{UI.COLOR_OFF}"
+                )
+            UI.success("💥 [Dry Run] Nuke completed (no changes made).")
+            return True
+
         if not force:
             confirm = UI.ask(
                 "Are you absolutely sure you want to nuke LDM? "
@@ -98,9 +121,31 @@ class SystemService(BaseHandler):
 
     def cmd_rescue(self, project_id=None):
         """Active self-healing and recovery for LDM local environments."""
+        is_dry_run = getattr(self.manager, "dry_run", False)
         if not project_id:
             # 1. Global Traefik SSL/Host rescue
             UI.info("Executing LDM Global Infrastructure Rescue...")
+            if is_dry_run:
+                UI.info(
+                    f"{UI.BYELLOW}[Dry Run] Would check and auto-repair global common portal-ext.properties.{UI.COLOR_OFF}"
+                )
+                UI.info(
+                    f"{UI.BYELLOW}[Dry Run] Would check and auto-repair workspace common portal-ext.properties.{UI.COLOR_OFF}"
+                )
+                UI.info(
+                    f"{UI.BYELLOW}[Dry Run] Would scan for port 80/443 conflicts.{UI.COLOR_OFF}"
+                )
+                UI.info(
+                    f"{UI.BYELLOW}[Dry Run] Would recreate shared Docker network 'liferay-net'.{UI.COLOR_OFF}"
+                )
+                UI.info(
+                    f"{UI.BYELLOW}[Dry Run] Would regenerate global infrastructure SSL certificates.{UI.COLOR_OFF}"
+                )
+                UI.info(
+                    f"{UI.BYELLOW}[Dry Run] Would force-recreate Traefik infrastructure container.{UI.COLOR_OFF}"
+                )
+                UI.success("🏥 [Dry Run] Global rescue completed (no changes made).")
+                return True
 
             # Auto-repair global properties
             from pathlib import Path
@@ -163,6 +208,43 @@ class SystemService(BaseHandler):
         root = self.detect_project_path(project_id, fatal=False)
         if not root:
             UI.die(f"Project '{project_id}' not found.")
+
+        if is_dry_run:
+            meta = self.read_meta(root)
+            name = (
+                meta.get("liferay_container_name")
+                or meta.get("container_name")
+                or root.name
+            )
+            UI.info(f"Executing LDM Rescue for project: {name}...")
+            UI.info(
+                f"{UI.BYELLOW}[Dry Run] Would check and auto-repair project portal-ext.properties syntax.{UI.COLOR_OFF}"
+            )
+            UI.info(
+                f"{UI.BYELLOW}[Dry Run] Would check and auto-repair project workspace common properties syntax.{UI.COLOR_OFF}"
+            )
+            UI.info(
+                f"{UI.BYELLOW}[Dry Run] Would stop project containers.{UI.COLOR_OFF}"
+            )
+            UI.info(
+                f"{UI.BYELLOW}[Dry Run] Would scan for and remove PostgreSQL postmaster.pid lock files.{UI.COLOR_OFF}"
+            )
+            UI.info(
+                f"{UI.BYELLOW}[Dry Run] Would scan for and remove OSGi state .lock files.{UI.COLOR_OFF}"
+            )
+            UI.info(
+                f"{UI.BYELLOW}[Dry Run] Would regenerate SSL certificates for project.{UI.COLOR_OFF}"
+            )
+            UI.info(
+                f"{UI.BYELLOW}[Dry Run] Would recreate project containers with clean volume initialization.{UI.COLOR_OFF}"
+            )
+            UI.info(
+                f"{UI.BYELLOW}[Dry Run] Would run post-rescue verification checks.{UI.COLOR_OFF}"
+            )
+            UI.success(
+                f"🏥 [Dry Run] Project '{root.name}' rescue completed (no changes made)."
+            )
+            return True
 
         # Check and rescue properties files for this project
         project_pe = root / "files" / "portal-ext.properties"
