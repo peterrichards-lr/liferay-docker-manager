@@ -403,3 +403,10 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
     - [x] Implement sliding window rate limit handler `_check_circuit_breaker()` resolving limit and window values from environment variables.
     - [x] Secure mutating MCP tools `start_project`, `stop_project`, and `restart_project` with circuit breaker guards while allowing diagnostic tool calls to function.
     - [x] Add comprehensive unit tests verifying rate limits, custom threshold/window configurations, and tripped state lockouts.
+
+58. **Guardrail: Scope Sprawl Protection and Anti-Churn Mandate (Issue #175)**:
+    - [x] Implement GitHub Actions workflow job `pr-sprawl-check` in `ci.yml` that triggers on pull requests to verify change sizing.
+    - [x] Ensure changed file limits are gated strictly for bugfixes (branches starting with `fix/` / `bugfix/` or PR title starts with `fix:` / `bugfix:`) exceeding 10 files.
+    - [x] Support bypass override keywords (`[bypass sprawl]` or `[bypass limit]`) in the PR title or description to allow manual bypass.
+    - [x] Update `CONTRIBUTING.md` to document PR sprawl guardrails, atomic limitations, and bypass keywords.
+    - [x] Update project-scoped rules of engagement `.agents/AGENTS.md` to enforce the mandate for AI development.
