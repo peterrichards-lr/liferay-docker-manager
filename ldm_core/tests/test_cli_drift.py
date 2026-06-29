@@ -52,3 +52,13 @@ class TestCliDrift(unittest.TestCase):
                 if opt not in doc_content:
                     missing.append(opt)
             self.assertIn("--secret-flag", missing)
+
+    def test_verify_cli_drift_detects_removed_options(self):
+        # When a documented option no longer exists in the parser, verify_cli_drift should fail
+        from ldm_core.utils import verify_cli_drift
+
+        doc_content = "To use the old feature, pass `--some-removed-option` flag."
+
+        with patch("pathlib.Path.read_text", return_value=doc_content):
+            res = verify_cli_drift()
+            self.assertEqual(res, 1)

@@ -385,3 +385,8 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
     - [x] Inject `LIFERAY_UPGRADE_PERIOD_DATABASE_PERIOD_AUTO_PERIOD_RUN=true` environment variable if auto-upgrade is enabled.
     - [x] Add test suite `ldm_core/tests/test_upgrade.py` verifying all upgrade conditions.
     - [x] Document options in `docs/guides/CLI_REFERENCE.md`.
+
+55. **Guardrail: Two-Way CLI Introspection & Documentation Drift Check (Issue #204)**:
+    - [x] Extend `verify_cli_drift` in `ldm_core/utils.py` to check that documented options in markdown files exist in the parser.
+    - [x] Automatically catch and fail on any stale, renamed, deprecated, or removed CLI options that are still listed in documentation.
+    - [x] Add pytest unit tests verifying detection of stale/removed options.

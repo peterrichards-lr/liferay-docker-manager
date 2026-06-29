@@ -2033,22 +2033,51 @@ def verify_cli_drift():
         if path.exists():
             doc_text += "\n" + path.read_text(encoding="utf-8")
 
-    missing = []
+    # 1. Check for options in parser but missing in docs (undocumented options)
+    missing_docs = []
     for opt in sorted(options):
         # Check if option string is documented
         if opt not in doc_text:
-            missing.append(opt)
+            missing_docs.append(opt)
 
-    if missing:
-        print("❌ CLI Documentation Drift Detected!", file=sys.stderr)
+    # 2. Check for options in docs but missing in parser (stale/removed options)
+    import re
+
+    documented_opts = set(re.findall(r"\`(-[a-zA-Z0-9-]+|--[a-zA-Z0-9-]+)\`", doc_text))
+    # Discard non-ldm documented strings (like JVM exports or standard help)
+    for external in ["--add-opens", "-h", "--help"]:
+        documented_opts.discard(external)
+
+    missing_parser = []
+    for opt in sorted(documented_opts):
+        if opt not in options:
+            missing_parser.append(opt)
+
+    if missing_docs or missing_parser:
+        if missing_docs:
+            print(
+                "❌ CLI Documentation Drift Detected (Undocumented options)!",
+                file=sys.stderr,
+            )
+            print(
+                "The following CLI options exist in parser but are not documented in docs/guides/:",
+                file=sys.stderr,
+            )
+            for opt in missing_docs:
+                print(f"  - {opt}", file=sys.stderr)
+        if missing_parser:
+            print(
+                "❌ CLI Documentation Drift Detected (Stale/removed options)!",
+                file=sys.stderr,
+            )
+            print(
+                "The following CLI options are documented in docs/guides/ but no longer exist in parser:",
+                file=sys.stderr,
+            )
+            for opt in missing_parser:
+                print(f"  - {opt}", file=sys.stderr)
         print(
-            "The following CLI options are not documented in docs/guides/:",
-            file=sys.stderr,
-        )
-        for opt in missing:
-            print(f"  - {opt}", file=sys.stderr)
-        print(
-            "\nPlease update docs/guides/CLI_REFERENCE.md or docs/guides/ADVANCED_CLI.md to include them.",
+            "\nPlease sync ldm_core/cli.py and docs/guides/CLI_REFERENCE.md or docs/guides/ADVANCED_CLI.md.",
             file=sys.stderr,
         )
         return 1
