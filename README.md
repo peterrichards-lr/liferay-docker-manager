@@ -76,6 +76,7 @@ LDM is conventions-driven and highly customizable. Choose a topic below for deta
 - **[Workspace Import & Packaging](docs/guides/WORKSPACE_IMPORT_AND_PACKAGING.md)** — Importing workspaces and exporting/restoring portable `.ldmp` packages.
 - **[Properties Hierarchy & Precedence](docs/guides/PROPERTIES_HIERARCHY.md)** — The 5-layer cascading properties and `# !important` overrides.
 - **[Sharing & Tunnels](docs/guides/SHARING_AND_TUNNELS.md)** — Securely sharing local stacks publicly using tunnels.
+- **[Liferay Version Upgrades](docs/guides/VERSION_UPGRADES.md)** — Safely upgrading Liferay Docker image tags, database backup snapshots, and schema auto-upgrades.
 - **[Data Management](docs/guides/DATA_MANAGEMENT.md)** — Snapshots, pre-warmed seeds, and assets.
 - **[Networking, DNS & Zero-Config SSL](docs/guides/NETWORKING_DNS.md)** — Traefik routing, hostname mappings, and trust certificates.
 
