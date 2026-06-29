@@ -214,6 +214,8 @@ class InfraService:
         cert_file = cert_dir / f"{host_name}.pem"
         key_file = cert_dir / f"{host_name}-key.pem"
 
+        new_files_written = False
+
         if not cert_file.exists():
             UI.info(
                 f"Generating SSL certificates for {UI.CYAN}{host_name}{UI.COLOR_OFF}..."
@@ -250,9 +252,14 @@ class InfraService:
                             "Ensure mkcert is correctly installed and initialized ('mkcert -install')."
                         )
                     return False
+                new_files_written = True
             except Exception as e:
                 UI.error(f"mkcert unexpected error: {e}")
                 return False
+
+        config_file = cert_dir / f"traefik-{host_name}.yml"
+        if not config_file.exists():
+            new_files_written = True
 
         # Generate Traefik Dynamic Config for this host
         try:
@@ -262,13 +269,22 @@ tls:
     - certFile: /etc/traefik/certs/{host_name}.pem
       keyFile: /etc/traefik/certs/{host_name}-key.pem
 """
-            config_file = cert_dir / f"traefik-{host_name}.yml"
             from ldm_core.utils import safe_write_text
 
             safe_write_text(config_file, config_content)
         except Exception as e:
             UI.error(f"Failed to write Traefik configuration: {e}")
             return False
+
+        if new_files_written:
+            import platform
+
+            is_mac = platform.system().lower() == "darwin"
+            is_win = platform.system().lower() == "windows"
+            is_wsl = "microsoft" in platform.uname().release.lower()
+            if is_mac or is_win or is_wsl:
+                UI.info("Waiting for host certificates to sync with Docker VM...")
+                time.sleep(2)
 
         return True
 

@@ -355,6 +355,8 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
     - [x] Add virtual environment dependency diagnostics to `DoctorRunner` in `diagnostics.py`.
     - [x] Add pytest unit tests in `ldm_core/tests/test_diagnostics.py` to cover mismatch detection, missing packages, and missing file warnings.
 
-50. **Fix SSL Certificate Sync Lag for Docker Desktop on Windows/macOS**:
-    - [ ] Add a 2-second synchronization delay in `setup_ssl` (inside `ldm_core/handlers/infra.py`) when brand new SSL certificates or Traefik config files are generated.
-    - [ ] Ensure the delay is only triggered on Windows, macOS, or WSL to compensate for hypervisor/gRPC-FUSE/VirtioFS filesystem sync lag.
+50. **Fix SSL Certificate Sync Lag for Docker Desktop on Windows/macOS (Issue #204)**:
+    - [x] Implement `new_files_written` tracking in `setup_ssl` (inside `infra.py`).
+    - [x] Add a 2-second synchronization delay in `setup_ssl` when new SSL certificates or Traefik configs are generated.
+    - [x] Ensure the delay is only triggered on Windows, macOS, or WSL to compensate for hypervisor/gRPC-FUSE/VirtioFS filesystem sync lag.
+    - [x] Update unit tests in `ldm_core/tests/test_stack.py` to assert that `time.sleep(2)` is called.

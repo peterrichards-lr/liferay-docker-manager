@@ -203,6 +203,7 @@ class TestStackInfrastructure(unittest.TestCase):
                     return_value="/usr/bin/mkcert",
                 ),
                 patch.object(self.manager, "run_command") as mock_run,
+                patch("time.sleep") as mock_sleep,
             ):
 
                 def mock_mkcert(*args, **kwargs):
@@ -217,6 +218,11 @@ class TestStackInfrastructure(unittest.TestCase):
                 self.assertTrue(res)
                 config_file = cert_dir / f"traefik-{host_name}.yml"
                 self.assertTrue(config_file.exists())
+                # On test platforms (Darwin/macOS), the sleep should have been triggered
+                import platform
+
+                if platform.system().lower() in ["darwin", "windows"]:
+                    mock_sleep.assert_called_once_with(2)
 
 
 class TestStackScaling(unittest.TestCase):
