@@ -390,3 +390,10 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
     - [x] Extend `verify_cli_drift` in `ldm_core/utils.py` to check that documented options in markdown files exist in the parser.
     - [x] Automatically catch and fail on any stale, renamed, deprecated, or removed CLI options that are still listed in documentation.
     - [x] Add pytest unit tests verifying detection of stale/removed options.
+
+56. **Guardrail: Mandatory `--dry-run` Support for Destructive Handlers (Issue #173)**:
+    - [x] Implement `--dry-run` short-circuiting in `cmd_nuke` and `cmd_rescue` (in `system.py`).
+    - [x] Implement `--dry-run` check and logging in `cmd_prune` (in `diagnostics.py`).
+    - [x] Implement `--dry-run` short-circuiting in `cmd_down`, `cmd_reset`, and `cmd_reseed` (in `runtime.py`).
+    - [x] Add comprehensive unit tests verifying dry-run actions for nuke, rescue, prune, down, reset, and reseed without making any modifications.
+    - [x] Ensure all unit tests, pre-commit checks, and style guidelines pass.
