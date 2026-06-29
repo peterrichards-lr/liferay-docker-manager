@@ -90,6 +90,10 @@ The following flags can be passed to almost any command:
 - **`-v`, `--verbose`**: Enable verbose debug logging to trace exact shell commands, API calls, and Docker interactions.
 - **`--info`**: Show informational logging (a middle tier between standard output and debug).
 - **`-y`, `--non-interactive`**: Accept all defaults and skip confirmation prompts.
+- **`--upgrade-db`**: Force-enables Liferay's database auto-upgrade tool on startup (`LIFERAY_UPGRADE_PERIOD_DATABASE_PERIOD_AUTO_PERIOD_RUN=true`).
+- **`--no-upgrade-db`**: Force-disables Liferay's database auto-upgrade tool.
+- **`--backup-on-upgrade`**: Force-enables automatic database backup snapshot creation before running version upgrades.
+- **`--no-backup-on-upgrade`**: Force-disables automatic database backup snapshot creation before running version upgrades.
 
 ### `list` (alias: `ls`)
 

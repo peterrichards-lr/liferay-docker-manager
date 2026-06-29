@@ -1367,7 +1367,104 @@ class RuntimeService(BaseHandler):
                     f"PostgreSQL does not support automatic database directory downgrades. Use '--force-downgrade' to bypass."
                 )
 
+        # Check for Liferay Upgrade (Issue #209)
+        project_id = project_meta.get("container_name")
+        last_lr_ver = project_meta.get("last_run_liferay_version")
+        is_upgrade = False
+        if last_lr_ver:
+            try:
+                is_upgrade = self.manager.parse_version(
+                    tag
+                ) > self.manager.parse_version(last_lr_ver)
+            except Exception:
+                pass
+
+        upgrade_db = False
+        if is_upgrade:
+            # 1. Database Backup Option
+            backup_on_upgrade = getattr(self.manager.args, "backup_on_upgrade", False)
+            no_backup_on_upgrade = getattr(
+                self.manager.args, "no_backup_on_upgrade", False
+            )
+
+            if not backup_on_upgrade and not no_backup_on_upgrade:
+                if not self.manager.non_interactive:
+                    UI.warning(
+                        f"Upgrade detected: Liferay version is changing from '{last_lr_ver}' to '{tag}'."
+                    )
+                    if UI.confirm(
+                        "Would you like to take a database backup snapshot before proceeding?",
+                        default=True,
+                    ):
+                        backup_on_upgrade = True
+
+            if backup_on_upgrade:
+                from ldm_core.utils import sanitize_id
+
+                container_name = sanitize_id(
+                    project_meta.get("liferay_container_name")
+                    or project_meta.get("container_name")
+                    or paths["root"].name
+                )
+                db_container = project_meta.get("db_container_name")
+                if not db_container:
+                    db_container = f"{container_name}-db"
+
+                db_type_val = project_meta.get("db_type", "postgresql")
+                if db_type_val not in ["hypersonic", "external"]:
+                    # Check if DB container is running
+                    is_running = self.manager.run_command(
+                        ["docker", "ps", "-q", "-f", f"name=^{db_container}$"]
+                    )
+                    compose_file = paths["root"] / "docker-compose.yml"
+                    if compose_file.exists() and not is_running:
+                        UI.info(
+                            "Starting database container temporarily to take a snapshot backup..."
+                        )
+                        self.manager.run_command(
+                            [*compose_base, "-f", str(compose_file), "up", "-d", "db"]
+                        )
+                        time.sleep(5)
+
+                    # Create the snapshot
+                    snapshot_name = f"Pre-upgrade snapshot to {tag}"
+                    old_args_name = getattr(self.manager.args, "name", None)
+                    self.manager.args.name = snapshot_name
+                    try:
+                        self.manager.snapshot.cmd_snapshot(project_id)
+                        UI.success(
+                            f"Database backup snapshot '{snapshot_name}' created successfully."
+                        )
+                    except Exception as e:
+                        UI.warning(f"Failed to create pre-upgrade database backup: {e}")
+                    finally:
+                        if old_args_name is not None:
+                            self.manager.args.name = old_args_name
+                        elif hasattr(self.manager.args, "name"):
+                            delattr(self.manager.args, "name")
+
+            # 2. Database Auto-Upgrade Option
+            if getattr(self.manager.args, "upgrade_db", False):
+                upgrade_db = True
+            elif getattr(self.manager.args, "no_upgrade_db", False):
+                upgrade_db = False
+            elif not self.manager.non_interactive:
+                UI.warning(
+                    "New Liferay versions often require a database schema upgrade."
+                )
+                if UI.confirm(
+                    "Do you want to run Liferay's database auto-upgrade tool on startup?",
+                    default=True,
+                ):
+                    upgrade_db = True
+            else:
+                upgrade_db = False
+
         liferay_env = ["LIFERAY_HOME=/opt/liferay"]
+        if upgrade_db:
+            liferay_env.append(
+                "LIFERAY_UPGRADE_PERIOD_DATABASE_PERIOD_AUTO_PERIOD_RUN=true"
+            )
         project_id = project_meta.get("container_name")
         host_name = project_meta.get("host_name", "localhost")
 
