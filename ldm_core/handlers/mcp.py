@@ -1,5 +1,7 @@
 import json
 import logging
+import os
+import time
 
 from mcp.server.fastmcp import FastMCP
 
@@ -9,6 +11,47 @@ from ldm_core.utils import run_command
 mcp_server = FastMCP("LDM Diagnostics Server")
 # Store manager as a global for the MCP tools to access
 _manager = None
+
+# Circuit Breaker state for AI runaway mutation loops
+_mutation_history: list[float] = []
+_circuit_breaker_tripped = False
+
+
+def _check_circuit_breaker() -> str | None:
+    """Checks if the circuit breaker is tripped or if the rate limit is exceeded."""
+    global _circuit_breaker_tripped, _mutation_history  # noqa: PLW0603
+
+    if _circuit_breaker_tripped:
+        return (
+            "Error: AI Action Circuit Breaker is currently TRIPPED. "
+            "Too many mutation commands were executed. "
+            "Please restart the LDM MCP server or manually verify the environment."
+        )
+
+    try:
+        max_actions = int(os.environ.get("LDM_MCP_CIRCUIT_BREAKER_MAX_ACTIONS", "5"))
+    except ValueError:
+        max_actions = 5
+
+    try:
+        window_seconds = int(os.environ.get("LDM_MCP_CIRCUIT_BREAKER_WINDOW", "300"))
+    except ValueError:
+        window_seconds = 300
+
+    now = time.time()
+    # Keep only timestamps within the sliding window
+    _mutation_history = [t for t in _mutation_history if now - t <= window_seconds]
+
+    if len(_mutation_history) >= max_actions:
+        _circuit_breaker_tripped = True
+        return (
+            f"Error: AI Action Circuit Breaker TRIPPED. "
+            f"Executed {len(_mutation_history)} mutation commands within the last {window_seconds} seconds. "
+            f"Mutation commands are locked. Please manually verify the environment."
+        )
+
+    _mutation_history.append(now)
+    return None
 
 
 @mcp_server.tool()
@@ -186,6 +229,10 @@ def get_logs(
 @mcp_server.tool()
 def start_project(project_id: str) -> str:
     """Starts the Liferay stack (containers) for a specific project."""
+    cb_err = _check_circuit_breaker()
+    if cb_err:
+        return cb_err
+
     if not _manager:
         return "Error: Manager not initialized"
 
@@ -216,6 +263,10 @@ def start_project(project_id: str) -> str:
 @mcp_server.tool()
 def stop_project(project_id: str) -> str:
     """Stops the Liferay stack (containers) for a specific project."""
+    cb_err = _check_circuit_breaker()
+    if cb_err:
+        return cb_err
+
     if not _manager:
         return "Error: Manager not initialized"
 
@@ -246,6 +297,10 @@ def stop_project(project_id: str) -> str:
 @mcp_server.tool()
 def restart_project(project_id: str, service: str | None = None) -> str:
     """Restarts specific services or the entire stack for a project."""
+    cb_err = _check_circuit_breaker()
+    if cb_err:
+        return cb_err
+
     if not _manager:
         return "Error: Manager not initialized"
 

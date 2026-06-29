@@ -1,4 +1,5 @@
 import json
+import os
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -166,3 +167,74 @@ def test_get_cli_help():
     res_err = get_cli_help("non-existent-subcommand")
     assert "Error" in res_err
     assert "Available commands" in res_err
+
+
+@pytest.fixture(autouse=True)
+def reset_circuit_breaker():
+    import os
+
+    import ldm_core.handlers.mcp as mcp_module
+
+    mcp_module._mutation_history = []
+    mcp_module._circuit_breaker_tripped = False
+    if "LDM_MCP_CIRCUIT_BREAKER_MAX_ACTIONS" in os.environ:
+        del os.environ["LDM_MCP_CIRCUIT_BREAKER_MAX_ACTIONS"]
+    if "LDM_MCP_CIRCUIT_BREAKER_WINDOW" in os.environ:
+        del os.environ["LDM_MCP_CIRCUIT_BREAKER_WINDOW"]
+
+
+def test_circuit_breaker_under_threshold(mock_manager):
+    from ldm_core.handlers.mcp import start_project
+
+    # 4 calls are under the default threshold of 5
+    for _ in range(4):
+        res = start_project("liferay-project1")
+        assert "Success" in res
+
+
+def test_circuit_breaker_trips(mock_manager):
+    from ldm_core.handlers.mcp import start_project, stop_project
+
+    # 5 actions are allowed (threshold is 5)
+    for _ in range(5):
+        res = start_project("liferay-project1")
+        assert "Success" in res
+
+    # 6th action trips it
+    res = start_project("liferay-project1")
+    assert "Error: AI Action Circuit Breaker TRIPPED" in res
+
+    # 7th action is blocked immediately by tripped flag
+    res_stop = stop_project("liferay-project1")
+    assert "Error: AI Action Circuit Breaker is currently TRIPPED" in res_stop
+
+
+def test_circuit_breaker_non_mutating_allowed(mock_manager):
+    from ldm_core.handlers.mcp import get_projects, start_project
+
+    # Trip it
+    for _ in range(6):
+        start_project("liferay-project1")
+
+    # Mutating command is blocked
+    res = start_project("liferay-project1")
+    assert "Circuit Breaker" in res
+
+    # Non-mutating command is allowed
+    res_projects = get_projects()
+    assert "liferay-project1" in res_projects
+
+
+def test_circuit_breaker_env_vars(mock_manager):
+    from ldm_core.handlers.mcp import start_project
+
+    os.environ["LDM_MCP_CIRCUIT_BREAKER_MAX_ACTIONS"] = "2"
+
+    # 2 actions are allowed
+    for _ in range(2):
+        res = start_project("liferay-project1")
+        assert "Success" in res
+
+    # 3rd action trips it
+    res2 = start_project("liferay-project1")
+    assert "Error: AI Action Circuit Breaker TRIPPED" in res2
