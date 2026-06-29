@@ -47,6 +47,14 @@ repos:
         files: ^pyproject\.toml$|^ldm_core/constants\.py$
         pass_filenames: false
 
+      - id: check-cli-drift
+        name: Check CLI Documentation Drift
+        entry: scripts/run_python.sh scripts/check_cli_drift.py
+        language: system
+        files: ^ldm_core/cli\.py$|^docs/guides/CLI_REFERENCE.md$|^docs/guides/ADVANCED_CLI.md$
+        pass_filenames: false
+        always_run: true
+
       - id: sync-docs
         name: Sync Documentation
         entry: bash -c 'scripts/run_python.sh scripts/sync_docs.py && git diff --exit-code docs/*.md'

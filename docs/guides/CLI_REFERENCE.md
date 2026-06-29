@@ -76,6 +76,7 @@ fi
 - **Bypass Prompts**: Use the `-y` or `--non-interactive` flag to skip all confirmations and use default values. This is ideal for scripts and CI/CD pipelines.
 - **Tag Prompt & Discovery**: When running `ldm run` without a tag, the interactive prompt will automatically fetch the latest release matching your default release type (usually LTS) and offer it as the default choice. You can simply press Enter to accept it, or type a specific release type (`lts`, `qr`, `u`), a prefix (`2025.q4`), or an exact tag name.
 - **Automated Latest Tags**: In non-interactive environments, LDM will automatically discover and use the latest tag matching your default release type (LTS) if no tag is explicitly provided. You can also force specific discovery using `--tag-latest` or `--tag-prefix`.
+- **Liferay Version Upgrades & Data Persistence**: If you have an existing LDM project running a specific Liferay version (e.g. `2026.q2.4-lts`) and want to upgrade it (e.g. to `2026.q2.5-lts`), you can safely do so by running `ldm run --tag 2026.q2.5-lts` (or choosing the new tag interactively). LDM's hybrid volume strategy keeps your database and file data intact inside persistent Docker volumes, so upgrading the image version **will not delete or reset** your local data and workspace files. (Note: Downgrades are blocked by default to prevent database schema corruption; use `--force-downgrade` only if explicitly required).
 - **Advanced Flags**: For information on pipeline automation flags (`--no-captcha`, `--fast-login`), JVM tuning (`--lean`), and filesystem overrides (`--internal-state`), please see the [Advanced Usage & Flags](ADVANCED_CLI.md) guide.
 
 ---
@@ -780,3 +781,84 @@ All legacy flat-form commands are automatically translated to their namespaced e
 | `ldm defaults` | `ldm config defaults` |
 
 ---
+
+## All CLI Options Reference
+
+The following is a comprehensive index of all registered CLI option flags and their descriptions:
+
+- **`--archetype`**: Apply an Extensible Stack Archetype (e.g. 'keycloak-sso', 'clustered')
+- **`--ascii`**: Enable ASCII-safe output translation.
+- **`--auto-install-lfr-tunnel`**: Automatically install lfr-tunnel if not found in PATH.
+- **`--background`**: Run dashboard in background.
+- **`--backup-dir`**: Directory path to backup archives.
+- **`--benchmark`**: Display performance benchmark on execution.
+- **`--build-info`**: Inject build metadata into the source.
+- **`--bump`**: Increment the version logically.
+- **`--clone-only`**: Force cloning the Git repository instead of downloading the LDM package (.ldmp).
+- **`--container`**: Show detailed Docker container diagnostic checks.
+- **`--docker`**: Show detailed Docker diagnostic checks.
+- **`--domain`**: Custom domain prefix (e.g. lfr-demo.online, lfr-demo.se).
+- **`--download`**: Force downloading of dependencies.
+- **`--dry-run`**: Preview execution without mutations.
+- **`--files-only`**: Extract or backup files/folders only.
+- **`--force-boot`**: Force a container reboot instead of immediate runtime reindexing.
+- **`--force-downgrade`**: Force a version downgrade (bypassing safety validations).
+- **`--grep`**: Grep search pattern for filtering log lines.
+- **`--grep-i`**: Case-insensitive grep search.
+- **`--grep-v`**: Inverted grep search (select non-matching lines).
+- **`--hydrate-from`**: Automatically hydrate data from a Liferay Cloud environment.
+- **`--image`**: Custom Docker image to use for the sharing tunnel sidecar.
+- **`--index`**: Force indexing check.
+- **`--inspector`**: Expose the lfr-tunnel local inspector dashboard on port 4040.
+- **`--keep-config`**: Retain global config file ~/.ldmrc.
+- **`--keep-last`**: Keep only the specified number of most recent snapshots.
+- **`--latest`**: Restore the most recent snapshot.
+- **`--leave-running`**: Keep the running project active and abort the import if it is currently running.
+- **`--list-backups`**: List backups in project work-folders.
+- **`--list-envs`**: List all cloud environments.
+- **`--logs`**: Stream container logs.
+- **`--name`**: Specify target name.
+- **`--no-color`**: Disable ANSI color codes in output.
+- **`--no-env-sync`**: Skip syncing environment variables from Liferay Cloud.
+- **`--no-home-warn`**: Suppress warning when running LDM from the root of the user's home directory.
+- **`--no-move`**: Skip moving existing data (just create symlinks).
+- **`--no-restart`**: Do not automatically stop and restart the containers.
+- **`--no-run`**: Update the metadata without automatically restarting the stack.
+- **`--no-unicode`**: Disable Unicode characters in output and force ASCII safe-replacements.
+- **`--older-than`**: Delete snapshots older than the specified number of days.
+- **`--output`**: Directory path to save the generated package.
+- **`--overwrite-registry`**: Automatically overwrite existing project registry entries in case of collisions.
+- **`--ports`**: Comma-separated ports to expose (defaults to 8080).
+- **`--print`**: Output current version string only.
+- **`--project`**: Show detailed Project diagnostic checks.
+- **`--project-id`**: Specific project ID to rescue.
+- **`--promote`**: Promote the current beta to a stable release.
+- **`--provider`**: Tunnel provider (defaults to lfr-tunnel).
+- **`--quiet`**: Quiet mode (suppress info logs).
+- **`--reboot`**: Force a container reboot instead of immediate runtime reindexing.
+- **`--reindex`**: Force a full search reindex on startup.
+- **`--reset`**: Reset cumulative ROI metrics back to zero.
+- **`--restore`**: Restore project backup/snapshot.
+- **`--service`**: Specify specific container service.
+- **`--set`**: Directly set the version string.
+- **`--share-domain`**: Custom domain to use when sharing the instance.
+- **`--share-image`**: Custom Docker image to use for the sharing tunnel sidecar.
+- **`--share-inspector`**: Expose the lfr-tunnel local inspector dashboard on port 4040.
+- **`--share-provider`**: Sharing provider to use (defaults to lfr-tunnel).
+- **`--status`**: Check for updates without performing the upgrade.
+- **`--stop-running`**: Automatically stop the project if it is currently running.
+- **`--subdomain`**: Custom subdomain prefix (defaults to machine hostname).
+- **`--sync-env`**: Sync configuration env vars.
+- **`--system`**: Show detailed system diagnostic checks.
+- **`--tail`**: Number of lines to show from the end of the logs.
+- **`--timestamps`**: Show timestamps.
+- **`--trigger`**: Event trigger for the release package workflow.
+- **`--tui`**: Launch interactive terminal menu to configure property overrides.
+- **`--up`**: Automatically start the project after reseeding.
+- **`--url`**: Remote packages download URL.
+- **`--version`**: Target a specific version of LDM (e.g. v2.11.53).
+- **`--wait-for-bundles`**: Comma-separated list of expected OSGi bundle symbolic names to wait for.
+- **`--wait-for-deployables`**: Scan local workspace for JARs/YAMLs and block until they are deployed in Liferay.
+- **`--workflow-name`**: Name of the workflow file.
+- **`-V`**: Show LDM version.
+- **`-q`**: Quiet mode.
