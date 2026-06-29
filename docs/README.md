@@ -26,6 +26,7 @@ Check out our **[Video Showcase](showcase/README.md)** to see short demonstratio
 - **[Workspace Import & Portable Packaging](guides/WORKSPACE_IMPORT_AND_PACKAGING.md)** — Working with workspaces and exporting `.ldmp` packages.
 - **[Properties Hierarchy & Precedence](guides/PROPERTIES_HIERARCHY.md)** — Merging cascading properties and using `# !important` rules.
 - **[Sharing & Tunnels](guides/SHARING_AND_TUNNELS.md)** — Exposing local projects securely to public subdomains (lfr-tunnel, Ngrok).
+- **[Liferay Version Upgrades](guides/VERSION_UPGRADES.md)** — Conceptual workflow, database safety, auto-upgrades, and CLI flags.
 - **[Data Management](guides/DATA_MANAGEMENT.md)** — Snapshots, pre-warmed database seeds, and backups.
 - **[Networking, DNS & Zero-Config SSL](guides/NETWORKING_DNS.md)** — Traefik proxy configurations, virtual hostnames, and HTTPS cert trust.
 
