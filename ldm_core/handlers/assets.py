@@ -184,18 +184,18 @@ class AssetService:
         cache_dir = actual_home / ".ldm" / "references" / "samples"
         cache_dir.mkdir(parents=True, exist_ok=True)
 
-        cached_zip = cache_dir / f"samples_{version}.zip"
+        cached_zip = cache_dir / f"samples_{version}.ldmp"
 
         if os.path.exists(cached_zip):
             UI.info(f"Using cached samples: {cached_zip.name}")
             temp_zip = cached_zip
         else:
             urls = [
-                f"{repo_url}/releases/download/v{version}/samples.zip",
-                f"{repo_url}/releases/latest/download/samples.zip",
+                f"{repo_url}/releases/download/v{version}/samples.ldmp",
+                f"{repo_url}/releases/latest/download/samples.ldmp",
             ]
 
-            temp_zip = cache_dir / f"samples_{version}.zip.download"
+            temp_zip = cache_dir / f"samples_{version}.ldmp.download"
             success = False
             last_error = None
 
