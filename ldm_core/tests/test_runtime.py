@@ -950,7 +950,7 @@ class TestRuntime(unittest.TestCase):
         ):
             # Create data folder to simulate existence
             data_dir = self.tmp_dir / "data"
-            data_dir.mkdir(exist_ok=True)
+            data_dir.mkdir(parents=True, exist_ok=True)
 
             res = self.handler.handler.cmd_reset("test", target="data")
             self.assertTrue(res)
