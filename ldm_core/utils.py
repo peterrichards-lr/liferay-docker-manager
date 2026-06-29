@@ -1984,3 +1984,74 @@ def reclaim_volume_permissions(path, uid=None, gid=None, chmod_val="777"):
         return res is not None
     except Exception:
         return False
+
+
+def get_all_options(parser):
+    """Recursively extract all option strings from an argparse parser."""
+    import argparse
+
+    options = set()
+    for action in parser._actions:
+        for opt in action.option_strings:
+            options.add(opt)
+    # Walk subparsers
+    for action in parser._actions:
+        if isinstance(action, argparse._SubParsersAction):
+            for choices in action.choices.values():
+                options.update(get_all_options(choices))
+    return options
+
+
+def verify_cli_drift():
+    """Verify that all CLI options in cli.py are documented in the guides.
+
+    Returns:
+        int: 0 if check passes, 1 if drift is found.
+    """
+    import sys
+    from pathlib import Path
+
+    from ldm_core.cli import get_parser
+
+    # Get all options from the parser
+    parser, _ = get_parser()
+    options = get_all_options(parser)
+
+    # Ignore standard help options
+    options.discard("-h")
+    options.discard("--help")
+
+    # Read documentation files
+    project_root = Path(__file__).parent.parent
+    doc_paths = [
+        project_root / "docs" / "guides" / "CLI_REFERENCE.md",
+        project_root / "docs" / "guides" / "ADVANCED_CLI.md",
+    ]
+
+    doc_text = ""
+    for path in doc_paths:
+        if path.exists():
+            doc_text += "\n" + path.read_text(encoding="utf-8")
+
+    missing = []
+    for opt in sorted(options):
+        # Check if option string is documented
+        if opt not in doc_text:
+            missing.append(opt)
+
+    if missing:
+        print("❌ CLI Documentation Drift Detected!", file=sys.stderr)
+        print(
+            "The following CLI options are not documented in docs/guides/:",
+            file=sys.stderr,
+        )
+        for opt in missing:
+            print(f"  - {opt}", file=sys.stderr)
+        print(
+            "\nPlease update docs/guides/CLI_REFERENCE.md or docs/guides/ADVANCED_CLI.md to include them.",
+            file=sys.stderr,
+        )
+        return 1
+
+    print("✅ No CLI documentation drift detected.")
+    return 0

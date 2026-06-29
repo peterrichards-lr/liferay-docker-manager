@@ -366,3 +366,9 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
     - [x] Add Liferay/PostgreSQL version downgrade validation at start of `sync_stack` in `runtime.py`.
     - [x] Save successfully run Liferay/PostgreSQL versions to project metadata before bringing up containers.
     - [x] Create comprehensive unit tests in `test_downgrade.py` verifying detection, force flag, and metadata update.
+
+52. **Guardrail: Automated CLI Arguments & Documentation Drift Detection (Issue #174)**:
+    - [ ] Create introspection script `scripts/check_cli_drift.py` that extracts all CLI option strings from `get_parser()`.
+    - [ ] Compare CLI option strings against documentation files (`docs/guides/CLI_REFERENCE.md`) and fail if undocumented.
+    - [ ] Add the drift check to pre-commit hook config.
+    - [ ] Add pytest unit tests for the drift checking logic.
