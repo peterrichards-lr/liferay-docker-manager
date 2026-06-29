@@ -377,3 +377,11 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
     - [x] Implement available free disk space check before extracting snapshot archives.
     - [x] Raise a descriptive error and abort execution if free space is less than 1.5x the compressed archive size.
     - [x] Add pytest unit tests verifying pre-flight check failure and success pathways.
+
+54. **Guardrail: Liferay database auto-upgrade options on version changes (Issue #209)**:
+    - [x] Detect Liferay version upgrades by comparing current tag with `last_run_liferay_version` in `sync_stack`.
+    - [x] Add CLI flags `--upgrade-db`, `--no-upgrade-db`, `--backup-on-upgrade`, and `--no-backup-on-upgrade`.
+    - [x] Offer automated database backup snapshot and auto-upgrade options interactively.
+    - [x] Inject `LIFERAY_UPGRADE_PERIOD_DATABASE_PERIOD_AUTO_PERIOD_RUN=true` environment variable if auto-upgrade is enabled.
+    - [x] Add test suite `ldm_core/tests/test_upgrade.py` verifying all upgrade conditions.
+    - [x] Document options in `docs/guides/CLI_REFERENCE.md`.
