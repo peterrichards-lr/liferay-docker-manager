@@ -76,8 +76,9 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
   - [x] Add a `--no-ssl` flag to `run-e2e-ldm.sh` in the AICA repository, allowing users and CI workflows to run LDM in plain HTTP mode and bypass local `mkcert` CA trust issues.
   - [x] Add `release_tag` input to `package-ldmp.yml` workflow_dispatch to allow manually rebuilding and attaching the `.ldmp` package to a specific release tag.
   - [x] Update `package-ldmp.yml` workflow to use `--no-ssl` and plain HTTP, and remove `mkcert` installation step.
-  - [ ] Update `package-ldmp.sh` in AICA to stage client extension zip files under `client-extensions/` instead of `deploy/` so LDM can scan and auto-deploy them.
-  - [ ] Update `package-ldmp.yml` to use `http://localhost:8080` instead of `http://aica-e2e.local` to bypass Traefik plain-HTTP routing limitations.
+  - [x] Update `package-ldmp.sh` in AICA to stage client extension zip files under `client-extensions/` instead of `deploy/` so LDM can scan and auto-deploy them.
+  - [x] Update package-ldmp.yml to use <http://localhost:8080> instead of <http://aica-e2e.local> to bypass Traefik plain-HTTP routing limitations (Skipped: build failure was due to unmerged CodeMirror 6 bug).
+  - [ ] Merge [PR #177](https://github.com/peterrichards-lr/liferay-ai-commerce-accelerator/pull/177) on AICA to resolve the CodeMirror 6 build failure, then rerun the manual LDM Package Release (.ldmp) workflow on master.
 
 - Implemented Config Integrity & Validation (Pre-Flight Properties Analyzer) for Issue #127 (statically checks unclosed quotes, malformed JDBC URLs, conflicting database configs, and missing mount paths during properties rebuilding).
 
@@ -345,4 +346,6 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
     - [x] Update `CONTRIBUTING.md` to make issue creation mandatory, define the plan/review steps, and document branching and commit auto-close conventions.
 
 48. **Update AICA package-ldmp.sh to Dynamically Generate Component Metadata**:
-    - [ ] Update `scripts/package-ldmp.sh` in the `liferay-ai-commerce-accelerator` repository to extract lists of staging zip/jar files and active services, writing them to the `meta` file.
+    - [x] Update `scripts/package-ldmp.sh` in the `liferay-ai-commerce-accelerator` repository to extract lists of staging zip/jar files and active services, writing them to the `meta` file.
+    - [x] Resolve CodeMirror 6 esbuild bundling regression by downgrading package.json/yarn.lock to CodeMirror 5.65.16.
+    - [x] Add dependabot ignore rules for `codemirror` and add `./gradlew build -x test` compilation step to CI workflow to prevent future bundling regressions.
