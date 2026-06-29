@@ -361,7 +361,13 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
     - [x] Ensure the delay is only triggered on Windows, macOS, or WSL to compensate for hypervisor/gRPC-FUSE/VirtioFS filesystem sync lag.
     - [x] Update unit tests in `ldm_core/tests/test_stack.py` to assert that `time.sleep(2)` is called.
 
-51. **Guardrail: Pre-Flight System Resource & Disk Space Checks for Hydration (Issue #168)**:
+51. **Guardrail: Safe Downgrade Prevention for Liferay/PostgreSQL Versions (Issue #169)**:
+    - [x] Register `--force-downgrade` command line option globally in `base_sub_parent`.
+    - [x] Add Liferay/PostgreSQL version downgrade validation at start of `sync_stack` in `runtime.py`.
+    - [x] Save successfully run Liferay/PostgreSQL versions to project metadata before bringing up containers.
+    - [x] Create comprehensive unit tests in `test_downgrade.py` verifying detection, force flag, and metadata update.
+
+52. **Guardrail: Pre-Flight System Resource & Disk Space Checks for Hydration (Issue #168)**:
     - [x] Implement available free disk space check before extracting snapshot archives.
     - [x] Raise a descriptive error and abort execution if free space is less than 1.5x the compressed archive size.
     - [x] Add pytest unit tests verifying pre-flight check failure and success pathways.

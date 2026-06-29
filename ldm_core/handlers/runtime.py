@@ -1336,6 +1336,37 @@ class RuntimeService(BaseHandler):
                 "Docker Compose not found. Please run 'ldm doctor' for installation instructions."
             )
 
+        # Check for Liferay/PostgreSQL Downgrade (LDM-Safe-Downgrade-Prevention)
+        tag = project_meta.get("tag")
+        db_type = project_meta.get("db_type", "postgresql")
+        current_pg_ver = None
+        if db_type in ["postgresql", "postgres"]:
+            from ldm_core.utils import resolve_dependency_version
+
+            current_pg_ver = resolve_dependency_version(tag, "postgresql") or "16"
+
+        if not getattr(self.manager.args, "force_downgrade", False):
+            last_lr_ver = project_meta.get("last_run_liferay_version")
+            if last_lr_ver and self.manager.parse_version(
+                tag
+            ) < self.manager.parse_version(last_lr_ver):
+                UI.die(
+                    f"Downgrade detected: Liferay version tag changed from '{last_lr_ver}' to '{tag}'. "
+                    f"This can cause schema corruption. Use '--force-downgrade' to bypass."
+                )
+
+            last_pg_ver = project_meta.get("last_run_postgres_version")
+            if (
+                last_pg_ver
+                and current_pg_ver
+                and self.manager.parse_version(current_pg_ver)
+                < self.manager.parse_version(last_pg_ver)
+            ):
+                UI.die(
+                    f"Downgrade detected: PostgreSQL version changed from '{last_pg_ver}' to '{current_pg_ver}'. "
+                    f"PostgreSQL does not support automatic database directory downgrades. Use '--force-downgrade' to bypass."
+                )
+
         liferay_env = ["LIFERAY_HOME=/opt/liferay"]
         project_id = project_meta.get("container_name")
         host_name = project_meta.get("host_name", "localhost")
@@ -1493,6 +1524,17 @@ class RuntimeService(BaseHandler):
                 UI.detail(f"  + Port:    {UI.CYAN}8080 -> {port_val}{UI.COLOR_OFF}")
 
         if not no_up:
+            # Save successfully run Liferay/PostgreSQL versions to metadata to prevent unsafe downgrades
+            tag_val = project_meta.get("tag")
+            project_meta["last_run_liferay_version"] = tag_val
+            db_type_val = project_meta.get("db_type", "postgresql")
+            if db_type_val in ["postgresql", "postgres"]:
+                from ldm_core.utils import resolve_dependency_version
+
+                current_pg = resolve_dependency_version(tag_val, "postgresql") or "16"
+                project_meta["last_run_postgres_version"] = current_pg
+            self.manager.write_meta(paths["root"], project_meta)
+
             if self.manager.verbose and total_start:
                 duration_str = UI.format_duration(time.time() - total_start)
                 UI.debug(f"Time to orchestration start: {duration_str}")
