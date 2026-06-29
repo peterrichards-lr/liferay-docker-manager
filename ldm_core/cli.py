@@ -302,22 +302,81 @@ def get_parser():
     base_sub_parent = argparse.ArgumentParser(
         add_help=False, argument_default=argparse.SUPPRESS
     )
-    base_sub_parent.add_argument("--info", action="store_true")
-    base_sub_parent.add_argument("-v", "--verbose", action="store_true")
-    base_sub_parent.add_argument("-y", "--non-interactive", action="store_true")
-    base_sub_parent.add_argument("-q", "--quiet", action="store_true")
-    base_sub_parent.add_argument("--dry-run", action="store_true")
-    base_sub_parent.add_argument("--benchmark", action="store_true")
-    base_sub_parent.add_argument("--overwrite-registry", action="store_true")
-    base_sub_parent.add_argument("--force-downgrade", action="store_true")
-    base_sub_parent.add_argument("--upgrade-db", action="store_true")
-    base_sub_parent.add_argument("--no-upgrade-db", action="store_true")
-    base_sub_parent.add_argument("--backup-on-upgrade", action="store_true")
-    base_sub_parent.add_argument("--no-backup-on-upgrade", action="store_true")
-    base_sub_parent.add_argument("--no-home-warn", action="store_true")
-    base_sub_parent.add_argument("-f", "--force", action="store_true")
-    base_sub_parent.add_argument("--no-color", action="store_true")
-    base_sub_parent.add_argument("--no-unicode", "--ascii", action="store_true")
+    base_sub_parent.add_argument(
+        "--info", action="store_true", help="Show informational logging"
+    )
+    base_sub_parent.add_argument(
+        "-v", "--verbose", action="store_true", help="Enable verbose debug logging"
+    )
+    base_sub_parent.add_argument(
+        "-y",
+        "--non-interactive",
+        action="store_true",
+        help="Accept all defaults and skip confirmation prompts",
+    )
+    base_sub_parent.add_argument(
+        "-q", "--quiet", action="store_true", help="Suppress all standard output"
+    )
+    base_sub_parent.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Show commands that would run without executing them",
+    )
+    base_sub_parent.add_argument(
+        "--benchmark",
+        action="store_true",
+        help="Run execution time benchmarks on operations",
+    )
+    base_sub_parent.add_argument(
+        "--overwrite-registry",
+        action="store_true",
+        help="Automatically overwrite project registry collisions",
+    )
+    base_sub_parent.add_argument(
+        "--force-downgrade",
+        action="store_true",
+        help="Bypass version checks to force a downgrade",
+    )
+    base_sub_parent.add_argument(
+        "--upgrade-db",
+        action="store_true",
+        help="Force-enable database auto-upgrade tool on startup",
+    )
+    base_sub_parent.add_argument(
+        "--no-upgrade-db",
+        action="store_true",
+        help="Force-disable database auto-upgrade tool",
+    )
+    base_sub_parent.add_argument(
+        "--backup-on-upgrade",
+        action="store_true",
+        help="Force database backup snapshot before upgrading version",
+    )
+    base_sub_parent.add_argument(
+        "--no-backup-on-upgrade",
+        action="store_true",
+        help="Force-disable database backup snapshot before upgrading version",
+    )
+    base_sub_parent.add_argument(
+        "--no-home-warn",
+        action="store_true",
+        help="Disable warning when running in user's home directory",
+    )
+    base_sub_parent.add_argument(
+        "-f",
+        "--force",
+        action="store_true",
+        help="Force execution, bypassing general safety validations",
+    )
+    base_sub_parent.add_argument(
+        "--no-color", action="store_true", help="Disable color codes in output"
+    )
+    base_sub_parent.add_argument(
+        "--no-unicode",
+        "--ascii",
+        action="store_true",
+        help="Disable Unicode characters in output and force ASCII safe-replacements",
+    )
 
     parser = argparse.ArgumentParser(
         prog="ldm",
