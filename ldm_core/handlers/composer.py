@@ -655,6 +655,16 @@ class ComposerService:
                 has_jdbc_env = True
 
         db_type = meta.get("db_type", "postgresql")
+        db_mode = "isolated"
+        if meta:
+            db_mode = meta.get("database_mode") or db_mode
+        if (
+            db_mode == "isolated"
+            and hasattr(self.manager, "defaults")
+            and self.manager.defaults is not None
+        ):
+            db_mode = self.manager.defaults.get("database_mode", "isolated")
+
         db_updates = {}
         if db_type == "external":
             if not has_jdbc_env:
@@ -670,8 +680,14 @@ class ComposerService:
                 or "org.mariadb.jdbc.Driver"
             )
             dialect = "org.hibernate.dialect.MariaDB103Dialect"
+            host = "db"
+            db_name = "lportal"
+            if db_mode == "shared":
+                host = "liferay-db-global"
+                db_name = f"lportal_{sanitize_id(project_name).replace('-', '_')}"
+
             url = (
-                "jdbc:mariadb://db:3306/lportal?"
+                f"jdbc:mariadb://{host}:3306/{db_name}?"
                 "characterEncoding=UTF-8"
                 "&dontTrackOpenResources=true"
                 "&holdResultsOpenOverStatementClose=true"
@@ -702,6 +718,10 @@ class ComposerService:
                 or "org.postgresql.Driver"
             )
             url = "jdbc:postgresql://db:5432/lportal"
+            if db_mode == "shared":
+                db_name = f"lportal_{sanitize_id(project_name).replace('-', '_')}"
+                url = f"jdbc:postgresql://liferay-db-global:5432/{db_name}"
+
             dialect = (
                 resolve_dependency_version(tag, "jdbc_dialect_postgresql")
                 or "org.hibernate.dialect.PostgreSQL10Dialect"
@@ -835,7 +855,7 @@ class ComposerService:
             image = f"{image_base}:{tag}{suffix}"
 
         depends_on = []
-        if db_type not in ["hypersonic", "external"]:
+        if db_type not in ["hypersonic", "external"] and db_mode != "shared":
             depends_on.append("db")
 
         # 80/20 DESIGN: SELinux compatibility for Fedora/RHEL
@@ -930,7 +950,16 @@ class ComposerService:
     def _build_db_service(self, meta, project_name):
         """Constructs the Database service (MySQL/PostgreSQL) if required."""
         db_type = meta.get("db_type", "postgresql")
-        if db_type == "external":
+        db_mode = "isolated"
+        if meta:
+            db_mode = meta.get("database_mode") or db_mode
+        if (
+            db_mode == "isolated"
+            and hasattr(self.manager, "defaults")
+            and self.manager.defaults is not None
+        ):
+            db_mode = self.manager.defaults.get("database_mode", "isolated")
+        if db_type == "external" or db_mode == "shared":
             return None
 
         tag = str(meta.get("tag") or "latest")

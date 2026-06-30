@@ -795,6 +795,56 @@ class TestComposerService(unittest.TestCase):
             self.assertIn("-Xmx2048m", args_ga)
             self.assertIn("-Xms1536m", args_ga)
 
+    def test_composer_shared_database_mode(self):
+        paths = {
+            "root": Path("/tmp/proj"),
+            "deploy": Path("/tmp/proj/deploy"),
+            "files": Path("/tmp/proj/files"),
+            "data": Path("/tmp/proj/data"),
+            "configs": Path("/tmp/proj/osgi/configs"),
+            "modules": Path("/tmp/proj/osgi/modules"),
+            "cx": Path("/tmp/proj/osgi/client-extensions"),
+            "scripts": Path("/tmp/proj/scripts"),
+            "state": Path("/tmp/proj/osgi/state"),
+            "logs": Path("/tmp/proj/logs"),
+            "portal_log4j": Path("/tmp/proj/osgi/log4j"),
+            "ce_dir": Path("/tmp/proj/client-extensions"),
+        }
+        meta = {
+            "tag": "2026.q1.7-lts",
+            "container_name": "test-project",
+            "db_type": "postgresql",
+            "database_mode": "shared",
+        }
+        self.manager.defaults.get.side_effect = lambda _key, default=None: default
+
+        # 1. Build DB service should be None
+        db_service = self.composer._build_db_service(meta, "test-project")
+        self.assertIsNone(db_service)
+
+        # 2. Build Liferay service should have URL pointing to global DB
+        self.composer._build_liferay_service(
+            paths, meta, "localhost", "test-project", False, None
+        )
+
+        self.assertTrue(self.manager.config.update_portal_ext.called)
+        db_call = next(
+            (
+                call
+                for call in self.manager.config.update_portal_ext.call_args_list
+                if "jdbc.default.url" in call[0][1]
+            ),
+            None,
+        )
+        self.assertIsNotNone(db_call)
+        assert db_call is not None
+        db_updates = db_call[0][1]
+        assert isinstance(db_updates, dict)
+        self.assertEqual(
+            db_updates["jdbc.default.url"],
+            "jdbc:postgresql://liferay-db-global:5432/lportal_test_project",
+        )
+
     def test_composer_db_pool_limits(self):
         paths = {
             "root": Path("/tmp/proj"),
