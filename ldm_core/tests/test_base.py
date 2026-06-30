@@ -831,5 +831,15 @@ class TestBasePortChecking(unittest.TestCase):
         self.assertTrue(res)
 
 
+class TestBaseFixHosts(unittest.TestCase):
+    def setUp(self):
+        self.handler = MockBaseManager()
+
+    @patch.object(MockBaseManager, "cmd_doctor")
+    def test_cmd_fix_hosts_no_target(self, mock_doctor):
+        self.handler.cmd_fix_hosts()
+        mock_doctor.assert_called_once_with(fix_hosts=True)
+
+
 if __name__ == "__main__":
     unittest.main()

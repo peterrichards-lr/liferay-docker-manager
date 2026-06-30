@@ -48,6 +48,7 @@ class BaseHandler:
     def cmd_edit(self, *args, **kwargs): ...
     def cmd_upgrade(self, *args, **kwargs): ...
     def cmd_version(self, *args, **kwargs): ...
+    def cmd_doctor(self, *args, **kwargs): ...
 
     def flag_reindex(self, project_path):
         """Marks the project for a full search reindex on next boot."""
@@ -1502,7 +1503,7 @@ class BaseHandler:
         """Fixes missing host entries for a specific hostname or a LDM project."""
         if not target:
             # If no target provided, run doctor's fix-hosts logic (scans all/current project)
-            return self.manager.cmd_doctor(fix_hosts=True)
+            return self.cmd_doctor(fix_hosts=True)
 
         # 1. Try to treat as a project first (non-fatal)
         root = self.detect_project_path(target, fatal=False)
