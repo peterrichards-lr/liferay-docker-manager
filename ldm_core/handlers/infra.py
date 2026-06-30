@@ -405,8 +405,11 @@ tls:
             reclaim_volume_permissions(es_data)
             reclaim_volume_permissions(es_backup)
 
-            # Persistent ES8 instance matching Liferay requirements
             from ldm_core.constants import ELASTICSEARCH_VERSION
+
+            es_heap = "512m"
+            if hasattr(self.manager, "defaults") and self.manager.defaults is not None:
+                es_heap = self.manager.defaults.get("elasticsearch_heap_size", "512m")
 
             self.manager.run_command(
                 [
@@ -426,7 +429,9 @@ tls:
                     "-e",
                     "cluster.name=liferay-cluster",
                     "-e",
-                    "ES_JAVA_OPTS=-Xms1g -Xmx1g",
+                    f"ES_JAVA_OPTS=-Xms{es_heap} -Xmx{es_heap}",
+                    "-e",
+                    "processors=1",
                     "-e",
                     "indices.query.bool.max_clause_count=10000",
                     "-v",

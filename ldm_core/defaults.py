@@ -16,6 +16,7 @@ CONVENTION_DEFAULTS = {
     "no_color": "false",
     "no_unicode": "false",
     "ci_trigger": "release",
+    "elasticsearch_heap_size": "512m",
 }
 
 

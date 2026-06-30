@@ -410,3 +410,9 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
     - [x] Support bypass override keywords (`[bypass sprawl]` or `[bypass limit]`) in the PR title or description to allow manual bypass.
     - [x] Update `CONTRIBUTING.md` to document PR sprawl guardrails, atomic limitations, and bypass keywords.
     - [x] Update project-scoped rules of engagement `.agents/AGENTS.md` to enforce the mandate for AI development.
+
+59. **Reduce global Elasticsearch container default memory and thread limit (Issue #228)** [Completed]:
+    - [x] Lower default global Elasticsearch memory footprint to 512MB (-Xms512m -Xmx512m).
+    - [x] Support config overrides `elasticsearch_heap_size` in global defaults configuration.
+    - [x] Inject `-e "processors=1"` inside global search initialization to limit CPU thread consumption.
+    - [x] Add unit tests verifying global search initialization options.

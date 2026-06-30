@@ -10,8 +10,12 @@ class MockInfraManager:
         self.args = MagicMock()
         self.verbose = False
         self.non_interactive = True
+        self.defaults = MagicMock()
 
     def run_command(self, *args, **kwargs):
+        pass
+
+    def get_container_status(self, *args, **kwargs):
         pass
 
     def get_resource_path(self, *args, **kwargs):
@@ -87,6 +91,77 @@ class TestInfraService(unittest.TestCase):
         ) as mock_run:
             ports = self.infra.get_proxy_ports()
             self.assertEqual(ports, {"http": 8080, "https": 8443, "admin": 18081})
+
+    @patch("ldm_core.docker_service.DockerService.exists", return_value=False)
+    @patch("ldm_core.handlers.infra.get_actual_home", return_value=Path("/tmp"))
+    @patch("ldm_core.utils.reclaim_volume_permissions")
+    @patch("ldm_core.ui.UI.info")
+    @patch("ldm_core.ui.UI.detail")
+    def test_setup_global_search_defaults(
+        self, _mock_detail, _mock_info, _mock_reclaim, _mock_home, _mock_exists
+    ):
+        self.manager.defaults.get.side_effect = lambda _key, default=None: default
+        with (
+            patch.object(
+                self.manager,
+                "run_command",
+                return_value='{"cluster_name": "liferay-cluster"}',
+            ) as mock_run,
+            patch.object(self.manager, "get_container_status", return_value="running"),
+        ):
+            self.infra.setup_global_search(force=True)
+
+            self.assertTrue(mock_run.called)
+            # Find the docker run command invocation
+            run_cmd = None
+            for call in mock_run.call_args_list:
+                args = call[0][0]
+                if (
+                    isinstance(args, list)
+                    and "run" in args
+                    and "liferay-search-global" in args
+                ):
+                    run_cmd = args
+                    break
+            self.assertIsNotNone(run_cmd)
+            assert isinstance(run_cmd, list)
+            self.assertIn("ES_JAVA_OPTS=-Xms512m -Xmx512m", run_cmd)
+            self.assertIn("processors=1", run_cmd)
+
+    @patch("ldm_core.docker_service.DockerService.exists", return_value=False)
+    @patch("ldm_core.handlers.infra.get_actual_home", return_value=Path("/tmp"))
+    @patch("ldm_core.utils.reclaim_volume_permissions")
+    @patch("ldm_core.ui.UI.info")
+    @patch("ldm_core.ui.UI.detail")
+    def test_setup_global_search_overrides(
+        self, _mock_detail, _mock_info, _mock_reclaim, _mock_home, _mock_exists
+    ):
+        with (
+            patch.object(
+                self.manager,
+                "run_command",
+                return_value='{"cluster_name": "liferay-cluster"}',
+            ) as mock_run,
+            patch.object(self.manager, "get_container_status", return_value="running"),
+            patch.object(self.manager.defaults, "get", return_value="256m"),
+        ):
+            self.infra.setup_global_search(force=True)
+
+            self.assertTrue(mock_run.called)
+            run_cmd = None
+            for call in mock_run.call_args_list:
+                args = call[0][0]
+                if (
+                    isinstance(args, list)
+                    and "run" in args
+                    and "liferay-search-global" in args
+                ):
+                    run_cmd = args
+                    break
+            self.assertIsNotNone(run_cmd)
+            assert isinstance(run_cmd, list)
+            self.assertIn("ES_JAVA_OPTS=-Xms256m -Xmx256m", run_cmd)
+            self.assertIn("processors=1", run_cmd)
 
 
 if __name__ == "__main__":
