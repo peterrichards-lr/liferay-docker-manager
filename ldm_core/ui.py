@@ -466,8 +466,19 @@ class UI:
     @staticmethod
     def confirm(prompt, default="Y"):
         """Standardized Yes/No confirmation prompt."""
-        res = UI.ask(prompt, default)
-        return str(res).lower() == "y"
+        if isinstance(default, bool):
+            default_str = "Y" if default else "N"
+        else:
+            default_str = str(default).upper()
+            if default_str not in ["Y", "N"]:
+                default_str = "Y"
+
+        prompt_choices = "Y/n" if default_str == "Y" else "y/N"
+        res = UI.ask(prompt, prompt_choices)
+
+        if not res or res == prompt_choices:
+            return default_str == "Y"
+        return res.lower().startswith("y")
 
     @staticmethod
     def format_size(size):

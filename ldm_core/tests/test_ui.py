@@ -155,6 +155,32 @@ class TestUI(unittest.TestCase):
         finally:
             UI.NO_UNICODE = False
 
+    @unittest.mock.patch("ldm_core.ui.UI.ask")
+    def test_confirm_yes_default(self, mock_ask):
+        # Default True / "Y"
+        mock_ask.return_value = "Y/n"
+        self.assertTrue(UI.confirm("Proceed?", default=True))
+        mock_ask.assert_called_with("Proceed?", "Y/n")
+
+        mock_ask.return_value = "y"
+        self.assertTrue(UI.confirm("Proceed?", default=True))
+
+        mock_ask.return_value = "no"
+        self.assertFalse(UI.confirm("Proceed?", default=True))
+
+    @unittest.mock.patch("ldm_core.ui.UI.ask")
+    def test_confirm_no_default(self, mock_ask):
+        # Default False / "N"
+        mock_ask.return_value = "y/N"
+        self.assertFalse(UI.confirm("Proceed?", default=False))
+        mock_ask.assert_called_with("Proceed?", "y/N")
+
+        mock_ask.return_value = "yes"
+        self.assertTrue(UI.confirm("Proceed?", default=False))
+
+        mock_ask.return_value = "n"
+        self.assertFalse(UI.confirm("Proceed?", default=False))
+
 
 if __name__ == "__main__":
     unittest.main()
