@@ -423,5 +423,10 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
 
 60. **Implement Docker logging size and rotation limits for LDM projects (Issue #230)** [Completed]:
     - [x] Add log driver limit defaults (max-size: 10m, max-file: 3) to `ComposerService` in `ldm_core/handlers/composer.py`.
-    - [x] Support global overrides `log_max_size` and `log_max_file` in `CONVENTION_DEFAULTS` inside `ldm_core/defaults.py` to allow custom logging rotation.
+    - [x] Support global overrides `log_max_size` and `log_max_file` in `CONVENTION_DEFAULTS` inside `defaults.py` to allow custom logging rotation.
     - [x] Update unit tests in `ldm_core/tests/test_composer.py` to assert that generated services have correct logging config blocks.
+
+61. **Optimize local database connection pool sizes for Liferay stacks (Issue #227)** [Completed]:
+    - [x] Limit default connection pool settings in database properties builder (maxActive=15, minIdle=2, maxIdle=5).
+    - [x] Support config overrides `db_max_active`, `db_min_idle`, and `db_max_idle` in `CONVENTION_DEFAULTS` inside `defaults.py`.
+    - [x] Add unit tests verifying database properties are output with these limits.
