@@ -130,6 +130,7 @@ def preprocess_args(args_list: list[str]) -> list[str]:
         "set",
         "remove",
         "ssl-mode",
+        "database-mode",
     }
 
     if first.startswith("-") or first in all_cmds:
@@ -198,6 +199,7 @@ def preprocess_args(args_list: list[str]) -> list[str]:
                 "revert-properties",
                 "reset-properties",
                 "ssl-mode",
+                "database-mode",
             ]
             if (
                 cmd_idx + 1 < len(processed_list)
@@ -1306,6 +1308,24 @@ def get_parser():
         "--remove", action="store_true", help="Remove the custom default"
     )
 
+    db_mode = config_subparsers.add_parser(
+        "database-mode",
+        parents=[base_sub_parent],
+        help="View or change the active database profile (isolated or shared)",
+    )
+    db_mode.add_argument(
+        "mode",
+        nargs="?",
+        choices=["isolated", "shared"],
+        help="Set database mode to either 'isolated' or 'shared'",
+    )
+    db_mode.add_argument(
+        "--global",
+        dest="global_level",
+        action="store_true",
+        help="Apply to the global system level",
+    )
+
     env = config_subparsers.add_parser("env", parents=[base_sub_parent])
     env.add_argument("vars", nargs="*")
     env.add_argument("-p", "--project", dest="project_flag")
@@ -2004,6 +2024,9 @@ def main():
         ),
         ("config", "defaults"): lambda: manager.config.cmd_defaults(
             getattr(args, "key", None), getattr(args, "value", None)
+        ),
+        ("config", "database-mode"): lambda: manager.config.cmd_database_mode(
+            getattr(args, "mode", None)
         ),
         ("config", "env"): lambda: manager.config.cmd_env(
             getattr(args, "project", None)

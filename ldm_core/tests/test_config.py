@@ -1025,6 +1025,42 @@ class TestConfigService(unittest.TestCase):
             self.manager.cmd_run.assert_not_called()
             self.config.cmd_rebuild_properties.assert_called_once_with(tmp_path.name)
 
+    def test_cmd_database_mode(self):
+        """Verify cmd_database_mode views and configures database profile."""
+        import tempfile
+        from pathlib import Path
+        from unittest.mock import MagicMock
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            self.manager.detect_project_path = MagicMock(return_value=tmp_path)  # type: ignore[method-assign]
+            self.manager.read_meta = MagicMock(return_value={})  # type: ignore[method-assign]
+            self.manager.write_meta = MagicMock()  # type: ignore[method-assign]
+
+            mock_defaults = MagicMock()
+            mock_defaults.get.return_value = "isolated"
+            mock_defaults.user_defaults = {}
+            mock_defaults.global_defaults = {}
+            self.manager.defaults = mock_defaults
+
+            # 1. View defaults fallback
+            self.config.cmd_database_mode()
+            mock_defaults.get.assert_called_with("database_mode", "isolated")
+
+            # 2. Set database mode locally
+            self.manager.args.global_level = False
+            self.config.cmd_database_mode("shared")
+            self.manager.write_meta.assert_called_once()
+            meta_arg = self.manager.write_meta.call_args[0][1]
+            self.assertEqual(meta_arg["database_mode"], "shared")
+
+            # 3. Set database mode globally
+            self.manager.args.global_level = True
+            self.config.cmd_database_mode("isolated")
+            self.manager.defaults.set_user_default.assert_called_with(
+                "database_mode", "isolated"
+            )
+
 
 if __name__ == "__main__":
     unittest.main()  # type: ignore[misc]
