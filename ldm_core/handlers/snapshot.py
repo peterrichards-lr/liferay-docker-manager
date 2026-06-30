@@ -706,9 +706,45 @@ class SnapshotService(BaseHandler):
             safe_mkdir(target_data, parents=True, exist_ok=True)
 
             if volume_tgz.exists():
-                self.manager.run_command(
-                    ["tar", "-xzf", str(volume_tgz), "-C", str(target_data)]
-                )
+                hash_file = target_data / ".ldm_volume.sha256"
+                skip_extraction = False
+                # If target directory is empty or missing, we must extract
+                has_files = False
+                try:
+                    if target_data.exists():
+                        has_files = any(
+                            item
+                            for item in target_data.iterdir()
+                            if item.name not in (".DS_Store", ".ldm_volume.sha256")
+                        )
+                except Exception:
+                    pass
+
+                if has_files and hash_file.exists():
+                    try:
+                        from ldm_core.utils import calculate_sha256
+
+                        current_hash = calculate_sha256(volume_tgz)
+                        cached_hash = hash_file.read_text().strip()
+                        if current_hash == cached_hash:
+                            skip_extraction = True
+                            UI.info(
+                                "  + Volume archive unchanged (hash matched). Skipping extraction."
+                            )
+                    except Exception:
+                        pass
+
+                if not skip_extraction:
+                    self.manager.run_command(
+                        ["tar", "-xzf", str(volume_tgz), "-C", str(target_data)]
+                    )
+                    try:
+                        from ldm_core.utils import calculate_sha256
+
+                        current_hash = calculate_sha256(volume_tgz)
+                        hash_file.write_text(current_hash)
+                    except Exception:
+                        pass
             else:
                 # LDM-408/422/423: Robust Volume Hydration (Mac Sync Resilience)
                 # 1. First, synchronously copy the snapshot to the host project folder.

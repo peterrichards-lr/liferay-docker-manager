@@ -410,3 +410,8 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
     - [x] Support bypass override keywords (`[bypass sprawl]` or `[bypass limit]`) in the PR title or description to allow manual bypass.
     - [x] Update `CONTRIBUTING.md` to document PR sprawl guardrails, atomic limitations, and bypass keywords.
     - [x] Update project-scoped rules of engagement `.agents/AGENTS.md` to enforce the mandate for AI development.
+
+59. **Smart Cache & Hydration Optimization (Issue #129)** [Completed]:
+    - [x] Add hash-based file change detection for heavy volume document library archives (`volume.tgz`) during snapshot/cloud hydration restores.
+    - [x] Cache volume hashes in target folder `.ldm_volume.sha256` to skip identical redundant extractions.
+    - [x] Add unit tests verifying hash checking, skip extraction logic, and hash file output.
