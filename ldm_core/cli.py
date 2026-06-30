@@ -131,6 +131,7 @@ def preprocess_args(args_list: list[str]) -> list[str]:
         "remove",
         "ssl-mode",
         "database-mode",
+        "fork",
     }
 
     if first.startswith("-") or first in all_cmds:
@@ -762,6 +763,15 @@ def get_parser():
     init_from.add_argument("--sidecar", action="store_true")
     init_from.add_argument("--env", action="append")
     init_from.add_argument("--delay", type=float, default=2.0)
+
+    # Command: fork
+    fork = subparsers.add_parser("fork", parents=[base_sub_parent])
+    fork.add_argument("source", help="The ID/name of the source project to fork from")
+    fork.add_argument("target", help="The ID/name of the new forked project")
+    fork.add_argument(
+        "--snapshot",
+        help="The name of the snapshot to use. If not specified, a new one will be created.",
+    )
 
     # Command: monitor
     monitor = subparsers.add_parser("monitor", parents=[base_sub_parent])
@@ -1865,6 +1875,9 @@ def main():
         ),
         ("import", None): lambda: manager.workspace.cmd_import(args.source),
         ("init-from", None): lambda: manager.workspace.cmd_init_from(args.source),
+        ("fork", None): lambda: manager.workspace.cmd_fork(
+            args.source, args.target, snapshot=getattr(args, "snapshot", None)
+        ),
         ("monitor", None): lambda: manager.workspace.cmd_monitor(args.source),
         ("init", None): lambda: manager.workspace.cmd_init(
             getattr(args, "project", None)

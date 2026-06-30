@@ -69,7 +69,7 @@ class MockWorkspaceManager(
     def find_dxp_roots(self, *args, **kwargs):
         return []
 
-    def detect_project_path(self, project_name, for_init=False):
+    def detect_project_path(self, project_name, for_init=False, fatal=True):
         # This will be patched in the test
         return Path(f"/tmp/{project_name}")
 
@@ -1188,6 +1188,130 @@ class TestWorkspaceQuickstart(unittest.TestCase):
         mock_cmd_run.assert_called_once_with("custom-aica-project")
         self.manager.share.cmd_start.assert_called_once_with(
             "custom-aica-project", subdomain="custom-sub"
+        )
+
+    @patch.object(MockWorkspaceManager, "register_project")
+    @patch("ldm_core.handlers.base.BaseHandler.write_meta")
+    @patch("ldm_core.handlers.base.BaseHandler.read_meta")
+    @patch.object(MockWorkspaceManager, "detect_project_path")
+    @patch.object(MockWorkspaceManager, "setup_paths")
+    @patch.object(MockWorkspaceManager, "check_port")
+    @patch("ldm_core.handlers.runtime.RuntimeService.sync_stack")
+    def test_cmd_fork_success(
+        self,
+        mock_sync_stack,
+        mock_check_port,
+        mock_setup_paths,
+        mock_detect_path,
+        mock_read_meta,
+        mock_write_meta,
+        mock_register_project,
+    ):
+        source_dir = self.test_project_dir / "source_proj"
+        target_dir = self.test_project_dir / "target_fork"
+        source_dir.mkdir(parents=True, exist_ok=True)
+
+        def mock_detect(project_id, for_init=False, fatal=True):
+            if project_id == "source_proj":
+                return source_dir
+            if project_id == "target_fork":
+                return target_dir
+            return None
+
+        mock_detect_path.side_effect = mock_detect
+        mock_read_meta.return_value = {
+            "project_name": "source_proj",
+            "port": "8080",
+            "tag": "2026.q1.4-lts",
+            "db_type": "postgresql",
+        }
+
+        # Setup paths mocks
+        mock_setup_paths.side_effect = lambda path: {
+            "root": Path(path),
+            "backups": Path(path) / "snapshots",
+        }
+
+        # Mock port availability (8081 is free)
+        mock_check_port.return_value = True
+
+        # Simulate snapshot exists
+        snapshot_dir = source_dir / "snapshots" / "my-snap"
+        snapshot_dir.mkdir(parents=True, exist_ok=True)
+
+        self.manager.workspace.cmd_fork(
+            "source_proj", "target_fork", snapshot="my-snap"
+        )
+
+        # Verify metadata mutation and creation
+        mock_write_meta.assert_called_once()
+        written_meta = mock_write_meta.call_args[0][1]
+        self.assertEqual(written_meta["project_name"], "target_fork")
+        self.assertEqual(written_meta["container_name"], "target_fork")
+        self.assertEqual(written_meta["db_container_name"], "target_fork-db")
+        self.assertEqual(written_meta["host_name"], "target_fork.local")
+        self.assertEqual(written_meta["port"], "8081")
+
+        # Verify registration and restore calls
+        mock_register_project.assert_called_once_with(
+            "target_fork", target_dir, "target_fork.local"
+        )
+        self.manager.snapshot.cmd_restore.assert_called_once_with(
+            project_id="target_fork", backup_dir=str(snapshot_dir)
+        )
+        mock_sync_stack.assert_called_once()
+
+    @patch.object(MockWorkspaceManager, "register_project")
+    @patch("ldm_core.handlers.base.BaseHandler.write_meta")
+    @patch("ldm_core.handlers.base.BaseHandler.read_meta")
+    @patch.object(MockWorkspaceManager, "detect_project_path")
+    @patch.object(MockWorkspaceManager, "setup_paths")
+    @patch.object(MockWorkspaceManager, "check_port")
+    @patch("ldm_core.handlers.runtime.RuntimeService.sync_stack")
+    def test_cmd_fork_auto_snapshot(
+        self,
+        mock_sync_stack,
+        mock_check_port,
+        mock_setup_paths,
+        mock_detect_path,
+        mock_read_meta,
+        mock_write_meta,
+        mock_register_project,
+    ):
+        source_dir = self.test_project_dir / "source_proj"
+        target_dir = self.test_project_dir / "target_fork"
+        source_dir.mkdir(parents=True, exist_ok=True)
+
+        def mock_detect(project_id, for_init=False, fatal=True):
+            if project_id == "source_proj":
+                return source_dir
+            if project_id == "target_fork":
+                return target_dir
+            return None
+
+        mock_detect_path.side_effect = mock_detect
+        mock_read_meta.return_value = {"port": "8080"}
+
+        mock_setup_paths.side_effect = lambda path: {
+            "root": Path(path),
+            "backups": Path(path) / "snapshots",
+        }
+        mock_check_port.return_value = True
+
+        # Mock latest snapshot retrieval
+        self.manager.snapshot._get_snapshots.return_value = [
+            {"path": source_dir / "snapshots" / "auto-snap", "name": "auto-snap"}
+        ]
+
+        self.manager.workspace.cmd_fork("source_proj", "target_fork")
+
+        # Assert cmd_snapshot was called to take a fresh snapshot of source
+        self.manager.snapshot.cmd_snapshot.assert_called_once_with(
+            project_id="source_proj"
+        )
+        self.manager.snapshot.cmd_restore.assert_called_once_with(
+            project_id="target_fork",
+            backup_dir=str(source_dir / "snapshots" / "auto-snap"),
         )
 
 
