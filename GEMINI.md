@@ -455,3 +455,14 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
     - [x] Support `--global` flag to configure the default database profile globally.
     - [x] Enforce validation options (choices: isolated, shared) and update subcommand preprocessing.
     - [x] Add unit tests verifying config database-mode subcommand get, local set, and global set actions.
+
+65. **Implement Native Project Fork Command (Issue #252 & Issue #253)** [Completed]:
+    - [x] Register `fork` subcommand and arguments in `ldm_core/cli.py`.
+    - [x] Implement `cmd_fork` in `ldm_core/handlers/workspace.py` providing snapshot-based duplication, automatic container and hostname namespacing, and free port allocation.
+    - [x] Add unit tests verifying metadata mutations, port auto-resolutions, and restore calls in `test_workspace.py`.
+
+66. **Codebase Review & Refactoring for Technical Debt (Issue #258)** [Completed]:
+    - [x] Perform codebase audit and generate pre-audit coverage report.
+    - [x] Refactor duplicate subprocess execution branches in `_run_lcp_cmd` to streamline Liferay Cloud command execution.
+    - [x] Document codebase conventions and command execution rules in `DEVELOPMENT.md`.
+    - [x] Run E2E smoke tests and pre-commit checks to verify formatting, linters, coverage, and tests pass cleanly.
