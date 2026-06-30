@@ -92,3 +92,50 @@ Downgrading Liferay versions on an existing database will corrupt schemas. By de
 ```bash
 ldm run --tag 2026.q2.4-lts --force-downgrade
 ```
+
+---
+
+## Post-Upgrade Verification & Validation
+
+Since database schema upgrades run asynchronously inside the Liferay JVM container after startup, LDM cannot instantly verify if the upgrade was successful upon running the `ldm run` command. You must validate the upgrade using the following steps:
+
+1. **Log Inspection**: Stream and monitor the container logs:
+
+   ```bash
+   ldm logs -f [project_id]
+   ```
+
+   Inspect the log stream to verify that Liferay's upgrade framework finishes without throwing critical SQL schema or data integrity exceptions.
+2. **Container Health status**: Run `ldm status` or check the project dashboard to ensure the container status transitions to **Healthy** (e.g., printing `Liferay is ready` in logs).
+3. **Sanity Testing**: Access the portal URL, log in as administrator, and perform basic sanity checks (verify that custom client extensions, OSGi modules, pages, and portlets load correctly).
+
+---
+
+## Executing a Rollback / Reversion
+
+If the upgrade fails, or if sanity testing reveals critical runtime incompatibilities, you can roll back the environment to its exact pre-upgrade state.
+
+1. **Restore the Pre-Upgrade Snapshot**:
+   Run the restore command:
+
+   ```bash
+   ldm restore [project_id] --latest
+   ```
+
+   *(Or specify the snapshot name: `ldm restore [project_id] --name "Pre-upgrade snapshot to {tag}"`)*
+2. **Automated Version Reversion**:
+   During the restore process, LDM will automatically:
+   - Wipe the database container and volume.
+   - Restore the SQL database dump from the pre-upgrade snapshot.
+   - Revert the project metadata Liferay version tag (`tag` and `last_run_liferay_version`) back to the pre-upgrade version.
+   - Regenerate `docker-compose.yml` to boot using the previous Liferay image tag.
+
+---
+
+## Business Boundaries & The "Point of No Return"
+
+While LDM allows you to restore the pre-upgrade snapshot at any time, doing so carries business and data loss implications:
+
+- **Safe Rollback Window**: Reverting is safe **only during the immediate verification phase** after boot, before any new business or developer data is created.
+- **Point of No Return**: The boundary is reached as soon as the upgraded sandbox is put into active use. Once users begin publishing web content, uploading documents, or configuring permissions on the new version, restoring the snapshot will **permanently delete all business data created since the upgrade started**.
+- **Recommendation**: Always perform validation immediately on startup and do not release the sandbox environment to general users until you have confirmed a successful upgrade.
