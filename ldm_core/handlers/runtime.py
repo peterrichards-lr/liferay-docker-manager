@@ -1507,6 +1507,12 @@ class RuntimeService(BaseHandler):
         use_shared_search = (
             str(project_meta.get("use_shared_search", "true")).lower() == "true"
         )
+        db_mode = (
+            getattr(self.manager.args, "database_mode", None)
+            or project_meta.get("database_mode")
+            or self.manager.defaults.get("database_mode", "isolated")
+        )
+        use_shared_db = db_mode == "shared"
 
         if host_name != "localhost":
             liferay_env.extend(
@@ -1517,7 +1523,7 @@ class RuntimeService(BaseHandler):
             )
 
         self.manager.infra._ensure_network()
-        if ssl_enabled or getattr(self.manager.args, "search", False):
+        if ssl_enabled or getattr(self.manager.args, "search", False) or use_shared_db:
             infra_start = time.time()
             resolved_ip = self.manager.get_resolved_ip(host_name) or "127.0.0.1"
 
@@ -1536,8 +1542,47 @@ class RuntimeService(BaseHandler):
                 use_ssl=ssl_enabled,
                 quiet=not show_summary,
                 use_shared_search=use_shared_search,
+                use_shared_db=use_shared_db,
             )
             project_meta["ssl_port"] = ssl_port
+
+            if use_shared_db and not no_up:
+                from ldm_core.utils import sanitize_id
+
+                db_name = f"lportal_{sanitize_id(project_id).replace('-', '_')}"
+                UI.info(f"Ensuring global database '{db_name}' exists...")
+                check_cmd = [
+                    "docker",
+                    "exec",
+                    "liferay-db-global",
+                    "psql",
+                    "-U",
+                    "lportal",
+                    "-d",
+                    "lportal",
+                    "-tc",
+                    f"SELECT 1 FROM pg_database WHERE datname = '{db_name}'",  # nosec B608
+                ]
+                exists_check = self.manager.run_command(
+                    check_cmd, check=False, capture_output=True
+                )
+                if not exists_check or "1" not in exists_check:
+                    create_cmd = [
+                        "docker",
+                        "exec",
+                        "liferay-db-global",
+                        "psql",
+                        "-U",
+                        "lportal",
+                        "-d",
+                        "lportal",
+                        "-c",
+                        f"CREATE DATABASE {db_name};",
+                    ]
+                    self.manager.run_command(create_cmd, check=True)
+                    UI.success(
+                        f"Created database '{db_name}' on global PostgreSQL container."
+                    )
 
             if self.manager.verbose:
                 duration_str = UI.format_duration(time.time() - infra_start)

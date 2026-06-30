@@ -415,3 +415,11 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
     - [x] Add hash-based file change detection for heavy volume document library archives (`volume.tgz`) during snapshot/cloud hydration restores.
     - [x] Cache volume hashes in target folder `.ldm_volume.sha256` to skip identical redundant extractions.
     - [x] Add unit tests verifying hash checking, skip extraction logic, and hash file output.
+
+60. **Shared Global Docker Database Containers (Issue #225)** [Completed]:
+    - [x] Implement global database initialization `liferay-db-global` (PostgreSQL) inside Traefik SSL Proxy network stack.
+    - [x] Omit local isolated `db` container definitions in Compose setup when running in shared database mode.
+    - [x] Override JDBC connection URL to point Liferay to namespaced database target schema on `liferay-db-global`.
+    - [x] Verify and dynamically create namespaced target database on stack boot.
+    - [x] Update snapshot database dump/restore commands to target namespaced database name on `liferay-db-global`.
+    - [x] Add unit tests verifying shared database compose and global database setup logic.

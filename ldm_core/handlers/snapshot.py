@@ -240,6 +240,18 @@ class SnapshotService(BaseHandler):
         if db_type in ["mysql", "postgresql", "mariadb"]:
             # LDM-388: Priority: Metadata -> Explicit Heuristic
             db_container = project_meta.get("db_container_name")
+            db_mode = "isolated"
+            if project_meta:
+                db_mode = project_meta.get("database_mode") or db_mode
+            if (
+                db_mode == "isolated"
+                and hasattr(self.manager, "defaults")
+                and self.manager.defaults is not None
+            ):
+                db_mode = self.manager.defaults.get("database_mode", "isolated")
+            if db_mode == "shared":
+                db_container = "liferay-db-global"
+
             if not db_container:
                 for suffix in ["-db", "-db-1"]:
                     candidate = f"{container_name}{suffix}"
@@ -255,6 +267,14 @@ class SnapshotService(BaseHandler):
                 db_snapshot_file = snap_dir / "database.sql"
                 UI.info(f"Triggering orchestrated database snapshot ({db_type})...")
 
+                db_name = "lportal"
+                if db_mode == "shared":
+                    from ldm_core.utils import sanitize_id
+
+                    db_name = (
+                        f"lportal_{sanitize_id(paths['root'].name).replace('-', '_')}"
+                    )
+
                 if db_type in ["mysql", "mariadb"]:
                     # MySQL/MariaDB Dump (Explicitly include drop tables for rollback)
                     dump_cmd = [
@@ -267,7 +287,7 @@ class SnapshotService(BaseHandler):
                         "-ptest",
                         "--opt",
                         "--add-drop-table",
-                        "lportal",
+                        db_name,
                     ]
                 else:
                     # PostgreSQL Dump (Include clean/drop commands for rollback)
@@ -280,7 +300,7 @@ class SnapshotService(BaseHandler):
                         "lportal",
                         "--clean",
                         "--if-exists",
-                        "lportal",
+                        db_name,
                     ]
 
                 try:
@@ -1256,6 +1276,21 @@ class SnapshotService(BaseHandler):
         import platform
         import subprocess
 
+        db_mode = "isolated"
+        if project_meta:
+            db_mode = project_meta.get("database_mode") or db_mode
+        if (
+            db_mode == "isolated"
+            and hasattr(self.manager, "defaults")
+            and self.manager.defaults is not None
+        ):
+            db_mode = self.manager.defaults.get("database_mode", "isolated")
+        db_name = "lportal"
+        if db_mode == "shared":
+            from ldm_core.utils import sanitize_id
+
+            db_name = f"lportal_{sanitize_id(paths['root'].name).replace('-', '_')}"
+
         def _wipe_db():
             # 1. Clean Slate (LDM-410)
             # Cloud dumps often lack DROP TABLE commands. We must wipe the target DB first.
@@ -1306,7 +1341,7 @@ class SnapshotService(BaseHandler):
                                 "-U",
                                 "lportal",
                                 "-d",
-                                "lportal",
+                                db_name,
                             ],
                             input=wipe_script.encode("utf-8"),
                             check=True,
@@ -1353,7 +1388,7 @@ class SnapshotService(BaseHandler):
                         "lportal",
                         "-ptest",
                         "-e",
-                        "DROP DATABASE IF EXISTS lportal; CREATE DATABASE lportal;",
+                        f"DROP DATABASE IF EXISTS {db_name}; CREATE DATABASE {db_name};",
                     ],
                     check=False,
                 )
@@ -1362,9 +1397,9 @@ class SnapshotService(BaseHandler):
         import_cmd_str = ""
         if db_type == "postgresql":
             # LDM-410: Use standard user and enforce error stopping for reliability
-            import_cmd_str = f'docker exec -i "{db_container}" psql -U lportal -d lportal -v ON_ERROR_STOP=1 < "{sql_file}"'
+            import_cmd_str = f'docker exec -i "{db_container}" psql -U lportal -d {db_name} -v ON_ERROR_STOP=1 < "{sql_file}"'
         elif db_type in ["mysql", "mariadb"]:
-            import_cmd_str = f'docker exec -i "{db_container}" mysql -u lportal -ptest lportal < "{sql_file}"'
+            import_cmd_str = f'docker exec -i "{db_container}" mysql -u lportal -ptest {db_name} < "{sql_file}"'
 
         # 3. Execute with Retry
         if import_cmd_str:
@@ -1421,6 +1456,23 @@ class SnapshotService(BaseHandler):
                 # LDM-410: Auto-update virtualhost to match local hostname
 
                 host_name = project_meta.get("host_name", "localhost")
+                db_mode = "isolated"
+                if project_meta:
+                    db_mode = project_meta.get("database_mode") or db_mode
+                if (
+                    db_mode == "isolated"
+                    and hasattr(self.manager, "defaults")
+                    and self.manager.defaults is not None
+                ):
+                    db_mode = self.manager.defaults.get("database_mode", "isolated")
+                db_name = "lportal"
+                if db_mode == "shared":
+                    from ldm_core.utils import sanitize_id
+
+                    db_name = (
+                        f"lportal_{sanitize_id(paths['root'].name).replace('-', '_')}"
+                    )
+
                 if db_type == "postgresql":
                     UI.info(f"  - Synchronizing Virtual Host entries to: {host_name}")
                     self.manager.run_command(
@@ -1432,7 +1484,7 @@ class SnapshotService(BaseHandler):
                             "-U",
                             "lportal",
                             "-d",
-                            "lportal",
+                            db_name,
                             "-c",
                             f"UPDATE virtualhost SET hostname = '{host_name}';",  # nosec B608
                         ],
@@ -1450,7 +1502,7 @@ class SnapshotService(BaseHandler):
                             "lportal",
                             "-ptest",
                             "-e",
-                            f"UPDATE lportal.virtualhost SET hostname = '{host_name}';",  # nosec B608
+                            f"UPDATE {db_name}.virtualhost SET hostname = '{host_name}';",  # nosec B608
                         ],
                         check=False,
                     )

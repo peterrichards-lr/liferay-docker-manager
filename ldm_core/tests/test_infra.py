@@ -14,6 +14,9 @@ class MockInfraManager:
     def run_command(self, *args, **kwargs):
         pass
 
+    def get_container_status(self, *args, **kwargs):
+        pass
+
     def get_resource_path(self, *args, **kwargs):
         from ldm_core.utils import get_resource_path
 
@@ -87,6 +90,33 @@ class TestInfraService(unittest.TestCase):
         ) as mock_run:
             ports = self.infra.get_proxy_ports()
             self.assertEqual(ports, {"http": 8080, "https": 8443, "admin": 18081})
+
+    @patch("ldm_core.docker_service.DockerService.exists", return_value=False)
+    @patch("ldm_core.ui.UI.info")
+    @patch("ldm_core.ui.UI.detail")
+    def test_setup_global_database(self, _mock_detail, _mock_info, _mock_exists):
+        with (
+            patch.object(
+                self.manager, "run_command", return_value="accepting connections"
+            ) as mock_run,
+            patch.object(self.manager, "get_container_status", return_value="running"),
+        ):
+            self.infra.setup_global_database()
+
+            self.assertTrue(mock_run.called)
+            run_cmd = None
+            for call in mock_run.call_args_list:
+                args = call[0][0]
+                if (
+                    isinstance(args, list)
+                    and "run" in args
+                    and "liferay-db-global" in args
+                ):
+                    run_cmd = args
+                    break
+            self.assertIsNotNone(run_cmd)
+            assert isinstance(run_cmd, list)
+            self.assertIn("POSTGRES_DB=lportal", run_cmd)
 
 
 if __name__ == "__main__":
