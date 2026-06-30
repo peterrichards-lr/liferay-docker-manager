@@ -136,6 +136,65 @@ class TestDowngradePrevention(unittest.TestCase):
         "ldm_core.handlers.runtime.get_compose_cmd", return_value=["docker", "compose"]
     )
     @patch("ldm_core.handlers.runtime.UI.die", side_effect=SystemExit(1))
+    def test_mysql_major_upgrade_fails(self, mock_die, mock_compose_cmd):
+        project_meta = {
+            "container_name": "test-project",
+            "tag": "2024.q4.1",
+            "db_type": "mysql",
+            "last_run_liferay_version": "2023.q1.3",
+            "last_run_mysql_version": "5.7",
+        }
+        self.manager.args.force_downgrade = False
+
+        with patch("ldm_core.utils.resolve_dependency_version", return_value="8.0"):
+            with self.assertRaises(SystemExit):
+                self.manager.runtime.sync_stack(
+                    self.paths, project_meta, no_up=True, show_summary=False
+                )
+
+        mock_die.assert_called_once()
+        self.assertIn(
+            "Incompatible database directory: MYSQL version changed",
+            mock_die.call_args[0][0],
+        )
+
+    @patch(
+        "ldm_core.handlers.runtime.get_compose_cmd", return_value=["docker", "compose"]
+    )
+    @patch("ldm_core.handlers.runtime.UI.warning")
+    @patch("ldm_core.handlers.runtime.UI.info")
+    @patch("ldm_core.utils.safe_rmtree")
+    def test_elasticsearch_major_upgrade_wipes_indices(
+        self, mock_rmtree, mock_info, mock_warning, mock_compose_cmd
+    ):
+        project_meta = {
+            "container_name": "test-project",
+            "tag": "2024.q4.1",
+            "db_type": "hypersonic",
+            "last_run_liferay_version": "2023.q1.3",
+            "last_run_elasticsearch_major": "7",
+        }
+        self.manager.args.force_downgrade = False
+
+        # Create the Elasticsearch data directory temporarily to trigger the wipe
+        es_path = self.paths["data"] / "elasticsearch8"
+        es_path.mkdir(parents=True, exist_ok=True)
+
+        self.manager.runtime.sync_stack(
+            self.paths, project_meta, no_up=True, show_summary=False
+        )
+
+        mock_warning.assert_called_once()
+        self.assertIn(
+            "Elasticsearch version changed from major '7' to '8'",
+            mock_warning.call_args[0][0],
+        )
+        mock_rmtree.assert_called_once_with(es_path)
+
+    @patch(
+        "ldm_core.handlers.runtime.get_compose_cmd", return_value=["docker", "compose"]
+    )
+    @patch("ldm_core.handlers.runtime.UI.die", side_effect=SystemExit(1))
     def test_force_downgrade_bypasses(self, mock_die, mock_compose_cmd):
         project_meta = {
             "container_name": "test-project",
