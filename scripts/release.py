@@ -221,11 +221,29 @@ def main():
         "--title",
         commit_msg,
         "--body",
-        f"Automated release bump to v{new_version}.",
+        f"Automated release bump to v{new_version}."
+        if "-" not in new_version
+        else f"Pre-release tracking PR for v{new_version}. Merging this PR will promote the changes to master, after which a stable release can be tagged.",
     ]
     pr_res = run_cmd(pr_cmd, capture=True)
     pr_url = pr_res.stdout.strip()
     print(f"PR Created: {pr_url}")
+
+    # If it is a pre-release, we tag and push directly on this branch, keeping the PR open.
+    if "-" in new_version:
+        tag_name = f"v{new_version}"
+        print(
+            f"Pre-release detected. Tagging directly on the release branch: {tag_name}..."
+        )
+        run_cmd(["git", "tag", "-d", tag_name], check=False)
+        run_cmd(["git", "tag", "-a", tag_name, "-m", f"Release {tag_name}"])
+        print("Pushing release tag to remote origin...")
+        run_cmd(["git", "push", "origin", tag_name])
+        print(
+            f"🎉 Pre-release {tag_name} successfully tagged and pushed on branch '{release_branch}'!\n"
+            f"The tracking PR is open at {pr_url} for testing. Close/merge it to promote when ready."
+        )
+        return
 
     # Parse PR number from URL
     pr_num = pr_url.split("/")[-1]
