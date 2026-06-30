@@ -178,6 +178,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added runtime state-awareness checks to commands (run, import) to prevent unexpected container collisions.
 - Enabled non-interactive bypass for internal developer utility prompts.
 
+## [v2.11.69-pre.1] - 2026-06-30
+
+### Added
+
+- Added Shared Database Mode (`use_shared_db`) supporting `--global` setting to host multiple projects on a single database container.
+- Throttled database connection pool sizes (`maxActive=15`, `minIdle=2`, `maxIdle=5`) to lower default stack RAM footprints.
+- Capped Elasticsearch memory allocation (512MB heap limit) and constrained CPU threads (`processors=1`).
+- Implemented SHA256-based smart cache volume hydration to bypass redundant document library asset extractions.
+- Added comprehensive technical walkthrough documentation in `docs/guides/QA.md` covering resource optimization, pre-baked seed packages, and sharing tunnels.
+
+### Fixed
+
+- Resolved missing `manager` attribute bug in `ldm fix-hosts` command.
+
 ## [v2.11.68] - 2026-06-29
 
 ### Added
