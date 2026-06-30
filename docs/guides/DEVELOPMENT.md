@@ -49,3 +49,15 @@ Bundles the Python interpreter inside the file. Works even on machines without P
 ```
 
 The resulting binary will be found in the `dist/` folder (for PyInstaller) or the root (for Shiv).
+
+---
+
+## 🛠️ Codebase Conventions & Command Execution
+
+When executing external binaries or shell commands (e.g. docker, git, mkcert, lcp):
+
+* **Avoid Direct `subprocess.run` / `subprocess.Popen`**: Running subprocesses directly bypasses central handlers and can introduce security vulnerabilities (Bandit B602/B607) or fail during dry-run executions.
+* **Use Centralized wrappers**:
+  * If executing inside a Service/Handler subclassing `BaseHandler`, use `self.run_command(cmd, ...)` or `self.manager.run_command(...)`.
+  * If executing inside helper modules, import and call `run_command` from `ldm_core.utils`.
+  * This automatically enables credential redaction, dry-run mocking, environment variable injection, and platform-specific binary resolution.
