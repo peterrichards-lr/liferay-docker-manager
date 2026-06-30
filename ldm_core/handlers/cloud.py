@@ -133,16 +133,6 @@ class CloudService:
                     return None
                 return full_output
 
-            if capture_json:
-                res = subprocess.run(
-                    cmd,
-                    capture_output=True,
-                    stdin=subprocess.DEVNULL,
-                    text=True,
-                    check=True,
-                )
-                return json.loads(res.stdout)
-            # For streaming or direct output
             res = subprocess.run(
                 cmd,
                 capture_output=True,
@@ -150,7 +140,7 @@ class CloudService:
                 text=True,
                 check=True,
             )
-            return res.stdout
+            return json.loads(res.stdout) if capture_json else res.stdout
         except (KeyboardInterrupt, SystemExit):
             if process:
                 process.terminate()
