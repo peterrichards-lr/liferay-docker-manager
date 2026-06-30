@@ -16,6 +16,9 @@ CONVENTION_DEFAULTS = {
     "no_color": "false",
     "no_unicode": "false",
     "ci_trigger": "release",
+    "db_max_active": "15",
+    "db_min_idle": "2",
+    "db_max_idle": "5",
 }
 
 

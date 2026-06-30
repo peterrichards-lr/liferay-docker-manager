@@ -16,6 +16,7 @@ class MockComposerManager:
         self.workspace = MagicMock()
         self.config = MagicMock()
         self.share = MagicMock()
+        self.defaults = MagicMock()
         self.get_resolved_ip = MagicMock(return_value="127.0.0.1")
         self.run_command = MagicMock(return_value="")
 
@@ -793,6 +794,90 @@ class TestComposerService(unittest.TestCase):
             args_ga = self.composer.get_default_jvm_args()
             self.assertIn("-Xmx2048m", args_ga)
             self.assertIn("-Xms1536m", args_ga)
+
+    def test_composer_db_pool_limits(self):
+        paths = {
+            "root": Path("/tmp/proj"),
+            "deploy": Path("/tmp/proj/deploy"),
+            "files": Path("/tmp/proj/files"),
+            "data": Path("/tmp/proj/data"),
+            "configs": Path("/tmp/proj/osgi/configs"),
+            "modules": Path("/tmp/proj/osgi/modules"),
+            "cx": Path("/tmp/proj/osgi/client-extensions"),
+            "scripts": Path("/tmp/proj/scripts"),
+            "state": Path("/tmp/proj/osgi/state"),
+            "logs": Path("/tmp/proj/logs"),
+            "portal_log4j": Path("/tmp/proj/osgi/log4j"),
+            "ce_dir": Path("/tmp/proj/client-extensions"),
+        }
+        meta = {
+            "tag": "2026.q1.7-lts",
+            "container_name": "test-project",
+            "db_type": "postgresql",
+        }
+        self.manager.defaults.get.side_effect = lambda _key, default=None: default
+        self.composer._build_liferay_service(
+            paths, meta, "localhost", "test-project", False, None
+        )
+
+        self.assertTrue(self.manager.config.update_portal_ext.called)
+        db_updates = None
+        for call in self.manager.config.update_portal_ext.call_args_list:
+            args = call[0]
+            if "jdbc.default.url" in args[1]:
+                db_updates = args[1]
+                break
+        self.assertIsNotNone(db_updates)
+        assert isinstance(db_updates, dict)
+        self.assertEqual(db_updates["jdbc.default.maxActive"], "15")
+        self.assertEqual(db_updates["jdbc.default.minIdle"], "2")
+        self.assertEqual(db_updates["jdbc.default.maxIdle"], "5")
+
+    def test_composer_db_pool_limits_custom_overrides(self):
+        paths = {
+            "root": Path("/tmp/proj"),
+            "deploy": Path("/tmp/proj/deploy"),
+            "files": Path("/tmp/proj/files"),
+            "data": Path("/tmp/proj/data"),
+            "configs": Path("/tmp/proj/osgi/configs"),
+            "modules": Path("/tmp/proj/osgi/modules"),
+            "cx": Path("/tmp/proj/osgi/client-extensions"),
+            "scripts": Path("/tmp/proj/scripts"),
+            "state": Path("/tmp/proj/osgi/state"),
+            "logs": Path("/tmp/proj/logs"),
+            "portal_log4j": Path("/tmp/proj/osgi/log4j"),
+            "ce_dir": Path("/tmp/proj/client-extensions"),
+        }
+        meta = {
+            "tag": "2026.q1.7-lts",
+            "container_name": "test-project",
+            "db_type": "postgresql",
+        }
+        with patch.object(
+            self.manager.defaults,
+            "get",
+            side_effect=lambda _key, default=None: {
+                "db_max_active": "35",
+                "db_min_idle": "8",
+                "db_max_idle": "12",
+            }.get(_key, default),
+        ):
+            self.composer._build_liferay_service(
+                paths, meta, "localhost", "test-project", False, None
+            )
+
+        self.assertTrue(self.manager.config.update_portal_ext.called)
+        db_updates = None
+        for call in self.manager.config.update_portal_ext.call_args_list:
+            args = call[0]
+            if "jdbc.default.url" in args[1]:
+                db_updates = args[1]
+                break
+        self.assertIsNotNone(db_updates)
+        assert isinstance(db_updates, dict)
+        self.assertEqual(db_updates["jdbc.default.maxActive"], "35")
+        self.assertEqual(db_updates["jdbc.default.minIdle"], "8")
+        self.assertEqual(db_updates["jdbc.default.maxIdle"], "12")
 
 
 if __name__ == "__main__":
