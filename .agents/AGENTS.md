@@ -9,3 +9,7 @@ To prevent unnecessary code churn, sweeping reformatting, and out-of-scope chang
 - Keep pull requests atomic and limited in size.
 - **Bugfixes** (branches starting with `fix/` or `bugfix/`) **MUST NOT** modify more than 10 files. Edits exceeding this limit will trigger a CI failure, requiring a bypass override (`[bypass sprawl]` or `[bypass limit]` in the PR title/description) or splitting the PR into smaller, atomic contributions.
 - Do not perform codebase-wide style cleanups or refactoring unless explicitly requested in the issue.
+
+## GitHub Pull Request & Issue Association
+
+- Every Pull Request body MUST contain reference keywords linking to the related issue (e.g. `Closes #XYZ` or `Resolves #XYZ`) to ensure GitHub automatically closes the issues on merge.
