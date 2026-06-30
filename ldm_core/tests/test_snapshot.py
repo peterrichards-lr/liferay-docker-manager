@@ -952,3 +952,55 @@ class TestSnapshotService(unittest.TestCase):
 
             expected_hash = calculate_sha256(volume_tgz)
             self.assertEqual(hash_file.read_text().strip(), expected_hash)
+
+    @patch("ldm_core.handlers.base.BaseHandler.setup_paths")
+    @patch("ldm_core.handlers.base.BaseHandler.detect_project_path")
+    def test_cmd_restore_version_tag_rollback(self, mock_detect, mock_paths):
+        mock_detect.return_value = self.test_dir
+        (self.test_dir / "snapshots").mkdir(exist_ok=True)
+
+        data_dir = self.test_dir / "data"
+        data_dir.mkdir(exist_ok=True)
+
+        mock_paths.return_value = {
+            "root": self.test_dir,
+            "backups": self.test_dir / "snapshots",
+            "state": self.test_dir / "osgi" / "state",
+            "data": data_dir,
+        }
+
+        snap_dir = self.test_dir / "snapshots" / "20260512_120000"
+        snap_dir.mkdir(parents=True)
+        (snap_dir / "volume.tgz").touch()
+        (snap_dir / "meta").touch()
+
+        self.manager.args.latest = True
+        self.manager.args.verify = True
+        self.manager.args.list = False
+        self.manager.args.backup_dir = None
+
+        # Set up current metadata tag and different tag in snapshot metadata
+        current_meta = {"tag": "dxp-2026.q2.1"}
+        snapshot_meta = {"tag": "dxp-2024.q4.1"}
+
+        def mock_read_meta(path):
+            if str(path).endswith("meta") and "20260512_120000" in str(path):
+                return snapshot_meta
+            return current_meta
+
+        with (
+            patch.object(self.manager.snapshot, "_hydrate_named_volumes"),
+            patch.object(MockSnapshotManager, "read_meta", side_effect=mock_read_meta),
+            patch.object(MockSnapshotManager, "write_meta") as mock_write_meta,
+        ):
+            self.manager.snapshot.cmd_restore("test")
+
+            # Verify that sync_stack was triggered on self.manager.runtime to rebuild config
+            self.manager.runtime.sync_stack.assert_called_with(
+                mock_paths.return_value, ANY, no_up=True, show_summary=False
+            )
+
+            # Verify write_meta updated tag in project_meta to the snapshot tag
+            called_meta = mock_write_meta.call_args[0][1]
+            self.assertEqual(called_meta["tag"], "dxp-2024.q4.1")
+            self.assertEqual(called_meta["last_run_liferay_version"], "dxp-2024.q4.1")

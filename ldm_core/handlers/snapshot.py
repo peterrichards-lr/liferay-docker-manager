@@ -852,6 +852,16 @@ class SnapshotService(BaseHandler):
             project_meta["custom_env"] = custom_env
             self.manager.write_meta(paths["root"], project_meta)
 
+        # Restore tag/version to project metadata so we revert to the correct Liferay version (Issue #246)
+        snap_tag = snap_meta.get("tag")
+        if snap_tag:
+            project_meta["tag"] = snap_tag
+            project_meta["last_run_liferay_version"] = snap_tag
+            self.manager.write_meta(paths["root"], project_meta)
+            self.manager.runtime.sync_stack(
+                paths, project_meta, no_up=True, show_summary=False
+            )
+
         # --- DATABASE RESTORE (Orchestrated) ---
         sql_file = choice_path / "database.sql"
         db_gz = choice_path / "database.gz"
