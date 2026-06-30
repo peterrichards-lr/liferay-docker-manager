@@ -474,6 +474,24 @@ class ComposerService:
                 except Exception as e:
                     UI.error(f"Failed to merge archetype overlay: {e}")
 
+        # Inject standard logging limits to all services to prevent disk bloat
+        max_size = "10m"
+        max_file = "3"
+        if hasattr(self.manager, "defaults") and self.manager.defaults is not None:
+            max_size = self.manager.defaults.get("log_max_size", "10m")
+            max_file = str(self.manager.defaults.get("log_max_file", "3"))
+
+        logging_block = {
+            "driver": "json-file",
+            "options": {
+                "max-size": max_size,
+                "max-file": max_file,
+            },
+        }
+        for svc_conf in compose.get("services", {}).values():
+            if "logging" not in svc_conf:
+                svc_conf["logging"] = logging_block
+
         from ldm_core.utils import safe_write_text
 
         safe_write_text(paths["compose"], dict_to_yaml(compose))
@@ -646,16 +664,15 @@ class ComposerService:
             and self.manager.defaults is not None
         ):
             db_mode = self.manager.defaults.get("database_mode", "isolated")
+
+        db_updates = {}
         if db_type == "external":
             if not has_jdbc_env:
-                self.manager.config.update_portal_ext(  # type: ignore[attr-defined]
-                    paths,
-                    {
-                        "jdbc.default.url": meta.get("jdbc_url", ""),
-                        "jdbc.default.username": meta.get("jdbc_user", ""),
-                        "jdbc.default.password": meta.get("jdbc_pass", ""),
-                    },
-                )
+                db_updates = {
+                    "jdbc.default.url": meta.get("jdbc_url", ""),
+                    "jdbc.default.username": meta.get("jdbc_user", ""),
+                    "jdbc.default.password": meta.get("jdbc_pass", ""),
+                }
             liferay_env.append("LIFERAY_HSQL_PERIOD_ENABLED=false")
         elif db_type in ["mysql", "mariadb"]:
             driver = (
@@ -687,16 +704,13 @@ class ComposerService:
                 "&permitMysqlScheme=true"
             )
             if not has_jdbc_env:
-                self.manager.config.update_portal_ext(  # type: ignore[attr-defined]
-                    paths,
-                    {
-                        "jdbc.default.driverClassName": driver,
-                        "jdbc.default.url": url,
-                        "jdbc.default.username": "lportal",
-                        "jdbc.default.password": "test",  # nosec B105
-                        "hibernate.dialect": dialect,
-                    },
-                )
+                db_updates = {
+                    "jdbc.default.driverClassName": driver,
+                    "jdbc.default.url": url,
+                    "jdbc.default.username": "lportal",
+                    "jdbc.default.password": "test",  # nosec B105
+                    "hibernate.dialect": dialect,
+                }
             liferay_env.append("LIFERAY_HSQL_PERIOD_ENABLED=false")
         elif db_type == "postgresql":
             driver = (
@@ -713,17 +727,33 @@ class ComposerService:
                 or "org.hibernate.dialect.PostgreSQL10Dialect"
             )
             if not has_jdbc_env:
-                self.manager.config.update_portal_ext(  # type: ignore[attr-defined]
-                    paths,
-                    {
-                        "jdbc.default.driverClassName": driver,
-                        "jdbc.default.url": url,
-                        "jdbc.default.username": "lportal",
-                        "jdbc.default.password": "test",  # nosec B105
-                        "hibernate.dialect": dialect,
-                    },
-                )
+                db_updates = {
+                    "jdbc.default.driverClassName": driver,
+                    "jdbc.default.url": url,
+                    "jdbc.default.username": "lportal",
+                    "jdbc.default.password": "test",  # nosec B105
+                    "hibernate.dialect": dialect,
+                }
             liferay_env.append("LIFERAY_HSQL_PERIOD_ENABLED=false")
+
+        if db_updates:
+            # Optimize connection pool limits for local development
+            db_max_active = "15"
+            db_min_idle = "2"
+            db_max_idle = "5"
+            if hasattr(self.manager, "defaults") and self.manager.defaults is not None:
+                db_max_active = self.manager.defaults.get("db_max_active", "15")
+                db_min_idle = self.manager.defaults.get("db_min_idle", "2")
+                db_max_idle = self.manager.defaults.get("db_max_idle", "5")
+
+            db_updates.update(
+                {
+                    "jdbc.default.maxActive": db_max_active,
+                    "jdbc.default.minIdle": db_min_idle,
+                    "jdbc.default.maxIdle": db_max_idle,
+                }
+            )
+            self.manager.config.update_portal_ext(paths, db_updates)
 
         # Determine if we are sharing via a tunnel
         is_share = (
