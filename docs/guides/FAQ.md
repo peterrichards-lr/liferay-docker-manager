@@ -202,3 +202,28 @@ cloudflared tunnel --url http://localhost:8080
 ```
 
 This maps your local Liferay HTTP port (`8080`) to a free, secure Cloudflare tunnel URL.
+
+---
+
+## 7. Version Upgrades, Rollbacks, and Database Lifecycle
+
+### Q: What is the difference between an LDM snapshot restore after a failed upgrade attempt versus a standard database/tag downgrade?
+
+**They are completely different operations with different safety guardrails:**
+
+* **Standard Downgrade**: Attempting to boot an existing database containing schema updates from a newer Liferay version (e.g. `2026.q1.9`) on an older Liferay version (e.g. `2024.q4.1`). Since Liferay databases do not support backward schema migrations, this is blocked by LDM (`Downgrade detected...`) to prevent database corruption.
+* **Restore after Failed Upgrade**: Returning to a working state by replacing the corrupted/upgraded database entirely with a clean snapshot taken prior to the upgrade. During `ldm restore`, LDM wipes the database container/volume, restores the Version A SQL dump, updates the Liferay version metadata back to Version A, and regenerates `docker-compose.yml` to boot with the previous Liferay version tag. This is fully supported and safe.
+
+### Q: How can we tell if a Liferay version database upgrade has completed successfully? When is the "point of no return" for rollbacks?
+
+* **Determining Success**: Database upgrades run asynchronously inside the Liferay container after boot. LDM is an orchestrator and cannot instantly verify success when starting the stack. You must monitor the logs (`ldm logs -f`) to verify that the upgrade tool completed without critical SQL schema errors, and check that the portal container state transitions to **Healthy** (`Liferay is ready`).
+* **Point of No Return**: A rollback using the pre-upgrade snapshot is safe **only immediately after boot** during developer validation. Once the environment is released to general users and new production data (content, users, documents) is written to the upgraded database, rolling back to the snapshot will **wipe all business data created since the upgrade started**. At this stage, rollbacks are no longer recommended without manual database delta migrations.
+
+### Q: Why are upgrade prompts (such as "Upgrade detected...") sometimes skipped when upgrading a Liferay version?
+
+* **`Created` Project Status (First Run)**: If a project was newly initialized or imported but has never run successfully on the machine, its status is `Created` and its `last_run_liferay_version` property is empty. LDM assumes this is a fresh start, not an upgrade, and skips the database backup/auto-upgrade prompts because there is no existing database to back up or upgrade.
+* **Direct Database Imports**: If you import a database dump from an older Liferay version directly into a newly created project, LDM cannot inspect the SQL tables to know what schema version is inside. To run Liferay's auto-upgrade tool on boot for such imports, you must pass the `--upgrade-db` flag explicitly:
+
+  ```bash
+  ldm run [project_id] --upgrade-db
+  ```
