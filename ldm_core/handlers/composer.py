@@ -474,6 +474,24 @@ class ComposerService:
                 except Exception as e:
                     UI.error(f"Failed to merge archetype overlay: {e}")
 
+        # Inject standard logging limits to all services to prevent disk bloat
+        max_size = "10m"
+        max_file = "3"
+        if hasattr(self.manager, "defaults") and self.manager.defaults is not None:
+            max_size = self.manager.defaults.get("log_max_size", "10m")
+            max_file = str(self.manager.defaults.get("log_max_file", "3"))
+
+        logging_block = {
+            "driver": "json-file",
+            "options": {
+                "max-size": max_size,
+                "max-file": max_file,
+            },
+        }
+        for svc_conf in compose.get("services", {}).values():
+            if "logging" not in svc_conf:
+                svc_conf["logging"] = logging_block
+
         from ldm_core.utils import safe_write_text
 
         safe_write_text(paths["compose"], dict_to_yaml(compose))

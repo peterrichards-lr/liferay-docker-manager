@@ -16,6 +16,8 @@ CONVENTION_DEFAULTS = {
     "no_color": "false",
     "no_unicode": "false",
     "ci_trigger": "release",
+    "log_max_size": "10m",
+    "log_max_file": "3",
 }
 
 
