@@ -110,6 +110,32 @@ class TestDowngradePrevention(unittest.TestCase):
         "ldm_core.handlers.runtime.get_compose_cmd", return_value=["docker", "compose"]
     )
     @patch("ldm_core.handlers.runtime.UI.die", side_effect=SystemExit(1))
+    def test_postgres_major_upgrade_fails(self, mock_die, mock_compose_cmd):
+        project_meta = {
+            "container_name": "test-project",
+            "tag": "2024.q4.1",
+            "db_type": "postgresql",
+            "last_run_liferay_version": "2023.q1.3",
+            "last_run_postgres_version": "15",
+        }
+        self.manager.args.force_downgrade = False
+
+        with patch("ldm_core.utils.resolve_dependency_version", return_value="16"):
+            with self.assertRaises(SystemExit):
+                self.manager.runtime.sync_stack(
+                    self.paths, project_meta, no_up=True, show_summary=False
+                )
+
+        mock_die.assert_called_once()
+        self.assertIn(
+            "Incompatible database directory: PostgreSQL version changed",
+            mock_die.call_args[0][0],
+        )
+
+    @patch(
+        "ldm_core.handlers.runtime.get_compose_cmd", return_value=["docker", "compose"]
+    )
+    @patch("ldm_core.handlers.runtime.UI.die", side_effect=SystemExit(1))
     def test_force_downgrade_bypasses(self, mock_die, mock_compose_cmd):
         project_meta = {
             "container_name": "test-project",
