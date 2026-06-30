@@ -1389,6 +1389,26 @@ class RuntimeService(BaseHandler):
                 )
 
             last_pg_ver = project_meta.get("last_run_postgres_version")
+            if last_pg_ver and current_pg_ver:
+                try:
+                    last_major = last_pg_ver.split(".")[0]
+                    curr_major = current_pg_ver.split(".")[0]
+                    if last_major != curr_major:
+                        if self.manager.parse_version(
+                            current_pg_ver
+                        ) > self.manager.parse_version(last_pg_ver):
+                            UI.die(
+                                f"Incompatible database directory: PostgreSQL version changed from '{last_pg_ver}' (major version {last_major}) to '{current_pg_ver}' (major version {curr_major}). "
+                                f"PostgreSQL does not support in-place major version upgrades on the same data directory.\n"
+                                f"To resolve this, please:\n"
+                                f"  1. Back up your database if needed (e.g. running your old version instance and exporting).\n"
+                                f"  2. Reset the database container and volume: ldm reset {paths['root'].name} --db\n"
+                                f"  3. Restart the project to initialize a new clean database container.\n"
+                                f"  4. Restore your database snapshot."
+                            )
+                except Exception:
+                    pass
+
             if (
                 last_pg_ver
                 and current_pg_ver
