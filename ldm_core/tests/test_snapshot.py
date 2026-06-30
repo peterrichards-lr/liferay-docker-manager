@@ -835,3 +835,120 @@ class TestSnapshotService(unittest.TestCase):
         self.manager.snapshot._extract_snapshot_archive(archive, paths)
         mock_die.assert_not_called()
         mock_tar_open.assert_called_once_with(archive, "r:gz")
+
+    @patch("ldm_core.handlers.base.BaseHandler.setup_paths")
+    @patch("ldm_core.handlers.base.BaseHandler.detect_project_path")
+    def test_cmd_restore_volume_hash_match_skips(self, mock_detect, mock_paths):
+        mock_detect.return_value = self.test_dir
+        (self.test_dir / "snapshots").mkdir(exist_ok=True)
+
+        target_data = self.test_dir / "data"
+        target_data.mkdir(parents=True, exist_ok=True)
+        # Create a mock file in data to show it's not empty
+        (target_data / "some_file.txt").touch()
+
+        mock_paths.return_value = {
+            "root": self.test_dir,
+            "backups": self.test_dir / "snapshots",
+            "data": target_data,
+        }
+
+        snap_dir = self.test_dir / "snapshots" / "20260512_120000"
+        snap_dir.mkdir(parents=True, exist_ok=True)
+
+        volume_tgz = snap_dir / "volume.tgz"
+        volume_tgz.write_bytes(b"dummy tgz content")
+
+        # Calculate expected hash
+        from ldm_core.utils import calculate_sha256
+
+        expected_hash = calculate_sha256(volume_tgz)
+
+        # Write matching hash file in target data
+        (target_data / ".ldm_volume.sha256").write_text(expected_hash)
+
+        # Set latest flag
+        self.manager.args.latest = True
+        self.manager.args.verify = True
+        self.manager.args.list = False
+        self.manager.args.backup_dir = None
+
+        with (
+            patch.object(self.manager, "run_command") as mock_run,
+            patch.object(self.manager.runtime, "cmd_reset"),
+            patch.object(self.manager.runtime, "sync_stack"),
+            patch(
+                "ldm_core.handlers.base.BaseHandler.read_meta",
+                return_value={"container_name": "test-c"},
+            ),
+            patch("ldm_core.ui.UI.info") as mock_info,
+        ):
+            # Run restore
+            self.manager.snapshot.cmd_restore("test")
+
+            # Since the hash matches and folder contains files, it should skip extraction
+            # Check that run_command was not called with tar -xzf
+            tar_calls = [
+                call for call in mock_run.call_args_list if "tar" in call[0][0]
+            ]
+            self.assertEqual(len(tar_calls), 0)
+            mock_info.assert_any_call(
+                "  + Volume archive unchanged (hash matched). Skipping extraction."
+            )
+
+    @patch("ldm_core.handlers.base.BaseHandler.setup_paths")
+    @patch("ldm_core.handlers.base.BaseHandler.detect_project_path")
+    def test_cmd_restore_volume_hash_mismatch_extracts(self, mock_detect, mock_paths):
+        mock_detect.return_value = self.test_dir
+        (self.test_dir / "snapshots").mkdir(exist_ok=True)
+
+        target_data = self.test_dir / "data"
+        target_data.mkdir(parents=True, exist_ok=True)
+        (target_data / "some_file.txt").touch()
+
+        mock_paths.return_value = {
+            "root": self.test_dir,
+            "backups": self.test_dir / "snapshots",
+            "data": target_data,
+        }
+
+        snap_dir = self.test_dir / "snapshots" / "20260512_120000"
+        snap_dir.mkdir(parents=True, exist_ok=True)
+
+        volume_tgz = snap_dir / "volume.tgz"
+        volume_tgz.write_bytes(b"dummy tgz content")
+
+        # Write mismatching hash file in target data
+        hash_file = target_data / ".ldm_volume.sha256"
+        hash_file.write_text("mismatch-hash")
+
+        # Set latest flag
+        self.manager.args.latest = True
+        self.manager.args.verify = True
+        self.manager.args.list = False
+        self.manager.args.backup_dir = None
+
+        with (
+            patch.object(self.manager, "run_command") as mock_run,
+            patch.object(self.manager.runtime, "cmd_reset"),
+            patch.object(self.manager.runtime, "sync_stack"),
+            patch(
+                "ldm_core.handlers.base.BaseHandler.read_meta",
+                return_value={"container_name": "test-c"},
+            ),
+            patch("ldm_core.ui.UI.info") as mock_info,
+        ):
+            # Run restore
+            self.manager.snapshot.cmd_restore("test")
+
+            # Since the hash mismatches, it should run extraction
+            tar_calls = [
+                call for call in mock_run.call_args_list if "tar" in call[0][0]
+            ]
+            self.assertEqual(len(tar_calls), 1)
+
+            # It should also write the correct new hash to hash_file
+            from ldm_core.utils import calculate_sha256
+
+            expected_hash = calculate_sha256(volume_tgz)
+            self.assertEqual(hash_file.read_text().strip(), expected_hash)

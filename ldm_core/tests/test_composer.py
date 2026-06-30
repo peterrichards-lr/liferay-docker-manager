@@ -16,6 +16,7 @@ class MockComposerManager:
         self.workspace = MagicMock()
         self.config = MagicMock()
         self.share = MagicMock()
+        self.defaults = MagicMock()
         self.get_resolved_ip = MagicMock(return_value="127.0.0.1")
         self.run_command = MagicMock(return_value="")
 
@@ -793,6 +794,212 @@ class TestComposerService(unittest.TestCase):
             args_ga = self.composer.get_default_jvm_args()
             self.assertIn("-Xmx2048m", args_ga)
             self.assertIn("-Xms1536m", args_ga)
+
+    def test_composer_shared_database_mode(self):
+        paths = {
+            "root": Path("/tmp/proj"),
+            "deploy": Path("/tmp/proj/deploy"),
+            "files": Path("/tmp/proj/files"),
+            "data": Path("/tmp/proj/data"),
+            "configs": Path("/tmp/proj/osgi/configs"),
+            "modules": Path("/tmp/proj/osgi/modules"),
+            "cx": Path("/tmp/proj/osgi/client-extensions"),
+            "scripts": Path("/tmp/proj/scripts"),
+            "state": Path("/tmp/proj/osgi/state"),
+            "logs": Path("/tmp/proj/logs"),
+            "portal_log4j": Path("/tmp/proj/osgi/log4j"),
+            "ce_dir": Path("/tmp/proj/client-extensions"),
+        }
+        meta = {
+            "tag": "2026.q1.7-lts",
+            "container_name": "test-project",
+            "db_type": "postgresql",
+            "database_mode": "shared",
+        }
+        self.manager.defaults.get.side_effect = lambda _key, default=None: default
+
+        # 1. Build DB service should be None
+        db_service = self.composer._build_db_service(meta, "test-project")
+        self.assertIsNone(db_service)
+
+        # 2. Build Liferay service should have URL pointing to global DB
+        self.composer._build_liferay_service(
+            paths, meta, "localhost", "test-project", False, None
+        )
+
+        self.assertTrue(self.manager.config.update_portal_ext.called)
+        db_call = next(
+            (
+                call
+                for call in self.manager.config.update_portal_ext.call_args_list
+                if "jdbc.default.url" in call[0][1]
+            ),
+            None,
+        )
+        self.assertIsNotNone(db_call)
+        assert db_call is not None
+        db_updates = db_call[0][1]
+        assert isinstance(db_updates, dict)
+        self.assertEqual(
+            db_updates["jdbc.default.url"],
+            "jdbc:postgresql://liferay-db-global:5432/lportal_test_project",
+        )
+
+    def test_composer_db_pool_limits(self):
+        paths = {
+            "root": Path("/tmp/proj"),
+            "deploy": Path("/tmp/proj/deploy"),
+            "files": Path("/tmp/proj/files"),
+            "data": Path("/tmp/proj/data"),
+            "configs": Path("/tmp/proj/osgi/configs"),
+            "modules": Path("/tmp/proj/osgi/modules"),
+            "cx": Path("/tmp/proj/osgi/client-extensions"),
+            "scripts": Path("/tmp/proj/scripts"),
+            "state": Path("/tmp/proj/osgi/state"),
+            "logs": Path("/tmp/proj/logs"),
+            "portal_log4j": Path("/tmp/proj/osgi/log4j"),
+            "ce_dir": Path("/tmp/proj/client-extensions"),
+        }
+        meta = {
+            "tag": "2026.q1.7-lts",
+            "container_name": "test-project",
+            "db_type": "postgresql",
+        }
+        self.manager.defaults.get.side_effect = lambda _key, default=None: default
+        self.composer._build_liferay_service(
+            paths, meta, "localhost", "test-project", False, None
+        )
+
+        self.assertTrue(self.manager.config.update_portal_ext.called)
+        db_updates = None
+        for call in self.manager.config.update_portal_ext.call_args_list:
+            args = call[0]
+            if "jdbc.default.url" in args[1]:
+                db_updates = args[1]
+                break
+        self.assertIsNotNone(db_updates)
+        assert isinstance(db_updates, dict)
+        self.assertEqual(db_updates["jdbc.default.maxActive"], "15")
+        self.assertEqual(db_updates["jdbc.default.minIdle"], "2")
+        self.assertEqual(db_updates["jdbc.default.maxIdle"], "5")
+
+    def test_composer_db_pool_limits_custom_overrides(self):
+        paths = {
+            "root": Path("/tmp/proj"),
+            "deploy": Path("/tmp/proj/deploy"),
+            "files": Path("/tmp/proj/files"),
+            "data": Path("/tmp/proj/data"),
+            "configs": Path("/tmp/proj/osgi/configs"),
+            "modules": Path("/tmp/proj/osgi/modules"),
+            "cx": Path("/tmp/proj/osgi/client-extensions"),
+            "scripts": Path("/tmp/proj/scripts"),
+            "state": Path("/tmp/proj/osgi/state"),
+            "logs": Path("/tmp/proj/logs"),
+            "portal_log4j": Path("/tmp/proj/osgi/log4j"),
+            "ce_dir": Path("/tmp/proj/client-extensions"),
+        }
+        meta = {
+            "tag": "2026.q1.7-lts",
+            "container_name": "test-project",
+            "db_type": "postgresql",
+        }
+        with patch.object(
+            self.manager.defaults,
+            "get",
+            side_effect=lambda _key, default=None: {
+                "db_max_active": "35",
+                "db_min_idle": "8",
+                "db_max_idle": "12",
+            }.get(_key, default),
+        ):
+            self.composer._build_liferay_service(
+                paths, meta, "localhost", "test-project", False, None
+            )
+
+        self.assertTrue(self.manager.config.update_portal_ext.called)
+        db_updates = None
+        for call in self.manager.config.update_portal_ext.call_args_list:
+            args = call[0]
+            if "jdbc.default.url" in args[1]:
+                db_updates = args[1]
+                break
+        self.assertIsNotNone(db_updates)
+        assert isinstance(db_updates, dict)
+        self.assertEqual(db_updates["jdbc.default.maxActive"], "35")
+        self.assertEqual(db_updates["jdbc.default.minIdle"], "8")
+        self.assertEqual(db_updates["jdbc.default.maxIdle"], "12")
+
+    @patch("ldm_core.utils.safe_write_text")
+    def test_composer_logging_limits(self, mock_write):
+        paths = {
+            "root": Path("/tmp/proj"),
+            "compose": Path("/tmp/proj/docker-compose.yml"),
+            "deploy": Path("/tmp/proj/deploy"),
+            "files": Path("/tmp/proj/files"),
+            "data": Path("/tmp/proj/data"),
+            "configs": Path("/tmp/proj/osgi/configs"),
+            "modules": Path("/tmp/proj/osgi/modules"),
+            "cx": Path("/tmp/proj/osgi/client-extensions"),
+            "scripts": Path("/tmp/proj/scripts"),
+            "state": Path("/tmp/proj/osgi/state"),
+            "logs": Path("/tmp/proj/logs"),
+            "portal_log4j": Path("/tmp/proj/osgi/log4j"),
+            "ce_dir": Path("/tmp/proj/client-extensions"),
+        }
+        meta = {"container_name": "test-project", "db_type": "postgresql"}
+        self.manager.defaults.get.side_effect = lambda _key, default=None: default
+        self.composer.write_docker_compose(paths, meta)
+        self.assertTrue(mock_write.called)
+
+        # Verify the content written contains logging config
+        written_content = mock_write.call_args[0][1]
+        import yaml
+
+        data = yaml.safe_load(written_content)
+
+        self.assertIn("services", data)
+        for svc_conf in data["services"].values():
+            self.assertIn("logging", svc_conf)
+            self.assertEqual(svc_conf["logging"]["driver"], "json-file")
+            self.assertEqual(svc_conf["logging"]["options"]["max-size"], "10m")
+            self.assertEqual(svc_conf["logging"]["options"]["max-file"], "3")
+
+    @patch("ldm_core.utils.safe_write_text")
+    def test_composer_logging_limits_custom_overrides(self, mock_write):
+        paths = {
+            "root": Path("/tmp/proj"),
+            "compose": Path("/tmp/proj/docker-compose.yml"),
+            "deploy": Path("/tmp/proj/deploy"),
+            "files": Path("/tmp/proj/files"),
+            "data": Path("/tmp/proj/data"),
+            "configs": Path("/tmp/proj/osgi/configs"),
+            "modules": Path("/tmp/proj/osgi/modules"),
+            "cx": Path("/tmp/proj/osgi/client-extensions"),
+            "scripts": Path("/tmp/proj/scripts"),
+            "state": Path("/tmp/proj/osgi/state"),
+            "logs": Path("/tmp/proj/logs"),
+            "portal_log4j": Path("/tmp/proj/osgi/log4j"),
+            "ce_dir": Path("/tmp/proj/client-extensions"),
+        }
+        meta = {"container_name": "test-project", "db_type": "postgresql"}
+        with patch.object(
+            self.manager.defaults,
+            "get",
+            side_effect=lambda _key, default=None: {
+                "log_max_size": "25m",
+                "log_max_file": "5",
+            }.get(_key, default),
+        ):
+            self.composer.write_docker_compose(paths, meta)
+
+        written_content = mock_write.call_args[0][1]
+        import yaml
+
+        data = yaml.safe_load(written_content)
+
+        for svc_conf in data["services"].values():
+            self.assertEqual(svc_conf["logging"]["options"]["max-size"], "25m")
+            self.assertEqual(svc_conf["logging"]["options"]["max-file"], "5")
 
 
 if __name__ == "__main__":

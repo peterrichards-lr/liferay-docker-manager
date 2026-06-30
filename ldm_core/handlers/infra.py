@@ -61,7 +61,13 @@ class InfraService:
         return ports
 
     def setup_infrastructure(
-        self, resolved_ip, ssl_port, use_ssl=True, quiet=False, use_shared_search=True
+        self,
+        resolved_ip,
+        ssl_port,
+        use_ssl=True,
+        quiet=False,
+        use_shared_search=True,
+        use_shared_db=False,
     ):
         """Initializes global Traefik proxy and search services."""
         self._ensure_network()
@@ -74,6 +80,9 @@ class InfraService:
         # Orchestrated Global Search (ES8)
         if getattr(self.manager.args, "search", False) and use_shared_search:
             self.setup_global_search()
+
+        if use_shared_db:
+            self.setup_global_database()
 
         if not quiet:
             UI.info("Checking infrastructure stack (Traefik SSL Proxy)...")
@@ -372,6 +381,58 @@ tls:
                 UI.detail("Starting existing Docker socket bridge...")
                 DockerService.start(container_name)
 
+    def setup_global_database(self, force=False):
+        """Ensures the global PostgreSQL database service is running."""
+        from ldm_core.docker_service import DockerService
+
+        db_name = "liferay-db-global"
+        exists = DockerService.exists(db_name)
+
+        if not exists:
+            UI.detail("Initializing Global Database (PostgreSQL) container...")
+            tag = "latest"
+            from ldm_core.utils import resolve_dependency_version
+
+            pg_ver = resolve_dependency_version(tag, "postgresql") or "16"
+
+            self.manager.run_command(
+                [
+                    "docker",
+                    "run",
+                    "-d",
+                    "--name",
+                    db_name,
+                    "--network",
+                    "liferay-net",
+                    "-e",
+                    "POSTGRES_PASSWORD=test",  # nosec B105
+                    "-e",
+                    "POSTGRES_USER=lportal",
+                    "-e",
+                    "POSTGRES_DB=lportal",
+                    "-p",
+                    "5433:5432",
+                    f"postgres:{pg_ver}",
+                ]
+            )
+            UI.info("Waiting for Global Database to become ready...")
+            import time
+
+            for _ in range(60):
+                status = self.manager.get_container_status(db_name)
+                if status == "exited":
+                    UI.error("Global database container exited unexpectedly.")
+                    break
+                res = self.manager.run_command(
+                    ["docker", "exec", db_name, "pg_isready", "-U", "lportal"],
+                    check=False,
+                    capture_output=True,
+                )
+                if res is not None:
+                    UI.success("Global database is ready.")
+                    break
+                time.sleep(2)
+
     def setup_global_search(self, force=False):
         """Ensures the global ES8 search service is running."""
         # LDM-369: Sidecar Protection. If the current project metadata explicitly
@@ -405,8 +466,11 @@ tls:
             reclaim_volume_permissions(es_data)
             reclaim_volume_permissions(es_backup)
 
-            # Persistent ES8 instance matching Liferay requirements
             from ldm_core.constants import ELASTICSEARCH_VERSION
+
+            es_heap = "512m"
+            if hasattr(self.manager, "defaults") and self.manager.defaults is not None:
+                es_heap = self.manager.defaults.get("elasticsearch_heap_size", "512m")
 
             self.manager.run_command(
                 [
@@ -426,7 +490,9 @@ tls:
                     "-e",
                     "cluster.name=liferay-cluster",
                     "-e",
-                    "ES_JAVA_OPTS=-Xms1g -Xmx1g",
+                    f"ES_JAVA_OPTS=-Xms{es_heap} -Xmx{es_heap}",
+                    "-e",
+                    "processors=1",
                     "-e",
                     "indices.query.bool.max_clause_count=10000",
                     "-v",
