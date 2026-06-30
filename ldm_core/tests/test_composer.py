@@ -879,6 +879,78 @@ class TestComposerService(unittest.TestCase):
         self.assertEqual(db_updates["jdbc.default.minIdle"], "8")
         self.assertEqual(db_updates["jdbc.default.maxIdle"], "12")
 
+    @patch("ldm_core.utils.safe_write_text")
+    def test_composer_logging_limits(self, mock_write):
+        paths = {
+            "root": Path("/tmp/proj"),
+            "compose": Path("/tmp/proj/docker-compose.yml"),
+            "deploy": Path("/tmp/proj/deploy"),
+            "files": Path("/tmp/proj/files"),
+            "data": Path("/tmp/proj/data"),
+            "configs": Path("/tmp/proj/osgi/configs"),
+            "modules": Path("/tmp/proj/osgi/modules"),
+            "cx": Path("/tmp/proj/osgi/client-extensions"),
+            "scripts": Path("/tmp/proj/scripts"),
+            "state": Path("/tmp/proj/osgi/state"),
+            "logs": Path("/tmp/proj/logs"),
+            "portal_log4j": Path("/tmp/proj/osgi/log4j"),
+            "ce_dir": Path("/tmp/proj/client-extensions"),
+        }
+        meta = {"container_name": "test-project", "db_type": "postgresql"}
+        self.manager.defaults.get.side_effect = lambda _key, default=None: default
+        self.composer.write_docker_compose(paths, meta)
+        self.assertTrue(mock_write.called)
+
+        # Verify the content written contains logging config
+        written_content = mock_write.call_args[0][1]
+        import yaml
+
+        data = yaml.safe_load(written_content)
+
+        self.assertIn("services", data)
+        for svc_conf in data["services"].values():
+            self.assertIn("logging", svc_conf)
+            self.assertEqual(svc_conf["logging"]["driver"], "json-file")
+            self.assertEqual(svc_conf["logging"]["options"]["max-size"], "10m")
+            self.assertEqual(svc_conf["logging"]["options"]["max-file"], "3")
+
+    @patch("ldm_core.utils.safe_write_text")
+    def test_composer_logging_limits_custom_overrides(self, mock_write):
+        paths = {
+            "root": Path("/tmp/proj"),
+            "compose": Path("/tmp/proj/docker-compose.yml"),
+            "deploy": Path("/tmp/proj/deploy"),
+            "files": Path("/tmp/proj/files"),
+            "data": Path("/tmp/proj/data"),
+            "configs": Path("/tmp/proj/osgi/configs"),
+            "modules": Path("/tmp/proj/osgi/modules"),
+            "cx": Path("/tmp/proj/osgi/client-extensions"),
+            "scripts": Path("/tmp/proj/scripts"),
+            "state": Path("/tmp/proj/osgi/state"),
+            "logs": Path("/tmp/proj/logs"),
+            "portal_log4j": Path("/tmp/proj/osgi/log4j"),
+            "ce_dir": Path("/tmp/proj/client-extensions"),
+        }
+        meta = {"container_name": "test-project", "db_type": "postgresql"}
+        with patch.object(
+            self.manager.defaults,
+            "get",
+            side_effect=lambda _key, default=None: {
+                "log_max_size": "25m",
+                "log_max_file": "5",
+            }.get(_key, default),
+        ):
+            self.composer.write_docker_compose(paths, meta)
+
+        written_content = mock_write.call_args[0][1]
+        import yaml
+
+        data = yaml.safe_load(written_content)
+
+        for svc_conf in data["services"].values():
+            self.assertEqual(svc_conf["logging"]["options"]["max-size"], "25m")
+            self.assertEqual(svc_conf["logging"]["options"]["max-file"], "5")
+
 
 if __name__ == "__main__":
     unittest.main()

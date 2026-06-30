@@ -411,7 +411,22 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
     - [x] Update `CONTRIBUTING.md` to document PR sprawl guardrails, atomic limitations, and bypass keywords.
     - [x] Update project-scoped rules of engagement `.agents/AGENTS.md` to enforce the mandate for AI development.
 
-59. **Optimize local database connection pool sizes for Liferay stacks (Issue #227)** [Completed]:
+59. **Shared Global Docker Database Containers option**:
+    - [ ] Add global and project-level configuration option `use_shared_db` (defaults to false).
+    - [ ] Update `ComposerService` in `composer.py` to skip generating local project database services when `use_shared_db` is active.
+    - [ ] Update `ComposerService` and `ConfigService` to map JDBC properties to shared global database container names (`liferay-postgres-global` / `liferay-mysql-global`) and namespaced databases (`lportal_<project_id>`).
+    - [ ] Update `setup_infrastructure` and `sync_stack` to dynamically start/ensure the global database containers, and execute database pre-creation commands.
+    - [ ] Update `SnapshotService` to perform orchestrated backups and restores targeting namespaced databases inside the global database containers.
+    - [ ] Register `"use_shared_db": "false"` in `CONVENTION_DEFAULTS` inside `ldm_core/defaults.py` to support configuring it via `ldm config defaults`.
+    - [ ] Implement `ldm config database-mode [isolated|shared|external]` CLI command to easily view/switch database modes for projects and configure global default preferences.
+    - [ ] Add comprehensive unit tests verifying defaults parsing, command execution, compose building, configuration properties injection, stack runtime orchestration, and snapshot backup/restores under the shared database model.
+
+60. **Implement Docker logging size and rotation limits for LDM projects (Issue #230)** [Completed]:
+    - [x] Add log driver limit defaults (max-size: 10m, max-file: 3) to `ComposerService` in `ldm_core/handlers/composer.py`.
+    - [x] Support global overrides `log_max_size` and `log_max_file` in `CONVENTION_DEFAULTS` inside `defaults.py` to allow custom logging rotation.
+    - [x] Update unit tests in `ldm_core/tests/test_composer.py` to assert that generated services have correct logging config blocks.
+
+61. **Optimize local database connection pool sizes for Liferay stacks (Issue #227)** [Completed]:
     - [x] Limit default connection pool settings in database properties builder (maxActive=15, minIdle=2, maxIdle=5).
     - [x] Support config overrides `db_max_active`, `db_min_idle`, and `db_max_idle` in `CONVENTION_DEFAULTS` inside `defaults.py`.
     - [x] Add unit tests verifying database properties are output with these limits.
