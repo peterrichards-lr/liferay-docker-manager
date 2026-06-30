@@ -21,6 +21,7 @@ CONVENTION_DEFAULTS = {
     "db_max_idle": "5",
     "log_max_size": "10m",
     "log_max_file": "3",
+    "elasticsearch_heap_size": "512m",
 }
 
 

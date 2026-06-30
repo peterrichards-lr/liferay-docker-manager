@@ -430,3 +430,9 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
     - [x] Limit default connection pool settings in database properties builder (maxActive=15, minIdle=2, maxIdle=5).
     - [x] Support config overrides `db_max_active`, `db_min_idle`, and `db_max_idle` in `CONVENTION_DEFAULTS` inside `defaults.py`.
     - [x] Add unit tests verifying database properties are output with these limits.
+
+62. **Reduce global Elasticsearch container default memory and thread limit (Issue #228)** [Completed]:
+    - [x] Lower default global Elasticsearch memory footprint to 512MB (-Xms512m -Xmx512m).
+    - [x] Support config overrides `elasticsearch_heap_size` in global defaults configuration.
+    - [x] Inject `-e "processors=1"` inside global search initialization to limit CPU thread consumption.
+    - [x] Add unit tests verifying global search initialization options.
