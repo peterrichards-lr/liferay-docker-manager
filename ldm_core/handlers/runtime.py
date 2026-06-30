@@ -1378,6 +1378,19 @@ class RuntimeService(BaseHandler):
 
             current_pg_ver = resolve_dependency_version(tag, "postgresql") or "16"
 
+        current_mysql_ver = None
+        if db_type in ["mysql", "mariadb"]:
+            from ldm_core.utils import resolve_dependency_version
+
+            if db_type == "mysql":
+                current_mysql_ver = resolve_dependency_version(tag, "mysql") or "5.7"
+            else:
+                current_mysql_ver = resolve_dependency_version(tag, "mariadb") or "10.6"
+
+        current_es_major = "8"
+        if tag and ("7.3" in tag or "7.2" in tag or "7.1" in tag or "7.0" in tag):
+            current_es_major = "7"
+
         if not getattr(self.manager.args, "force_downgrade", False):
             last_lr_ver = project_meta.get("last_run_liferay_version")
             if last_lr_ver and self.manager.parse_version(
@@ -1419,6 +1432,45 @@ class RuntimeService(BaseHandler):
                     f"Downgrade detected: PostgreSQL version changed from '{last_pg_ver}' to '{current_pg_ver}'. "
                     f"PostgreSQL does not support automatic database directory downgrades. Use '--force-downgrade' to bypass."
                 )
+
+            # MySQL/MariaDB Upgrade Check
+            last_mysql_ver = project_meta.get("last_run_mysql_version")
+            if last_mysql_ver and current_mysql_ver:
+                try:
+                    last_major = last_mysql_ver.split(".")[0]
+                    curr_major = current_mysql_ver.split(".")[0]
+                    if last_major != curr_major:
+                        if self.manager.parse_version(
+                            current_mysql_ver
+                        ) > self.manager.parse_version(last_mysql_ver):
+                            UI.die(
+                                f"Incompatible database directory: {db_type.upper()} version changed from '{last_mysql_ver}' (major version {last_major}) to '{current_mysql_ver}' (major version {curr_major}). "
+                                f"{db_type.upper()} does not support in-place major version upgrades on the same data directory.\n"
+                                f"To resolve this, please:\n"
+                                f"  1. Back up your database if needed (e.g. running your old version instance and exporting).\n"
+                                f"  2. Reset the database container and volume: ldm reset {paths['root'].name} --db\n"
+                                f"  3. Restart the project to initialize a new clean database container.\n"
+                                f"  4. Restore your database snapshot."
+                            )
+                except Exception:
+                    pass
+
+            # Elasticsearch Major Version Upgrade Check
+            last_es_major = project_meta.get("last_run_elasticsearch_major")
+            if last_es_major and last_es_major != current_es_major:
+                es_dir_name = f"elasticsearch{current_es_major}"
+                es_path = paths["data"] / es_dir_name
+                if es_path.exists():
+                    UI.warning(
+                        f"Upgrade detected: Elasticsearch version changed from major '{last_es_major}' to '{current_es_major}'."
+                    )
+                    UI.info(
+                        f"Automatically clearing stale search indices at {es_path} to prevent container startup crashes..."
+                    )
+                    from ldm_core.utils import safe_rmtree
+
+                    with contextlib.suppress(Exception):
+                        safe_rmtree(es_path)
 
         # Check for Liferay Upgrade (Issue #209)
         project_id = project_meta.get("container_name")
@@ -1728,6 +1780,30 @@ class RuntimeService(BaseHandler):
 
                 current_pg = resolve_dependency_version(tag_val, "postgresql") or "16"
                 project_meta["last_run_postgres_version"] = current_pg
+
+            if db_type_val in ["mysql", "mariadb"]:
+                from ldm_core.utils import resolve_dependency_version
+
+                if db_type_val == "mysql":
+                    current_mysql = (
+                        resolve_dependency_version(tag_val, "mysql") or "5.7"
+                    )
+                else:
+                    current_mysql = (
+                        resolve_dependency_version(tag_val, "mariadb") or "10.6"
+                    )
+                project_meta["last_run_mysql_version"] = current_mysql
+
+            current_es = "8"
+            if tag_val and (
+                "7.3" in tag_val
+                or "7.2" in tag_val
+                or "7.1" in tag_val
+                or "7.0" in tag_val
+            ):
+                current_es = "7"
+            project_meta["last_run_elasticsearch_major"] = current_es
+
             self.manager.write_meta(paths["root"], project_meta)
 
             if self.manager.verbose and total_start:
