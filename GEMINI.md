@@ -112,6 +112,16 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
 - Released `v2.11.31` successfully (integrated quickstart templates overrides, automatically start sharing under `ldm import`, standalone `ldmp` package exports, and test suite/pre-commit fixes).
 - Released `v2.11.30` successfully (integrated Visual Diagnostics Web Dashboard (P3), Dynamic JVM Self-Tuning (P2), and solved GITHUB_ACTIONS env var mock test coverage mismatch).
 
+- **Current Active Task (June 30, 2026)**:
+  - [x] All 6 prioritized resource reduction & database mode issues have been fully implemented, tested, and committed to their respective feature branches.
+  - [x] Pushed all 5 feature branches to remote origin:
+    - `feat/230-docker-logging-limits`
+    - `feat/227-db-connection-pool-limits`
+    - `feat/228-elasticsearch-limits`
+    - `feat/129-smart-cache-hydration` (contains both Issue #129 and Issue #225)
+    - `feat/226-database-mode-subcommand`
+  - [ ] Run the automated PR creation script (`python3 /Users/peterrichards/.gemini/antigravity-cli/brain/f6b11c7a-acde-4796-a5bc-5a712add681a/scratch/create_prs.py`) to create the 5 pull requests on GitHub using the updated GITHUB_PAT token loaded after terminal/IDE restart.
+
 ### Plan
 
 1. **Sequential Property Overrides Hierarchy (5-Layers) with `!important` Precedence**:
