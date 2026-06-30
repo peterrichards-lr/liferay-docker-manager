@@ -176,3 +176,33 @@ To prevent test-runner hangs, memory exhaustion, and side-effect leakage in CI p
    * Let LDM interact with real, lightweight files on disk. The cleanups inside LDM and `TemporaryDirectory` contexts will automatically ensure that no files are left behind.
 3. **Use Mock Side-Effects for Specific Interceptions**:
    * If files need to be simulated, write a side effect for a specific dependency (like mocking `safe_extract` to write dummy meta files directly to the temporary directory).
+
+---
+
+## 🚀 Local E2E Platform Verification Scripts (Multi-OS)
+
+To verify the complete container lifecycle, volume mount synchronization, and CLI options natively on local developer machines:
+
+### **1. macOS & Linux**
+
+Run the Bash E2E verification script:
+
+```bash
+bash scripts/verify_e2e_refactor.sh
+```
+
+### **2. Windows**
+
+Run the PowerShell E2E verification script (ensure your PowerShell ExecutionPolicy permits running scripts):
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/verify_e2e_refactor.ps1
+```
+
+### **What the scripts verify**
+
+* Docker daemon connectivity and registry cleanups.
+* Full project initialization, compose generation, and database sidecar startup.
+* Automated snapshot extraction, integrity verification (SHA-256 signature generation), and directory structure restores.
+* Metadata namespacing and port collision handling (confirming the **`ldm fork`** command works cleanly without conflicts).
+* Teardown of resources and network isolation.
