@@ -1221,6 +1221,61 @@ class ConfigService:
             UI.raw(f"  {k.ljust(15)}: {display_v.ljust(20)} [{source}]")
         UI.raw("")
 
+    def cmd_database_mode(self, mode=None):
+        """View or change the active database profile (isolated or shared)."""
+        global_level = getattr(self.manager.args, "global_level", False)
+
+        if mode is None:
+            # Viewing the active database mode
+            if global_level:
+                db_mode = self.manager.defaults.user_defaults.get("database_mode")
+                if db_mode is None:
+                    db_mode = self.manager.defaults.global_defaults.get("database_mode")
+                if db_mode is None:
+                    db_mode = "isolated"
+                UI.info(
+                    f"Global default database mode is set to: {UI.CYAN}{db_mode}{UI.COLOR_OFF}"
+                )
+            else:
+                # Try to detect local project first
+                project_path = self.manager.detect_project_path(None)
+                db_mode = None
+                if project_path:
+                    meta = self.manager.read_meta(project_path)
+                    if meta:
+                        db_mode = meta.get("database_mode")
+
+                if db_mode is not None:
+                    UI.info(
+                        f"Project database mode is set to: {UI.CYAN}{db_mode}{UI.COLOR_OFF} (local)"
+                    )
+                else:
+                    # Fallback to resolved defaults
+                    db_mode = self.manager.defaults.get("database_mode", "isolated")
+                    UI.info(
+                        f"Active database mode is: {UI.CYAN}{db_mode}{UI.COLOR_OFF} (from defaults)"
+                    )
+            return
+
+        # Setting the database mode
+        if global_level:
+            self.manager.defaults.set_user_default("database_mode", mode)
+            UI.success(
+                f"Global default database mode set to: {UI.CYAN}{mode}{UI.COLOR_OFF}"
+            )
+        else:
+            project_path = self.manager.detect_project_path(None)
+            if not project_path:
+                UI.die(
+                    "No project context found. Run this within an LDM project or use --global."
+                )
+            meta = self.manager.read_meta(project_path)
+            if not meta:
+                meta = {}
+            meta["database_mode"] = mode
+            self.manager.write_meta(project_path, meta)
+            UI.success(f"Project database mode set to: {UI.CYAN}{mode}{UI.COLOR_OFF}")
+
     def cmd_edit(self, project_id=None, target="meta", tui=False):
         root_path = self.manager.detect_project_path(project_id)
         if not root_path:
