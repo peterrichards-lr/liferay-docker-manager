@@ -456,6 +456,35 @@ class ShareService:
         project_id = root.name if root else None
         project_meta = self.manager.read_meta(root) if root else {}
 
+        # Check for LCP.json to infer ports if not specified
+        if not ports:
+            lcp_candidates = [Path("lcp.json"), Path("LCP.json")]
+            if root:
+                lcp_candidates.extend(
+                    [
+                        root / "lcp.json",
+                        root / "LCP.json",
+                        root / "liferay" / "lcp.json",
+                        root / "liferay" / "LCP.json",
+                    ]
+                )
+            for lcp_cand in lcp_candidates:
+                if lcp_cand.exists():
+                    try:
+                        import json
+
+                        lcp_data = json.loads(lcp_cand.read_text(encoding="utf-8"))
+                        if (
+                            "ports" in lcp_data
+                            and isinstance(lcp_data["ports"], list)
+                            and len(lcp_data["ports"]) > 0
+                        ):
+                            ports = str(lcp_data["ports"][0])
+                            UI.info(f"Detected port {ports} from {lcp_cand.name}")
+                            break
+                    except Exception:
+                        pass
+
         # Resolve provider and domain
         provider, share_domain = self.resolve_share_config(
             project_meta, provider=provider
