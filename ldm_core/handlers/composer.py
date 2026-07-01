@@ -881,6 +881,7 @@ class ComposerService:
                 f"{paths['deploy'].as_posix()}:/mnt/liferay/deploy{z_label}",
                 f"{paths['files'].as_posix()}:/mnt/liferay/files{z_label}",
                 f"{paths['scripts'].as_posix()}:/mnt/liferay/scripts{z_label}",
+                f"{paths.get('routes', paths['root'] / 'routes').as_posix()}:/workspace/routes{z_label}",
                 f"{project_name}-data:/opt/liferay/data",
                 f"{paths['modules'].as_posix()}:/opt/liferay/osgi/modules{z_label}",
                 f"{paths['cx'].as_posix()}:/opt/liferay/osgi/client-extensions{z_label}",
@@ -1120,6 +1121,9 @@ class ComposerService:
                     "pull_policy": "build",
                     "networks": ["liferay-net"],
                     "labels": labels,
+                    "volumes": [
+                        f"{paths.get('routes', paths['root'] / 'routes').as_posix()}:/workspace/routes",
+                    ],
                 }
 
                 if scale == 1:
