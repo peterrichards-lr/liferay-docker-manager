@@ -460,7 +460,7 @@ class TestComposerService(unittest.TestCase):
                     [
                         "/bin/sh",
                         "-c",
-                        "./lfr-tunnel 2>&1 | tee /opt/liferay/logs/lfr-tunnel.log",
+                        "./lfr-tunnel -ports 8080 2>&1 | tee /opt/liferay/logs/lfr-tunnel.log",
                     ],
                 )
                 self.assertIn(
@@ -601,7 +601,7 @@ class TestComposerService(unittest.TestCase):
                     [
                         "/bin/sh",
                         "-c",
-                        "./lfr-tunnel 2>&1 | tee /opt/liferay/logs/lfr-tunnel.log",
+                        "./lfr-tunnel -ports 8080 2>&1 | tee /opt/liferay/logs/lfr-tunnel.log",
                     ],
                 )
                 self.assertEqual(tunnel_service.get("ports"), ["4040:4040"])

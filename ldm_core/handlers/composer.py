@@ -345,7 +345,7 @@ class ComposerService:
                     "entrypoint": [
                         "/bin/sh",
                         "-c",
-                        "./lfr-tunnel 2>&1 | tee /opt/liferay/logs/lfr-tunnel.log",
+                        f"./lfr-tunnel -ports {meta.get('share_ports', '8080')} 2>&1 | tee /opt/liferay/logs/lfr-tunnel.log",
                     ],
                     "deploy": {
                         "resources": {

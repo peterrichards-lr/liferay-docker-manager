@@ -611,7 +611,7 @@ class ShareService:
             if subdomain:
                 project_meta["share_subdomain"] = subdomain
             if ports:
-                project_meta["port"] = int(ports)
+                project_meta["share_ports"] = str(ports)
             if image:
                 project_meta["share_image"] = image
             project_meta["share_inspector"] = "true" if inspector else "false"
