@@ -251,7 +251,7 @@ try {
     }
 
     Write-Host ">> Verifying Redaction..."
-    $redactOut = & $LDM_CMD -v config env . REDACT_SECRET=hidden 2>&1
+    $redactOut = & $LDM_CMD status REDACT_SECRET=hidden 2>&1
     if ($redactOut -match "REDACT_SECRET=\[REDACTED\]") { 
         Write-Host "✅ Redaction verified." 
     } else {

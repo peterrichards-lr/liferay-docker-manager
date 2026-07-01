@@ -84,6 +84,23 @@ class ShareService:
             pass
         return None
 
+    def _get_docker_installed_version(self, image):
+        """Queries the docker image version by running it with -version."""
+        try:
+            res = subprocess.run(
+                ["docker", "run", "--rm", image, "-version"],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            output = (res.stdout or res.stderr or "").strip()
+            match = re.search(r"v?(\d+\.\d+\.\d+)", output)
+            if match:
+                return match.group(1)
+        except Exception:
+            pass
+        return None
+
     def _ensure_binary(self):
         """Ensures the correct version of lfr-tunnel is installed, downloading it if necessary."""
         bin_path = self._get_binary_path()
@@ -194,17 +211,17 @@ class ShareService:
 
         return bin_path
 
-    def _verify_compatibility(self, bin_path, local_version):
-        """Checks the binary against the remote server for minimum and latest versions."""
-        if not local_version or not bin_path.exists():
+    def _verify_compatibility(self, cmd_prefix, local_version):
+        """Checks the client against the remote server for minimum and latest versions."""
+        if not local_version or not cmd_prefix:
             return
 
         try:
             res = subprocess.run(
-                [str(bin_path), "-check-version"],
+                [*cmd_prefix, "-check-version"],
                 capture_output=True,
                 text=True,
-                timeout=5,
+                timeout=10,
             )
             if res.returncode != 0 or not res.stdout:
                 return
@@ -220,13 +237,23 @@ class ShareService:
             min_tuple = version_to_tuple(min_version)
             latest_tuple = version_to_tuple(latest_version)
 
+            lv_str = (
+                local_version if local_version.startswith("v") else f"v{local_version}"
+            )
+            latest_str = (
+                latest_version
+                if latest_version.startswith("v")
+                else f"v{latest_version}"
+            )
+
             if local_tuple < min_tuple:
                 UI.die(
-                    f"Your Liferay Tunnel client is too old to connect to the server. Minimum required version is {min_version}."
+                    f"Your Liferay Tunnel client is too old to connect to the server (Minimum required: {min_version}). "
+                    "Please upgrade using 'lfr-tunnel -upgrade' or 'docker pull peterrichards/lfr-tunnel'."
                 )
             elif local_tuple < latest_tuple:
                 UI.warning(
-                    f"A new version of Liferay Tunnel ({latest_version}) is available. You are running v{local_version}."
+                    f"An update is available for lfr-tunnel (Current: {lv_str}, Latest: {latest_str})"
                 )
         except Exception:
             pass
@@ -441,7 +468,7 @@ class ShareService:
         if provider == "lfr-tunnel":
             bin_path = self._ensure_binary()
             installed_ver = self._get_installed_version(bin_path)
-            self._verify_compatibility(bin_path, installed_ver)
+            self._verify_compatibility([str(bin_path)], installed_ver)
 
             token = self._get_auth_token()
 
@@ -512,6 +539,13 @@ class ShareService:
                             pass
                         UI.die("Unable to establish tunnel connection.")
                 else:
+                    err_out = ((res.stderr or "") + "\n" + (res.stdout or "")).lower()
+                    if "is already running" in err_out:
+                        UI.die(
+                            f"❌ Tunnel is already running in the background for this subdomain. "
+                            f"Run 'lfr-tunnel -stop -subdomain {subdomain}' to terminate it before trying again."
+                        )
+
                     UI.error(f"Failed to start tunnel (Exit {res.returncode})")
                     if res.stderr:
                         print(res.stderr.strip())
@@ -556,6 +590,15 @@ class ShareService:
                 project_meta["share_domain"] = share_domain
             base_container = project_meta.get("container_name") or project_id
             project_meta["tunnel_container_name"] = f"{base_container}-lfr-tunnel"
+
+            # Proactive Version Checking for Docker
+            docker_image = image or project_meta.get(
+                "share_image", "peterrichards/lfr-tunnel:latest"
+            )
+            installed_ver = self._get_docker_installed_version(docker_image)
+            self._verify_compatibility(
+                ["docker", "run", "--rm", docker_image], installed_ver
+            )
 
             self.manager.write_meta(root, project_meta)
 

@@ -341,14 +341,14 @@ fi
 
 echo ">> Verifying Env Sync..."
 "$LDM_CMD" config env . TEST_SECRET=supersecret123 >/dev/null
-grep -q "TEST_SECRET=supersecret123" docker-compose.yml && echo "✅ Env Sync verified."
+if grep -q "TEST_SECRET=supersecret123" docker-compose.yml; then echo "✅ Env Sync verified."; else echo "❌ ERROR: Env Sync validation failed." && exit 1; fi
 
 echo ">> Verifying Redaction..."
-"$LDM_CMD" -v config env . REDACT_SECRET=hidden 2>&1 | grep -q "REDACT_SECRET=\[REDACTED\]" && echo "✅ Redaction verified."
+if "$LDM_CMD" status REDACT_SECRET=hidden 2>&1 | grep -q "REDACT_SECRET=\[REDACTED\]"; then echo "✅ Redaction verified."; else echo "❌ ERROR: Redaction validation failed." && exit 1; fi
 
 echo ">> Verifying Scaling..."
 log_and_run "Scaling Liferay" "$LDM_CMD" -y scale . liferay=3 --no-run
-grep -q "scale_liferay=3" meta && echo "✅ Scaling verified."
+if grep -q "scale_liferay=3" meta; then echo "✅ Scaling verified."; else echo "❌ ERROR: Scaling validation failed." && exit 1; fi
 
 echo ">> Verifying logs --instance..."
 # Scale is 3, so --instance 4 should be invalid, and --instance 2 should look for the container

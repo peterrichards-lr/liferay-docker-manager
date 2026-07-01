@@ -144,10 +144,11 @@ class TestShareService(unittest.TestCase):
         mock_run.return_value = mock_res
 
         # Local version is older than min_version -> Hard Blocker
-        self.service._verify_compatibility(mock_bin, "0.9.0")
+        self.service._verify_compatibility([str(mock_bin)], "0.9.0")
 
         mock_ui.die.assert_called_once_with(
-            "Your Liferay Tunnel client is too old to connect to the server. Minimum required version is v1.0.0."
+            "Your Liferay Tunnel client is too old to connect to the server (Minimum required: v1.0.0). "
+            "Please upgrade using 'lfr-tunnel -upgrade' or 'docker pull peterrichards/lfr-tunnel'."
         )
         mock_ui.warning.assert_not_called()
 
@@ -163,10 +164,10 @@ class TestShareService(unittest.TestCase):
         mock_run.return_value = mock_res
 
         # Local version >= min_version but < latest_version -> Soft Warning
-        self.service._verify_compatibility(mock_bin, "1.2.0")
+        self.service._verify_compatibility([str(mock_bin)], "1.2.0")
 
         mock_ui.warning.assert_called_once_with(
-            "A new version of Liferay Tunnel (v1.3.0) is available. You are running v1.2.0."
+            "An update is available for lfr-tunnel (Current: v1.2.0, Latest: v1.3.0)"
         )
         mock_ui.die.assert_not_called()
 
@@ -182,7 +183,7 @@ class TestShareService(unittest.TestCase):
         mock_run.return_value = mock_res
 
         # Local version >= latest_version -> No Warning
-        self.service._verify_compatibility(mock_bin, "1.3.0")
+        self.service._verify_compatibility([str(mock_bin)], "1.3.0")
 
         mock_ui.warning.assert_not_called()
         mock_ui.die.assert_not_called()
@@ -268,8 +269,8 @@ class TestShareService(unittest.TestCase):
         self.mock_manager.runtime.sync_stack.assert_called_once()
 
         # Verify subprocess.run call to start container via docker compose
-        mock_run.assert_called_once()
-        cmd_args = mock_run.call_args[0][0]
+        self.assertTrue(mock_run.call_count >= 1)
+        cmd_args = mock_run.call_args_list[-1][0][0]
         self.assertEqual(cmd_args, ["docker-compose", "up", "-d", "lfr-tunnel"])
 
     @patch("ldm_core.utils.get_compose_cmd", return_value=["docker-compose"])
