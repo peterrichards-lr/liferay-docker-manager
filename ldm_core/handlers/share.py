@@ -479,8 +479,8 @@ class ShareService:
                             and isinstance(lcp_data["ports"], list)
                             and len(lcp_data["ports"]) > 0
                         ):
-                            ports = str(lcp_data["ports"][0])
-                            UI.info(f"Detected port {ports} from {lcp_cand.name}")
+                            ports = ",".join(str(p) for p in lcp_data["ports"])
+                            UI.info(f"Detected ports {ports} from {lcp_cand.name}")
                             break
                     except Exception:
                         pass
@@ -611,7 +611,7 @@ class ShareService:
             if subdomain:
                 project_meta["share_subdomain"] = subdomain
             if ports:
-                project_meta["port"] = int(ports)
+                project_meta["share_ports"] = str(ports)
             if image:
                 project_meta["share_image"] = image
             project_meta["share_inspector"] = "true" if inspector else "false"
