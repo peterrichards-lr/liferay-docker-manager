@@ -22,7 +22,7 @@ class ClientExtensionAnalyzer:
         deploy_dir = workspace_root / "deploy"
         cx_dir = workspace_root / "client-extensions"
 
-        zip_files: list[Path] = []
+        zip_files = []
         if deploy_dir.exists():
             zip_files.extend(deploy_dir.glob("*.zip"))
         if cx_dir.exists():

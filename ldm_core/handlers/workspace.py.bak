@@ -724,24 +724,6 @@ class WorkspaceService(BaseHandler):
             pass
         return None
 
-    def cmd_validate(self, project_id=None):
-        """Runs the Pre-Flight Client Extension Analyzer against the workspace."""
-        root = self.manager.detect_project_path(project_id)
-        if not root:
-            return
-        from ldm_core.handlers.validation import ClientExtensionAnalyzer
-
-        if ClientExtensionAnalyzer.analyze_workspace(root):
-            from ldm_core.utils import UI
-
-            UI.success(
-                "Validation passed. Client extensions appear structurally sound."
-            )
-        else:
-            from ldm_core.utils import UI
-
-            UI.error("Validation failed. See warnings above.")
-
     def cmd_import(self, source_path, is_init_from=False):
         is_dry_run = os.environ.get("LDM_DRY_RUN", "").lower() == "true"
         if is_dry_run:

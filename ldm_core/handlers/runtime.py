@@ -302,11 +302,6 @@ class RuntimeService(BaseHandler):
 
             is_samples = getattr(self.manager.args, "samples", False)
             if is_samples:
-        # Pre-Flight Client Extension Analyzer
-        from ldm_core.handlers.validation import ClientExtensionAnalyzer
-        if not ClientExtensionAnalyzer.analyze_workspace(paths["root"]):
-            UI.warning("Pre-Flight validation identified critical risks in the Client Extensions. The environment may fail to deploy properly.")
-
                 config_handler = self.manager.config
                 if host_name == "localhost":
                     if self.manager.non_interactive:
@@ -1664,11 +1659,6 @@ class RuntimeService(BaseHandler):
             if self.manager.verbose:
                 duration_str = UI.format_duration(time.time() - infra_start)
                 UI.debug(f"Infrastructure setup took: {duration_str}")
-
-        # Pre-Flight Client Extension Analyzer
-        from ldm_core.handlers.validation import ClientExtensionAnalyzer
-        if not ClientExtensionAnalyzer.analyze_workspace(paths["root"]):
-            UI.warning("Pre-Flight validation identified critical risks in the Client Extensions. The environment may fail to deploy properly.")
 
         config_handler = self.manager.config
         config_handler.sync_common_assets(

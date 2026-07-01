@@ -1,12 +1,13 @@
-import unittest
-from pathlib import Path
-from unittest.mock import patch, MagicMock
-import zipfile
 import io
 import json
+import unittest
+import zipfile
+from unittest.mock import patch
+
 import yaml
 
 from ldm_core.handlers.validation import ClientExtensionAnalyzer
+
 
 class TestClientExtensionAnalyzer(unittest.TestCase):
     def create_mock_zip(self, files_dict):
@@ -20,9 +21,7 @@ class TestClientExtensionAnalyzer(unittest.TestCase):
 
     @patch("ldm_core.utils.UI.error")
     def test_missing_dockerfile(self, mock_error):
-        files = {
-            "LCP.json": json.dumps({"kind": "Deployment"})
-        }
+        files = {"LCP.json": json.dumps({"kind": "Deployment"})}
         mock_zip = self.create_mock_zip(files)
         with zipfile.ZipFile(mock_zip, "r") as zf:
             result = ClientExtensionAnalyzer._analyze_zip(zf, "test.zip")
@@ -34,7 +33,7 @@ class TestClientExtensionAnalyzer(unittest.TestCase):
     def test_valid_deployment(self, mock_error):
         files = {
             "LCP.json": json.dumps({"kind": "Deployment"}),
-            "Dockerfile": "FROM liferay/node-runner:latest"
+            "Dockerfile": "FROM liferay/node-runner:latest",
         }
         mock_zip = self.create_mock_zip(files)
         with zipfile.ZipFile(mock_zip, "r") as zf:
