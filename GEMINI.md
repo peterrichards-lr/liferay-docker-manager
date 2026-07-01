@@ -466,3 +466,7 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
     - [x] Refactor duplicate subprocess execution branches in `_run_lcp_cmd` to streamline Liferay Cloud command execution.
     - [x] Document codebase conventions and command execution rules in `DEVELOPMENT.md`.
     - [x] Run E2E smoke tests and pre-commit checks to verify formatting, linters, coverage, and tests pass cleanly.
+
+## Client Extension Routing Rules
+
+When modifying `client-extension.yaml` files, **NEVER change or remove `.serviceAddress: localhost:3001` or `.serviceScheme`** manually to fix Docker or LDM routing issues. Liferay automatically updates the shared routes context with the correct internal endpoint when the generated `.zip` file is copied to the Liferay `osgi/client-extensions` deploy folder. Modifying these properties will override the auto-registration and break the deployment.
