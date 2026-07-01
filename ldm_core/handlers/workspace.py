@@ -1055,6 +1055,19 @@ class WorkspaceService(BaseHandler):
 
                         safe_container_name = sanitize_id(project_name)
 
+                        final_host_name = (
+                            getattr(self.manager.args, "host_name", None)
+                            or project_meta.get("host_name")
+                            or "localhost"
+                        )
+                        ssl_arg = getattr(self.manager.args, "ssl", None)
+                        if ssl_arg is not None:
+                            final_ssl = str(ssl_arg).lower()
+                        elif getattr(self.manager.args, "host_name", None) is not None:
+                            final_ssl = str(final_host_name != "localhost").lower()
+                        else:
+                            final_ssl = str(project_meta.get("ssl") or "false").lower()
+
                         project_meta.update(
                             {
                                 "project_name": project_name,
@@ -1064,16 +1077,8 @@ class WorkspaceService(BaseHandler):
                                     or project_meta.get("port")
                                     or 8080
                                 ),
-                                "ssl": str(
-                                    getattr(self.manager.args, "ssl", None)
-                                    or project_meta.get("ssl")
-                                    or "false"
-                                ).lower(),
-                                "host_name": getattr(
-                                    self.manager.args, "host_name", None
-                                )
-                                or project_meta.get("host_name")
-                                or "localhost",
+                                "ssl": final_ssl,
+                                "host_name": final_host_name,
                                 "last_run": datetime.now().isoformat(),
                             }
                         )
@@ -1368,6 +1373,19 @@ class WorkspaceService(BaseHandler):
                         f"Project name '{project_name}' contains invalid characters for Docker. Using '{safe_container_name}' for container names."
                     )
 
+                final_host_name = (
+                    getattr(self.manager.args, "host_name", None)
+                    or project_meta.get("host_name")
+                    or "localhost"
+                )
+                ssl_arg = getattr(self.manager.args, "ssl", None)
+                if ssl_arg is not None:
+                    final_ssl = str(ssl_arg).lower()
+                elif getattr(self.manager.args, "host_name", None) is not None:
+                    final_ssl = str(final_host_name != "localhost").lower()
+                else:
+                    final_ssl = str(project_meta.get("ssl") or "false").lower()
+
                 project_meta.update(
                     {
                         "project_name": project_name,
@@ -1377,14 +1395,8 @@ class WorkspaceService(BaseHandler):
                             or project_meta.get("port")
                             or 8080
                         ),
-                        "ssl": str(
-                            getattr(self.manager.args, "ssl", None)
-                            or project_meta.get("ssl")
-                            or "false"
-                        ).lower(),
-                        "host_name": getattr(self.manager.args, "host_name", None)
-                        or project_meta.get("host_name")
-                        or "localhost",
+                        "ssl": final_ssl,
+                        "host_name": final_host_name,
                         "last_run": datetime.now().isoformat(),
                     }
                 )
