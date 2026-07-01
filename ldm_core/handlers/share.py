@@ -542,7 +542,7 @@ class ShareService:
                     err_out = ((res.stderr or "") + "\n" + (res.stdout or "")).lower()
                     if "is already running" in err_out:
                         UI.die(
-                            f"❌ Tunnel is already running in the background for this subdomain. "
+                            f"Tunnel is already running in the background for this subdomain. "
                             f"Run 'lfr-tunnel -stop -subdomain {subdomain}' to terminate it before trying again."
                         )
 
