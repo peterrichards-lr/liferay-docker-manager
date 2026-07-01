@@ -106,6 +106,62 @@ def api_projects():
         ssl = str(meta.get("ssl", "false")).lower() == "true"
         url = f"https://{host_name}" if ssl else f"http://{host_name}:{port}"
 
+        # Scan for client extensions
+        extensions_data = []
+        paths = manager.setup_paths(path)
+        if paths["cx"].exists():
+            from ldm_core.handlers.workspace import WorkspaceService
+
+            handler = WorkspaceService(manager)
+            extensions = handler.scan_client_extensions(
+                paths["root"], paths["cx"], paths["ce_dir"]
+            )
+        else:
+            extensions = meta.get("extensions", [])
+            if isinstance(extensions, str):
+                try:
+                    import json
+
+                    extensions = json.loads(extensions)
+                except Exception:
+                    extensions = []
+
+        is_shared = meta.get("share") or meta.get("share_provider")
+        share_subdomain = meta.get("share_subdomain")
+        share_domain = meta.get("share_domain", "lfr-demo.online")
+
+        fetched_urls = []
+        if is_shared and share_subdomain:
+            fetched_urls = manager.share.resolve_public_tunnel_urls(
+                share_subdomain, name
+            )
+
+        for ext in extensions:
+            if isinstance(ext, dict) and ext.get("is_service"):
+                ext_id = ext.get("id")
+                ext_name = f"{name}-{ext_id}"
+
+                local_url = f"http://{ext_id}.{host_name}:8080"
+                public_url = None
+                if is_shared and share_subdomain:
+                    for u in fetched_urls:
+                        if f"-{ext_id}." in u:
+                            public_url = u
+                            break
+                    if not public_url:
+                        public_url = (
+                            f"https://{share_subdomain}-{ext_id}.{share_domain}"
+                        )
+
+                extensions_data.append(
+                    {
+                        "id": ext_id,
+                        "name": ext_name,
+                        "local_url": local_url,
+                        "public_url": public_url,
+                    }
+                )
+
         projects.append(
             {
                 "name": name,
@@ -115,6 +171,7 @@ def api_projects():
                 "path": str(path),
                 "db_type": meta.get("db_type", "N/A"),
                 "archetype": meta.get("archetype", "None"),
+                "client_extensions": extensions_data,
             }
         )
 

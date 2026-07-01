@@ -785,15 +785,23 @@ class ComposerService:
             bind_ip = self.manager.get_resolved_ip(host_name) or "127.0.0.1"
             port_list.append(f"{bind_ip}:{port}:8080")
 
+        tunnel_managed_cors = getattr(
+            self.manager.args, "tunnel_managed_cors", False
+        ) or self.manager.config.get_global_config().get("tunnel_managed_cors", False)
+
+        valid_hosts = f"localhost,127.0.0.1,{host_name},liferay"
+        if not tunnel_managed_cors:
+            valid_hosts += ",*.lfr-demo.online,*.lfr-demo.se"
+
         # Configure Liferay web server proxy and header forwarding settings
         forwarded_props = {
             "web.server.forwarded.host.header": "X-Forwarded-Host",
             "web.server.forwarded.port.header": "X-Forwarded-Port",
             "web.server.forwarded.proto.header": "X-Forwarded-Proto",
-            "virtual.hosts.valid.hosts": f"localhost,127.0.0.1,{host_name},liferay,*.lfr-demo.online,*.lfr-demo.se",
+            "virtual.hosts.valid.hosts": valid_hosts,
         }
 
-        if share_host:
+        if not tunnel_managed_cors and share_host:
             forwarded_props.update(
                 {
                     "web.server.host": share_host,
@@ -801,7 +809,7 @@ class ComposerService:
                     "web.server.protocol": "https",
                 }
             )
-        elif ssl_enabled:
+        elif not tunnel_managed_cors and ssl_enabled:
             forwarded_props.update(
                 {
                     "web.server.host": host_name,

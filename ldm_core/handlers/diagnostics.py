@@ -1906,28 +1906,78 @@ class DiagnosticsService:
                 f"    {UI.WHITE}Tunnel:{UI.COLOR_OFF}     {UI.CYAN}{meta.get('tunnel_container_name', 'N/A')}{UI.COLOR_OFF}"
             )
 
-        # Show extensions if present
-        extensions = meta.get("extensions", [])
-        if isinstance(extensions, str):
-            try:
-                import json
+        # Actively scan for client extensions in workspace
+        extensions = []
+        paths = self.manager.setup_paths(root)
+        if paths["cx"].exists():
+            from ldm_core.handlers.workspace import WorkspaceService
 
-                extensions = json.loads(extensions)
-            except Exception:
-                extensions = []
+            handler = WorkspaceService(self.manager)
+            extensions = handler.scan_client_extensions(
+                paths["root"], paths["cx"], paths["ce_dir"]
+            )
+
+        # Fallback to metadata if no workspace is found
+        if not extensions:
+            extensions = meta.get("extensions", [])
+            if isinstance(extensions, str):
+                try:
+                    import json
+
+                    extensions = json.loads(extensions)
+                except Exception:
+                    extensions = []
+
+        share_subdomain = meta.get("share_subdomain")
+        share_domain = meta.get("share_domain", "lfr-demo.online")
+        host_name = meta.get("host_name", "localhost")
+        project_name = meta.get("container_name", root.name)
+        is_shared = meta.get("share") or meta.get("share_provider")
+
+        fetched_urls = []
+        if is_shared and share_subdomain:
+            fetched_urls = self.manager.share.resolve_public_tunnel_urls(
+                share_subdomain, project_id
+            )
 
         for ext in extensions:
             if isinstance(ext, dict) and ext.get("is_service"):
                 ext_id = ext.get("id")
-                ext_name = f"{meta.get('container_name', root.name)}-{ext_id}"
+                ext_name = f"{project_name}-{ext_id}"
+
+                local_url = f"http://{ext_id}.{host_name}:8080"
+                urls_str = local_url
+                if is_shared and share_subdomain:
+                    public_url = None
+                    for url in fetched_urls:
+                        if f"-{ext_id}." in url:
+                            public_url = url
+                            break
+                    if not public_url:
+                        public_url = (
+                            f"https://{share_subdomain}-{ext_id}.{share_domain}"
+                        )
+                    urls_str = f"{local_url} | {public_url}"
+
                 UI.raw(
-                    f"    {UI.WHITE}Extension:{UI.COLOR_OFF}  {UI.CYAN}{ext_name}{UI.COLOR_OFF} ({ext_id})"
+                    f"    {UI.WHITE}Extension:{UI.COLOR_OFF}  {UI.CYAN}{ext_name}{UI.COLOR_OFF} -> {urls_str}"
                 )
 
         UI.raw("")
 
         # Determine specific colors for known keys
         keys_to_skip = ["root", "custom_env"]
+
+        # Inject extension share subdomains into meta for display
+        if is_shared and share_subdomain:
+            for ext in extensions:
+                if isinstance(ext, dict) and ext.get("is_service"):
+                    ext_id = ext.get("id")
+                    if ext_id:
+                        meta[f"share_subdomain_{ext_id.replace('-', '_')}"] = (
+                            f"{share_subdomain}-{ext_id}"
+                        )
+
         for key, value in sorted(meta.items()):
             if key in keys_to_skip:
                 continue
@@ -1941,7 +1991,7 @@ class DiagnosticsService:
             else:
                 val_str = f"{UI.CYAN}{val_str}{UI.COLOR_OFF}"
 
-            UI.raw(f"  {UI.WHITE}{key:<15}{UI.COLOR_OFF} {val_str}")
+            UI.raw(f"  {UI.WHITE}{key:<30}{UI.COLOR_OFF} {val_str}")
 
         # Pretty print custom_env if it exists
         custom_env = meta.get("custom_env")

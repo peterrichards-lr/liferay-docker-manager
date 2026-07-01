@@ -375,6 +375,11 @@ def get_parser():
         "--no-color", action="store_true", help="Disable color codes in output"
     )
     base_sub_parent.add_argument(
+        "--tunnel-managed-cors",
+        action="store_true",
+        help="Skip local CORS patching and defer to tunnel gateway's dynamic header injection",
+    )
+    base_sub_parent.add_argument(
         "--no-unicode",
         "--ascii",
         action="store_true",

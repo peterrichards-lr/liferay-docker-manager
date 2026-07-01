@@ -839,6 +839,7 @@ The following is a comprehensive index of all registered CLI option flags and th
 - **`--no-color`**: Disable ANSI color codes in output.
 - **`--no-env-sync`**: Skip syncing environment variables from Liferay Cloud.
 - **`--no-home-warn`**: Suppress warning when running LDM from the root of the user's home directory.
+- **`--tunnel-managed-cors`**: Skip local CORS patching and defer entirely to the tunnel gateway's dynamic header injection.
 - **`--no-move`**: Skip moving existing data (just create symlinks).
 - **`--no-restart`**: Do not automatically stop and restart the containers.
 - **`--no-run`**: Update the metadata without automatically restarting the stack.
