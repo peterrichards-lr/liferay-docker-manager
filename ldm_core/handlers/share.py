@@ -479,8 +479,8 @@ class ShareService:
                             and isinstance(lcp_data["ports"], list)
                             and len(lcp_data["ports"]) > 0
                         ):
-                            ports = str(lcp_data["ports"][0])
-                            UI.info(f"Detected port {ports} from {lcp_cand.name}")
+                            ports = ",".join(str(p) for p in lcp_data["ports"])
+                            UI.info(f"Detected ports {ports} from {lcp_cand.name}")
                             break
                     except Exception:
                         pass
