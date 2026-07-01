@@ -160,6 +160,11 @@ VENV_PYTEST="${TEST_VENV}/bin/pytest"
 
 # Install dependencies into venv
 if [ ! -f "$VENV_PYTEST" ]; then
+    if [ ! -f "$VENV_PIP" ]; then
+        echo ">> pip is missing from the virtual environment (common on Debian/Ubuntu). Bootstrapping pip..."
+        curl -sS https://bootstrap.pypa.io/get-pip.py | "$VENV_PYTHON"
+    fi
+
     echo ">> Installing test dependencies into virtual environment..."
     "$VENV_PIP" install pytest requests PyYAML --quiet --disable-pip-version-check
 fi
