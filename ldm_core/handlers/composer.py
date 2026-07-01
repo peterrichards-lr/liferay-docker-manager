@@ -654,6 +654,29 @@ class ComposerService:
             if k.startswith("LIFERAY_JDBC_PERIOD_"):
                 has_jdbc_env = True
 
+        # Inject LIFERAY_ROUTES_CLIENT_EXTENSION_... for microservices
+        extensions = []
+        if self.manager and hasattr(self.manager, "workspace"):
+            extensions = self.manager.workspace.scan_client_extensions(
+                paths["root"], paths.get("cx"), paths.get("ce_dir")
+            )
+        elif self.manager:
+            from ldm_core.handlers.workspace import WorkspaceService
+
+            cx_handler = WorkspaceService(self.manager)
+            extensions = cx_handler.scan_client_extensions(
+                paths["root"], paths.get("cx"), paths.get("ce_dir")
+            )
+
+        for ext in extensions:
+            if ext.get("deploy") and ext.get("is_service"):
+                ext_id = ext.get("id")
+                if ext_id:
+                    svc_id = f"{project_name}-{ext_id}"
+                    ms_port = ext.get("loadBalancer", {}).get("targetPort", 8080)
+                    env_key = f"LIFERAY_ROUTES_CLIENT_EXTENSION_{ext_id.replace('-', '_').upper()}"
+                    liferay_env.append(f"{env_key}=http://{svc_id}:{ms_port}")
+
         db_type = meta.get("db_type", "postgresql")
         db_mode = "isolated"
         if meta:
@@ -1097,7 +1120,7 @@ class ComposerService:
         extensions = []
         if self.manager and hasattr(self.manager, "workspace"):
             extensions = self.manager.workspace.scan_client_extensions(
-                paths["root"], paths["cx"], paths["ce_dir"]
+                paths["root"], paths.get("cx"), paths.get("ce_dir")
             )
         else:
             # Fallback for standalone/mock usage
@@ -1105,7 +1128,7 @@ class ComposerService:
 
             cx_handler = WorkspaceService(self.manager)
             extensions = cx_handler.scan_client_extensions(
-                paths["root"], paths["cx"], paths["ce_dir"]
+                paths["root"], paths.get("cx"), paths.get("ce_dir")
             )
         for ext in extensions:
             if ext.get("deploy") and ext.get("is_service"):

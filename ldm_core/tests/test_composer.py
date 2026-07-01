@@ -47,6 +47,12 @@ class TestComposerService(unittest.TestCase):
         )
         self.assertIn("proj-ms1", services)
         self.assertEqual(services["proj-ms1"]["image"], "proj-ms1:latest")
+        self.assertTrue(
+            any(
+                v.startswith(f"{Path('/tmp/routes').as_posix()}:/workspace/routes")
+                for v in services["proj-ms1"]["volumes"]
+            )
+        )
 
     def test_build_liferay_service_volumes_and_jvm(self):
         paths = {
@@ -76,6 +82,12 @@ class TestComposerService(unittest.TestCase):
         )
         self.assertTrue(
             any(v.startswith("proj-state:/opt/liferay/osgi/state") for v in volumes)
+        )
+        self.assertTrue(
+            any(
+                v.startswith(f"{Path('/tmp/proj/routes').as_posix()}:/workspace/routes")
+                for v in volumes
+            )
         )
         self.assertFalse(any("/storage/liferay/data" in v for v in volumes))
 
