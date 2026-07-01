@@ -1875,6 +1875,8 @@ def main():
         ),
         ("import", None): lambda: manager.workspace.cmd_import(args.source),
         ("init-from", None): lambda: manager.workspace.cmd_init_from(args.source),
+        ("validate", None): lambda: manager.workspace.cmd_validate(getattr(args, "project", None)),
+
         ("fork", None): lambda: manager.workspace.cmd_fork(
             args.source, args.target, snapshot=getattr(args, "snapshot", None)
         ),
