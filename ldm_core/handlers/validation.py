@@ -44,6 +44,44 @@ class ClientExtensionAnalyzer:
         return success
 
     @staticmethod
+    def validate_lcp_json_structure(data: dict) -> list[str]:
+        """Validates the structure and content of an LCP.json file. Returns a list of errors."""
+        errors = []
+
+        # 1. Mandatory ID
+        if not data.get("id"):
+            errors.append("Missing mandatory 'id' field.")
+
+        # 2. Port Validation
+        ports = data.get("ports", [])
+        if not isinstance(ports, list):
+            errors.append("'ports' must be an array.")
+        else:
+            for i, p in enumerate(ports):
+                if not isinstance(p, dict):
+                    errors.append(f"Port at index {i} must be an object.")
+                    continue
+                if not p.get("port") and not p.get("targetPort"):
+                    errors.append(f"Port at index {i} missing 'port' or 'targetPort'.")
+
+        # 3. Load Balancer / External Port Consistency
+        has_lb = "loadBalancer" in data
+        has_external_port = any(p.get("external") for p in ports if isinstance(p, dict))
+
+        if has_lb and not has_external_port:
+            errors.append(
+                "loadBalancer defined but no ports are marked as 'external: true'."
+            )
+
+        # 4. Resource Limits
+        for res in ["cpu", "memory"]:
+            val = data.get(res)
+            if val is not None and not isinstance(val, (int, float)):
+                errors.append(f"'{res}' must be a numeric value.")
+
+        return errors
+
+    @staticmethod
     def _analyze_zip(zf: zipfile.ZipFile, filename: str) -> bool:
         """Analyzes a single zip file for LCP.json and Dockerfile integrity."""
         success = True
@@ -51,6 +89,7 @@ class ClientExtensionAnalyzer:
 
         # 1. Parse LCP.json if it exists
         lcp_kind = None
+        lcp_data = None
         if "LCP.json" in namelist:
             try:
                 lcp_content = zf.read("LCP.json").decode("utf-8")
@@ -68,6 +107,13 @@ class ClientExtensionAnalyzer:
                 UI.error(
                     f"Validation Analyzer: CRITICAL gap in '{filename}'. 'LCP.json' declares kind='Deployment', but no 'Dockerfile' was found in the archive root. It will fail to containerize."
                 )
+                success = False
+
+        # 2.5 LCP.json Structural Integrity Check
+        if lcp_data:
+            lcp_errors = ClientExtensionAnalyzer.validate_lcp_json_structure(lcp_data)
+            for err in lcp_errors:
+                UI.error(f"Validation Analyzer: LCP.json Issue in '{filename}': {err}")
                 success = False
 
         # 3. Parse client-extension.yaml if it exists
