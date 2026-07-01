@@ -322,28 +322,55 @@ class ShareService:
 
         return provider, domain
 
-    def resolve_public_tunnel_url(self, subdomain, project_id=None):
-        """Resolves the public tunnel URL using LFT_SERVER_URL or defaulting to lfr-demo.online."""
-        if not getattr(self.manager, "dry_run", False):
-            try:
-                bin_path = self._get_binary_path()
-                if bin_path and os.path.exists(bin_path):
-                    import json
-                    import subprocess
+    def resolve_public_tunnel_urls(self, subdomain, project_id=None):
+        """Resolves all public tunnel URLs natively or via Docker API."""
+        urls: list = []
+        if getattr(self.manager, "dry_run", False):
+            return urls
 
-                    result = subprocess.run(
-                        [str(bin_path), "-status-json", "-subdomain", subdomain],
-                        capture_output=True,
-                        text=True,
-                        timeout=3,
-                    )
-                    if result.returncode == 0:
-                        status_data = json.loads(result.stdout)
-                        urls = status_data.get("public_urls")
-                        if urls and isinstance(urls, list):
-                            return urls[0]
+        import json
+        import subprocess
+        import urllib.request
+
+        # 1. Try Native CLI
+        try:
+            bin_path = self._get_binary_path()
+            if bin_path and os.path.exists(bin_path):
+                result = subprocess.run(
+                    [str(bin_path), "-status-json", "-subdomain", subdomain],
+                    capture_output=True,
+                    text=True,
+                    timeout=3,
+                )
+                if result.returncode == 0:
+                    status_data = json.loads(result.stdout)
+                    fetched = status_data.get("public_urls")
+                    if fetched and isinstance(fetched, list):
+                        urls.extend(fetched)
+        except Exception:
+            pass
+
+        # 2. Try Docker Runtime Inspector API
+        if not urls:
+            try:
+                host = "lfr-tunnel" if os.path.exists("/.dockerenv") else "127.0.0.1"
+                req = urllib.request.Request(f"http://{host}:4040/api/info")
+                with urllib.request.urlopen(req, timeout=3) as response:  # nosec B310
+                    if response.status == 200:
+                        data = json.loads(response.read().decode())
+                        fetched = data.get("public_urls")
+                        if fetched and isinstance(fetched, list):
+                            urls.extend(fetched)
             except Exception:
                 pass
+
+        return urls
+
+    def resolve_public_tunnel_url(self, subdomain, project_id=None):
+        """Resolves the primary public tunnel URL, falling back to static generation if offline."""
+        urls = self.resolve_public_tunnel_urls(subdomain, project_id)
+        if urls:
+            return urls[0]
 
         server_url = os.environ.get("LFT_SERVER_URL")
         domain = None

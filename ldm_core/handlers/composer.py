@@ -785,30 +785,39 @@ class ComposerService:
             bind_ip = self.manager.get_resolved_ip(host_name) or "127.0.0.1"
             port_list.append(f"{bind_ip}:{port}:8080")
 
+        tunnel_managed_cors = getattr(
+            self.manager.args, "tunnel_managed_cors", False
+        ) or self.manager.config.get_global_config().get("tunnel_managed_cors", False)
+
+        valid_hosts = f"localhost,127.0.0.1,{host_name},liferay"
+        if not tunnel_managed_cors:
+            valid_hosts += ",*.lfr-demo.online,*.lfr-demo.se"
+
         # Configure Liferay web server proxy and header forwarding settings
         forwarded_props = {
             "web.server.forwarded.host.header": "X-Forwarded-Host",
             "web.server.forwarded.port.header": "X-Forwarded-Port",
             "web.server.forwarded.proto.header": "X-Forwarded-Proto",
-            "virtual.hosts.valid.hosts": f"localhost,127.0.0.1,{host_name},liferay,*.lfr-demo.online,*.lfr-demo.se",
+            "virtual.hosts.valid.hosts": valid_hosts,
         }
 
-        if share_host:
-            forwarded_props.update(
-                {
-                    "web.server.host": share_host,
-                    "web.server.https.port": "443",
-                    "web.server.protocol": "https",
-                }
-            )
-        elif ssl_enabled:
-            forwarded_props.update(
-                {
-                    "web.server.host": host_name,
-                    "web.server.https.port": "443",
-                    "web.server.protocol": "https",
-                }
-            )
+        if not tunnel_managed_cors:
+            if share_host:
+                forwarded_props.update(
+                    {
+                        "web.server.host": share_host,
+                        "web.server.https.port": "443",
+                        "web.server.protocol": "https",
+                    }
+                )
+            elif ssl_enabled:
+                forwarded_props.update(
+                    {
+                        "web.server.host": host_name,
+                        "web.server.https.port": "443",
+                        "web.server.protocol": "https",
+                    }
+                )
         else:
             forwarded_props.update(
                 {
@@ -875,7 +884,7 @@ class ComposerService:
                 f"{paths['scripts'].as_posix()}:/mnt/liferay/scripts{z_label}",
                 f"{project_name}-data:/opt/liferay/data",
                 f"{paths['modules'].as_posix()}:/opt/liferay/osgi/modules{z_label}",
-                f"{paths['cx'].as_posix()}:/opt/liferay/osgi/client-extensions{z_label}",
+                f"{paths['ce_dir'].as_posix()}:/opt/liferay/osgi/client-extensions{z_label}",
                 f"{paths['portal_log4j'].as_posix()}:/opt/liferay/osgi/log4j{z_label}",
             ],
             "networks": ["liferay-net"],
