@@ -21,7 +21,7 @@ class TestClientExtensionAnalyzer(unittest.TestCase):
 
     @patch("ldm_core.utils.UI.error")
     def test_missing_dockerfile(self, mock_error):
-        files = {"LCP.json": json.dumps({"kind": "Deployment"})}
+        files = {"LCP.json": json.dumps({"id": "test", "kind": "Deployment"})}
         mock_zip = self.create_mock_zip(files)
         with zipfile.ZipFile(mock_zip, "r") as zf:
             result = ClientExtensionAnalyzer._analyze_zip(zf, "test.zip")
@@ -32,7 +32,7 @@ class TestClientExtensionAnalyzer(unittest.TestCase):
     @patch("ldm_core.utils.UI.error")
     def test_valid_deployment(self, mock_error):
         files = {
-            "LCP.json": json.dumps({"kind": "Deployment"}),
+            "LCP.json": json.dumps({"id": "test", "kind": "Deployment"}),
             "Dockerfile": "FROM liferay/node-runner:latest",
         }
         mock_zip = self.create_mock_zip(files)
@@ -52,3 +52,26 @@ class TestClientExtensionAnalyzer(unittest.TestCase):
             self.assertFalse(result)
             mock_error.assert_called_once()
             self.assertIn("UNSUPPORTED CONFIG", mock_error.call_args[0][0])
+
+    @patch("ldm_core.utils.UI.error")
+    def test_missing_external_port_with_loadbalancer(self, mock_error):
+        files = {
+            "LCP.json": json.dumps(
+                {
+                    "id": "test",
+                    "kind": "Deployment",
+                    "loadBalancer": {"environment": {}},
+                    "ports": [{"port": 3001}],  # Missing external: true
+                }
+            ),
+            "Dockerfile": "FROM liferay/node-runner:latest",
+        }
+        mock_zip = self.create_mock_zip(files)
+        with zipfile.ZipFile(mock_zip, "r") as zf:
+            result = ClientExtensionAnalyzer._analyze_zip(zf, "test.zip")
+            self.assertFalse(result)
+            mock_error.assert_called_once()
+            self.assertIn(
+                "loadBalancer defined but no ports are marked as 'external: true'",
+                mock_error.call_args[0][0],
+            )
