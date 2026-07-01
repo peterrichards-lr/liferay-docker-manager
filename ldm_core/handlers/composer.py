@@ -801,23 +801,22 @@ class ComposerService:
             "virtual.hosts.valid.hosts": valid_hosts,
         }
 
-        if not tunnel_managed_cors:
-            if share_host:
-                forwarded_props.update(
-                    {
-                        "web.server.host": share_host,
-                        "web.server.https.port": "443",
-                        "web.server.protocol": "https",
-                    }
-                )
-            elif ssl_enabled:
-                forwarded_props.update(
-                    {
-                        "web.server.host": host_name,
-                        "web.server.https.port": "443",
-                        "web.server.protocol": "https",
-                    }
-                )
+        if not tunnel_managed_cors and share_host:
+            forwarded_props.update(
+                {
+                    "web.server.host": share_host,
+                    "web.server.https.port": "443",
+                    "web.server.protocol": "https",
+                }
+            )
+        elif not tunnel_managed_cors and ssl_enabled:
+            forwarded_props.update(
+                {
+                    "web.server.host": host_name,
+                    "web.server.https.port": "443",
+                    "web.server.protocol": "https",
+                }
+            )
         else:
             forwarded_props.update(
                 {
@@ -884,7 +883,7 @@ class ComposerService:
                 f"{paths['scripts'].as_posix()}:/mnt/liferay/scripts{z_label}",
                 f"{project_name}-data:/opt/liferay/data",
                 f"{paths['modules'].as_posix()}:/opt/liferay/osgi/modules{z_label}",
-                f"{paths['ce_dir'].as_posix()}:/opt/liferay/osgi/client-extensions{z_label}",
+                f"{paths['cx'].as_posix()}:/opt/liferay/osgi/client-extensions{z_label}",
                 f"{paths['portal_log4j'].as_posix()}:/opt/liferay/osgi/log4j{z_label}",
             ],
             "networks": ["liferay-net"],

@@ -11,10 +11,12 @@ class MockComposerManager:
         self.args = MagicMock()
         self.args.ssl = None
         self.args.lean = False
+        self.args.tunnel_managed_cors = False
         self.verbose = False
         self.non_interactive = True
         self.workspace = MagicMock()
         self.config = MagicMock()
+        self.config.get_global_config.return_value = {}
         self.share = MagicMock()
         self.defaults = MagicMock()
         self.get_resolved_ip = MagicMock(return_value="127.0.0.1")
