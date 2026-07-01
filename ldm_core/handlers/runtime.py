@@ -1276,13 +1276,32 @@ class RuntimeService(BaseHandler):
                             )
 
                     if not access_url:
+                        # Respect ssl property from args/metadata, defaulting to True if not localhost and ssl not explicitly disabled
+                        ssl_arg = getattr(self.manager.args, "ssl", None)
+                        use_ssl = (
+                            ssl_arg if ssl_arg is not None else host_name != "localhost"
+                        )
+                        scheme = "https" if use_ssl else "http"
+
                         access_url = (
-                            f"https://{host_name}"
+                            f"{scheme}://{host_name}"
                             if host_name != "localhost"
                             else f"http://localhost:{project_meta.get('port', 8080)}"
                         )
-                        if host_name != "localhost" and active_ssl_port != 443:
+                        if (
+                            host_name != "localhost"
+                            and use_ssl
+                            and active_ssl_port != 443
+                        ):
                             access_url = f"https://{host_name}:{active_ssl_port}"
+                        elif (
+                            host_name != "localhost"
+                            and not use_ssl
+                            and project_meta.get("port", 8080) != 80
+                        ):
+                            access_url = (
+                                f"http://{host_name}:{project_meta.get('port', 8080)}"
+                            )
 
                     UI.info(
                         f"Access your instance at: {UI.CYAN}{UI.BOLD}{access_url}{UI.COLOR_OFF}"
