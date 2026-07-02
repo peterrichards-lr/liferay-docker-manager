@@ -860,7 +860,9 @@ class WorkspaceService(BaseHandler):
                     self.manager.args, "project_flag", None
                 )
                 parsed = self._parse_github_repo(source_path)
-                github_token = os.environ.get("GITHUB_TOKEN")
+                github_token = os.environ.get("GITHUB_TOKEN") or os.environ.get(
+                    "GITHUB_PAT"
+                )
                 clone_only = getattr(self.manager.args, "clone_only", False)
                 has_ldmp = False
                 ldmp_asset = None
@@ -900,6 +902,12 @@ class WorkspaceService(BaseHandler):
                                         f"Remote LDM package '{ldmp_asset.get('name')}' is too small ({asset_size} bytes) "
                                         "and appears to be empty/vanilla. Falling back to standard clone and build."
                                     )
+                        elif api_resp.status_code == 403:
+                            UI.warning(
+                                "GitHub API rate limit exceeded. Falling back to standard git clone. (Set GITHUB_TOKEN to avoid this)"
+                            )
+                        else:
+                            UI.debug(f"GitHub API returned {api_resp.status_code}")
                     except Exception as e:
                         UI.debug(f"GitHub Release API query failed: {e}")
 
@@ -1168,9 +1176,13 @@ class WorkspaceService(BaseHandler):
                     except Exception:
                         pass
 
-                    if is_github and "GITHUB_TOKEN" not in os.environ:
+                    if (
+                        is_github
+                        and "GITHUB_TOKEN" not in os.environ
+                        and "GITHUB_PAT" not in os.environ
+                    ):
                         UI.info(
-                            "Note: GITHUB_TOKEN environment variable is not set. If this is a private repository, cloning may fail."
+                            "Note: GITHUB_TOKEN/GITHUB_PAT environment variable is not set. If this is a private repository, cloning may fail."
                         )
 
                 try:
@@ -1196,7 +1208,7 @@ class WorkspaceService(BaseHandler):
                                 UI.die(
                                     f"Git clone failed: Authentication error.\n"
                                     f"Details: {stderr.strip()}\n"
-                                    f"Guide: Please export a valid GITHUB_TOKEN: 'export GITHUB_TOKEN=your_pat'."
+                                    f"Guide: Please export a valid GITHUB_TOKEN or GITHUB_PAT: 'export GITHUB_PAT=your_pat'."
                                 )
                         else:
                             UI.die(f"Git clone failed:\n{stderr.strip()}")

@@ -600,6 +600,11 @@ def get_parser():
         help="Expose the lfr-tunnel local inspector dashboard on port 4040",
     )
     imp.add_argument(
+        "--search-mode",
+        choices=["shared", "sidecar", "remote"],
+        help="Explicitly force a specific Elasticsearch mode (overrides local repository configs)",
+    )
+    imp.add_argument(
         "--share-domain",
         help="Custom domain to use when sharing the instance (e.g. lfr-demo.online, lfr-demo.se)",
     )
