@@ -52,3 +52,7 @@ The timings were gathered using the automated E2E timing script:
 ```
 
 This script automates setting up the mock project, starting the container in the background, timing the boot phases via log matching, clearing the container logs with a `down` lifecycle command, and comparing warm startup times.
+
+<!-- markdownlint-disable MD049 -->
+---
+*Last Updated: 2026-07-02* | *Last Reviewed: 2026-07-02*

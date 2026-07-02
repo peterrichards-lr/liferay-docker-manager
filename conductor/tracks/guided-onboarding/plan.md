@@ -67,3 +67,7 @@ Implement a fully declarative system for injecting complex architectural topolog
 - [ ] `ldm init test-ext --db external` successfully prompts for JDBC and generates a stack without a local DB.
 - [ ] `ldm init test-sso --archetype keycloak-sso` successfully boots Liferay + Keycloak with SSO enabled.
 - [ ] `ldm init test-cluster --archetype clustered` successfully boots multiple nodes with shared storage and Traefik load balancing.
+
+<!-- markdownlint-disable MD049 -->
+---
+*Last Updated: 2026-07-02* | *Last Reviewed: 2026-07-02*

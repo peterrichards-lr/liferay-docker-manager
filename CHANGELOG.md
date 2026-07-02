@@ -1003,3 +1003,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - **Enhanced Readiness Detection**: Updated `ldm run` and E2E scripts to monitor Liferay logs for the Tomcat "Server startup" marker. This provides a faster and more reliable signal that Liferay is ready for access, especially in CI environments where the Docker healthcheck status may be significantly delayed.
+
+<!-- markdownlint-disable MD049 -->
+---
+*Last Updated: 2026-07-02* | *Last Reviewed: 2026-07-02*

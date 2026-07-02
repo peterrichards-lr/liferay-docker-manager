@@ -99,3 +99,7 @@ The Visual Diagnostics Web Dashboard (`ldm dashboard`) includes a **Properties I
 - **Local Common**: Cyan
 - **Project Customization**: Emerald
 - **System/Runtime Injection**: Indigo (e.g., fast-login, feature flags, captcha config)
+
+<!-- markdownlint-disable MD049 -->
+---
+*Last Updated: 2026-07-02* | *Last Reviewed: 2026-07-02*

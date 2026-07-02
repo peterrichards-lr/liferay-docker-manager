@@ -206,3 +206,7 @@ powershell -ExecutionPolicy Bypass -File scripts/verify_e2e_refactor.ps1
 * Automated snapshot extraction, integrity verification (SHA-256 signature generation), and directory structure restores.
 * Metadata namespacing and port collision handling (confirming the **`ldm fork`** command works cleanly without conflicts).
 * Teardown of resources and network isolation.
+
+<!-- markdownlint-disable MD049 -->
+---
+*Last Updated: 2026-07-02* | *Last Reviewed: 2026-07-02*

@@ -29,3 +29,7 @@ This registry tracks the status and priority of independent development tracks f
 - **Samples Support**: `--samples` command switch.
 - **On-Demand Sample Hydration**: Automatic zip download and caching from GitHub releases.
 - **Cloud Fetch (`ldm cloud-fetch`)**: Automation for Liferay Cloud environment variables, database, and asset sync.
+
+<!-- markdownlint-disable MD049 -->
+---
+*Last Updated: 2026-07-02* | *Last Reviewed: 2026-07-02*

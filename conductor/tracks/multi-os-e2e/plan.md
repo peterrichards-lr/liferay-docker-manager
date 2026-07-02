@@ -61,3 +61,7 @@ Currently, we rely on manual E2E verification reports for macOS, Windows, and sp
 - `LDM Release E2E` workflow successfully passes on Ubuntu, Fedora, macOS (Silicon), macOS (Intel), and Windows.
 - `ldm run --lean` (or CI auto-detect) allows Liferay to boot within 7GB RAM without OOM kills.
 - Compatibility table in `README.md` is updated automatically from multi-OS CI results.
+
+<!-- markdownlint-disable MD049 -->
+---
+*Last Updated: 2026-07-02* | *Last Reviewed: 2026-07-02*

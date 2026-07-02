@@ -40,3 +40,7 @@ Transition the LDM CLI from a flat command list to grouped namespaces to reduce 
 2. Run `ldm prune` and verify it still works as an alias.
 3. Run `ldm --help` and verify the output is cleanly organized by namespace.
 4. Verify that no existing scripts (like `scripts/run_smoke_tests.sh`) are broken by the change.
+
+<!-- markdownlint-disable MD049 -->
+---
+*Last Updated: 2026-07-02* | *Last Reviewed: 2026-07-02*

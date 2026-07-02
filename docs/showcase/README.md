@@ -67,3 +67,7 @@ See how seamlessly LDM pulls backups directly from Liferay Cloud environments (l
 Minimize boot times on local development environments by persisting the OSGi bundle resolution state across container lifetimes.
 
 See the [OSGi State Persistence Performance Showcase](OSGI_STATE_PERSISTENCE.md) for timing comparisons, speed improvement metrics, and architectural details.
+
+<!-- markdownlint-disable MD049 -->
+---
+*Last Updated: 2026-07-02* | *Last Reviewed: 2026-07-02*

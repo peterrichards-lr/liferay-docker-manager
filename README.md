@@ -91,3 +91,7 @@ LDM is conventions-driven and highly customizable. Choose a topic below for deta
 ---
 
 For a complete structured table of contents, visit the **[Documentation Index](docs/README.md)**.
+
+<!-- markdownlint-disable MD049 -->
+---
+*Last Updated: 2026-07-02* | *Last Reviewed: 2026-07-02*

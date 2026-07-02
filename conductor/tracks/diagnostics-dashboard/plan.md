@@ -46,3 +46,7 @@ Transition `ldm doctor` to a **Summary-First** model:
 - `ldm doctor` output is < 10 lines by default for a healthy system.
 - `ldm doctor --docker` shows the technical details previously shown in the Docker section.
 - Unit tests verify both summary and filtered detail modes.
+
+<!-- markdownlint-disable MD049 -->
+---
+*Last Updated: 2026-07-02* | *Last Reviewed: 2026-07-02*

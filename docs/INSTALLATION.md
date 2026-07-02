@@ -740,3 +740,7 @@ We maintain "Tier 1" support for the following physical lab configurations:
 | **Traefik** | `v3.6.1+` | Automatic API version negotiation enabled. |
 | **Elasticsearch** | `8.19.1`, `7.17.24` | Dual support. ES 8.17.x+ required for Liferay 2025.Q2+ (ES 7 deprecated). |
 <!-- COMPATIBILITY_END -->
+
+<!-- markdownlint-disable MD049 -->
+---
+*Last Updated: 2026-07-02* | *Last Reviewed: 2026-07-02*

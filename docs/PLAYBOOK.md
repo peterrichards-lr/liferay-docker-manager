@@ -111,3 +111,7 @@ When running scripts via an AI agent, standard input is non-interactive (`[ -t 0
   - DNS A/AAAA record propagation.
   - Network reachability and firewall port openings (e.g., 22, 80, 443).
   - JSON responses from the application's version endpoint (`/api/version`) to guarantee the active deployment matches the newly released target version.
+
+<!-- markdownlint-disable MD049 -->
+---
+*Last Updated: 2026-07-02* | *Last Reviewed: 2026-07-02*

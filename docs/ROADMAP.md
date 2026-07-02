@@ -179,3 +179,7 @@ While the v2.4.0 release solidified the modular architecture, the focus will now
 ## ✅ Completed Improvements (v2.1.x & v2.5.x)
 
 - **Extensible Stack Archetypes & External DB (v2.5.x)**: Replaced application scaffolding with a declarative overlay architecture via `ldm init -a <archetype>`. Includes full topology generation for `keycloak-sso` (OIDC injection) and `clustered` (JGroups TCPPING and Traefik sticky sessions), alongside a decoupled `--db external` workflow.
+
+<!-- markdownlint-disable MD049 -->
+---
+*Last Updated: 2026-07-02* | *Last Reviewed: 2026-07-02*

@@ -65,3 +65,7 @@ Create a formal specification for portable "Scenario Packs" that bundle a databa
 3. Install the pack into a new project: `ldm pack install my-project.ldmpack --name=test-import`.
 4. Verify that the new project is identical in state and configuration to the original.
 5. Attempt to install a corrupted pack and verify that SHA-256 validation fails.
+
+<!-- markdownlint-disable MD049 -->
+---
+*Last Updated: 2026-07-02* | *Last Reviewed: 2026-07-02*

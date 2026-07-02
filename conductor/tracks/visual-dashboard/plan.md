@@ -49,3 +49,7 @@ Provide a lightweight, read-only web interface accessible via `http://localhost:
 3. Start an LDM project and verify its status updates from "Down" to "Starting" and then "Up."
 4. Stop a project and verify its status update.
 5. Check route information for correctness.
+
+<!-- markdownlint-disable MD049 -->
+---
+*Last Updated: 2026-07-02* | *Last Reviewed: 2026-07-02*

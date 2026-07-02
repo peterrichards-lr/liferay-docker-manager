@@ -63,3 +63,7 @@ Your local LDM instance is now an exact, running replica of the Liferay Cloud Pa
 
 * You can continue developing code in your local `./prospect-paas-repo` folder; LDM will hot-reload the changes automatically.
 * You can confidently deliver your presentation using real prospect data, entirely immune to remote network outages.
+
+<!-- markdownlint-disable MD049 -->
+---
+*Last Updated: 2026-07-02* | *Last Reviewed: 2026-07-02*

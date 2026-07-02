@@ -67,3 +67,7 @@ ldm mcp
 ```
 
 *(Note: Since it communicates over `stdio`, you configure your MCP client to invoke `ldm mcp` rather than running it interactively).*
+
+<!-- markdownlint-disable MD049 -->
+---
+*Last Updated: 2026-07-02* | *Last Reviewed: 2026-07-02*

@@ -227,3 +227,7 @@ This maps your local Liferay HTTP port (`8080`) to a free, secure Cloudflare tun
   ```bash
   ldm run [project_id] --upgrade-db
   ```
+
+<!-- markdownlint-disable MD049 -->
+---
+*Last Updated: 2026-07-02* | *Last Reviewed: 2026-07-02*

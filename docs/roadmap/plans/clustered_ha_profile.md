@@ -87,3 +87,7 @@ dl.store.impl=com.liferay.portal.store.file.system.AdvancedFileSystemStore
 ```
 
 *(By default, Liferay DXP/Portal's AdvancedFileSystemStore writes documents to `/opt/liferay/data/document_library`, which will be mapped to our shared `liferay-shared-data` volume).*
+
+<!-- markdownlint-disable MD049 -->
+---
+*Last Updated: 2026-07-02* | *Last Reviewed: 2026-07-02*

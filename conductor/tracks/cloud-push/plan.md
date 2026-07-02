@@ -82,3 +82,7 @@ To support CI/CD pipelines and headless automation, `cloud-push` MUST mirror the
   - Add the `cloud-push` command parser with all defined flags.
   - Implement stdout pipeline support: If `-q` is passed, suppress all `UI.info` spinners and only output the final JSON status or standard error streams.
   - Ensure robust cleanup of `.ldm_temp/paas_workspace` on both success and failure states.
+
+<!-- markdownlint-disable MD049 -->
+---
+*Last Updated: 2026-07-02* | *Last Reviewed: 2026-07-02*

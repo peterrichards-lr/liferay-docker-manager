@@ -47,3 +47,7 @@ A built-in chat session for Sales Engineers and developers who prefer the termin
 1. **Test MCP**: Connect an external tool (like the official MCP Inspector) to `ldm mcp` and verify it can list projects and fetch logs.
 2. **Test CLI Config**: Configure an API key: `ldm config gemini_api_key YOUR_KEY`.
 3. **Test CLI Chat**: Run `ldm ai "My forge project is crashing, can you look at the logs?"`. Verify the CLI automatically invokes the internal MCP tool, fetches the logs, sends them to Gemini, and prints the analysis.
+
+<!-- markdownlint-disable MD049 -->
+---
+*Last Updated: 2026-07-02* | *Last Reviewed: 2026-07-02*
