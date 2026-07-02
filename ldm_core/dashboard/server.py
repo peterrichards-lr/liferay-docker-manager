@@ -376,7 +376,7 @@ def api_project_properties(project_name):
         project_meta = manager.read_meta(path) or {}
         # Load layers
         seed_ext = (
-            Path(manager.__file__).parent
+            Path(__file__).parent.parent
             / "resources"
             / "common_baseline"
             / "portal-ext.properties"
