@@ -690,7 +690,7 @@
                     const name = project.name;
                     const action = project.status === 'Running' ? 'stop' : 'start';
                     
-                    this.projectActionLoading[name] = true;
+                    this.projectActionLoading = { ...this.projectActionLoading, [name]: true };
                     this.showToast(`Requesting ${action} command for ${name}...`, 'info');
                     
                     try {
@@ -708,7 +708,7 @@
                     } catch (e) {
                         this.showToast(`Failed to trigger stack ${action}`, 'error');
                     } finally {
-                        this.projectActionLoading[name] = false;
+                        this.projectActionLoading = { ...this.projectActionLoading, [name]: false };
                     }
                 },
 

@@ -284,6 +284,29 @@ class TestDashboard(unittest.TestCase):
         self.assertEqual(response.status_code, 404)
 
     @patch("ldm_core.dashboard.server._find_project_path")
+    def test_api_get_project_properties_success(self, mock_find_path):
+        mock_find_path.return_value = Path("/dummy/project1")
+        self.manager.setup_paths.return_value = {
+            "files": Path("/dummy/project1/files"),
+            "root": Path("/dummy/project1"),
+            "common_dirs": [],
+        }
+        self.manager.config._get_properties_with_metadata.return_value = (
+            {"my.prop": "value"},
+            set(),
+        )
+
+        with (
+            patch("pathlib.Path.exists", return_value=True),
+            patch("pathlib.Path.read_text", return_value=""),
+        ):
+            response = self.client.get("/api/projects/my-project1/properties")
+
+        self.assertEqual(response.status_code, 200)
+        json_data = response.get_json()
+        self.assertTrue(any(item.get("key") == "my.prop" for item in json_data))
+
+    @patch("ldm_core.dashboard.server._find_project_path")
     def test_api_update_project_property_success(self, mock_find_path):
         mock_find_path.return_value = Path("/dummy/project1")
         self.manager.setup_paths.return_value = {
@@ -291,7 +314,6 @@ class TestDashboard(unittest.TestCase):
             "root": Path("/dummy/project1"),
             "common_dirs": [],
         }
-        self.manager.__file__ = "/dummy/manager.py"
         self.manager.config._get_properties_with_metadata.return_value = ({}, set())
 
         # Mock meta reads for properties GET return
@@ -330,7 +352,6 @@ class TestDashboard(unittest.TestCase):
             "root": Path("/dummy/project1"),
             "common_dirs": [],
         }
-        self.manager.__file__ = "/dummy/manager.py"
         self.manager.config._get_properties_with_metadata.return_value = ({}, set())
 
         # Mock meta reads for properties GET return
