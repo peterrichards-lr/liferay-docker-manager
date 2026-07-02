@@ -2315,13 +2315,27 @@ class WorkspaceService(BaseHandler):
                 UI.warning(f"Failed to extract zip for OAuth rewriting: {e}")
                 return
 
-            yaml_path = tmp_path / "client-extension.yaml"
-            if not yaml_path.exists():
+            config_file = None
+            is_json = False
+            if (tmp_path / "client-extension.yaml").exists():
+                config_file = tmp_path / "client-extension.yaml"
+            else:
+                json_files = list(tmp_path.glob("*.client-extension-config.json"))
+                if json_files:
+                    config_file = json_files[0]
+                    is_json = True
+
+            if not config_file:
                 return
 
             try:
-                content = yaml_path.read_text(encoding="utf-8")
-                data = yaml.safe_load(content)
+                content = config_file.read_text(encoding="utf-8")
+                if is_json:
+                    import json
+
+                    data = json.loads(content)
+                else:
+                    data = yaml.safe_load(content)
 
                 if not isinstance(data, dict):
                     return
@@ -2363,16 +2377,54 @@ class WorkspaceService(BaseHandler):
                                     new_redirects.append(uri)
                             block["redirectURIs"] = new_redirects
 
+                        ts = block.get("typeSettings", [])
+                        if isinstance(ts, list):
+                            for i, setting in enumerate(ts):
+                                if (
+                                    setting.startswith(".serviceAddress=")
+                                    and "localhost" in setting
+                                ):
+                                    ts[i] = f".serviceAddress={ext_name}.{host_name}"
+                                    modified = True
+                                elif (
+                                    setting.startswith(".serviceScheme=")
+                                    and protocol == "https"
+                                ):
+                                    ts[i] = ".serviceScheme=https"
+                                    modified = True
+                                elif (
+                                    setting.startswith("homePageURL=")
+                                    and "localhost" in setting
+                                ):
+                                    ts[i] = f"homePageURL={external_url}"
+                                    modified = True
+                                elif (
+                                    "redirectURIs=" in setting
+                                    and "localhost" in setting
+                                ):
+                                    ts[i] = re.sub(
+                                        r"https?://localhost:\d+", external_url, setting
+                                    )
+                                    modified = True
+
                 if modified:
+                    if is_json:
+                        import json
 
-                    class NoAliasDumper(yaml.SafeDumper):
-                        def ignore_aliases(self, data):
-                            return True
+                        config_file.write_text(
+                            json.dumps(data, indent=2),
+                            encoding="utf-8",
+                        )
+                    else:
 
-                    yaml_path.write_text(
-                        yaml.dump(data, Dumper=NoAliasDumper, sort_keys=False),
-                        encoding="utf-8",
-                    )
+                        class NoAliasDumper(yaml.SafeDumper):
+                            def ignore_aliases(self, data):
+                                return True
+
+                        config_file.write_text(
+                            yaml.dump(data, Dumper=NoAliasDumper, sort_keys=False),
+                            encoding="utf-8",
+                        )
 
                     temp_zip_path = tmp_path / "repacked.zip"
                     with zipfile.ZipFile(
