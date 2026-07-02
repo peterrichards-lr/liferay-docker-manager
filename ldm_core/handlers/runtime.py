@@ -2081,6 +2081,80 @@ class RuntimeService(BaseHandler):
                     )
 
             if delete:
+                meta = self.manager.read_meta(root)
+                if meta:
+                    baseline_default = "isolated"
+                    ldm_version = meta.get("ldm_version")
+                    if ldm_version and self.manager.parse_version(ldm_version) >= (
+                        2,
+                        11,
+                        75,
+                    ):
+                        baseline_default = "shared"
+                    if (
+                        hasattr(self.manager, "defaults")
+                        and self.manager.defaults is not None
+                    ):
+                        baseline_default = self.manager.defaults.get(
+                            "database_mode", baseline_default
+                        )
+                    db_mode = meta.get("database_mode") or baseline_default
+                    db_type = meta.get("db_type", "postgresql")
+
+                    if db_mode == "shared" and db_type != "hypersonic":
+                        from ldm_core.utils import sanitize_id
+
+                        project_name = meta.get("project_name", root.name)
+                        db_name = (
+                            f"lportal_{sanitize_id(project_name).replace('-', '_')}"
+                        )
+                        global_db_container = (
+                            "liferay-db-mysql-global"
+                            if db_type in ["mysql", "mariadb"]
+                            else "liferay-db-global"
+                        )
+
+                        if is_dry_run:
+                            UI.info(
+                                f"  {UI.BYELLOW}- [Dry Run] Would drop database {db_name} from shared container {global_db_container}{UI.COLOR_OFF}"
+                            )
+                        else:
+                            UI.info(f"Dropping shared database schema: {db_name}")
+                            drop_cmd = []
+                            if db_type == "postgresql":
+                                drop_cmd = [
+                                    "docker",
+                                    "exec",
+                                    global_db_container,
+                                    "dropdb",
+                                    "-U",
+                                    "liferay",
+                                    "--if-exists",
+                                    db_name,
+                                ]
+                            elif db_type in ["mysql", "mariadb"]:
+                                drop_cmd = [
+                                    "docker",
+                                    "exec",
+                                    global_db_container,
+                                    "mysql",
+                                    "-u",
+                                    "root",
+                                    "-pliferay",
+                                    "-e",
+                                    f"DROP DATABASE IF EXISTS {db_name};",
+                                ]
+
+                            if drop_cmd:
+                                try:
+                                    subprocess.run(
+                                        drop_cmd, check=False, capture_output=True
+                                    )
+                                except Exception as e:
+                                    UI.warning(
+                                        f"Failed to drop shared database {db_name} (container might be offline): {e}"
+                                    )
+
                 if is_dry_run:
                     UI.warning(
                         f"  {UI.BYELLOW}- [Dry Run] Would unregister project {root.name} and permanently delete directory {root}{UI.COLOR_OFF}"

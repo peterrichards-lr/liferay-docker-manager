@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING, Any, cast
 if TYPE_CHECKING:
     pass
 
-from ldm_core.constants import SCRIPT_DIR
+from ldm_core.constants import SCRIPT_DIR, VERSION
 from ldm_core.handlers.base import BaseHandler
 from ldm_core.ui import UI
 from ldm_core.utils import (
@@ -252,7 +252,9 @@ class WorkspaceService(BaseHandler):
                     info["oauth_erc"] = erc
         return info
 
-    def scan_client_extensions(self, root_dir, osgi_cx_dir, ce_build_dir):
+    def scan_client_extensions(
+        self, root_dir, osgi_cx_dir, ce_build_dir, host_name=None
+    ):
         extensions: list[dict[str, Any]] = []
         if not root_dir.exists():
             return extensions
@@ -324,6 +326,11 @@ class WorkspaceService(BaseHandler):
                             if dest_zip.exists():
                                 os.remove(dest_zip)
                             safe_copy(root_zip_copy, dest_zip)
+
+                        if host_name:
+                            self._rewrite_oauth_urls_in_zip(
+                                dest_zip, host_name, item.stem.lower().replace("_", "-")
+                            )
 
                         extensions.append(
                             {
@@ -775,6 +782,7 @@ class WorkspaceService(BaseHandler):
                 "host_name": "localhost",
                 "tag": "2026.q1.4-lts",
                 "db_type": "postgresql",
+                "ldm_version": VERSION,
             }
             self.manager.write_meta(project_path, project_meta)
             return project_name
@@ -1574,6 +1582,7 @@ class WorkspaceService(BaseHandler):
                 "custom_env": json.dumps(custom_env),
                 "db_type": getattr(self.manager.args, "db", None),
                 "workspace_path": str(source) if is_init_from else None,
+                "ldm_version": VERSION,
             }
 
             gradle_props = workspace_root / "gradle.properties"
@@ -2279,3 +2288,111 @@ class WorkspaceService(BaseHandler):
         if share:
             UI.info("Exposing quickstart tunnel...")
             self.manager.share.cmd_start(project_name, subdomain=share_subdomain)
+
+    def _rewrite_oauth_urls_in_zip(self, zip_path: Path, host_name: str, ext_name: str):
+        if not host_name or host_name == "localhost":
+            return
+
+        import os
+        import re
+        import tempfile
+        import zipfile
+
+        import yaml
+
+        from ldm_core.utils import safe_extract, safe_move
+
+        protocol = "https"
+        external_url = f"{protocol}://{ext_name}.{host_name}"
+
+        modified = False
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_path = Path(tmpdir)
+            try:
+                with zipfile.ZipFile(zip_path, "r") as zip_ref:
+                    safe_extract(zip_ref, tmp_path)
+            except Exception as e:
+                UI.warning(f"Failed to extract zip for OAuth rewriting: {e}")
+                return
+
+            yaml_path = tmp_path / "client-extension.yaml"
+            if not yaml_path.exists():
+                return
+
+            try:
+                content = yaml_path.read_text(encoding="utf-8")
+                data = yaml.safe_load(content)
+
+                if not isinstance(data, dict):
+                    return
+
+                for _key, block in data.items():
+                    if (
+                        isinstance(block, dict)
+                        and block.get("type") == "oAuthApplicationUserAgent"
+                    ):
+                        service_address = block.get(".serviceAddress", "")
+                        if "localhost" in service_address:
+                            block[".serviceAddress"] = f"{ext_name}.{host_name}"
+                            modified = True
+
+                        if (
+                            block.get(".serviceScheme") == "http"
+                            and protocol == "https"
+                        ):
+                            block[".serviceScheme"] = "https"
+                            modified = True
+
+                        hp_url = block.get("homePageURL", "")
+                        if "localhost" in hp_url:
+                            block["homePageURL"] = external_url
+                            modified = True
+
+                        redirects = block.get("redirectURIs", [])
+                        if redirects and isinstance(redirects, list):
+                            new_redirects = []
+                            for uri in redirects:
+                                if "localhost" in uri:
+                                    new_uri = re.sub(
+                                        r"https?://localhost:\d+", external_url, uri
+                                    )
+                                    new_redirects.append(new_uri)
+                                    if new_uri != uri:
+                                        modified = True
+                                else:
+                                    new_redirects.append(uri)
+                            block["redirectURIs"] = new_redirects
+
+                if modified:
+
+                    class NoAliasDumper(yaml.SafeDumper):
+                        def ignore_aliases(self, data):
+                            return True
+
+                    yaml_path.write_text(
+                        yaml.dump(data, Dumper=NoAliasDumper, sort_keys=False),
+                        encoding="utf-8",
+                    )
+
+                    temp_zip_path = tmp_path / "repacked.zip"
+                    with zipfile.ZipFile(
+                        temp_zip_path, "w", zipfile.ZIP_DEFLATED
+                    ) as new_zip:
+                        for root, _dirs, files in os.walk(tmp_path):
+                            for file in files:
+                                if file == "repacked.zip":
+                                    continue
+                                file_path = Path(root) / file
+                                arcname = file_path.relative_to(tmp_path)
+                                new_zip.write(file_path, arcname)
+
+                    os.remove(zip_path)
+                    safe_move(str(temp_zip_path), str(zip_path))
+                    UI.detail(
+                        f"  + Dynamically rewrote OAuth profile URLs in {zip_path.name}"
+                    )
+
+            except Exception as e:
+                UI.warning(
+                    f"Failed to modify client-extension.yaml for OAuth rewriting in {zip_path.name}: {e}"
+                )
