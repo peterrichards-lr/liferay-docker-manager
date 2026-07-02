@@ -11,9 +11,12 @@ class MockManager:
 
 class TestLicenseHandler(unittest.TestCase):
     def setUp(self):
+        import tempfile
+
         self.mock_manager = MockManager()
         self.manager = LicenseService(self.mock_manager)
-        self.test_dir = Path("/tmp/ldm_license_test")
+        self.temp_dir_obj = tempfile.TemporaryDirectory()
+        self.test_dir = Path(self.temp_dir_obj.name)
         self.test_dir.mkdir(parents=True, exist_ok=True)
         self.common_dir = self.test_dir / "common"
         self.deploy_dir = self.test_dir / "deploy"

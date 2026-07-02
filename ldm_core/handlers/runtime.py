@@ -644,8 +644,13 @@ class RuntimeService(BaseHandler):
                 self.sync_stack(
                     paths, project_meta, no_up=True, no_wait=True, show_summary=False
                 )
+                db_args = (
+                    ["up", "-d", "db"]
+                    if str(project_meta.get("use_shared_db", "false")).lower() != "true"
+                    else ["up", "-d"]
+                )
                 self.manager.run_command(
-                    [*get_compose_cmd(), "up", "-d", "db"], cwd=str(paths["root"])
+                    [*get_compose_cmd(), *db_args], cwd=str(paths["root"])
                 )
                 time.sleep(5)
                 self.manager.snapshot.cmd_restore(
@@ -1536,6 +1541,9 @@ class RuntimeService(BaseHandler):
                     db_container = f"{container_name}-db"
 
                 db_type_val = project_meta.get("db_type", "postgresql")
+                use_shared_db = (
+                    str(project_meta.get("use_shared_db", "false")).lower() == "true"
+                )
                 if db_type_val not in ["hypersonic", "external"]:
                     # Check if DB container is running
                     is_running = self.manager.run_command(
@@ -1546,8 +1554,11 @@ class RuntimeService(BaseHandler):
                         UI.info(
                             "Starting database container temporarily to take a snapshot backup..."
                         )
+                        db_args = (
+                            ["up", "-d", "db"] if not use_shared_db else ["up", "-d"]
+                        )
                         self.manager.run_command(
-                            [*compose_base, "-f", str(compose_file), "up", "-d", "db"]
+                            [*compose_base, "-f", str(compose_file), *db_args]
                         )
                         time.sleep(5)
 
@@ -1884,8 +1895,11 @@ class RuntimeService(BaseHandler):
                 UI.debug(f"Time to orchestration start: {duration_str}")
 
             db_type = project_meta.get("db_type", "postgresql")
+            use_shared_db = (
+                str(project_meta.get("use_shared_db", "false")).lower() == "true"
+            )
             deps = []
-            if db_type != "hypersonic":
+            if db_type != "hypersonic" and not use_shared_db:
                 deps.append("db")
 
             if deps:
