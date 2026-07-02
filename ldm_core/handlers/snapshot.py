@@ -930,7 +930,14 @@ class SnapshotService(BaseHandler):
             # attempting to initialize schemas during the restore process.
             self.manager.runtime.cmd_stop(project_id, service="liferay")
 
+            db_mode = project_meta.get("database_mode") or "isolated"
+            if hasattr(self.manager, "defaults") and self.manager.defaults is not None:
+                db_mode = self.manager.defaults.get("database_mode", db_mode)
+
             db_container = project_meta.get("db_container_name")
+            if db_mode == "shared":
+                db_container = "liferay-db-global"
+
             if not db_container:
                 for suffix in ["-db", "-db-1"]:
                     candidate = f"{container_name}{suffix}"
@@ -943,27 +950,30 @@ class SnapshotService(BaseHandler):
             if not db_container or not self.manager.run_command(
                 ["docker", "ps", "-q", "-f", f"name=^{db_container}$"]
             ):
-                from ldm_core.utils import get_compose_cmd
+                UI.info("  + Starting database container for restore...")
+                if db_mode == "shared":
+                    self.manager.infra.setup_global_database()
+                else:
+                    from ldm_core.utils import get_compose_cmd
 
-                compose_base = get_compose_cmd()
-                if compose_base:
-                    UI.info("  + Starting database container for restore...")
-                    self.manager.run_command(
-                        [*compose_base, "up", "-d", "db"], cwd=str(paths["root"])
-                    )
+                    compose_base = get_compose_cmd()
+                    if compose_base:
+                        self.manager.run_command(
+                            [*compose_base, "up", "-d", "db"], cwd=str(paths["root"])
+                        )
 
-                    # Wait for DB to be responsive
-                    for _i in range(10):
-                        time.sleep(2)
-                        for suffix in ["-db", "-db-1"]:
-                            candidate = f"{container_name}{suffix}"
-                            if self.manager.run_command(
-                                ["docker", "ps", "-q", "-f", f"name=^{candidate}$"]
-                            ):
-                                db_container = candidate
+                        # Wait for DB to be responsive
+                        for _i in range(10):
+                            time.sleep(2)
+                            for suffix in ["-db", "-db-1"]:
+                                candidate = f"{container_name}{suffix}"
+                                if self.manager.run_command(
+                                    ["docker", "ps", "-q", "-f", f"name=^{candidate}$"]
+                                ):
+                                    db_container = candidate
+                                    break
+                            if db_container:
                                 break
-                        if db_container:
-                            break
 
             if db_container:
                 self._execute_orchestrated_db_restore(
