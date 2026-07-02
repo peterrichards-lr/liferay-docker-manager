@@ -1187,16 +1187,24 @@ class DoctorRunner:
                             True,
                         )
                     )
-            elif configs_exist or configs_partial:
+            elif configs_exist:
                 self.results.append(
                     (
                         f"[{p_path.name}] OSGi Search",
-                        "SIDECAR (LDM Overriding OSGi)",
+                        "REMOTE mode (Custom OSGi Configs)",
+                        True,
+                    )
+                )
+            elif configs_partial:
+                self.results.append(
+                    (
+                        f"[{p_path.name}] OSGi Search",
+                        "Partial / Incomplete (Custom Configs)",
                         "warn",
                     )
                 )
                 self.add_hint(
-                    f"[{p_path.name}] Project has Remote ES configs, but LDM Search is disabled. Run '{UI.WHITE}ldm run {p_path.name} --search{UI.COLOR_OFF}'."
+                    f"[{p_path.name}] Ensure both custom Elasticsearch configs exist in '{UI.WHITE}osgi/configs/{UI.COLOR_OFF}'."
                 )
             else:
                 self.results.append(
