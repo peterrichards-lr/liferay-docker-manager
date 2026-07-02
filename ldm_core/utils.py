@@ -1887,7 +1887,7 @@ def verify_safe_to_delete(path):
     # 3. Block deletion of the LDM installation/source directory or any of its parents
     try:
         pkg_dir = Path(__file__).parent.parent.resolve()
-        if path_obj == pkg_dir or pkg_dir in path_obj.parents:
+        if path_obj == pkg_dir or path_obj in pkg_dir.parents:
             raise ValueError(
                 f"Safety Violation: Cannot delete LDM installation/source directory: {path_obj}"
             )

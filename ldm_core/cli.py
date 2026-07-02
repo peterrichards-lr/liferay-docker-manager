@@ -404,6 +404,11 @@ def get_parser():
     run.add_argument("--force-ssl", action="store_true")
     run.add_argument("--port", type=int)
     run.add_argument("--db", choices=["postgresql", "mysql", "hypersonic"])
+    run.add_argument(
+        "--search-mode",
+        choices=["shared", "sidecar", "remote"],
+        help="Explicitly force a specific Elasticsearch mode (overrides local repository configs)",
+    )
     run.add_argument("--release-type", choices=["any", "u", "lts", "qr"])
     run.add_argument("--portal", action="store_true")
     run.add_argument("--refresh", action="store_true")
@@ -678,8 +683,13 @@ def get_parser():
     hydrate.add_argument("-t", "--tag", help="Liferay Tag (e.g. 2024.q1.3)")
     hydrate.add_argument(
         "--db",
-        choices=["postgresql", "mysql"],
+        choices=["postgresql", "mysql", "hypersonic"],
         help="Database type for the seed",
+    )
+    hydrate.add_argument(
+        "--search-mode",
+        choices=["shared", "sidecar", "remote"],
+        help="Explicitly force a specific Elasticsearch mode (overrides local repository configs)",
     )
 
     # Command: init
@@ -698,6 +708,11 @@ def get_parser():
     )
     init.add_argument("--host-name", help="Virtual Hostname")
     init.add_argument("--db", choices=["postgresql", "mysql", "hypersonic", "external"])
+    init.add_argument(
+        "--search-mode",
+        choices=["shared", "sidecar", "remote"],
+        help="Explicitly force a specific Elasticsearch mode (overrides local repository configs)",
+    )
     init.add_argument("--internal-state", action="store_true")
     init.add_argument(
         "--samples", action="store_true", help="Initialize with sample extensions"
@@ -742,6 +757,11 @@ def get_parser():
     init_from.add_argument("--no-ssl", action="store_false", dest="ssl")
     init_from.add_argument("--port", type=int)
     init_from.add_argument("--db", choices=["postgresql", "mysql", "hypersonic"])
+    init_from.add_argument(
+        "--search-mode",
+        choices=["shared", "sidecar", "remote"],
+        help="Explicitly force a specific Elasticsearch mode (overrides local repository configs)",
+    )
     init_from.add_argument("--mount-logs", action="store_true")
     init_from.add_argument("--gogo-port", type=int)
     init_from.add_argument("--jvm-args", help="Override Liferay JVM arguments")
