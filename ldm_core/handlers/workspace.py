@@ -1061,10 +1061,14 @@ class WorkspaceService(BaseHandler):
                             or "localhost"
                         )
                         ssl_arg = getattr(self.manager.args, "ssl", None)
+                        print(f"DEBUG: ssl_arg={ssl_arg}, type={type(ssl_arg)}")
                         if ssl_arg is not None:
                             final_ssl = str(ssl_arg).lower()
                         elif getattr(self.manager.args, "host_name", None) is not None:
                             final_ssl = str(final_host_name != "localhost").lower()
+                            print(
+                                f"DEBUG: final_host_name={final_host_name}, final_ssl={final_ssl}"
+                            )
                         else:
                             final_ssl = str(project_meta.get("ssl") or "false").lower()
 
@@ -1379,10 +1383,14 @@ class WorkspaceService(BaseHandler):
                     or "localhost"
                 )
                 ssl_arg = getattr(self.manager.args, "ssl", None)
+                print(f"DEBUG: ssl_arg={ssl_arg}, type={type(ssl_arg)}")
                 if ssl_arg is not None:
                     final_ssl = str(ssl_arg).lower()
                 elif getattr(self.manager.args, "host_name", None) is not None:
                     final_ssl = str(final_host_name != "localhost").lower()
+                    print(
+                        f"DEBUG: final_host_name={final_host_name}, final_ssl={final_ssl}"
+                    )
                 else:
                     final_ssl = str(project_meta.get("ssl") or "false").lower()
 
@@ -1522,6 +1530,7 @@ class WorkspaceService(BaseHandler):
 
             # SSL Rule: Default to True only if host_name is NOT localhost
             ssl_arg = getattr(self.manager.args, "ssl", None)
+            print(f"DEBUG: ssl_arg={ssl_arg}, type={type(ssl_arg)}")
             use_ssl = ssl_arg if ssl_arg is not None else host_name != "localhost"
 
             # DNS Check (Intelligent & Auto-Fixing)

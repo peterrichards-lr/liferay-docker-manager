@@ -286,16 +286,17 @@ class AssetService:
         )
 
         ans = UI.ask(
-            "Release type (lts|u|qr), prefix, or specific tag",
+            "Release type (lts|u|qr|latest), prefix, or specific tag",
             default_tag,
         )
 
         if ans == default_tag:
             return default_tag
-        if ans.lower() in ["any", "u", "lts", "qr"]:
+        if ans.lower() in ["any", "latest", "u", "lts", "qr"]:
+            release_type = "any" if ans.lower() == "latest" else ans.lower()
             resolved = discover_latest_tag(
                 API_BASE_DXP,
-                release_type=ans.lower(),
+                release_type=release_type,
                 verbose=self.manager.verbose if self.manager else False,
             )
             if not resolved:

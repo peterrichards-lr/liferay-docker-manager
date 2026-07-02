@@ -350,18 +350,19 @@ class RuntimeService(BaseHandler):
                     )
 
                     ans = UI.ask(
-                        "Release type (lts|u|qr), prefix, or specific tag",
+                        "Release type (lts|u|qr|latest), prefix, or specific tag",
                         default_resolved_tag,
                     )
 
                     if ans == default_resolved_tag:
                         tag = default_resolved_tag
-                    elif ans.lower() in ["any", "u", "lts", "qr"]:
+                    elif ans.lower() in ["any", "latest", "u", "lts", "qr"]:
+                        release_type = "any" if ans.lower() == "latest" else ans.lower()
                         if self.manager.verbose:
                             UI.info(f"Discovering latest {ans.upper()} release...")
                         tag = discover_latest_tag(
                             api_base,
-                            release_type=ans.lower(),
+                            release_type=release_type,
                             verbose=self.manager.verbose,
                         )
                         if not tag:
@@ -1598,6 +1599,59 @@ class RuntimeService(BaseHandler):
         use_shared_search = (
             str(project_meta.get("use_shared_search", "true")).lower() == "true"
         )
+
+        if not use_shared_search:
+            is_es8 = self.manager.parse_version(project_meta.get("tag")) >= (2024, 1, 0)
+            es_ver = "8" if is_es8 else "7"
+            es_main_conf = (
+                paths.get("configs", paths["root"] / "osgi" / "configs")
+                / f"com.liferay.portal.search.elasticsearch{es_ver}.configuration.ElasticsearchConfiguration.config"
+            )
+            if es_main_conf.exists():
+                UI.warn(
+                    f"Custom Elasticsearch OSGi configs detected in '{es_main_conf.parent.name}', but LDM Shared Search is disabled."
+                )
+                if not self.manager.non_interactive:
+                    UI.info("How would you like to resolve this search configuration?")
+                    UI.info(
+                        "  [1] Keep configs: Connect to my own external Remote cluster (Default)"
+                    )
+                    UI.info(
+                        "  [2] Delete configs: Fallback to LDM Sidecar (Internal) mode"
+                    )
+                    UI.info(
+                        "  [3] Delete configs: Migrate to LDM Global (Shared) Search"
+                    )
+                    choice = UI.ask("Select an option [1/2/3]", "1").strip()
+                    if choice == "2":
+                        es_main_conf.unlink()
+                        es_conn_conf = es_main_conf.with_name(
+                            f"com.liferay.portal.search.elasticsearch{es_ver}.configuration.ElasticsearchConnectionConfiguration.config"
+                        )
+                        if es_conn_conf.exists():
+                            es_conn_conf.unlink()
+                        UI.success(
+                            "Removed custom configs. Proceeding with Sidecar mode."
+                        )
+                    elif choice == "3":
+                        es_main_conf.unlink()
+                        es_conn_conf = es_main_conf.with_name(
+                            f"com.liferay.portal.search.elasticsearch{es_ver}.configuration.ElasticsearchConnectionConfiguration.config"
+                        )
+                        if es_conn_conf.exists():
+                            es_conn_conf.unlink()
+                        use_shared_search = True
+                        project_meta["use_shared_search"] = "true"
+                        self.manager.write_meta(paths["root"], project_meta)
+                        UI.success("Migrating to Global Shared Search.")
+                    else:
+                        UI.info(
+                            "Keeping custom configs. LDM Sidecar injection will be bypassed."
+                        )
+                else:
+                    UI.warn(
+                        "Running in non-interactive mode. Bypassing Sidecar injection to respect custom configs."
+                    )
         db_mode = (
             getattr(self.manager.args, "database_mode", None)
             or project_meta.get("database_mode")

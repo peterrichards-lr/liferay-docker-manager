@@ -208,7 +208,7 @@ To ensure maximum reliability and to follow how Liferay expects infrastructure t
 | **Database (PostgreSQL)** | **Managed via `portal-ext.properties`**. Standardized on `org.postgresql.Driver` and `PostgreSQL10Dialect`. |
 | **Conflict Avoidance** | If custom `LIFERAY_JDBC_PERIOD_` environment variables are detected in metadata, LDM **skips** writing JDBC properties to `portal-ext.properties` to ensure the user's manual config takes precedence. |
 | **SSL / Routing** | **Managed via Environment Variables**. Enforces `web.server.*` and `redirect.url.*` settings for proxy alignment. |
-| **Search (ES8)** | **Managed via Environment Variables & OSGi .config Substitution.** LDM enforces `LIFERAY_ELASTICSEARCH_SIDECAR_ENABLED=false` and unique `indexNamePrefix` dynamically to prevent collisions and skip Sidecar startup. |
+| **Search (ES8)** | **Shared Infrastructure / Interactive Resolution.** LDM attempts to use Global Search by enforcing `LIFERAY_ELASTICSEARCH_SIDECAR_ENABLED=false` dynamically. If custom Elasticsearch `.config` files are detected, LDM pauses execution and interactively prompts the user to either preserve their remote configuration, migrate to Global Search, or delete the configs to force local Sidecar. |
 | **Clustering** | **Managed via Environment Variables**. Automatically injects `cluster.link.enabled` and `lucene.replicate.write` when scaled > 1. |
 | **Identity** | `liferay.docker.image`, `liferay.docker.tag` (Labels & Env) |
 

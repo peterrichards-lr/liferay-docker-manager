@@ -1161,24 +1161,54 @@ class DoctorRunner:
                 / f"com.liferay.portal.search.elasticsearch{es_ver}.configuration.ElasticsearchConnectionConfiguration.config"
             )
 
-            if es_main_conf.exists() and es_conn_conf.exists():
-                self.results.append(
-                    (f"[{p_path.name}] OSGi Search", "REMOTE mode detected", True)
-                )
-            elif es_main_conf.exists() or es_conn_conf.exists():
-                self.results.append(
-                    (f"[{p_path.name}] OSGi Search", "Partial / Incomplete", "warn")
-                )
-                self.add_hint(
-                    f"[{p_path.name}] Ensure both Elasticsearch configs exist in '{UI.WHITE}osgi/configs/{UI.COLOR_OFF}'."
-                )
-            else:
+            use_shared_search = (
+                str(meta.get("use_shared_search", "false")).lower() == "true"
+            )
+            configs_exist = es_main_conf.exists() and es_conn_conf.exists()
+            configs_partial = es_main_conf.exists() or es_conn_conf.exists()
+
+            if use_shared_search:
+                if configs_exist:
+                    self.results.append(
+                        (f"[{p_path.name}] OSGi Search", "REMOTE mode detected", True)
+                    )
+                elif configs_partial:
+                    self.results.append(
+                        (f"[{p_path.name}] OSGi Search", "Partial / Incomplete", "warn")
+                    )
+                    self.add_hint(
+                        f"[{p_path.name}] Ensure both Elasticsearch configs exist in '{UI.WHITE}osgi/configs/{UI.COLOR_OFF}'."
+                    )
+                else:
+                    self.results.append(
+                        (
+                            f"[{p_path.name}] OSGi Search",
+                            "REMOTE mode (via ENV vars)",
+                            True,
+                        )
+                    )
+            elif configs_exist:
                 self.results.append(
                     (
                         f"[{p_path.name}] OSGi Search",
-                        "Missing (Liferay will start sidecar)",
+                        "REMOTE mode (Custom OSGi Configs)",
+                        True,
+                    )
+                )
+            elif configs_partial:
+                self.results.append(
+                    (
+                        f"[{p_path.name}] OSGi Search",
+                        "Partial / Incomplete (Custom Configs)",
                         "warn",
                     )
+                )
+                self.add_hint(
+                    f"[{p_path.name}] Ensure both custom Elasticsearch configs exist in '{UI.WHITE}osgi/configs/{UI.COLOR_OFF}'."
+                )
+            else:
+                self.results.append(
+                    (f"[{p_path.name}] OSGi Search", "SIDECAR mode active", "warn")
                 )
                 self.add_hint(
                     f"[{p_path.name}] Enable global search by running '{UI.WHITE}ldm migrate-search {p_path.name}{UI.COLOR_OFF}'.",
@@ -2936,8 +2966,10 @@ pause
 
         return arch, host_os, provider, mount_type
 
-    def cmd_doctor(self, project_id=None, all_projects=False):
+    def cmd_doctor(self, project_id=None, all_projects=False, fix_hosts=False):
         """Verify host environment health and project dependencies."""
+        if fix_hosts and self.manager and hasattr(self.manager, "args"):
+            self.manager.args.fix_hosts = True
         runner = DoctorRunner(self, project_id, all_projects)
         runner.run()
 

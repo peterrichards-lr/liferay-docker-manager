@@ -597,35 +597,45 @@ class ComposerService:
                 ]
             )
         else:
-            # LDM-Sidecar: We must explicitly tell Liferay which ports to use for Sidecar
-            # because LDM defaults to 9201 to avoid global search collisions.
-            # We use portal-ext.properties to ensure these take precedence over .config files.
-            es_port = int(meta.get("es_port", 9201))
-            tcp_port = es_port + 100
+            # Check if user has explicitly provided custom remote search configs
+            is_es8 = self.manager.parse_version(meta.get("tag")) >= (2024, 1, 0)
+            es_ver = "8" if is_es8 else "7"
+            es_main_conf = (
+                paths.get("configs", paths["root"] / "osgi" / "configs")
+                / f"com.liferay.portal.search.elasticsearch{es_ver}.configuration.ElasticsearchConfiguration.config"
+            )
+            has_custom_remote = es_main_conf.exists()
 
-            def get_es_props(ver):
-                base = f"module.framework.properties.com.liferay.portal.search.elasticsearch{ver}.configuration.ElasticsearchConfiguration"
-                return {
-                    f"{base}.operationMode": "EMBEDDED",
-                    f"{base}.sidecarHttpPort": str(es_port),
-                    f"{base}.sidecarTransportTcpPort": str(tcp_port),
-                    f"{base}.transportTcpPort": str(tcp_port),
-                    f"{base}.sidecarNetworkHost": "0.0.0.0",  # nosec B104
-                }
+            if not has_custom_remote:
+                # LDM-Sidecar: We must explicitly tell Liferay which ports to use for Sidecar
+                # because LDM defaults to 9201 to avoid global search collisions.
+                # We use portal-ext.properties to ensure these take precedence over .config files.
+                es_port = int(meta.get("es_port", 9201))
+                tcp_port = es_port + 100
 
-            self.manager.config.update_portal_ext(paths, get_es_props(7))
-            self.manager.config.update_portal_ext(paths, get_es_props(8))
+                def get_es_props(ver):
+                    base = f"module.framework.properties.com.liferay.portal.search.elasticsearch{ver}.configuration.ElasticsearchConfiguration"
+                    return {
+                        f"{base}.operationMode": "EMBEDDED",
+                        f"{base}.sidecarHttpPort": str(es_port),
+                        f"{base}.sidecarTransportTcpPort": str(tcp_port),
+                        f"{base}.transportTcpPort": str(tcp_port),
+                        f"{base}.sidecarNetworkHost": "0.0.0.0",  # nosec B104
+                    }
+
+                self.manager.config.update_portal_ext(paths, get_es_props(7))
+                self.manager.config.update_portal_ext(paths, get_es_props(8))
+
+                liferay_env.extend(
+                    [
+                        "LIFERAY_ELASTICSEARCH_PERIOD_PRODUCTION_PERIOD_MODE_PERIOD_ENABLED=false",
+                        "LIFERAY_ELASTICSEARCH_PERIOD_SIDECAR_PERIOD_ENABLED=true",
+                        "LIFERAY_ELASTICSEARCH_PERIOD_OPERATION_PERIOD_MODE=EMBEDDED",
+                    ]
+                )
 
             if "-Dliferay.auto.deploy.interval" not in jvm_opts:
                 jvm_opts += " -Dliferay.auto.deploy.interval=5000"
-
-            liferay_env.extend(
-                [
-                    "LIFERAY_ELASTICSEARCH_PERIOD_PRODUCTION_PERIOD_MODE_PERIOD_ENABLED=false",
-                    "LIFERAY_ELASTICSEARCH_PERIOD_SIDECAR_PERIOD_ENABLED=true",
-                    "LIFERAY_ELASTICSEARCH_PERIOD_OPERATION_PERIOD_MODE=EMBEDDED",
-                ]
-            )
 
         # LDM-422: Automatic Reindex on Startup
         if str(meta.get("reindex_required", "false")).lower() == "true":

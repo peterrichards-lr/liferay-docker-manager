@@ -69,7 +69,7 @@ class TestE2EWorkspace(unittest.TestCase):
         stdout_val = mock_stdout.getvalue()
 
         # Verify it reached the prompts
-        self.assertIn("Release type (any|u|lts|qr) or prefix", stdout_val)
+        self.assertIn("Release type (lts|u|qr|latest)", stdout_val)
         self.assertTrue(mock_cmd_run.called)
 
         # Cleanup
