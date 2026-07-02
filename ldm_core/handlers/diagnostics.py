@@ -1909,16 +1909,14 @@ class DiagnosticsService:
             f"  {UI.WHITE}Status:{UI.COLOR_OFF}     {status_color}{status}{UI.COLOR_OFF}"
         )
 
-        host_name = meta.get("host_name")
-        if host_name:
-            ssl_enabled = self.manager.composer._is_ssl_active(host_name, meta)
-            port = meta.get("port", 8080)
-            url = (
-                f"https://{host_name}" if ssl_enabled else f"http://{host_name}:{port}"
-            )
-            UI.raw(
-                f"  {UI.WHITE}URL:{UI.COLOR_OFF}        {UI.CYAN}{UI.UNDERLINE}{url}{UI.COLOR_OFF}"
-            )
+        host_name = meta.get("host_name", "localhost")
+        ssl_enabled = self.manager.composer._is_ssl_active(host_name, meta)
+        port = meta.get("port", 8080)
+
+        url = f"https://{host_name}" if ssl_enabled else f"http://{host_name}:{port}"
+        UI.raw(
+            f"  {UI.WHITE}URL:{UI.COLOR_OFF}        {UI.CYAN}{UI.UNDERLINE}{url}{UI.COLOR_OFF}"
+        )
 
         # LDM-388: Explicit Container Names for reference
         UI.raw("")
@@ -1960,7 +1958,7 @@ class DiagnosticsService:
 
         share_subdomain = meta.get("share_subdomain")
         share_domain = meta.get("share_domain", "lfr-demo.online")
-        host_name = meta.get("host_name", "localhost")
+
         project_name = meta.get("container_name", root.name)
         is_shared = meta.get("share") or meta.get("share_provider")
 
@@ -1975,7 +1973,11 @@ class DiagnosticsService:
                 ext_id = ext.get("id")
                 ext_name = f"{project_name}-{ext_id}"
 
-                local_url = f"http://{ext_id}.{host_name}:8080"
+                if ssl_enabled:
+                    local_url = f"https://{ext_id}.{host_name}"
+                else:
+                    local_url = f"http://{ext_id}.{host_name}:{port}"
+
                 urls_str = local_url
                 if is_shared and share_subdomain:
                     public_url = None
