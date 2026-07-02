@@ -1245,11 +1245,11 @@ class RuntimeService(BaseHandler):
         """Wait for Liferay to become healthy and provide access information."""
         container_name = project_meta.get("container_name")
         start_time = time.time()
-
         with UI.spinner(
             f"Waiting for Liferay to become healthy ({container_name})..."
         ) as spinner:
             last_notified_time = 0
+            seen_errors = set()
             while time.time() - start_time < timeout:
                 elapsed = time.time() - start_time
                 # Notify every 30 seconds (Robust timestamp check)
@@ -1277,12 +1277,20 @@ class RuntimeService(BaseHandler):
                                 or "FATAL" in line.upper()
                                 or "CRITICAL" in line.upper()
                             ]
-                            if error_lines:
+
+                            new_error_lines = [
+                                line for line in error_lines if line not in seen_errors
+                            ]
+
+                            if new_error_lines:
+                                seen_errors.update(new_error_lines)
                                 UI.warning(
-                                    f"LDM detected {len(error_lines)} error(s) in the logs."
+                                    f"LDM detected {len(new_error_lines)} new error(s) in the logs."
                                 )
                                 # Display the most recent unique error
-                                last_unique_error = list(dict.fromkeys(error_lines))[-1]
+                                last_unique_error = list(
+                                    dict.fromkeys(new_error_lines)
+                                )[-1]
                                 UI.info(
                                     f"Recent log error: {UI.YELLOW}{last_unique_error[:120]}...{UI.COLOR_OFF}"
                                 )
@@ -1293,7 +1301,7 @@ class RuntimeService(BaseHandler):
                                 )
 
                                 advice = None
-                                for err_line in reversed(error_lines):
+                                for err_line in reversed(new_error_lines):
                                     advice = check_troubleshooting_signatures(err_line)
                                     if advice:
                                         break
