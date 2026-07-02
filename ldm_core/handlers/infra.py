@@ -387,6 +387,11 @@ tls:
 
         db_name = "liferay-db-global"
         exists = DockerService.exists(db_name)
+        running = DockerService.is_running(db_name)
+
+        if exists and not running:
+            UI.detail("Starting existing Global Database (PostgreSQL) container...")
+            DockerService.start(db_name)
 
         if not exists:
             UI.detail("Initializing Global Database (PostgreSQL) container...")
@@ -450,6 +455,11 @@ tls:
 
         search_name = "liferay-search-global"
         exists = DockerService.exists(search_name)
+        running = DockerService.is_running(search_name)
+
+        if exists and not running:
+            UI.detail("Starting existing Global Search (ES8) container...")
+            DockerService.start(search_name)
 
         if not exists:
             UI.detail("Initializing Global Search (ES8) container...")
