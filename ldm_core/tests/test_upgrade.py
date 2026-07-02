@@ -27,6 +27,7 @@ class MockManager(BaseHandler):
         self.args.no_backup_on_upgrade = False
         self.verbose = False
         self.non_interactive = False
+        self.defaults = {}
         self.license = LicenseService(self)
         self.assets = AssetService(self)
         self.config = ConfigService(self)

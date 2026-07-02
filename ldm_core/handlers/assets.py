@@ -31,7 +31,7 @@ class AssetService:
         UI.info(f"Checking for pre-warmed seed: {UI.CYAN}{seed_filename}{UI.COLOR_OFF}")
 
         headers = {}
-        token = os.environ.get("GITHUB_TOKEN")
+        token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GITHUB_PAT")
         if token:
             headers["Authorization"] = f"token {token}"
 

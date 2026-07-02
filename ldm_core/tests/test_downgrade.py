@@ -22,6 +22,7 @@ class MockManager(BaseHandler):
         self.args.force_downgrade = False
         self.verbose = False
         self.non_interactive = True
+        self.defaults = {}
         self.license = LicenseService(self)
         self.assets = AssetService(self)
         self.config = ConfigService(self)

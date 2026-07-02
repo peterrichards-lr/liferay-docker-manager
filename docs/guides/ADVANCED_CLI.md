@@ -65,3 +65,7 @@ Advanced options for memory constraints and Java-level debugging.
 <!-- markdownlint-disable MD049 -->
 ---
 *Last Updated: 2026-07-02* | *Last Reviewed: 2026-07-02*
+
+### `--search-mode`
+
+Controls whether LDM provisions a dedicated Elasticsearch container or connects to the Global Shared Elasticsearch cluster. Available modes: `sidecar` or `shared`.

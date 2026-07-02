@@ -1927,6 +1927,29 @@ class DiagnosticsService:
         UI.raw(
             f"    {UI.WHITE}Database:{UI.COLOR_OFF}   {UI.CYAN}{meta.get('db_container_name', 'N/A')}{UI.COLOR_OFF}"
         )
+        project_name = meta.get("container_name", root.name)
+
+        default_shared = (
+            "true" if self.manager.defaults.get("search_mode") == "shared" else "false"
+        )
+        use_shared = (
+            str(meta.get("use_shared_search", default_shared)).lower() == "true"
+        )
+        if not use_shared and self.manager.parse_version(meta.get("tag", "")) >= (
+            2025,
+            2,
+            0,
+        ):
+            use_shared = True
+
+        search_mode = "Shared (Global)" if use_shared else "Sidecar (Isolated)"
+        UI.raw(
+            f"    {UI.WHITE}Search:{UI.COLOR_OFF}     {UI.CYAN}{search_mode}{UI.COLOR_OFF}"
+        )
+        if use_shared:
+            UI.raw(
+                f"      {UI.WHITE}└─ Index Prefix:{UI.COLOR_OFF} {UI.CYAN}ldm-{project_name}-{UI.COLOR_OFF}"
+            )
         if meta.get("share_provider") == "lfr-tunnel-docker" or meta.get(
             "tunnel_container_name"
         ):

@@ -644,11 +644,10 @@ class RuntimeService(BaseHandler):
                 self.sync_stack(
                     paths, project_meta, no_up=True, no_wait=True, show_summary=False
                 )
-                db_args = (
-                    ["up", "-d", "db"]
-                    if str(project_meta.get("use_shared_db", "false")).lower() != "true"
-                    else ["up", "-d"]
-                )
+                db_mode = project_meta.get(
+                    "database_mode"
+                ) or self.manager.defaults.get("database_mode", "isolated")
+                db_args = ["up", "-d", "db"] if db_mode != "shared" else ["up", "-d"]
                 self.manager.run_command(
                     [*get_compose_cmd(), *db_args], cwd=str(paths["root"])
                 )
@@ -815,6 +814,184 @@ class RuntimeService(BaseHandler):
                             )
 
         return targets
+
+    def _patch_fragment_overrides(self, project_meta, paths):
+        """Execute headless API requests to dynamically patch fragment configurations."""
+        import base64
+        import json
+        import os
+        import string
+        import urllib.error
+        import urllib.request
+
+        overrides_file = paths["root"] / "configs" / "fragment-overrides.json"
+        if not overrides_file.exists():
+            overrides_file = paths["root"] / ".ldm" / "fragment-overrides.json"
+
+        if not overrides_file.exists():
+            return
+
+        dxp_version = self.manager.parse_version(project_meta.get("tag", ""))
+        if dxp_version < (2025, 1, 0):
+            UI.warning(
+                "fragment-overrides.json found, but DXP version is < 2025.Q1. Headless Page API not supported. Skipping patches."
+            )
+            return
+
+        try:
+            with open(overrides_file) as f:
+                overrides = json.load(f)
+        except Exception as e:
+            UI.warning(f"Failed to read fragment-overrides.json: {e}")
+            return
+
+        if not overrides:
+            return
+
+        UI.info("Executing dynamic Headless API fragment configuration patches...")
+
+        # 1. Build expansion dictionary
+        expansion_env = os.environ.copy()
+        expansion_env["LDM_HOST_NAME"] = project_meta.get("host_name", "localhost")
+
+        # Extract Docker environment variables (which contain LIFERAY_ROUTES_*)
+        container_name = project_meta.get("liferay_container_name") or project_meta.get(
+            "container_name"
+        )
+        if container_name:
+            try:
+                inspect_output = self.manager.run_command(
+                    [
+                        "docker",
+                        "inspect",
+                        "-f",
+                        "{{range .Config.Env}}{{println .}}{{end}}",
+                        container_name,
+                    ],
+                    check=False,
+                    capture_output=True,
+                )
+                if inspect_output:
+                    for line in inspect_output.splitlines():
+                        if "=" in line:
+                            k, v = line.split("=", 1)
+                            expansion_env[k] = v
+            except Exception:
+                pass
+
+        def expand_vars(obj):
+            if isinstance(obj, str):
+                return string.Template(obj).safe_substitute(expansion_env)
+            if isinstance(obj, dict):
+                return {k: expand_vars(v) for k, v in obj.items()}
+            if isinstance(obj, list):
+                return [expand_vars(i) for i in obj]
+            return obj
+
+        overrides = expand_vars(overrides)
+
+        # 2. Setup API client
+        admin_email = self.manager.get_config("admin_email", "test@liferay.com")
+        admin_pass = self.manager.get_config("admin_password", "test")
+
+        # Determine exposed port
+        lfr_port = "8080"
+        try:
+            inspect_output = self.manager.run_command(
+                ["docker", "port", container_name, "8080"],
+                check=False,
+                capture_output=True,
+            )
+            if inspect_output and ":" in inspect_output:
+                lfr_port = inspect_output.split(":")[-1].strip()
+        except Exception:
+            pass
+
+        base_url = f"http://127.0.0.1:{lfr_port}"
+        auth_string = f"{admin_email}:{admin_pass}"
+        auth_b64 = base64.b64encode(auth_string.encode("utf-8")).decode("utf-8")
+        headers = {
+            "Authorization": f"Basic {auth_b64}",
+            "Accept": "application/json",
+            "Content-Type": "application/json",
+        }
+
+        def api_request(method, path, payload=None):
+            url = f"{base_url}{path}"
+            req = urllib.request.Request(url, headers=headers, method=method)
+            if payload:
+                req.data = json.dumps(payload).encode("utf-8")
+            try:
+                with urllib.request.urlopen(req) as response:  # nosec B310
+                    return json.loads(response.read().decode())
+            except urllib.error.HTTPError as e:
+                # 404 indicates feature flag missing or page not found
+                if e.code == 404:
+                    return None
+                UI.warning(f"Headless API {method} {path} failed: {e.code} {e.reason}")
+                return None
+            except Exception as e:
+                UI.warning(f"Headless API request failed: {e}")
+                return None
+
+        # 3. Fetch Sites and Patch
+        sites_data = api_request("GET", "/o/headless-delivery/v1.0/sites")
+        if not sites_data or "items" not in sites_data:
+            return
+
+        patched_count = 0
+        for site in sites_data["items"]:
+            site_id = site["id"]
+
+            pages_data = api_request(
+                "GET", f"/o/headless-delivery/v1.0/sites/{site_id}/site-pages"
+            )
+            if not pages_data or "items" not in pages_data:
+                continue
+
+            for page in pages_data["items"]:
+                page_def = page.get("pageDefinition")
+                if not page_def:
+                    continue
+
+                def patch_fragments(element, page_name):
+                    nonlocal patched_count
+                    if element.get("type") == "Fragment":
+                        frag_key = (
+                            element.get("definition", {})
+                            .get("fragmentConfig", {})
+                            .get("fragmentKey")
+                        )
+                        for rule in overrides:
+                            if rule.get("fragmentKey") == frag_key:
+                                element_id = element.get("id")
+                                if element_id:
+                                    patch_payload = {
+                                        "definition": {
+                                            "config": rule.get("overrides", {})
+                                        }
+                                    }
+                                    res = api_request(
+                                        "PATCH",
+                                        f"/o/headless-delivery/v1.0/page-elements/{element_id}",
+                                        payload=patch_payload,
+                                    )
+                                    if res:
+                                        UI.success(
+                                            f"  -> Patched configuration for fragment '{frag_key}' on page '{page_name}'"
+                                        )
+                                        patched_count += 1
+
+                    for child in element.get("pageElements", []):
+                        patch_fragments(child, page_name)
+
+                if "pageElement" in page_def:
+                    patch_fragments(page_def["pageElement"], page.get("name"))
+
+        if patched_count > 0:
+            UI.success(
+                f"Successfully applied {patched_count} fragment configuration overrides."
+            )
 
     def cmd_wait(
         self,
@@ -1255,6 +1432,14 @@ class RuntimeService(BaseHandler):
                     duration_str = UI.format_duration(duration_total)
 
                     UI.success(f"Liferay is ready! (Total time: {duration_str})")
+
+                    # Execute Headless API patcher for fragment overrides
+                    root_path = self.manager.detect_project_path(
+                        project_id=None, for_init=True
+                    )
+                    paths = self.manager.setup_paths(root_path)
+                    self._patch_fragment_overrides(project_meta, paths)
+
                     share_enabled = (
                         str(project_meta.get("share", "false")).lower() == "true"
                         or str(project_meta.get("expose", "false")).lower() == "true"
@@ -1541,9 +1726,10 @@ class RuntimeService(BaseHandler):
                     db_container = f"{container_name}-db"
 
                 db_type_val = project_meta.get("db_type", "postgresql")
-                use_shared_db = (
-                    str(project_meta.get("use_shared_db", "false")).lower() == "true"
-                )
+                db_mode = project_meta.get(
+                    "database_mode"
+                ) or self.manager.defaults.get("database_mode", "isolated")
+                use_shared_db = db_mode == "shared"
                 if db_type_val not in ["hypersonic", "external"]:
                     # Check if DB container is running
                     is_running = self.manager.run_command(
@@ -1622,7 +1808,15 @@ class RuntimeService(BaseHandler):
                 UI.warning(
                     f"Custom Elasticsearch OSGi configs detected in '{es_main_conf.parent.name}', but LDM Shared Search is disabled."
                 )
-                if not self.manager.non_interactive:
+                search_mode_arg = getattr(self.manager.args, "search_mode", None)
+                choice = "1"
+                if search_mode_arg == "sidecar":
+                    choice = "2"
+                elif search_mode_arg == "shared":
+                    choice = "3"
+                elif search_mode_arg == "remote":
+                    choice = "1"
+                elif not self.manager.non_interactive:
                     UI.info("How would you like to resolve this search configuration?")
                     UI.info(
                         "  [1] Keep configs: Connect to my own external Remote cluster (Default)"
@@ -1634,34 +1828,28 @@ class RuntimeService(BaseHandler):
                         "  [3] Delete configs: Migrate to LDM Global (Shared) Search"
                     )
                     choice = UI.ask("Select an option [1/2/3]", "1").strip()
-                    if choice == "2":
-                        es_main_conf.unlink()
-                        es_conn_conf = es_main_conf.with_name(
-                            f"com.liferay.portal.search.elasticsearch{es_ver}.configuration.ElasticsearchConnectionConfiguration.config"
-                        )
-                        if es_conn_conf.exists():
-                            es_conn_conf.unlink()
-                        UI.success(
-                            "Removed custom configs. Proceeding with Sidecar mode."
-                        )
-                    elif choice == "3":
-                        es_main_conf.unlink()
-                        es_conn_conf = es_main_conf.with_name(
-                            f"com.liferay.portal.search.elasticsearch{es_ver}.configuration.ElasticsearchConnectionConfiguration.config"
-                        )
-                        if es_conn_conf.exists():
-                            es_conn_conf.unlink()
-                        use_shared_search = True
-                        project_meta["use_shared_search"] = "true"
-                        self.manager.write_meta(paths["root"], project_meta)
-                        UI.success("Migrating to Global Shared Search.")
-                    else:
-                        UI.info(
-                            "Keeping custom configs. LDM Sidecar injection will be bypassed."
-                        )
+                if choice == "2":
+                    es_main_conf.unlink()
+                    es_conn_conf = es_main_conf.with_name(
+                        f"com.liferay.portal.search.elasticsearch{es_ver}.configuration.ElasticsearchConnectionConfiguration.config"
+                    )
+                    if es_conn_conf.exists():
+                        es_conn_conf.unlink()
+                    UI.success("Removed custom configs. Proceeding with Sidecar mode.")
+                elif choice == "3":
+                    es_main_conf.unlink()
+                    es_conn_conf = es_main_conf.with_name(
+                        f"com.liferay.portal.search.elasticsearch{es_ver}.configuration.ElasticsearchConnectionConfiguration.config"
+                    )
+                    if es_conn_conf.exists():
+                        es_conn_conf.unlink()
+                    use_shared_search = True
+                    project_meta["use_shared_search"] = "true"
+                    self.manager.write_meta(paths["root"], project_meta)
+                    UI.success("Migrating to Global Shared Search.")
                 else:
-                    UI.warning(
-                        "Running in non-interactive mode. Bypassing Sidecar injection to respect custom configs."
+                    UI.info(
+                        "Keeping custom configs. LDM Sidecar injection will be bypassed."
                     )
         db_mode = (
             getattr(self.manager.args, "database_mode", None)
@@ -1895,9 +2083,6 @@ class RuntimeService(BaseHandler):
                 UI.debug(f"Time to orchestration start: {duration_str}")
 
             db_type = project_meta.get("db_type", "postgresql")
-            use_shared_db = (
-                str(project_meta.get("use_shared_db", "false")).lower() == "true"
-            )
             deps = []
             if db_type != "hypersonic" and not use_shared_db:
                 deps.append("db")
