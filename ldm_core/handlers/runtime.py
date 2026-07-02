@@ -1608,7 +1608,7 @@ class RuntimeService(BaseHandler):
                 / f"com.liferay.portal.search.elasticsearch{es_ver}.configuration.ElasticsearchConfiguration.config"
             )
             if es_main_conf.exists():
-                UI.warn(
+                UI.warning(
                     f"Custom Elasticsearch OSGi configs detected in '{es_main_conf.parent.name}', but LDM Shared Search is disabled."
                 )
                 if not self.manager.non_interactive:
@@ -1649,7 +1649,7 @@ class RuntimeService(BaseHandler):
                             "Keeping custom configs. LDM Sidecar injection will be bypassed."
                         )
                 else:
-                    UI.warn(
+                    UI.warning(
                         "Running in non-interactive mode. Bypassing Sidecar injection to respect custom configs."
                     )
         db_mode = (
