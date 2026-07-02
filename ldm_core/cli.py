@@ -1,6 +1,5 @@
 import argparse
 import platform
-import signal
 import sys
 import warnings
 
@@ -14,19 +13,10 @@ if sys.version_info < (3, 10):  # noqa: UP036
     sys.exit(1)
 
 
-# --- SIGINT / CTRL+C Graceful Exit Handler ---
-def _graceful_exit(sig, frame):
-    sys.stdout.write("\n\r")
-    sys.exit(0)
-
-
-signal.signal(signal.SIGINT, _graceful_exit)
-
-
-from ldm_core.constants import SCRIPT_DIR, VERSION  # noqa: E402
-from ldm_core.manager import LiferayManager  # noqa: E402
-from ldm_core.ui import UI  # noqa: E402
-from ldm_core.utils import check_for_updates  # noqa: E402
+from ldm_core.constants import SCRIPT_DIR, VERSION
+from ldm_core.manager import LiferayManager
+from ldm_core.ui import UI
+from ldm_core.utils import check_for_updates
 
 try:
     import argcomplete
