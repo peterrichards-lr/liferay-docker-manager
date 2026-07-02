@@ -1009,7 +1009,7 @@ class TestRuntime(unittest.TestCase):
             project_meta = {"container_name": "test-container"}
             self.handler.handler._wait_for_ready(project_meta, "test.local")
 
-            mock_warning.assert_any_call("LDM detected 1 error(s) in the logs.")
+            mock_warning.assert_any_call("LDM detected 1 new error(s) in the logs.")
             mock_success.assert_any_call(
                 "Auto-Thaw successful. Liferay should now proceed."
             )

@@ -393,7 +393,7 @@ class TestStackOrchestration(unittest.TestCase):
                 )
 
             # Verify that we hit the warning logic
-            mock_warn.assert_any_call("LDM detected 1 error(s) in the logs.")
+            mock_warn.assert_any_call("LDM detected 1 new error(s) in the logs.")
 
     def test_fetch_seed_url_construction(self):
         from ldm_core.constants import SEED_VERSION
