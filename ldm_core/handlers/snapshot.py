@@ -391,6 +391,7 @@ class SnapshotService(BaseHandler):
                 "deploy",
                 "routes",
                 "client-extensions",
+                "configs",
             ]:
                 f_path = paths["root"] / f
                 if f_path.exists():
