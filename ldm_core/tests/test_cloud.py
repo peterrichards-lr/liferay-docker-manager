@@ -90,7 +90,9 @@ class TestCloudService(unittest.TestCase):
         self, mock_auth, mock_die, mock_confirm
     ):
         mock_auth.return_value = (False, "LCP CLI not installed")
-        self.cloud.ensure_cloud_auth()
+        mock_die.side_effect = SystemExit
+        with self.assertRaises(SystemExit):
+            self.cloud.ensure_cloud_auth()
         mock_die.assert_any_call(
             "Liferay Cloud CLI (lcp) is not installed. Install it to use cloud features.",
             exit_code=2,
