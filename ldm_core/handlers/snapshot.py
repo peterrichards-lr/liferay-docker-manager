@@ -937,7 +937,11 @@ class SnapshotService(BaseHandler):
 
             db_container = project_meta.get("db_container_name")
             if db_mode == "shared":
-                db_container = "liferay-db-global"
+                db_container = (
+                    "liferay-db-mysql-global"
+                    if db_type in ["mysql", "mariadb"]
+                    else "liferay-db-global"
+                )
 
             if not db_container:
                 for suffix in ["-db", "-db-1"]:
@@ -975,6 +979,24 @@ class SnapshotService(BaseHandler):
                                     break
                             if db_container:
                                 break
+
+            # Wait for shared database to be responsive before importing
+            if db_mode == "shared" and db_container:
+                UI.detail(
+                    f"Waiting for shared database ({UI.CYAN}{db_container}{UI.COLOR_OFF}) to be ready..."
+                )
+                start_wait = time.time()
+                while time.time() - start_wait < 60:
+                    status = self.manager.get_container_status(db_container)
+                    if status in {"healthy", "running"}:
+                        time.sleep(2)
+                        break
+                    if status == "exited":
+                        UI.error(
+                            f"Global database container '{db_container}' exited unexpectedly."
+                        )
+                        return
+                    time.sleep(2)
 
             if db_container:
                 self._execute_orchestrated_db_restore(
