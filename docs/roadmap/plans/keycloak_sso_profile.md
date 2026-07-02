@@ -77,3 +77,7 @@ providerName="Keycloak SSO"
 ```
 
 *(Note: Variables like `${HOST_NAME}` inside config templates will be programmatically replaced during profile application by LDM).*
+
+<!-- markdownlint-disable MD049 -->
+---
+*Last Updated: 2026-07-02* | *Last Reviewed: 2026-07-02*

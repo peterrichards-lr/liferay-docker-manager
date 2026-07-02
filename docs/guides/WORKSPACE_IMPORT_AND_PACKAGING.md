@@ -120,3 +120,7 @@ This scaffolds a `.github/workflows/ldm-package-release.yml` file which:
 4. Waits for all OSGi modules and Client Extensions to deploy cleanly.
 5. Bundles the database and volume into a `.ldmp` package.
 6. Automatically attaches the package and its checksum as GitHub Release assets.
+
+<!-- markdownlint-disable MD049 -->
+---
+*Last Updated: 2026-07-02* | *Last Reviewed: 2026-07-02*

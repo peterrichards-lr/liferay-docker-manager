@@ -881,3 +881,7 @@ The following is a comprehensive index of all registered CLI option flags and th
 - **`--workflow-name`**: Name of the workflow file.
 - **`-V`**: Show LDM version.
 - **`-q`**: Quiet mode.
+
+<!-- markdownlint-disable MD049 -->
+---
+*Last Updated: 2026-07-02* | *Last Reviewed: 2026-07-02*

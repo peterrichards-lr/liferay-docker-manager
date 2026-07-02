@@ -16,3 +16,7 @@ To avoid merge conflicts across the CLI routing and ensure safe binary testing w
    Update this branch from `master`, resolve the final CLI conflicts, test the dashboard artifact, and merge.
 
 Once all features are successfully merged into `master`, you can cut a single, unified `v2.11.4-pre.3` tag that consolidates all of these features for wider community testing.
+
+<!-- markdownlint-disable MD049 -->
+---
+*Last Updated: 2026-07-02* | *Last Reviewed: 2026-07-02*

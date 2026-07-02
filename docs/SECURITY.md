@@ -121,3 +121,7 @@ f7e5b56e5e4e6e94fe5de5424e66fef84be863f385
 ---
 
 **LDM is not a production orchestrator.** Never use LDM to host publicly accessible Liferay instances or sensitive production data.
+
+<!-- markdownlint-disable MD049 -->
+---
+*Last Updated: 2026-07-02* | *Last Reviewed: 2026-07-02*

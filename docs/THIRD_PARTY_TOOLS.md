@@ -72,3 +72,7 @@ To build trust and provide transparency to developers, this document details eve
   * LDM writes configurations to a bind-mounted `portal-log4j-ext.xml` template.
   * The Log4j2 configuration is marked with `monitorInterval="5"`, which instructs the Liferay JVM to automatically poll and reload changes on the filesystem every 5 seconds.
 * **Current Status**: **Fully Deprecated & Unused**. The dependency check for `nc/ncat` has been retired from the active `ldm doctor` warnings list. Windows developers no longer need to download or install `Insecure.Nmap` to use LDM.
+
+<!-- markdownlint-disable MD049 -->
+---
+*Last Updated: 2026-07-02* | *Last Reviewed: 2026-07-02*

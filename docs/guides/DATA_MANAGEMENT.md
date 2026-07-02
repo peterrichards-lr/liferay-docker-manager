@@ -174,3 +174,7 @@ ldm reset demo search,db      # Clear local search and DB
 ldm reset demo all            # Total project data wipe
 ldm re-seed demo              # Total project reset to Day Zero (Seeded)
 ```
+
+<!-- markdownlint-disable MD049 -->
+---
+*Last Updated: 2026-07-02* | *Last Reviewed: 2026-07-02*

@@ -61,3 +61,7 @@ Create a new service `ldm_core/services/profile.py` that handles discovery and a
 
 - Update `ldm_core/handlers/composer.py` to check for active profiles in the project metadata and invoke `ProfileService.apply()`.
 - Update `ldm_core/cli.py` to register the `--profile` (`-p`) option under `ldm init`.
+
+<!-- markdownlint-disable MD049 -->
+---
+*Last Updated: 2026-07-02* | *Last Reviewed: 2026-07-02*

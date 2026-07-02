@@ -20,3 +20,7 @@ LDM automates the routing and SSL orchestration for both the main Liferay instan
 
 > [!TIP]
 > **DNS Resolution**: Standard `/etc/hosts` files do not support wildcards. However, LDM's **`ldm fix-hosts [project]`** and **`ldm doctor --fix-hosts`** commands are intelligent—they scan your project for active client extensions and automatically append entries for both the main hostname and all required subdomains (e.g., `custom-logic.my-project.local`) to your hosts file.
+
+<!-- markdownlint-disable MD049 -->
+---
+*Last Updated: 2026-07-02* | *Last Reviewed: 2026-07-02*

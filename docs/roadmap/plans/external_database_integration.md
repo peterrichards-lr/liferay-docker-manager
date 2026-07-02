@@ -65,3 +65,7 @@ During Docker Compose generation in `ComposerService`:
 - If `--db external` is set, LDM **excludes the database container service block** (e.g., `db` container is omitted completely from the generated `docker-compose.yml`).
 - Liferay is configured to start up independently and connect directly to the external host network interface.
 - (Ensure that the `liferay` service network is configured to bridge correctly or that `--network host` compatibility is supported if running against localhost databases on some OS platforms).
+
+<!-- markdownlint-disable MD049 -->
+---
+*Last Updated: 2026-07-02* | *Last Reviewed: 2026-07-02*

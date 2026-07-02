@@ -16,3 +16,7 @@ ldm init-common
 
 - Place any `*.config`, `*.cfg`, `*.xml`, or `*.lpkg` files here to have them automatically deployed to every project stack during startup.
 - Files are tracked via `.liferay-docker.deployed` within each project to ensure they are only synchronized once.
+
+<!-- markdownlint-disable MD049 -->
+---
+*Last Updated: 2026-07-02* | *Last Reviewed: 2026-07-02*

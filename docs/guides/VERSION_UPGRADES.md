@@ -139,3 +139,7 @@ While LDM allows you to restore the pre-upgrade snapshot at any time, doing so c
 - **Safe Rollback Window**: Reverting is safe **only during the immediate verification phase** after boot, before any new business or developer data is created.
 - **Point of No Return**: The boundary is reached as soon as the upgraded sandbox is put into active use. Once users begin publishing web content, uploading documents, or configuring permissions on the new version, restoring the snapshot will **permanently delete all business data created since the upgrade started**.
 - **Recommendation**: Always perform validation immediately on startup and do not release the sandbox environment to general users until you have confirmed a successful upgrade.
+
+<!-- markdownlint-disable MD049 -->
+---
+*Last Updated: 2026-07-02* | *Last Reviewed: 2026-07-02*

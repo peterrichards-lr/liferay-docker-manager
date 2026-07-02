@@ -41,3 +41,7 @@ When running `ldm run <project-name>` (or creating a fresh stack targeting the l
 - **Architecture-Aware**: The tool detects your OS automatically to fetch the correct optimized binary during self-updates.
 - **Shell Autocompletion**: TAB completion for commands and project names across Bash, Zsh, and Fish.
 - **Fuzzy Interactive Selection**: Quickly filter through dozens of projects by typing a few characters in any interactive menu.
+
+<!-- markdownlint-disable MD049 -->
+---
+*Last Updated: 2026-07-02* | *Last Reviewed: 2026-07-02*

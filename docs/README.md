@@ -41,3 +41,7 @@ Check out our **[Video Showcase](showcase/README.md)** to see short demonstratio
 - **[Security Posture & Disclosures](SECURITY.md)** — Safe secrets handling and security policy.
 - **[Third-Party Tools list](THIRD_PARTY_TOOLS.md)** — Internal and external dependencies (mkcert, Traefik, etc.).
 - **[Future Roadmap](ROADMAP.md)** — Planned features and strategic milestones.
+
+<!-- markdownlint-disable MD049 -->
+---
+*Last Updated: 2026-07-02* | *Last Reviewed: 2026-07-02*

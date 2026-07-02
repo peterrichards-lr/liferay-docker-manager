@@ -83,3 +83,7 @@ You can target a specific service (including Client Extensions) by prefixing the
 - **Container** (`my-custom-extension` only): `DEBUG=true`
 
 ---
+
+<!-- markdownlint-disable MD049 -->
+---
+*Last Updated: 2026-07-02* | *Last Reviewed: 2026-07-02*

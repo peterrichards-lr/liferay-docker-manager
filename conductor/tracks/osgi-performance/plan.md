@@ -42,3 +42,7 @@ Reduce subsequent Liferay startup times by optionally persisting the OSGi bundle
 3. Restart the project and verify that the "bundle resolution" phase is skipped or significantly faster.
 4. Upgrade the project tag and verify that the OSGi state is correctly invalidated and recreated.
 5. Verify that search data persists across project restarts.
+
+<!-- markdownlint-disable MD049 -->
+---
+*Last Updated: 2026-07-02* | *Last Reviewed: 2026-07-02*

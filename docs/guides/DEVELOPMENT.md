@@ -61,3 +61,7 @@ When executing external binaries or shell commands (e.g. docker, git, mkcert, lc
   * If executing inside a Service/Handler subclassing `BaseHandler`, use `self.run_command(cmd, ...)` or `self.manager.run_command(...)`.
   * If executing inside helper modules, import and call `run_command` from `ldm_core.utils`.
   * This automatically enables credential redaction, dry-run mocking, environment variable injection, and platform-specific binary resolution.
+
+<!-- markdownlint-disable MD049 -->
+---
+*Last Updated: 2026-07-02* | *Last Reviewed: 2026-07-02*

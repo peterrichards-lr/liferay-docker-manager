@@ -385,3 +385,7 @@ If you are running the `lfr-tunnel` Go executable directly or writing custom scr
 - **`-status`**: Introspects and outputs the running status/PID of the background daemon.
 - **`-stop`**: Sends a shutdown signal (`SIGINT`) to clean up and close the background tunnel daemon.
 - **`-upgrade`**: Triggers a self-upgrade sequence downloading the latest release binary.
+
+<!-- markdownlint-disable MD049 -->
+---
+*Last Updated: 2026-07-02* | *Last Reviewed: 2026-07-02*
