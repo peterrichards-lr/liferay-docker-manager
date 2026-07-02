@@ -350,18 +350,19 @@ class RuntimeService(BaseHandler):
                     )
 
                     ans = UI.ask(
-                        "Release type (lts|u|qr), prefix, or specific tag",
+                        "Release type (lts|u|qr|latest), prefix, or specific tag",
                         default_resolved_tag,
                     )
 
                     if ans == default_resolved_tag:
                         tag = default_resolved_tag
-                    elif ans.lower() in ["any", "u", "lts", "qr"]:
+                    elif ans.lower() in ["any", "latest", "u", "lts", "qr"]:
+                        release_type = "any" if ans.lower() == "latest" else ans.lower()
                         if self.manager.verbose:
                             UI.info(f"Discovering latest {ans.upper()} release...")
                         tag = discover_latest_tag(
                             api_base,
-                            release_type=ans.lower(),
+                            release_type=release_type,
                             verbose=self.manager.verbose,
                         )
                         if not tag:
