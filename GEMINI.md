@@ -111,6 +111,12 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
 - Released `v2.11.33` successfully (integrated CWD home directory warning, `--stop-running` flag for import, and portable packaging documentation updates).
 - Released `v2.11.31` successfully (integrated quickstart templates overrides, automatically start sharing under `ldm import`, standalone `ldmp` package exports, and test suite/pre-commit fixes).
 - Released `v2.11.30` successfully (integrated Visual Diagnostics Web Dashboard (P3), Dynamic JVM Self-Tuning (P2), and solved GITHUB_ACTIONS env var mock test coverage mismatch).
+- **Current Active Task (July 1, 2026)**:
+  - [x] Liferay Tunnel multiple port parsing support (`-ports 8080,3001` via `lcp.json`)
+  - [x] Docker Share Host automatic Traefik multi-port proxy support.
+  - [x] Infer `ssl=True` if `host_name` differs from localhost during `ldm import`.
+  - [x] Dynamic injection of `LIFERAY_ROUTES_CLIENT_EXTENSION_...` for automatic Liferay -> Microservice routing.
+  - [x] `routes` volume mount integration in core Liferay container.
 
 - **Current Active Task (June 30, 2026)**:
   - [x] All 6 prioritized resource reduction & database mode issues have been fully implemented, tested, and committed to their respective feature branches.
