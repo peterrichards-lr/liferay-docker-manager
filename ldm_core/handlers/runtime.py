@@ -1885,7 +1885,7 @@ class RuntimeService(BaseHandler):
 
             db_type = project_meta.get("db_type", "postgresql")
             deps = []
-            if db_type != "hypersonic":
+            if db_type != "hypersonic" and not use_shared_db:
                 deps.append("db")
 
             if deps:
