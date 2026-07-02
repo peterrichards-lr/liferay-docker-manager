@@ -2327,10 +2327,10 @@ class WorkspaceService(BaseHandler):
                     return
 
                 for _key, block in data.items():
-                    if (
-                        isinstance(block, dict)
-                        and block.get("type") == "oAuthApplicationUserAgent"
-                    ):
+                    if isinstance(block, dict) and block.get("type") in [
+                        "oAuthApplicationUserAgent",
+                        "oAuthApplicationHeadlessServer",
+                    ]:
                         service_address = block.get(".serviceAddress", "")
                         if "localhost" in service_address:
                             block[".serviceAddress"] = f"{ext_name}.{host_name}"
