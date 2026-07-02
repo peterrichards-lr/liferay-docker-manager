@@ -2408,6 +2408,14 @@ class WorkspaceService(BaseHandler):
                                     modified = True
 
                 if modified:
+                    import time
+
+                    current_ts = int(time.time() * 1000)
+                    for _key, block in data.items():
+                        if isinstance(block, dict) and "buildTimestamp" in block:
+                            # Bump the timestamp to force Liferay to re-evaluate it over the snapshot DB
+                            block["buildTimestamp"] = current_ts
+
                     if is_json:
                         import json
 
