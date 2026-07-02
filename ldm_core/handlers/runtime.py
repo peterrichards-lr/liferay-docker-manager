@@ -2113,6 +2113,27 @@ class RuntimeService(BaseHandler):
                             UI.error(f"Dependency '{dep}' exited unexpectedly.")
                             return False
                         time.sleep(2)
+            elif use_shared_db and db_type != "hypersonic":
+                global_db_container = (
+                    "liferay-db-mysql-global"
+                    if db_type in ["mysql", "mariadb"]
+                    else "liferay-db-global"
+                )
+                UI.detail(
+                    f"Waiting for shared database ({UI.CYAN}{global_db_container}{UI.COLOR_OFF}) to be ready..."
+                )
+                start_wait = time.time()
+                while time.time() - start_wait < 60:
+                    status = self.manager.get_container_status(global_db_container)
+                    if status in {"healthy", "running"}:
+                        time.sleep(2)
+                        break
+                    if status == "exited":
+                        UI.error(
+                            f"Global database container '{global_db_container}' exited unexpectedly."
+                        )
+                        return False
+                    time.sleep(2)
 
             # LDM-381: Reclaim volume permissions on Linux before starting
             # This prevents host-side 'Permission denied' errors when Liferay container
