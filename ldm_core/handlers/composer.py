@@ -668,14 +668,20 @@ class ComposerService:
         extensions = []
         if self.manager and hasattr(self.manager, "workspace"):
             extensions = self.manager.workspace.scan_client_extensions(
-                paths["root"], paths.get("cx"), paths.get("ce_dir")
+                paths["root"],
+                paths.get("cx"),
+                paths.get("ce_dir"),
+                host_name=meta.get("host_name"),
             )
         elif self.manager:
             from ldm_core.handlers.workspace import WorkspaceService
 
             cx_handler = WorkspaceService(self.manager)
             extensions = cx_handler.scan_client_extensions(
-                paths["root"], paths.get("cx"), paths.get("ce_dir")
+                paths["root"],
+                paths.get("cx"),
+                paths.get("ce_dir"),
+                host_name=meta.get("host_name"),
             )
 
         for ext in extensions:
@@ -683,20 +689,42 @@ class ComposerService:
                 ext_id = ext.get("id")
                 if ext_id:
                     svc_id = f"{project_name}-{ext_id}"
-                    ms_port = ext.get("loadBalancer", {}).get("targetPort", 8080)
+                    ms_port = next(
+                        (
+                            p.get("port")
+                            for p in ext.get("ports", [])
+                            if isinstance(p, dict) and p.get("external")
+                        ),
+                        ext.get("loadBalancer", {}).get("targetPort", 8080),
+                    )
                     env_key = f"LIFERAY_ROUTES_CLIENT_EXTENSION_{ext_id.replace('-', '_').upper()}"
                     liferay_env.append(f"{env_key}=http://{svc_id}:{ms_port}")
 
         db_type = meta.get("db_type", "postgresql")
-        db_mode = "isolated"
-        if meta:
-            db_mode = meta.get("database_mode") or db_mode
-        if (
-            db_mode == "isolated"
-            and hasattr(self.manager, "defaults")
-            and self.manager.defaults is not None
-        ):
-            db_mode = self.manager.defaults.get("database_mode", "isolated")
+
+        # 1. Determine baseline default based on LDM version when project was created
+        baseline_default = "isolated"
+        ldm_version = meta.get("ldm_version")
+        if ldm_version and self.manager.parse_version(ldm_version) >= (2, 11, 75):
+            baseline_default = "shared"
+
+        # 2. Allow global config to override baseline
+        if hasattr(self.manager, "defaults") and self.manager.defaults is not None:
+            baseline_default = self.manager.defaults.get(
+                "database_mode", baseline_default
+            )
+
+        # 3. Project-specific explicit setting wins
+        db_mode = meta.get("database_mode") or baseline_default
+
+        # 4. Enforce Hypersonic isolation
+        if db_type == "hypersonic" and db_mode == "shared":
+            from ldm_core.ui import UI
+
+            UI.warning(
+                "Hypersonic database cannot be shared. Enforcing 'isolated' mode."
+            )
+            db_mode = "isolated"
 
         db_updates = {}
         if db_type == "external":
@@ -1130,7 +1158,10 @@ class ComposerService:
         extensions = []
         if self.manager and hasattr(self.manager, "workspace"):
             extensions = self.manager.workspace.scan_client_extensions(
-                paths["root"], paths.get("cx"), paths.get("ce_dir")
+                paths["root"],
+                paths.get("cx"),
+                paths.get("ce_dir"),
+                host_name=meta.get("host_name"),
             )
         else:
             # Fallback for standalone/mock usage
@@ -1138,13 +1169,23 @@ class ComposerService:
 
             cx_handler = WorkspaceService(self.manager)
             extensions = cx_handler.scan_client_extensions(
-                paths["root"], paths.get("cx"), paths.get("ce_dir")
+                paths["root"],
+                paths.get("cx"),
+                paths.get("ce_dir"),
+                host_name=meta.get("host_name"),
             )
         for ext in extensions:
             if ext.get("deploy") and ext.get("is_service"):
                 ext_id = ext.get("id")
                 svc_id = f"{project_name}-{ext_id}"
-                ms_port = ext.get("loadBalancer", {}).get("targetPort", 8080)
+                ms_port = next(
+                    (
+                        p.get("port")
+                        for p in ext.get("ports", [])
+                        if isinstance(p, dict) and p.get("external")
+                    ),
+                    ext.get("loadBalancer", {}).get("targetPort", 8080),
+                )
                 scale = int(meta.get(f"scale_{ext_id}", 1))
 
                 labels = ["traefik.enable=true"]
@@ -1158,6 +1199,16 @@ class ComposerService:
                         f"{paths.get('routes', paths['root'] / 'routes').as_posix()}:/workspace/routes",
                     ],
                 }
+
+                env_vars = ext.get("env", {})
+                env_list = [f"{k}={v}" for k, v in env_vars.items()]
+                # Fix Node.js microservice SSL issues against local mkcert Traefik proxy
+                if not any(
+                    e.startswith("NODE_TLS_REJECT_UNAUTHORIZED=") for e in env_list
+                ):
+                    env_list.append("NODE_TLS_REJECT_UNAUTHORIZED=0")
+
+                services[svc_id]["environment"] = env_list
 
                 if scale == 1:
                     services[svc_id]["container_name"] = svc_id
