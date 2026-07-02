@@ -1810,7 +1810,9 @@ class RuntimeService(BaseHandler):
                 )
                 search_mode_arg = getattr(self.manager.args, "search_mode", None)
                 choice = "1"
-                if search_mode_arg == "sidecar":
+                if search_mode_arg == "sidecar" or getattr(
+                    self.manager.args, "sidecar", False
+                ):
                     choice = "2"
                 elif search_mode_arg == "shared":
                     choice = "3"
