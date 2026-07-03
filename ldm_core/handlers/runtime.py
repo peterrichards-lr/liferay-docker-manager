@@ -1000,6 +1000,7 @@ class RuntimeService(BaseHandler):
         wait_for_deployables=False,
         wait_for_bundles=None,
         stream_status=False,
+        stream_logs=False,
     ):
         """Block execution until project is fully ready (HTTP 200/302)."""
         if timeout is None:
@@ -1011,11 +1012,51 @@ class RuntimeService(BaseHandler):
         meta = self.manager.read_meta(root)
         host_name = meta.get("host_name", "localhost")
 
+        container_name = (
+            meta.get("liferay_container_name")
+            or meta.get("container_name")
+            or root.name
+        )
+
+        log_proc = None
+        if stream_logs:
+            import subprocess
+            import sys
+
+            log_proc = subprocess.Popen(
+                ["docker", "logs", "-f", container_name],
+                stdout=sys.stdout,
+                stderr=sys.stderr,
+            )
+
+        def _die_with_logs(msg):
+            if log_proc:
+                log_proc.terminate()
+            import subprocess
+            import sys
+
+            UI.error(
+                f"Timeout exhausted. Dumping last 200 lines of logs for {container_name}:"
+            )
+            subprocess.run(
+                ["docker", "logs", "--tail", "200", container_name],
+                stdout=sys.stderr,
+                stderr=sys.stderr,
+                check=False,
+            )
+            UI.die(msg)
+
         # 1. Wait for Container/Log Readiness
         if not self._wait_for_ready(
-            meta, host_name, timeout=timeout, stream_status=stream_status
+            meta,
+            host_name,
+            timeout=timeout,
+            stream_status=stream_status,
+            stream_logs=stream_logs,
         ):
-            UI.die(f"Project '{project_id}' failed to become ready within {timeout}s.")
+            _die_with_logs(
+                f"Project '{project_id}' failed to become ready within {timeout}s."
+            )
 
         # Determine target expected deployables
         expected_targets = {}
@@ -1058,7 +1099,7 @@ class RuntimeService(BaseHandler):
             time.sleep(2)
 
         if not http_ready:
-            UI.die(
+            _die_with_logs(
                 f"Project '{project_id}' is running but HTTP {url} is not responding correctly."
             )
 
@@ -1172,7 +1213,7 @@ class RuntimeService(BaseHandler):
                             err_msg = "⚠️ Fail-Fast: The following required bundles never appeared in the OSGi container (missing from deploy/osgi folders):\n"
                             for t in missing_bundles:
                                 err_msg += f"  - {t}\n"
-                            UI.die(err_msg.strip())
+                            _die_with_logs(err_msg.strip())
 
                     elif res:
                         # Gogo console responded but not with the bundle table (e.g. error/command not found)
@@ -1217,6 +1258,8 @@ class RuntimeService(BaseHandler):
                                 UI.success(
                                     f"Project '{project_id}' is fully initialized and idle."
                                 )
+                                if log_proc:
+                                    log_proc.terminate()
                                 return True
                         else:
                             idle_checks = 0
@@ -1229,6 +1272,8 @@ class RuntimeService(BaseHandler):
         UI.warning(
             f"Project '{project_id}' did not reach an idle state within the timeout, but is responding to HTTP."
         )
+        if log_proc:
+            log_proc.terminate()
         return True
 
     def _print_ngrok_url(self, project_id):
@@ -1271,6 +1316,7 @@ class RuntimeService(BaseHandler):
         total_start=None,
         timeout=600,
         stream_status=False,
+        stream_logs=False,
     ):
         """Wait for Liferay to become healthy and provide access information."""
         container_name = project_meta.get("container_name")
@@ -1308,7 +1354,7 @@ class RuntimeService(BaseHandler):
 
             yield NullSpinner()
 
-        spinner_ctx = null_spinner if stream_status else UI.spinner
+        spinner_ctx = null_spinner if (stream_status or stream_logs) else UI.spinner
         start_time = time.time()
         with spinner_ctx(
             f"Waiting for Liferay to become healthy ({container_name})..."

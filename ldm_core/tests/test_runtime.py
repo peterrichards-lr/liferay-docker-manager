@@ -156,7 +156,11 @@ class TestRuntime(unittest.TestCase):
                 return t.pop(0)
 
             with patch("time.time", side_effect=mock_time), patch("time.sleep"):
-                with patch("requests.get") as mock_get:
+                with (
+                    patch("requests.get") as mock_get,
+                    patch("subprocess.run") as mock_run_subp,
+                    patch("subprocess.Popen") as mock_popen,
+                ):
                     mock_get.return_value.status_code = 200
 
                     try:
