@@ -1811,6 +1811,141 @@ services:
             ]
             self.assertTrue(len(advice_calls) > 0)
 
+    @patch("ldm_core.handlers.runtime.Path.exists")
+    def test_patch_fragment_overrides_no_file(self, mock_exists):
+        """Test that nothing happens if fragment-overrides.json does not exist."""
+        mock_exists.return_value = False
+        paths = {"root": Path("/mock/root")}
+        project_meta = {"tag": "2025.q1.0"}
+
+        self.handler.handler._patch_fragment_overrides(project_meta, paths)
+        mock_exists.assert_called()
+
+    @patch("ldm_core.handlers.runtime.Path.exists")
+    @patch("ldm_core.handlers.runtime.UI.warning")
+    def test_patch_fragment_overrides_old_version(self, mock_warning, mock_exists):
+        """Test that it aborts if DXP version is older than 2025.q1."""
+        mock_exists.return_value = True
+        paths = {"root": Path("/mock/root")}
+        project_meta = {"tag": "7.4.3.100"}
+
+        self.handler.handler._patch_fragment_overrides(project_meta, paths)
+        mock_warning.assert_called_with(
+            "fragment-overrides.json found, but DXP version is < 2025.Q1. Headless Page API not supported. Skipping patches."
+        )
+
+    @patch.object(MockRuntime, "run_command")
+    @patch("ldm_core.handlers.runtime.Path.exists")
+    @patch(
+        "builtins.open",
+        new_callable=unittest.mock.mock_open,
+        read_data='[{"fragmentKey":"test-frag","overrides":{"color":"${MY_ENV_COLOR}"}}]',
+    )
+    @patch("os.environ.copy")
+    @patch("urllib.request.urlopen")
+    @patch("ldm_core.handlers.runtime.UI.success")
+    def test_patch_fragment_overrides_success(
+        self,
+        mock_success,
+        mock_urlopen,
+        mock_env_copy,
+        mock_file,
+        mock_exists,
+        mock_run_command_patch,
+    ):
+        """Test successful parsing, variable expansion, and patching of fragments."""
+        self.handler.manager.get_config = MagicMock(return_value="mock")  # type: ignore
+        # Setup paths and exist checks
+        mock_exists.side_effect = lambda: True
+        paths = {"root": Path("/mock/root")}
+        project_meta = {
+            "tag": "2025.q1.0",
+            "host_name": "test.local",
+            "container_name": "mock-db",
+        }
+
+        # Mock environment copy for template expansion
+        mock_env_copy.return_value = {"MY_ENV_COLOR": "red"}
+
+        # Mock run_command to return mock inspect output (with a custom var) and port
+        def mock_run_command_func(*args, **kwargs):
+            if args[0][1] == "inspect":
+                return "MY_CUSTOM_VAR=blue\\n"
+            if args[0][1] == "port":
+                return "0.0.0.0:8080\\n"
+            return ""
+
+        mock_run_command_patch.side_effect = mock_run_command_func
+
+        # Mock urlopen API responses
+        def build_mock_response(data):
+            import json
+
+            mock_resp = MagicMock()
+            mock_resp.read.return_value = json.dumps(data).encode("utf-8")
+            # We must yield or return it when used in a context manager
+            cm = MagicMock()
+            cm.__enter__.return_value = mock_resp
+            return cm
+
+        # Sequence of API calls:
+        # 1. GET /sites -> returns site list
+        # 2. GET /sites/{id}/site-pages -> returns page list
+        # 3. PATCH /page-elements/{id} -> returns success
+
+        sites_data = {"items": [{"id": 123}]}
+
+        # Page data contains a deep nested pageElement with the matching fragmentKey
+        pages_data = {
+            "items": [
+                {
+                    "name": "Home",
+                    "pageDefinition": {
+                        "pageElement": {
+                            "type": "Container",
+                            "pageElements": [
+                                {
+                                    "id": 456,
+                                    "type": "Fragment",
+                                    "definition": {
+                                        "fragmentConfig": {"fragmentKey": "test-frag"}
+                                    },
+                                }
+                            ],
+                        }
+                    },
+                }
+            ]
+        }
+
+        patch_response = {"status": "ok"}
+
+        mock_urlopen.side_effect = [
+            build_mock_response(sites_data),
+            build_mock_response(pages_data),
+            build_mock_response(patch_response),
+        ]
+
+        self.handler.handler._patch_fragment_overrides(project_meta, paths)
+
+        # Verify that the URL open was called exactly 3 times
+        self.assertEqual(mock_urlopen.call_count, 3)
+
+        # Verify the patch request payload had the expanded variable ("red" from env copy)
+        # Note: since the env variable "MY_CUSTOM_VAR" wasn't used in the template, it just uses "red"
+        patch_call = mock_urlopen.call_args_list[2]
+        req = patch_call[0][0]
+        self.assertEqual(req.method, "PATCH")
+        import json
+
+        payload = json.loads(req.data.decode("utf-8"))
+        self.assertEqual(payload["definition"]["config"]["color"], "red")
+
+        # Verify success was called
+        mock_success.assert_any_call(
+            "Successfully applied 1 fragment configuration overrides."
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -106,6 +106,48 @@ class TestAssetService(unittest.TestCase):
         tag = self.assets.prompt_for_tag()
         self.assertEqual(tag, "7.4.13-dxp-4")
 
+    @patch("ldm_core.handlers.assets.get_actual_home")
+    @patch("requests.head")
+    @patch("requests.get")
+    def test_download_seed_success(self, mock_get, mock_head, mock_home):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            mock_home.return_value = tmp_path
+
+            # Mock head failure to trigger GET fallback
+            mock_head_res = MagicMock()
+            mock_head_res.status_code = 404
+            mock_head.return_value = mock_head_res
+
+            # Mock GET release API
+            mock_api_res = MagicMock()
+            mock_api_res.status_code = 200
+            mock_api_res.json.return_value = {
+                "tag_name": "seeded-states",
+                "assets": [
+                    {
+                        "name": f"seeded-7.4-mysql-local-v{SEED_VERSION}.tar.gz",
+                        "browser_download_url": "http://example.com",
+                    }
+                ],
+            }
+
+            # Mock GET download stream
+            mock_stream_res = MagicMock()
+            mock_stream_res.status_code = 200
+            mock_stream_res.headers = {"content-length": "100"}
+            mock_stream_res.iter_content.return_value = [b"data"]
+
+            mock_get.side_effect = [mock_api_res, mock_stream_res]
+
+            paths = {"root": tmp_path}
+            with patch("ldm_core.ui.UI.confirm", return_value=True):
+                res = self.assets._fetch_seed("7.4", "mysql", "local", paths)
+
+            self.assertTrue(res)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -113,6 +113,7 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
 - Released `v2.11.30` successfully (integrated Visual Diagnostics Web Dashboard (P3), Dynamic JVM Self-Tuning (P2), and solved GITHUB_ACTIONS env var mock test coverage mismatch).
 - **Current Active Task (July 3, 2026)**:
   - [x] Fix E2E script hanging on Dev Guardrails check when executed from project root (use env CI=true instead of interactive prompt or passing -y which bypasses the guardrail).
+  - [x] Add missing unit tests for `_patch_fragment_overrides` feature inside `ldm_core/tests/test_runtime.py`.
 
 - **Current Active Task (July 2, 2026)**:
   - [x] Implement Global Shared Database default fallbacks (Issue #225)

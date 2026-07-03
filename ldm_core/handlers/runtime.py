@@ -1243,7 +1243,31 @@ class RuntimeService(BaseHandler):
 
     def _wait_for_ready(self, project_meta, host_name, total_start=None, timeout=600):
         """Wait for Liferay to become healthy and provide access information."""
+        import json
+
         container_name = project_meta.get("container_name")
+        project_id = project_meta.get("id")
+        root_path = (
+            self.manager.detect_project_path(project_id, for_init=True)
+            if project_id
+            else None
+        )
+        status_file = (
+            root_path / ".liferay-docker" / "startup-status.json" if root_path else None
+        )
+
+        milestones = [
+            ("OSGi Framework Starting", "OSGi run level"),
+            (
+                "Spring Web Context Initializing",
+                "Initializing Spring root WebApplicationContext",
+            ),
+            ("Portal Startup Progress", "Starting Liferay"),
+            ("Available Contexts Registered", "Available contexts"),
+            ("Tomcat Server Ready", "Server startup in"),
+        ]
+        reached_milestones = set()
+
         start_time = time.time()
         with UI.spinner(
             f"Waiting for Liferay to become healthy ({container_name})..."
@@ -1265,7 +1289,7 @@ class RuntimeService(BaseHandler):
                     # Proactive Log Monitoring: Look for ERRORS
                     try:
                         logs = self.manager.run_command(
-                            ["docker", "logs", "--tail", "100", container_name],
+                            ["docker", "logs", "--tail", "200", container_name],
                             check=False,
                             capture_output=True,
                         )
@@ -1343,12 +1367,38 @@ class RuntimeService(BaseHandler):
                         check=False,
                         capture_output=True,
                     )
-                    if (
-                        logs
-                        and "org.apache.catalina.startup.Catalina.start Server startup in"
-                        in logs
-                    ):
-                        ready_by_logs = True
+                    if logs:
+                        if (
+                            "org.apache.catalina.startup.Catalina.start Server startup in"
+                            in logs
+                        ):
+                            ready_by_logs = True
+
+                        # Milestone tracking
+                        latest_milestone = None
+                        for title, marker in milestones:
+                            if marker in logs:
+                                if title not in reached_milestones:
+                                    reached_milestones.add(title)
+                                    UI.detail(
+                                        f"Startup Milestone Reached: {UI.CYAN}{title}{UI.COLOR_OFF}"
+                                    )
+                                    spinner.update(f"Liferay Startup: {title}...")
+                                latest_milestone = title
+
+                        if status_file and latest_milestone:
+                            try:
+                                status_file.parent.mkdir(parents=True, exist_ok=True)
+                                status_data = {
+                                    "status": "starting",
+                                    "latest_milestone": latest_milestone,
+                                    "milestones_reached": list(reached_milestones),
+                                    "elapsed_seconds": int(elapsed),
+                                }
+                                with open(status_file, "w") as f:
+                                    json.dump(status_data, f, indent=2)
+                            except Exception:
+                                pass
                 except Exception:
                     pass
 
@@ -1550,6 +1600,20 @@ class RuntimeService(BaseHandler):
                     if getattr(self.manager.args, "browser", False):
                         UI.info(f"Launching browser: {access_url}/web/guest/home")
                         open_browser(f"{access_url}/web/guest/home")
+
+                    if status_file:
+                        try:
+                            status_data = {
+                                "status": "healthy",
+                                "latest_milestone": "Liferay is ready",
+                                "milestones_reached": list(reached_milestones),
+                                "elapsed_seconds": int(duration_total),
+                            }
+                            with open(status_file, "w") as f:
+                                json.dump(status_data, f, indent=2)
+                        except Exception:
+                            pass
+
                     return True
 
                 # Fail fast if container exited
