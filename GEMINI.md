@@ -111,6 +111,9 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
 - Released `v2.11.33` successfully (integrated CWD home directory warning, `--stop-running` flag for import, and portable packaging documentation updates).
 - Released `v2.11.31` successfully (integrated quickstart templates overrides, automatically start sharing under `ldm import`, standalone `ldmp` package exports, and test suite/pre-commit fixes).
 - Released `v2.11.30` successfully (integrated Visual Diagnostics Web Dashboard (P3), Dynamic JVM Self-Tuning (P2), and solved GITHUB_ACTIONS env var mock test coverage mismatch).
+- **Current Active Task (July 3, 2026)**:
+  - [x] Fix E2E script hanging on Dev Guardrails check when executed from project root (use env CI=true instead of interactive prompt or passing -y which bypasses the guardrail).
+
 - **Current Active Task (July 2, 2026)**:
   - [x] Implement Global Shared Database default fallbacks (Issue #225)
   - [x] Restore JIT Zip Repackaging for OAuth profile URLs (Issue #309)
@@ -485,4 +488,4 @@ When modifying `client-extension.yaml` files, **NEVER change or remove `.service
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-07-02* | *Last Reviewed: 2026-07-02*
+*Last Updated: 2026-07-03* | *Last Reviewed: 2026-07-02*

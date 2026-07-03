@@ -182,7 +182,7 @@ log_and_run "Initializing Infrastructure" "$LDM_CMD" -y infra setup --search
 
 # 2. Guardrails
 echo ">> Verifying Dev Guardrails..."
-DEV_GUARD_OUT=$($LDM_CMD system version --bump patch 2>&1 || true)
+DEV_GUARD_OUT=$(env CI=true "$LDM_CMD" system version --bump patch 2>&1 || true)
 if echo "$DEV_GUARD_OUT" | grep -qE "Error: Developer utility requires LDM_DEV_MODE=true|Action restricted"; then
     echo "✅ Dev Guardrails verified."
 else
