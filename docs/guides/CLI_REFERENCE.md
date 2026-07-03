@@ -878,10 +878,11 @@ The following is a comprehensive index of all registered CLI option flags and th
 - **`--version`**: Target a specific version of LDM (e.g. v2.11.53).
 - **`--wait-for-bundles`**: Comma-separated list of expected OSGi bundle symbolic names to wait for.
 - **`--wait-for-deployables`**: Scan local workspace for JARs/YAMLs and block until they are deployed in Liferay.
+- **`--stream-status`**: Stream Liferay startup milestones to stdout in real-time without using an interactive spinner.
 - **`--workflow-name`**: Name of the workflow file.
 - **`-V`**: Show LDM version.
 - **`-q`**: Quiet mode.
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-07-02* | *Last Reviewed: 2026-07-02*
+*Last Updated: 2026-07-03* | *Last Reviewed: 2026-07-02*

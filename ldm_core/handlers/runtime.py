@@ -996,9 +996,10 @@ class RuntimeService(BaseHandler):
     def cmd_wait(
         self,
         project_id=None,
-        timeout=900,
+        timeout=None,
         wait_for_deployables=False,
         wait_for_bundles=None,
+        stream_status=False,
     ):
         """Block execution until project is fully ready (HTTP 200/302)."""
         if timeout is None:
@@ -1011,7 +1012,9 @@ class RuntimeService(BaseHandler):
         host_name = meta.get("host_name", "localhost")
 
         # 1. Wait for Container/Log Readiness
-        if not self._wait_for_ready(meta, host_name, timeout=timeout):
+        if not self._wait_for_ready(
+            meta, host_name, timeout=timeout, stream_status=stream_status
+        ):
             UI.die(f"Project '{project_id}' failed to become ready within {timeout}s.")
 
         # Determine target expected deployables
@@ -1123,12 +1126,15 @@ class RuntimeService(BaseHandler):
                                 bundles[sym_name] = state
 
                         satisfied = True
+                        stalled_bundles = {}
+                        missing_bundles = set()
+
                         for target, expected in expected_targets.items():
                             # Direct match
                             if target in bundles:
                                 if bundles[target] != expected:
                                     satisfied = False
-                                    break
+                                    stalled_bundles[target] = bundles[target]
                             else:
                                 # Client Extension match: symbolic name contains the target ID and "client.extension"
                                 cx_bundle_found = False
@@ -1140,10 +1146,11 @@ class RuntimeService(BaseHandler):
                                         cx_bundle_found = True
                                         if state != expected:
                                             satisfied = False
+                                            stalled_bundles[target] = state
                                         break
-                                if not cx_bundle_found or not satisfied:
+                                if not cx_bundle_found:
                                     satisfied = False
-                                    break
+                                    missing_bundles.add(target)
 
                         if satisfied:
                             UI.success(
@@ -1151,6 +1158,22 @@ class RuntimeService(BaseHandler):
                             )
                             gogo_ready = True
                             break
+                        # Periodically identify stalled deployables
+                        if time.time() - getattr(self, "_last_stalled_print", 0) > 30:
+                            if stalled_bundles:
+                                warning_msg = "⚠️ Still waiting for the following local deployables to become ACTIVE:\n"
+                                for t, s in stalled_bundles.items():
+                                    warning_msg += f"  - {t} (Currently: {s})\n"
+                                UI.warning(warning_msg.strip())
+                            self._last_stalled_print = time.time()
+
+                        # Fail-Fast for completely missing bundles after 120s
+                        if missing_bundles and (time.time() - gogo_start > 120):
+                            err_msg = "⚠️ Fail-Fast: The following required bundles never appeared in the OSGi container (missing from deploy/osgi folders):\n"
+                            for t in missing_bundles:
+                                err_msg += f"  - {t}\n"
+                            UI.die(err_msg.strip())
+
                     elif res:
                         # Gogo console responded but not with the bundle table (e.g. error/command not found)
                         break
@@ -1241,11 +1264,53 @@ class RuntimeService(BaseHandler):
             pass
         UI.warning("ngrok container is running, but failed to retrieve public URL.")
 
-    def _wait_for_ready(self, project_meta, host_name, total_start=None, timeout=600):
+    def _wait_for_ready(
+        self,
+        project_meta,
+        host_name,
+        total_start=None,
+        timeout=600,
+        stream_status=False,
+    ):
         """Wait for Liferay to become healthy and provide access information."""
         container_name = project_meta.get("container_name")
+        project_id = project_meta.get("id")
+        root_path = (
+            self.manager.detect_project_path(project_id, for_init=True)
+            if project_id
+            else None
+        )
+        status_file = (
+            root_path / ".liferay-docker" / "startup-status.json" if root_path else None
+        )
+
+        milestones = [
+            ("OSGi Framework Starting", "OSGi run level"),
+            (
+                "Spring Web Context Initializing",
+                "Initializing Spring root WebApplicationContext",
+            ),
+            ("Portal Startup Progress", "Starting Liferay"),
+            ("Available Contexts Registered", "Available contexts"),
+            ("Tomcat Server Ready", "Server startup in"),
+        ]
+        reached_milestones = set()
+
+        import contextlib
+
+        @contextlib.contextmanager
+        def null_spinner(msg):
+            UI.info(f"[LDM] {msg}")
+
+            class NullSpinner:
+                def update(self, m):
+                    pass
+
+            yield NullSpinner()
+
+        spinner_ctx = null_spinner if stream_status else UI.spinner
         start_time = time.time()
-        with UI.spinner(
+        with spinner_ctx(
             f"Waiting for Liferay to become healthy ({container_name})..."
         ) as spinner:
             last_notified_time = 0
@@ -1343,12 +1408,43 @@ class RuntimeService(BaseHandler):
                         check=False,
                         capture_output=True,
                     )
-                    if (
-                        logs
-                        and "org.apache.catalina.startup.Catalina.start Server startup in"
-                        in logs
-                    ):
-                        ready_by_logs = True
+                    if logs:
+                        if (
+                            "org.apache.catalina.startup.Catalina.start Server startup in"
+                            in logs
+                        ):
+                            ready_by_logs = True
+
+                        # Milestone tracking
+                        latest_milestone = None
+                        for title, marker in milestones:
+                            if marker in logs:
+                                if title not in reached_milestones:
+                                    reached_milestones.add(title)
+                                    if stream_status:
+                                        UI.info(f"[LDM] ⏳ Phase reached: {title}")
+                                    else:
+                                        UI.detail(
+                                            f"Startup Milestone Reached: {UI.CYAN}{title}{UI.COLOR_OFF}"
+                                        )
+                                        spinner.update(f"Liferay Startup: {title}...")
+                                latest_milestone = title
+
+                        if status_file and latest_milestone:
+                            try:
+                                status_file.parent.mkdir(parents=True, exist_ok=True)
+                                status_data = {
+                                    "status": "starting",
+                                    "latest_milestone": latest_milestone,
+                                    "milestones_reached": list(reached_milestones),
+                                    "elapsed_seconds": int(elapsed),
+                                }
+                                with open(status_file, "w") as f:
+                                    import json
+
+                                    json.dump(status_data, f, indent=2)
+                            except Exception:
+                                pass
                 except Exception:
                     pass
 
@@ -1364,6 +1460,9 @@ class RuntimeService(BaseHandler):
                 )
 
                 if status == "healthy" or ready_by_logs:
+                    if stream_status:
+                        UI.info("[LDM] ✅ Liferay is healthy!")
+
                     # LDM-422: Proactive Search Reindex Monitoring (UX Win)
                     if (
                         str(project_meta.get("reindex_required", "false")).lower()

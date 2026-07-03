@@ -1074,6 +1074,11 @@ def get_parser():
         "--wait-for-bundles",
         help="Comma-separated list of expected OSGi bundle symbolic names to wait for",
     )
+    wait_cmd.add_argument(
+        "--stream-status",
+        action="store_true",
+        help="Stream Liferay startup milestones to stdout in real-time without using an interactive spinner",
+    )
 
     status = subparsers.add_parser("status", aliases=["ps"], parents=[base_sub_parent])
     status.add_argument("project", nargs="?")
@@ -1979,6 +1984,7 @@ def main():
             timeout=getattr(args, "timeout", 600),
             wait_for_deployables=getattr(args, "wait_for_deployables", False),
             wait_for_bundles=getattr(args, "wait_for_bundles", None),
+            stream_status=getattr(args, "stream_status", False),
         ),
         ("status", None): lambda: manager.diagnostics.cmd_status(
             getattr(args, "project", None),
