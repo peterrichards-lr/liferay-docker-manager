@@ -28,7 +28,21 @@ class InfraService:
             if sys.platform == "darwin"
             else self.manager.get_resolved_ip("localhost")
         )
-        self.setup_infrastructure(resolved_ip, 443, use_ssl=True)
+
+        db_mode = getattr(self.manager.args, "database_mode", None)
+        if not db_mode:
+            project_path = self.manager.detect_project_path(None)
+            if project_path:
+                meta = self.manager.read_meta(project_path) or {}
+                db_mode = meta.get("database_mode")
+        if not db_mode:
+            db_mode = self.manager.defaults.get("database_mode", "isolated")
+
+        use_shared_db = db_mode == "shared"
+
+        self.setup_infrastructure(
+            resolved_ip, 443, use_ssl=True, use_shared_db=use_shared_db
+        )
         UI.success("Infrastructure setup complete.")
 
     def get_proxy_ports(self):
