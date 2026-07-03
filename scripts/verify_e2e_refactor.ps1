@@ -102,7 +102,9 @@ try {
 
     # 2. Guardrails
     Write-Host ">> Verifying Dev Guardrails..."
-    $res = & $LDM_CMD -y system version --bump patch 2>&1
+    $env:CI = "true"
+    $res = & $LDM_CMD system version --bump patch 2>&1
+    $env:CI = "false"
     if ($res -match "Developer utility requires LDM_DEV_MODE=true" -or $res -match "Action restricted") { 
         Write-Host "✅ Dev Guardrails verified." 
     } else { 
