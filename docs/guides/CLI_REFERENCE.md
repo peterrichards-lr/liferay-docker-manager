@@ -879,6 +879,7 @@ The following is a comprehensive index of all registered CLI option flags and th
 - **`--wait-for-bundles`**: Comma-separated list of expected OSGi bundle symbolic names to wait for.
 - **`--wait-for-deployables`**: Scan local workspace for JARs/YAMLs and block until they are deployed in Liferay.
 - **`--stream-status`**: Stream Liferay startup milestones to stdout in real-time without using an interactive spinner.
+- **`--stream-logs`**: Stream raw Docker container logs to stdout in real-time while waiting.
 - **`--workflow-name`**: Name of the workflow file.
 - **`-V`**: Show LDM version.
 - **`-q`**: Quiet mode.

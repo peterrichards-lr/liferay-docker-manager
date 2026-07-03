@@ -1079,6 +1079,11 @@ def get_parser():
         action="store_true",
         help="Stream Liferay startup milestones to stdout in real-time without using an interactive spinner",
     )
+    wait_cmd.add_argument(
+        "--stream-logs",
+        action="store_true",
+        help="Stream raw Docker container logs to stdout in real-time while waiting",
+    )
 
     status = subparsers.add_parser("status", aliases=["ps"], parents=[base_sub_parent])
     status.add_argument("project", nargs="?")
