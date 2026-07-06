@@ -734,6 +734,8 @@ def get_parser():
         help="Bypass typical startup prompts (terms of use, password reset)",
     )
     init.add_argument("--feature", nargs="+")
+    init.add_argument("--ssl", action="store_true", default=None)
+    init.add_argument("--no-ssl", action="store_false", dest="ssl")
 
     # Command: init-from
     init_from = subparsers.add_parser("init-from", parents=[base_sub_parent])

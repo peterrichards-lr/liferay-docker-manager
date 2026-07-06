@@ -2,12 +2,11 @@ import os
 import shutil
 import sys
 import time
-import zipfile
 
 import requests
 
 from ldm_core.ui import UI
-from ldm_core.utils import get_actual_home, safe_move
+from ldm_core.utils import get_actual_home
 
 # Reference for reliable mocking in tests
 exists_fn = os.path.exists
@@ -178,24 +177,25 @@ class AssetService:
 
     def download_samples(self, version, destination):
         """Downloads and extracts the samples pack from GitHub with Offline-First logic."""
-        repo_url = "https://github.com/peterrichards-lr/liferay-docker-manager"
+        import tarfile
+
+        repo_url = "https://github.com/peterrichards-lr/ldm-cx-samples"
 
         actual_home = get_actual_home()
         cache_dir = actual_home / ".ldm" / "references" / "samples"
         cache_dir.mkdir(parents=True, exist_ok=True)
 
-        cached_zip = cache_dir / f"samples_{version}.ldmp"
+        cached_zip = cache_dir / "samples_latest.ldmp"
 
         if os.path.exists(cached_zip):
             UI.info(f"Using cached samples: {cached_zip.name}")
             temp_zip = cached_zip
         else:
             urls = [
-                f"{repo_url}/releases/download/v{version}/samples.ldmp",
-                f"{repo_url}/releases/latest/download/samples.ldmp",
+                f"{repo_url}/releases/latest/download/ldm-cx-samples.ldmp",
             ]
 
-            temp_zip = cache_dir / f"samples_{version}.ldmp.download"
+            temp_zip = cache_dir / "samples_latest.ldmp.download"
             success = False
             last_error = None
 
@@ -241,28 +241,25 @@ class AssetService:
         try:
             UI.info("Extracting samples...")
             destination.mkdir(parents=True, exist_ok=True)
-            with zipfile.ZipFile(temp_zip, "r") as zip_ref:
-                extract_temp = cache_dir / f"temp_extract_{version}"
-                if extract_temp.exists():
-                    shutil.rmtree(extract_temp)
-                extract_temp.mkdir(parents=True)
-                zip_ref.extractall(extract_temp)
 
-                source_root = extract_temp
-                inner_samples = extract_temp / "samples"
-                if inner_samples.exists() and inner_samples.is_dir():
-                    source_root = inner_samples
-
-                for item in source_root.iterdir():
-                    target = destination / item.name
-                    if target.exists():
-                        if target.is_dir():
-                            shutil.rmtree(target)
-                        else:
-                            os.remove(target)
-                    safe_move(str(item), str(target))
-
+            extract_temp = cache_dir / "temp_extract_samples"
+            if extract_temp.exists():
                 shutil.rmtree(extract_temp)
+            extract_temp.mkdir(parents=True)
+
+            # Step 1: Extract the outer .ldmp package
+            with tarfile.open(temp_zip, "r:gz") as tar_ref:
+                tar_ref.extractall(extract_temp)  # nosec B202
+
+            files_tar = extract_temp / "files.tar.gz"
+            if not files_tar.exists():
+                raise FileNotFoundError("files.tar.gz not found inside .ldmp package")
+
+            # Step 2: Extract the inner volume assets directly to destination
+            with tarfile.open(files_tar, "r:gz") as inner_tar:
+                inner_tar.extractall(destination)  # nosec B202
+
+            shutil.rmtree(extract_temp)
 
             UI.success("Sample pack ready.")
             return True
