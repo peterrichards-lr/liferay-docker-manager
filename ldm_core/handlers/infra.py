@@ -309,6 +309,15 @@ tls:
                 UI.info("Waiting for host certificates to sync with Docker VM...")
                 time.sleep(2)
 
+            # Restart Traefik to ensure it picks up the new files, as VirtioFS/SSHFS
+            # file-watching (inotify) is often unreliable on VM-based Docker providers.
+            from ldm_core.docker_service import DockerService
+
+            if DockerService.is_running("liferay-proxy-global"):
+                self.manager.run_command(
+                    ["docker", "restart", "liferay-proxy-global"], check=False
+                )
+
         return True
 
     def cmd_infra_down(self):
