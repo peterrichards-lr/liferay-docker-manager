@@ -64,6 +64,10 @@ class DoctorRunner:
             print(f"{clean_arch}-{clean_os}-{clean_provider}")
             return
 
+        if getattr(self.args, "ssl", False):
+            self._check_ssl_diagnostics()
+            return
+
         UI.heading("LDM Doctor - Environmental Health Check")
 
         # 0. Early Project Resolve (Optional skip allowed)
@@ -1871,6 +1875,114 @@ class DoctorRunner:
                 msg += f" (Attempted {len(fixable_commands)} auto-fixes)."
             UI.error(msg)
             sys.exit(1)
+
+    def _check_ssl_diagnostics(self):
+        UI.heading("LDM Doctor - SSL Diagnostics")
+        target_domain = getattr(self.args, "domain", None)
+        domains_to_check = []
+
+        if target_domain:
+            domains_to_check.append(target_domain)
+        else:
+            UI.info("Scanning for active projects with SSL enabled...")
+            roots = self.handler.manager.find_dxp_roots()
+            for r in roots:
+                p_meta = self.handler.manager.read_meta(r["path"])
+                if str(p_meta.get("ssl", "false")).lower() == "true":
+                    host_name = p_meta.get("host_name")
+                    if host_name:
+                        domains_to_check.append(host_name)
+
+        if not domains_to_check:
+            UI.warning(
+                "No SSL-enabled projects detected. Pass --domain to explicitly check a domain."
+            )
+            return
+
+        import socket
+        import subprocess
+
+        for domain in set(domains_to_check):
+            print(f"\n{UI.BOLD}=== SSL Analysis: {domain} ==={UI.COLOR_OFF}")
+            try:
+                ip = socket.gethostbyname(domain)
+                print(f"🌍 Resolves to: {ip}")
+                if ip != "127.0.0.1":
+                    UI.warning(
+                        f"Domain {domain} does not resolve to 127.0.0.1 locally. It resolves to {ip}. Routing may bypass Traefik."
+                    )
+            except Exception as e:
+                UI.error(f"Failed to resolve {domain}: {e}")
+                continue
+
+            print("🔍 Fetching certificate chain...")
+            # Use openssl s_client to fetch cert info without external py libs
+            cmd = [
+                "openssl",
+                "s_client",
+                "-showcerts",
+                "-connect",
+                "127.0.0.1:443",
+                "-servername",
+                domain,
+            ]
+            try:
+                res = subprocess.run(cmd, input=b"", capture_output=True, timeout=5)
+                out = res.stdout.decode("utf-8", errors="ignore")
+
+                # Parse subject and issuer from openssl output
+                subject = "Unknown"
+                issuer = "Unknown"
+
+                for line in out.splitlines():
+                    if line.strip().startswith("subject="):
+                        subject = line.strip().replace("subject=", "").strip()
+                    elif line.strip().startswith("issuer="):
+                        issuer = line.strip().replace("issuer=", "").strip()
+
+                if "Unknown" in subject and "Unknown" in issuer:
+                    UI.error(
+                        "Failed to extract certificate details. Is Traefik running?"
+                    )
+                    continue
+
+                print(f"📄 Subject: {subject}")
+                print(f"🖋  Issuer:  {issuer}")
+
+                if (
+                    "CN = TRAEFIK DEFAULT CERT" in subject
+                    or "CN=TRAEFIK DEFAULT CERT" in subject
+                ):
+                    UI.error(
+                        "❌ Certificate Mismatch: Traefik is serving its default fallback certificate instead of the project certificate."
+                    )
+
+                    if getattr(self.args, "fix", False):
+                        UI.info("🔧 Auto-fix: Restarting Traefik proxy...")
+                        try:
+                            self.manager.infra.cmd_restart_proxy()
+                        except Exception as e:
+                            UI.error(f"Failed to restart Traefik: {e}")
+                    else:
+                        print(
+                            f"   💡 Hint: Try restarting Traefik: {UI.WHITE}docker restart liferay-proxy-global{UI.COLOR_OFF}"
+                        )
+                        print(
+                            f"   💡 Or run this command with the --fix flag: {UI.WHITE}ldm doctor --ssl --fix{UI.COLOR_OFF}"
+                        )
+                elif "mkcert development CA" in issuer or "mkcert" in issuer.lower():
+                    UI.success(
+                        "✅ Certificate is a valid LDM local development certificate."
+                    )
+                else:
+                    UI.info("ℹ️  Certificate is valid but issued by a third party.")
+
+            except subprocess.TimeoutExpired:
+                UI.error("Timeout fetching certificate. Is port 443 open?")
+            except Exception as e:
+                UI.error(f"Error fetching certificate: {e}")
+
+        print("")
 
 
 class DiagnosticsService:

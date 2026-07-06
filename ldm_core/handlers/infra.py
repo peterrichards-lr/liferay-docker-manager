@@ -344,6 +344,21 @@ tls:
         self.cmd_infra_down()
         self.cmd_infra_setup()
 
+    def cmd_restart_proxy(self):
+        """Restarts only the Traefik proxy container."""
+        from ldm_core.docker_service import DockerService
+
+        container_name = "liferay-proxy-global"
+        UI.info(f"Restarting proxy container: {container_name}...")
+
+        if DockerService.exists(container_name):
+            DockerService.restart(container_name)
+            UI.success("Proxy container restarted successfully.")
+        else:
+            UI.error(
+                f"Container '{container_name}' does not exist. Is the infrastructure running?"
+            )
+
     def _ensure_network(self):
         """Ensures the standard 'liferay-net' Docker network exists."""
         networks = self.manager.run_command(
