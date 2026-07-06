@@ -6,6 +6,7 @@ description: Run FIRST before any task when workspace root lacks AGENTS.md. Crea
 # Ensure AGENTS.md (Bootstrap)
 
 Before any other work, the agent MUST:
+
 1. Check whether `AGENTS.md` exists at the workspace root.
 2. If it exists, skip this skill entirely.
 3. If it does not exist, create `AGENTS.md` based on the Python environment.
