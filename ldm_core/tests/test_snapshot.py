@@ -10,13 +10,23 @@ from ldm_core.handlers.snapshot import SnapshotService
 
 class MockSnapshotManager(BaseHandler):
     def __init__(self):
-        self.args = MagicMock()
+        from argparse import Namespace
+
+        self.args = Namespace(
+            database_mode=None,
+            search_mode=None,
+            ssl=None,
+            lean=False,
+            tunnel_managed_cors=False,
+        )
         self.verbose = False
         self.non_interactive = True
         self.snapshot = SnapshotService(self)
         self.composer = MagicMock()
         self.composer.is_using_named_volumes.return_value = False
         self.runtime = MagicMock()
+        self.defaults = MagicMock()
+        self.defaults.get = MagicMock(return_value="isolated")
 
     def run_command(self, *args, **kwargs):
         return ""

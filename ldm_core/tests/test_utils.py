@@ -624,3 +624,31 @@ class TestUpdateChecks(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def test_resolve_infrastructure_mode_args_override():
+    from ldm_core.utils import resolve_infrastructure_mode
+
+    defaults = type("MockDefaults", (), {"get": lambda _k, _d="isolated": "isolated"})
+    assert (
+        resolve_infrastructure_mode("database_mode", {}, defaults, "shared") == "shared"
+    )
+
+
+def test_resolve_infrastructure_mode_meta_precedence():
+    from ldm_core.utils import resolve_infrastructure_mode
+
+    defaults = type("MockDefaults", (), {"get": lambda _k, _d="isolated": "isolated"})
+    assert (
+        resolve_infrastructure_mode(
+            "database_mode", {"database_mode": "shared"}, defaults
+        )
+        == "shared"
+    )
+
+
+def test_resolve_infrastructure_mode_defaults():
+    from ldm_core.utils import resolve_infrastructure_mode
+
+    defaults = type("MockDefaults", (), {"get": lambda _k, _d="isolated": "shared"})
+    assert resolve_infrastructure_mode("database_mode", {}, defaults) == "shared"

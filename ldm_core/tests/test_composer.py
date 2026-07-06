@@ -8,19 +8,26 @@ from ldm_core.handlers.composer import ComposerService
 
 class MockComposerManager:
     def __init__(self):
-        self.args = MagicMock()
-        self.args.ssl = None
-        self.args.lean = False
-        self.args.tunnel_managed_cors = False
+        from argparse import Namespace
+
+        self.args = Namespace(
+            database_mode=None,
+            search_mode=None,
+            ssl=None,
+            lean=False,
+            tunnel_managed_cors=False,
+        )
         self.verbose = False
         self.non_interactive = True
         self.workspace = MagicMock()
         self.config = MagicMock()
         self.config.get_global_config.return_value = {}
         self.share = MagicMock()
+        self.share.resolve_share_config.return_value = (None, None)
         self.defaults = MagicMock()
         self.get_resolved_ip = MagicMock(return_value="127.0.0.1")
         self.run_command = MagicMock(return_value="")
+        self.parse_version = MagicMock(return_value=(2024, 1, 0))
 
 
 class TestComposerService(unittest.TestCase):
@@ -1014,6 +1021,37 @@ class TestComposerService(unittest.TestCase):
         for svc_conf in data["services"].values():
             self.assertEqual(svc_conf["logging"]["options"]["max-size"], "25m")
             self.assertEqual(svc_conf["logging"]["options"]["max-file"], "5")
+
+    @patch("ldm_core.handlers.composer.UI")
+    def test_shared_infra_ux_warning(self, mock_ui):
+        """Verify UI.info is called when shared mode is evaluated for search or db."""
+        meta = {
+            "database_mode": "shared",
+            "search_mode": "shared",
+            "tag": "2026.q1.7-lts",
+        }
+        paths = {
+            "root": Path("/tmp/proj"),
+            "deploy": Path("/tmp/proj/deploy"),
+            "files": Path("/tmp/proj/files"),
+            "scripts": Path("/tmp/proj/scripts"),
+            "modules": Path("/tmp/proj/osgi/modules"),
+            "cx": Path("/tmp/proj/osgi/client-extensions"),
+            "portal_log4j": Path("/tmp/proj/osgi/log4j"),
+            "data": Path("/tmp/proj/data"),
+            "state": Path("/tmp/proj/osgi/state"),
+            "logs": Path("/tmp/proj/logs"),
+        }
+        project_name = "test-project"
+
+        self.composer._build_liferay_service(
+            paths, meta, "localhost", project_name, False, []
+        )
+        mock_ui.info.assert_any_call("⚠️ Utilizing Global Shared Infrastructure")
+
+        mock_ui.reset_mock()
+        self.composer._build_db_service(meta, project_name)
+        mock_ui.info.assert_any_call("⚠️ Utilizing Global Shared Infrastructure")
 
 
 if __name__ == "__main__":

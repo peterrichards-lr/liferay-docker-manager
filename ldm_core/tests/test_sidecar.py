@@ -13,14 +13,25 @@ from ldm_core.handlers.runtime import RuntimeService
 
 class MockManager(BaseHandler):
     def __init__(self):
-        self.args = MagicMock()
-        self.args.search = False
+        from argparse import Namespace
+
+        self.args = Namespace(
+            database_mode=None,
+            search_mode=None,
+            search=False,
+            ssl=None,
+            lean=False,
+            tunnel_managed_cors=False,
+        )
         self.verbose = False
         self.non_interactive = True
         self.composer = ComposerService(self)
         self.infra = InfraService(self)
         self.runtime = RuntimeService(self)
         self.config = ConfigService(self)
+        self.defaults = MagicMock()
+        self.defaults.get = MagicMock(return_value="isolated")
+        self.parse_version = MagicMock(return_value=(2024, 1, 0))  # type: ignore[method-assign]
         self.run_command = MagicMock(return_value="")  # type: ignore[method-assign]
 
     def setup_paths(self, root):

@@ -7,7 +7,8 @@ CONVENTION_DEFAULTS = {
     "tag": "",  # Empty forces user to pick or use latest
     "release_type": "lts",
     "db_type": "postgresql",
-    "search_mode": "sidecar",
+    "search_mode": "shared",
+    "database_mode": "shared",
     "host_name": "localhost",
     "port": "8080",
     "portal": "false",

@@ -488,15 +488,12 @@ class RuntimeService(BaseHandler):
                     self.manager.config.track_roi(840, "first-boot seeding")
                 is_new_project = False
 
-            default_shared = (
-                "true"
-                if self.manager.defaults.get("search_mode") == "shared"
-                else "false"
+            from ldm_core.utils import resolve_infrastructure_mode
+
+            search_mode = resolve_infrastructure_mode(
+                "search_mode", project_meta, self.manager.defaults
             )
-            use_shared_search = (
-                str(project_meta.get("use_shared_search", default_shared)).lower()
-                == "true"
-            )
+            use_shared_search = search_mode == "shared"
             if getattr(self.manager.args, "sidecar", False):
                 use_shared_search = False
 
@@ -644,9 +641,11 @@ class RuntimeService(BaseHandler):
                 self.sync_stack(
                     paths, project_meta, no_up=True, no_wait=True, show_summary=False
                 )
-                db_mode = project_meta.get(
-                    "database_mode"
-                ) or self.manager.defaults.get("database_mode", "isolated")
+                from ldm_core.utils import resolve_infrastructure_mode
+
+                db_mode = resolve_infrastructure_mode(
+                    "database_mode", project_meta, self.manager.defaults
+                )
                 db_args = ["up", "-d", "db"] if db_mode != "shared" else ["up", "-d"]
                 self.manager.run_command(
                     [*get_compose_cmd(), *db_args], cwd=str(paths["root"])
@@ -1879,9 +1878,11 @@ class RuntimeService(BaseHandler):
                     db_container = f"{container_name}-db"
 
                 db_type_val = project_meta.get("db_type", "postgresql")
-                db_mode = project_meta.get(
-                    "database_mode"
-                ) or self.manager.defaults.get("database_mode", "isolated")
+                from ldm_core.utils import resolve_infrastructure_mode
+
+                db_mode = resolve_infrastructure_mode(
+                    "database_mode", project_meta, self.manager.defaults
+                )
                 use_shared_db = db_mode == "shared"
                 if db_type_val not in ["hypersonic", "external"]:
                     # Check if DB container is running
@@ -2006,12 +2007,17 @@ class RuntimeService(BaseHandler):
                     UI.info(
                         "Keeping custom configs. LDM Sidecar injection will be bypassed."
                     )
-        db_mode = (
-            getattr(self.manager.args, "database_mode", None)
-            or project_meta.get("database_mode")
-            or self.manager.defaults.get("database_mode", "isolated")
+        from ldm_core.utils import resolve_infrastructure_mode
+
+        db_mode = resolve_infrastructure_mode(
+            "database_mode",
+            project_meta,
+            self.manager.defaults,
+            getattr(self.manager.args, "database_mode", None),
         )
         use_shared_db = db_mode == "shared"
+        if use_shared_db or use_shared_search:
+            UI.info("⚠️ Utilizing Global Shared Infrastructure")
 
         if host_name != "localhost":
             liferay_env.extend(
@@ -2466,14 +2472,11 @@ class RuntimeService(BaseHandler):
                         75,
                     ):
                         baseline_default = "shared"
-                    if (
-                        hasattr(self.manager, "defaults")
-                        and self.manager.defaults is not None
-                    ):
-                        baseline_default = self.manager.defaults.get(
-                            "database_mode", baseline_default
-                        )
-                    db_mode = meta.get("database_mode") or baseline_default
+                    from ldm_core.utils import resolve_infrastructure_mode
+
+                    db_mode = resolve_infrastructure_mode(
+                        "database_mode", meta, self.manager.defaults
+                    )
                     db_type = meta.get("db_type", "postgresql")
 
                     if db_mode == "shared" and db_type != "hypersonic":

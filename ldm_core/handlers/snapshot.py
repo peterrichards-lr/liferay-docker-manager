@@ -240,15 +240,11 @@ class SnapshotService(BaseHandler):
         if db_type in ["mysql", "postgresql", "mariadb"]:
             # LDM-388: Priority: Metadata -> Explicit Heuristic
             db_container = project_meta.get("db_container_name")
-            db_mode = "isolated"
-            if project_meta:
-                db_mode = project_meta.get("database_mode") or db_mode
-            if (
-                db_mode == "isolated"
-                and hasattr(self.manager, "defaults")
-                and self.manager.defaults is not None
-            ):
-                db_mode = self.manager.defaults.get("database_mode", "isolated")
+            from ldm_core.utils import resolve_infrastructure_mode
+
+            db_mode = resolve_infrastructure_mode(
+                "database_mode", project_meta or {}, self.manager.defaults
+            )
             if db_mode == "shared":
                 db_container = "liferay-db-global"
 
@@ -931,9 +927,11 @@ class SnapshotService(BaseHandler):
             # attempting to initialize schemas during the restore process.
             self.manager.runtime.cmd_stop(project_id, service="liferay")
 
-            db_mode = project_meta.get("database_mode") or "isolated"
-            if hasattr(self.manager, "defaults") and self.manager.defaults is not None:
-                db_mode = self.manager.defaults.get("database_mode", db_mode)
+            from ldm_core.utils import resolve_infrastructure_mode
+
+            db_mode = resolve_infrastructure_mode(
+                "database_mode", project_meta, self.manager.defaults
+            )
 
             db_container = project_meta.get("db_container_name")
             if db_mode == "shared":
@@ -1330,15 +1328,11 @@ class SnapshotService(BaseHandler):
         import platform
         import subprocess
 
-        db_mode = "isolated"
-        if project_meta:
-            db_mode = project_meta.get("database_mode") or db_mode
-        if (
-            db_mode == "isolated"
-            and hasattr(self.manager, "defaults")
-            and self.manager.defaults is not None
-        ):
-            db_mode = self.manager.defaults.get("database_mode", "isolated")
+        from ldm_core.utils import resolve_infrastructure_mode
+
+        db_mode = resolve_infrastructure_mode(
+            "database_mode", project_meta or {}, self.manager.defaults
+        )
         db_name = "lportal"
         if db_mode == "shared":
             from ldm_core.utils import sanitize_id
@@ -1510,15 +1504,11 @@ class SnapshotService(BaseHandler):
                 # LDM-410: Auto-update virtualhost to match local hostname
 
                 host_name = project_meta.get("host_name", "localhost")
-                db_mode = "isolated"
-                if project_meta:
-                    db_mode = project_meta.get("database_mode") or db_mode
-                if (
-                    db_mode == "isolated"
-                    and hasattr(self.manager, "defaults")
-                    and self.manager.defaults is not None
-                ):
-                    db_mode = self.manager.defaults.get("database_mode", "isolated")
+                from ldm_core.utils import resolve_infrastructure_mode
+
+                db_mode = resolve_infrastructure_mode(
+                    "database_mode", project_meta or {}, self.manager.defaults
+                )
                 db_name = "lportal"
                 if db_mode == "shared":
                     from ldm_core.utils import sanitize_id
