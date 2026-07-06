@@ -88,18 +88,18 @@ class InfraService:
     ):
         """Initializes global Traefik proxy and search services."""
         self._ensure_network()
-        if not use_ssl:
-            return 443
-
-        # Docker bridge proxy check (Traefik needs to talk to Docker socket securely)
-        self._ensure_docker_proxy()
-
         # Orchestrated Global Search (ES8)
         if getattr(self.manager.args, "search", False) and use_shared_search:
             self.setup_global_search()
 
         if use_shared_db:
             self.setup_global_database()
+
+        if not use_ssl:
+            return 443
+
+        # Docker bridge proxy check (Traefik needs to talk to Docker socket securely)
+        self._ensure_docker_proxy()
 
         if not quiet:
             UI.info("Checking infrastructure stack (Traefik SSL Proxy)...")
