@@ -119,6 +119,9 @@ Stop and remove global infrastructure containers. (legacy: \fBldm infra-down\fR)
 \fBldm infra restart\fR [\fB--search\fR]
 Reset all global services in one go. (legacy: \fBldm infra-restart\fR)
 .TP
+\fBldm infra restart-proxy\fR
+Restarts only the Traefik proxy container.
+.TP
 \fBldm infra init-common\fR
 Recreate the baseline global configuration from internal resources. (legacy: \fBldm init-common\fR)
 .TP
@@ -162,8 +165,8 @@ Open project config files in \fB$EDITOR\fR.
 
 .SS system \- System Utilities & Diagnostics
 .TP
-\fBldm system doctor\fR
-Verify host health, Docker resources, and project dependencies. (legacy: \fBldm doctor\fR)
+\fBldm system doctor\fR [\fB--ssl\fR] [\fB--domain\fR \fIDOMAIN\fR] [\fB--fix\fR]
+Verify host health, Docker resources, and project dependencies. Use \fB--ssl\fR to check certificate routing, and \fB--fix\fR to automatically apply suggested solutions. (legacy: \fBldm doctor\fR)
 .TP
 \fBldm system prune\fR
 Reclaim disk space by removing orphaned containers, search snapshots, and caches. (legacy: \fBldm prune\fR)

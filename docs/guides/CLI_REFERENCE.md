@@ -508,6 +508,8 @@ ldm system doctor --fix       # Automatically apply recommended fixes
 ldm system doctor --bundle    # Generate a sanitized zip bundle of logs and config
 ldm system doctor --slug      # Output a machine-readable environment identifier string
 ldm system doctor --fix-hosts # Add missing domains to /etc/hosts (will prompt for sudo)
+ldm system doctor --ssl       # Run SSL diagnostic workflow to verify certificate chains and routing
+ldm system doctor --ssl --domain aica.local # Check a specific domain
 
 # Legacy flat form (still works):
 ldm doctor --fix
@@ -667,6 +669,7 @@ ldm infra setup --es7      # Force Global Search to use legacy Elasticsearch 7
 ldm infra down             # Stop and remove global services
 ldm infra restart          # Reset all global services in one go
 ldm infra restart --search # Restart and also initialize/restart Global Search
+ldm infra restart-proxy    # Restarts only the Traefik proxy container
 
 # Legacy flat forms (still work):
 ldm infra-setup --search
