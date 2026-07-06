@@ -4,6 +4,7 @@ import pkgutil
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 import yaml
 
@@ -238,22 +239,13 @@ class TestArchitecturalContracts(unittest.TestCase):
             "REDLINE VIOLATION: Search settings found in portal-ext.properties. MUST be in Env Vars or .config.",
         )
 
-    def test_get_samples_root_delegation_mandate(self):
+    @patch("ldm_core.handlers.config.ConfigService.get_samples_root")
+    def test_get_samples_root_delegation_mandate(self, mock_get):
         """Mandate: LiferayManager MUST correctly delegate get_samples_root to ConfigService."""
+        mock_get.return_value = Path("/tmp/mock_samples")
         samples_root = self.manager.get_samples_root()
-        self.assertIsNotNone(
-            samples_root, "get_samples_root returned None (delegation likely missing)."
-        )
-        self.assertIsInstance(
-            samples_root, Path, "get_samples_root did not return a Path object."
-        )
-        self.assertTrue(
-            samples_root.exists(), "The returned samples_root path does not exist."
-        )
-        self.assertTrue(
-            (samples_root / "metadata.json").exists(),
-            "The samples directory is missing metadata.json.",
-        )
+        mock_get.assert_called_once()
+        self.assertEqual(samples_root, Path("/tmp/mock_samples"))
 
     def test_cli_preprocess_gating_contracts(self):
         """Mandate: All registered CLI subparsers/commands MUST be synchronized with preprocess_args."""

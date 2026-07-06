@@ -111,6 +111,10 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
 - Released `v2.11.33` successfully (integrated CWD home directory warning, `--stop-running` flag for import, and portable packaging documentation updates).
 - Released `v2.11.31` successfully (integrated quickstart templates overrides, automatically start sharing under `ldm import`, standalone `ldmp` package exports, and test suite/pre-commit fixes).
 - Released `v2.11.30` successfully (integrated Visual Diagnostics Web Dashboard (P3), Dynamic JVM Self-Tuning (P2), and solved GITHUB_ACTIONS env var mock test coverage mismatch).
+- **Current Active Task (July 3, 2026)**:
+  - [x] Create and push missing v2.11.85 tag to trigger CI/CD pipeline.
+  - [x] Fix ldm infra-setup to dynamically resolve the database_mode config and automatically start liferay-db-global when shared mode is requested (PR #342).
+
 - **Current Active Task (July 2, 2026)**:
   - [x] Implement Global Shared Database default fallbacks (Issue #225)
   - [x] Restore JIT Zip Repackaging for OAuth profile URLs (Issue #309)
@@ -483,6 +487,12 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
 
 When modifying `client-extension.yaml` files, **NEVER change or remove `.serviceAddress: localhost:3001` or `.serviceScheme`** manually to fix Docker or LDM routing issues. Liferay automatically updates the shared routes context with the correct internal endpoint when the generated `.zip` file is copied to the Liferay `osgi/client-extensions` deploy folder. Modifying these properties will override the auto-registration and break the deployment.
 
+- **Current Active Task (July 6, 2026)**:
+  - [x] Migrate `ldm-cx-samples` delivery to `.ldmp` package file.
+  - [x] Create GitHub Actions CI/CD to build `.ldmp` from `ldm-cx-samples`.
+  - [x] Update LDM `AssetService` to read `.ldmp` for `--samples`.
+  - [x] Create an E2E test in `ldm-cx-samples` using `--samples` switch.
+
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-07-03* | *Last Reviewed: 2026-07-02*
+*Last Updated: 2026-07-06* | *Last Reviewed: 2026-07-02*
