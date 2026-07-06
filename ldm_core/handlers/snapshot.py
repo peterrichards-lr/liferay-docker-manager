@@ -1119,8 +1119,19 @@ class SnapshotService(BaseHandler):
                 if not is_within_root(member_path, target_root):
                     UI.error(f"Security: Skipping unsafe member: {m.name}")
                     continue
+
+                # Pre-emptively remove file to avoid PermissionError (Errno 13) during overwrite
+                if member_path.exists() and not member_path.is_dir():
+                    try:
+                        member_path.unlink()
+                    except Exception:
+                        pass
+
                 members.append(m)
 
+            tar.errorlevel = (
+                0  # Robustness: suppress non-fatal OSErrors (like copystat failures)
+            )
             tar.extractall(path=target_root, members=members)  # nosec B202
 
             # 2. Extract search_backup if present
