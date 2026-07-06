@@ -896,8 +896,13 @@ class BaseHandler:
                     for f in ["meta", ".liferay-docker.meta", ".ldm.meta"]
                 )
                 if has_meta:
-                    # If the project path IS the home directory, warn the user
-                    if p == Path.home().resolve() and not no_home_warn:
+                    # If the project is directly in the home directory, warn the user
+                    if (
+                        p.parent == Path.home().resolve()
+                        and not no_home_warn
+                        and not getattr(BaseHandler, "_warned_home", False)
+                    ):
+                        BaseHandler._warned_home = True  # type: ignore[attr-defined]
                         UI.warning(
                             "You are running LDM from your Home directory. "
                             "For better performance and to avoid noise, it is recommended to "
@@ -911,6 +916,18 @@ class BaseHandler:
                             f"Cannot initialize project: '{p}' already exists and is a file."
                         )
                     if p.parent.exists():
+                        # If the new project is directly in the home directory, warn the user
+                        if (
+                            p.parent == Path.home().resolve()
+                            and not no_home_warn
+                            and not getattr(BaseHandler, "_warned_home", False)
+                        ):
+                            BaseHandler._warned_home = True  # type: ignore[attr-defined]
+                            UI.warning(
+                                "You are running LDM from your Home directory. "
+                                "For better performance and to avoid noise, it is recommended to "
+                                "run LDM from a dedicated workspace folder (e.g. ~/ldm)."
+                            )
                         return p
             except PermissionError:
                 # If we get permission denied, but the path exists, it's definitely the project
