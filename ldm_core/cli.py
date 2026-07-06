@@ -44,6 +44,7 @@ def preprocess_args(args_list: list[str]) -> list[str]:
         "infra-setup",
         "infra-down",
         "infra-restart",
+        "restart-proxy",
         "init-common",
         "init-ci",
         "renew-ssl",
@@ -1210,6 +1211,12 @@ def get_parser():
         "--es7", action="store_true", help="Use Elasticsearch 7 for global search"
     )
 
+    infra_subparsers.add_parser(
+        "restart-proxy",
+        parents=[base_sub_parent],
+        help="Restarts only the Traefik proxy container",
+    )
+
     infra_subparsers.add_parser("init-common", parents=[base_sub_parent])
 
     renew_ssl = infra_subparsers.add_parser("renew-ssl", parents=[base_sub_parent])
@@ -1559,6 +1566,16 @@ def get_parser():
         action="store_true",
         help="Automatically apply recommended fixes (e.g., pruning, lifting watermarks)",
     )
+    doctor.add_argument(
+        "--ssl",
+        action="store_true",
+        help="Run SSL diagnostic workflow to verify certificate chains and routing",
+    )
+    doctor.add_argument(
+        "--domain",
+        type=str,
+        help="Specific domain to check SSL certificates for (used with --ssl)",
+    )
 
     upgrade = system_subparsers.add_parser(
         "upgrade", parents=[base_sub_parent], conflict_handler="resolve"
@@ -1848,6 +1865,7 @@ def main():
         # Namespaced commands requiring docker:
         ("infra", "down"),
         ("infra", "restart"),
+        ("infra", "restart-proxy"),
         ("infra", "setup"),
         ("cloud", "fetch"),
         ("config", "env"),
@@ -2049,6 +2067,7 @@ def main():
         ("infra", "setup"): manager.infra.cmd_infra_setup,
         ("infra", "down"): manager.infra.cmd_infra_down,
         ("infra", "restart"): manager.infra.cmd_infra_restart,
+        ("infra", "restart-proxy"): manager.infra.cmd_restart_proxy,
         ("infra", "init-common"): manager.config.cmd_init_common,
         ("infra", "renew-ssl"): lambda: manager.runtime.cmd_renew_ssl(
             getattr(args, "project", None)

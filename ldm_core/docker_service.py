@@ -66,6 +66,13 @@ class DockerService:
         )
 
     @staticmethod
+    def restart(container_name: str):
+        """Restarts a container."""
+        return run_command(
+            ["docker", "restart", container_name], check=False, capture_output=True
+        )
+
+    @staticmethod
     def exec(
         container_name: str,
         command_list: list[str],
