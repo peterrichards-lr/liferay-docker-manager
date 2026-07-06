@@ -526,7 +526,12 @@ class ConfigService:
             return samples_root
 
         # 4. Prompt & Download
-        if not self.manager.non_interactive:
+        if self.manager.non_interactive:
+            UI.info(f"Auto-downloading sample pack for v{VERSION}...")
+            if self.manager.assets.download_samples(VERSION, cache_versioned):
+                return cache_versioned
+            UI.die("Failed to download sample pack.")
+        else:
             UI.heading("On-Demand Sample Pack")
             UI.info("Sample assets are not bundled with the standalone binary.")
             if UI.confirm(f"Download sample pack for v{VERSION} (~50MB)?", "Y"):
@@ -536,19 +541,17 @@ class ConfigService:
                 UI.die("Failed to download sample pack.")
             else:
                 UI.die("Sample pack required for --samples mode.")
-        else:
-            UI.die("Sample assets missing and non-interactive mode is active.")
-
-        return samples_root
+        return None
 
     def get_samples_tag(self):
         """Extracts the reference Liferay tag from the samples metadata."""
         root = self.manager.get_samples_root()
-        meta_file = root / "metadata.json"
+        meta_file = root / "meta"
         if meta_file.exists():
             try:
-                meta = json.loads(meta_file.read_text())
-                return meta.get("reference_tag")
+                for line in meta_file.read_text().splitlines():
+                    if line.startswith("tag="):
+                        return line.split("=", 1)[1].strip()
             except Exception:
                 pass
         return None
@@ -556,11 +559,12 @@ class ConfigService:
     def get_samples_db_type(self):
         """Extracts the database type from the samples metadata."""
         root = self.manager.get_samples_root()
-        meta_file = root / "metadata.json"
+        meta_file = root / "meta"
         if meta_file.exists():
             try:
-                meta = json.loads(meta_file.read_text())
-                return meta.get("db_type")
+                for line in meta_file.read_text().splitlines():
+                    if line.startswith("db_type="):
+                        return line.split("=", 1)[1].strip()
             except Exception:
                 pass
         return None

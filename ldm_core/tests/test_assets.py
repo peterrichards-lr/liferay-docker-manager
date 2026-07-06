@@ -34,11 +34,21 @@ class TestAssetService(unittest.TestCase):
             # Mock response
             mock_res = MagicMock()
             mock_res.status_code = 200
-            mock_res.iter_content = MagicMock(return_value=[b"ZIP"])
+            mock_res.iter_content = MagicMock(return_value=[b"TAR"])
             mock_get.return_value = mock_res
 
-            # Mock ZipFile to avoid BadZipFile
-            with patch("zipfile.ZipFile") as mock_zip:
+            def mock_extractall(path, **kwargs):
+                # Ensure the expected files_tar exists after first extraction
+                files_tar = Path(path) / "files.tar.gz"
+                if "temp_extract_samples" in str(path):
+                    files_tar.parent.mkdir(parents=True, exist_ok=True)
+                    files_tar.touch()
+
+            # Mock tarfile to avoid ReadError
+            with patch("tarfile.open") as mock_tar:
+                mock_tar.return_value.__enter__.return_value.extractall.side_effect = (
+                    mock_extractall
+                )
                 res = self.assets.download_samples("2.5.0", tmp_path / "dest")
                 self.assertTrue(res)
                 self.assertTrue(mock_get.called)
@@ -52,8 +62,17 @@ class TestAssetService(unittest.TestCase):
             tmp_path = Path(tmp_dir)
             mock_home.return_value = tmp_path
 
-            # Mock ZipFile
-            with patch("zipfile.ZipFile") as mock_zip:
+            def mock_extractall(path, **kwargs):
+                files_tar = Path(path) / "files.tar.gz"
+                if "temp_extract_samples" in str(path):
+                    files_tar.parent.mkdir(parents=True, exist_ok=True)
+                    files_tar.touch()
+
+            # Mock tarfile
+            with patch("tarfile.open") as mock_tar:
+                mock_tar.return_value.__enter__.return_value.extractall.side_effect = (
+                    mock_extractall
+                )
                 res = self.assets.download_samples("2.5.0", tmp_path / "dest")
                 self.assertTrue(res)
 
