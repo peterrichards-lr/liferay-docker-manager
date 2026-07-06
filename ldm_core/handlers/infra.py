@@ -309,6 +309,16 @@ tls:
                 UI.info("Waiting for host certificates to sync with Docker VM...")
                 time.sleep(2)
 
+            from ldm_core.docker_service import DockerService
+
+            if DockerService.exists(
+                "liferay-proxy-global"
+            ) and DockerService.is_running("liferay-proxy-global"):
+                UI.info(
+                    "Restarting Traefik proxy to ensure new certificates are detected..."
+                )
+                DockerService.restart("liferay-proxy-global")
+
         return True
 
     def cmd_infra_down(self):
