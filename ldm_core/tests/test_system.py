@@ -459,6 +459,43 @@ class TestSystemService(unittest.TestCase):
         self.assertFalse(self.manager.runtime.cmd_run.called)
         self.assertFalse(self.manager.cmd_doctor.called)
 
+    @patch("ldm_core.handlers.system.UI")
+    @patch("ldm_core.utils.has_shared_projects")
+    def test_nuke_global_volume_guard(self, mock_has_shared, mock_ui):
+        """Verify cmd_nuke guards global volume drops correctly."""
+        mock_ui.ask.return_value = "y"  # Confirm nuke
+        mock_ui.confirm.return_value = False  # Deny global volume drop
+        mock_has_shared.return_value = True  # Ensure prompt triggers
+
+        self.system.cmd_nuke(force=False)
+        # Should not drop global volumes
+        self.manager.run_command.assert_any_call(
+            ["docker", "volume", "prune", "-f"], check=False
+        )
+        run_calls = self.manager.run_command.call_args_list
+        for call in run_calls:
+            if (
+                "docker" in call.args[0]
+                and "volume" in call.args[0]
+                and "rm" in call.args[0]
+            ):
+                self.assertNotIn("liferay-db-global-data", call.args[0])
+
+        # Now confirm it
+        mock_ui.confirm.return_value = True
+        self.system.cmd_nuke(force=False)
+        self.manager.run_command.assert_any_call(
+            [
+                "docker",
+                "volume",
+                "rm",
+                "-f",
+                "liferay-db-global-data",
+                "liferay-search-global-data",
+            ],
+            check=False,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -29,14 +29,17 @@ class InfraService:
             else self.manager.get_resolved_ip("localhost")
         )
 
-        db_mode = getattr(self.manager.args, "database_mode", None)
-        if not db_mode:
-            project_path = self.manager.detect_project_path(None)
-            if project_path:
-                meta = self.manager.read_meta(project_path) or {}
-                db_mode = meta.get("database_mode")
-        if not db_mode:
-            db_mode = self.manager.defaults.get("database_mode", "isolated")
+        project_path = self.manager.detect_project_path(None)
+        meta = self.manager.read_meta(project_path) or {} if project_path else {}
+
+        from ldm_core.utils import resolve_infrastructure_mode
+
+        db_mode = resolve_infrastructure_mode(
+            "database_mode",
+            meta,
+            self.manager.defaults,
+            getattr(self.manager.args, "database_mode", None),
+        )
 
         use_shared_db = db_mode == "shared"
 
@@ -325,6 +328,18 @@ tls:
 
     def cmd_infra_down(self):
         """Tears down the global infrastructure (Traefik, Proxy)."""
+        from ldm_core.utils import has_shared_projects
+
+        if not getattr(self.manager, "non_interactive", False) and has_shared_projects(
+            self.manager
+        ):
+            if not UI.confirm(
+                "Are you sure you want to tear down global infrastructure? This will disrupt all active shared workspaces.",
+                default="N",
+            ):
+                UI.info("Infra teardown aborted.")
+                return False
+
         UI.warning("Tearing down global infrastructure (Traefik)...")
         infra_compose = self.manager.get_resource_path("infra-compose.yml")
         if not infra_compose:
@@ -349,6 +364,7 @@ tls:
             DockerService.stop(container)
             DockerService.rm(container)
         UI.success("Infrastructure teardown complete.")
+        return True
 
     def cmd_infra_restart(self):
         """Restarts the global infrastructure services."""

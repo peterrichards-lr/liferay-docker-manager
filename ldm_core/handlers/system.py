@@ -44,6 +44,16 @@ class SystemService(BaseHandler):
                 UI.info("Nuke aborted.")
                 return False
 
+        drop_global_vols = force
+        from ldm_core.utils import has_shared_projects
+
+        if not force and has_shared_projects(self.manager):
+            drop_global_vols = UI.confirm(
+                "Do you also want to drop global data volumes (liferay-db-global-data, liferay-search-global-data)? "
+                "This deletes data for ALL shared projects.",
+                default="N",
+            )
+
         # 1. Stop all registered projects
         UI.info("Stopping and tearing down all registered projects...")
         try:
@@ -81,6 +91,18 @@ class SystemService(BaseHandler):
             self.manager.run_command(
                 ["docker", "network", "rm", "liferay-net"], check=False
             )
+            if drop_global_vols:
+                self.manager.run_command(
+                    [
+                        "docker",
+                        "volume",
+                        "rm",
+                        "-f",
+                        "liferay-db-global-data",
+                        "liferay-search-global-data",
+                    ],
+                    check=False,
+                )
             self.manager.run_command(["docker", "volume", "prune", "-f"], check=False)
             self.manager.run_command(["docker", "network", "prune", "-f"], check=False)
         except Exception as e:

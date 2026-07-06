@@ -23,8 +23,16 @@ class MockManager(
     BaseHandler,
 ):
     def __init__(self):
-        self.args = MagicMock()
-        self.args.search = False
+        from argparse import Namespace
+
+        self.args = Namespace(
+            database_mode=None,
+            search_mode=None,
+            search=False,
+            ssl=None,
+            lean=False,
+            tunnel_managed_cors=False,
+        )
         self.verbose = False
         self.non_interactive = True
         self.license = LicenseService(self)
@@ -36,6 +44,9 @@ class MockManager(
         self.workspace = WorkspaceService(self)
         self.composer = ComposerService(self)
         self.runtime = RuntimeService(self)
+        self.defaults = MagicMock()
+        self.defaults.get = MagicMock(return_value="isolated")
+        self.parse_version = MagicMock(return_value=(2024, 1, 0))  # type: ignore[method-assign]
 
         self.run_command = MagicMock()  # type: ignore[method-assign]
         self.write_docker_compose = MagicMock()  # type: ignore[method-assign]

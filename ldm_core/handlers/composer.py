@@ -4,6 +4,7 @@ import os
 import platform
 from pathlib import Path
 
+from ldm_core.ui import UI
 from ldm_core.utils import dict_to_yaml, resolve_dependency_version, sanitize_id
 
 
@@ -164,8 +165,6 @@ class ComposerService:
         if original_name != project_name and getattr(
             self.manager.args, "verbose", False
         ):
-            from ldm_core.ui import UI
-
             UI.info(
                 f"Project name '{original_name}' contains invalid characters for Docker. Using '{project_name}' for container names."
             )
@@ -214,8 +213,6 @@ class ComposerService:
                     ],
                 }
             else:
-                from ldm_core.ui import UI
-
                 UI.warning(
                     "ngrok authtoken not found, ngrok service will not be started."
                 )
@@ -364,8 +361,6 @@ class ComposerService:
                 if share_inspector:
                     services["lfr-tunnel"]["ports"] = ["4040:4040"]
             else:
-                from ldm_core.ui import UI
-
                 UI.warning(
                     "Liferay Tunnel token not found, lfr-tunnel service will not be started."
                 )
@@ -508,7 +503,14 @@ class ComposerService:
         tag = str(meta.get("tag") or "latest")
         scale = int(meta.get("scale_liferay", 1))
         port = meta.get("port", 8080)
-        use_shared_search = str(meta.get("use_shared_search", "true")).lower() == "true"
+        from ldm_core.utils import resolve_infrastructure_mode
+
+        search_mode = resolve_infrastructure_mode(
+            "search_mode", meta, self.manager.defaults
+        )
+        use_shared_search = search_mode == "shared"
+        if use_shared_search:
+            UI.info("⚠️ Utilizing Global Shared Infrastructure")
 
         jvm_opts = str(meta.get("jvm_args", ""))
         if "-Dfile.encoding" not in jvm_opts:
@@ -715,12 +717,17 @@ class ComposerService:
             )
 
         # 3. Project-specific explicit setting wins
-        db_mode = meta.get("database_mode") or baseline_default
+        from ldm_core.utils import resolve_infrastructure_mode
+
+        db_mode = resolve_infrastructure_mode(
+            "database_mode", meta, self.manager.defaults
+        )
+
+        if db_mode == "shared":
+            UI.info("⚠️ Utilizing Global Shared Infrastructure")
 
         # 4. Enforce Hypersonic isolation
         if db_type == "hypersonic" and db_mode == "shared":
-            from ldm_core.ui import UI
-
             UI.warning(
                 "Hypersonic database cannot be shared. Enforcing 'isolated' mode."
             )
@@ -1020,16 +1027,18 @@ class ComposerService:
     def _build_db_service(self, meta, project_name):
         """Constructs the Database service (MySQL/PostgreSQL) if required."""
         db_type = meta.get("db_type", "postgresql")
-        db_mode = "isolated"
-        if meta:
-            db_mode = meta.get("database_mode") or db_mode
-        if (
-            db_mode == "isolated"
-            and hasattr(self.manager, "defaults")
-            and self.manager.defaults is not None
-        ):
-            db_mode = self.manager.defaults.get("database_mode", "isolated")
+        from ldm_core.utils import resolve_infrastructure_mode
+
+        db_mode = resolve_infrastructure_mode(
+            "database_mode",
+            meta or {},
+            self.manager.defaults,
+            getattr(self.manager.args, "database_mode", None),
+        )
+
         if db_type == "external" or db_mode == "shared":
+            if db_mode == "shared":
+                UI.info("⚠️ Utilizing Global Shared Infrastructure")
             return None
 
         tag = str(meta.get("tag") or "latest")

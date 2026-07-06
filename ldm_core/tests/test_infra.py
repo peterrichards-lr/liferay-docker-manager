@@ -190,6 +190,24 @@ class TestInfraService(unittest.TestCase):
             self.assertIn("ES_JAVA_OPTS=-Xms256m -Xmx256m", run_cmd)
             self.assertIn("processors=1", run_cmd)
 
+    @patch("ldm_core.handlers.infra.UI")
+    @patch("ldm_core.utils.has_shared_projects")
+    def test_cmd_infra_down_guard(self, mock_has_shared, mock_ui):
+        """Verify cmd_infra_down guards properly."""
+        mock_has_shared.return_value = True
+        mock_ui.confirm.return_value = False
+        self.manager.non_interactive = False
+
+        # Should abort
+        res = self.infra.cmd_infra_down()
+        self.assertFalse(res)
+
+        # Should proceed
+        mock_ui.confirm.return_value = True
+        with patch.object(self.manager, "run_command") as mock_run:
+            self.infra.cmd_infra_down()
+            mock_run.assert_called()
+
 
 if __name__ == "__main__":
     unittest.main()

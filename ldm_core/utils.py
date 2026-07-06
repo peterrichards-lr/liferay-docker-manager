@@ -2119,3 +2119,62 @@ def check_troubleshooting_signatures(line):
         if re.search(pattern, line, re.IGNORECASE):
             return advice
     return None
+
+
+def resolve_infrastructure_mode(mode_key, meta, defaults, args_override=None):
+    """
+    Resolves the infrastructure mode (database_mode or search_mode), respecting legacy fallbacks.
+    Prioritizes: 1. CLI Override, 2. Project Meta, 3. Defaults (with version-aware fallbacks).
+    """
+    from packaging.version import parse as parse_version
+
+    if args_override:
+        return args_override
+
+    meta_val = meta.get(mode_key)
+    if meta_val:
+        return meta_val
+
+    # Handle legacy boolean flags
+    if (
+        mode_key == "search_mode"
+        and str(meta.get("use_shared_search")).lower() == "true"
+    ):
+        return "shared"
+
+    ldm_version = meta.get("ldm_version", "0.0.0")
+    # Projects created before v2.14.0 must fallback to legacy isolated/sidecar modes
+    # to prevent accidentally hijacking a local sidecar into shared infrastructure.
+    if parse_version(ldm_version) < parse_version("2.14.0"):
+        if mode_key == "database_mode":
+            return defaults.get("database_mode", "isolated")
+        if mode_key == "search_mode":
+            return defaults.get("search_mode", "sidecar")
+
+    # Modern defaults (v2.14.0+)
+    if mode_key == "database_mode":
+        return defaults.get("database_mode", "shared")
+    if mode_key == "search_mode":
+        return defaults.get("search_mode", "shared")
+
+    return defaults.get(mode_key)
+
+
+def has_shared_projects(manager):
+    """Returns True if any registered project utilizes shared database or search infrastructure."""
+    if not hasattr(manager, "registry"):
+        return False
+
+    projects = manager.registry.get_projects()
+    for _project_id, project_data in projects.items():
+        from pathlib import Path
+
+        path = Path(project_data.get("path", ""))
+        if not path.exists():
+            continue
+        meta = manager.read_meta(path) or {}
+        db_mode = resolve_infrastructure_mode("database_mode", meta, manager.defaults)
+        search_mode = resolve_infrastructure_mode("search_mode", meta, manager.defaults)
+        if db_mode == "shared" or search_mode == "shared":
+            return True
+    return False
