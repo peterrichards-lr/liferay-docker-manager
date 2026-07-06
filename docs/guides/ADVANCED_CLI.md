@@ -66,6 +66,10 @@ Advanced options for memory constraints and Java-level debugging.
 
 Controls whether LDM provisions a dedicated Elasticsearch container or connects to the Global Shared Elasticsearch cluster. Available modes: `sidecar` or `shared`.
 
+### `--database-mode`
+
+Controls whether LDM provisions an isolated PostgreSQL database or connects to the Global Shared Database cluster. Available modes: `isolated` or `shared`.
+
 <!-- markdownlint-disable MD049 -->
 ---
 *Last Updated: 2026-07-06* | *Last Reviewed: 2026-07-02*

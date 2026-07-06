@@ -410,6 +410,11 @@ def get_parser():
         choices=["shared", "sidecar", "remote"],
         help="Explicitly force a specific Elasticsearch mode (overrides local repository configs)",
     )
+    run.add_argument(
+        "--database-mode",
+        choices=["isolated", "shared"],
+        help="Explicitly force a specific Database mode (overrides local repository configs)",
+    )
     run.add_argument("--release-type", choices=["any", "u", "lts", "qr"])
     run.add_argument("--portal", action="store_true")
     run.add_argument("--refresh", action="store_true")
@@ -611,6 +616,11 @@ def get_parser():
         help="Explicitly force a specific Elasticsearch mode (overrides local repository configs)",
     )
     imp.add_argument(
+        "--database-mode",
+        choices=["isolated", "shared"],
+        help="Explicitly force a specific Database mode (overrides local repository configs)",
+    )
+    imp.add_argument(
         "--share-domain",
         help="Custom domain to use when sharing the instance (e.g. lfr-demo.online, lfr-demo.se)",
     )
@@ -713,6 +723,11 @@ def get_parser():
         "--search-mode",
         choices=["shared", "sidecar", "remote"],
         help="Explicitly force a specific Elasticsearch mode (overrides local repository configs)",
+    )
+    init.add_argument(
+        "--database-mode",
+        choices=["isolated", "shared"],
+        help="Explicitly force a specific Database mode (overrides local repository configs)",
     )
     init.add_argument("--internal-state", action="store_true")
     init.add_argument(
