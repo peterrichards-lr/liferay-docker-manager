@@ -487,6 +487,12 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
 
 When modifying `client-extension.yaml` files, **NEVER change or remove `.serviceAddress: localhost:3001` or `.serviceScheme`** manually to fix Docker or LDM routing issues. Liferay automatically updates the shared routes context with the correct internal endpoint when the generated `.zip` file is copied to the Liferay `osgi/client-extensions` deploy folder. Modifying these properties will override the auto-registration and break the deployment.
 
+- **Current Active Task (July 6, 2026)**:
+  - [x] Migrate `ldm-cx-samples` delivery to `.ldmp` package file.
+  - [x] Create GitHub Actions CI/CD to build `.ldmp` from `ldm-cx-samples`.
+  - [x] Update LDM `AssetService` to read `.ldmp` for `--samples`.
+  - [x] Create an E2E test in `ldm-cx-samples` using `--samples` switch.
+
 <!-- markdownlint-disable MD049 -->
 ---
 *Last Updated: 2026-07-06* | *Last Reviewed: 2026-07-02*
