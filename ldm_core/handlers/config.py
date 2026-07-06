@@ -573,9 +573,17 @@ class ConfigService:
         """Sync global samples into the current project path with on-demand download support."""
         samples_root = self.manager.get_samples_root()
         UI.info("Syncing project samples...")
-        shutil.copytree(
-            samples_root, paths["root"], dirs_exist_ok=True, copy_function=atomic_copy
-        )
+        try:
+            shutil.copytree(
+                samples_root,
+                paths["root"],
+                dirs_exist_ok=True,
+                copy_function=atomic_copy,
+            )
+        except shutil.Error as e:
+            # Ignore Errno 1 (Operation not permitted) which happens in CI when copying directory stats
+            # over existing directories owned by another user/process.
+            pass
 
     def cmd_init_common(self):
         """Recreates the baseline common/ folder with standard development assets."""
