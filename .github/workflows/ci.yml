@@ -343,17 +343,15 @@ jobs:
           path: bin-temp
           merge-multiple: true
 
-      - name: Prepare Samples and License
+      - name: Prepare License
         run: |
-          (cd references && zip -r ../samples.ldmp samples/)
           cp LICENSE bin-temp/
-          mv samples.ldmp bin-temp/
 
       - name: Generate Checksums
         shell: bash
         run: |
           cd bin-temp
-          sha256sum ldm-linux ldm-macos-arm64 ldm-macos-x86_64 ldm-windows.exe samples.ldmp ../compatibility.json > checksums.txt
+          sha256sum ldm-linux ldm-macos-arm64 ldm-macos-x86_64 ldm-windows.exe ../compatibility.json > checksums.txt
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v3
@@ -364,7 +362,6 @@ jobs:
             bin-temp/ldm-macos-arm64
             bin-temp/ldm-macos-x86_64
             bin-temp/ldm-windows.exe
-            bin-temp/samples.ldmp
             bin-temp/checksums.txt
             bin-temp/LICENSE
             compatibility.json
