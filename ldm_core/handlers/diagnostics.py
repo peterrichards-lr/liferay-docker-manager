@@ -1228,7 +1228,7 @@ class DoctorRunner:
                     lcp_file
                 )
                 self.results.append(
-                    (f"Extension Config ({rel_path})", lcp_status, lcp_ok)
+                    ("Extension Config", f"{lcp_status} ({rel_path})", lcp_ok)
                 )
                 if lcp_errors:
                     for err in lcp_errors:
