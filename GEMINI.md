@@ -111,6 +111,9 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
 - Released `v2.11.33` successfully (integrated CWD home directory warning, `--stop-running` flag for import, and portable packaging documentation updates).
 - Released `v2.11.31` successfully (integrated quickstart templates overrides, automatically start sharing under `ldm import`, standalone `ldmp` package exports, and test suite/pre-commit fixes).
 - Released `v2.11.30` successfully (integrated Visual Diagnostics Web Dashboard (P3), Dynamic JVM Self-Tuning (P2), and solved GITHUB_ACTIONS env var mock test coverage mismatch).
+- **Current Active Task (July 7, 2026)**:
+  - [x] Fix Docker EADDRINUSE conflict for CX deployments exposing port 80/443 when running locally in `--no-ssl` mode. Always inject Traefik HTTP routing labels and safely dynamically shift conflicting direct host bindings.
+
 - **Current Active Task (July 3, 2026)**:
   - [x] Create and push missing v2.11.85 tag to trigger CI/CD pipeline.
   - [x] Fix ldm infra-setup to dynamically resolve the database_mode config and automatically start liferay-db-global when shared mode is requested (PR #342).
@@ -498,6 +501,13 @@ When modifying `client-extension.yaml` files, **NEVER change or remove `.service
   - [x] Review redundant `init-local-env.sh`, `package-ldmp.sh` bash scripts, replaced by native `ldm hydrate` (Issue #371) and `ldm package` (Issue #372).
   - [x] Implement native `ldm set-version` (Issue #373) to mutate `gradle.properties` natively.
   - [x] Execute automated release script to cut `v2.15.0` version bump.
+
+- **Current Active Task (July 7, 2026) - Part 2**:
+  - [x] Fix ComposerService `--no-ssl` port binding collision preventing local extensions from booting (PR #390).
+  - [x] Create release `v2.15.2` of Liferay Docker Manager with the port fix.
+  - [x] Implement Diátaxis documentation restructure on `ldm-cx-samples`.
+  - [x] Enhance MkDocs material theme with premium UX (Dark mode, Tabs, Search).
+  - [x] Resolve `ldm-cx-samples` E2E cleanup permissions error with `sudo`.
 
 <!-- markdownlint-disable MD049 -->
 ---

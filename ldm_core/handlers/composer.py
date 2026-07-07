@@ -1224,23 +1224,39 @@ class ComposerService:
                 else:
                     services[svc_id]["deploy"] = {"replicas": scale}
 
+                traefik_svc_id = f"{svc_id}-svc"
+                labels.extend(
+                    [
+                        "traefik.docker.network=liferay-net",
+                        f"traefik.http.routers.{traefik_svc_id}.rule=Host(`{ext['id']}.{host_name}`)",
+                        f"traefik.http.services.{traefik_svc_id}.loadbalancer.server.port={ms_port}",
+                    ]
+                )
                 if ssl_enabled:
-                    traefik_svc_id = f"{svc_id}-svc"
-                    labels.extend(
-                        [
-                            "traefik.docker.network=liferay-net",
-                            f"traefik.http.routers.{traefik_svc_id}.rule=Host(`{ext['id']}.{host_name}`)",
-                            f"traefik.http.routers.{traefik_svc_id}.tls=true",
-                            f"traefik.http.services.{traefik_svc_id}.loadbalancer.server.port={ms_port}",
-                        ]
-                    )
-                    services[svc_id]["labels"] = labels
-                else:
+                    labels.append(f"traefik.http.routers.{traefik_svc_id}.tls=true")
+
+                services[svc_id]["labels"] = labels
+
+                if not ssl_enabled:
                     has_external_port = any(
                         isinstance(p, dict) and p.get("external")
                         for p in ext.get("ports", [])
                     )
                     if has_external_port:
                         bind_ip = meta.get("bind_ip", "0.0.0.0")  # nosec B104
-                        services[svc_id]["ports"] = [f"{bind_ip}:{ms_port}:{ms_port}"]
+                        safe_host_port = ms_port
+                        try:
+                            if safe_host_port is not None:
+                                safe_host_port = int(str(safe_host_port))
+                        except ValueError:
+                            pass
+
+                        # Prevent Docker EADDRINUSE conflicts with Traefik (80, 443) or Liferay (8080)
+                        if safe_host_port in [80, 443, "80", "443"]:
+                            safe_host_port = int(str(safe_host_port)) + 10000
+                        elif safe_host_port in [8080, "8080"]:
+                            safe_host_port = 28080
+                        services[svc_id]["ports"] = [
+                            f"{bind_ip}:{safe_host_port}:{ms_port}"
+                        ]
         return services
