@@ -411,6 +411,17 @@ class SnapshotService(BaseHandler):
                 except Exception:
                     pass
 
+            # Explicitly add .ldm/fragment-overrides.json if it exists, since the .ldm dir is not archived entirely
+            fragment_overrides = paths["root"] / ".ldm" / "fragment-overrides.json"
+            if fragment_overrides.exists():
+                try:
+                    UI.detail("Adding .ldm/fragment-overrides.json to archive...")
+                    tar.add(fragment_overrides, arcname=".ldm/fragment-overrides.json")
+                except Exception as e:
+                    UI.warning(
+                        f"Skipping .ldm/fragment-overrides.json due to error: {e}"
+                    )
+
             # If we have a search snapshot, bundle the global backup repo into the archive
             if search_snapshot_name:
                 es_infra_backup = (
