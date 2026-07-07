@@ -642,6 +642,25 @@ def safe_move(src, dst):
             raise e
 
 
+def get_github_token() -> str | None:
+    """Retrieve GitHub token from environment variables or gh CLI."""
+    token = os.environ.get("GITHUB_PAT") or os.environ.get("GITHUB_TOKEN")
+    if token:
+        return token
+
+    try:
+        import subprocess
+
+        res = subprocess.run(
+            ["gh", "auth", "token"], capture_output=True, text=True, check=False
+        )
+        if res.returncode == 0:
+            return res.stdout.strip()
+    except Exception:
+        pass
+    return None
+
+
 def get_actual_home():
     """Returns the home directory of the real user, even when running with sudo."""
     import getpass
