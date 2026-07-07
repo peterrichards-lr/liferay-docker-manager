@@ -717,7 +717,7 @@ class WorkspaceService(BaseHandler):
 
         try:
             parsed = urlparse(url)
-            if parsed.scheme in ("http", "https") and parsed.netloc in (
+            if parsed.scheme in ("http", "https") and parsed.hostname in (
                 "github.com",
                 "www.github.com",
             ):
