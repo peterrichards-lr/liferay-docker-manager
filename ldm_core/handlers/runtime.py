@@ -939,7 +939,23 @@ class RuntimeService(BaseHandler):
 
         def expand_vars(obj):
             if isinstance(obj, str):
-                return string.Template(obj).safe_substitute(expansion_env)
+                res = string.Template(obj).safe_substitute(expansion_env)
+                if res != obj:
+                    import re
+
+                    # Look for ${VAR} syntax
+                    for match in re.findall(r"\$\{([^}]+)\}", obj):
+                        if match in expansion_env:
+                            UI.detail(
+                                f"  + Resolved token ${{{match}}} -> {expansion_env[match]}"
+                            )
+                    # Look for $VAR syntax
+                    for match in re.findall(r"\$([a-zA-Z_][a-zA-Z0-9_]*)", obj):
+                        if match in expansion_env:
+                            UI.detail(
+                                f"  + Resolved token ${match} -> {expansion_env[match]}"
+                            )
+                return res
             if isinstance(obj, dict):
                 return {k: expand_vars(v) for k, v in obj.items()}
             if isinstance(obj, list):
@@ -1241,7 +1257,7 @@ class RuntimeService(BaseHandler):
                         # Periodically identify stalled deployables
                         if time.time() - getattr(self, "_last_stalled_print", 0) > 30:
                             if stalled_bundles:
-                                warning_msg = "⚠️ Still waiting for the following local deployables to become ACTIVE:\n"
+                                warning_msg = "Still waiting for the following local deployables to become ACTIVE:\n"
                                 for t, s in stalled_bundles.items():
                                     warning_msg += f"  - {t} (Currently: {s})\n"
                                 UI.warning(warning_msg.strip())
@@ -1249,7 +1265,7 @@ class RuntimeService(BaseHandler):
 
                         # Fail-Fast for completely missing bundles after 120s
                         if missing_bundles and (time.time() - gogo_start > 120):
-                            err_msg = "⚠️ Fail-Fast: The following required bundles never appeared in the OSGi container (missing from deploy/osgi folders):\n"
+                            err_msg = "Fail-Fast: The following required bundles never appeared in the OSGi container (missing from deploy/osgi folders):\n"
                             for t in missing_bundles:
                                 err_msg += f"  - {t}\n"
                             _die_with_logs(err_msg.strip())
@@ -1546,7 +1562,7 @@ class RuntimeService(BaseHandler):
 
                 if status == "healthy" or ready_by_logs:
                     if stream_status:
-                        UI.info("[LDM] ✅ Liferay is healthy!")
+                        UI.success("[LDM] Liferay is healthy!")
 
                     # LDM-422: Proactive Search Reindex Monitoring (UX Win)
                     if (
@@ -2057,7 +2073,7 @@ class RuntimeService(BaseHandler):
         )
         use_shared_db = db_mode == "shared"
         if use_shared_db or use_shared_search:
-            UI.info("⚠️ Utilizing Global Shared Infrastructure")
+            UI.info("Utilizing Global Shared Infrastructure")
 
         if host_name != "localhost":
             liferay_env.extend(

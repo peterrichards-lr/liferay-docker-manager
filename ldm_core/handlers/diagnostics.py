@@ -1958,7 +1958,7 @@ class DoctorRunner:
                     )
 
                     if getattr(self.args, "fix", False):
-                        UI.info("🔧 Auto-fix: Restarting Traefik proxy...")
+                        UI.info("Auto-fix: Restarting Traefik proxy...")
                         try:
                             self.manager.infra.cmd_restart_proxy()
                         except Exception as e:
@@ -1972,10 +1972,10 @@ class DoctorRunner:
                         )
                 elif "mkcert development CA" in issuer or "mkcert" in issuer.lower():
                     UI.success(
-                        "✅ Certificate is a valid LDM local development certificate."
+                        "Certificate is a valid LDM local development certificate."
                     )
                 else:
-                    UI.info("ℹ️  Certificate is valid but issued by a third party.")
+                    UI.info("Certificate is valid but issued by a third party.")
 
             except subprocess.TimeoutExpired:
                 UI.error("Timeout fetching certificate. Is port 443 open?")
@@ -4052,7 +4052,7 @@ pause
                         UI.redact(logs),
                     )
 
-        UI.success(f"\n✅ Debug bundle created: {bundle_name}")
+        UI.success(f"Debug bundle created: {bundle_name}")
         UI.info("Please attach this file to your GitHub Issue.")
         return bundle_path
 

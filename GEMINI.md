@@ -113,6 +113,7 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
 - Released `v2.11.30` successfully (integrated Visual Diagnostics Web Dashboard (P3), Dynamic JVM Self-Tuning (P2), and solved GITHUB_ACTIONS env var mock test coverage mismatch).
 - **Current Active Task (July 7, 2026)**:
   - [x] Fix Docker EADDRINUSE conflict for CX deployments exposing port 80/443 when running locally in `--no-ssl` mode. Always inject Traefik HTTP routing labels and safely dynamically shift conflicting direct host bindings.
+  - [x] Fix GitHub Actions URL parsing bug where `parsed.netloc` was extracting the `x-access-token` hostname instead of `github.com`, causing `ldm package` to fail its `--repo` autodiscovery during CI pipelines.
 
 - **Current Active Task (July 3, 2026)**:
   - [x] Create and push missing v2.11.85 tag to trigger CI/CD pipeline.

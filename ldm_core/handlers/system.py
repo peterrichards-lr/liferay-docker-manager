@@ -197,7 +197,7 @@ class SystemService(BaseHandler):
                     s.close()
                 except OSError:
                     UI.warning(
-                        f"⚠️ Port {port} is already in use by another process on your host."
+                        f"Port {port} is already in use by another process on your host."
                     )
                     UI.info(
                         f"Please ensure no local IIS, Apache, Nginx, or Skype process is binding to {port}."

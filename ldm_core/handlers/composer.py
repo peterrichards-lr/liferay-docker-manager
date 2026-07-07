@@ -510,7 +510,7 @@ class ComposerService:
         )
         use_shared_search = search_mode == "shared"
         if use_shared_search:
-            UI.info("⚠️ Utilizing Global Shared Infrastructure")
+            UI.info("Utilizing Global Shared Infrastructure")
 
         jvm_opts = str(meta.get("jvm_args", ""))
         if "-Dfile.encoding" not in jvm_opts:
@@ -724,7 +724,7 @@ class ComposerService:
         )
 
         if db_mode == "shared":
-            UI.info("⚠️ Utilizing Global Shared Infrastructure")
+            UI.info("Utilizing Global Shared Infrastructure")
 
         # 4. Enforce Hypersonic isolation
         if db_type == "hypersonic" and db_mode == "shared":
@@ -1038,7 +1038,7 @@ class ComposerService:
 
         if db_type == "external" or db_mode == "shared":
             if db_mode == "shared":
-                UI.info("⚠️ Utilizing Global Shared Infrastructure")
+                UI.info("Utilizing Global Shared Infrastructure")
             return None
 
         tag = str(meta.get("tag") or "latest")
