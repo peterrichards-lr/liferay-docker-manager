@@ -173,7 +173,7 @@ jobs:
       - name: Stage changes
         id: changes
         run: |
-          git add references/verification-results/ docs/COMPATIBILITY_TABLE.md
+          git add references/verification-results/ docs/reference/compatibility.md
           # Stage README.md only if it exists (it may not be present on all branches)
           if [ -f README.md ]; then
             git add README.md

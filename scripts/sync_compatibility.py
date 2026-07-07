@@ -286,10 +286,9 @@ def sync_reports():
     results_dir = Path("references/verification-results")
     archive_dir = results_dir / "archived_findings"
     archive_dir.mkdir(parents=True, exist_ok=True)
-    source_file = Path("docs/COMPATIBILITY_TABLE.md")
-
-    if not results_dir.exists():
-        UI.error(f"Directory not found: {results_dir}")
+    source_file = Path("docs/reference/compatibility.md")
+    if not source_file.exists():
+        print(f"Error: {source_file} not found.")
         return
 
     # 1. Gather and Parse all reports (excluding archive directory)
