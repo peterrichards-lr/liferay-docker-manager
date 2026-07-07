@@ -74,6 +74,7 @@ LDM is conventions-driven and highly customizable. Choose a topic below for deta
 
 - **[PaaS "Golden Path" Local Dev](docs/guides/PAAS_LOCAL_DEV.md)** — Fetching backups and replicating Liferay Cloud environments locally.
 - **[Workspace Import & Packaging](docs/guides/WORKSPACE_IMPORT_AND_PACKAGING.md)** — Importing workspaces and exporting/restoring portable `.ldmp` packages.
+- **[Runtime Overrides & Fragments](docs/guides/RUNTIME_OVERRIDES.md)** — Dynamic substitution and environment-aware client extension patching.
 - **[Properties Hierarchy & Precedence](docs/guides/PROPERTIES_HIERARCHY.md)** — The 5-layer cascading properties and `# !important` overrides.
 - **[Sharing & Tunnels](docs/guides/SHARING_AND_TUNNELS.md)** — Securely sharing local stacks publicly using tunnels.
 - **[Liferay Version Upgrades](docs/guides/VERSION_UPGRADES.md)** — Safely upgrading Liferay Docker image tags, database backup snapshots, and schema auto-upgrades.

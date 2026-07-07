@@ -24,6 +24,7 @@ Check out our **[Video Showcase](showcase/README.md)** to see short demonstratio
 
 - **[PaaS "Golden Path" Local Dev](guides/PAAS_LOCAL_DEV.md)** — Hydrating local setups using remote Liferay Cloud backups.
 - **[Workspace Import & Portable Packaging](guides/WORKSPACE_IMPORT_AND_PACKAGING.md)** — Working with workspaces and exporting `.ldmp` packages.
+- **[Runtime Overrides & Fragments](guides/RUNTIME_OVERRIDES.md)** — Dynamic substitution and environment-aware client extension patching.
 - **[Properties Hierarchy & Precedence](guides/PROPERTIES_HIERARCHY.md)** — Merging cascading properties and using `# !important` rules.
 - **[Sharing & Tunnels](guides/SHARING_AND_TUNNELS.md)** — Exposing local projects securely to public subdomains (lfr-tunnel, Ngrok).
 - **[Liferay Version Upgrades](guides/VERSION_UPGRADES.md)** — Conceptual workflow, database safety, auto-upgrades, and CLI flags.
