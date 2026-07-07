@@ -910,6 +910,22 @@ class RuntimeService(BaseHandler):
                                 ext_id_and_port = v[len(svc_prefix) :]
                                 ext_id = ext_id_and_port.split(":")[0]
                                 v = f"{ext_base_url}/o/{ext_id}"
+
+                                # Add absolute direct Traefik URL for explicit bypass overrides
+                                ext_k = k.replace(
+                                    "LIFERAY_ROUTES_CLIENT_EXTENSION_",
+                                    "LIFERAY_EXTERNAL_URL_CLIENT_EXTENSION_",
+                                )
+                                if host_name != "localhost":
+                                    scheme = "https" if is_ssl else "http"
+                                    expansion_env[ext_k] = (
+                                        f"{scheme}://{ext_id}.{host_name}"
+                                    )
+                                else:
+                                    expansion_env[ext_k] = (
+                                        f"http://localhost:{lfr_port}"
+                                    )
+
                             expansion_env[k] = v
             except Exception:
                 pass
