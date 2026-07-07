@@ -53,7 +53,11 @@ ldm init-from /path/to/workspace my-project
 # 3. THE PREDEFINED QUICKSTART: Bootstrap an accelerator demo stack
 ldm quickstart aica
 
-# 4. THE PORTABLE PACKAGE: Export project snapshot into a .ldmp package
+# 4. THE TIME MACHINE: Take a snapshot of your database and volumes, and restore them later
+ldm snapshot my-project
+ldm restore my-project
+
+# 5. THE PORTABLE PACKAGE: Export project snapshot into a .ldmp package
 ldm package my-project
 ```
 
