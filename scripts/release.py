@@ -264,9 +264,6 @@ def main():
             f"Promoting pre-release branch {current_branch} (version {current_version}) to stable..."
         )
 
-        # Quality Gate check: Format and Lint before promoting
-        run_pre_commit_checks(current_branch)
-
         # Bump the version using ldm system version --promote
         run_cmd(
             [
@@ -377,6 +374,8 @@ def main():
 
     print("Pulling latest from master...")
     run_cmd(["git", "pull", "origin", "master"])
+    # 3. Quality Gate check: Format and Lint
+    run_pre_commit_checks(current_branch)
 
     # 4. Bump the version using ldm system version
     print(f"Bumping version with logic: {args.bump}...")
@@ -411,9 +410,6 @@ def main():
     release_branch = f"release/v{new_version}"
     print(f"Creating release branch: {release_branch}...")
     run_cmd(["git", "checkout", "-b", release_branch])
-
-    # Quality Gate check: Format and Lint
-    run_pre_commit_checks(release_branch)
 
     # 7. Add, commit, and push
     print("Staging and committing files...")
