@@ -860,9 +860,9 @@ class WorkspaceService(BaseHandler):
                     self.manager.args, "project_flag", None
                 )
                 parsed = self._parse_github_repo(source_path)
-                github_token = os.environ.get("GITHUB_TOKEN") or os.environ.get(
-                    "GITHUB_PAT"
-                )
+                from ldm_core.utils import get_github_token
+
+                github_token = get_github_token()
                 clone_only = getattr(self.manager.args, "clone_only", False)
                 has_ldmp = False
                 ldmp_asset = None
@@ -2247,6 +2247,15 @@ class WorkspaceService(BaseHandler):
         template_info = templates[name_lower]
         repo_url = template_info["repo"]
         project_name = template_info["default_name"]
+
+        if template_info.get("private"):
+            from ldm_core.utils import get_github_token
+
+            if not get_github_token():
+                UI.die(
+                    f"Template '{template_name}' requires a private repository.\n"
+                    "Please authenticate using the GitHub CLI ('gh auth login') or set the GITHUB_PAT environment variable."
+                )
 
         # Ensure project argument is set so import target matches
         self.manager.args.project = project_name
