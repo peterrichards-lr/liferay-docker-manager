@@ -58,7 +58,7 @@ class DevService:
         run_command([str(venv_python), "-m", "pre_commit", "install"])
         UI.success("Pre-commit hooks registered.")
 
-        UI.success("\n✅ Development environment is ready!")
+        UI.success("Development environment is ready!")
         if platform.system().lower() == "windows":
             UI.info(
                 f"To activate, run: {UI.CYAN}.\\.venv\\Scripts\\activate{UI.COLOR_OFF}"

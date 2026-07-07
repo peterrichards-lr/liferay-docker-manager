@@ -1241,7 +1241,7 @@ class RuntimeService(BaseHandler):
                         # Periodically identify stalled deployables
                         if time.time() - getattr(self, "_last_stalled_print", 0) > 30:
                             if stalled_bundles:
-                                warning_msg = "⚠️ Still waiting for the following local deployables to become ACTIVE:\n"
+                                warning_msg = "Still waiting for the following local deployables to become ACTIVE:\n"
                                 for t, s in stalled_bundles.items():
                                     warning_msg += f"  - {t} (Currently: {s})\n"
                                 UI.warning(warning_msg.strip())
@@ -1249,7 +1249,7 @@ class RuntimeService(BaseHandler):
 
                         # Fail-Fast for completely missing bundles after 120s
                         if missing_bundles and (time.time() - gogo_start > 120):
-                            err_msg = "⚠️ Fail-Fast: The following required bundles never appeared in the OSGi container (missing from deploy/osgi folders):\n"
+                            err_msg = "Fail-Fast: The following required bundles never appeared in the OSGi container (missing from deploy/osgi folders):\n"
                             for t in missing_bundles:
                                 err_msg += f"  - {t}\n"
                             _die_with_logs(err_msg.strip())
@@ -1546,7 +1546,7 @@ class RuntimeService(BaseHandler):
 
                 if status == "healthy" or ready_by_logs:
                     if stream_status:
-                        UI.info("[LDM] ✅ Liferay is healthy!")
+                        UI.success("[LDM] Liferay is healthy!")
 
                     # LDM-422: Proactive Search Reindex Monitoring (UX Win)
                     if (

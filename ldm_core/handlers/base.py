@@ -1299,12 +1299,12 @@ class BaseHandler:
                 if "OK" not in (verify_res or ""):
                     # ... (rest of error handling) ...
                     if "NO_WRITE" in (verify_res or ""):
-                        UI.error("\n❌ FATAL: VOLUME MOUNT IS READ-ONLY")
+                        UI.error("FATAL: VOLUME MOUNT IS READ-ONLY")
                         UI.info(
                             f"{UI.BYELLOW}Reason:{UI.COLOR_OFF} Docker can see the files, but the 'liferay' user cannot write to: {root}"
                         )
                     else:
-                        UI.error("\n❌ FATAL: VOLUME MOUNTING IS BROKEN")
+                        UI.error("FATAL: VOLUME MOUNTING IS BROKEN")
                         UI.info(
                             f"{UI.BYELLOW}Reason:{UI.COLOR_OFF} Docker cannot see the files in: {root}"
                         )
@@ -1429,7 +1429,7 @@ class BaseHandler:
                 return True
 
             if hasattr(os, "getuid") and os.getuid() == 0:
-                UI.error("\n❌ FATAL: RUNNING AS ROOT/SUDO IS PROHIBITED")
+                UI.error("FATAL: RUNNING AS ROOT/SUDO IS PROHIBITED")
                 if platform.system().lower() == "linux":
                     UI.info(
                         f"If you are using sudo because of Docker permissions, please run:\n"

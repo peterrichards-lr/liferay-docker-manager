@@ -1902,7 +1902,6 @@ def main():
         ("config", "env"),
         ("config", "log-level"),
         ("config", "ssl-mode"),
-        ("system", "doctor"),
         ("system", "prune"),
     ]
     cmd = getattr(args, "command", None)
