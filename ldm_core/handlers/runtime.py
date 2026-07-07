@@ -849,14 +849,44 @@ class RuntimeService(BaseHandler):
 
         UI.info("Executing dynamic Headless API fragment configuration patches...")
 
-        # 1. Build expansion dictionary
-        expansion_env = os.environ.copy()
-        expansion_env["LDM_HOST_NAME"] = project_meta.get("host_name", "localhost")
-
-        # Extract Docker environment variables (which contain LIFERAY_ROUTES_*)
+        # Determine exposed port and API client
         container_name = project_meta.get("liferay_container_name") or project_meta.get(
             "container_name"
         )
+
+        admin_email = self.manager.get_config("admin_email", "test@liferay.com")
+        admin_pass = self.manager.get_config("admin_password", "test")
+
+        lfr_port = "8080"
+        try:
+            inspect_output = self.manager.run_command(
+                ["docker", "port", container_name, "8080"],
+                check=False,
+                capture_output=True,
+            )
+            if inspect_output and ":" in inspect_output:
+                lfr_port = inspect_output.split(":")[-1].strip()
+        except Exception:
+            pass
+
+        base_url = f"http://127.0.0.1:{lfr_port}"
+
+        # 1. Build expansion dictionary
+        expansion_env = os.environ.copy()
+
+        host_name = project_meta.get("host_name", "localhost")
+        is_ssl = str(project_meta.get("ssl", "False")).lower() == "true"
+        expansion_env["LDM_HOST_NAME"] = host_name
+
+        if host_name != "localhost":
+            ext_base_url = f"https://{host_name}" if is_ssl else f"http://{host_name}"
+        else:
+            ext_base_url = f"http://localhost:{lfr_port}"
+
+        project_name = project_meta.get("project_name", paths["root"].name)
+        svc_prefix = f"http://{project_name}-"
+
+        # Extract Docker environment variables (which contain LIFERAY_ROUTES_*)
         if container_name:
             try:
                 inspect_output = self.manager.run_command(
@@ -874,6 +904,12 @@ class RuntimeService(BaseHandler):
                     for line in inspect_output.splitlines():
                         if "=" in line:
                             k, v = line.split("=", 1)
+                            if k.startswith(
+                                "LIFERAY_ROUTES_CLIENT_EXTENSION_"
+                            ) and v.startswith(svc_prefix):
+                                ext_id_and_port = v[len(svc_prefix) :]
+                                ext_id = ext_id_and_port.split(":")[0]
+                                v = f"{ext_base_url}/o/{ext_id}"
                             expansion_env[k] = v
             except Exception:
                 pass
@@ -888,25 +924,6 @@ class RuntimeService(BaseHandler):
             return obj
 
         overrides = expand_vars(overrides)
-
-        # 2. Setup API client
-        admin_email = self.manager.get_config("admin_email", "test@liferay.com")
-        admin_pass = self.manager.get_config("admin_password", "test")
-
-        # Determine exposed port
-        lfr_port = "8080"
-        try:
-            inspect_output = self.manager.run_command(
-                ["docker", "port", container_name, "8080"],
-                check=False,
-                capture_output=True,
-            )
-            if inspect_output and ":" in inspect_output:
-                lfr_port = inspect_output.split(":")[-1].strip()
-        except Exception:
-            pass
-
-        base_url = f"http://127.0.0.1:{lfr_port}"
         auth_string = f"{admin_email}:{admin_pass}"
         auth_b64 = base64.b64encode(auth_string.encode("utf-8")).decode("utf-8")
         headers = {
