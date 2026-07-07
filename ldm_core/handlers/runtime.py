@@ -877,11 +877,17 @@ class RuntimeService(BaseHandler):
         host_name = project_meta.get("host_name", "localhost")
         is_ssl = str(project_meta.get("ssl", "False")).lower() == "true"
         expansion_env["LDM_HOST_NAME"] = host_name
-
+        expansion_env["LDM_PROJECT_ID"] = project_meta.get(
+            "project_name", paths["root"].name
+        )
+        expansion_env["LDM_SSL_ENABLED"] = "true" if is_ssl else "false"
+        expansion_env["LDM_HTTP_SCHEME"] = "https" if is_ssl else "http"
         if host_name != "localhost":
             ext_base_url = f"https://{host_name}" if is_ssl else f"http://{host_name}"
         else:
             ext_base_url = f"http://localhost:{lfr_port}"
+
+        expansion_env["LDM_BASE_URL"] = ext_base_url
 
         project_name = project_meta.get("project_name", paths["root"].name)
         svc_prefix = f"http://{project_name}-"
@@ -908,8 +914,9 @@ class RuntimeService(BaseHandler):
                                 "LIFERAY_ROUTES_CLIENT_EXTENSION_"
                             ) and v.startswith(svc_prefix):
                                 ext_id_and_port = v[len(svc_prefix) :]
-                                ext_id = ext_id_and_port.split(":")[0]
-                                v = f"{ext_base_url}/o/{ext_id}"
+                                parts = ext_id_and_port.split(":")
+                                ext_id = parts[0]
+                                ext_port = parts[1] if len(parts) > 1 else "8080"
 
                                 # Add absolute direct Traefik URL for explicit bypass overrides
                                 ext_k = k.replace(
@@ -923,7 +930,7 @@ class RuntimeService(BaseHandler):
                                     )
                                 else:
                                     expansion_env[ext_k] = (
-                                        f"http://localhost:{lfr_port}"
+                                        f"http://localhost:{ext_port}"
                                     )
 
                             expansion_env[k] = v
