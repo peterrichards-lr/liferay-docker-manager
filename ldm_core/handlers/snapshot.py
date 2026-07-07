@@ -726,6 +726,14 @@ class SnapshotService(BaseHandler):
                     import shutil
 
                     shutil.copy2(target_pe, ldm_dir / "ldmp-portal-ext.properties")
+
+            # Fallback for older or custom packaging scripts that place .ldm outside files.tar.gz
+            if (choice_path / ".ldm").exists():
+                import shutil
+
+                shutil.copytree(
+                    choice_path / ".ldm", paths["root"] / ".ldm", dirs_exist_ok=True
+                )
         elif volume_tgz.exists() or (choice_path / "volume").is_dir():
             UI.detail("  + Restoring cloud data volume...")
             target_data = paths["data"]

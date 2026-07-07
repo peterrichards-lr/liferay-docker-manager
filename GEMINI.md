@@ -493,6 +493,12 @@ When modifying `client-extension.yaml` files, **NEVER change or remove `.service
   - [x] Update LDM `AssetService` to read `.ldmp` for `--samples`.
   - [x] Create an E2E test in `ldm-cx-samples` using `--samples` switch.
 
+- **Current Active Task (July 7, 2026)**:
+  - [x] Fix Java version validation (Issue #370) to allow JDK 21+.
+  - [x] Review redundant `init-local-env.sh`, `package-ldmp.sh` bash scripts, replaced by native `ldm hydrate` (Issue #371) and `ldm package` (Issue #372).
+  - [x] Implement native `ldm set-version` (Issue #373) to mutate `gradle.properties` natively.
+  - [x] Execute automated release script to cut `v2.15.0` version bump.
+
 <!-- markdownlint-disable MD049 -->
 ---
 *Last Updated: 2026-07-07* | *Last Reviewed: 2026-07-02*
