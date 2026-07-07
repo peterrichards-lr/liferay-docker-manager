@@ -174,6 +174,9 @@ class LiferayManager(
     def cmd_quickstart(self, *args, **kwargs):
         return self.workspace.cmd_quickstart(*args, **kwargs)
 
+    def cmd_set_version(self, *args, **kwargs):
+        return self.workspace.cmd_set_version(*args, **kwargs)
+
     def cmd_init(self, *args, **kwargs):
         return self.workspace.cmd_init(*args, **kwargs)
 
