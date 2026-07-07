@@ -114,4 +114,4 @@ When running scripts via an AI agent, standard input is non-interactive (`[ -t 0
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-07-06* | *Last Reviewed: 2026-07-02*
+*Last Updated: 2026-07-07* | *Last Reviewed: 2026-07-02*
