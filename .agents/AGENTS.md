@@ -13,3 +13,8 @@ To prevent unnecessary code churn, sweeping reformatting, and out-of-scope chang
 ## GitHub Pull Request & Issue Association
 
 - Every Pull Request body MUST contain reference keywords linking to the related issue (e.g. `Closes #XYZ` or `Resolves #XYZ`) to ensure GitHub automatically closes the issues on merge.
+
+## Pre-commit & CI Verification
+
+- **Mandatory Local Pre-commit**: To prevent GitHub Actions CI failures caused by dirty states, you MUST run `. .venv/bin/activate && pre-commit run --all-files` locally before committing and pushing any changes.
+- **Documentation Timestamps Awareness**: The `bump-docs-timestamps` hook will automatically modify the `Last Updated` footers of any `*.md` files if there have been changes. You must be extremely careful to ensure you run `git add .` (or explicitly stage *all* modified markdown files) **after** the pre-commit hook runs, so that the auto-fixed timestamps are included in your commit. Do NOT push until all pre-commit checks pass locally without modifying any further files.
