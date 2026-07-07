@@ -1047,11 +1047,11 @@ class TestComposerService(unittest.TestCase):
         self.composer._build_liferay_service(
             paths, meta, "localhost", project_name, False, []
         )
-        mock_ui.info.assert_any_call("⚠️ Utilizing Global Shared Infrastructure")
+        mock_ui.info.assert_any_call("Utilizing Global Shared Infrastructure")
 
         mock_ui.reset_mock()
         self.composer._build_db_service(meta, project_name)
-        mock_ui.info.assert_any_call("⚠️ Utilizing Global Shared Infrastructure")
+        mock_ui.info.assert_any_call("Utilizing Global Shared Infrastructure")
 
 
 if __name__ == "__main__":

@@ -2057,7 +2057,7 @@ class RuntimeService(BaseHandler):
         )
         use_shared_db = db_mode == "shared"
         if use_shared_db or use_shared_search:
-            UI.info("⚠️ Utilizing Global Shared Infrastructure")
+            UI.info("Utilizing Global Shared Infrastructure")
 
         if host_name != "localhost":
             liferay_env.extend(
