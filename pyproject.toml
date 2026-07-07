@@ -118,3 +118,9 @@ omit = ["ldm_core/tests/*"]
 [tool.coverage.report]
 show_missing = true
 fail_under = 60
+
+[tool.deptry]
+extend_exclude = [
+    "ldm_core/tests",
+    "scripts"
+]
