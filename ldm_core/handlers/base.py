@@ -605,13 +605,19 @@ class BaseHandler:
             )
             output = res.stderr
 
-            match = re.search(rf'version\s+"({expected}\.[^"]+)"', output)
+            match = re.search(r'version\s+"(\d+)\.', output)
             if match:
-                if self.verbose:
-                    UI.info(f"Verified system Java version: {match.group(1)}")
-                return True
-            UI.error(f"System Java version mismatch. Expected JDK {expected}.")
-            print(f"{UI.WHITE}Actual output:{UI.COLOR_OFF}\n{output}")
+                actual_version = int(match.group(1))
+                if actual_version >= int(expected):
+                    if self.verbose:
+                        UI.info(
+                            f"Verified system Java version is JDK {actual_version} (>= {expected})"
+                        )
+                    return True
+            UI.error(
+                f"System Java version mismatch. Expected JDK {expected} or higher."
+            )
+            print(f"{UI.WHITE}Actual output:{UI.COLOR_OFF}\n{output.strip()}")
             return False
         except Exception as e:
             UI.error(f"Failed to verify Java version: {e}")
@@ -631,13 +637,17 @@ class BaseHandler:
                 [str(gradlew_path), "-v"], capture_output=True, text=True, check=True
             )
             output = res.stdout
-            match = re.search(rf"JVM:\s+({expected}\.[^\s]+)", output)
+            match = re.search(r"JVM:\s+(\d+)\.", output)
             if match:
-                if self.verbose:
-                    UI.info(f"Verified Gradle JVM version: {match.group(1)}")
-                return True
-            UI.error(f"Gradle JVM version mismatch. Expected JDK {expected}.")
-            print(f"{UI.WHITE}Actual output:{UI.COLOR_OFF}\n{output}")
+                actual_version = int(match.group(1))
+                if actual_version >= int(expected):
+                    if self.verbose:
+                        UI.info(
+                            f"Verified Gradle JVM version is JDK {actual_version} (>= {expected})"
+                        )
+                    return True
+            UI.error(f"Gradle JVM version mismatch. Expected JDK {expected} or higher.")
+            print(f"{UI.WHITE}Actual output:{UI.COLOR_OFF}\n{output.strip()}")
             return False
         except Exception as e:
             UI.error(f"Failed to verify Gradle JVM version: {e}")
