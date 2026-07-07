@@ -1,0 +1,305 @@
+1c1
+< # CLI Reference
+---
+> # CLI Core Commands
+3,113d2
+< > [!NOTE]
+< > **CLI Namespacing**: As of v2.11, commands are organized into logical namespaces (`infra`, `cloud`, `config`, `system`). All legacy flat-form commands (e.g. `ldm prune`, `ldm infra-setup`, `ldm doctor`) remain **fully supported as transparent aliases** and will continue to work indefinitely.
+< 
+< ## Scripting & Automation
+< 
+< LDM is designed to be pipeline-friendly. The `ldm system doctor` command returns a non-zero exit code if critical environment issues are detected.
+< 
+< ### Automating Interactive Prompts (Piped Input)
+< 
+< When running LDM in an automated environment (or if you just want to skip interactive menus quickly), you can pipe responses directly into the command using standard shell `echo` formatting.
+< 
+< *Note: Ensure your `echo` pipes into LDM directly. Due to shell precedence, `echo "y" | cd /tmp && ldm run` pipes to `cd` instead of LDM. Use `cd /tmp && echo "y" | ldm run` instead.*
+< 
+< #### Example: Automate starting a new project
+< 
+< ```bash
+< # Provide 'n' to select 'new', 'my-project' for the name, and \n (enters) to accept default host/tag options
+< echo -e "n\nmy-project\n\n\n" | ldm run
+< ```
+< 
+< #### Example: Automate project teardown
+< 
+< ```bash
+< # Automatically confirm project deletion, and confirm removal of global search index
+< echo -e "y\ny" | ldm down my-project --delete
+< ```
+< 
+< ### Health Check Pipe
+< 
+< Ensure your environment is healthy before attempting to start a project:
+< 
+< ```bash
+< ldm doctor --skip-project && ldm run my-project
+< ```
+< 
+< ### Automation Patterns
+< 
+< Check if services are running before executing operations:
+< 
+< ```bash
+< # Start infrastructure only if it's not already running
+< ldm ps || ldm infra setup --search  # (or legacy: ldm infra-setup --search)
+< ```
+< 
+< ### CI/CD Integration
+< 
+< You can use LDM in automated scripts to verify infrastructure:
+< 
+< ```bash
+< if ldm doctor --skip-project; then
+<   echo "Environment is healthy, proceeding..."
+< else
+<   echo "Critical environment failure!"
+<   exit 1
+< fi
+< ```
+< 
+< ---
+< 
+< ## Interactive Mode Tips
+< 
+< - **Fuzzy Search Selection**: In any project selection menu, you can simply start typing to filter the list. The menu will update in real-time to match project names or version tags.
+< - **Smart Project Detection**: `ldm` resolves project locations using this priority:
+<     1. **Direct Path**: Absolute or relative path (e.g., `ldm logs ./my-proj` or `ldm logs /opt/ldm/proj`).
+<     2. **CWD**: If the current directory is an LDM project.
+<     3. **Global Workspaces**: Searches `LDM_WORKSPACE` (if set), `~/ldm`, and `/Volumes/SanDisk/ldm`.
+<     4. **Deep Search**: Scans the above directories for projects matching the name in their `.liferay-docker.meta`.
+< - **Quick Quit**: You can type `q` at any interactive prompt to safely abort the current command.
+< - **Initialization Overrides**: When a project already exists, you can choose:
+<   - `y` (Yes): Overwrite configuration and artifact files.
+<   - `n` (No): Continue initialization but **skip/keep** existing files.
+<   - `c` (Clean): Delete the entire project folder and start fresh.
+<   - `q` (Quit): Abort the process entirely.
+< - **Bypass Prompts**: Use the `-y` or `--non-interactive` flag to skip all confirmations and use default values. This is ideal for scripts and CI/CD pipelines.
+< - **Tag Prompt & Discovery**: When running `ldm run` without a tag, the interactive prompt will automatically fetch the latest release matching your default release type (usually LTS) and offer it as the default choice. You can simply press Enter to accept it, or type a specific release type (`lts`, `qr`, `u`), a prefix (`2025.q4`), or an exact tag name.
+< - **Automated Latest Tags**: In non-interactive environments, LDM will automatically discover and use the latest tag matching your default release type (LTS) if no tag is explicitly provided. You can also force specific discovery using `--tag-latest` or `--tag-prefix`.
+< - **Liferay Version Upgrades & Data Persistence**: If you have an existing LDM project running a specific Liferay version (e.g. `2026.q2.4-lts`) and want to upgrade it (e.g. to `2026.q2.5-lts`), you can safely do so by running `ldm run --tag 2026.q2.5-lts` (or choosing the new tag interactively). LDM's hybrid volume strategy keeps your database and file data intact inside persistent Docker volumes, so upgrading the image version **will not delete or reset** your local data and workspace files. (Note: Downgrades are blocked by default to prevent database schema corruption; use `--force-downgrade` only if explicitly required).
+< - **Advanced Flags**: For information on pipeline automation flags (`--no-captcha`, `--fast-login`), JVM tuning (`--lean`), and filesystem overrides (`--internal-state`), please see the [Advanced Usage & Flags](ADVANCED_CLI.md) guide.
+< 
+< ---
+< 
+< ## Liferay Version Upgrades
+< 
+< LDM supports changing Liferay Docker image tags on existing projects seamlessly. If you run a project with a newer version tag (e.g., `ldm run --tag 2026.q2.5-lts` on a project that was previously running `2026.q2.4-lts`), LDM will orchestrate the transition safely.
+< 
+< ### How it Works & Data Persistence
+< 
+< 1. **Volume Preservation**: LDM's hybrid volume strategy keeps your database data and document library assets in named Docker volumes, ensuring that changing the Liferay Docker image version tag **does not delete or reset** your database or files.
+< 2. **Upgrade Detection**: LDM automatically detects version upgrades during startup by comparing the new tag with `last_run_liferay_version` stored in the project's metadata.
+< 3. **Automated Database Backup**: If an upgrade is detected and neither `--backup-on-upgrade` nor `--no-backup-on-upgrade` is specified, LDM will ask if you want to take a database backup snapshot first. If you confirm (or pass `--backup-on-upgrade`), LDM will temporarily start the database service (if stopped) and execute an orchestrated SQL dump backup (`Pre-upgrade snapshot to {tag}`) before Liferay starts.
+< 4. **Database Auto-Upgrade**: New Liferay versions often make underlying database schema changes. If an upgrade is detected and neither `--upgrade-db` nor `--no-upgrade-db` is specified, LDM will ask: `"Do you want to run Liferay's database auto-upgrade tool on startup?"`. If you confirm (or pass `--upgrade-db`), LDM will inject the `LIFERAY_UPGRADE_PERIOD_DATABASE_PERIOD_AUTO_PERIOD_RUN=true` environment variable, enabling Liferay to perform a schema upgrade on boot. LDM will omit this environment variable on subsequent runs to prevent repeating the upgrade.
+< 5. **Downgrade Safety**: Downgrading Liferay or PostgreSQL versions can cause database corruption. By default, LDM blocks version downgrades. To override this protection, you must explicitly pass the `--force-downgrade` flag.
+< 
+< ---
+< 
+< ## Command Reference
+< 
+< ### Global Flags
+< 
+< The following flags can be passed to almost any command:
+< 
+< - **`-v`, `--verbose`**: Enable verbose debug logging to trace exact shell commands, API calls, and Docker interactions.
+< - **`--info`**: Show informational logging (a middle tier between standard output and debug).
+< - **`-y`, `--non-interactive`**: Accept all defaults and skip confirmation prompts.
+< - **`--upgrade-db`**: Force-enables Liferay's database auto-upgrade tool on startup (`LIFERAY_UPGRADE_PERIOD_DATABASE_PERIOD_AUTO_PERIOD_RUN=true`).
+< - **`--no-upgrade-db`**: Force-disables Liferay's database auto-upgrade tool.
+< - **`--backup-on-upgrade`**: Force-enables automatic database backup snapshot creation before running version upgrades.
+< - **`--no-backup-on-upgrade`**: Force-disables automatic database backup snapshot creation before running version upgrades.
+< 
+< ### `list` (alias: `ls`)
+< 
+121c10
+< ### `run` (alias: `up`)
+---
+> ## `run` (alias: `up`)
+167c56
+< #### `--open` Switch
+---
+> ### `--open` Switch
+171c60
+< #### `--scale` Switch
+---
+> ### `--scale` Switch
+179c68
+< ### `init`
+---
+> ## `init`
+187c76
+< #### External Database Integration
+---
+> ### External Database Integration
+199c88
+< #### SSL Defaults (New Projects)
+---
+> ### SSL Defaults (New Projects)
+214c103
+< #### 🛡️ Modern Liferay & JDK 17+ Standards
+---
+> ### 🛡️ Modern Liferay & JDK 17+ Standards
+227c116
+< ### `init-from` (Live Link)
+---
+> ## `init-from` (Live Link)
+242c131
+< ### `import` (Static Snapshot)
+---
+> ## `import` (Static Snapshot)
+257c146
+< ### `quickstart`
+---
+> ## `quickstart`
+271c160
+< ### `package`
+---
+> ## `package`
+286c175
+< ### Data Management Commands
+---
+> ## Data Management Commands
+288c177
+< LDM includes powerful commands for managing your project's database, OSGi state, and Elasticsearch indices. For full details on the following commands, please see the [Data Management Guide](DATA_MANAGEMENT.md).
+---
+> LDM includes powerful commands for managing your project's database, OSGi state, and Elasticsearch indices. For full details on the following commands, please see the [Data Management Guide](../../how-to/data_management.md).
+296c185
+< ### `monitor`
+---
+> ## `monitor`
+304c193
+< ### `logs`
+---
+> ## `logs`
+327c216
+< #### Targeting a Specific Scaled Replica (`--instance N` / `-i N`)
+---
+> ### Targeting a Specific Scaled Replica (`--instance N` / `-i N`)
+348c237
+< ### `stop`, `restart`, `down` (alias: `rm`)
+---
+> ## `stop`, `restart`, `down` (alias: `rm`)
+367c256
+< ### `status`
+---
+> ## `status`
+380c269
+< ### `deploy`
+---
+> ## `deploy`
+392c281
+< ### `scale`
+---
+> ## `scale`
+404c293
+< ### `shell` & `gogo`
+---
+> ## `shell` & `gogo`
+442c331
+< ### `config env` (legacy: `env`)
+---
+> ## `config env` (legacy: `env`)
+457c346
+< ### `config feature` (legacy: `feature`)
+---
+> ## `config feature` (legacy: `feature`)
+469c358
+< ### `config edit` (legacy: `edit`)
+---
+> ## `config edit` (legacy: `edit`)
+481c370
+< ### `config log-level` (legacy: `log-level`)
+---
+> ## `config log-level` (legacy: `log-level`)
+499c388,391
+< ### `system doctor` (legacy: `doctor`)
+---
+> <!-- markdownlint-disable MD049 -->
+> ---
+> *Last Updated: 2026-07-07* | *Last Reviewed: 2026-07-07*
+> # CLI Data Commands
+500a393,401
+> See Data Management guide.
+> 
+> <!-- markdownlint-disable MD049 -->
+> ---
+> *Last Updated: 2026-07-07* | *Last Reviewed: 2026-07-07*
+> # CLI System Commands
+> 
+> ## `system doctor` (legacy: `doctor`)
+> 
+518c419
+< ### `system fix-hosts` (legacy: `fix-hosts`)
+---
+> ## `system fix-hosts` (legacy: `fix-hosts`)
+536c437
+< ### `wait` (Readiness Gating)
+---
+> ## `wait` (Readiness Gating)
+552c453
+< ### `status` (alias: `ps`)
+---
+> ## `status` (alias: `ps`)
+562c463
+< ### `info`
+---
+> ## `info`
+570c471
+< ### `browser` (alias: `open`)
+---
+> ## `browser` (alias: `open`)
+582c483
+< ### `system upgrade` (legacy: `upgrade`)
+---
+> ## `system upgrade` (legacy: `upgrade`)
+596c497
+< ### `system completion` (legacy: `completion`)
+---
+> ## `system completion` (legacy: `completion`)
+618c519
+< ### `system man` (legacy: `man`)
+---
+> ## `system man` (legacy: `man`)
+629c530
+< #### Native Integration (`man ldm`)
+---
+> ### Native Integration (`man ldm`)
+637c538
+< ### `infra renew-ssl` (legacy: `renew-ssl`)
+---
+> ## `infra renew-ssl` (legacy: `renew-ssl`)
+650c551
+< ### `infra init-common` (legacy: `init-common`)
+---
+> ## `infra init-common` (legacy: `init-common`)
+661c562
+< ### `infra setup` / `infra down` / `infra restart` (legacy: `infra-setup`, `infra-down`, `infra-restart`)
+---
+> ## `infra setup` / `infra down` / `infra restart` (legacy: `infra-setup`, `infra-down`, `infra-restart`)
+683c584
+< ### `infra migrate-search` (legacy: `migrate-search`)
+---
+> ## `infra migrate-search` (legacy: `migrate-search`)
+702c603
+< ### `system prune` (legacy: `prune`)
+---
+> ## `system prune` (legacy: `prune`)
+724c625
+< ### `clear-cache`
+---
+> ## `clear-cache`
+732c633
+< ### `system relocate`
+---
+> ## `system relocate`
+740c641
+< ### `config` (get / set / remove)
+---
+> ## `config` (get / set / remove)
+755c656
+< ### `config defaults` (legacy: `defaults`)
+---
+> ## `config defaults` (legacy: `defaults`)

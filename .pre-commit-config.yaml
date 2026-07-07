@@ -51,7 +51,7 @@ repos:
         name: Check CLI Documentation Drift
         entry: scripts/run_python.sh scripts/check_cli_drift.py
         language: system
-        files: ^ldm_core/cli\.py$|^docs/guides/CLI_REFERENCE.md$|^docs/guides/ADVANCED_CLI.md$
+        files: ^ldm_core/cli\.py$|^docs/reference/cli/core\.md$|^docs/reference/advanced_cli\.md$
         pass_filenames: false
         always_run: true
 

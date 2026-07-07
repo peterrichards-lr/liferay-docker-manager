@@ -1,6 +1,6 @@
 # Advanced CLI Usage & Flags
 
-This document covers advanced flags and commands intended for CI/CD automation, complex edge-cases, debugging, and extreme performance tuning. For standard workflow commands, see the [CLI Reference](CLI_REFERENCE.md).
+This document covers advanced flags and commands intended for CI/CD automation, complex edge-cases, debugging, and extreme performance tuning. For standard workflow commands, see the [CLI Reference](cli/core.md).
 
 ## Filesystem & Volumes (macOS / Windows)
 

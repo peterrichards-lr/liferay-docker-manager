@@ -1,0 +1,49 @@
+site_name: Liferay Docker Manager
+theme:
+  name: material
+
+nav:
+  - Home: README.md
+  - Tutorials:
+    - Quick Start: tutorials/quick_start.md
+    - PaaS Local Dev: tutorials/paas_local_dev.md
+  - How-To:
+    - Install macOS: how-to/install_macos.md
+    - Install Windows: how-to/install_windows.md
+    - Install Linux: how-to/install_linux.md
+    - Workspace Import: how-to/workspace_import.md
+    - Version Upgrades: how-to/version_upgrades.md
+    - Data Management: how-to/data_management.md
+    - Sharing & Tunnels: how-to/sharing_tunnels.md
+    - Runtime Overrides: how-to/runtime_overrides.md
+    - AI MCP Guide: how-to/ai_mcp_guide.md
+    - Development: how-to/development.md
+  - Reference:
+    - Configuration: reference/configuration.md
+    - CLI Reference:
+      - Core: reference/cli/core.md
+      - Data: reference/cli/data.md
+      - System: reference/cli/system.md
+    - Compatibility: reference/compatibility.md
+    - Security: reference/security.md
+    - Third-Party Tools: reference/third_party_tools.md
+    - Networking: reference/networking.md
+    - Advanced CLI: reference/advanced_cli.md
+  - Explanation:
+    - Architecture: explanation/architecture.md
+    - Properties: explanation/properties.md
+    - Conventions: explanation/conventions.md
+    - FAQ: explanation/faq.md
+  - Project Info:
+    - Playbook: PLAYBOOK.md
+    - Roadmap: ROADMAP.md
+    - Testing: TESTING.md
+    - Troubleshooting: TROUBLESHOOTING.md
+    - Roadmap Plans:
+      - Clustered HA: roadmap/plans/clustered_ha_profile.md
+      - External DB: roadmap/plans/external_database_integration.md
+      - Keycloak SSO: roadmap/plans/keycloak_sso_profile.md
+      - Profile Loader: roadmap/plans/profile_loader_logic.md
+    - Showcase:
+      - Intro: showcase/README.md
+      - OSGi State Persistence: showcase/OSGI_STATE_PERSISTENCE.md

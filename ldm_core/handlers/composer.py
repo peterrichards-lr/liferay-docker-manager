@@ -1235,4 +1235,7 @@ class ComposerService:
                         ]
                     )
                     services[svc_id]["labels"] = labels
+                else:
+                    bind_ip = meta.get("bind_ip", "0.0.0.0")  # nosec B104
+                    services[svc_id]["ports"] = [f"{bind_ip}:{ms_port}:{ms_port}"]
         return services
