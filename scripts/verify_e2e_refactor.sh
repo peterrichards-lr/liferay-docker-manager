@@ -154,7 +154,7 @@ if [ ! -d "$TEST_VENV" ]; then
 fi
 
 # Determine venv binaries
-VENV_PYTHON="${TEST_VENV}/bin/python"
+VENV_PYTHON="${TEST_VENV}/bin/python3"
 VENV_PIP="${TEST_VENV}/bin/pip"
 VENV_PYTEST="${TEST_VENV}/bin/pytest"
 

@@ -23,4 +23,4 @@ LDM automates the routing and SSL orchestration for both the main Liferay instan
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-07-06* | *Last Reviewed: 2026-07-02*
+*Last Updated: 2026-07-07* | *Last Reviewed: 2026-07-02*

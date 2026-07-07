@@ -12,8 +12,8 @@ When running `ldm run <project-name>` (or creating a fresh stack targeting the l
 | Component | Default Configuration / Convention |
 | :--- | :--- |
 | **Liferay Version** | Automatically fetches and runs the latest **LTS** version if no specific tag is specified. |
-| **Database** | **PostgreSQL** running as a dedicated service container in the project's Docker network (configured with DB/user/password: `lportal`). <!-- pragma: allowlist secret --> |
-| **Search Engine** | **Shared Global Search** (Elasticsearch 8.x) running as a shared background service (minimizes CPU/RAM overhead). Custom remote search clusters are dynamically supported via interactive prompt conflict resolution. |
+| **Database** | **PostgreSQL** running as a shared Global Infrastructure container (`liferay-db-global`), minimizing memory consumption across multiple projects (configured with DB/user/password: `lportal`). Prior to `v2.14.0`, LDM defaulted to an isolated sidecar container for every project, prioritizing isolation over resource consumption. <!-- pragma: allowlist secret --> |
+| **Search Engine** | **Shared Global Search** (Elasticsearch 8.x) running as a shared background service (minimizes CPU/RAM overhead). Prior to `v2.14.0`, this also defaulted to an isolated sidecar container per project. Custom remote search clusters and sidecar instances are dynamically supported via interactive prompt conflict resolution. |
 | **Routing & Proxy** | **Traefik** routing HTTP traffic (port `8080`) and HTTPS traffic (port `443` via auto-generated `mkcert` local trust certificates). |
 | **JVM Settings** | Self-Tuning JVM with optimal dev-mode settings (e.g., bytecode verification disabled via `-Xverify:none` to speed up start times). |
 | **Volumes & Mounts** | **Hybrid Volume Strategy**: POSIX-lock sensitive directories (`osgi/state`, `data`) use Named Docker Volumes to prevent locking deadlocks; hot-reloading directories (`deploy`, `modules`, `client-extensions`) are bind-mounted to the host. |
@@ -44,4 +44,4 @@ When running `ldm run <project-name>` (or creating a fresh stack targeting the l
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-07-06* | *Last Reviewed: 2026-07-02*
+*Last Updated: 2026-07-07* | *Last Reviewed: 2026-07-02*
