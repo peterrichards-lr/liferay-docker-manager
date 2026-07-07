@@ -939,7 +939,23 @@ class RuntimeService(BaseHandler):
 
         def expand_vars(obj):
             if isinstance(obj, str):
-                return string.Template(obj).safe_substitute(expansion_env)
+                res = string.Template(obj).safe_substitute(expansion_env)
+                if res != obj:
+                    import re
+
+                    # Look for ${VAR} syntax
+                    for match in re.findall(r"\$\{([^}]+)\}", obj):
+                        if match in expansion_env:
+                            UI.detail(
+                                f"  + Resolved token ${{{match}}} -> {expansion_env[match]}"
+                            )
+                    # Look for $VAR syntax
+                    for match in re.findall(r"\$([a-zA-Z_][a-zA-Z0-9_]*)", obj):
+                        if match in expansion_env:
+                            UI.detail(
+                                f"  + Resolved token ${match} -> {expansion_env[match]}"
+                            )
+                return res
             if isinstance(obj, dict):
                 return {k: expand_vars(v) for k, v in obj.items()}
             if isinstance(obj, list):
