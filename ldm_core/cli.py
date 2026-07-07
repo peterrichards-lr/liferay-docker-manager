@@ -68,6 +68,7 @@ def preprocess_args(args_list: list[str]) -> list[str]:
         "nuke",
         "rescue",
         "quickstart",
+        "set-version",
         "man",
         "fix-hosts",
         "config",
@@ -1164,6 +1165,21 @@ def get_parser():
     quickstart_cmd.add_argument(
         "--share-subdomain",
         help="Custom subdomain to use when sharing the stack",
+    )
+    # Command: set-version
+    set_version_cmd = subparsers.add_parser(
+        "set-version",
+        parents=[base_sub_parent],
+        help="Update the Liferay Workspace version and docker tag mapping",
+    )
+    set_version_cmd.add_argument(
+        "product_key",
+        help="The new product key (e.g. dxp-2024.q1.3)",
+    )
+    set_version_cmd.add_argument(
+        "project",
+        nargs="?",
+        help="Name of the project to update (defaults to current directory)",
     )
 
     # Command: package
