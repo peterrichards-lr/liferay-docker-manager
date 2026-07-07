@@ -167,7 +167,7 @@ While the v2.4.0 release solidified the modular architecture, the focus will now
 
 ### **Ecosystem Planning & Orchestration**
 
-- **Track-Based Implementation**: Established a formal [Conductor Registry](../conductor/index.md) for feature planning, providing detailed implementation paths for upcoming v2.3 features.
+- **Track-Based Implementation**: Established a formal [Conductor Registry](https://github.com/liferay/liferay-portal/tree/master/modules/util/portal-tools-bundle-builder) for feature planning, providing detailed implementation paths for upcoming v2.3 features.
 - **Deep OSGi Seeding**: Integrated `osgi/state` folder into the core seeding engine (v2 Seeds). LDM now pre-resolves bundle dependencies during the seeding phase, reducing secondary boot times by an additional 2-3 minutes.
 - **Selective Seeding Control**: Introduced the `--no-osgi-seed` flag to allow developers to opt-out of state seeding when performing low-level bundle development.
 - **Infrastructure Idempotency**: Fixed Docker conflict errors where LDM would fail if infrastructure containers existed in a stopped state. The orchestrator now correctly identifies and starts them.

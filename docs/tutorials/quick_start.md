@@ -1,114 +1,6 @@
-# Installation Guide
+# Quick Start
 
-LDM can be installed either as a standalone binary or manually via Python for development.
-
-## 1. Standalone Binary (Recommended)
-
-The standalone binary is a single-file executable. On Windows, it is fully self-contained (including Python itself). On macOS and Linux, it is packaged as a ZipApp (which includes all library dependencies but requires a host-installed Python 3.10+ interpreter).
-
-### macOS / Linux / WSL2
-
-Download the latest `ldm` directly using your terminal. Copy and run the block specific to your environment:
-
-#### macOS (Apple Silicon)
-
-```bash
-sudo curl -L https://github.com/peterrichards-lr/liferay-docker-manager/releases/latest/download/ldm-macos-arm64 -o /usr/local/bin/ldm
-sudo chmod +x /usr/local/bin/ldm
-ldm --version
-```
-
-#### macOS (Apple Intel)
-
-```bash
-sudo curl -L https://github.com/peterrichards-lr/liferay-docker-manager/releases/latest/download/ldm-macos-x86_64 -o /usr/local/bin/ldm
-sudo chmod +x /usr/local/bin/ldm
-ldm --version
-```
-
-#### Linux / WSL2 (Native Linux)
-
-```bash
-sudo curl -L https://github.com/peterrichards-lr/liferay-docker-manager/releases/latest/download/ldm-linux -o /usr/local/bin/ldm
-sudo chmod +x /usr/local/bin/ldm
-ldm --version
-```
-
-> [!IMPORTANT]
-> **macOS/Linux Runtime Requirement:** The standalone binaries for macOS and Linux require **Python 3.10 or higher** installed on the host machine. If running `ldm --version` fails with a traceback (e.g. `TypeError: unsupported operand type(s) for |`), please install or update Python (on macOS, you can run `brew install python@3.12`).
-
-<!-- -->
-
-> [!TIP]
->
-> **WSL2 Users:** Use the `ldm-linux` binary within your WSL terminal. To enable SSL, you **must** install `mkcert` inside the Linux environment (`sudo apt update && sudo apt install libnss3-tools`).
->
-> **Seamless WSL SSL (Green Lock):** To make your Windows browser (Edge/Chrome) trust LDM certificates generated inside WSL, you must share the Root CA:
->
-> 1. In **PowerShell**, find your Windows CA path: `mkcert -CAROOT`
-> 2. In **WSL**, point to that path by adding this to your `.bashrc` or `.zshrc`:
->    `export CAROOT="/mnt/c/Users/<your_user>/AppData/Local/mkcert"`
-> 3. Run `mkcert -install` inside WSL. This links the Linux environment to the Windows-trusted authority.
-
-### Windows
-
-Open PowerShell as an Administrator and run:
-
-```powershell
-# Create a bin folder if it doesn't exist
-New-Item -ItemType Directory -Force -Path "$HOME\bin"
-
-# Download the executable
-Invoke-WebRequest -Uri "https://github.com/peterrichards-lr/liferay-docker-manager/releases/latest/download/ldm-windows.exe" -OutFile "$HOME\bin\ldm.exe"
-
-# Add to your User PATH (one-time setup)
-[Environment]::SetEnvironmentVariable("Path", [Environment]::GetEnvironmentVariable("Path", "User") + ";$HOME\bin", "User")
-
-# Verify (in a new terminal window)
-ldm --version
-```
-
----
-
-## 2. Manual Installation (Development)
-
-To contribute to LDM or run it from source, clone the repository and use the built-in developer utility to set up your environment:
-
-### macOS / Linux / WSL2
-
-```bash
-git clone https://github.com/peterrichards-lr/liferay-docker-manager.git
-cd liferay-docker-manager
-
-# Initialize the dev environment (venv, dependencies, hooks)
-python3 liferay_docker.py dev-setup
-
-# Activate the environment
-source .venv/bin/activate
-
-# Verify
-ldm --help
-```
-
-### Windows
-
-```powershell
-git clone https://github.com/peterrichards-lr/liferay-docker-manager.git
-cd liferay-docker-manager
-
-# Initialize the dev environment
-python3 liferay_docker.py dev-setup
-
-# Activate the environment
-.\.venv\Scripts\activate
-
-# Verify
-ldm --help
-```
-
----
-
-## Prerequisites
+See the specific installation guides for your OS.
 
 - **Docker Engine**: Required for container orchestration.
   - [Docker Desktop](https://www.docker.com/products/docker-desktop/) (Windows/Mac)
@@ -119,16 +11,16 @@ ldm --help
   - _Note_: `ldm doctor` expects these minimums. If you allocate exactly 8GB, Docker may report ~7.7GB due to system overhead; the tool accounts for this by allowing a 7.5GB threshold.
 - **Python**: 3.10+ (required for source installations and for macOS/Linux standalone binaries, as they are packaged as ZipApps. Not required for Windows standalone binaries).
 
-For a detailed breakdown of all third-party dependencies, why they are needed, and feature impact, see the [THIRD_PARTY_TOOLS.md](./THIRD_PARTY_TOOLS.md) guide.
+For a detailed breakdown of all third-party dependencies, why they are needed, and feature impact, see the [THIRD_PARTY_TOOLS.md](../reference/third_party_tools.md) guide.
 
-### 🪟 Windows Setup & Tools
+## 🪟 Windows Setup & Tools
 
 Windows does not include all the optional developer tools by default.
 
 > [!IMPORTANT]
 > **Terminal Encoding:** Older Windows consoles (cmd.exe / PowerShell 5) may have trouble displaying Unicode symbols (●, ✅). LDM **v2.4.26-beta.37+** automatically detects these terminals and switches to safe ASCII fallbacks. For the best experience, we recommend using **Windows Terminal**.
 
-#### 1. Enable Telnet Client (Administrator PowerShell)
+### 1. Enable Telnet Client (Administrator PowerShell)
 
 Open PowerShell **as an Administrator** to enable Telnet (required for OSGi Gogo Shell access):
 
@@ -136,7 +28,7 @@ Open PowerShell **as an Administrator** to enable Telnet (required for OSGi Gogo
 Enable-WindowsOptionalFeature -Online -FeatureName TelnetClient
 ```
 
-#### 2. Install SSL Tools (Chocolatey or Scoop)
+### 2. Install SSL Tools (Chocolatey or Scoop)
 
 To enable "Green Lock" SSL on Windows, you must install `mkcert` and `openssl`. You can use either Chocolatey or Scoop.
 
@@ -171,7 +63,7 @@ _After Scoop finishes, open an **Administrator PowerShell** to initialize the tr
 mkcert -install
 ```
 
-### 🍎 Install SSL Tools (macOS)
+## 🍎 Install SSL Tools (macOS)
 
 **Using [Homebrew](https://brew.sh/):**
 
@@ -191,7 +83,7 @@ sudo port install docker docker-compose mkcert nss openssl
 mkcert -install
 ```
 
-### 🐧 Install SSL Tools (Native Linux)
+## 🐧 Install SSL Tools (Native Linux)
 
 ...
 
@@ -201,7 +93,7 @@ sudo apt update && sudo apt install mkcert libnss3-tools openssl
 mkcert -install
 ```
 
-### 🐳 Linux & WSL Docker Permissions
+## 🐳 Linux & WSL Docker Permissions
 
 If `ldm doctor` reports **Docker Engine: Not reachable** or you see **Permission Denied** errors on Linux/WSL, your user needs permission to talk to the Docker socket.
 
@@ -223,11 +115,11 @@ newgrp docker
 
 ## 🛠️ Environment Setup & Troubleshooting
 
-### Global Configuration (The `common/` Folder)
+## Global Configuration (The `common/` Folder)
 
 LDM allows you to synchronize files (e.g., OSGi configs, licenses, LPKG modules) to **every** project stack automatically.
 
-#### 1. Baseline Assets (`init-common`)
+### 1. Baseline Assets (`init-common`)
 
 LDM bundles a "Gold Standard" development baseline internally. To initialize or recreate this baseline in your global `common/` folder, run:
 
@@ -242,7 +134,7 @@ This will create:
 - **`env-blacklist.txt`**: Standard exclusions for environment variables (OAuth2 secrets, etc.).
 - **`com.liferay...config`**: OSGi configuration to prevent session timeouts during local demos.
 
-### Global Preferences (`config`)
+## Global Preferences (`config`)
 
 LDM supports global user preferences stored in `~/.ldmrc`. You can manage these settings without editing files manually:
 
@@ -258,11 +150,11 @@ ldm config verbose true
 ldm config verbose --remove
 ```
 
-#### 2. Mandatory Infrastructure Settings
+### 2. Mandatory Infrastructure Settings
 
 LDM is designed to be **self-healing**. Even if you do not use a `common/` folder, the tool will automatically ensure that every project's `portal-ext.properties` contains the essential settings for SSL and virtual hosting (`web.server.host`, `web.server.protocol`, etc.).
 
-### Docker Resource Alignment (Windows/WSL2/macOS)
+## Docker Resource Alignment (Windows/WSL2/macOS)
 
 If `ldm doctor` reports insufficient memory or CPU cores:
 
@@ -279,13 +171,13 @@ If `ldm doctor` reports insufficient memory or CPU cores:
 
 If `ldm doctor` reports **Executable Integrity: TAMPERED** or if you are stuck in a **"Version Loop"** (where you upgrade but the version doesn't change), follow these steps:
 
-### 1. The "Intel Hash Mismatch" (macOS Intel)
+## 1. The "Intel Hash Mismatch" (macOS Intel)
 
 Earlier versions of LDM (v1.6.32-v1.6.33) had an integrity check that was not fully architecture-aware. This often caused Intel Macs to flag official binaries as "TAMPERED" because their hash didn't match the Apple Silicon metadata.
 
 **The Fix**: Upgrade to **v1.6.36+**, which introduces architecture-specific integrity verification.
 
-### 2. Force a Repair
+## 2. Force a Repair
 
 If your binary is corrupted or misbehaving, force a re-download of the official assets:
 
@@ -295,7 +187,7 @@ If your binary is corrupted or misbehaving, force a re-download of the official 
 ldm upgrade --repair
 ```
 
-### 3. The "Manual Reset" (Last Resort)
+## 3. The "Manual Reset" (Last Resort)
 
 If the tool is too broken to self-repair, manually overwrite the binary with the latest version:
 
@@ -306,17 +198,17 @@ sudo curl -L https://github.com/peterrichards-lr/liferay-docker-manager/releases
 sudo chmod +x /usr/local/bin/ldm
 ```
 
-### 4. Version Shadowing
+## 4. Version Shadowing
 
 If you have cloned the repository and also have the binary installed, `ldm doctor` may report a "Shadowed" version.
 
 - **Recommendation**: Use `./ldm` (local wrapper) for development and `ldm` (global binary) for daily use.
 
-### 3. Manual Recovery (Binary Replacement)
+## 3. Manual Recovery (Binary Replacement)
 
 If the automatic upgrade fails (due to network issues or permission constraints), you can always perform a manual replacement of the binary.
 
-#### macOS / Linux / WSL2
+### macOS / Linux / WSL2
 
 ```bash
 # Replace <tag> and <asset> with appropriate values (e.g. v2.4.25 and ldm-linux)
@@ -324,19 +216,19 @@ sudo curl -L https://github.com/peterrichards-lr/liferay-docker-manager/releases
 sudo chmod +x /usr/local/bin/ldm
 ```
 
-#### Windows
+### Windows
 
 ```powershell
 Invoke-WebRequest -Uri "https://github.com/peterrichards-lr/liferay-docker-manager/releases/download/<tag>/ldm-windows.exe" -OutFile "$HOME\bin\ldm.exe"
 ```
 
-### 4. Manual Beta Installation
+## 4. Manual Beta Installation
 
 To install a specific beta or pre-release version manually, replace `<tag>` in the URLs above with the specific version string (e.g., `v2.4.26-beta.1`).
 
 Stable releases are always available via the `/releases/latest/download/` path, while pre-releases must be accessed via their specific tag path: `/releases/download/<tag>/`.
 
-### 5. GitHub API Rate Limiting (HTTP 403 / "Failed to check for updates")
+## 5. GitHub API Rate Limiting (HTTP 403 / "Failed to check for updates")
 
 If you are running LDM behind a corporate proxy, VPN, or a shared public IP address, you might occasionally see the following error when checking for updates or upgrading:
 
@@ -384,7 +276,7 @@ Standalone LDM binaries use a cache directory in your home folder (`~/.shiv`). R
 
 LDM supports full **TAB completion** for all commands and project names. This significantly improves productivity by allowing you to quickly cycle through projects when running `stop`, `logs`, or `run`.
 
-### Step 1: Install argcomplete (Source Installs Only)
+## Step 1: Install argcomplete (Source Installs Only)
 
 If you are using the Standalone Binary, `argcomplete` is already bundled. If you are using a Python Source installation (`pip install -e .`), ensure the library is installed:
 
@@ -392,7 +284,7 @@ If you are using the Standalone Binary, `argcomplete` is already bundled. If you
 pip install argcomplete
 ```
 
-### Step 2: Enable Completion for your Shell
+## Step 2: Enable Completion for your Shell
 
 Run the following command to see the specific instruction for your active shell:
 
@@ -400,7 +292,7 @@ Run the following command to see the specific instruction for your active shell:
 ldm completion
 ```
 
-#### **For Zsh (macOS Default)**
+### **For Zsh (macOS Default)**
 
 Add this to your `~/.zshrc`:
 
@@ -408,7 +300,7 @@ Add this to your `~/.zshrc`:
 eval "$(ldm completion zsh)"
 ```
 
-#### **For Bash**
+### **For Bash**
 
 Add this to your `~/.bashrc`:
 
@@ -416,7 +308,7 @@ Add this to your `~/.bashrc`:
 eval "$(ldm completion bash)"
 ```
 
-#### **For Fish**
+### **For Fish**
 
 Add this to your `~/.config/fish/config.fish`:
 
@@ -424,7 +316,7 @@ Add this to your `~/.config/fish/config.fish`:
 ldm completion fish | source
 ```
 
-#### **For PowerShell (Windows)**
+### **For PowerShell (Windows)**
 
 Standard `argcomplete` requires a community module to bridge with PowerShell.
 
@@ -447,7 +339,7 @@ Standard `argcomplete` requires a community module to bridge with PowerShell.
    Register-Argcomplete ldm
    ```
 
-### Step 3: Restart your Terminal
+## Step 3: Restart your Terminal
 
 After adding the line to your profile, restart your terminal or source the file (e.g., `source ~/.zshrc`) for the changes to take effect.
 
@@ -457,12 +349,12 @@ After adding the line to your profile, restart your terminal or source the file 
 
 Colima is a lightweight, open-source alternative to Docker Desktop. While highly performant on Apple Silicon, it is much stricter regarding file sharing and permissions.
 
-### 0. Installation
+## 0. Installation
 
 **Homebrew**: `brew install colima`
 **MacPorts**: `sudo port install colima`
 
-### 1. Recommended Start Command (Apple Silicon)
+## 1. Recommended Start Command (Apple Silicon)
 
 For the best compatibility with Liferay and SSCE build processes, we recommend using the macOS Virtualization Framework (`vz`) with **VirtioFS**.
 
@@ -472,7 +364,7 @@ For the best compatibility with Liferay and SSCE build processes, we recommend u
 colima start --cpu 4 --memory 8 --vm-type=vz --mount-type=virtiofs --mount /Users/$(whoami):w --mount /Volumes:w
 ```
 
-### 2. Supported Providers (Legacy Intel Mac / macOS 12)
+## 2. Supported Providers (Legacy Intel Mac / macOS 12)
 
 If you are running on an older Intel Mac (macOS 12 and below), **Colima is explicitly unsupported** for LDM due to filesystem limitations (`sshfs` breaks write permissions, `9p` breaks Elasticsearch file locking).
 
@@ -481,21 +373,21 @@ For older macOS versions, you must use a provider that supports gRPC FUSE or `os
 - **[Docker Desktop](https://www.docker.com/products/docker-desktop/)** (Recommended)
 - **[OrbStack](https://orbstack.dev/)** (Lightweight alternative)
 
-### 3. The "Ghost Mount" Issue
+## 3. The "Ghost Mount" Issue
 
 If LDM reports `FATAL: VOLUME MOUNTING IS BROKEN`, it means Colima's VM can see the folder but cannot see the files inside it.
 
 **The Fix**: Ensure your home directory is explicitly mounted with write permissions (`:w`). If your project is on an external volume, add it to the mount list using the command above.
 
-### 3. Permissions
+## 3. Permissions
 
 Unlike Docker Desktop, Colima does not "mask" file owners. LDM automatically handles this by running a **Permission Fixer** before every stack startup to ensure the `liferay` user (UID 1000) has access to your host files. **Note:** LDM is smart enough to skip the `.git` directory to preserve your repository metadata permissions.
 
-### 4. Automatic Start (macOS Service)
+## 4. Automatic Start (macOS Service)
 
 For a seamless experience, you can set up Colima to start automatically in the background when you log in.
 
-#### Step 1: Create the Startup Script
+### Step 1: Create the Startup Script
 
 Save this script as `/usr/local/bin/colima-start-fg` and make it executable (`chmod +x`). It is architecture-aware and will automatically select the best VM and mount settings for your Mac.
 
@@ -548,7 +440,7 @@ tail -f /dev/null &
 wait $!
 ```
 
-#### Step 2: Create the `launchd` Service
+### Step 2: Create the `launchd` Service
 
 Create a file named `~/Library/LaunchAgents/com.github.abiosoft.colima.plist` with the following content:
 
@@ -575,7 +467,7 @@ Create a file named `~/Library/LaunchAgents/com.github.abiosoft.colima.plist` wi
 </plist>
 ```
 
-#### Step 3: Load the Service
+### Step 3: Load the Service
 
 ```bash
 
@@ -584,7 +476,7 @@ launchctl load ~/Library/LaunchAgents/com.github.abiosoft.colima.plist
 
 ---
 
-### 🪟 Windows & 🐧 Linux Auto-Start
+## 🪟 Windows & 🐧 Linux Auto-Start
 
 Colima is primarily a macOS tool. If you are on Windows or Linux, auto-start is handled differently:
 
@@ -598,11 +490,11 @@ Colima is primarily a macOS tool. If you are on Windows or Linux, auto-start is 
 
 ---
 
-### 🌐 DNS & Subdomain Configuration
+## 🌐 DNS & Subdomain Configuration
 
 Server-Side Client Extensions (SSCE) in LDM use subdomains (e.g., `https://my-ext.forge.demo`) for routing. Because these are local domains, your operating system needs to be told to route them to your machine.
 
-#### 1. Manual Mapping (The Standard Way)
+### 1. Manual Mapping (The Standard Way)
 
 You must add each domain and subdomain to your system's `hosts` file.
 
@@ -630,7 +522,7 @@ You must add each domain and subdomain to your system's `hosts` file.
 
 ---
 
-### 🐧 Docker Permissions (WSL & Linux)
+## 🐧 Docker Permissions (WSL & Linux)
 
 If you see a "Permission Denied" error or LDM keeps asking for `sudo`, your user likely doesn't have permission to access the Docker socket. **Do not run LDM with sudo.** Instead, add your user to the `docker` group:
 
@@ -650,11 +542,11 @@ If you see a "Permission Denied" error or LDM keeps asking for `sudo`, your user
 
 ---
 
-### 🔐 Fixing SSL Trust Issues (mkcert)
+## 🔐 Fixing SSL Trust Issues (mkcert)
 
 If your browser (Chrome, Edge, etc.) shows "Your connection is not private" or a red warning even though LDM is running with SSL, follow these steps to fix the trust relationship:
 
-#### 1. Initialize the Root CA (Mandatory)
+### 1. Initialize the Root CA (Mandatory)
 
 The most common cause is that the `mkcert` Root CA has not been added to your system's trust store. Run this in your terminal:
 
@@ -667,14 +559,14 @@ mkcert -install
 - **WSL2**: You **must** run this inside your WSL terminal to allow `curl` and Liferay modules to verify internal HTTPS traffic.
 - **Windows**: You will see a security prompt asking to install the "mkcert development CA." Click **Yes**.
 
-#### 2. Fully Restart your Browser
+### 2. Fully Restart your Browser
 
 Chrome and other Chromium-based browsers often cache certificate trust.
 
 - Simply refreshing the page is often **not enough**.
 - **Action**: **Completely Quit** (Cmd+Q on Mac) the browser and restart the application.
 
-#### 3. Verify with `ldm doctor`
+### 3. Verify with `ldm doctor`
 
 Run `ldm doctor` to verify that your system sees the Root CA as trusted and that all required tools (`telnet`, `nc`, `lcp`, `docker compose`) are correctly installed and reachable:
 
@@ -689,7 +581,7 @@ Look for: `mkcert ✅ Installed (Root CA Trusted)` and ensure other tools show a
 
 ## 🚀 Running Commands
 
-### Project Scope
+## Project Scope
 
 Most LDM commands (like `run`, `stop`, `logs`) require a project context.
 
@@ -703,44 +595,12 @@ Most LDM commands (like `run`, `stop`, `logs`) require a project context.
 
 **Pro-Tip**: Add `export LDM_WORKSPACE="/path/to/your/projects"` to your `.bashrc` or `.zshrc` to make your projects accessible from anywhere.
 
-### Version Verification
+## Version Verification
 
 LDM binaries use **"Magic Byte" detection** to accurately report their checksum in `ldm doctor`. This ensures that even if you rename the file, LDM can still verify that you are running a valid, hardened production build.
 
 ---
 
-## 🛡️ Supported & Tested Environments
-
-We maintain "Tier 1" support for the following physical lab configurations:
-
-| Environment Type      | Host OS           | Docker Provider | Lab Hardware                |
-| :-------------------- | :---------------- | :-------------- | :-------------------------- |
-| **Legacy/Intel Mac**  | macOS 12 Monterey | Colima          | Apple Intel Core i7 (16GB)  |
-| **Standard Mac**      | macOS 15 Sequoia  | Colima          | Apple M1 Pro (32GB)         |
-| **Modern Mac**        | macOS 26 Tahoe    | Colima          | Apple M3 Max (36GB)         |
-| **Modern Mac**        | macOS 26 Tahoe    | OrbStack        | Apple M3 Max (36GB)         |
-| **Linux Workstation** | Fedora 43         | Native Docker   | MacBook Pro 11,3 (Intel i7) |
-| **Corporate Windows** | Windows 11        | Docker Desktop  | Intel i7-7800X (16GB)       |
-| **Corporate Windows** | Windows 11        | Native WSL2     | Intel i7-7800X (16GB)       |
-
-### Latest Verification Results
-
-<!-- COMPATIBILITY_START -->
-| Architecture | Host OS | Docker Provider | Docker Engine | Hardening | LDM Version | Verified | Report |
-| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| **Apple Silicon** | macOS 15 Sequoia | **Colima** | `29.4.0` | ![Colima](https://img.shields.io/badge/Colima-Hardening-FFAB00?style=flat-square&logo=apple) | `2.11.2` | ✅ | [verify-apple-silicon-macos-15-sequoia-colima-pass.txt](../references/verification-results/verify-apple-silicon-macos-15-sequoia-colima-pass.txt) |
-| **Apple Silicon** | macOS 15 Sequoia | **OrbStack** `v2.1.1` | `29.4.0` | ![OrbStack](https://img.shields.io/badge/OrbStack-Hardening-00B0FF?style=flat-square&logo=apple) | `2.11.2` | ✅ | [verify-apple-silicon-macos-15-sequoia-orbstack-pass.txt](../references/verification-results/verify-apple-silicon-macos-15-sequoia-orbstack-pass.txt) |
-| **Windows PC** | Windows 11 | **Docker Desktop** `v4.35.0` | `29.4.0` | ![DockerDesktop](https://img.shields.io/badge/Docker_Desktop-Hardening-00C853?style=flat-square&logo=windows) | `2.11.2` | ✅ | [verify-windows-pc-windows-11-docker-desktop-pass.txt](../references/verification-results/verify-windows-pc-windows-11-docker-desktop-pass.txt) |
-| **Windows PC** | Windows 11 | **Native WSL2** `WSL 2.4.4` | `29.3.0` | ![WSL2](https://img.shields.io/badge/WSL2-Hardening-blue?style=flat-square&logo=windows) | `2.11.2` | ✅ | [verify-windows-pc-windows-11-native-wsl2-pass.txt](../references/verification-results/verify-windows-pc-windows-11-native-wsl2-pass.txt) |
-
-## Global Infrastructure
-
-| Component | Verified Versions | Notes |
-| :--- | :--- | :--- |
-| **Traefik** | `v3.6.1+` | Automatic API version negotiation enabled. |
-| **Elasticsearch** | `8.19.1`, `7.17.24` | Dual support. ES 8.17.x+ required for Liferay 2025.Q2+ (ES 7 deprecated). |
-<!-- COMPATIBILITY_END -->
-
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-07-07* | *Last Reviewed: 2026-07-02*
+*Last Updated: 2026-07-07* | *Last Reviewed: 2026-07-07*

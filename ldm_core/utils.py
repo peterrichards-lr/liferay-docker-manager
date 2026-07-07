@@ -2024,8 +2024,10 @@ def verify_cli_drift():
     # Read documentation files
     project_root = Path(__file__).parent.parent
     doc_paths = [
-        project_root / "docs" / "guides" / "CLI_REFERENCE.md",
-        project_root / "docs" / "guides" / "ADVANCED_CLI.md",
+        project_root / "docs" / "reference" / "cli" / "core.md",
+        project_root / "docs" / "reference" / "cli" / "data.md",
+        project_root / "docs" / "reference" / "cli" / "system.md",
+        project_root / "docs" / "reference" / "advanced_cli.md",
     ]
 
     doc_text = ""
@@ -2077,7 +2079,7 @@ def verify_cli_drift():
             for opt in missing_parser:
                 print(f"  - {opt}", file=sys.stderr)
         print(
-            "\nPlease sync ldm_core/cli.py and docs/guides/CLI_REFERENCE.md or docs/guides/ADVANCED_CLI.md.",
+            "\nPlease sync ldm_core/cli.py and docs/reference/cli/*.md or docs/reference/advanced_cli.md.",
             file=sys.stderr,
         )
         return 1
