@@ -876,6 +876,19 @@ class RuntimeService(BaseHandler):
 
         host_name = project_meta.get("host_name", "localhost")
         is_ssl = str(project_meta.get("ssl", "False")).lower() == "true"
+
+        share_enabled = (
+            str(project_meta.get("share", "false")).lower() == "true"
+            or str(project_meta.get("expose", "false")).lower() == "true"
+            or getattr(self.manager.args, "share", False)
+        )
+
+        if share_enabled and self.manager.defaults:
+            tunnel_subdomain = self.manager.defaults.get("lfr_tunnel_subdomain")
+            if tunnel_subdomain:
+                host_name = f"{tunnel_subdomain}.lfr.cloud"
+                is_ssl = True
+
         expansion_env["LDM_HOST_NAME"] = host_name
         expansion_env["LDM_PROJECT_ID"] = project_meta.get(
             "project_name", paths["root"].name
