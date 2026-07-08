@@ -1757,20 +1757,20 @@ class RuntimeService(BaseHandler):
                             == "true",
                         )
 
-                    UI.detail("=== Useful Commands ===")
-                    UI.detail(
+                    UI.info("=== Useful Commands ===")
+                    UI.info(
                         f"  {UI.CYAN}ldm logs -f {container_name}{UI.COLOR_OFF}  Tail logs"
                     )
-                    UI.detail(
+                    UI.info(
                         f"  {UI.CYAN}ldm shell {container_name}{UI.COLOR_OFF}    Enter bash"
                     )
-                    UI.detail(
+                    UI.info(
                         f"  {UI.CYAN}ldm status {container_name}{UI.COLOR_OFF}   Check health"
                     )
-                    UI.detail(
+                    UI.info(
                         f"  {UI.CYAN}ldm stop {container_name}{UI.COLOR_OFF}     Stop stack"
                     )
-                    UI.detail("")
+                    UI.info("")
 
                     if getattr(self.manager.args, "browser", False):
                         UI.info(f"Launching browser: {access_url}/web/guest/home")
