@@ -1,8 +1,8 @@
 from pathlib import Path
 
 # --- Constants & Configuration ---
-# LDM_MAGIC_VERSION: 2.15.12
-VERSION = "2.15.12"
+# LDM_MAGIC_VERSION: 2.15.13
+VERSION = "2.15.13"
 # Release commit v2.11.30
 
 

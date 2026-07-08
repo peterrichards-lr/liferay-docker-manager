@@ -120,14 +120,14 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
   - [x] Fix `Could not verify mounts automatically: 'LiferayManager' object has no attribute 'manager'` bug in `ldm_core/handlers/base.py` caused by recent inheritance refactoring.
   - [x] Correct mistaken `reindex_required` key regression in `flag_reindex`.
   - [x] Create PR #422 (`fix/mount-manager-error`) with the fix.
-  - [ ] Merge PR #422 and perform a patch release (`v2.15.12`).
+  - [x] Merge PR #422 and perform a patch release (`v2.15.12`).
 
 - **Current Active Task (July 8, 2026)**:
   - [x] Investigate why LDM `v2.15.11` fragment overrides resulted in default values for AICA site.
   - [x] Refactor `_patch_fragment_overrides` loop in `ldm_core/handlers/runtime.py` to poll until fragments are found, waiting for Site Initializer completion.
   - [x] Create PR #423 (`fix/site-initializer-race-condition`) with the fix.
   - [ ] Merge PR #177 on `liferay-ai-commerce-accelerator` to fix its CI pipeline and repackage `.ldmp` release with the missing `fragment-overrides.json`.
-  - [ ] Merge PR #423 and release.
+  - [x] Merge PR #423 and PR #424 (Snapshot `.ldm` bug) and release.
 
 - Released `v2.11.30` successfully (integrated Visual Diagnostics Web Dashboard (P3), Dynamic JVM Self-Tuning (P2), and solved GITHUB_ACTIONS env var mock test coverage mismatch).
 - **Current Active Task (July 7, 2026)**:
