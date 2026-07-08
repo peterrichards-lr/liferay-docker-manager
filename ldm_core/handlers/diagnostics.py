@@ -2990,6 +2990,33 @@ pause
             elif "linux" in p_low:
                 host_os = "Linux"
                 arch = "Linux Workstation"
+
+                # Attempt to read /etc/os-release for accurate distro detection
+                try:
+                    if os.path.exists("/etc/os-release"):
+                        with open("/etc/os-release") as f:
+                            os_release = f.read().lower()
+
+                            distro_id = re.search(
+                                r"^id=([^\n]+)", os_release, re.MULTILINE
+                            )
+                            version_id = re.search(
+                                r"^version_id=([^\n]+)", os_release, re.MULTILINE
+                            )
+
+                            d_id = distro_id.group(1).strip("\"'") if distro_id else ""
+                            v_id = (
+                                version_id.group(1).strip("\"'") if version_id else ""
+                            )
+
+                            if d_id == "ubuntu":
+                                host_os = f"Ubuntu {v_id}".strip()
+                            elif d_id == "fedora":
+                                host_os = f"Fedora {v_id}".strip()
+                            elif d_id:
+                                host_os = f"{d_id.capitalize()} {v_id}".strip()
+                except Exception:
+                    pass
         except Exception:
             pass
 

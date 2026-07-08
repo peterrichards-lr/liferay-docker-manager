@@ -34,7 +34,7 @@ jobs:
 
       - name: Checkout Code
         if: steps.check_trigger.outputs.is_tag == 'true'
-        uses: actions/checkout@v7
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
@@ -80,7 +80,7 @@ jobs:
     
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v7
+        uses: actions/checkout@v4
 
       - name: Run E2E Verification Suite (Ubuntu)
         if: matrix.distro == 'ubuntu'
@@ -108,7 +108,7 @@ jobs:
 
       - name: Upload Test Results
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v4
         with:
           name: verification-results-${{ matrix.distro }}
           path: verify-*.txt
@@ -126,13 +126,13 @@ jobs:
 
     steps:
       - name: Checkout master branch
-        uses: actions/checkout@v7
+        uses: actions/checkout@v4
         with:
           ref: master
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set up Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v5
         with:
           python-version: "3.12"
           cache: "pip"
@@ -143,14 +143,14 @@ jobs:
           pip install --disable-pip-version-check -e .
 
       - name: Download Ubuntu verification report
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@v4
         with:
           name: verification-results-ubuntu
           path: ci-reports/
         continue-on-error: true
 
       - name: Download Fedora verification report
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@v4
         with:
           name: verification-results-fedora
           path: ci-reports/
@@ -173,7 +173,7 @@ jobs:
       - name: Stage changes
         id: changes
         run: |
-          git add references/verification-results/ docs/reference/compatibility.md
+          git add references/verification-results/ docs/reference/compatibility.md docs/TESTING.md docs/INSTALLATION.md
           # Stage README.md only if it exists (it may not be present on all branches)
           if [ -f README.md ]; then
             git add README.md
