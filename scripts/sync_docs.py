@@ -7,7 +7,7 @@ from ldm_core.ui import UI
 
 def sync_table():
     script_dir = Path(__file__).parent.parent
-    source_file = script_dir / "docs" / "COMPATIBILITY_TABLE.md"
+    source_file = script_dir / "docs" / "reference" / "compatibility.md"
 
     if not source_file.exists():
         print(f"Error: Source table not found at {source_file}")
