@@ -99,4 +99,4 @@ For a complete structured table of contents, visit the **[Documentation Index](d
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-07-07* | *Last Reviewed: 2026-07-02*
+*Last Updated: 2026-07-08* | *Last Reviewed: 2026-07-02*
