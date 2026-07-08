@@ -1890,7 +1890,7 @@ services:
             import urllib.error
 
             error_404 = urllib.error.HTTPError(
-                "http://127.0.0.1:8080/o/headless-delivery/v1.0/sites",
+                "https://my-subdomain.lfr.cloud/o/headless-delivery/v1.0/sites",
                 404,
                 "Not Found",
                 MagicMock(),
