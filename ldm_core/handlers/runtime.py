@@ -988,13 +988,20 @@ class RuntimeService(BaseHandler):
             "Content-Type": "application/json",
         }
 
+        import ssl
+
         def api_request(method, path, payload=None):
-            url = f"{base_url}{path}"
+            url = f"{ext_base_url}{path}"
             req = urllib.request.Request(url, headers=headers, method=method)
             if payload:
                 req.data = json.dumps(payload).encode("utf-8")
+
+            ctx = ssl.create_default_context()
+            ctx.check_hostname = False
+            ctx.verify_mode = ssl.CERT_NONE
+
             try:
-                with urllib.request.urlopen(req) as response:  # nosec B310
+                with urllib.request.urlopen(req, context=ctx) as response:  # nosec B310
                     return json.loads(response.read().decode())
             except urllib.error.HTTPError as e:
                 # 404 indicates feature flag missing or page not found
