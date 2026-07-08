@@ -67,6 +67,9 @@ class MockRuntime(BaseHandler):
     def get_resource_path(self, name):
         return Path("/tmp/res") / name
 
+    def get_config(self, key, default=None):
+        return default
+
     def read_meta(self, *args, **kwargs):
         return {"container_name": "test-runtime", "host_name": "localhost"}
 
@@ -1814,6 +1817,90 @@ services:
                 c for c in printed_calls if "Target database does not exist" in c
             ]
             self.assertTrue(len(advice_calls) > 0)
+
+    @patch("urllib.request.urlopen")
+    def test_patch_fragment_overrides(self, mock_urlopen):
+        """Test that fragment overrides are parsed and sent to the headless API correctly."""
+        import json
+
+        project_meta = {
+            "tag": "2025.Q1.0",
+            "container_name": "liferay-demo",
+            "share": "true",
+        }
+
+        paths = {"root": self.tmp_dir}
+
+        # Create mock fragment-overrides.json
+        configs_dir = self.tmp_dir / "configs"
+        configs_dir.mkdir(parents=True, exist_ok=True)
+
+        overrides_data = [
+            {
+                "fragmentKey": "test-frag",
+                "overrides": {"url": "https://foo.${LDM_HOST_NAME}"},
+            }
+        ]
+        with open(configs_dir / "fragment-overrides.json", "w") as f:
+            json.dump(overrides_data, f)
+
+        with (
+            patch("ldm_core.ui.UI.success") as mock_success,
+            patch.object(self.handler, "run_command", return_value="8080"),
+            patch.object(self.handler.defaults, "get", return_value="my-subdomain"),
+        ):
+            # Mock site data response
+            mock_response = MagicMock()
+            mock_response.read.side_effect = [
+                json.dumps({"items": [{"id": "20124"}]}).encode("utf-8"),  # sites
+                json.dumps(
+                    {
+                        "items": [
+                            {
+                                "name": "Home",
+                                "pageDefinition": {
+                                    "pageElement": {
+                                        "type": "Fragment",
+                                        "id": "frag-1",
+                                        "definition": {
+                                            "fragmentConfig": {
+                                                "fragmentKey": "test-frag"
+                                            }
+                                        },
+                                    }
+                                },
+                            }
+                        ]
+                    }
+                ).encode("utf-8"),  # pages
+                json.dumps({"status": "ok"}).encode("utf-8"),  # patch response
+            ]
+            mock_urlopen.return_value.__enter__.return_value = mock_response
+
+            self.handler.handler._patch_fragment_overrides(project_meta, paths)
+
+            mock_success.assert_any_call(
+                "  -> Patched configuration for fragment 'test-frag' on page 'Home'"
+            )
+            mock_success.assert_any_call(
+                "Successfully applied 1 fragment configuration overrides."
+            )
+
+            # Verify the patch payload was constructed correctly using variables
+            calls = mock_urlopen.call_args_list
+            patch_call = None
+            for call in calls:
+                req = call[0][0]
+                if req.method == "PATCH":
+                    patch_call = req
+                    break
+
+            assert patch_call is not None
+            payload = json.loads(patch_call.data.decode("utf-8"))  # type: ignore[attr-defined]
+            self.assertEqual(
+                payload["definition"]["config"]["url"],
+                "https://foo.my-subdomain.lfr.cloud",
+            )
 
 
 if __name__ == "__main__":
