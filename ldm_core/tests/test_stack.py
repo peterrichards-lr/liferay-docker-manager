@@ -336,6 +336,7 @@ class TestStackOrchestration(unittest.TestCase):
                 patch.object(
                     self.manager, "get_container_status", return_value="starting"
                 ),
+                patch.object(self.manager, "check_port", return_value=True),
                 patch.object(self.manager, "run_command"),
             ):
                 self.manager.sync_stack(paths, meta, no_up=False, no_wait=True)

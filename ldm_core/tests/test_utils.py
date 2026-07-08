@@ -651,4 +651,9 @@ def test_resolve_infrastructure_mode_defaults():
     from ldm_core.utils import resolve_infrastructure_mode
 
     defaults = type("MockDefaults", (), {"get": lambda _k, _d="isolated": "shared"})
-    assert resolve_infrastructure_mode("database_mode", {}, defaults) == "shared"
+    assert (
+        resolve_infrastructure_mode(
+            "database_mode", {"ldm_version": "2.15.0"}, defaults
+        )
+        == "shared"
+    )
