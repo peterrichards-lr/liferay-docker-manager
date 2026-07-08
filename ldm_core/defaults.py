@@ -8,7 +8,7 @@ CONVENTION_DEFAULTS = {
     "release_type": "lts",
     "db_type": "postgresql",
     "search_mode": "shared",
-    "database_mode": "shared",
+    "database_mode": "isolated",
     "host_name": "localhost",
     "port": "8080",
     "portal": "false",
