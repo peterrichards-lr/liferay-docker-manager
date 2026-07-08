@@ -1851,12 +1851,7 @@ services:
         configs_dir = self.tmp_dir / "configs"
         configs_dir.mkdir(parents=True, exist_ok=True)
 
-        overrides_data = [
-            {
-                "fragmentKey": "test-frag",
-                "overrides": {"url": "https://foo.${LDM_HOST_NAME}"},
-            }
-        ]
+        overrides_data = {"test-frag": {"url": "https://foo.${LDM_HOST_NAME}"}}
         with open(configs_dir / "fragment-overrides.json", "w") as f:
             json.dump(overrides_data, f)
 

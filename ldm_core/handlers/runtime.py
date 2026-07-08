@@ -1045,25 +1045,22 @@ class RuntimeService(BaseHandler):
                             .get("fragmentConfig", {})
                             .get("fragmentKey")
                         )
-                        for rule in overrides:
-                            if rule.get("fragmentKey") == frag_key:
-                                element_id = element.get("id")
-                                if element_id:
-                                    patch_payload = {
-                                        "definition": {
-                                            "config": rule.get("overrides", {})
-                                        }
-                                    }
-                                    res = api_request(
-                                        "PATCH",
-                                        f"/o/headless-delivery/v1.0/page-elements/{element_id}",
-                                        payload=patch_payload,
+                        if frag_key in overrides:
+                            element_id = element.get("id")
+                            if element_id:
+                                patch_payload = {
+                                    "definition": {"config": overrides[frag_key]}
+                                }
+                                res = api_request(
+                                    "PATCH",
+                                    f"/o/headless-delivery/v1.0/page-elements/{element_id}",
+                                    payload=patch_payload,
+                                )
+                                if res:
+                                    UI.success(
+                                        f"  -> Patched configuration for fragment '{frag_key}' on page '{page_name}'"
                                     )
-                                    if res:
-                                        UI.success(
-                                            f"  -> Patched configuration for fragment '{frag_key}' on page '{page_name}'"
-                                        )
-                                        patched_count += 1
+                                    patched_count += 1
 
                     for child in element.get("pageElements", []):
                         patch_fragments(child, page_name)
