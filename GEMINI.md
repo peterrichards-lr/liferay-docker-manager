@@ -114,6 +114,7 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
   - [x] Create comprehensive mock unit test in `test_runtime.py` to verify Liferay Fragment `.ldmp` override patching using `urllib` Headless API.
   - [x] Tag and release LDM `v2.15.7` to publish the fragment override functionality.
   - [x] Fix CI validation workflow failure (`Sync Compatibility Table`) by removing deleted `INSTALLATION.md` pathspec.
+  - [x] Change "Useful Commands" from detail to info so they display by default.
 
 - Released `v2.11.30` successfully (integrated Visual Diagnostics Web Dashboard (P3), Dynamic JVM Self-Tuning (P2), and solved GITHUB_ACTIONS env var mock test coverage mismatch).
 - **Current Active Task (July 7, 2026)**:
