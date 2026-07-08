@@ -1464,7 +1464,22 @@ class TestRuntime(unittest.TestCase):
                 self.assertEqual(meta_arg["share"], "true")
                 self.assertEqual(meta_arg["share_subdomain"], "my-custom-sub")
 
-    def test_wait_for_ready_triggers_share(self):
+    @patch("time.sleep")
+    def test_wait_for_ready_detect_project_path_with_id(self, mock_sleep):
+        with (
+            patch("time.time", side_effect=[0, 1, 2, 3, 4, 5, 6]),
+            patch.object(self.handler, "run_command", return_value="healthy"),
+            patch.object(self.handler.handler, "_patch_fragment_overrides"),
+            patch.object(self.handler, "detect_project_path") as mock_detect,
+        ):
+            project_meta = {"id": "test-project-123", "container_name": "liferay-test"}
+            self.handler.handler._wait_for_ready(project_meta, "localhost")
+
+            # Check that detect_project_path was called with project_id="test-project-123"
+            mock_detect.assert_any_call(project_id="test-project-123", for_init=True)
+
+    @patch("ldm_core.ui.UI.success")
+    def test_wait_for_ready_triggers_share(self, mock_success):
         project_meta = {
             "project_name": "test-project",
             "container_name": "test-project",
@@ -1818,8 +1833,9 @@ services:
             ]
             self.assertTrue(len(advice_calls) > 0)
 
+    @patch("time.sleep")
     @patch("urllib.request.urlopen")
-    def test_patch_fragment_overrides(self, mock_urlopen):
+    def test_patch_fragment_overrides(self, mock_urlopen, mock_sleep):
         """Test that fragment overrides are parsed and sent to the headless API correctly."""
         import json
 
@@ -1875,7 +1891,28 @@ services:
                 ).encode("utf-8"),  # pages
                 json.dumps({"status": "ok"}).encode("utf-8"),  # patch response
             ]
-            mock_urlopen.return_value.__enter__.return_value = mock_response
+
+            import urllib.error
+
+            error_404 = urllib.error.HTTPError(
+                "http://127.0.0.1:8080/o/headless-delivery/v1.0/sites",
+                404,
+                "Not Found",
+                MagicMock(),
+                None,
+            )
+
+            ctx_manager = MagicMock()
+            ctx_manager.__enter__.return_value = mock_response
+
+            # First two calls raise 404 (simulating race condition), then success
+            mock_urlopen.side_effect = [
+                error_404,
+                error_404,
+                ctx_manager,
+                ctx_manager,
+                ctx_manager,
+            ]
 
             self.handler.handler._patch_fragment_overrides(project_meta, paths)
 
@@ -1885,6 +1922,7 @@ services:
             mock_success.assert_any_call(
                 "Successfully applied 1 fragment configuration overrides."
             )
+            self.assertEqual(mock_sleep.call_count, 2)
 
             # Verify the patch payload was constructed correctly using variables
             calls = mock_urlopen.call_args_list
