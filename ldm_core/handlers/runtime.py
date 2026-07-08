@@ -1002,76 +1002,80 @@ class RuntimeService(BaseHandler):
                 UI.warning(f"Headless API request failed: {e}")
                 return None
 
-        # 3. Fetch Sites and Patch (with retry to wait for OSGi JAX-RS endpoints)
+        # 3. Fetch Sites and Patch (with retry to wait for OSGi JAX-RS and Site Initializer)
         import time
 
-        max_retries = 10
-        sites_data = None
+        max_retries = 12
+        patched_count = 0
+
         for attempt in range(max_retries):
             sites_data = api_request("GET", "/o/headless-delivery/v1.0/sites")
-            if sites_data and "items" in sites_data:
-                break
-            UI.info(
-                f"Waiting for Headless API to become ready (attempt {attempt + 1}/{max_retries})..."
-            )
-            time.sleep(3)
-
-        if not sites_data or "items" not in sites_data:
-            UI.warning(
-                "Headless API is not available after waiting. Fragment overrides skipped."
-            )
-            return
-
-        patched_count = 0
-        for site in sites_data["items"]:
-            site_id = site["id"]
-
-            pages_data = api_request(
-                "GET", f"/o/headless-delivery/v1.0/sites/{site_id}/site-pages"
-            )
-            if not pages_data or "items" not in pages_data:
+            if not sites_data or "items" not in sites_data:
+                UI.info(
+                    f"Waiting for Headless API to become ready (attempt {attempt + 1}/{max_retries})..."
+                )
+                time.sleep(5)
                 continue
 
-            for page in pages_data["items"]:
-                page_def = page.get("pageDefinition")
-                if not page_def:
+            for site in sites_data["items"]:
+                site_id = site["id"]
+
+                pages_data = api_request(
+                    "GET", f"/o/headless-delivery/v1.0/sites/{site_id}/site-pages"
+                )
+                if not pages_data or "items" not in pages_data:
                     continue
 
-                def patch_fragments(element, page_name):
-                    nonlocal patched_count
-                    if element.get("type") == "Fragment":
-                        frag_key = (
-                            element.get("definition", {})
-                            .get("fragmentConfig", {})
-                            .get("fragmentKey")
-                        )
-                        if frag_key in overrides:
-                            element_id = element.get("id")
-                            if element_id:
-                                patch_payload = {
-                                    "definition": {"config": overrides[frag_key]}
-                                }
-                                res = api_request(
-                                    "PATCH",
-                                    f"/o/headless-delivery/v1.0/page-elements/{element_id}",
-                                    payload=patch_payload,
-                                )
-                                if res:
-                                    UI.success(
-                                        f"  -> Patched configuration for fragment '{frag_key}' on page '{page_name}'"
+                for page in pages_data["items"]:
+                    page_def = page.get("pageDefinition")
+                    if not page_def:
+                        continue
+
+                    def patch_fragments(element, page_name):
+                        nonlocal patched_count
+                        if element.get("type") == "Fragment":
+                            frag_key = (
+                                element.get("definition", {})
+                                .get("fragmentConfig", {})
+                                .get("fragmentKey")
+                            )
+                            if frag_key in overrides:
+                                element_id = element.get("id")
+                                if element_id:
+                                    patch_payload = {
+                                        "definition": {"config": overrides[frag_key]}
+                                    }
+                                    res = api_request(
+                                        "PATCH",
+                                        f"/o/headless-delivery/v1.0/page-elements/{element_id}",
+                                        payload=patch_payload,
                                     )
-                                    patched_count += 1
+                                    if res:
+                                        UI.success(
+                                            f"  -> Patched configuration for fragment '{frag_key}' on page '{page_name}'"
+                                        )
+                                        patched_count += 1
 
-                    for child in element.get("pageElements", []):
-                        patch_fragments(child, page_name)
+                        for child in element.get("pageElements", []):
+                            patch_fragments(child, page_name)
 
-                if "pageElement" in page_def:
-                    patch_fragments(page_def["pageElement"], page.get("name"))
+                    if "pageElement" in page_def:
+                        patch_fragments(page_def["pageElement"], page.get("name"))
+
+            if patched_count > 0:
+                break
+
+            UI.info(
+                f"Waiting for Site Initializer to populate fragment pages (attempt {attempt + 1}/{max_retries})..."
+            )
+            time.sleep(5)
 
         if patched_count > 0:
             UI.success(
                 f"Successfully applied {patched_count} fragment configuration overrides."
             )
+        else:
+            UI.warning("No matching fragments found on any site pages after waiting.")
 
     def cmd_wait(
         self,
