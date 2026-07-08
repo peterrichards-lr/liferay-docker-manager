@@ -650,10 +650,30 @@ def test_resolve_infrastructure_mode_meta_precedence():
 def test_resolve_infrastructure_mode_defaults():
     from ldm_core.utils import resolve_infrastructure_mode
 
+    # Mock defaults to return "shared", testing if old versions override this
     defaults = type("MockDefaults", (), {"get": lambda _k, _d="isolated": "shared"})
+
+    # 1. New projects respect the new default
     assert (
         resolve_infrastructure_mode(
             "database_mode", {"ldm_version": "2.15.0"}, defaults
         )
         == "shared"
+    )
+
+    # 2. Old projects (pre-2.14.0) enforce "isolated" database mode regardless of the shared default
+    assert (
+        resolve_infrastructure_mode(
+            "database_mode", {"ldm_version": "2.13.0"}, defaults
+        )
+        == "isolated"
+    )
+
+    # 3. Old projects without a version (0.0.0) enforce "isolated" database mode
+    assert resolve_infrastructure_mode("database_mode", {}, defaults) == "isolated"
+
+    # 4. Old projects (pre-2.14.0) enforce "sidecar" search mode regardless of the default
+    assert (
+        resolve_infrastructure_mode("search_mode", {"ldm_version": "2.13.0"}, defaults)
+        == "sidecar"
     )
