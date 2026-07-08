@@ -65,10 +65,10 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
 
 - [Architecture Guide](./docs/LDM_ARCHITECTURE.md)
 - [Troubleshooting](./docs/TROUBLESHOOTING.md)
-- [PaaS "Golden Path" Guide](./docs/guides/PAAS_LOCAL_DEV.md)
-- [Workspace Import & Packaging Guide](./docs/guides/WORKSPACE_IMPORT_AND_PACKAGING.md)
+- [PaaS "Golden Path" Guide](./docs/tutorials/paas_local_dev.md)
+- [Workspace Import & Packaging Guide](./docs/how-to/workspace_import.md)
 - [Agent Rules of Engagement](./.gemini/gemini.md)
-- [Properties Override Hierarchy Guide](./docs/guides/PROPERTIES_HIERARCHY.md)
+- [Properties Override Hierarchy Guide](./docs/explanation/properties.md)
 
 ## 8. Active Work State & Plan (June 26, 2026)
 
@@ -234,7 +234,7 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
     - [x] Add double quotes around the `db_container` variable in database restore shell commands to prevent command parameter split failures.
     - [x] Add corresponding unit tests in `test_assets.py` and `test_snapshot.py` to verify prompt behavior and container quoting. [Completed]
 18. **Secure Liferay Tunnel PAT Documentation**:
-    - [x] Add a detailed guide on securing LFT_CLIENT_TOKEN (Restricted Secrets File and OS Credential Manager alternatives) to `docs/guides/SHARING_AND_TUNNELS.md`. [Completed]
+    - [x] Add a detailed guide on securing LFT_CLIENT_TOKEN (Restricted Secrets File and OS Credential Manager alternatives) to `docs/how-to/sharing_tunnels.md`. [Completed]
 19. **Extend LDM MCP Server**:
     - [x] Add `grep` and `level` log filtering support to the `get_logs` FastMCP tool in `ldm_core/handlers/mcp.py`.
     - [x] Expose container lifecycle control FastMCP tools: `start_project`, `stop_project`, and `restart_project`.
@@ -244,7 +244,7 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
     - [x] Dynamically inject host operating system metadata into `system_instruction` in `ldm_core/handlers/ai.py`.
     - [x] Update `system_instruction` in `ldm_core/handlers/ai.py` to command the model to validate CLI commands against `get_cli_help`.
     - [x] Add unit tests for `get_cli_help` tool in `ldm_core/tests/test_mcp.py`.
-    - [x] Update `docs/guides/AI_MCP_GUIDE.md` to document the `get_cli_help` tool. [Completed]
+    - [x] Update `docs/how-to/ai_mcp_guide.md` to document the `get_cli_help` tool. [Completed]
 21. **Fix safe_rmtree Windows read-only file permission errors**:
     - [x] Update `safe_rmtree` in `ldm_core/utils.py` to handle read-only files by passing an `onerror` handler to `shutil.rmtree` on Windows.
     - [x] Add a unit test in `ldm_core/tests/test_utils.py` to verify deletion of read-only files.
@@ -298,7 +298,7 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
     - [x] Add CLI parser logic in `cli.py` for `ldm config ssl-mode [hosts|share]`.
     - [x] Implement `cmd_ssl_mode` in `config.py` supporting swapping properties and syncing client extension `.env` files.
     - [x] Add unit tests in `test_config.py` verifying correct functionality.
-    - [x] Add documentation for `ssl-mode` in `docs/guides/SHARING_AND_TUNNELS.md`.
+    - [x] Add documentation for `ssl-mode` in `docs/how-to/sharing_tunnels.md`.
 
 33. **Implement --no-home-warn flag and config option**:
     - [x] Add global CLI flag `--no-home-warn` in `ldm_core/cli.py` to suppress home directory CWD warnings.
@@ -357,7 +357,7 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
 
 44. **Restructure documentation entry points**:
     - [x] Create a root `README.md` with a clean, concise introduction, macOS/Linux quick installation, quick start commands, and signposts.
-    - [x] Move detailed Conventions and Key Features out of the main index to `docs/guides/CONVENTIONS_AND_FEATURES.md`.
+    - [x] Move detailed Conventions and Key Features out of the main index to `docs/explanation/conventions.md`.
     - [x] Simplify `docs/README.md` to be a categorized table of contents and documentation index, removing duplicate sections.
     - [x] Run pre-commit checks to verify markdown formatting and link integrity.
 
