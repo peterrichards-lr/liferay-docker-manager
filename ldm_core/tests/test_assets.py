@@ -3,7 +3,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from ldm_core.constants import SEED_VERSION
-from ldm_core.handlers.assets import AssetService
+from ldm_core.handlers.assets import AssetService, exists_fn
 
 
 class MockAssetManager:
@@ -54,8 +54,7 @@ class TestAssetService(unittest.TestCase):
                 self.assertTrue(mock_get.called)
 
     @patch("ldm_core.handlers.assets.get_actual_home")
-    @patch("os.path.exists", return_value=True)
-    def test_download_samples_cached(self, mock_exists, mock_home):
+    def test_download_samples_cached(self, mock_home):
         import tempfile
 
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -73,7 +72,13 @@ class TestAssetService(unittest.TestCase):
                 mock_tar.return_value.__enter__.return_value.extractall.side_effect = (
                     mock_extractall
                 )
-                res = self.assets.download_samples("2.5.0", tmp_path / "dest")
+                with patch(
+                    "os.path.exists",
+                    side_effect=lambda x: (
+                        str(x).endswith("samples_latest.ldmp") or exists_fn(x)
+                    ),
+                ):
+                    res = self.assets.download_samples("2.5.0", tmp_path / "dest")
                 self.assertTrue(res)
 
     @patch("ldm_core.handlers.assets.get_actual_home")
