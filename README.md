@@ -70,25 +70,25 @@ LDM is conventions-driven and highly customizable. Choose a topic below for deta
 ### 1. Getting Started
 
 - **[Installation Guide](docs/INSTALLATION.md)** — Setting up macOS (Colima/OrbStack), Linux, and Windows (WSL2).
-- **[LDM Conventions & Features](docs/guides/CONVENTIONS_AND_FEATURES.md)** — Default stacks, ports, database options, and key features.
+- **[LDM Conventions & Features](docs/explanation/conventions.md)** — Default stacks, ports, database options, and key features.
 - **[Compatibility Matrix](docs/COMPATIBILITY_TABLE.md)** — Supported host OS, Docker providers, and engines.
 - **[Troubleshooting & Diagnostics](docs/TROUBLESHOOTING.md)** — Logs, Docker deadlocks, port conflicts, and common fixes.
 
 ### 2. Core Operational Guides
 
-- **[PaaS "Golden Path" Local Dev](docs/guides/PAAS_LOCAL_DEV.md)** — Fetching backups and replicating Liferay Cloud environments locally.
-- **[Workspace Import & Packaging](docs/guides/WORKSPACE_IMPORT_AND_PACKAGING.md)** — Importing workspaces and exporting/restoring portable `.ldmp` packages.
-- **[Runtime Overrides & Fragments](docs/guides/RUNTIME_OVERRIDES.md)** — Dynamic substitution and environment-aware client extension patching.
-- **[Properties Hierarchy & Precedence](docs/guides/PROPERTIES_HIERARCHY.md)** — The 5-layer cascading properties and `# !important` overrides.
-- **[Sharing & Tunnels](docs/guides/SHARING_AND_TUNNELS.md)** — Securely sharing local stacks publicly using tunnels.
-- **[Liferay Version Upgrades](docs/guides/VERSION_UPGRADES.md)** — Safely upgrading Liferay Docker image tags, database backup snapshots, and schema auto-upgrades.
-- **[Data Management](docs/guides/DATA_MANAGEMENT.md)** — Snapshots, pre-warmed seeds, and assets.
-- **[Networking, DNS & Zero-Config SSL](docs/guides/NETWORKING_DNS.md)** — Traefik routing, hostname mappings, and trust certificates.
+- **[PaaS "Golden Path" Local Dev](docs/tutorials/paas_local_dev.md)** — Fetching backups and replicating Liferay Cloud environments locally.
+- **[Workspace Import & Packaging](docs/how-to/workspace_import.md)** — Importing workspaces and exporting/restoring portable `.ldmp` packages.
+- **[Runtime Overrides & Fragments](docs/how-to/runtime_overrides.md)** — Dynamic substitution and environment-aware client extension patching.
+- **[Properties Hierarchy & Precedence](docs/explanation/properties.md)** — The 5-layer cascading properties and `# !important` overrides.
+- **[Sharing & Tunnels](docs/how-to/sharing_tunnels.md)** — Securely sharing local stacks publicly using tunnels.
+- **[Liferay Version Upgrades](docs/how-to/version_upgrades.md)** — Safely upgrading Liferay Docker image tags, database backup snapshots, and schema auto-upgrades.
+- **[Data Management](docs/how-to/data_management.md)** — Snapshots, pre-warmed seeds, and assets.
+- **[Networking, DNS & Zero-Config SSL](docs/reference/networking.md)** — Traefik routing, hostname mappings, and trust certificates.
 
 ### 3. Developer & Integration Resources
 
-- **[AI Command Center & LDM MCP Server](docs/guides/AI_MCP_GUIDE.md)** — Powering AI workflows with LDM FastMCP tools.
-- **[Advanced CLI Overrides](docs/guides/ADVANCED_CLI.md)** — Colorless/ASCII outputs and global cli defaults.
+- **[AI Command Center & LDM MCP Server](docs/how-to/ai_mcp_guide.md)** — Powering AI workflows with LDM FastMCP tools.
+- **[Advanced CLI Overrides](docs/reference/advanced_cli.md)** — Colorless/ASCII outputs and global cli defaults.
 - **[Micro-Architecture](docs/LDM_ARCHITECTURE.md)** — Core design principles, layers, and boundaries.
 - **[Testing & Validation](docs/TESTING.md)** — Running unit and E2E test suites.
 - **[Release Playbook](docs/PLAYBOOK.md)** — Pipeline standards and release workflow triggers.

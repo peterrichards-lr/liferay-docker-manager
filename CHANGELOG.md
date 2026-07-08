@@ -372,7 +372,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Throttled database connection pool sizes (`maxActive=15`, `minIdle=2`, `maxIdle=5`) to lower default stack RAM footprints.
 - Capped Elasticsearch memory allocation (512MB heap limit) and constrained CPU threads (`processors=1`).
 - Implemented SHA256-based smart cache volume hydration to bypass redundant document library asset extractions.
-- Added comprehensive technical walkthrough documentation in `docs/guides/FAQ.md` covering resource optimization, pre-baked seed packages, and sharing tunnels.
+- Added comprehensive technical walkthrough documentation in `docs/explanation/faq.md` covering resource optimization, pre-baked seed packages, and sharing tunnels.
 
 ### Fixed
 
