@@ -61,6 +61,7 @@ To prevent massive, out-of-scope code refactoring and "code churn" from AI or ma
 
 - **Bugfixes** (PR branches starting with `fix/` or `bugfix/`, or PR titles starting with `fix:`/`bugfix:`) **MUST NOT** modify more than **10 files**.
 - Edits exceeding this limit will fail the automated `pr-sprawl-check` status check on Pull Requests.
+- **Documentation Timestamps**: The `bump-docs-timestamps` pre-commit hook automatically modifies the `Last Updated` footer of `.md` files. If this hook modifies many files that are unrelated to your active task, DO NOT include these automated timestamp changes in your `fix/` PR if it causes you to exceed the 10-file limit. Instead, put the `.md` timestamp bumps in a separate `chore/` PR.
 - **Bypass**: If a bugfix genuinely requires changing more than 10 files, you can bypass this gate by adding `[bypass sprawl]` or `[bypass limit]` to the PR title or description. Use this sparingly to keep reviews atomic.
 
 ## 🛠️ Development Environment
