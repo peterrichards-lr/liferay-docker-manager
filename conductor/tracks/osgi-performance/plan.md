@@ -45,4 +45,4 @@ Reduce subsequent Liferay startup times by optionally persisting the OSGi bundle
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-07-07* | *Last Reviewed: 2026-07-02*
+*Last Updated: 2026-07-08* | *Last Reviewed: 2026-07-02*

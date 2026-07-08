@@ -380,6 +380,25 @@ class WorkspaceService(BaseHandler):
                     "is_service": is_service,
                     **ext_info,
                 }
+
+                if host_name:
+                    dest_zip = osgi_cx_dir / f"{item.name}.zip"
+                    if not dest_zip.exists():
+                        alt_name = item.name.replace("-", "_")
+                        if (osgi_cx_dir / f"{alt_name}.zip").exists():
+                            dest_zip = osgi_cx_dir / f"{alt_name}.zip"
+                        elif (
+                            osgi_cx_dir / f"{item.name.replace('_', '-')}.zip"
+                        ).exists():
+                            dest_zip = (
+                                osgi_cx_dir / f"{item.name.replace('_', '-')}.zip"
+                            )
+
+                    if dest_zip.exists():
+                        self._rewrite_oauth_urls_in_zip(
+                            dest_zip, host_name, item.name.lower().replace("_", "-")
+                        )
+
                 existing = next((e for e in extensions if e["id"] == entry["id"]), None)
                 if existing:
                     existing.update(entry)
