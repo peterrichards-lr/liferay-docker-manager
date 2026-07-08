@@ -1002,9 +1002,24 @@ class RuntimeService(BaseHandler):
                 UI.warning(f"Headless API request failed: {e}")
                 return None
 
-        # 3. Fetch Sites and Patch
-        sites_data = api_request("GET", "/o/headless-delivery/v1.0/sites")
+        # 3. Fetch Sites and Patch (with retry to wait for OSGi JAX-RS endpoints)
+        import time
+
+        max_retries = 10
+        sites_data = None
+        for attempt in range(max_retries):
+            sites_data = api_request("GET", "/o/headless-delivery/v1.0/sites")
+            if sites_data and "items" in sites_data:
+                break
+            UI.info(
+                f"Waiting for Headless API to become ready (attempt {attempt + 1}/{max_retries})..."
+            )
+            time.sleep(3)
+
         if not sites_data or "items" not in sites_data:
+            UI.warning(
+                "Headless API is not available after waiting. Fragment overrides skipped."
+            )
             return
 
         patched_count = 0
@@ -1637,7 +1652,7 @@ class RuntimeService(BaseHandler):
                         # Clear the flag so we don't wait on future boots
                         project_meta["reindex_required"] = "false"
                         root_path = self.manager.detect_project_path(
-                            project_id=None, for_init=True
+                            project_id=project_id, for_init=True
                         )
                         if root_path:
                             self.manager.write_meta(root_path, project_meta)
@@ -1656,7 +1671,7 @@ class RuntimeService(BaseHandler):
 
                     # Execute Headless API patcher for fragment overrides
                     root_path = self.manager.detect_project_path(
-                        project_id=None, for_init=True
+                        project_id=project_id, for_init=True
                     )
                     paths = self.manager.setup_paths(root_path)
                     self._patch_fragment_overrides(project_meta, paths)
