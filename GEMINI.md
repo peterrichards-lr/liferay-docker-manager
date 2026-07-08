@@ -110,6 +110,11 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
 - Released `v2.11.34` successfully (integrated automatic stop in non-interactive/yes mode and `--leave-running` option for workspace imports).
 - Released `v2.11.33` successfully (integrated CWD home directory warning, `--stop-running` flag for import, and portable packaging documentation updates).
 - Released `v2.11.31` successfully (integrated quickstart templates overrides, automatically start sharing under `ldm import`, standalone `ldmp` package exports, and test suite/pre-commit fixes).
+- **Current Active Task (July 8, 2026)**:
+  - [x] Create comprehensive mock unit test in `test_runtime.py` to verify Liferay Fragment `.ldmp` override patching using `urllib` Headless API.
+  - [x] Tag and release LDM `v2.15.7` to publish the fragment override functionality.
+  - [x] Fix CI validation workflow failure (`Sync Compatibility Table`) by removing deleted `INSTALLATION.md` pathspec.
+
 - Released `v2.11.30` successfully (integrated Visual Diagnostics Web Dashboard (P3), Dynamic JVM Self-Tuning (P2), and solved GITHUB_ACTIONS env var mock test coverage mismatch).
 - **Current Active Task (July 7, 2026)**:
   - [x] Fix Docker EADDRINUSE conflict for CX deployments exposing port 80/443 when running locally in `--no-ssl` mode. Always inject Traefik HTTP routing labels and safely dynamically shift conflicting direct host bindings.
