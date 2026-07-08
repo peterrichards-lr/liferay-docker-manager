@@ -52,10 +52,10 @@ class BaseHandler:
 
     def flag_reindex(self, project_path):
         """Marks the project for a full search reindex on next boot."""
-        meta = self.manager.read_meta(project_path)
+        meta = self.read_meta(project_path)
         if meta:
             meta["reindex_required"] = "true"
-            self.manager.write_meta(project_path, meta)
+            self.write_meta(project_path, meta)
             return True
         return False
 
@@ -1349,7 +1349,10 @@ class BaseHandler:
                 # Reclaiming the root itself causes ownership issues for the host user (e.g. in CI)
                 from ldm_core.utils import reclaim_volume_permissions
 
-                use_volumes = self.manager.composer.is_using_named_volumes()
+                composer = getattr(self, "composer", None)
+                if not composer and hasattr(self, "manager") and self.manager:
+                    composer = getattr(self.manager, "composer", None)
+                use_volumes = composer.is_using_named_volumes() if composer else False
 
                 for v in [
                     "data",
