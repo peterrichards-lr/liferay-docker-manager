@@ -388,6 +388,7 @@ class SnapshotService(BaseHandler):
                 "routes",
                 "client-extensions",
                 "configs",
+                ".ldm",
             ]:
                 f_path = paths["root"] / f
                 if f_path.exists():
