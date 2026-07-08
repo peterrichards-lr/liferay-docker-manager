@@ -1014,3 +1014,37 @@ class TestSnapshotService(unittest.TestCase):
             called_meta = mock_write_meta.call_args[0][1]
             self.assertEqual(called_meta["tag"], "dxp-2024.q4.1")
             self.assertEqual(called_meta["last_run_liferay_version"], "dxp-2024.q4.1")
+
+    @patch("ldm_core.handlers.base.BaseHandler.detect_project_path")
+    @patch("ldm_core.handlers.base.BaseHandler.setup_paths")
+    @patch("ldm_core.handlers.base.BaseHandler.verify_runtime_environment")
+    @patch("ldm_core.utils.reclaim_volume_permissions")
+    def test_cmd_snapshot_includes_ldm_directory(
+        self, mock_reclaim, mock_verify, mock_paths, mock_detect
+    ):
+        mock_detect.return_value = self.test_dir
+        (self.test_dir / "snapshots").mkdir(exist_ok=True)
+        ldm_dir = self.test_dir / ".ldm"
+        ldm_dir.mkdir()
+        (ldm_dir / "fragment-overrides.json").touch()
+
+        mock_paths.return_value = {
+            "root": self.test_dir,
+            "backups": self.test_dir / "snapshots",
+            "state": self.test_dir / "osgi" / "state",
+        }
+
+        self.manager.args.delete = None
+        self.manager.args.keep_last = None
+        self.manager.args.older_than = None
+
+        with (
+            patch("tarfile.open") as mock_tar_open,
+            patch.object(self.manager, "run_command", return_value="liferay\n"),
+            patch("ldm_core.handlers.base.BaseHandler.write_meta"),
+        ):
+            mock_tar = mock_tar_open.return_value.__enter__.return_value
+            self.manager.snapshot.cmd_snapshot("proj")
+
+            # Assert .ldm was added to the tarball
+            mock_tar.add.assert_any_call(ldm_dir, arcname=".ldm")
