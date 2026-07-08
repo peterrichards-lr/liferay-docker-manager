@@ -89,6 +89,7 @@ LDM is conventions-driven and highly customizable. Choose a topic below for deta
 
 - **[AI Command Center & LDM MCP Server](docs/how-to/ai_mcp_guide.md)** — Powering AI workflows with LDM FastMCP tools.
 - **[Advanced CLI Overrides](docs/reference/advanced_cli.md)** — Colorless/ASCII outputs and global cli defaults.
+- **[End-to-End Testing with LDM](docs/how-to/e2e_testing.md)** — Using LDM as an orchestration layer for automated CI/CD and local tests.
 - **[Micro-Architecture](docs/LDM_ARCHITECTURE.md)** — Core design principles, layers, and boundaries.
 - **[Testing & Validation](docs/TESTING.md)** — Running unit and E2E test suites.
 - **[Release Playbook](docs/PLAYBOOK.md)** — Pipeline standards and release workflow triggers.
