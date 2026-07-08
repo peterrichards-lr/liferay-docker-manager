@@ -557,6 +557,25 @@ class WorkspaceService(BaseHandler):
                             self._sync_cx_artifact(zip_file, paths, overwrite=overwrite)
                 except Exception:
                     pass
+
+        # 4. Sync Fragment Overrides
+        for override_file in [
+            workspace_root / ".ldm" / "fragment-overrides.json",
+            workspace_root / "configs" / "fragment-overrides.json",
+        ]:
+            if override_file.exists():
+                dest = paths["root"] / ".ldm" / "fragment-overrides.json"
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                if not overwrite and dest.exists():
+                    UI.detail("  - Skipping existing fragment overrides")
+                    continue
+                try:
+                    if override_file.resolve() != dest.resolve():
+                        safe_copy(override_file, dest)
+                        UI.detail("  + Synced Fragment Overrides")
+                except Exception:
+                    pass
+
         return True
 
     def _sync_cx_artifact(self, zip_path, paths, overwrite=True):
