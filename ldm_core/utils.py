@@ -2168,9 +2168,9 @@ def resolve_infrastructure_mode(mode_key, meta, defaults, args_override=None):
     # to prevent accidentally hijacking a local sidecar into shared infrastructure.
     if parse_version(ldm_version) < parse_version("2.14.0"):
         if mode_key == "database_mode":
-            return defaults.get("database_mode", "isolated")
+            return "isolated"
         if mode_key == "search_mode":
-            return defaults.get("search_mode", "sidecar")
+            return "sidecar"
 
     # Modern defaults (v2.14.0+)
     if mode_key == "database_mode":

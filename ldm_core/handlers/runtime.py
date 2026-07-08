@@ -854,8 +854,12 @@ class RuntimeService(BaseHandler):
             "container_name"
         )
 
-        admin_email = self.manager.get_config("admin_email", "test@liferay.com")
-        admin_pass = self.manager.get_config("admin_password", "test")
+        admin_email = self.manager.config.get_global_config().get(
+            "admin_email", "test@liferay.com"
+        )
+        admin_pass = self.manager.config.get_global_config().get(
+            "admin_password", "test"
+        )
 
         lfr_port = "8080"
         try:
