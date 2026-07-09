@@ -72,6 +72,10 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
 
 ## 8. Active Work State & Plan (July 9, 2026)
 
+- **Harden run_command return values and check-less error boundaries (Issue #445)**:
+  - [/] Catch volume hydration command failures in `_sync_volume` in `ldm_core/handlers/snapshot.py` and log warnings.
+  - [/] Write unit tests in `ldm_core/tests/test_snapshot.py` asserting correct error handling when `run_command` returns `None`.
+
 - **Vanilla Liferay start option & guides (Colleague request)**:
   - [x] Add a `--vanilla` flag to `ldm run` and `ldm init` commands to bypass project seeding.
   - [x] Add a documentation guide `docs/how-to/vanilla_start.md` explaining fresh vanilla Liferay start configurations (database, volumes, versions).
