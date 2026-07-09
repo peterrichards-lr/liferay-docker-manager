@@ -1402,7 +1402,7 @@ def find_dxp_roots(search_dir=None):
 
 
 def safe_extract(archive, target_path):
-    """Safely extracts a Zip or Tar archive to a target path, preventing Zip Slip."""
+    """Safely extracts a Zip or Tar archive to a target path, preventing directory traversal."""
     target_path = Path(target_path).resolve()
     is_dry_run = os.environ.get("LDM_DRY_RUN", "").lower() == "true"
     if is_dry_run:
@@ -1412,17 +1412,38 @@ def safe_extract(archive, target_path):
         return
 
     if hasattr(archive, "namelist"):  # ZipFile
-        for member in archive.namelist():
-            member_path = (target_path / member).resolve()
-            if not is_within_root(member_path, target_path):
-                raise Exception(f"Potential Zip Slip attempt: {member}")
-        archive.extractall(target_path)
+        members = []
+        for info in archive.infolist():
+            # Check if ZipFile member is a symlink
+            is_link = (info.external_attr >> 16) & 0o170000 == 0o120000
+            link_target = None
+            if is_link:
+                try:
+                    link_target = (
+                        archive.read(info.filename)
+                        .decode("utf-8", errors="ignore")
+                        .strip()
+                    )
+                except Exception:
+                    pass
+
+            if not is_safe_path(target_path, info.filename, is_link, link_target):
+                raise ValueError(
+                    f"Security Block: Traversal detected in member {info.filename}"
+                )
+            members.append(info.filename)
+        archive.extractall(target_path, members=members)
+
     elif hasattr(archive, "getmembers"):  # TarFile
+        members = []
         for member in archive.getmembers():
-            member_path = (target_path / member.name).resolve()
-            if not is_within_root(member_path, target_path):
-                raise Exception(f"Potential Zip Slip attempt: {member.name}")
-        archive.extractall(target_path)
+            is_link = member.issym() or member.islnk()
+            if not is_safe_path(target_path, member.name, is_link, member.linkname):
+                raise ValueError(
+                    f"Security Block: Traversal detected in member {member.name}"
+                )
+            members.append(member)
+        archive.extractall(target_path, members=members)
 
 
 def get_compose_cmd():
@@ -2430,3 +2451,37 @@ def save_global_config_safe(config_path: Path, data: dict) -> bool:
         return False
     finally:
         lock.release()
+
+
+def is_safe_path(
+    target_path: Path,
+    member_name: str,
+    is_link: bool = False,
+    link_target: str | None = None,
+) -> bool:
+    """Verifies that a member name and optional link target resolve inside target_path."""
+    try:
+        target_path = Path(target_path).resolve()
+
+        # Check member_name boundary
+        # Prevent absolute paths or directory traversal segments
+        if Path(member_name).is_absolute() or ".." in member_name.split("/"):
+            return False
+
+        member_path = (target_path / member_name).resolve()
+        if target_path not in member_path.parents and member_path != target_path:
+            return False
+
+        # Check link target boundary if it is a link
+        if is_link and link_target:
+            if Path(link_target).is_absolute() or link_target.startswith("/"):
+                return False
+
+            link_dir = member_path.parent
+            link_dest = (link_dir / link_target).resolve()
+            if target_path not in link_dest.parents and link_dest != target_path:
+                return False
+
+        return True
+    except Exception:
+        return False
