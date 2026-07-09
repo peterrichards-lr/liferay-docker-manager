@@ -4,13 +4,12 @@ import os
 import platform
 import re
 import shutil
-import ssl
 import subprocess
 import urllib.request
 from pathlib import Path
 
 from ldm_core.ui import UI
-from ldm_core.utils import get_actual_home, version_to_tuple
+from ldm_core.utils import download_file, get_actual_home, version_to_tuple
 
 
 class ShareService:
@@ -191,12 +190,9 @@ class ShareService:
             with UI.spinner(
                 f"Downloading lfr-tunnel for {os_name}-{arch_name}..."
             ) as s:
-                context = ssl._create_unverified_context()  # nosec B323
-                with (
-                    urllib.request.urlopen(url, context=context) as response,  # nosec B310
-                    open(bin_path, "wb") as out_file,
-                ):
-                    out_file.write(response.read())
+                success = download_file(url, bin_path)
+                if not success:
+                    raise RuntimeError("Download failed.")
 
             if os_name != "windows":
                 bin_path.chmod(bin_path.stat().st_mode | 0o111)  # chmod +x
@@ -357,7 +353,6 @@ class ShareService:
 
         import json
         import subprocess
-        import urllib.request
 
         # 1. Try Native CLI
         try:

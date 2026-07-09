@@ -72,6 +72,12 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
 
 ## 8. Active Work State & Plan (July 9, 2026)
 
+- **Secure binary downloads by enforcing verified SSL context and hash checks (Issue #444)**:
+  - [x] Refactor `download_file` in `ldm_core/utils.py` to write to a `.download_tmp` file and atomically rename on success to prevent corrupt/partial downloads.
+  - [x] Refactor `_ensure_binary` in `ldm_core/handlers/share.py` to use the centralized `download_file` helper and remove unverified SSL contexts.
+  - [x] Add unit tests in `ldm_core/tests/test_utils.py` verifying successful roundtrips and atomic file cleanup on failure.
+  - [x] Update `test_share.py` unit tests to mock `download_file`.
+
 - **Harden run_command return values and check-less error boundaries (Issue #445)**:
   - [/] Catch volume hydration command failures in `_sync_volume` in `ldm_core/handlers/snapshot.py` and log warnings.
   - [/] Write unit tests in `ldm_core/tests/test_snapshot.py` asserting correct error handling when `run_command` returns `None`.
