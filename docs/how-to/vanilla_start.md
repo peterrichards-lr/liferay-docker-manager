@@ -100,6 +100,48 @@ When starting a project, LDM creates a project workspace directory under `~/.ldm
 - `files/portal-ext.properties`: Pre-configured portal overrides cascade.
 - `deploy/`: Drop client extensions or OSGi bundles to deploy them to Liferay.
 
+---
+
+## 5. Seeding Prompts, Aliases, and Headless Execution
+
+### Interactive Seeding & Cache Misses
+
+By default, if you run or initialize a project without specifying a seeding flag, LDM checks if a pre-warmed database seed for the target version exists in the local cache (`~/.ldm/seeds/`).
+If the seed is not cached, LDM will prompt you interactively:
+
+```text
+Project seed not found in cache. Download pre-warmed {tag} seed? [Y/n]
+```
+
+If you decline (`n`), or if you explicitly bypass seeding, LDM starts a fresh vanilla instance.
+
+### Semantic Aliases: `--vanilla` vs. `--no-seed`
+
+LDM provides two flags to skip pre-warmed database seeding:
+
+1. **`--no-seed`** (Technical Mechanism): Bypasses downloading or restoring any pre-warmed database schema.
+2. **`--vanilla`** (Expected Outcome): A user-friendly alias for `--no-seed` that explicitly signifies you want to boot a completely pristine, empty Liferay instance.
+
+Both flags have identical behavior and can be used interchangeably.
+
+### Headless and CI/CD Guidelines
+
+In automated, headless, or non-interactive environments (such as GitHub Actions, GitLab CI, or cron-triggered orchestration scripts), any interactive prompt will block execution indefinitely or cause build timeouts.
+
+To guarantee successful headless execution:
+
+- **To use pre-warmed database seeds**: Pass the `-y`, `--yes`, or `--non-interactive` flag to automatically approve seed downloads on a cache miss.
+
+  ```bash
+  ldm run my-project -y
+  ```
+
+- **To use vanilla setups**: Pass `--vanilla` or `--no-seed` to skip seeding prompts entirely.
+
+  ```bash
+  ldm run my-project --vanilla
+  ```
+
 <!-- markdownlint-disable MD049 -->
 ---
 *Last Updated: 2026-07-09* | *Last Reviewed: 2026-07-09*
