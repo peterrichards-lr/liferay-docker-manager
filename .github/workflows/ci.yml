@@ -139,7 +139,13 @@ jobs:
 
       - name: Run Quality Gate (pre-commit)
         env:
-          SKIP: bump-docs-timestamps,check-docs-review
+          # actionlint-py fails to build its wheel under setuptools >=77 (Python 3.13
+          # runners) due to a deprecated pyproject.toml license-table format in the
+          # upstream package. Skip it on 3.13 until actionlint-py ships a fix.
+          # It still runs on the 3.11 and 3.12 matrix jobs.
+          SKIP: >-
+            bump-docs-timestamps,check-docs-review${{
+              matrix.python-version == '3.13' && ',actionlint' || '' }}
         run: |
           # Use pre-commit to run all linting, types, and unit tests.
           # This ensures local and CI checks are identical.
