@@ -124,6 +124,8 @@ def preprocess_args(args_list: list[str]) -> list[str]:
         "ssl-mode",
         "database-mode",
         "fork",
+        "db",
+        "query",
     }
 
     if first.startswith("-") or first in all_cmds:
@@ -1509,6 +1511,36 @@ def get_parser():
         help="Do not automatically stop and restart the containers",
     )
 
+    # Namespace: db
+    db = subparsers.add_parser(
+        "db",
+        parents=[base_sub_parent],
+        help="Database operations",
+    )
+    db_subparsers = db.add_subparsers(dest="subcommand")
+
+    db_query = db_subparsers.add_parser(
+        "query",
+        parents=[base_sub_parent],
+        help="Safe, SELECT-only SQL execution against project databases",
+    )
+    db_query.add_argument("project", nargs="?")
+    db_query.add_argument("-p", "--project", dest="project_flag")
+    db_query.add_argument("-s", "--sql", help="SQL statement to execute")
+    db_query.add_argument(
+        "-f",
+        "--format",
+        choices=["table", "csv", "json"],
+        default="table",
+        help="Output format (default: table)",
+    )
+    db_query.add_argument(
+        "--allow-db-query",
+        action="store_true",
+        dest="allow_db_query",
+        help="Explicitly bypass query execution prompt / config check",
+    )
+
     # Namespace: system
     system = subparsers.add_parser(
         "system",
@@ -1912,6 +1944,7 @@ def main():
         ("infra", "restart-proxy"),
         ("infra", "setup"),
         ("cloud", "fetch"),
+        ("db", "query"),
         ("config", "env"),
         ("config", "log-level"),
         ("config", "ssl-mode"),
@@ -2167,6 +2200,14 @@ def main():
             getattr(args, "project", None),
             subdomain=getattr(args, "subdomain", None),
             domain=getattr(args, "domain", None),
+        ),
+        # db namespace:
+        ("db", "query"): lambda: manager.database.cmd_query(
+            project_id=getattr(args, "project", None)
+            or getattr(args, "project_flag", None),
+            sql=getattr(args, "sql", None),
+            output_format=getattr(args, "format", "table"),
+            allow_query=getattr(args, "allow_db_query", False),
         ),
         # system namespace:
         ("system", "relocate"): lambda: manager.infra.cmd_system("relocate"),

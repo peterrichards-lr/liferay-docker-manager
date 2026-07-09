@@ -71,6 +71,13 @@ Controls whether LDM provisions a dedicated Elasticsearch container or connects 
 
 Controls whether LDM provisions an isolated PostgreSQL database or connects to the Global Shared Database cluster. Available modes: `isolated` or `shared`.
 
+## Database Querying
+
+- **`ldm db query [project]`**: Safe, SELECT-only SQL execution against project databases. By default, this resolves credentials automatically and prompts for query confirmation.
+  - **`-s`, `--sql "<query>"`**: Inline SQL statement to execute. If not provided, LDM will read from stdin.
+  - **`-f`, `--format {table,csv,json}`**: Output format (default: `table`).
+  - **`--allow-db-query`**: Explicitly bypasses the interactive confirmation prompt.
+
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-07-08* | *Last Reviewed: 2026-07-02*
+*Last Updated: 2026-07-09* | *Last Reviewed: 2026-07-09*
