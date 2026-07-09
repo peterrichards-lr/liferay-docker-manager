@@ -690,8 +690,14 @@ def index():
     html_path = SCRIPT_DIR / "ldm_core" / "resources" / "dashboard" / "index.html"
     if html_path.exists():
         html = html_path.read_text(encoding="utf-8")
+        secret_key = current_app.secret_key
+        if isinstance(secret_key, bytes):
+            secret_key_str = secret_key.decode("utf-8")
+        else:
+            secret_key_str = str(secret_key or "")
+
         return html.replace(
             "<!-- LDM_TOKEN_PLACEHOLDER -->",
-            f'<meta name="ldm-token" content="{current_app.secret_key}">',
+            f'<meta name="ldm-token" content="{secret_key_str}">',
         )
     return "Dashboard UI not found.", 404
