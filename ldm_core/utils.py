@@ -2280,6 +2280,69 @@ class FileLock:
         self.release()
 
 
+class ProjectLock:
+    """Application-level concurrency lock for workspace projects."""
+
+    def __init__(self, project_path):
+        self.lock_file = Path(project_path) / ".liferay-docker" / ".ldm_lock"
+        self.fd = None
+
+    def acquire(self):
+        """Acquires a non-blocking exclusive file lock on the project."""
+        import atexit
+
+        self.lock_file.parent.mkdir(parents=True, exist_ok=True)
+        self.fd = open(self.lock_file, "w")  # noqa: SIM115
+        try:
+            if os.name != "nt":
+                import fcntl
+
+                fcntl.flock(self.fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            else:
+                import msvcrt
+
+                self.fd.seek(0)
+                msvcrt.locking(self.fd.fileno(), msvcrt.LK_NBLCK, 1)  # type: ignore[attr-defined]
+
+            self.fd.write(f"PID: {os.getpid()}\n")
+            self.fd.flush()
+            atexit.register(self.release)
+        except (BlockingIOError, PermissionError, OSError):
+            self.fd.close()
+            self.fd = None
+            raise RuntimeError(
+                "Concurrency Violation: Another instance of LDM is running on this project."
+            )
+
+    def release(self):
+        """Releases the lock and deletes the lock file."""
+        if self.fd:
+            try:
+                if os.name != "nt":
+                    import fcntl
+
+                    fcntl.flock(self.fd, fcntl.LOCK_UN)
+                else:
+                    import msvcrt
+
+                    self.fd.seek(0)
+                    msvcrt.locking(self.fd.fileno(), msvcrt.LK_UNLCK, 1)  # type: ignore[attr-defined]
+            except Exception:
+                pass
+            self.fd.close()
+            self.fd = None
+            with contextlib.suppress(OSError):
+                if self.lock_file.exists():
+                    self.lock_file.unlink()
+
+    def __enter__(self):
+        self.acquire()
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.release()
+
+
 def load_global_config_safe(config_path: Path) -> dict:
     """Loads global JSON config file with shared/exclusive locking and validation."""
     if not config_path.exists():
