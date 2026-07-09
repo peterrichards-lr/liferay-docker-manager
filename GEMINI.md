@@ -72,6 +72,12 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
 
 ## 8. Active Work State & Plan (July 9, 2026)
 
+- **Secure Plaintext Token Storage and Restrict Configuration File Permissions (Issue #438)**:
+  - [x] Integrate Python's standard `keyring` package to securely store and retrieve Liferay Tunnel tokens (`lfr_tunnel_token`) in the OS-native credential vault.
+  - [x] Restrict global config file (`~/.ldmrc`) creation permissions to `0600` and its parent directory to `0700` inside `save_global_config_safe`.
+  - [x] Enforce owner-only `0600` permissions on Liferay Tunnel credentials file (`~/.lfr-tunnel/token`) during retrieval and interactive creation.
+  - [x] Add comprehensive unit tests in `test_share.py` and `test_utils.py` verifying keyring storage integration, interactive saving fallback, and file mode constraints.
+
 - **Stream database snapshot dumps directly to disk to prevent OOM memory exhaustion (Issue #442)**:
   - [x] Add `stdout_file` parameter support to `run_command` in `ldm_core/utils.py` and `ldm_core/handlers/base.py` to allow streaming stdout directly to a file descriptor.
   - [x] Refactor database backup snapshot dump routine in `ldm_core/handlers/snapshot.py` to open the backup file and stream stdout directly to it.

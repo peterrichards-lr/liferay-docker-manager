@@ -13,6 +13,11 @@ from typing import Any
 
 import requests
 
+try:
+    import keyring
+except ImportError:
+    keyring = None
+
 from ldm_core.constants import SCRIPT_DIR, TAG_PATTERN
 from ldm_core.ui import UI
 
@@ -523,7 +528,7 @@ def get_raw(url):
         return None
 
 
-def safe_write_text(path, content, encoding="utf-8"):
+def safe_write_text(path, content, encoding="utf-8", mode=None):
     """Atomically writes text to a file using a temporary file and robust replacement."""
     path = Path(path).resolve()
     is_dry_run = os.environ.get("LDM_DRY_RUN", "").lower() == "true"
@@ -534,14 +539,26 @@ def safe_write_text(path, content, encoding="utf-8"):
     tmp_path = path.with_suffix(".tmp" + path.suffix)
     try:
         try:
-            tmp_path.write_text(content, encoding=encoding)
+            if mode is not None:
+                flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
+                fd = os.open(tmp_path, flags, mode)
+                with open(fd, "w", encoding=encoding) as f:
+                    f.write(content)
+            else:
+                tmp_path.write_text(content, encoding=encoding)
         except (OSError, PermissionError) as e:
             # LDM-384: Fallback for root-owned directories in CI
             if platform.system().lower() != "windows":
                 from ldm_core.utils import reclaim_volume_permissions
 
                 if reclaim_volume_permissions(path.parent):
-                    tmp_path.write_text(content, encoding=encoding)
+                    if mode is not None:
+                        flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
+                        fd = os.open(tmp_path, flags, mode)
+                        with open(fd, "w", encoding=encoding) as f:
+                            f.write(content)
+                    else:
+                        tmp_path.write_text(content, encoding=encoding)
                 else:
                     raise e
             else:
@@ -553,6 +570,12 @@ def safe_write_text(path, content, encoding="utf-8"):
         for i in range(max_retries):
             try:
                 os.replace(tmp_path, path)
+                if (
+                    mode is not None
+                    and platform.system().lower() != "windows"
+                    and path.exists()
+                ):
+                    path.chmod(mode)
                 return
             except (OSError, PermissionError) as e:
                 if i == max_retries - 1:
@@ -2415,18 +2438,52 @@ def load_global_config_safe(config_path: Path) -> dict:
 
 
 def save_global_config_safe(config_path: Path, data: dict) -> bool:
-    """Saves global JSON config file atomically with exclusive locking."""
+    """Saves global JSON config file securely and atomically with exclusive locking."""
     lock_file = config_path.with_suffix(config_path.suffix + ".lock")
     lock = FileLock(lock_file)
     try:
         lock.acquire(exclusive=True)
         config_path.parent.mkdir(parents=True, exist_ok=True)
+        if platform.system().lower() != "windows":
+            try:
+                config_path.parent.chmod(0o700)
+            except OSError:
+                pass
         temp_file = config_path.with_suffix(config_path.suffix + ".tmp")
-        temp_file.write_text(json.dumps(data, indent=4), encoding="utf-8")
+
+        # Write securely with 0600 permissions
+        flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
+        fd = os.open(temp_file, flags, 0o600)
+        with open(fd, "w", encoding="utf-8") as f:
+            f.write(json.dumps(data, indent=4))
+
         temp_file.replace(config_path)
+        if platform.system().lower() != "windows" and config_path.exists():
+            config_path.chmod(0o600)
         return True
     except Exception as e:
         UI.warning(f"Failed to write configuration file '{config_path}': {e}")
         return False
     finally:
         lock.release()
+
+
+def get_keyring_token(service_name: str, username: str) -> str | None:
+    """Retrieves the token from the OS-native credential vault."""
+    if keyring is not None:
+        try:
+            return keyring.get_password(service_name, username)
+        except Exception as e:
+            UI.debug(f"Failed to retrieve password from keyring: {e}")
+    return None
+
+
+def set_keyring_token(service_name: str, username: str, token: str) -> bool:
+    """Saves the token to the OS-native credential vault."""
+    if keyring is not None:
+        try:
+            keyring.set_password(service_name, username, token)
+            return True
+        except Exception as e:
+            UI.debug(f"Failed to store password in keyring: {e}")
+    return False

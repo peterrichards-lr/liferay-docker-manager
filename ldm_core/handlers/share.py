@@ -261,31 +261,56 @@ class ShareService:
         if token:
             return token
 
-        # Priority 2: ~/.lfr-tunnel/token file
+        # Priority 2: OS Keyring
+        from ldm_core.utils import get_keyring_token
+
+        token = get_keyring_token("liferay-docker-manager", "lfr_tunnel_token")
+        if token:
+            return token
+
+        # Priority 3: ~/.lfr-tunnel/token file
         token_file = get_actual_home() / ".lfr-tunnel" / "token"
         if token_file.exists():
+            if platform.system().lower() != "windows":
+                try:
+                    token_file.chmod(0o600)
+                except OSError:
+                    pass
             with contextlib.suppress(Exception):
                 token = token_file.read_text().strip()
                 if token:
                     return token
 
-        # Priority 3: LDM global config (.ldmrc)
+        # Priority 4: LDM global config (.ldmrc)
         config = self.manager.config.get_global_config()
         token = config.get("lfr_tunnel_token")
         if token:
             return token
 
-        # Priority 4: Interactive prompt
+        # Priority 5: Interactive prompt
         if not self.manager.non_interactive:
             token = UI.ask("Enter your Liferay Tunnel token (LFT_CLIENT_TOKEN)")
             if token:
                 token = token.strip()
+
+                # 1. Save in OS Keyring
+                from ldm_core.utils import set_keyring_token
+
+                set_keyring_token("liferay-docker-manager", "lfr_tunnel_token", token)
+
+                # 2. Save securely in LDM global config
                 config = self.manager.config.get_global_config()
                 config["lfr_tunnel_token"] = token
                 from ldm_core.utils import save_global_config_safe
 
                 config_path = get_actual_home() / ".ldmrc"
                 save_global_config_safe(config_path, config)
+
+                # 3. Write securely to ~/.lfr-tunnel/token (for the native client)
+                from ldm_core.utils import safe_write_text
+
+                safe_write_text(token_file, token, mode=0o600)
+
                 return token
 
         UI.die(
