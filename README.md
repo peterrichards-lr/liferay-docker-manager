@@ -47,17 +47,20 @@ Once installed, bootstrap or run your stacks instantly:
 # 1. THE CONFIDENCE BOOSTER: Run Liferay with pre-configured samples
 ldm run my-sample-project --samples
 
-# 2. THE DEVELOPER FLOW: Initialize from a workspace and start monitoring
+# 2. THE VANILLA FLOW: Run a fresh vanilla Liferay instance (LTS release)
+ldm run my-vanilla-project --vanilla --tag 2026.q1.7-lts
+
+# 3. THE DEVELOPER FLOW: Initialize from a workspace and start monitoring
 ldm init-from /path/to/workspace my-project
 
-# 3. THE PREDEFINED QUICKSTART: Bootstrap an accelerator demo stack
+# 4. THE PREDEFINED QUICKSTART: Bootstrap an accelerator demo stack
 ldm quickstart aica
 
-# 4. THE TIME MACHINE: Take a snapshot of your database and volumes, and restore them later
+# 5. THE TIME MACHINE: Take a snapshot of your database and volumes, and restore them later
 ldm snapshot my-project
 ldm restore my-project
 
-# 5. THE PORTABLE PACKAGE: Export project snapshot into a .ldmp package
+# 6. THE PORTABLE PACKAGE: Export project snapshot into a .ldmp package
 ldm package my-project
 ```
 
@@ -76,6 +79,7 @@ LDM is conventions-driven and highly customizable. Choose a topic below for deta
 
 ### 2. Core Operational Guides
 
+- **[Fresh Vanilla Start](docs/how-to/vanilla_start.md)** — Launching empty Liferay instances for quick tests.
 - **[PaaS "Golden Path" Local Dev](docs/tutorials/paas_local_dev.md)** — Fetching backups and replicating Liferay Cloud environments locally.
 - **[Workspace Import & Packaging](docs/how-to/workspace_import.md)** — Importing workspaces and exporting/restoring portable `.ldmp` packages.
 - **[Runtime Overrides & Fragments](docs/how-to/runtime_overrides.md)** — Dynamic substitution and environment-aware client extension patching.

@@ -22,6 +22,7 @@ Check out our **[Video Showcase](showcase/README.md)** to see short demonstratio
 
 ### 2. Operational & Feature Guides
 
+- **[Fresh Vanilla Start](how-to/vanilla_start.md)** — Launching empty Liferay instances for quick tests.
 - **[PaaS "Golden Path" Local Dev](tutorials/paas_local_dev.md)** — Hydrating local setups using remote Liferay Cloud backups.
 - **[Workspace Import & Portable Packaging](how-to/workspace_import.md)** — Working with workspaces and exporting `.ldmp` packages.
 - **[Runtime Overrides & Fragments](how-to/runtime_overrides.md)** — Dynamic substitution and environment-aware client extension patching.
