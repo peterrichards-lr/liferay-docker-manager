@@ -13,6 +13,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
+import yaml
+
 if TYPE_CHECKING:
     pass
 
@@ -77,15 +79,39 @@ class WorkspaceService(BaseHandler):
         )
 
     def _parse_client_extension_yaml(self, content):
+        """Parse client-extension.yaml content using PyYAML for robust structured extraction.
+
+        Uses yaml.safe_load instead of fragile regex matching so that comments,
+        nested configuration blocks, and multi-line YAML values are all handled
+        correctly.  Falls back to an empty result on any parse failure.
+        """
         info: dict[str, Any] = {"type": None, "oauth_erc": None}
-        type_match = re.search(r"^\s*type:\s*(\w+)", content, re.MULTILINE)
-        if type_match:
-            info["type"] = type_match.group(1).strip()
-        oauth_match = re.search(
-            r"^\s*oAuthApplicationHeadlessServer:\s*([^\s\n]+)", content, re.MULTILINE
-        )
-        if oauth_match:
-            info["oauth_erc"] = oauth_match.group(1).strip()
+        try:
+            data = yaml.safe_load(content)
+            if isinstance(data, dict):
+                # Top-level "type" field (single-block format)
+                if "type" in data:
+                    info["type"] = str(data["type"]).strip()
+                # Top-level oAuthApplicationHeadlessServer ERC (single-block format)
+                if "oAuthApplicationHeadlessServer" in data:
+                    info["oauth_erc"] = str(
+                        data["oAuthApplicationHeadlessServer"]
+                    ).strip()
+                else:
+                    # Multi-block format: scan nested configuration dicts
+                    for block in data.values():
+                        if not isinstance(block, dict):
+                            continue
+                        if info["type"] is None and "type" in block:
+                            info["type"] = str(block["type"]).strip()
+                        if info["oauth_erc"] is None and (
+                            erc := block.get("oAuthApplicationHeadlessServer")
+                        ):
+                            info["oauth_erc"] = str(erc).strip()
+                        if info["type"] and info["oauth_erc"]:
+                            break
+        except Exception:
+            pass
         return info
 
     def _get_effective_blacklist(self, paths=None):
@@ -2357,9 +2383,7 @@ class WorkspaceService(BaseHandler):
         import tempfile
         import zipfile
 
-        import yaml
-
-        from ldm_core.utils import safe_extract, safe_move
+        from ldm_core.utils import safe_extract
 
         protocol = "https"
         external_url = f"{protocol}://{ext_name}.{host_name}"
@@ -2505,8 +2529,13 @@ class WorkspaceService(BaseHandler):
                                 arcname = file_path.relative_to(tmp_path)
                                 new_zip.write(file_path, arcname)
 
-                    os.remove(zip_path)
-                    safe_move(str(temp_zip_path), str(zip_path))
+                    # Atomically overwrite the original zip.  Writing to a
+                    # temp file inside the same TemporaryDirectory and then
+                    # calling Path.replace() ensures that an interruption
+                    # (SIGINT, OOM, disk-full) never leaves the workspace in a
+                    # state where the original archive is gone but the
+                    # replacement has not yet landed.
+                    temp_zip_path.replace(zip_path)
                     UI.detail(
                         f"  + Dynamically rewrote OAuth profile URLs in {zip_path.name}"
                     )

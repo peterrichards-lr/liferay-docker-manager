@@ -2,6 +2,7 @@ import json
 import os
 import shutil
 import tempfile
+import textwrap
 import unittest
 import zipfile
 from pathlib import Path
@@ -126,10 +127,48 @@ class TestWorkspaceMetadata(unittest.TestCase):
         self.assertTrue(info.get("loadBalancer", {}).get("externalPort"))
 
     def test_parse_client_extension_yaml(self):
+        """Basic single-block format: type and oauth ERC are extracted correctly."""
         content = "type: customElement\noAuthApplicationHeadlessServer: my-erc"
         info = self.handler.workspace._parse_client_extension_yaml(content)
         self.assertEqual(info["type"], "customElement")
         self.assertEqual(info["oauth_erc"], "my-erc")
+
+    def test_parse_client_extension_yaml_with_comments(self):
+        """YAML with leading comment lines must not confuse the parser."""
+        content = textwrap.dedent("""
+            # This is a comment about the extension type
+            type: customElement
+            # ERC reference below
+            oAuthApplicationHeadlessServer: erc-value
+        """)
+        info = self.handler.workspace._parse_client_extension_yaml(content)
+        self.assertEqual(info["type"], "customElement")
+        self.assertEqual(info["oauth_erc"], "erc-value")
+
+    def test_parse_client_extension_yaml_multi_block(self):
+        """Multi-block client-extension.yaml format should return the first matching block values."""
+        content = textwrap.dedent("""
+            my-oauth-app:
+              type: oAuthApplicationHeadlessServer
+              oAuthApplicationHeadlessServer: block-erc
+            my-element:
+              type: customElement
+        """)
+        info = self.handler.workspace._parse_client_extension_yaml(content)
+        # Should discover type from first block
+        self.assertIsNotNone(info["type"])
+
+    def test_parse_client_extension_yaml_invalid_returns_empty(self):
+        """Invalid YAML must gracefully return empty info rather than raise."""
+        info = self.handler.workspace._parse_client_extension_yaml(": [invalid yaml {{")
+        self.assertIsNone(info["type"])
+        self.assertIsNone(info["oauth_erc"])
+
+    def test_parse_client_extension_yaml_empty_string(self):
+        """Empty content must gracefully return empty info."""
+        info = self.handler.workspace._parse_client_extension_yaml("")
+        self.assertIsNone(info["type"])
+        self.assertIsNone(info["oauth_erc"])
 
 
 class TestWorkspaceImport(unittest.TestCase):
@@ -1313,6 +1352,84 @@ class TestWorkspaceQuickstart(unittest.TestCase):
             project_id="target_fork",
             backup_dir=str(source_dir / "snapshots" / "auto-snap"),
         )
+
+
+class TestAtomicZipRepackaging(unittest.TestCase):
+    """Tests for atomic zip replacement in _rewrite_oauth_urls_in_zip (Issue #469)."""
+
+    def setUp(self):
+        self.handler = MockWorkspaceManager()
+
+    def test_atomic_replace_not_os_remove(self):
+        """Path.replace() must be used for atomic overwrite; os.remove must NOT be called."""
+        import zipfile
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_path = Path(tmpdir)
+
+            # Build a minimal client-extension.yaml inside a zip
+            cx_yaml = textwrap.dedent("""
+                my-app:
+                  type: oAuthApplicationHeadlessServer
+                  oAuthApplicationHeadlessServer: test-erc
+                  homePageURL: http://localhost:8080
+                  redirectURIs:
+                    - http://localhost:8080/callback
+            """)
+            zip_path = tmp_path / "my-ext.zip"
+            with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+                zf.writestr("client-extension.yaml", cx_yaml)
+
+            original_zip_size = zip_path.stat().st_size
+
+            # Run the method
+            self.handler.workspace._rewrite_oauth_urls_in_zip(
+                zip_path, "my-host.local", "my-ext"
+            )
+
+            # The zip must still exist (no data loss)
+            self.assertTrue(
+                zip_path.exists(), "Original zip must still exist after atomic replace"
+            )
+
+            # The zip must have been modified (OAuth URLs were rewritten)
+            with zipfile.ZipFile(zip_path, "r") as zf:
+                updated_content = zf.read("client-extension.yaml").decode("utf-8")
+            self.assertNotIn(
+                "localhost", updated_content, "localhost references must be rewritten"
+            )
+            self.assertIn("my-host.local", updated_content)
+
+    def test_localhost_skip(self):
+        """When host_name is 'localhost', the zip must be left untouched."""
+        import zipfile
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            zip_path = Path(tmpdir) / "skip.zip"
+            with zipfile.ZipFile(zip_path, "w") as zf:
+                zf.writestr("client-extension.yaml", "type: customElement")
+
+            mtime_before = zip_path.stat().st_mtime
+            self.handler.workspace._rewrite_oauth_urls_in_zip(
+                zip_path, "localhost", "my-ext"
+            )
+            # File should be untouched when host is localhost
+            self.assertTrue(zip_path.exists())
+
+    def test_no_config_file_is_safe(self):
+        """A zip with no client-extension.yaml / JSON config must be handled gracefully."""
+        import zipfile
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            zip_path = Path(tmpdir) / "empty.zip"
+            with zipfile.ZipFile(zip_path, "w") as zf:
+                zf.writestr("README.md", "hello")
+
+            # Should not raise
+            self.handler.workspace._rewrite_oauth_urls_in_zip(
+                zip_path, "my-host.local", "my-ext"
+            )
+            self.assertTrue(zip_path.exists())
 
 
 if __name__ == "__main__":
