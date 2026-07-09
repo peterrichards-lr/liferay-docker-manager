@@ -528,13 +528,9 @@ When modifying `client-extension.yaml` files, **NEVER change or remove `.service
   - [x] Implement native `ldm set-version` (Issue #373) to mutate `gradle.properties` natively.
   - [x] Execute automated release script to cut `v2.15.0` version bump.
 
-- **Current Active Task (July 7, 2026) - Part 2**:
-  - [x] Fix ComposerService `--no-ssl` port binding collision preventing local extensions from booting (PR #390).
-  - [x] Create release `v2.15.2` of Liferay Docker Manager with the port fix.
-  - [x] Implement Diátaxis documentation restructure on `ldm-cx-samples`.
-  - [x] Enhance MkDocs material theme with premium UX (Dark mode, Tabs, Search).
-  - [x] Resolve `ldm-cx-samples` E2E cleanup permissions error with `sudo`.
+- **Current Active Task (July 9, 2026)**:
+  - [x] Create Technical Debt issues on GitHub using `gh` CLI.
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-07-09* | *Last Reviewed: 2026-07-02*
+*Last Updated: 2026-07-09* | *Last Reviewed: 2026-07-09*
