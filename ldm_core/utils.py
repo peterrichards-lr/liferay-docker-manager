@@ -2199,3 +2199,20 @@ def has_shared_projects(manager):
         if db_mode == "shared" or search_mode == "shared":
             return True
     return False
+
+
+def is_continuation_line(line_str: str) -> bool:
+    """Checks if a properties line ends in an active continuation backslash.
+
+    Count trailing backslashes:
+    - Odd count = active continuation.
+    - Even count = escaped backslash (not continuation).
+    """
+    stripped = line_str.rstrip(" \t\r\n")
+    backslash_count = 0
+    for char in reversed(stripped):
+        if char == "\\":
+            backslash_count += 1
+        else:
+            break
+    return (backslash_count % 2) != 0

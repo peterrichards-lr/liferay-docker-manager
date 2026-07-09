@@ -73,6 +73,19 @@ class TestConfigService(unittest.TestCase):
         props = self.config._get_properties(content)
         self.assertIn("key1", props)
 
+    def test_get_properties_escaped_backslash(self):
+        # Even number of backslashes = escaped, not a continuation.
+        content = "key1=val1\\\\\nkey2=val2"
+        props = self.config._get_properties(content)
+        self.assertEqual(props["key1"], "val1\\\\")
+        self.assertEqual(props["key2"], "val2")
+
+        # Odd number of backslashes = active continuation.
+        content = "key1=val1\\\\\\\n    continued\nkey2=val2"
+        props = self.config._get_properties(content)
+        self.assertEqual(props["key1"], "val1\\\\\\\n    continued")
+        self.assertEqual(props["key2"], "val2")
+
     @patch("ldm_core.handlers.config.safe_write_text")
     def test_update_portal_ext(self, mock_write):
         import tempfile

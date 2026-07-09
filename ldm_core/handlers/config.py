@@ -12,6 +12,7 @@ from ldm_core.ui import UI
 from ldm_core.utils import (
     atomic_copy,
     get_actual_home,
+    is_continuation_line,
     run_command,
     safe_write_text,
 )
@@ -80,7 +81,7 @@ class ConfigService:
                 # We must consume the next line(s) regardless of their content
                 # until we find a line that DOES NOT end a continuation from the previous.
                 temp_val = val
-                while temp_val.strip().endswith("\\") and i + 1 < len(lines):
+                while is_continuation_line(temp_val) and i + 1 < len(lines):
                     i += 1
                     temp_val = lines[i]
                     full_val.append(temp_val)
@@ -134,7 +135,7 @@ class ConfigService:
 
                 # Handle continuation lines
                 temp_val = val
-                while temp_val.strip().endswith("\\") and i + 1 < len(lines):
+                while is_continuation_line(temp_val) and i + 1 < len(lines):
                     i += 1
                     temp_val = lines[i]
                     full_val.append(temp_val)
@@ -372,7 +373,7 @@ class ConfigService:
 
                         # Skip the original block's continuations
                         temp_val = line.split("=", 1)[1]
-                        while temp_val.strip().endswith("\\") and i + 1 < len(lines):
+                        while is_continuation_line(temp_val) and i + 1 < len(lines):
                             i += 1
                             temp_val = lines[i]
                     else:
@@ -414,7 +415,7 @@ class ConfigService:
                 if key in keys_to_remove:
                     # Skip the entire block
                     temp_val = stripped.split("=", 1)[1]
-                    while temp_val.endswith("\\") and i + 1 < len(lines):
+                    while is_continuation_line(temp_val) and i + 1 < len(lines):
                         i += 1
                         temp_val = lines[i]
                     i += 1

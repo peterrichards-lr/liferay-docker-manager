@@ -17,6 +17,7 @@ from ldm_core.utils import (
     check_for_updates,
     get_actual_home,
     get_resource_path,
+    is_continuation_line,
     resolve_dependency_version,
     run_command,
     safe_move,
@@ -3807,7 +3808,7 @@ pause
                         else:
                             keys_found[key] = [line_num]
 
-                last_line_continued = stripped.endswith("\\")
+                last_line_continued = is_continuation_line(stripped)
 
             # Report Duplicates
             for key, occurrences in keys_found.items():
