@@ -78,6 +78,17 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
   - [x] Add unit tests in `ldm_core/tests/test_utils.py` verifying successful roundtrips and atomic file cleanup on failure.
   - [x] Update `test_share.py` unit tests to mock `download_file`.
 
+- **Fix silent fallback and lack of locking in JSON config parser (Issue #446)**:
+  - [x] Create generic cross-platform `FileLock` utility in `ldm_core/utils.py`.
+  - [x] Create safe config loader (`load_global_config_safe`) with detailed JSON Decode exception diagnostics, and atomic saver (`save_global_config_safe`) with lock protection.
+  - [x] Refactor config operations in `ldm_core/defaults.py`, `ldm_core/handlers/config.py`, `ldm_core/handlers/ai.py`, and `ldm_core/handlers/share.py` to use safe loaders and savers.
+  - [x] Write unit tests verifying roundtrips, JSON syntax warnings, and lock acquisition failure handling.
+
+- **Implement workspace project lock concurrency protection (Issue #448)**:
+  - [x] Add `ProjectLock` cross-platform file locking utility in `ldm_core/utils.py`.
+  - [x] Wrap `detect_project_path` in `ldm_core/handlers/base.py` to automatically validate and acquire the project lock for state-mutating commands.
+  - [x] Implement comprehensive unit tests covering successful lock acquisition, releasing, context manager access, and concurrency violations.
+
 - **Harden run_command return values and check-less error boundaries (Issue #445)**:
   - [/] Catch volume hydration command failures in `_sync_volume` in `ldm_core/handlers/snapshot.py` and log warnings.
   - [/] Write unit tests in `ldm_core/tests/test_snapshot.py` asserting correct error handling when `run_command` returns `None`.

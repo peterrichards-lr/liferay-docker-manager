@@ -861,6 +861,58 @@ class BaseHandler:
                 filter_str = str(choice)
 
     def detect_project_path(self, project_id=None, for_init=False, fatal=True):
+        path = self._detect_project_path_raw(project_id, for_init=for_init, fatal=fatal)
+        if path:
+            self._acquire_lock_if_needed(path)
+        return path
+
+    def _acquire_lock_if_needed(self, path):
+        if not path:
+            return
+
+        lock_commands = {
+            "run",
+            "up",
+            "stop",
+            "restart",
+            "down",
+            "rm",
+            "deploy",
+            "snapshot",
+            "restore",
+            "hydrate",
+            "import",
+            "init-from",
+            "scale",
+        }
+        cmd = getattr(self.args, "command", None)
+        subcmd = getattr(self.args, "subcommand", None)
+
+        is_config_lock = cmd == "config" and subcmd in [
+            "edit",
+            "rebuild-properties",
+            "revert-properties",
+            "reset-properties",
+        ]
+        is_rescue_lock = cmd == "system" and subcmd == "rescue"
+
+        if cmd in lock_commands or is_config_lock or is_rescue_lock:
+            from ldm_core.utils import ProjectLock
+
+            mgr = getattr(self, "manager", None) or self
+            if not hasattr(mgr, "_active_locks"):
+                mgr._active_locks = {}  # type: ignore[attr-defined, union-attr]
+
+            path_key = Path(path).resolve().as_posix()
+            if path_key not in mgr._active_locks:  # type: ignore[attr-defined, union-attr]
+                lock = ProjectLock(path)
+                try:
+                    lock.acquire()
+                    mgr._active_locks[path_key] = lock  # type: ignore[attr-defined, union-attr]
+                except RuntimeError as e:
+                    UI.die(str(e))
+
+    def _detect_project_path_raw(self, project_id=None, for_init=False, fatal=True):
         """Resolves a project ID or path to a full filesystem path."""
         no_home_warn = False
         if hasattr(self, "args") and self.args is not None:

@@ -282,9 +282,10 @@ class ShareService:
                 token = token.strip()
                 config = self.manager.config.get_global_config()
                 config["lfr_tunnel_token"] = token
+                from ldm_core.utils import save_global_config_safe
+
                 config_path = get_actual_home() / ".ldmrc"
-                with contextlib.suppress(Exception):
-                    config_path.write_text(json.dumps(config, indent=4))
+                save_global_config_safe(config_path, config)
                 return token
 
         UI.die(

@@ -1,7 +1,10 @@
-import json
 from pathlib import Path
 
-from ldm_core.utils import get_actual_home
+from ldm_core.utils import (
+    get_actual_home,
+    load_global_config_safe,
+    save_global_config_safe,
+)
 
 CONVENTION_DEFAULTS = {
     "tag": "",  # Empty forces user to pick or use latest
@@ -35,23 +38,15 @@ class DefaultsManager:
         self.user_defaults = self._load(self.user_path)
 
     def _load(self, path):
-        if path.exists():
-            try:
-                data = json.loads(path.read_text())
-                return data.get("defaults", {}) if "defaults" in data else data
-            except Exception:
-                pass
-        return {}
+        data = load_global_config_safe(path)
+        return data.get("defaults", {}) if "defaults" in data else data
 
     def _save(self, path, data, existing_root=None):
-        try:
-            path.parent.mkdir(parents=True, exist_ok=True)
-            root_data = existing_root or {}
-            root_data["defaults"] = data
-            path.write_text(json.dumps(root_data, indent=4))
-            return True
-        except Exception:
-            return False
+        root_data = existing_root or {}
+        if path.exists():
+            root_data = load_global_config_safe(path)
+        root_data["defaults"] = data
+        return save_global_config_safe(path, root_data)
 
     def get_resolved(self):
         resolved = CONVENTION_DEFAULTS.copy()
@@ -63,45 +58,25 @@ class DefaultsManager:
         return self.get_resolved().get(key, fallback)
 
     def set_user_default(self, key, value):
-        root = {}
-        if self.user_path.exists():
-            try:
-                root = json.loads(self.user_path.read_text())
-            except Exception:
-                pass
+        root = load_global_config_safe(self.user_path)
         self.user_defaults[key] = value
         return self._save(self.user_path, self.user_defaults, root)
 
     def remove_user_default(self, key):
         if key in self.user_defaults:
             del self.user_defaults[key]
-            root = {}
-            if self.user_path.exists():
-                try:
-                    root = json.loads(self.user_path.read_text())
-                except Exception:
-                    pass
+            root = load_global_config_safe(self.user_path)
             return self._save(self.user_path, self.user_defaults, root)
         return True
 
     def set_global_default(self, key, value):
-        root = {}
-        if self.global_path.exists():
-            try:
-                root = json.loads(self.global_path.read_text())
-            except Exception:
-                pass
+        root = load_global_config_safe(self.global_path)
         self.global_defaults[key] = value
         return self._save(self.global_path, self.global_defaults, root)
 
     def remove_global_default(self, key):
         if key in self.global_defaults:
             del self.global_defaults[key]
-            root = {}
-            if self.global_path.exists():
-                try:
-                    root = json.loads(self.global_path.read_text())
-                except Exception:
-                    pass
+            root = load_global_config_safe(self.global_path)
             return self._save(self.global_path, self.global_defaults, root)
         return True
