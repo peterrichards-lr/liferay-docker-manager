@@ -72,6 +72,14 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
 
 ## 8. Active Work State & Plan (July 9, 2026)
 
+- **Decouple CI checks from local commit loop (Issue #476)**:
+  - [x] Configure stages `[pre-push, manual]` for heavy hooks (`mypy`, `pytest`, `bandit`, `deptry`) in `.pre-commit-config.yaml`.
+  - [x] Update `ldm dev-setup` to install both pre-commit and pre-push hook types.
+  - [x] Split generic Quality Gate step in `.github/workflows/ci.yml` into distinct, parallel/sequential steps.
+  - [x] Add mypy and type stubs to `requirements-dev.txt` for GHA/local direct execution.
+  - [x] Document hooks setup inside `docs/how-to/development.md`.
+  - [x] Create PR #477 for the feature branch.
+
 - **Secure Plaintext Token Storage and Restrict Configuration File Permissions (Issue #438)**:
   - [x] Integrate Python's standard `keyring` package to securely store and retrieve Liferay Tunnel tokens (`lfr_tunnel_token`) in the OS-native credential vault.
   - [x] Restrict global config file (`~/.ldmrc`) creation permissions to `0600` and its parent directory to `0700` inside `save_global_config_safe`.
