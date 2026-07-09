@@ -2,7 +2,7 @@ import shutil
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import ANY, MagicMock, patch
+from unittest.mock import ANY, MagicMock, mock_open, patch
 
 from ldm_core.handlers.base import BaseHandler
 from ldm_core.handlers.snapshot import SnapshotService
@@ -273,9 +273,10 @@ class TestSnapshotService(unittest.TestCase):
                 self.manager.snapshot.cmd_restore("test")
             self.assertTrue(mock_die.called)
 
+    @patch("builtins.open", new_callable=mock_open)
     @patch("subprocess.run")
     @patch("time.sleep")
-    def test_wipe_db_postgres_retries(self, mock_sleep, mock_sub_run):
+    def test_wipe_db_postgres_retries(self, mock_sleep, mock_sub_run, mock_file_open):
         import subprocess
 
         mock_err = subprocess.CalledProcessError(
@@ -298,9 +299,12 @@ class TestSnapshotService(unittest.TestCase):
         self.assertEqual(mock_sub_run.call_count, 5)
         self.assertEqual(mock_sleep.call_count, 3)
 
+    @patch("builtins.open", new_callable=mock_open)
     @patch("subprocess.run")
     @patch("time.sleep")
-    def test_wipe_db_postgres_non_fatal_sql_error(self, mock_sleep, mock_sub_run):
+    def test_wipe_db_postgres_non_fatal_sql_error(
+        self, mock_sleep, mock_sub_run, mock_file_open
+    ):
         import subprocess
 
         mock_err = subprocess.CalledProcessError(
@@ -317,9 +321,12 @@ class TestSnapshotService(unittest.TestCase):
         self.assertEqual(mock_sub_run.call_count, 2)
         self.assertEqual(mock_sleep.call_count, 0)
 
+    @patch("builtins.open", new_callable=mock_open)
     @patch("subprocess.run")
     @patch("platform.system", return_value="Darwin")
-    def test_execute_orchestrated_db_restore_success(self, mock_system, mock_sub_run):
+    def test_execute_orchestrated_db_restore_success(
+        self, mock_system, mock_sub_run, mock_file_open
+    ):
         mock_res = MagicMock()
         mock_res.returncode = 0
         mock_sub_run.return_value = mock_res
@@ -328,19 +335,31 @@ class TestSnapshotService(unittest.TestCase):
             "db-container", "postgresql", "sql-file", {}, {"host_name": "my-local-host"}
         )
 
-        import_call = next(
-            c
-            for c in mock_sub_run.call_args_list
-            if isinstance(c.args[0], str) and "ON_ERROR_STOP=1" in c.args[0]
+        import_call = mock_sub_run.call_args_list[-1]
+        self.assertEqual(
+            import_call.args[0],
+            [
+                "docker",
+                "exec",
+                "-i",
+                "db-container",
+                "psql",
+                "-U",
+                "lportal",
+                "-d",
+                "lportal",
+                "-v",
+                "ON_ERROR_STOP=1",
+            ],
         )
-        self.assertIn("ON_ERROR_STOP=1", import_call.args[0])
-        self.assertEqual(import_call.kwargs.get("shell"), True)
-        self.assertEqual(import_call.kwargs.get("executable"), "/bin/bash")
+        self.assertIsNotNone(import_call.kwargs.get("stdin"))
+        self.assertIsNone(import_call.kwargs.get("shell"))
 
+    @patch("builtins.open", new_callable=mock_open)
     @patch("subprocess.run")
     @patch("time.sleep")
     def test_execute_orchestrated_db_restore_failure_retries(
-        self, mock_sleep, mock_sub_run
+        self, mock_sleep, mock_sub_run, mock_file_open
     ):
         import subprocess
 
@@ -523,10 +542,11 @@ class TestSnapshotService(unittest.TestCase):
             sha_file.read_text().strip(), f"dummy-sha-value  {proj_name}.ldmp"
         )
 
+    @patch("builtins.open", new_callable=mock_open)
     @patch("subprocess.run")
     @patch("platform.system", return_value="Darwin")
     def test_execute_orchestrated_db_restore_space_in_container_name(
-        self, mock_system, mock_sub_run
+        self, mock_system, mock_sub_run, mock_file_open
     ):
         mock_res = MagicMock()
         mock_res.returncode = 0
@@ -540,12 +560,23 @@ class TestSnapshotService(unittest.TestCase):
             {"host_name": "my-local-host"},
         )
 
-        import_call = next(
-            c
-            for c in mock_sub_run.call_args_list
-            if isinstance(c.args[0], str) and "ON_ERROR_STOP=1" in c.args[0]
+        import_call = mock_sub_run.call_args_list[-1]
+        self.assertEqual(
+            import_call.args[0],
+            [
+                "docker",
+                "exec",
+                "-i",
+                "zukunft digital-db",
+                "psql",
+                "-U",
+                "lportal",
+                "-d",
+                "lportal",
+                "-v",
+                "ON_ERROR_STOP=1",
+            ],
         )
-        self.assertIn('docker exec -i "zukunft digital-db" psql', import_call.args[0])
 
     @patch("ldm_core.handlers.base.BaseHandler.detect_project_path")
     @patch("ldm_core.handlers.base.BaseHandler.setup_paths")
