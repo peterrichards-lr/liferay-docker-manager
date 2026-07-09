@@ -2218,6 +2218,68 @@ def is_continuation_line(line_str: str) -> bool:
     return (backslash_count % 2) != 0
 
 
+class FileLock:
+    """Cross-platform non-blocking file lock."""
+
+    def __init__(self, lock_file_path):
+        self.lock_file = Path(lock_file_path)
+        self.fd = None
+
+    def acquire(self, mode="w", exclusive=True):
+        """Acquires the lock."""
+        import atexit
+
+        self.lock_file.parent.mkdir(parents=True, exist_ok=True)
+        self.fd = open(self.lock_file, mode)  # noqa: SIM115
+        try:
+            if os.name != "nt":
+                import fcntl
+
+                lock_type = fcntl.LOCK_EX if exclusive else fcntl.LOCK_SH
+                fcntl.flock(self.fd, lock_type | fcntl.LOCK_NB)
+            else:
+                import msvcrt
+
+                self.fd.seek(0)
+                lock_type = msvcrt.LK_NBLCK if exclusive else msvcrt.LK_NBND  # type: ignore[attr-defined]
+                msvcrt.locking(self.fd.fileno(), lock_type, 1)  # type: ignore[attr-defined]
+
+            atexit.register(self.release)
+        except (BlockingIOError, PermissionError, OSError):
+            if self.fd:
+                self.fd.close()
+                self.fd = None
+            raise RuntimeError(f"Could not acquire lock on file: {self.lock_file}")
+
+    def release(self):
+        """Releases the lock."""
+        if self.fd:
+            try:
+                if os.name != "nt":
+                    import fcntl
+
+                    fcntl.flock(self.fd, fcntl.LOCK_UN)
+                else:
+                    import msvcrt
+
+                    self.fd.seek(0)
+                    msvcrt.locking(self.fd.fileno(), msvcrt.LK_UNLCK, 1)  # type: ignore[attr-defined]
+            except Exception:
+                pass
+            self.fd.close()
+            self.fd = None
+            with contextlib.suppress(OSError):
+                if self.lock_file.exists():
+                    self.lock_file.unlink()
+
+    def __enter__(self):
+        self.acquire()
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.release()
+
+
 class ProjectLock:
     """Application-level concurrency lock for workspace projects."""
 
@@ -2279,3 +2341,47 @@ class ProjectLock:
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.release()
+
+
+def load_global_config_safe(config_path: Path) -> dict:
+    """Loads global JSON config file with shared/exclusive locking and validation."""
+    if not config_path.exists():
+        return {}
+
+    lock_file = config_path.with_suffix(config_path.suffix + ".lock")
+    lock = FileLock(lock_file)
+    try:
+        lock.acquire(exclusive=False)
+        content = config_path.read_text(encoding="utf-8")
+        if not content.strip():
+            return {}
+        return json.loads(content)
+    except json.JSONDecodeError as e:
+        UI.warning(
+            f"Configuration file '{config_path}' contains invalid JSON syntax:\n"
+            f"  {e.msg} at line {e.lineno}, column {e.colno}"
+        )
+        return {}
+    except Exception as e:
+        UI.warning(f"Failed to read configuration file '{config_path}': {e}")
+        return {}
+    finally:
+        lock.release()
+
+
+def save_global_config_safe(config_path: Path, data: dict) -> bool:
+    """Saves global JSON config file atomically with exclusive locking."""
+    lock_file = config_path.with_suffix(config_path.suffix + ".lock")
+    lock = FileLock(lock_file)
+    try:
+        lock.acquire(exclusive=True)
+        config_path.parent.mkdir(parents=True, exist_ok=True)
+        temp_file = config_path.with_suffix(config_path.suffix + ".tmp")
+        temp_file.write_text(json.dumps(data, indent=4), encoding="utf-8")
+        temp_file.replace(config_path)
+        return True
+    except Exception as e:
+        UI.warning(f"Failed to write configuration file '{config_path}': {e}")
+        return False
+    finally:
+        lock.release()

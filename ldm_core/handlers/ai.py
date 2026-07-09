@@ -1,4 +1,3 @@
-import json
 import sys
 
 import requests
@@ -34,11 +33,10 @@ class AiService(BaseHandler):
                 UI.die("API Key is required to proceed.")
 
             config[cfg_key] = gemini_val
-            # Save it via config service
-            from ldm_core.utils import get_actual_home
+            from ldm_core.utils import get_actual_home, save_global_config_safe
 
             config_path = get_actual_home() / ".ldmrc"
-            config_path.write_text(json.dumps(config, indent=4))
+            save_global_config_safe(config_path, config)
             UI.success("API Key saved to global config.")
         return gemini_val
 
