@@ -26,13 +26,10 @@ class ConfigService:
 
     def get_global_config(self):
         """Helper to load global LDM configuration from ~/.ldmrc."""
-        from ldm_core.utils import get_actual_home
+        from ldm_core.utils import get_actual_home, load_global_config_safe
 
         config_path = get_actual_home() / ".ldmrc"
-        if config_path.exists():
-            with contextlib.suppress(Exception):
-                return json.loads(config_path.read_text())
-        return {}
+        return load_global_config_safe(config_path)
 
     def get_ngrok_auth_token(self):
         """Retrieves the NGROK_AUTHTOKEN from env vars or global config."""
@@ -44,12 +41,12 @@ class ConfigService:
 
     def set_global_config(self, key, value):
         """Saves a key-value pair to the global config (~/.ldmrc)."""
-        from ldm_core.utils import get_actual_home
+        from ldm_core.utils import get_actual_home, save_global_config_safe
 
         config = self.get_global_config()
         config[key] = value
         config_path = get_actual_home() / ".ldmrc"
-        config_path.write_text(json.dumps(config, indent=4))
+        save_global_config_safe(config_path, config)
 
     def set_ngrok_auth_token(self, token):
         """Saves the NGROK_AUTHTOKEN to global config."""

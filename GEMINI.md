@@ -72,6 +72,12 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
 
 ## 8. Active Work State & Plan (July 9, 2026)
 
+- **Fix silent fallback and lack of locking in JSON config parser (Issue #446)**:
+  - [x] Create generic cross-platform `FileLock` utility in `ldm_core/utils.py`.
+  - [x] Create safe config loader (`load_global_config_safe`) with detailed JSON Decode exception diagnostics, and atomic saver (`save_global_config_safe`) with lock protection.
+  - [x] Refactor config operations in `ldm_core/defaults.py`, `ldm_core/handlers/config.py`, `ldm_core/handlers/ai.py`, and `ldm_core/handlers/share.py` to use safe loaders and savers.
+  - [x] Write unit tests verifying roundtrips, JSON syntax warnings, and lock acquisition failure handling.
+
 - **Harden run_command return values and check-less error boundaries (Issue #445)**:
   - [/] Catch volume hydration command failures in `_sync_volume` in `ldm_core/handlers/snapshot.py` and log warnings.
   - [/] Write unit tests in `ldm_core/tests/test_snapshot.py` asserting correct error handling when `run_command` returns `None`.
