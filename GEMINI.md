@@ -72,6 +72,11 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
 
 ## 8. Active Work State & Plan (July 9, 2026)
 
+- **Implement workspace project lock concurrency protection (Issue #448)**:
+  - [x] Add `ProjectLock` cross-platform file locking utility in `ldm_core/utils.py`.
+  - [x] Wrap `detect_project_path` in `ldm_core/handlers/base.py` to automatically validate and acquire the project lock for state-mutating commands.
+  - [x] Implement comprehensive unit tests covering successful lock acquisition, releasing, context manager access, and concurrency violations.
+
 - **Harden run_command return values and check-less error boundaries (Issue #445)**:
   - [/] Catch volume hydration command failures in `_sync_volume` in `ldm_core/handlers/snapshot.py` and log warnings.
   - [/] Write unit tests in `ldm_core/tests/test_snapshot.py` asserting correct error handling when `run_command` returns `None`.
