@@ -342,6 +342,8 @@ class SystemService(BaseHandler):
         import re
         from pathlib import Path
 
+        from ldm_core.utils import is_continuation_line
+
         file_path = Path(file_path)
         if not file_path.exists():
             return False
@@ -364,7 +366,7 @@ class SystemService(BaseHandler):
             line = lines[i]
             stripped_line = line.rstrip()
             # Check if this line ends with a backslash
-            if stripped_line.endswith("\\"):
+            if is_continuation_line(stripped_line):
                 is_broken = False
                 # Condition 1: Last line of file
                 if i + 1 >= len(lines):
