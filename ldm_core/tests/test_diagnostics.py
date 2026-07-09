@@ -1,26 +1,23 @@
-from ldm_core.diagnostics.completions import _refresh_man_symlink
-from ldm_core.diagnostics.completions import is_completion_enabled
-from ldm_core.diagnostics.upgrade import _get_manual_upgrade_cmd
-from ldm_core.diagnostics.info import _get_env_info
-from ldm_core.diagnostics.doctor import _generate_debug_bundle
-from ldm_core.diagnostics.doctor import _check_liferay_health_logs
-from ldm_core.diagnostics.doctor import _check_container_health_logs
-from ldm_core.diagnostics.doctor import validate_lcp_json
-from ldm_core.diagnostics.doctor import validate_properties_file
-from ldm_core.diagnostics.doctor import _check_docker_resources
-from ldm_core.diagnostics.doctor import _check_docker_creds
-from ldm_core.diagnostics.doctor import _check_elasticsearch_watermarks
-from ldm_core.diagnostics.doctor import _check_lcp_cli
-from ldm_core.diagnostics.doctor import _check_openssl
-from ldm_core.diagnostics.doctor import check_mkcert
-from ldm_core.diagnostics.doctor import _verify_dependency_integrity
 import json
 import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from ldm_core.constants import VERSION
-from ldm_core.diagnostics.doctor import DoctorRunner
+from ldm_core.diagnostics.doctor import (
+    DoctorRunner,
+    _check_container_health_logs,
+    _check_docker_creds,
+    _check_docker_resources,
+    _check_elasticsearch_watermarks,
+    _check_lcp_cli,
+    _check_liferay_health_logs,
+    _check_openssl,
+    _verify_dependency_integrity,
+    check_mkcert,
+    validate_lcp_json,
+    validate_properties_file,
+)
 from ldm_core.handlers.base import BaseHandler
 from ldm_core.handlers.diagnostics import DiagnosticsService
 
@@ -110,7 +107,9 @@ class TestDiagnostics(unittest.TestCase):
     def test_doctor_runner_check_openssl(self):
         with patch("ldm_core.diagnostics.doctor.run_command") as mock_run:
             mock_run.return_value = "OpenSSL 3.0.0"
-            res, ok = _check_openssl(self.manager.diagnostics, )
+            res, ok = _check_openssl(
+                self.manager.diagnostics,
+            )
             self.assertTrue(ok)
             self.assertEqual(res, "OpenSSL 3.0.0")
 
@@ -121,7 +120,9 @@ class TestDiagnostics(unittest.TestCase):
                 self.manager.cloud, "_is_cloud_authenticated", return_value=(True, "OK")
             ),
         ):
-            res, ok = _check_lcp_cli(self.manager.diagnostics, )
+            res, ok = _check_lcp_cli(
+                self.manager.diagnostics,
+            )
             self.assertTrue(ok)
             self.assertEqual(res, "Logged In")
 
@@ -253,7 +254,9 @@ class TestDiagnostics(unittest.TestCase):
             "builtins.open",
             unittest.mock.mock_open(read_data='{"credsStore": "osxkeychain"}'),
         ):
-            status, ok = _check_docker_creds(self.manager.diagnostics, )
+            status, ok = _check_docker_creds(
+                self.manager.diagnostics,
+            )
             self.assertTrue(ok)
             self.assertIn("osxkeychain", status)
 
@@ -267,7 +270,9 @@ class TestDiagnostics(unittest.TestCase):
     @patch("ldm_core.docker_service.DockerService.get_logs")
     def test_check_liferay_health_logs(self, mock_logs):
         mock_logs.return_value = "Liferay(TM) Portal 7.4 GA 100\nSTARTED in 100s"
-        status, ok = _check_liferay_health_logs(self.manager.diagnostics, "test-liferay")
+        status, ok = _check_liferay_health_logs(
+            self.manager.diagnostics, "test-liferay"
+        )
         self.assertTrue(ok)
         self.assertIn("Ready", status)
 
@@ -348,7 +353,9 @@ class TestDiagnostics(unittest.TestCase):
     def test_check_mkcert(
         self, mock_access, mock_home, mock_listdir, mock_exists, mock_run, mock_which
     ):
-        status, ok, ca_root = check_mkcert(self.manager.diagnostics, )
+        status, ok, ca_root = check_mkcert(
+            self.manager.diagnostics,
+        )
         self.assertTrue(ok)
         self.assertIn("Trusted", status)
 

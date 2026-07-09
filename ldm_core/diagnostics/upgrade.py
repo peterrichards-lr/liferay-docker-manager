@@ -5,6 +5,7 @@ import sys
 from pathlib import Path
 
 from ldm_core.constants import VERSION
+from ldm_core.diagnostics.completions import is_completion_enabled
 from ldm_core.ui import UI
 from ldm_core.utils import (
     check_for_updates,
@@ -23,11 +24,10 @@ def run_update_check(handler, force=True):
     if version_to_tuple(latest) <= version_to_tuple(VERSION):
         UI.success(f"You are up to date! (v{VERSION})")
     else:
-        print(
-            f"{UI.BYELLOW}[!] A new version is available: v{latest}{UI.COLOR_OFF}"
-        )
+        print(f"{UI.BYELLOW}[!] A new version is available: v{latest}{UI.COLOR_OFF}")
         print(f"    Current version: v{VERSION}")
         print(f"    Download: {UI.CYAN}{url}{UI.COLOR_OFF}\n")
+
 
 def _get_manual_upgrade_cmd(handler, url, exe_path):
     """Generates a platform-appropriate manual download and install command."""
@@ -40,9 +40,8 @@ def _get_manual_upgrade_cmd(handler, url, exe_path):
     except Exception:
         parent_writable = False
     prefix = "sudo " if not parent_writable else ""
-    return (
-        f'{prefix}curl -L "{url}" -o "{exe_path}" && {prefix}chmod +x "{exe_path}"'
-    )
+    return f'{prefix}curl -L "{url}" -o "{exe_path}" && {prefix}chmod +x "{exe_path}"'
+
 
 def run_upgrade(handler):
     """Self-upgrade the LDM binary to the latest version."""
@@ -80,13 +79,9 @@ def run_upgrade(handler):
     else:
         # 1. Check for updates / specific version tag
         if target_version_str:
-            latest, url = check_for_updates(
-                VERSION, force=True, tag=target_version_str
-            )
+            latest, url = check_for_updates(VERSION, force=True, tag=target_version_str)
             if not latest:
-                UI.die(
-                    f"Version '{target_version_str}' not found on GitHub Releases."
-                )
+                UI.die(f"Version '{target_version_str}' not found on GitHub Releases.")
         else:
             latest, url = check_for_updates(
                 VERSION, force=True, pre_release=pre_release
@@ -123,9 +118,7 @@ def run_upgrade(handler):
             UI.info(
                 f"You are currently on a beta build ({UI.BYELLOW}v{VERSION}{UI.COLOR_OFF})."
             )
-            UI.info(
-                f"The latest stable version is {UI.GREEN}v{latest}{UI.COLOR_OFF}."
-            )
+            UI.info(f"The latest stable version is {UI.GREEN}v{latest}{UI.COLOR_OFF}.")
             if not UI.confirm("Switch back to the stable release tier?", "N"):
                 return
 
@@ -268,9 +261,7 @@ def run_upgrade(handler):
                 temp_new.unlink()
             UI.die(f"Failed to fetch checksums (HTTP {response.status_code})")
     except Exception as e:
-        UI.warning(
-            f"Could not verify hash remotely ({e}). Proceeding with caution..."
-        )
+        UI.warning(f"Could not verify hash remotely ({e}). Proceeding with caution...")
 
     # 5. Atomic Swap
     UI.info("Applying update...")
@@ -310,9 +301,7 @@ pause
 (goto) 2>nul & del "%~f0"
 """
             bat_path.write_text(bat_content)
-            UI.success(
-                "Update staged. LDM will restart in a new window to complete."
-            )
+            UI.success("Update staged. LDM will restart in a new window to complete.")
 
             # Check if we have write access to the target directory
             try:
@@ -331,7 +320,9 @@ pause
                 UI.info(
                     "\nRequesting administrative privileges to replace the binary in system path..."
                 )
-                ps_cmd = f"Start-Process cmd -ArgumentList '/c \"{bat_path}\"' -Verb RunAs"
+                ps_cmd = (
+                    f"Start-Process cmd -ArgumentList '/c \"{bat_path}\"' -Verb RunAs"
+                )
                 subprocess.Popen(["powershell.exe", "-Command", ps_cmd])
 
             sys.exit(0)
@@ -360,7 +351,9 @@ pause
                     if platform.system() != "Windows" and not getattr(
                         handler.manager.args, "non_interactive", False
                     ):
-                        cmd = f'sudo cp "{temp_new}" "{exe_path}" && sudo rm "{temp_new}"'
+                        cmd = (
+                            f'sudo cp "{temp_new}" "{exe_path}" && sudo rm "{temp_new}"'
+                        )
                         ret = os.system(cmd)  # nosec B605
                         if ret != 0:
                             raise subprocess.CalledProcessError(ret, cmd)
@@ -374,9 +367,7 @@ pause
                             [*sudo_prefix, "cp", str(temp_new), str(exe_path)],
                             check=True,
                         )
-                        subprocess.run(
-                            [*sudo_prefix, "rm", str(temp_new)], check=True
-                        )
+                        subprocess.run([*sudo_prefix, "rm", str(temp_new)], check=True)
 
                     UI.success(f"Successfully upgraded to v{latest}!")
                 except Exception as e:
@@ -407,4 +398,3 @@ pause
         print(f"\n    {UI.CYAN}ldm completion{UI.COLOR_OFF}\n")
     else:
         UI.success("Shell completion is active.")
-

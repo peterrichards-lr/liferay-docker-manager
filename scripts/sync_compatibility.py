@@ -385,7 +385,7 @@ def sync_reports():
     for meta in sorted(table_metas, key=lambda x: (x["arch"], x["os"], x["provider"])):
         badge = get_badge(meta["provider"], meta["os"])
         icon = "✅" if meta["passed"] else "❌"
-        report_link = f"[{meta['report_path'].name}](../references/verification-results/{meta['report_path'].name})"
+        report_link = f"[{meta['report_path'].name}](../../references/verification-results/{meta['report_path'].name})"
 
         provider_display = f"**{meta['provider']}**"
         if meta["provider_v"]:

@@ -64,9 +64,7 @@ def run_info(handler, project_id=None):
     default_shared = (
         "true" if handler.manager.defaults.get("search_mode") == "shared" else "false"
     )
-    use_shared = (
-        str(meta.get("use_shared_search", default_shared)).lower() == "true"
-    )
+    use_shared = str(meta.get("use_shared_search", default_shared)).lower() == "true"
     if not use_shared and handler.manager.parse_version(meta.get("tag", "")) >= (
         2025,
         2,
@@ -141,9 +139,7 @@ def run_info(handler, project_id=None):
                         public_url = url
                         break
                 if not public_url:
-                    public_url = (
-                        f"https://{share_subdomain}-{ext_id}.{share_domain}"
-                    )
+                    public_url = f"https://{share_subdomain}-{ext_id}.{share_domain}"
                 urls_str = f"{local_url} | {public_url}"
 
             UI.raw(
@@ -195,6 +191,7 @@ def run_info(handler, project_id=None):
         except Exception:
             pass
     UI.raw("")
+
 
 def run_status(handler, project_id=None, all_projects=False, detailed=False):
     """Displays a summary of active global services and projects."""
@@ -272,9 +269,7 @@ def run_status(handler, project_id=None, all_projects=False, detailed=False):
         if "healthy" in status_lower:
             return f"{UI.GREEN}●{UI.COLOR_OFF} {UI.GREEN}{status_str}{UI.COLOR_OFF}"
         if "starting" in status_lower or "health:" in status_lower:
-            return (
-                f"{UI.YELLOW}●{UI.COLOR_OFF} {UI.YELLOW}{status_str}{UI.COLOR_OFF}"
-            )
+            return f"{UI.YELLOW}●{UI.COLOR_OFF} {UI.YELLOW}{status_str}{UI.COLOR_OFF}"
         if "up" in status_lower:
             return f"{UI.GREEN}●{UI.COLOR_OFF} {UI.GREEN}{status_str}{UI.COLOR_OFF}"
         if "exited" in status_lower:
@@ -346,9 +341,7 @@ def run_status(handler, project_id=None, all_projects=False, detailed=False):
                         # Derive service name
                         svc = (
                             c_service
-                            or c_names.replace(f"{safe_name}-", "").rsplit("-", 1)[
-                                0
-                            ]
+                            or c_names.replace(f"{safe_name}-", "").rsplit("-", 1)[0]
                         )
                         if not svc or svc == c_names:
                             svc = c_names
@@ -413,9 +406,7 @@ def run_status(handler, project_id=None, all_projects=False, detailed=False):
                 "status=running",
             ]
             running_containers = run_command(cmd, check=False)
-            project_running = bool(
-                running_containers and running_containers.strip()
-            )
+            project_running = bool(running_containers and running_containers.strip())
 
             host = meta.get("host_name", "localhost")
             ssl = str(meta.get("ssl")).lower() == "true"
@@ -473,6 +464,7 @@ def run_status(handler, project_id=None, all_projects=False, detailed=False):
                 sys.exit(1)
             sys.exit(0)
 
+
 def _get_env_info(self):
     """Extracts architecture, OS, and Docker provider information."""
     arch = "Unknown"
@@ -481,9 +473,7 @@ def _get_env_info(self):
 
     # 1. Architecture & OS
     try:
-        platform_str = (
-            f"{platform.system()}-{platform.release()}-{platform.machine()}"
-        )
+        platform_str = f"{platform.system()}-{platform.release()}-{platform.machine()}"
         p_low = platform_str.lower()
         is_mac = "mac" in p_low or "darwin" in p_low
 
@@ -523,15 +513,11 @@ def _get_env_info(self):
         elif "fedora" in p_low:
             # Capture major version if possible
             fedora_match = re.search(r"fc(\d+)", p_low)
-            host_os = (
-                f"Fedora {fedora_match.group(1) if fedora_match else ''}".strip()
-            )
+            host_os = f"Fedora {fedora_match.group(1) if fedora_match else ''}".strip()
             arch = "Linux Workstation"
         elif "ubuntu" in p_low:
             ubuntu_match = re.search(r"(\d+\.\d+)", p_low)
-            host_os = (
-                f"Ubuntu {ubuntu_match.group(1) if ubuntu_match else ''}".strip()
-            )
+            host_os = f"Ubuntu {ubuntu_match.group(1) if ubuntu_match else ''}".strip()
             arch = "Linux Node" if "server" in p_low else "Linux Workstation"
         elif "linux" in p_low:
             host_os = "Linux"
@@ -543,17 +529,13 @@ def _get_env_info(self):
                     with open("/etc/os-release") as f:
                         os_release = f.read().lower()
 
-                        distro_id = re.search(
-                            r"^id=([^\n]+)", os_release, re.MULTILINE
-                        )
+                        distro_id = re.search(r"^id=([^\n]+)", os_release, re.MULTILINE)
                         version_id = re.search(
                             r"^version_id=([^\n]+)", os_release, re.MULTILINE
                         )
 
                         d_id = distro_id.group(1).strip("\"'") if distro_id else ""
-                        v_id = (
-                            version_id.group(1).strip("\"'") if version_id else ""
-                        )
+                        v_id = version_id.group(1).strip("\"'") if version_id else ""
 
                         if d_id == "ubuntu":
                             host_os = f"Ubuntu {v_id}".strip()
@@ -576,9 +558,7 @@ def _get_env_info(self):
             )
             if inspect:
                 data = json.loads(inspect)[0]
-                endpoint = (
-                    data.get("Endpoints", {}).get("docker", {}).get("Host", "")
-                )
+                endpoint = data.get("Endpoints", {}).get("docker", {}).get("Host", "")
                 if endpoint:
                     if ".colima" in endpoint:
                         provider = "Colima"
@@ -667,7 +647,7 @@ def _get_env_info(self):
                         # Store this in a way doctor can use
                         if not is_explicitly_writable and mount_type == "sshfs":
                             # We'll use this to trigger a warning even if the write test hasn't run yet
-                            handler._colima_mount_not_writable = True
+                            self._colima_mount_not_writable = True
             except Exception:
                 pass
 
@@ -675,6 +655,7 @@ def _get_env_info(self):
         pass
 
     return arch, host_os, provider, mount_type
+
 
 def run_list(handler):
     UI.heading("LDM Sandbox Projects")
@@ -772,4 +753,3 @@ def run_list(handler):
 
         print(f"    {UI.BYELLOW}Path:{UI.COLOR_OFF} {path}")
         print(f"    {UI.BYELLOW}Last Seen:{UI.COLOR_OFF} {last_seen_str}\n")
-

@@ -42,10 +42,13 @@ def sync_table():
 
         content = target.read_text()
 
-        # We find the OUTERMOST markers in the target and replace the whole block
-        # including markers to ensure we clean up any nesting.
+        # Adjust relative paths based on target directory depth
+        target_inner = inner_content
+        if target.parent == script_dir / "docs":
+            target_inner = target_inner.replace("../../references/", "../references/")
+
         new_replacement = (
-            f"<!-- COMPATIBILITY_START -->\n{inner_content}\n<!-- COMPATIBILITY_END -->"
+            f"<!-- COMPATIBILITY_START -->\n{target_inner}\n<!-- COMPATIBILITY_END -->"
         )
 
         if "<!-- COMPATIBILITY_START -->" in content:

@@ -51,6 +51,7 @@ def is_completion_enabled(self):
 
     return False
 
+
 def _refresh_man_symlink(self):
     """Ensures a stable symlink for the man page exists in ~/.ldm/man/man1/."""
     if platform.system().lower() == "windows":
@@ -73,6 +74,7 @@ def _refresh_man_symlink(self):
     except Exception:
         # Silent fail for symlink refresh
         pass
+
 
 def run_completion(handler, target_shell=None):
     """Displays instructions or outputs shellcode for enabling completion."""
@@ -132,9 +134,7 @@ def run_completion(handler, target_shell=None):
                     "        [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_)"
                 )
                 print("    }")
-                print(
-                    "    Remove-Item Env:COMP_LINE, Env:COMP_POINT, Env:_ARGCOMPLETE"
-                )
+                print("    Remove-Item Env:COMP_LINE, Env:COMP_POINT, Env:_ARGCOMPLETE")
                 print("}")
                 print(
                     "Register-ArgumentCompleter -Native -CommandName ldm -ScriptBlock $scriptblock"
@@ -180,6 +180,7 @@ def run_completion(handler, target_shell=None):
     )
     print("for the changes to take effect.")
 
+
 def run_man(handler):
     """Displays the ldm manual page."""
     _refresh_man_symlink(handler)
@@ -221,6 +222,7 @@ def run_man(handler):
     except Exception as e:
         UI.error(f"Failed to display manual: {e}")
         UI.info(f"You can view the raw manual file at: {man_path}")
+
 
 def run_setup_completion(handler, target_shell=None):
     """Automates the setup of autocomplete for the detected or specified shell."""
@@ -309,10 +311,7 @@ def run_setup_completion(handler, target_shell=None):
                 )
             else:
                 profile_path = (
-                    home
-                    / ".config"
-                    / "powershell"
-                    / "Microsoft.PowerShell_profile.ps1"
+                    home / ".config" / "powershell" / "Microsoft.PowerShell_profile.ps1"
                 )
 
     if not profile_path:
@@ -334,9 +333,7 @@ def run_setup_completion(handler, target_shell=None):
     elif shell == "fish":
         inner_code = "    ldm completion fish | source"
     elif shell == "powershell":
-        inner_code = (
-            "    ldm completion powershell | Out-String | Invoke-Expression"
-        )
+        inner_code = "    ldm completion powershell | Out-String | Invoke-Expression"
 
     block_content = f"{start_marker}\n{inner_code}\n{end_marker}"
 
@@ -374,4 +371,3 @@ def run_setup_completion(handler, target_shell=None):
 
     except Exception as e:
         UI.die(f"Failed to setup completion in {profile_path}: {e}")
-

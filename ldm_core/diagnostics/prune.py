@@ -13,6 +13,7 @@ def run_clear_cache(handler):
     """Deprecated: Use ldm cache instead."""
     handler.cmd_cache(target="tags")
 
+
 def run_cache(handler, target="all"):
     """Manages LDM internal caches (tags, projects)."""
     UI.heading("LDM Cache Management")
@@ -48,6 +49,7 @@ def run_cache(handler, target="all"):
         UI.info("No caches found to clear.")
     else:
         UI.success(f"Successfully cleared: {', '.join(cleared)}")
+
 
 def run_prune(handler):
     UI.heading("LDM Global Maintenance - Pruning Orphaned Resources")
@@ -156,9 +158,7 @@ def run_prune(handler):
                         orphaned_snaps.append(s_name)
 
                 if orphaned_snaps:
-                    UI.info(
-                        f"Found {len(orphaned_snaps)} orphaned search snapshots."
-                    )
+                    UI.info(f"Found {len(orphaned_snaps)} orphaned search snapshots.")
                     if UI.INFO_MODE or UI.VERBOSE:
                         for s in orphaned_snaps:
                             print(f"  - {s}")
@@ -322,11 +322,8 @@ def run_prune(handler):
             )
         elif prune_all or (
             not handler.manager.non_interactive
-            and UI.confirm(
-                "Remove ALL LDM-managed entries from your hosts file?", "N"
-            )
+            and UI.confirm("Remove ALL LDM-managed entries from your hosts file?", "N")
         ):
             handler.manager._remove_hosts_entries(all_ldm=True)
 
     UI.info("Prune complete.")
-

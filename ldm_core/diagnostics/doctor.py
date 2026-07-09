@@ -12,9 +12,9 @@ from pathlib import Path
 from typing import Any
 
 from ldm_core.constants import BUILD_INFO, SCRIPT_DIR, VERSION
-from ldm_core.ui import UI
-from ldm_core.diagnostics.info import _get_env_info
 from ldm_core.diagnostics.completions import is_completion_enabled
+from ldm_core.diagnostics.info import _get_env_info
+from ldm_core.ui import UI
 from ldm_core.utils import (
     check_for_updates,
     get_actual_home,
@@ -53,8 +53,8 @@ class DoctorRunner:
         self.hints.append({"text": text, "doc": doc})
 
     def run(self):
-        self.arch, self.host_os, self.provider, self.mount_type = (
-            _get_env_info(self.handler)
+        self.arch, self.host_os, self.provider, self.mount_type = _get_env_info(
+            self.handler
         )
 
         if getattr(self.args, "slug", False):
@@ -764,8 +764,8 @@ class DoctorRunner:
                             ("Global Config", f"Baseline (v{VERSION})", True)
                         )
                     else:
-                        prop_status, prop_ok, prop_details = (
-                            validate_properties_file(self.handler, pe_file)
+                        prop_status, prop_ok, prop_details = validate_properties_file(
+                            self.handler, pe_file
                         )
                         if prop_ok is True:
                             self.results.append(
@@ -972,10 +972,8 @@ class DoctorRunner:
                                 )
                             else:
                                 # 2. Disk Watermark / Blocked Indices Check
-                                watermark_status = (
-                                    _check_elasticsearch_watermarks(self.handler, 
-                                        self.add_hint
-                                    )
+                                watermark_status = _check_elasticsearch_watermarks(
+                                    self.handler, self.add_hint
                                 )
                                 if watermark_status:
                                     status = watermark_status
@@ -983,8 +981,8 @@ class DoctorRunner:
                         except Exception:
                             pass
 
-                    log_status, log_ok = _check_container_health_logs(self.handler, 
-                        container, add_hint=self.add_hint
+                    log_status, log_ok = _check_container_health_logs(
+                        self.handler, container, add_hint=self.add_hint
                     )
                     if log_status:
                         status = log_status
@@ -1098,8 +1096,8 @@ class DoctorRunner:
 
             pe_file = p_path / "files" / "portal-ext.properties"
             if pe_file.exists():
-                prop_status, prop_ok, prop_details = (
-                    validate_properties_file(self.handler, pe_file)
+                prop_status, prop_ok, prop_details = validate_properties_file(
+                    self.handler, pe_file
                 )
                 self.results.append(
                     (f"[{p_path.name}] Properties", prop_status, prop_ok)
@@ -1139,8 +1137,8 @@ class DoctorRunner:
                     break
 
             if liferay_container:
-                log_status, log_ok = _check_liferay_health_logs(self.handler, 
-                    liferay_container
+                log_status, log_ok = _check_liferay_health_logs(
+                    self.handler, liferay_container
                 )
                 self.results.append(
                     (f"[{p_path.name}] Liferay Logs", log_status, log_ok)
@@ -1225,8 +1223,8 @@ class DoctorRunner:
                 # Avoid validating LCP.json in the project root if it's not a service
                 # (Standard Liferay Cloud workspaces have a root LCP.json)
                 rel_path = lcp_file.relative_to(p_path)
-                lcp_status, lcp_ok, lcp_errors = validate_lcp_json(self.handler, 
-                    lcp_file
+                lcp_status, lcp_ok, lcp_errors = validate_lcp_json(
+                    self.handler, lcp_file
                 )
                 self.results.append(
                     ("Extension Config", f"{lcp_status} ({rel_path})", lcp_ok)
