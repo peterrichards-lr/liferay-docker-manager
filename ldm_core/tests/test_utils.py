@@ -677,3 +677,63 @@ def test_resolve_infrastructure_mode_defaults():
         resolve_infrastructure_mode("search_mode", {"ldm_version": "2.13.0"}, defaults)
         == "sidecar"
     )
+
+
+class TestDownloadFile(unittest.TestCase):
+    def setUp(self):
+        import tempfile
+
+        self.temp_dir = tempfile.mkdtemp()
+        self.dest_path = Path(self.temp_dir) / "downloaded.bin"
+
+    def tearDown(self):
+        import shutil
+
+        shutil.rmtree(self.temp_dir)
+
+    @patch("requests.get")
+    def test_download_file_success(self, mock_get):
+        """Verify download_file succeeds and cleans up tmp files on success."""
+        from ldm_core.utils import download_file
+
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.iter_content.return_value = [b"chunk1", b"chunk2"]
+        mock_get.return_value = mock_resp
+
+        success = download_file("https://example.com/file", self.dest_path)
+        self.assertTrue(success)
+        self.assertTrue(self.dest_path.exists())
+        self.assertEqual(self.dest_path.read_bytes(), b"chunk1chunk2")
+        self.assertFalse(self.dest_path.with_suffix(".download_tmp").exists())
+
+    @patch("requests.get")
+    def test_download_file_failure_unlinked(self, mock_get):
+        """Verify download_file deletes temporary files if the download fails/crashes."""
+        from ldm_core.utils import download_file
+
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+
+        # Iterator raises an exception halfway through
+        def mock_iter_content(chunk_size=8192):
+            yield b"partial_data"
+            raise RuntimeError("Network disconnected")
+
+        mock_resp.iter_content = mock_iter_content
+        mock_get.return_value = mock_resp
+
+        with patch("ldm_core.ui.UI.error") as mock_err:
+            success = download_file("https://example.com/file", self.dest_path)
+            self.assertFalse(success)
+            self.assertFalse(self.dest_path.exists())
+            self.assertFalse(self.dest_path.with_suffix(".download_tmp").exists())
+            mock_err.assert_called()
+
+    def test_download_file_invalid_scheme(self):
+        """Verify invalid URL scheme fails immediately."""
+        from ldm_core.utils import download_file
+
+        success = download_file("http://unsafe-url.com/file", self.dest_path)
+        self.assertFalse(success)
+        self.assertFalse(self.dest_path.exists())

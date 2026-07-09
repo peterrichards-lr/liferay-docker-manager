@@ -210,7 +210,9 @@ def get_lcp_environment_variables(workspace_path, environment_id):
 
 
 def download_file(url, destination):
-    """Downloads a file from a URL to a destination path."""
+    """Downloads a file securely from a URL to a destination path using atomic replacement."""
+    destination = Path(destination)
+    temp_dest = destination.with_suffix(".download_tmp")
     try:
         if not url.startswith("https://"):
             raise ValueError(f"Invalid URL scheme: {url}")
@@ -221,11 +223,20 @@ def download_file(url, destination):
 
         response.raise_for_status()
         with Benchmarker.measure_download():
-            with open(destination, "wb") as f:
+            temp_dest.parent.mkdir(parents=True, exist_ok=True)
+            with open(temp_dest, "wb") as f:
                 for chunk in response.iter_content(chunk_size=8192):
                     f.write(chunk)
+
+        # Atomic replacement ensures partial/corrupted files are never left in the final path
+        temp_dest.replace(destination)
         return True
     except Exception as e:
+        if temp_dest.exists():
+            try:
+                temp_dest.unlink()
+            except OSError:
+                pass
         UI.error(f"Download failed: {e}")
         return False
 

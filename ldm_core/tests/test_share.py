@@ -85,8 +85,7 @@ class TestShareService(unittest.TestCase):
         self.assertIsNone(self.service._get_installed_version(mock_bin))
 
     @patch("ldm_core.handlers.share.get_actual_home")
-    @patch("urllib.request.urlopen")
-    @patch("ssl._create_unverified_context")
+    @patch("ldm_core.handlers.share.download_file")
     @patch("subprocess.run")
     @patch("platform.system")
     @patch("platform.machine")
@@ -95,8 +94,7 @@ class TestShareService(unittest.TestCase):
         mock_machine,
         mock_system,
         mock_run,
-        mock_ssl,
-        mock_urlopen,
+        mock_download,
         mock_home,
     ):
         mock_home.return_value = Path("/fake/home")
@@ -107,6 +105,7 @@ class TestShareService(unittest.TestCase):
         mock_ver_res = MagicMock()
         mock_ver_res.stdout = "v1.3.0"
         mock_run.return_value = mock_ver_res
+        mock_download.return_value = True
 
         # We need _get_installed_version to return None first, then "1.3.0"
         with patch.object(
@@ -115,22 +114,25 @@ class TestShareService(unittest.TestCase):
             side_effect=[None, "1.3.0"],
         ) as mock_get_ver:
             # Mock file operations inside open()
-            with patch("builtins.open", unittest.mock.mock_open()) as mock_file:
-                with patch("pathlib.Path.chmod") as mock_chmod:
-                    with patch("pathlib.Path.mkdir") as mock_mkdir:
-                        with patch("pathlib.Path.stat") as mock_stat:
-                            mock_stat.return_value.st_mode = 0o100644
-                            bin_path = self.service._ensure_binary()
+            with patch("pathlib.Path.chmod") as mock_chmod:
+                with patch("pathlib.Path.mkdir") as mock_mkdir:
+                    with patch("pathlib.Path.stat") as mock_stat:
+                        mock_stat.return_value.st_mode = 0o100644
+                        bin_path = self.service._ensure_binary()
 
-                        self.assertEqual(
-                            bin_path,
-                            Path("/fake/home/.ldm/bin/lfr-tunnel"),
-                        )
-                        # Should request the correct Go binary for darwin-arm64
-                        mock_urlopen.assert_called_once()
-                        req_url = mock_urlopen.call_args[0][0]
-                        self.assertIn("lfr-tunnel-darwin-arm64", req_url)
-                        mock_chmod.assert_called_once()
+                    self.assertEqual(
+                        bin_path,
+                        Path("/fake/home/.ldm/bin/lfr-tunnel"),
+                    )
+                    # Should request the correct Go binary for darwin-arm64
+                    mock_download.assert_called_once()
+                    req_url = mock_download.call_args[0][0]
+                    self.assertIn("lfr-tunnel-darwin-arm64", req_url)
+                    self.assertEqual(
+                        mock_download.call_args[0][1],
+                        Path("/fake/home/.ldm/bin/lfr-tunnel"),
+                    )
+                    mock_chmod.assert_called_once()
 
     @patch("subprocess.run")
     @patch("ldm_core.handlers.share.UI")
