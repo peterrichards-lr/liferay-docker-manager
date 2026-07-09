@@ -23,13 +23,12 @@ class TestE2EWorkspace(unittest.TestCase):
         # 1. Release type (any|u|lts|qr) or prefix [lts]: (default)
         # 2. Enter Liferay Tag [latest_lts]: (default)
         # 3. Enter a project name to import to [ldm_e2e_init_from_test]: (default)
-        test_input = "\n\n\n\n\n\n\n\n"
 
         # Provide enough inputs to satisfy the prompts.
         # Note: We must pass --no-up or use LDM_WORKSPACE to prevent it actually
         # downloading Liferay and starting the container, which would stall the test.
         # But we really just want to test the interactive prompts.
-        ldm_executable = Path(__file__).parent.parent.parent / "ldm"
+        Path(__file__).parent.parent.parent / "ldm"
 
         # We append --no-captcha to bypass the captcha check,
         # and we set an environment variable to mock `cmd_run` or we just let it run but fail gracefully

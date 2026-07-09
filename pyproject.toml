@@ -89,14 +89,12 @@ ignore = [
     "SIM117",  # Use single with statement
     "SIM102",  # Use single if statement
     "PLW2901", # for loop variable overwritten
-    "PLW1510", # subprocess.run without check
     "PLE2513", # Invalid unescaped character ESC
     "SIM108",  # Use ternary operator
     "PTH208",  # Path.iterdir()
     "PTH121",  # Path.samefile()
     "B018",    # Useless expression
     "PLC0206", # Extracting value without items()
-    "F841",    # Unused variable
     "RUF059",  # Unused unpacked variable
 ]
 

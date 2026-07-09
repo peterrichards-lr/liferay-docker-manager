@@ -492,7 +492,7 @@ class TestDiagnostics(unittest.TestCase):
         from contextlib import redirect_stdout
 
         f = io.StringIO()
-        with redirect_stdout(f), patch("sys.exit") as mock_exit:
+        with redirect_stdout(f), patch("sys.exit"):
             runner._check_dangling_and_print()
             output = f.getvalue()
             self.assertIn("System (Python, Executable, Venv)", output)
@@ -519,7 +519,7 @@ class TestDiagnostics(unittest.TestCase):
         from contextlib import redirect_stdout
 
         f = io.StringIO()
-        with redirect_stdout(f), patch("sys.exit") as mock_exit:
+        with redirect_stdout(f), patch("sys.exit"):
             runner._check_dangling_and_print()
             output = f.getvalue()
             self.assertIn("Python Version", output)

@@ -161,8 +161,8 @@ class TestRuntime(unittest.TestCase):
             with patch("time.time", side_effect=mock_time), patch("time.sleep"):
                 with (
                     patch("requests.get") as mock_get,
-                    patch("subprocess.run") as mock_run_subp,
-                    patch("subprocess.Popen") as mock_popen,
+                    patch("subprocess.run"),
+                    patch("subprocess.Popen"),
                 ):
                     mock_get.return_value.status_code = 200
 
@@ -1329,7 +1329,7 @@ class TestRuntime(unittest.TestCase):
                 patch.object(self.handler, "setup_paths", return_value=all_paths),
                 patch.object(self.handler, "read_meta") as mock_read,
                 patch.object(self.handler, "_ensure_seeded", return_value=False),
-                patch.object(self.handler, "write_meta") as mock_write,
+                patch.object(self.handler, "write_meta"),
                 patch.object(self.handler, "verify_runtime_environment"),
                 patch.object(self.handler, "run_command"),
                 patch.object(self.handler.handler, "sync_stack"),
@@ -1363,7 +1363,7 @@ class TestRuntime(unittest.TestCase):
                 patch.object(self.handler, "setup_paths", return_value=all_paths),
                 patch.object(self.handler, "read_meta") as mock_read,
                 patch.object(self.handler, "_ensure_seeded", return_value=False),
-                patch.object(self.handler, "write_meta") as mock_write,
+                patch.object(self.handler, "write_meta"),
                 patch.object(self.handler, "verify_runtime_environment"),
                 patch.object(self.handler, "run_command"),
                 patch.object(self.handler.handler, "sync_stack"),
@@ -1704,9 +1704,7 @@ services:
                 return_value=mock_targets,
             ),
             patch.object(DockerService, "exec") as mock_exec,
-            patch.object(
-                self.handler, "run_command", return_value="10%"
-            ) as mock_run_cmd,
+            patch.object(self.handler, "run_command", return_value="10%"),
             patch("ldm_core.ui.UI.die") as mock_die,
         ):
             mock_exec.side_effect = [
@@ -1742,9 +1740,7 @@ services:
         with (
             patch.object(self.handler.handler, "_wait_for_ready", return_value=True),
             patch.object(DockerService, "exec") as mock_exec,
-            patch.object(
-                self.handler, "run_command", return_value="10%"
-            ) as mock_run_cmd,
+            patch.object(self.handler, "run_command", return_value="10%"),
             patch("ldm_core.ui.UI.die") as mock_die,
             patch("ldm_core.ui.UI.warning") as mock_warning,
         ):

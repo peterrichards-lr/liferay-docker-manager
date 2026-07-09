@@ -34,7 +34,7 @@ def mock_manager():
 
 def test_mcp_service_init(mock_manager):
     mcp_module._manager = None
-    service = McpService(mock_manager)
+    McpService(mock_manager)
     assert mcp_module._manager == mock_manager
 
 

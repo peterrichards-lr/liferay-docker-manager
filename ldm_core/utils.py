@@ -672,7 +672,7 @@ def atomic_copy(src, dst):
                 # Since it's on the same filesystem, this is atomic.
                 os.replace(tmp_dst, dst_path)
                 return
-            except (OSError, PermissionError) as e:
+            except (OSError, PermissionError):
                 if i == max_retries - 1:
                     # Final attempt: direct copy if rename is blocked (e.g. cross-device)
                     # Note: This loses atomicity but ensures the file is delivered
@@ -893,13 +893,11 @@ def resolve_liferay_docker_tag(tag, manager=None):
     url = "https://releases.liferay.com/releases.json"
     online_resolved_tag = None
     is_portal = False
-    online_success = False
 
     try:
         response = requests.get(url, headers={"User-Agent": "LDM-CLI"}, timeout=5)
         if response.status_code == 200:
             data = response.json()
-            online_success = True
             for entry in data:
                 entry_url = entry.get("url", "")
                 entry_tag = entry_url.split("/")[-1] if entry_url else ""
@@ -1395,7 +1393,7 @@ def find_dxp_roots(search_dir=None):
     return sorted(roots, key=lambda x: x["path"])
 
 
-def safe_extract(archive, target_path):
+def safe_extract(archive, target_path, members=None):
     """Safely extracts a Zip or Tar archive to a target path, preventing directory traversal."""
     target_path = Path(target_path).resolve()
     is_dry_run = os.environ.get("LDM_DRY_RUN", "").lower() == "true"
@@ -1406,38 +1404,41 @@ def safe_extract(archive, target_path):
         return
 
     if hasattr(archive, "namelist"):  # ZipFile
-        members = []
-        for info in archive.infolist():
+        safe_members = []
+        archive_members = members if members is not None else archive.infolist()
+        for info in archive_members:
+            filename = info if isinstance(info, str) else info.filename
             # Check if ZipFile member is a symlink
-            is_link = (info.external_attr >> 16) & 0o170000 == 0o120000
+            is_link = False
+            if not isinstance(info, str):
+                is_link = (info.external_attr >> 16) & 0o170000 == 0o120000
             link_target = None
             if is_link:
                 try:
                     link_target = (
-                        archive.read(info.filename)
-                        .decode("utf-8", errors="ignore")
-                        .strip()
+                        archive.read(filename).decode("utf-8", errors="ignore").strip()
                     )
                 except Exception:
                     pass
 
-            if not is_safe_path(target_path, info.filename, is_link, link_target):
+            if not is_safe_path(target_path, filename, is_link, link_target):
                 raise ValueError(
-                    f"Security Block: Traversal detected in member {info.filename}"
+                    f"Security Block: Traversal detected in member {filename}"
                 )
-            members.append(info.filename)
-        archive.extractall(target_path, members=members)
+            safe_members.append(filename)
+        archive.extractall(target_path, members=safe_members)
 
     elif hasattr(archive, "getmembers"):  # TarFile
-        members = []
-        for member in archive.getmembers():
+        safe_members = []
+        archive_members = members if members is not None else archive.getmembers()
+        for member in archive_members:
             is_link = member.issym() or member.islnk()
             if not is_safe_path(target_path, member.name, is_link, member.linkname):
                 raise ValueError(
                     f"Security Block: Traversal detected in member {member.name}"
                 )
-            members.append(member)
-        archive.extractall(target_path, members=members)
+            safe_members.append(member)
+        archive.extractall(target_path, members=safe_members)
 
 
 def get_compose_cmd():
@@ -2313,6 +2314,9 @@ class FileLock:
 
     def release(self):
         """Releases the lock."""
+        import atexit
+
+        atexit.unregister(self.release)
         if self.fd:
             try:
                 if os.name != "nt":
@@ -2376,6 +2380,9 @@ class ProjectLock:
 
     def release(self):
         """Releases the lock and deletes the lock file."""
+        import atexit
+
+        atexit.unregister(self.release)
         if self.fd:
             try:
                 if os.name != "nt":

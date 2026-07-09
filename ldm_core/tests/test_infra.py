@@ -68,7 +68,7 @@ class TestInfraService(unittest.TestCase):
                 "find_available_port",
                 side_effect=lambda _, port, exclude=None: port + 10,  # noqa: ARG005
             ),
-            patch.object(self.manager, "run_command") as mock_run,
+            patch.object(self.manager, "run_command"),
         ):
             ssl_port = self.infra.setup_infrastructure(
                 "127.0.0.1", 443, use_ssl=True, quiet=True
@@ -80,15 +80,13 @@ class TestInfraService(unittest.TestCase):
             self.assertTrue(any("HTTPS" in msg and "453" in msg for msg in warn_msgs))
 
     def test_get_proxy_ports_not_running(self):
-        with patch.object(self.manager, "run_command", return_value="") as mock_run:
+        with patch.object(self.manager, "run_command", return_value=""):
             ports = self.infra.get_proxy_ports()
             self.assertEqual(ports, {"http": 80, "https": 443, "admin": 18080})
 
     def test_get_proxy_ports_running(self):
         mock_inspect_json = '{"80/tcp": [{"HostIp": "0.0.0.0", "HostPort": "8080"}], "443/tcp": [{"HostIp": "0.0.0.0", "HostPort": "8443"}], "8080/tcp": [{"HostIp": "0.0.0.0", "HostPort": "18081"}]}'
-        with patch.object(
-            self.manager, "run_command", return_value=mock_inspect_json
-        ) as mock_run:
+        with patch.object(self.manager, "run_command", return_value=mock_inspect_json):
             ports = self.infra.get_proxy_ports()
             self.assertEqual(ports, {"http": 8080, "https": 8443, "admin": 18081})
 

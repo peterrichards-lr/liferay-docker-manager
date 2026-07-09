@@ -112,10 +112,10 @@ class TestShareService(unittest.TestCase):
             self.service,
             "_get_installed_version",
             side_effect=[None, "1.3.0"],
-        ) as mock_get_ver:
+        ):
             # Mock file operations inside open()
             with patch("pathlib.Path.chmod") as mock_chmod:
-                with patch("pathlib.Path.mkdir") as mock_mkdir:
+                with patch("pathlib.Path.mkdir"):
                     with patch("pathlib.Path.stat") as mock_stat:
                         mock_stat.return_value.st_mode = 0o100644
                         bin_path = self.service._ensure_binary()
@@ -1020,6 +1020,7 @@ class TestShareService(unittest.TestCase):
                 capture_output=True,
                 text=True,
                 timeout=3,
+                check=False,
             )
 
     @patch.dict(os.environ, {"LDM_LFR_TUNNEL_BIN": "/env/bin/lfr-tunnel"})

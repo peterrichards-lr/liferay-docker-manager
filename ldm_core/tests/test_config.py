@@ -647,7 +647,6 @@ class TestConfigService(unittest.TestCase):
 
             self.manager.update_portal_ext = self.config.update_portal_ext  # type: ignore[method-assign]
 
-            seed_pe_content = "default.admin.password=seed_val\n"
             global_pe_content = "default.admin.password=global_val\n"
             local_pe_content = "default.admin.password=local_val\n"
 

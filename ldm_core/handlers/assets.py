@@ -6,7 +6,7 @@ import time
 import requests
 
 from ldm_core.ui import UI
-from ldm_core.utils import get_actual_home
+from ldm_core.utils import get_actual_home, safe_extract
 
 # Reference for reliable mocking in tests
 exists_fn = os.path.exists
@@ -249,7 +249,7 @@ class AssetService:
 
             # Step 1: Extract the outer .ldmp package
             with tarfile.open(temp_zip, "r:gz") as tar_ref:
-                tar_ref.extractall(extract_temp)  # nosec B202
+                safe_extract(tar_ref, extract_temp)
 
             files_tar = extract_temp / "files.tar.gz"
             if not files_tar.exists():
@@ -257,7 +257,7 @@ class AssetService:
 
             # Step 2: Extract the inner volume assets directly to destination
             with tarfile.open(files_tar, "r:gz") as inner_tar:
-                inner_tar.extractall(destination)  # nosec B202
+                safe_extract(inner_tar, destination)
 
             shutil.rmtree(extract_temp)
 

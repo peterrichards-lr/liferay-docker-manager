@@ -304,7 +304,7 @@ class TestComposerService(unittest.TestCase):
 
         with patch.dict(os.environ, {"LFT_SERVER_URL": "https://tunnel.lfr-demo.se"}):
             with patch("ldm_core.handlers.composer.dict_to_yaml") as mock_yaml:
-                with patch("ldm_core.utils.safe_write_text") as mock_write:
+                with patch("ldm_core.utils.safe_write_text"):
                     with (
                         patch.object(
                             self.composer,

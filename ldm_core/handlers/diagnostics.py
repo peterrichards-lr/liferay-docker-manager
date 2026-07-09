@@ -474,7 +474,7 @@ class DoctorRunner:
                 # This catches the 'VOLUME MOUNT IS READ-ONLY' issue seen in Colima/WSL
                 from ldm_core.utils import get_actual_home
 
-                rel_path = test_path.relative_to(get_actual_home())
+                test_path.relative_to(get_actual_home())
 
                 res = self.handler.manager.run_command(
                     [
@@ -1928,7 +1928,9 @@ class DoctorRunner:
                 domain,
             ]
             try:
-                res = subprocess.run(cmd, input=b"", capture_output=True, timeout=5)
+                res = subprocess.run(
+                    cmd, input=b"", capture_output=True, timeout=5, check=False
+                )
                 out = res.stdout.decode("utf-8", errors="ignore")
 
                 # Parse subject and issuer from openssl output
@@ -4231,24 +4233,26 @@ pause
                     ["man", "--help"], capture_output=True, text=True, check=False
                 )
                 if "-l" in res.stdout or "-l" in res.stderr:
-                    subprocess.run(["man", "-l", str(man_path)])
+                    subprocess.run(["man", "-l", str(man_path)], check=False)
                 # Fallback to less with roff processing if possible, or raw text
                 # We can use mandoc or groff if available
                 elif shutil.which("mandoc"):
                     subprocess.run(
                         f"mandoc -Tutf8 {man_path} | less -R",
                         shell=True,  # nosec B602 B604
+                        check=False,
                     )
                 elif shutil.which("groff"):
                     subprocess.run(
                         f"groff -man -Tascii {man_path} | less -R",
                         shell=True,  # nosec B602 B604
+                        check=False,
                     )
                 else:
-                    subprocess.run(["less", str(man_path)])
+                    subprocess.run(["less", str(man_path)], check=False)
             else:
                 # Windows fallback to notepad or similar
-                subprocess.run(["notepad", str(man_path)])
+                subprocess.run(["notepad", str(man_path)], check=False)
         except Exception as e:
             UI.error(f"Failed to display manual: {e}")
             UI.info(f"You can view the raw manual file at: {man_path}")

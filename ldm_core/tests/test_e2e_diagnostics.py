@@ -37,6 +37,7 @@ class TestE2EDiagnostics(unittest.TestCase):
             text=True,
             cwd="/tmp",
             env=env,
+            check=False,
         )
 
         # Verify the command executes successfully without hanging

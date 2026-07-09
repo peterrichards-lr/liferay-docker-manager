@@ -8,7 +8,7 @@ from typing import cast
 
 from ldm_core.handlers.base import BaseHandler
 from ldm_core.ui import UI
-from ldm_core.utils import get_actual_home
+from ldm_core.utils import get_actual_home, safe_extract
 
 
 class SnapshotService(BaseHandler):
@@ -1158,7 +1158,7 @@ class SnapshotService(BaseHandler):
             tar.errorlevel = (
                 0  # Robustness: suppress non-fatal OSErrors (like copystat failures)
             )
-            tar.extractall(path=target_root, members=members)  # nosec B202
+            safe_extract(tar, target_root, members=members)
 
             # 2. Extract search_backup if present
             has_search = any(
