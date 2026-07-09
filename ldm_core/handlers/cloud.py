@@ -1,6 +1,7 @@
 import json
 import shutil
 import subprocess
+import threading
 from typing import cast
 
 from ldm_core.constants import PROJECT_META_FILE
@@ -65,9 +66,21 @@ class CloudService:
         return None
 
     def _run_lcp_cmd(
-        self, args, capture_json=True, project=None, env=None, spinner=None
+        self, args, capture_json=True, project=None, env=None, spinner=None, timeout=300
     ):
-        """Runs an LCP command and returns parsed JSON or output string."""
+        """Runs an LCP command and returns parsed JSON or output string.
+
+        Args:
+            args: Command arguments to pass to the LCP CLI.
+            capture_json: Whether to parse the output as JSON.
+            project: Optional project flag value.
+            env: Optional environment flag value.
+            spinner: Optional UI spinner to update with progress lines.
+            timeout: Maximum seconds to wait for the command to complete
+                (default 300). Prevents indefinite hangs in CI/headless
+                environments when the LCP CLI stalls or prompts for
+                interactive authentication.
+        """
         lcp_bin = shutil.which("lcp")
         if not lcp_bin:
             UI.die("LCP CLI not found.")
@@ -97,27 +110,58 @@ class CloudService:
                     bufsize=1,
                     universal_newlines=True,
                 )
+
+                # Guard against indefinite blocking.  If the LCP CLI stalls
+                # (e.g. waiting for interactive auth), the timer kills the
+                # process after `timeout` seconds so the calling thread can
+                # surface a clean error rather than hanging forever.
+                timed_out = False
+
+                def _kill_on_timeout():
+                    nonlocal timed_out
+                    timed_out = True
+                    try:
+                        process.kill()
+                    except OSError:
+                        pass
+
+                timer = threading.Timer(timeout, _kill_on_timeout)
+                timer.start()
+
                 output = []
-                if process.stdout:
-                    for line in iter(process.stdout.readline, ""):
-                        clean_line = line.strip()
-                        if clean_line:
-                            # LDM-402: Improve progress visibility
-                            # We let the UI layer (Spinner) handle terminal-aware truncation.
-                            msg = clean_line
+                try:
+                    if process.stdout:
+                        for line in iter(process.stdout.readline, ""):
+                            clean_line = line.strip()
+                            if clean_line:
+                                # LDM-402: Improve progress visibility
+                                # We let the UI layer (Spinner) handle terminal-aware truncation.
+                                msg = clean_line
 
-                            # Filter out useless noise but keep important notes
-                            if (
-                                "require minimum service version" in msg
-                                or "✔" in msg
-                                or "Successfully" in msg
-                                or "[" in msg
-                            ):
-                                spinner.update(msg)
+                                # Filter out useless noise but keep important notes
+                                if (
+                                    "require minimum service version" in msg
+                                    or "✔" in msg
+                                    or "Successfully" in msg
+                                    or "[" in msg
+                                ):
+                                    spinner.update(msg)
 
-                            output.append(clean_line)
-                    process.stdout.close()
+                                output.append(clean_line)
+                        process.stdout.close()
+                finally:
+                    timer.cancel()
+
                 returncode = process.wait()
+
+                if timed_out:
+                    UI.error(
+                        f"LCP command timed out after {timeout}s. "
+                        "If the LCP CLI is waiting for authentication, "
+                        "please run 'lcp login' first."
+                    )
+                    return None
+
                 full_output = "\n".join(output)
                 if returncode != 0:
                     # LDM-402: Handle silent failure or stall
@@ -139,6 +183,7 @@ class CloudService:
                 stdin=subprocess.DEVNULL,
                 text=True,
                 check=True,
+                timeout=timeout,
             )
             return json.loads(res.stdout) if capture_json else res.stdout
         except (KeyboardInterrupt, SystemExit):
@@ -146,6 +191,16 @@ class CloudService:
                 process.terminate()
                 process.wait()
             raise
+        except subprocess.TimeoutExpired:
+            if process:
+                process.kill()
+                process.wait()
+            UI.error(
+                f"LCP command timed out after {timeout}s. "
+                "The process may be waiting for interactive input. "
+                "Please run 'lcp login' to refresh your session."
+            )
+            return None
         except subprocess.CalledProcessError as e:
             err_msg = str(e.stderr or e.stdout)
             if "You need to log in" in err_msg or "authenticate" in err_msg:

@@ -430,5 +430,89 @@ class TestCloudService(unittest.TestCase):
                     )
 
 
+class TestRunLcpCmdTimeout(unittest.TestCase):
+    """Tests for subprocess timeout guards in _run_lcp_cmd (Issue #467)."""
+
+    def setUp(self):
+        self.cloud = CloudService()
+
+    @patch("shutil.which")
+    @patch("subprocess.run")
+    @patch("ldm_core.ui.UI.error")
+    def test_subprocess_run_timeout_returns_none(
+        self, mock_error, mock_run, mock_which
+    ):
+        """subprocess.TimeoutExpired from the non-spinner path must be caught and return None."""
+        import subprocess
+
+        mock_which.return_value = "/usr/local/bin/lcp"
+        mock_run.side_effect = subprocess.TimeoutExpired(cmd=["lcp"], timeout=300)
+
+        result = self.cloud._run_lcp_cmd(["backup", "list"], timeout=300)
+
+        self.assertIsNone(result)
+        # A user-friendly timeout message must be logged
+        self.assertTrue(
+            any("timed out" in str(c) for c in mock_error.call_args_list),
+            "Expected a timeout error message to be logged",
+        )
+
+    @patch("shutil.which")
+    @patch("subprocess.Popen")
+    @patch("ldm_core.ui.UI.error")
+    def test_spinner_path_timeout_kills_process(
+        self, mock_error, mock_popen, mock_which
+    ):
+        """When the timer fires during the Popen spinner path, the process is killed and None returned."""
+        import threading
+
+        mock_which.return_value = "/usr/local/bin/lcp"
+
+        mock_process = MagicMock()
+        # Simulate the process hanging: readline blocks until kill() ends the pipe
+        kill_event = threading.Event()
+
+        def _blocking_readline():
+            # Block until kill() is simulated (event set by test thread)
+            kill_event.wait(timeout=5)
+            return ""  # Empty string signals EOF
+
+        mock_process.stdout.readline.side_effect = _blocking_readline
+        mock_process.wait.return_value = -9  # Killed
+        mock_popen.return_value = mock_process
+
+        spinner_mock = MagicMock()
+
+        # Use a very short timeout so the test doesn't stall
+        def _run():
+            return self.cloud._run_lcp_cmd(
+                ["backup", "list"], spinner=spinner_mock, timeout=0.1
+            )
+
+        import concurrent.futures
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(_run)
+            # Allow the timer to fire
+            kill_event.set()
+            result = future.result(timeout=5)
+
+        self.assertIsNone(result)
+
+    @patch("shutil.which")
+    @patch("subprocess.run")
+    def test_custom_timeout_is_passed_to_subprocess_run(self, mock_run, mock_which):
+        """The timeout kwarg must be forwarded to subprocess.run."""
+        mock_which.return_value = "/usr/local/bin/lcp"
+        mock_res = MagicMock()
+        mock_res.stdout = "some output"
+        mock_run.return_value = mock_res
+
+        self.cloud._run_lcp_cmd(["backup", "list"], timeout=60)
+
+        call_kwargs = mock_run.call_args.kwargs
+        self.assertEqual(call_kwargs.get("timeout"), 60)
+
+
 if __name__ == "__main__":
     unittest.main()
