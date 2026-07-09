@@ -139,13 +139,10 @@ jobs:
 
       - name: Run Quality Gate (pre-commit)
         env:
-          # actionlint-py fails to build its wheel under setuptools >=77 (Python 3.13
-          # runners) due to a deprecated pyproject.toml license-table format in the
-          # upstream package. Skip it on 3.13 until actionlint-py ships a fix.
-          # It still runs on the 3.11 and 3.12 matrix jobs.
-          SKIP: >-
-            bump-docs-timestamps,check-docs-review${{
-              matrix.python-version == '3.13' && ',actionlint' || '' }}
+          # actionlint is a Go binary and does not belong in a Python-version matrix.
+          # It is validated in the dedicated 'actionlint' job instead, which runs
+          # the official binary directly and is unaffected by setuptools versions.
+          SKIP: bump-docs-timestamps,check-docs-review,actionlint
         run: |
           # Use pre-commit to run all linting, types, and unit tests.
           # This ensures local and CI checks are identical.
@@ -154,6 +151,18 @@ jobs:
       - name: Run Dependency Audit (pip-audit)
         run: pip-audit
 
+
+  actionlint:
+    name: Lint GitHub Actions workflows
+    needs: validate-tag
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Download actionlint
+        run: |
+          bash <(curl -s https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash)
+      - name: Run actionlint
+        run: ./actionlint -color
 
   smoke-test:
     needs: lint-and-test
