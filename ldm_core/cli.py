@@ -1157,6 +1157,7 @@ def get_parser():
     dashboard.add_argument(
         "--background", action="store_true", help="Run dashboard in background"
     )
+    dashboard.add_argument("--token", help="CSRF/Authentication token for mutations")
 
     # Command: mcp
     subparsers.add_parser(
@@ -1993,6 +1994,7 @@ def main():
             port=getattr(args, "port", 19000),
             host=getattr(args, "host", "127.0.0.1"),
             background=getattr(args, "background", False),
+            token=getattr(args, "token", None),
         ),
         ("hydrate", None): lambda: manager.cmd_hydrate(
             args.backup_path, getattr(args, "project", None)

@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="description" content="Premium LDM Diagnostics Visual Dashboard. Control your Liferay projects, live logs, and snapshot state.">
+    <!-- LDM_TOKEN_PLACEHOLDER -->
     <title>LDM Visual Dashboard</title>
     <!-- Premium Outfit & JetBrains Mono Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -608,6 +609,15 @@
                 activeProject: null,
                 lastUpdated: 'Never',
                 toastIdSeq: 0,
+                token: '',
+                
+                async apiFetch(url, options = {}) {
+                    options.headers = options.headers || {};
+                    if (this.token) {
+                        options.headers['X-LDM-Token'] = this.token;
+                    }
+                    return fetch(url, options);
+                },
                 
                 // Logs
                 logModalOpen: false,
@@ -616,19 +626,19 @@
                 activeProjectLogs: '',
                 autoRefreshLogs: true,
                 logIntervalId: null,
-
+ 
                 // Snapshots
                 snapshotDrawerOpen: false,
                 snapshotsLoading: false,
                 snapshots: [],
                 newSnapshotName: '',
                 snapshotCreating: false,
-
+ 
                 // Restore
                 restoreConfirmOpen: false,
                 activeSnapshotToRestore: null,
                 restoring: false,
-
+ 
                 // Properties Inspector
                 propertiesDrawerOpen: false,
                 propertiesLoading: false,
@@ -639,11 +649,22 @@
                 newPropKey: '',
                 newPropVal: '',
                 newPropImportant: false,
-
+ 
                 // Loaders
                 projectActionLoading: {},
-
+ 
                 async init() {
+                    const metaToken = document.querySelector('meta[name="ldm-token"]')?.getAttribute('content');
+                    const urlParams = new URLSearchParams(window.location.search);
+                    const urlToken = urlParams.get('token');
+                    
+                    this.token = urlToken || metaToken || localStorage.getItem('ldm_token') || '';
+                    if (urlToken) {
+                        localStorage.setItem('ldm_token', urlToken);
+                        const cleanUrl = window.location.protocol + "//" + window.location.host + window.location.pathname;
+                        window.history.replaceState({path:cleanUrl}, '', cleanUrl);
+                    }
+                    
                     await this.fetchProjects(true);
                     
                     // Poll projects list
@@ -673,7 +694,7 @@
                 async fetchProjects(showLoader = false) {
                     if (showLoader) this.loading = true;
                     try {
-                        const response = await fetch('/api/projects');
+                        const response = await this.apiFetch('/api/projects');
                         if (!response.ok) throw new Error('API server status failure');
                         const data = await response.json();
                         this.projects = data;
@@ -694,7 +715,7 @@
                     this.showToast(`Requesting ${action} command for ${name}...`, 'info');
                     
                     try {
-                        const response = await fetch(`/api/projects/${name}/${action}`, {
+                        const response = await this.apiFetch(`/api/projects/${name}/${action}`, {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' }
                         });
@@ -739,7 +760,7 @@
                 async showLogs(projectName) {
                     this.logsLoading = true;
                     try {
-                        const response = await fetch(`/api/logs/${projectName}`);
+                        const response = await this.apiFetch(`/api/logs/${projectName}`);
                         if (!response.ok) throw new Error('Could not fetch logs');
                         const data = await response.json();
                         this.logsContent = data.logs;
@@ -766,7 +787,7 @@
                 async fetchSnapshots() {
                     this.snapshotsLoading = true;
                     try {
-                        const response = await fetch(`/api/projects/${this.activeProject}/snapshots`);
+                        const response = await this.apiFetch(`/api/projects/${this.activeProject}/snapshots`);
                         if (!response.ok) throw new Error('Catalog loading failed');
                         this.snapshots = await response.json();
                     } catch (e) {
@@ -782,7 +803,7 @@
                     this.showToast('Snapshot background task initiated...', 'info');
                     
                     try {
-                        const response = await fetch(`/api/projects/${this.activeProject}/snapshot`, {
+                        const response = await this.apiFetch(`/api/projects/${this.activeProject}/snapshot`, {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({ name: name || undefined })
@@ -820,7 +841,7 @@
                     this.showToast(`Restoring backup ${this.activeSnapshotToRestore.name} in background...`, 'info');
                     
                     try {
-                        const response = await fetch(`/api/projects/${project}/restore/${snapId}`, {
+                        const response = await this.apiFetch(`/api/projects/${project}/restore/${snapId}`, {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' }
                         });
@@ -856,7 +877,7 @@
                     this.newPropVal = '';
                     this.newPropImportant = false;
                     try {
-                        const response = await fetch(`/api/projects/${projectName}/properties`);
+                        const response = await this.apiFetch(`/api/projects/${projectName}/properties`);
                         if (!response.ok) throw new Error('API server properties failure');
                         const data = await response.json();
                         this.properties = data.map(p => ({
@@ -896,7 +917,7 @@
 
                 async saveProperty(key, value, important) {
                     try {
-                        const response = await fetch(`/api/projects/${this.activeProject}/properties`, {
+                        const response = await this.apiFetch(`/api/projects/${this.activeProject}/properties`, {
                             method: 'PUT',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({ key, value, important })
@@ -919,7 +940,7 @@
 
                 async deleteProperty(key) {
                     try {
-                        const response = await fetch(`/api/projects/${this.activeProject}/properties/${key}`, {
+                        const response = await this.apiFetch(`/api/projects/${this.activeProject}/properties/${key}`, {
                             method: 'DELETE'
                         });
                         if (!response.ok) {
@@ -957,7 +978,7 @@
                     }
 
                     try {
-                        const response = await fetch(`/api/projects/${this.activeProject}/properties`, {
+                        const response = await this.apiFetch(`/api/projects/${this.activeProject}/properties`, {
                             method: 'PUT',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({ key, value, important })
