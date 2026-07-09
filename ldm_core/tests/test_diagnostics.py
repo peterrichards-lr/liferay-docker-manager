@@ -1,11 +1,28 @@
+from ldm_core.diagnostics.completions import _refresh_man_symlink
+from ldm_core.diagnostics.completions import is_completion_enabled
+from ldm_core.diagnostics.upgrade import _get_manual_upgrade_cmd
+from ldm_core.diagnostics.info import _get_env_info
+from ldm_core.diagnostics.doctor import _generate_debug_bundle
+from ldm_core.diagnostics.doctor import _check_liferay_health_logs
+from ldm_core.diagnostics.doctor import _check_container_health_logs
+from ldm_core.diagnostics.doctor import validate_lcp_json
+from ldm_core.diagnostics.doctor import validate_properties_file
+from ldm_core.diagnostics.doctor import _check_docker_resources
+from ldm_core.diagnostics.doctor import _check_docker_creds
+from ldm_core.diagnostics.doctor import _check_elasticsearch_watermarks
+from ldm_core.diagnostics.doctor import _check_lcp_cli
+from ldm_core.diagnostics.doctor import _check_openssl
+from ldm_core.diagnostics.doctor import check_mkcert
+from ldm_core.diagnostics.doctor import _verify_dependency_integrity
 import json
 import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from ldm_core.constants import VERSION
+from ldm_core.diagnostics.doctor import DoctorRunner
 from ldm_core.handlers.base import BaseHandler
-from ldm_core.handlers.diagnostics import DiagnosticsService, DoctorRunner
+from ldm_core.handlers.diagnostics import DiagnosticsService
 
 
 class MockArgs:
@@ -77,8 +94,8 @@ class TestDiagnostics(unittest.TestCase):
     def setUp(self):
         self.manager = MockDiagManager()
 
-    @patch("ldm_core.handlers.diagnostics.DiagnosticsService._get_env_info")
-    @patch("ldm_core.handlers.diagnostics.DoctorRunner")
+    @patch("ldm_core.diagnostics.doctor._get_env_info")
+    @patch("ldm_core.diagnostics.doctor.DoctorRunner")
     def test_cmd_doctor_calls_runner(self, mock_runner, mock_env):
         mock_env.return_value = ("arch", "os", "provider", "mount")
         self.manager.diagnostics.cmd_doctor()
@@ -91,9 +108,9 @@ class TestDiagnostics(unittest.TestCase):
         self.assertEqual(runner.hints[0]["text"], "test hint")
 
     def test_doctor_runner_check_openssl(self):
-        with patch("ldm_core.handlers.diagnostics.run_command") as mock_run:
+        with patch("ldm_core.diagnostics.doctor.run_command") as mock_run:
             mock_run.return_value = "OpenSSL 3.0.0"
-            res, ok = self.manager.diagnostics._check_openssl()
+            res, ok = _check_openssl(self.manager.diagnostics, )
             self.assertTrue(ok)
             self.assertEqual(res, "OpenSSL 3.0.0")
 
@@ -104,17 +121,17 @@ class TestDiagnostics(unittest.TestCase):
                 self.manager.cloud, "_is_cloud_authenticated", return_value=(True, "OK")
             ),
         ):
-            res, ok = self.manager.diagnostics._check_lcp_cli()
+            res, ok = _check_lcp_cli(self.manager.diagnostics, )
             self.assertTrue(ok)
             self.assertEqual(res, "Logged In")
 
     def test_doctor_runner_check_docker_resources(self):
         docker_info_raw = '{"NCPU": 8, "MemTotal": 17179869184}'
-        results = self.manager.diagnostics._check_docker_resources(docker_info_raw)
+        results = _check_docker_resources(self.manager.diagnostics, docker_info_raw)
         self.assertTrue(any("Docker CPUs" in r[0] for r in results))
         self.assertTrue(any("Docker Memory" in r[0] for r in results))
 
-    @patch("ldm_core.handlers.diagnostics.run_command")
+    @patch("ldm_core.diagnostics.doctor.run_command")
     @patch("subprocess.run")
     @patch("shutil.which")
     @patch("ldm_core.utils.get_compose_cmd", return_value="/usr/bin/docker-compose")
@@ -137,8 +154,8 @@ class TestDiagnostics(unittest.TestCase):
         self.assertTrue(any("Docker Engine" in r[0] for r in runner.results))
         self.assertTrue(any("Docker Compose" in r[0] for r in runner.results))
 
-    @patch("ldm_core.handlers.diagnostics.DoctorRunner.add_hint")
-    @patch("ldm_core.handlers.diagnostics.run_command")
+    @patch("ldm_core.diagnostics.doctor.DoctorRunner.add_hint")
+    @patch("ldm_core.diagnostics.doctor.run_command")
     def test_check_elasticsearch_watermarks_blocked(self, mock_run, mock_hint):
         runner = DoctorRunner(self.manager.diagnostics)
         explain_json = json.dumps(
@@ -160,28 +177,28 @@ class TestDiagnostics(unittest.TestCase):
             explain_json,  # allocation explain
             "index.blocks.read_only_allow_delete: true",  # settings
         ]
-        res = self.manager.diagnostics._check_elasticsearch_watermarks(runner.add_hint)
+        res = _check_elasticsearch_watermarks(self.manager.diagnostics, runner.add_hint)
         self.assertEqual(res, "Disk Watermark Exceeded (Blocked)")
         self.assertTrue(mock_hint.called)
 
-    @patch("ldm_core.handlers.diagnostics.DoctorRunner.add_hint")
-    @patch("ldm_core.handlers.diagnostics.run_command")
+    @patch("ldm_core.diagnostics.doctor.DoctorRunner.add_hint")
+    @patch("ldm_core.diagnostics.doctor.run_command")
     def test_check_elasticsearch_watermarks_flood(self, mock_run, mock_hint):
         runner = DoctorRunner(self.manager.diagnostics)
         mock_run.side_effect = [
             '{"node_allocation_decisions": []}',  # allocation explain OK
             "index.blocks.read_only_allow_delete: true",  # but read-only blocks exist
         ]
-        res = self.manager.diagnostics._check_elasticsearch_watermarks(runner.add_hint)
+        res = _check_elasticsearch_watermarks(self.manager.diagnostics, runner.add_hint)
         self.assertEqual(res, "Read-Only (Flood Stage)")
 
-    @patch("ldm_core.handlers.diagnostics.check_for_updates", return_value=(None, None))
+    @patch("ldm_core.diagnostics.doctor.check_for_updates", return_value=(None, None))
     @patch(
-        "ldm_core.handlers.diagnostics.verify_executable_checksum",
+        "ldm_core.diagnostics.doctor.verify_executable_checksum",
         return_value=("Valid", True, "2.5.0"),
     )
     @patch(
-        "ldm_core.handlers.diagnostics.DiagnosticsService.is_completion_enabled",
+        "ldm_core.diagnostics.completions.is_completion_enabled",
         return_value=True,
     )
     def test_check_tooling_and_integrity(self, mock_comp, mock_verify, mock_updates):
@@ -192,7 +209,7 @@ class TestDiagnostics(unittest.TestCase):
 
     @patch("ldm_core.utils.get_actual_home", return_value=Path("/tmp"))
     @patch(
-        "ldm_core.handlers.diagnostics.DiagnosticsService.check_mkcert",
+        "ldm_core.diagnostics.doctor.check_mkcert",
         return_value=("OK", True, "/root"),
     )
     @patch.object(MockDiagManager, "run_command", return_value="OK")
@@ -204,9 +221,9 @@ class TestDiagnostics(unittest.TestCase):
         self.assertTrue(any("mkcert" in r[0] for r in runner.results))
         self.assertTrue(any("Volume Permissions" in r[0] for r in runner.results))
 
-    @patch("ldm_core.handlers.diagnostics.run_command", return_value="")
+    @patch("ldm_core.diagnostics.doctor.run_command", return_value="")
     @patch(
-        "ldm_core.handlers.diagnostics.DiagnosticsService.validate_lcp_json",
+        "ldm_core.diagnostics.doctor.validate_lcp_json",
         return_value=("Valid", True, []),
     )
     def test_check_project_specific(self, mock_lcp, mock_run):
@@ -221,14 +238,14 @@ class TestDiagnostics(unittest.TestCase):
         # Add a warning to avoid clean exit
         runner.results.append(("Test", "Warning", "warn"))
         with (
-            patch("ldm_core.handlers.diagnostics.run_command", return_value=""),
+            patch("ldm_core.diagnostics.doctor.run_command", return_value=""),
             patch("sys.exit") as mock_exit,
         ):
             self.manager.args.bundle = False
             runner._check_dangling_and_print()
             self.assertTrue(mock_exit.called)
 
-    @patch("ldm_core.handlers.diagnostics.get_actual_home", return_value=Path("/tmp"))
+    @patch("ldm_core.diagnostics.doctor.get_actual_home", return_value=Path("/tmp"))
     @patch("pathlib.Path.exists", return_value=True)
     @patch("shutil.which", return_value="/usr/bin/helper")
     def test_check_docker_creds(self, mock_which, mock_exists, mock_home):
@@ -236,25 +253,25 @@ class TestDiagnostics(unittest.TestCase):
             "builtins.open",
             unittest.mock.mock_open(read_data='{"credsStore": "osxkeychain"}'),
         ):
-            status, ok = self.manager.diagnostics._check_docker_creds()
+            status, ok = _check_docker_creds(self.manager.diagnostics, )
             self.assertTrue(ok)
             self.assertIn("osxkeychain", status)
 
     @patch("ldm_core.docker_service.DockerService.get_logs")
     def test_check_container_health_logs(self, mock_logs):
         mock_logs.return_value = "health: starting\nERROR: something broke"
-        status, ok = self.manager.diagnostics._check_container_health_logs("test-c")
+        status, ok = _check_container_health_logs(self.manager.diagnostics, "test-c")
         self.assertFalse(ok)
         self.assertIn("Error in logs", status)
 
     @patch("ldm_core.docker_service.DockerService.get_logs")
     def test_check_liferay_health_logs(self, mock_logs):
         mock_logs.return_value = "Liferay(TM) Portal 7.4 GA 100\nSTARTED in 100s"
-        status, ok = self.manager.diagnostics._check_liferay_health_logs("test-liferay")
+        status, ok = _check_liferay_health_logs(self.manager.diagnostics, "test-liferay")
         self.assertTrue(ok)
         self.assertIn("Ready", status)
 
-    @patch("ldm_core.handlers.diagnostics.run_command")
+    @patch("ldm_core.diagnostics.info.run_command")
     def test_cmd_list(self, mock_run):
         # 1. Setup mocks
         with (
@@ -292,7 +309,7 @@ class TestDiagnostics(unittest.TestCase):
             self.assertIn("Running", output)
             self.assertIn("http://localhost:8080", output)
 
-    @patch("ldm_core.handlers.diagnostics.run_command")
+    @patch("ldm_core.diagnostics.doctor.run_command")
     @patch.object(
         MockDiagManager, "find_dxp_roots", return_value=[{"path": Path("/tmp/p1")}]
     )
@@ -303,7 +320,7 @@ class TestDiagnostics(unittest.TestCase):
             self.manager.diagnostics.cmd_prune()
             self.assertTrue(mock_rm.called)
 
-    @patch("ldm_core.handlers.diagnostics.run_command")
+    @patch("ldm_core.diagnostics.prune.run_command")
     @patch.object(
         MockDiagManager, "find_dxp_roots", return_value=[{"path": Path("/tmp/p1")}]
     )
@@ -315,7 +332,7 @@ class TestDiagnostics(unittest.TestCase):
             self.manager.diagnostics.cmd_prune()
             self.assertFalse(mock_rm.called)
 
-    @patch("ldm_core.handlers.diagnostics.get_actual_home", return_value=Path("/tmp"))
+    @patch("ldm_core.diagnostics.prune.get_actual_home", return_value=Path("/tmp"))
     @patch("pathlib.Path.exists", return_value=True)
     @patch("os.remove")
     def test_cmd_cache_tags(self, mock_remove, mock_exists, mock_home):
@@ -323,20 +340,20 @@ class TestDiagnostics(unittest.TestCase):
         mock_remove.assert_called_with(Path("/tmp/.liferay_docker_cache.json"))
 
     @patch("shutil.which", return_value="/usr/bin/mkcert")
-    @patch("ldm_core.handlers.diagnostics.run_command", return_value="/tmp/ca")
+    @patch("ldm_core.diagnostics.doctor.run_command", return_value="/tmp/ca")
     @patch("os.path.exists", return_value=True)
     @patch("os.listdir", return_value=["ca.pem"])
-    @patch("ldm_core.handlers.diagnostics.get_actual_home", return_value=Path("/tmp"))
+    @patch("ldm_core.diagnostics.doctor.get_actual_home", return_value=Path("/tmp"))
     @patch("os.access", return_value=True)
     def test_check_mkcert(
         self, mock_access, mock_home, mock_listdir, mock_exists, mock_run, mock_which
     ):
-        status, ok, ca_root = self.manager.diagnostics.check_mkcert()
+        status, ok, ca_root = check_mkcert(self.manager.diagnostics, )
         self.assertTrue(ok)
         self.assertIn("Trusted", status)
 
     @patch(
-        "ldm_core.handlers.diagnostics.DiagnosticsService._get_env_info",
+        "ldm_core.diagnostics.doctor._get_env_info",
         return_value=("arch", "os", "provider", "mount"),
     )
     def test_doctor_slug(self, mock_env):
@@ -352,7 +369,7 @@ class TestDiagnostics(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp_dir:
             f = Path(tmp_dir) / "pe.properties"
             f.write_text("key1=v1\nkey1=v2")
-            status, ok, errors = self.manager.diagnostics.validate_properties_file(f)
+            status, ok, errors = validate_properties_file(self.manager.diagnostics, f)
             self.assertEqual(ok, "warn")
             self.assertTrue(any("Duplicate key 'key1'" in e for e in errors))
 
@@ -362,12 +379,12 @@ class TestDiagnostics(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp_dir:
             f = Path(tmp_dir) / "LCP.json"
             f.write_text(json.dumps({"type": "service"}))
-            status, ok, errors = self.manager.diagnostics.validate_lcp_json(f)
+            status, ok, errors = validate_lcp_json(self.manager.diagnostics, f)
             self.assertEqual(ok, "warn")
             self.assertIn("Missing mandatory 'id' field.", errors)
 
     @patch(
-        "ldm_core.handlers.diagnostics.DiagnosticsService._get_env_info",
+        "ldm_core.diagnostics.doctor._get_env_info",
         return_value=("arch", "os", "provider", "mount"),
     )
     def test_doctor_runner_all_projects(self, mock_env):
@@ -380,13 +397,13 @@ class TestDiagnostics(unittest.TestCase):
         runner.project_paths = [r["path"] for r in roots]
         self.assertEqual(len(runner.project_paths), 2)
 
-    @patch("ldm_core.handlers.diagnostics.verify_executable_checksum")
+    @patch("ldm_core.diagnostics.doctor.verify_executable_checksum")
     def test_check_tooling_integrity_shadowed(self, mock_verify):
         # Return a version different from current VERSION
         mock_verify.return_value = ("Shadowed", True, "1.0.0")
         runner = DoctorRunner(self.manager.diagnostics)
         with patch(
-            "ldm_core.handlers.diagnostics.check_for_updates", return_value=(None, None)
+            "ldm_core.diagnostics.doctor.check_for_updates", return_value=(None, None)
         ):
             runner._check_tooling_and_integrity()
             self.assertTrue(any("(Shadowed by" in str(r[1]) for r in runner.results))
@@ -418,7 +435,7 @@ class TestDiagnostics(unittest.TestCase):
             self.assertEqual(venv_result[1], "Active (.venv)")
             self.assertTrue(venv_result[2])
 
-    @patch("ldm_core.handlers.diagnostics.verify_executable_checksum")
+    @patch("ldm_core.diagnostics.doctor.verify_executable_checksum")
     def test_check_tooling_and_integrity_venv_inactive(self, mock_verify):
         mock_verify.return_value = ("Source", True, "2.11.7")
         runner = DoctorRunner(self.manager.diagnostics)
@@ -435,7 +452,7 @@ class TestDiagnostics(unittest.TestCase):
             self.assertEqual(venv_result[2], "warn")
             self.assertTrue(any("globally" in h["text"] for h in runner.hints))
 
-    @patch("ldm_core.handlers.diagnostics.verify_executable_checksum")
+    @patch("ldm_core.diagnostics.doctor.verify_executable_checksum")
     def test_check_tooling_and_integrity_venv_inactive_binary(self, mock_verify):
         mock_verify.return_value = ("Binary Checksum Valid", True, "2.11.7")
         runner = DoctorRunner(self.manager.diagnostics)
@@ -452,7 +469,7 @@ class TestDiagnostics(unittest.TestCase):
             self.assertTrue(venv_result[2])
             self.assertFalse(any("globally" in h["text"] for h in runner.hints))
 
-    @patch("ldm_core.handlers.diagnostics.verify_executable_checksum")
+    @patch("ldm_core.diagnostics.doctor.verify_executable_checksum")
     def test_check_tooling_and_integrity_dependency_failure(self, mock_verify):
         mock_verify.return_value = ("Source", True, VERSION)
         runner = DoctorRunner(self.manager.diagnostics)
@@ -460,8 +477,8 @@ class TestDiagnostics(unittest.TestCase):
             patch("sys.prefix", "dummy_venv"),
             patch("sys.base_prefix", "dummy_base"),
             patch.dict("os.environ", {}, clear=True),
-            patch.object(
-                self.manager.diagnostics, "_verify_dependency_integrity"
+            patch(
+                "ldm_core.diagnostics.doctor._verify_dependency_integrity"
             ) as mock_verify_dep,
         ):
             mock_verify_dep.return_value = ("Tampered: pkg/__init__.py", "error")
@@ -526,7 +543,7 @@ class TestDiagnostics(unittest.TestCase):
             self.assertNotIn("Docker Engine", output)
             self.assertNotIn("Project Initialization", output)
 
-    @patch("ldm_core.handlers.diagnostics.UI.die", side_effect=SystemExit)
+    @patch("ldm_core.diagnostics.upgrade.UI.die", side_effect=SystemExit)
     def test_upgrade_version_and_repair_conflict(self, mock_die):
         self.manager.args.repair = True
         self.manager.args.version = "v2.11.53"
@@ -536,7 +553,7 @@ class TestDiagnostics(unittest.TestCase):
             "Cannot specify both --repair and --version. Please choose one."
         )
 
-    @patch("ldm_core.handlers.diagnostics.UI.die", side_effect=SystemExit)
+    @patch("ldm_core.diagnostics.upgrade.UI.die", side_effect=SystemExit)
     def test_upgrade_invalid_version_format(self, mock_die):
         self.manager.args.repair = False
         self.manager.args.version = "invalid.1.0"
@@ -545,8 +562,8 @@ class TestDiagnostics(unittest.TestCase):
         mock_die.assert_called_once()
         self.assertIn("Invalid version format", mock_die.call_args[0][0])
 
-    @patch("ldm_core.handlers.diagnostics.check_for_updates", return_value=(None, None))
-    @patch("ldm_core.handlers.diagnostics.UI.die", side_effect=SystemExit)
+    @patch("ldm_core.diagnostics.upgrade.check_for_updates", return_value=(None, None))
+    @patch("ldm_core.diagnostics.upgrade.UI.die", side_effect=SystemExit)
     def test_upgrade_version_not_found(self, mock_die, mock_updates):
         self.manager.args.repair = False
         self.manager.args.version = "v2.11.99"
@@ -559,8 +576,8 @@ class TestDiagnostics(unittest.TestCase):
             "Version 'v2.11.99' not found on GitHub Releases."
         )
 
-    @patch("ldm_core.handlers.diagnostics.check_for_updates")
-    @patch("ldm_core.handlers.diagnostics.UI.die", side_effect=SystemExit)
+    @patch("ldm_core.diagnostics.upgrade.check_for_updates")
+    @patch("ldm_core.diagnostics.upgrade.UI.die", side_effect=SystemExit)
     def test_upgrade_downgrade_non_interactive_no_force(self, mock_die, mock_updates):
         mock_updates.return_value = (
             "2.11.53",
@@ -579,8 +596,8 @@ class TestDiagnostics(unittest.TestCase):
         )
 
     @patch("sys.argv", ["liferay_docker.py"])
-    @patch("ldm_core.handlers.diagnostics.check_for_updates")
-    @patch("ldm_core.handlers.diagnostics.UI.die", side_effect=SystemExit)
+    @patch("ldm_core.diagnostics.upgrade.check_for_updates")
+    @patch("ldm_core.diagnostics.upgrade.UI.die", side_effect=SystemExit)
     def test_upgrade_downgrade_non_interactive_with_force(self, mock_die, mock_updates):
         mock_updates.return_value = (
             "2.11.53",
@@ -599,9 +616,9 @@ class TestDiagnostics(unittest.TestCase):
             "Self-upgrade is only supported for standalone binaries. Please use 'git pull' for source installations."
         )
 
-    @patch("ldm_core.handlers.diagnostics.check_for_updates")
-    @patch("ldm_core.handlers.diagnostics.UI.confirm", return_value=False)
-    @patch("ldm_core.handlers.diagnostics.UI.die", side_effect=SystemExit)
+    @patch("ldm_core.diagnostics.upgrade.check_for_updates")
+    @patch("ldm_core.diagnostics.upgrade.UI.confirm", return_value=False)
+    @patch("ldm_core.diagnostics.upgrade.UI.die", side_effect=SystemExit)
     def test_upgrade_downgrade_interactive_reject(
         self, mock_die, mock_confirm, mock_updates
     ):
@@ -624,9 +641,9 @@ class TestDiagnostics(unittest.TestCase):
         mock_die.assert_not_called()
 
     @patch("sys.argv", ["liferay_docker.py"])
-    @patch("ldm_core.handlers.diagnostics.check_for_updates")
-    @patch("ldm_core.handlers.diagnostics.UI.confirm", return_value=True)
-    @patch("ldm_core.handlers.diagnostics.UI.die", side_effect=SystemExit)
+    @patch("ldm_core.diagnostics.upgrade.check_for_updates")
+    @patch("ldm_core.diagnostics.upgrade.UI.confirm", return_value=True)
+    @patch("ldm_core.diagnostics.upgrade.UI.die", side_effect=SystemExit)
     def test_upgrade_downgrade_interactive_confirm(
         self, mock_die, mock_confirm, mock_updates
     ):
@@ -647,7 +664,7 @@ class TestDiagnostics(unittest.TestCase):
             "Self-upgrade is only supported for standalone binaries. Please use 'git pull' for source installations."
         )
 
-    @patch("ldm_core.handlers.diagnostics.distribution")
+    @patch("ldm_core.diagnostics.doctor.distribution")
     def test_verify_dependency_integrity_all_ok(self, mock_distribution):
         mock_dist = MagicMock()
         mock_dist.version = "1.0.0"
@@ -660,19 +677,19 @@ class TestDiagnostics(unittest.TestCase):
         mock_dist.locate_file.return_value = mock_file
         mock_distribution.return_value = mock_dist
 
-        res, status = self.manager.diagnostics._verify_dependency_integrity("some-pkg")
+        res, status = _verify_dependency_integrity(self.manager.diagnostics, "some-pkg")
         self.assertEqual(res, "OK")
         self.assertTrue(status)
 
     @patch(
-        "ldm_core.handlers.diagnostics.distribution", side_effect=Exception("Not found")
+        "ldm_core.diagnostics.doctor.distribution", side_effect=Exception("Not found")
     )
     def test_verify_dependency_integrity_missing_package(self, mock_distribution):
-        res, status = self.manager.diagnostics._verify_dependency_integrity("some-pkg")
+        res, status = _verify_dependency_integrity(self.manager.diagnostics, "some-pkg")
         self.assertEqual(res, "Missing")
         self.assertEqual(status, "error")
 
-    @patch("ldm_core.handlers.diagnostics.distribution")
+    @patch("ldm_core.diagnostics.doctor.distribution")
     def test_verify_dependency_integrity_hash_mismatch(self, mock_distribution):
         mock_dist = MagicMock()
         mock_dist.version = "1.0.0"
@@ -685,11 +702,11 @@ class TestDiagnostics(unittest.TestCase):
         mock_dist.locate_file.return_value = mock_file
         mock_distribution.return_value = mock_dist
 
-        res, status = self.manager.diagnostics._verify_dependency_integrity("some-pkg")
+        res, status = _verify_dependency_integrity(self.manager.diagnostics, "some-pkg")
         self.assertTrue(res.startswith("Tampered"))
         self.assertEqual(status, "error")
 
-    @patch("ldm_core.handlers.diagnostics.distribution")
+    @patch("ldm_core.diagnostics.doctor.distribution")
     def test_verify_dependency_integrity_missing_critical_file(self, mock_distribution):
         mock_dist = MagicMock()
         mock_dist.version = "1.0.0"
@@ -701,11 +718,11 @@ class TestDiagnostics(unittest.TestCase):
         mock_dist.locate_file.return_value = mock_file
         mock_distribution.return_value = mock_dist
 
-        res, status = self.manager.diagnostics._verify_dependency_integrity("some-pkg")
+        res, status = _verify_dependency_integrity(self.manager.diagnostics, "some-pkg")
         self.assertTrue(res.startswith("Corrupted"))
         self.assertEqual(status, "error")
 
-    @patch("ldm_core.handlers.diagnostics.distribution")
+    @patch("ldm_core.diagnostics.doctor.distribution")
     def test_verify_dependency_integrity_missing_non_critical_file(
         self, mock_distribution
     ):
@@ -719,7 +736,7 @@ class TestDiagnostics(unittest.TestCase):
         mock_dist.locate_file.return_value = mock_file
         mock_distribution.return_value = mock_dist
 
-        res, status = self.manager.diagnostics._verify_dependency_integrity("some-pkg")
+        res, status = _verify_dependency_integrity(self.manager.diagnostics, "some-pkg")
         self.assertEqual(res, "OK")
         self.assertTrue(status)
 
@@ -730,14 +747,14 @@ class TestDiagnosticsCompletion(unittest.TestCase):
         self.test_home = Path("/tmp/home-test")
         self.test_home.mkdir(parents=True, exist_ok=True)
 
-    @patch("ldm_core.handlers.diagnostics.get_actual_home")
+    @patch("ldm_core.diagnostics.completions.get_actual_home")
     def test_cmd_completion_bash(self, mock_home):
         mock_home.return_value = self.test_home
         with patch("builtins.print") as mock_print:
             self.manager.cmd_completion("bash")
             self.assertTrue(mock_print.called)
 
-    @patch("ldm_core.handlers.diagnostics.get_actual_home")
+    @patch("ldm_core.diagnostics.completions.get_actual_home")
     def test_cmd_completion_zsh(self, mock_home):
         mock_home.return_value = self.test_home
         with patch("builtins.print") as mock_print:
@@ -756,7 +773,7 @@ class TestDiagnosticsSetupCompletion(unittest.TestCase):
     def tearDown(self):
         self.temp_dir.cleanup()
 
-    @patch("ldm_core.handlers.diagnostics.get_actual_home")
+    @patch("ldm_core.diagnostics.completions.get_actual_home")
     @patch.dict("os.environ", {"SHELL": "/bin/zsh"})
     def test_cmd_setup_completion_zsh(self, mock_home):
         mock_home.return_value = self.test_home
@@ -781,7 +798,7 @@ class TestDiagnosticsSetupCompletion(unittest.TestCase):
         new_content = zshrc.read_text(encoding="utf-8")
         self.assertIn("# >>> LDM CLI AUTOCOMPLETE >>>", new_content)
 
-    @patch("ldm_core.handlers.diagnostics.get_actual_home")
+    @patch("ldm_core.diagnostics.completions.get_actual_home")
     def test_cmd_setup_completion_bash(self, mock_home):
         mock_home.return_value = self.test_home
 
@@ -795,7 +812,7 @@ class TestDiagnosticsSetupCompletion(unittest.TestCase):
         self.assertIn('eval "$(ldm completion bash)"', content)
         self.assertFalse((self.test_home / ".bashrc").exists())
 
-    @patch("ldm_core.handlers.diagnostics.get_actual_home")
+    @patch("ldm_core.diagnostics.completions.get_actual_home")
     def test_cmd_setup_completion_fish(self, mock_home):
         mock_home.return_value = self.test_home
         self.manager.cmd_setup_completion("fish")
@@ -804,7 +821,7 @@ class TestDiagnosticsSetupCompletion(unittest.TestCase):
         content = fish_config.read_text(encoding="utf-8")
         self.assertIn("ldm completion fish | source", content)
 
-    @patch("ldm_core.handlers.diagnostics.get_actual_home")
+    @patch("ldm_core.diagnostics.completions.get_actual_home")
     @patch("subprocess.run")
     def test_cmd_setup_completion_powershell(self, mock_run, mock_home):
         mock_home.return_value = self.test_home
@@ -834,7 +851,7 @@ class TestDiagnosticsSetupCompletion(unittest.TestCase):
             "ldm completion powershell | Out-String | Invoke-Expression", content
         )
 
-    @patch("ldm_core.handlers.diagnostics.get_actual_home")
+    @patch("ldm_core.diagnostics.completions.get_actual_home")
     @patch("subprocess.run")
     def test_cmd_setup_completion_argcomplete_fallback(self, mock_run, mock_home):
         mock_home.return_value = self.test_home
@@ -850,7 +867,7 @@ class TestDiagnosticsSetupCompletion(unittest.TestCase):
         ]
         self.assertTrue(len(install_calls) > 0)
 
-    @patch("ldm_core.handlers.diagnostics.run_command")
+    @patch("ldm_core.diagnostics.info.run_command")
     def test_cmd_status_project_not_found(self, mock_run):
         mock_run.return_value = ""
         with patch.object(self.manager, "detect_project_path", return_value=None):
@@ -858,7 +875,7 @@ class TestDiagnosticsSetupCompletion(unittest.TestCase):
                 self.manager.diagnostics.cmd_status(project_id="nonexistent")
             self.assertEqual(cm.exception.code, 1)
 
-    @patch("ldm_core.handlers.diagnostics.run_command")
+    @patch("ldm_core.diagnostics.info.run_command")
     def test_cmd_status_running_standard(self, mock_run):
         mock_run.side_effect = [
             "",  # liferay-proxy-global
@@ -878,7 +895,7 @@ class TestDiagnosticsSetupCompletion(unittest.TestCase):
                     self.manager.diagnostics.cmd_status(project_id="myproj")
                 self.assertEqual(cm.exception.code, 0)
 
-    @patch("ldm_core.handlers.diagnostics.run_command")
+    @patch("ldm_core.diagnostics.info.run_command")
     def test_cmd_status_stopped_standard(self, mock_run):
         mock_run.return_value = ""
         with patch.object(
@@ -893,7 +910,7 @@ class TestDiagnosticsSetupCompletion(unittest.TestCase):
                     self.manager.diagnostics.cmd_status(project_id="myproj")
                 self.assertEqual(cm.exception.code, 1)
 
-    @patch("ldm_core.handlers.diagnostics.run_command")
+    @patch("ldm_core.diagnostics.info.run_command")
     def test_cmd_status_detailed_running(self, mock_run):
         # We query container list: Name, Status, Image, Ports, Service
         mock_run.return_value = (
