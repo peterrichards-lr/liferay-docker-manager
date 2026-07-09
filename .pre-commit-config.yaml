@@ -6,6 +6,12 @@ repos:
         args: [ --fix ]
       - id: ruff-format
 
+  - repo: https://github.com/semgrep/semgrep
+    rev: v1.168.0
+    hooks:
+      - id: semgrep
+        args: ['--config', '.semgrep.yaml', '--error']
+
   - repo: https://github.com/pre-commit/mirrors-mypy
     rev: v1.10.0
     hooks:
