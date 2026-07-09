@@ -72,6 +72,12 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
 
 ## 8. Active Work State & Plan (July 9, 2026)
 
+- **Fix Path Traversal (Tar Slip) Vulnerability in Archive Extraction (Issue #437)**:
+  - [x] Create generic `is_safe_path` helper in `ldm_core/utils.py` verifying that all extracted archive member names and symbolic/hard link targets resolve within the destination target boundary without any traversal.
+  - [x] Refactor `safe_extract` in `ldm_core/utils.py` to check all ZipFile and TarFile member names and link destinations using `is_safe_path` before extraction.
+  - [x] Refactor `_extract_snapshot_archive` in `ldm_core/handlers/snapshot.py` to check snapshot TarFile members and symlinks using `is_safe_path`.
+  - [x] Add comprehensive unit tests in `ldm_core/tests/test_utils.py` covering traversal/absolute path exclusions, relative link boundary validations, and Zip/Tar slip block triggers.
+
 - **Stream database snapshot dumps directly to disk to prevent OOM memory exhaustion (Issue #442)**:
   - [x] Add `stdout_file` parameter support to `run_command` in `ldm_core/utils.py` and `ldm_core/handlers/base.py` to allow streaming stdout directly to a file descriptor.
   - [x] Refactor database backup snapshot dump routine in `ldm_core/handlers/snapshot.py` to open the backup file and stream stdout directly to it.
