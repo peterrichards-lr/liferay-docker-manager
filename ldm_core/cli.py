@@ -565,6 +565,18 @@ def get_parser():
         dest="persist_osgi",
         help="Do not persist the OSGi state folder",
     )
+    run.add_argument(
+        "--on-validation-failure",
+        choices=["die", "ignore"],
+        default="die",
+        dest="on_validation_failure",
+        help=(
+            "Behaviour when a config file (e.g. fragment-overrides.json) fails "
+            "schema validation in non-interactive mode. "
+            "'die' (default) aborts with exit code 1; "
+            "'ignore' logs a warning and continues."
+        ),
+    )
 
     # Command: import
     imp = subparsers.add_parser("import", parents=[base_sub_parent])

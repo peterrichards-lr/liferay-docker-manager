@@ -42,6 +42,7 @@ These flags are ideal for automated testing pipelines where interactivity is imp
 - **`--fast-login`**: Automatically bypasses typical post-startup prompts (Terms of Use acceptance, initial password reset). Best used with an external database (`--db mysql` or `postgresql`), as password policy bypass has known limitations with the embedded Hypersonic database.
 - **`--target-env`**: (Used with `import` and `init-from`). Overrides the environment name metadata.
 - **`--build`**: (Used with `import` and `init-from`). Forces a full rebuild of any Server-Side Client Extensions found in the source workspace during initialization.
+- **`--on-validation-failure`**: Behaviour when a config file (e.g. `fragment-overrides.json`) fails schema validation in non-interactive mode. Choices: `die` (default) or `ignore`.
 
 ## JVM & Tomcat Tuning
 
@@ -73,4 +74,4 @@ Controls whether LDM provisions an isolated PostgreSQL database or connects to t
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-07-08* | *Last Reviewed: 2026-07-02*
+*Last Updated: 2026-07-09* | *Last Reviewed: 2026-07-02*

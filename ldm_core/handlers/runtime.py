@@ -819,6 +819,46 @@ class RuntimeService(BaseHandler):
 
         return targets
 
+    @staticmethod
+    def _validate_fragment_overrides(data, file_path):
+        """Statically validate the structure of a fragment-overrides.json payload.
+
+        Expected format is a top-level dictionary where:
+        - Every key is a non-empty string (the fragment key).
+        - Every value is a dictionary (the configuration payload sent to the
+          Headless Page API).
+
+        The legacy format (a JSON list) and any other type are rejected.
+
+        Returns:
+            list[str]: A (possibly empty) list of human-readable error messages.
+                       An empty list means the data is valid.
+        """
+        errors = []
+        if isinstance(data, list):
+            errors.append(
+                f"{file_path.name}: root element is a list — this is the legacy "
+                "format. Please convert it to a dictionary keyed by fragment key."
+            )
+            return errors
+        if not isinstance(data, dict):
+            errors.append(
+                f"{file_path.name}: root element must be a JSON object (dict), "
+                f"got {type(data).__name__}."
+            )
+            return errors
+        for key, value in data.items():
+            if not isinstance(key, str) or not key.strip():
+                errors.append(
+                    f"{file_path.name}: key {key!r} is not a valid non-empty string."
+                )
+            if not isinstance(value, dict):
+                errors.append(
+                    f"{file_path.name}: value for key {key!r} must be a dict "
+                    f"(fragment config payload), got {type(value).__name__}."
+                )
+        return errors
+
     def _patch_fragment_overrides(self, project_meta, paths):
         """Execute headless API requests to dynamically patch fragment configurations."""
         import base64
@@ -851,6 +891,30 @@ class RuntimeService(BaseHandler):
 
         if not overrides:
             return
+
+        # --- Schema validation ---
+        validation_errors = self._validate_fragment_overrides(overrides, overrides_file)
+        if validation_errors:
+            for err in validation_errors:
+                UI.warning(err)
+            if self.manager.non_interactive:
+                on_failure = getattr(self.manager.args, "on_validation_failure", "die")
+                if on_failure == "ignore":
+                    UI.warning(
+                        "fragment-overrides.json validation failed — continuing "
+                        "(--on-validation-failure=ignore)."
+                    )
+                else:
+                    UI.die(
+                        "fragment-overrides.json validation failed. Use "
+                        "--on-validation-failure=ignore to override.",
+                        exit_code=1,
+                    )
+            elif not UI.confirm(
+                "fragment-overrides.json has validation errors. Continue anyway?",
+                "N",
+            ):
+                return
 
         UI.info("Executing dynamic Headless API fragment configuration patches...")
 
