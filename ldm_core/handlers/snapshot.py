@@ -1350,7 +1350,6 @@ class SnapshotService(BaseHandler):
         self, db_container, db_type, sql_file, paths, project_meta
     ):
         """Internal helper to execute a robust SQL import into a running DB container."""
-        import platform
         import subprocess
 
         from ldm_core.utils import resolve_infrastructure_mode
@@ -1466,16 +1465,38 @@ class SnapshotService(BaseHandler):
                     check=False,
                 )
 
-        # 2. Build Import Command
-        import_cmd_str = ""
+        # 2. Build Import Command as a list
+        import_cmd = []
         if db_type == "postgresql":
             # LDM-410: Use standard user and enforce error stopping for reliability
-            import_cmd_str = f'docker exec -i "{db_container}" psql -U lportal -d {db_name} -v ON_ERROR_STOP=1 < "{sql_file}"'
+            import_cmd = [
+                "docker",
+                "exec",
+                "-i",
+                db_container,
+                "psql",
+                "-U",
+                "lportal",
+                "-d",
+                db_name,
+                "-v",
+                "ON_ERROR_STOP=1",
+            ]
         elif db_type in ["mysql", "mariadb"]:
-            import_cmd_str = f'docker exec -i "{db_container}" mysql -u lportal -ptest {db_name} < "{sql_file}"'
+            import_cmd = [
+                "docker",
+                "exec",
+                "-i",
+                db_container,
+                "mysql",
+                "-u",
+                "lportal",
+                "-ptest",
+                db_name,
+            ]
 
         # 3. Execute with Retry
-        if import_cmd_str:
+        if import_cmd:
             success = False
             for i in range(3):  # Retry up to 3 times for flaky Docker IO
                 # LDM-422: We MUST wipe the DB at the start of EVERY retry attempt.
@@ -1483,18 +1504,14 @@ class SnapshotService(BaseHandler):
                 # fail with "relation already exists" unless the schema is dropped again.
                 _wipe_db()
                 try:
-                    # LDM-419: Use shell=True and OS-level redirection (<) instead of Python's stdin buffering.
-                    # Python's subprocess.run(stdin=f) truncates massive 50MB+ SQL files across the Docker boundary,
-                    # causing "Broken pipe" and incomplete schema restorations.
-                    subprocess.run(
-                        import_cmd_str,
-                        shell=True,
-                        check=True,
-                        capture_output=True,
-                        executable="/bin/bash"
-                        if platform.system() != "Windows"
-                        else None,
-                    )  # nosec B602 B604
+                    # Pipe the file stream directly via stdin to prevent memory buffering and command injection
+                    with open(sql_file, "rb") as sql_f:
+                        subprocess.run(
+                            import_cmd,
+                            stdin=sql_f,
+                            check=True,
+                            capture_output=True,
+                        )
                     success = True
                     break
                 except subprocess.CalledProcessError as e:
