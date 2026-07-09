@@ -80,6 +80,14 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
   - [x] Document hooks setup inside `docs/how-to/development.md`.
   - [x] Create PR #477 for the feature branch.
 
+- **Safe SELECT-only SQL execution command (Issue #473)**:
+  - [x] Create generic `is_query_safe` validator method in `DatabaseService`.
+  - [x] Implement database container credentials resolution and output formats (`table`, `csv`, `json`).
+  - [x] Add `db query` subparser group, execution routing, and preprocess gates in `cli.py`.
+  - [x] Write comprehensive unit/integration tests in `test_database.py`.
+  - [x] Document the new command in `docs/reference/advanced_cli.md`.
+  - [x] Create PR #475 for the feature branch.
+
 - **Secure Plaintext Token Storage and Restrict Configuration File Permissions (Issue #438)**:
   - [x] Integrate Python's standard `keyring` package to securely store and retrieve Liferay Tunnel tokens (`lfr_tunnel_token`) in the OS-native credential vault.
   - [x] Restrict global config file (`~/.ldmrc`) creation permissions to `0600` and its parent directory to `0700` inside `save_global_config_safe`.
