@@ -905,7 +905,26 @@ class RuntimeService(BaseHandler):
         expansion_env["LDM_SSL_ENABLED"] = "true" if is_ssl else "false"
         expansion_env["LDM_HTTP_SCHEME"] = "https" if is_ssl else "http"
         if host_name != "localhost":
-            ext_base_url = f"https://{host_name}" if is_ssl else f"http://{host_name}"
+            if share_enabled:
+                ext_base_url = (
+                    f"https://{host_name}" if is_ssl else f"http://{host_name}"
+                )
+            else:
+                proxy_ports = self.manager.infra.get_proxy_ports()
+                if is_ssl:
+                    port_suffix = (
+                        f":{proxy_ports['https']}"
+                        if proxy_ports.get("https", 443) != 443
+                        else ""
+                    )
+                    ext_base_url = f"https://{host_name}{port_suffix}"
+                else:
+                    port_suffix = (
+                        f":{proxy_ports['http']}"
+                        if proxy_ports.get("http", 80) != 80
+                        else ""
+                    )
+                    ext_base_url = f"http://{host_name}{port_suffix}"
         else:
             ext_base_url = f"http://localhost:{lfr_port}"
 
