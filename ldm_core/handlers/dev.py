@@ -54,9 +54,20 @@ class DevService:
         UI.success("Dependencies installed.")
 
         # 4. Install pre-commit hooks
-        UI.info("Registering pre-commit hooks...")
-        run_command([str(venv_python), "-m", "pre_commit", "install"])
-        UI.success("Pre-commit hooks registered.")
+        UI.info("Registering pre-commit and pre-push hooks...")
+        run_command(
+            [
+                str(venv_python),
+                "-m",
+                "pre_commit",
+                "install",
+                "--hook-type",
+                "pre-commit",
+                "--hook-type",
+                "pre-push",
+            ]
+        )
+        UI.success("Pre-commit and pre-push hooks registered.")
 
         UI.success("Development environment is ready!")
         if platform.system().lower() == "windows":

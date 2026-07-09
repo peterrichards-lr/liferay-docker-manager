@@ -137,16 +137,30 @@ jobs:
           python3 scripts/sync_baseline.py
           python3 scripts/sync_colors.py
 
-      - name: Run Quality Gate (pre-commit)
+      - name: Run Quality Gate (pre-commit lints)
         env:
           # actionlint is a Go binary and does not belong in a Python-version matrix.
           # It is validated in the dedicated 'actionlint' job instead, which runs
           # the official binary directly and is unaffected by setuptools versions.
           SKIP: bump-docs-timestamps,check-docs-review,actionlint
         run: |
-          # Use pre-commit to run all linting, types, and unit tests.
-          # This ensures local and CI checks are identical.
-          pre-commit run --all-files --show-diff-on-failure
+          pre-commit run --all-files --stages commit --show-diff-on-failure
+
+      - name: Run MyPy Type Check
+        run: |
+          mypy ldm_core --config-file=mypy.ini
+
+      - name: Run Import Dependency Audit (deptry)
+        run: |
+          deptry .
+
+      - name: Run Security Audit (Bandit)
+        run: |
+          bandit -r ldm_core/ -x ldm_core/tests/ --severity-level medium
+
+      - name: Run PyTest Suite
+        run: |
+          python -m pytest ldm_core/tests/
 
       - name: Run Dependency Audit (pip-audit)
         run: pip-audit

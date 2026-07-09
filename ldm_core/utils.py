@@ -16,7 +16,7 @@ import requests
 try:
     import keyring
 except ImportError:
-    keyring = None
+    keyring = None  # type: ignore[assignment]
 
 from ldm_core.constants import SCRIPT_DIR, TAG_PATTERN
 from ldm_core.ui import UI

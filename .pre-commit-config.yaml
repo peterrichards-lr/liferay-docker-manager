@@ -10,6 +10,7 @@ repos:
     rev: v1.10.0
     hooks:
       - id: mypy
+        stages: [pre-push, manual]
         additional_dependencies:
           - types-requests
           - types-PyYAML
@@ -26,6 +27,7 @@ repos:
   - repo: local
     hooks:
       - id: pytest
+        stages: [pre-push, manual]
         name: pytest
         entry: scripts/run_python.sh -m pytest
         language: system
@@ -33,6 +35,7 @@ repos:
         always_run: true
 
       - id: bandit
+        stages: [pre-push, manual]
         name: bandit
         entry: scripts/run_python.sh -m bandit
         args: [ "-r", "ldm_core/", "-x", "ldm_core/tests/", "--severity-level", "medium" ]
@@ -117,6 +120,7 @@ repos:
   - repo: local
     hooks:
       - id: deptry
+        stages: [pre-push, manual]
         name: deptry
         entry: scripts/run_python.sh -m deptry .
         language: system
