@@ -144,7 +144,7 @@ jobs:
           # the official binary directly and is unaffected by setuptools versions.
           SKIP: bump-docs-timestamps,check-docs-review,actionlint
         run: |
-          pre-commit run --all-files --stage commit --show-diff-on-failure
+          pre-commit run --all-files --hook-stage pre-commit --show-diff-on-failure
 
       - name: Run MyPy Type Check
         run: |
