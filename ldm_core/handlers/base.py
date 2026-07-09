@@ -899,16 +899,16 @@ class BaseHandler:
         if cmd in lock_commands or is_config_lock or is_rescue_lock:
             from ldm_core.utils import ProjectLock
 
-            mgr = self.manager if self.manager else self
+            mgr = getattr(self, "manager", None) or self
             if not hasattr(mgr, "_active_locks"):
-                mgr._active_locks = {}  # type: ignore[attr-defined]
+                mgr._active_locks = {}  # type: ignore[attr-defined, union-attr]
 
             path_key = Path(path).resolve().as_posix()
-            if path_key not in mgr._active_locks:  # type: ignore[attr-defined]
+            if path_key not in mgr._active_locks:  # type: ignore[attr-defined, union-attr]
                 lock = ProjectLock(path)
                 try:
                     lock.acquire()
-                    mgr._active_locks[path_key] = lock  # type: ignore[attr-defined]
+                    mgr._active_locks[path_key] = lock  # type: ignore[attr-defined, union-attr]
                 except RuntimeError as e:
                     UI.die(str(e))
 
