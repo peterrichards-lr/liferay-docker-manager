@@ -1,25 +1,43 @@
 import logging
+import secrets
 import subprocess
 import sys
 from pathlib import Path
 
-from flask import Flask, jsonify, request
+from flask import Blueprint, Flask, abort, current_app, jsonify, request
 
 from ldm_core.utils import run_command
 
-app = Flask(__name__)
-# Suppress Flask default logging
-log = logging.getLogger("werkzeug")
-log.setLevel(logging.ERROR)
+bp = Blueprint("dashboard", __name__)
 
 
-def start_server(manager, host, port):
+def create_app(manager, secret_key=None):
+    app = Flask(__name__)
+    app.secret_key = secret_key or secrets.token_hex(32)
     app.config["MANAGER"] = manager
+
+    @app.before_request
+    def check_csrf_or_auth():
+        if request.method in ["POST", "PUT", "DELETE"]:
+            token = request.headers.get("X-LDM-Token")
+            if not token or token != app.secret_key:
+                abort(403, description="Forbidden: Invalid or missing API Token")
+
+    app.register_blueprint(bp)
+    return app
+
+
+def start_server(manager, host, port, secret_key=None):
+    # Suppress Flask default logging
+    log = logging.getLogger("werkzeug")
+    log.setLevel(logging.ERROR)
+
+    app = create_app(manager, secret_key=secret_key)
     app.run(host=host, port=port, debug=False)
 
 
 def _find_project_path(project_name):
-    manager = app.config["MANAGER"]
+    manager = current_app.config["MANAGER"]
     roots = manager.find_dxp_roots()
     for r in roots:
         path = r["path"]
@@ -68,9 +86,9 @@ def run_background_ldm_cmd(args_list):
         )
 
 
-@app.route("/api/projects")
+@bp.route("/api/projects")
 def api_projects():
-    manager = app.config["MANAGER"]
+    manager = current_app.config["MANAGER"]
     roots = manager.find_dxp_roots()
     projects = []
 
@@ -178,7 +196,7 @@ def api_projects():
     return jsonify(projects)
 
 
-@app.route("/api/projects/<project_name>/start", methods=["POST"])
+@bp.route("/api/projects/<project_name>/start", methods=["POST"])
 def api_start_project(project_name):
     import re
 
@@ -195,7 +213,7 @@ def api_start_project(project_name):
     )
 
 
-@app.route("/api/projects/<project_name>/stop", methods=["POST"])
+@bp.route("/api/projects/<project_name>/stop", methods=["POST"])
 def api_stop_project(project_name):
     import re
 
@@ -212,7 +230,7 @@ def api_stop_project(project_name):
     )
 
 
-@app.route("/api/projects/<project_name>/snapshots")
+@bp.route("/api/projects/<project_name>/snapshots")
 def api_list_snapshots(project_name):
     import re
 
@@ -223,7 +241,7 @@ def api_list_snapshots(project_name):
     if not path:
         return jsonify({"error": "Project not found"}), 404
 
-    manager = app.config["MANAGER"]
+    manager = current_app.config["MANAGER"]
     paths = manager.setup_paths(path)
     backups_dir = paths.get("backups")
 
@@ -259,7 +277,7 @@ def api_list_snapshots(project_name):
     return jsonify(result)
 
 
-@app.route("/api/projects/<project_name>/snapshot", methods=["POST"])
+@bp.route("/api/projects/<project_name>/snapshot", methods=["POST"])
 def api_create_snapshot(project_name):
     import re
 
@@ -283,7 +301,7 @@ def api_create_snapshot(project_name):
     )
 
 
-@app.route("/api/projects/<project_name>/restore/<snapshot_id>", methods=["POST"])
+@bp.route("/api/projects/<project_name>/restore/<snapshot_id>", methods=["POST"])
 def api_restore_snapshot(project_name, snapshot_id):
     import re
 
@@ -296,7 +314,7 @@ def api_restore_snapshot(project_name, snapshot_id):
     if not path:
         return jsonify({"error": "Project not found"}), 404
 
-    manager = app.config["MANAGER"]
+    manager = current_app.config["MANAGER"]
     paths = manager.setup_paths(path)
     backups_dir = paths.get("backups")
 
@@ -323,14 +341,14 @@ def api_restore_snapshot(project_name, snapshot_id):
     )
 
 
-@app.route("/api/logs/<project_name>")
+@bp.route("/api/logs/<project_name>")
 def api_logs(project_name):
     import re
 
     if not re.match(r"^[a-zA-Z0-9_-]+$", project_name):
         return jsonify({"error": "Invalid project name format"}), 400
 
-    manager = app.config["MANAGER"]
+    manager = current_app.config["MANAGER"]
     # Verify the project exists
     roots = manager.find_dxp_roots()
     project_path = None
@@ -359,7 +377,7 @@ def api_logs(project_name):
     return jsonify({"logs": logs or "No logs available or container not running."})
 
 
-@app.route("/api/projects/<project_name>/properties")
+@bp.route("/api/projects/<project_name>/properties")
 def api_project_properties(project_name):
     import re
 
@@ -371,7 +389,7 @@ def api_project_properties(project_name):
         return jsonify({"error": "Project not found"}), 404
 
     try:
-        manager = app.config["MANAGER"]
+        manager = current_app.config["MANAGER"]
         paths = manager.setup_paths(path)
         project_meta = manager.read_meta(path) or {}
         # Load layers
@@ -580,7 +598,7 @@ def api_project_properties(project_name):
         ), 500
 
 
-@app.route("/api/projects/<project_name>/properties", methods=["PUT"])
+@bp.route("/api/projects/<project_name>/properties", methods=["PUT"])
 def api_update_project_property(project_name):
     import contextlib
     import re
@@ -605,7 +623,7 @@ def api_update_project_property(project_name):
         return jsonify({"error": "Property value is required"}), 400
 
     try:
-        manager = app.config["MANAGER"]
+        manager = current_app.config["MANAGER"]
         paths = manager.setup_paths(path)
         # Update the properties file
         updates = {key: str(value)}
@@ -631,7 +649,7 @@ def api_update_project_property(project_name):
         ), 500
 
 
-@app.route("/api/projects/<project_name>/properties/<key>", methods=["DELETE"])
+@bp.route("/api/projects/<project_name>/properties/<key>", methods=["DELETE"])
 def api_delete_project_property(project_name, key):
     import re
 
@@ -646,7 +664,7 @@ def api_delete_project_property(project_name, key):
         return jsonify({"error": "Invalid property key format"}), 400
 
     try:
-        manager = app.config["MANAGER"]
+        manager = current_app.config["MANAGER"]
         paths = manager.setup_paths(path)
         # Surgically remove property override from files/portal-ext.properties
         manager.config.remove_portal_ext(paths, {key})
@@ -665,11 +683,21 @@ def api_delete_project_property(project_name, key):
         ), 500
 
 
-@app.route("/")
+@bp.route("/")
 def index():
     from ldm_core.constants import SCRIPT_DIR
 
     html_path = SCRIPT_DIR / "ldm_core" / "resources" / "dashboard" / "index.html"
     if html_path.exists():
-        return html_path.read_text(encoding="utf-8")
+        html = html_path.read_text(encoding="utf-8")
+        secret_key = current_app.secret_key
+        if isinstance(secret_key, bytes):
+            secret_key_str = secret_key.decode("utf-8")
+        else:
+            secret_key_str = str(secret_key or "")
+
+        return html.replace(
+            "<!-- LDM_TOKEN_PLACEHOLDER -->",
+            f'<meta name="ldm-token" content="{secret_key_str}">',
+        )
     return "Dashboard UI not found.", 404

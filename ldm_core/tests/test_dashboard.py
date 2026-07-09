@@ -2,7 +2,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from ldm_core.dashboard.server import app
+from ldm_core.dashboard.server import create_app
 from ldm_core.handlers.dashboard import DashboardService
 
 
@@ -13,8 +13,10 @@ class TestDashboard(unittest.TestCase):
         self.manager.args = MagicMock()
         self.manager.config.get_global_config.return_value = {}
         self.dashboard_service = DashboardService(self.manager)
-        app.config["MANAGER"] = self.manager
-        self.client = app.test_client()
+        self.secret_key = "test_ephemeral_token"  # pragma: allowlist secret
+        self.app = create_app(self.manager, secret_key=self.secret_key)
+        self.client = self.app.test_client()
+        self.headers = {"X-LDM-Token": self.secret_key}
 
     @patch("ldm_core.dashboard.server.run_command")
     def test_dashboard_api_projects(self, mock_run_command):
@@ -70,7 +72,7 @@ class TestDashboard(unittest.TestCase):
         self.assertEqual(response.status_code, 404)
         self.assertIn("error", response.get_json())
 
-    @patch("ldm_core.dashboard.server.app.run")
+    @patch("flask.Flask.run")
     def test_cmd_dashboard_foreground(self, mock_flask_run):
         # Test foreground execution where Flask start_server is called
         with patch("ldm_core.handlers.dashboard.UI") as mock_ui:
@@ -94,6 +96,7 @@ class TestDashboard(unittest.TestCase):
             self.assertIn("19000", args[0])
             self.assertIn("--host", args[0])
             self.assertIn("127.0.0.1", args[0])
+            self.assertIn("--token", args[0])
 
     @patch("pathlib.Path.exists")
     @patch("pathlib.Path.read_text")
@@ -116,14 +119,18 @@ class TestDashboard(unittest.TestCase):
             {"path": Path("/dummy/project1"), "version": "7.4"}
         ]
         self.manager.read_meta.return_value = {"liferay_container_name": "my-project1"}
-        response = self.client.post("/api/projects/my-project1/start")
+        response = self.client.post(
+            "/api/projects/my-project1/start", headers=self.headers
+        )
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.get_json()["status"], "Starting")
         mock_run_background.assert_called_once_with(["run", "my-project1", "-y"])
 
     def test_api_start_project_not_found(self):
         self.manager.find_dxp_roots.return_value = []
-        response = self.client.post("/api/projects/my-project1/start")
+        response = self.client.post(
+            "/api/projects/my-project1/start", headers=self.headers
+        )
         self.assertEqual(response.status_code, 404)
 
     @patch("ldm_core.dashboard.server.run_background_ldm_cmd")
@@ -132,14 +139,18 @@ class TestDashboard(unittest.TestCase):
             {"path": Path("/dummy/project1"), "version": "7.4"}
         ]
         self.manager.read_meta.return_value = {"liferay_container_name": "my-project1"}
-        response = self.client.post("/api/projects/my-project1/stop")
+        response = self.client.post(
+            "/api/projects/my-project1/stop", headers=self.headers
+        )
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.get_json()["status"], "Stopping")
         mock_run_background.assert_called_once_with(["stop", "my-project1", "-y"])
 
     def test_api_stop_project_not_found(self):
         self.manager.find_dxp_roots.return_value = []
-        response = self.client.post("/api/projects/my-project1/stop")
+        response = self.client.post(
+            "/api/projects/my-project1/stop", headers=self.headers
+        )
         self.assertEqual(response.status_code, 404)
 
     @patch("ldm_core.dashboard.server.get_dir_size")
@@ -228,7 +239,9 @@ class TestDashboard(unittest.TestCase):
         self.manager.read_meta.return_value = {"liferay_container_name": "my-project1"}
 
         # Test default (no custom name)
-        response = self.client.post("/api/projects/my-project1/snapshot")
+        response = self.client.post(
+            "/api/projects/my-project1/snapshot", headers=self.headers
+        )
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.get_json()["status"], "Creating")
         mock_run_background.assert_called_with(["snapshot", "my-project1", "-y"])
@@ -236,7 +249,9 @@ class TestDashboard(unittest.TestCase):
         # Test with custom name
         mock_run_background.reset_mock()
         response = self.client.post(
-            "/api/projects/my-project1/snapshot", json={"name": "Custom Snap"}
+            "/api/projects/my-project1/snapshot",
+            json={"name": "Custom Snap"},
+            headers=self.headers,
         )
         self.assertEqual(response.status_code, 200)
         mock_run_background.assert_called_with(
@@ -261,7 +276,8 @@ class TestDashboard(unittest.TestCase):
         self.manager.setup_paths.return_value = {"backups": backups_dir}
 
         response = self.client.post(
-            "/api/projects/my-project1/restore/2026-06-22T12-00-00Z"
+            "/api/projects/my-project1/restore/2026-06-22T12-00-00Z",
+            headers=self.headers,
         )
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.get_json()["status"], "Restoring")
@@ -280,7 +296,9 @@ class TestDashboard(unittest.TestCase):
         backups_dir.iterdir.return_value = []
         self.manager.setup_paths.return_value = {"backups": backups_dir}
 
-        response = self.client.post("/api/projects/my-project1/restore/nonexistent")
+        response = self.client.post(
+            "/api/projects/my-project1/restore/nonexistent", headers=self.headers
+        )
         self.assertEqual(response.status_code, 404)
 
     @patch("ldm_core.dashboard.server._find_project_path")
@@ -335,7 +353,9 @@ class TestDashboard(unittest.TestCase):
             patch("ldm_core.handlers.config.safe_write_text"),
         ):
             response = self.client.put(
-                "/api/projects/my-project1/properties", json=payload
+                "/api/projects/my-project1/properties",
+                json=payload,
+                headers=self.headers,
             )
 
             self.assertEqual(response.status_code, 200)
@@ -364,7 +384,8 @@ class TestDashboard(unittest.TestCase):
             patch("pathlib.Path.read_text", return_value=""),
         ):
             response = self.client.delete(
-                "/api/projects/my-project1/properties/portal.security.manager.enabled"
+                "/api/projects/my-project1/properties/portal.security.manager.enabled",
+                headers=self.headers,
             )
 
             self.assertEqual(response.status_code, 200)
@@ -404,7 +425,9 @@ class TestDashboard(unittest.TestCase):
         }
         with patch("pathlib.Path.exists", return_value=True):
             response = self.client.put(
-                "/api/projects/my-project1/properties", json=payload
+                "/api/projects/my-project1/properties",
+                json=payload,
+                headers=self.headers,
             )
             self.assertEqual(response.status_code, 500)
             json_data = response.get_json()
@@ -423,8 +446,35 @@ class TestDashboard(unittest.TestCase):
         )
 
         response = self.client.delete(
-            "/api/projects/my-project1/properties/portal.security.manager.enabled"
+            "/api/projects/my-project1/properties/portal.security.manager.enabled",
+            headers=self.headers,
         )
         self.assertEqual(response.status_code, 500)
         json_data = response.get_json()
         self.assertEqual(json_data["error"], "Failed to delete property: Exception")
+
+    def test_csrf_mutation_without_token_fails(self):
+        # POST/PUT/DELETE requests without X-LDM-Token should return 403 Forbidden
+        response = self.client.post("/api/projects/my-project1/start")
+        self.assertEqual(response.status_code, 403)
+        self.assertIn("Forbidden", response.get_data(as_text=True))
+
+        response = self.client.put("/api/projects/my-project1/properties", json={})
+        self.assertEqual(response.status_code, 403)
+
+        response = self.client.delete("/api/projects/my-project1/properties/key")
+        self.assertEqual(response.status_code, 403)
+
+    def test_csrf_mutation_with_invalid_token_fails(self):
+        # Requests with an invalid token should return 403 Forbidden
+        bad_headers = {"X-LDM-Token": "completely_wrong_token"}
+        response = self.client.post(
+            "/api/projects/my-project1/start", headers=bad_headers
+        )
+        self.assertEqual(response.status_code, 403)
+
+    def test_csrf_get_endpoints_do_not_require_token(self):
+        # GET endpoints must bypass token authentication
+        self.manager.find_dxp_roots.return_value = []
+        response = self.client.get("/api/projects")
+        self.assertEqual(response.status_code, 200)

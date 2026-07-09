@@ -72,6 +72,15 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
 
 ## 8. Active Work State & Plan (July 9, 2026)
 
+- **Add CSRF Protection and API Token Authentication to Web Dashboard Server (Issue #441)**:
+  - [x] Introduce Blueprint and `create_app` factory in `ldm_core/dashboard/server.py`.
+  - [x] Add session key validation `before_request` hook.
+  - [x] Inject `meta` tag placeholder in `index.html` and replace it in the index view.
+  - [x] Implement Alpine.js client security initialization and `apiFetch` wrapper.
+  - [x] Add `--token` CLI argument and mapping in `ldm_core/cli.py` and `ldm_core/handlers/dashboard.py`.
+  - [x] Write unit tests verifying token authentication validation and bypass routes in `test_dashboard.py`.
+  - [/] Create PR #478 for the feature branch.
+
 - **Decouple CI checks from local commit loop (Issue #476)**:
   - [x] Configure stages `[pre-push, manual]` for heavy hooks (`mypy`, `pytest`, `bandit`, `deptry`) in `.pre-commit-config.yaml`.
   - [x] Update `ldm dev-setup` to install both pre-commit and pre-push hook types.

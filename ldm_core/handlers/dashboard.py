@@ -10,9 +10,13 @@ class DashboardService:
     def __init__(self, manager):
         self.manager = manager
 
-    def cmd_dashboard(self, port=19000, host="127.0.0.1", background=False):
+    def cmd_dashboard(self, port=19000, host="127.0.0.1", background=False, token=None):
         """Starts the local web dashboard for LDM."""
+        import secrets
+
         UI.heading("LDM Visual Health Dashboard")
+
+        secret_key = token or secrets.token_hex(32)
 
         if background:
             # Re-launch this command without --background, but detached
@@ -24,8 +28,12 @@ class DashboardService:
                 str(port),
                 "--host",
                 host,
+                "--token",
+                secret_key,
             ]
-            UI.info(f"Starting dashboard in background on http://{host}:{port}...")
+            UI.info(
+                f"Starting dashboard in background on http://{host}:{port}/?token={secret_key}..."
+            )
 
             # Use subprocess.Popen to launch detached
             if sys.platform == "win32":
@@ -55,7 +63,7 @@ class DashboardService:
                 "Failed to import the dashboard server. Ensure 'flask' is installed."
             )
 
-        UI.info(f"Server starting on http://{host}:{port}")
+        UI.info(f"Server starting on http://{host}:{port}/?token={secret_key}")
         UI.detail("Press Ctrl+C to stop the dashboard.")
 
-        start_server(self.manager, host, port)
+        start_server(self.manager, host, port, secret_key=secret_key)

@@ -378,6 +378,7 @@ The following is a comprehensive index of all registered CLI option flags and th
 - **`--system`**: Show detailed system diagnostic checks.
 - **`--tail`**: Number of lines to show from the end of the logs.
 - **`--timestamps`**: Show timestamps.
+- **`--token`**: CSRF/Authentication token for dashboard mutations.
 - **`--trigger`**: Event trigger for the release package workflow.
 - **`--tui`**: Launch interactive terminal menu to configure property overrides.
 - **`--up`**: Automatically start the project after reseeding.
@@ -393,4 +394,4 @@ The following is a comprehensive index of all registered CLI option flags and th
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-07-08* | *Last Reviewed: 2026-07-02*
+*Last Updated: 2026-07-09* | *Last Reviewed: 2026-07-02*
