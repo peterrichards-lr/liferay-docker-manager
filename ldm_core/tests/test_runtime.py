@@ -1935,6 +1935,45 @@ services:
                 "https://foo.my-subdomain.lfr.cloud",
             )
 
+    def test_cmd_run_with_vanilla_flag(self):
+        """Verify that cmd_run sets no_seed=True when --vanilla is passed."""
+        with (
+            patch.object(
+                self.handler,
+                "setup_paths",
+                return_value={
+                    "root": self.tmp_dir,
+                    "data": self.tmp_dir / "data",
+                    "state": self.tmp_dir / "osgi" / "state",
+                },
+            ),
+            patch.object(self.handler, "read_meta", return_value={}),
+            patch.object(self.handler, "_pre_flight_checks", return_value=8080),
+            patch.object(self.handler, "verify_runtime_environment"),
+            patch.object(self.handler.handler, "sync_stack") as mock_sync,
+        ):
+            self.handler.args.vanilla = True
+            self.handler.args.no_seed = False
+            self.handler.args.project = "test"
+            self.handler.args.tag = "latest"
+            self.handler.args.tag_latest = False
+            self.handler.args.tag_prefix = None
+            self.handler.args.release_type = None
+            self.handler.args.no_up = True
+            self.handler.args.samples = False
+            self.handler.args.db = None
+            self.handler.args.host_name = None
+            self.handler.args.jvm_args = None
+            self.handler.args.port = None
+            self.handler.args.snapshot = None
+            self.handler.args.archetype = None
+            self.handler.args.reindex = False
+
+            self.handler.cmd_run("test")
+
+            self.assertTrue(self.handler.args.no_seed)
+            mock_sync.assert_called_once()
+
 
 if __name__ == "__main__":
     unittest.main()

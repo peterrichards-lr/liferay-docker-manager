@@ -65,6 +65,10 @@ Use `--scale SERVICE=N` to boot a scaled stack without having to run `ldm scale`
 ldm run demo --scale liferay=2 --scale my-ext=3
 ```
 
+### `--vanilla` Switch
+
+Bypasses downloading the pre-warmed database seed from GitHub releases. Spawns the Liferay project stack with a pristine, empty database.
+
 ## `init`
 
 Initialize project scaffolding (creating `.liferay-docker.meta`, `portal-ext.properties`, etc.) without actually starting the Docker containers. Accepts many of the same configuration flags as `run`.
@@ -387,7 +391,7 @@ ldm log-level [project] --list
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-07-08* | *Last Reviewed: 2026-07-07*
+*Last Updated: 2026-07-09* | *Last Reviewed: 2026-07-07*
 
 ## Global Flags
 

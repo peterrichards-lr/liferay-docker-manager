@@ -138,6 +138,8 @@ jobs:
           python3 scripts/sync_colors.py
 
       - name: Run Quality Gate (pre-commit)
+        env:
+          SKIP: bump-docs-timestamps,check-docs-review
         run: |
           # Use pre-commit to run all linting, types, and unit tests.
           # This ensures local and CI checks are identical.

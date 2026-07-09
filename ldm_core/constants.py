@@ -81,6 +81,7 @@ RUN_ATTRS = [
     "no_jvm_verify",
     "no_tld_skip",
     "no_seed",
+    "vanilla",
     "seeded",
     "seed_version",
     "seed_config",

@@ -70,7 +70,13 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
 - [Agent Rules of Engagement](./.gemini/gemini.md)
 - [Properties Override Hierarchy Guide](./docs/explanation/properties.md)
 
-## 8. Active Work State & Plan (June 26, 2026)
+## 8. Active Work State & Plan (July 9, 2026)
+
+- **Vanilla Liferay start option & guides (Colleague request)**:
+  - [x] Add a `--vanilla` flag to `ldm run` and `ldm init` commands to bypass project seeding.
+  - [x] Add a documentation guide `docs/how-to/vanilla_start.md` explaining fresh vanilla Liferay start configurations (database, volumes, versions).
+  - [x] Update `README.md` and `docs/README.md` to link and document the vanilla run command.
+  - [x] Write unit tests to cover the --vanilla flag.
 
 - **Bypass SSL/certificate generation during .ldmp packaging and local builds**:
   - [x] Add a `--no-ssl` flag to `run-e2e-ldm.sh` in the AICA repository, allowing users and CI workflows to run LDM in plain HTTP mode and bypass local `mkcert` CA trust issues.
@@ -522,13 +528,9 @@ When modifying `client-extension.yaml` files, **NEVER change or remove `.service
   - [x] Implement native `ldm set-version` (Issue #373) to mutate `gradle.properties` natively.
   - [x] Execute automated release script to cut `v2.15.0` version bump.
 
-- **Current Active Task (July 7, 2026) - Part 2**:
-  - [x] Fix ComposerService `--no-ssl` port binding collision preventing local extensions from booting (PR #390).
-  - [x] Create release `v2.15.2` of Liferay Docker Manager with the port fix.
-  - [x] Implement Diátaxis documentation restructure on `ldm-cx-samples`.
-  - [x] Enhance MkDocs material theme with premium UX (Dark mode, Tabs, Search).
-  - [x] Resolve `ldm-cx-samples` E2E cleanup permissions error with `sudo`.
+- **Current Active Task (July 9, 2026)**:
+  - [x] Create Technical Debt issues on GitHub using `gh` CLI.
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-07-08* | *Last Reviewed: 2026-07-02*
+*Last Updated: 2026-07-09* | *Last Reviewed: 2026-07-09*

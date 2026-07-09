@@ -459,6 +459,11 @@ def get_parser():
         "--no-seed", action="store_true", help="Disable automatic project seeding"
     )
     run.add_argument(
+        "--vanilla",
+        action="store_true",
+        help="Bypass seeding to start a completely fresh vanilla Liferay",
+    )
+    run.add_argument(
         "--no-osgi-seed",
         action="store_true",
         help="Skip seeding the OSGi state folder (use when re-calculating bundles)",
@@ -749,6 +754,14 @@ def get_parser():
         "--fast-login",
         action="store_true",
         help="Bypass typical startup prompts (terms of use, password reset)",
+    )
+    init.add_argument(
+        "--no-seed", action="store_true", help="Disable automatic project seeding"
+    )
+    init.add_argument(
+        "--vanilla",
+        action="store_true",
+        help="Bypass seeding to start a completely fresh vanilla Liferay",
     )
     init.add_argument("--feature", nargs="+")
     init.add_argument("--ssl", action="store_true", default=None)
