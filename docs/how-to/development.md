@@ -50,6 +50,16 @@ Bundles the Python interpreter inside the file. Works even on machines without P
 
 The resulting binary will be found in the `dist/` folder (for PyInstaller) or the root (for Shiv).
 
+### 3. Pre-commit & Pre-push Setup
+
+To keep local commits fast (< 2 seconds), code formatting, style checks, and secrets scanning run on `git commit`. Heavy quality gates (type checking, security audits, and testing) are deferred to `git push`.
+
+Verify you have both hook types installed in your clone:
+
+```bash
+pre-commit install --hook-type pre-commit --hook-type pre-push
+```
+
 ---
 
 ## 🛠️ Codebase Conventions & Command Execution
@@ -64,4 +74,4 @@ When executing external binaries or shell commands (e.g. docker, git, mkcert, lc
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-07-08* | *Last Reviewed: 2026-07-02*
+*Last Updated: 2026-07-09* | *Last Reviewed: 2026-07-09*

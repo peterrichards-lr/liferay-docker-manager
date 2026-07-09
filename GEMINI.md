@@ -72,6 +72,14 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
 
 ## 8. Active Work State & Plan (July 9, 2026)
 
+- **Decouple CI checks from local commit loop (Issue #476)**:
+  - [x] Configure stages `[pre-push, manual]` for heavy hooks (`mypy`, `pytest`, `bandit`, `deptry`) in `.pre-commit-config.yaml`.
+  - [x] Update `ldm dev-setup` to install both pre-commit and pre-push hook types.
+  - [x] Split generic Quality Gate step in `.github/workflows/ci.yml` into distinct, parallel/sequential steps.
+  - [x] Add mypy and type stubs to `requirements-dev.txt` for GHA/local direct execution.
+  - [x] Document hooks setup inside `docs/how-to/development.md`.
+  - [x] Create PR #477 for the feature branch.
+
 - **Safe SELECT-only SQL execution command (Issue #473)**:
   - [x] Create generic `is_query_safe` validator method in `DatabaseService`.
   - [x] Implement database container credentials resolution and output formats (`table`, `csv`, `json`).
