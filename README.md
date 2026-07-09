@@ -64,6 +64,12 @@ ldm restore my-project
 ldm package my-project
 ```
 
+> [!NOTE]
+> **Headless & Seeding Prompt Behaviors**:
+>
+> - By default, LDM checks for a cached pre-warmed database seed. If not cached, it will prompt you interactively to download it.
+> - **CI/CD / Headless Scripts**: To prevent interactive prompts from blocking headless environments, pass `-y` / `--yes` / `--non-interactive` to automatically confirm seed downloads, or pass `--vanilla` / `--no-seed` to skip seeding entirely and start a clean baseline database.
+
 ---
 
 ## 📚 Documentation Signposts
