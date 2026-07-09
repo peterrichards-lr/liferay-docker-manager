@@ -575,13 +575,13 @@ class TestConfigService(unittest.TestCase):
         self.assertEqual(token, "config-token")
 
     @patch("ldm_core.handlers.config.ConfigService.get_global_config")
-    @patch("pathlib.Path.write_text")
-    def test_set_ngrok_auth_token(self, mock_write, mock_get_global):
+    @patch("ldm_core.utils.save_global_config_safe")
+    def test_set_ngrok_auth_token(self, mock_save_config, mock_get_global):
         mock_get_global.return_value = {}
         self.config.set_ngrok_auth_token("new-token")
-        self.assertTrue(mock_write.called)
-        written_content = mock_write.call_args[0][0]
-        self.assertIn("new-token", written_content)
+        self.assertTrue(mock_save_config.called)
+        written_data = mock_save_config.call_args[0][1]
+        self.assertEqual(written_data["ngrok_authtoken"], "new-token")
 
     @patch("ldm_core.ui.UI.success")
     @patch("ldm_core.ui.UI.detail")

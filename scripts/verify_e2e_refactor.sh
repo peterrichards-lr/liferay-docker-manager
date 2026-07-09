@@ -5,8 +5,16 @@ set -e
 # Target: Verifies the INSTALLED binary, not the source code.
 # Optimized for macOS (Intel/Silicon) and Linux.
 
-TEST_PORT="${LDM_TEST_PORT:-8082}"
+TEST_PORT="${LDM_TEST_PORT}"
+if [ -z "$TEST_PORT" ]; then
+    TEST_PORT=$(python3 -c 'import socket; s=socket.socket(); s.bind(("", 0)); print(s.getsockname()[1]); s.close()')
+fi
 export TEST_PORT
+
+PROJECT_NAME="ldm-smoke-test-${TEST_PORT}"
+COLLISION_PROJECT="collision-test-${TEST_PORT}"
+TAG_VAL_PROJECT="tag-val-test-${TEST_PORT}"
+
 KEEP_ARTIFACTS=false
 for arg in "$@"; do
     if [ "$arg" == "-k" ] || [ "$arg" == "--keep" ]; then
@@ -14,10 +22,13 @@ for arg in "$@"; do
     fi
 done
 
-echo "⚡ Starting Standalone Binary Verification..."
+echo "⚡ Starting Standalone Binary Verification on Port ${TEST_PORT}..."
 
 # Store the original directory for final report placement
 ORIGINAL_PWD=$(pwd)
+
+LDM_WORKSPACE_DIR_NAME="e2e-work-dir-${TEST_PORT}"
+LDM_WORKSPACE="${LDM_WORKSPACE:-${ORIGINAL_PWD}/${LDM_WORKSPACE_DIR_NAME}}"
 
 # Determine the binary command
 LDM_CMD="ldm"
@@ -65,7 +76,7 @@ get_hash() {
 
 capture_logs_on_failure() {
     echo -e "\n--- FAILURE DEBUG LOGS ---" >> "$RESULTS_FILE_TMP"
-    for container in liferay-proxy-global liferay-search-global ldm-smoke-test ldm-smoke-test-db-1; do
+    for container in liferay-proxy-global liferay-search-global "${PROJECT_NAME}" "${PROJECT_NAME}-db-1"; do
         if docker ps -a | grep -q "$container"; then
             echo ">> Logs for $container:" >> "$RESULTS_FILE_TMP"
             docker logs "$container" --tail 50 >> "$RESULTS_FILE_TMP" 2>&1
@@ -88,8 +99,8 @@ cleanup_test_projects() {
     local final_name
     final_name="verify-${env_slug:-unknown}-${status}.txt"
     
-    if [ -d "e2e-work-dir/ldm-smoke-test/test-results" ]; then
-        cp -r "e2e-work-dir/ldm-smoke-test/test-results" "${ORIGINAL_PWD}/" 2>/dev/null || true
+    if [ -d "${LDM_WORKSPACE_DIR_NAME}/${PROJECT_NAME}/test-results" ]; then
+        cp -r "${LDM_WORKSPACE_DIR_NAME}/${PROJECT_NAME}/test-results" "${ORIGINAL_PWD}/" 2>/dev/null || true
     fi
 
     if [ "$status" == "pass" ] && [ -f "$RESULTS_FILE_TMP" ]; then
@@ -106,11 +117,20 @@ cleanup_test_projects() {
     fi
 
     if [ "$KEEP_ARTIFACTS" != "true" ]; then
-        docker rm -f liferay-proxy-global liferay-search-global liferay-docker-proxy 2>/dev/null || true
-        LDM_WORKSPACE="${ORIGINAL_PWD}/e2e-work-dir" "$LDM_CMD" -y rm ldm-smoke-test --delete >/dev/null 2>&1 || true
+        # Check if other LDM project containers are running before tearing down global Traefik/proxy
+        local other_containers
+        other_containers=$(docker ps --format '{{.Names}}' | grep -vE "^(liferay-proxy-global|liferay-search-global|liferay-docker-proxy|${PROJECT_NAME}|${PROJECT_NAME}-db-1)$" || true)
+        if [ -z "$other_containers" ]; then
+            echo "ℹ  No other LDM projects running. Cleaning up global infrastructure..."
+            docker rm -f liferay-proxy-global liferay-search-global liferay-docker-proxy 2>/dev/null || true
+        else
+            echo "ℹ  Other LDM projects are running (${other_containers//$'\n'/, }). Skipping global infrastructure cleanup."
+        fi
+
+        LDM_WORKSPACE="${LDM_WORKSPACE}" "$LDM_CMD" -y rm "${PROJECT_NAME}" --delete >/dev/null 2>&1 || true
         # Keep the venv if we are in the repository for developer convenience, otherwise delete
         if [ ! -f "pyproject.toml" ]; then
-            rm -rf "${ORIGINAL_PWD}/e2e-work-dir"
+            rm -rf "${LDM_WORKSPACE}"
         fi
     fi
 }
@@ -144,7 +164,6 @@ log_and_run() {
 
 # 0. Dependencies & Virtual Environment
 # We use a virtual environment to avoid PEP 668 'externally-managed-environment' errors.
-LDM_WORKSPACE="${ORIGINAL_PWD}/e2e-work-dir"
 TEST_VENV="${LDM_WORKSPACE}/.verify-venv"
 mkdir -p "$LDM_WORKSPACE"
 
@@ -170,7 +189,7 @@ if [ ! -f "$VENV_PYTEST" ]; then
 fi
 
 # 1. Cleanup & Setup
-"$LDM_CMD" -y rm ldm-smoke-test --delete --infra >/dev/null 2>&1 || true
+"$LDM_CMD" -y rm "${PROJECT_NAME}" --delete --infra >/dev/null 2>&1 || true
 export LDM_WORKSPACE
 
 # Pre-pull large images to avoid containerd lease timeouts during the timed E2E run
@@ -218,38 +237,38 @@ fi
 
 echo ">> Verifying Project Collision Detection..."
 # Use --no-seed to avoid 1GB download for a simple collision test
-if ! "$LDM_CMD" -y run "collision-test" --tag 2026.q1.4-lts --port 8099 --no-wait --no-up --no-seed > col_init.log 2>&1; then
+if ! "$LDM_CMD" -y run "${COLLISION_PROJECT}" --tag 2026.q1.4-lts --port 8099 --no-wait --no-up --no-seed > col_init.log 2>&1; then
     echo "❌ ERROR: Failed to initialize collision-test project." | tee -a "$RESULTS_FILE_TMP"
     tee -a "$RESULTS_FILE_TMP" < col_init.log
     exit 1
 fi
 
-mkdir -p "collision-test/nested"
-if (cd collision-test/nested && echo "n" | env -u GITHUB_ACTIONS -u CI -u GITLAB_CI LDM_ALLOW_ROOT=true "$LDM_CMD" run "./collision-test" --port 8099 --no-wait --no-up --no-seed 2>&1 | grep -qE "Project collision|already registered"); then
+mkdir -p "${COLLISION_PROJECT}/nested"
+if (cd "${COLLISION_PROJECT}/nested" && echo "n" | env -u GITHUB_ACTIONS -u CI -u GITLAB_CI LDM_ALLOW_ROOT=true "$LDM_CMD" run "./${COLLISION_PROJECT}" --port 8099 --no-wait --no-up --no-seed 2>&1 | grep -qE "Project collision|already registered"); then
     echo "✅ Project Collision verified."
 else
     echo "❌ ERROR: Collision detection failed." | tee -a "$RESULTS_FILE_TMP"
     # Print the log of the failed second run for debugging
-    (cd collision-test/nested && echo "n" | env -u GITHUB_ACTIONS -u CI -u GITLAB_CI LDM_ALLOW_ROOT=true "$LDM_CMD" run "./collision-test" --port 8099 --no-wait --no-up --no-seed 2>&1) | tee -a "$RESULTS_FILE_TMP"
+    (cd "${COLLISION_PROJECT}/nested" && echo "n" | env -u GITHUB_ACTIONS -u CI -u GITLAB_CI LDM_ALLOW_ROOT=true "$LDM_CMD" run "./${COLLISION_PROJECT}" --port 8099 --no-wait --no-up --no-seed 2>&1) | tee -a "$RESULTS_FILE_TMP"
     exit 1
 fi
-"$LDM_CMD" -y rm "collision-test" --delete >/dev/null 2>&1 && rm -rf "collision-test" col_init.log
+"$LDM_CMD" -y rm "${COLLISION_PROJECT}" --delete >/dev/null 2>&1 && rm -rf "${COLLISION_PROJECT}" col_init.log
 
 echo ">> Verifying Tag Validation Guardrail..."
-TAG_WARN_OUT=$("$LDM_CMD" -y run "tag-val-test" --tag invalid-tag --port 8099 --no-wait --no-up --no-seed 2>&1 || true)
+TAG_WARN_OUT=$("$LDM_CMD" -y run "${TAG_VAL_PROJECT}" --tag invalid-tag --port 8099 --no-wait --no-up --no-seed 2>&1 || true)
 if echo "$TAG_WARN_OUT" | grep -q "not listed in official Liferay releases"; then
     echo "✅ Tag Validation Guardrail verified."
 else
     echo "❌ ERROR: Tag Validation Guardrail failed. Output was: $TAG_WARN_OUT" | tee -a "$RESULTS_FILE_TMP"
     exit 1
 fi
-"$LDM_CMD" -y rm "tag-val-test" --delete >/dev/null 2>&1 && rm -rf "tag-val-test"
+"$LDM_CMD" -y rm "${TAG_VAL_PROJECT}" --delete >/dev/null 2>&1 && rm -rf "${TAG_VAL_PROJECT}"
 
 # 3. Project Run
 echo "ℹ  Provisioning standalone test project..."
-mkdir -p "$LDM_WORKSPACE/ldm-smoke-test/files"
-cd "$LDM_WORKSPACE/ldm-smoke-test"
-echo -e "tag=2026.q1.7-lts\ncontainer_name=ldm-smoke-test\nport=${TEST_PORT}\ndb_type=postgresql" > meta
+mkdir -p "$LDM_WORKSPACE/${PROJECT_NAME}/files"
+cd "$LDM_WORKSPACE/${PROJECT_NAME}"
+echo -e "tag=2026.q1.7-lts\ncontainer_name=${PROJECT_NAME}\nport=${TEST_PORT}\ndb_type=postgresql" > meta
 
 log_and_run "Running LDM Project" "$LDM_CMD" -y run . --no-wait --no-tld-skip --no-jvm-verify
 
@@ -257,7 +276,7 @@ log_and_run "Running LDM Project" "$LDM_CMD" -y run . --no-wait --no-tld-skip --
 echo "ℹ  Waiting for Liferay health..."
 if ! "$LDM_CMD" -y wait . --timeout 600; then
     echo "❌ ERROR: Liferay failed to become healthy. Dumping logs..." | tee -a "$RESULTS_FILE_TMP"
-    docker logs ldm-smoke-test --tail 300
+    docker logs "${PROJECT_NAME}" --tail 300
     exit 1
 fi
 
@@ -278,7 +297,7 @@ echo ">> Waiting for auto-deploy processing (up to 10m)..."
 # Verify Hot Deploy via Logs with a polling loop
 HOT_DEPLOY_SUCCESS=false
 for _ in {1..60}; do
-    if docker logs ldm-smoke-test --tail 200 2>&1 | grep -q "STARTED com.liferay.test.bundle"; then
+    if docker logs "${PROJECT_NAME}" --tail 200 2>&1 | grep -q "STARTED com.liferay.test.bundle"; then
         echo "✅ Hot Deploy verified." | tee -a "$RESULTS_FILE_TMP"
         HOT_DEPLOY_SUCCESS=true
         break
@@ -288,7 +307,7 @@ done
 
 if [ "$HOT_DEPLOY_SUCCESS" = false ]; then
     echo -e "\n❌ ERROR: Hot Deploy failed. Test Bundle did not start." | tee -a "$RESULTS_FILE_TMP"
-    docker logs ldm-smoke-test --tail 100
+    docker logs "${PROJECT_NAME}" --tail 100
     exit 1
 fi
 echo ""
@@ -350,10 +369,9 @@ echo ">> Verifying Scaling..."
 log_and_run "Scaling Liferay" "$LDM_CMD" -y scale . liferay=3 --no-run
 if grep -q "scale_liferay=3" meta; then echo "✅ Scaling verified."; else echo "❌ ERROR: Scaling validation failed." && exit 1; fi
 
-echo ">> Verifying logs --instance..."
 # Scale is 3, so --instance 4 should be invalid, and --instance 2 should look for the container
 if "$LDM_CMD" logs . --instance 4 2>&1 | grep -q "Invalid instance index 4" && \
-   "$LDM_CMD" logs . --instance 2 2>&1 | grep -q "Container 'ldm-smoke-test-liferay-2' not found"; then
+   "$LDM_CMD" logs . --instance 2 2>&1 | grep -q "Container '${PROJECT_NAME}-liferay-2' not found"; then
     echo "✅ logs --instance routing verified."
 else
     echo "❌ ERROR: logs --instance routing validation failed." && exit 1

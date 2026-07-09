@@ -72,6 +72,12 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
 
 ## 8. Active Work State & Plan (July 9, 2026)
 
+- **Secure Plaintext Token Storage and Restrict Configuration File Permissions (Issue #438)**:
+  - [x] Integrate Python's standard `keyring` package to securely store and retrieve Liferay Tunnel tokens (`lfr_tunnel_token`) in the OS-native credential vault.
+  - [x] Restrict global config file (`~/.ldmrc`) creation permissions to `0600` and its parent directory to `0700` inside `save_global_config_safe`.
+  - [x] Enforce owner-only `0600` permissions on Liferay Tunnel credentials file (`~/.lfr-tunnel/token`) during retrieval and interactive creation.
+  - [x] Add comprehensive unit tests in `test_share.py` and `test_utils.py` verifying keyring storage integration, interactive saving fallback, and file mode constraints.
+
 - **Fix Path Traversal (Tar Slip) Vulnerability in Archive Extraction (Issue #437)**:
   - [x] Create generic `is_safe_path` helper in `ldm_core/utils.py` verifying that all extracted archive member names and symbolic/hard link targets resolve within the destination target boundary without any traversal.
   - [x] Refactor `safe_extract` in `ldm_core/utils.py` to check all ZipFile and TarFile member names and link destinations using `is_safe_path` before extraction.

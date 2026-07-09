@@ -221,6 +221,53 @@ class TestShareService(unittest.TestCase):
             token = self.service._get_auth_token()
             self.assertEqual(token, "config-token")
 
+    @patch("ldm_core.utils.get_keyring_token")
+    @patch.dict(os.environ, {}, clear=True)
+    def test_get_auth_token_keyring(self, mock_get_keyring):
+        mock_get_keyring.return_value = "keyring-token"
+
+        # 1. OS Keyring
+        token = self.service._get_auth_token()
+        self.assertEqual(token, "keyring-token")
+        mock_get_keyring.assert_called_with(
+            "liferay-docker-manager", "lfr_tunnel_token"
+        )
+
+    @patch("ldm_core.handlers.share.get_actual_home")
+    @patch("ldm_core.utils.get_keyring_token")
+    @patch("ldm_core.utils.set_keyring_token")
+    @patch("ldm_core.utils.save_global_config_safe")
+    @patch("ldm_core.utils.safe_write_text")
+    @patch("ldm_core.ui.UI.ask")
+    @patch.dict(os.environ, {}, clear=True)
+    def test_get_auth_token_interactive_prompt_keyring(
+        self,
+        mock_ask,
+        mock_safe_write,
+        mock_save_config,
+        mock_set_keyring,
+        mock_get_keyring,
+        mock_home,
+    ):
+        mock_home.return_value = Path("/fake/home")
+        mock_get_keyring.return_value = None
+        mock_ask.return_value = "user-entered-token"
+        self.mock_manager.non_interactive = False
+        self.mock_manager.config.get_global_config = MagicMock(return_value={})  # type: ignore[method-assign]
+
+        with patch("pathlib.Path.exists", return_value=False):
+            token = self.service._get_auth_token()
+            self.assertEqual(token, "user-entered-token")
+            mock_set_keyring.assert_called_with(
+                "liferay-docker-manager", "lfr_tunnel_token", "user-entered-token"
+            )
+            mock_save_config.assert_called_once()
+            mock_safe_write.assert_called_with(
+                Path("/fake/home/.lfr-tunnel/token"),
+                "user-entered-token",
+                mode=0o600,
+            )
+
     @patch("subprocess.run")
     def test_cmd_start(self, mock_run):
         # Mock ensures we have token and binary

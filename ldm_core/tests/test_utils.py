@@ -738,6 +738,45 @@ class TestDownloadFile(unittest.TestCase):
         self.assertFalse(success)
         self.assertFalse(self.dest_path.exists())
 
+    def test_save_global_config_permissions(self):
+        """Verify save_global_config_safe enforces restricted permissions (0600 / 0700)."""
+        import json
+        import platform
+        import tempfile
+
+        from ldm_core.utils import save_global_config_safe
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            config_path = Path(tmp_dir) / "config_dir" / "global.config"
+            data = {"key": "value"}
+
+            success = save_global_config_safe(config_path, data)
+            self.assertTrue(success)
+            self.assertTrue(config_path.exists())
+
+            content = json.loads(config_path.read_text(encoding="utf-8"))
+            self.assertEqual(content, data)
+
+            if platform.system().lower() != "windows":
+                self.assertEqual(config_path.parent.stat().st_mode & 0o777, 0o700)
+                self.assertEqual(config_path.stat().st_mode & 0o777, 0o600)
+
+    def test_safe_write_text_mode_permissions(self):
+        """Verify safe_write_text enforces specified mode permissions."""
+        import platform
+        import tempfile
+
+        from ldm_core.utils import safe_write_text
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            file_path = Path(tmp_dir) / "secure.txt"
+            safe_write_text(file_path, "secret content", mode=0o600)
+            self.assertTrue(file_path.exists())
+            self.assertEqual(file_path.read_text(encoding="utf-8"), "secret content")
+
+            if platform.system().lower() != "windows":
+                self.assertEqual(file_path.stat().st_mode & 0o777, 0o600)
+
     def test_is_safe_path(self):
         """Verify is_safe_path correctly identifies safe vs unsafe members and symlinks."""
         import tempfile
