@@ -1048,3 +1048,26 @@ class TestSnapshotService(unittest.TestCase):
 
             # Assert .ldm was added to the tarball
             mock_tar.add.assert_any_call(ldm_dir, arcname=".ldm")
+
+    def test_sync_volume_success(self):
+        """Verify _sync_volume returns True when run_command succeeds."""
+        with patch.object(
+            self.manager, "run_command", return_value="success output"
+        ) as mock_run:
+            with tempfile.TemporaryDirectory() as tmp_dir:
+                res = self.manager.snapshot._sync_volume(tmp_dir, "my-vol", "to_volume")
+                self.assertTrue(res)
+                mock_run.assert_called()
+
+    def test_sync_volume_failure(self):
+        """Verify _sync_volume returns False and logs warning when run_command returns None (failure)."""
+        with patch.object(self.manager, "run_command", return_value=None) as mock_run:
+            with tempfile.TemporaryDirectory() as tmp_dir:
+                with patch("ldm_core.ui.UI.warning") as mock_warn:
+                    res = self.manager.snapshot._sync_volume(
+                        tmp_dir, "my-vol", "to_volume"
+                    )
+                    self.assertFalse(res)
+                    mock_warn.assert_called_with(
+                        "Failed to sync volume my-vol: Command execution returned error status."
+                    )
