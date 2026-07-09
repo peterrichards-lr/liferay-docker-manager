@@ -776,3 +776,116 @@ class TestDownloadFile(unittest.TestCase):
 
             if platform.system().lower() != "windows":
                 self.assertEqual(file_path.stat().st_mode & 0o777, 0o600)
+
+    def test_is_safe_path(self):
+        """Verify is_safe_path correctly identifies safe vs unsafe members and symlinks."""
+        import tempfile
+
+        from ldm_core.utils import is_safe_path
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+
+            # Safe paths
+            self.assertTrue(is_safe_path(root, "file.txt"))
+            self.assertTrue(is_safe_path(root, "subdir/file.txt"))
+
+            # Paths containing ".." traversal segments are rejected
+            self.assertFalse(is_safe_path(root, "subdir/../file.txt"))
+
+            # Unsafe paths (direct traversal)
+            self.assertFalse(is_safe_path(root, "../outside.txt"))
+            self.assertFalse(is_safe_path(root, "/absolute/path"))
+            self.assertFalse(is_safe_path(root, "subdir/../../outside.txt"))
+
+            # Safe symlinks (resolve within target root)
+            self.assertTrue(
+                is_safe_path(root, "link_to_file", is_link=True, link_target="file.txt")
+            )
+            self.assertTrue(
+                is_safe_path(
+                    root,
+                    "subdir/link_to_parent",
+                    is_link=True,
+                    link_target="../file.txt",
+                )
+            )
+
+            # Unsafe symlinks (resolve outside target root)
+            self.assertFalse(
+                is_safe_path(
+                    root,
+                    "link_to_outside",
+                    is_link=True,
+                    link_target="../outside.txt",
+                )
+            )
+            self.assertFalse(
+                is_safe_path(
+                    root,
+                    "subdir/link_to_outside",
+                    is_link=True,
+                    link_target="../../outside.txt",
+                )
+            )
+            self.assertFalse(
+                is_safe_path(
+                    root,
+                    "link_to_absolute",
+                    is_link=True,
+                    link_target="/etc/passwd",
+                )
+            )
+
+    def test_safe_extract_zip_and_tar_slip_prevention(self):
+        """Verify safe_extract raises ValueError if traversal or unsafe symlink is found in Zip/Tar."""
+        import tarfile
+        import zipfile
+
+        from ldm_core.utils import safe_extract
+
+        # 1. Test Zip file with unsafe member
+        mock_zip = MagicMock(spec=zipfile.ZipFile)
+        mock_zip.namelist.return_value = ["safe.txt", "../unsafe.txt"]
+
+        # infolist returns ZipInfo objects
+        zip_info1 = MagicMock()
+        zip_info1.filename = "safe.txt"
+        zip_info1.external_attr = 0
+
+        zip_info2 = MagicMock()
+        zip_info2.filename = "../unsafe.txt"
+        zip_info2.external_attr = 0
+
+        mock_zip.infolist.return_value = [zip_info1, zip_info2]
+
+        with self.assertRaises(ValueError) as ctx:
+            safe_extract(mock_zip, "/tmp/extract_target")
+        self.assertIn("Security Block", str(ctx.exception))
+        mock_zip.extractall.assert_not_called()
+
+        # 2. Test Tar file with unsafe symlink
+        class MockTarMember:
+            def __init__(self, name, issym=False, islnk=False, linkname=""):
+                self.name = name
+                self._issym = issym
+                self._islnk = islnk
+                self.linkname = linkname
+
+            def issym(self):
+                return self._issym
+
+            def islnk(self):
+                return self._islnk
+
+        mock_tar = MagicMock(spec=tarfile.TarFile)
+        member1 = MockTarMember("safe.txt")
+        member2 = MockTarMember(
+            "link_to_outside", issym=True, linkname="../outside.txt"
+        )
+        mock_tar.getmembers.return_value = [member1, member2]
+
+        with self.assertRaises(ValueError) as ctx:
+            safe_extract(mock_tar, "/tmp/extract_target")
+        self.assertIn("Security Block", str(ctx.exception))
+        mock_tar.extractall.assert_not_called()

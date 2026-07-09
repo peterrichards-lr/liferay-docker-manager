@@ -1126,7 +1126,7 @@ class SnapshotService(BaseHandler):
         no_osgi = getattr(self.manager.args, "no_osgi_seed", False)
 
         with tarfile.open(files_tar, "r:gz") as tar:
-            from ldm_core.utils import is_within_root
+            from ldm_core.utils import is_safe_path
 
             # 1. Extract standard project files
             target_root = paths["root"].resolve()
@@ -1140,11 +1140,12 @@ class SnapshotService(BaseHandler):
                     continue
 
                 # Security: Validate path to prevent Zip Slip / Path Traversal
-                member_path = (target_root / m.name).resolve()
-                if not is_within_root(member_path, target_root):
+                is_link = m.issym() or m.islnk()
+                if not is_safe_path(target_root, m.name, is_link, m.linkname):
                     UI.error(f"Security: Skipping unsafe member: {m.name}")
                     continue
 
+                member_path = (target_root / m.name).resolve()
                 # Pre-emptively remove file to avoid PermissionError (Errno 13) during overwrite
                 if member_path.exists() and not member_path.is_dir():
                     try:
@@ -1183,9 +1184,10 @@ class SnapshotService(BaseHandler):
                         rel_name = m.name.replace("search_backup/", "", 1)
                         if not rel_name:
                             continue
-                        member_path = (es_infra_root / rel_name).resolve()
-
-                        if not is_within_root(member_path, es_infra_root):
+                        is_link = m.issym() or m.islnk()
+                        if not is_safe_path(
+                            es_infra_root, rel_name, is_link, m.linkname
+                        ):
                             UI.error(f"Security: Skipping unsafe ES member: {m.name}")
                             continue
 
