@@ -1,0 +1,33 @@
+rules:
+  - id: enforce-safe-extract
+    patterns:
+      - pattern-either:
+          - pattern: $OBJ.extractall(...)
+          - pattern: tarfile.TarFile.extractall(...)
+          - pattern: zipfile.ZipFile.extractall(...)
+    paths:
+      exclude:
+        - "**/ldm_core/utils.py"
+    message: "Direct extraction of archives can lead to path traversal vulnerabilities (Zip/Tar Slip). Use `ldm_core.utils.safe_extract` instead."
+    languages:
+      - python
+    severity: ERROR
+
+  - id: atexit-unregister
+    patterns:
+      - pattern-inside: |
+          class $CLASS(...):
+            ...
+      - pattern: atexit.register($FUNC)
+      - pattern-not-inside: |
+          class $CLASS(...):
+            ...
+            def $M(...):
+              ...
+              atexit.unregister($FUNC)
+              ...
+            ...
+    message: "Memory leak risk: `atexit.register($FUNC)` is used inside a class without a corresponding `atexit.unregister($FUNC)`. Ensure unregistration occurs during resource cleanup."
+    languages:
+      - python
+    severity: ERROR
