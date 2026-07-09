@@ -60,6 +60,9 @@ class RuntimeService(BaseHandler):
 
     def cmd_run(self, project_id=None, is_restart=False):
         """Main entry point for starting or updating a project stack."""
+        if getattr(self.manager.args, "vanilla", False):
+            self.manager.args.no_seed = True
+
         total_start = time.time()
         project_id = (
             project_id
@@ -98,6 +101,8 @@ class RuntimeService(BaseHandler):
         )
         if is_new_project:
             UI.print_banner()
+            if getattr(self.manager.args, "vanilla", False):
+                UI.info("Vanilla start requested: Bypassing pre-warmed seeding.")
 
         init_success = False
         paths = self.manager.setup_paths(root)

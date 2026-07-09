@@ -1,0 +1,105 @@
+# Starting a Fresh Vanilla Liferay
+
+This guide explains how to start a completely fresh, vanilla Liferay instance using Liferay Docker Manager (LDM), detailing the configurations, database profiles, volume strategies, and CLI options.
+
+---
+
+## 1. What is Vanilla Start?
+
+By default, when you start a new project with LDM, it attempts to download and extract a **pre-warmed database seed** from GitHub Releases. Pre-warmed seeds contain pre-initialized database schemas and cached OSGi configurations, reducing the first boot time of Liferay to under a minute.
+
+A **Vanilla Start** bypasses the pre-warmed seeds entirely:
+
+- It starts with a completely blank database (PostgreSQL, MySQL, or Hypersonic).
+- Liferay will perform its own full schema creation and startup initialization script executions on the very first boot.
+- This is useful when you want to start a truly pristine instance, verify startup scripts, or build a clean baseline without LDM's pre-packaged configurations.
+
+> [!WARNING]
+> Because vanilla starts require Liferay to initialize its database from scratch, the first boot will take significantly longer (typically 2 to 5 minutes depending on your hardware and database choice). Subsequent boots will be fast since the database schema will already be initialized.
+
+---
+
+## 2. Starting a Vanilla Instance
+
+To start a vanilla instance, use the `--vanilla` flag (which acts as a developer alias to `--no-seed`) during project initialization or run:
+
+```bash
+# Start a fresh vanilla Liferay using the default PostgreSQL database
+ldm run my-vanilla-project --vanilla
+
+# Start a vanilla instance of a specific Liferay version
+ldm run my-vanilla-project --vanilla -t 2025.q1.0
+```
+
+You can also scaffold the project structure without immediately booting the containers:
+
+```bash
+ldm init my-vanilla-project --vanilla -t 2025.q1.0
+```
+
+---
+
+## 3. Configuration Options
+
+### Liferay Version
+
+Specify the exact Liferay version you want to target using the `-t` or `--tag` flag. If omitted, LDM will prompt you to choose or automatically select the latest LTS release.
+
+```bash
+ldm run my-vanilla-project --vanilla -t 2025.q1.0
+```
+
+### Database Options
+
+LDM supports multiple database backends via the `--db` argument:
+
+- `postgresql` (Default): Boots a dedicated PostgreSQL container in your project stack.
+- `mysql`: Boots a dedicated MySQL container in your project stack.
+- `hypersonic`: Uses Liferay's built-in HSQL database. Rapid startup, but not suitable for production or complex setups.
+- `external`: Configures Liferay to connect to an external database (prompts you for JDBC URL and credentials).
+
+```bash
+# Start a vanilla Liferay with a fresh MySQL database
+ldm run my-vanilla-project --vanilla --db mysql
+```
+
+### Database Modes
+
+You can configure database resource pooling configurations globally or per project:
+
+- **Isolated** (Default): A dedicated database container is spawned for your project.
+- **Shared**: Shares a global database container (`liferay-db-global`), creating a namespaced schema for the project to save system memory.
+
+```bash
+ldm run my-vanilla-project --vanilla --database-mode shared
+```
+
+### Search Modes
+
+Specify how Elasticsearch is deployed for search indexing:
+
+- **Shared** (Default): Uses the global search container (`liferay-search-global`) to reduce resource overhead.
+- **Sidecar**: Runs the embedded Elasticsearch search server directly inside the Liferay container.
+
+```bash
+ldm run my-vanilla-project --vanilla --search-mode sidecar
+```
+
+---
+
+## 4. Volume Strategy & File Mounts
+
+To comply with the LDM Hybrid Volume Strategy, vanilla projects separate storage types:
+
+- **Named Docker Volumes**: Used for directories requiring POSIX filesystem locks (e.g. `/opt/liferay/data`, `/opt/liferay/osgi/state`) to prevent locks or latency issues on macOS and Windows hosts.
+- **Host Bind-Mounts**: Folders facilitating developer interaction and hot-reloads (like `deploy/`, `files/`, and `modules/`) are mapped directly to your local workspace directory.
+
+When starting a project, LDM creates a project workspace directory under `~/.ldm/projects/my-vanilla-project/` containing:
+
+- `files/`: Place customizations or hot-reload configurations here.
+- `files/portal-ext.properties`: Pre-configured portal overrides cascade.
+- `deploy/`: Drop client extensions or OSGi bundles to deploy them to Liferay.
+
+<!-- markdownlint-disable MD049 -->
+---
+*Last Updated: 2026-07-09* | *Last Reviewed: 2026-07-09*
