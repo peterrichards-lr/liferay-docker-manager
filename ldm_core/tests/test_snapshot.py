@@ -977,7 +977,7 @@ class TestSnapshotService(unittest.TestCase):
                 "ldm_core.handlers.base.BaseHandler.read_meta",
                 return_value={"container_name": "test-c"},
             ),
-            patch("ldm_core.ui.UI.info") as mock_info,
+            patch("ldm_core.ui.UI.info"),
         ):
             # Run restore
             self.manager.snapshot.cmd_restore("test")
@@ -1092,7 +1092,7 @@ class TestSnapshotService(unittest.TestCase):
 
     def test_sync_volume_failure(self):
         """Verify _sync_volume returns False and logs warning when run_command returns None (failure)."""
-        with patch.object(self.manager, "run_command", return_value=None) as mock_run:
+        with patch.object(self.manager, "run_command", return_value=None):
             with tempfile.TemporaryDirectory() as tmp_dir:
                 with patch("ldm_core.ui.UI.warning") as mock_warn:
                     res = self.manager.snapshot._sync_volume(

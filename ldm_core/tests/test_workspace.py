@@ -1380,7 +1380,7 @@ class TestAtomicZipRepackaging(unittest.TestCase):
             with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
                 zf.writestr("client-extension.yaml", cx_yaml)
 
-            original_zip_size = zip_path.stat().st_size
+            zip_path.stat().st_size
 
             # Run the method
             self.handler.workspace._rewrite_oauth_urls_in_zip(
@@ -1409,7 +1409,7 @@ class TestAtomicZipRepackaging(unittest.TestCase):
             with zipfile.ZipFile(zip_path, "w") as zf:
                 zf.writestr("client-extension.yaml", "type: customElement")
 
-            mtime_before = zip_path.stat().st_mtime
+            zip_path.stat().st_mtime
             self.handler.workspace._rewrite_oauth_urls_in_zip(
                 zip_path, "localhost", "my-ext"
             )

@@ -510,7 +510,7 @@ class ConfigService:
             return cache_versioned
 
         # Backwards compatibility for older caches
-        cache_current = cache_base / "current"
+        cache_base / "current"
 
         # 3. Check Local (Source Checkout)
         # We check relative to SCRIPT_DIR and also CWD for convenience during dev
@@ -578,7 +578,7 @@ class ConfigService:
                 dirs_exist_ok=True,
                 copy_function=atomic_copy,
             )
-        except shutil.Error as e:
+        except shutil.Error:
             # Ignore Errno 1 (Operation not permitted) which happens in CI when copying directory stats
             # over existing directories owned by another user/process.
             pass
@@ -1011,7 +1011,7 @@ class ConfigService:
                     ]
 
                     if dest_name in sidecar_conflicts:
-                        project_id = paths["root"].name
+                        paths["root"].name
                         use_sidecar = (
                             project_meta
                             and str(
@@ -1472,7 +1472,7 @@ class ConfigService:
             "EDITOR", "vi" if platform.system() != "Windows" else "notepad"
         )
         try:
-            subprocess.run([editor, str(file_to_edit)])
+            subprocess.run([editor, str(file_to_edit)], check=False)
         except Exception as e:
             UI.error(f"Failed to open editor '{editor}': {e}")
 
@@ -1771,7 +1771,7 @@ class ConfigService:
             return
 
         project_name = root_path.name
-        paths = self.manager.setup_paths(root_path)
+        self.manager.setup_paths(root_path)
         project_meta = self.manager.read_meta(root_path) or {}
 
         # 1. Determine running state

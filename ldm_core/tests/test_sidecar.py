@@ -182,11 +182,11 @@ class TestSidecarImplementation(unittest.TestCase):
         """Requirement: make sure the search .config files are not copied from the common folder."""
         project_meta = {"use_shared_search": "false"}
 
-        common_dir = Path("/tmp/common")
+        Path("/tmp/common")
         with (
             patch("pathlib.Path.exists", return_value=True),
             patch("pathlib.Path.glob") as mock_glob,
-            patch("ldm_core.handlers.config.run_command") as mock_run,
+            patch("ldm_core.handlers.config.run_command"),
         ):
             # Mock glob to return some elasticsearch configs
             es_config = MagicMock(spec=Path)

@@ -75,7 +75,7 @@ class TestDashboard(unittest.TestCase):
     @patch("flask.Flask.run")
     def test_cmd_dashboard_foreground(self, mock_flask_run):
         # Test foreground execution where Flask start_server is called
-        with patch("ldm_core.handlers.dashboard.UI") as mock_ui:
+        with patch("ldm_core.handlers.dashboard.UI"):
             self.dashboard_service.cmd_dashboard(
                 port=19000, host="127.0.0.1", background=False
             )
@@ -85,7 +85,7 @@ class TestDashboard(unittest.TestCase):
 
     @patch("subprocess.Popen")
     def test_cmd_dashboard_background(self, mock_popen):
-        with patch("ldm_core.handlers.dashboard.UI") as mock_ui:
+        with patch("ldm_core.handlers.dashboard.UI"):
             self.dashboard_service.cmd_dashboard(
                 port=19000, host="127.0.0.1", background=True
             )

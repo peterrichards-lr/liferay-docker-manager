@@ -205,7 +205,7 @@ class TestDowngradePrevention(unittest.TestCase):
         }
         self.manager.args.force_downgrade = True
 
-        with patch("ldm_core.handlers.runtime.UI.info") as mock_info:
+        with patch("ldm_core.handlers.runtime.UI.info"):
             self.manager.runtime.sync_stack(
                 self.paths, project_meta, no_up=False, no_wait=True, show_summary=False
             )

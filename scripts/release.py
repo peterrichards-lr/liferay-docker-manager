@@ -15,7 +15,9 @@ sys.path.insert(0, str(project_root))
 
 def run_cmd(cmd, cwd=project_root, check=True, capture=False):
     """Helper to run a shell command."""
-    res = subprocess.run(cmd, cwd=str(cwd), capture_output=capture, text=True)
+    res = subprocess.run(
+        cmd, cwd=str(cwd), capture_output=capture, text=True, check=False
+    )
     if check and res.returncode != 0:
         print(f"Error executing command: {' '.join(cmd)}")
         if capture:
@@ -34,6 +36,7 @@ def call_github_api(url_path, method="GET", data=None):
                 input="protocol=https\nhost=github.com\n",
                 capture_output=True,
                 text=True,
+                check=False,
             )
             for line in res.stdout.splitlines():
                 if line.startswith("password="):
@@ -108,7 +111,10 @@ def api_get_pr_state(pr_number):
 def get_pr_number(branch_name):
     try:
         res = subprocess.run(
-            ["gh", "pr", "view", "--json", "number"], capture_output=True, text=True
+            ["gh", "pr", "view", "--json", "number"],
+            capture_output=True,
+            text=True,
+            check=False,
         )
         if res.returncode == 0:
             return json.loads(res.stdout).get("number")
@@ -131,6 +137,7 @@ def merge_pr(pr_number, branch_name):
             ],
             capture_output=True,
             text=True,
+            check=False,
         )
         if res.returncode == 0:
             print("🎉 Release PR successfully merged / set to auto-merge via gh CLI.")
@@ -151,6 +158,7 @@ def get_pr_state(pr_number):
             ["gh", "pr", "view", str(pr_number), "--json", "state"],
             capture_output=True,
             text=True,
+            check=False,
         )
         if res.returncode == 0:
             return json.loads(res.stdout).get("state")

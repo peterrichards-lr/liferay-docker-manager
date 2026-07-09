@@ -672,7 +672,7 @@ def atomic_copy(src, dst):
                 # Since it's on the same filesystem, this is atomic.
                 os.replace(tmp_dst, dst_path)
                 return
-            except (OSError, PermissionError) as e:
+            except (OSError, PermissionError):
                 if i == max_retries - 1:
                     # Final attempt: direct copy if rename is blocked (e.g. cross-device)
                     # Note: This loses atomicity but ensures the file is delivered
@@ -893,13 +893,11 @@ def resolve_liferay_docker_tag(tag, manager=None):
     url = "https://releases.liferay.com/releases.json"
     online_resolved_tag = None
     is_portal = False
-    online_success = False
 
     try:
         response = requests.get(url, headers={"User-Agent": "LDM-CLI"}, timeout=5)
         if response.status_code == 200:
             data = response.json()
-            online_success = True
             for entry in data:
                 entry_url = entry.get("url", "")
                 entry_tag = entry_url.split("/")[-1] if entry_url else ""

@@ -696,7 +696,7 @@ class WorkspaceService(BaseHandler):
         p_meta["cloud_env_id"] = env_id
         self.manager.write_meta(project_path, p_meta)
 
-        paths = self.manager.setup_paths(project_path)
+        self.manager.setup_paths(project_path)
 
         UI.info(f"Fetching backups from '{env_id}'...")
         old_download = getattr(self.manager.args, "download", False)

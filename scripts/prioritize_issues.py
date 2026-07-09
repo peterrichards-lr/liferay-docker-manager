@@ -8,7 +8,7 @@ def run_cmd(
     cmd: list[str], check: bool = True, capture: bool = False
 ) -> subprocess.CompletedProcess[str]:
     """Helper to run a shell command."""
-    res = subprocess.run(cmd, capture_output=capture, text=True)
+    res = subprocess.run(cmd, capture_output=capture, text=True, check=False)
     if check and res.returncode != 0:
         print(f"Error executing command: {' '.join(cmd)}")
         if capture:

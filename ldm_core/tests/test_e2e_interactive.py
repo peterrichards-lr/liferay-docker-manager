@@ -42,6 +42,7 @@ class TestE2EInteractive(unittest.TestCase):
                 text=True,
                 cwd=str(tmp_dir),
                 env=env,
+                check=False,
             )
 
             # Verify the prompt for project name was actually reached

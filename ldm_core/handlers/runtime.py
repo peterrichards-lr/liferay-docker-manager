@@ -942,8 +942,6 @@ class RuntimeService(BaseHandler):
         except Exception:
             pass
 
-        base_url = f"http://127.0.0.1:{lfr_port}"
-
         # 1. Build expansion dictionary
         expansion_env = os.environ.copy()
 
@@ -2648,14 +2646,13 @@ class RuntimeService(BaseHandler):
             if delete:
                 meta = self.manager.read_meta(root)
                 if meta:
-                    baseline_default = "isolated"
                     ldm_version = meta.get("ldm_version")
                     if ldm_version and self.manager.parse_version(ldm_version) >= (
                         2,
                         11,
                         75,
                     ):
-                        baseline_default = "shared"
+                        pass
                     from ldm_core.utils import resolve_infrastructure_mode
 
                     db_mode = resolve_infrastructure_mode(
@@ -2885,7 +2882,7 @@ class RuntimeService(BaseHandler):
 
         UI.info(f"Connecting to Gogo shell on localhost:{port}...")
         try:
-            subprocess.run(["telnet", "localhost", str(port)])
+            subprocess.run(["telnet", "localhost", str(port)], check=False)
         except FileNotFoundError:
             UI.error("telnet not found. Run: telnet localhost " + str(port))
         except KeyboardInterrupt:
@@ -3253,7 +3250,7 @@ class RuntimeService(BaseHandler):
                     UI.debug(f"Processing logs for project: {root.name} in {root}")
 
                 meta = self.manager.read_meta(root)
-                c_name = meta.get("container_name") or root.name
+                meta.get("container_name") or root.name
                 target_service = (
                     service if service and not isinstance(service, list) else "liferay"
                 )
@@ -3416,7 +3413,9 @@ class RuntimeService(BaseHandler):
 
         UI.info(f"Entering container: {target_container}")
         try:
-            subprocess.run(["docker", "exec", "-it", target_container, "/bin/bash"])
+            subprocess.run(
+                ["docker", "exec", "-it", target_container, "/bin/bash"], check=False
+            )
         except KeyboardInterrupt:
             pass
 

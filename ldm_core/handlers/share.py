@@ -74,6 +74,7 @@ class ShareService:
                 capture_output=True,
                 text=True,
                 timeout=5,
+                check=False,
             )
             output = (res.stdout or res.stderr or "").strip()
             match = re.search(r"v?(\d+\.\d+\.\d+)", output)
@@ -91,6 +92,7 @@ class ShareService:
                 capture_output=True,
                 text=True,
                 timeout=10,
+                check=False,
             )
             output = (res.stdout or res.stderr or "").strip()
             match = re.search(r"v?(\d+\.\d+\.\d+)", output)
@@ -187,9 +189,7 @@ class ShareService:
         bin_path.parent.mkdir(parents=True, exist_ok=True)
 
         try:
-            with UI.spinner(
-                f"Downloading lfr-tunnel for {os_name}-{arch_name}..."
-            ) as s:
+            with UI.spinner(f"Downloading lfr-tunnel for {os_name}-{arch_name}..."):
                 success = download_file(url, bin_path)
                 if not success:
                     raise RuntimeError("Download failed.")
@@ -218,6 +218,7 @@ class ShareService:
                 capture_output=True,
                 text=True,
                 timeout=10,
+                check=False,
             )
             if res.returncode != 0 or not res.stdout:
                 return
@@ -389,6 +390,7 @@ class ShareService:
                     capture_output=True,
                     text=True,
                     timeout=3,
+                    check=False,
                 )
                 if result.returncode == 0:
                     status_data = json.loads(result.stdout)
@@ -857,7 +859,7 @@ class ShareService:
                     json_out = (json_res.stdout or "").strip()
                     if json_out and json_out.startswith("{") and json_out.endswith("}"):
                         data = json.loads(json_out)
-                        running = data.get("running", False)
+                        data.get("running", False)
                         status = data.get("status", "unknown")
                         conn_state = data.get("connection_state", "disconnected")
                         public_urls = data.get("public_urls", [])
@@ -918,7 +920,7 @@ class ShareService:
                     output = (res.stdout or "").strip()
                     if output and output.startswith("{") and output.endswith("}"):
                         data = json.loads(output)
-                        running = data.get("running", False)
+                        data.get("running", False)
                         status = data.get("status", "unknown")
                         conn_state = data.get("connection_state", "disconnected")
                         public_urls = data.get("public_urls", [])
@@ -1107,7 +1109,7 @@ class ShareService:
 
                 res = subprocess.run(cmd, capture_output=True, text=True, check=False)
                 output = (res.stdout or "").strip()
-                err_out = (res.stderr or "").strip()
+                (res.stderr or "").strip()
                 is_legacy = not (
                     output and output.startswith("{") and output.endswith("}")
                 )

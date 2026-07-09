@@ -637,7 +637,7 @@ class TestBaseCompletion(unittest.TestCase):
     ):
         # No argument: should show instructions
         mock_home.return_value = Path("/tmp/home")
-        with patch("builtins.print") as mock_print:
+        with patch("builtins.print"):
             self.handler.cmd_completion(target_shell=None)
             mock_heading.assert_called_with("LDM Shell Completion")
 
