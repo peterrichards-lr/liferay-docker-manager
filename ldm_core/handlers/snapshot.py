@@ -1302,7 +1302,12 @@ class SnapshotService(BaseHandler):
                 UI.info(
                     f"  + Syncing volume {UI.CYAN}{volume_name}{UI.COLOR_OFF} ({direction})..."
                 )
-            self.manager.run_command(cmd, check=False)
+            res = self.manager.run_command(cmd, check=False)
+            if res is None:
+                UI.warning(
+                    f"Failed to sync volume {volume_name}: Command execution returned error status."
+                )
+                return False
             return True
         except Exception as e:
             UI.warning(f"Failed to sync volume {volume_name}: {e}")
