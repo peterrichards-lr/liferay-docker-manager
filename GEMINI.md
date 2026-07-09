@@ -72,6 +72,12 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
 
 ## 8. Active Work State & Plan (July 9, 2026)
 
+- **Stream database snapshot dumps directly to disk to prevent OOM memory exhaustion (Issue #442)**:
+  - [x] Add `stdout_file` parameter support to `run_command` in `ldm_core/utils.py` and `ldm_core/handlers/base.py` to allow streaming stdout directly to a file descriptor.
+  - [x] Refactor database backup snapshot dump routine in `ldm_core/handlers/snapshot.py` to open the backup file and stream stdout directly to it.
+  - [x] Implement error boundaries in `snapshot.py` to delete empty/corrupted backup files on failure.
+  - [x] Add unit test in `ldm_core/tests/test_snapshot.py` asserting that the `stdout_file` parameter is passed and utilized during snapshot creation.
+
 - **Fix silent fallback and lack of locking in JSON config parser (Issue #446)**:
   - [x] Create generic cross-platform `FileLock` utility in `ldm_core/utils.py`.
   - [x] Create safe config loader (`load_global_config_safe`) with detailed JSON Decode exception diagnostics, and atomic saver (`save_global_config_safe`) with lock protection.

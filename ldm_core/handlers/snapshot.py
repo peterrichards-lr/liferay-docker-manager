@@ -300,17 +300,24 @@ class SnapshotService(BaseHandler):
                     ]
 
                 try:
-                    sql_content = self.manager.run_command(
-                        dump_cmd, capture_output=True
-                    )
-                    if sql_content:
-                        db_snapshot_file.write_text(sql_content)
+                    with open(db_snapshot_file, "wb") as db_f:
+                        self.manager.run_command(dump_cmd, stdout_file=db_f)
+                    if db_snapshot_file.stat().st_size > 0:
                         UI.success("Database dump completed.")
                     else:
                         UI.warning("Database dump returned no content.")
+                        try:
+                            db_snapshot_file.unlink()
+                        except OSError:
+                            pass
                         db_snapshot_file = None
                 except Exception as e:
                     UI.warning(f"Database dump failed: {e}")
+                    if db_snapshot_file.exists():
+                        try:
+                            db_snapshot_file.unlink()
+                        except OSError:
+                            pass
                     db_snapshot_file = None
 
         # Wait for search snapshot if it was triggered
