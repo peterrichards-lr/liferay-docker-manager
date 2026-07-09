@@ -2138,5 +2138,123 @@ services:
             )
 
 
+class TestFragmentOverridesValidation(unittest.TestCase):
+    """Unit tests for _validate_fragment_overrides (Issue #434)."""
+
+    def setUp(self):
+        self.handler = MockRuntime()
+        self.handler.handler = RuntimeService(self.handler)
+        self.file_path = Path("fragment-overrides.json")
+
+    # --- Static validator ---
+
+    def test_valid_dict_passes(self):
+        """A well-formed dict of fragment-key -> config-dict must return no errors."""
+        data = {
+            "my-fragment": {"textColor": "#fff"},
+            "other-frag": {"padding": "1rem"},
+        }
+        errors = RuntimeService._validate_fragment_overrides(data, self.file_path)
+        self.assertEqual(errors, [])
+
+    def test_legacy_list_format_is_rejected(self):
+        """A JSON list (legacy format) must produce exactly one error."""
+        data = [{"key": "value"}]
+        errors = RuntimeService._validate_fragment_overrides(data, self.file_path)
+        self.assertEqual(len(errors), 1)
+        self.assertIn("list", errors[0])
+        self.assertIn("legacy", errors[0])
+
+    def test_non_dict_root_is_rejected(self):
+        """A scalar root (e.g. a bare string) must produce an error."""
+        errors = RuntimeService._validate_fragment_overrides("bad", self.file_path)
+        self.assertEqual(len(errors), 1)
+        self.assertIn("str", errors[0])
+
+    def test_non_dict_value_is_rejected(self):
+        """A value that is not a dict (e.g. a string config) must produce an error."""
+        data = {"my-fragment": "not-a-dict"}
+        errors = RuntimeService._validate_fragment_overrides(data, self.file_path)
+        self.assertEqual(len(errors), 1)
+        self.assertIn("my-fragment", errors[0])
+
+    def test_empty_string_key_is_rejected(self):
+        """A whitespace-only key must produce an error."""
+        data = {"   ": {"color": "red"}}
+        errors = RuntimeService._validate_fragment_overrides(data, self.file_path)
+        self.assertEqual(len(errors), 1)
+
+    # --- Integration: non-interactive dispatch ---
+
+    def test_non_interactive_die_on_invalid(self):
+        """In non-interactive mode with die policy, UI.die must be called."""
+        import json as _json
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            configs = root / "configs"
+            configs.mkdir()
+            (configs / "fragment-overrides.json").write_text(
+                _json.dumps([{"key": "legacy"}])
+            )
+
+            project_meta = {"tag": "2025.q1.1-lts"}
+            paths = {"root": root}
+
+            self.handler.non_interactive = True
+            self.handler.args.on_validation_failure = "die"
+
+            self.handler.parse_version = MagicMock(return_value=(2025, 1, 0))  # type: ignore[method-assign]
+
+            with (
+                patch("ldm_core.ui.UI.die") as mock_die,
+                patch("ldm_core.ui.UI.warning"),
+            ):
+                self.handler.handler._patch_fragment_overrides(project_meta, paths)
+                mock_die.assert_called_once()
+                call_kwargs = mock_die.call_args.kwargs
+                self.assertEqual(call_kwargs.get("exit_code"), 1)
+
+    def test_non_interactive_ignore_continues(self):
+        """In non-interactive mode with ignore policy, execution must continue past validation."""
+        import json as _json
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            configs = root / "configs"
+            configs.mkdir()
+            (configs / "fragment-overrides.json").write_text(
+                _json.dumps([{"key": "legacy"}])
+            )
+
+            project_meta = {"tag": "2025.q1.1-lts"}
+            paths = {"root": root}
+
+            self.handler.non_interactive = True
+            self.handler.args.on_validation_failure = "ignore"
+            self.handler.parse_version = MagicMock(return_value=(2025, 1, 0))  # type: ignore[method-assign]
+
+            # If ignore is respected, execution continues to the API phase.
+            # We patch run_command (docker port) to return None so it exits cleanly.
+            self.handler.run_command = MagicMock(return_value=None)  # type: ignore[method-assign]
+            self.handler.config = MagicMock()
+            self.handler.config.get_global_config.return_value = {}
+            self.handler.infra = MagicMock()
+            self.handler.infra.get_proxy_ports.return_value = {"http": 80, "https": 443}
+            self.handler.defaults = {}  # type: ignore[assignment]
+
+            with (
+                patch("ldm_core.ui.UI.die") as mock_die,
+                patch("ldm_core.ui.UI.warning"),
+            ):
+                # Run — if "ignore" works it won't die; it will proceed to API
+                # (which will fail quickly since there's no real Liferay).
+                try:
+                    self.handler.handler._patch_fragment_overrides(project_meta, paths)
+                except Exception:
+                    pass
+                mock_die.assert_not_called()
+
+
 if __name__ == "__main__":
     unittest.main()
