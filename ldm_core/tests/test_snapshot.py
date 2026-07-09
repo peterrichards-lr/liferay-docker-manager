@@ -1102,3 +1102,85 @@ class TestSnapshotService(unittest.TestCase):
                     mock_warn.assert_called_with(
                         "Failed to sync volume my-vol: Command execution returned error status."
                     )
+
+    @patch("ldm_core.handlers.base.BaseHandler.write_meta")
+    @patch("ldm_core.utils.calculate_sha256", return_value="dummy-sha")
+    @patch("ldm_core.handlers.base.BaseHandler.verify_runtime_environment")
+    @patch("ldm_core.handlers.base.BaseHandler.setup_paths")
+    @patch("ldm_core.handlers.base.BaseHandler.read_meta")
+    @patch("ldm_core.handlers.base.BaseHandler.detect_project_path")
+    @patch("ldm_core.utils.reclaim_volume_permissions")
+    @patch("tarfile.open")
+    def test_cmd_snapshot_db_dump_streaming(
+        self,
+        mock_tar,
+        mock_reclaim,
+        mock_detect,
+        mock_read_meta,
+        mock_paths,
+        mock_verify,
+        mock_sha,
+        mock_write_meta,
+    ):
+        """Verify cmd_snapshot database dump executes streaming directly to file descriptor."""
+        mock_detect.return_value = self.test_dir
+        mock_paths.return_value = {
+            "root": self.test_dir,
+            "backups": self.test_dir / "snapshots",
+            "state": self.test_dir / "osgi" / "state",
+            "data": self.test_dir / "data",
+            "deploy": self.test_dir / "deploy",
+            "files": self.test_dir / "files",
+            "logs": self.test_dir / "logs",
+            "configs": self.test_dir / "osgi" / "configs",
+            "modules": self.test_dir / "osgi" / "modules",
+            "compose": self.test_dir / "docker-compose.yml",
+        }
+        for d in [
+            "snapshots",
+            "data",
+            "deploy",
+            "files",
+            "logs",
+            "osgi/configs",
+            "osgi/modules",
+            "osgi/state",
+        ]:
+            (self.test_dir / d).mkdir(parents=True, exist_ok=True)
+        (self.test_dir / "docker-compose.yml").touch()
+
+        # Database type is postgresql, container is active
+        mock_read_meta.return_value = {
+            "db_type": "postgresql",
+            "db_container_name": "proj-db",
+        }
+
+        # Mock run_command to simulate:
+        # 1. docker ps for db container check -> returns "active"
+        # 2. pg_dump execution -> writes mock sql output
+        def mock_run_cmd(cmd, *args, **kwargs):
+            if "docker" in cmd and "ps" in cmd:
+                return "active"
+            if "pg_dump" in cmd:
+                stdout_file = kwargs.get("stdout_file")
+                if stdout_file:
+                    stdout_file.write(b"mock sql output")
+                return ""
+            return ""
+
+        with patch.object(
+            self.manager, "run_command", side_effect=mock_run_cmd
+        ) as mock_run:
+            self.manager.snapshot.cmd_snapshot("proj")
+
+            pg_dump_call = None
+            for call in mock_run.call_args_list:
+                call_cmd = call[0][0]
+                if "pg_dump" in call_cmd:
+                    pg_dump_call = call
+                    break
+
+            self.assertIsNotNone(pg_dump_call)
+            assert pg_dump_call is not None
+            self.assertIn("stdout_file", pg_dump_call[1])
+            self.assertIsNotNone(pg_dump_call[1]["stdout_file"])

@@ -702,7 +702,15 @@ class BaseHandler:
         except Exception:
             pass
 
-    def run_command(self, cmd, check=True, cwd=None, env=None, capture_output=True):
+    def run_command(
+        self,
+        cmd,
+        check=True,
+        cwd=None,
+        env=None,
+        capture_output=True,
+        stdout_file=None,
+    ):
         from ldm_core.utils import run_command
 
         # Safety: If cwd is a dictionary (common error in refactored handlers), extract root
@@ -718,6 +726,7 @@ class BaseHandler:
             env=env,
             capture_output=capture_output,
             verbose=self.verbose,
+            stdout_file=stdout_file,
         )
 
     def require_compose(self, root_path, silent=False):

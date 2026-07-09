@@ -378,7 +378,14 @@ def _sanitize_shell_command(cmd):
 
 
 def run_command(
-    cmd, shell=False, capture_output=True, check=True, env=None, cwd=None, verbose=False
+    cmd,
+    shell=False,
+    capture_output=True,
+    check=True,
+    env=None,
+    cwd=None,
+    verbose=False,
+    stdout_file=None,
 ):
     env = os.environ.copy() if env is None else env.copy()
 
@@ -423,13 +430,22 @@ def run_command(
         return mock_output
 
     try:
+        # If stdout_file is provided, route stdout to the file descriptor and capture stderr separately.
+        # Otherwise, we use capture_output.
+        stdout_dest = (
+            stdout_file
+            if stdout_file
+            else (subprocess.PIPE if capture_output else None)
+        )
+        stderr_dest = subprocess.PIPE if (capture_output or stdout_file) else None
+
         # Bandit: B602 (shell=True) is used for complex commands where needed,
         # B603 (subprocess_without_shell_equals_true) is safe as we now use absolute paths.
         result = subprocess.run(  # nosec B602 B603
             cmd,
             shell=shell,
-            capture_output=capture_output,
-            encoding="utf-8",
+            stdout=stdout_dest,
+            stderr=stderr_dest,
             check=check,
             env=env,
             cwd=cwd,
@@ -437,7 +453,18 @@ def run_command(
 
         if result.returncode != 0 and not check:
             return None
-        return result.stdout.strip() if result.stdout else ""
+
+        if stdout_file:
+            return ""
+
+        stdout_str = ""
+        if result.stdout:
+            stdout_str = (
+                result.stdout
+                if isinstance(result.stdout, str)
+                else result.stdout.decode("utf-8", errors="ignore")
+            )
+        return stdout_str.strip()
     except (subprocess.CalledProcessError, FileNotFoundError) as e:
         if isinstance(e, subprocess.CalledProcessError) and e.returncode == 130:
             raise KeyboardInterrupt()
@@ -455,11 +482,18 @@ def run_command(
 
             UI.error(f"Command failed (Exit {e.returncode}): {cmd_str}")
             if e.stderr:
-                print(f"{UI.WHITE}Error Details:{UI.COLOR_OFF} {e.stderr.strip()}")
+                err_details = (
+                    e.stderr
+                    if isinstance(e.stderr, str)
+                    else e.stderr.decode("utf-8", errors="ignore")
+                )
+                print(f"{UI.WHITE}Error Details:{UI.COLOR_OFF} {err_details.strip()}")
             sys.exit(e.returncode)
         return None
     except KeyboardInterrupt:
-        raise
+        # Standardize exit behavior on Ctrl+C to 130
+        UI.info("\nExecution interrupted by user.")
+        sys.exit(130)
 
 
 def get_json(url):
