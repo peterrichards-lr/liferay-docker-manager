@@ -1974,6 +1974,169 @@ services:
             self.assertTrue(self.handler.args.no_seed)
             mock_sync.assert_called_once()
 
+    @patch("time.sleep")
+    @patch("urllib.request.urlopen")
+    def test_patch_fragment_overrides_shifted_ports(self, mock_urlopen, mock_sleep):
+        """Verify that fragment overrides ext_base_url appends shifted proxy ports correctly when not shared."""
+        import json
+
+        paths = {"root": self.tmp_dir}
+        configs_dir = self.tmp_dir / "configs"
+        configs_dir.mkdir(parents=True, exist_ok=True)
+
+        overrides_data = {"test-frag": {"url": "${LDM_BASE_URL}/test"}}
+        with open(configs_dir / "fragment-overrides.json", "w") as f:
+            json.dump(overrides_data, f)
+
+        # Mock responses
+        mock_response = MagicMock()
+        mock_response.read.side_effect = [
+            json.dumps({"items": [{"id": "20124"}]}).encode("utf-8"),  # sites
+            json.dumps(
+                {
+                    "items": [
+                        {
+                            "name": "Home",
+                            "pageDefinition": {
+                                "pageElement": {
+                                    "type": "Fragment",
+                                    "id": "frag-1",
+                                    "definition": {
+                                        "fragmentConfig": {"fragmentKey": "test-frag"}
+                                    },
+                                }
+                            },
+                        }
+                    ]
+                }
+            ).encode("utf-8"),  # pages
+            json.dumps({"status": "ok"}).encode("utf-8"),  # patch response
+        ]
+        ctx_manager = MagicMock()
+        ctx_manager.__enter__.return_value = mock_response
+        mock_urlopen.return_value = ctx_manager
+
+        # Mock shifted proxy ports
+        mock_proxy_ports = {"http": 8080, "https": 8443, "admin": 18080}
+
+        # Scenario 1: HTTP local, proxy HTTP shifted to 8080
+        project_meta = {
+            "tag": "2025.Q1.0",
+            "container_name": "liferay-demo",
+            "host_name": "my-host.local",
+            "ssl": "False",
+            "share": "false",
+        }
+        self.handler.args.share = False
+        with (
+            patch.object(
+                self.handler.infra, "get_proxy_ports", return_value=mock_proxy_ports
+            ),
+            patch.object(self.handler, "run_command", return_value="8080"),
+        ):
+            self.handler.handler._patch_fragment_overrides(project_meta, paths)
+
+            patch_req = mock_urlopen.call_args_list[-1][0][0]
+            payload = json.loads(patch_req.data.decode("utf-8"))
+            self.assertEqual(
+                payload["definition"]["config"]["url"], "http://my-host.local:8080/test"
+            )
+
+        # Scenario 2: HTTPS local, proxy HTTPS shifted to 8443
+        mock_urlopen.reset_mock()
+        mock_response.read.side_effect = [
+            json.dumps({"items": [{"id": "20124"}]}).encode("utf-8"),
+            json.dumps(
+                {
+                    "items": [
+                        {
+                            "name": "Home",
+                            "pageDefinition": {
+                                "pageElement": {
+                                    "type": "Fragment",
+                                    "id": "frag-1",
+                                    "definition": {
+                                        "fragmentConfig": {"fragmentKey": "test-frag"}
+                                    },
+                                }
+                            },
+                        }
+                    ]
+                }
+            ).encode("utf-8"),
+            json.dumps({"status": "ok"}).encode("utf-8"),
+        ]
+
+        project_meta = {
+            "tag": "2025.Q1.0",
+            "container_name": "liferay-demo",
+            "host_name": "my-host.local",
+            "ssl": "True",
+            "share": "false",
+        }
+        self.handler.args.share = False
+        with (
+            patch.object(
+                self.handler.infra, "get_proxy_ports", return_value=mock_proxy_ports
+            ),
+            patch.object(self.handler, "run_command", return_value="8080"),
+        ):
+            self.handler.handler._patch_fragment_overrides(project_meta, paths)
+
+            patch_req = mock_urlopen.call_args_list[-1][0][0]
+            payload = json.loads(patch_req.data.decode("utf-8"))
+            self.assertEqual(
+                payload["definition"]["config"]["url"],
+                "https://my-host.local:8443/test",
+            )
+
+        # Scenario 3: Shared/Tunnel enabled, proxy HTTPS is ignored, resolves to tunnel subdomain
+        mock_urlopen.reset_mock()
+        mock_response.read.side_effect = [
+            json.dumps({"items": [{"id": "20124"}]}).encode("utf-8"),
+            json.dumps(
+                {
+                    "items": [
+                        {
+                            "name": "Home",
+                            "pageDefinition": {
+                                "pageElement": {
+                                    "type": "Fragment",
+                                    "id": "frag-1",
+                                    "definition": {
+                                        "fragmentConfig": {"fragmentKey": "test-frag"}
+                                    },
+                                }
+                            },
+                        }
+                    ]
+                }
+            ).encode("utf-8"),
+            json.dumps({"status": "ok"}).encode("utf-8"),
+        ]
+
+        project_meta = {
+            "tag": "2025.Q1.0",
+            "container_name": "liferay-demo",
+            "share": "true",
+        }
+        self.handler.args.share = True
+        with (
+            patch.object(
+                self.handler.infra, "get_proxy_ports", return_value=mock_proxy_ports
+            ),
+            patch.object(self.handler, "run_command", return_value="8080"),
+            patch.object(self.handler.defaults, "get", return_value="my-subdomain"),
+        ):
+            self.handler.handler._patch_fragment_overrides(project_meta, paths)
+
+            patch_req = mock_urlopen.call_args_list[-1][0][0]
+            payload = json.loads(patch_req.data.decode("utf-8"))
+            self.assertEqual(
+                payload["definition"]["config"]["url"],
+                "https://my-subdomain.lfr.cloud/test",
+            )
+
 
 if __name__ == "__main__":
     unittest.main()
