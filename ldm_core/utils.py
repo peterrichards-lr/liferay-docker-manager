@@ -1118,48 +1118,19 @@ def yaml_to_dict(content):
         return {}
 
 
-def dict_to_yaml(d, indent=0):
-    lines = []
-    spaces = "  " * indent
-    if isinstance(d, dict):
-        for k, v in d.items():
-            if v is None:
-                continue
-            if isinstance(v, (dict, list)):
-                if not v:
-                    val = "{}" if isinstance(v, dict) else "[]"
-                    lines.append(f"{spaces}{k}: {val}")
-                    continue
-                lines.append(f"{spaces}{k}:")
-                lines.append(dict_to_yaml(v, indent + 1))
-            else:
-                if isinstance(v, bool):
-                    v = str(v).lower()
-                elif isinstance(v, (int, float)):
-                    v = str(v)
-                elif isinstance(v, str):
-                    # Escape backslashes for YAML compatibility (prevents \u parsing errors)
-                    escaped = v.replace("\\", "\\\\").replace('"', '\\"')
-                    v = f'"{escaped}"'
-                lines.append(f"{spaces}{k}: {v}")
-    elif isinstance(d, list):
-        for item in d:
-            if item is None:
-                continue
-            if isinstance(item, (dict, list)):
-                lines.append(f"{spaces}-")
-                lines.append(dict_to_yaml(item, indent + 1))
-            else:
-                if isinstance(item, bool):
-                    item = str(item).lower()
-                elif isinstance(item, (int, float)):
-                    item = str(item)
-                elif isinstance(item, str):
-                    # Escape backslashes for YAML compatibility
-                    escaped = item.replace("\\", "\\\\").replace('"', '\\"')
-                    item = f'"{escaped}"'
-                lines.append(f"{spaces}- {item}")
-    return "\n".join(lines)
+def dict_to_yaml(d: dict, indent: int = 0) -> str:
+    import yaml
+
+    class BlockStyleDumper(yaml.SafeDumper):
+        def increase_indent(self, flow=False, indentless=False):
+            return super().increase_indent(flow=False, indentless=False)
+
+    return yaml.dump(
+        d,
+        Dumper=BlockStyleDumper,
+        default_flow_style=False,
+        sort_keys=False,
+    )
 
 
 def check_port(port):
