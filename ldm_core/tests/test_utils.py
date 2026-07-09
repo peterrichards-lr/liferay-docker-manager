@@ -2,10 +2,31 @@ import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from ldm_core.utils import verify_executable_checksum, version_to_tuple
+from ldm_core.utils import dict_to_yaml, verify_executable_checksum, version_to_tuple
 
 
 class TestUtils(unittest.TestCase):
+    def test_dict_to_yaml(self):
+        data = {
+            "services": {
+                "web": {
+                    "image": "nginx:latest",
+                    "ports": ["80:80", "443:443"],
+                    "environment": {
+                        "DEBUG": True,
+                        "VERSION": 1.0,
+                        "MSG": "Hello\nWorld",
+                    },
+                }
+            }
+        }
+        yaml_str = dict_to_yaml(data)
+        self.assertIn("services:", yaml_str)
+        self.assertIn("web:", yaml_str)
+        self.assertIn("image: nginx:latest", yaml_str)
+        self.assertIn("- 80:80", yaml_str)
+        self.assertIn("DEBUG: true", yaml_str)
+
     @patch("sys.argv", ["ldm.py"])
     @patch("sys.frozen", False, create=True)
     def test_verify_executable_checksum_source(self):
