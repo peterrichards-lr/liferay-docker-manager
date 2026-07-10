@@ -335,7 +335,7 @@ class VolumeSyncStage(PipelineStage):
                 UI.debug(f"Found {label} ZIP: {zip_path.name}")
                 with zipfile.ZipFile(zip_path, "r") as z:
                     if z.testzip() is not None:
-                        UI.error(f"{z.name} corrupt.")
+                        UI.error(f"{zip_path.name} corrupt.")
                         continue
                 target_file = target_dir / zip_path.name
                 if target_file.exists() and not overwrite:
