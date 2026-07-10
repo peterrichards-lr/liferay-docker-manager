@@ -100,6 +100,16 @@ class TestRuntime(unittest.TestCase):
         self.handler = MockRuntime()
         self.tmp_dir = Path("/tmp/runtime-project")
 
+        # Globally mock requests.get for _wait_for_ready tests to prevent hanging/failing
+        from unittest.mock import MagicMock, patch
+
+        self.req_patcher = patch("requests.get")
+        self.mock_req = self.req_patcher.start()
+        self.mock_req.return_value = MagicMock(status_code=200)
+
+    def tearDown(self):
+        self.req_patcher.stop()
+
     def test_resolve_container_label_discovery(self):
         """Verify that resolve_container uses Docker labels for discovery."""
         with patch.object(self.handler, "run_command") as mock_run:
