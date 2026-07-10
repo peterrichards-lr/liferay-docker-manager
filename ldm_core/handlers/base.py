@@ -686,7 +686,10 @@ class BaseHandler:
         try:
             p = Path(path)
             # Ensure we are targeting a file inside the directory
-            if p.suffix not in [".meta", ""]:
+            if (
+                p.name in ["meta", ".liferay-docker.meta", ".ldm.meta"]
+                or p.suffix == ".meta"
+            ):
                 # Assuming it's already a file path
                 target = p
             else:
