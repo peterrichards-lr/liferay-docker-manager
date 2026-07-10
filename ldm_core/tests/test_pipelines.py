@@ -114,9 +114,12 @@ def test_pipeline_rollback_failure_continues_rollback():
     pipeline = Pipeline("test_rollback_failure")
 
     stage1 = MockSuccessStage("Stage1")
-    stage2 = MockSuccessStage("Stage2")
-    # This stage will fail during rollback
-    stage2.rollback = lambda _ctx: (_ for _ in ()).throw(RuntimeError("Rollback error"))
+
+    class MockRollbackFailStage(MockSuccessStage):
+        def rollback(self, context: PipelineContext) -> None:
+            raise RuntimeError("Rollback error")
+
+    stage2 = MockRollbackFailStage("Stage2")
     stage3 = MockFailStage("Stage3")
 
     pipeline.add_stage(stage1)
