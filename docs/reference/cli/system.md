@@ -338,7 +338,7 @@ The following is a comprehensive index of all registered CLI option flags and th
 - **`--keep-config`**: Retain global config file ~/.ldmrc.
 - **`--keep-last`**: Keep only the specified number of most recent snapshots.
 - **`--latest`**: Restore the most recent snapshot.
-- **`--leave-running`**: Keep the running project active and abort the import if it is currently running.
+- **`--leave-running`** ![Added in v2.11.34](https://img.shields.io/badge/Added%20in-v2.11.34-blue): Keep the running project active and abort the import if it is currently running.
 - **`--list-backups`**: List backups in project work-folders.
 - **`--list-envs`**: List all cloud environments.
 - **`--logs`**: Stream container logs.
@@ -372,15 +372,15 @@ The following is a comprehensive index of all registered CLI option flags and th
 - **`--share-inspector`**: Expose the lfr-tunnel local inspector dashboard on port 4040.
 - **`--share-provider`**: Sharing provider to use (defaults to lfr-tunnel).
 - **`--status`**: Check for updates without performing the upgrade.
-- **`--stop-running`**: Automatically stop the project if it is currently running.
+- **`--stop-running`** ![Added in v2.11.33](https://img.shields.io/badge/Added%20in-v2.11.33-blue): Automatically stop the project if it is currently running.
 - **`--subdomain`**: Custom subdomain prefix (defaults to machine hostname).
 - **`--sync-env`**: Sync configuration env vars.
 - **`--system`**: Show detailed system diagnostic checks.
 - **`--tail`**: Number of lines to show from the end of the logs.
 - **`--timestamps`**: Show timestamps.
-- **`--token`**: CSRF/Authentication token for dashboard mutations.
+- **`--token`** ![Added in v2.16.0](https://img.shields.io/badge/Added%20in-v2.16.0-blue): CSRF/Authentication token for dashboard mutations.
 - **`--trigger`**: Event trigger for the release package workflow.
-- **`--tui`**: Launch interactive terminal menu to configure property overrides.
+- **`--tui`** ![Added in v2.11.43](https://img.shields.io/badge/Added%20in-v2.11.43-blue): Launch interactive terminal menu to configure property overrides.
 - **`--up`**: Automatically start the project after reseeding.
 - **`--url`**: Remote packages download URL.
 - **`--version`**: Target a specific version of LDM (e.g. v2.11.53).
@@ -394,4 +394,4 @@ The following is a comprehensive index of all registered CLI option flags and th
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-07-10* | *Last Reviewed: 2026-07-02*
+*Last Updated: 2026-07-10* | *Last Reviewed: 2026-07-10*
