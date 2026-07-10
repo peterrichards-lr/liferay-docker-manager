@@ -452,7 +452,7 @@ class BuildWorkspaceStage(PipelineStage):
             if gradlew.exists():
                 if platform.system() != "Windows":
                     try:
-                        os.chmod(gradlew, 0o755)
+                        os.chmod(gradlew, 0o755)  # nosec B103
                     except Exception:
                         pass
                 try:
