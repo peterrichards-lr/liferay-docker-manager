@@ -1,5 +1,7 @@
 # Starting a Fresh Vanilla Liferay
 
+![Added in v2.16.0](https://img.shields.io/badge/Added%20in-v2.16.0-blue)
+
 This guide explains how to start a completely fresh, vanilla Liferay instance using Liferay Docker Manager (LDM), detailing the configurations, database profiles, volume strategies, and CLI options.
 
 ---
@@ -21,7 +23,7 @@ A **Vanilla Start** bypasses the pre-warmed seeds entirely:
 
 ## 2. Starting a Vanilla Instance
 
-To start a vanilla instance, use the `--vanilla` flag (which acts as a developer alias to `--no-seed`) during project initialization or run:
+To start a vanilla instance, use the `--vanilla` flag ![Added in v2.16.0](https://img.shields.io/badge/Added%20in-v2.16.0-blue) (which acts as a developer alias to `--no-seed`) during project initialization or run:
 
 ```bash
 # Start a fresh vanilla Liferay using the default PostgreSQL database
@@ -144,4 +146,4 @@ To guarantee successful headless execution:
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-07-10* | *Last Reviewed: 2026-07-09*
+*Last Updated: 2026-07-10* | *Last Reviewed: 2026-07-10*
