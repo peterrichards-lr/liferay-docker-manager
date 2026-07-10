@@ -196,6 +196,25 @@ Restarts the background watch process for a project linked to a Liferay workspac
 ldm monitor [project_name] --delay 2.0
 ```
 
+## `wait`
+
+Blocks the terminal until the Liferay project has fully started, initialized, and is ready to accept HTTP traffic.
+
+```bash
+ldm wait [project]
+
+# Example:
+ldm wait demo
+```
+
+The wait sequence uses a progressively aggressive validation strategy with visual milestone tracking:
+
+1. **Container Health:** Polls the Docker daemon until the `liferay` container reaches a `healthy` state.
+2. **OSGi Subsystem Readiness:** Connects to the internal Gogo shell (via telnet) to ensure all core OSGi bundles are completely `Active` without any unresolved dependencies.
+3. **HTTP Server Validation:** Repeatedly sends lightweight HTTP probes to Liferay's primary dashboard endpoints (`/c/portal/layout` and `/o/api`) looking for a `200 OK`.
+
+This guarantees that scripts or CI/CD pipelines leveraging `ldm wait` will not proceed until Liferay is strictly capable of serving web requests, mitigating race conditions during automated deployments or integration tests.
+
 ## `logs`
 
 View real-time logs. Supports filtering by project, specific services, global infrastructure, or individual scaled replicas.
@@ -212,6 +231,8 @@ ldm logs -t               # Show timestamps
 ldm logs --since 1h       # Show logs from the last hour
 ldm logs --until 10m      # Show logs until 10 minutes ago
 ldm logs --no-wait        # Tailing usually waits for containers to be ready; use this to tail immediately
+ldm logs --export         # Export logs to a local file
+ldm logs --include-infra  # Include global infrastructure logs when viewing/exporting project logs
 ldm logs --infra          # Show logs for all global infrastructure (ES, Proxy, etc.)
 ldm logs --infra es       # Show logs only for Global Elasticsearch
 ldm logs --infra proxy    # Show logs only for Global SSL Proxy
