@@ -2311,11 +2311,11 @@ class FileLock:
                             if os.name == "nt":
                                 import ctypes
 
-                                process = ctypes.windll.kernel32.OpenProcess(
+                                process = ctypes.windll.kernel32.OpenProcess(  # type: ignore[attr-defined]
                                     0x00100000, 0, pid
                                 )
                                 if process != 0:
-                                    ctypes.windll.kernel32.CloseHandle(process)
+                                    ctypes.windll.kernel32.CloseHandle(process)  # type: ignore[attr-defined]
                                 else:
                                     stale = True
                             else:
