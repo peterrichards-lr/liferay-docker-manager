@@ -26,8 +26,14 @@ class MockConfigManager:
 
         self.defaults = DefaultsManager()
 
-    def update_portal_ext(self, *args, **kwargs):
-        pass
+    def update_portal_ext(self, target_file, updates, important_keys=None):
+        content = ""
+        for k, v in updates.items():
+            imp_str = " # !important" if important_keys and k in important_keys else ""
+            content += f"{k}={v}{imp_str}\n"
+        from ldm_core.utils import safe_write_text
+
+        safe_write_text(target_file, content)
 
     def detect_project_path(self, *args, **kwargs):
         pass
