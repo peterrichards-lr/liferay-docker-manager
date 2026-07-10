@@ -938,6 +938,42 @@ class TestDiagnosticsSetupCompletion(unittest.TestCase):
                     )
                 self.assertEqual(cm.exception.code, 0)
 
+    @patch("ldm_core.diagnostics.completions.platform.system")
+    @patch("ldm_core.diagnostics.completions.get_actual_home")
+    @patch("ldm_core.diagnostics.completions.get_resource_path")
+    @patch("pathlib.Path.mkdir")
+    @patch("pathlib.Path.symlink_to")
+    @patch("pathlib.Path.unlink")
+    @patch("pathlib.Path.exists")
+    @patch("pathlib.Path.is_symlink")
+    def test_refresh_man_symlink(
+        self,
+        mock_is_symlink,
+        mock_exists,
+        mock_unlink,
+        mock_symlink,
+        mock_mkdir,
+        mock_res_path,
+        mock_home,
+        mock_system,
+    ):
+        from ldm_core.diagnostics.completions import _refresh_man_symlink
+
+        # Setup mocks for Linux scenario
+        mock_system.return_value = "Linux"
+        mock_home.return_value = Path("/tmp/home")
+        mock_res_path.return_value = Path("/app/resources/ldm.1")
+        mock_is_symlink.return_value = True
+        mock_exists.return_value = True
+
+        # Run the logic
+        _refresh_man_symlink(self.manager.diagnostics)
+
+        # Verify interactions
+        self.assertTrue(mock_mkdir.called)
+        self.assertTrue(mock_unlink.called)
+        self.assertTrue(mock_symlink.called)
+
 
 if __name__ == "__main__":
     unittest.main()

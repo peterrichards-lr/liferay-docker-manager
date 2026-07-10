@@ -306,18 +306,6 @@ class LiferayManager(
     def validate_lcp_json(self, *args, **kwargs):
         return self.diagnostics.validate_lcp_json(*args, **kwargs)
 
-    def _check_container_health_logs(self, *args, **kwargs):
-        return self.diagnostics._check_container_health_logs(*args, **kwargs)
-
-    def _check_liferay_health_logs(self, *args, **kwargs):
-        return self.diagnostics._check_liferay_health_logs(*args, **kwargs)
-
-    def _check_elasticsearch_watermarks(self, *args, **kwargs):
-        return self.diagnostics._check_elasticsearch_watermarks(*args, **kwargs)
-
-    def _generate_debug_bundle(self, *args, **kwargs):
-        return self.diagnostics._generate_debug_bundle(*args, **kwargs)
-
     def _restore_from_cloud_layout(self, *args, **kwargs):
         return self.snapshot._restore_from_cloud_layout(*args, **kwargs)
 
