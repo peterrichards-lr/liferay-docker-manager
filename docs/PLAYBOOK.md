@@ -67,16 +67,26 @@ Because GitHub Actions do not natively trigger on reaction additions/removals, i
 
 ## 3. Version Tagging & CI/CD Release Pipeline
 
-Automate releases using a versioning script coupled with GitHub Actions.
+Automate releases using the repository's dedicated orchestrator script: `python3 scripts/release.py`.
 
-- **Bump Version**: The script parses the repository's metadata configuration (e.g., `pyproject.toml` or `whats-new.json`), increments the semantic version patch (e.g., `v1.14.1` -> `v1.14.2`), and commits the changes.
-- **Tag and Push**: It generates a semantic tag, pushes the branch/tag, opens a release PR, and sets it to auto-merge.
-- **CI/CD Compilation & Distribution**: Pushing the tag triggers the release workflow, which executes:
-  - **Cross-Compilation**: Compiles platform-specific binaries, injecting version numbers at build time (e.g., `go build -ldflags` or package bundling).
-  - **Checksum Verification**: Generates SHA256 hashes and pushes a `checksums.txt` file to an isolated, orphaned branch.
+- **Initiate a Pre-release**: Run this command from `master` branch to bump the version, stage the required release-related changes, create a tracking PR, and push the release tag directly on the release branch:
+
+  ```bash
+  python3 scripts/release.py --bump beta
+  ```
+
+- **Promote to Stable**: Run this command from the active `release/v*` branch to promote the version to a stable release, auto-merge the tracking PR to master, and push the stable release tag on master:
+
+  ```bash
+  python3 scripts/release.py --promote
+  ```
+
+- **CI/CD Compilation & Distribution**: Pushing tags (pre-release or stable) triggers the GitHub Actions workflows, which execute:
+  - **Cross-Compilation**: Compiles platform-specific binaries, injecting version numbers at build time.
+  - **Checksum Verification**: Generates SHA256 hashes and pushes a `checksums.txt` file.
   - **GitHub Release**: Creates an official GitHub Release and attaches the compiled assets.
-  - **Package Managers**: Automatically pushes updated manifests to community repositories (e.g., Homebrew Taps, Scoop Buckets).
-  - **Containerization**: Builds and publishes the latest application container image to an external registry (e.g., Docker Hub).
+  - **Package Managers**: Automatically pushes updated manifests to community repositories.
+  - **Containerization**: Builds and publishes the latest application container image.
 
 ---
 
@@ -114,4 +124,4 @@ When running scripts via an AI agent, standard input is non-interactive (`[ -t 0
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-07-10* | *Last Reviewed: 2026-07-02*
+*Last Updated: 2026-07-10* | *Last Reviewed: 2026-07-10*
