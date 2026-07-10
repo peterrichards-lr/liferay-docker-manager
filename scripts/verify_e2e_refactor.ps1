@@ -172,7 +172,7 @@ try {
     Set-Location $projectDir
     "tag=2026.q1.7-lts`ncontainer_name=ldm-smoke-test`nport=$TEST_PORT`ndb_type=postgresql" | Out-File "meta" -Encoding utf8
 
-    Log-AndRun "Running LDM Project" $LDM_CMD "-y run . --no-wait --no-tld-skip --no-jvm-verify"
+    Log-AndRun "Running LDM Project" $LDM_CMD "-y run . --no-wait"
 
     # Wait for Health
     Log-AndRun "Waiting for Liferay health" $LDM_CMD "-y wait . --timeout 600"

@@ -270,7 +270,7 @@ mkdir -p "$LDM_WORKSPACE/${PROJECT_NAME}/files"
 cd "$LDM_WORKSPACE/${PROJECT_NAME}"
 echo -e "tag=2026.q1.7-lts\ncontainer_name=${PROJECT_NAME}\nport=${TEST_PORT}\ndb_type=postgresql" > meta
 
-log_and_run "Running LDM Project" "$LDM_CMD" -y run . --no-wait --no-tld-skip --no-jvm-verify
+log_and_run "Running LDM Project" "$LDM_CMD" -y run . --no-wait
 
 # Wait for Health
 echo "ℹ  Waiting for Liferay health..."
