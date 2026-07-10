@@ -27,6 +27,8 @@ ldm import <source-path-or-url>
 
 ## 2. Packaging Workspaces (`ldm package`)
 
+![Added in v2.11.31](https://img.shields.io/badge/Added%20in-v2.11.31-blue)
+
 The `ldm package` command bundles a project's files, configurations, database, and volume assets into a single portable `.ldmp` tarball, complete with a `.sha256` signature.
 
 ### Step-by-Step: Creating an `.ldmp` Package
@@ -123,4 +125,4 @@ This scaffolds a `.github/workflows/ldm-package-release.yml` file which:
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-07-10* | *Last Reviewed: 2026-07-02*
+*Last Updated: 2026-07-10* | *Last Reviewed: 2026-07-10*

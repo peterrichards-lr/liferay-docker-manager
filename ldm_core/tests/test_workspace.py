@@ -339,13 +339,13 @@ class TestWorkspaceImport(unittest.TestCase):
 
             with (
                 patch(
-                    "ldm_core.handlers.workspace.calculate_sha256",
+                    "ldm_core.pipelines.import_pipeline.calculate_sha256",
                     return_value="match-sha",
                 ),
-                patch("ldm_core.handlers.workspace.UI.success") as mock_success,
+                patch("ldm_core.pipelines.import_pipeline.UI.success") as mock_success,
                 patch("zipfile.ZipFile"),
                 patch("ldm_core.utils.safe_extract"),
-                patch("ldm_core.handlers.workspace.datetime") as mock_date,
+                patch("ldm_core.pipelines.import_pipeline.datetime") as mock_date,
                 patch.object(
                     self.handler, "detect_project_path", return_value=tmp_path / "test"
                 ),
@@ -353,7 +353,7 @@ class TestWorkspaceImport(unittest.TestCase):
                 mock_date.now.return_value.strftime.return_value = "20260512_120000"
                 # Mock die to avoid further processing
                 with patch(
-                    "ldm_core.handlers.workspace.UI.die", side_effect=SystemExit
+                    "ldm_core.pipelines.import_pipeline.UI.die", side_effect=SystemExit
                 ):
                     try:
                         self.handler.workspace.cmd_import(str(source_zip))

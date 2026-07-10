@@ -1,6 +1,6 @@
 # LDM Properties Cascade & Override Hierarchy
 
-This document outlines the **5-Layer Properties Cascade** and CSS-style `# !important` override mechanism used by Liferay Docker Manager (LDM) to manage `portal-ext.properties` files.
+This document outlines the **5-Layer Properties Cascade** and CSS-style `# !important` override mechanism ![Added in v2.11.43](https://img.shields.io/badge/Added%20in-v2.11.43-blue) used by Liferay Docker Manager (LDM) to manage `portal-ext.properties` files.
 
 ---
 
@@ -96,7 +96,7 @@ flowchart TD
     Write[Write final merged properties<br>to project's files/portal-ext.properties] --> Done((End))
 ```
 
-### Rebuild Properties
+### Rebuild Properties ![Added in v2.11.43](https://img.shields.io/badge/Added%20in-v2.11.43-blue)
 
 ```bash
 ldm config rebuild-properties [project] [--dry-run]
@@ -104,7 +104,7 @@ ldm config rebuild-properties [project] [--dry-run]
 
 Reconstructs and synchronizes properties from all active layers, while fully preserving manual edits in your Project Customizations layer.
 
-### Reset Properties
+### Reset Properties ![Added in v2.11.43](https://img.shields.io/badge/Added%20in-v2.11.43-blue)
 
 ```bash
 ldm config reset-properties [project] [--dry-run]
@@ -112,7 +112,7 @@ ldm config reset-properties [project] [--dry-run]
 
 Wipes out all Project-level customizations and rebuilds properties cleanly from the remaining baseline layers (Seed + LDMP + Global Common + Local Common).
 
-### Revert Properties
+### Revert Properties ![Added in v2.11.43](https://img.shields.io/badge/Added%20in-v2.11.43-blue)
 
 ```bash
 ldm config revert-properties [project]
@@ -122,7 +122,7 @@ Restores the project's `portal-ext.properties` using the backup saved at creatio
 
 ---
 
-## 4. Visual Diagnostics Inspector
+## 4. Visual Diagnostics Inspector ![Added in v2.11.43](https://img.shields.io/badge/Added%20in-v2.11.43-blue)
 
 The Visual Diagnostics Web Dashboard (`ldm dashboard`) includes a **Properties Inspector** drawer. For every property in the project's config, it displays:
 
@@ -141,4 +141,4 @@ The Visual Diagnostics Web Dashboard (`ldm dashboard`) includes a **Properties I
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-07-10* | *Last Reviewed: 2026-07-02*
+*Last Updated: 2026-07-10* | *Last Reviewed: 2026-07-10*
