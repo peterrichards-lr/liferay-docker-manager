@@ -848,7 +848,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Added a dedicated third-party tool dependencies guide ([THIRD_PARTY_TOOLS.md](./docs/THIRD_PARTY_TOOLS.md)) detailing mandatory/optional status, purposes, and impacts of missing dependencies.
+- Added a dedicated third-party tool dependencies guide ([THIRD_PARTY_TOOLS.md](./docs/reference/third_party_tools.md)) detailing mandatory/optional status, purposes, and impacts of missing dependencies.
 
 ### Changed
 
@@ -1216,4 +1216,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-07-08* | *Last Reviewed: 2026-07-02*
+*Last Updated: 2026-07-09* | *Last Reviewed: 2026-07-09*

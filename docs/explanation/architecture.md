@@ -32,11 +32,12 @@ graph TD
 
     %% Traffic Flow
     User((Browser)) -- "https://forge.local" --> Proxy
+    User -- "http://forge.local (--no-ssl)" --> Proxy
     User -- "https://ext.forge.local" --> Proxy
 
-    Proxy -- "SNI Matching" --> DXP
-    Proxy -- "SNI Matching" --> SSCE1
-    Proxy -- "SNI Matching" --> SSCE2
+    Proxy -- "SNI Matching / HTTP Routing" --> DXP
+    Proxy -- "SNI Matching / HTTP Routing" --> SSCE1
+    Proxy -- "SNI Matching / HTTP Routing" --> SSCE2
 
     %% Public Tunnel Routing
     PublicUser((Public User)) -- "https://sub.lfr-demo.se" --> VPSGateway[VPS Gateway: lfr-tunneld]
@@ -45,7 +46,7 @@ graph TD
 
     %% Communication
     DXP -- "Namespaced Indexing" --> Search
-    Proxy -- "API Events" --> Socket
+    Proxy -- "API Events / Traefik Labels" --> Socket
     Socat -.-> Socket
 
     %% Persistence
@@ -139,6 +140,7 @@ graph TD
     subgraph LDM_Logic [ldm scan_client_extensions]
         Detect{Has Dockerfile?}
         Extract[Unzip context to CX_Build]
+        Repackage[JIT Repackage Config Overrides]
         Move[Move zip to OSGi_CX]
     end
 
@@ -155,7 +157,8 @@ graph TD
     %% Lifecycle Flow
     Zip --> Detect
     Detect -- "Yes (SSCE)" --> Extract
-    Detect -- "Always" --> Move
+    Detect -- "Always" --> Repackage
+    Repackage -- "Injects environment/OAuth" --> Move
 
     Extract --> Build
     Build --> Run
@@ -309,4 +312,4 @@ For a complete breakdown of each third-party dependency, including their optiona
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-07-08* | *Last Reviewed: 2026-07-02*
+*Last Updated: 2026-07-09* | *Last Reviewed: 2026-07-02*

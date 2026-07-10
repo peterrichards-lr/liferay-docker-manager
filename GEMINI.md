@@ -63,7 +63,7 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
 
 ### 7. Reference Documentation
 
-- [Architecture Guide](./docs/LDM_ARCHITECTURE.md)
+- [Architecture Guide](./docs/explanation/architecture.md)
 - [Troubleshooting](./docs/TROUBLESHOOTING.md)
 - [PaaS "Golden Path" Guide](./docs/tutorials/paas_local_dev.md)
 - [Workspace Import & Packaging Guide](./docs/how-to/workspace_import.md)
@@ -71,6 +71,12 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
 - [Properties Override Hierarchy Guide](./docs/explanation/properties.md)
 
 ## 8. Active Work State & Plan (July 9, 2026)
+
+- **Current Active Task (July 9, 2026)**:
+  - [x] Issue #449: Decouple `DiagnosticsService` monolithic structure into `ldm_core/diagnostics/` submodules. Resolved merge conflicts.
+  - [x] Issue #483: Add and update Mermaid diagrams (Architecture & Properties).
+  - [x] Epic #439: Broken down into Sub-issues #486, #487, #488, and #489.
+  - [ ] Issue #486: Implement Base Pipeline Architecture (`ldm_core.pipelines.base`).
 
 - **Add CSRF Protection and API Token Authentication to Web Dashboard Server (Issue #441)**:
   - [x] Introduce Blueprint and `create_app` factory in `ldm_core/dashboard/server.py`.
@@ -597,4 +603,4 @@ When modifying `client-extension.yaml` files, **NEVER change or remove `.service
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-07-09* | *Last Reviewed: 2026-07-09*
+*Last Updated: 2026-07-10* | *Last Reviewed: 2026-07-09*
