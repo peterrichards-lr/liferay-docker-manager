@@ -91,3 +91,8 @@ class DiagnosticsService(BaseHandler):
         from ldm_core.diagnostics.completions import _refresh_man_symlink
 
         return _refresh_man_symlink(self, *args, **kwargs)
+
+    def get_resource_path(self, *args, **kwargs):
+        from ldm_core.utils import get_resource_path
+
+        return get_resource_path(*args, **kwargs)

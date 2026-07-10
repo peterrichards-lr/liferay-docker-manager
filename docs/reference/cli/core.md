@@ -67,6 +67,8 @@ ldm run demo --scale liferay=2 --scale my-ext=3
 
 ### `--vanilla` Switch
 
+![Added in v2.16.0](https://img.shields.io/badge/Added%20in-v2.16.0-blue)
+
 Bypasses downloading the pre-warmed database seed from GitHub releases. Spawns the Liferay project stack with a pristine, empty database.
 
 ## `init`
@@ -391,7 +393,7 @@ ldm log-level [project] --list
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-07-10* | *Last Reviewed: 2026-07-07*
+*Last Updated: 2026-07-10* | *Last Reviewed: 2026-07-10*
 
 ## Global Flags
 
