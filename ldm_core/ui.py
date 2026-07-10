@@ -114,9 +114,8 @@ class UI:
                 .replace("❓", "[?]")
             )
             safe_out = safe_out.encode("ascii", "replace").decode("ascii")
-            print(
-                safe_out, file=file, flush=True
-            )  # codeql[py/clear-text-logging-sensitive-data]
+            # codeql[py/clear-text-logging-sensitive-data]
+            print(safe_out, file=file, flush=True)
             return
 
         try:
@@ -128,7 +127,8 @@ class UI:
             ):
                 out.encode(file.encoding)
             # Try printing with the current encoding
-            print(out, file=file, flush=True)  # codeql[py/clear-text-logging-sensitive-data] # fmt: skip
+            # codeql[py/clear-text-logging-sensitive-data]
+            print(out, file=file, flush=True)  # fmt: skip
         except (UnicodeEncodeError, OSError):
             # Fallback for old Windows consoles (CP1252) or problematic streams
             # Replace known problematic symbols with ASCII equivalents
@@ -145,7 +145,8 @@ class UI:
             )
             # Final safety wash
             safe_out = safe_out.encode("ascii", "replace").decode("ascii")
-            print(safe_out, file=file, flush=True)  # codeql[py/clear-text-logging-sensitive-data] # fmt: skip
+            # codeql[py/clear-text-logging-sensitive-data]
+            print(safe_out, file=file, flush=True)  # fmt: skip
 
     class Spinner:
         """A simple animated spinner context manager."""
