@@ -60,6 +60,17 @@ Verify you have both hook types installed in your clone:
 pre-commit install --hook-type pre-commit --hook-type pre-push
 ```
 
+### 4. Documentation Version Badges
+
+When documenting CLI commands, flags, or configuration options, always specify the LDM version in which the feature was introduced using a visual badge (Shields.io) or bold inline label:
+
+* **Visual SVG Badge (Recommended)**:
+  `![Added in v2.11.34](https://img.shields.io/badge/Added%20in-v2.11.34-blue)`
+* **Text Fallback**:
+  `**[Added in v2.11.34]**`
+
+Place the badge immediately below the heading or next to the flag definition (e.g., in a table or list).
+
 ---
 
 ## 🛠️ Codebase Conventions & Command Execution
@@ -90,4 +101,4 @@ When executing external binaries or shell commands (e.g. docker, git, mkcert, lc
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-07-10* | *Last Reviewed: 2026-07-09*
+*Last Updated: 2026-07-10* | *Last Reviewed: 2026-07-10*
