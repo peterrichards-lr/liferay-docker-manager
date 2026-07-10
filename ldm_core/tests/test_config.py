@@ -1073,6 +1073,62 @@ class TestConfigService(unittest.TestCase):
                 "database_mode", "isolated"
             )
 
+    def test_sync_common_assets_checksum_caching(self):
+        import tempfile
+        from pathlib import Path
+        from unittest.mock import patch
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp = Path(tmpdir)
+
+            root_dir = tmp / "root"
+            files_dir = tmp / "files"
+            common_dir = tmp / "common"
+            deploy_dir = tmp / "deploy"
+            configs_dir = tmp / "configs"
+
+            for d in [root_dir, files_dir, common_dir, deploy_dir, configs_dir]:
+                d.mkdir(parents=True)
+
+            paths = {
+                "root": root_dir,
+                "files": files_dir,
+                "common": common_dir,
+                "deploy": deploy_dir,
+                "configs": configs_dir,
+            }
+
+            target_ext = files_dir / "portal-ext.properties"
+            ldm_dir = root_dir / ".liferay-docker"
+            manifest = ldm_dir / "properties_manifest.json"
+
+            # Run 1: Should build target_ext and manifest
+            self.handler.sync_common_assets(paths, host_updates={"test.prop": "1"})
+
+            self.assertTrue(target_ext.exists())
+            self.assertTrue(manifest.exists())
+
+            content_1 = target_ext.read_text()
+            self.assertIn("test.prop=1", content_1)
+
+            # Run 2: Hash matches, should bypass parser completely
+            with patch.object(
+                self.handler, "_get_properties_with_metadata"
+            ) as mock_parse:
+                self.handler.sync_common_assets(paths, host_updates={"test.prop": "1"})
+                mock_parse.assert_not_called()
+
+            # Run 3: We modify a layer, it should trigger parser again
+            with patch.object(
+                self.handler,
+                "_get_properties_with_metadata",
+                wraps=self.handler._get_properties_with_metadata,
+            ) as mock_parse_2:
+                self.handler.sync_common_assets(paths, host_updates={"test.prop": "2"})
+                mock_parse_2.assert_called()
+                content_2 = target_ext.read_text()
+                self.assertIn("test.prop=2", content_2)
+
 
 if __name__ == "__main__":
     unittest.main()  # type: ignore[misc]
