@@ -213,6 +213,7 @@ ldm logs --since 1h       # Show logs from the last hour
 ldm logs --until 10m      # Show logs until 10 minutes ago
 ldm logs --no-wait        # Tailing usually waits for containers to be ready; use this to tail immediately
 ldm logs --export         # Export logs to a local file
+ldm logs --include-infra  # Include global infrastructure logs when viewing/exporting project logs
 ldm logs --infra          # Show logs for all global infrastructure (ES, Proxy, etc.)
 ldm logs --infra es       # Show logs only for Global Elasticsearch
 ldm logs --infra proxy    # Show logs only for Global SSL Proxy

@@ -914,6 +914,11 @@ def get_parser():
                 help="Export logs to a text file in the current directory",
             )
             p.add_argument(
+                "--include-infra",
+                action="store_true",
+                help="Also include global infrastructure logs when exporting/viewing project logs",
+            )
+            p.add_argument(
                 "--infra",
                 action="store_true",
                 help="View logs for global infrastructure",
@@ -2073,6 +2078,7 @@ def main():
             grep_v=getattr(args, "grep_v", False),
             level=getattr(args, "level", None),
             export=getattr(args, "export", False),
+            include_infra=getattr(args, "include_infra", False),
         ),
         ("deploy", None): lambda: manager.cmd_deploy(
             getattr(args, "project", None), targets=getattr(args, "targets", [])

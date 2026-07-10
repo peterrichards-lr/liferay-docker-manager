@@ -2582,8 +2582,31 @@ class RuntimeService(BaseHandler):
         grep_v=False,
         level=None,
         export=False,
+        include_infra=False,
     ):
         """Shows logs for a project or global infrastructure."""
+        if include_infra and export and not infra:
+            UI.info("Including infrastructure logs in export...")
+            self.cmd_logs(
+                project_id=project_id,
+                service=service,
+                all_projects=all_projects,
+                infra=True,
+                follow=follow,
+                no_wait=no_wait,
+                tail=tail,
+                timestamps=timestamps,
+                since=since,
+                until=until,
+                instance=instance,
+                grep=grep,
+                grep_i=grep_i,
+                grep_v=grep_v,
+                level=level,
+                export=True,
+                include_infra=False,
+            )
+
         if instance is not None:
             self._cmd_logs_instance(
                 project_id=project_id,
