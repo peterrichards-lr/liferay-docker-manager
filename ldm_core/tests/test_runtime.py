@@ -13,6 +13,7 @@ class MockRuntime(BaseHandler):
         self.args = MagicMock()
         self.args.tag_latest = False
         self.args.tag_prefix = None
+        self.args.timeout = 900
         self.verbose = False
         self.non_interactive = True
         self.dry_run = False
@@ -1465,6 +1466,7 @@ services:
                 self.handler, "detect_project_path", return_value=self.tmp_dir
             ),
             patch.object(self.handler.config, "sync_common_assets"),
+            patch.object(self.handler, "run_command"),
         ):
             result = self.handler.sync_stack(self.tmp_dir, {"container_name": "test"})
             self.assertTrue(result)
