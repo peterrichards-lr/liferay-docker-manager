@@ -277,6 +277,24 @@ try {
         throw "logs --instance routing validation failed."
     }
 
+    Write-Host ">> Verifying Trace Log and Logs Export..."
+    $traceLogPath = Join-Path $HOME ".ldm/last-command.log"
+    if (Test-Path $traceLogPath) {
+        Write-Host "✅ Trace Log (last-command.log) verified."
+    } else {
+        throw "Trace Log file missing."
+    }
+
+    Log-AndRun "Exporting project logs" $LDM_CMD "logs . --export"
+    $exportFiles = Resolve-Path *.log -ErrorAction SilentlyContinue
+    if ($exportFiles) {
+        $exportFile = $exportFiles[0].Path
+        Write-Host "✅ Logs Export verified ($exportFile)."
+        Remove-Item $exportFile -Force
+    } else {
+        throw "Logs Export file not generated."
+    }
+
     Log-AndRun "Checking Status" $LDM_CMD "-y status"
 
     # Clean up any potential orphans from the run
