@@ -2395,7 +2395,7 @@ class RuntimeService(BaseHandler):
         export_prefix="logs",
     ):
         """Runs the log command, streaming, filtering, and performing troubleshooting diagnostics."""
-        if not grep and not level and not follow:
+        if not grep and not level and not follow and not export:
             self.manager.run_command(
                 cmd, env=env, cwd=cwd, capture_output=False, check=False
             )

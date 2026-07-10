@@ -73,6 +73,7 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
 ## 8. Active Work State & Plan (July 10, 2026)
 
 - **Current Active Task (July 10, 2026)**:
+  - [x] Extend test coverage for logs export, wait milestones, and trace logging.
   - [x] Issue #449: Decouple `DiagnosticsService` monolithic structure into `ldm_core/diagnostics/` submodules. Resolved merge conflicts.
   - [x] Issue #483: Add and update Mermaid diagrams (Architecture & Properties).
   - [x] Epic #439: Broken down into Sub-issues #486, #487, #488, and #489.

@@ -377,6 +377,28 @@ else
     echo "❌ ERROR: logs --instance routing validation failed." && exit 1
 fi
 
+echo ">> Verifying Trace Log and Logs Export..."
+if [ -f "$HOME/.ldm/last-command.log" ]; then
+    echo "✅ Trace Log (last-command.log) verified."
+else
+    echo "❌ ERROR: Trace Log file missing." && exit 1
+fi
+
+log_and_run "Exporting project logs" "$LDM_CMD" logs . --export
+EXPORT_FILE=""
+for f in *.log; do
+    if [ -f "$f" ]; then
+        EXPORT_FILE="$f"
+        break
+    fi
+done
+if [ -n "$EXPORT_FILE" ]; then
+    echo "✅ Logs Export verified ($EXPORT_FILE)."
+    rm "$EXPORT_FILE"
+else
+    echo "❌ ERROR: Logs Export file not generated." && exit 1
+fi
+
 # Final
 log_and_run "Checking Status" "$LDM_CMD" -y status
 

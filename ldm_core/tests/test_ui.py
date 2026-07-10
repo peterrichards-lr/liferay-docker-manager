@@ -181,6 +181,41 @@ class TestUI(unittest.TestCase):
         mock_ask.return_value = "n"
         self.assertFalse(UI.confirm("Proceed?", default=False))
 
+    @unittest.mock.patch("ldm_core.utils.get_actual_home")
+    def test_trace_log_initialization(self, mock_home):
+        import tempfile
+        from pathlib import Path
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            mock_home.return_value = Path(tmpdir)
+            UI.init_trace_log(["cmd", "arg1"])
+            self.assertIsNotNone(UI._trace_handle)
+            self.assertTrue(UI.TRACE_LOG_PATH.exists())
+            UI._trace_handle.close()
+            UI._trace_handle = None
+
+            content = UI.TRACE_LOG_PATH.read_text(encoding="utf-8")
+            self.assertIn("--- LDM Trace Log Started at", content)
+            self.assertIn("Command: cmd arg1", content)
+
+    @unittest.mock.patch("ldm_core.utils.get_actual_home")
+    def test_trace_log_writing(self, mock_home):
+        import tempfile
+        from pathlib import Path
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            mock_home.return_value = Path(tmpdir)
+            UI.init_trace_log(["cmd"])
+            UI.trace("Test Trace Message")
+            UI._print("Test Print Message", color=UI.CYAN)
+            UI._trace_handle.close()
+            UI._trace_handle = None
+
+            content = UI.TRACE_LOG_PATH.read_text(encoding="utf-8")
+            self.assertIn("Test Trace Message", content)
+            self.assertIn("Test Print Message", content)
+            self.assertNotIn("\033", content)
+
 
 if __name__ == "__main__":
     unittest.main()

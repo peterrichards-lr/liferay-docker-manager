@@ -26,6 +26,7 @@ class MockRuntime(BaseHandler):
         self.infra = MagicMock()
         self.snapshot = MagicMock()
         self.share = MagicMock()
+        self.license = MagicMock()
         self.share.resolve_share_config.return_value = ("lfr-tunnel", "lfr-demo.online")
         from ldm_core.defaults import DefaultsManager
         from ldm_core.handlers.composer import ComposerService
@@ -1448,6 +1449,109 @@ services:
                 "https://my-subdomain.lfr.cloud/test",
             )
 
+    @patch("ldm_core.pipelines.run.Pipeline.run", return_value=True)
+    def test_cmd_run_invokes_pipeline(self, mock_run):
+        with patch.object(
+            self.handler, "detect_project_path", return_value=self.tmp_dir
+        ):
+            result = self.handler.cmd_run("test_proj")
+            self.assertTrue(result)
+            mock_run.assert_called_once()
+
+    @patch("ldm_core.pipelines.run.Pipeline.run", return_value=True)
+    def test_sync_stack_invokes_pipeline(self, mock_run):
+        with (
+            patch.object(
+                self.handler, "detect_project_path", return_value=self.tmp_dir
+            ),
+            patch.object(self.handler.config, "sync_common_assets"),
+        ):
+            result = self.handler.sync_stack(self.tmp_dir, {"container_name": "test"})
+            self.assertTrue(result)
+            mock_run.assert_called_once()
+
+    @patch("subprocess.Popen")
+    @patch("ldm_core.handlers.runtime.get_compose_cmd")
+    def test_cmd_logs_export(self, mock_compose, mock_popen):
+        import os
+        import tempfile
+        from pathlib import Path
+
+        mock_compose.return_value = ["docker", "compose"]
+
+        mock_process = MagicMock()
+        mock_process.poll.return_value = 0
+        mock_process.stdout.readline.side_effect = [
+            "INFO [main] portal starting...",
+            "WARN [main] deprecated config",
+            "",
+        ]
+        mock_popen.return_value = mock_process
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            old_cwd = os.getcwd()
+            os.chdir(tmpdir)
+            try:
+                with patch.object(self.handler, "run_command") as mock_run:
+                    mock_run.side_effect = ["my-container", True]
+
+                    self.handler.cmd_logs(project_id="test", export=True, no_wait=True)
+
+                    log_files = list(Path(tmpdir).glob("*.log"))
+                    self.assertEqual(len(log_files), 1)
+                    content = log_files[0].read_text(encoding="utf-8")
+                    self.assertIn("INFO [main] portal starting...", content)
+                    self.assertIn("WARN [main] deprecated config", content)
+            finally:
+                os.chdir(old_cwd)
+
+    @patch("subprocess.Popen")
+    @patch("ldm_core.handlers.runtime.get_compose_cmd")
+    def test_cmd_logs_export_include_infra(self, mock_compose, mock_popen):
+        import os
+        import tempfile
+        from pathlib import Path
+
+        mock_compose.return_value = ["docker", "compose"]
+
+        def mock_popen_func(*args, **kwargs):
+            mock_process = MagicMock()
+            mock_process.poll.return_value = 0
+            mock_process.stdout.readline.side_effect = [
+                "INFO [main] portal starting...",
+                "",
+                "",
+                "",
+                "",
+            ]
+            return mock_process
+
+        mock_popen.side_effect = mock_popen_func
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            old_cwd = os.getcwd()
+            os.chdir(tmpdir)
+            try:
+                with (
+                    patch.object(self.handler, "run_command") as mock_run,
+                    patch.object(
+                        self.handler.manager,
+                        "get_resource_path",
+                        return_value=Path("/tmp/infra-compose.yml"),
+                    ),
+                ):
+                    mock_run.side_effect = ["my-container", True, "", True]
+                    self.handler.manager.infra._get_infra_env.return_value = {}
+
+                    self.handler.cmd_logs(
+                        project_id="test", export=True, include_infra=True, no_wait=True
+                    )
+
+                    log_files = list(Path(tmpdir).glob("*.log"))
+                    self.assertEqual(len(log_files), 2)
+            finally:
+                os.chdir(old_cwd)
+
 
 class TestFragmentOverridesValidation(unittest.TestCase):
     """Unit tests for _validate_fragment_overrides (Issue #434)."""
@@ -1569,21 +1673,3 @@ class TestFragmentOverridesValidation(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-
-    @patch("ldm_core.pipelines.run.Pipeline.run", return_value=True)
-    def test_cmd_run_invokes_pipeline(self, mock_run):
-        with patch.object(
-            self.handler, "detect_project_path", return_value=self.tmp_dir
-        ):
-            result = self.handler.cmd_run("test_proj")
-            self.assertTrue(result)
-            mock_run.assert_called_once()
-
-    @patch("ldm_core.pipelines.run.Pipeline.run", return_value=True)
-    def test_sync_stack_invokes_pipeline(self, mock_run):
-        with patch.object(
-            self.handler, "detect_project_path", return_value=self.tmp_dir
-        ):
-            result = self.handler.sync_stack("test_proj")
-            self.assertTrue(result)
-            mock_run.assert_called_once()
