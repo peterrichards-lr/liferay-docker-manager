@@ -2522,6 +2522,12 @@ def save_global_config_safe(config_path: Path, data: dict) -> bool:
 
 def get_keyring_token(service_name: str, username: str) -> str | None:
     """Retrieves the token from the OS-native credential vault."""
+    if (
+        os.environ.get("GITHUB_ACTIONS") == "true"
+        or os.environ.get("LDM_NO_KEYRING") == "1"
+    ):
+        return None
+
     if keyring is not None:
         try:
             return keyring.get_password(service_name, username)
@@ -2532,6 +2538,12 @@ def get_keyring_token(service_name: str, username: str) -> str | None:
 
 def set_keyring_token(service_name: str, username: str, token: str) -> bool:
     """Saves the token to the OS-native credential vault."""
+    if (
+        os.environ.get("GITHUB_ACTIONS") == "true"
+        or os.environ.get("LDM_NO_KEYRING") == "1"
+    ):
+        return False
+
     if keyring is not None:
         try:
             keyring.set_password(service_name, username, token)

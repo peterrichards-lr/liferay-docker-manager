@@ -76,6 +76,7 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
   - [x] Issue #449: Decouple `DiagnosticsService` monolithic structure into `ldm_core/diagnostics/` submodules. Resolved merge conflicts.
   - [x] Issue #483: Add and update Mermaid diagrams (Architecture & Properties).
   - [x] Epic #439: Broken down into Sub-issues #486, #487, #488, and #489.
+  - [x] Issue #499: Add version badges/pills for CLI flags and features in documentation.
   - [ ] Issue #486: Implement Base Pipeline Architecture (`ldm_core.pipelines.base`).
   - [ ] Issue #492: Implement Lock Expiry and Resiliency for Workspace FileLock and ProjectLock.
   - [ ] Issue #493: Graceful Fallbacks and Headless Bypasses for OS Keyring Token Storage.
