@@ -12,6 +12,7 @@ from datetime import datetime
 from pathlib import Path
 
 from ldm_core.pipelines.base import Pipeline, PipelineContext, PipelineStage
+from ldm_core.pipelines.validation import ValidationStage as SharedValidationStage
 from ldm_core.ui import UI
 from ldm_core.utils import calculate_sha256
 
@@ -33,7 +34,7 @@ class ImportPipelineContext(PipelineContext):
         self.set("is_init_from", kwargs.get("is_init_from", False))
 
 
-class ValidationStage(PipelineStage):
+class ImportValidationStage(PipelineStage):
     """Verifies target paths, existing states, and CLI flags."""
 
     def execute(self, context: PipelineContext) -> None:
@@ -494,7 +495,8 @@ class ImportPipeline(Pipeline):
         super().__init__(
             name="import",
             stages=[
-                ValidationStage(),
+                SharedValidationStage(),
+                ImportValidationStage(),
                 ExtractionStage(),
                 ProjectSetupStage(),
                 BackupStateStage(),
