@@ -1,67 +1,94 @@
+import abc
+import logging
 from typing import Any
-
-from ldm_core.ui import UI
 
 
 class PipelineContext:
-    def __init__(self, manager, **kwargs):
-        self.manager = manager
-        self._data: dict[str, Any] = kwargs
-        self.aborted: bool = False
-        self.error: Exception | None = None
+    """Shared state container for pipeline execution."""
+
+    def __init__(self, **kwargs):
+        self.data: dict[str, Any] = dict(kwargs)
+        self.errors: list[Exception] = []
+        self.stopped: bool = False
 
     def get(self, key: str, default: Any = None) -> Any:
-        return self._data.get(key, default)
+        return self.data.get(key, default)
 
     def set(self, key: str, value: Any) -> None:
-        self._data[key] = value
+        self.data[key] = value
+
+    def update(self, items: dict[str, Any]) -> None:
+        self.data.update(items)
 
 
-class PipelineStage:
-    def execute(self, context: PipelineContext) -> bool:
-        """Executes the pipeline stage. Returns True if successful, False if pipeline should abort."""
-        raise NotImplementedError
+class PipelineStage(abc.ABC):
+    """Abstract base class for a single stage in a pipeline."""
+
+    @property
+    def name(self) -> str:
+        return self.__class__.__name__
+
+    @abc.abstractmethod
+    def execute(self, context: PipelineContext) -> None:
+        """Execute the primary logic of the stage."""
+        pass
 
     def rollback(self, context: PipelineContext) -> None:
         """Optional rollback logic if a subsequent stage fails."""
-        pass
+        return
 
 
 class Pipeline:
-    def __init__(self, name: str = "Pipeline"):
+    """Orchestrates the sequential execution of multiple PipelineStage instances."""
+
+    def __init__(self, name: str, stages: list[PipelineStage] | None = None):
         self.name = name
-        self.stages: list[PipelineStage] = []
+        self.stages: list[PipelineStage] = stages or []
+        self.executed_stages: list[PipelineStage] = []
+        self.logger = logging.getLogger(f"pipeline.{name}")
 
-    def add_stage(self, stage: PipelineStage) -> "Pipeline":
+    def add_stage(self, stage: PipelineStage) -> None:
         self.stages.append(stage)
-        return self
 
-    def execute(self, context: PipelineContext) -> bool:
-        executed_stages = []
+    def run(self, context: PipelineContext) -> bool:
+        """
+        Executes all stages sequentially.
+        If an exception is raised by any stage, the pipeline stops and
+        triggers rollback on all successfully executed stages in reverse order.
+        """
+        self.logger.debug(
+            f"Starting pipeline: {self.name} with {len(self.stages)} stages"
+        )
+
         for stage in self.stages:
-            if context.aborted:
+            if context.stopped:
+                self.logger.debug(
+                    f"Pipeline {self.name} was stopped before stage: {stage.name}"
+                )
                 break
+
             try:
-                success = stage.execute(context)
-                executed_stages.append(stage)
-                if not success:
-                    UI.error(
-                        f"Pipeline {self.name} aborted at stage {stage.__class__.__name__}"
-                    )
-                    self._rollback(executed_stages, context)
-                    return False
+                self.logger.debug(f"Executing stage: {stage.name}")
+                stage.execute(context)
+                self.executed_stages.append(stage)
             except Exception as e:
-                UI.error(f"Error in {self.name} stage {stage.__class__.__name__}: {e}")
-                context.error = e
-                self._rollback(executed_stages, context)
+                self.logger.error(f"Stage {stage.name} failed: {e}", exc_info=True)
+                context.errors.append(e)
+                self._rollback(context)
                 return False
+
+        self.logger.debug(f"Pipeline {self.name} completed successfully")
         return True
 
-    def _rollback(
-        self, executed_stages: list[PipelineStage], context: PipelineContext
-    ) -> None:
-        for stage in reversed(executed_stages):
+    def _rollback(self, context: PipelineContext) -> None:
+        """Triggers the rollback logic of executed stages in reverse order."""
+        self.logger.debug(f"Triggering rollback for pipeline {self.name}")
+        for stage in reversed(self.executed_stages):
             try:
+                self.logger.debug(f"Rolling back stage: {stage.name}")
                 stage.rollback(context)
             except Exception as e:
-                UI.error(f"Error during rollback in {stage.__class__.__name__}: {e}")
+                self.logger.error(
+                    f"Error during rollback of stage {stage.name}: {e}", exc_info=True
+                )
+                # Keep rolling back other stages even if one fails

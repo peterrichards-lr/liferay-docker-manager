@@ -13,9 +13,9 @@ from ldm_core.pipelines.run import (
 class TestRunPipeline(unittest.TestCase):
     def setUp(self):
         self.context = RunPipelineContext(MagicMock())
-        self.context.project_id = "test-project"
-        self.context.is_new_project = False
-        self.context.dry_run = False
+        self.context.set("project_id", "test-project")
+        self.context.set("is_new_project", False)
+        self.context.set("dry_run", False)
         self.context.manager.non_interactive = True
         self.context.set("project_meta", {"container_name": "test-project"})
 
@@ -36,7 +36,7 @@ class TestRunPipeline(unittest.TestCase):
             stage.execute(self.context)
 
     def test_composer_stage_dry_run(self):
-        self.context.dry_run = True
+        self.context.set("dry_run", True)
         stage = ComposerStage()
         self.context.set("paths", {"root": MagicMock(), "configs": MagicMock()})
         self.context.set("infra_ports", {})
@@ -49,7 +49,7 @@ class TestRunPipeline(unittest.TestCase):
         pass  # is_dry_run is handled dynamically
 
     def test_execution_stage_dry_run(self):
-        self.context.dry_run = True
+        self.context.set("dry_run", True)
         stage = ExecutionStage()
         stage.execute(self.context)
         self.context.manager.run_command.assert_not_called()

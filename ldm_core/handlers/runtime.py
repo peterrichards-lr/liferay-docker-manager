@@ -66,7 +66,7 @@ class RuntimeService(BaseHandler):
         context = RunPipelineContext(
             self.manager, project_id=project_id, is_restart=is_restart
         )
-        return pipeline.execute(context)
+        return pipeline.run(context)
 
     def cmd_reseed(self, project_id=None):
         """Triggers a re-bootstrap of the project from a fresh seed."""

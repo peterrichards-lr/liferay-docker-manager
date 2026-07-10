@@ -35,7 +35,7 @@ sudo curl -L https://github.com/peterrichards-lr/liferay-docker-manager/releases
 sudo chmod +x /usr/local/bin/ldm
 ```
 
-For detailed setup on Windows (including PowerShell instructions), see the **[Full Installation Guide](docs/INSTALLATION.md)**.
+For detailed setup on Windows (including PowerShell instructions), see the **[Full Installation Guide](docs/tutorials/quick_start.md)**.
 
 ---
 
@@ -78,9 +78,9 @@ LDM is conventions-driven and highly customizable. Choose a topic below for deta
 
 ### 1. Getting Started
 
-- **[Installation Guide](docs/INSTALLATION.md)** — Setting up macOS (Colima/OrbStack), Linux, and Windows (WSL2).
+- **[Installation Guide](docs/tutorials/quick_start.md)** — Setting up macOS (Colima/OrbStack), Linux, and Windows (WSL2).
 - **[LDM Conventions & Features](docs/explanation/conventions.md)** — Default stacks, ports, database options, and key features.
-- **[Compatibility Matrix](docs/COMPATIBILITY_TABLE.md)** — Supported host OS, Docker providers, and engines.
+- **[Compatibility Matrix](docs/reference/compatibility.md)** — Supported host OS, Docker providers, and engines.
 - **[Troubleshooting & Diagnostics](docs/TROUBLESHOOTING.md)** — Logs, Docker deadlocks, port conflicts, and common fixes.
 
 ### 2. Core Operational Guides
@@ -100,7 +100,7 @@ LDM is conventions-driven and highly customizable. Choose a topic below for deta
 - **[AI Command Center & LDM MCP Server](docs/how-to/ai_mcp_guide.md)** — Powering AI workflows with LDM FastMCP tools.
 - **[Advanced CLI Overrides](docs/reference/advanced_cli.md)** — Colorless/ASCII outputs and global cli defaults.
 - **[End-to-End Testing with LDM](docs/how-to/e2e_testing.md)** — Using LDM as an orchestration layer for automated CI/CD and local tests.
-- **[Micro-Architecture](docs/LDM_ARCHITECTURE.md)** — Core design principles, layers, and boundaries.
+- **[Architecture Diagrams & Overview](docs/explanation/architecture.md)** — Visual environment diagrams, hybrid volumes, routing, and lifecycles.
 - **[Testing & Validation](docs/TESTING.md)** — Running unit and E2E test suites.
 - **[Release Playbook](docs/PLAYBOOK.md)** — Pipeline standards and release workflow triggers.
 
@@ -110,4 +110,4 @@ For a complete structured table of contents, visit the **[Documentation Index](d
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-07-09* | *Last Reviewed: 2026-07-02*
+*Last Updated: 2026-07-09* | *Last Reviewed: 2026-07-09*

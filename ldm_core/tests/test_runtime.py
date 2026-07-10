@@ -1560,7 +1560,7 @@ class TestFragmentOverridesValidation(unittest.TestCase):
 if __name__ == "__main__":
     unittest.main()
 
-    @patch("ldm_core.pipelines.run.Pipeline.execute", return_value=True)
+    @patch("ldm_core.pipelines.run.Pipeline.run", return_value=True)
     def test_cmd_run_invokes_pipeline(self, mock_run):
         with patch.object(
             self.handler, "detect_project_path", return_value=self.tmp_dir
@@ -1569,7 +1569,7 @@ if __name__ == "__main__":
             self.assertTrue(result)
             mock_run.assert_called_once()
 
-    @patch("ldm_core.pipelines.run.Pipeline.execute", return_value=True)
+    @patch("ldm_core.pipelines.run.Pipeline.run", return_value=True)
     def test_sync_stack_invokes_pipeline(self, mock_run):
         with patch.object(
             self.handler, "detect_project_path", return_value=self.tmp_dir

@@ -5,6 +5,7 @@ Orchestrates the main 'ldm run' pipeline.
 import contextlib
 import platform
 import time
+import typing
 from pathlib import Path
 
 from ldm_core.pipelines.base import Pipeline, PipelineContext, PipelineStage
@@ -16,7 +17,8 @@ class RunPipelineContext(PipelineContext):
     """Strongly typed context for the Run pipeline."""
 
     def __init__(self, manager, **kwargs):
-        super().__init__(manager, **kwargs)
+        super().__init__(**kwargs)
+        self.manager = manager
         self.set("total_start", time.time())
         self.set("is_new_project", False)
         self.set("init_success", False)
@@ -29,7 +31,8 @@ class RunPipelineContext(PipelineContext):
 class ProjectInitializationStage(PipelineStage):
     """Handles project selection, discovery, and path setup."""
 
-    def execute(self, context: RunPipelineContext) -> bool:
+    def execute(self, context: PipelineContext) -> None:
+        context = typing.cast(RunPipelineContext, context)
         manager = context.manager
         project_id = context.get("project_id")
 
@@ -48,7 +51,8 @@ class ProjectInitializationStage(PipelineStage):
                 heading="Available Projects"
             )
             if not selection:
-                return False
+                context.stopped = True
+                return
             if selection.get("new"):
                 project_id = None
             else:
@@ -61,7 +65,8 @@ class ProjectInitializationStage(PipelineStage):
             default_name = f"ldm-{int(time.time())}"
             project_id = UI.ask("Enter a new project name to initialize", default_name)
             if not project_id:
-                return False
+                context.stopped = True
+                return
             root = manager.detect_project_path(project_id, for_init=True)
             if not root:
                 UI.die("Failed to resolve project path.")
@@ -92,9 +97,10 @@ class ProjectInitializationStage(PipelineStage):
         context.set("is_new_project", is_new_project)
         context.set("paths", paths)
         context.set("project_meta", project_meta)
-        return True
+        return
 
-    def rollback(self, context: RunPipelineContext):
+    def rollback(self, context: PipelineContext) -> None:
+        context = typing.cast(RunPipelineContext, context)
         is_new_project = context.get("is_new_project")
         init_success = context.get("init_success")
         root = context.get("root")
@@ -111,7 +117,8 @@ class ProjectInitializationStage(PipelineStage):
 class ValidationStage(PipelineStage):
     """Validates runtime, Docker engine state, port collisions, and downgrade constraints."""
 
-    def execute(self, context: RunPipelineContext) -> bool:
+    def execute(self, context: PipelineContext) -> None:
+        context = typing.cast(RunPipelineContext, context)
         manager = context.manager
         project_meta = context.get("project_meta")
         project_id = context.get("project_id")
@@ -131,7 +138,8 @@ class ValidationStage(PipelineStage):
                     f"Project '{project_id}' is already running. Reconfigure and restart?",
                     "Y",
                 ):
-                    return False
+                    context.stopped = True
+                    return
                 context.set("is_restart", True)
 
         tag = project_meta.get("tag")
@@ -239,13 +247,14 @@ class ValidationStage(PipelineStage):
         context.set("current_pg_ver", current_pg_ver)
         context.set("current_mysql_ver", current_mysql_ver)
         context.set("current_es_major", current_es_major)
-        return True
+        return
 
 
 class ConfigResolutionStage(PipelineStage):
     """Resolves tags, databases, archtypes, and constructs project configuration."""
 
-    def execute(self, context: RunPipelineContext) -> bool:
+    def execute(self, context: PipelineContext) -> None:
+        context = typing.cast(RunPipelineContext, context)
         manager = context.manager
         project_meta = context.get("project_meta")
         paths = context.get("paths")
@@ -629,13 +638,13 @@ class ConfigResolutionStage(PipelineStage):
         context.set("use_shared_search", use_shared_search)
         context.set("is_samples", is_samples)
         context.set("external_snapshot", external_snapshot)
-        return True
 
 
 class EnvironmentSetupStage(PipelineStage):
     """Initializes external volumes, seeds templates, and clears obsolete locks."""
 
-    def execute(self, context: RunPipelineContext) -> bool:
+    def execute(self, context: PipelineContext) -> None:
+        context = typing.cast(RunPipelineContext, context)
         manager = context.manager
         project_meta = context.get("project_meta")
         paths = context.get("paths")
@@ -729,13 +738,13 @@ class EnvironmentSetupStage(PipelineStage):
             manager.config.sync_samples(paths)
 
         manager.write_meta(paths["root"], project_meta)
-        return True
 
 
 class ComposerStage(PipelineStage):
     """Generates compose definitions and applies overrides."""
 
-    def execute(self, context: RunPipelineContext) -> bool:
+    def execute(self, context: PipelineContext) -> None:
+        context = typing.cast(RunPipelineContext, context)
         manager = context.manager
         project_meta = context.get("project_meta")
         paths = context.get("paths")
@@ -1030,7 +1039,7 @@ class ComposerStage(PipelineStage):
                             published = port_entry.get("published")
                             if published:
                                 ports_to_check.append((svc_name, int(published)))
-                for svc_name, host_port in ports_to_check:
+                for svc_name, mapped_port in ports_to_check:
                     container_name = (
                         services[svc_name].get("container_name")
                         or f"{context.get('project_id')}-{svc_name}-1"
@@ -1038,11 +1047,11 @@ class ComposerStage(PipelineStage):
                     from ldm_core.docker_service import DockerService
 
                     if not DockerService.is_running(container_name):
-                        if not manager.check_port("127.0.0.1", host_port):
+                        if not manager.check_port("127.0.0.1", mapped_port):
                             UI.die(
-                                f"Port conflict detected: Port {host_port} is already in use on the host "
+                                f"Port conflict detected: Port {mapped_port} is already in use on the host "
                                 f"and is required by service '{svc_name}' in your compose configuration.\n"
-                                f"Please stop the service currently using port {host_port} before starting LDM."
+                                f"Please stop the service currently using port {mapped_port} before starting LDM."
                             )
             except SystemExit:
                 raise
@@ -1052,13 +1061,13 @@ class ComposerStage(PipelineStage):
                 )
 
         manager.write_meta(paths["root"], project_meta)
-        return True
 
 
 class ExecutionStage(PipelineStage):
     """Boots dependencies, checks readiness, and starts Liferay."""
 
-    def execute(self, context: RunPipelineContext) -> bool:
+    def execute(self, context: PipelineContext) -> None:
+        context = typing.cast(RunPipelineContext, context)
         manager = context.manager
         paths = context.get("paths")
         project_meta = context.get("project_meta")
@@ -1177,7 +1186,8 @@ class ExecutionStage(PipelineStage):
                             break
                         if status == "exited":
                             UI.error(f"Dependency '{dep}' exited unexpectedly.")
-                            return False
+                            context.stopped = True
+                            return None
                         time.sleep(2)
             elif use_shared_db and db_type != "hypersonic":
                 global_db_container = (
@@ -1198,7 +1208,8 @@ class ExecutionStage(PipelineStage):
                         UI.error(
                             f"Global database container '{global_db_container}' exited unexpectedly."
                         )
-                        return False
+                        context.stopped = True
+                        return None
                     time.sleep(2)
 
             if platform.system().lower() == "linux":
@@ -1212,12 +1223,11 @@ class ExecutionStage(PipelineStage):
             manager.run_command(cmd, cwd=str(paths["root"]), capture_output=not follow)
 
             if follow:
-                context.logs_attached = True
+                context.set("logs_attached", True)
                 manager.run_command(
                     [*compose_base, "logs", "-f"], cwd=str(paths["root"])
                 )
-                return True
-
+                return None
             no_wait = getattr(manager.args, "no_wait", False)
             if not no_wait:
                 timeout_val = getattr(manager.args, "timeout", 900)
@@ -1249,7 +1259,7 @@ class ExecutionStage(PipelineStage):
                 )
             UI.success(f"Project '{project_id}' started in background.")
 
-        return True
+        return None
 
 
 def create_run_pipeline() -> Pipeline:
