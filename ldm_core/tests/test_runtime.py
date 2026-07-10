@@ -1459,19 +1459,19 @@ services:
             self.assertTrue(result)
             mock_run.assert_called_once()
 
-    @patch("ldm_core.pipelines.run.Pipeline.run", return_value=True)
-    def test_sync_stack_invokes_pipeline(self, mock_run):
-        self.handler.args.no_wait = True
+    def test_sync_stack_runs_compose(self):
         with (
             patch.object(
                 self.handler, "detect_project_path", return_value=self.tmp_dir
             ),
             patch.object(self.handler.config, "sync_common_assets"),
-            patch.object(self.handler, "run_command"),
+            patch.object(self.handler, "run_command") as mock_run_cmd,
         ):
-            result = self.handler.sync_stack(self.tmp_dir, {"container_name": "test"})
+            result = self.handler.sync_stack(
+                self.tmp_dir, {"container_name": "test"}, no_wait=True
+            )
             self.assertTrue(result)
-            mock_run.assert_called_once()
+            self.assertTrue(mock_run_cmd.called)
 
     @patch("subprocess.Popen")
     @patch("ldm_core.handlers.runtime.get_compose_cmd")
