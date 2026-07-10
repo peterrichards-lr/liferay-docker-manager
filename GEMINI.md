@@ -70,13 +70,18 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
 - [Agent Rules of Engagement](./.gemini/gemini.md)
 - [Properties Override Hierarchy Guide](./docs/explanation/properties.md)
 
-## 8. Active Work State & Plan (July 9, 2026)
+## 8. Active Work State & Plan (July 10, 2026)
 
-- **Current Active Task (July 9, 2026)**:
+- **Current Active Task (July 10, 2026)**:
   - [x] Issue #449: Decouple `DiagnosticsService` monolithic structure into `ldm_core/diagnostics/` submodules. Resolved merge conflicts.
   - [x] Issue #483: Add and update Mermaid diagrams (Architecture & Properties).
   - [x] Epic #439: Broken down into Sub-issues #486, #487, #488, and #489.
   - [ ] Issue #486: Implement Base Pipeline Architecture (`ldm_core.pipelines.base`).
+  - [ ] Issue #492: Implement Lock Expiry and Resiliency for Workspace FileLock and ProjectLock.
+  - [ ] Issue #493: Graceful Fallbacks and Headless Bypasses for OS Keyring Token Storage.
+  - [ ] Issue #494: Add Backwards-Compatible Delegation Shims and Fix Mock Tests for Modular Diagnostics.
+  - [ ] Issue #495: Implement Checksum-Based Caching for 5-Layer Properties Rebuilds.
+  - [ ] Issue #496: Clean Up Corrupted Partial Output Files on Database Dump Command Failures.
 
 - **Add CSRF Protection and API Token Authentication to Web Dashboard Server (Issue #441)**:
   - [x] Introduce Blueprint and `create_app` factory in `ldm_core/dashboard/server.py`.
@@ -603,4 +608,4 @@ When modifying `client-extension.yaml` files, **NEVER change or remove `.service
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-07-10* | *Last Reviewed: 2026-07-09*
+*Last Updated: 2026-07-10* | *Last Reviewed: 2026-07-10*
