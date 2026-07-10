@@ -2480,6 +2480,7 @@ def _check_liferay_health_logs(self, container_name, tail=50):
                         "SessionTimeout",
                         "GarbageCollector",
                         "Keep-Alive",
+                        "field not found",
                     ]
                 ):
                     continue
