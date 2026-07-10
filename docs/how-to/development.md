@@ -64,6 +64,22 @@ pre-commit install --hook-type pre-commit --hook-type pre-push
 
 ## 🛠️ Codebase Conventions & Command Execution
 
+### Version Badges for New Features
+
+To clarify required minimum LDM versions for users, always append a Shields.io version badge next to any mentions of newly introduced flags, features, or commands in the markdown documentation.
+
+**Format**:
+
+```markdown
+![Added in v2.X.X](https://img.shields.io/badge/Added%20in-v2.X.X-blue)
+```
+
+**Example Usage**:
+
+* `--my-new-flag` ![Added in v2.15.0](https://img.shields.io/badge/Added%20in-v2.15.0-blue) : Does a new thing.
+
+### Execution Safety
+
 When executing external binaries or shell commands (e.g. docker, git, mkcert, lcp):
 
 * **Avoid Direct `subprocess.run` / `subprocess.Popen`**: Running subprocesses directly bypasses central handlers and can introduce security vulnerabilities (Bandit B602/B607) or fail during dry-run executions.

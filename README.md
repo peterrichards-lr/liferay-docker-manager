@@ -68,7 +68,7 @@ ldm package my-project
 > **Headless & Seeding Prompt Behaviors**:
 >
 > - By default, LDM checks for a cached pre-warmed database seed. If not cached, it will prompt you interactively to download it.
-> - **CI/CD / Headless Scripts**: To prevent interactive prompts from blocking headless environments, pass `-y` / `--yes` / `--non-interactive` to automatically confirm seed downloads, or pass `--vanilla` / `--no-seed` to skip seeding entirely and start a clean baseline database.
+> - **CI/CD / Headless Scripts**: To prevent interactive prompts from blocking headless environments, pass `-y` / `--yes` / `--non-interactive` to automatically confirm seed downloads, or pass `--vanilla` ![Added in v2.16.0](https://img.shields.io/badge/Added%20in-v2.16.0-blue) / `--no-seed` to skip seeding entirely and start a clean baseline database.
 
 ---
 
@@ -110,4 +110,4 @@ For a complete structured table of contents, visit the **[Documentation Index](d
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-07-09* | *Last Reviewed: 2026-07-09*
+*Last Updated: 2026-07-10* | *Last Reviewed: 2026-07-09*
