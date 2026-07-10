@@ -44,6 +44,7 @@ To support CI/CD pipelines and headless automation, all LDM commands MUST adhere
 
 To prevent "version fatigue" and ensure the stability of the main release channel:
 
+- **Release Orchestration**: All version updates, pre-releases, and stable promotions MUST be performed using the automated orchestrator script: `python3 scripts/release.py --bump [beta|patch|minor|major]` or `python3 scripts/release.py --promote`. Manual git tagging or direct version modifications are strictly prohibited.
 - **Experimental Features**: All brand new or complex functionality (specifically **Liferay Cloud Golden Path** integrations) MUST be released as **Pre-Releases** (e.g. `v2.10.x-pre.y`) first.
 - **Verification Gate**: A pre-release feature is only eligible for a stable release after the user has performed a full E2E verification and confirmed its success.
 - **Stable Promotion**: Stable releases (`[release]`) MUST be reserved for hardened features and verified bugfixes.
@@ -73,6 +74,7 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
 ## 8. Active Work State & Plan (July 10, 2026)
 
 - **Current Active Task (July 10, 2026)**:
+  - [x] Database Volume Persistence & CLI start Alias.
   - [x] Extend test coverage for logs export, wait milestones, and trace logging.
   - [x] Issue #449: Decouple `DiagnosticsService` monolithic structure into `ldm_core/diagnostics/` submodules. Resolved merge conflicts.
   - [x] Issue #483: Add and update Mermaid diagrams (Architecture & Properties).
