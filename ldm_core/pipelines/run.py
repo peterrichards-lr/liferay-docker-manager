@@ -9,6 +9,7 @@ import typing
 from pathlib import Path
 
 from ldm_core.pipelines.base import Pipeline, PipelineContext, PipelineStage
+from ldm_core.pipelines.validation import ValidationStage as SharedValidationStage
 from ldm_core.ui import UI
 from ldm_core.utils import get_actual_home, get_compose_cmd
 
@@ -114,7 +115,7 @@ class ProjectInitializationStage(PipelineStage):
                 context.manager.unregister_project(project_id)
 
 
-class ValidationStage(PipelineStage):
+class RuntimeValidationStage(PipelineStage):
     """Validates runtime, Docker engine state, port collisions, and downgrade constraints."""
 
     def execute(self, context: PipelineContext) -> None:
@@ -1265,7 +1266,8 @@ class ExecutionStage(PipelineStage):
 def create_run_pipeline() -> Pipeline:
     pipeline = Pipeline(name="RunPipeline")
     pipeline.add_stage(ProjectInitializationStage())
-    pipeline.add_stage(ValidationStage())
+    pipeline.add_stage(SharedValidationStage())
+    pipeline.add_stage(RuntimeValidationStage())
     pipeline.add_stage(ConfigResolutionStage())
     pipeline.add_stage(EnvironmentSetupStage())
     pipeline.add_stage(ComposerStage())
