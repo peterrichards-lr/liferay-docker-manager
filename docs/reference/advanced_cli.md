@@ -16,7 +16,7 @@ These flags modify how LDM handles the initial startup of a Liferay environment.
 - **`--persist-osgi`**: Maps the container's `osgi/state` directory to the host instead of an anonymous Docker volume, allowing bundle state to persist across container restarts. This dramatically reduces subsequent Liferay startup times by bypassing the OSGi bundle resolution phase. *Note: LDM will automatically invalidate and wipe this state if it detects the underlying Liferay image tag has changed to prevent bundle conflicts.*
 - **`--no-persist-osgi`**: Explicitly disables OSGi state persistence, forcing a clean OSGi resolution on every start.
 - **`--no-seed`**: Completely bypasses the pre-warmed database and OSGi cache. The project will start totally fresh, forcing Liferay to build its schema and resolve all OSGi bundles from scratch.
-- **`--vanilla`**: Bypasses all seeding mechanisms to start a completely fresh, vanilla Liferay instance.
+- **`--vanilla`** ![Added in v2.16.0](https://img.shields.io/badge/Added%20in-v2.16.0-blue): Bypasses all seeding mechanisms to start a completely fresh, vanilla Liferay instance.
 - **`--no-osgi-seed`**: Bypasses only the OSGi cache seed. Useful if you are testing custom OSGi resolution logic or diagnosing a corrupted `.osgi_state_archive`.
 - **`--verify` / `--no-verify`**: Controls whether LDM generates or checks the integrity checksum of snapshots and imports. Defaults to true. Disabling can speed up local imports slightly.
 - **`--snapshot`**: Initialize a project directly from an external snapshot folder.

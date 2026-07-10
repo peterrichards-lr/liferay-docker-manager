@@ -65,7 +65,7 @@ Use `--scale SERVICE=N` to boot a scaled stack without having to run `ldm scale`
 ldm run demo --scale liferay=2 --scale my-ext=3
 ```
 
-### `--vanilla` Switch
+### `--vanilla` Switch ![Added in v2.16.0](https://img.shields.io/badge/Added%20in-v2.16.0-blue)
 
 ![Added in v2.16.0](https://img.shields.io/badge/Added%20in-v2.16.0-blue)
 
