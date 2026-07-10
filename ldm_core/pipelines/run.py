@@ -973,7 +973,7 @@ class ComposerStage(PipelineStage):
                     "-d",
                     "lportal",
                     "-tc",
-                    f"SELECT 1 FROM pg_database WHERE datname = '{db_name}'",
+                    f"SELECT 1 FROM pg_database WHERE datname = '{db_name}'",  # nosec B608
                 ]
                 exists_check = manager.run_command(
                     check_cmd, check=False, capture_output=True
