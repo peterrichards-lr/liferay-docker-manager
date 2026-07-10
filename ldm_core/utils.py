@@ -2286,11 +2286,59 @@ class FileLock:
         self.lock_file = Path(lock_file_path)
         self.fd = None
 
-    def acquire(self, mode="w", exclusive=True):
+    def acquire(self, mode="w+", exclusive=True):
         """Acquires a non-blocking flock. Employs fcntl.flock on Unix systems and msvcrt.locking (locking the first byte of the file) on Windows."""
         import atexit
 
         self.lock_file.parent.mkdir(parents=True, exist_ok=True)
+
+        try:
+            self._try_acquire(mode, exclusive)
+            atexit.register(self.release)
+        except RuntimeError:
+            stale = False
+            try:
+                with open(self.lock_file) as f:
+                    content = f.read().strip()
+                    if content.isdigit():
+                        pid = int(content)
+                        try:
+                            import psutil
+
+                            if not psutil.pid_exists(pid):
+                                stale = True
+                        except ImportError:
+                            if os.name == "nt":
+                                import ctypes
+
+                                process = ctypes.windll.kernel32.OpenProcess(
+                                    0x00100000, 0, pid
+                                )
+                                if process != 0:
+                                    ctypes.windll.kernel32.CloseHandle(process)
+                                else:
+                                    stale = True
+                            else:
+                                try:
+                                    os.kill(pid, 0)
+                                except ProcessLookupError:
+                                    stale = True
+                                except PermissionError:
+                                    pass
+            except Exception:
+                pass
+
+            if stale:
+                try:
+                    self.lock_file.unlink()
+                except OSError:
+                    pass
+                self._try_acquire(mode, exclusive)
+                atexit.register(self.release)
+            else:
+                raise RuntimeError(f"Could not acquire lock on file: {self.lock_file}")
+
+    def _try_acquire(self, mode: str, exclusive: bool):
         self.fd = open(self.lock_file, mode)  # noqa: SIM115
         try:
             if os.name != "nt":
@@ -2305,7 +2353,12 @@ class FileLock:
                 lock_type = msvcrt.LK_NBLCK if exclusive else msvcrt.LK_NBND  # type: ignore[attr-defined]
                 msvcrt.locking(self.fd.fileno(), lock_type, 1)  # type: ignore[attr-defined]
 
-            atexit.register(self.release)
+            if exclusive and ("w" in mode or "+" in mode):
+                self.fd.truncate(0)
+                self.fd.seek(0)
+                self.fd.write(str(os.getpid()))
+                self.fd.flush()
+
         except (BlockingIOError, PermissionError, OSError):
             if self.fd:
                 self.fd.close()
