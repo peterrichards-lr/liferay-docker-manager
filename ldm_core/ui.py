@@ -52,6 +52,50 @@ class UI:
     NO_COLOR = False
     NO_UNICODE = False
 
+    TRACE_LOG_PATH = None
+    _trace_handle = None
+
+    @staticmethod
+    def init_trace_log(args):
+        """Initializes the rolling trace log for debugging."""
+        try:
+            from datetime import datetime
+
+            from ldm_core.utils import get_actual_home
+
+            UI.TRACE_LOG_PATH = get_actual_home() / ".ldm" / "last-command.log"
+            UI.TRACE_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+
+            # Truncate on each new invocation
+            UI._trace_handle = open(UI.TRACE_LOG_PATH, "w", encoding="utf-8")  # noqa: SIM115
+
+            ts = datetime.now().isoformat()
+            command_line = " ".join(args)
+            UI._trace_handle.write(f"--- LDM Trace Log Started at {ts} ---\n")
+            UI._trace_handle.write(f"Command: {command_line}\n")
+            import platform
+
+            UI._trace_handle.write(f"Platform: {platform.platform()}\n")
+            UI._trace_handle.write(f"Python: {sys.version.split()[0]}\n")
+            UI._trace_handle.write("-" * 50 + "\n")
+            UI._trace_handle.flush()
+        except Exception:
+            # Silently ignore trace log failures
+            UI._trace_handle = None
+
+    @staticmethod
+    def trace(msg):
+        """Writes a message strictly to the trace log, silently."""
+        if UI._trace_handle:
+            try:
+                import re
+
+                clean_msg = re.sub(r"\x1b\[[0-9;]*[a-zA-Z]", "", str(msg))
+                UI._trace_handle.write(clean_msg + "\n")
+                UI._trace_handle.flush()
+            except Exception:
+                pass
+
     @staticmethod
     def get_padding(icon=None):
         """Returns the OS-aware padding for icons."""
@@ -94,6 +138,9 @@ class UI:
         out = f"{icon}{padding}{msg}" if icon else msg
         if color and not getattr(UI, "NO_COLOR", False):
             out = f"{color}{out}{UI.COLOR_OFF}"
+
+        # Write to the global trace log cleanly
+        UI.trace(out)
 
         if getattr(UI, "NO_COLOR", False):
             import re
