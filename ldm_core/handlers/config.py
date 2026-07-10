@@ -739,133 +739,52 @@ class ConfigService:
 
         target_ext = paths["files"] / "portal-ext.properties"
 
-        # 1. Load Pre-warmed Seed properties (Layer 1)
+        # --- Checksum Caching Logic ---
+        import hashlib
+        import json
+
+        def _hash_file(p):
+            if p and p.exists():
+                try:
+                    return hashlib.sha256(p.read_bytes()).hexdigest()
+                except OSError:
+                    pass
+            return ""
+
         seed_ext = (
             Path(__file__).parent.parent
             / "resources"
             / "common_baseline"
             / "portal-ext.properties"
         )
-        seed_props, seed_imp = {}, set()
-        if seed_ext.exists():
-            try:
-                seed_props, seed_imp = self._get_properties_with_metadata(
-                    seed_ext.read_text()
-                )
-            except (FileNotFoundError, OSError):
-                pass
-
-        # 2. Load LDMP overrides (Layer 2)
         ldmp_ext = paths["root"] / ".liferay-docker" / "ldmp-portal-ext.properties"
-        ldmp_props, ldmp_imp = {}, set()
-        if ldmp_ext.exists():
-            try:
-                ldmp_props, ldmp_imp = self._get_properties_with_metadata(
-                    ldmp_ext.read_text()
-                )
-            except (FileNotFoundError, OSError):
-                pass
 
-        # 3. Load Global & Local Common properties (Layers 3 & 4)
-        global_props, global_imp = {}, set()
-        local_props, local_imp = {}, set()
-
+        global_ext, local_ext = None, None
         for cd in paths.get("common_dirs", []):
             cd_ext = cd / "portal-ext.properties"
             if cd_ext.exists():
-                try:
-                    c_props, c_imp = self._get_properties_with_metadata(
-                        cd_ext.read_text()
-                    )
-                    if (
-                        ".ldm" in str(cd.resolve())
-                        or "home" in str(cd.resolve())
-                        or "global" in str(cd.resolve()).lower()
-                    ):
-                        global_props, global_imp = c_props, c_imp
-                    else:
-                        local_props, local_imp = c_props, c_imp
-                except (FileNotFoundError, OSError):
-                    pass
+                if (
+                    ".ldm" in str(cd.resolve())
+                    or "home" in str(cd.resolve())
+                    or "global" in str(cd.resolve()).lower()
+                ):
+                    global_ext = cd_ext
+                else:
+                    local_ext = cd_ext
 
-        # 4. Load Project-level customizations (Layer 5)
-        project_props, project_imp = {}, set()
-        if target_ext.exists():
-            try:
-                project_props, project_imp = self._get_properties_with_metadata(
-                    target_ext.read_text()
-                )
-            except (FileNotFoundError, OSError):
-                pass
+        current_hashes = {
+            "seed": _hash_file(seed_ext),
+            "ldmp": _hash_file(ldmp_ext),
+            "global": _hash_file(global_ext),
+            "local": _hash_file(local_ext),
+            "target": _hash_file(target_ext),
+            "host_updates": hashlib.sha256(
+                json.dumps(host_updates or {}, sort_keys=True).encode()
+            ).hexdigest(),
+        }
 
-        # Compute Project Baseline = Seed + LDMP
-        baseline_props = dict(seed_props)
-        baseline_props.update(ldmp_props)
-        baseline_imp = set(seed_imp)
-        for k in ldmp_props:
-            if k in ldmp_imp:
-                baseline_imp.add(k)
-            else:
-                baseline_imp.discard(k)
-
-        # Compute Project Customizations (Layer 5 effective)
-        project_custom_props = {}
-        project_custom_imp = set()
-        for k, v in project_props.items():
-            if k not in baseline_props:
-                project_custom_props[k] = v
-                if k in project_imp:
-                    project_custom_imp.add(k)
-            else:
-                val_differs = v != baseline_props[k]
-                imp_differs = (k in project_imp) != (k in baseline_imp)
-                if val_differs or imp_differs:
-                    project_custom_props[k] = v
-                    if k in project_imp:
-                        project_custom_imp.add(k)
-
-        # 5. Resolve cascade winner using CSS-style !important rule
-        all_keys = (
-            set(seed_props.keys())
-            | set(ldmp_props.keys())
-            | set(global_props.keys())
-            | set(local_props.keys())
-            | set(project_custom_props.keys())
-        )
-
-        winning_props = {}
-        winning_imp = set()
-
-        for k in all_keys:
-            entries = []
-            if k in seed_props:
-                entries.append((1, "seed", seed_props[k], k in seed_imp))
-            if k in ldmp_props:
-                entries.append((2, "ldmp", ldmp_props[k], k in ldmp_imp))
-            if k in global_props:
-                entries.append((3, "global", global_props[k], k in global_imp))
-            if k in local_props:
-                entries.append((4, "local", local_props[k], k in local_imp))
-            if k in project_custom_props:
-                entries.append(
-                    (5, "project", project_custom_props[k], k in project_custom_imp)
-                )
-
-            important_entries = [e for e in entries if e[3]]
-            if important_entries:
-                winner = max(important_entries, key=lambda x: x[0])
-            else:
-                winner = max(entries, key=lambda x: x[0])
-
-            winning_props[k] = winner[2]
-            if winner[3]:
-                winning_imp.add(k)
-
-        # Merge System/Runtime Injections (host_updates) as highest priority normal overrides
-        if host_updates:
-            for k, v in host_updates.items():
-                winning_props[k] = v
-                winning_imp.discard(k)
+        ldm_dir = paths["root"] / ".liferay-docker"
+        manifest_path = ldm_dir / "properties_manifest.json"
 
         is_dry_run = (
             getattr(self.manager.args, "dry_run_properties", False)
@@ -873,50 +792,185 @@ class ConfigService:
             or os.environ.get("LDM_DRY_RUN", "").lower() == "true"
         )
 
-        # Pre-Flight static properties verification
-        self.validate_properties(
-            paths, winning_props, project_meta, is_dry_run=is_dry_run
-        )
-
-        # Diff and apply changes to target_ext
-        current_props, current_imp = {}, set()
-        if target_ext.exists():
+        bypass_engine = False
+        if not is_dry_run and manifest_path.exists():
             try:
-                current_props, current_imp = self._get_properties_with_metadata(
-                    target_ext.read_text()
-                )
-            except (FileNotFoundError, OSError):
+                cached_hashes = json.loads(manifest_path.read_text())
+                if current_hashes == cached_hashes:
+                    bypass_engine = True
+            except (json.JSONDecodeError, OSError):
                 pass
 
-        to_update = {}
-        for k, v in winning_props.items():
-            if current_props.get(k) != v or (k in current_imp) != (k in winning_imp):
-                to_update[k] = v
+        if not bypass_engine:
+            # 1. Load Pre-warmed Seed properties (Layer 1)
+            seed_props, seed_imp = {}, set()
+            if seed_ext.exists():
+                try:
+                    seed_props, seed_imp = self._get_properties_with_metadata(
+                        seed_ext.read_text()
+                    )
+                except (FileNotFoundError, OSError):
+                    pass
 
-        if to_update:
-            if is_dry_run:
-                UI.info("[DRY RUN] Would update portal-ext.properties with:")
-                for k, v in to_update.items():
-                    imp_str = " # !important" if k in winning_imp else ""
-                    UI.info(f"  {k}={v}{imp_str}")
-            else:
-                if not target_ext.exists():
-                    with contextlib.suppress(PermissionError, OSError):
-                        target_ext.parent.mkdir(parents=True, exist_ok=True)
-                self.manager.update_portal_ext(
-                    target_ext, to_update, important_keys=winning_imp
-                )
+            # 2. Load LDMP overrides (Layer 2)
+            ldmp_props, ldmp_imp = {}, set()
+            if ldmp_ext.exists():
+                try:
+                    ldmp_props, ldmp_imp = self._get_properties_with_metadata(
+                        ldmp_ext.read_text()
+                    )
+                except (FileNotFoundError, OSError):
+                    pass
 
-        # Save copy as original-portal-ext.properties if not exists
-        if not is_dry_run:
-            ldm_dir = paths["root"] / ".liferay-docker"
-            orig_pe = ldm_dir / "original-portal-ext.properties"
-            if not orig_pe.exists():
-                ldm_dir.mkdir(parents=True, exist_ok=True)
-                import shutil
+            # 3. Load Global & Local Common properties (Layers 3 & 4)
+            global_props, global_imp = {}, set()
+            local_props, local_imp = {}, set()
 
-                if target_ext.exists():
-                    shutil.copy2(target_ext, orig_pe)
+            if global_ext:
+                try:
+                    global_props, global_imp = self._get_properties_with_metadata(
+                        global_ext.read_text()
+                    )
+                except (FileNotFoundError, OSError):
+                    pass
+            if local_ext:
+                try:
+                    local_props, local_imp = self._get_properties_with_metadata(
+                        local_ext.read_text()
+                    )
+                except (FileNotFoundError, OSError):
+                    pass
+
+            # 4. Load Project-level customizations (Layer 5)
+            project_props, project_imp = {}, set()
+            if target_ext.exists():
+                try:
+                    project_props, project_imp = self._get_properties_with_metadata(
+                        target_ext.read_text()
+                    )
+                except (FileNotFoundError, OSError):
+                    pass
+
+            # Compute Project Baseline = Seed + LDMP
+            baseline_props = dict(seed_props)
+            baseline_props.update(ldmp_props)
+            baseline_imp = set(seed_imp)
+            for k in ldmp_props:
+                if k in ldmp_imp:
+                    baseline_imp.add(k)
+                else:
+                    baseline_imp.discard(k)
+
+            # Compute Project Customizations (Layer 5 effective)
+            project_custom_props = {}
+            project_custom_imp = set()
+            for k, v in project_props.items():
+                if k not in baseline_props:
+                    project_custom_props[k] = v
+                    if k in project_imp:
+                        project_custom_imp.add(k)
+                else:
+                    val_differs = v != baseline_props[k]
+                    imp_differs = (k in project_imp) != (k in baseline_imp)
+                    if val_differs or imp_differs:
+                        project_custom_props[k] = v
+                        if k in project_imp:
+                            project_custom_imp.add(k)
+
+            # 5. Resolve cascade winner using CSS-style !important rule
+            all_keys = (
+                set(seed_props.keys())
+                | set(ldmp_props.keys())
+                | set(global_props.keys())
+                | set(local_props.keys())
+                | set(project_custom_props.keys())
+            )
+
+            winning_props = {}
+            winning_imp = set()
+
+            for k in all_keys:
+                entries = []
+                if k in seed_props:
+                    entries.append((1, "seed", seed_props[k], k in seed_imp))
+                if k in ldmp_props:
+                    entries.append((2, "ldmp", ldmp_props[k], k in ldmp_imp))
+                if k in global_props:
+                    entries.append((3, "global", global_props[k], k in global_imp))
+                if k in local_props:
+                    entries.append((4, "local", local_props[k], k in local_imp))
+                if k in project_custom_props:
+                    entries.append(
+                        (5, "project", project_custom_props[k], k in project_custom_imp)
+                    )
+
+                important_entries = [e for e in entries if e[3]]
+                if important_entries:
+                    winner = max(important_entries, key=lambda x: x[0])
+                else:
+                    winner = max(entries, key=lambda x: x[0])
+
+                winning_props[k] = winner[2]
+                if winner[3]:
+                    winning_imp.add(k)
+
+            # Merge System/Runtime Injections (host_updates) as highest priority normal overrides
+            if host_updates:
+                for k, v in host_updates.items():
+                    winning_props[k] = v
+                    winning_imp.discard(k)
+
+            # Pre-Flight static properties verification
+            self.validate_properties(
+                paths, winning_props, project_meta, is_dry_run=is_dry_run
+            )
+
+            # Diff and apply changes to target_ext
+            current_props, current_imp = {}, set()
+            if target_ext.exists():
+                try:
+                    current_props, current_imp = self._get_properties_with_metadata(
+                        target_ext.read_text()
+                    )
+                except (FileNotFoundError, OSError):
+                    pass
+
+            to_update = {}
+            for k, v in winning_props.items():
+                if current_props.get(k) != v or (k in current_imp) != (
+                    k in winning_imp
+                ):
+                    to_update[k] = v
+
+            if to_update:
+                if is_dry_run:
+                    UI.info("[DRY RUN] Would update portal-ext.properties with:")
+                    for k, v in to_update.items():
+                        imp_str = " # !important" if k in winning_imp else ""
+                        UI.info(f"  {k}={v}{imp_str}")
+                else:
+                    if not target_ext.exists():
+                        with contextlib.suppress(PermissionError, OSError):
+                            target_ext.parent.mkdir(parents=True, exist_ok=True)
+                    self.manager.update_portal_ext(
+                        target_ext, to_update, important_keys=winning_imp
+                    )
+
+            # Save copy as original-portal-ext.properties if not exists
+            if not is_dry_run:
+                orig_pe = ldm_dir / "original-portal-ext.properties"
+                if not orig_pe.exists():
+                    ldm_dir.mkdir(parents=True, exist_ok=True)
+                    import shutil
+
+                    if target_ext.exists():
+                        shutil.copy2(target_ext, orig_pe)
+
+                # Update the target hash after modifications and save manifest
+                current_hashes["target"] = _hash_file(target_ext)
+                with contextlib.suppress(PermissionError, OSError):
+                    ldm_dir.mkdir(parents=True, exist_ok=True)
+                    manifest_path.write_text(json.dumps(current_hashes, indent=2))
 
         # Copy other common assets (license, configs, xml etc.) from multiple common dirs
         history_file = paths["root"] / ".liferay-docker.deployed"

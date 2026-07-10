@@ -6,7 +6,7 @@ from ldm_core.pipelines.run import (
     ExecutionStage,
     ProjectInitializationStage,
     RunPipelineContext,
-    ValidationStage,
+    RuntimeValidationStage,
 )
 
 
@@ -31,7 +31,7 @@ class TestRunPipeline(unittest.TestCase):
     def test_validation_stage(self, mock_is_running, mock_die):
         self.context.manager.args.force = False
         self.context.manager.args.no_up = False
-        stage = ValidationStage()
+        stage = RuntimeValidationStage()
         with self.assertRaises(SystemExit):
             stage.execute(self.context)
 

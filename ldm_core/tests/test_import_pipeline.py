@@ -6,20 +6,23 @@ from ldm_core.pipelines.import_pipeline import (
     BackupStateStage,
     ImportPipeline,
     ImportPipelineContext,
-    ValidationStage,
+    ImportValidationStage,
 )
 
 
 def test_import_pipeline_initialization():
     pipeline = ImportPipeline()
-    assert len(pipeline.stages) == 8
-    assert isinstance(pipeline.stages[0], ValidationStage)
+    assert len(pipeline.stages) == 9
+    from ldm_core.pipelines.validation import ValidationStage as SharedValidationStage
+
+    assert isinstance(pipeline.stages[0], SharedValidationStage)
+    assert isinstance(pipeline.stages[1], ImportValidationStage)
 
 
 @patch("ldm_core.pipelines.import_pipeline.UI")
 @patch("ldm_core.pipelines.import_pipeline.calculate_sha256")
 def test_validation_stage_file_not_found(mock_sha, mock_ui, tmp_path):
-    stage = ValidationStage()
+    stage = ImportValidationStage()
     manager = MagicMock()
     context = ImportPipelineContext(
         manager=manager, source_path=str(tmp_path / "nonexistent.zip")

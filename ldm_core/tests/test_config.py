@@ -26,8 +26,14 @@ class MockConfigManager:
 
         self.defaults = DefaultsManager()
 
-    def update_portal_ext(self, *args, **kwargs):
-        pass
+    def update_portal_ext(self, target_file, updates, important_keys=None):
+        content = ""
+        for k, v in updates.items():
+            imp_str = " # !important" if important_keys and k in important_keys else ""
+            content += f"{k}={v}{imp_str}\n"
+        from ldm_core.utils import safe_write_text
+
+        safe_write_text(target_file, content)
 
     def detect_project_path(self, *args, **kwargs):
         pass
@@ -1072,6 +1078,62 @@ class TestConfigService(unittest.TestCase):
             self.manager.defaults.set_user_default.assert_called_with(
                 "database_mode", "isolated"
             )
+
+    def test_sync_common_assets_checksum_caching(self):
+        import tempfile
+        from pathlib import Path
+        from unittest.mock import patch
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp = Path(tmpdir)
+
+            root_dir = tmp / "root"
+            files_dir = tmp / "files"
+            common_dir = tmp / "common"
+            deploy_dir = tmp / "deploy"
+            configs_dir = tmp / "configs"
+
+            for d in [root_dir, files_dir, common_dir, deploy_dir, configs_dir]:
+                d.mkdir(parents=True)
+
+            paths = {
+                "root": root_dir,
+                "files": files_dir,
+                "common": common_dir,
+                "deploy": deploy_dir,
+                "configs": configs_dir,
+            }
+
+            target_ext = files_dir / "portal-ext.properties"
+            ldm_dir = root_dir / ".liferay-docker"
+            manifest = ldm_dir / "properties_manifest.json"
+
+            # Run 1: Should build target_ext and manifest
+            self.config.sync_common_assets(paths, host_updates={"test.prop": "1"})
+
+            self.assertTrue(target_ext.exists())
+            self.assertTrue(manifest.exists())
+
+            content_1 = target_ext.read_text()
+            self.assertIn("test.prop=1", content_1)
+
+            # Run 2: Hash matches, should bypass parser completely
+            with patch.object(
+                self.config, "_get_properties_with_metadata"
+            ) as mock_parse:
+                self.config.sync_common_assets(paths, host_updates={"test.prop": "1"})
+                mock_parse.assert_not_called()
+
+            # Run 3: We modify a layer, it should trigger parser again
+            with patch.object(
+                self.config,
+                "_get_properties_with_metadata",
+                wraps=self.config._get_properties_with_metadata,
+            ) as mock_parse_2:
+                self.config.sync_common_assets(paths, host_updates={"test.prop": "2"})
+                mock_parse_2.assert_called()
+                content_2 = target_ext.read_text()
+                self.assertIn("test.prop=2", content_2)
 
 
 if __name__ == "__main__":
