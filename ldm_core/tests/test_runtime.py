@@ -1461,6 +1461,7 @@ services:
 
     @patch("ldm_core.pipelines.run.Pipeline.run", return_value=True)
     def test_sync_stack_invokes_pipeline(self, mock_run):
+        self.handler.args.no_wait = True
         with (
             patch.object(
                 self.handler, "detect_project_path", return_value=self.tmp_dir
@@ -1543,7 +1544,7 @@ services:
                     ),
                 ):
                     mock_run.side_effect = ["my-container", True, "", True]
-                    self.handler.manager.infra._get_infra_env.return_value = {}
+                    self.handler.manager.infra._get_infra_env.return_value = {}  # type: ignore[attr-defined]
 
                     self.handler.cmd_logs(
                         project_id="test", export=True, include_infra=True, no_wait=True

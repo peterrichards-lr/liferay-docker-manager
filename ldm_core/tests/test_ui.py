@@ -190,7 +190,9 @@ class TestUI(unittest.TestCase):
             mock_home.return_value = Path(tmpdir)
             UI.init_trace_log(["cmd", "arg1"])
             self.assertIsNotNone(UI._trace_handle)
+            assert UI.TRACE_LOG_PATH is not None
             self.assertTrue(UI.TRACE_LOG_PATH.exists())
+            assert UI._trace_handle is not None
             UI._trace_handle.close()
             UI._trace_handle = None
 
@@ -208,9 +210,11 @@ class TestUI(unittest.TestCase):
             UI.init_trace_log(["cmd"])
             UI.trace("Test Trace Message")
             UI._print("Test Print Message", color=UI.CYAN)
+            assert UI._trace_handle is not None
             UI._trace_handle.close()
             UI._trace_handle = None
 
+            assert UI.TRACE_LOG_PATH is not None
             content = UI.TRACE_LOG_PATH.read_text(encoding="utf-8")
             self.assertIn("Test Trace Message", content)
             self.assertIn("Test Print Message", content)
