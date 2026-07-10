@@ -114,7 +114,6 @@ class UI:
                 .replace("❓", "[?]")
             )
             safe_out = safe_out.encode("ascii", "replace").decode("ascii")
-            # codeql[py/clear-text-logging-sensitive-data]
             print(safe_out, file=file, flush=True)
             return
 
@@ -127,7 +126,6 @@ class UI:
             ):
                 out.encode(file.encoding)
             # Try printing with the current encoding
-            # codeql[py/clear-text-logging-sensitive-data]
             print(out, file=file, flush=True)  # fmt: skip
         except (UnicodeEncodeError, OSError):
             # Fallback for old Windows consoles (CP1252) or problematic streams
@@ -145,7 +143,6 @@ class UI:
             )
             # Final safety wash
             safe_out = safe_out.encode("ascii", "replace").decode("ascii")
-            # codeql[py/clear-text-logging-sensitive-data]
             print(safe_out, file=file, flush=True)  # fmt: skip
 
     class Spinner:
