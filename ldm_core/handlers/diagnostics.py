@@ -66,3 +66,28 @@ class DiagnosticsService(BaseHandler):
         from ldm_core.diagnostics.completions import run_setup_completion
 
         run_setup_completion(self, target_shell)
+
+    def _check_container_health_logs(self, *args, **kwargs):
+        from ldm_core.diagnostics.doctor import _check_container_health_logs
+
+        return _check_container_health_logs(self, *args, **kwargs)
+
+    def _check_liferay_health_logs(self, *args, **kwargs):
+        from ldm_core.diagnostics.doctor import _check_liferay_health_logs
+
+        return _check_liferay_health_logs(self, *args, **kwargs)
+
+    def _check_elasticsearch_watermarks(self, *args, **kwargs):
+        from ldm_core.diagnostics.doctor import _check_elasticsearch_watermarks
+
+        return _check_elasticsearch_watermarks(self, *args, **kwargs)
+
+    def _generate_debug_bundle(self, *args, **kwargs):
+        from ldm_core.diagnostics.doctor import _generate_debug_bundle
+
+        return _generate_debug_bundle(self, *args, **kwargs)
+
+    def _refresh_man_symlink(self, *args, **kwargs):
+        from ldm_core.diagnostics.completions import _refresh_man_symlink
+
+        return _refresh_man_symlink(self, *args, **kwargs)
