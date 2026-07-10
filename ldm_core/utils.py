@@ -2287,7 +2287,7 @@ class FileLock:
         self.fd = None
 
     def acquire(self, mode="w", exclusive=True):
-        """Acquires the lock."""
+        """Acquires a non-blocking flock. Employs fcntl.flock on Unix systems and msvcrt.locking (locking the first byte of the file) on Windows."""
         import atexit
 
         self.lock_file.parent.mkdir(parents=True, exist_ok=True)
@@ -2313,7 +2313,7 @@ class FileLock:
             raise RuntimeError(f"Could not acquire lock on file: {self.lock_file}")
 
     def release(self):
-        """Releases the lock."""
+        """Releases the active file lock and unregisters the exit handler."""
         import atexit
 
         atexit.unregister(self.release)
@@ -2498,8 +2498,7 @@ def is_safe_path(
     try:
         target_path = Path(target_path).resolve()
 
-        # Check member_name boundary
-        # Prevent absolute paths or directory traversal segments
+        # Prevent Zip Slip / Tar Slip directory traversal vulnerabilities by rejecting traversal segments or absolute paths
         if Path(member_name).is_absolute() or ".." in member_name.split("/"):
             return False
 
@@ -2507,7 +2506,7 @@ def is_safe_path(
         if target_path not in member_path.parents and member_path != target_path:
             return False
 
-        # Check link target boundary if it is a link
+        # Enforce that symbolic link destinations also resolve within the extraction root
         if is_link and link_target:
             if Path(link_target).is_absolute() or link_target.startswith("/"):
                 return False

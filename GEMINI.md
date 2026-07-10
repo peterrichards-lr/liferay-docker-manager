@@ -63,7 +63,7 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
 
 ### 7. Reference Documentation
 
-- [Architecture Guide](./docs/LDM_ARCHITECTURE.md)
+- [Architecture Guide](./docs/explanation/architecture.md)
 - [Troubleshooting](./docs/TROUBLESHOOTING.md)
 - [PaaS "Golden Path" Guide](./docs/tutorials/paas_local_dev.md)
 - [Workspace Import & Packaging Guide](./docs/how-to/workspace_import.md)

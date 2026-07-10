@@ -588,9 +588,9 @@ class TestBaseHardening(unittest.TestCase):
     def setUp(self):
         self.handler = MockBaseManager()
 
-    @patch("ldm_core.handlers.diagnostics.platform.system")
-    @patch("ldm_core.handlers.diagnostics.get_actual_home")
-    @patch("ldm_core.handlers.diagnostics.get_resource_path")
+    @patch("ldm_core.diagnostics.completions.platform.system")
+    @patch("ldm_core.diagnostics.completions.get_actual_home")
+    @patch("ldm_core.diagnostics.completions.get_resource_path")
     @patch("pathlib.Path.mkdir")
     @patch("pathlib.Path.symlink_to")
     @patch("pathlib.Path.unlink")
@@ -627,8 +627,8 @@ class TestBaseCompletion(unittest.TestCase):
     def setUp(self):
         self.handler = MockBaseManager()
 
-    @patch("ldm_core.handlers.diagnostics.get_actual_home")
-    @patch("ldm_core.handlers.diagnostics.get_resource_path")
+    @patch("ldm_core.diagnostics.completions.get_actual_home")
+    @patch("ldm_core.diagnostics.completions.get_resource_path")
     @patch("ldm_core.ui.UI.heading")
     @patch("ldm_core.ui.UI.info")
     @patch("ldm_core.handlers.base.os.environ", {"SHELL": "/bin/zsh"})
@@ -644,7 +644,8 @@ class TestBaseCompletion(unittest.TestCase):
     @patch("sys.stdout", new_callable=MagicMock)
     @patch("ldm_core.handlers.base.os.environ", {"SHELL": "/bin/bash"})
     @patch(
-        "ldm_core.handlers.diagnostics.get_actual_home", return_value=Path("/tmp/home")
+        "ldm_core.diagnostics.completions.get_actual_home",
+        return_value=Path("/tmp/home"),
     )
     def test_cmd_completion_bash_instructions(self, mock_home, mock_stdout):
         # No argument: should show instructions
@@ -654,7 +655,8 @@ class TestBaseCompletion(unittest.TestCase):
     @patch("sys.stdout", new_callable=MagicMock)
     @patch("ldm_core.handlers.base.os.environ", {"SHELL": "/usr/bin/fish"})
     @patch(
-        "ldm_core.handlers.diagnostics.get_actual_home", return_value=Path("/tmp/home")
+        "ldm_core.diagnostics.completions.get_actual_home",
+        return_value=Path("/tmp/home"),
     )
     def test_cmd_completion_fish_instructions(self, mock_home, mock_stdout):
         self.handler.cmd_completion(target_shell=None)
@@ -662,7 +664,8 @@ class TestBaseCompletion(unittest.TestCase):
     @patch("sys.stdout", new_callable=MagicMock)
     @patch("ldm_core.handlers.base.os.environ", {"SHELL": "powershell.exe"})
     @patch(
-        "ldm_core.handlers.diagnostics.get_actual_home", return_value=Path("/tmp/home")
+        "ldm_core.diagnostics.completions.get_actual_home",
+        return_value=Path("/tmp/home"),
     )
     def test_cmd_completion_powershell_instructions(self, mock_home, mock_stdout):
         self.handler.cmd_completion(target_shell=None)
@@ -670,7 +673,8 @@ class TestBaseCompletion(unittest.TestCase):
     @patch("sys.stdout", new_callable=MagicMock)
     @patch("ldm_core.handlers.base.os.environ", {"SHELL": "powershell.exe"})
     @patch(
-        "ldm_core.handlers.diagnostics.get_actual_home", return_value=Path("/tmp/home")
+        "ldm_core.diagnostics.completions.get_actual_home",
+        return_value=Path("/tmp/home"),
     )
     def test_cmd_completion_powershell_code(self, mock_home, mock_stdout):
         # Specific argument: should show the bridge script
@@ -680,7 +684,8 @@ class TestBaseCompletion(unittest.TestCase):
     @patch("sys.stdout", new_callable=MagicMock)
     @patch("ldm_core.handlers.base.os.environ", {"SHELL": "/usr/bin/fish"})
     @patch(
-        "ldm_core.handlers.diagnostics.get_actual_home", return_value=Path("/tmp/home")
+        "ldm_core.diagnostics.completions.get_actual_home",
+        return_value=Path("/tmp/home"),
     )
     def test_cmd_completion_zsh_code(self, mock_home, mock_stdout):
         # Specific argument: should show raw code
@@ -690,7 +695,8 @@ class TestBaseCompletion(unittest.TestCase):
     @patch("sys.stdout", new_callable=MagicMock)
     @patch("sys.stderr", new_callable=MagicMock)
     @patch(
-        "ldm_core.handlers.diagnostics.get_actual_home", return_value=Path("/tmp/home")
+        "ldm_core.diagnostics.completions.get_actual_home",
+        return_value=Path("/tmp/home"),
     )
     def test_cmd_completion_generation_suppresses_ui(
         self, mock_home, mock_stderr, mock_stdout
@@ -706,7 +712,8 @@ class TestBaseCompletion(unittest.TestCase):
     @patch("sys.stdout", new_callable=MagicMock)
     @patch("sys.stderr", new_callable=MagicMock)
     @patch(
-        "ldm_core.handlers.diagnostics.get_actual_home", return_value=Path("/tmp/home")
+        "ldm_core.diagnostics.completions.get_actual_home",
+        return_value=Path("/tmp/home"),
     )
     def test_cmd_completion_generation_zsh_boilerplate(
         self, mock_home, mock_stderr, mock_stdout
@@ -718,7 +725,8 @@ class TestBaseCompletion(unittest.TestCase):
     @patch("sys.stdout", new_callable=MagicMock)
     @patch("sys.stderr", new_callable=MagicMock)
     @patch(
-        "ldm_core.handlers.diagnostics.get_actual_home", return_value=Path("/tmp/home")
+        "ldm_core.diagnostics.completions.get_actual_home",
+        return_value=Path("/tmp/home"),
     )
     def test_cmd_completion_error_goes_to_stderr(
         self, mock_home, mock_stderr, mock_stdout
