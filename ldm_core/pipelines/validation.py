@@ -18,7 +18,7 @@ class ValidationStage(PipelineStage):
         project_id = context.get("project_id")
 
         # Run silent checks
-        runner = DoctorRunner(manager.handler, project_id=project_id)
+        runner = DoctorRunner(manager.diagnostics, project_id=project_id)
 
         # We can check docker runtime or tooling
         runner._check_tooling_and_integrity()
