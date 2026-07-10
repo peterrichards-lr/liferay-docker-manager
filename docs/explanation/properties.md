@@ -16,6 +16,24 @@ When LDM synchronizes or rebuilds project properties, it merges settings from fi
 | **4** | **Local Workspace Common** | `[workspace]/common/portal-ext.properties` | Project-group/workspace developer defaults shared across projects. |
 | **5** | **Project Customizations** | `[project]/files/portal-ext.properties` | Manual project-level settings (retains user edits). |
 
+```mermaid
+graph TD
+    L1[1. Pre-warmed Seed]
+    L2[2. .ldmp package overrides]
+    L3[3. Global User Common]
+    L4[4. Local Workspace Common]
+    L5[5. Project Customizations]
+
+    L1 -->|Lower Precedence| L2
+    L2 -->|Overridden By| L3
+    L3 -->|Overridden By| L4
+    L4 -->|Overridden By| L5
+    
+    L5 --> Merge((Final Merged<br>Properties))
+
+    Important[# !important Bypass] -.->|Overrides any non-important<br>value in higher layers| Merge
+```
+
 ---
 
 ## 2. Precedence Overrides with `# !important`
@@ -56,6 +74,27 @@ default.admin.password=test # !important
 ## 3. CLI Management Commands
 
 LDM exposes CLI commands under the `config` namespace to manage the properties hierarchy:
+
+```mermaid
+flowchart TD
+    Start((Command Run)) --> Check{Command Type?}
+
+    Check -- "rebuild-properties" --> Keep[Load existing Project Customizations]
+    Check -- "reset-properties" --> Wipe[Wipe Project Customizations]
+
+    Keep --> Merge
+    Wipe --> Merge
+
+    Merge[Read all active baseline layers<br>Seed + LDMP + Global + Local] --> Resolve{Resolve Conflicts}
+
+    Resolve -- "Same Key" --> Precedence[Apply Precedence Rules]
+    Resolve -- "# !important" --> Override[Apply !important override]
+
+    Precedence --> Write
+    Override --> Write
+
+    Write[Write final merged properties<br>to project's files/portal-ext.properties] --> Done((End))
+```
 
 ### Rebuild Properties
 
