@@ -314,7 +314,7 @@ class TestDiagnostics(unittest.TestCase):
             self.assertIn("Running", output)
             self.assertIn("http://localhost:8080", output)
 
-    @patch("ldm_core.diagnostics.doctor.run_command")
+    @patch("ldm_core.diagnostics.prune.run_command")
     @patch.object(
         MockDiagManager, "find_dxp_roots", return_value=[{"path": Path("/tmp/p1")}]
     )
