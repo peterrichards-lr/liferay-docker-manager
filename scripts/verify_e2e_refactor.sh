@@ -270,7 +270,7 @@ mkdir -p "$LDM_WORKSPACE/${PROJECT_NAME}/files"
 cd "$LDM_WORKSPACE/${PROJECT_NAME}"
 echo -e "tag=2026.q1.7-lts\ncontainer_name=${PROJECT_NAME}\nport=${TEST_PORT}\ndb_type=postgresql" > meta
 
-log_and_run "Running LDM Project" "$LDM_CMD" -y run . --no-wait --no-tld-skip --no-jvm-verify
+log_and_run "Running LDM Project" "$LDM_CMD" -y run . --no-wait
 
 # Wait for Health
 echo "ℹ  Waiting for Liferay health..."
@@ -384,6 +384,8 @@ else
     echo "❌ ERROR: Trace Log file missing." && exit 1
 fi
 
+log_and_run "Scaling Liferay back to 1 for logs export check" "$LDM_CMD" -y scale . liferay=1 --no-run
+log_and_run "Starting project for logs export check" "$LDM_CMD" -y run . --no-wait
 log_and_run "Exporting project logs" "$LDM_CMD" logs . --export
 EXPORT_FILE=""
 for f in *.log; do
