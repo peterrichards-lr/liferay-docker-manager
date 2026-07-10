@@ -1854,6 +1854,7 @@ def main():
     sys.argv = preprocess_args(sys.argv)
 
     parser, subparsers = get_parser()
+    UI.init_trace_log(sys.argv)
 
     if argcomplete:
         # Recursively attach project completer to all choices under subparsers

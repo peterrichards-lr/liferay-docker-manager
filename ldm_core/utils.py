@@ -411,8 +411,8 @@ def run_command(
         if executable:
             cmd[0] = executable
 
-    # Redact sensitive info for logging/display
     display_cmd = UI.redact(" ".join(cmd) if isinstance(cmd, list) else cmd)
+    UI.trace(f"[CMD] {display_cmd}")
     if verbose:
         UI.debug(f"Executing: {display_cmd}")
 
@@ -469,7 +469,10 @@ def run_command(
                 if isinstance(result.stdout, str)
                 else result.stdout.decode("utf-8", errors="ignore")
             )
-        return stdout_str.strip()
+        stdout_str = stdout_str.strip()
+        if stdout_str:
+            UI.trace(f"[STDOUT] {stdout_str}")
+        return stdout_str
     except (subprocess.CalledProcessError, FileNotFoundError) as e:
         if isinstance(e, subprocess.CalledProcessError) and e.returncode == 130:
             raise KeyboardInterrupt()
@@ -486,12 +489,14 @@ def run_command(
                 sys.exit(127)
 
             UI.error(f"Command failed (Exit {e.returncode}): {cmd_str}")
+            UI.trace(f"[ERROR] Exit {e.returncode}")
             if e.stderr:
                 err_details = (
                     e.stderr
                     if isinstance(e.stderr, str)
                     else e.stderr.decode("utf-8", errors="ignore")
                 )
+                UI.trace(f"[STDERR] {err_details.strip()}")
                 print(f"{UI.WHITE}Error Details:{UI.COLOR_OFF} {err_details.strip()}")
             sys.exit(e.returncode)
         return None

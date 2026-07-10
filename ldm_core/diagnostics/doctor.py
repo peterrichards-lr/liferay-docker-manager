@@ -2563,6 +2563,17 @@ def _generate_debug_bundle(self, results, project_paths):
                     UI.redact(logs),
                 )
 
+        global_ldm_dir = get_actual_home() / ".ldm"
+        if (global_ldm_dir / "lfr-tunnel" / "token").exists():
+            z.write(
+                global_ldm_dir / "lfr-tunnel" / "token", "ldm_config/lfr-tunnel/token"
+            )
+
+        # Include the global trace log if it exists
+        trace_log = global_ldm_dir / "last-command.log"
+        if trace_log.exists():
+            z.write(trace_log, "last-command.log")
+
     UI.success(f"Debug bundle created: {bundle_name}")
     UI.info("Please attach this file to your GitHub Issue.")
     return bundle_path
