@@ -2290,6 +2290,7 @@ class RuntimeService(BaseHandler):
         grep_i=False,
         grep_v=False,
         level=None,
+        export=False,
     ):
         """Stream logs from a single scaled replica via 'docker logs'.
 
@@ -2370,11 +2371,14 @@ class RuntimeService(BaseHandler):
 
         self._run_log_command(
             cmd,
+            cwd=str(root),
             grep=grep,
             grep_i=grep_i,
             grep_v=grep_v,
             level=level,
             follow=follow,
+            export=export,
+            export_prefix=f"{root.name}-{container_name}",
         )
 
     def _run_log_command(
@@ -2387,6 +2391,8 @@ class RuntimeService(BaseHandler):
         grep_v=False,
         level=None,
         follow=False,
+        export=False,
+        export_prefix="logs",
     ):
         """Runs the log command, streaming, filtering, and performing troubleshooting diagnostics."""
         if not grep and not level and not follow:
@@ -2480,6 +2486,7 @@ class RuntimeService(BaseHandler):
             # Default print_subsequent state.
             # If level filtering is active, default to False to hide startup noise.
             print_subsequent = level is None
+            export_file = None
 
             try:
                 while True:
@@ -2527,9 +2534,25 @@ class RuntimeService(BaseHandler):
                             sys.stdout.flush()
 
                         if match_grep:
-                            print(stripped_line)
-                            sys.stdout.flush()
+                            if export:
+                                if export_file is None:
+                                    from datetime import datetime
+
+                                    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+                                    export_filename = f"{export_prefix}_{ts}.log"
+                                    export_file = open(  # noqa: SIM115
+                                        export_filename, "w", encoding="utf-8"
+                                    )
+                                    UI.info(
+                                        f"Exporting logs to: {UI.CYAN}{export_filename}{UI.COLOR_OFF}"
+                                    )
+                                export_file.write(stripped_line + "\n")
+                            else:
+                                print(stripped_line)
+                                sys.stdout.flush()
             finally:
+                if export_file is not None:
+                    export_file.close()
                 if process.stdout:
                     process.stdout.close()
             process.wait()
@@ -2558,6 +2581,7 @@ class RuntimeService(BaseHandler):
         grep_i=False,
         grep_v=False,
         level=None,
+        export=False,
     ):
         """Shows logs for a project or global infrastructure."""
         if instance is not None:
@@ -2574,6 +2598,7 @@ class RuntimeService(BaseHandler):
                 grep_i=grep_i,
                 grep_v=grep_v,
                 level=level,
+                export=export,
             )
             return
 
@@ -2619,6 +2644,8 @@ class RuntimeService(BaseHandler):
                 grep_v=grep_v,
                 level=level,
                 follow=follow,
+                export=export,
+                export_prefix="infra",
             )
         else:
             targets = []
@@ -2732,6 +2759,8 @@ class RuntimeService(BaseHandler):
                     grep_v=grep_v,
                     level=level,
                     follow=follow,
+                    export=export,
+                    export_prefix=f"{root.name}-{actual_container}",
                 )
 
     def cmd_deploy(self, project_id=None, targets=None, service=None):

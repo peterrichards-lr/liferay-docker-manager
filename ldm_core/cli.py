@@ -909,6 +909,11 @@ def get_parser():
                 help="Do not wait for container to be available",
             )
             p.add_argument(
+                "--export",
+                action="store_true",
+                help="Export logs to a text file in the current directory",
+            )
+            p.add_argument(
                 "--infra",
                 action="store_true",
                 help="View logs for global infrastructure",
@@ -2067,6 +2072,7 @@ def main():
             grep_i=getattr(args, "grep_i", False),
             grep_v=getattr(args, "grep_v", False),
             level=getattr(args, "level", None),
+            export=getattr(args, "export", False),
         ),
         ("deploy", None): lambda: manager.cmd_deploy(
             getattr(args, "project", None), targets=getattr(args, "targets", [])
