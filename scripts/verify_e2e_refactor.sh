@@ -384,6 +384,8 @@ else
     echo "❌ ERROR: Trace Log file missing." && exit 1
 fi
 
+log_and_run "Scaling Liferay back to 1 for logs export check" "$LDM_CMD" -y scale . liferay=1 --no-run
+log_and_run "Starting project for logs export check" "$LDM_CMD" -y run . --no-wait
 log_and_run "Exporting project logs" "$LDM_CMD" logs . --export
 EXPORT_FILE=""
 for f in *.log; do

@@ -285,6 +285,8 @@ try {
         throw "Trace Log file missing."
     }
 
+    Log-AndRun "Scaling Liferay back to 1 for logs export check" $LDM_CMD "-y scale . liferay=1 --no-run"
+    Log-AndRun "Starting project for logs export check" $LDM_CMD "-y run . --no-wait"
     Log-AndRun "Exporting project logs" $LDM_CMD "logs . --export"
     $exportFiles = Resolve-Path *.log -ErrorAction SilentlyContinue
     if ($exportFiles) {
