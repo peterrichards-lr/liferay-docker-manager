@@ -11,7 +11,7 @@ pyinstaller==6.21.0
 actionlint-py==1.7.12.24
 detect-secrets==1.5.0
 deptry==0.25.1
-mkdocs-material==9.5.50
+mkdocs-material==9.7.6
 mypy==1.10.0
 types-requests
 types-PyYAML
