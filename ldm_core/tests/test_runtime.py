@@ -1465,6 +1465,7 @@ services:
                 self.handler, "detect_project_path", return_value=self.tmp_dir
             ),
             patch.object(self.handler.config, "sync_common_assets"),
+            patch.object(self.handler, "get_container_status", return_value="running"),
             patch.object(self.handler, "run_command") as mock_run_cmd,
         ):
             result = self.handler.sync_stack(

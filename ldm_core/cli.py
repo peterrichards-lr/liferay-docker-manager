@@ -388,9 +388,12 @@ def get_parser():
     parser.add_argument("--version", action="version", version=f"%(prog)s {VERSION}")
     subparsers = parser.add_subparsers(dest="command")
 
-    # Command: run (alias: up)
+    # Command: run (alias: up, start)
     run = subparsers.add_parser(
-        "run", aliases=["up"], parents=[base_sub_parent], conflict_handler="resolve"
+        "run",
+        aliases=["up", "start"],
+        parents=[base_sub_parent],
+        conflict_handler="resolve",
     )
     run.add_argument("project", nargs="?")
     run.add_argument("-t", "--tag")

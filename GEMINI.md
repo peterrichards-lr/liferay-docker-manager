@@ -73,7 +73,8 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
 
 ## 8. Active Work State & Plan (July 10, 2026)
 
-- **Current Active Task (July 10, 2026)**:
+- **Current Active Task (July 13, 2026)**:
+  - [/] Create GitHub Issue for Database Volume Persistence & CLI start Alias.
   - [x] Database Volume Persistence & CLI start Alias.
   - [x] Extend test coverage for logs export, wait milestones, and trace logging.
   - [x] Issue #449: Decouple `DiagnosticsService` monolithic structure into `ldm_core/diagnostics/` submodules. Resolved merge conflicts.
@@ -612,4 +613,4 @@ When modifying `client-extension.yaml` files, **NEVER change or remove `.service
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-07-10* | *Last Reviewed: 2026-07-10*
+*Last Updated: 2026-07-13* | *Last Reviewed: 2026-07-10*
