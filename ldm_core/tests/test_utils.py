@@ -571,6 +571,44 @@ class TestUpdateChecks(unittest.TestCase):
                 run_command("sleep 10", check=True)
             self.assertEqual(ctx.exception.code, 124)
 
+    def test_run_command_non_ascii_error(self):
+        import subprocess
+
+        from ldm_core.utils import run_command
+
+        # Mock subprocess.run to raise CalledProcessError with non-ascii/localized Spanish/Mandarin stderr
+        non_ascii_stderr = (
+            "pg_dump: error: la conexión falló: FATAL: la base de datos no existe: 中文"
+        )
+        mock_err = subprocess.CalledProcessError(
+            returncode=1,
+            cmd="pg_dump",
+            output=None,
+            stderr=non_ascii_stderr.encode("utf-8"),
+        )
+
+        with patch("subprocess.run", side_effect=mock_err):
+            # Mock print to raise UnicodeEncodeError (simulating charmap console printing failure)
+            # when print is called with the original string, but succeed on fallback.
+            print_calls = []
+
+            def mock_print(msg, *args, **kwargs):
+                print_calls.append(msg)
+                if "la conexión" in msg and "Safe" not in msg:
+                    raise UnicodeEncodeError(
+                        "charmap", msg, 0, 1, "character maps to <undefined>"
+                    )
+
+            with patch("builtins.print", side_effect=mock_print):
+                with self.assertRaises(SystemExit) as ctx:
+                    run_command("pg_dump", check=True)
+                self.assertEqual(ctx.exception.code, 1)
+
+            # Assert that print fell back to printing the safe version with backslash replacements
+            self.assertTrue(
+                any("Error Details (Safe):" in call for call in print_calls)
+            )
+
     def test_reclaim_volume_permissions_timeout(self):
         import subprocess
 
