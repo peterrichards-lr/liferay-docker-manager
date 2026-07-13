@@ -753,8 +753,13 @@ class WorkspaceService(BaseHandler):
         """Initialize project with a persistent link to a source workspace and start monitoring."""
         from ldm_core.utils import UI
 
-        source = Path(source_path).resolve()
-        if not source.exists() or not source.is_dir():
+        try:
+            source = Path(source_path).resolve()
+            is_valid_dir = source.exists() and source.is_dir()
+        except Exception:
+            is_valid_dir = False
+
+        if not is_valid_dir:
             UI.die(
                 "Error: Source path to link must be a local Liferay Workspace directory."
             )
@@ -769,7 +774,11 @@ class WorkspaceService(BaseHandler):
         """Clone a remote Git repository workspace and initialize it."""
         from ldm_core.utils import UI
 
-        if not source_path.startswith(("http://", "https://", "git@")):
+        is_remote = (
+            source_path.startswith(("http://", "https://", "git@"))
+            or "://" in source_path
+        )
+        if not is_remote:
             UI.die("Error: Source path to clone must be a valid Git repository URL.")
 
         self.manager.args.clone_only = True
@@ -839,12 +848,19 @@ class WorkspaceService(BaseHandler):
     def cmd_import(self, source_path, is_init_from=False, is_internal=False):
         from ldm_core.utils import UI
 
-        if not source_path.startswith(("http://", "https://", "git@")):
-            source_p = Path(source_path).resolve()
-            if source_p.is_dir() and not is_init_from and not is_internal:
-                UI.die(
-                    "Error: To integrate a local Liferay Workspace, please use: 'ldm link <workspace-path>'"
-                )
+        is_remote = (
+            source_path.startswith(("http://", "https://", "git@"))
+            or "://" in source_path
+        )
+        if not is_remote:
+            try:
+                source_p = Path(source_path).resolve()
+                if source_p.is_dir() and not is_init_from and not is_internal:
+                    UI.die(
+                        "Error: To integrate a local Liferay Workspace, please use: 'ldm link <workspace-path>'"
+                    )
+            except Exception:
+                pass
 
         is_dry_run = os.environ.get("LDM_DRY_RUN", "").lower() == "true"
         if is_dry_run:

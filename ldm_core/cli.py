@@ -1973,6 +1973,8 @@ def check_and_display_upgrade_banner():
 
     if "PYTEST_CURRENT_TEST" in os.environ or "pytest" in sys.argv[0]:
         return
+    if not sys.stdout.isatty():
+        return
 
     try:
         from ldm_core.constants import VERSION

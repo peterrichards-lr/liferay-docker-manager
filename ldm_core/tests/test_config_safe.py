@@ -63,13 +63,18 @@ class TestConfigSafe(unittest.TestCase):
 
         another_lock.release()
 
+    @patch("sys.stdout.isatty")
     @patch("ldm_core.utils.get_actual_home")
     @patch("ldm_core.ui.UI.heading")
     @patch("builtins.print")
-    def test_upgrade_banner_one_time(self, mock_print, mock_heading, mock_home):
+    def test_upgrade_banner_one_time(
+        self, mock_print, mock_heading, mock_home, mock_isatty
+    ):
         """Verify the upgrade banner displays once and writes the version back."""
         import os
         import sys
+
+        mock_isatty.return_value = True
 
         orig_argv = sys.argv
         sys.argv = ["ldm"]
@@ -98,6 +103,35 @@ class TestConfigSafe(unittest.TestCase):
 
             check_and_display_upgrade_banner()
 
+            self.assertFalse(mock_heading.called)
+            self.assertFalse(mock_print.called)
+        finally:
+            sys.argv = orig_argv
+            os.environ.clear()
+            os.environ.update(orig_env)
+
+    @patch("sys.stdout.isatty")
+    @patch("ldm_core.utils.get_actual_home")
+    @patch("ldm_core.ui.UI.heading")
+    @patch("builtins.print")
+    def test_upgrade_banner_non_tty(
+        self, mock_print, mock_heading, mock_home, mock_isatty
+    ):
+        """Verify the upgrade banner does not display on non-TTY streams."""
+        import os
+        import sys
+
+        mock_isatty.return_value = False
+        orig_argv = sys.argv
+        sys.argv = ["ldm"]
+        orig_env = os.environ.copy()
+        if "PYTEST_CURRENT_TEST" in os.environ:
+            del os.environ["PYTEST_CURRENT_TEST"]
+        try:
+            mock_home.return_value = Path(self.test_dir)
+            from ldm_core.cli import check_and_display_upgrade_banner
+
+            check_and_display_upgrade_banner()
             self.assertFalse(mock_heading.called)
             self.assertFalse(mock_print.called)
         finally:
