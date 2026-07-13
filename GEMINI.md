@@ -189,7 +189,7 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
   - [x] Remove duplicate quickstart execution in test suite.
   - [x] Run test suite and pre-commit checks to confirm everything is clean.
   - [x] Commit, push, and create PR for `bugfix/160-empty-ldmp-import-fallback` (PR #161, squash-merged).
-
+- Released `v2.15.16-pre.10` successfully (UX Refactor subcommands link/clone/import, post-upgrade banner, SSH git URL compatibility, non-TTY banner check, and Windows path resolve safety).
 - Released `v2.11.53` successfully (restored release PR workflow and resolved hypersonic workspace database restore bypass).
 - Released `v2.11.52` successfully (immediate search reindexing on running containers via OSGi Gogo telnet command).
 - Released `v2.11.46` successfully (upgraded Gitleaks hook to `v8.30.1` to resolve the Go 1.24 WASM panic in CI runners, and canceled hung jobs).
@@ -616,4 +616,4 @@ When modifying `client-extension.yaml` files, **NEVER change or remove `.service
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-07-13* | *Last Reviewed: 2026-07-10*
+*Last Updated: 2026-07-13* | *Last Reviewed: 2026-07-13*

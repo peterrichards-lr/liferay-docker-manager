@@ -49,12 +49,17 @@ function Invoke-Cleanup {
     param($cmd, $args_list)
     $oldEAP = $ErrorActionPreference
     $ErrorActionPreference = "SilentlyContinue"
-    if ($args_list) {
-        & $cmd $args_list.Split(' ') 2>$null | Out-Null
-    } else {
-        & $cmd 2>$null | Out-Null
+    try {
+        if ($args_list) {
+            & $cmd $args_list.Split(' ') 2>$null | Out-Null
+        } else {
+            & $cmd 2>$null | Out-Null
+        }
+    } catch {
+        # ignore exceptions during cleanup
+    } finally {
+        $ErrorActionPreference = $oldEAP
     }
-    $ErrorActionPreference = $oldEAP
 }
 
 function Finalize-Verification {
@@ -62,11 +67,14 @@ function Finalize-Verification {
     $status = "fail"
     if ($ExitCode -eq 0) { $status = "pass" }
     
-    $slugOut = & $LDM_CMD system doctor --slug 2>$null
-    if ($null -eq $slugOut) { 
-        $slug = "unknown" 
-    } else {
-        $slug = ($slugOut -join "-") -replace '[^a-zA-Z0-9-]', '-'
+    $slug = "unknown"
+    try {
+        $slugOut = & $LDM_CMD system doctor --slug 2>$null
+        if ($null -ne $slugOut) {
+            $slug = ($slugOut -join "-") -replace '[^a-zA-Z0-9-]', '-'
+        }
+    } catch {
+        # ignore exceptions during finalization
     }
     
     $FinalName = "verify-$slug-$status.txt"
