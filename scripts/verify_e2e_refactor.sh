@@ -401,6 +401,35 @@ else
     echo "❌ ERROR: Logs Export file not generated." && exit 1
 fi
 
+echo ">> Verifying Properties Override Cascade & Reset..."
+mkdir -p "$LDM_WORKSPACE/common"
+echo "test.override.prop=456" > "$LDM_WORKSPACE/common/portal-ext.properties"
+echo "test.override.prop=123 # !important" >> files/portal-ext.properties
+log_and_run "Rebuilding properties" "$LDM_CMD" config rebuild-properties .
+if grep -q "test.override.prop=123" files/portal-ext.properties; then
+    echo "✅ Properties Override Cascade verified (rebuild)."
+else
+    echo "❌ ERROR: Properties Override Cascade rebuild failed." && exit 1
+fi
+
+log_and_run "Resetting properties" "$LDM_CMD" config reset-properties .
+if grep -q "test.override.prop=456" files/portal-ext.properties && ! grep -q "123" files/portal-ext.properties; then
+    echo "✅ Properties Override Reset verified."
+else
+    echo "❌ ERROR: Properties Override Reset failed." && exit 1
+fi
+
+# Clean up temporary test files
+rm -rf "$LDM_WORKSPACE/common"
+
+echo ">> Verifying Safe SELECT SQL Query..."
+DB_QUERY_OUT=$("$LDM_CMD" db query . -s "SELECT 1 as test_val;" --allow-db-query 2>&1 || true)
+if echo "$DB_QUERY_OUT" | grep -q "test_val"; then
+    echo "✅ Safe SELECT SQL Query verified."
+else
+    echo "❌ ERROR: Safe SELECT SQL Query failed. Output was: $DB_QUERY_OUT" && exit 1
+fi
+
 # Final
 log_and_run "Checking Status" "$LDM_CMD" -y status
 

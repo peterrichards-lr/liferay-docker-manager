@@ -105,7 +105,7 @@ class ExtractionStage(PipelineStage):
                 with zipfile.ZipFile(source, "r") as z:
                     safe_extract(z, temp_extract_dir)
             else:
-                mode = (
+                mode: typing.Literal["r:", "r:gz"] = (
                     "r:gz"
                     if source.suffix.lower() in [".tgz", ".gz", ".ldmp"]
                     else "r:"

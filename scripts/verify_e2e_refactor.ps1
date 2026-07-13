@@ -297,6 +297,37 @@ try {
         throw "Logs Export file not generated."
     }
 
+    Write-Host ">> Verifying Properties Override Cascade & Reset..."
+    $commonDir = Join-Path $LDM_WORKSPACE "common"
+    New-Item -ItemType Directory -Force -Path $commonDir | Out-Null
+    "test.override.prop=456" | Out-File (Join-Path $commonDir "portal-ext.properties") -Encoding utf8
+    Add-Content (Join-Path "files" "portal-ext.properties") "`ntest.override.prop=123 # !important"
+    Log-AndRun "Rebuilding properties" $LDM_CMD "config rebuild-properties ."
+    if ((Get-Content (Join-Path "files" "portal-ext.properties") -Raw) -match "test.override.prop=123") {
+        Write-Host "✅ Properties Override Cascade verified (rebuild)."
+    } else {
+        throw "Properties Override Cascade rebuild failed."
+    }
+
+    Log-AndRun "Resetting properties" $LDM_CMD "config reset-properties ."
+    $resetPE = Get-Content (Join-Path "files" "portal-ext.properties") -Raw
+    if ($resetPE -match "test.override.prop=456" -and $resetPE -notmatch "123") {
+        Write-Host "✅ Properties Override Reset verified."
+    } else {
+        throw "Properties Override Reset failed."
+    }
+
+    # Clean up temporary test files
+    Remove-Item $commonDir -Recurse -Force -ErrorAction SilentlyContinue
+
+    Write-Host ">> Verifying Safe SELECT SQL Query..."
+    $dbQueryOut = & $LDM_CMD db query . -s "SELECT 1 as test_val;" --allow-db-query 2>&1
+    if ($dbQueryOut -match "test_val") {
+        Write-Host "✅ Safe SELECT SQL Query verified."
+    } else {
+        throw "Safe SELECT SQL Query failed. Output: $dbQueryOut"
+    }
+
     Log-AndRun "Checking Status" $LDM_CMD "-y status"
 
     # Clean up any potential orphans from the run
