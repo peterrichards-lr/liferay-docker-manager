@@ -1490,6 +1490,29 @@ class TestAtomicZipRepackaging(unittest.TestCase):
         with self.assertRaises(SystemExit):
             self.handler.workspace.cmd_import("https://github.com/owner/repo")
 
+    @patch("ldm_core.handlers.workspace.WorkspaceService.cmd_import")
+    def test_cmd_clone_ssh_protocols(self, mock_import):
+        """Verify cmd_clone accepts custom SSH protocols containing :// or starting with git@"""
+        self.handler.workspace.cmd_clone("ssh://git@github.com/owner/repo.git")
+        mock_import.assert_called_once_with("ssh://git@github.com/owner/repo.git")
+
+        mock_import.reset_mock()
+        self.handler.workspace.cmd_clone("git+ssh://github.com/owner/repo.git")
+        mock_import.assert_called_once_with("git+ssh://github.com/owner/repo.git")
+
+    def test_cmd_link_path_crash_resilience(self):
+        """Verify cmd_link doesn't raise raw OSError on malformed Windows paths (like URLs or invalid characters)"""
+        with self.assertRaises(SystemExit):
+            self.handler.workspace.cmd_link("http://invalid/path:with*illegal?chars")
+
+    def test_cmd_import_path_crash_resilience(self):
+        """Verify cmd_import doesn't raise raw OSError on malformed Windows paths"""
+        # Under normal conditions (without raise), it should proceed because is_remote is False
+        # and resolve path throws exception, silently bypassing the local dir reject guard
+        # and then failing on target LDM package validation.
+        with self.assertRaises(SystemExit):
+            self.handler.workspace.cmd_import("http://invalid/path:with*illegal?chars")
+
 
 if __name__ == "__main__":
     unittest.main()
