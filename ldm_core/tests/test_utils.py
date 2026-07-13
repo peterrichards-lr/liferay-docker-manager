@@ -553,6 +553,43 @@ class TestUpdateChecks(unittest.TestCase):
             self.assertIn("chown -R 1001:1001", docker_cmd)
             self.assertIn("chmod -R 777", docker_cmd)
 
+    def test_run_command_timeout(self):
+        import subprocess
+
+        from ldm_core.utils import run_command
+
+        with patch(
+            "subprocess.run",
+            side_effect=subprocess.TimeoutExpired(cmd="sleep 10", timeout=1.0),
+        ):
+            # check=False should return None
+            res = run_command("sleep 10", check=False)
+            self.assertIsNone(res)
+
+            # check=True should raise SystemExit with 124
+            with self.assertRaises(SystemExit) as ctx:
+                run_command("sleep 10", check=True)
+            self.assertEqual(ctx.exception.code, 124)
+
+    def test_reclaim_volume_permissions_timeout(self):
+        import subprocess
+
+        from ldm_core.utils import reclaim_volume_permissions
+
+        with (
+            patch(
+                "ldm_core.utils.run_command",
+                side_effect=subprocess.TimeoutExpired(
+                    cmd="docker run ...", timeout=15.0
+                ),
+            ),
+            patch("pathlib.Path.exists", return_value=True),
+            patch("ldm_core.utils.platform.system", return_value="Linux"),
+        ):
+            # Should return False instead of raising/crashing
+            res = reclaim_volume_permissions("/tmp/some-dir", uid="1001", gid="1001")
+            self.assertFalse(res)
+
     @patch("ldm_core.utils.requests.get")
     def test_validate_liferay_tag(self, mock_get):
         from ldm_core.utils import validate_liferay_tag

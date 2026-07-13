@@ -391,6 +391,7 @@ def run_command(
     cwd=None,
     verbose=False,
     stdout_file=None,
+    timeout=None,
 ):
     env = os.environ.copy() if env is None else env.copy()
 
@@ -454,6 +455,7 @@ def run_command(
             check=check,
             env=env,
             cwd=cwd,
+            timeout=timeout,
         )
 
         if result.returncode != 0 and not check:
@@ -473,6 +475,13 @@ def run_command(
         if stdout_str:
             UI.trace(f"[STDOUT] {stdout_str}")
         return stdout_str
+    except subprocess.TimeoutExpired as e:
+        if not check:
+            return None
+        cmd_str = UI.redact(" ".join(cmd) if isinstance(cmd, list) else cmd)
+        UI.error(f"Command timed out after {e.timeout}s: {cmd_str}")
+        UI.trace(f"[ERROR] Timeout after {e.timeout}s")
+        sys.exit(124)
     except (subprocess.CalledProcessError, FileNotFoundError) as e:
         if isinstance(e, subprocess.CalledProcessError) and e.returncode == 130:
             raise KeyboardInterrupt()
@@ -2065,6 +2074,7 @@ def reclaim_volume_permissions(path, uid=None, gid=None, chmod_val="777"):
             ],
             check=False,
             capture_output=True,
+            timeout=15,
         )
         return res is not None
     except Exception:

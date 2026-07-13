@@ -71,9 +71,10 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
 - [Agent Rules of Engagement](./.gemini/gemini.md)
 - [Properties Override Hierarchy Guide](./docs/explanation/properties.md)
 
-## 8. Active Work State & Plan (July 10, 2026)
+## 8. Active Work State & Plan (July 13, 2026)
 
 - **Current Active Task (July 13, 2026)**:
+  - [/] Add timeout parameter to run_command and enforce a 15-second timeout on reclaim_volume_permissions to prevent WSL hangs, and fix Windows PowerShell 5.1 syntax compatibility errors.
   - [x] Create GitHub Issue for Database Volume Persistence & CLI start Alias.
   - [x] Database Volume Persistence & CLI start Alias.
   - [x] Extend test coverage for logs export, wait milestones, and trace logging.
