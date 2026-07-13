@@ -2365,7 +2365,7 @@ class FileLock:
                 import msvcrt
 
                 self.fd.seek(0)
-                lock_type = msvcrt.LK_NBLCK if exclusive else msvcrt.LK_NBND  # type: ignore[attr-defined]
+                lock_type = msvcrt.LK_NBLCK if exclusive else msvcrt.LK_NBRLCK  # type: ignore[attr-defined]
                 msvcrt.locking(self.fd.fileno(), lock_type, 1)  # type: ignore[attr-defined]
 
             if exclusive and ("w" in mode or "+" in mode):
