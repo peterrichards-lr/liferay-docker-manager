@@ -5,7 +5,8 @@
 $env:PYTHONUTF8 = 1
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 $ErrorActionPreference = "Stop"
-$TEST_PORT = if ($env:LDM_TEST_PORT) { $env:LDM_TEST_PORT } else { "8082" }
+$TEST_PORT = "8082"
+if ($env:LDM_TEST_PORT) { $TEST_PORT = $env:LDM_TEST_PORT }
 $ORIGINAL_PWD = Get-Location
 $LDM_CMD = "ldm"
 $Timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
@@ -46,7 +47,8 @@ if (-not (Test-Path $VENV_PYTEST)) {
 
 function Finalize-Verification {
     param($ExitCode)
-    $status = if ($ExitCode -eq 0) { "pass" } else { "fail" }
+    $status = "fail"
+    if ($ExitCode -eq 0) { $status = "pass" }
     
     $slugOut = & $LDM_CMD system doctor --slug 2>$null
     if ($null -eq $slugOut) { 
