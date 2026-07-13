@@ -4,6 +4,26 @@ Liferay Docker Manager (LDM) offers a portable mechanism to export, share, and i
 
 ---
 
+## Workspace Source vs. Hydrated Packages (.ldmp)
+
+To avoid confusion, it is important to distinguish between developing inside a **Liferay Workspace** and importing a pre-built **LDM Package (`.ldmp`)**:
+
+### A. Raw Liferay Workspaces (Source Code)
+
+* **What it is**: A standard directory structure containing Java source files, client extension source code (`client-extension.yaml`), and Gradle scripts.
+* **How it works**: You link it with LDM via `ldm init-from /path/to/workspace`.
+* **Deployment**: LDM runs `gradlew deploy` to compile Java bundles and package client extensions into zip archives, then hot-deploys them into Liferay's `/deploy` directory.
+* **Best For**: Active developer code writing and file editing.
+
+### B. Hydrated LDM Packages (`.ldmp`)
+
+* **What it is**: A portable compressed archive containing pre-built assets, database snapshots, and volume directories.
+* **How it works**: You import it with `ldm import my-project.ldmp`.
+* **Deployment**: The database schema and custom assets are **already compiled and pre-hydrated** inside Liferay's internal directories. No Gradle compilation or local Java SDK is needed to start running.
+* **Best For**: Mirrored backups, distributing quickstart demos, and deploying final pre-configured states.
+
+---
+
 ## 1. Unified Import Workflow (`ldm import`)
 
 The `ldm import` command is a polymorphic entry point. It automatically detects the type of source you provide and configures the environment accordingly.
@@ -107,10 +127,10 @@ ldm system init-ci [project] [--trigger release|tag|push|manual] [--repo owner/r
 
 ### Trigger Presets
 
-- **`release` (Default)**: Triggers only when a GitHub Release is published. Useful for production-grade builds.
-- **`tag`**: Triggers whenever a tag starting with `v*` is pushed.
-- **`push`**: Triggers on every commit pushed to the `master` branch.
-- **`manual`**: Only runs when triggered manually via the GitHub Actions tab (`workflow_dispatch`).
+* **`release` (Default)**: Triggers only when a GitHub Release is published. Useful for production-grade builds.
+* **`tag`**: Triggers whenever a tag starting with `v*` is pushed.
+* **`push`**: Triggers on every commit pushed to the `master` branch.
+* **`manual`**: Only runs when triggered manually via the GitHub Actions tab (`workflow_dispatch`).
 
 ### Workflow Output
 
