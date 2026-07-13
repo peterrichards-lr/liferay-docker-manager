@@ -248,8 +248,8 @@ class DatabaseService(BaseHandler):
             return
 
         # 9. Format outputs
-        f = io.StringIO(raw_out)
-        reader = csv.reader(f, delimiter=delimiter)
+        f_io = io.StringIO(raw_out)
+        reader = csv.reader(f_io, delimiter=delimiter)
         try:
             headers = next(reader)
         except StopIteration:
