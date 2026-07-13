@@ -1,4 +1,4 @@
-# Comprehensive E2E Binary Verification for LDM (Windows Native PowerShell)
+﻿# Comprehensive E2E Binary Verification for LDM (Windows Native PowerShell)
 # Target: Verifies the INSTALLED binary, not the source code.
 # Optimized for Windows Native.
 
@@ -12,7 +12,7 @@ $LDM_CMD = "ldm"
 $Timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
 $RESULTS_FILE_TMP = Join-Path $ORIGINAL_PWD ".ldm-verify-tmp-${Timestamp}.txt"
 
-Write-Host "⚡ Starting Standalone Binary Verification (Windows Native)..."
+Write-Host "* Starting Standalone Binary Verification (Windows Native)..."
 
 # 0. Dependencies & Virtual Environment
 $LDM_WORKSPACE = Join-Path $ORIGINAL_PWD "e2e-work-dir"
@@ -23,7 +23,7 @@ $TEST_VENV = Join-Path $LDM_WORKSPACE ".verify-venv"
 $VENV_PYTHON = Join-Path $TEST_VENV "Scripts\python.exe"
 $VENV_PYTEST = Join-Path $TEST_VENV "Scripts\pytest.exe"
 
-Write-Host "ℹ  Preparing isolated test environment..."
+Write-Host "[INFO]  Preparing isolated test environment..."
 if (-not (Test-Path $TEST_VENV)) {
     & python -m venv $TEST_VENV
 }
@@ -61,10 +61,10 @@ function Finalize-Verification {
     
     if (Test-Path $RESULTS_FILE_TMP) {
         if ($status -eq "pass") {
-            "`n🎯 ALL E2E VERIFICATIONS PASSED!" | Out-File -FilePath $RESULTS_FILE_TMP -Append -Encoding utf8
+            "`n[SUCCESS] ALL E2E VERIFICATIONS PASSED!" | Out-File -FilePath $RESULTS_FILE_TMP -Append -Encoding utf8
         }
         Move-Item $RESULTS_FILE_TMP (Join-Path $ORIGINAL_PWD $FinalName) -Force
-        Write-Host "`n✅ Verification Complete ($status)`n📊 Results: $FinalName"
+        Write-Host "`n[SUCCESS] Verification Complete ($status)`n[RESULTS] Results: $FinalName"
         if ($status -eq "pass") {
             $archiveDir = Join-Path $ORIGINAL_PWD "references\verification-results"
             if (-not (Test-Path $archiveDir)) { New-Item -ItemType Directory -Path $archiveDir | Out-Null }
@@ -96,7 +96,7 @@ try {
     & $LDM_CMD -y rm ldm-smoke-test --delete --infra > $null 2>&1
 
     # Pre-pull large images to avoid containerd lease timeouts during the timed E2E run
-    Write-Host "ℹ  Pre-pulling required Docker images..."
+    Write-Host "[INFO]  Pre-pulling required Docker images..."
     & docker pull liferay/dxp:2026.q1.7-lts --quiet
     & docker pull postgres:16.2 --quiet
 
@@ -108,20 +108,20 @@ try {
     $res = & $LDM_CMD system version --bump patch 2>&1
     $env:CI = "false"
     if ($res -match "Developer utility requires LDM_DEV_MODE=true" -or $res -match "Action restricted") { 
-        Write-Host "✅ Dev Guardrails verified." 
+        Write-Host "[SUCCESS] Dev Guardrails verified." 
     } else { 
-        Write-Host "❌ ERROR: Dev Guardrails failed! Output was: $res" -ForegroundColor Red
+        Write-Host "[ERROR] ERROR: Dev Guardrails failed! Output was: $res" -ForegroundColor Red
         exit 1
     }
 
     Write-Host ">> Verifying Sudo Guard (Behavioral)..."
-    Write-Host "⚠️  Skipping behavioral Sudo Guard check (Sudo allowed in CI/Windows environment)."
+    Write-Host "[WARNING]  Skipping behavioral Sudo Guard check (Sudo allowed in CI/Windows environment)."
 
     Write-Host ">> Verifying Project Collision Detection..."
     $colRes = & $LDM_CMD -y run "collision-test" --tag "2026.q1.4-lts" --port 8099 --no-wait --no-up --no-seed 2>&1
     # Check if collision-test directory exists
     if (-not (Test-Path "collision-test")) {
-        Write-Host "❌ ERROR: Failed to initialize collision-test project." -ForegroundColor Red
+        Write-Host "[ERROR] ERROR: Failed to initialize collision-test project." -ForegroundColor Red
         exit 1
     }
     New-Item -ItemType Directory -Path "collision-test/nested" -Force | Out-Null
@@ -145,9 +145,9 @@ try {
         $out
     }
     if ($nestedRes -match "Project collision" -or $nestedRes -match "already registered") {
-        Write-Host "✅ Project Collision verified."
+        Write-Host "[SUCCESS] Project Collision verified."
     } else {
-        Write-Host "❌ ERROR: Project Collision detection failed! Output was: $nestedRes" -ForegroundColor Red
+        Write-Host "[ERROR] ERROR: Project Collision detection failed! Output was: $nestedRes" -ForegroundColor Red
         & $LDM_CMD -y rm "collision-test" --delete > $null 2>&1
         exit 1
     }
@@ -157,9 +157,9 @@ try {
     Write-Host ">> Verifying Tag Validation Guardrail..."
     $tagRes = & $LDM_CMD -y run "tag-val-test" --tag "invalid-tag" --port 8099 --no-wait --no-up --no-seed 2>&1
     if ($tagRes -match "not listed in official Liferay releases") {
-        Write-Host "✅ Tag Validation Guardrail verified."
+        Write-Host "[SUCCESS] Tag Validation Guardrail verified."
     } else {
-        Write-Host "❌ ERROR: Tag Validation Guardrail failed! Output was: $tagRes" -ForegroundColor Red
+        Write-Host "[ERROR] ERROR: Tag Validation Guardrail failed! Output was: $tagRes" -ForegroundColor Red
         & $LDM_CMD -y rm "tag-val-test" --delete > $null 2>&1
         exit 1
     }
@@ -167,7 +167,7 @@ try {
     if (Test-Path "tag-val-test") { Remove-Item -Recurse -Force "tag-val-test" }
 
     # 3. Project Run
-    Write-Host "ℹ  Provisioning standalone test project..."
+    Write-Host "[INFO]  Provisioning standalone test project..."
     $projectDir = Join-Path $LDM_WORKSPACE "ldm-smoke-test"
     if (-not (Test-Path $projectDir)) { New-Item -ItemType Directory -Path $projectDir -Force | Out-Null }
     New-Item -ItemType Directory -Path (Join-Path $projectDir "files") -Force | Out-Null
@@ -194,7 +194,7 @@ try {
     $hotDeploySuccess = $false
     for ($i=0; $i -lt 60; $i++) {
         if ((docker logs ldm-smoke-test --tail 200 2>&1) -match "STARTED com.liferay.test.bundle") {
-            Write-Host "✅ Hot Deploy verified."
+            Write-Host "[SUCCESS] Hot Deploy verified."
             $hotDeploySuccess = $true
             break
         }
@@ -202,7 +202,7 @@ try {
         Start-Sleep 10
     }
     if (-not $hotDeploySuccess) {
-        Write-Host "`n❌ ERROR: Hot Deploy failed. Test Bundle did not start." -ForegroundColor Red
+        Write-Host "`n[ERROR] ERROR: Hot Deploy failed. Test Bundle did not start." -ForegroundColor Red
         docker logs ldm-smoke-test --tail 100
         exit 1
     }
@@ -214,7 +214,7 @@ try {
     $shaFile = Join-Path $latestSnapshotDir "files.tar.gz.sha256"
     "CORRUPTED" | Out-File $shaFile -Encoding utf8
     if ((& $LDM_CMD -y restore --latest 2>&1) -match "Integrity check failed") { 
-        Write-Host "✅ Integrity check verified." 
+        Write-Host "[SUCCESS] Integrity check verified." 
     } else { 
         throw "Integrity block failed" 
     }
@@ -224,7 +224,7 @@ try {
     $legacyDoc = & $LDM_CMD doctor --help 2>&1
     $legacySetup = & $LDM_CMD infra-setup --help 2>&1
     if ($legacyDoc -match "Usage" -and $legacySetup -match "Usage") {
-        Write-Host "✅ Legacy command translation verified."
+        Write-Host "[SUCCESS] Legacy command translation verified."
     } else {
         throw "Legacy command translation failed."
     }
@@ -234,14 +234,14 @@ try {
     & $LDM_CMD config defaults test_key test_value > $null 2>&1
     $defaultsOut = & $LDM_CMD config defaults 2>&1
     if ($defaultsOut -match "test_key" -and $defaultsOut -match "test_value" -and $defaultsOut -match "User") {
-        Write-Host "✅ Set User Default verified."
+        Write-Host "[SUCCESS] Set User Default verified."
     } else {
         throw "Set User Default failed. Output: $defaultsOut"
     }
     & $LDM_CMD config defaults --remove test_key > $null 2>&1
     $defaultsOut2 = & $LDM_CMD config defaults 2>&1
     if ($defaultsOut2 -notmatch "test_key") {
-        Write-Host "✅ Remove User Default verified."
+        Write-Host "[SUCCESS] Remove User Default verified."
     } else {
         throw "Remove User Default failed. Output: $defaultsOut2"
     }
@@ -249,7 +249,7 @@ try {
     Write-Host ">> Verifying Env Sync..."
     & $LDM_CMD config env . TEST_SECRET=supersecret123 > $null 2>&1
     if ((Get-Content "docker-compose.yml" -Raw) -match "TEST_SECRET=supersecret123") { 
-        Write-Host "✅ Env Sync verified." 
+        Write-Host "[SUCCESS] Env Sync verified." 
     } else {
         throw "Env Sync verification failed."
     }
@@ -257,7 +257,7 @@ try {
     Write-Host ">> Verifying Redaction..."
     $redactOut = & $LDM_CMD status REDACT_SECRET=hidden 2>&1
     if ($redactOut -match "REDACT_SECRET=\[REDACTED\]") { 
-        Write-Host "✅ Redaction verified." 
+        Write-Host "[SUCCESS] Redaction verified." 
     } else {
         throw "Redaction verification failed. Output: $redactOut"
     }
@@ -265,7 +265,7 @@ try {
     Write-Host ">> Verifying Scaling..."
     Log-AndRun "Scaling Liferay" $LDM_CMD "-y scale . liferay=3 --no-run"
     if ((Get-Content "meta" -Raw) -match "scale_liferay=3") { 
-        Write-Host "✅ Scaling verified." 
+        Write-Host "[SUCCESS] Scaling verified." 
     } else {
         throw "Scaling verification failed."
     }
@@ -274,7 +274,7 @@ try {
     $logErr4 = & $LDM_CMD logs . --instance 4 2>&1
     $logErr2 = & $LDM_CMD logs . --instance 2 2>&1
     if ($logErr4 -match "Invalid instance index 4" -and $logErr2 -match "Container 'ldm-smoke-test-liferay-2' not found") {
-        Write-Host "✅ logs --instance routing verified."
+        Write-Host "[SUCCESS] logs --instance routing verified."
     } else {
         throw "logs --instance routing validation failed."
     }
@@ -282,7 +282,7 @@ try {
     Write-Host ">> Verifying Trace Log and Logs Export..."
     $traceLogPath = Join-Path $HOME ".ldm/last-command.log"
     if (Test-Path $traceLogPath) {
-        Write-Host "✅ Trace Log (last-command.log) verified."
+        Write-Host "[SUCCESS] Trace Log (last-command.log) verified."
     } else {
         throw "Trace Log file missing."
     }
@@ -293,7 +293,7 @@ try {
     $exportFiles = Resolve-Path *.log -ErrorAction SilentlyContinue
     if ($exportFiles) {
         $exportFile = $exportFiles[0].Path
-        Write-Host "✅ Logs Export verified ($exportFile)."
+        Write-Host "[SUCCESS] Logs Export verified ($exportFile)."
         Remove-Item $exportFile -Force
     } else {
         throw "Logs Export file not generated."
@@ -306,7 +306,7 @@ try {
     Add-Content (Join-Path "files" "portal-ext.properties") "`ntest.override.prop=123 # !important"
     Log-AndRun "Rebuilding properties" $LDM_CMD "config rebuild-properties ."
     if ((Get-Content (Join-Path "files" "portal-ext.properties") -Raw) -match "test.override.prop=123") {
-        Write-Host "✅ Properties Override Cascade verified (rebuild)."
+        Write-Host "[SUCCESS] Properties Override Cascade verified (rebuild)."
     } else {
         throw "Properties Override Cascade rebuild failed."
     }
@@ -314,7 +314,7 @@ try {
     Log-AndRun "Resetting properties" $LDM_CMD "config reset-properties ."
     $resetPE = Get-Content (Join-Path "files" "portal-ext.properties") -Raw
     if ($resetPE -match "test.override.prop=456" -and $resetPE -notmatch "123") {
-        Write-Host "✅ Properties Override Reset verified."
+        Write-Host "[SUCCESS] Properties Override Reset verified."
     } else {
         throw "Properties Override Reset failed."
     }
@@ -325,7 +325,7 @@ try {
     Write-Host ">> Verifying Safe SELECT SQL Query..."
     $dbQueryOut = & $LDM_CMD db query . -s "SELECT 1 as test_val;" --allow-db-query 2>&1
     if ($dbQueryOut -match "test_val") {
-        Write-Host "✅ Safe SELECT SQL Query verified."
+        Write-Host "[SUCCESS] Safe SELECT SQL Query verified."
     } else {
         throw "Safe SELECT SQL Query failed. Output: $dbQueryOut"
     }
@@ -335,7 +335,7 @@ try {
     # Clean up any potential orphans from the run
     & $LDM_CMD -y system prune > $null 2>&1
 
-    Write-Host "`n🎯 ALL E2E VERIFICATIONS PASSED!"
+    Write-Host "`n[SUCCESS] ALL E2E VERIFICATIONS PASSED!"
     Finalize-Verification 0
 } catch {
     Write-Host $_.Exception.Message -ForegroundColor Red
