@@ -5,6 +5,7 @@
 $env:PYTHONUTF8 = 1
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 $ErrorActionPreference = "Stop"
+$PSNativeCommandUseErrorActionPreference = $false
 $TEST_PORT = "8082"
 if ($env:LDM_TEST_PORT) { $TEST_PORT = $env:LDM_TEST_PORT }
 $ORIGINAL_PWD = Get-Location
