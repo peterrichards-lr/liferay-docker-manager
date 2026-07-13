@@ -276,6 +276,10 @@ class TestComposerService(unittest.TestCase):
 
         db_service = self.composer._build_db_service(meta_explicit, "Zukunft Digital")
         self.assertEqual(db_service["container_name"], "Zukunft-Digital-Database")
+        self.assertEqual(
+            db_service["volumes"],
+            ["Zukunft-Digital-Database-db-data:/var/lib/postgresql/data"],
+        )
 
         # 2. Fallbacks when container names are omitted in metadata but project name has spaces
         meta_fallback = {
@@ -292,6 +296,10 @@ class TestComposerService(unittest.TestCase):
             meta_fallback, "Zukunft Digital"
         )
         self.assertEqual(db_service_fb["container_name"], "Zukunft-Digital-db")
+        self.assertEqual(
+            db_service_fb["volumes"],
+            ["Zukunft-Digital-db-db-data:/var/lib/postgresql/data"],
+        )
 
         # 3. Tunnel sidecar container names (both explicit and fallback)
         self.manager.args.expose = False

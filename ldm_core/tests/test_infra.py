@@ -116,6 +116,8 @@ class TestInfraService(unittest.TestCase):
             self.assertIsNotNone(run_cmd)
             assert isinstance(run_cmd, list)
             self.assertIn("POSTGRES_DB=lportal", run_cmd)
+            self.assertIn("-v", run_cmd)
+            self.assertIn("liferay-db-global-data:/var/lib/postgresql/data", run_cmd)
 
     @patch("ldm_core.docker_service.DockerService.exists", return_value=False)
     @patch("ldm_core.handlers.infra.get_actual_home", return_value=Path("/tmp"))

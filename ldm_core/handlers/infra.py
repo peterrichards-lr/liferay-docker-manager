@@ -474,6 +474,8 @@ tls:
                     "POSTGRES_DB=lportal",
                     "-p",
                     "5433:5432",
+                    "-v",
+                    "liferay-db-global-data:/var/lib/postgresql/data",
                     f"postgres:{pg_ver}",
                 ]
             )
