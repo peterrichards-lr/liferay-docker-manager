@@ -75,7 +75,6 @@ class TestConfigSafe(unittest.TestCase):
         import sys
 
         mock_isatty.return_value = True
-
         orig_argv = sys.argv
         sys.argv = ["ldm"]
         orig_env = os.environ.copy()
