@@ -62,3 +62,45 @@ class TestConfigSafe(unittest.TestCase):
             )
 
         another_lock.release()
+
+    @patch("ldm_core.utils.get_actual_home")
+    @patch("ldm_core.ui.UI.heading")
+    @patch("builtins.print")
+    def test_upgrade_banner_one_time(self, mock_print, mock_heading, mock_home):
+        """Verify the upgrade banner displays once and writes the version back."""
+        import os
+        import sys
+
+        orig_argv = sys.argv
+        sys.argv = ["ldm"]
+        orig_env = os.environ.copy()
+        if "PYTEST_CURRENT_TEST" in os.environ:
+            del os.environ["PYTEST_CURRENT_TEST"]
+        try:
+            mock_home.return_value = Path(self.test_dir)
+            config_path = Path(self.test_dir) / ".ldmrc"
+
+            from ldm_core.cli import check_and_display_upgrade_banner
+            from ldm_core.constants import VERSION
+
+            check_and_display_upgrade_banner()
+
+            self.assertTrue(mock_heading.called)
+            self.assertTrue(mock_print.called)
+
+            from ldm_core.utils import load_global_config_safe
+
+            saved_data = load_global_config_safe(config_path)
+            self.assertEqual(saved_data.get("last_run_version"), VERSION)
+
+            mock_heading.reset_mock()
+            mock_print.reset_mock()
+
+            check_and_display_upgrade_banner()
+
+            self.assertFalse(mock_heading.called)
+            self.assertFalse(mock_print.called)
+        finally:
+            sys.argv = orig_argv
+            os.environ.clear()
+            os.environ.update(orig_env)

@@ -74,7 +74,9 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
 ## 8. Active Work State & Plan (July 13, 2026)
 
 - **Current Active Task (July 13, 2026)**:
-  - [/] Add timeout parameter to run_command and enforce a 15-second timeout on reclaim_volume_permissions to prevent WSL hangs, and fix Windows PowerShell 5.1 syntax and file encoding parser errors, and fix Windows file locking crash caused by msvcrt LK_NBND typo, and fix charmap console print encoding crash on command failures.
+  - [x] UX Refactor: Introduce `ldm link` and deprecate `ldm init-from` (Issue #547)
+  - [x] UX Refactor: Restrict `ldm import` to data packages and introduce `ldm clone` for Git repos (Issue #548)
+  - [x] UX Refactor: Add post-upgrade release notes banner to CLI (Issue #550)
   - [x] Create GitHub Issue for Database Volume Persistence & CLI start Alias.
   - [x] Database Volume Persistence & CLI start Alias.
   - [x] Extend test coverage for logs export, wait milestones, and trace logging.

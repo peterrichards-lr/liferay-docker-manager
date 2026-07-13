@@ -197,7 +197,7 @@ class TestWorkspaceImport(unittest.TestCase):
                 self.handler.non_interactive = True
                 self.handler.args.project = "My Awesome Project"
                 self.handler.args.project_flag = None
-                self.handler.workspace.cmd_import(str(source_dir))
+                self.handler.workspace.cmd_import(str(source_dir), is_internal=True)
 
                 mock_write.assert_called_once()
                 args, _ = mock_write.call_args
@@ -210,7 +210,7 @@ class TestWorkspaceImport(unittest.TestCase):
                 # Verify we logged the verbose message (even if verbose is off, we can check the call isn't made, but if we mock verbose we can check it)
                 # Let's run it again with verbose=True to ensure the message triggers
                 self.handler.args.verbose = True
-                self.handler.workspace.cmd_import(str(source_dir))
+                self.handler.workspace.cmd_import(str(source_dir), is_internal=True)
                 mock_info.assert_any_call(
                     "Project name 'My Awesome Project' contains invalid characters for Docker. Using 'My-Awesome-Project' for container names."
                 )
@@ -235,7 +235,7 @@ class TestWorkspaceImport(unittest.TestCase):
             ):
                 self.handler.args.project = "my-project"
                 self.handler.args.no_run = False
-                self.handler.workspace.cmd_import(str(source_dir))
+                self.handler.workspace.cmd_import(str(source_dir), is_internal=True)
 
                 # Verify project_id from meta matches what we expected
                 written_meta = mock_write.call_args[0][1]
@@ -261,7 +261,7 @@ class TestWorkspaceImport(unittest.TestCase):
             ):
                 self.handler.non_interactive = False
                 self.handler.args.project = "my-project"
-                self.handler.workspace.cmd_import(str(source_dir))
+                self.handler.workspace.cmd_import(str(source_dir), is_internal=True)
 
                 # Verify cleanup happened
                 self.assertFalse((project_dir / "old-file.txt").exists())
@@ -311,7 +311,7 @@ class TestWorkspaceImport(unittest.TestCase):
                 mock_ui_ask.return_value = "N"
                 self.handler.non_interactive = False
 
-                self.handler.workspace.cmd_import(str(source_dir))
+                self.handler.workspace.cmd_import(str(source_dir), is_internal=True)
 
                 # Verify the original content was PRESERVED
                 self.assertEqual(existing_cx.read_text(), "ORIGINAL_CONTENT")
@@ -936,6 +936,7 @@ class TestWorkspaceRemoteImport(unittest.TestCase):
                 self.handler.args.project = "my-project"
                 self.handler.args.verify = True
                 self.handler.args.no_run = True
+                self.handler.args.clone_only = True
                 self.handler.workspace.cmd_import("https://github.com/owner/repo")
 
         # Assert recursive import was called with cloned git repo path (fallback succeeded)
@@ -1109,19 +1110,17 @@ class TestWorkspaceRemoteImport(unittest.TestCase):
                 self.handler.args.project = "my-project"
                 self.handler.args.verify = True
                 self.handler.args.no_run = True
-                # This should log warning and trigger git clone fallback path
-                self.handler.workspace.cmd_import("https://github.com/owner/repo")
+                with self.assertRaises(SystemExit):
+                    self.handler.workspace.cmd_import("https://github.com/owner/repo")
 
-        # Verify that it fell back to clone (git clone was called)
+        # Verify that it did NOT fall back to clone
         clone_called = False
         for call_args in mock_sub_run.call_args_list:
             if call_args[0] and len(call_args[0][0]) > 1:
                 if "clone" in call_args[0][0]:
                     clone_called = True
                     break
-        self.assertTrue(clone_called)
-        # Assert database restore was NOT triggered on the downloaded empty package
-        self.assertFalse(self.handler.snapshot.cmd_restore.called)
+        self.assertFalse(clone_called)
 
 
 class TestWorkspaceQuickstart(unittest.TestCase):
@@ -1430,6 +1429,66 @@ class TestAtomicZipRepackaging(unittest.TestCase):
                 zip_path, "my-host.local", "my-ext"
             )
             self.assertTrue(zip_path.exists())
+
+    @patch("ldm_core.handlers.workspace.WorkspaceService.cmd_monitor")
+    @patch("ldm_core.handlers.workspace.WorkspaceService.cmd_import")
+    def test_cmd_link_success(self, mock_import, mock_monitor):
+        """test ldm link with a valid directory."""
+        mock_import.return_value = "my-linked-project"
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            self.handler.workspace.cmd_link(tmpdir)
+            mock_import.assert_called_once_with(
+                str(Path(tmpdir).resolve()), is_init_from=True
+            )
+            mock_monitor.assert_called_once_with(str(Path(tmpdir).resolve()))
+
+    def test_cmd_link_invalid_source(self):
+        """test ldm link fails with invalid path."""
+        with self.assertRaises(SystemExit):
+            self.handler.workspace.cmd_link("/nonexistent/path/here")
+
+    @patch("ldm_core.handlers.workspace.WorkspaceService.cmd_import")
+    def test_cmd_clone_success(self, mock_import):
+        """test ldm clone triggers import with clone_only=True."""
+        self.handler.workspace.cmd_clone("https://github.com/owner/repo.git")
+        self.assertTrue(self.handler.args.clone_only)
+        mock_import.assert_called_once_with("https://github.com/owner/repo.git")
+
+    def test_cmd_clone_invalid_source(self):
+        """test ldm clone fails with non-git URL."""
+        with self.assertRaises(SystemExit):
+            self.handler.workspace.cmd_clone("/local/path/instead")
+
+    @patch("ldm_core.handlers.workspace.WorkspaceService.cmd_link")
+    def test_cmd_init_from_deprecation(self, mock_link):
+        """test ldm init-from prints warning and calls link."""
+        self.handler.workspace.cmd_init_from("/local/workspace")
+        mock_link.assert_called_once_with("/local/workspace")
+
+    def test_cmd_import_rejects_local_dir(self):
+        """test cmd_import rejects local directory direct import (guiding to link)."""
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with self.assertRaises(SystemExit):
+                self.handler.workspace.cmd_import(tmpdir)
+
+    @patch("subprocess.run")
+    @patch("requests.get")
+    def test_cmd_import_git_url_release_missing_aborts_without_clone_only(
+        self, mock_get, mock_sub_run
+    ):
+        """test cmd_import aborts when release is missing and clone_only is not specified."""
+        mock_release_resp = MagicMock()
+        mock_release_resp.status_code = 200
+        mock_release_resp.json.return_value = {"assets": []}
+        mock_get.return_value = mock_release_resp
+
+        self.handler.args.clone_only = False
+        with self.assertRaises(SystemExit):
+            self.handler.workspace.cmd_import("https://github.com/owner/repo")
 
 
 if __name__ == "__main__":

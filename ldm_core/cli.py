@@ -75,6 +75,8 @@ def preprocess_args(args_list: list[str]) -> list[str]:
         "run",
         "up",
         "import",
+        "link",
+        "clone",
         "hydrate",
         "init",
         "init-from",
@@ -832,6 +834,128 @@ def get_parser():
     init_from.add_argument("--sidecar", action="store_true")
     init_from.add_argument("--env", action="append")
     init_from.add_argument("--delay", type=float, default=2.0)
+
+    # Command: link
+    link = subparsers.add_parser("link", parents=[base_sub_parent])
+    link.add_argument(
+        "source", help="Path to local Liferay Workspace or Cloud Workspace"
+    )
+    link.add_argument("project", nargs="?")
+    link.add_argument("-p", "--project", dest="project_flag")
+    link.add_argument("--cloud-project", help="Liferay Cloud project ID")
+    link.add_argument("--target-env", default="local")
+    link.add_argument(
+        "--hydrate-from",
+        help="Automatically hydrate data from a Liferay Cloud environment",
+    )
+    link.add_argument(
+        "--no-env-sync",
+        action="store_true",
+        help="Skip syncing environment variables from Liferay Cloud",
+    )
+    link.add_argument(
+        "--build",
+        action="store_true",
+        help="Compile and build Java modules and custom elements before linking",
+    )
+    link.add_argument("--host-name")
+    link.add_argument("--ssl", action="store_true", default=None)
+    link.add_argument("--no-ssl", action="store_false", dest="ssl")
+    link.add_argument("--port", type=int)
+    link.add_argument("--db", choices=["postgresql", "mysql", "hypersonic"])
+    link.add_argument(
+        "--search-mode",
+        choices=["shared", "sidecar", "remote"],
+        help="Explicitly force a specific Elasticsearch mode (overrides local repository configs)",
+    )
+    link.add_argument(
+        "--database-mode",
+        choices=["isolated", "shared"],
+        help="Explicitly force a specific Database mode (overrides local repository configs)",
+    )
+    link.add_argument("--mount-logs", action="store_true")
+    link.add_argument("--gogo-port", type=int)
+    link.add_argument("--jvm-args", help="Override Liferay JVM arguments")
+    link.add_argument(
+        "--tag-latest",
+        action="store_true",
+        help="Automatically use the latest Liferay tag",
+    )
+    link.add_argument("--tag-prefix", help="Prefix for Liferay tag discovery")
+    link.add_argument("--no-vol-cache", action="store_true")
+    link.add_argument("--internal-state", action="store_true")
+    link.add_argument("--no-jvm-verify", action="store_true")
+    link.add_argument("--no-tld-skip", action="store_true")
+    link.add_argument("--no-seed", action="store_true")
+    link.add_argument("--no-osgi-seed", action="store_true")
+    link.add_argument("--no-captcha", action="store_true")
+    link.add_argument("--fast-login", action="store_true")
+    link.add_argument("--feature", nargs="+")
+    link.add_argument("--sidecar", action="store_true")
+    link.add_argument("--env", action="append")
+    link.add_argument("--delay", type=float, default=2.0)
+
+    # Command: clone
+    clone = subparsers.add_parser("clone", parents=[base_sub_parent])
+    clone.add_argument("source", help="Git repository URL to clone")
+    clone.add_argument("project", nargs="?")
+    clone.add_argument("-p", "--project", dest="project_flag")
+    clone.add_argument("--cloud-project", help="Liferay Cloud project ID")
+    clone.add_argument("--target-env", default="local")
+    clone.add_argument(
+        "--hydrate",
+        action="store_true",
+        help="Download and restore database/volume assets from GitHub releases if present",
+    )
+    clone.add_argument(
+        "--hydrate-from",
+        help="Automatically hydrate data from a Liferay Cloud environment",
+    )
+    clone.add_argument(
+        "--no-env-sync",
+        action="store_true",
+        help="Skip syncing environment variables from Liferay Cloud",
+    )
+    clone.add_argument(
+        "--build",
+        action="store_true",
+        help="Compile and build Java modules and custom elements after cloning",
+    )
+    clone.add_argument("--host-name")
+    clone.add_argument("--ssl", action="store_true", default=None)
+    clone.add_argument("--no-ssl", action="store_false", dest="ssl")
+    clone.add_argument("--port", type=int)
+    clone.add_argument("--db", choices=["postgresql", "mysql", "hypersonic"])
+    clone.add_argument(
+        "--search-mode",
+        choices=["shared", "sidecar", "remote"],
+        help="Explicitly force a specific Elasticsearch mode (overrides local repository configs)",
+    )
+    clone.add_argument(
+        "--database-mode",
+        choices=["isolated", "shared"],
+        help="Explicitly force a specific Database mode (overrides local repository configs)",
+    )
+    clone.add_argument("--mount-logs", action="store_true")
+    clone.add_argument("--gogo-port", type=int)
+    clone.add_argument("--jvm-args", help="Override Liferay JVM arguments")
+    clone.add_argument(
+        "--tag-latest",
+        action="store_true",
+        help="Automatically use the latest Liferay tag",
+    )
+    clone.add_argument("--tag-prefix", help="Prefix for Liferay tag discovery")
+    clone.add_argument("--no-vol-cache", action="store_true")
+    clone.add_argument("--internal-state", action="store_true")
+    clone.add_argument("--no-jvm-verify", action="store_true")
+    clone.add_argument("--no-tld-skip", action="store_true")
+    clone.add_argument("--no-seed", action="store_true")
+    clone.add_argument("--no-osgi-seed", action="store_true")
+    clone.add_argument("--no-captcha", action="store_true")
+    clone.add_argument("--fast-login", action="store_true")
+    clone.add_argument("--feature", nargs="+")
+    clone.add_argument("--sidecar", action="store_true")
+    clone.add_argument("--env", action="append")
 
     # Command: fork
     fork = subparsers.add_parser("fork", parents=[base_sub_parent])
@@ -1839,6 +1963,56 @@ def get_parser():
     return parser, subparsers
 
 
+def check_and_display_upgrade_banner():
+    # Only run if not completing/testing
+    import os
+
+    if "_ARGCOMPLETE" in os.environ:
+        return
+    import sys
+
+    if "PYTEST_CURRENT_TEST" in os.environ or "pytest" in sys.argv[0]:
+        return
+
+    try:
+        from ldm_core.constants import VERSION
+        from ldm_core.utils import (
+            get_actual_home,
+            load_global_config_safe,
+            save_global_config_safe,
+        )
+
+        user_path = get_actual_home() / ".ldmrc"
+        root_data = load_global_config_safe(user_path)
+        last_version = root_data.get("last_run_version")
+
+        if last_version != VERSION:
+            from ldm_core.ui import UI
+
+            UI.heading("Welcome to Liferay Docker Manager")
+            print(f"🎉 {UI.GREEN}LDM has been upgraded to v{VERSION}!{UI.COLOR_OFF}")
+            print(
+                f"\n📢 {UI.BYELLOW}Important Changes & UX Refactoring in this Release:{UI.COLOR_OFF}"
+            )
+            print(
+                f"  * {UI.CYAN}ldm link <path>{UI.COLOR_OFF}  : Linked workspaces local integration (replaces {UI.CYAN}init-from{UI.COLOR_OFF})"
+            )
+            print(
+                f"  * {UI.CYAN}ldm clone <url>{UI.COLOR_OFF}  : Clone and setup a remote Git workspace repository"
+            )
+            print(
+                f"  * {UI.CYAN}ldm import <pkg>{UI.COLOR_OFF} : Import compiled hydrated data packages (.ldmp) only"
+            )
+            print(
+                f"  * {UI.CYAN}ldm init-from{UI.COLOR_OFF}     : Deprecated (forwarded to {UI.CYAN}ldm link{UI.COLOR_OFF})\n"
+            )
+
+            root_data["last_run_version"] = VERSION
+            save_global_config_safe(user_path, root_data)
+    except Exception:
+        pass
+
+
 def main():
     # Suppress watchdog warning on macOS when fsevents is missing (kqueue is a fine fallback)
     warnings.filterwarnings("ignore", message="Failed to import fsevents")
@@ -1925,6 +2099,7 @@ def main():
         os.environ["LDM_DRY_RUN"] = "true"
 
     manager = LiferayManager(args)
+    check_and_display_upgrade_banner()
 
     # Disambiguation Heuristic:
     # If the user provides 'ldm logs liferay', argparse puts 'liferay' in project.
@@ -1960,6 +2135,8 @@ def main():
         ("restore", None),
         ("hydrate", None),
         ("import", None),
+        ("link", None),
+        ("clone", None),
         ("scale", None),
         ("status", None),
         ("ps", None),
@@ -2028,6 +2205,8 @@ def main():
             snapshot=getattr(args, "snapshot", None),
         ),
         ("import", None): lambda: manager.workspace.cmd_import(args.source),
+        ("link", None): lambda: manager.workspace.cmd_link(args.source),
+        ("clone", None): lambda: manager.workspace.cmd_clone(args.source),
         ("init-from", None): lambda: manager.workspace.cmd_init_from(args.source),
         ("validate", None): lambda: manager.workspace.cmd_validate(
             getattr(args, "project", None)
