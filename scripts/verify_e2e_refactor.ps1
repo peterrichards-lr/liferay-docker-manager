@@ -1,4 +1,4 @@
-# Comprehensive E2E Binary Verification for LDM (Windows Native PowerShell)
+﻿# Comprehensive E2E Binary Verification for LDM (Windows Native PowerShell)
 # Target: Verifies the INSTALLED binary, not the source code.
 # Optimized for Windows Native.
 
