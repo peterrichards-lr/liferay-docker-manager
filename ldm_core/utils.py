@@ -506,7 +506,21 @@ def run_command(
                     else e.stderr.decode("utf-8", errors="ignore")
                 )
                 UI.trace(f"[STDERR] {err_details.strip()}")
-                print(f"{UI.WHITE}Error Details:{UI.COLOR_OFF} {err_details.strip()}")
+                try:
+                    print(
+                        f"{UI.WHITE}Error Details:{UI.COLOR_OFF} {err_details.strip()}"
+                    )
+                except Exception:
+                    try:
+                        encoding = sys.stdout.encoding or "utf-8"
+                        safe_details = err_details.encode(
+                            encoding, errors="backslashreplace"
+                        ).decode(encoding)
+                        print(
+                            f"{UI.WHITE}Error Details (Safe):{UI.COLOR_OFF} {safe_details.strip()}"
+                        )
+                    except Exception:
+                        pass
             sys.exit(e.returncode)
         return None
     except KeyboardInterrupt:

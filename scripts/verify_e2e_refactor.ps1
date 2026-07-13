@@ -1,4 +1,4 @@
-﻿# Comprehensive E2E Binary Verification for LDM (Windows Native PowerShell)
+# Comprehensive E2E Binary Verification for LDM (Windows Native PowerShell)
 # Target: Verifies the INSTALLED binary, not the source code.
 # Optimized for Windows Native.
 
@@ -45,6 +45,18 @@ if (-not (Test-Path $VENV_PYTEST)) {
     }
 } | Out-File -FilePath $RESULTS_FILE_TMP -Encoding utf8
 
+function Invoke-Cleanup {
+    param($cmd, $args_list)
+    $oldEAP = $ErrorActionPreference
+    $ErrorActionPreference = "SilentlyContinue"
+    if ($args_list) {
+        & $cmd $args_list.Split(' ') 2>$null | Out-Null
+    } else {
+        & $cmd 2>$null | Out-Null
+    }
+    $ErrorActionPreference = $oldEAP
+}
+
 function Finalize-Verification {
     param($ExitCode)
     $status = "fail"
@@ -71,8 +83,8 @@ function Finalize-Verification {
             Copy-Item (Join-Path $ORIGINAL_PWD $FinalName) $archiveDir -Force
         }
     }
-    docker rm -f liferay-proxy-global liferay-search-global liferay-docker-proxy 2>$null | Out-Null
-    & $LDM_CMD -y rm ldm-smoke-test --delete > $null 2>&1
+    Invoke-Cleanup "docker" "rm -f liferay-proxy-global liferay-search-global liferay-docker-proxy"
+    Invoke-Cleanup $LDM_CMD "-y rm ldm-smoke-test --delete"
     
     # Keep venv if in repo, otherwise clean up
     if (-not (Test-Path "pyproject.toml")) {
@@ -93,7 +105,7 @@ function Log-AndRun {
 
 try {
     # 1. Cleanup
-    & $LDM_CMD -y rm ldm-smoke-test --delete --infra > $null 2>&1
+    Invoke-Cleanup $LDM_CMD "-y rm ldm-smoke-test --delete --infra"
 
     # Pre-pull large images to avoid containerd lease timeouts during the timed E2E run
     Write-Host "[INFO]  Pre-pulling required Docker images..."
@@ -148,10 +160,10 @@ try {
         Write-Host "[SUCCESS] Project Collision verified."
     } else {
         Write-Host "[ERROR] ERROR: Project Collision detection failed! Output was: $nestedRes" -ForegroundColor Red
-        & $LDM_CMD -y rm "collision-test" --delete > $null 2>&1
+        Invoke-Cleanup $LDM_CMD "-y rm collision-test --delete"
         exit 1
     }
-    & $LDM_CMD -y rm "collision-test" --delete > $null 2>&1
+    Invoke-Cleanup $LDM_CMD "-y rm collision-test --delete"
     if (Test-Path "collision-test") { Remove-Item -Recurse -Force "collision-test" }
 
     Write-Host ">> Verifying Tag Validation Guardrail..."
@@ -160,10 +172,10 @@ try {
         Write-Host "[SUCCESS] Tag Validation Guardrail verified."
     } else {
         Write-Host "[ERROR] ERROR: Tag Validation Guardrail failed! Output was: $tagRes" -ForegroundColor Red
-        & $LDM_CMD -y rm "tag-val-test" --delete > $null 2>&1
+        Invoke-Cleanup $LDM_CMD "-y rm tag-val-test --delete"
         exit 1
     }
-    & $LDM_CMD -y rm "tag-val-test" --delete > $null 2>&1
+    Invoke-Cleanup $LDM_CMD "-y rm tag-val-test --delete"
     if (Test-Path "tag-val-test") { Remove-Item -Recurse -Force "tag-val-test" }
 
     # 3. Project Run
@@ -333,7 +345,7 @@ try {
     Log-AndRun "Checking Status" $LDM_CMD "-y status"
 
     # Clean up any potential orphans from the run
-    & $LDM_CMD -y system prune > $null 2>&1
+    Invoke-Cleanup $LDM_CMD "-y system prune"
 
     Write-Host "`n[SUCCESS] ALL E2E VERIFICATIONS PASSED!"
     Finalize-Verification 0
