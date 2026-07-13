@@ -25,6 +25,7 @@ Check out our **[Video Showcase](showcase/README.md)** to see short demonstratio
 - **[Fresh Vanilla Start](how-to/vanilla_start.md)** — Launching empty Liferay instances for quick tests.
 - **[PaaS "Golden Path" Local Dev](tutorials/paas_local_dev.md)** — Hydrating local setups using remote Liferay Cloud backups.
 - **[Workspace Import & Portable Packaging](how-to/workspace_import.md)** — Working with workspaces and exporting `.ldmp` packages.
+- **[Liferay Workspace Local Dev](tutorials/workspace_development.md)** — Linking workspaces with LDM for customization development.
 - **[Runtime Overrides & Fragments](how-to/runtime_overrides.md)** — Dynamic substitution and environment-aware client extension patching.
 - **[Properties Hierarchy & Precedence](explanation/properties.md)** — Merging cascading properties and using `# !important` rules.
 - **[Sharing & Tunnels](how-to/sharing_tunnels.md)** — Exposing local projects securely to public subdomains (lfr-tunnel, Ngrok).
