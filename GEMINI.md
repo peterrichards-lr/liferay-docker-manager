@@ -74,7 +74,7 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
 ## 8. Active Work State & Plan (July 13, 2026)
 
 - **Current Active Task (July 13, 2026)**:
-  - [/] Add timeout parameter to run_command and enforce a 15-second timeout on reclaim_volume_permissions to prevent WSL hangs, and fix Windows PowerShell 5.1 syntax and file encoding parser errors.
+  - [/] Add timeout parameter to run_command and enforce a 15-second timeout on reclaim_volume_permissions to prevent WSL hangs, and fix Windows PowerShell 5.1 syntax and file encoding parser errors, and fix Windows file locking crash caused by msvcrt LK_NBND typo.
   - [x] Create GitHub Issue for Database Volume Persistence & CLI start Alias.
   - [x] Database Volume Persistence & CLI start Alias.
   - [x] Extend test coverage for logs export, wait milestones, and trace logging.
