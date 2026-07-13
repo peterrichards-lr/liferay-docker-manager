@@ -749,15 +749,40 @@ class WorkspaceService(BaseHandler):
             if hasattr(self.manager.args, "source_path"):
                 delattr(self.manager.args, "source_path")
 
-    def cmd_init_from(self, source_path):
+    def cmd_link(self, source_path):
         """Initialize project with a persistent link to a source workspace and start monitoring."""
-        # 1. Perform a standard import (but we will keep the link)
-        project_name = self.cmd_import(source_path, is_init_from=True)
+        from ldm_core.utils import UI
+
+        source = Path(source_path).resolve()
+        if not source.exists() or not source.is_dir():
+            UI.die(
+                "Error: Source path to link must be a local Liferay Workspace directory."
+            )
+
+        project_name = self.cmd_import(str(source), is_init_from=True)
         if project_name:
             self.manager.args.project = project_name
 
-        # 2. Immediately start monitoring
-        self.cmd_monitor(source_path)
+        self.cmd_monitor(str(source))
+
+    def cmd_clone(self, source_path):
+        """Clone a remote Git repository workspace and initialize it."""
+        from ldm_core.utils import UI
+
+        if not source_path.startswith(("http://", "https://", "git@")):
+            UI.die("Error: Source path to clone must be a valid Git repository URL.")
+
+        self.manager.args.clone_only = True
+        return self.cmd_import(source_path)
+
+    def cmd_init_from(self, source_path):
+        """Deprecated: Initialize project from workspace."""
+        from ldm_core.utils import UI
+
+        UI.warning(
+            "Deprecation Warning: 'ldm init-from' is deprecated. Please use: 'ldm link <workspace-path>' instead."
+        )
+        return self.cmd_link(source_path)
 
     def _parse_github_repo(self, url: str) -> tuple[str, str] | None:
         if not url:
@@ -811,7 +836,16 @@ class WorkspaceService(BaseHandler):
 
             UI.error("Validation failed. See warnings above.")
 
-    def cmd_import(self, source_path, is_init_from=False):
+    def cmd_import(self, source_path, is_init_from=False, is_internal=False):
+        from ldm_core.utils import UI
+
+        if not source_path.startswith(("http://", "https://", "git@")):
+            source_p = Path(source_path).resolve()
+            if source_p.is_dir() and not is_init_from and not is_internal:
+                UI.die(
+                    "Error: To integrate a local Liferay Workspace, please use: 'ldm link <workspace-path>'"
+                )
+
         is_dry_run = os.environ.get("LDM_DRY_RUN", "").lower() == "true"
         if is_dry_run:
             project_name = getattr(self.manager.args, "project", None) or getattr(
@@ -912,7 +946,9 @@ class WorkspaceService(BaseHandler):
                         pass
 
                 try:
-                    return self.cmd_import(str(local_path), is_init_from=is_init_from)
+                    return self.cmd_import(
+                        str(local_path), is_init_from=is_init_from, is_internal=True
+                    )
                 finally:
                     if temp_dir.exists():
                         shutil.rmtree(temp_dir)
@@ -955,14 +991,14 @@ class WorkspaceService(BaseHandler):
                             if ldmp_asset and sha_asset:
                                 # Safety Check: If the remote package is empty/vanilla (e.g. created by headless CI),
                                 # its size will be extremely small (typically <10KB). In this case, do not use it
-                                # and fall back to standard cloning to ensure the user gets the workspace code.
+                                # and fall back to standard cloning to ensure the user gets the workspace code
                                 asset_size = ldmp_asset.get("size", 0)
                                 if asset_size > 10240:
                                     has_ldmp = True
                                 else:
-                                    UI.warning(
+                                    UI.die(
                                         f"Remote LDM package '{ldmp_asset.get('name')}' is too small ({asset_size} bytes) "
-                                        "and appears to be empty/vanilla. Falling back to standard clone and build."
+                                        f"and appears to be empty/vanilla. To clone the workspace code directly, please use: 'ldm clone {source_path}'"
                                     )
                         elif api_resp.status_code == 403:
                             UI.warning(
@@ -1193,6 +1229,11 @@ class WorkspaceService(BaseHandler):
                     return project_name
 
                 # Standard clone path (no .ldmp package available, or --clone-only is specified)
+                if not getattr(self.manager.args, "clone_only", False):
+                    UI.die(
+                        "No compiled LDM Package (.ldmp) found in GitHub Releases. To clone the workspace code directly, please use: 'ldm clone <repository-url>'"
+                    )
+
                 if not project_name:
                     if parsed:
                         project_name = parsed[1]
@@ -1284,7 +1325,9 @@ class WorkspaceService(BaseHandler):
 
                 try:
                     # Import the code elements
-                    self.cmd_import(str(temp_git_dir), is_init_from=is_init_from)
+                    self.cmd_import(
+                        str(temp_git_dir), is_init_from=is_init_from, is_internal=True
+                    )
                 finally:
                     self.manager.args.no_run = original_no_run
                     self.manager.args.backup_dir = original_backup_dir
