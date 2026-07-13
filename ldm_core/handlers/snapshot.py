@@ -305,20 +305,27 @@ class SnapshotService(BaseHandler):
                     if db_snapshot_file.stat().st_size > 0:
                         UI.success("Database dump completed.")
                     else:
-                        UI.warning("Database dump returned no content.")
-                        try:
-                            db_snapshot_file.unlink()
-                        except OSError:
-                            pass
-                        db_snapshot_file = None
+                        if db_snapshot_file and db_snapshot_file.exists():
+                            import time
+
+                            for _ in range(5):
+                                try:
+                                    db_snapshot_file.unlink()
+                                    break
+                                except OSError:
+                                    time.sleep(0.2)
+                        UI.die("Database dump returned no content.", exit_code=3)
                 except Exception as e:
-                    UI.warning(f"Database dump failed: {e}")
                     if db_snapshot_file and db_snapshot_file.exists():
-                        try:
-                            db_snapshot_file.unlink()
-                        except OSError:
-                            pass
-                    db_snapshot_file = None
+                        import time
+
+                        for _ in range(5):
+                            try:
+                                db_snapshot_file.unlink()
+                                break
+                            except OSError:
+                                time.sleep(0.2)
+                    UI.die(f"Database dump failed: {e}", exit_code=3)
 
         # Wait for search snapshot if it was triggered
         if search_snapshot_name:
