@@ -313,7 +313,7 @@ class SnapshotService(BaseHandler):
                         db_snapshot_file = None
                 except Exception as e:
                     UI.warning(f"Database dump failed: {e}")
-                    if db_snapshot_file.exists():
+                    if db_snapshot_file and db_snapshot_file.exists():
                         try:
                             db_snapshot_file.unlink()
                         except OSError:
