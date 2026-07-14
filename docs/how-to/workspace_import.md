@@ -11,7 +11,7 @@ To avoid confusion, it is important to distinguish between developing inside a *
 ### A. Raw Liferay Workspaces (Source Code)
 
 * **What it is**: A standard directory structure containing Java source files, client extension source code (`client-extension.yaml`), and Gradle scripts.
-* **How it works**: You link it with LDM via `ldm init-from /path/to/workspace`.
+* **How it works**: You link it with LDM via `ldm link /path/to/workspace`.
 * **Deployment**: LDM runs `gradlew deploy` to compile Java bundles and package client extensions into zip archives, then hot-deploys them into Liferay's `/deploy` directory.
 * **Best For**: Active developer code writing and file editing.
 
@@ -34,14 +34,17 @@ ldm import <source-path-or-url>
 
 ### Supported Source Types
 
-| Source Type | Example Command | Behavior & Details |
+> [!IMPORTANT]
+> As of v2.15.16, `ldm import` is restricted to **data packages only** (`.ldmp` archives and remote URLs). To clone a Git repository or link a local workspace, use `ldm clone` or `ldm link` respectively.
+
+| Source Type | Command | Behavior & Details |
 | :--- | :--- | :--- |
 | **Local LDM Package (`.ldmp`)** | `ldm import ~/Downloads/my-project.ldmp` | Extracts the archive, restores the database snapshot and named volumes, writes metadata, and boots the Docker stack. |
 | **Remote `.ldmp` URL** | `ldm import https://example.com/assets/my-project.ldmp` | Downloads the remote archive, verifies the `.sha256` signature if available, and performs a local package import. |
-| **GitHub Release Package** | `ldm import https://github.com/my-org/my-repo` | Automatically queries the GitHub Release API. If a `.ldmp` asset exists, it downloads and restores it directly, bypassing standard cloning. |
-| **Git Repository URL** | `ldm import https://github.com/my-org/my-repo.git` | Clones the repository to a temporary folder, builds modules via Gradle, and sets up a standard workspace path. |
-| **Local Liferay Workspace** | `ldm import /path/to/local/liferay-workspace` | Maps folders, executes `gradlew` build (if `--build` is specified), and configures the container paths. |
-| **Local Cloud Workspace** | `ldm import /path/to/local/lcp-workspace` | Detects `LCP.json`, resolves the nested `liferay/` folder structure, and configures the environment variables/properties. |
+| **GitHub Release Package** | `ldm import https://github.com/my-org/my-repo` | Automatically queries the GitHub Release API. If a `.ldmp` asset exists, it downloads and restores it directly. |
+| **Git Repository URL** | `ldm clone https://github.com/my-org/my-repo.git` | Clones the repository to a local folder and sets up a standard workspace with hot-reload mounts. |
+| **Local Liferay Workspace** | `ldm link /path/to/local/liferay-workspace` | Maps folders, executes `gradlew` build (if `--build` is specified), and configures the container paths. |
+| **Local Cloud Workspace** | `ldm link /path/to/local/lcp-workspace` | Detects `LCP.json`, resolves the nested `liferay/` folder structure, and configures environment variables and properties. |
 
 ---
 
@@ -145,4 +148,4 @@ This scaffolds a `.github/workflows/ldm-package-release.yml` file which:
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-07-13* | *Last Reviewed: 2026-07-10*
+*Last Updated: 2026-07-14* | *Last Reviewed: 2026-07-10*

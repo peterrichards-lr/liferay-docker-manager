@@ -36,11 +36,11 @@ git clone git@github.com:my-org/prospect-paas-repo.git
 
 ### Step 2: Initialize the Local Runtime & Hydrate Data (LDM)
 
-Use LDM to ingest the code and start the local Docker containers. The `init-from` command will scan the repository, build any modules, and set up a live-syncing workspace.
+Use LDM to ingest the code and start the local Docker containers. The `ldm link` command will scan the repository, build any modules, and set up a live-syncing workspace.
 
 ```bash
-# Initialize LDM using the cloned repository as the source
-ldm init-from ./prospect-paas-repo
+# Link LDM to the cloned repository
+ldm link ./prospect-paas-repo
 ```
 
 Because LDM recognizes the Liferay Cloud workspace structure, it will automatically launch an interactive wizard during initialization:
@@ -66,4 +66,4 @@ Your local LDM instance is now an exact, running replica of the Liferay Cloud Pa
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-07-13* | *Last Reviewed: 2026-07-02*
+*Last Updated: 2026-07-14* | *Last Reviewed: 2026-07-02*

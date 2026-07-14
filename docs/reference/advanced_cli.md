@@ -40,8 +40,8 @@ These flags are ideal for automated testing pipelines where interactivity is imp
 
 - **`--no-captcha`**: Disables Liferay's mandatory Omni-Admin CAPTCHA requirement. Strictly opt-in and easily reversible; running without this flag on a subsequent start will re-enable CAPTCHA.
 - **`--fast-login`**: Automatically bypasses typical post-startup prompts (Terms of Use acceptance, initial password reset). Best used with an external database (`--db mysql` or `postgresql`), as password policy bypass has known limitations with the embedded Hypersonic database.
-- **`--target-env`**: (Used with `import` and `init-from`). Overrides the environment name metadata.
-- **`--build`**: (Used with `import` and `init-from`). Forces a full rebuild of any Server-Side Client Extensions found in the source workspace during initialization.
+- **`--target-env`**: (Used with `link`, `clone`, and `import`). Overrides the environment name metadata.
+- **`--build`**: (Used with `link` and `clone`). Forces a full rebuild of any Server-Side Client Extensions found in the source workspace during initialization.
 - **`--on-validation-failure`**: Behaviour when a config file (e.g. `fragment-overrides.json`) fails schema validation in non-interactive mode. Choices: `die` (default) or `ignore`.
 
 ## JVM & Tomcat Tuning
@@ -57,7 +57,7 @@ Advanced options for memory constraints and Java-level debugging.
 
 - **`--gogo-port <port>`**: Exposes the OSGi Gogo shell on a specific host port. Required if you plan to use `ldm gogo [project]`.
 - **`--mount-logs`**: By default, logs remain inside the container. This flag bind-mounts the `tomcat/logs` directory directly to the host for external log aggregator testing.
-- **`--delay <seconds>`**: (Used with `monitor` and `init-from`). Alters the debounce delay for the background file watcher. Useful on slow filesystems.
+- **`--delay <seconds>`**: (Used with `monitor` and `link`). Alters the debounce delay for the background file watcher. Useful on slow filesystems.
 
 ## Search & Legacy Infrastructure
 
@@ -72,13 +72,22 @@ Controls whether LDM provisions a dedicated Elasticsearch container or connects 
 
 Controls whether LDM provisions an isolated PostgreSQL database or connects to the Global Shared Database cluster. Available modes: `isolated` or `shared`.
 
-## Database Querying
+## Database Commands
 
 - **`ldm db query [project]`**: Safe, SELECT-only SQL execution against project databases. By default, this resolves credentials automatically and prompts for query confirmation.
   - **`-s`, `--sql "<query>"`**: Inline SQL statement to execute. If not provided, LDM will read from stdin.
   - **`-f`, `--format {table,csv,json}`**: Output format (default: `table`).
   - **`--allow-db-query`**: Explicitly bypasses the interactive confirmation prompt.
 
+- **`ldm db start [project]`** ![Added in v2.15.16](https://img.shields.io/badge/Added%20in-v2.15.16-blue): Start only the database service for a project without booting the full Liferay stack. Useful for performing database maintenance, running migrations, or connecting external tools without a full environment start.
+
+  ```bash
+  ldm db start my-project
+
+  # Alias — the bare 'start' keyword is also routed to db start:
+  ldm start my-project
+  ```
+
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-07-13* | *Last Reviewed: 2026-07-09*
+*Last Updated: 2026-07-14* | *Last Reviewed: 2026-07-09*

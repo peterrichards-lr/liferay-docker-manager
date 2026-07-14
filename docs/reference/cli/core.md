@@ -119,34 +119,64 @@ LDM automatically hardens modern environments (DXP 2024+ and modern Quarterly Re
   - Prioritizes `LIFERAY_JDBC_DEFAULT_*` environment variables ONLY for runtime user overrides; LDM baseline always uses `portal-ext.properties`.
 - **Proactive Boot Sequencing**: Configures `depends_on` with healthchecks to ensure Liferay only starts once the database is fully ready to accept connections.
 
-## `init-from` (Live Link)
+## `link` (alias: `init-from`) ![Added in v2.15.16](https://img.shields.io/badge/Added%20in-v2.15.16-blue)
 
 Initialize a project from a source workspace and establish a **persistent link**. This command records the workspace path in the project metadata and automatically starts the `monitor` process to sync your code changes in real-time. If a Liferay Cloud Workspace is detected, it will also launch an interactive wizard to hydrate the data from the remote environment.
 
-```bash
-# ldm init-from <source_path> [project_name] [--host-name custom.local]
-ldm init-from ~/repos/my-workspace my-project --host-name forge.demo
+> [!NOTE]
+> `ldm init-from` is a supported legacy alias for `ldm link` and will continue to work. New scripts and documentation should use `ldm link`.
 
-# Initialize with the latest tag and disable CAPTCHAs for CI testing
-ldm init-from ~/repos/my-workspace my-ci-project -y --tag-latest --no-captcha
+```bash
+# ldm link <source_path> [project_name] [--host-name custom.local]
+ldm link ~/repos/my-workspace my-project --host-name forge.demo
+
+# Link with the latest tag and disable CAPTCHAs for CI testing
+ldm link ~/repos/my-workspace my-ci-project -y --tag-latest --no-captcha
 
 # Manually bind a Liferay Cloud project ID to the local workspace
-ldm init-from ~/repos/my-workspace my-project --cloud-project lctintranet
+ldm link ~/repos/my-workspace my-project --cloud-project lctintranet
+
+# Legacy alias (still works)
+ldm init-from ~/repos/my-workspace my-project
 ```
 
-## `import` (Static Snapshot)
+## `clone` ![Added in v2.15.16](https://img.shields.io/badge/Added%20in-v2.15.16-blue)
 
-Scaffold a new project by taking a **one-time static import** of an existing workspace. This project is detached from the source; changes to the source workspace will not be synced. Follows the same internal deployment sequence as `init-from`. If a Liferay Cloud Workspace is detected, it will also launch an interactive wizard to hydrate the data from the remote environment.
+Clone a remote Git repository and initialize an LDM project from it. Unlike `link`, which connects to an existing local workspace, `clone` handles the Git clone step automatically and sets up hot-reload mounts in one command.
 
 ```bash
-# ldm import <source_path> [project_name] [--host-name custom.local]
-ldm import ~/repos/my-workspace my-static-project
+# Clone a Git repository and initialize an LDM project
+ldm clone https://github.com/my-org/my-repo.git
+
+# Clone into a named project
+ldm clone https://github.com/my-org/my-repo.git my-project
+
+# Clone using SSH and specify a host name
+ldm clone git@github.com:my-org/my-repo.git my-project --host-name demo.local
+
+# Clone and force a full Gradle build on initialization
+ldm clone https://github.com/my-org/my-repo.git --build
+```
+
+## `import` (Data Packages Only)
+
+Import a pre-built **LDM Package (`.ldmp`)** or remote package URL. As of v2.15.16, `ldm import` is restricted to **data packages only**. To clone a Git repository use `ldm clone`; to link a local workspace use `ldm link`.
+
+```bash
+# Import a local .ldmp package
+ldm import ~/Downloads/my-project.ldmp
+
+# Import a remote .ldmp package by URL
+ldm import https://example.com/assets/my-project.ldmp
+
+# Import from a GitHub Release (auto-detects .ldmp asset)
+ldm import https://github.com/my-org/my-repo
 
 # Import using a specific release type filter
-ldm import ~/repos/my-workspace my-static-project --tag-latest --release-type qr
+ldm import https://github.com/my-org/my-repo --tag-latest --release-type qr
 
-# Manually bind a Liferay Cloud project ID to the local workspace
-ldm import ~/repos/my-workspace my-project --cloud-project lctintranet
+# Manually bind a Liferay Cloud project ID
+ldm import ~/Downloads/my-project.ldmp --cloud-project lctintranet
 ```
 
 ## `quickstart`
@@ -190,7 +220,7 @@ LDM includes powerful commands for managing your project's database, OSGi state,
 
 ## `monitor`
 
-Restarts the background watch process for a project linked to a Liferay workspace. This command can **only be used for projects created with `init-from`**. It automatically syncs built artifacts (`.jar`, `.war`, `.zip`) whenever they are updated in the workspace.
+Restarts the background watch process for a project linked to a Liferay workspace. This command can **only be used for projects created with `ldm link`** (or the legacy `ldm init-from`). It automatically syncs built artifacts (`.jar`, `.war`, `.zip`) whenever they are updated in the workspace.
 
 ```bash
 ldm monitor [project_name] --delay 2.0
@@ -414,7 +444,7 @@ ldm log-level [project] --list
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-07-13* | *Last Reviewed: 2026-07-10*
+*Last Updated: 2026-07-14* | *Last Reviewed: 2026-07-10*
 
 ## Global Flags
 
