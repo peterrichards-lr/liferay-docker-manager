@@ -71,15 +71,18 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
 - [Agent Rules of Engagement](./.gemini/gemini.md)
 - [Properties Override Hierarchy Guide](./docs/explanation/properties.md)
 
-## 8. Active Work State & Plan (July 13, 2026)
+## 8. Active Work State & Plan (July 14, 2026)
 
-- **Current Active Task (July 13, 2026)**:
+- **Current Active Task (July 14, 2026)**:
   - [x] UX Refactor: Introduce `ldm link` and deprecate `ldm init-from` (Issue #547)
   - [x] UX Refactor: Restrict `ldm import` to data packages and introduce `ldm clone` for Git repos (Issue #548)
   - [x] UX Refactor: Add post-upgrade release notes banner to CLI (Issue #550)
   - [x] Create GitHub Issue for Database Volume Persistence & CLI start Alias.
   - [x] Database Volume Persistence & CLI start Alias.
   - [x] Extend test coverage for logs export, wait milestones, and trace logging.
+  - [x] Document `ldm link` and `ldm clone` in CLI reference, tutorials, and README.md.
+  - [x] Populate CHANGELOG.md for all v2.15.16 pre-releases.
+  - [x] Synchronize compatibility table to include macOS 16 Tahoe and all 5 verified environments.
   - [x] Issue #449: Decouple `DiagnosticsService` monolithic structure into `ldm_core/diagnostics/` submodules. Resolved merge conflicts.
   - [x] Issue #483: Add and update Mermaid diagrams (Architecture & Properties).
   - [x] Epic #439: Broken down into Sub-issues #486, #487, #488, and #489.
