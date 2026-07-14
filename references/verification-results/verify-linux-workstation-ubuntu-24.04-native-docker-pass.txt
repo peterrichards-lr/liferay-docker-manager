@@ -1,8 +1,8 @@
 === LDM BINARY VERIFICATION REPORT ===
 Timestamp: Mon Jul 13 19:20:10 BST 2026
-Hostname:  PRICHARDS
+Hostname:  [ANONYMIZED]
 Platform:  Ubuntu 24.04.4 LTS
-Binary:    /usr/local/bin/ldm
+Binary:    [ANONYMIZED]
 Version:   ldm 2.15.16-pre.10
 Docker:    29.3.0
 Compose:   5.1.1
