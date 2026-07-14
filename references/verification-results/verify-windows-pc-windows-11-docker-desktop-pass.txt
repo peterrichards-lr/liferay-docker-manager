@@ -1,7 +1,7 @@
 ﻿=== LDM BINARY VERIFICATION REPORT ===
 Timestamp: 07/14/2026 10:00:14
 Platform:  
-Binary:    C:\WINDOWS\system32\ldm.exe
+Binary:    [ANONYMIZED]
 Version:   ldm 2.15.16-pre.11
 Docker:    29.4.0
 [0;33m[i]  Waiting for Elasticsearch to become ready...[0m

@@ -6,10 +6,8 @@
 | Architecture | Host OS | Docker Provider | Docker Engine | Hardening | LDM Version | Verified | Report |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
 | **Apple Intel** | macOS 12 Monterey | **OrbStack** `v1.5.1` | `v25.0.5` | ![OrbStack](https://img.shields.io/badge/OrbStack-Hardening-00B0FF?style=flat-square&logo=apple) | `2.4.26-pre.13` | ✅ | [verify-apple-intel-macos-12-monterey-orbstack-pass.txt](../references/verification-results/verify-apple-intel-macos-12-monterey-orbstack-pass.txt) |
-| **Apple Silicon** | macOS 16 Tahoe | **Colima** | `29.2.1` | ![Colima](https://img.shields.io/badge/Colima-Hardening-FFAB00?style=flat-square&logo=apple) | `2.15.16-pre.11` | ✅ | [verify-apple-silicon-macos-16-tahoe-colima-pass.txt](../references/verification-results/verify-apple-silicon-macos-16-tahoe-colima-pass.txt) |
-| **Apple Silicon** | macOS 16 Tahoe | **OrbStack** | `29.4.0` | ![OrbStack](https://img.shields.io/badge/OrbStack-Hardening-00B0FF?style=flat-square&logo=apple) | `2.15.16-pre.11` | ✅ | [verify-apple-silicon-macos-16-tahoe-orbstack-pass.txt](../references/verification-results/verify-apple-silicon-macos-16-tahoe-orbstack-pass.txt) |
-| **Linux Workstation** | Ubuntu 24.04 | **Native Docker** | `29.4.0` | `Native` | `2.15.16-pre.11` | ✅ | [verify-linux-workstation-ubuntu-24.04-native-docker-pass.txt](../references/verification-results/verify-linux-workstation-ubuntu-24.04-native-docker-pass.txt) |
-| **Windows PC** | Windows 11 | **Docker Desktop** | `29.4.0` | ![Docker Desktop](https://img.shields.io/badge/Docker_Desktop-Hardening-0db7ed?style=flat-square&logo=docker) | `2.15.16-pre.11` | ✅ | [verify-windows-pc-windows-11-docker-desktop-pass.txt](../references/verification-results/verify-windows-pc-windows-11-docker-desktop-pass.txt) |
+| **Apple Silicon** | macOS 15 Sequoia | **Colima** | `29.2.1` | ![Colima](https://img.shields.io/badge/Colima-Hardening-FFAB00?style=flat-square&logo=apple) | `2.15.16-pre.11` | ✅ | [verify-apple-silicon-macos-15-sequoia-colima-pass.txt](../references/verification-results/verify-apple-silicon-macos-15-sequoia-colima-pass.txt) |
+| **Linux Workstation** | Linux | **Unknown** | `29.4.0` | `Unknown` | `2.15.16-pre.11` | ✅ | [verify-windows-pc-windows-11-docker-desktop-pass.txt](../references/verification-results/verify-windows-pc-windows-11-docker-desktop-pass.txt) |
 
 ## Global Infrastructure
 

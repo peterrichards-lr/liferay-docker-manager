@@ -1,8 +1,8 @@
 === LDM BINARY VERIFICATION REPORT ===
 Timestamp: Tue 14 Jul 2026 10:19:45 BST
-Hostname:  peters.macbook.pro.2.lan
+Hostname:  [ANONYMIZED]
 Platform:  darwin25
-Binary:    /usr/local/bin/ldm
+Binary:    [ANONYMIZED]
 Version:   ldm 2.15.16-pre.11
 Docker:    29.2.1
 Compose:   5.2.0
