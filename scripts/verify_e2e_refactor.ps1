@@ -195,7 +195,7 @@ try {
     Set-Location $projectDir
     "tag=2026.q1.7-lts`ncontainer_name=ldm-smoke-test`nport=$TEST_PORT`ndb_type=postgresql" | Out-File "meta" -Encoding utf8
 
-    Log-AndRun "Running LDM Project" $LDM_CMD "-y run . --no-wait"
+    Log-AndRun "Running LDM Project" $LDM_CMD "-y run . --no-wait --lean"
 
     # Wait for Health
     Log-AndRun "Waiting for Liferay health" $LDM_CMD "-y wait . --timeout 600"
@@ -309,7 +309,7 @@ try {
     }
 
     Log-AndRun "Scaling Liferay back to 1 for logs export check" $LDM_CMD "-y scale . liferay=1 --no-run"
-    Log-AndRun "Starting project for logs export check" $LDM_CMD "-y run . --no-wait"
+    Log-AndRun "Starting project for logs export check" $LDM_CMD "-y run . --no-wait --lean"
     Log-AndRun "Exporting project logs" $LDM_CMD "logs . --export"
     $exportFiles = Resolve-Path *.log -ErrorAction SilentlyContinue
     if ($exportFiles) {
