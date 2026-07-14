@@ -15,7 +15,7 @@ Compose:   5.2.0
 [0;33mℹ  Checking infrastructure stack (Traefik SSL Proxy)...[0m
 [0;32m✅  Infrastructure setup complete.[0m
 >> Running LDM Project
-[0;33mℹ  Created missing mount directory: /Users/peterrichards/ldm-verify/e2e-work-dir-54665/ldm-smoke-test-54665/scripts[0m
+[0;33mℹ  Created missing mount directory: [HOME]/ldm-verify/e2e-work-dir-54665/ldm-smoke-test-54665/scripts[0m
 [0;33mℹ  + Synced license from Common: activation-key-dxpdevelopment-7.4-developeractivationkeys.xml[0m
 [0;33mℹ  [0;37m⚡[0m Starting [1;33mldm-smoke-test-54665[0m stack (2026.q1.7-lts, postgresql, localhost:54665)...[0m
 [0;32m✅  Project 'ldm-smoke-test-54665' started in background.[0m
@@ -29,7 +29,7 @@ Compose:   5.2.0
 [0;33mℹ  + Dehydrating volume [0;36mldm-smoke-test-54665-data[0m to host...[0m
 [0;33mℹ  + Dehydrating volume [0;36mldm-smoke-test-54665-state[0m to host...[0m
 [0;33mℹ  Reclaiming project permissions before snapshot...[0m
-[0;32m✅  Snapshot saved: /Users/peterrichards/ldm-verify/e2e-work-dir-54665/ldm-smoke-test-54665/snapshots/20260714_102512[0m
+[0;32m✅  Snapshot saved: [HOME]/ldm-verify/e2e-work-dir-54665/ldm-smoke-test-54665/snapshots/20260714_102512[0m
 >> Bypassing Integrity
 [1;33m=== Snapshots for ldm-smoke-test-54665 ===[0m
 [1] [0;36m20260714_102512[0m - [1mBinary-Verify[0m (1.0 GB)[2m [DB,VOL,MOD][0m
