@@ -1214,6 +1214,7 @@ class WorkspaceService(BaseHandler):
                                 "ssl": final_ssl,
                                 "host_name": final_host_name,
                                 "last_run": datetime.now().isoformat(),
+                                "restored_from_package": "true",
                             }
                         )
                         self.manager.write_meta(project_path, project_meta)
@@ -1794,6 +1795,7 @@ class WorkspaceService(BaseHandler):
 
         # Ensure project argument is set so import target matches
         self.manager.args.project = project_name
+        self.manager.args.browser = True
 
         UI.heading(f"Starting Quickstart: {template_name.upper()}")
 
@@ -1828,17 +1830,24 @@ class WorkspaceService(BaseHandler):
             use_shared = True
         search_mode = "shared" if use_shared else "sidecar"
 
-        # 3. Apply fresh database seed
-        UI.info(f"Seeding database for {tag} ({db_type}/{search_mode})...")
-        paths = self.manager.setup_paths(project_path)
-        if not self.manager.assets._fetch_seed(tag, db_type, search_mode, paths):
-            UI.die("Failed to seed database during quickstart.")
-            return
+        restored_from_pkg = (
+            str(project_meta.get("restored_from_package", "false")).lower() == "true"
+        )
+        if restored_from_pkg:
+            UI.info(
+                "Project was restored from LDM package snapshot. Skipping database seeding."
+            )
+        else:
+            # 3. Apply fresh database seed
+            UI.info(f"Seeding database for {tag} ({db_type}/{search_mode})...")
+            paths = self.manager.setup_paths(project_path)
+            if not self.manager.assets._fetch_seed(tag, db_type, search_mode, paths):
+                UI.die("Failed to seed database during quickstart.")
+                return
 
-        # 4. Start stack and launch browser
-        UI.info("Starting quickstart services stack...")
-        self.manager.args.browser = True
-        self.manager.runtime.cmd_run(project_name)
+            # 4. Start stack and launch browser
+            UI.info("Starting quickstart services stack...")
+            self.manager.runtime.cmd_run(project_name)
 
         # 5. Share via tunnel if requested
         if share:
