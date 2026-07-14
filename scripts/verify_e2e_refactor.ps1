@@ -4,7 +4,7 @@
 
 $env:PYTHONUTF8 = 1
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
-$ErrorActionPreference = "Stop"
+$ErrorActionPreference = "Continue"
 $PSNativeCommandUseErrorActionPreference = $false
 $TEST_PORT = "8082"
 if ($env:LDM_TEST_PORT) { $TEST_PORT = $env:LDM_TEST_PORT }
@@ -56,7 +56,7 @@ if (-not (Test-Path $VENV_PYTEST)) {
             $ldmVer = ($res -join " ").Trim()
         } else {
             $errorMsg = ($res -join " ").Trim()
-            $ldmVer = "Error (Exit code $LASTEXITCODE: $errorMsg)"
+            $ldmVer = "Error (Exit code ${LASTEXITCODE}: $errorMsg)"
         }
     } catch {
         $ldmVer = "Unknown (Exception: $($_.Exception.Message))"
