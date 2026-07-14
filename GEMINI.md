@@ -74,6 +74,7 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
 ## 8. Active Work State & Plan (July 14, 2026)
 
 - **Current Active Task (July 14, 2026)**:
+  - [x] Fix quickstart preseed prompt to proceed on decline (Issue #570) and conditionally bypass based on package database presence.
   - [x] UX Refactor: Introduce `ldm link` and deprecate `ldm init-from` (Issue #547)
   - [x] UX Refactor: Restrict `ldm import` to data packages and introduce `ldm clone` for Git repos (Issue #548)
   - [x] UX Refactor: Add post-upgrade release notes banner to CLI (Issue #550)
