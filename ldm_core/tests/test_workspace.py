@@ -1289,6 +1289,7 @@ class TestWorkspaceQuickstart(unittest.TestCase):
             "db_type": "postgresql",
             "use_shared_search": "true",
             "restored_from_package": "true",
+            "package_includes_database": "true",
         }
         mock_setup_paths.return_value = {}
 
@@ -1301,6 +1302,47 @@ class TestWorkspaceQuickstart(unittest.TestCase):
         )
         mock_fetch_seed.assert_not_called()
         mock_cmd_run.assert_not_called()
+        self.manager.share.cmd_start.assert_called_once_with(
+            "liferay-ai-commerce-accelerator", subdomain="my-aica-sub"
+        )
+        self.assertTrue(self.manager.args.browser)
+
+    @patch("ldm_core.handlers.workspace.WorkspaceService.cmd_import")
+    @patch.object(MockWorkspaceManager, "detect_project_path")
+    @patch("ldm_core.handlers.base.BaseHandler.read_meta")
+    @patch.object(MockWorkspaceManager, "setup_paths")
+    @patch("ldm_core.handlers.assets.AssetService._fetch_seed")
+    @patch("ldm_core.handlers.runtime.RuntimeService.cmd_run")
+    def test_cmd_quickstart_restored_from_package_no_db(
+        self,
+        mock_cmd_run,
+        mock_fetch_seed,
+        mock_setup_paths,
+        mock_read_meta,
+        mock_detect,
+        mock_cmd_import,
+    ):
+        self.test_project_dir.mkdir(parents=True, exist_ok=True)
+        mock_detect.return_value = self.test_project_dir
+        mock_read_meta.return_value = {
+            "tag": "2026.q1.4-lts",
+            "db_type": "postgresql",
+            "use_shared_search": "true",
+            "restored_from_package": "true",
+            "package_includes_database": "false",
+        }
+        mock_setup_paths.return_value = {}
+        mock_fetch_seed.return_value = True
+
+        self.manager.workspace.cmd_quickstart(
+            "aica", share=True, share_subdomain="my-aica-sub"
+        )
+
+        mock_cmd_import.assert_called_once_with(
+            "https://github.com/peterrichards-lr/liferay-ai-commerce-accelerator.git"
+        )
+        mock_fetch_seed.assert_called_once()
+        mock_cmd_run.assert_called_once_with("liferay-ai-commerce-accelerator")
         self.manager.share.cmd_start.assert_called_once_with(
             "liferay-ai-commerce-accelerator", subdomain="my-aica-sub"
         )
