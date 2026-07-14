@@ -16,37 +16,48 @@ When developing customizations for Liferay, you typically work in a **Liferay Wo
 
 ## 2. Step-by-Step Setup
 
-Follow these steps to bootstrap a fresh local development environment:
+Follow one of the two routes below to bootstrap your local developer environment:
 
-### Step 1: Create a Liferay Workspace
+### Route A: Link an Existing Local Workspace
 
-If you do not already have a Liferay Workspace, initialize one using Liferay's **Blade CLI**:
+Use this route if you already have a Liferay Workspace directory on your machine (either freshly initialized using Blade CLI, or previously cloned manually).
+
+1. If you need to bootstrap a brand new workspace first, you can use Liferay's **Blade CLI**:
+
+   ```bash
+   # Initialize a new workspace targeting a specific version
+   blade init my-workspace -v dxp-2025.q1.0
+   ```
+
+2. Link your workspace to LDM and start the stack:
+
+   ```bash
+   # Link the workspace and boot the local runtime stack
+   ldm link ./my-workspace
+   ```
+
+### Route B: Clone a Remote Workspace (Git)
+
+Use this route if the workspace is hosted in a remote Git repository (e.g. GitHub). LDM's `clone` command combines cloning and linking in a single step.
 
 ```bash
-# Initialize a new workspace targeting a specific version
-blade init my-workspace -v dxp-2025.q1.0
+# Clone the repository and initialize the LDM project stack
+ldm clone https://github.com/my-org/my-workspace.git my-project
 ```
 
-*Note: If you do not have Blade CLI installed, you can clone a clean workspace template from GitHub or copy an existing one.*
+---
 
-### Step 2: Initialize LDM Stack & Link the Workspace
+### What LDM Does During Link/Clone
 
-To link your new workspace to LDM, navigate to the parent folder and run:
+When you run `ldm link` or `ldm clone`, LDM automatically:
 
-```bash
-# Link the workspace and boot the local runtime stack
-ldm link ./my-workspace
-```
-
-LDM will:
-
-1. Scan your `./my-workspace` folder and register it.
-2. Setup folder mapping links from your workspace `deploy/` and build directories directly into LDM's hot-reload mounts.
-3. Automatically boot up the Docker stack and start the file monitoring daemon.
+1. Resolves the workspace path and registers the project.
+2. Sets up folders mapping links from your workspace `deploy/` and build directories directly into LDM's hot-reload mounts.
+3. Boots up the Docker stack and launches the background file monitoring daemon.
 
 ### Step 3: Run the Monitor Daemon (Hot-Reloads)
 
-The `init-from` command immediately launches the file monitor. If you restart your system or shell, you can resume monitoring at any time by running:
+The `link` and `clone` commands immediately launch the file monitor. If you restart your system or shell, you can resume monitoring at any time by running:
 
 ```bash
 ldm monitor ./my-workspace

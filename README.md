@@ -87,6 +87,7 @@ LDM is conventions-driven and highly customizable. Choose a topic below for deta
 
 - **[Fresh Vanilla Start](docs/how-to/vanilla_start.md)** — Launching empty Liferay instances for quick tests.
 - **[PaaS "Golden Path" Local Dev](docs/tutorials/paas_local_dev.md)** — Fetching backups and replicating Liferay Cloud environments locally.
+- **[Liferay Workspace Local Dev](docs/tutorials/workspace_development.md)** — Linking workspaces with LDM for customization development.
 - **[Workspace Import & Packaging](docs/how-to/workspace_import.md)** — Importing workspaces and exporting/restoring portable `.ldmp` packages.
 - **[Runtime Overrides & Fragments](docs/how-to/runtime_overrides.md)** — Dynamic substitution and environment-aware client extension patching.
 - **[Properties Hierarchy & Precedence](docs/explanation/properties.md)** — The 5-layer cascading properties and `# !important` overrides.
