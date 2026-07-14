@@ -498,7 +498,7 @@ def _get_env_info(self):
                         13: "Ventura",
                         14: "Sonoma",
                         15: "Sequoia",
-                        16: "16",
+                        16: "Tahoe",
                         17: "17",
                     }
                     name = names.get(v_macos, str(v_macos))
