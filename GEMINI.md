@@ -83,6 +83,7 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
   - [x] Document `ldm link` and `ldm clone` in CLI reference, tutorials, and README.md.
   - [x] Populate CHANGELOG.md for all v2.15.16 pre-releases.
   - [x] Synchronize compatibility table to include macOS 16 Tahoe and all 5 verified environments.
+  - [x] Promote to stable release `v2.15.16` and resolve CI dependencies auditing (`setuptools` vulnerability) issues.
   - [x] Issue #449: Decouple `DiagnosticsService` monolithic structure into `ldm_core/diagnostics/` submodules. Resolved merge conflicts.
   - [x] Issue #483: Add and update Mermaid diagrams (Architecture & Properties).
   - [x] Epic #439: Broken down into Sub-issues #486, #487, #488, and #489.
