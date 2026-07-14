@@ -50,8 +50,8 @@ ldm run my-sample-project --samples
 # 2. THE VANILLA FLOW: Run a fresh vanilla Liferay instance (LTS release)
 ldm run my-vanilla-project --vanilla --tag 2026.q1.7-lts
 
-# 3. THE DEVELOPER FLOW: Initialize from a workspace and start monitoring
-ldm init-from /path/to/workspace my-project
+# 3. THE DEVELOPER FLOW: Link a local workspace and start monitoring
+ldm link /path/to/workspace my-project
 
 # 4. THE PREDEFINED QUICKSTART: Bootstrap an accelerator demo stack
 ldm quickstart aica
@@ -110,4 +110,4 @@ For a complete structured table of contents, visit the **[Documentation Index](d
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-07-13* | *Last Reviewed: 2026-07-09*
+*Last Updated: 2026-07-14* | *Last Reviewed: 2026-07-09*

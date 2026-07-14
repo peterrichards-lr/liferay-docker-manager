@@ -87,6 +87,9 @@ ldm browser --remove           # Remove saved custom URLs from history
 
 Automatically download and install the latest version of LDM for your architecture. Includes integrity verification. If the automatic process fails, LDM will provide a manual `curl` or `PowerShell` command to complete the installation.
 
+> [!TIP]
+> **Post-Upgrade Release Notes**: After a successful upgrade, LDM will automatically display a "What's New" release notes banner summarising the key changes in the new version. This is shown once on the next command run after the upgrade completes. ![Added in v2.15.16](https://img.shields.io/badge/Added%20in-v2.15.16-blue)
+
 ```bash
 ldm system upgrade                   # Standard upgrade to latest stable
 ldm system upgrade --pre-release     # Upgrade to the latest pre-release/beta
@@ -304,6 +307,8 @@ All legacy flat-form commands are automatically translated to their namespaced e
 | `ldm log-level` | `ldm config log-level` |
 | `ldm edit` | `ldm config edit` |
 | `ldm defaults` | `ldm config defaults` |
+| `ldm init-from` | `ldm link` |
+| `ldm start` | `ldm db start` |
 
 ---
 
@@ -394,4 +399,4 @@ The following is a comprehensive index of all registered CLI option flags and th
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-07-13* | *Last Reviewed: 2026-07-10*
+*Last Updated: 2026-07-14* | *Last Reviewed: 2026-07-10*

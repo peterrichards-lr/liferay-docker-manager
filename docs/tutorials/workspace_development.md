@@ -10,7 +10,7 @@ When developing customizations for Liferay, you typically work in a **Liferay Wo
 
 - **Liferay Workspace**: Houses your Gradle build script, configuration files, custom modules, and Client Extensions.
 - **LDM Stack**: Spawns and manages the underlying Docker containers (Liferay, Postgres, Elasticsearch).
-- **Workspace Link & Monitor (`init-from`)**: Bridges the two by watching your workspace for changes, compiling files, and auto-deploying build outputs to the Docker container.
+- **Workspace Link & Monitor (`ldm link`)**: Bridges the two by watching your workspace for changes, compiling files, and auto-deploying build outputs to the Docker container.
 
 ---
 
@@ -35,7 +35,7 @@ To link your new workspace to LDM, navigate to the parent folder and run:
 
 ```bash
 # Link the workspace and boot the local runtime stack
-ldm init-from ./my-workspace
+ldm link ./my-workspace
 ```
 
 LDM will:
@@ -90,11 +90,11 @@ Now that your workspace is linked, you can develop assets using standard Liferay
 
 | Action | Command | Description |
 | :--- | :--- | :--- |
-| **Link Workspace** | `ldm init-from ./my-workspace` | Integrates workspace mounts and boots containers. |
+| **Link Workspace** | `ldm link ./my-workspace` | Integrates workspace mounts and boots containers. |
 | **Start Stack** | `ldm run` | Starts the Docker containers (without running monitor). |
 | **Start Monitor** | `ldm monitor ./my-workspace` | Watches workspace and compiles/deploys on save. |
 | **Stop Stack** | `ldm down` | Stops the running Docker containers. |
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-07-13* | *Last Reviewed: 2026-07-13*
+*Last Updated: 2026-07-14* | *Last Reviewed: 2026-07-13*

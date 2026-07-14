@@ -180,69 +180,86 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [v2.15.16-pre.11] - 2026-07-14
 
-### Added
+### Fixed
 
--
+- **PowerShell 5.1 Compatibility**: Set `$ErrorActionPreference = "Continue"` in the E2E verification script to prevent fatal `NativeCommandError` exceptions on Windows PowerShell 5.1 when LDM or Docker writes to stderr.
+- **PowerShell String Parsing**: Fixed a variable reference parse error in the verification script where `$LASTEXITCODE:` was incorrectly interpreted as a drive reference; replaced with `${LASTEXITCODE}:`.
+- **Windows Port Checks**: Updated `infra-setup` to check wildcard IP `0.0.0.0` for port availability on Windows, resolving false-positive port conflict errors when Docker Desktop binds on all interfaces.
 
 ## [v2.15.16-pre.10] - 2026-07-13
 
 ### Added
 
--
+- **`ldm link` Subcommand** (Issue #547): Introduced `ldm link` as the new canonical command for linking a local Liferay Workspace to an LDM project. The previous `ldm init-from` command is now a supported legacy alias.
+- **`ldm clone` Subcommand** (Issue #548): Introduced `ldm clone` for cloning a remote Git repository and initializing an LDM project in one step. `ldm import` is now restricted to `.ldmp` data packages only.
+- **Post-Upgrade Release Notes Banner** (Issue #550): After a successful `ldm system upgrade`, LDM now displays a "What's New" banner summarising key changes in the new version on the next command run.
+
+### Fixed
+
+- **SSH Git URL Compatibility**: Resolved a URL parsing issue where SSH-style Git URLs (e.g., `git@github.com:org/repo.git`) were incorrectly rejected during `ldm clone`.
+- **Non-TTY Banner Check**: The post-upgrade banner is now suppressed in non-interactive (headless) environments to avoid corrupting CI output.
+- **Windows Path Resolution Safety**: Fixed edge cases where Windows-style path separators caused workspace path resolution failures.
 
 ## [v2.15.16-pre.9] - 2026-07-13
 
-### Added
+### Fixed
 
--
+- **Snapshot Failure Handling**: `ldm snapshot` and `ldm package` now cleanly fail and remove partial/empty output files when the underlying database dump command exits with a non-zero code, preventing corrupted snapshots from being silently retained.
 
 ## [v2.15.16-pre.8] - 2026-07-13
 
-### Added
+### Fixed
 
--
+- **E2E PowerShell Cleanup**: Wrapped all E2E verification script cleanup steps in a dedicated `Invoke-Cleanup` helper function to prevent native command exceptions from aborting cleanup on Windows.
 
 ## [v2.15.16-pre.7] - 2026-07-13
 
-### Added
+### Fixed
 
--
+- **Windows File Locking Typo**: Corrected a `msvcrt` locking mode attribute typo (`LK_NBND` → `LK_NBLCK`) that caused intermittent file lock failures on Windows during concurrent operations.
+- **E2E Script Encoding**: Saved `verify_e2e_refactor.ps1` with UTF-8 BOM encoding to ensure correct parsing by Windows PowerShell 5.1.
 
 ## [v2.15.16-pre.6] - 2026-07-13
 
-### Added
+### Fixed
 
--
+- **WSL Deadlock Resolution**: Added a configurable `run_command` timeout and resolved WSL-specific process deadlocks caused by blocking stdin reads in subprocess calls.
+- **PowerShell 5.1 Compatibility**: Disabled `$PSNativeCommandUseErrorActionPreference` in the E2E verification script for Windows PowerShell 5.1 compatibility.
 
 ## [v2.15.16-pre.5] - 2026-07-13
 
+### Fixed
+
+- **Database Data Loss Prevention**: Fixed a critical vulnerability where stopping a project while a database volume snapshot was in progress could result in partial or corrupted data. LDM now coordinates a safe shutdown before any volume dehydration.
+
 ### Added
 
--
+- **`ldm db start` / `ldm start` Alias**: Added `ldm db start` to start only the database container without booting the full Liferay stack. The bare `ldm start` keyword is also routed as an alias.
+- **E2E Property Override Cascade Checks**: Extended the E2E verification suite to validate the 5-layer properties override cascade, `--reset-properties`, and `ldm db query` behaviours.
 
 ## [v2.15.16-pre.4] - 2026-07-10
 
 ### Added
 
--
+- **Extended E2E Test Coverage**: Added unit and E2E tests for log export, `ldm wait` milestone reporting, and trace log (`last-command.log`) integration.
 
 ## [v2.15.16-pre.3] - 2026-07-10
 
-### Added
+### Changed
 
--
+- **Dependency Bumps**: Updated `psutil`, `keyring`, `mypy`, `ruff`, and `mkdocs-material` to latest compatible versions. Updated GitHub Actions dependencies.
 
 ## [v2.15.16-pre.2] - 2026-07-10
 
 ### Added
 
--
+- **Improved Wait UX and Milestone Reporting**: `ldm wait` now displays progressive milestone markers (Container Health → OSGi Ready → HTTP Ready) with elapsed time, giving clear feedback during long Liferay startup sequences.
 
 ## [v2.15.16-pre.1] - 2026-07-10
 
 ### Added
 
--
+- **Global `last-command.log` Trace File**: LDM now writes a persistent `last-command.log` trace file capturing the full output of the most recent command. This file is included in diagnostic bundles (`ldm system doctor --bundle`) to aid support and debugging.
 
 ## [v2.15.15] - 2026-07-08
 
@@ -1282,4 +1299,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-07-13* | *Last Reviewed: 2026-07-09*
+*Last Updated: 2026-07-14* | *Last Reviewed: 2026-07-09*
