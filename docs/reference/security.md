@@ -8,6 +8,7 @@ LDM binds certain infrastructure components to `0.0.0.0` (all interfaces) instea
 
 - **macOS Multi-IP Loopback**: On macOS (Silicon and Intel), Traefik is bound to `0.0.0.0` to ensure that custom hostnames (e.g., `mysite.local`) correctly route back to the Docker containers.
 - **Gogo Shell Exposure**: To allow telnet access to the Liferay OSGi console, the Gogo shell listener is bound to `0.0.0.0` inside the container network.
+- **Wildcard Port Verification**: When checking if a port is available on the host (in `check_port`), LDM attempts to bind socket listeners to `0.0.0.0`. This wildcard bind is required to guarantee detection of existing bindings on all local IP addresses and interfaces, preventing port allocation conflicts when starting proxy and database containers. Specifically, on Windows (WSL2/Hyper-V), port forwarding from the Linux VM requires verifying all interfaces to prevent Traefik startup failures.
 
 **Mitigation**: These bindings are only active while the LDM stack is running. In a standard home/office network, this exposure is limited to the local subnet. Users requiring stricter isolation should use a firewall or VPN.
 
@@ -18,7 +19,7 @@ The LDM CI pipeline runs Bandit security scans. We explicitly ignore the followi
 | Code | Intent & Disclosure |
 | :--- | :--- |
 | **B103** | Permissive 777 permissions. Used in `migrate_layout` for legacy projects and `cmd_upgrade` to ensure the newly downloaded binary is executable. **Mitigation**: All calls are wrapped in `try...except` and LDM prioritizes standard user ownership. |
-| **B104** | Hardcoded bind to all interfaces. Required for macOS loopback, Gogo shell access, and infrastructure setup. |
+| **B104** | Hardcoded bind to all interfaces. Required for macOS loopback, Gogo shell access, host port availability checks (especially on Windows WSL2/Hyper-V), and infrastructure setup. |
 | **B105** | Hardcoded passwords or tokens. Used for default local development database passwords (e.g., `test`) and transient mount verification tokens. **Mitigation**: These are only used in isolated sandbox environments and are not intended for production secrets. |
 | **B108** | Hardcoded /tmp directory. Used only for transient mount verification tokens. |
 | **B110 / B112** | `try...except pass/continue` patterns. Used in loops (e.g., tag discovery, project scanning) and cleanup routines where a single failure should not abort the entire operation. |
@@ -124,4 +125,4 @@ f7e5b56e5e4e6e94fe5de5424e66fef84be863f385
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-07-13* | *Last Reviewed: 2026-07-02*
+*Last Updated: 2026-07-14* | *Last Reviewed: 2026-07-14*
