@@ -1331,6 +1331,11 @@ def get_parser():
         "--share-subdomain",
         help="Custom subdomain to use when sharing the stack",
     )
+    quickstart_cmd.add_argument(
+        "--name",
+        "-n",
+        help="Custom target project directory name (defaults to template default)",
+    )
     # Command: set-version
     set_version_cmd = subparsers.add_parser(
         "set-version",

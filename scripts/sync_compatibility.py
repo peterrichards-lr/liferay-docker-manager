@@ -155,19 +155,22 @@ def get_report_metadata(report_path):
     arch = "Unknown"
     host_os = "Unknown"
     p_low = platform_str.lower()
+    fn_low = report_path.name.lower()
 
     # --- Standardize Environment ---
-    is_mac = "mac" in p_low or "darwin" in p_low
-    is_fedora = "fc" in p_low or "fedora" in p_low
-    is_ubuntu = "ubuntu" in p_low
+    is_mac = "mac" in p_low or "darwin" in p_low or "macos" in fn_low
+    is_fedora = "fc" in p_low or "fedora" in p_low or "fedora" in fn_low
+    is_ubuntu = "ubuntu" in p_low or "ubuntu" in fn_low
 
-    # WSL: Platform MUST be Linux, and mention microsoft/wsl
-    is_wsl = "linux" in p_low and ("microsoft" in p_low or "wsl" in p_low)
+    # WSL: Platform MUST be Linux and mention microsoft/wsl, or filename must contain wsl
+    is_wsl = (
+        "linux" in p_low and ("microsoft" in p_low or "wsl" in p_low)
+    ) or "wsl" in fn_low
 
-    # Windows Native: Platform contains Windows, and NOT linux
+    # Windows Native: Platform contains Windows and NOT linux, or filename contains windows and NOT wsl
     is_windows_native = (
-        "windows" in p_low or "win32" in p_low
-    ) and "linux" not in p_low
+        ("windows" in p_low or "win32" in p_low) and "linux" not in p_low
+    ) or ("windows" in fn_low and "wsl" not in fn_low)
 
     # 4.1 Force Provider standardization
     if is_mac:

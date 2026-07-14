@@ -1787,10 +1787,12 @@ class WorkspaceService(BaseHandler):
         if name_lower not in templates:
             UI.die(f"Unrecognized quickstart template: {template_name}")
             return
-
         template_info = templates[name_lower]
         repo_url = template_info["repo"]
         project_name = template_info["default_name"]
+        cli_name = getattr(self.manager.args, "name", None)
+        if cli_name and isinstance(cli_name, str):
+            project_name = cli_name
 
         if template_info.get("private"):
             from ldm_core.utils import get_github_token

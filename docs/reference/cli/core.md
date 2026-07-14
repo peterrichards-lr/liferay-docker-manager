@@ -189,6 +189,9 @@ ldm quickstart aica
 
 # Bootstrap and expose the stack dynamically using lfr-tunnel
 ldm quickstart aica --share --share-subdomain my-custom-demo
+
+# Bootstrap with a custom target directory and project name
+ldm quickstart aica --name custom-aica-demo
 ```
 
 Custom templates and repository mappings can be configured by defining overrides in `~/.ldm_templates.json`.
