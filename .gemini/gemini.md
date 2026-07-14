@@ -107,6 +107,12 @@
   - [x] **Release Cleanup**: Delete redundant tags/releases `v2.10.25` to `v2.10.59` locally and remotely on GitHub.
   - [x] **Actions Cleanup**: Delete failed/redundant GitHub Action workflow runs.
 
+  - [x] **v2.15.16 Stable Release Documentation Updates**:
+    - [x] Link `workspace_development.md` to root `README.md` Documentation Signposts.
+    - [x] Add path-specific documentation for `ldm link` (Route A) and `ldm clone` (Route B) in `workspace_development.md`.
+    - [x] Populate `CHANGELOG.md` for all 11 `v2.15.16` pre-releases.
+    - [x] Add compatibility matrix updates for macOS 16 Tahoe.
+
 - **Next Focus: Roadmap Execution & CLI Namespacing**
   - [x] **Branch Cleanup**: Audit and delete fully merged roadmap branches (`cli-namespacing`, `guided-onboarding`, `extensible-profiles-architecture`).
   - [x] **Document Branching & Tagging Strategy**: Update CONTRIBUTING.md with branch-isolated pre-release rules.
