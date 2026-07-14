@@ -39,11 +39,47 @@ if (-not (Test-Path $VENV_PYTEST)) {
     Write-Output "=== LDM BINARY VERIFICATION REPORT ==="
     Write-Output "Timestamp: $(Get-Date)"
     Write-Output "Platform:  $($PSVersionTable.OS)"
-    Write-Output "Binary:    $((Get-Command $LDM_CMD).Source)"
-    Write-Output "Version:   $(& $LDM_CMD --version 2>$null)"
-    if (Get-Command docker -ErrorAction SilentlyContinue) {
-        Write-Output "Docker:    $(& docker version --format '{{.Server.Version}}' 2>$null)"
+    
+    $binaryPath = "Not Found"
+    try {
+        $cmdInfo = Get-Command $LDM_CMD -ErrorAction SilentlyContinue
+        if ($null -ne $cmdInfo) { $binaryPath = $cmdInfo.Source }
+    } catch {
+        $binaryPath = "Not Found (Exception: $($_.Exception.Message))"
     }
+    Write-Output "Binary:    $binaryPath"
+    
+    $ldmVer = "Unknown"
+    try {
+        $res = & $LDM_CMD --version 2>&1
+        if ($LASTEXITCODE -eq 0 -and $null -ne $res) {
+            $ldmVer = ($res -join " ").Trim()
+        } else {
+            $errorMsg = ($res -join " ").Trim()
+            $ldmVer = "Error (Exit code $LASTEXITCODE: $errorMsg)"
+        }
+    } catch {
+        $ldmVer = "Unknown (Exception: $($_.Exception.Message))"
+    }
+    Write-Output "Version:   $ldmVer"
+    
+    $dockerVer = "Not Running"
+    try {
+        if (Get-Command docker -ErrorAction SilentlyContinue) {
+            $res = & docker version --format '{{.Server.Version}}' 2>&1
+            if ($LASTEXITCODE -eq 0 -and $null -ne $res) {
+                $dockerVer = ($res -join " ").Trim()
+            } else {
+                $errorMsg = ($res -join " ").Trim()
+                $dockerVer = "Not Running (Connection failed: $errorMsg)"
+            }
+        } else {
+            $dockerVer = "Not Installed"
+        }
+    } catch {
+        $dockerVer = "Not Running (Exception: $($_.Exception.Message))"
+    }
+    Write-Output "Docker:    $dockerVer"
 } | Out-File -FilePath $RESULTS_FILE_TMP -Encoding utf8
 
 function Invoke-Cleanup {
