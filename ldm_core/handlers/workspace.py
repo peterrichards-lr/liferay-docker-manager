@@ -1842,8 +1842,9 @@ class WorkspaceService(BaseHandler):
             UI.info(f"Seeding database for {tag} ({db_type}/{search_mode})...")
             paths = self.manager.setup_paths(project_path)
             if not self.manager.assets._fetch_seed(tag, db_type, search_mode, paths):
-                UI.die("Failed to seed database during quickstart.")
-                return
+                UI.info(
+                    "No pre-warmed seed applied. Liferay will initialize the database schema on first boot (this may take several minutes)."
+                )
 
             # 4. Start stack and launch browser
             UI.info("Starting quickstart services stack...")
