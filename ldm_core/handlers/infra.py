@@ -127,9 +127,9 @@ class InfraService:
             allocated_ports = []
 
             # Check HTTP port
-            if not self.manager.check_port("127.0.0.1", http_port):
+            if not self.manager.check_port("0.0.0.0", http_port):  # nosec B104
                 orig_http = http_port
-                http_port = self.manager.find_available_port("127.0.0.1", http_port)
+                http_port = self.manager.find_available_port("0.0.0.0", http_port)  # nosec B104
                 UI.warning(
                     f"Port conflict detected! Global HTTP proxy port {orig_http} is in use on the host. Using {http_port} instead."
                 )
@@ -137,11 +137,14 @@ class InfraService:
 
             # Check HTTPS port
             if ssl_port in allocated_ports or not self.manager.check_port(
-                "127.0.0.1", ssl_port
+                "0.0.0.0",
+                ssl_port,  # nosec B104
             ):
                 orig_ssl = ssl_port
                 ssl_port = self.manager.find_available_port(
-                    "127.0.0.1", ssl_port, exclude=allocated_ports
+                    "0.0.0.0",
+                    ssl_port,
+                    exclude=allocated_ports,  # nosec B104
                 )
                 UI.warning(
                     f"Port conflict detected! Global HTTPS proxy port {orig_ssl} is in use on the host. Using {ssl_port} instead."
@@ -150,11 +153,14 @@ class InfraService:
 
             # Check Admin port
             if admin_port in allocated_ports or not self.manager.check_port(
-                "127.0.0.1", admin_port
+                "0.0.0.0",
+                admin_port,  # nosec B104
             ):
                 orig_admin = admin_port
                 admin_port = self.manager.find_available_port(
-                    "127.0.0.1", admin_port, exclude=allocated_ports
+                    "0.0.0.0",
+                    admin_port,
+                    exclude=allocated_ports,  # nosec B104
                 )
                 UI.warning(
                     f"Port conflict detected! Global Admin proxy port {orig_admin} is in use on the host. Using {admin_port} instead."
@@ -173,7 +179,7 @@ class InfraService:
                 "--remove-orphans",
             ],
             env=env,
-            capture_output=quiet,
+            capture_output=True,
         )
         return ssl_port
 
