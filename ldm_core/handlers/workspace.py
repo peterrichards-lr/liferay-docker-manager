@@ -1215,6 +1215,9 @@ class WorkspaceService(BaseHandler):
                                 "host_name": final_host_name,
                                 "last_run": datetime.now().isoformat(),
                                 "restored_from_package": "true",
+                                "package_includes_database": str(
+                                    manifest.get("includes_database", "false")
+                                ).lower(),
                             }
                         )
                         self.manager.write_meta(project_path, project_meta)
@@ -1240,7 +1243,12 @@ class WorkspaceService(BaseHandler):
                             shutil.rmtree(temp_extract_dir)
 
                     # Boot stack if needed
-                    if not original_no_run:
+                    # Only boot if the package actually included a database snapshot.
+                    # If it did not, we should keep it stopped so the caller (quickstart) can seed it first.
+                    if not original_no_run and manifest.get("includes_database") in [
+                        True,
+                        "true",
+                    ]:
                         self.manager.cmd_run(project_id=project_name, is_restart=True)
 
                     return project_name
@@ -1833,7 +1841,11 @@ class WorkspaceService(BaseHandler):
         restored_from_pkg = (
             str(project_meta.get("restored_from_package", "false")).lower() == "true"
         )
-        if restored_from_pkg:
+        pkg_has_db = (
+            str(project_meta.get("package_includes_database", "false")).lower()
+            == "true"
+        )
+        if restored_from_pkg and pkg_has_db:
             UI.info(
                 "Project was restored from LDM package snapshot. Skipping database seeding."
             )
