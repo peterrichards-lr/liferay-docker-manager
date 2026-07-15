@@ -67,12 +67,13 @@ class InfraService:
             if inspect_raw:
                 settings = json.loads(inspect_raw)
                 # settings is a dict like: {"443/tcp": [{"HostIp": "0.0.0.0", "HostPort": "443"}], ...}
-                if settings.get("80/tcp"):
-                    ports["http"] = int(settings["80/tcp"][0]["HostPort"])
-                if settings.get("443/tcp"):
-                    ports["https"] = int(settings["443/tcp"][0]["HostPort"])
-                if settings.get("8080/tcp"):
-                    ports["admin"] = int(settings["8080/tcp"][0]["HostPort"])
+                if isinstance(settings, dict):
+                    if settings.get("80/tcp"):
+                        ports["http"] = int(settings["80/tcp"][0]["HostPort"])
+                    if settings.get("443/tcp"):
+                        ports["https"] = int(settings["443/tcp"][0]["HostPort"])
+                    if settings.get("8080/tcp"):
+                        ports["admin"] = int(settings["8080/tcp"][0]["HostPort"])
         except Exception:
             pass
         return ports
