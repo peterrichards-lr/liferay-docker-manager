@@ -589,7 +589,7 @@ def run_command(
 ) -> str | None:
     return get_runner().run(
         cmd,
-        shell=shell,
+        shell=shell,  # nosec B604
         capture_output=capture_output,
         check=check,
         env=env,
