@@ -78,6 +78,7 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
   - [x] Identified 21 specific findings (race conditions, security vulnerabilities, architectural smells, fragile error boundaries).
   - [x] Created 21 GitHub issues (#592–#612) with full root cause analysis, proposed fixes, and test protocols.
   - [/] Implementing Milestone 1 critical issues (beginning with #593: _wait_for_search_restore() timeout).
+  - [/] Implementing Milestone 1 critical issues (beginning with #592: DB restore rollback protection).
   - [ ] Review implementation against audit intent (agent has been briefed to do this).
 
   **Milestone 1 Critical Issues (Priority: p1 — act immediately):**
