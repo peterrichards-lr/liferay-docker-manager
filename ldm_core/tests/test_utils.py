@@ -533,6 +533,34 @@ class TestUpdateChecks(unittest.TestCase):
                 # Verify it atomically moved the temp file to destination
                 mock_replace.assert_called_once_with(expected_tmp, dst)
 
+    def test_safe_write_text_raises_on_permission_error(self):
+        """safe_write_text should propagate PermissionError, not silently reclaim permissions."""
+        from ldm_core.utils import safe_write_text
+
+        with (
+            patch("pathlib.Path.with_suffix", return_value=Path("/fake/.tmp.txt")),
+            patch(
+                "pathlib.Path.write_text",
+                side_effect=PermissionError("[Errno 13] Permission denied"),
+            ),
+            patch("pathlib.Path.exists", return_value=True),
+        ):
+            with self.assertRaises(PermissionError):
+                safe_write_text(Path("/fake/test.txt"), "content")
+
+    def test_safe_mkdir_raises_on_permission_error(self):
+        """safe_mkdir should propagate PermissionError, not silently reclaim permissions."""
+        from ldm_core.utils import safe_mkdir
+
+        with (
+            patch(
+                "pathlib.Path.mkdir",
+                side_effect=PermissionError("[Errno 13] Permission denied"),
+            ),
+        ):
+            with self.assertRaises(PermissionError):
+                safe_mkdir("/fake/path")
+
     def test_reclaim_volume_permissions(self):
         from ldm_core.utils import reclaim_volume_permissions
 
@@ -551,7 +579,7 @@ class TestUpdateChecks(unittest.TestCase):
             # Verify the chmod/chown commands in the command string
             docker_cmd = cmd[cmd.index("-c") + 1]
             self.assertIn("chown -R 1001:1001", docker_cmd)
-            self.assertIn("chmod -R 777", docker_cmd)
+            self.assertIn("chmod -R 750", docker_cmd)
 
     def test_run_command_timeout(self):
         import subprocess
