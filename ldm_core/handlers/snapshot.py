@@ -1520,6 +1520,49 @@ class SnapshotService(BaseHandler):
         # 3. Execute with Retry
         if import_cmd:
             success = False
+            baseline_file = Path(sql_file).parent / ".restore_baseline.sql"
+            baseline_dump_cmd = []
+            if db_type in ["mysql", "mariadb"]:
+                baseline_dump_cmd = [
+                    "docker",
+                    "exec",
+                    db_container,
+                    "mysqldump",
+                    "-u",
+                    "lportal",
+                    "-ptest",
+                    "--opt",
+                    "--add-drop-table",
+                    db_name,
+                ]
+            elif db_type == "postgresql":
+                baseline_dump_cmd = [
+                    "docker",
+                    "exec",
+                    db_container,
+                    "pg_dump",
+                    "-U",
+                    "lportal",
+                    "--clean",
+                    "--if-exists",
+                    db_name,
+                ]
+
+            has_baseline = False
+            if baseline_dump_cmd:
+                try:
+                    with open(baseline_file, "wb") as bf:
+                        subprocess.run(
+                            baseline_dump_cmd,
+                            stdout=bf,
+                            stderr=subprocess.PIPE,
+                            check=False,
+                        )
+                    if baseline_file.exists() and baseline_file.stat().st_size > 0:
+                        has_baseline = True
+                except Exception as e:
+                    UI.debug(f"Could not create pre-restore baseline (non-fatal): {e}")
+
             for i in range(3):  # Retry up to 3 times for flaky Docker IO
                 # LDM-422: We MUST wipe the DB at the start of EVERY retry attempt.
                 # If attempt 1 fails halfway through, the tables are created. Attempt 2 will instantly
@@ -1557,6 +1600,41 @@ class SnapshotService(BaseHandler):
                         time.sleep(5)
                     else:
                         UI.error(f"  ! Database restore failed after 3 attempts: {e}")
+
+            if not success:
+                if has_baseline and baseline_file.exists():
+                    UI.info("Restoring database to the pre-restore baseline...")
+                    _wipe_db()
+                    try:
+                        with open(baseline_file, "rb") as bf:
+                            subprocess.run(
+                                import_cmd,
+                                stdin=bf,
+                                check=True,
+                                capture_output=True,
+                            )
+                        UI.info(
+                            "Original database data has been successfully restored."
+                        )
+                    except Exception as e:
+                        UI.error(f"Failed to restore original database baseline: {e}")
+
+                if baseline_file.exists():
+                    try:
+                        baseline_file.unlink()
+                    except OSError:
+                        pass
+
+                UI.die(
+                    "Database restore failed after all retries. Original data has been preserved.",
+                    exit_code=3,
+                )
+
+            if baseline_file.exists():
+                try:
+                    baseline_file.unlink()
+                except OSError:
+                    pass
 
             if success:
                 UI.success("  + Database restored successfully.")
