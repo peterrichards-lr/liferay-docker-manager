@@ -215,6 +215,10 @@ ldm package my-project -o /tmp/packages
 
 # Package using a specific repository manifest identifier and the latest snapshot
 ldm package my-project --repo my-owner/my-repo --use-latest
+
+# Override target host-name and SSL defaults in the package manifest
+ldm package my-project --host-name custom.demo --ssl
+ldm package my-project --host-name custom.demo --no-ssl
 ```
 
 ## Data Management Commands

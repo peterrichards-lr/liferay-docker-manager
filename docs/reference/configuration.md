@@ -9,9 +9,10 @@ LDM uses a robust cascading configuration system to ensure consistent, reproduci
 When LDM needs a default value (e.g., for the Liferay tag, database type, or port), it resolves it in the following order (highest to lowest priority):
 
 1. **Project Metadata (`.liferay-docker.meta`)**: Once a project is created (via `init`, `run`, or `hydrate`), the resolved settings are permanently "frozen" into the project's metadata. This ensures stability.
-2. **User Defaults (`~/.ldmrc`)**: Custom defaults specific to the current developer's machine.
-3. **Global Defaults (`/etc/ldmrc`)**: System-wide defaults, typically managed by system administrators or CI/CD provisioning scripts.
-4. **Convention Defaults**: Hardcoded fallback values within the LDM source code (e.g., Port `8080`, DB `postgresql`, Search `sidecar`).
+2. **Workspace Defaults (`.ldmrc`)**: A committed config file at the root of the Liferay Workspace. During project initialization (e.g., via `ldm link` or `ldm import`), LDM automatically reads these settings to seed the default metadata.
+3. **User Defaults (`~/.ldmrc`)**: Custom defaults specific to the current developer's machine.
+4. **Global Defaults (`/etc/ldmrc`)**: System-wide defaults, typically managed by system administrators or CI/CD provisioning scripts.
+5. **Convention Defaults**: Hardcoded fallback values within the LDM source code (e.g., Port `8080`, DB `postgresql`, Search `sidecar`).
 
 ### Managing Defaults
 
