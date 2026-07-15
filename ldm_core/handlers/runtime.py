@@ -470,9 +470,22 @@ class RuntimeService(BaseHandler):
             if payload:
                 req.data = json.dumps(payload).encode("utf-8")
 
+            import ipaddress
+            from urllib.parse import urlparse
+
             ctx = ssl.create_default_context()
-            ctx.check_hostname = False
-            ctx.verify_mode = ssl.CERT_NONE
+            parsed_url = urlparse(url)
+            host = parsed_url.hostname or "localhost"
+
+            is_loopback = False
+            try:
+                is_loopback = ipaddress.ip_address(host).is_loopback
+            except ValueError:
+                is_loopback = host.lower() in ("localhost", "127.0.0.1", "::1")
+
+            if is_loopback:
+                ctx.check_hostname = False
+                ctx.verify_mode = ssl.CERT_NONE
 
             try:
                 with urllib.request.urlopen(req, context=ctx) as response:  # nosec B310
