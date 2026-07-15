@@ -1245,16 +1245,19 @@ class ComposerService:
                 if not ssl_enabled:
                     bind_ip = meta.get("bind_ip", "0.0.0.0")  # nosec B104
                     resolved_port_str = meta.get(f"port_{ext_id}")
+                    safe_host_port = 8080
                     if resolved_port_str:
                         try:
                             safe_host_port = int(resolved_port_str)
                         except ValueError:
-                            safe_host_port = ms_port
-                    else:
-                        safe_host_port = ms_port
+                            if ms_port is not None:
+                                try:
+                                    safe_host_port = int(str(ms_port))
+                                except ValueError:
+                                    pass
+                    elif ms_port is not None:
                         try:
-                            if safe_host_port is not None:
-                                safe_host_port = int(str(safe_host_port))
+                            safe_host_port = int(str(ms_port))
                         except ValueError:
                             pass
 

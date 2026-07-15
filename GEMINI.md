@@ -75,6 +75,7 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
 
 - **Current Active Task (July 15, 2026)**:
   - [x] Epic #582: Implement Quickstart Host/SSL defaults, dynamic microservice port conflict resolution, and container status tracking.
+  - [x] Support committed repository-level `.ldmrc` files for default configuration overrides.
 
 - **Current Active Task (July 14, 2026)**:
   - [x] Fix quickstart preseed prompt to proceed on decline (Issue #570) and conditionally bypass based on package database presence.
