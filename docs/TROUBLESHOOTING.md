@@ -371,6 +371,27 @@ Alternatively, if you are sharing a running project using `ldm share start`, exp
 ldm share start <project> --provider lfr-tunnel-docker --subdomain <subdomain>
 ```
 
+---
+
+## 🔒 Project Concurrency Locks
+
+### **Issue: "Concurrency Violation: Another instance of LDM is running on this project"**
+
+If a previous `ldm` process was hard-killed (e.g. via `kill -9` or a VM reboot/OOM event) or crashed, the project concurrency lock file might remain on disk. While LDM includes **stale-lock auto-recovery** (automatically clearing the lock if the process is no longer running), in rare network/virtualized filesystem configurations the lock check can block subsequent commands.
+
+**The Solution:**
+You can force-clear the project lock using the rescue command:
+
+```bash
+ldm rescue --clear-lock [project]
+```
+
+Alternatively, you can manually delete the lock file located in your project work directory:
+
+```bash
+rm -f <project-path>/.liferay-docker/.ldm_lock
+```
+
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-07-15* | *Last Reviewed: 2026-07-02*
+*Last Updated: 2026-07-15* | *Last Reviewed: 2026-07-15*

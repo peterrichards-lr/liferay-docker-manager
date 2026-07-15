@@ -325,6 +325,7 @@ The following is a comprehensive index of all registered CLI option flags and th
 - **`--build-info`**: Inject build metadata into the source.
 - **`--bump`**: Increment the version logically.
 - **`--clone-only`**: Force cloning the Git repository instead of downloading the LDM package (.ldmp).
+- **`--clear-lock`** ![Added in v2.15.17](https://img.shields.io/badge/Added%20in-v2.15.17-blue): Clear the stale concurrency project lock for the specified project and exit.
 - **`--container`**: Show detailed Docker container diagnostic checks.
 - **`--docker`**: Show detailed Docker diagnostic checks.
 - **`--domain`**: Custom domain prefix (e.g. lfr-demo.online, lfr-demo.se).

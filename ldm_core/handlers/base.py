@@ -908,7 +908,13 @@ class BaseHandler:
         ]
         is_rescue_lock = cmd == "system" and subcmd == "rescue"
 
-        if cmd in lock_commands or is_config_lock or is_rescue_lock:
+        clear_lock = False
+        if hasattr(self, "args") and self.args is not None:
+            clear_lock = getattr(self.args, "clear_lock", False)
+
+        if not clear_lock and (
+            cmd in lock_commands or is_config_lock or is_rescue_lock
+        ):
             from ldm_core.utils import ProjectLock
 
             mgr = getattr(self, "manager", None) or self
