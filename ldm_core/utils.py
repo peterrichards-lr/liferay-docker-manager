@@ -529,17 +529,55 @@ def run_command(
         sys.exit(130)
 
 
+def _fetch_with_retry(
+    url: str,
+    headers: dict[str, str] | None = None,
+    timeout: int = 15,
+    max_retries: int = 3,
+) -> requests.Response | None:
+    """Fetches a URL with retries, handling rate limits (429) and transient errors."""
+    import random
+
+    if headers is None:
+        headers = {}
+
+    # Default to generic User-Agent if not specified
+    if "User-Agent" not in headers:
+        headers["User-Agent"] = "Mozilla/5.0"
+
+    for attempt in range(max_retries):
+        try:
+            response = requests.get(url, headers=headers, timeout=timeout)
+            if response.status_code == 429:
+                retry_after = int(response.headers.get("Retry-After", 5))
+                UI.debug(f"Rate limited (429) on {url}. Retrying in {retry_after}s...")
+                time.sleep(retry_after)
+                continue
+
+            response.raise_for_status()
+            return response
+        except requests.RequestException as e:
+            if attempt == max_retries - 1:
+                UI.debug(f"Request failed after {max_retries} attempts: {e}")
+                return None
+            # Exponential backoff with random jitter
+            wait = 0.5 * (2**attempt) + random.uniform(0, 0.1)
+            UI.debug(f"Transient error fetching {url}: {e}. Retrying in {wait:.2f}s...")
+            time.sleep(wait)
+    return None
+
+
 def get_json(url):
     try:
         if not url.startswith(("http://", "https://")):
             raise ValueError(f"Invalid URL scheme: {url}")
 
-        response = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=15)
-        response.raise_for_status()
-        return response.json()
+        response = _fetch_with_retry(url, timeout=15)
+        if response is not None:
+            return response.json()
     except Exception as e:
         UI.error(f"Failed to fetch data: {e}")
-        return None
+    return None
 
 
 def get_raw(url):
@@ -548,12 +586,12 @@ def get_raw(url):
         if not url.startswith(("http://", "https://")):
             raise ValueError(f"Invalid URL scheme: {url}")
 
-        response = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=30)
-        response.raise_for_status()
-        return response.text
+        response = _fetch_with_retry(url, timeout=30)
+        if response is not None:
+            return response.text
     except Exception as e:
         UI.error(f"Failed to fetch data: {e}")
-        return None
+    return None
 
 
 def safe_write_text(path, content, encoding="utf-8", mode=None):
