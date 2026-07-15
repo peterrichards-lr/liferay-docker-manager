@@ -9,7 +9,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, NamedTuple
 
 import requests
 
@@ -386,43 +386,163 @@ def _sanitize_shell_command(cmd):
     return cmd
 
 
-def run_command(
-    cmd,
-    shell=False,
-    capture_output=True,
-    check=True,
-    env=None,
-    cwd=None,
-    verbose=False,
-    stdout_file=None,
-    timeout=None,
-):
-    env = os.environ.copy() if env is None else env.copy()
+class CommandResult(NamedTuple):
+    returncode: int
+    stdout: str
+    stderr: str
 
-    env["DOCKER_CLI_HINTS"] = "false"
 
-    # Hardening: Standardize on a modern API version for newer Docker engines (v29+)
-    # while suppressing CLI hints for clean automation output.
-    if "DOCKER_API_VERSION" not in env:
-        env["DOCKER_API_VERSION"] = "1.44"
+class CommandRunner:
+    def __init__(self, env: dict[str, str] | None = None):
+        self.env = env
 
-    # Hardening: Sanitize if shell is enabled
-    if shell:
-        cmd = _sanitize_shell_command(cmd)
+    def run(
+        self,
+        cmd,
+        shell: bool = False,
+        capture_output: bool = True,
+        check: bool = True,
+        env: dict[str, str] | None = None,
+        cwd: str | None = None,
+        verbose: bool = False,
+        stdout_file: Any = None,
+        timeout: float | None = None,
+    ) -> str | None:
+        resolved_env = (
+            env
+            if env is not None
+            else (self.env if self.env is not None else os.environ)
+        )
+        resolved_env = resolved_env.copy()
 
-    # Automatically resolve absolute paths for list-based commands (resolves Bandit B607)
-    if isinstance(cmd, list) and len(cmd) > 0 and not shell:
-        executable = shutil.which(cmd[0])
-        if executable:
-            cmd[0] = executable
+        resolved_env["DOCKER_CLI_HINTS"] = "false"
+        if "DOCKER_API_VERSION" not in resolved_env:
+            resolved_env["DOCKER_API_VERSION"] = "1.44"
 
-    display_cmd = UI.redact(" ".join(cmd) if isinstance(cmd, list) else cmd)
-    UI.trace(f"[CMD] {display_cmd}")
-    if verbose:
-        UI.debug(f"Executing: {display_cmd}")
+        # Hardening: Sanitize if shell is enabled
+        if shell:
+            cmd = _sanitize_shell_command(cmd)
 
-    is_dry_run = os.environ.get("LDM_DRY_RUN", "").lower() == "true"
-    if is_dry_run:
+        # Automatically resolve absolute paths for list-based commands (resolves Bandit B607)
+        if isinstance(cmd, list) and len(cmd) > 0 and not shell:
+            executable = shutil.which(cmd[0])
+            if executable:
+                cmd[0] = executable
+
+        display_cmd = UI.redact(" ".join(cmd) if isinstance(cmd, list) else cmd)
+        UI.trace(f"[CMD] {display_cmd}")
+        if verbose:
+            UI.debug(f"Executing: {display_cmd}")
+
+        try:
+            # If stdout_file is provided, route stdout to the file descriptor and capture stderr separately.
+            # Otherwise, we use capture_output.
+            stdout_dest = (
+                stdout_file
+                if stdout_file
+                else (subprocess.PIPE if capture_output else None)
+            )
+            stderr_dest = subprocess.PIPE if (capture_output or stdout_file) else None
+
+            # Bandit: B602 (shell=True) is used for complex commands where needed,
+            # B603 (subprocess_without_shell_equals_true) is safe as we now use absolute paths.
+            result = subprocess.run(  # nosec B602 B603
+                cmd,
+                shell=shell,
+                stdout=stdout_dest,
+                stderr=stderr_dest,
+                check=check,
+                env=resolved_env,
+                cwd=cwd,
+                timeout=timeout,
+            )
+
+            if result.returncode != 0 and not check:
+                return None
+
+            if stdout_file:
+                return ""
+
+            stdout_str = ""
+            if result.stdout:
+                stdout_str = (
+                    result.stdout
+                    if isinstance(result.stdout, str)
+                    else result.stdout.decode("utf-8", errors="ignore")
+                )
+            stdout_str = stdout_str.strip()
+            if stdout_str:
+                UI.trace(f"[STDOUT] {stdout_str}")
+            return stdout_str
+
+        except subprocess.TimeoutExpired as e:
+            if not check:
+                return None
+            cmd_str = UI.redact(" ".join(cmd) if isinstance(cmd, list) else cmd)
+            UI.error(f"Command timed out after {e.timeout}s: {cmd_str}")
+            UI.trace(f"[ERROR] Timeout after {e.timeout}s")
+            sys.exit(124)
+        except (subprocess.CalledProcessError, FileNotFoundError) as e:
+            if isinstance(e, subprocess.CalledProcessError) and e.returncode == 130:
+                raise KeyboardInterrupt()
+
+            if check:
+                # Provide a clean, user-friendly error message instead of a stack trace
+                # Use redaction to protect sensitive info in the error log
+                cmd_str = UI.redact(" ".join(cmd) if isinstance(cmd, list) else cmd)
+
+                if isinstance(e, FileNotFoundError):
+                    UI.error(
+                        f"Command not found: {cmd[0] if isinstance(cmd, list) else cmd}"
+                    )
+                    sys.exit(127)
+
+                UI.error(f"Command failed (Exit {e.returncode}): {cmd_str}")
+                UI.trace(f"[ERROR] Exit {e.returncode}")
+                if e.stderr:
+                    err_details = (
+                        e.stderr
+                        if isinstance(e.stderr, str)
+                        else e.stderr.decode("utf-8", errors="ignore")
+                    )
+                    UI.trace(f"[STDERR] {err_details.strip()}")
+                    try:
+                        print(
+                            f"{UI.WHITE}Error Details:{UI.COLOR_OFF} {err_details.strip()}"
+                        )
+                    except Exception:
+                        try:
+                            encoding = sys.stdout.encoding or "utf-8"
+                            safe_details = err_details.encode(
+                                encoding, errors="backslashreplace"
+                            ).decode(encoding)
+                            print(
+                                f"{UI.WHITE}Error Details (Safe):{UI.COLOR_OFF} {safe_details.strip()}"
+                            )
+                        except Exception:
+                            pass
+                sys.exit(e.returncode)
+            return None
+        except KeyboardInterrupt:
+            # Standardize exit behavior on Ctrl+C to 130
+            UI.info("\nExecution interrupted by user.")
+            sys.exit(130)
+
+
+class DryRunCommandRunner(CommandRunner):
+    def run(
+        self,
+        cmd,
+        shell: bool = False,
+        capture_output: bool = True,
+        check: bool = True,
+        env: dict[str, str] | None = None,
+        cwd: str | None = None,
+        verbose: bool = False,
+        stdout_file: Any = None,
+        timeout: float | None = None,
+    ) -> str | None:
+        display_cmd = UI.redact(" ".join(cmd) if isinstance(cmd, list) else cmd)
         cmd_str = " ".join(cmd) if isinstance(cmd, list) else cmd
         UI.info(f"{UI.BYELLOW}[DRY RUN] Would execute:{UI.COLOR_OFF} {display_cmd}")
         mock_output = ""
@@ -439,98 +559,46 @@ def run_command(
                 mock_output = "[]"
         return mock_output
 
-    try:
-        # If stdout_file is provided, route stdout to the file descriptor and capture stderr separately.
-        # Otherwise, we use capture_output.
-        stdout_dest = (
-            stdout_file
-            if stdout_file
-            else (subprocess.PIPE if capture_output else None)
-        )
-        stderr_dest = subprocess.PIPE if (capture_output or stdout_file) else None
 
-        # Bandit: B602 (shell=True) is used for complex commands where needed,
-        # B603 (subprocess_without_shell_equals_true) is safe as we now use absolute paths.
-        result = subprocess.run(  # nosec B602 B603
-            cmd,
-            shell=shell,
-            stdout=stdout_dest,
-            stderr=stderr_dest,
-            check=check,
-            env=env,
-            cwd=cwd,
-            timeout=timeout,
-        )
+_CURRENT_RUNNER: CommandRunner | None = None
 
-        if result.returncode != 0 and not check:
-            return None
 
-        if stdout_file:
-            return ""
+def get_runner() -> CommandRunner:
+    if _CURRENT_RUNNER is not None:
+        return _CURRENT_RUNNER
+    is_dry_run = os.environ.get("LDM_DRY_RUN", "").lower() == "true"
+    if is_dry_run:
+        return DryRunCommandRunner()
+    return CommandRunner()
 
-        stdout_str = ""
-        if result.stdout:
-            stdout_str = (
-                result.stdout
-                if isinstance(result.stdout, str)
-                else result.stdout.decode("utf-8", errors="ignore")
-            )
-        stdout_str = stdout_str.strip()
-        if stdout_str:
-            UI.trace(f"[STDOUT] {stdout_str}")
-        return stdout_str
-    except subprocess.TimeoutExpired as e:
-        if not check:
-            return None
-        cmd_str = UI.redact(" ".join(cmd) if isinstance(cmd, list) else cmd)
-        UI.error(f"Command timed out after {e.timeout}s: {cmd_str}")
-        UI.trace(f"[ERROR] Timeout after {e.timeout}s")
-        sys.exit(124)
-    except (subprocess.CalledProcessError, FileNotFoundError) as e:
-        if isinstance(e, subprocess.CalledProcessError) and e.returncode == 130:
-            raise KeyboardInterrupt()
 
-        if check:
-            # Provide a clean, user-friendly error message instead of a stack trace
-            # Use redaction to protect sensitive info in the error log
-            cmd_str = UI.redact(" ".join(cmd) if isinstance(cmd, list) else cmd)
+def set_runner(runner: CommandRunner | None) -> None:
+    global _CURRENT_RUNNER  # noqa: PLW0603
+    _CURRENT_RUNNER = runner
 
-            if isinstance(e, FileNotFoundError):
-                UI.error(
-                    f"Command not found: {cmd[0] if isinstance(cmd, list) else cmd}"
-                )
-                sys.exit(127)
 
-            UI.error(f"Command failed (Exit {e.returncode}): {cmd_str}")
-            UI.trace(f"[ERROR] Exit {e.returncode}")
-            if e.stderr:
-                err_details = (
-                    e.stderr
-                    if isinstance(e.stderr, str)
-                    else e.stderr.decode("utf-8", errors="ignore")
-                )
-                UI.trace(f"[STDERR] {err_details.strip()}")
-                try:
-                    print(
-                        f"{UI.WHITE}Error Details:{UI.COLOR_OFF} {err_details.strip()}"
-                    )
-                except Exception:
-                    try:
-                        encoding = sys.stdout.encoding or "utf-8"
-                        safe_details = err_details.encode(
-                            encoding, errors="backslashreplace"
-                        ).decode(encoding)
-                        print(
-                            f"{UI.WHITE}Error Details (Safe):{UI.COLOR_OFF} {safe_details.strip()}"
-                        )
-                    except Exception:
-                        pass
-            sys.exit(e.returncode)
-        return None
-    except KeyboardInterrupt:
-        # Standardize exit behavior on Ctrl+C to 130
-        UI.info("\nExecution interrupted by user.")
-        sys.exit(130)
+def run_command(
+    cmd,
+    shell: bool = False,
+    capture_output: bool = True,
+    check: bool = True,
+    env: dict[str, str] | None = None,
+    cwd: str | None = None,
+    verbose: bool = False,
+    stdout_file: Any = None,
+    timeout: float | None = None,
+) -> str | None:
+    return get_runner().run(
+        cmd,
+        shell=shell,
+        capture_output=capture_output,
+        check=check,
+        env=env,
+        cwd=cwd,
+        verbose=verbose,
+        stdout_file=stdout_file,
+        timeout=timeout,
+    )
 
 
 def _fetch_with_retry(
