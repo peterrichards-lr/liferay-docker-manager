@@ -2,7 +2,15 @@ import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from ldm_core.utils import dict_to_yaml, verify_executable_checksum, version_to_tuple
+import requests
+
+from ldm_core.utils import (
+    dict_to_yaml,
+    get_json,
+    get_raw,
+    verify_executable_checksum,
+    version_to_tuple,
+)
 
 
 class TestUtils(unittest.TestCase):
@@ -1167,3 +1175,83 @@ class TestWindowsDriveRootSafety(unittest.TestCase):
         with self.assertRaises(ValueError) as ctx:
             self._call_windows_safety(windows_dir)
         self.assertIn("Safety Violation", str(ctx.exception))
+
+
+class TestFetchWithRetry(unittest.TestCase):
+    """Tests the retry behavior of get_json() and get_raw() under transient errors/rate limits."""
+
+    @patch("ldm_core.utils.requests.get")
+    @patch("ldm_core.utils.time.sleep")
+    def test_fetch_retry_on_rate_limit(self, mock_sleep, mock_get):
+        """Test that get_json() retries when rate limited (429) and eventually succeeds."""
+        # 1st response: 429 with Retry-After header
+        # 2nd response: 200 with JSON payload
+        mock_resp_429 = MagicMock()
+        mock_resp_429.status_code = 429
+        mock_resp_429.headers = {"Retry-After": "3"}
+
+        mock_resp_200 = MagicMock()
+        mock_resp_200.status_code = 200
+        mock_resp_200.json.return_value = {"status": "ok"}
+
+        mock_get.side_effect = [mock_resp_429, mock_resp_200]
+
+        result = get_json("https://api.github.com/repos/liferay/releases")
+
+        self.assertEqual(result, {"status": "ok"})
+        self.assertEqual(mock_get.call_count, 2)
+        mock_sleep.assert_called_once_with(3)
+
+    @patch("ldm_core.utils.requests.get")
+    @patch("ldm_core.utils.time.sleep")
+    def test_fetch_retry_on_transient_error(self, mock_sleep, mock_get):
+        """Test that get_json() retries on transient connection timeouts and succeeds."""
+        # 1st response: raises Timeout
+        # 2nd response: raises ConnectionError
+        # 3rd response: 200 with JSON payload
+        mock_resp_200 = MagicMock()
+        mock_resp_200.status_code = 200
+        mock_resp_200.json.return_value = {"version": "2.0"}
+
+        mock_get.side_effect = [
+            requests.exceptions.Timeout("Timeout"),
+            requests.exceptions.ConnectionError("Connection lost"),
+            mock_resp_200,
+        ]
+
+        result = get_json("https://api.github.com/releases")
+
+        self.assertEqual(result, {"version": "2.0"})
+        self.assertEqual(mock_get.call_count, 3)
+        self.assertEqual(mock_sleep.call_count, 2)
+
+    @patch("ldm_core.utils.requests.get")
+    @patch("ldm_core.utils.time.sleep")
+    def test_fetch_fails_after_max_retries(self, mock_sleep, mock_get):
+        """Test that get_json() returns None and stops retrying after max_retries limit is exceeded."""
+        mock_get.side_effect = requests.exceptions.Timeout("Persistent timeout")
+
+        result = get_json("https://api.github.com/releases")
+
+        self.assertIsNone(result)
+        self.assertEqual(mock_get.call_count, 3)  # max_retries default is 3
+        self.assertEqual(mock_sleep.call_count, 2)
+
+    @patch("ldm_core.utils.requests.get")
+    @patch("ldm_core.utils.time.sleep")
+    def test_get_raw_resilience(self, mock_sleep, mock_get):
+        """Test that get_raw() also benefits from the retry wrapper."""
+        mock_resp_200 = MagicMock()
+        mock_resp_200.status_code = 200
+        mock_resp_200.text = "raw_content"
+
+        mock_get.side_effect = [
+            requests.exceptions.Timeout("Timeout"),
+            mock_resp_200,
+        ]
+
+        result = get_raw("https://api.github.com/raw")
+
+        self.assertEqual(result, "raw_content")
+        self.assertEqual(mock_get.call_count, 2)
+        mock_sleep.assert_called_once()
