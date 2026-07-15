@@ -92,7 +92,6 @@ class LiferayManager(
             if not hasattr(args, attr):
                 setattr(args, attr, None)
 
-    # --- Composed Services Properties ---
     @property
     def ai(self):
         if getattr(self, "_ai", None) is None:

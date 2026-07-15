@@ -1796,8 +1796,12 @@ class WorkspaceService(BaseHandler):
 
         # 8. Rebuild composition & configurations cleanly for target
         UI.info(f"Synchronizing compose stack for fork project '{target}'...")
-        self.manager.runtime.sync_stack(
-            target_paths, target_meta, no_up=True, show_summary=True
+        self.manager.runtime.cmd_run(
+            project_id=target_meta.get("container_name") or target_paths["root"].name,
+            no_up=True,
+            show_summary=True,
+            paths=target_paths,
+            project_meta=target_meta,
         )
 
         UI.success(

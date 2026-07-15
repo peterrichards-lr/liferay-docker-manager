@@ -89,9 +89,6 @@ class MockManager(
     def _wait_for_ready(self, *args, **kwargs):
         return self.runtime._wait_for_ready(*args, **kwargs)
 
-    def sync_stack(self, *args, **kwargs):
-        return self.runtime.sync_stack(*args, **kwargs)
-
     def cmd_run(self, *args, **kwargs):
         return self.runtime.cmd_run(*args, **kwargs)
 
@@ -323,7 +320,7 @@ class TestStackOrchestration(unittest.TestCase):
     @patch("time.time")
     @patch("time.sleep")
     @patch("ldm_core.handlers.runtime.get_compose_cmd")
-    def test_sync_stack_readiness_timeout(self, mock_compose, mock_sleep, mock_time):
+    def test_cmd_run_readiness_timeout(self, mock_compose, mock_sleep, mock_time):
         """Verifies that the Service Readiness Gate correctly times out if a dependency hangs."""
         import tempfile
         from pathlib import Path
@@ -366,7 +363,13 @@ class TestStackOrchestration(unittest.TestCase):
                 patch.object(self.manager, "check_port", return_value=True),
                 patch.object(self.manager, "run_command"),
             ):
-                self.manager.sync_stack(paths, meta, no_up=False, no_wait=True)
+                self.manager.runtime.cmd_run(
+                    project_id="timeout-test",
+                    no_up=False,
+                    no_wait=True,
+                    paths=paths,
+                    project_meta=meta,
+                )
                 self.assertGreater(
                     cast(MagicMock, self.manager.get_container_status).call_count, 1
                 )

@@ -95,8 +95,12 @@ class TestVersionUpgrades(unittest.TestCase):
                 "ldm_core.docker_service.DockerService.is_running", return_value=False
             ),
         ):
-            self.manager.runtime.sync_stack(
-                self.paths, project_meta, no_up=True, show_summary=False
+            self.manager.runtime.cmd_run(
+                project_id="test-project",
+                no_up=True,
+                show_summary=False,
+                paths=self.paths,
+                project_meta=project_meta,
             )
 
             # Verify UI warnings and confirmations were triggered
@@ -139,8 +143,12 @@ class TestVersionUpgrades(unittest.TestCase):
         }
 
         with patch.object(self.manager.snapshot, "cmd_snapshot") as mock_snapshot:
-            self.manager.runtime.sync_stack(
-                self.paths, project_meta, no_up=True, show_summary=False
+            self.manager.runtime.cmd_run(
+                project_id="test-project",
+                no_up=True,
+                show_summary=False,
+                paths=self.paths,
+                project_meta=project_meta,
             )
 
             # Verify snapshot was NOT triggered
@@ -171,8 +179,12 @@ class TestVersionUpgrades(unittest.TestCase):
         self.manager.args.no_upgrade_db = True
 
         with patch.object(self.manager.snapshot, "cmd_snapshot") as mock_snapshot:
-            self.manager.runtime.sync_stack(
-                self.paths, project_meta, no_up=True, show_summary=False
+            self.manager.runtime.cmd_run(
+                project_id="test-project",
+                no_up=True,
+                show_summary=False,
+                paths=self.paths,
+                project_meta=project_meta,
             )
 
             # No prompts should be shown
@@ -208,8 +220,12 @@ class TestVersionUpgrades(unittest.TestCase):
         run_cmd_mock.return_value = True
 
         with patch.object(self.manager.snapshot, "cmd_snapshot") as mock_snapshot:
-            self.manager.runtime.sync_stack(
-                self.paths, project_meta, no_up=True, show_summary=False
+            self.manager.runtime.cmd_run(
+                project_id="test-project",
+                no_up=True,
+                show_summary=False,
+                paths=self.paths,
+                project_meta=project_meta,
             )
 
             # No prompts should be shown because overrides are active
@@ -244,8 +260,12 @@ class TestVersionUpgrades(unittest.TestCase):
         self.manager.non_interactive = True
 
         with patch.object(self.manager.snapshot, "cmd_snapshot") as mock_snapshot:
-            self.manager.runtime.sync_stack(
-                self.paths, project_meta, no_up=True, show_summary=False
+            self.manager.runtime.cmd_run(
+                project_id="test-project",
+                no_up=True,
+                show_summary=False,
+                paths=self.paths,
+                project_meta=project_meta,
             )
 
             # No prompts should be shown, backup should be skipped, upgrade should be disabled

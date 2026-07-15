@@ -57,7 +57,14 @@ class RuntimeService(BaseHandler):
             project_root / "keycloak-realm.json", json.dumps(realm_data, indent=2)
         )
 
-    def cmd_run(self, project_id=None, is_restart=False, no_up=None, browser=None):
+    def cmd_run(
+        self,
+        project_id=None,
+        is_restart=False,
+        no_up=None,
+        browser=None,
+        **kwargs,
+    ):
         """Main entry point for starting or updating a project stack."""
         from ldm_core.pipelines.run import RunPipelineContext, create_run_pipeline
 
@@ -68,6 +75,7 @@ class RuntimeService(BaseHandler):
             is_restart=is_restart,
             no_up=no_up,
             browser=browser,
+            **kwargs,
         )
         return pipeline.run(context)
 
@@ -1304,44 +1312,6 @@ class RuntimeService(BaseHandler):
 
         UI.error("\nTimed out waiting for Liferay to become healthy.")
         return False
-
-    def sync_stack(
-        self,
-        paths,
-        project_meta,
-        follow=False,
-        rebuild=False,
-        no_up=False,
-        no_wait=False,
-        show_summary=True,
-        total_start=None,
-        browser=None,
-    ):
-        """Orchestrates stack configuration and startup using the unified RunPipeline."""
-        from ldm_core.pipelines.run import RunPipelineContext, create_run_pipeline
-
-        # Ensure paths is a dictionary for subscripting
-        if not isinstance(paths, dict):
-            paths = self.manager.setup_paths(paths)
-
-        pipeline = create_run_pipeline()
-        context = RunPipelineContext(
-            self.manager,
-            project_id=project_meta.get("container_name")
-            or project_meta.get("project_name")
-            or paths["root"].name,
-            paths=paths,
-            project_meta=project_meta,
-            is_restart=True,
-            no_up=no_up,
-            browser=browser,
-            total_start=total_start,
-            rebuild=rebuild,
-            no_wait=no_wait,
-            show_summary=show_summary,
-            follow=follow,
-        )
-        return pipeline.run(context)
 
     def cmd_stop(self, project_id=None, service=None, all_projects=False):
         """Stops project containers."""

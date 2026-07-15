@@ -685,8 +685,12 @@ class SnapshotService(BaseHandler):
         # 1.5 Ensure Compose file exists (Mandate 2.1)
         if not (paths["root"] / "docker-compose.yml").exists():
             UI.info("Scaffolding Docker environment for restore...")
-            self.manager.runtime.sync_stack(
-                paths, project_meta, no_up=True, show_summary=False
+            self.manager.runtime.cmd_run(
+                project_id=project_meta.get("container_name") or paths["root"].name,
+                no_up=True,
+                show_summary=False,
+                paths=paths,
+                project_meta=project_meta,
             )
 
         # 2. Reset the Environment (Clean Slate)
@@ -898,8 +902,13 @@ class SnapshotService(BaseHandler):
             project_meta["tag"] = snap_tag
             project_meta["last_run_liferay_version"] = snap_tag
             self.manager.write_meta(paths["root"], project_meta)
-            self.manager.runtime.sync_stack(
-                paths, project_meta, no_up=True, show_summary=False
+            self.manager.runtime.cmd_run(
+                project_id=project_meta.get("container_name") or paths["root"].name,
+                no_up=True,
+                show_summary=False,
+                is_restore=True,
+                paths=paths,
+                project_meta=project_meta,
             )
 
         # --- DATABASE RESTORE (Orchestrated) ---

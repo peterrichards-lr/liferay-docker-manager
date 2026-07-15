@@ -1482,10 +1482,10 @@ class TestWorkspaceQuickstart(unittest.TestCase):
     @patch.object(MockWorkspaceManager, "detect_project_path")
     @patch.object(MockWorkspaceManager, "setup_paths")
     @patch.object(MockWorkspaceManager, "check_port")
-    @patch("ldm_core.handlers.runtime.RuntimeService.sync_stack")
+    @patch("ldm_core.handlers.runtime.RuntimeService.cmd_run")
     def test_cmd_fork_success(
         self,
-        mock_sync_stack,
+        mock_cmd_run,
         mock_check_port,
         mock_setup_paths,
         mock_detect_path,
@@ -1545,7 +1545,7 @@ class TestWorkspaceQuickstart(unittest.TestCase):
         self.manager.snapshot.cmd_restore.assert_called_once_with(
             project_id="target_fork", backup_dir=str(snapshot_dir)
         )
-        mock_sync_stack.assert_called_once()
+        mock_cmd_run.assert_called_once()
 
     @patch.object(MockWorkspaceManager, "register_project")
     @patch("ldm_core.handlers.base.BaseHandler.write_meta")
@@ -1553,10 +1553,10 @@ class TestWorkspaceQuickstart(unittest.TestCase):
     @patch.object(MockWorkspaceManager, "detect_project_path")
     @patch.object(MockWorkspaceManager, "setup_paths")
     @patch.object(MockWorkspaceManager, "check_port")
-    @patch("ldm_core.handlers.runtime.RuntimeService.sync_stack")
+    @patch("ldm_core.handlers.runtime.RuntimeService.cmd_run")
     def test_cmd_fork_auto_snapshot(
         self,
-        mock_sync_stack,
+        mock_cmd_run,
         mock_check_port,
         mock_setup_paths,
         mock_detect_path,

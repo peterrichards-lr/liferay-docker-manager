@@ -659,8 +659,12 @@ class ShareService:
             # Regenerate compose file and boot lfr-tunnel service
             paths = self.manager.setup_paths(root)
             UI.info("Regenerating stack configuration with lfr-tunnel sidecar...")
-            self.manager.runtime.sync_stack(
-                paths, project_meta, no_up=True, show_summary=False
+            self.manager.runtime.cmd_run(
+                project_id=project_meta.get("container_name") or paths["root"].name,
+                no_up=True,
+                show_summary=False,
+                paths=paths,
+                project_meta=project_meta,
             )
 
             from ldm_core.utils import get_compose_cmd
@@ -758,8 +762,12 @@ class ShareService:
             # Regenerate compose file and boot ngrok service
             paths = self.manager.setup_paths(root)
             UI.info("Regenerating stack configuration with ngrok sidecar...")
-            self.manager.runtime.sync_stack(
-                paths, project_meta, no_up=True, show_summary=False
+            self.manager.runtime.cmd_run(
+                project_id=project_meta.get("container_name") or paths["root"].name,
+                no_up=True,
+                show_summary=False,
+                paths=paths,
+                project_meta=project_meta,
             )
 
             from ldm_core.utils import get_compose_cmd

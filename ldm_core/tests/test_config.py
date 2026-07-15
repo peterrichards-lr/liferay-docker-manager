@@ -45,9 +45,6 @@ class MockConfigManager:
     def write_meta(self, *args, **kwargs):
         pass
 
-    def sync_stack(self, *args, **kwargs):
-        pass
-
     def verify_runtime_environment(self, *args, **kwargs):
         pass
 
@@ -499,7 +496,7 @@ class TestConfigService(unittest.TestCase):
 
             self.manager.detect_project_path = MagicMock(return_value=tmp_path)  # type: ignore[method-assign]
             self.manager.write_meta = MagicMock()  # type: ignore[method-assign]
-            self.manager.sync_stack = MagicMock()  # type: ignore[method-assign]
+            self.manager.runtime.cmd_run = MagicMock()  # type: ignore[method-assign]
 
             # Case 1: Empty string + Batch Update
             self.manager.non_interactive = True
