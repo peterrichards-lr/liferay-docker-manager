@@ -108,12 +108,17 @@ class BaseHandler:
         required_hosts = [host_name]
         paths = self.setup_paths(root)
         if paths["cx"].exists():
-            from ldm_core.handlers.workspace import WorkspaceService
+            if self.manager and hasattr(self.manager, "workspace"):
+                extensions = self.manager.workspace.scan_client_extensions(
+                    paths["root"], paths["cx"], paths["ce_dir"]
+                )
+            else:
+                from ldm_core.handlers.workspace import WorkspaceService
 
-            handler = WorkspaceService(self)
-            extensions = handler.scan_client_extensions(
-                paths["root"], paths["cx"], paths["ce_dir"]
-            )
+                handler = WorkspaceService(self.manager if self.manager else self)
+                extensions = handler.scan_client_extensions(
+                    paths["root"], paths["cx"], paths["ce_dir"]
+                )
             for ext in extensions:
                 if ext.get("deploy") and ext.get("has_load_balancer"):
                     required_hosts.append(f"{ext['id']}.{host_name}")
