@@ -2374,57 +2374,38 @@ class FileLock:
         self.lock_file = Path(lock_file_path)
         self.fd = None
 
-    def acquire(self, mode="w+", exclusive=True):
+    def acquire(self, mode="w+", exclusive=True, retries=5):
         """Acquires a non-blocking flock. Employs fcntl.flock on Unix systems and msvcrt.locking (locking the first byte of the file) on Windows."""
         import atexit
+        import random
+        import time
 
         self.lock_file.parent.mkdir(parents=True, exist_ok=True)
 
-        try:
-            self._try_acquire(mode, exclusive)
-            atexit.register(self.release)
-        except RuntimeError:
-            stale = False
+        for attempt in range(retries):
             try:
-                with open(self.lock_file) as f:
-                    content = f.read().strip()
-                    if content.isdigit():
-                        pid = int(content)
-                        try:
-                            import psutil
-
-                            if not psutil.pid_exists(pid):
-                                stale = True
-                        except ImportError:
-                            if os.name == "nt":
-                                import ctypes
-
-                                process = ctypes.windll.kernel32.OpenProcess(  # type: ignore[attr-defined]
-                                    0x00100000, 0, pid
-                                )
-                                if process != 0:
-                                    ctypes.windll.kernel32.CloseHandle(process)  # type: ignore[attr-defined]
-                                else:
-                                    stale = True
-                            else:
-                                try:
-                                    os.kill(pid, 0)
-                                except ProcessLookupError:
-                                    stale = True
-                                except PermissionError:
-                                    pass
-            except Exception:
-                pass
-
-            if stale:
-                try:
-                    self.lock_file.unlink()
-                except OSError:
-                    pass
                 self._try_acquire(mode, exclusive)
                 atexit.register(self.release)
-            else:
-                raise RuntimeError(f"Could not acquire lock on file: {self.lock_file}")
+                return
+            except RuntimeError as e:
+                if attempt == retries - 1:
+                    # Final attempt failed; read PID of the process currently holding the lock for better logging
+                    pid = None
+                    try:
+                        if self.lock_file.exists():
+                            content = self.lock_file.read_text(encoding="utf-8").strip()
+                            if content.isdigit():
+                                pid = int(content)
+                    except Exception:
+                        pass
+                    pid_msg = f" (held by PID {pid})" if pid else ""
+                    raise RuntimeError(
+                        f"Could not acquire lock on file: {self.lock_file}{pid_msg}"
+                    ) from e
+
+                # Exponential backoff with jitter
+                wait = min(0.05 * (2**attempt) + random.uniform(0, 0.02), 1.0)
+                time.sleep(wait)
 
     def _try_acquire(self, mode: str, exclusive: bool):
         self.fd = open(self.lock_file, mode)  # noqa: SIM115
@@ -2519,78 +2500,41 @@ class ProjectLock:
                 self.fd = None
             raise
 
-    def _is_lock_stale(self) -> bool:
-        if not self.lock_file.exists():
-            return True
-        try:
-            content = self.lock_file.read_text(encoding="utf-8").strip()
-            if content.startswith("PID: "):
-                pid_str = content.split()[-1]
-            else:
-                pid_str = content
-            if not pid_str.isdigit():
-                return True
-            pid = int(pid_str)
-
-            import psutil
-
-            return not psutil.pid_exists(pid)
-        except ImportError:
-            if os.name == "nt":
-                import ctypes
-
-                try:
-                    process = ctypes.windll.kernel32.OpenProcess(0x00100000, 0, pid)  # type: ignore[attr-defined]
-                    if process != 0:
-                        ctypes.windll.kernel32.CloseHandle(process)  # type: ignore[attr-defined]
-                        return False
-                    return True
-                except Exception:
-                    return True
-            else:
-                try:
-                    os.kill(pid, 0)  # liveness probe only
-                    return False  # process is alive
-                except ProcessLookupError:
-                    return True  # process is dead
-                except PermissionError:
-                    return False  # alive, just owned by another user
-                except Exception:
-                    return True
-        except Exception:
-            return True
-
-    def acquire(self):
+    def acquire(self, retries=5):
         """Acquires a non-blocking exclusive file lock on the project."""
-        try:
-            self._try_acquire()
-        except (BlockingIOError, PermissionError, OSError):
-            if self._is_lock_stale():
-                try:
-                    # Attempt to read PID for the warning log before unlinking
-                    pid = None
-                    if self.lock_file.exists():
-                        content = self.lock_file.read_text(encoding="utf-8").strip()
-                        pid_str = (
-                            content.split()[-1]
-                            if content.startswith("PID: ")
-                            else content
-                        )
-                        if pid_str.isdigit():
-                            pid = int(pid_str)
-                except Exception:
-                    pass
+        import random
+        import time
 
-                pid_msg = f" (PID {pid} no longer running)" if pid else ""
-                UI.warning(f"Stale project lock detected{pid_msg}. Auto-recovering...")
-                with contextlib.suppress(OSError):
-                    self.lock_file.unlink(missing_ok=True)
+        for attempt in range(retries):
+            try:
                 self._try_acquire()
-            else:
-                raise RuntimeError(
-                    "Concurrency Violation: Another instance of LDM is running on this project.\n"
-                    f"If this is incorrect, delete: {self.lock_file}"
-                )
+                return
+            except (BlockingIOError, PermissionError, OSError, RuntimeError) as e:
+                if attempt == retries - 1:
+                    # Final attempt failed; read PID of the process currently holding the lock for better logging
+                    pid = None
+                    try:
+                        if self.lock_file.exists():
+                            content = self.lock_file.read_text(encoding="utf-8").strip()
+                            pid_str = (
+                                content.split()[-1]
+                                if content.startswith("PID: ")
+                                else content
+                            )
+                            if pid_str.isdigit():
+                                pid = int(pid_str)
+                    except Exception:
+                        pass
+                    pid_msg = f" (held by PID {pid})" if pid else ""
+                    raise RuntimeError(
+                        "Concurrency Violation: Another instance of LDM is running on this project.\n"
+                        f"Lock file: {self.lock_file}{pid_msg}\n"
+                        "If this is incorrect, delete the lock file."
+                    ) from e
+
+                # Exponential backoff with jitter
+                wait = min(0.05 * (2**attempt) + random.uniform(0, 0.02), 1.0)
+                time.sleep(wait)
 
     def release(self):
         """Releases the lock and deletes the lock file."""

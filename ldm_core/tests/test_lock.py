@@ -2,8 +2,9 @@ import os
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
-from ldm_core.utils import ProjectLock
+from ldm_core.utils import FileLock, ProjectLock
 
 
 class TestProjectLock(unittest.TestCase):
@@ -95,19 +96,60 @@ class TestProjectLock(unittest.TestCase):
             )
             fcntl.flock(hold_fd, fcntl.LOCK_UN)
 
-    def test_is_lock_stale_edge_cases(self):
-        """Verify _is_lock_stale handles corrupted/empty lock files."""
-        lock = ProjectLock(self.project_path)
+    @patch("time.sleep")
+    def test_project_lock_retries_and_raises(self, mock_sleep):
+        """Verify ProjectLock retries acquisition and eventually raises on failure."""
         lock_file = self.project_path / ".liferay-docker" / ".ldm_lock"
         lock_file.parent.mkdir(parents=True, exist_ok=True)
+        # Write PID of current process and hold the flock to simulate a locked file
+        lock_file.write_text(f"PID: {os.getpid()}\n", encoding="utf-8")
 
-        # Non-existent lock file
-        self.assertTrue(lock._is_lock_stale())
+        import fcntl
 
-        # Empty file
-        lock_file.write_text("", encoding="utf-8")
-        self.assertTrue(lock._is_lock_stale())
+        with open(lock_file, "r+") as hold_fd:
+            fcntl.flock(hold_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
 
-        # Invalid PID format
-        lock_file.write_text("PID: abc\n", encoding="utf-8")
-        self.assertTrue(lock._is_lock_stale())
+            lock = ProjectLock(self.project_path)
+            with self.assertRaises(RuntimeError) as ctx:
+                lock.acquire(retries=3)
+
+            self.assertIn("Concurrency Violation", str(ctx.exception))
+            self.assertEqual(
+                mock_sleep.call_count, 2
+            )  # Should sleep twice for 3 retries
+
+            fcntl.flock(hold_fd, fcntl.LOCK_UN)
+
+
+class TestFileLock(unittest.TestCase):
+    def setUp(self):
+        self.test_dir = tempfile.mkdtemp()
+        self.lock_file = Path(self.test_dir) / "test.lock"
+
+    def tearDown(self):
+        import shutil
+
+        shutil.rmtree(self.test_dir)
+
+    def test_acquire_release(self):
+        lock = FileLock(self.lock_file)
+        lock.acquire()
+        self.assertTrue(self.lock_file.exists())
+        lock.release()
+        self.assertFalse(self.lock_file.exists())
+
+    @patch("time.sleep")
+    def test_file_lock_retries_and_raises(self, mock_sleep):
+        from ldm_core.utils import FileLock
+
+        lock1 = FileLock(self.lock_file)
+        lock1.acquire()
+
+        lock2 = FileLock(self.lock_file)
+        with self.assertRaises(RuntimeError) as ctx:
+            lock2.acquire(retries=3)
+
+        self.assertIn("Could not acquire lock on file", str(ctx.exception))
+        self.assertEqual(mock_sleep.call_count, 2)
+
+        lock1.release()
