@@ -327,8 +327,11 @@ class RuntimeService(BaseHandler):
             )
             if inspect_output and ":" in inspect_output:
                 lfr_port = inspect_output.split(":")[-1].strip()
-        except Exception:
-            pass
+        except Exception as e:
+            UI.debug(
+                f"Could not inspect mapped port for container '{container_name}': {e}. "
+                "Defaulting to port 8080 — OAuth redirects may be incorrect."
+            )
 
         # 1. Build expansion dictionary
         expansion_env = os.environ.copy()
@@ -425,8 +428,11 @@ class RuntimeService(BaseHandler):
                                     )
 
                             expansion_env[k] = v
-            except Exception:
-                pass
+            except Exception as e:
+                UI.warning(
+                    f"Client extension environment variable expansion failed: {e}\n"
+                    "Routes and OAuth URLs for client extensions may not resolve correctly."
+                )
 
         def expand_vars(obj):
             if isinstance(obj, str):
@@ -676,8 +682,8 @@ class RuntimeService(BaseHandler):
                     )
                     http_ready = True
                     break
-            except Exception:
-                pass
+            except Exception as e:
+                UI.debug(f"HTTP readiness check failed (will retry): {e}")
             time.sleep(2)
 
         if not http_ready:
@@ -718,8 +724,8 @@ class RuntimeService(BaseHandler):
                     else:
                         deploy_clear = True
                         break
-                except Exception:
-                    pass
+                except Exception as e:
+                    UI.debug(f"Deploy directory check failed (will retry): {e}")
                 time.sleep(2)
 
             if not deploy_clear:
@@ -847,8 +853,8 @@ class RuntimeService(BaseHandler):
                             idle_checks = 0
                     except ValueError:
                         pass
-            except Exception:
-                pass
+            except Exception as e:
+                UI.debug(f"Log milestone scan failed (will retry): {e}")
             time.sleep(2)
 
         UI.warning(
@@ -887,8 +893,8 @@ class RuntimeService(BaseHandler):
                             f"🌍 Public ngrok Tunnel Active: {UI.CYAN}{public_url}{UI.COLOR_OFF}"
                         )
                         return
-        except Exception:
-            pass
+        except Exception as e:
+            UI.debug(f"Could not retrieve ngrok public URL: {e}")
         UI.warning("ngrok container is running, but failed to retrieve public URL.")
 
     def _wait_for_ready(
