@@ -551,7 +551,8 @@ def _get_env_info(self):
     # 2. Docker Provider
     mount_type = None
     try:
-        context = run_command(["docker", "context", "show"], check=False).strip()
+        context_res = run_command(["docker", "context", "show"], check=False)
+        context = context_res.strip() if context_res else ""
         if context:
             inspect = run_command(
                 ["docker", "context", "inspect", context], check=False

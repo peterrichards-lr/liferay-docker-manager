@@ -408,12 +408,11 @@ class CommandRunner:
         stdout_file: Any = None,
         timeout: float | None = None,
     ) -> str | None:
-        resolved_env = (
+        resolved_env = dict(
             env
             if env is not None
             else (self.env if self.env is not None else os.environ)
         )
-        resolved_env = resolved_env.copy()
 
         resolved_env["DOCKER_CLI_HINTS"] = "false"
         if "DOCKER_API_VERSION" not in resolved_env:
