@@ -21,8 +21,12 @@ except ImportError:
 from ldm_core.constants import SCRIPT_DIR, TAG_PATTERN
 from ldm_core.ui import UI
 
-# Global virtual file system for Dry-Run mode to support read-after-write operations
 _DRY_RUN_VFS: dict[str, str] = {}
+
+
+def reset_dry_run_vfs() -> None:
+    """Clears the in-memory dry-run virtual filesystem. Call in test teardown."""
+    _DRY_RUN_VFS.clear()
 
 
 class Benchmarker:

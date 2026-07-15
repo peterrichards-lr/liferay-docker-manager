@@ -104,7 +104,7 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
   - [x] #602: ES version detection using substring matching
   - [x] #603: Windows drive root safety gaps in `verify_safe_to_delete()`
   - [x] #610: `_DRY_RUN_VFS` global dict never cleared -- state leaks between test runs
-  - [ ] #611: Add retry with exponential backoff to `get_json()` and `get_raw()`
+  - [x] #611: Add retry with exponential backoff to `get_json()` and `get_raw()`
 
   **Audit Reference:** Technical Risk Assessment (file:///Users/peterrichards/.gemini/antigravity/brain/78137ee0-ce3c-4d01-9eae-a47d416f8dec/technical_risk_assessment.md)
 
