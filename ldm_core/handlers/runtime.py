@@ -1332,9 +1332,13 @@ class RuntimeService(BaseHandler):
             else:
                 current_mysql_ver = resolve_dependency_version(tag, "mariadb") or "10.6"
 
+        from ldm_core.utils import resolve_dependency_version
+
         current_es_major = "8"
-        if tag and ("7.3" in tag or "7.2" in tag or "7.1" in tag or "7.0" in tag):
-            current_es_major = "7"
+        if tag:
+            es_version = resolve_dependency_version(tag, "elasticsearch")
+            if es_version:
+                current_es_major = es_version.split(".")[0]
 
         if not getattr(self.manager.args, "force_downgrade", False):
             last_lr_ver = project_meta.get("last_run_liferay_version")
