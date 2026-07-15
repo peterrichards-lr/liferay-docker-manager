@@ -503,7 +503,7 @@ tls:
                     break
                 time.sleep(2)
 
-    def setup_global_search(self, force=False):
+    def setup_global_search(self, force=False, _depth=0):
         """Ensures the global ES8 search service is running."""
         # LDM-369: Sidecar Protection. If the current project metadata explicitly
         # disables shared search, we MUST NOT touch the global search infrastructure.
@@ -599,6 +599,11 @@ tls:
                 time.sleep(5)
 
             if not ready:
+                if _depth >= 2:
+                    UI.die(
+                        "Elasticsearch failed to start after 2 restart attempts. Check: ldm logs",
+                        exit_code=3,
+                    )
                 UI.error("Elasticsearch failed to become ready in time.")
                 # AUTO-REPAIR: If ES fails to start, it's often due to corrupted data in the volume.
                 # Wiping and restarting usually fixes mapping/plugin-mismatch issues.
@@ -616,7 +621,7 @@ tls:
                     reclaim_volume_permissions(es_data)
 
                 UI.info("Restarting Global Search with clean slate...")
-                return self.setup_global_search()
+                return self.setup_global_search(force=force, _depth=_depth + 1)
 
             # Register backup repository (required for snapshots)
             self.manager.run_command(
