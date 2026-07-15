@@ -71,7 +71,32 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
 - [Agent Rules of Engagement](./.gemini/gemini.md)
 - [Properties Override Hierarchy Guide](./docs/explanation/properties.md)
 
-## 8. Active Work State & Plan (July 14, 2026)
+## 8. Active Work State & Plan (July 15, 2026)
+
+- **Current Active Task (July 15, 2026) — Technical Debt Audit & GitHub Issue Creation**:
+  - [x] Conducted comprehensive 3-phase Technical Debt Assessment across 10 core modules.
+  - [x] Identified 21 specific findings (race conditions, security vulnerabilities, architectural smells, fragile error boundaries).
+  - [x] Created 21 GitHub issues (#592–#612) with full root cause analysis, proposed fixes, and test protocols.
+  - [/] Implementing Milestone 1 critical issues (beginning with #594: setup_global_search() unbounded recursion).
+  - [ ] Review implementation against audit intent (agent has been briefed to do this).
+
+  **Milestone 1 Critical Issues (Priority: p1 — act immediately):**
+  - #592: DB restore wipes database on every retry — silent data loss
+  - #593: `_wait_for_search_restore()` false success on timeout
+  - #594: `setup_global_search()` unbounded recursion
+  - #595: SSL disabled for admin API calls over public tunnel URLs
+  - #598: `ProjectLock` no stale-lock recovery after SIGKILL
+
+  **Milestone 1 High Issues (Priority: p2):**
+  - #596: `shell=True` with unvalidated env var in `_ensure_binary()`
+  - #597: `_print_ngrok_url()` AttributeError on str.stdout
+  - #599: `reclaim_volume_permissions()` chmod 777 security issue
+  - #600: Silent except blocks swallowing CX failures in runtime.py
+  - #601: Tag cache without FileLock — JSON corruption
+  - #602: ES version detection using substring matching
+  - #603: Windows drive root safety gaps in `verify_safe_to_delete()`
+
+  **Audit Reference:** [Technical Risk Assessment](file:///Users/peterrichards/.gemini/antigravity/brain/78137ee0-ce3c-4d01-9eae-a47d416f8dec/technical_risk_assessment.md)
 
 - **Current Active Task (July 15, 2026)**:
   - [x] Epic #582: Implement Quickstart Host/SSL defaults, dynamic microservice port conflict resolution, and container status tracking.

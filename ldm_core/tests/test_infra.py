@@ -208,6 +208,25 @@ class TestInfraService(unittest.TestCase):
             self.infra.cmd_infra_down()
             mock_run.assert_called()
 
+    @patch("ldm_core.docker_service.DockerService.exists", return_value=False)
+    @patch("ldm_core.handlers.infra.get_actual_home", return_value=Path("/tmp"))
+    @patch("ldm_core.utils.reclaim_volume_permissions")
+    @patch("ldm_core.ui.UI.die")
+    @patch("shutil.rmtree")
+    @patch("time.sleep")
+    def test_setup_global_search_recursion_limit(
+        self, mock_sleep, mock_rmtree, mock_die, mock_reclaim, mock_home, mock_exists
+    ):
+        mock_die.side_effect = SystemExit(3)
+        with (
+            patch.object(self.manager, "run_command", return_value=""),
+            patch.object(self.manager, "get_container_status", return_value="running"),
+        ):
+            with self.assertRaises(SystemExit):
+                self.infra.setup_global_search(force=True)
+            mock_die.assert_called_once()
+            self.assertEqual(mock_die.call_args[1].get("exit_code"), 3)
+
 
 if __name__ == "__main__":
     unittest.main()
