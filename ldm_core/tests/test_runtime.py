@@ -1289,6 +1289,80 @@ services:
 
     @patch("time.sleep")
     @patch("urllib.request.urlopen")
+    def test_patch_fragment_overrides_ssl_verification(self, mock_urlopen, mock_sleep):
+        """Test that SSL context verification is only bypassed for loopback hosts."""
+        import json
+        import ssl
+
+        # 1. Non-loopback case (public sharing subdomain)
+        project_meta_public = {
+            "tag": "2025.Q1.0",
+            "container_name": "liferay-demo",
+            "share": "true",
+        }
+        configs_dir = self.tmp_dir / "configs"
+        configs_dir.mkdir(parents=True, exist_ok=True)
+        overrides_data = {"test-frag": {"url": "https://foo.${LDM_HOST_NAME}"}}
+        with open(configs_dir / "fragment-overrides.json", "w") as f:
+            json.dump(overrides_data, f)
+
+        mock_response = MagicMock()
+        mock_response.read.side_effect = [
+            json.dumps({"items": [{"id": "20124"}]}).encode("utf-8"),
+            json.dumps({"items": []}).encode("utf-8"),
+        ]
+        ctx_manager = MagicMock()
+        ctx_manager.__enter__.return_value = mock_response
+        mock_urlopen.side_effect = [ctx_manager, ctx_manager]
+
+        with (
+            patch.object(self.handler, "run_command", return_value="8080"),
+            patch.object(self.handler.defaults, "get", return_value="my-subdomain"),
+        ):
+            self.handler.handler._patch_fragment_overrides(
+                project_meta_public, paths={"root": self.tmp_dir}
+            )
+
+        # Get context parameter passed to urlopen for non-loopback
+        called_ctx_public = mock_urlopen.call_args_list[0].kwargs.get("context")
+        self.assertIsNotNone(called_ctx_public)
+        # Should NOT bypass verification (i.e. check_hostname should be True, verify_mode should not be CERT_NONE)
+        self.assertTrue(called_ctx_public.check_hostname)
+        self.assertNotEqual(called_ctx_public.verify_mode, ssl.CERT_NONE)
+
+        # 2. Loopback case (local development host)
+        project_meta_local = {
+            "tag": "2025.Q1.0",
+            "container_name": "liferay-demo",
+            "host_name": "localhost",
+            "share": "false",
+        }
+        mock_urlopen.reset_mock()
+        mock_response_local = MagicMock()
+        mock_response_local.read.side_effect = [
+            json.dumps({"items": [{"id": "20124"}]}).encode("utf-8"),
+            json.dumps({"items": []}).encode("utf-8"),
+        ]
+        ctx_manager_local = MagicMock()
+        ctx_manager_local.__enter__.return_value = mock_response_local
+        mock_urlopen.side_effect = [ctx_manager_local, ctx_manager_local]
+
+        with (
+            patch.object(self.handler, "run_command", return_value="8080"),
+            patch.object(self.handler.defaults, "get", return_value=None),
+        ):
+            self.handler.handler._patch_fragment_overrides(
+                project_meta_local, paths={"root": self.tmp_dir}
+            )
+
+        called_ctx_local = mock_urlopen.call_args_list[0].kwargs.get("context")
+        self.assertIsNotNone(called_ctx_local)
+        # Should bypass verification
+        self.assertFalse(called_ctx_local.check_hostname)
+        self.assertEqual(called_ctx_local.verify_mode, ssl.CERT_NONE)
+
+    @patch("time.sleep")
+    @patch("urllib.request.urlopen")
     def test_patch_fragment_overrides_shifted_ports(self, mock_urlopen, mock_sleep):
         """Verify that fragment overrides ext_base_url appends shifted proxy ports correctly when not shared."""
         import json
