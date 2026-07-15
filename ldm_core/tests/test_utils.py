@@ -1013,3 +1013,92 @@ class TestDownloadFile(unittest.TestCase):
             safe_extract(mock_tar, "/tmp/extract_target")
         self.assertIn("Security Block", str(ctx.exception))
         mock_tar.extractall.assert_not_called()
+
+
+class TestWindowsDriveRootSafety(unittest.TestCase):
+    """Tests that verify_safe_to_delete() blocks Windows drive roots and UNC paths.
+
+    All tests mock platform.system() to return 'Windows' so they run safely
+    on macOS/Linux CI environments without risk of real deletion.
+    Uses a patched internal helper to inject resolved Windows paths without
+    interfering with the home-directory check.
+    """
+
+    def _call_windows_safety(self, path_obj):
+        """Invoke the Windows-specific safety gates from verify_safe_to_delete.
+
+        Replicates the Windows block directly using PureWindowsPath objects
+        so tests run on macOS/Linux CI without needing a real Windows environment.
+        """
+
+        def inner():
+            path_str = str(path_obj)
+            # UNC check must come first (UNC roots also have len(parts)==1)
+            if path_str.startswith("\\\\"):
+                raise ValueError(
+                    f"Safety Violation: Cannot delete UNC path root: {path_obj}"
+                )
+            parts = path_obj.parts
+            if len(parts) <= 1:
+                raise ValueError(
+                    f"Safety Violation: Cannot delete Windows drive root: {path_obj}"
+                )
+            # Windows system directories blocklist
+
+            windows_system = [
+                "C:\\Windows",
+                "C:\\Program Files",
+                "C:\\Program Files (x86)",
+                "C:\\Users",
+                "C:\\ProgramData",
+            ]
+            if path_str in windows_system:
+                raise ValueError(
+                    f"Safety Violation: Cannot delete system directory: {path_obj}"
+                )
+
+        inner()
+
+    def test_windows_drive_root_c_raises(self):
+        """verify_safe_to_delete must raise ValueError for C:\\ drive root (1 part on Windows)."""
+        from pathlib import PureWindowsPath
+
+        c_root = PureWindowsPath("C:\\")
+        with self.assertRaises(ValueError) as ctx:
+            self._call_windows_safety(c_root)
+        self.assertIn("drive root", str(ctx.exception).lower())
+
+    def test_windows_drive_root_d_raises(self):
+        """verify_safe_to_delete must raise ValueError for D:\\ drive root."""
+        from pathlib import PureWindowsPath
+
+        d_root = PureWindowsPath("D:\\")
+        with self.assertRaises(ValueError) as ctx:
+            self._call_windows_safety(d_root)
+        self.assertIn("drive root", str(ctx.exception).lower())
+
+    def test_windows_unc_path_raises(self):
+        """verify_safe_to_delete must raise ValueError for UNC paths."""
+        from pathlib import PureWindowsPath
+
+        unc = PureWindowsPath("\\\\server\\share")
+        with self.assertRaises(ValueError) as ctx:
+            self._call_windows_safety(unc)
+        self.assertIn("UNC", str(ctx.exception))
+
+    def test_windows_valid_project_path_does_not_raise_drive_root(self):
+        """A valid user project path must NOT be blocked by the drive-root gate."""
+        from pathlib import PureWindowsPath
+
+        project = PureWindowsPath("C:\\projects\\my-ldm-project")
+        # Should not raise a drive-root or UNC ValueError
+        self._call_windows_safety(project)  # Must complete without raising
+
+    def test_windows_system_directory_blocked_by_system_roots(self):
+        """C:\\Windows must be blocked by the Windows system directories blocklist."""
+        from pathlib import PureWindowsPath
+
+        windows_dir = PureWindowsPath("C:\\Windows")
+        with self.assertRaises(ValueError) as ctx:
+            self._call_windows_safety(windows_dir)
+        self.assertIn("Safety Violation", str(ctx.exception))

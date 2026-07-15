@@ -1936,6 +1936,42 @@ def verify_safe_to_delete(path):
         Path("/Users"),
         Path("/Volumes"),
     ]
+
+    # Windows-specific safety gates
+    if platform.system().lower() == "windows":
+        path_str = str(path_obj)
+        # Block UNC roots first: \\server\share (starts with \\)
+        # UNC root paths also have len(parts)==1, so check this before the drive-root gate
+        if path_str.startswith("\\\\"):
+            raise ValueError(
+                f"Safety Violation: Cannot delete UNC path root: {path_obj}"
+            )
+        parts = path_obj.parts
+        # Block drive roots: C:\, D:\, etc. (only 1 part when at root)
+        if len(parts) <= 1:
+            raise ValueError(
+                f"Safety Violation: Cannot delete Windows drive root: {path_obj}"
+            )
+        # Add common Windows system directories to blocklist
+        import string
+
+        system_roots.extend(
+            [
+                Path(f"{d}:\\")
+                for d in string.ascii_uppercase
+                if Path(f"{d}:\\").exists()
+            ]
+        )
+        system_roots.extend(
+            [
+                Path("C:\\Windows"),
+                Path("C:\\Program Files"),
+                Path("C:\\Program Files (x86)"),
+                Path("C:\\Users"),
+                Path("C:\\ProgramData"),
+            ]
+        )
+
     if path_obj in system_roots or any(
         path_obj == r.resolve() for r in system_roots if os.path.exists(r)
     ):
