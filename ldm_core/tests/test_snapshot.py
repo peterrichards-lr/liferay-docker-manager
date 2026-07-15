@@ -1308,3 +1308,23 @@ class TestSnapshotService(unittest.TestCase):
                 self.manager.snapshot.cmd_snapshot("proj")
                 mock_die.assert_called_once()
                 self.assertEqual(mock_die.call_args[1].get("exit_code"), 3)
+
+    @patch("time.time")
+    @patch("time.sleep")
+    def test_wait_for_search_restore_success(self, mock_sleep, mock_time):
+        mock_time.side_effect = [100.0, 101.0]
+        with patch.object(self.manager, "run_command", return_value='"stage":"DONE"'):
+            res = self.manager.snapshot._wait_for_search_restore(
+                "snap", "proj", timeout=10
+            )
+            self.assertTrue(res)
+
+    @patch("time.time")
+    @patch("time.sleep")
+    def test_wait_for_search_restore_timeout(self, mock_sleep, mock_time):
+        mock_time.side_effect = [100.0, 101.0, 102.0]
+        with patch.object(self.manager, "run_command", return_value='"stage":"INDEX"'):
+            res = self.manager.snapshot._wait_for_search_restore(
+                "snap", "proj", timeout=1
+            )
+            self.assertFalse(res)
