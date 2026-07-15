@@ -512,6 +512,71 @@ class TestUpdateChecks(unittest.TestCase):
             self.assertIsNone(version)
             self.assertIsNone(url)
 
+    @patch("requests.get")
+    @patch("pathlib.Path.home")
+    def test_check_for_updates_cache_write_is_atomic(self, mock_home, mock_get):
+        """Cache write should use a .tmp file + atomic replace, not a bare write_text."""
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            mock_home.return_value = Path(tmp_dir)
+            cache_file = Path(tmp_dir) / ".ldm_update_cache"
+
+            mock_res = MagicMock()
+            mock_res.status_code = 200
+            mock_res.json.return_value = {
+                "tag_name": "v2.99.0",
+                "html_url": "https://github.com/peterrichards-lr/liferay-docker-manager/releases/v2.99.0",
+                "assets": [],
+            }
+            mock_get.return_value = mock_res
+
+            from ldm_core.utils import check_for_updates
+
+            version, _ = check_for_updates("2.0.0")
+            self.assertEqual(version, "2.99.0")
+            # Cache file should exist after successful update check
+            self.assertTrue(
+                cache_file.exists(), "Cache file should be written after update check"
+            )
+            # Verify no stale .tmp file was left behind (atomic replace succeeded)
+            tmp_file = cache_file.with_suffix(cache_file.suffix + ".tmp")
+            self.assertFalse(
+                tmp_file.exists(), ".tmp file should not remain after atomic replace"
+            )
+
+    @patch("requests.get")
+    @patch("pathlib.Path.home")
+    def test_check_for_updates_cache_hit_uses_filelock(self, mock_home, mock_get):
+        """Cache read should respect a FileLock (shared read) and not call the API when fresh."""
+        import json
+        import tempfile
+        import time
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            mock_home.return_value = Path(tmp_dir)
+            cache_file = Path(tmp_dir) / ".ldm_update_cache"
+
+            # Write a fresh cache entry manually
+            cache_file.write_text(
+                json.dumps(
+                    {
+                        "last_check": time.time(),
+                        "latest_version": "2.88.0",
+                        "url": "https://example.com/release",
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            from ldm_core.utils import check_for_updates
+
+            version, url = check_for_updates("2.0.0")
+            self.assertEqual(version, "2.88.0")
+            self.assertEqual(url, "https://example.com/release")
+            # If the cache was read correctly, no GitHub API call should have been made
+            mock_get.assert_not_called()
+
     def test_atomic_copy(self):
         from ldm_core.utils import atomic_copy
 
