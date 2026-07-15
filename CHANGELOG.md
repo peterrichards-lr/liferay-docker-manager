@@ -182,7 +182,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
--
+- Promote pre-release changes to stable v2.15.17 release.
 
 ## [v2.15.17-pre.3] - 2026-07-15
 
