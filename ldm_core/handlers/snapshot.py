@@ -1606,10 +1606,10 @@ class SnapshotService(BaseHandler):
                     UI.info("Restoring database to the pre-restore baseline...")
                     _wipe_db()
                     try:
-                        with open(baseline_file, "rb") as bf:
+                        with open(baseline_file, "rb") as bf_read:
                             subprocess.run(
                                 import_cmd,
-                                stdin=bf,
+                                stdin=bf_read,
                                 check=True,
                                 capture_output=True,
                             )
