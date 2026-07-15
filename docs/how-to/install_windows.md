@@ -68,4 +68,4 @@ mkcert -install
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-07-13* | *Last Reviewed: 2026-07-07*
+*Last Updated: 2026-07-15* | *Last Reviewed: 2026-07-07*

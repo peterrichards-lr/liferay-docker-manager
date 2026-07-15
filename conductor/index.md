@@ -10,4 +10,4 @@ This file serves as the main entry point for the **Liferay Docker Manager (LDM)*
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-07-13* | *Last Reviewed: 2026-07-09*
+*Last Updated: 2026-07-15* | *Last Reviewed: 2026-07-09*
