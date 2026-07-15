@@ -192,6 +192,12 @@ ldm quickstart aica --share --share-subdomain my-custom-demo
 
 # Bootstrap with a custom target directory and project name
 ldm quickstart aica --name custom-aica-demo
+
+# Bootstrap with a custom domain and SSL enabled
+ldm quickstart aica --host-name aica.demo --ssl
+
+# Bootstrap with a custom name and SSL explicitly disabled
+ldm quickstart aica --name aica-http --host-name aica.demo --no-ssl
 ```
 
 Custom templates and repository mappings can be configured by defining overrides in `~/.ldm_templates.json`.
@@ -447,7 +453,7 @@ ldm log-level [project] --list
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-07-14* | *Last Reviewed: 2026-07-10*
+*Last Updated: 2026-07-15* | *Last Reviewed: 2026-07-10*
 
 ## Global Flags
 

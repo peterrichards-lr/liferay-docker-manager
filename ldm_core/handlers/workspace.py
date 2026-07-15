@@ -282,6 +282,7 @@ class WorkspaceService(BaseHandler):
         extensions: list[dict[str, Any]] = []
         if not root_dir.exists():
             return extensions
+        meta = self.manager.read_meta(root_dir) or {}
 
         # Paths based on Core Mandates:
         # root_dir / client-extensions -> Build Source of Truth
@@ -351,9 +352,37 @@ class WorkspaceService(BaseHandler):
                                 os.remove(dest_zip)
                             safe_copy(root_zip_copy, dest_zip)
 
+                        # Resolve and persist port first
+                        ext_id = ext_info.get("id") or item.stem
+                        if is_service:
+                            load_balancer = ext_info.get("loadBalancer") or {}
+                            default_port = next(
+                                (
+                                    p.get("port")
+                                    for p in ext_info.get("ports", [])
+                                    if isinstance(p, dict)
+                                ),
+                                load_balancer.get("targetPort", 8080),
+                            )
+                            try:
+                                default_port = int(default_port)
+                            except (ValueError, TypeError):
+                                default_port = 8080
+
+                            meta_port_key = f"port_{ext_id}"
+                            if meta_port_key not in meta:
+                                resolved_port = self.manager.find_available_port(
+                                    "127.0.0.1", default_port
+                                )
+                                meta[meta_port_key] = str(resolved_port)
+                                self.manager.write_meta(root_dir, meta)
+
                         if host_name:
                             self._rewrite_oauth_urls_in_zip(
-                                dest_zip, host_name, item.stem.lower().replace("_", "-")
+                                dest_zip,
+                                host_name,
+                                item.stem.lower().replace("_", "-"),
+                                root_dir,
                             )
 
                         extensions.append(
@@ -404,6 +433,30 @@ class WorkspaceService(BaseHandler):
                     "is_service": is_service,
                     **ext_info,
                 }
+                # Resolve and persist port first
+                ext_id = ext_info.get("id") or item.name
+                if is_service:
+                    load_balancer = ext_info.get("loadBalancer") or {}
+                    default_port = next(
+                        (
+                            p.get("port")
+                            for p in ext_info.get("ports", [])
+                            if isinstance(p, dict)
+                        ),
+                        load_balancer.get("targetPort", 8080),
+                    )
+                    try:
+                        default_port = int(default_port)
+                    except (ValueError, TypeError):
+                        default_port = 8080
+
+                    meta_port_key = f"port_{ext_id}"
+                    if meta_port_key not in meta:
+                        resolved_port = self.manager.find_available_port(
+                            "127.0.0.1", default_port
+                        )
+                        meta[meta_port_key] = str(resolved_port)
+                        self.manager.write_meta(root_dir, meta)
 
                 if host_name:
                     dest_zip = osgi_cx_dir / f"{item.name}.zip"
@@ -420,7 +473,10 @@ class WorkspaceService(BaseHandler):
 
                     if dest_zip.exists():
                         self._rewrite_oauth_urls_in_zip(
-                            dest_zip, host_name, item.name.lower().replace("_", "-")
+                            dest_zip,
+                            host_name,
+                            item.name.lower().replace("_", "-"),
+                            root_dir,
                         )
 
                 existing = next((e for e in extensions if e["id"] == entry["id"]), None)
@@ -855,7 +911,12 @@ class WorkspaceService(BaseHandler):
         if not is_remote:
             try:
                 source_p = Path(source_path).resolve()
-                if source_p.is_dir() and not is_init_from and not is_internal:
+                if (
+                    source_p.is_dir()
+                    and not is_init_from
+                    and not is_internal
+                    and not self.manager.non_interactive
+                ):
                     UI.die(
                         "Error: To integrate a local Liferay Workspace, please use: 'ldm link <workspace-path>'"
                     )
@@ -1187,6 +1248,7 @@ class WorkspaceService(BaseHandler):
 
                         final_host_name = (
                             getattr(self.manager.args, "host_name", None)
+                            or manifest.get("host_name")
                             or project_meta.get("host_name")
                             or "localhost"
                         )
@@ -1196,11 +1258,14 @@ class WorkspaceService(BaseHandler):
                             final_ssl = str(ssl_arg).lower()
                         elif getattr(self.manager.args, "host_name", None) is not None:
                             final_ssl = str(final_host_name != "localhost").lower()
-                            UI.debug(
-                                f"final_host_name={final_host_name}, final_ssl={final_ssl}"
-                            )
                         else:
-                            final_ssl = str(project_meta.get("ssl") or "false").lower()
+                            manifest_ssl = manifest.get("ssl")
+                            if manifest_ssl is not None:
+                                final_ssl = str(manifest_ssl).lower()
+                            else:
+                                final_ssl = str(
+                                    project_meta.get("ssl") or "false"
+                                ).lower()
 
                         project_meta.update(
                             {
@@ -1863,14 +1928,19 @@ class WorkspaceService(BaseHandler):
             # 4. Start stack and launch browser
             UI.info("Starting quickstart services stack...")
             self.manager.runtime.cmd_run(project_name)
-
         # 5. Share via tunnel if requested
         if share:
             UI.info("Exposing quickstart tunnel...")
             self.manager.share.cmd_start(project_name, subdomain=share_subdomain)
 
-    def _rewrite_oauth_urls_in_zip(self, zip_path: Path, host_name: str, ext_name: str):
-        if not host_name or host_name == "localhost":
+    def _rewrite_oauth_urls_in_zip(
+        self,
+        zip_path: Path,
+        host_name: str,
+        ext_name: str,
+        root_dir: Path | None = None,
+    ):
+        if not host_name:
             return
 
         import os
@@ -1879,8 +1949,26 @@ class WorkspaceService(BaseHandler):
 
         from ldm_core.utils import safe_extract
 
-        protocol = "https"
-        external_url = f"{protocol}://{ext_name}.{host_name}"
+        meta = {}
+        if root_dir is not None:
+            meta = self.manager.read_meta(root_dir) or {}
+        ssl_enabled = str(meta.get("ssl", "false")).lower() == "true"
+        protocol = "https" if ssl_enabled else "http"
+
+        if host_name == "localhost":
+            if ssl_enabled:
+                external_url = "https://localhost"
+            else:
+                port = meta.get(f"port_{ext_name}") or "8080"
+                external_url = f"http://localhost:{port}"
+        elif ssl_enabled:
+            external_url = f"https://{ext_name}.{host_name}"
+        else:
+            port = meta.get(f"port_{ext_name}")
+            if port and port not in ["80", "443", 80, 443]:
+                external_url = f"http://{ext_name}.{host_name}:{port}"
+            else:
+                external_url = f"http://{ext_name}.{host_name}"
 
         modified = False
         with tempfile.TemporaryDirectory() as tmpdir:

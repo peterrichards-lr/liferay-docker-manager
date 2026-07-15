@@ -139,6 +139,20 @@ class ProjectSetupStage(PipelineStage):
         manifest = manager.read_meta(backup_dir) or {} if is_ldmp else {}
         context.set("is_ldmp", is_ldmp)
 
+        if not is_ldmp:
+            source_dir = context.get("source_resolved")
+            if source_dir and source_dir.is_dir():
+                ldmrc_path = source_dir / ".ldmrc"
+                if ldmrc_path.exists():
+                    from ldm_core.utils import load_global_config_safe
+
+                    config_data = load_global_config_safe(ldmrc_path)
+                    manifest = (
+                        config_data.get("defaults", {})
+                        if "defaults" in config_data
+                        else config_data
+                    )
+
         db_type = manifest.get("db_type")
         if db_type and db_type not in ["postgresql", "mysql", "mariadb", "hypersonic"]:
             UI.die(f"Unsupported database type '{db_type}' in LDM package manifest.")
@@ -212,6 +226,7 @@ class ProjectSetupStage(PipelineStage):
 
         final_host_name = (
             getattr(manager.args, "host_name", None)
+            or manifest.get("host_name")
             or project_meta.get("host_name")
             or "localhost"
         )
@@ -221,7 +236,11 @@ class ProjectSetupStage(PipelineStage):
         elif getattr(manager.args, "host_name", None) is not None:
             final_ssl = str(final_host_name != "localhost").lower()
         else:
-            final_ssl = str(project_meta.get("ssl") or "false").lower()
+            manifest_ssl = manifest.get("ssl")
+            if manifest_ssl is not None:
+                final_ssl = str(manifest_ssl).lower()
+            else:
+                final_ssl = str(project_meta.get("ssl") or "false").lower()
 
         project_meta.update(
             {

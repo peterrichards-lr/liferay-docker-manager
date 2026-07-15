@@ -1199,7 +1199,10 @@ class ComposerService:
                 )
                 scale = int(meta.get(f"scale_{ext_id}", 1))
 
-                labels = ["traefik.enable=true"]
+                labels = [
+                    "traefik.enable=true",
+                    f"com.liferay.ldm.project={project_name}",
+                ]
                 services[svc_id] = {
                     "image": f"{svc_id}:latest",
                     "build": {"context": Path(ext["path"]).as_posix()},
@@ -1240,12 +1243,14 @@ class ComposerService:
                 services[svc_id]["labels"] = labels
 
                 if not ssl_enabled:
-                    has_external_port = any(
-                        isinstance(p, dict) and p.get("external")
-                        for p in ext.get("ports", [])
-                    )
-                    if has_external_port:
-                        bind_ip = meta.get("bind_ip", "0.0.0.0")  # nosec B104
+                    bind_ip = meta.get("bind_ip", "0.0.0.0")  # nosec B104
+                    resolved_port_str = meta.get(f"port_{ext_id}")
+                    if resolved_port_str:
+                        try:
+                            safe_host_port = int(resolved_port_str)
+                        except ValueError:
+                            safe_host_port = ms_port
+                    else:
                         safe_host_port = ms_port
                         try:
                             if safe_host_port is not None:
@@ -1253,12 +1258,11 @@ class ComposerService:
                         except ValueError:
                             pass
 
-                        # Prevent Docker EADDRINUSE conflicts with Traefik (80, 443) or Liferay (8080)
-                        if safe_host_port in [80, 443, "80", "443"]:
-                            safe_host_port = int(str(safe_host_port)) + 10000
-                        elif safe_host_port in [8080, "8080"]:
-                            safe_host_port = 28080
-                        services[svc_id]["ports"] = [
-                            f"{bind_ip}:{safe_host_port}:{ms_port}"
-                        ]
+                    if safe_host_port in [80, 443, "80", "443"]:
+                        safe_host_port = int(str(safe_host_port)) + 10000
+                    elif safe_host_port in [8080, "8080"]:
+                        safe_host_port = 28080
+                    services[svc_id]["ports"] = [
+                        f"{bind_ip}:{safe_host_port}:{ms_port}"
+                    ]
         return services

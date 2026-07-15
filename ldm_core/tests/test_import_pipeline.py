@@ -57,3 +57,49 @@ def test_backup_state_stage_rollback(mock_rmtree, mock_ui, tmp_path):
     # Assert cleanup was called
     mock_rmtree.assert_any_call(temp_dir, ignore_errors=True)
     manager.safe_rmtree.assert_called_once_with(project_dir)
+
+
+def test_project_setup_stage_loads_workspace_ldmrc(tmp_path):
+    import json
+
+    from ldm_core.pipelines.import_pipeline import ProjectSetupStage
+
+    stage = ProjectSetupStage()
+    manager = MagicMock()
+
+    manager.setup_paths.return_value = {
+        "root": tmp_path / "project_root",
+    }
+    manager.read_meta.return_value = {}
+    manager.args = MagicMock()
+    manager.args.project = "test_project"
+    manager.args.host_name = None
+    manager.args.ssl = None
+    manager.args.port = None
+    manager.non_interactive = True
+
+    context = ImportPipelineContext(manager=manager, source_path=str(tmp_path))
+    context.set("source_resolved", tmp_path)
+    context.set("backup_dir", None)
+
+    ldmrc_file = tmp_path / ".ldmrc"
+    ldmrc_file.write_text(
+        json.dumps(
+            {
+                "defaults": {
+                    "host_name": "my-committed-domain.demo",
+                    "ssl": True,
+                    "tag": "2026.q1.4",
+                }
+            }
+        )
+    )
+
+    stage.execute(context)
+
+    # Assert that the written project meta inherited defaults from .ldmrc
+    manager.write_meta.assert_called_once()
+    written_meta = manager.write_meta.call_args[0][1]
+    assert written_meta["host_name"] == "my-committed-domain.demo"
+    assert written_meta["ssl"] == "true"
+    assert written_meta["tag"] == "2026.q1.4"

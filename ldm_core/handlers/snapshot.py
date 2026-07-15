@@ -579,7 +579,13 @@ class SnapshotService(BaseHandler):
             "timestamp": timestamp,
             "tag": project_meta.get("tag"),
             "db_type": project_meta.get("db_type"),
-            "host_name": project_meta.get("host_name"),
+            "host_name": getattr(self.manager.args, "host_name", None)
+            or project_meta.get("host_name"),
+            "ssl": str(
+                getattr(self.manager.args, "ssl", None)
+                if getattr(self.manager.args, "ssl", None) is not None
+                else (project_meta.get("ssl") or "false")
+            ).lower(),
             "search_snapshot": search_snapshot_name,
             "custom_env": json.dumps(custom_env_dict) if custom_env_dict else None,
             "includes_database": str(db_included).lower(),
