@@ -1699,12 +1699,16 @@ def check_for_updates(current_version, force=False, pre_release=False, tag=None)
     now = time.time()
 
     if not tag and not force and cache_file.exists():
+        lock_file = cache_file.with_suffix(cache_file.suffix + ".lock")
+        lock = FileLock(lock_file)
         try:
-            data = json.loads(cache_file.read_text())
-            if now - data.get("last_check", 0) < cache_duration:
-                return data.get("latest_version"), data.get("url")
-        except Exception:
-            pass
+            lock.acquire(exclusive=False)  # shared read lock
+            with contextlib.suppress(json.JSONDecodeError, OSError):
+                data = json.loads(cache_file.read_text(encoding="utf-8"))
+                if now - data.get("last_check", 0) < cache_duration:
+                    return data.get("latest_version"), data.get("url")
+        finally:
+            lock.release()
 
     try:
         headers = {"User-Agent": "ldm-cli"}
@@ -1783,17 +1787,28 @@ def check_for_updates(current_version, force=False, pre_release=False, tag=None)
             if found_url:
                 release_url = found_url
 
-            # Update cache (only for general update checks, not tag lookups)
+            # Update cache atomically with FileLock (only for general update checks, not tag lookups)
             if not tag:
-                cache_file.write_text(
-                    json.dumps(
-                        {
-                            "last_check": now,
-                            "latest_version": latest_version,
-                            "url": release_url,
-                        }
+                lock_file = cache_file.with_suffix(cache_file.suffix + ".lock")
+                lock = FileLock(lock_file)
+                try:
+                    lock.acquire(exclusive=True)
+                    tmp = cache_file.with_suffix(cache_file.suffix + ".tmp")
+                    tmp.write_text(
+                        json.dumps(
+                            {
+                                "last_check": now,
+                                "latest_version": latest_version,
+                                "url": release_url,
+                            }
+                        ),
+                        encoding="utf-8",
                     )
-                )
+                    tmp.replace(cache_file)
+                except Exception as e:
+                    UI.debug(f"Could not write update cache: {e}")
+                finally:
+                    lock.release()
 
             return latest_version, release_url
 
