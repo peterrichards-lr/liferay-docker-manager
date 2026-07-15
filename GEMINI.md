@@ -73,6 +73,10 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
 
 ## 8. Active Work State & Plan (July 14, 2026)
 
+- **Current Active Task (July 15, 2026)**:
+  - [x] Epic #582: Implement Quickstart Host/SSL defaults, dynamic microservice port conflict resolution, and container status tracking.
+  - [x] Support committed repository-level `.ldmrc` files for default configuration overrides.
+
 - **Current Active Task (July 14, 2026)**:
   - [x] Fix quickstart preseed prompt to proceed on decline (Issue #570) and conditionally bypass based on package database presence.
   - [x] feat(quickstart): support custom target project directory names via --name / -n
@@ -622,4 +626,4 @@ When modifying `client-extension.yaml` files, **NEVER change or remove `.service
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-07-13* | *Last Reviewed: 2026-07-13*
+*Last Updated: 2026-07-15* | *Last Reviewed: 2026-07-13*

@@ -196,6 +196,65 @@ class TestSnapshotService(unittest.TestCase):
         snap_dirs = [d for d in (self.test_dir / "snapshots").iterdir() if d.is_dir()]
         self.assertTrue(len(snap_dirs) >= 1)
 
+    @patch("ldm_core.handlers.base.BaseHandler.detect_project_path")
+    @patch("ldm_core.handlers.base.BaseHandler.read_meta")
+    @patch("ldm_core.handlers.base.BaseHandler.setup_paths")
+    @patch("ldm_core.handlers.base.BaseHandler.verify_runtime_environment")
+    @patch("ldm_core.handlers.base.BaseHandler.run_command")
+    @patch("ldm_core.utils.reclaim_volume_permissions")
+    def test_cmd_snapshot_host_name_ssl_overrides(
+        self, mock_reclaim, mock_run, mock_verify, mock_paths, mock_meta, mock_detect
+    ):
+        mock_detect.return_value = self.test_dir
+        for d in [
+            "snapshots",
+            "data",
+            "deploy",
+            "files",
+            "logs",
+            "osgi/configs",
+            "osgi/modules",
+            "osgi/state",
+        ]:
+            (self.test_dir / d).mkdir(parents=True, exist_ok=True)
+        (self.test_dir / "docker-compose.yml").touch()
+
+        mock_paths.return_value = {
+            "root": self.test_dir,
+            "backups": self.test_dir / "snapshots",
+            "state": self.test_dir / "osgi" / "state",
+            "data": self.test_dir / "data",
+            "deploy": self.test_dir / "deploy",
+            "files": self.test_dir / "files",
+            "logs": self.test_dir / "logs",
+            "configs": self.test_dir / "osgi" / "configs",
+            "modules": self.test_dir / "osgi" / "modules",
+            "compose": self.test_dir / "docker-compose.yml",
+        }
+        mock_meta.return_value = {"tag": "2026.q1.4", "db_type": "postgresql"}
+
+        # Simulate host_name and ssl CLI overrides
+        self.manager.args.host_name = "custom.domain"
+        self.manager.args.ssl = True
+        self.manager.args.delete = None
+        self.manager.args.keep_last = None
+        self.manager.args.older_than = None
+
+        try:
+            with (
+                patch("tarfile.open"),
+                patch("ldm_core.handlers.base.BaseHandler.write_meta") as mock_write,
+                patch("ldm_core.utils.calculate_sha256", return_value="dummy-sha"),
+            ):
+                self.manager.snapshot.cmd_snapshot("proj")
+                mock_write.assert_called_once()
+                written_meta = mock_write.call_args[0][1]
+                self.assertEqual(written_meta["host_name"], "custom.domain")
+                self.assertEqual(written_meta["ssl"], "true")
+        finally:
+            self.manager.args.host_name = None
+            self.manager.args.ssl = None
+
     def test_get_dir_size_empty(self):
         with patch("pathlib.Path.rglob", return_value=[]):
             size = self.manager.snapshot._get_dir_size(Path("/tmp"))

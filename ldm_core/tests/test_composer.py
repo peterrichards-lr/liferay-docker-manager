@@ -54,12 +54,32 @@ class TestComposerService(unittest.TestCase):
         )
         self.assertIn("proj-ms1", services)
         self.assertEqual(services["proj-ms1"]["image"], "proj-ms1:latest")
+        self.assertIn("com.liferay.ldm.project=proj", services["proj-ms1"]["labels"])
         self.assertTrue(
             any(
                 v.startswith(f"{Path('/tmp/routes').as_posix()}:/workspace/routes")
                 for v in services["proj-ms1"]["volumes"]
             )
         )
+
+    def test_build_extensions_services_non_ssl_port_mapping(self):
+        paths = {"root": Path("/tmp"), "cx": Path("/tmp/cx"), "ce_dir": Path("/tmp/ce")}
+        meta = {"port_ms1": "8083"}
+        self.manager.workspace.scan_client_extensions.return_value = [
+            {
+                "id": "ms1",
+                "deploy": True,
+                "is_service": True,
+                "path": "/tmp/ms1",
+                "ports": [{"port": 8080}],
+            }
+        ]
+
+        services = self.composer._build_extensions_services(
+            paths, meta, "localhost", "proj", False
+        )
+        self.assertIn("proj-ms1", services)
+        self.assertIn("0.0.0.0:8083:8080", services["proj-ms1"]["ports"])
 
     def test_build_liferay_service_volumes_and_jvm(self):
         paths = {

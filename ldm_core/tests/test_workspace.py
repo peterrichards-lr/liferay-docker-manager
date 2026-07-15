@@ -571,6 +571,80 @@ class TestWorkspaceScanners(unittest.TestCase):
             self.assertEqual(exts[0]["id"], "my-ext")
             self.assertTrue(exts[0]["is_service"])
 
+    def test_scan_client_extensions_port_resolution(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            root_dir = tmp_path / "root"
+            osgi_cx_dir = tmp_path / "osgi-cx"
+            ce_build_dir = tmp_path / "ce-build"
+
+            for d in [root_dir, osgi_cx_dir, ce_build_dir]:
+                d.mkdir(parents=True)
+
+            # Preseed metadata as non-ssl
+            self.handler.write_meta(
+                root_dir, {"ssl": "false", "host_name": "localhost"}
+            )
+
+            # Create a mock CX zip in ce-build
+            zip_path = ce_build_dir / "my-service-ext.zip"
+            with zipfile.ZipFile(zip_path, "w") as z:
+                z.writestr(
+                    "LCP.json",
+                    json.dumps(
+                        {
+                            "id": "my-service-ext",
+                            "type": "liferay-client-extension",
+                            "ports": [{"port": 8080}],
+                        }
+                    ),
+                )
+                z.writestr("Dockerfile", "FROM scratch")
+
+            # Mock check_port: 8080 in use, 8081 free
+            def mock_check_port(ip, port):
+                return port != 8080
+
+            with patch.object(self.handler, "check_port", side_effect=mock_check_port):
+                exts = self.handler.workspace.scan_client_extensions(
+                    root_dir, osgi_cx_dir, ce_build_dir, host_name="localhost"
+                )
+            self.assertEqual(len(exts), 1)
+
+            # Assert port was resolved to 8081 due to 8080 being in use
+            meta = self.handler.read_meta(root_dir)
+            self.assertEqual(meta.get("port_my-service-ext"), "8081")
+
+    def test_rewrite_oauth_urls_in_zip_non_ssl_localhost(self):
+        import yaml
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            root_dir = tmp_path / "root"
+            root_dir.mkdir(parents=True)
+            self.handler.write_meta(
+                root_dir,
+                {"ssl": "false", "host_name": "localhost", "port_my-ext": "8082"},
+            )
+
+            zip_path = tmp_path / "my-ext.zip"
+            with zipfile.ZipFile(zip_path, "w") as z:
+                z.writestr(
+                    "client-extension.yaml",
+                    "my-ext:\n  type: oAuthApplicationHeadlessServer\n  .serviceAddress: http://localhost:8080\n  homePageURL: http://localhost:8080\n",
+                )
+
+            self.handler.workspace._rewrite_oauth_urls_in_zip(
+                zip_path, "localhost", "my-ext", root_dir
+            )
+
+            # Read and assert rewritten properties
+            with zipfile.ZipFile(zip_path, "r") as z:
+                yaml_content = z.read("client-extension.yaml").decode("utf-8")
+                data = yaml.safe_load(yaml_content)
+                self.assertEqual(data["my-ext"][".serviceAddress"], "my-ext.localhost")
+                self.assertEqual(data["my-ext"]["homePageURL"], "http://localhost:8082")
+
     def test_scan_extension_metadata_folder(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             folder = Path(tmp_dir)
@@ -1633,12 +1707,18 @@ class TestAtomicZipRepackaging(unittest.TestCase):
         mock_link.assert_called_once_with("/local/workspace")
 
     def test_cmd_import_rejects_local_dir(self):
-        """test cmd_import rejects local directory direct import (guiding to link)."""
+        """test ldm import rejects local directory direct import (guiding to link) in interactive mode, but bypasses in non-interactive mode."""
         import tempfile
 
         with tempfile.TemporaryDirectory() as tmpdir:
+            self.handler._non_interactive = False
             with self.assertRaises(SystemExit):
                 self.handler.workspace.cmd_import(tmpdir)
+
+            self.handler._non_interactive = True
+            with patch.dict(os.environ, {"LDM_DRY_RUN": "true"}):
+                res = self.handler.workspace.cmd_import(tmpdir)
+                self.assertIsNotNone(res)
 
     @patch("subprocess.run")
     @patch("requests.get")

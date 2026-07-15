@@ -56,7 +56,7 @@ class MockManager(BaseHandler):
         }
 
     def read_meta(self, path):
-        return self.meta
+        return getattr(self, "meta", {})
 
     def write_meta(self, path, meta):
         self.meta = meta

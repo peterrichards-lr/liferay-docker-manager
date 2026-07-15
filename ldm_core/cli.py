@@ -1336,6 +1336,22 @@ def get_parser():
         "-n",
         help="Custom target project directory name (defaults to template default)",
     )
+    quickstart_cmd.add_argument(
+        "--host-name",
+        help="Custom host-name / domain to configure for the bootstrap stack",
+    )
+    quickstart_cmd.add_argument(
+        "--ssl",
+        action="store_true",
+        default=None,
+        help="Force enable HTTPS (SSL) for the bootstrap stack",
+    )
+    quickstart_cmd.add_argument(
+        "--no-ssl",
+        action="store_false",
+        dest="ssl",
+        help="Force disable HTTPS (SSL) for the bootstrap stack",
+    )
     # Command: set-version
     set_version_cmd = subparsers.add_parser(
         "set-version",
@@ -1380,6 +1396,22 @@ def get_parser():
     package_cmd.add_argument(
         "--snapshot",
         help="Target a specific snapshot name or directory to package",
+    )
+    package_cmd.add_argument(
+        "--host-name",
+        help="Custom host-name / domain to store in the package metadata",
+    )
+    package_cmd.add_argument(
+        "--ssl",
+        action="store_true",
+        default=None,
+        help="Force enable HTTPS (SSL) default in the package metadata",
+    )
+    package_cmd.add_argument(
+        "--no-ssl",
+        action="store_false",
+        dest="ssl",
+        help="Force disable HTTPS (SSL) default in the package metadata",
     )
 
     # ==================== NAMESPACES ====================
