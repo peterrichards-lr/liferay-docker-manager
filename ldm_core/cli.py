@@ -1955,6 +1955,11 @@ def get_parser():
     rescue_cmd.add_argument(
         "-p", "--project-id", dest="project_flag", help="Specific project ID to rescue"
     )
+    rescue_cmd.add_argument(
+        "--clear-lock",
+        action="store_true",
+        help="Clear the stale concurrency project lock for the specified project and exit",
+    )
 
     init_ci = system_subparsers.add_parser(
         "init-ci",
@@ -2488,7 +2493,8 @@ def main():
         ),
         ("system", "rescue"): lambda: manager.system.cmd_rescue(
             project_id=getattr(args, "project", None)
-            or getattr(args, "project_flag", None)
+            or getattr(args, "project_flag", None),
+            clear_lock=getattr(args, "clear_lock", False),
         ),
         ("system", "init-ci"): lambda: manager.cmd_init_ci(
             repo=getattr(args, "repo", None),

@@ -141,8 +141,21 @@ class SystemService(BaseHandler):
         )
         return True
 
-    def cmd_rescue(self, project_id=None):
+    def cmd_rescue(self, project_id=None, clear_lock=False):
         """Active self-healing and recovery for LDM local environments."""
+        if clear_lock:
+            root = self.detect_project_path(project_id, fatal=True)
+            lock_file = root / ".liferay-docker" / ".ldm_lock"
+            if lock_file.exists():
+                try:
+                    lock_file.unlink()
+                    UI.success(f"Cleared project lock: {lock_file}")
+                except Exception as e:
+                    UI.die(f"Failed to clear project lock: {e}")
+            else:
+                UI.info("No active project lock file found.")
+            return True
+
         is_dry_run = getattr(self.manager, "dry_run", False)
         if not project_id:
             # 1. Global Traefik SSL/Host rescue

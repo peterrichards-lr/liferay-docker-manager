@@ -207,6 +207,36 @@ class TestSystemService(unittest.TestCase):
             self.system.cmd_rescue(project_id="nonexistent")
         mock_die.assert_called_once_with("Project 'nonexistent' not found.")
 
+    @patch("ldm_core.ui.UI.success")
+    def test_cmd_rescue_clear_lock_exists(self, mock_success):
+        # Setup temp project dir and lock file
+        project_root = Path(self.temp_home) / "my_project"
+        project_root.mkdir()
+        lock_file = project_root / ".liferay-docker" / ".ldm_lock"
+        lock_file.parent.mkdir(parents=True, exist_ok=True)
+        lock_file.write_text("PID: 12345", encoding="utf-8")
+
+        with patch.object(
+            self.system, "detect_project_path", return_value=project_root
+        ):
+            res = self.system.cmd_rescue(project_id="my_project", clear_lock=True)
+            self.assertTrue(res)
+            self.assertFalse(lock_file.exists())
+            mock_success.assert_called_once()
+            self.assertIn("Cleared project lock", mock_success.call_args[0][0])
+
+    @patch("ldm_core.ui.UI.info")
+    def test_cmd_rescue_clear_lock_not_found(self, mock_info):
+        project_root = Path(self.temp_home) / "my_project"
+        project_root.mkdir()
+
+        with patch.object(
+            self.system, "detect_project_path", return_value=project_root
+        ):
+            res = self.system.cmd_rescue(project_id="my_project", clear_lock=True)
+            self.assertTrue(res)
+            mock_info.assert_called_once_with("No active project lock file found.")
+
     def test_properties_file_auto_repair_success(self):
         # Create a properties file with syntax errors
         pe_file = Path(self.temp_home) / "portal-ext.properties"

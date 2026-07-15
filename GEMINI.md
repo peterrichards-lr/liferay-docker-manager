@@ -73,22 +73,26 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
 
 ## 8. Active Work State & Plan (July 15, 2026)
 
+- **Current Active Task (July 15, 2026) — Custom Images & Multi-Compose Architecture Planning**:
+  - [x] Conducted architectural risk analysis for WordPress and Web Crawler integration.
+  - [x] Created implementation plan and designed external Docker network architecture.
+  - [x] Created GitHub Issue #618 for custom image packaging.
+  - [x] Created GitHub Issue #619 for multi-compose stack integration.
+  - [ ] Write target docker-compose.yml files for WordPress, Elasticsearch, and Liferay.
+
 - **Current Active Task (July 15, 2026) — Technical Debt Audit & GitHub Issue Creation**:
   - [x] Conducted comprehensive 3-phase Technical Debt Assessment across 10 core modules.
   - [x] Identified 21 specific findings (race conditions, security vulnerabilities, architectural smells, fragile error boundaries).
   - [x] Created 21 GitHub issues (#592–#612) with full root cause analysis, proposed fixes, and test protocols.
-  - [/] Implementing Milestone 1 critical issues (beginning with #595: SSL disabled for admin API calls).
-  - [/] Implementing Milestone 1 critical issues (beginning with #594: setup_global_search() unbounded recursion).
-  - [/] Implementing Milestone 1 critical issues (beginning with #593: _wait_for_search_restore() timeout).
-  - [/] Implementing Milestone 1 critical issues (beginning with #592: DB restore rollback protection).
-  - [ ] Review implementation against audit intent (agent has been briefed to do this).
+  - [x] Implementing Milestone 1 critical issues (completed #592, #593, #594, #595, #598).
+  - [x] Review implementation against audit intent.
 
   **Milestone 1 Critical Issues (Priority: p1 — act immediately):**
-  - #592: DB restore wipes database on every retry — silent data loss
-  - #593: `_wait_for_search_restore()` false success on timeout
-  - #594: `setup_global_search()` unbounded recursion
-  - #595: SSL disabled for admin API calls over public tunnel URLs
-  - #598: `ProjectLock` no stale-lock recovery after SIGKILL
+  - [x] #592: DB restore wipes database on every retry — silent data loss
+  - [x] #593: `_wait_for_search_restore()` false success on timeout
+  - [x] #594: `setup_global_search()` unbounded recursion
+  - [x] #595: SSL disabled for admin API calls over public tunnel URLs
+  - [x] #598: `ProjectLock` no stale-lock recovery after SIGKILL
 
   **Milestone 1 High Issues (Priority: p2):**
   - #596: `shell=True` with unvalidated env var in `_ensure_binary()`
@@ -654,4 +658,4 @@ When modifying `client-extension.yaml` files, **NEVER change or remove `.service
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-07-15* | *Last Reviewed: 2026-07-13*
+*Last Updated: 2026-07-15* | *Last Reviewed: 2026-07-15*

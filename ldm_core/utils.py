@@ -2433,12 +2433,11 @@ class ProjectLock:
         self.lock_file = Path(project_path) / ".liferay-docker" / ".ldm_lock"
         self.fd = None
 
-    def acquire(self):
-        """Acquires a non-blocking exclusive file lock on the project."""
+    def _try_acquire(self):
         import atexit
 
         self.lock_file.parent.mkdir(parents=True, exist_ok=True)
-        self.fd = open(self.lock_file, "w")  # noqa: SIM115
+        self.fd = open(self.lock_file, "a+")  # noqa: SIM115
         try:
             if os.name != "nt":
                 import fcntl
@@ -2450,15 +2449,89 @@ class ProjectLock:
                 self.fd.seek(0)
                 msvcrt.locking(self.fd.fileno(), msvcrt.LK_NBLCK, 1)  # type: ignore[attr-defined]
 
+            self.fd.truncate(0)
+            self.fd.seek(0)
             self.fd.write(f"PID: {os.getpid()}\n")
             self.fd.flush()
             atexit.register(self.release)
+        except Exception:
+            if self.fd:
+                self.fd.close()
+                self.fd = None
+            raise
+
+    def _is_lock_stale(self) -> bool:
+        if not self.lock_file.exists():
+            return True
+        try:
+            content = self.lock_file.read_text(encoding="utf-8").strip()
+            if content.startswith("PID: "):
+                pid_str = content.split()[-1]
+            else:
+                pid_str = content
+            if not pid_str.isdigit():
+                return True
+            pid = int(pid_str)
+
+            import psutil
+
+            return not psutil.pid_exists(pid)
+        except ImportError:
+            if os.name == "nt":
+                import ctypes
+
+                try:
+                    process = ctypes.windll.kernel32.OpenProcess(0x00100000, 0, pid)  # type: ignore[attr-defined]
+                    if process != 0:
+                        ctypes.windll.kernel32.CloseHandle(process)  # type: ignore[attr-defined]
+                        return False
+                    return True
+                except Exception:
+                    return True
+            else:
+                try:
+                    os.kill(pid, 0)  # liveness probe only
+                    return False  # process is alive
+                except ProcessLookupError:
+                    return True  # process is dead
+                except PermissionError:
+                    return False  # alive, just owned by another user
+                except Exception:
+                    return True
+        except Exception:
+            return True
+
+    def acquire(self):
+        """Acquires a non-blocking exclusive file lock on the project."""
+        try:
+            self._try_acquire()
         except (BlockingIOError, PermissionError, OSError):
-            self.fd.close()
-            self.fd = None
-            raise RuntimeError(
-                "Concurrency Violation: Another instance of LDM is running on this project."
-            )
+            if self._is_lock_stale():
+                try:
+                    # Attempt to read PID for the warning log before unlinking
+                    pid = None
+                    if self.lock_file.exists():
+                        content = self.lock_file.read_text(encoding="utf-8").strip()
+                        pid_str = (
+                            content.split()[-1]
+                            if content.startswith("PID: ")
+                            else content
+                        )
+                        if pid_str.isdigit():
+                            pid = int(pid_str)
+                except Exception:
+                    pass
+
+                pid_msg = f" (PID {pid} no longer running)" if pid else ""
+                UI.warning(f"Stale project lock detected{pid_msg}. Auto-recovering...")
+                with contextlib.suppress(OSError):
+                    self.lock_file.unlink(missing_ok=True)
+                self._try_acquire()
+            else:
+                raise RuntimeError(
+                    "Concurrency Violation: Another instance of LDM is running on this project.\n"
+                    f"If this is incorrect, delete: {self.lock_file}"
+                )
 
     def release(self):
         """Releases the lock and deletes the lock file."""
