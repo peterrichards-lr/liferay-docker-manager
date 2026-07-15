@@ -360,7 +360,7 @@ class SystemService(BaseHandler):
 
         # Run doctor check to verify
         UI.info("Running post-rescue verification checks...")
-        self.manager.cmd_doctor(project_id=root.name)
+        self.manager.diagnostics.cmd_doctor(project_id=root.name)
 
         UI.success(f"Project '{root.name}' rescue completed successfully!")
         return True

@@ -413,7 +413,7 @@ class TestWorkspaceImport(unittest.TestCase):
     @patch("ldm_core.handlers.workspace.UI.confirm")
     @patch("ldm_core.handlers.workspace.UI.die")
     @patch("ldm_core.handlers.workspace.UI.info")
-    @patch.object(MockWorkspaceManager, "cmd_stop")
+    @patch.object(RuntimeService, "cmd_stop")
     def test_ensure_stopped_stop_running_flag(
         self, mock_stop, mock_info, mock_die, mock_confirm, mock_is_running
     ):
@@ -431,7 +431,7 @@ class TestWorkspaceImport(unittest.TestCase):
     @patch("ldm_core.handlers.workspace.UI.confirm")
     @patch("ldm_core.handlers.workspace.UI.die")
     @patch("ldm_core.handlers.workspace.UI.info")
-    @patch.object(MockWorkspaceManager, "cmd_stop")
+    @patch.object(RuntimeService, "cmd_stop")
     def test_ensure_stopped_non_interactive_auto_stop(
         self, mock_stop, mock_info, mock_die, mock_confirm, mock_is_running
     ):
@@ -449,7 +449,7 @@ class TestWorkspaceImport(unittest.TestCase):
     @patch("ldm_core.docker_service.DockerService.is_running")
     @patch("ldm_core.handlers.workspace.UI.confirm")
     @patch("ldm_core.handlers.workspace.UI.die")
-    @patch.object(MockWorkspaceManager, "cmd_stop")
+    @patch.object(RuntimeService, "cmd_stop")
     def test_ensure_stopped_leave_running(
         self, mock_stop, mock_die, mock_confirm, mock_is_running
     ):
@@ -471,7 +471,7 @@ class TestWorkspaceImport(unittest.TestCase):
     @patch("ldm_core.docker_service.DockerService.is_running")
     @patch("ldm_core.handlers.workspace.UI.confirm")
     @patch("ldm_core.handlers.workspace.UI.die")
-    @patch.object(MockWorkspaceManager, "cmd_stop")
+    @patch.object(RuntimeService, "cmd_stop")
     def test_ensure_stopped_interactive_confirm_yes(
         self, mock_stop, mock_die, mock_confirm, mock_is_running
     ):
@@ -489,7 +489,7 @@ class TestWorkspaceImport(unittest.TestCase):
     @patch("ldm_core.docker_service.DockerService.is_running")
     @patch("ldm_core.handlers.workspace.UI.confirm")
     @patch("ldm_core.handlers.workspace.UI.die")
-    @patch.object(MockWorkspaceManager, "cmd_stop")
+    @patch.object(RuntimeService, "cmd_stop")
     def test_ensure_stopped_interactive_confirm_no(
         self, mock_stop, mock_die, mock_confirm, mock_is_running
     ):
@@ -725,6 +725,7 @@ class TestWorkspaceScanners(unittest.TestCase):
 class TestWorkspaceRemoteImport(unittest.TestCase):
     def setUp(self):
         self.handler = MockWorkspaceManager()
+        self.handler.runtime = MagicMock()
 
     def test_parse_github_repo(self):
         ws = self.handler.workspace

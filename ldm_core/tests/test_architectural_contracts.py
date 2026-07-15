@@ -137,11 +137,11 @@ class TestArchitecturalContracts(unittest.TestCase):
         from unittest.mock import patch
 
         with patch.object(self.manager, "run_command"):
-            with patch.object(self.manager, "setup_infrastructure"):
+            with patch.object(self.manager.infra, "setup_infrastructure"):
                 with patch.object(
                     self.manager.composer, "write_docker_compose"
                 ) as mock_write:
-                    self.manager.sync_stack(paths, meta, no_up=True)
+                    self.manager.runtime.sync_stack(paths, meta, no_up=True)
 
                     # Verify that environment variables were passed to write_docker_compose
                     # It might be in call_args.args[2] or call_args.kwargs['liferay_env']
@@ -180,8 +180,8 @@ class TestArchitecturalContracts(unittest.TestCase):
         from unittest.mock import patch
 
         with patch.object(self.manager, "run_command"):
-            with patch.object(self.manager, "setup_infrastructure"):
-                self.manager.sync_stack(paths, meta, no_up=True)
+            with patch.object(self.manager.infra, "setup_infrastructure"):
+                self.manager.runtime.sync_stack(paths, meta, no_up=True)
 
         # 1. POSITIVE: Verify it IS in portal-ext.properties
         pe_content = (paths["files"] / "portal-ext.properties").read_text()
@@ -216,8 +216,8 @@ class TestArchitecturalContracts(unittest.TestCase):
         from unittest.mock import patch
 
         with patch.object(self.manager, "run_command"):
-            with patch.object(self.manager, "setup_infrastructure"):
-                self.manager.sync_stack(paths, meta, no_up=True)
+            with patch.object(self.manager.infra, "setup_infrastructure"):
+                self.manager.runtime.sync_stack(paths, meta, no_up=True)
 
         # 1. POSITIVE: Verify it IS in environment variables
         compose_content = yaml.safe_load(paths["compose"].read_text())
@@ -241,9 +241,9 @@ class TestArchitecturalContracts(unittest.TestCase):
 
     @patch("ldm_core.handlers.config.ConfigService.get_samples_root")
     def test_get_samples_root_delegation_mandate(self, mock_get):
-        """Mandate: LiferayManager MUST correctly delegate get_samples_root to ConfigService."""
+        """Mandate: ConfigService.get_samples_root correctly retrieves the path."""
         mock_get.return_value = Path("/tmp/mock_samples")
-        samples_root = self.manager.get_samples_root()
+        samples_root = self.manager.config.get_samples_root()
         mock_get.assert_called_once()
         self.assertEqual(samples_root, Path("/tmp/mock_samples"))
 

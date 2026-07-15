@@ -25,6 +25,7 @@ class MockConfigManager:
         from ldm_core.defaults import DefaultsManager
 
         self.defaults = DefaultsManager()
+        self.runtime = MagicMock()
 
     def update_portal_ext(self, target_file, updates, important_keys=None):
         content = ""
@@ -425,7 +426,6 @@ class TestConfigService(unittest.TestCase):
                 "common": common_dir,
                 "deploy": tmp_path / "deploy",
             }
-            self.manager.update_portal_ext = self.config.update_portal_ext  # type: ignore[method-assign]
 
             # 1. Scenario: Overwrite vanilla default value
             project_pe.write_text("default.admin.password=test\n")
@@ -650,8 +650,6 @@ class TestConfigService(unittest.TestCase):
 
             paths["common_dirs"] = [global_common, local_common]
             target_pe = files_dir / "portal-ext.properties"
-
-            self.manager.update_portal_ext = self.config.update_portal_ext  # type: ignore[method-assign]
 
             global_pe_content = "default.admin.password=global_val\n"
             local_pe_content = "default.admin.password=local_val\n"
@@ -908,8 +906,8 @@ class TestConfigService(unittest.TestCase):
                 return_value={"container_name": "test-c"}
             )
             self.manager.write_meta = MagicMock()  # type: ignore[method-assign]
-            self.manager.cmd_stop = MagicMock()  # type: ignore[method-assign]
-            self.manager.cmd_run = MagicMock()  # type: ignore[method-assign]
+            self.manager.runtime.cmd_stop = MagicMock()  # type: ignore[method-assign]
+            self.manager.runtime.cmd_run = MagicMock()  # type: ignore[method-assign]
             self.config.cmd_rebuild_properties = MagicMock()  # type: ignore[method-assign]
             self.manager.args.no_restart = False
 
@@ -930,8 +928,12 @@ class TestConfigService(unittest.TestCase):
             )
 
             # Check stop/start and rebuild
-            self.manager.cmd_stop.assert_called_once_with(project_id=tmp_path.name)
-            self.manager.cmd_run.assert_called_once_with(project_id=tmp_path.name)
+            self.manager.runtime.cmd_stop.assert_called_once_with(
+                project_id=tmp_path.name
+            )
+            self.manager.runtime.cmd_run.assert_called_once_with(
+                project_id=tmp_path.name
+            )
             self.config.cmd_rebuild_properties.assert_called_once_with(tmp_path.name)
 
     @patch("subprocess.run")
@@ -967,8 +969,8 @@ class TestConfigService(unittest.TestCase):
             self.manager.setup_paths = MagicMock(return_value=paths)  # type: ignore[method-assign]
             self.manager.read_meta = MagicMock(return_value={})  # type: ignore[method-assign]
             self.manager.write_meta = MagicMock()  # type: ignore[method-assign]
-            self.manager.cmd_stop = MagicMock()  # type: ignore[method-assign]
-            self.manager.cmd_run = MagicMock()  # type: ignore[method-assign]
+            self.manager.runtime.cmd_stop = MagicMock()  # type: ignore[method-assign]
+            self.manager.runtime.cmd_run = MagicMock()  # type: ignore[method-assign]
             self.config.cmd_rebuild_properties = MagicMock()  # type: ignore[method-assign]
             self.manager.args.no_restart = False
 
@@ -995,8 +997,12 @@ class TestConfigService(unittest.TestCase):
             )
 
             # Check stop/start and rebuild
-            self.manager.cmd_stop.assert_called_once_with(project_id=tmp_path.name)
-            self.manager.cmd_run.assert_called_once_with(project_id=tmp_path.name)
+            self.manager.runtime.cmd_stop.assert_called_once_with(
+                project_id=tmp_path.name
+            )
+            self.manager.runtime.cmd_run.assert_called_once_with(
+                project_id=tmp_path.name
+            )
             self.config.cmd_rebuild_properties.assert_called_once_with(tmp_path.name)
 
     @patch("subprocess.run")
@@ -1028,8 +1034,8 @@ class TestConfigService(unittest.TestCase):
             self.manager.setup_paths = MagicMock(return_value=paths)  # type: ignore[method-assign]
             self.manager.read_meta = MagicMock(return_value={})  # type: ignore[method-assign]
             self.manager.write_meta = MagicMock()  # type: ignore[method-assign]
-            self.manager.cmd_stop = MagicMock()  # type: ignore[method-assign]
-            self.manager.cmd_run = MagicMock()  # type: ignore[method-assign]
+            self.manager.runtime.cmd_stop = MagicMock()  # type: ignore[method-assign]
+            self.manager.runtime.cmd_run = MagicMock()  # type: ignore[method-assign]
             self.config.cmd_rebuild_properties = MagicMock()  # type: ignore[method-assign]
 
             # Force no_restart on args
@@ -1039,8 +1045,8 @@ class TestConfigService(unittest.TestCase):
             self.config.cmd_ssl_mode("hosts", project_id="test-p")
 
             # Check stop/start were NOT called
-            self.manager.cmd_stop.assert_not_called()
-            self.manager.cmd_run.assert_not_called()
+            self.manager.runtime.cmd_stop.assert_not_called()
+            self.manager.runtime.cmd_run.assert_not_called()
             self.config.cmd_rebuild_properties.assert_called_once_with(tmp_path.name)
 
     def test_cmd_database_mode(self):

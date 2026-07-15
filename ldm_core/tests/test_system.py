@@ -20,12 +20,12 @@ class MockSystemManager:
         # Mock services
         self.runtime = MagicMock()
         self.infra = MagicMock()
+        self.diagnostics = MagicMock()
 
         # Mock methods
         self.find_dxp_roots = MagicMock(return_value=[])
         self.read_meta = MagicMock(return_value={})
         self.run_command = MagicMock()
-        self.cmd_doctor = MagicMock()
 
 
 class TestSystemService(unittest.TestCase):
@@ -196,7 +196,9 @@ class TestSystemService(unittest.TestCase):
         )
 
         # Verify doctor verification run
-        self.manager.cmd_doctor.assert_called_once_with(project_id=project_root.name)
+        self.manager.diagnostics.cmd_doctor.assert_called_once_with(
+            project_id=project_root.name
+        )
 
     @patch(
         "ldm_core.handlers.system.SystemService.detect_project_path", return_value=None
@@ -487,7 +489,7 @@ class TestSystemService(unittest.TestCase):
         self.assertFalse(self.manager.runtime.cmd_down.called)
         self.assertFalse(self.manager.runtime.cmd_renew_ssl.called)
         self.assertFalse(self.manager.runtime.cmd_run.called)
-        self.assertFalse(self.manager.cmd_doctor.called)
+        self.assertFalse(self.manager.diagnostics.cmd_doctor.called)
 
     @patch("ldm_core.handlers.system.UI")
     @patch("ldm_core.utils.has_shared_projects")
