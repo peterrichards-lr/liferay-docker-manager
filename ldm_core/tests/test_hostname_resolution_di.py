@@ -17,7 +17,7 @@ class TestHostnameResolutionDI(unittest.TestCase):
     def setUp(self):
         self.manager = MockManager()
         self.handler = BaseHandler(self.manager.args)
-        self.handler.manager = self.manager
+        self.handler.manager = self.manager  # type: ignore[assignment]
 
     @patch("ldm_core.handlers.base.BaseHandler.setup_paths")
     @patch("ldm_core.handlers.base.BaseHandler.check_hostname", return_value=True)
@@ -64,7 +64,7 @@ class TestHostnameResolutionDI(unittest.TestCase):
         self, mock_ws_class, mock_check_hostname, mock_setup_paths
     ):
         # GIVEN a handler without manager workspace composed
-        self.handler.manager = None
+        self.handler.manager = None  # type: ignore[assignment]
         tmp_root = Path("/tmp/fake_root_resolution")
         mock_setup_paths.return_value = {
             "root": tmp_root,
