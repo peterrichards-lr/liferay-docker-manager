@@ -96,7 +96,7 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
   - #602: ES version detection using substring matching
   - #603: Windows drive root safety gaps in `verify_safe_to_delete()`
 
-  **Audit Reference:** [Technical Risk Assessment](file:///Users/peterrichards/.gemini/antigravity/brain/78137ee0-ce3c-4d01-9eae-a47d416f8dec/technical_risk_assessment.md)
+  **Audit Reference:** Technical Risk Assessment (file:///Users/peterrichards/.gemini/antigravity/brain/78137ee0-ce3c-4d01-9eae-a47d416f8dec/technical_risk_assessment.md)
 
 - **Current Active Task (July 15, 2026)**:
   - [x] Epic #582: Implement Quickstart Host/SSL defaults, dynamic microservice port conflict resolution, and container status tracking.
