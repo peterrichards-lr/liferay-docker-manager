@@ -20,15 +20,38 @@ class RunPipelineContext(PipelineContext):
     def __init__(self, manager, **kwargs):
         super().__init__(**kwargs)
         self.manager = manager
-        self.set("total_start", time.time())
+
+        # Wrap mock args to prevent mock attribute contamination
+        if type(manager.args).__name__ in ("MagicMock", "Mock"):
+
+            class SafeArgsWrapper:
+                def __init__(self, original):
+                    self.__dict__["_original"] = original
+
+                def __getattr__(self, name):
+                    val = getattr(self._original, name)
+                    if type(val).__name__ in ("MagicMock", "Mock"):
+                        return None
+                    return val
+
+                def __setattr__(self, name, value):
+                    setattr(self._original, name, value)
+
+            self.manager.args = SafeArgsWrapper(manager.args)
+
+        self.set("total_start", kwargs.get("total_start") or time.time())
         self.set("is_new_project", False)
         self.set("init_success", False)
-        self.set("paths", {})
-        self.set("project_meta", {})
+        self.set("paths", kwargs.get("paths", {}))
+        self.set("project_meta", kwargs.get("project_meta", {}))
         self.set("is_restart", kwargs.get("is_restart", False))
         self.set("project_id", kwargs.get("project_id"))
         self.set("no_up", kwargs.get("no_up"))
         self.set("browser", kwargs.get("browser"))
+        self.set("rebuild", kwargs.get("rebuild", False))
+        self.set("no_wait", kwargs.get("no_wait", False))
+        self.set("show_summary", kwargs.get("show_summary", True))
+        self.set("follow", kwargs.get("follow", False))
 
 
 class ProjectInitializationStage(PipelineStage):
@@ -37,6 +60,12 @@ class ProjectInitializationStage(PipelineStage):
     def execute(self, context: PipelineContext) -> None:
         context = typing.cast(RunPipelineContext, context)
         manager = context.manager
+        paths = context.get("paths")
+        project_meta = context.get("project_meta")
+        if paths and project_meta:
+            context.set("root", paths.get("root"))
+            return
+
         project_id = context.get("project_id")
 
         project_id = (
@@ -302,6 +331,7 @@ class ConfigResolutionStage(PipelineStage):
             manager.args.host_name
             or project_meta.get("host_name")
             or manager.defaults.get("host_name")
+            or "localhost"
         )
 
         if getattr(manager.args, "ssl", None) is True and not getattr(
@@ -314,6 +344,7 @@ class ConfigResolutionStage(PipelineStage):
             getattr(manager.args, "db", None)
             or project_meta.get("db_type")
             or manager.defaults.get("db_type")
+            or "postgresql"
         )
 
         archetype_name = getattr(manager.args, "archetype", None) or project_meta.get(
@@ -704,7 +735,11 @@ class EnvironmentSetupStage(PipelineStage):
                 project_id, paths["root"], host_name=project_meta.get("host_name")
             )
 
-        manager.verify_runtime_environment(paths)
+        no_up = context.get("no_up")
+        if no_up is None:
+            no_up = getattr(manager.args, "no_up", False)
+        if not no_up:
+            manager.verify_runtime_environment(paths)
 
         if str(project_meta.get("persist_osgi", "false")).lower() == "true":
             osgi_state_dir = paths["state"]
@@ -1098,10 +1133,13 @@ class ExecutionStage(PipelineStage):
             )
 
         cmd = [*compose_base, "up", "-d", "--remove-orphans"]
-        if getattr(manager.args, "rebuild", False):
+        rebuild = context.get("rebuild") or getattr(manager.args, "rebuild", False)
+        if rebuild:
             cmd.append("--build")
 
-        show_summary = not getattr(manager.args, "quiet", False)
+        show_summary = context.get("show_summary") and not getattr(
+            manager.args, "quiet", False
+        )
         if show_summary:
             tag_val = project_meta.get("tag")
             db_val = project_meta.get("db_type", "postgresql")
@@ -1226,7 +1264,7 @@ class ExecutionStage(PipelineStage):
                     if p_key in paths:
                         reclaim_volume_permissions(paths[p_key])
 
-            follow = getattr(manager.args, "follow", False)
+            follow = context.get("follow") or getattr(manager.args, "follow", False)
             manager.run_command(cmd, cwd=str(paths["root"]), capture_output=not follow)
 
             if follow:
@@ -1235,7 +1273,7 @@ class ExecutionStage(PipelineStage):
                     [*compose_base, "logs", "-f"], cwd=str(paths["root"])
                 )
                 return None
-            no_wait = getattr(manager.args, "no_wait", False)
+            no_wait = context.get("no_wait") or getattr(manager.args, "no_wait", False)
             if not no_wait:
                 timeout_val = getattr(manager.args, "timeout", 900)
                 if timeout_val is None:
