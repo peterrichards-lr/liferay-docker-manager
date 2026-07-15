@@ -85,6 +85,7 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
   - [x] Identified 21 specific findings (race conditions, security vulnerabilities, architectural smells, fragile error boundaries).
   - [x] Created 21 GitHub issues (#592–#612) with full root cause analysis, proposed fixes, and test protocols.
   - [x] Implementing Milestone 1 critical issues (completed #592, #593, #594, #595, #598).
+  - [/] Implementing Milestone 1 high issues (beginning with #597: _print_ngrok_url AttributeError).
   - [x] Review implementation against audit intent.
 
   **Milestone 1 Critical Issues (Priority: p1 — act immediately):**
@@ -96,7 +97,7 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
 
   **Milestone 1 High Issues (Priority: p2):**
   - #596: `shell=True` with unvalidated env var in `_ensure_binary()`
-  - #597: `_print_ngrok_url()` AttributeError on str.stdout
+  - [x] #597: `_print_ngrok_url()` AttributeError on str.stdout
   - #599: `reclaim_volume_permissions()` chmod 777 security issue
   - #600: Silent except blocks swallowing CX failures in runtime.py
   - #601: Tag cache without FileLock — JSON corruption

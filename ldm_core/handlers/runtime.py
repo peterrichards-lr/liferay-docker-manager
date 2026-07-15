@@ -878,8 +878,8 @@ class RuntimeService(BaseHandler):
                 capture_output=True,
                 check=False,
             )
-            if result and result.stdout:
-                data = json.loads(result.stdout)
+            if result:
+                data = json.loads(result)
                 for tunnel in data.get("tunnels", []):
                     if tunnel.get("public_url", "").startswith("https://"):
                         public_url = tunnel["public_url"]
