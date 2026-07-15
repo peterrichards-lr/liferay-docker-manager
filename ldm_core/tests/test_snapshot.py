@@ -345,17 +345,18 @@ class TestSnapshotService(unittest.TestCase):
         mock_success_res.returncode = 0
 
         mock_sub_run.side_effect = [
-            mock_err,
-            mock_err,
-            mock_err,
-            mock_success_res,
-            mock_success_res,
+            mock_success_res,  # baseline dump
+            mock_err,  # wipe retry 1
+            mock_err,  # wipe retry 2
+            mock_err,  # wipe retry 3
+            mock_success_res,  # wipe retry 4
+            mock_success_res,  # import
         ]
 
         self.manager.snapshot._execute_orchestrated_db_restore(
             "db-container", "postgresql", "sql-file", {}, {"host_name": "localhost"}
         )
-        self.assertEqual(mock_sub_run.call_count, 5)
+        self.assertEqual(mock_sub_run.call_count, 6)
         self.assertEqual(mock_sleep.call_count, 3)
 
     @patch("builtins.open", new_callable=mock_open)
@@ -372,12 +373,16 @@ class TestSnapshotService(unittest.TestCase):
         mock_success_res = MagicMock()
         mock_success_res.returncode = 0
 
-        mock_sub_run.side_effect = [mock_err, mock_success_res]
+        mock_sub_run.side_effect = [
+            mock_success_res,  # baseline dump
+            mock_err,  # wipe (non-fatal error)
+            mock_success_res,  # import
+        ]
 
         self.manager.snapshot._execute_orchestrated_db_restore(
             "db-container", "postgresql", "sql-file", {}, {"host_name": "localhost"}
         )
-        self.assertEqual(mock_sub_run.call_count, 2)
+        self.assertEqual(mock_sub_run.call_count, 3)
         self.assertEqual(mock_sleep.call_count, 0)
 
     @patch("builtins.open", new_callable=mock_open)
@@ -414,31 +419,42 @@ class TestSnapshotService(unittest.TestCase):
         self.assertIsNotNone(import_call.kwargs.get("stdin"))
         self.assertIsNone(import_call.kwargs.get("shell"))
 
+    @patch("pathlib.Path.exists")
+    @patch("pathlib.Path.stat")
     @patch("builtins.open", new_callable=mock_open)
     @patch("subprocess.run")
     @patch("time.sleep")
     def test_execute_orchestrated_db_restore_failure_retries(
-        self, mock_sleep, mock_sub_run, mock_file_open
+        self, mock_sleep, mock_sub_run, mock_file_open, mock_stat, mock_exists
     ):
         import subprocess
+
+        mock_exists.return_value = True
+        mock_stat_val = MagicMock()
+        mock_stat_val.st_size = 100
+        mock_stat.return_value = mock_stat_val
 
         mock_success = MagicMock()
         mock_success.returncode = 0
         mock_err = subprocess.CalledProcessError(1, ["cmd"], stderr=b"broken pipe")
 
         mock_sub_run.side_effect = [
-            mock_success,
-            mock_err,
-            mock_success,
-            mock_err,
-            mock_success,
-            mock_err,
+            mock_success,  # baseline dump
+            mock_success,  # wipe 1
+            mock_err,  # import 1
+            mock_success,  # wipe 2
+            mock_err,  # import 2
+            mock_success,  # wipe 3
+            mock_err,  # import 3
+            mock_success,  # wipe rollback
+            mock_success,  # import rollback
         ]
 
-        self.manager.snapshot._execute_orchestrated_db_restore(
-            "db-container", "postgresql", "sql-file", {}, {}
-        )
-        self.assertEqual(mock_sub_run.call_count, 6)
+        with self.assertRaises(SystemExit):
+            self.manager.snapshot._execute_orchestrated_db_restore(
+                "db-container", "postgresql", "sql-file", {}, {}
+            )
+        self.assertEqual(mock_sub_run.call_count, 9)
         self.assertEqual(mock_sleep.call_count, 2)
 
     @patch("ldm_core.handlers.base.BaseHandler.detect_project_path")
