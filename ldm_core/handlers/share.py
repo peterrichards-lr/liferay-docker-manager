@@ -9,7 +9,7 @@ import urllib.request
 from pathlib import Path
 
 from ldm_core.ui import UI
-from ldm_core.utils import download_file, get_actual_home, version_to_tuple
+from ldm_core.utils import download_file, get_actual_home, run_command, version_to_tuple
 
 
 class ShareService:
@@ -147,10 +147,12 @@ class ShareService:
 
         if custom_cmd:
             UI.info(f"Running custom installation command: {custom_cmd}")
-            try:
-                subprocess.run(custom_cmd, shell=True, check=True)  # nosec B602
-            except Exception as e:
-                UI.die(f"Custom installation command failed: {e}")
+            import shlex
+
+            safe_cmd = shlex.split(custom_cmd)
+            res = run_command(safe_cmd, check=False)
+            if res is None:
+                UI.die("Custom installation command failed.")
 
             resolved_bin = self._resolve_existing_binary()
             if resolved_bin:

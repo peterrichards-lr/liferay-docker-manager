@@ -1070,9 +1070,9 @@ class TestShareService(unittest.TestCase):
             self.service._ensure_binary()
         mock_ui.die.assert_called_once()
 
-    @patch("subprocess.run")
+    @patch("ldm_core.handlers.share.run_command")
     @patch("ldm_core.handlers.share.UI")
-    def test_ensure_binary_custom_install_cmd(self, mock_ui, mock_run):
+    def test_ensure_binary_custom_install_cmd(self, mock_ui, mock_run_cmd):
         self.service._get_binary_path = MagicMock(  # type: ignore[method-assign]
             return_value=Path("/fake/bin/lfr-tunnel")
         )
@@ -1087,8 +1087,52 @@ class TestShareService(unittest.TestCase):
             return_value=Path("/resolved/lfr-tunnel")
         )
 
+        mock_run_cmd.return_value = "success"
+
         res = self.service._ensure_binary()
-        mock_run.assert_called_once_with("install.sh", shell=True, check=True)
+        mock_run_cmd.assert_called_once_with(["install.sh"], check=False)
+        self.assertEqual(res, Path("/resolved/lfr-tunnel"))
+
+    @patch("ldm_core.handlers.share.run_command")
+    @patch("ldm_core.handlers.share.UI")
+    def test_ensure_binary_custom_install_cmd_failure(self, mock_ui, mock_run_cmd):
+        self.service._get_binary_path = MagicMock(  # type: ignore[method-assign]
+            return_value=Path("/fake/bin/lfr-tunnel")
+        )
+        self.service._get_installed_version = MagicMock(return_value=None)  # type: ignore[method-assign]
+        self.mock_manager.non_interactive = True
+        self.mock_manager.args.auto_install_lfr_tunnel = True
+        self.mock_manager.config.get_global_config = MagicMock(  # type: ignore[method-assign]
+            return_value={"lfr_tunnel_install_cmd": "install.sh"}
+        )
+
+        mock_ui.die.side_effect = SystemExit("Terminated")
+        mock_run_cmd.return_value = None
+
+        with self.assertRaises(SystemExit):
+            self.service._ensure_binary()
+        mock_ui.die.assert_called_once_with("Custom installation command failed.")
+
+    @patch("ldm_core.handlers.share.run_command")
+    @patch("ldm_core.handlers.share.UI")
+    def test_ensure_binary_custom_cmd_safety(self, mock_ui, mock_run_cmd):
+        self.service._get_binary_path = MagicMock(  # type: ignore[method-assign]
+            return_value=Path("/fake/bin/lfr-tunnel")
+        )
+        self.service._get_installed_version = MagicMock(side_effect=[None, "1.0.0"])  # type: ignore[method-assign]
+        self.mock_manager.non_interactive = True
+        self.mock_manager.args.auto_install_lfr_tunnel = True
+        self.mock_manager.config.get_global_config = MagicMock(  # type: ignore[method-assign]
+            return_value={"lfr_tunnel_install_cmd": "echo pwned; id"}
+        )
+        self.service._resolve_existing_binary = MagicMock(  # type: ignore[method-assign]
+            return_value=Path("/resolved/lfr-tunnel")
+        )
+
+        mock_run_cmd.return_value = "success"
+
+        res = self.service._ensure_binary()
+        mock_run_cmd.assert_called_once_with(["echo", "pwned;", "id"], check=False)
         self.assertEqual(res, Path("/resolved/lfr-tunnel"))
 
     @patch("ldm_core.handlers.share.get_actual_home")
