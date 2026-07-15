@@ -329,6 +329,21 @@ class SystemService(BaseHandler):
                 except Exception as e:
                     UI.warning(f"Failed to remove OSGi lock: {e}")
 
+        # Reclaim Docker volume permissions for the project
+        import platform
+
+        if platform.system().lower() in ["darwin", "linux"]:
+            UI.info("Reclaiming volume permissions for project directories...")
+            from ldm_core.utils import reclaim_volume_permissions
+
+            try:
+                paths = self.setup_paths(root)
+                for p_key in ["deploy", "logs", "osgi", "files"]:
+                    if p_key in paths and paths[p_key].exists():
+                        reclaim_volume_permissions(paths[p_key])
+            except Exception as e:
+                UI.warning(f"Could not reclaim volume permissions: {e}")
+
         # Renew SSL for project
         UI.info(f"Regenerating SSL certificates for project '{root.name}'...")
         try:

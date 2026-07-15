@@ -566,31 +566,13 @@ def safe_write_text(path, content, encoding="utf-8", mode=None):
         return
     tmp_path = path.with_suffix(".tmp" + path.suffix)
     try:
-        try:
-            if mode is not None:
-                flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
-                fd = os.open(tmp_path, flags, mode)
-                with open(fd, "w", encoding=encoding) as f:
-                    f.write(content)
-            else:
-                tmp_path.write_text(content, encoding=encoding)
-        except (OSError, PermissionError) as e:
-            # LDM-384: Fallback for root-owned directories in CI
-            if platform.system().lower() != "windows":
-                from ldm_core.utils import reclaim_volume_permissions
-
-                if reclaim_volume_permissions(path.parent):
-                    if mode is not None:
-                        flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
-                        fd = os.open(tmp_path, flags, mode)
-                        with open(fd, "w", encoding=encoding) as f:
-                            f.write(content)
-                    else:
-                        tmp_path.write_text(content, encoding=encoding)
-                else:
-                    raise e
-            else:
-                raise e
+        if mode is not None:
+            flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
+            fd = os.open(tmp_path, flags, mode)
+            with open(fd, "w", encoding=encoding) as f:
+                f.write(content)
+        else:
+            tmp_path.write_text(content, encoding=encoding)
 
         # Robust replacement with retries (for Windows file locking)
         # and fallback (for permission nuances in CI)
@@ -652,19 +634,7 @@ def safe_copy(src, dst):
         UI.info(f"{UI.BYELLOW}[DRY RUN] Would copy:{UI.COLOR_OFF} {src} -> {dst}")
         return
     try:
-        try:
-            shutil.copyfile(src, dst)
-        except (OSError, PermissionError) as e:
-            # LDM-384: Fallback for root-owned directories in CI
-            if platform.system().lower() != "windows":
-                from ldm_core.utils import reclaim_volume_permissions
-
-                if reclaim_volume_permissions(Path(dst).parent):
-                    shutil.copyfile(src, dst)
-                else:
-                    raise e
-            else:
-                raise e
+        shutil.copyfile(src, dst)
 
         # Try to copy permissions/mode, but ignore if it fails (common for cross-user files)
         with contextlib.suppress(OSError, PermissionError):
@@ -1933,7 +1903,7 @@ def resolve_dependency_version(liferay_tag, dependency_name):
 
 
 def safe_mkdir(path, parents=True, exist_ok=True):
-    """Creates a directory safely, with JIT permission reclamation if needed."""
+    """Creates a directory safely, raising PermissionError if the path cannot be created."""
     path_obj = Path(path).resolve()
     is_dry_run = os.environ.get("LDM_DRY_RUN", "").lower() == "true"
     if is_dry_run:
@@ -1941,17 +1911,7 @@ def safe_mkdir(path, parents=True, exist_ok=True):
             f"{UI.BYELLOW}[DRY RUN] Would create directory:{UI.COLOR_OFF} {path_obj}"
         )
         return
-    try:
-        path_obj.mkdir(parents=parents, exist_ok=exist_ok)
-    except (OSError, PermissionError) as e:
-        if platform.system().lower() != "windows":
-            # Attempt to reclaim parent
-            if reclaim_volume_permissions(path_obj.parent):
-                path_obj.mkdir(parents=parents, exist_ok=exist_ok)
-            else:
-                raise e
-        else:
-            raise e
+    path_obj.mkdir(parents=parents, exist_ok=exist_ok)
 
 
 def verify_safe_to_delete(path):
@@ -2047,8 +2007,12 @@ def safe_rmtree(path):
             raise e
 
 
-def reclaim_volume_permissions(path, uid=None, gid=None, chmod_val="777"):
-    """Forces ownership and permissions of a directory via Docker (Linux/macOS)."""
+def reclaim_volume_permissions(path, uid=None, gid=None, chmod_val="750"):
+    """Forces ownership and permissions of a directory via Docker (Linux/macOS).
+
+    Uses chmod 750 (owner full, group read/execute, others nothing) by default
+    to prevent world-writable project directories that violate least-privilege.
+    """
     is_dry_run = os.environ.get("LDM_DRY_RUN", "").lower() == "true"
     if is_dry_run:
         return True
@@ -2069,7 +2033,9 @@ def reclaim_volume_permissions(path, uid=None, gid=None, chmod_val="777"):
 
     from ldm_core.ui import UI
 
-    UI.detail(f"Reclaiming permissions for: {path}")
+    UI.warning(
+        f"Reclaiming volume permissions for {path} (Docker volume may have root-owned files)..."
+    )
 
     docker_cmd = f"chown -R {uid}:{gid} /workspace; chmod -R {chmod_val} /workspace; "
 
