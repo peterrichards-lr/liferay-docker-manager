@@ -2481,9 +2481,9 @@ class ProjectLock:
                 import ctypes
 
                 try:
-                    process = ctypes.windll.kernel32.OpenProcess(0x00100000, 0, pid)
+                    process = ctypes.windll.kernel32.OpenProcess(0x00100000, 0, pid)  # type: ignore[attr-defined]
                     if process != 0:
-                        ctypes.windll.kernel32.CloseHandle(process)
+                        ctypes.windll.kernel32.CloseHandle(process)  # type: ignore[attr-defined]
                         return False
                     return True
                 except Exception:
