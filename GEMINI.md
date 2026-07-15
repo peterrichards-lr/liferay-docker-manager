@@ -105,6 +105,8 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
   - [x] #603: Windows drive root safety gaps in `verify_safe_to_delete()`
   - [x] #610: `_DRY_RUN_VFS` global dict never cleared -- state leaks between test runs
   - [x] #611: Add retry with exponential backoff to `get_json()` and `get_raw()`
+  - [x] #612: `BaseHandler.ensure_hostnames_resolve()` WorkspaceService dependency injection
+  - [x] fix(infra): check if docker settings is dict in `get_proxy_ports()` to handle null ports (PR #635)
 
   **Audit Reference:** Technical Risk Assessment (file:///Users/peterrichards/.gemini/antigravity/brain/78137ee0-ce3c-4d01-9eae-a47d416f8dec/technical_risk_assessment.md)
 

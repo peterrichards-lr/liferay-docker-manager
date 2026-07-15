@@ -90,6 +90,11 @@ class TestInfraService(unittest.TestCase):
             ports = self.infra.get_proxy_ports()
             self.assertEqual(ports, {"http": 8080, "https": 8443, "admin": 18081})
 
+    def test_get_proxy_ports_null_settings(self):
+        with patch.object(self.manager, "run_command", return_value="null"):
+            ports = self.infra.get_proxy_ports()
+            self.assertEqual(ports, {"http": 80, "https": 443, "admin": 18080})
+
     @patch("ldm_core.docker_service.DockerService.exists", return_value=False)
     @patch("ldm_core.ui.UI.info")
     @patch("ldm_core.ui.UI.detail")
