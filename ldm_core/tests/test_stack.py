@@ -25,7 +25,28 @@ class MockManager(
     def __init__(self):
         from argparse import Namespace
 
-        self.args = Namespace(
+        class DefaultNamespace(Namespace):
+            def __getattr__(self, name):
+                if name in [
+                    "tag_latest",
+                    "search",
+                    "lean",
+                    "tunnel_managed_cors",
+                    "portal",
+                    "share",
+                    "expose",
+                    "share_inspector",
+                    "sidecar",
+                    "persist_osgi",
+                    "no_captcha",
+                    "fast_login",
+                    "force_downgrade",
+                    "no_up",
+                ]:
+                    return False
+                return None
+
+        self.args = DefaultNamespace(
             database_mode=None,
             search_mode=None,
             search=False,
@@ -45,7 +66,13 @@ class MockManager(
         self.composer = ComposerService(self)
         self.runtime = RuntimeService(self)
         self.defaults = MagicMock()
-        self.defaults.get = MagicMock(return_value="isolated")
+
+        def mock_defaults_get(key, default=None):
+            if key == "port":
+                return 8080
+            return "isolated"
+
+        self.defaults.get = MagicMock(side_effect=mock_defaults_get)
         self.parse_version = MagicMock(return_value=(2024, 1, 0))  # type: ignore[method-assign]
 
         self.run_command = MagicMock()  # type: ignore[method-assign]

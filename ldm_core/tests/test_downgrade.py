@@ -207,12 +207,17 @@ class TestDowngradePrevention(unittest.TestCase):
         self.manager.args.force_downgrade = True
 
         with patch("ldm_core.handlers.runtime.UI.info"):
-            self.manager.runtime.sync_stack(
-                self.paths, project_meta, no_up=False, no_wait=True, show_summary=False
-            )
+            with patch.object(self.manager, "verify_runtime_environment"):
+                self.manager.runtime.sync_stack(
+                    self.paths,
+                    project_meta,
+                    no_up=False,
+                    no_wait=True,
+                    show_summary=False,
+                )
 
         mock_die.assert_not_called()
-        self.assertEqual(project_meta.get("last_run_liferay_version"), "2023.q1.3")
+        self.assertEqual(project_meta.get("last_run_liferay_version"), "2023.q1.3-lts")
 
 
 class TestElasticsearchVersionDetection(unittest.TestCase):

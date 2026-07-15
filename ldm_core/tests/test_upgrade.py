@@ -49,6 +49,7 @@ class MockManager(BaseHandler):
         self.composer.write_docker_compose = MagicMock()  # type: ignore[method-assign]
         self.infra.setup_infrastructure = MagicMock()  # type: ignore[method-assign]
         self.infra._ensure_network = MagicMock()  # type: ignore[method-assign]
+        self.verify_runtime_environment = MagicMock()  # type: ignore[method-assign]
 
     def check_port(self, host, port):
         return True
@@ -85,9 +86,15 @@ class TestVersionUpgrades(unittest.TestCase):
         run_cmd_mock.side_effect = [
             False,  # docker ps check
             "",  # docker compose up db
+            "",  # docker compose config validation
         ]
 
-        with patch.object(self.manager.snapshot, "cmd_snapshot") as mock_snapshot:
+        with (
+            patch.object(self.manager.snapshot, "cmd_snapshot") as mock_snapshot,
+            patch(
+                "ldm_core.docker_service.DockerService.is_running", return_value=False
+            ),
+        ):
             self.manager.runtime.sync_stack(
                 self.paths, project_meta, no_up=True, show_summary=False
             )

@@ -105,6 +105,8 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
   - [x] #602: ES version detection using substring matching
   - [x] #603: Windows drive root safety gaps in `verify_safe_to_delete()`
   - [x] #606: `FileLock` / `ProjectLock` stale-lock recovery TOCTOU race window (PR #636)
+  - [x] #604: Eliminate delegation shims from LiferayManager
+  - [x] #607: Extract run_command monolith into CommandRunner class
   - [x] #610: `_DRY_RUN_VFS` global dict never cleared -- state leaks between test runs
   - [x] #611: Add retry with exponential backoff to `get_json()` and `get_raw()`
   - [x] #612: `BaseHandler.ensure_hostnames_resolve()` WorkspaceService dependency injection
