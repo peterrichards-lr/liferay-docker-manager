@@ -540,7 +540,7 @@ class CloudService:
         self.manager.write_meta(root_path, project_meta)
 
         UI.info(f"Triggering local restore from {backup_dir_path}...")
-        self.manager.cmd_restore(
+        self.manager.snapshot.cmd_restore(
             project_id=project_id, backup_dir=backup_dir_path, no_run=should_no_run
         )
         return True

@@ -56,12 +56,6 @@ class MockDiagManager(BaseHandler):
     def read_meta(self, *args, **kwargs):
         return {"tag": "2026.q1.4-lts", "env_args": []}
 
-    def cmd_completion(self, *args, **kwargs):
-        return self.diagnostics.cmd_completion(*args, **kwargs)
-
-    def cmd_setup_completion(self, *args, **kwargs):
-        return self.diagnostics.cmd_setup_completion(*args, **kwargs)
-
     def find_dxp_roots(self, *args, **kwargs):
         return [{"path": Path("/tmp/p1")}, {"path": Path("/tmp/p2")}]
 
@@ -758,14 +752,14 @@ class TestDiagnosticsCompletion(unittest.TestCase):
     def test_cmd_completion_bash(self, mock_home):
         mock_home.return_value = self.test_home
         with patch("builtins.print") as mock_print:
-            self.manager.cmd_completion("bash")
+            self.manager.diagnostics.cmd_completion("bash")
             self.assertTrue(mock_print.called)
 
     @patch("ldm_core.diagnostics.completions.get_actual_home")
     def test_cmd_completion_zsh(self, mock_home):
         mock_home.return_value = self.test_home
         with patch("builtins.print") as mock_print:
-            self.manager.cmd_completion("zsh")
+            self.manager.diagnostics.cmd_completion("zsh")
             self.assertTrue(mock_print.called)
 
 
@@ -786,7 +780,7 @@ class TestDiagnosticsSetupCompletion(unittest.TestCase):
         mock_home.return_value = self.test_home
 
         # 1. Run first time (profile does not exist)
-        self.manager.cmd_setup_completion("zsh")
+        self.manager.diagnostics.cmd_setup_completion("zsh")
         zshrc = self.test_home / ".zshrc"
         self.assertTrue(zshrc.exists())
         content = zshrc.read_text(encoding="utf-8")
@@ -796,7 +790,7 @@ class TestDiagnosticsSetupCompletion(unittest.TestCase):
 
         # 2. Run second time (profile exists, should backup and update)
         zshrc.write_text(content + "\n# dummy comment\n", encoding="utf-8")
-        self.manager.cmd_setup_completion("zsh")
+        self.manager.diagnostics.cmd_setup_completion("zsh")
 
         bak_file = self.test_home / ".zshrc.bak"
         self.assertTrue(bak_file.exists())
@@ -813,7 +807,7 @@ class TestDiagnosticsSetupCompletion(unittest.TestCase):
         bash_profile = self.test_home / ".bash_profile"
         bash_profile.write_text("# existing profile", encoding="utf-8")
 
-        self.manager.cmd_setup_completion("bash")
+        self.manager.diagnostics.cmd_setup_completion("bash")
         self.assertTrue(bash_profile.exists())
         content = bash_profile.read_text(encoding="utf-8")
         self.assertIn('eval "$(ldm completion bash)"', content)
@@ -822,7 +816,7 @@ class TestDiagnosticsSetupCompletion(unittest.TestCase):
     @patch("ldm_core.diagnostics.completions.get_actual_home")
     def test_cmd_setup_completion_fish(self, mock_home):
         mock_home.return_value = self.test_home
-        self.manager.cmd_setup_completion("fish")
+        self.manager.diagnostics.cmd_setup_completion("fish")
         fish_config = self.test_home / ".config" / "fish" / "config.fish"
         self.assertTrue(fish_config.exists())
         content = fish_config.read_text(encoding="utf-8")
@@ -834,7 +828,7 @@ class TestDiagnosticsSetupCompletion(unittest.TestCase):
         mock_home.return_value = self.test_home
         mock_run.side_effect = Exception("failed")
 
-        self.manager.cmd_setup_completion("powershell")
+        self.manager.diagnostics.cmd_setup_completion("powershell")
         import sys
 
         if sys.platform == "win32":
@@ -864,7 +858,7 @@ class TestDiagnosticsSetupCompletion(unittest.TestCase):
         mock_home.return_value = self.test_home
 
         with patch.dict("sys.modules", {"argcomplete": None}):
-            self.manager.cmd_setup_completion("zsh")
+            self.manager.diagnostics.cmd_setup_completion("zsh")
 
         called_args = [call[0][0] for call in mock_run.call_args_list]
         install_calls = [

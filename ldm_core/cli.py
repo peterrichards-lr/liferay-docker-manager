@@ -2229,18 +2229,18 @@ def main():
             if getattr(args, "open", False)
             else None,
         )[0],
-        ("dashboard", None): lambda: manager.cmd_dashboard(
+        ("dashboard", None): lambda: manager.dashboard.cmd_dashboard(
             port=getattr(args, "port", 19000),
             host=getattr(args, "host", "127.0.0.1"),
             background=getattr(args, "background", False),
             token=getattr(args, "token", None),
         ),
-        ("hydrate", None): lambda: manager.cmd_hydrate(
+        ("hydrate", None): lambda: manager.cloud.cmd_hydrate(
             args.backup_path, getattr(args, "project", None)
         ),
-        ("mcp", None): manager.cmd_mcp,
-        ("ai", None): lambda: manager.cmd_ai(args.query),
-        ("quickstart", None): lambda: manager.cmd_quickstart(
+        ("mcp", None): manager.mcp.cmd_mcp,
+        ("ai", None): lambda: manager.ai.cmd_ai(args.query),
+        ("quickstart", None): lambda: manager.workspace.cmd_quickstart(
             args.template,
             share=args.share,
             share_subdomain=args.share_subdomain,
@@ -2311,7 +2311,7 @@ def main():
             export=getattr(args, "export", False),
             include_infra=getattr(args, "include_infra", False),
         ),
-        ("deploy", None): lambda: manager.cmd_deploy(
+        ("deploy", None): lambda: manager.runtime.cmd_deploy(
             getattr(args, "project", None), targets=getattr(args, "targets", [])
         ),
         ("reindex", None): lambda: manager.runtime.cmd_reindex(
@@ -2337,7 +2337,7 @@ def main():
         ),
         ("clear-cache", None): lambda: manager.diagnostics.cmd_cache("tags"),
         ("clear-tags", None): lambda: manager.diagnostics.cmd_cache("tags"),
-        ("wait", None): lambda: manager.cmd_wait(
+        ("wait", None): lambda: manager.runtime.cmd_wait(
             getattr(args, "project", None),
             timeout=getattr(args, "timeout", 600),
             wait_for_deployables=getattr(args, "wait_for_deployables", False),
@@ -2469,7 +2469,7 @@ def main():
         # system namespace:
         ("system", "relocate"): lambda: manager.infra.cmd_system("relocate"),
         ("system", "prune"): manager.diagnostics.cmd_prune,
-        ("system", "doctor"): lambda: manager.cmd_doctor(
+        ("system", "doctor"): lambda: manager.diagnostics.cmd_doctor(
             getattr(args, "project", None), all_projects=args.all
         ),
         ("system", "upgrade"): manager.diagnostics.cmd_upgrade,
@@ -2482,16 +2482,18 @@ def main():
             print_only=args.print,
         ),
         ("system", "dev-setup"): manager.dev.cmd_dev_setup,
-        ("system", "completion"): lambda: manager.cmd_completion(args.shell),
-        ("system", "setup-completion"): lambda: manager.cmd_setup_completion(
+        ("system", "completion"): lambda: manager.diagnostics.cmd_completion(
             args.shell
         ),
-        ("system", "man"): manager.cmd_man,
+        ("system", "setup-completion"): lambda: (
+            manager.diagnostics.cmd_setup_completion(args.shell)
+        ),
+        ("system", "man"): manager.diagnostics.cmd_man,
         ("system", "fix-hosts"): lambda: manager.cmd_fix_hosts(
             getattr(args, "host_name", None)
         ),
         ("system", "roi"): manager.config.cmd_roi,
-        ("system", "nuke"): lambda: manager.cmd_nuke(
+        ("system", "nuke"): lambda: manager.system.cmd_nuke(
             force=getattr(args, "force", False),
             keep_config=getattr(args, "keep_config", False),
         ),
@@ -2500,7 +2502,7 @@ def main():
             or getattr(args, "project_flag", None),
             clear_lock=getattr(args, "clear_lock", False),
         ),
-        ("system", "init-ci"): lambda: manager.cmd_init_ci(
+        ("system", "init-ci"): lambda: manager.system.cmd_init_ci(
             repo=getattr(args, "repo", None),
             workflow_name=getattr(args, "workflow_name", "ldm-package-release.yml"),
             trigger=getattr(args, "trigger", None),

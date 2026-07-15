@@ -543,7 +543,7 @@ class ConfigService:
 
     def get_samples_tag(self):
         """Extracts the reference Liferay tag from the samples metadata."""
-        root = self.manager.get_samples_root()
+        root = self.get_samples_root()
         meta_file = root / "meta"
         if meta_file.exists():
             try:
@@ -556,7 +556,7 @@ class ConfigService:
 
     def get_samples_db_type(self):
         """Extracts the database type from the samples metadata."""
-        root = self.manager.get_samples_root()
+        root = self.get_samples_root()
         meta_file = root / "meta"
         if meta_file.exists():
             try:
@@ -569,7 +569,7 @@ class ConfigService:
 
     def sync_samples(self, paths):
         """Sync global samples into the current project path with on-demand download support."""
-        samples_root = self.manager.get_samples_root()
+        samples_root = self.get_samples_root()
         UI.info("Syncing project samples...")
         try:
             shutil.copytree(
@@ -952,7 +952,7 @@ class ConfigService:
                     if not target_ext.exists():
                         with contextlib.suppress(PermissionError, OSError):
                             target_ext.parent.mkdir(parents=True, exist_ok=True)
-                    self.manager.update_portal_ext(
+                    self.update_portal_ext(
                         target_ext, to_update, important_keys=winning_imp
                     )
 
@@ -1856,7 +1856,7 @@ class ConfigService:
             UI.warning(
                 f"Stopping running project container stack '{project_name}' (downtime initiated)..."
             )
-            self.manager.cmd_stop(project_id=project_name)
+            self.manager.runtime.cmd_stop(project_id=project_name)
 
         if mode == "hosts":
             # Switch to local hosts-based SSL
@@ -1903,7 +1903,7 @@ class ConfigService:
             UI.info(
                 f"Starting project container stack '{project_name}' in mode '{mode}'..."
             )
-            self.manager.cmd_run(project_id=project_name)
+            self.manager.runtime.cmd_run(project_id=project_name)
 
     def _sync_env_files(self, project_path, target_url):
         """Find and update LIFERAY_URL/LIFERAY_PORTAL_URL/AICA_LIFERAY_URL in client extension .env files."""

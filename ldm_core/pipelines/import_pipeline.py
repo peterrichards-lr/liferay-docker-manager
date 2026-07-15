@@ -509,7 +509,9 @@ class FinalizationStage(PipelineStage):
             no_run = getattr(manager.args, "no_run", False)
 
         if not no_run:
-            manager.cmd_run(project_id=context.get("project_name"), is_restart=True)
+            manager.runtime.cmd_run(
+                project_id=context.get("project_name"), is_restart=True
+            )
 
 
 class ImportPipeline(Pipeline):

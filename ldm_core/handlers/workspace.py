@@ -56,19 +56,19 @@ class WorkspaceService(BaseHandler):
                 or self.manager.non_interactive
             ):
                 UI.info(f"Stopping running project '{project_name}' automatically...")
-                self.manager.cmd_stop(project_id=project_name)
+                self.manager.runtime.cmd_stop(project_id=project_name)
             elif UI.confirm(
                 f"Project '{project_name}' is currently running. Stop it before continuing?",
                 "Y",
             ):
-                self.manager.cmd_stop(project_id=project_name)
+                self.manager.runtime.cmd_stop(project_id=project_name)
             else:
                 UI.die("Import aborted. Cannot modify a running project's foundation.")
 
     def cmd_init(self, project_id=None):
         """Scaffolds a project without starting it."""
         UI.info(f"Initializing project shell: {project_id or 'interactively'}")
-        self.manager.cmd_run(project_id, no_up=True)
+        self.manager.runtime.cmd_run(project_id, no_up=True)
         UI.success(
             "Initialization complete. You can now run 'ldm doctor' or 'ldm run'."
         )
@@ -1305,7 +1305,9 @@ class WorkspaceService(BaseHandler):
                         True,
                         "true",
                     ]:
-                        self.manager.cmd_run(project_id=project_name, is_restart=True)
+                        self.manager.runtime.cmd_run(
+                            project_id=project_name, is_restart=True
+                        )
 
                     return project_name
 
@@ -1414,7 +1416,9 @@ class WorkspaceService(BaseHandler):
 
                 # Boot stack if needed
                 if not should_no_run:
-                    self.manager.cmd_run(project_id=project_name, is_restart=True)
+                    self.manager.runtime.cmd_run(
+                        project_id=project_name, is_restart=True
+                    )
 
                 return project_name
 
@@ -1569,9 +1573,9 @@ class WorkspaceService(BaseHandler):
                 # 3. Trigger deployment from the project's internal state
                 if updated_services:
                     for svc in updated_services:
-                        self.manager.cmd_deploy(service=svc)
+                        self.manager.runtime.cmd_deploy(service=svc)
                 else:
-                    self.manager.cmd_deploy()
+                    self.manager.runtime.cmd_deploy()
 
                 UI.success("Deployment complete.")
 

@@ -65,7 +65,7 @@ class TestCLIEntrypoint(unittest.TestCase):
 
         # Setup mock manager
         mock_manager = mock_manager_class.return_value
-        mock_manager.cmd_completion = MagicMock()
+        mock_manager.diagnostics = MagicMock()
 
         # Run main
         with patch("sys.argv", ["ldm", "completion", "zsh"]):
@@ -74,7 +74,7 @@ class TestCLIEntrypoint(unittest.TestCase):
         # Verify threading.Thread was NOT called (since update check is skipped)
         mock_thread.assert_not_called()
         # Verify cmd_completion WAS called
-        mock_manager.cmd_completion.assert_called_once_with("zsh")
+        mock_manager.diagnostics.cmd_completion.assert_called_once_with("zsh")
 
     @patch("ldm_core.cli.LiferayManager")
     @patch("ldm_core.cli.get_parser")

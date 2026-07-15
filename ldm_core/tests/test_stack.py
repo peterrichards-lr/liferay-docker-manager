@@ -519,7 +519,7 @@ class TestStackOrchestration(unittest.TestCase):
             patch("ldm_core.utils.open_browser") as mock_open,
         ):
             self.manager.non_interactive = False
-            self.manager.cmd_browser("test")
+            self.manager.runtime.cmd_browser("test")
             self.assertTrue(mock_open.called)
 
     def test_cmd_reset_state(self):
@@ -528,7 +528,7 @@ class TestStackOrchestration(unittest.TestCase):
             patch.object(Path, "exists", return_value=True),
             patch("ldm_core.handlers.runtime.shutil.rmtree") as mock_rmtree,
         ):
-            self.manager.cmd_reset("test", target="state")
+            self.manager.runtime.cmd_reset("test", target="state")
             self.assertTrue(mock_rmtree.called)
 
 
