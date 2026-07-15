@@ -19,3 +19,16 @@ def clear_dry_run_vfs():
     reset_dry_run_vfs()
     yield
     reset_dry_run_vfs()
+
+
+@pytest.fixture(autouse=True)
+def reset_singletons():
+    """Resets UI and Benchmarker class singletons to prevent state pollution."""
+    from ldm_core.ui import UI
+    from ldm_core.utils import Benchmarker
+
+    UI.reset()
+    Benchmarker.reset()
+    yield
+    UI.reset()
+    Benchmarker.reset()

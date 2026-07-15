@@ -315,7 +315,7 @@ class TestShareService(unittest.TestCase):
         )
 
         # Verify sync_stack call
-        self.mock_manager.runtime.sync_stack.assert_called_once()
+        self.mock_manager.runtime.cmd_run.assert_called_once()
 
         # Verify subprocess.run call to start container via docker compose
         self.assertTrue(mock_run.call_count >= 1)

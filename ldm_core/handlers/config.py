@@ -1694,8 +1694,13 @@ class ConfigService:
                             custom_env[k] = val
                     project_meta["custom_env"] = json.dumps(custom_env)
                     self.manager.write_meta(paths["root"], project_meta)
-                    self.manager.sync_stack(
-                        paths, project_meta, no_up=True, no_wait=True
+                    self.manager.runtime.cmd_run(
+                        project_id=project_meta.get("container_name")
+                        or paths["root"].name,
+                        no_up=True,
+                        no_wait=True,
+                        paths=paths,
+                        project_meta=project_meta,
                     )
                     UI.success("Environment variables synchronized from shell.")
                     return
@@ -1722,7 +1727,13 @@ class ConfigService:
         # Final Commit
         project_meta["custom_env"] = json.dumps(custom_env)
         self.manager.write_meta(paths["root"], project_meta)
-        self.manager.sync_stack(paths, project_meta, no_up=True, no_wait=True)
+        self.manager.runtime.cmd_run(
+            project_id=project_meta.get("container_name") or paths["root"].name,
+            no_up=True,
+            no_wait=True,
+            paths=paths,
+            project_meta=project_meta,
+        )
         UI.success("Environment updated.")
 
     def cmd_feature(self, project_id=None, enable=None, disable=None):

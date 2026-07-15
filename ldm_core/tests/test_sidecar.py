@@ -173,7 +173,12 @@ class TestSidecarImplementation(unittest.TestCase):
             # Mock manager.run_command to avoid actual docker calls
             self.manager.infra.manager.run_command = MagicMock(return_value="")
 
-            self.manager.runtime.sync_stack(self.paths, project_meta, no_up=True)
+            self.manager.runtime.cmd_run(
+                project_id="test",
+                no_up=True,
+                paths=self.paths,
+                project_meta=project_meta,
+            )
 
             # Verify setup_global_search was NOT called
             mock_setup_global_search.assert_not_called()

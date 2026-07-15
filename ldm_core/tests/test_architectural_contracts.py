@@ -141,7 +141,12 @@ class TestArchitecturalContracts(unittest.TestCase):
                 with patch.object(
                     self.manager.composer, "write_docker_compose"
                 ) as mock_write:
-                    self.manager.runtime.sync_stack(paths, meta, no_up=True)
+                    self.manager.runtime.cmd_run(
+                        project_id="redline-domain",
+                        no_up=True,
+                        paths=paths,
+                        project_meta=meta,
+                    )
 
                     # Verify that environment variables were passed to write_docker_compose
                     # It might be in call_args.args[2] or call_args.kwargs['liferay_env']
@@ -181,7 +186,12 @@ class TestArchitecturalContracts(unittest.TestCase):
 
         with patch.object(self.manager, "run_command"):
             with patch.object(self.manager.infra, "setup_infrastructure"):
-                self.manager.runtime.sync_stack(paths, meta, no_up=True)
+                self.manager.runtime.cmd_run(
+                    project_id="redline-database",
+                    no_up=True,
+                    paths=paths,
+                    project_meta=meta,
+                )
 
         # 1. POSITIVE: Verify it IS in portal-ext.properties
         pe_content = (paths["files"] / "portal-ext.properties").read_text()
@@ -217,7 +227,12 @@ class TestArchitecturalContracts(unittest.TestCase):
 
         with patch.object(self.manager, "run_command"):
             with patch.object(self.manager.infra, "setup_infrastructure"):
-                self.manager.runtime.sync_stack(paths, meta, no_up=True)
+                self.manager.runtime.cmd_run(
+                    project_id="redline-search",
+                    no_up=True,
+                    paths=paths,
+                    project_meta=meta,
+                )
 
         # 1. POSITIVE: Verify it IS in environment variables
         compose_content = yaml.safe_load(paths["compose"].read_text())

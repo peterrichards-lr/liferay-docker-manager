@@ -73,8 +73,12 @@ class TestDowngradePrevention(unittest.TestCase):
         self.manager.args.force_downgrade = False
 
         with self.assertRaises(SystemExit):
-            self.manager.runtime.sync_stack(
-                self.paths, project_meta, no_up=True, show_summary=False
+            self.manager.runtime.cmd_run(
+                project_id="test-project",
+                no_up=True,
+                show_summary=False,
+                paths=self.paths,
+                project_meta=project_meta,
             )
 
         mock_die.assert_called_once()
@@ -98,8 +102,12 @@ class TestDowngradePrevention(unittest.TestCase):
 
         with patch("ldm_core.utils.resolve_dependency_version", return_value="16"):
             with self.assertRaises(SystemExit):
-                self.manager.runtime.sync_stack(
-                    self.paths, project_meta, no_up=True, show_summary=False
+                self.manager.runtime.cmd_run(
+                    project_id="test-project",
+                    no_up=True,
+                    show_summary=False,
+                    paths=self.paths,
+                    project_meta=project_meta,
                 )
 
         mock_die.assert_called_once()
@@ -123,8 +131,12 @@ class TestDowngradePrevention(unittest.TestCase):
 
         with patch("ldm_core.utils.resolve_dependency_version", return_value="16"):
             with self.assertRaises(SystemExit):
-                self.manager.runtime.sync_stack(
-                    self.paths, project_meta, no_up=True, show_summary=False
+                self.manager.runtime.cmd_run(
+                    project_id="test-project",
+                    no_up=True,
+                    show_summary=False,
+                    paths=self.paths,
+                    project_meta=project_meta,
                 )
 
         mock_die.assert_called_once()
@@ -149,8 +161,12 @@ class TestDowngradePrevention(unittest.TestCase):
 
         with patch("ldm_core.utils.resolve_dependency_version", return_value="8.0"):
             with self.assertRaises(SystemExit):
-                self.manager.runtime.sync_stack(
-                    self.paths, project_meta, no_up=True, show_summary=False
+                self.manager.runtime.cmd_run(
+                    project_id="test-project",
+                    no_up=True,
+                    show_summary=False,
+                    paths=self.paths,
+                    project_meta=project_meta,
                 )
 
         mock_die.assert_called_once()
@@ -182,8 +198,12 @@ class TestDowngradePrevention(unittest.TestCase):
         es_path.mkdir(parents=True, exist_ok=True)
 
         with patch("ldm_core.utils.resolve_dependency_version", return_value="8.17"):
-            self.manager.runtime.sync_stack(
-                self.paths, project_meta, no_up=True, show_summary=False
+            self.manager.runtime.cmd_run(
+                project_id="test-project",
+                no_up=True,
+                show_summary=False,
+                paths=self.paths,
+                project_meta=project_meta,
             )
 
         mock_warning.assert_called_once()
@@ -208,12 +228,13 @@ class TestDowngradePrevention(unittest.TestCase):
 
         with patch("ldm_core.handlers.runtime.UI.info"):
             with patch.object(self.manager, "verify_runtime_environment"):
-                self.manager.runtime.sync_stack(
-                    self.paths,
-                    project_meta,
+                self.manager.runtime.cmd_run(
+                    project_id="test-project",
                     no_up=False,
                     no_wait=True,
                     show_summary=False,
+                    paths=self.paths,
+                    project_meta=project_meta,
                 )
 
         mock_die.assert_not_called()
@@ -262,8 +283,12 @@ class TestElasticsearchVersionDetection(unittest.TestCase):
             ) as mock_rdv,
             patch("ldm_core.utils.safe_rmtree") as mock_rmtree,
         ):
-            self.manager.runtime.sync_stack(
-                self.paths, project_meta, no_up=True, show_summary=False
+            self.manager.runtime.cmd_run(
+                project_id="test-project",
+                no_up=True,
+                show_summary=False,
+                paths=self.paths,
+                project_meta=project_meta,
             )
             # Verify resolve_dependency_version was called with "elasticsearch"
             mock_rdv.assert_called()
@@ -299,8 +324,12 @@ class TestElasticsearchVersionDetection(unittest.TestCase):
         }
         # resolve_dependency_version returns ES7 for 7.x Liferay tags
         with patch("ldm_core.utils.resolve_dependency_version", return_value="7.17"):
-            self.manager.runtime.sync_stack(
-                self.paths, project_meta, no_up=True, show_summary=False
+            self.manager.runtime.cmd_run(
+                project_id="test-project",
+                no_up=True,
+                show_summary=False,
+                paths=self.paths,
+                project_meta=project_meta,
             )
         # Major stayed at "7" → no upgrade wipe triggered
         mock_rmtree.assert_not_called()
@@ -334,8 +363,12 @@ class TestElasticsearchVersionDetection(unittest.TestCase):
             patch("ldm_core.utils.resolve_dependency_version", return_value=None),
             patch("ldm_core.utils.safe_rmtree") as mock_rmtree,
         ):
-            self.manager.runtime.sync_stack(
-                self.paths, project_meta, no_up=True, show_summary=False
+            self.manager.runtime.cmd_run(
+                project_id="test-project",
+                no_up=True,
+                show_summary=False,
+                paths=self.paths,
+                project_meta=project_meta,
             )
         # No wipe: default ES major is "8", matches no previous version
         mock_rmtree.assert_not_called()

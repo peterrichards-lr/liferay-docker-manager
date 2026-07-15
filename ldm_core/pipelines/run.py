@@ -42,7 +42,10 @@ class RunPipelineContext(PipelineContext):
         self.set("total_start", kwargs.get("total_start") or time.time())
         self.set("is_new_project", False)
         self.set("init_success", False)
-        self.set("paths", kwargs.get("paths", {}))
+        paths = kwargs.get("paths")
+        if paths and not isinstance(paths, dict):
+            paths = self.manager.setup_paths(paths)
+        self.set("paths", paths or {})
         self.set("project_meta", kwargs.get("project_meta", {}))
         self.set("is_restart", kwargs.get("is_restart", False))
         self.set("project_id", kwargs.get("project_id"))

@@ -992,7 +992,7 @@ class TestSnapshotService(unittest.TestCase):
         with (
             patch.object(self.manager, "run_command") as mock_run,
             patch.object(self.manager.runtime, "cmd_reset"),
-            patch.object(self.manager.runtime, "sync_stack"),
+            patch.object(self.manager.runtime, "cmd_run"),
             patch(
                 "ldm_core.handlers.base.BaseHandler.read_meta",
                 return_value={"container_name": "test-c"},
@@ -1047,7 +1047,7 @@ class TestSnapshotService(unittest.TestCase):
         with (
             patch.object(self.manager, "run_command") as mock_run,
             patch.object(self.manager.runtime, "cmd_reset"),
-            patch.object(self.manager.runtime, "sync_stack"),
+            patch.object(self.manager.runtime, "cmd_run"),
             patch(
                 "ldm_core.handlers.base.BaseHandler.read_meta",
                 return_value={"container_name": "test-c"},
@@ -1111,9 +1111,14 @@ class TestSnapshotService(unittest.TestCase):
         ):
             self.manager.snapshot.cmd_restore("test")
 
-            # Verify that sync_stack was triggered on self.manager.runtime to rebuild config
-            self.manager.runtime.sync_stack.assert_called_with(
-                mock_paths.return_value, ANY, no_up=True, show_summary=False
+            # Verify that cmd_run was triggered on self.manager.runtime to rebuild config
+            self.manager.runtime.cmd_run.assert_called_with(
+                project_id=self.test_dir.name,
+                no_up=True,
+                show_summary=False,
+                is_restore=True,
+                paths=mock_paths.return_value,
+                project_meta=ANY,
             )
 
             # Verify write_meta updated tag in project_meta to the snapshot tag

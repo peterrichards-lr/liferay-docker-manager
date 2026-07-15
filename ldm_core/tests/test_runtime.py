@@ -62,9 +62,6 @@ class MockRuntime(BaseHandler):
     def _wait_for_ready(self, *args, **kwargs):
         return self.handler._wait_for_ready(*args, **kwargs)
 
-    def sync_stack(self, *args, **kwargs):
-        return self.handler.sync_stack(*args, **kwargs)
-
     def detect_project_path(self, *args, **kwargs):
         return Path("/tmp/runtime-project")
 
@@ -992,11 +989,13 @@ services:
                 ),
                 patch("ldm_core.ui.UI.die") as mock_die,
             ):
-                self.handler.handler.sync_stack(
-                    all_paths,
-                    {"container_name": "test-project-liferay-1"},
+                self.handler.handler.cmd_run(
+                    project_id="test-project-liferay-1",
                     no_up=False,
                     no_wait=True,
+                    is_restart=True,
+                    paths=all_paths,
+                    project_meta={"container_name": "test-project-liferay-1"},
                 )
                 mock_is_running.assert_called_with("test-project-liferay-1")
                 mock_check_port.assert_not_called()
@@ -1015,11 +1014,13 @@ services:
                 patch("ldm_core.ui.UI.die", side_effect=SystemExit("died")) as mock_die,
             ):
                 with self.assertRaises(SystemExit) as cm:
-                    self.handler.handler.sync_stack(
-                        all_paths,
-                        {"container_name": "test-project-liferay-1"},
+                    self.handler.handler.cmd_run(
+                        project_id="test-project-liferay-1",
                         no_up=False,
                         no_wait=True,
+                        is_restart=True,
+                        paths=all_paths,
+                        project_meta={"container_name": "test-project-liferay-1"},
                     )
                 self.assertEqual(str(cm.exception), "died")
                 mock_is_running.assert_called_with("test-project-liferay-1")
@@ -1041,11 +1042,13 @@ services:
                 ),
                 patch("ldm_core.ui.UI.die") as mock_die,
             ):
-                self.handler.handler.sync_stack(
-                    all_paths,
-                    {"container_name": "test-project-liferay-1"},
+                self.handler.handler.cmd_run(
+                    project_id="test-project-liferay-1",
                     no_up=False,
                     no_wait=True,
+                    is_restart=True,
+                    paths=all_paths,
+                    project_meta={"container_name": "test-project-liferay-1"},
                 )
                 mock_is_running.assert_called_with("test-project-liferay-1")
                 mock_check_port.assert_any_call("127.0.0.1", 8080)
@@ -1615,8 +1618,11 @@ services:
             patch.object(self.handler, "get_container_status", return_value="running"),
             patch.object(self.handler, "run_command") as mock_run_cmd,
         ):
-            result = self.handler.sync_stack(
-                self.tmp_dir, {"container_name": "test"}, no_wait=True
+            result = self.handler.cmd_run(
+                "test",
+                no_wait=True,
+                paths=self.tmp_dir,
+                project_meta={"container_name": "test"},
             )
             self.assertTrue(result)
             self.assertTrue(mock_run_cmd.called)

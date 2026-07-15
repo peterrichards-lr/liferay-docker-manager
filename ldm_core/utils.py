@@ -38,6 +38,14 @@ class Benchmarker:
     download_time = 0.0
 
     @classmethod
+    def reset(cls):
+        """Resets all benchmarking metrics to factory defaults."""
+        cls.is_active = False
+        cls._start_time = 0.0
+        cls.human_time = 0.0
+        cls.download_time = 0.0
+
+    @classmethod
     def start(cls):
         cls.is_active = True
         cls._start_time = time.time()

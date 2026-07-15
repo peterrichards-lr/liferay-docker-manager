@@ -38,6 +38,7 @@ class BaseHandler:
             return True
         return False
 
+
     def is_wsl(self):
         """Checks if the current environment is WSL."""
         if platform.system().lower() == "linux":

@@ -1,3 +1,4 @@
+import contextlib
 import os
 import sys
 
@@ -54,6 +55,47 @@ class UI:
 
     TRACE_LOG_PATH = None
     _trace_handle = None
+
+    @classmethod
+    def reset(cls):
+        """Resets mutable class-level properties to defaults for test isolation."""
+        cls.NON_INTERACTIVE = False
+        cls.VERBOSE = False
+        cls.INFO_MODE = False
+        cls.QUIET_MODE = False
+        cls.NO_COLOR = False
+        cls.NO_UNICODE = False
+        cls.TRACE_LOG_PATH = None
+        if cls._trace_handle:
+            try:
+                cls._trace_handle.close()
+            except Exception:
+                pass
+            cls._trace_handle = None
+
+    @classmethod
+    @contextlib.contextmanager
+    def patch(cls, non_interactive=None, verbose=None, info_mode=None, quiet_mode=None):
+        """Context manager to temporarily modify UI settings and restore them."""
+        old_ni = cls.NON_INTERACTIVE
+        old_v = cls.VERBOSE
+        old_info = cls.INFO_MODE
+        old_quiet = cls.QUIET_MODE
+        if non_interactive is not None:
+            cls.NON_INTERACTIVE = non_interactive
+        if verbose is not None:
+            cls.VERBOSE = verbose
+        if info_mode is not None:
+            cls.INFO_MODE = info_mode
+        if quiet_mode is not None:
+            cls.QUIET_MODE = quiet_mode
+        try:
+            yield
+        finally:
+            cls.NON_INTERACTIVE = old_ni
+            cls.VERBOSE = old_v
+            cls.INFO_MODE = old_info
+            cls.QUIET_MODE = old_quiet
 
     @staticmethod
     def init_trace_log(args):
