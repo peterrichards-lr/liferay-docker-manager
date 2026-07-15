@@ -103,7 +103,9 @@ class TestVersionUpgrades(unittest.TestCase):
             )
 
             # Verify snapshot was triggered
-            mock_snapshot.assert_called_once_with("test-project")
+            mock_snapshot.assert_called_once_with(
+                "test-project", name="Pre-upgrade snapshot to 2024.q4.2"
+            )
 
             # Verify auto-upgrade env var was injected in compose write
             write_mock = cast(MagicMock, self.manager.composer.write_docker_compose)
@@ -205,7 +207,9 @@ class TestVersionUpgrades(unittest.TestCase):
 
             # No prompts should be shown because overrides are active
             mock_confirm.assert_not_called()
-            mock_snapshot.assert_called_once_with("test-project")
+            mock_snapshot.assert_called_once_with(
+                "test-project", name="Pre-upgrade snapshot to 2024.q4.2"
+            )
 
             # Verify auto-upgrade env var WAS injected
             write_mock = cast(MagicMock, self.manager.composer.write_docker_compose)

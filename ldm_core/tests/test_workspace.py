@@ -1239,14 +1239,16 @@ class TestWorkspaceQuickstart(unittest.TestCase):
         )
 
         mock_cmd_import.assert_called_once_with(
-            "https://github.com/peterrichards-lr/liferay-ai-commerce-accelerator.git"
+            "https://github.com/peterrichards-lr/liferay-ai-commerce-accelerator.git",
+            project_id="liferay-ai-commerce-accelerator",
         )
         mock_fetch_seed.assert_called_once()
-        mock_cmd_run.assert_called_once_with("liferay-ai-commerce-accelerator")
+        mock_cmd_run.assert_called_once_with(
+            "liferay-ai-commerce-accelerator", browser=True
+        )
         self.manager.share.cmd_start.assert_called_once_with(
             "liferay-ai-commerce-accelerator", subdomain="my-aica-sub"
         )
-        self.assertTrue(self.manager.args.browser)
 
     def test_cmd_quickstart_invalid_template(self):
         with self.assertRaises(SystemExit):
@@ -1282,14 +1284,16 @@ class TestWorkspaceQuickstart(unittest.TestCase):
         )
 
         mock_cmd_import.assert_called_once_with(
-            "https://github.com/peterrichards-lr/liferay-ai-commerce-accelerator.git"
+            "https://github.com/peterrichards-lr/liferay-ai-commerce-accelerator.git",
+            project_id="liferay-ai-commerce-accelerator",
         )
         mock_fetch_seed.assert_called_once()
-        mock_cmd_run.assert_called_once_with("liferay-ai-commerce-accelerator")
+        mock_cmd_run.assert_called_once_with(
+            "liferay-ai-commerce-accelerator", browser=True
+        )
         self.manager.share.cmd_start.assert_called_once_with(
             "liferay-ai-commerce-accelerator", subdomain="my-aica-sub"
         )
-        self.assertTrue(self.manager.args.browser)
 
     @patch("ldm_core.handlers.workspace.WorkspaceService.cmd_import")
     @patch.object(MockWorkspaceManager, "detect_project_path")
@@ -1325,14 +1329,14 @@ class TestWorkspaceQuickstart(unittest.TestCase):
             )
 
             mock_cmd_import.assert_called_once_with(
-                "https://github.com/peterrichards-lr/liferay-ai-commerce-accelerator.git"
+                "https://github.com/peterrichards-lr/liferay-ai-commerce-accelerator.git",
+                project_id="my-custom-aica",
             )
             mock_fetch_seed.assert_called_once()
-            mock_cmd_run.assert_called_once_with("my-custom-aica")
+            mock_cmd_run.assert_called_once_with("my-custom-aica", browser=True)
             self.manager.share.cmd_start.assert_called_once_with(
                 "my-custom-aica", subdomain="my-aica-sub"
             )
-            self.assertEqual(self.manager.args.project, "my-custom-aica")
         finally:
             self.manager.args.name = None
 
@@ -1380,8 +1384,10 @@ class TestWorkspaceQuickstart(unittest.TestCase):
             "custom_aica", share=True, share_subdomain="custom-sub"
         )
 
-        mock_cmd_import.assert_called_once_with("https://github.com/custom/my-aica.git")
-        mock_cmd_run.assert_called_once_with("custom-aica-project")
+        mock_cmd_import.assert_called_once_with(
+            "https://github.com/custom/my-aica.git", project_id="custom-aica-project"
+        )
+        mock_cmd_run.assert_called_once_with("custom-aica-project", browser=True)
         self.manager.share.cmd_start.assert_called_once_with(
             "custom-aica-project", subdomain="custom-sub"
         )
@@ -1417,14 +1423,14 @@ class TestWorkspaceQuickstart(unittest.TestCase):
         )
 
         mock_cmd_import.assert_called_once_with(
-            "https://github.com/peterrichards-lr/liferay-ai-commerce-accelerator.git"
+            "https://github.com/peterrichards-lr/liferay-ai-commerce-accelerator.git",
+            project_id="liferay-ai-commerce-accelerator",
         )
         mock_fetch_seed.assert_not_called()
         mock_cmd_run.assert_not_called()
         self.manager.share.cmd_start.assert_called_once_with(
             "liferay-ai-commerce-accelerator", subdomain="my-aica-sub"
         )
-        self.assertTrue(self.manager.args.browser)
 
     @patch("ldm_core.handlers.workspace.WorkspaceService.cmd_import")
     @patch.object(MockWorkspaceManager, "detect_project_path")
@@ -1458,14 +1464,16 @@ class TestWorkspaceQuickstart(unittest.TestCase):
         )
 
         mock_cmd_import.assert_called_once_with(
-            "https://github.com/peterrichards-lr/liferay-ai-commerce-accelerator.git"
+            "https://github.com/peterrichards-lr/liferay-ai-commerce-accelerator.git",
+            project_id="liferay-ai-commerce-accelerator",
         )
         mock_fetch_seed.assert_called_once()
-        mock_cmd_run.assert_called_once_with("liferay-ai-commerce-accelerator")
+        mock_cmd_run.assert_called_once_with(
+            "liferay-ai-commerce-accelerator", browser=True
+        )
         self.manager.share.cmd_start.assert_called_once_with(
             "liferay-ai-commerce-accelerator", subdomain="my-aica-sub"
         )
-        self.assertTrue(self.manager.args.browser)
 
     @patch.object(MockWorkspaceManager, "register_project")
     @patch("ldm_core.handlers.base.BaseHandler.write_meta")
@@ -1681,7 +1689,9 @@ class TestAtomicZipRepackaging(unittest.TestCase):
             mock_import.assert_called_once_with(
                 str(Path(tmpdir).resolve()), is_init_from=True
             )
-            mock_monitor.assert_called_once_with(str(Path(tmpdir).resolve()))
+            mock_monitor.assert_called_once_with(
+                str(Path(tmpdir).resolve()), project_id="my-linked-project"
+            )
 
     def test_cmd_link_invalid_source(self):
         """test ldm link fails with invalid path."""
@@ -1692,8 +1702,9 @@ class TestAtomicZipRepackaging(unittest.TestCase):
     def test_cmd_clone_success(self, mock_import):
         """test ldm clone triggers import with clone_only=True."""
         self.handler.workspace.cmd_clone("https://github.com/owner/repo.git")
-        self.assertTrue(self.handler.args.clone_only)
-        mock_import.assert_called_once_with("https://github.com/owner/repo.git")
+        mock_import.assert_called_once_with(
+            "https://github.com/owner/repo.git", clone_only=True
+        )
 
     def test_cmd_clone_invalid_source(self):
         """test ldm clone fails with non-git URL."""
@@ -1739,11 +1750,15 @@ class TestAtomicZipRepackaging(unittest.TestCase):
     def test_cmd_clone_ssh_protocols(self, mock_import):
         """Verify cmd_clone accepts custom SSH protocols containing :// or starting with git@"""
         self.handler.workspace.cmd_clone("ssh://git@github.com/owner/repo.git")
-        mock_import.assert_called_once_with("ssh://git@github.com/owner/repo.git")
+        mock_import.assert_called_once_with(
+            "ssh://git@github.com/owner/repo.git", clone_only=True
+        )
 
         mock_import.reset_mock()
         self.handler.workspace.cmd_clone("git+ssh://github.com/owner/repo.git")
-        mock_import.assert_called_once_with("git+ssh://github.com/owner/repo.git")
+        mock_import.assert_called_once_with(
+            "git+ssh://github.com/owner/repo.git", clone_only=True
+        )
 
     def test_cmd_link_path_crash_resilience(self):
         """Verify cmd_link doesn't raise raw OSError on malformed Windows paths (like URLs or invalid characters)"""

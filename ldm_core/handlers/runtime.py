@@ -58,13 +58,17 @@ class RuntimeService(BaseHandler):
             project_root / "keycloak-realm.json", json.dumps(realm_data, indent=2)
         )
 
-    def cmd_run(self, project_id=None, is_restart=False):
+    def cmd_run(self, project_id=None, is_restart=False, no_up=None, browser=None):
         """Main entry point for starting or updating a project stack."""
         from ldm_core.pipelines.run import RunPipelineContext, create_run_pipeline
 
         pipeline = create_run_pipeline()
         context = RunPipelineContext(
-            self.manager, project_id=project_id, is_restart=is_restart
+            self.manager,
+            project_id=project_id,
+            is_restart=is_restart,
+            no_up=no_up,
+            browser=browser,
         )
         return pipeline.run(context)
 
@@ -905,6 +909,7 @@ class RuntimeService(BaseHandler):
         timeout=600,
         stream_status=False,
         stream_logs=False,
+        browser=None,
     ):
         """Wait for Liferay to become healthy and provide access information."""
         container_name = project_meta.get("container_name")
@@ -1280,7 +1285,12 @@ class RuntimeService(BaseHandler):
                     )
                     UI.info("")
 
-                    if getattr(self.manager.args, "browser", False):
+                    should_open_browser = (
+                        browser
+                        if browser is not None
+                        else getattr(self.manager.args, "browser", False)
+                    )
+                    if should_open_browser:
                         UI.info(f"Launching browser: {access_url}/web/guest/home")
                         open_browser(f"{access_url}/web/guest/home")
                     return True
@@ -1308,6 +1318,7 @@ class RuntimeService(BaseHandler):
         no_wait=False,
         show_summary=True,
         total_start=None,
+        browser=None,
     ):
         """Orchestrates stack configuration and startup."""
         # Ensure paths is a dictionary for subscripting
@@ -1497,20 +1508,15 @@ class RuntimeService(BaseHandler):
 
                     # Create the snapshot
                     snapshot_name = f"Pre-upgrade snapshot to {tag}"
-                    old_args_name = getattr(self.manager.args, "name", None)
-                    self.manager.args.name = snapshot_name
                     try:
-                        self.manager.snapshot.cmd_snapshot(project_id)
+                        self.manager.snapshot.cmd_snapshot(
+                            project_id, name=snapshot_name
+                        )
                         UI.success(
                             f"Database backup snapshot '{snapshot_name}' created successfully."
                         )
                     except Exception as e:
                         UI.warning(f"Failed to create pre-upgrade database backup: {e}")
-                    finally:
-                        if old_args_name is not None:
-                            self.manager.args.name = old_args_name
-                        elif hasattr(self.manager.args, "name"):
-                            delattr(self.manager.args, "name")
 
             # 2. Database Auto-Upgrade Option
             if getattr(self.manager.args, "upgrade_db", False):
@@ -1919,6 +1925,7 @@ class RuntimeService(BaseHandler):
                     host_name,
                     total_start,
                     timeout=timeout_val,
+                    browser=browser,
                 )
 
         if no_wait:
