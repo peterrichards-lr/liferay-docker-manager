@@ -32,6 +32,7 @@ class ImportPipelineContext(PipelineContext):
         self.set("paths", {})
         self.set("backup_dir", None)
         self.set("is_init_from", kwargs.get("is_init_from", False))
+        self.set("no_run", kwargs.get("no_run"))
 
 
 class ImportValidationStage(PipelineStage):
@@ -503,7 +504,11 @@ class FinalizationStage(PipelineStage):
         project_path = context.get("project_path")
         UI.success(f"Project created/imported at: {project_path}")
 
-        if not getattr(manager.args, "no_run", False):
+        no_run = context.get("no_run")
+        if no_run is None:
+            no_run = getattr(manager.args, "no_run", False)
+
+        if not no_run:
             manager.cmd_run(project_id=context.get("project_name"), is_restart=True)
 
 

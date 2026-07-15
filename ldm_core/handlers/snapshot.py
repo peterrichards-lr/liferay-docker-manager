@@ -152,7 +152,7 @@ class SnapshotService(BaseHandler):
 
         return backups
 
-    def cmd_snapshot(self, project_id=None):
+    def cmd_snapshot(self, project_id=None, name=None):
         """Creates or manages snapshots of the project state."""
         is_dry_run = os.environ.get("LDM_DRY_RUN", "").lower() == "true"
         if is_dry_run:
@@ -172,7 +172,8 @@ class SnapshotService(BaseHandler):
         delete_arg = getattr(self.manager.args, "delete", None)
         keep_last = getattr(self.manager.args, "keep_last", None)
         older_than = getattr(self.manager.args, "older_than", None)
-        name = getattr(self.manager.args, "name", None)
+        if name is None:
+            name = getattr(self.manager.args, "name", None)
 
         if delete_arg or keep_last is not None or older_than is not None:
             self._manage_snapshots(paths, delete_arg, keep_last, older_than)
@@ -609,7 +610,9 @@ class SnapshotService(BaseHandler):
 
         UI.success(f"Snapshot saved: {snap_dir}")
 
-    def cmd_restore(self, project_id=None, auto_index=None, backup_dir=None):
+    def cmd_restore(
+        self, project_id=None, auto_index=None, backup_dir=None, no_run=None
+    ):
         is_dry_run = os.environ.get("LDM_DRY_RUN", "").lower() == "true"
         if is_dry_run:
             UI.info(
@@ -1099,7 +1102,8 @@ class SnapshotService(BaseHandler):
             UI.warning("  ! Could not schedule automatic reindex (metadata missing).")
 
         # --- OPTIONAL STARTUP (LDM-388) ---
-        no_run = getattr(self.manager.args, "no_run", False)
+        if no_run is None:
+            no_run = getattr(self.manager.args, "no_run", False)
         up_flag = getattr(self.manager.args, "up", False)
 
         if not no_run:

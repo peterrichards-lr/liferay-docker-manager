@@ -67,11 +67,8 @@ class WorkspaceService(BaseHandler):
 
     def cmd_init(self, project_id=None):
         """Scaffolds a project without starting it."""
-        # Set the no_up flag on args to ensure it doesn't try to start
-        self.manager.args.no_up = True
-
         UI.info(f"Initializing project shell: {project_id or 'interactively'}")
-        self.manager.cmd_run(project_id)
+        self.manager.cmd_run(project_id, no_up=True)
         UI.success(
             "Initialization complete. You can now run 'ldm doctor' or 'ldm run'."
         )
@@ -753,57 +750,37 @@ class WorkspaceService(BaseHandler):
         self.manager.setup_paths(project_path)
 
         UI.info(f"Fetching backups from '{env_id}'...")
-        old_download = getattr(self.manager.args, "download", False)
-        old_restore = getattr(self.manager.args, "restore", False)
-        old_sync_env = getattr(self.manager.args, "sync_env", False)
-        old_env_id = getattr(self.manager.args, "env_id", None)
-        old_project = getattr(self.manager.args, "project", None)
-
-        if project_name:
-            self.manager.args.project = project_name
-
         try:
-            # Pass the original source path down to cloud fetch
-            # so sync_env can find the LCP.json file
-            self.manager.args.source_path = str(source_path)
-
             # 1. Sync Env Vars (Do this first so they are in place for the restoration boot)
             # LDM-423: Skip env sync if --no-env-sync is provided
             if not getattr(self.manager.args, "no_env_sync", False):
-                self.manager.args.download = False
-                self.manager.args.restore = False
-                self.manager.args.sync_env = True
-                self.manager.cloud.cmd_cloud_fetch()
+                self.manager.cloud.cmd_cloud_fetch(
+                    project_id=project_name,
+                    env_id=env_id,
+                    sync_env=True,
+                    download=False,
+                    restore=False,
+                    source_path=str(source_path),
+                )
             else:
                 UI.info("  - Skipping environment variable sync (--no-env-sync).")
 
             # 2. Fetch Data & Restore
             # We set no_run=True to prevent cmd_restore from starting the stack early.
             # The outer cmd_import/cmd_init_from will handle the final startup.
-            self.manager.args.download = True
-            self.manager.args.restore = True
-            self.manager.args.sync_env = False
-            self.manager.args.env_id = env_id
-
-            old_no_run = getattr(self.manager.args, "no_run", False)
-            try:
-                self.manager.args.no_run = True
-                self.manager.cloud.cmd_cloud_fetch()
-            finally:
-                self.manager.args.no_run = old_no_run
+            self.manager.cloud.cmd_cloud_fetch(
+                project_id=project_name,
+                env_id=env_id,
+                sync_env=False,
+                download=True,
+                restore=True,
+                no_run=True,
+            )
 
         except SystemExit:
             UI.warning(
                 "Cloud hydration could not be completed. Falling back to local runtime only."
             )
-        finally:
-            self.manager.args.download = old_download
-            self.manager.args.restore = old_restore
-            self.manager.args.sync_env = old_sync_env
-            self.manager.args.env_id = old_env_id
-            self.manager.args.project = old_project
-            if hasattr(self.manager.args, "source_path"):
-                delattr(self.manager.args, "source_path")
 
     def cmd_link(self, source_path):
         """Initialize project with a persistent link to a source workspace and start monitoring."""
@@ -821,10 +798,7 @@ class WorkspaceService(BaseHandler):
             )
 
         project_name = self.cmd_import(str(source), is_init_from=True)
-        if project_name:
-            self.manager.args.project = project_name
-
-        self.cmd_monitor(str(source))
+        self.cmd_monitor(str(source), project_id=project_name)
 
     def cmd_clone(self, source_path):
         """Clone a remote Git repository workspace and initialize it."""
@@ -837,8 +811,7 @@ class WorkspaceService(BaseHandler):
         if not is_remote:
             UI.die("Error: Source path to clone must be a valid Git repository URL.")
 
-        self.manager.args.clone_only = True
-        return self.cmd_import(source_path)
+        return self.cmd_import(source_path, clone_only=True)
 
     def cmd_init_from(self, source_path):
         """Deprecated: Initialize project from workspace."""
@@ -901,8 +874,33 @@ class WorkspaceService(BaseHandler):
 
             UI.error("Validation failed. See warnings above.")
 
-    def cmd_import(self, source_path, is_init_from=False, is_internal=False):
+    def cmd_import(
+        self,
+        source_path,
+        is_init_from=False,
+        is_internal=False,
+        project_id=None,
+        clone_only=None,
+        no_run=None,
+    ):
         from ldm_core.utils import UI
+
+        # Resolve parameters to avoid mutating manager.args directly
+        should_project_name = (
+            project_id
+            or getattr(self.manager.args, "project", None)
+            or getattr(self.manager.args, "project_flag", None)
+        )
+        should_clone_only = (
+            clone_only
+            if clone_only is not None
+            else getattr(self.manager.args, "clone_only", False)
+        )
+        should_no_run = (
+            no_run
+            if no_run is not None
+            else getattr(self.manager.args, "no_run", False)
+        )
 
         is_remote = (
             source_path.startswith(("http://", "https://", "git@"))
@@ -925,9 +923,7 @@ class WorkspaceService(BaseHandler):
 
         is_dry_run = os.environ.get("LDM_DRY_RUN", "").lower() == "true"
         if is_dry_run:
-            project_name = getattr(self.manager.args, "project", None) or getattr(
-                self.manager.args, "project_flag", None
-            )
+            project_name = should_project_name
             if not project_name:
                 parsed = self._parse_github_repo(source_path)
                 if parsed:
@@ -1024,21 +1020,24 @@ class WorkspaceService(BaseHandler):
 
                 try:
                     return self.cmd_import(
-                        str(local_path), is_init_from=is_init_from, is_internal=True
+                        str(local_path),
+                        is_init_from=is_init_from,
+                        is_internal=True,
+                        project_id=should_project_name,
+                        clone_only=should_clone_only,
+                        no_run=should_no_run,
                     )
                 finally:
                     if temp_dir.exists():
                         shutil.rmtree(temp_dir)
             else:
                 # Git URL / GitHub Repo URL
-                project_name = getattr(self.manager.args, "project", None) or getattr(
-                    self.manager.args, "project_flag", None
-                )
+                project_name = should_project_name
                 parsed = self._parse_github_repo(source_path)
                 from ldm_core.utils import get_github_token
 
                 github_token = get_github_token()
-                clone_only = getattr(self.manager.args, "clone_only", False)
+                clone_only = should_clone_only
                 has_ldmp = False
                 ldmp_asset = None
                 sha_asset = None
@@ -1094,7 +1093,6 @@ class WorkspaceService(BaseHandler):
                             UI.info(f"Using default project name: {project_name}")
                         else:
                             project_name = UI.ask("Project Name", project_name)
-                        self.manager.args.project = project_name
 
                     project_path = self.manager.detect_project_path(
                         project_name, for_init=True
@@ -1220,11 +1218,6 @@ class WorkspaceService(BaseHandler):
                             shutil.rmtree(temp_extract_dir)
                         UI.die("Security Violation: Repository origin mismatch.")
 
-                    # Save original settings and restore
-                    original_no_run = getattr(self.manager.args, "no_run", False)
-                    self.manager.args.no_run = True
-                    original_backup_dir = getattr(self.manager.args, "backup_dir", None)
-
                     try:
                         # Extract LDMP contents directly into the project directory
                         paths = self.manager.setup_paths(project_path)
@@ -1293,15 +1286,13 @@ class WorkspaceService(BaseHandler):
                         self.manager._skip_git_check = True
                         try:
                             self.manager.snapshot.cmd_restore(
-                                project_name, backup_dir=temp_extract_dir
+                                project_name, backup_dir=temp_extract_dir, no_run=True
                             )
                         finally:
                             if hasattr(self.manager, "_skip_git_check"):
                                 delattr(self.manager, "_skip_git_check")
                         UI.success(f"Project created at: {project_path}")
                     finally:
-                        self.manager.args.no_run = original_no_run
-                        self.manager.args.backup_dir = original_backup_dir
                         if temp_pkg_dir.exists():
                             shutil.rmtree(temp_pkg_dir)
                         if temp_extract_dir.exists():
@@ -1310,7 +1301,7 @@ class WorkspaceService(BaseHandler):
                     # Boot stack if needed
                     # Only boot if the package actually included a database snapshot.
                     # If it did not, we should keep it stopped so the caller (quickstart) can seed it first.
-                    if not original_no_run and manifest.get("includes_database") in [
+                    if not should_no_run and manifest.get("includes_database") in [
                         True,
                         "true",
                     ]:
@@ -1319,7 +1310,7 @@ class WorkspaceService(BaseHandler):
                     return project_name
 
                 # Standard clone path (no .ldmp package available, or --clone-only is specified)
-                if not getattr(self.manager.args, "clone_only", False):
+                if not should_clone_only:
                     UI.die(
                         "No compiled LDM Package (.ldmp) found in GitHub Releases. To clone the workspace code directly, please use: 'ldm clone <repository-url>'"
                     )
@@ -1336,7 +1327,6 @@ class WorkspaceService(BaseHandler):
                         UI.info(f"Using default project name: {project_name}")
                     else:
                         project_name = UI.ask("Project Name", project_name)
-                    self.manager.args.project = project_name
 
                 project_path = self.manager.detect_project_path(
                     project_name, for_init=True
@@ -1408,25 +1398,22 @@ class WorkspaceService(BaseHandler):
                 except Exception as e:
                     UI.die(f"Failed to execute git clone: {e}")
 
-                # Save original settings and call recursive cmd_import
-                original_no_run = getattr(self.manager.args, "no_run", False)
-                self.manager.args.no_run = True
-                original_backup_dir = getattr(self.manager.args, "backup_dir", None)
-
                 try:
                     # Import the code elements
                     self.cmd_import(
-                        str(temp_git_dir), is_init_from=is_init_from, is_internal=True
+                        str(temp_git_dir),
+                        is_init_from=is_init_from,
+                        is_internal=True,
+                        project_id=project_name,
+                        clone_only=should_clone_only,
+                        no_run=True,
                     )
                 finally:
-                    self.manager.args.no_run = original_no_run
-                    self.manager.args.backup_dir = original_backup_dir
-
                     if temp_git_dir.exists():
                         shutil.rmtree(temp_git_dir)
 
                 # Boot stack if needed
-                if not original_no_run:
+                if not should_no_run:
                     self.manager.cmd_run(project_id=project_name, is_restart=True)
 
                 return project_name
@@ -1437,22 +1424,21 @@ class WorkspaceService(BaseHandler):
             ImportPipelineContext,
         )
 
-        project_name = getattr(self.manager.args, "project", None) or getattr(
-            self.manager.args, "project_flag", None
-        )
+        project_name = should_project_name
 
         context = ImportPipelineContext(
             manager=self.manager,
             source_path=source_path,
             project_name=project_name,
             is_init_from=is_init_from,
+            no_run=should_no_run,
         )
         pipeline = ImportPipeline()
         pipeline.run(context)
 
         return context.get("project_name")
 
-    def cmd_monitor(self, source_path=None):
+    def cmd_monitor(self, source_path=None, project_id=None):
         try:
             from watchdog.events import FileSystemEventHandler
             from watchdog.observers import Observer
@@ -1461,7 +1447,8 @@ class WorkspaceService(BaseHandler):
             UI.die("watchdog required: pip install watchdog")
 
         project_id = (
-            getattr(self.manager.args, "project", None)
+            project_id
+            or getattr(self.manager.args, "project", None)
             or self.manager.detect_project_path()
         )
         if not project_id:
@@ -1868,15 +1855,11 @@ class WorkspaceService(BaseHandler):
                     "Please authenticate using the GitHub CLI ('gh auth login') or set the GITHUB_PAT environment variable."
                 )
 
-        # Ensure project argument is set so import target matches
-        self.manager.args.project = project_name
-        self.manager.args.browser = True
-
         UI.heading(f"Starting Quickstart: {template_name.upper()}")
 
         # 1. Import workspace repository
         UI.info(f"Importing template workspace from: {repo_url}...")
-        self.cmd_import(repo_url)
+        self.cmd_import(repo_url, project_id=project_name)
 
         # Detect paths after import
         project_path = self.manager.detect_project_path(project_name)
@@ -1927,7 +1910,7 @@ class WorkspaceService(BaseHandler):
 
             # 4. Start stack and launch browser
             UI.info("Starting quickstart services stack...")
-            self.manager.runtime.cmd_run(project_name)
+            self.manager.runtime.cmd_run(project_name, browser=True)
         # 5. Share via tunnel if requested
         if share:
             UI.info("Exposing quickstart tunnel...")

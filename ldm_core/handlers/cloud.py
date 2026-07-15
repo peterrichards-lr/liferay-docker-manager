@@ -236,9 +236,45 @@ class CloudService:
                         return image.split(":")[1]
         return None
 
-    def cmd_cloud_fetch(self, project_id=None, env_id=None, follow=False):
+    def cmd_cloud_fetch(
+        self,
+        project_id=None,
+        env_id=None,
+        follow=False,
+        sync_env=None,
+        download=None,
+        restore=None,
+        no_run=None,
+        source_path=None,
+    ):
         """Orchestrates the cloud-fetch command logic."""
         self.ensure_cloud_auth()
+
+        should_sync_env = (
+            sync_env
+            if sync_env is not None
+            else getattr(self.manager.args, "sync_env", False)
+        )
+        should_download = (
+            download
+            if download is not None
+            else getattr(self.manager.args, "download", False)
+        )
+        should_restore = (
+            restore
+            if restore is not None
+            else getattr(self.manager.args, "restore", False)
+        )
+        should_no_run = (
+            no_run
+            if no_run is not None
+            else getattr(self.manager.args, "no_run", False)
+        )
+        target_source_path = (
+            source_path
+            if source_path is not None
+            else getattr(self.manager.args, "source_path", None)
+        )
 
         root_path = self.manager.detect_project_path(project_id, for_init=True)
         if not root_path:
@@ -301,13 +337,13 @@ class CloudService:
             )
             return
 
-        if getattr(self.manager.args, "sync_env", False):
+        if should_sync_env:
             UI.heading(f"Syncing Cloud Environment Variables: {cp_id} / {target_env}")
 
             # If called via import/init-from wizard, use the original source path.
             # Otherwise use the local LDM project path.
             search_path = root_path
-            source_arg = getattr(self.manager.args, "source_path", None)
+            source_arg = target_source_path
             if source_arg:
                 from pathlib import Path
 
@@ -359,9 +395,7 @@ class CloudService:
                 UI.error(f"Failed to sync environment variables: {e}")
             return
 
-        if getattr(self.manager.args, "download", False) or getattr(
-            self.manager.args, "restore", False
-        ):
+        if should_download or should_restore:
             UI.heading(f"Downloading Cloud Backups: {cp_id} / {target_env}")
             with UI.spinner("Fetching backup list...") as s:
                 data = self._run_lcp_cmd(
@@ -462,7 +496,10 @@ class CloudService:
                             cp_id, target_env, spinner=s
                         )
                 self.hydrate_cloud_backup(
-                    project_id, snapshot_dir, tag_for_seed=tag_for_seed
+                    project_id,
+                    snapshot_dir,
+                    tag_for_seed=tag_for_seed,
+                    no_run=should_no_run,
                 )
             return
 
@@ -470,13 +507,20 @@ class CloudService:
             f"Environment '{target_env}' (Project: {cp_id}) selected. Use flags (--list-backups, --download, --logs, --sync-env) to perform actions."
         )
 
-    def hydrate_cloud_backup(self, project_id, backup_dir_path, tag_for_seed=None):
+    def hydrate_cloud_backup(
+        self, project_id, backup_dir_path, tag_for_seed=None, no_run=None
+    ):
         """Generic function to hydrate an LDM project from a cloud backup directory (local or remote)."""
         root_path = self.manager.detect_project_path(project_id, for_init=True)
         if not root_path:
             return False
         project_id = root_path.name
 
+        should_no_run = (
+            no_run
+            if no_run is not None
+            else getattr(self.manager.args, "no_run", False)
+        )
         is_new_project = not (root_path / PROJECT_META_FILE).exists()
         project_meta = self.manager.read_meta(root_path)
 
@@ -496,10 +540,12 @@ class CloudService:
         self.manager.write_meta(root_path, project_meta)
 
         UI.info(f"Triggering local restore from {backup_dir_path}...")
-        self.manager.cmd_restore(project_id=project_id, backup_dir=backup_dir_path)
+        self.manager.cmd_restore(
+            project_id=project_id, backup_dir=backup_dir_path, no_run=should_no_run
+        )
         return True
 
-    def cmd_hydrate(self, backup_path, project_id=None):
+    def cmd_hydrate(self, backup_path, project_id=None, no_run=None):
         """Creates or updates an LDM project from a local Liferay Cloud backup folder."""
         from pathlib import Path
 
@@ -553,7 +599,9 @@ class CloudService:
         elif not is_new_project:
             tag = None
 
-        self.hydrate_cloud_backup(project_id, backup_dir, tag_for_seed=tag)
+        self.hydrate_cloud_backup(
+            project_id, backup_dir, tag_for_seed=tag, no_run=no_run
+        )
 
     def _detect_db_type(self, backup_dir):
         """Attempts to detect the database type (mysql/postgresql) from a cloud backup's database.gz."""

@@ -27,6 +27,8 @@ class RunPipelineContext(PipelineContext):
         self.set("project_meta", {})
         self.set("is_restart", kwargs.get("is_restart", False))
         self.set("project_id", kwargs.get("project_id"))
+        self.set("no_up", kwargs.get("no_up"))
+        self.set("browser", kwargs.get("browser"))
 
 
 class ProjectInitializationStage(PipelineStage):
@@ -36,9 +38,6 @@ class ProjectInitializationStage(PipelineStage):
         context = typing.cast(RunPipelineContext, context)
         manager = context.manager
         project_id = context.get("project_id")
-
-        if getattr(manager.args, "vanilla", False):
-            manager.args.no_seed = True
 
         project_id = (
             project_id
@@ -129,7 +128,11 @@ class RuntimeValidationStage(PipelineStage):
         from ldm_core.docker_service import DockerService
 
         container_name = project_meta.get("container_name") or project_id
-        if not getattr(manager.args, "no_up", False) and not is_restart:
+        no_up = context.get("no_up")
+        if no_up is None:
+            no_up = getattr(manager.args, "no_up", False)
+
+        if not no_up and not is_restart:
             if DockerService.is_running(container_name):
                 if manager.non_interactive:
                     UI.die(
@@ -261,6 +264,10 @@ class ConfigResolutionStage(PipelineStage):
         paths = context.get("paths")
         project_id = context.get("project_id")
 
+        no_up = context.get("no_up")
+        if no_up is None:
+            no_up = getattr(manager.args, "no_up", False)
+
         tag_latest = getattr(manager.args, "tag_latest", False)
         prefix = getattr(manager.args, "tag_prefix", None)
         if tag_latest or prefix:
@@ -352,7 +359,7 @@ class ConfigResolutionStage(PipelineStage):
 
         ssl_val = manager.composer._is_ssl_active(host_name, project_meta)
 
-        if not getattr(manager.args, "no_up", False):
+        if not no_up:
             port = manager._pre_flight_checks(
                 host_name, port, ssl_enabled=ssl_val, meta=project_meta
             )
@@ -817,20 +824,15 @@ class ComposerStage(PipelineStage):
                         time.sleep(5)
 
                     snapshot_name = f"Pre-upgrade snapshot to {tag}"
-                    old_args_name = getattr(manager.args, "name", None)
-                    manager.args.name = snapshot_name
                     try:
-                        manager.snapshot.cmd_snapshot(context.get("project_id"))
+                        manager.snapshot.cmd_snapshot(
+                            context.get("project_id"), name=snapshot_name
+                        )
                         UI.success(
                             f"Database backup snapshot '{snapshot_name}' created successfully."
                         )
                     except Exception as e:
                         UI.warning(f"Failed to create pre-upgrade database backup: {e}")
-                    finally:
-                        if old_args_name is not None:
-                            manager.args.name = old_args_name
-                        elif hasattr(manager.args, "name"):
-                            delattr(manager.args, "name")
 
             if getattr(manager.args, "upgrade_db", False):
                 upgrade_db = True
@@ -934,7 +936,9 @@ class ComposerStage(PipelineStage):
         manager.infra._ensure_network()
         ssl_enabled = str(project_meta.get("ssl", "false")).lower() == "true"
         ssl_port = project_meta.get("ssl_port", 443)
-        no_up = getattr(manager.args, "no_up", False)
+        no_up = context.get("no_up")
+        if no_up is None:
+            no_up = getattr(manager.args, "no_up", False)
 
         if ssl_enabled or getattr(manager.args, "search", False) or use_shared_db:
             infra_start = time.time()
@@ -1076,7 +1080,9 @@ class ExecutionStage(PipelineStage):
 
         is_samples = context.get("is_samples")
         external_snapshot = context.get("external_snapshot")
-        no_up = getattr(manager.args, "no_up", False)
+        no_up = context.get("no_up")
+        if no_up is None:
+            no_up = getattr(manager.args, "no_up", False)
         compose_base = get_compose_cmd()
         db_type = project_meta.get("db_type", "postgresql")
         use_shared_db = context.get("use_shared_db")
@@ -1239,6 +1245,7 @@ class ExecutionStage(PipelineStage):
                     host_name,
                     context.get("total_start"),
                     timeout=timeout_val,
+                    browser=context.get("browser"),
                 )
 
         no_wait = getattr(manager.args, "no_wait", False)

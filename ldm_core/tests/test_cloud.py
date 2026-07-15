@@ -392,7 +392,7 @@ class TestCloudService(unittest.TestCase):
                     mock_prompt_tag.assert_not_called()
                     # hydrate_cloud_backup should be called with tag_for_seed=None
                     mock_hydrate.assert_called_once_with(
-                        "my_project", backup_dir, tag_for_seed=None
+                        "my_project", backup_dir, tag_for_seed=None, no_run=None
                     )
 
     @patch("ldm_core.ui.UI.ask_choices")
@@ -426,7 +426,7 @@ class TestCloudService(unittest.TestCase):
                     mock_prompt_tag.assert_called_once()
                     # hydrate_cloud_backup should be called with tag_for_seed="7.4"
                     mock_hydrate.assert_called_once_with(
-                        "new_project", backup_dir, tag_for_seed="7.4"
+                        "new_project", backup_dir, tag_for_seed="7.4", no_run=None
                     )
 
 

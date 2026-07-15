@@ -157,7 +157,9 @@ class AssetService:
 
     def _ensure_seeded(self, tag, db_type, paths):
         """Helper to ensure a project is bootstrapped from a seed if available and appropriate."""
-        if getattr(self.manager.args, "no_seed", False):
+        if getattr(self.manager.args, "no_seed", False) or getattr(
+            self.manager.args, "vanilla", False
+        ):
             return False
 
         sidecar_flag = getattr(self.manager.args, "sidecar", False)
