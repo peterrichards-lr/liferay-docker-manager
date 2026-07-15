@@ -145,24 +145,24 @@ class RuntimeValidationStage(PipelineStage):
 
         tag = project_meta.get("tag")
         db_type = project_meta.get("db_type", "postgresql")
+        from ldm_core.utils import resolve_dependency_version
+
         current_pg_ver = None
         if db_type in ["postgresql", "postgres"]:
-            from ldm_core.utils import resolve_dependency_version
-
             current_pg_ver = resolve_dependency_version(tag, "postgresql") or "16"
 
         current_mysql_ver = None
         if db_type in ["mysql", "mariadb"]:
-            from ldm_core.utils import resolve_dependency_version
-
             if db_type == "mysql":
                 current_mysql_ver = resolve_dependency_version(tag, "mysql") or "5.7"
             else:
                 current_mysql_ver = resolve_dependency_version(tag, "mariadb") or "10.6"
 
         current_es_major = "8"
-        if tag and ("7.3" in tag or "7.2" in tag or "7.1" in tag or "7.0" in tag):
-            current_es_major = "7"
+        if tag:
+            es_version = resolve_dependency_version(tag, "elasticsearch")
+            if es_version:
+                current_es_major = es_version.split(".")[0]
 
         if not getattr(manager.args, "force_downgrade", False):
             last_lr_ver = project_meta.get("last_run_liferay_version")
