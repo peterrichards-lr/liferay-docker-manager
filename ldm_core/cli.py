@@ -2058,6 +2058,10 @@ def check_and_display_upgrade_banner():
 
 
 def main():
+    from ldm_core.utils import reset_dry_run_vfs
+
+    reset_dry_run_vfs()
+
     # Suppress watchdog warning on macOS when fsevents is missing (kqueue is a fine fallback)
     warnings.filterwarnings("ignore", message="Failed to import fsevents")
 

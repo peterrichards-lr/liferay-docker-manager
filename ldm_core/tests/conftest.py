@@ -9,3 +9,13 @@ def suppress_browser():
     os.environ["LDM_TEST_MODE"] = "true"
     yield
     # We don't necessarily need to unset it as it's just for the test process
+
+
+@pytest.fixture(autouse=True)
+def clear_dry_run_vfs():
+    """Ensures that the dry-run VFS is cleared before and after each test."""
+    from ldm_core.utils import reset_dry_run_vfs
+
+    reset_dry_run_vfs()
+    yield
+    reset_dry_run_vfs()
