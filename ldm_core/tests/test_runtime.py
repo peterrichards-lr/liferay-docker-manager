@@ -798,8 +798,8 @@ class TestRuntime(unittest.TestCase):
     @patch("ldm_core.ui.UI.success")
     def test_print_ngrok_url_success(self, mock_success):
         with patch.object(self.handler, "run_command") as mock_run:
-            mock_run.return_value = MagicMock(
-                stdout='{"tunnels": [{"public_url": "https://foo.ngrok.app"}]}'
+            mock_run.return_value = (
+                '{"tunnels": [{"public_url": "https://foo.ngrok.app"}]}'
             )
             self.handler.handler._print_ngrok_url("my-project")
             mock_run.assert_called_once()
@@ -815,6 +815,15 @@ class TestRuntime(unittest.TestCase):
     def test_print_ngrok_url_failure(self, mock_warning):
         with patch.object(self.handler, "run_command") as mock_run:
             mock_run.side_effect = Exception("failed")
+            self.handler.handler._print_ngrok_url("my-project")
+            mock_warning.assert_called_with(
+                "ngrok container is running, but failed to retrieve public URL."
+            )
+
+    @patch("ldm_core.ui.UI.warning")
+    def test_print_ngrok_url_none(self, mock_warning):
+        with patch.object(self.handler, "run_command") as mock_run:
+            mock_run.return_value = None
             self.handler.handler._print_ngrok_url("my-project")
             mock_warning.assert_called_with(
                 "ngrok container is running, but failed to retrieve public URL."
