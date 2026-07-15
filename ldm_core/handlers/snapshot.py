@@ -1253,7 +1253,7 @@ class SnapshotService(BaseHandler):
             if res and '"stage":"DONE"' in res and '"stage":"INDEX"' not in res:
                 return True
             time.sleep(5)
-        return True
+        return False
 
     def _delete_project_indices(self, container_name):
         search_name = "liferay-search-global"
