@@ -1255,3 +1255,106 @@ class TestFetchWithRetry(unittest.TestCase):
         self.assertEqual(result, "raw_content")
         self.assertEqual(mock_get.call_count, 2)
         mock_sleep.assert_called_once()
+
+
+class TestCommandRunner(unittest.TestCase):
+    def setUp(self):
+        import os
+
+        from ldm_core.utils import get_runner
+
+        self.original_runner = get_runner()
+        self.original_dry_run = os.environ.get("LDM_DRY_RUN")
+
+    def tearDown(self):
+        import os
+
+        from ldm_core.utils import set_runner
+
+        set_runner(self.original_runner)
+        if self.original_dry_run is not None:
+            os.environ["LDM_DRY_RUN"] = self.original_dry_run
+        else:
+            os.environ.pop("LDM_DRY_RUN", None)
+
+    def test_default_runner_resolution(self):
+        import os
+
+        from ldm_core.utils import (
+            CommandRunner,
+            DryRunCommandRunner,
+            get_runner,
+            set_runner,
+        )
+
+        set_runner(None)
+
+        # Test default resolution (no dry-run env)
+        os.environ.pop("LDM_DRY_RUN", None)
+        runner = get_runner()
+        self.assertIsInstance(runner, CommandRunner)
+        self.assertNotIsInstance(runner, DryRunCommandRunner)
+
+        # Test dry-run resolution via env var
+        os.environ["LDM_DRY_RUN"] = "true"
+        runner = get_runner()
+        self.assertIsInstance(runner, DryRunCommandRunner)
+
+    def test_explicit_runner_set(self):
+        from ldm_core.utils import CommandRunner, get_runner, set_runner
+
+        custom_runner = CommandRunner()
+        set_runner(custom_runner)
+        self.assertEqual(get_runner(), custom_runner)
+
+    @patch("subprocess.run")
+    def test_command_runner_execution(self, mock_run):
+        from ldm_core.utils import CommandRunner
+
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = b"success_output\n"
+        mock_run.return_value = mock_result
+
+        runner = CommandRunner()
+        output = runner.run(["echo", "hello"], capture_output=True)
+        self.assertEqual(output, "success_output")
+        mock_run.assert_called_once()
+
+    @patch("ldm_core.utils.UI.die", side_effect=SystemExit)
+    def test_command_runner_shell_sanitization(self, mock_die):
+        from ldm_core.utils import CommandRunner
+
+        runner = CommandRunner()
+        # Bad shell command should trigger security violation
+        with self.assertRaises(SystemExit):
+            runner.run("rm -rf /; dangerous", shell=True)
+        mock_die.assert_called_once_with(
+            "Security Violation: Shell command contains forbidden character ';'"
+        )
+
+    def test_dry_run_command_runner(self):
+        from ldm_core.utils import DryRunCommandRunner
+
+        runner = DryRunCommandRunner()
+
+        # MemTotal check
+        self.assertEqual(
+            runner.run(["cat", "/proc/meminfo", "MemTotal"]), "17179869184"
+        )
+
+        # JSON inspect
+        self.assertEqual(
+            runner.run(["docker", "info", "--format", "{{json .}}"]),
+            '{"MemTotal": 17179869184}',
+        )
+
+        # Context show
+        self.assertEqual(runner.run(["docker", "context", "show"]), "default")
+
+        # Docker inspect status
+        self.assertEqual(
+            runner.run(["docker", "inspect", "-f", "{{.State.Status}}", "container"]),
+            "running",
+        )
+        self.assertEqual(runner.run(["docker", "inspect", "container"]), "[]")

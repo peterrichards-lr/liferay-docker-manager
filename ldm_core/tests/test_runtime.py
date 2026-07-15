@@ -28,6 +28,7 @@ class MockRuntime(BaseHandler):
         self.snapshot = MagicMock()
         self.share = MagicMock()
         self.license = MagicMock()
+        self.diagnostics = MagicMock()
         self.share.resolve_share_config.return_value = ("lfr-tunnel", "lfr-demo.online")
         from ldm_core.defaults import DefaultsManager
         from ldm_core.handlers.composer import ComposerService
@@ -38,6 +39,7 @@ class MockRuntime(BaseHandler):
         self.config.update_portal_ext = MagicMock()  # type: ignore[method-assign]
         self.composer = ComposerService(self)
         self.handler = RuntimeService(self)
+        self.verify_runtime_environment = MagicMock()  # type: ignore[method-assign]
 
     def cmd_run(self, *args, **kwargs):
         return self.handler.cmd_run(*args, **kwargs)
@@ -109,8 +111,14 @@ class TestRuntime(unittest.TestCase):
         self.mock_req = self.req_patcher.start()
         self.mock_req.return_value = MagicMock(status_code=200)
 
+        self.update_patcher = patch(
+            "ldm_core.diagnostics.doctor.check_for_updates", return_value=(None, None)
+        )
+        self.update_patcher.start()
+
     def tearDown(self):
         self.req_patcher.stop()
+        self.update_patcher.stop()
 
     def test_resolve_container_label_discovery(self):
         """Verify that resolve_container uses Docker labels for discovery."""
@@ -1040,7 +1048,7 @@ services:
                     no_wait=True,
                 )
                 mock_is_running.assert_called_with("test-project-liferay-1")
-                mock_check_port.assert_called_once_with("127.0.0.1", 8080)
+                mock_check_port.assert_any_call("127.0.0.1", 8080)
                 mock_die.assert_not_called()
 
     def test_scan_for_expected_deployables(self):

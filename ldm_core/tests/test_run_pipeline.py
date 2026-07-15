@@ -50,6 +50,8 @@ class TestRunPipeline(unittest.TestCase):
 
     def test_execution_stage_dry_run(self):
         self.context.set("dry_run", True)
+        self.context.set("no_up", True)
+        self.context.set("paths", {"root": MagicMock()})
         stage = ExecutionStage()
         stage.execute(self.context)
         self.context.manager.run_command.assert_not_called()
