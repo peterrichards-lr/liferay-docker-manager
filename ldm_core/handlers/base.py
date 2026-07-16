@@ -1406,7 +1406,7 @@ class BaseHandler:
                         # LDM-382: Skip reclamation for data/state if they are Docker-managed volumes
                         if use_volumes and v in ["data", "state"]:
                             continue
-                        reclaim_volume_permissions(paths[v])
+                        reclaim_volume_permissions(paths[v], chmod_val="777")
 
             except Exception as e:
                 if self.verbose:

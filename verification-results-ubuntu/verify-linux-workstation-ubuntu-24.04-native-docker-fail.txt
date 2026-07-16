@@ -1,0 +1,49 @@
+=== LDM BINARY VERIFICATION REPORT ===
+Timestamp: Thu Jul 16 05:41:59 UTC 2026
+Hostname:  runnervm5mmn9
+Platform:  Ubuntu 24.04.4 LTS
+Binary:    /home/runner/work/liferay-docker-manager/liferay-docker-manager/.venv/bin/ldm
+Version:   ldm 2.15.18-pre.2
+Docker:    28.0.4
+Compose:   2.38.2
+
+>> Initializing Infrastructure
+⚠️  Reclaiming volume permissions for /home/runner/.ldm/infra/search/data (Docker volume may have root-owned files)...
+⚠️  Reclaiming volume permissions for /home/runner/.ldm/infra/search/backup (Docker volume may have root-owned files)...
+ℹ  Waiting for Elasticsearch to become ready...
+❌  Elasticsearch container exited unexpectedly.
+❌  Elasticsearch failed to become ready in time.
+⚠️  Attempting automatic search volume repair...
+⚠️  Reclaiming volume permissions for /home/runner/.ldm/infra/search/data (Docker volume may have root-owned files)...
+ℹ  Restarting Global Search with clean slate...
+⚠️  Reclaiming volume permissions for /home/runner/.ldm/infra/search/data (Docker volume may have root-owned files)...
+⚠️  Reclaiming volume permissions for /home/runner/.ldm/infra/search/backup (Docker volume may have root-owned files)...
+ℹ  Waiting for Elasticsearch to become ready...
+❌  Elasticsearch container exited unexpectedly.
+❌  Elasticsearch failed to become ready in time.
+⚠️  Attempting automatic search volume repair...
+⚠️  Reclaiming volume permissions for /home/runner/.ldm/infra/search/data (Docker volume may have root-owned files)...
+ℹ  Restarting Global Search with clean slate...
+⚠️  Reclaiming volume permissions for /home/runner/.ldm/infra/search/data (Docker volume may have root-owned files)...
+⚠️  Reclaiming volume permissions for /home/runner/.ldm/infra/search/backup (Docker volume may have root-owned files)...
+ℹ  Waiting for Elasticsearch to become ready...
+❌  Elasticsearch container exited unexpectedly.
+❌  Elasticsearch failed to start after 2 restart attempts. Check: ldm logs
+❌ ERROR: Command failed with exit code 3.
+
+--- FAILURE DEBUG LOGS ---
+>> Logs for liferay-search-global:
+java.nio.file.AccessDeniedException: /usr/share/elasticsearch/data
+	at java.base/sun.nio.fs.UnixException.translateToIOException(UnixException.java:90)
+	at java.base/sun.nio.fs.UnixException.asIOException(UnixException.java:115)
+	at java.base/sun.nio.fs.UnixFileSystemProvider.newDirectoryStream(UnixFileSystemProvider.java:452)
+	at java.base/java.nio.file.Files.newDirectoryStream(Files.java:445)
+	at java.base/java.nio.file.Files.list(Files.java:3419)
+	at org.elasticsearch.xpack.security.cli.AutoConfigureNode.isDirEmpty(AutoConfigureNode.java:1163)
+	at org.elasticsearch.xpack.security.cli.AutoConfigureNode.execute(AutoConfigureNode.java:170)
+	at org.elasticsearch.server.cli.ServerCli.autoConfigureSecurity(ServerCli.java:185)
+	at org.elasticsearch.server.cli.ServerCli.execute(ServerCli.java:91)
+	at org.elasticsearch.common.cli.EnvironmentAwareCommand.execute(EnvironmentAwareCommand.java:55)
+	at org.elasticsearch.cli.Command.mainWithoutErrorHandling(Command.java:101)
+	at org.elasticsearch.cli.Command.main(Command.java:54)
+	at org.elasticsearch.launcher.CliToolLauncher.main(CliToolLauncher.java:65)

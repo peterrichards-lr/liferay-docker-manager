@@ -991,17 +991,20 @@ class ComposerStage(PipelineStage):
                         f"SSL certificate generation took: {UI.format_duration(time.time() - ssl_start)}"
                     )
 
-            ssl_port = manager.infra.setup_infrastructure(
-                resolved_ip,
-                ssl_port,
-                use_ssl=ssl_enabled,
-                quiet=getattr(manager.args, "quiet", False),
-                use_shared_search=use_shared_search,
-                use_shared_db=use_shared_db,
-            )
+            import shutil
+
+            if shutil.which("docker") and not no_up:
+                ssl_port = manager.infra.setup_infrastructure(
+                    resolved_ip,
+                    ssl_port,
+                    use_ssl=ssl_enabled,
+                    quiet=getattr(manager.args, "quiet", False),
+                    use_shared_search=use_shared_search,
+                    use_shared_db=use_shared_db,
+                )
             project_meta["ssl_port"] = ssl_port
 
-            if use_shared_db and not no_up:
+            if shutil.which("docker") and use_shared_db and not no_up:
                 from ldm_core.utils import sanitize_id
 
                 db_name = f"lportal_{sanitize_id(context.get('project_id')).replace('-', '_')}"
@@ -1053,12 +1056,15 @@ class ComposerStage(PipelineStage):
             paths, project_meta, liferay_env=liferay_env
         )
 
-        UI.debug("Validating generated docker-compose.yml syntax...")
-        manager.run_command(
-            [*get_compose_cmd(), "config", "--quiet"],
-            cwd=str(paths["root"]),
-            check=True,
-        )
+        import shutil
+
+        if shutil.which("docker"):
+            UI.debug("Validating generated docker-compose.yml syntax...")
+            manager.run_command(
+                [*get_compose_cmd(), "config", "--quiet"],
+                cwd=str(paths["root"]),
+                check=True,
+            )
 
         compose_file = paths["root"] / "docker-compose.yml"
         if compose_file.exists() and not no_up:
@@ -1265,7 +1271,7 @@ class ExecutionStage(PipelineStage):
 
                 for p_key in ["deploy", "logs", "osgi", "files"]:
                     if p_key in paths:
-                        reclaim_volume_permissions(paths[p_key])
+                        reclaim_volume_permissions(paths[p_key], chmod_val="777")
 
             follow = context.get("follow") or getattr(manager.args, "follow", False)
             manager.run_command(cmd, cwd=str(paths["root"]), capture_output=not follow)

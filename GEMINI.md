@@ -646,10 +646,14 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
     - [x] Document codebase conventions and command execution rules in `DEVELOPMENT.md`.
     - [x] Run E2E smoke tests and pre-commit checks to verify formatting, linters, coverage, and tests pass cleanly.
 
+## 9. GitHub PR & Issue Linking
+
+- **MANDATORY REQUIREMENT**: PRs will be rejected if they do not include the GitHub issue link. You MUST ensure an issue is created and linked on every single PR you open (e.g., `Resolves #XYZ` or `Closes #XYZ`).
+
 ## Client Extension Routing Rules
 
 When modifying `client-extension.yaml` files, **NEVER change or remove `.serviceAddress: localhost:3001` or `.serviceScheme`** manually to fix Docker or LDM routing issues. Liferay automatically updates the shared routes context with the correct internal endpoint when the generated `.zip` file is copied to the Liferay `osgi/client-extensions` deploy folder. Modifying these properties will override the auto-registration and break the deployment.
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-07-15* | *Last Reviewed: 2026-07-15*
+*Last Updated: 2026-07-16* | *Last Reviewed: 2026-07-15*
