@@ -1195,7 +1195,7 @@ class ComposerService:
                         for p in ext.get("ports", [])
                         if isinstance(p, dict) and p.get("external")
                     ),
-                    ext.get("loadBalancer", {}).get("targetPort", 8080),
+                    (ext.get("loadBalancer") or {}).get("targetPort", 8080),
                 )
                 scale = int(meta.get(f"scale_{ext_id}", 1))
 
