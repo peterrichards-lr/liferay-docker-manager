@@ -156,7 +156,52 @@ class BaseHandler:
                 UI.warning(f"Port {port} is in use. Using {new_port} instead.")
                 port = new_port
 
-        # 4. Registry Conflict Check
+        # 4. Custom Container Port Checks
+        from ldm_core.docker_service import DockerService
+
+        custom_containers = meta.get("custom_containers") if meta else None
+        if isinstance(custom_containers, str):
+            import json
+
+            try:
+                custom_containers = json.loads(custom_containers)
+            except Exception:
+                custom_containers = []
+
+        if custom_containers and isinstance(custom_containers, list):
+            resolved_ip = (
+                self.get_resolved_ip(host_name)
+                if host_name != "localhost"
+                else "127.0.0.1"
+            )
+            if not resolved_ip:
+                resolved_ip = "127.0.0.1"
+
+            for container in custom_containers:
+                c_name = container.get("service_name")
+                if not c_name:
+                    continue
+
+                svc_id = f"{project_id}-{c_name}" if project_id else c_name
+                is_running = DockerService.is_running(svc_id)
+
+                if not is_running:
+                    for p_mapping in container.get("ports", []):
+                        parts = str(p_mapping).split(":")
+                        host_port_str = None
+                        if len(parts) == 2:
+                            host_port_str = parts[0]
+                        elif len(parts) == 3:
+                            host_port_str = parts[1]
+
+                        if host_port_str and host_port_str.isdigit():
+                            c_port = int(host_port_str)
+                            if not self.check_port(resolved_ip, c_port):
+                                UI.die(
+                                    f"Custom container port {c_port} for '{c_name}' is already in use on {resolved_ip}."
+                                )
+
+        # 5. Registry Conflict Check
         project_name = meta.get("project_name") if meta else None
         if project_name and root:
             self.check_registry_collisions(project_name, root, host_name=host_name)
