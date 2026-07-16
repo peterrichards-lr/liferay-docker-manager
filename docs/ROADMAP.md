@@ -84,7 +84,7 @@ While the v2.4.0 release solidified the modular architecture, the focus will now
 
 ### **Liferay Cloud Golden Path**
 
-- **Smart Workspace Recognition**: Added automatic heuristics in `init-from` and `import` to detect Liferay Cloud Git repositories.
+- **Smart Workspace Recognition**: Added automatic heuristics in `init-from` (now `link`) and `import` to detect Liferay Cloud Git repositories.
 - **Guided Hydration Wizard**: Built an interactive setup wizard to retrieve and synchronize LCP backup databases and document library assets.
 - **Robust Backup Organization**: Programmatically flattens Cloud nested folder structures and automatically detects `AdvancedFileSystemStore` vs `FileSystemStore`.
 - **Database Scrubbing & Wipes**: Strips proprietary Cloud commands (e.g. `\restrict`) and implements schema wipe loops to ensure clean database imports without superuser privileges.
@@ -152,7 +152,7 @@ While the v2.4.0 release solidified the modular architecture, the focus will now
 
 ### **High-Velocity Orchestration**
 
-- **Workspace-Aware Seeding Boost**: Extended the high-performance seeding engine to `import`, `init-from`, and `cloud-fetch` commands. LDM now automatically detects the required Liferay version and bootstraps matching v2 seeds, reducing "first boot" for imported projects from 15 minutes to under 60 seconds.
+- **Workspace-Aware Seeding Boost**: Extended the high-performance seeding engine to `import`, `init-from` (now `link`), and `cloud-fetch` commands. LDM now automatically detects the required Liferay version and bootstraps matching v2 seeds, reducing "first boot" for imported projects from 15 minutes to under 60 seconds.
 - **Cloud-Native Seeding**: `ldm cloud-fetch` now probes remote Liferay Cloud environments to identify the exact image tag and leverages version-matched seeds for local restoration.
 
 ### **Architectural Cleanup & Reliability**

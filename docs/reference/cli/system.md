@@ -288,6 +288,7 @@ All legacy flat-form commands are automatically translated to their namespaced e
 
 | Legacy Command | New Canonical Form |
 | :--- | :--- |
+| `ldm init-from` | `ldm link` |
 | `ldm prune` | `ldm system prune` |
 | `ldm doctor` | `ldm system doctor` |
 | `ldm upgrade` | `ldm system upgrade` |

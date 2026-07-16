@@ -304,6 +304,15 @@ To ensure that projects using Liferay's internal search do not interfere with ot
 
 ---
 
+## 6. CLI Boot Sequence & Post-Upgrade Hooks
+
+When the `ldm` command is executed, it runs through a lightweight initialization sequence before parsing arguments:
+
+- **Version Validation**: LDM checks its runtime state against the last known executed version stored in `~/.ldm/state`.
+- **Post-Upgrade Banner**: If a new version is detected, the `post-upgrade` hook triggers automatically. It retrieves and displays the version-specific **Release Notes banner** from the embedded changelog directly in the terminal, ensuring developers are immediately aware of breaking changes, UX refactors (like the transition from `init-from` to `link`), or new features.
+
+---
+
 ## 6. Third-Party Tool Integration
 
 LDM coordinates several third-party binaries to perform system-level tasks (e.g., Docker, Docker Compose, mkcert, openssl, telnet, and the lcp CLI).
