@@ -340,7 +340,7 @@ class SystemService(BaseHandler):
                 paths = self.setup_paths(root)
                 for p_key in ["deploy", "logs", "osgi", "files"]:
                     if p_key in paths and paths[p_key].exists():
-                        reclaim_volume_permissions(paths[p_key])
+                        reclaim_volume_permissions(paths[p_key], chmod_val="777")
             except Exception as e:
                 UI.warning(f"Could not reclaim volume permissions: {e}")
 

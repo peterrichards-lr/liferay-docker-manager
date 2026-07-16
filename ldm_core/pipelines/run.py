@@ -1265,7 +1265,7 @@ class ExecutionStage(PipelineStage):
 
                 for p_key in ["deploy", "logs", "osgi", "files"]:
                     if p_key in paths:
-                        reclaim_volume_permissions(paths[p_key])
+                        reclaim_volume_permissions(paths[p_key], chmod_val="777")
 
             follow = context.get("follow") or getattr(manager.args, "follow", False)
             manager.run_command(cmd, cwd=str(paths["root"]), capture_output=not follow)

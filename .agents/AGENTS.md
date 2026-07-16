@@ -13,6 +13,7 @@ To prevent unnecessary code churn, sweeping reformatting, and out-of-scope chang
 ## GitHub Pull Request & Issue Association
 
 - Every Pull Request body MUST contain reference keywords linking to the related issue (e.g. `Closes #XYZ` or `Resolves #XYZ`) to ensure GitHub automatically closes the issues on merge.
+- **MANDATORY REQUIREMENT**: PRs will be rejected if they do not include the GitHub issue link. You MUST ensure an issue is created and linked on every single PR you open.
 
 ## Pre-commit & CI Verification
 

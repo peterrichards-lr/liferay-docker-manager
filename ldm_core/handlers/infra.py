@@ -539,8 +539,8 @@ tls:
             # Reclamation via Docker container ensures it works even if files are owned by root
             from ldm_core.utils import reclaim_volume_permissions
 
-            reclaim_volume_permissions(es_data)
-            reclaim_volume_permissions(es_backup)
+            reclaim_volume_permissions(es_data, chmod_val="777")
+            reclaim_volume_permissions(es_backup, chmod_val="777")
 
             from ldm_core.constants import ELASTICSEARCH_VERSION
 
@@ -619,7 +619,7 @@ tls:
                     es_data.mkdir(parents=True, exist_ok=True)
                     from ldm_core.utils import reclaim_volume_permissions
 
-                    reclaim_volume_permissions(es_data)
+                    reclaim_volume_permissions(es_data, chmod_val="777")
 
                 UI.info("Restarting Global Search with clean slate...")
                 return self.setup_global_search(force=force, _depth=_depth + 1)
