@@ -77,11 +77,11 @@ class LdmTrayApp:
                 project_id = Path(project_path).name
                 self.manager.runtime.cmd_run(project_id=project_id)
             else:
-                UI.warn("Not inside an LDM workspace.")
+                UI.warning("Not inside an LDM workspace.")
 
             self.manager.args.no_logs = original_no_logs
         except Exception as e:
-            UI.warn(f"Failed to start: {e}")
+            UI.warning(f"Failed to start: {e}")
 
     def on_start(self, icon, item):
         t = threading.Thread(target=self._start_project_thread, daemon=True)
@@ -96,7 +96,7 @@ class LdmTrayApp:
             else:
                 self.manager.runtime.cmd_stop(all_projects=True)
         except Exception as e:
-            UI.warn(f"Failed to stop: {e}")
+            UI.warning(f"Failed to stop: {e}")
 
     def on_stop(self, icon, item):
         t = threading.Thread(target=self._stop_project_thread, daemon=True)
