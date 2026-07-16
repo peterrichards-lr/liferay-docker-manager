@@ -992,6 +992,7 @@ class ComposerStage(PipelineStage):
                     )
 
             import shutil
+
             if shutil.which("docker") and not no_up:
                 ssl_port = manager.infra.setup_infrastructure(
                     resolved_ip,
