@@ -32,6 +32,37 @@ sudo ldm defaults port 9090 --global
 ldm defaults --remove tag
 ```
 
+## Custom Containers (`custom_containers`)
+
+You can inject external services or orchestrate multi-compose architectures (such as WordPress sidecars, specialized caching layers, or monitoring agents) into the LDM runtime by defining `custom_containers` in your `.ldmrc` file. 
+
+These custom containers are seamlessly integrated into the generated `docker-compose.yml`, automatically attached to the `liferay-net` network, and properly labeled so that LDM's garbage collection manages their lifecycle alongside the core Liferay stack.
+
+### Example `.ldmrc`
+```json
+{
+  "custom_containers": [
+    {
+      "name": "wordpress",
+      "image": "wordpress:latest",
+      "subdomain": "blog",
+      "ports": ["8000:80"],
+      "environment": {
+        "WORDPRESS_DB_HOST": "db",
+        "WORDPRESS_DB_USER": "lportal",
+        "WORDPRESS_DB_PASSWORD": "test",
+        "WORDPRESS_DB_NAME": "lportal"
+      }
+    }
+  ]
+}
+```
+
+- **`name`**: The service name in `docker-compose.yml`.
+- **`subdomain`**: Automatically injects Traefik routing labels to route `[subdomain].lfr.local` securely via HTTPS to this container.
+- **`ports`**: Host port bindings.
+- **`environment`**: Key-value pairs for environment variables.
+
 ## Configuration Files
 
 - **`logging.json`**: Managed via `log-level` command.

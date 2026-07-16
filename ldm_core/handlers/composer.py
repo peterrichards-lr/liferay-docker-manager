@@ -195,6 +195,22 @@ class ComposerService:
         )
         services.update(ext_services)
 
+        custom_containers = meta.get("custom_containers")
+        if not custom_containers:
+            custom_containers = self.manager.defaults.get("custom_containers", [])
+        elif isinstance(custom_containers, str):
+            import json
+            try:
+                custom_containers = json.loads(custom_containers)
+            except Exception:
+                custom_containers = []
+
+        if custom_containers:
+            custom_services = self._build_custom_containers(
+                custom_containers, host_name, project_name, ssl_enabled, meta
+            )
+            services.update(custom_services)
+
         is_expose = (
             getattr(self.manager.args, "expose", False) is True
             or str(meta.get("expose", "false")).lower() == "true"
@@ -1268,4 +1284,66 @@ class ComposerService:
                     services[svc_id]["ports"] = [
                         f"{bind_ip}:{safe_host_port}:{ms_port}"
                     ]
+        return services
+
+    def _build_custom_containers(self, custom_containers, host_name, project_name, ssl_enabled, meta):
+        services = {}
+        if not isinstance(custom_containers, list):
+            return services
+            
+        for container in custom_containers:
+            image = container.get("image")
+            if not image:
+                continue
+            
+            c_name = container.get("service_name")
+            if not c_name:
+                continue
+
+            svc_id = f"{project_name}-{c_name}"
+            scale = int(meta.get(f"scale_{c_name}", 1))
+
+            service = {
+                "image": image,
+                "networks": ["liferay-net"],
+                "labels": [f"com.liferay.ldm.project={project_name}"],
+            }
+
+            if scale == 1:
+                service["container_name"] = svc_id
+            else:
+                service["deploy"] = {"replicas": scale}
+
+            depends_on_list = container.get("depends_on", [])
+            if depends_on_list:
+                service["depends_on"] = {
+                    dep: {"condition": "service_started"} for dep in depends_on_list
+                }
+                
+            env_vars = container.get("environment", [])
+            if env_vars:
+                if isinstance(env_vars, dict):
+                    service["environment"] = [f"{k}={v}" for k, v in env_vars.items()]
+                elif isinstance(env_vars, list):
+                    service["environment"] = env_vars
+
+            ports = container.get("ports", [])
+            if ports:
+                service["ports"] = ports
+                
+            volumes = container.get("volumes", [])
+            if volumes:
+                service["volumes"] = volumes
+
+            subdomain = container.get("subdomain")
+            if subdomain:
+                service["labels"].append("traefik.enable=true")
+                service["labels"].append("traefik.docker.network=liferay-net")
+                traefik_svc_id = f"{svc_id}-svc"
+                service["labels"].append(f"traefik.http.routers.{traefik_svc_id}.rule=Host(`{subdomain}.{host_name}`)")
+                if ssl_enabled:
+                    service["labels"].append(f"traefik.http.routers.{traefik_svc_id}.tls=true")
+                    
+            services[c_name] = service
+
         return services
