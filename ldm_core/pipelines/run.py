@@ -991,17 +991,18 @@ class ComposerStage(PipelineStage):
                         f"SSL certificate generation took: {UI.format_duration(time.time() - ssl_start)}"
                     )
 
-            ssl_port = manager.infra.setup_infrastructure(
-                resolved_ip,
-                ssl_port,
-                use_ssl=ssl_enabled,
-                quiet=getattr(manager.args, "quiet", False),
-                use_shared_search=use_shared_search,
-                use_shared_db=use_shared_db,
-            )
+            if shutil.which("docker") and not no_up:
+                ssl_port = manager.infra.setup_infrastructure(
+                    resolved_ip,
+                    ssl_port,
+                    use_ssl=ssl_enabled,
+                    quiet=getattr(manager.args, "quiet", False),
+                    use_shared_search=use_shared_search,
+                    use_shared_db=use_shared_db,
+                )
             project_meta["ssl_port"] = ssl_port
 
-            if use_shared_db and not no_up:
+            if shutil.which("docker") and use_shared_db and not no_up:
                 from ldm_core.utils import sanitize_id
 
                 db_name = f"lportal_{sanitize_id(context.get('project_id')).replace('-', '_')}"
