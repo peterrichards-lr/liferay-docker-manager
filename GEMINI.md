@@ -71,7 +71,14 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
 - [Agent Rules of Engagement](./.gemini/gemini.md)
 - [Properties Override Hierarchy Guide](./docs/explanation/properties.md)
 
-## 8. Active Work State & Plan (July 15, 2026)
+## 8. Active Work State & Plan (July 16, 2026)
+
+- **Current Active Task (July 16, 2026) — Documentation Cleanup & Verification**:
+  - [x] Clean up empty pre-release stubs (`v2.15.18-pre`, `v2.15.17-pre`) from `CHANGELOG.md`.
+  - [x] Formally deprecate `ldm init-from` and replace with `ldm link` in `README.md` and `docs/ROADMAP.md`.
+  - [x] Add backward compatibility mapping for `init-from` to `docs/reference/cli/system.md`.
+  - [x] Document CLI boot sequence and `post-upgrade` hooks in `docs/explanation/architecture.md`.
+  - [x] Verify site build integrity with `mkdocs build` and `markdownlint`.
 
 - **Current Active Task (July 15, 2026) — Custom Images & Multi-Compose Architecture Planning**:
   - [x] Conducted architectural risk analysis for WordPress and Web Crawler integration.

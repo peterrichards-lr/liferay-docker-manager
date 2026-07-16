@@ -17,8 +17,8 @@ To prevent unnecessary code churn, sweeping reformatting, and out-of-scope chang
 
 ## Pre-commit & CI Verification
 
-- **Mandatory Local Pre-commit**: To prevent GitHub Actions CI failures caused by dirty states, you MUST run `. .venv/bin/activate && pre-commit run --all-files` locally before committing and pushing any changes.
-- **Documentation Timestamps Awareness**: The `bump-docs-timestamps` hook will automatically modify the `Last Updated` footers of any `*.md` files if there have been changes. If this hook modifies many `.md` files that are unrelated to your active task, DO NOT stage and commit these automated timestamp changes alongside your logic changes if it causes your PR to exceed the 10-file limit. Instead, put the `.md` timestamp bumps in a separate `chore/` PR to keep your main `fix/` PR strictly under the limit.
+- **Mandatory Local Pre-commit**: To prevent GitHub Actions CI failures caused by dirty states, you MUST run `. .venv/bin/activate && pre-commit run --all-files` locally before committing and pushing any changes. If you forget, the local git hooks (installed in `.git/hooks`) will intercept your `git commit` and run the linters automatically.
+- **Handling Hook Failures**: If `git commit` fails because a hook (like `ruff-format` or `markdownlint`) modified files, you MUST re-stage the modified files (`git add .`) and run `git commit` again. If a hook like `mypy` or `detect-secrets` fails, you MUST fix the underlying code issue, re-stage, and commit again. Never use `--no-verify` to bypass these quality gates.
 
 ## Release & Version Automation
 
