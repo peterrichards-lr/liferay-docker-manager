@@ -118,6 +118,7 @@ def preprocess_args(args_list: list[str]) -> list[str]:
         "roi",
         "start",
         "inspector",
+        "tray",
         "setup",
         "fetch",
         "get",

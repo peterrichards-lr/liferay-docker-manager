@@ -1,4 +1,5 @@
 import os
+
 from ldm_core.handlers.base import BaseHandler
 from ldm_core.ui import UI
 
@@ -26,7 +27,9 @@ class TrayService(BaseHandler):
         try:
             from ldm_core.gui.tray import LdmTrayApp
         except ImportError as e:
-            UI.die(f"Failed to load GUI dependencies: {e}\nPlease ensure pystray and Pillow are installed.")
+            UI.die(
+                f"Failed to load GUI dependencies: {e}\nPlease ensure pystray and Pillow are installed."
+            )
 
         try:
             app = LdmTrayApp(self.manager)
@@ -36,11 +39,11 @@ class TrayService(BaseHandler):
 
     def _is_wsl(self) -> bool:
         """Detect if we are running under WSL where native UI tray isn't easily supported."""
-        if os.name == 'nt':
+        if os.name == "nt":
             return False
         try:
-            with open('/proc/version', 'r') as f:
-                if 'microsoft' in f.read().lower():
+            with open("/proc/version") as f:
+                if "microsoft" in f.read().lower():
                     return True
         except Exception:
             pass
