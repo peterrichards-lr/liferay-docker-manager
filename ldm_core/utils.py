@@ -1360,6 +1360,7 @@ def write_meta(path, meta):
             if v is not None:
                 if isinstance(v, (dict, list)):
                     import json
+
                     v = json.dumps(v)
                 content += f"{k}={v}\n"
         UI.info(
@@ -1380,6 +1381,7 @@ def write_meta(path, meta):
                 if v is not None:
                     if isinstance(v, (dict, list)):
                         import json
+
                         v = json.dumps(v)
                     f.write(f"{k}={v}\n")
 

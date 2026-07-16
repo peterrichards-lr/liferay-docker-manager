@@ -34,11 +34,12 @@ ldm defaults --remove tag
 
 ## Custom Containers (`custom_containers`)
 
-You can inject external services or orchestrate multi-compose architectures (such as WordPress sidecars, specialized caching layers, or monitoring agents) into the LDM runtime by defining `custom_containers` in your `.ldmrc` file. 
+You can inject external services or orchestrate multi-compose architectures (such as WordPress sidecars, specialized caching layers, or monitoring agents) into the LDM runtime by defining `custom_containers` in your `.ldmrc` file.
 
 These custom containers are seamlessly integrated into the generated `docker-compose.yml`, automatically attached to the `liferay-net` network, and properly labeled so that LDM's garbage collection manages their lifecycle alongside the core Liferay stack.
 
 ### Example `.ldmrc`
+
 ```json
 {
   "custom_containers": [
@@ -50,7 +51,7 @@ These custom containers are seamlessly integrated into the generated `docker-com
       "environment": {
         "WORDPRESS_DB_HOST": "db",
         "WORDPRESS_DB_USER": "lportal",
-        "WORDPRESS_DB_PASSWORD": "test",
+        "WORDPRESS_DB_PASSWORD": "test",  # pragma: allowlist secret
         "WORDPRESS_DB_NAME": "lportal"
       }
     }
