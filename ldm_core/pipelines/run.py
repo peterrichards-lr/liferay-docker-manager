@@ -844,9 +844,14 @@ class ComposerStage(PipelineStage):
                 )
                 use_shared_db = db_mode == "shared"
 
-                if db_type_val not in ["hypersonic", "external"]:
+                import shutil
+
+                if db_type_val not in ["hypersonic", "external"] and shutil.which(
+                    "docker"
+                ):
                     is_running = manager.run_command(
-                        ["docker", "ps", "-q", "-f", f"name=^{db_container}$"]
+                        ["docker", "ps", "-q", "-f", f"name=^{db_container}$"],
+                        check=False,
                     )
                     compose_file = paths["root"] / "docker-compose.yml"
                     if compose_file.exists() and not is_running:
@@ -971,12 +976,17 @@ class ComposerStage(PipelineStage):
                 ]
             )
 
-        manager.infra._ensure_network()
-        ssl_enabled = str(project_meta.get("ssl", "false")).lower() == "true"
-        ssl_port = project_meta.get("ssl_port", 443)
+        import shutil
+
         no_up = context.get("no_up")
         if no_up is None:
             no_up = getattr(manager.args, "no_up", False)
+
+        if shutil.which("docker") and not no_up:
+            manager.infra._ensure_network()
+
+        ssl_enabled = str(project_meta.get("ssl", "false")).lower() == "true"
+        ssl_port = project_meta.get("ssl_port", 443)
 
         if ssl_enabled or getattr(manager.args, "search", False) or use_shared_db:
             infra_start = time.time()

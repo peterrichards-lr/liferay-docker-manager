@@ -334,9 +334,7 @@ jobs:
             # Verify arm64 binary
             ./${{ env.BINARY_PATH_ARM }} --version
             ./${{ env.BINARY_PATH_ARM }} init test-project-arm -y --no-up
-            # Verify x86_64 binary
-            ./${{ env.BINARY_PATH_X86 }} --version
-            ./${{ env.BINARY_PATH_X86 }} init test-project-x86 -y --no-up
+            # Skip running the x86_64 binary natively on the arm64 runner to avoid Rosetta / Architecture mismatch errors.
           else
             # Verify Linux/Windows binary
             ./${{ env.BINARY_PATH }} --version
