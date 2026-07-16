@@ -316,7 +316,7 @@ class ConfigService:
             if pe_path.is_dir():
                 pe_path = pe_path / "portal-ext.properties"
 
-        content = pe_path.read_text() if pe_path.exists() else ""
+        content = pe_path.read_text(encoding="utf-8") if pe_path.exists() else ""
         props = self._get_properties(content)
 
         # Update the properties dictionary
@@ -399,7 +399,7 @@ class ConfigService:
 
         from ldm_core.utils import safe_write_text
 
-        lines = pe_path.read_text().splitlines()
+        lines = pe_path.read_text(encoding="utf-8").splitlines()
         new_lines: list[str] = []
         i = 0
 
@@ -448,11 +448,11 @@ class ConfigService:
             return
 
         try:
-            log_data = json.loads(logging_file.read_text())
+            log_data = json.loads(logging_file.read_text(encoding="utf-8"))
             if not log_data:
                 return
 
-            content = target.read_text()
+            content = target.read_text(encoding="utf-8")
             # Safety check: If the file was corrupted, restore template
             if "<Loggers>" not in content:
                 content = standard_template
@@ -547,7 +547,7 @@ class ConfigService:
         meta_file = root / "meta"
         if meta_file.exists():
             try:
-                for line in meta_file.read_text().splitlines():
+                for line in meta_file.read_text(encoding="utf-8").splitlines():
                     if line.startswith("tag="):
                         return line.split("=", 1)[1].strip()
             except Exception:
@@ -560,7 +560,7 @@ class ConfigService:
         meta_file = root / "meta"
         if meta_file.exists():
             try:
-                for line in meta_file.read_text().splitlines():
+                for line in meta_file.read_text(encoding="utf-8").splitlines():
                     if line.startswith("db_type="):
                         return line.split("=", 1)[1].strip()
             except Exception:
@@ -609,7 +609,7 @@ class ConfigService:
 
                 target_file = common_dir / resource_file.name
                 if not target_file.exists():
-                    content = resource_file.read_text()
+                    content = resource_file.read_text(encoding="utf-8")
                     safe_write_text(target_file, content)
                     UI.info(f"  + Created {resource_file.name}")
                     created_count += 1
@@ -795,7 +795,7 @@ class ConfigService:
         bypass_engine = False
         if not is_dry_run and manifest_path.exists():
             try:
-                cached_hashes = json.loads(manifest_path.read_text())
+                cached_hashes = json.loads(manifest_path.read_text(encoding="utf-8"))
                 if current_hashes == cached_hashes:
                     bypass_engine = True
             except (json.JSONDecodeError, OSError):
@@ -807,7 +807,7 @@ class ConfigService:
             if seed_ext.exists():
                 try:
                     seed_props, seed_imp = self._get_properties_with_metadata(
-                        seed_ext.read_text()
+                        seed_ext.read_text(encoding="utf-8")
                     )
                 except (FileNotFoundError, OSError):
                     pass
@@ -817,7 +817,7 @@ class ConfigService:
             if ldmp_ext.exists():
                 try:
                     ldmp_props, ldmp_imp = self._get_properties_with_metadata(
-                        ldmp_ext.read_text()
+                        ldmp_ext.read_text(encoding="utf-8")
                     )
                 except (FileNotFoundError, OSError):
                     pass
@@ -829,14 +829,14 @@ class ConfigService:
             if global_ext:
                 try:
                     global_props, global_imp = self._get_properties_with_metadata(
-                        global_ext.read_text()
+                        global_ext.read_text(encoding="utf-8")
                     )
                 except (FileNotFoundError, OSError):
                     pass
             if local_ext:
                 try:
                     local_props, local_imp = self._get_properties_with_metadata(
-                        local_ext.read_text()
+                        local_ext.read_text(encoding="utf-8")
                     )
                 except (FileNotFoundError, OSError):
                     pass
@@ -846,7 +846,7 @@ class ConfigService:
             if target_ext.exists():
                 try:
                     project_props, project_imp = self._get_properties_with_metadata(
-                        target_ext.read_text()
+                        target_ext.read_text(encoding="utf-8")
                     )
                 except (FileNotFoundError, OSError):
                     pass
@@ -930,7 +930,7 @@ class ConfigService:
             if target_ext.exists():
                 try:
                     current_props, current_imp = self._get_properties_with_metadata(
-                        target_ext.read_text()
+                        target_ext.read_text(encoding="utf-8")
                     )
                 except (FileNotFoundError, OSError):
                     pass
@@ -977,7 +977,7 @@ class ConfigService:
         history = set()
         if history_file.exists():
             try:
-                history = set(history_file.read_text().splitlines())
+                history = set(history_file.read_text(encoding="utf-8").splitlines())
             except (FileNotFoundError, OSError):
                 pass
 
@@ -1079,8 +1079,11 @@ class ConfigService:
                                 dest.unlink()
                             continue
 
-                        content = match.read_text()
-                        if not dest.exists() or dest.read_text() != content:
+                        content = match.read_text(encoding="utf-8")
+                        if (
+                            not dest.exists()
+                            or dest.read_text(encoding="utf-8") != content
+                        ):
                             from ldm_core.utils import safe_write_text
 
                             safe_write_text(dest, content)
@@ -1158,7 +1161,7 @@ class ConfigService:
                 UI.info("No custom log levels defined.")
                 return
             UI.heading(f"Log Levels for {root.name}")
-            print(logging_json.read_text())
+            print(logging_json.read_text(encoding="utf-8"))
             return
 
         if not category:
@@ -1176,7 +1179,7 @@ class ConfigService:
         log_data = {}
         if logging_json.exists():
             with contextlib.suppress(Exception):
-                log_data = json.loads(logging_json.read_text())
+                log_data = json.loads(logging_json.read_text(encoding="utf-8"))
 
         if remove:
             if bundle in log_data and category in log_data[bundle]:
@@ -1206,7 +1209,7 @@ class ConfigService:
         config = {}
         if config_path.exists():
             with contextlib.suppress(Exception):
-                config = json.loads(config_path.read_text())
+                config = json.loads(config_path.read_text(encoding="utf-8"))
 
         if not key and not value:
             UI.heading("Global LDM Configuration")
@@ -1370,7 +1373,9 @@ class ConfigService:
                 UI.raw("=" * 60)
 
                 # Load current overrides
-                content = pe_path.read_text() if pe_path.exists() else ""
+                content = (
+                    pe_path.read_text(encoding="utf-8") if pe_path.exists() else ""
+                )
                 props, important_keys = self._get_properties_with_metadata(content)
 
                 sorted_keys = sorted(props.keys())
