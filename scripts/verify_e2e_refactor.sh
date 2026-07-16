@@ -402,6 +402,7 @@ else
 fi
 
 echo ">> Verifying Properties Override Cascade & Reset..."
+log_and_run "Stopping project to release file locks" "$LDM_CMD" -y stop .
 mkdir -p "$LDM_WORKSPACE/common"
 echo "test.override.prop=456" > "$LDM_WORKSPACE/common/portal-ext.properties"
 echo "test.override.prop=123 # !important" >> files/portal-ext.properties
