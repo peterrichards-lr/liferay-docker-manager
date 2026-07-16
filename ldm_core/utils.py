@@ -2375,7 +2375,7 @@ def resolve_infrastructure_mode(mode_key, meta, defaults, args_override=None):
         from packaging.version import parse as parse_version
     except ImportError:
 
-        def parse_version(v_str):
+        def _fallback_parse(v_str):
             """Robust zero-dependency fallback for LDM version strings."""
             cleaned = str(v_str).lstrip("v").split("-")[0]
             parts = []
@@ -2387,6 +2387,8 @@ def resolve_infrastructure_mode(mode_key, meta, defaults, args_override=None):
             while len(parts) < 3:
                 parts.append(0)
             return tuple(parts[:3])
+
+        parse_version = _fallback_parse  # type: ignore[assignment]
 
     if args_override:
         return args_override
