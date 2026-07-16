@@ -1,4 +1,5 @@
 import json
+import re
 import zipfile
 from pathlib import Path
 
@@ -144,3 +145,101 @@ class ClientExtensionAnalyzer:
                 success = False
 
         return success
+
+
+class CustomContainerValidator:
+    """Pre-Flight analyzer for validating custom container definitions from .ldmrc defaults."""
+
+    CORE_SERVICES = frozenset({"liferay", "db", "search", "kibana", "proxy", "ngrok"})
+
+    @staticmethod
+    def validate_custom_containers(containers: list) -> list[str]:
+        """Validates a list of custom container dictionaries. Returns a list of errors."""
+        errors = []
+
+        if not isinstance(containers, list):
+            return ["'custom_containers' must be a list."]
+
+        for i, c in enumerate(containers):
+            if not isinstance(c, dict):
+                errors.append(f"Container at index {i} must be a dictionary.")
+                continue
+
+            # Required fields
+            service_name = c.get("service_name")
+            if not service_name:
+                errors.append(
+                    f"Container at index {i} missing required field 'service_name'."
+                )
+            elif not isinstance(service_name, str):
+                errors.append(
+                    f"Container at index {i} 'service_name' must be a string."
+                )
+            else:
+                if not re.match(r"^[a-zA-Z0-9_-]+$", service_name):
+                    errors.append(
+                        f"Container '{service_name}' has invalid characters. Use alphanumeric, dash, or underscore."
+                    )
+                if service_name in CustomContainerValidator.CORE_SERVICES:
+                    errors.append(
+                        f"Container '{service_name}' name collides with an LDM core service. Choose a different name."
+                    )
+
+            image = c.get("image")
+            if not image:
+                errors.append(
+                    f"Container '{service_name or i}' missing required field 'image'."
+                )
+            elif not isinstance(image, str):
+                errors.append(
+                    f"Container '{service_name or i}' 'image' must be a string."
+                )
+
+            # Optional fields
+            ports = c.get("ports")
+            if ports is not None:
+                if not isinstance(ports, list):
+                    errors.append(
+                        f"Container '{service_name or i}' 'ports' must be a list of strings."
+                    )
+                else:
+                    for p in ports:
+                        if not isinstance(p, str) or ":" not in p:
+                            errors.append(
+                                f"Container '{service_name or i}' port '{p}' must be a string in format 'host_port:container_port'."
+                            )
+
+            env = c.get("environment")
+            if env is not None:
+                if not isinstance(env, list):
+                    errors.append(
+                        f"Container '{service_name or i}' 'environment' must be a list of strings."
+                    )
+                else:
+                    for e in env:
+                        if not isinstance(e, str) or not re.match(
+                            r"^[a-zA-Z_]+[a-zA-Z0-9_]*(=.*)?$", e
+                        ):
+                            errors.append(
+                                f"Container '{service_name or i}' environment variable '{e}' must be a valid KEY or KEY=VALUE string."
+                            )
+
+            for list_field in ["networks", "volumes", "depends_on"]:
+                val = c.get(list_field)
+                if val is not None:
+                    if not isinstance(val, list):
+                        errors.append(
+                            f"Container '{service_name or i}' '{list_field}' must be a list of strings."
+                        )
+                    elif not all(isinstance(v, str) for v in val):
+                        errors.append(
+                            f"Container '{service_name or i}' '{list_field}' must contain only strings."
+                        )
+
+            subdomain = c.get("subdomain")
+            if subdomain is not None and not isinstance(subdomain, str):
+                errors.append(
+                    f"Container '{service_name or i}' 'subdomain' must be a string."
+                )
+
+        return errors
