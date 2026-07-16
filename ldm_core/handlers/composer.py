@@ -1287,16 +1287,18 @@ class ComposerService:
                     ]
         return services
 
-    def _build_custom_containers(self, custom_containers, host_name, project_name, ssl_enabled, meta):
+    def _build_custom_containers(
+        self, custom_containers, host_name, project_name, ssl_enabled, meta
+    ):
         services = {}
         if not isinstance(custom_containers, list):
             return services
-            
+
         for container in custom_containers:
             image = container.get("image")
             if not image:
                 continue
-            
+
             c_name = container.get("service_name")
             if not c_name:
                 continue
@@ -1320,7 +1322,7 @@ class ComposerService:
                 service["depends_on"] = {
                     dep: {"condition": "service_started"} for dep in depends_on_list
                 }
-                
+
             env_vars = container.get("environment", [])
             if env_vars:
                 if isinstance(env_vars, dict):
@@ -1331,7 +1333,7 @@ class ComposerService:
             ports = container.get("ports", [])
             if ports:
                 service["ports"] = ports
-                
+
             volumes = container.get("volumes", [])
             if volumes:
                 service["volumes"] = volumes
@@ -1341,10 +1343,14 @@ class ComposerService:
                 service["labels"].append("traefik.enable=true")
                 service["labels"].append("traefik.docker.network=liferay-net")
                 traefik_svc_id = f"{svc_id}-svc"
-                service["labels"].append(f"traefik.http.routers.{traefik_svc_id}.rule=Host(`{subdomain}.{host_name}`)")
+                service["labels"].append(
+                    f"traefik.http.routers.{traefik_svc_id}.rule=Host(`{subdomain}.{host_name}`)"
+                )
                 if ssl_enabled:
-                    service["labels"].append(f"traefik.http.routers.{traefik_svc_id}.tls=true")
-                    
+                    service["labels"].append(
+                        f"traefik.http.routers.{traefik_svc_id}.tls=true"
+                    )
+
             services[c_name] = service
 
         return services
