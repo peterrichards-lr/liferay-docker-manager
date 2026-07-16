@@ -200,6 +200,7 @@ class ComposerService:
             custom_containers = self.manager.defaults.get("custom_containers", [])
         elif isinstance(custom_containers, str):
             import json
+
             try:
                 custom_containers = json.loads(custom_containers)
             except Exception:
