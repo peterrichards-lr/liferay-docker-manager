@@ -1081,6 +1081,128 @@ class TestComposerService(unittest.TestCase):
         self.composer._build_db_service(meta, project_name)
         mock_ui.info.assert_any_call("Utilizing Global Shared Infrastructure")
 
+    @patch("ldm_core.handlers.composer.dict_to_yaml")
+    @patch("ldm_core.utils.safe_write_text")
+    def test_search_kibana_enabled_isolated(self, mock_write, mock_yaml):
+        paths = {
+            "root": Path("/tmp/proj"),
+            "deploy": Path("/tmp/proj/deploy"),
+            "files": Path("/tmp/proj/files"),
+            "data": Path("/tmp/proj/data"),
+            "configs": Path("/tmp/proj/osgi/configs"),
+            "modules": Path("/tmp/proj/osgi/modules"),
+            "cx": Path("/tmp/proj/osgi/client-extensions"),
+            "scripts": Path("/tmp/proj/scripts"),
+            "state": Path("/tmp/proj/osgi/state"),
+            "logs": Path("/tmp/proj/logs"),
+            "portal_log4j": Path("/tmp/proj/osgi/log4j"),
+            "compose": Path("/tmp/proj/docker-compose.yml"),
+        }
+        meta = {
+            "tag": "2026.q1.7-lts",
+            "container_name": "proj",
+            "search_kibana_enabled": "true",
+            "search_mode": "isolated",
+        }
+
+        with (
+            patch.object(
+                self.composer, "_build_liferay_service", return_value={"volumes": []}
+            ),
+            patch.object(self.composer, "_build_db_service", return_value=None),
+            patch.object(self.composer, "_build_search_service", return_value=None),
+            patch.object(self.composer, "_build_extensions_services", return_value={}),
+        ):
+            self.composer.write_docker_compose(paths, meta)
+            self.assertTrue(mock_yaml.called)
+            compose = mock_yaml.call_args[0][0]
+            self.assertIn("kibana", compose["services"])
+            kibana_service = compose["services"]["kibana"]
+            self.assertTrue(kibana_service["image"].startswith("kibana:"))
+            self.assertIn(
+                "ELASTICSEARCH_HOSTS=http://proj-liferay:9200",
+                kibana_service["environment"],
+            )
+            self.assertIn("5601:5601", kibana_service["ports"])
+
+    @patch("ldm_core.handlers.composer.dict_to_yaml")
+    @patch("ldm_core.utils.safe_write_text")
+    def test_search_kibana_enabled_shared(self, mock_write, mock_yaml):
+        paths = {
+            "root": Path("/tmp/proj"),
+            "deploy": Path("/tmp/proj/deploy"),
+            "files": Path("/tmp/proj/files"),
+            "data": Path("/tmp/proj/data"),
+            "configs": Path("/tmp/proj/osgi/configs"),
+            "modules": Path("/tmp/proj/osgi/modules"),
+            "cx": Path("/tmp/proj/osgi/client-extensions"),
+            "scripts": Path("/tmp/proj/scripts"),
+            "state": Path("/tmp/proj/osgi/state"),
+            "logs": Path("/tmp/proj/logs"),
+            "portal_log4j": Path("/tmp/proj/osgi/log4j"),
+            "compose": Path("/tmp/proj/docker-compose.yml"),
+        }
+        meta = {
+            "tag": "2026.q1.7-lts",
+            "container_name": "proj",
+            "search_kibana_enabled": "true",
+            "search_mode": "shared",
+        }
+
+        with (
+            patch.object(
+                self.composer, "_build_liferay_service", return_value={"volumes": []}
+            ),
+            patch.object(self.composer, "_build_db_service", return_value=None),
+            patch.object(self.composer, "_build_search_service", return_value=None),
+            patch.object(self.composer, "_build_extensions_services", return_value={}),
+        ):
+            self.composer.write_docker_compose(paths, meta)
+            self.assertTrue(mock_yaml.called)
+            compose = mock_yaml.call_args[0][0]
+            self.assertIn("kibana", compose["services"])
+            kibana_service = compose["services"]["kibana"]
+            self.assertIn(
+                "ELASTICSEARCH_HOSTS=http://liferay-search-global:9200",
+                kibana_service["environment"],
+            )
+
+    @patch("ldm_core.handlers.composer.dict_to_yaml")
+    @patch("ldm_core.utils.safe_write_text")
+    def test_search_kibana_disabled(self, mock_write, mock_yaml):
+        paths = {
+            "root": Path("/tmp/proj"),
+            "deploy": Path("/tmp/proj/deploy"),
+            "files": Path("/tmp/proj/files"),
+            "data": Path("/tmp/proj/data"),
+            "configs": Path("/tmp/proj/osgi/configs"),
+            "modules": Path("/tmp/proj/osgi/modules"),
+            "cx": Path("/tmp/proj/osgi/client-extensions"),
+            "scripts": Path("/tmp/proj/scripts"),
+            "state": Path("/tmp/proj/osgi/state"),
+            "logs": Path("/tmp/proj/logs"),
+            "portal_log4j": Path("/tmp/proj/osgi/log4j"),
+            "compose": Path("/tmp/proj/docker-compose.yml"),
+        }
+        meta = {
+            "tag": "2026.q1.7-lts",
+            "container_name": "proj",
+            "search_kibana_enabled": "false",
+        }
+
+        with (
+            patch.object(
+                self.composer, "_build_liferay_service", return_value={"volumes": []}
+            ),
+            patch.object(self.composer, "_build_db_service", return_value=None),
+            patch.object(self.composer, "_build_search_service", return_value=None),
+            patch.object(self.composer, "_build_extensions_services", return_value={}),
+        ):
+            self.composer.write_docker_compose(paths, meta)
+            self.assertTrue(mock_yaml.called)
+            compose = mock_yaml.call_args[0][0]
+            self.assertNotIn("kibana", compose["services"])
+
 
 if __name__ == "__main__":
     unittest.main()

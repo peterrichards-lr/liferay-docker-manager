@@ -212,6 +212,22 @@ class ComposerService:
             )
             services.update(custom_services)
 
+        search_kibana_enabled = (
+            str(
+                meta.get(
+                    "search_kibana_enabled",
+                    getattr(self.manager.defaults, "global_defaults", {}).get(
+                        "search_kibana_enabled", "false"
+                    ),
+                )
+            ).lower()
+            == "true"
+        )
+        if search_kibana_enabled:
+            kibana_service = self._build_kibana_service(meta, project_name)
+            if kibana_service:
+                services["kibana"] = kibana_service
+
         is_expose = (
             getattr(self.manager.args, "expose", False) is True
             or str(meta.get("expose", "false")).lower() == "true"
@@ -1286,6 +1302,41 @@ class ComposerService:
                         f"{bind_ip}:{safe_host_port}:{ms_port}"
                     ]
         return services
+
+    def _build_kibana_service(self, meta, project_name):
+        """Constructs an optional Kibana service for index debugging."""
+        from ldm_core.utils import resolve_infrastructure_mode
+
+        search_mode = resolve_infrastructure_mode(
+            "search_mode", meta, self.manager.defaults
+        )
+
+        # Determine Elasticsearch URL based on mode
+        # By default, Sidecar search runs within the Liferay container itself, but
+        # shared search runs in the global search container.
+        if search_mode == "shared":
+            es_url = "http://liferay-search-global:9200"
+        else:
+            # Sidecar exposes on liferay container
+            es_url = f"http://{project_name}-liferay:9200"
+
+        # Try to resolve a matching Kibana version
+        tag = str(meta.get("tag") or "latest")
+        from ldm_core.utils import resolve_dependency_version
+
+        kibana_ver = resolve_dependency_version(tag, "elasticsearch") or "8.11.1"
+
+        return {
+            "image": f"kibana:{kibana_ver}",
+            "container_name": f"{project_name}-kibana",
+            "ports": ["5601:5601"],
+            "environment": [f"ELASTICSEARCH_HOSTS={es_url}"],
+            "networks": ["liferay-net"],
+            "labels": [
+                f"com.liferay.ldm.project={project_name}",
+                "com.liferay.ldm.managed=true",
+            ],
+        }
 
     def _build_custom_containers(
         self, custom_containers, host_name, project_name, ssl_enabled, meta

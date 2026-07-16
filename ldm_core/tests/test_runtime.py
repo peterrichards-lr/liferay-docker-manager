@@ -1054,6 +1054,78 @@ services:
                 mock_check_port.assert_any_call("127.0.0.1", 8080)
                 mock_die.assert_not_called()
 
+    def test_preflight_custom_container_port_collision_check(self):
+        with tempfile.TemporaryDirectory() as tmp_root:
+            root = Path(tmp_root)
+            compose_file = root / "docker-compose.yml"
+            compose_file.write_text("services:\n  liferay:\n    image: liferay")
+
+            all_paths = {
+                "root": root,
+                "data": root / "data",
+                "deploy": root / "deploy",
+                "files": root / "files",
+                "scripts": root / "scripts",
+                "state": root / "osgi" / "state",
+                "cx": root / "osgi" / "client-extensions",
+                "configs": root / "osgi" / "configs",
+                "modules": root / "osgi" / "modules",
+                "backups": root / "snapshots",
+                "portal_log4j": root / "osgi" / "log4j",
+                "logs": root / "logs",
+                "compose": compose_file,
+                "common": Path("/tmp/common"),
+            }
+
+            from ldm_core.docker_service import DockerService
+
+            self.handler.args.no_wait = True
+            self.handler.args.timeout = 900
+            self.handler.args.no_up = False
+
+            # Setup custom containers in meta mapping port 9000
+            project_meta = {
+                "container_name": "test-project-liferay-1",
+                "project_name": "test-project",
+                "custom_containers": [
+                    {
+                        "service_name": "wordpress",
+                        "image": "wordpress:latest",
+                        "ports": ["9000:80"],
+                    }
+                ],
+            }
+
+            # Case: Container not running, port is bound -> dies
+            with (
+                patch.object(
+                    DockerService, "is_running", side_effect=lambda _: False
+                ) as mock_is_running,
+                patch.object(
+                    self.handler, "check_port", side_effect=lambda _ip, p: p != 9000
+                ) as mock_check_port,
+                patch.object(self.handler, "run_command"),
+                patch.object(self.handler, "setup_infrastructure"),
+                patch("ldm_core.ui.UI.die", side_effect=SystemExit("died")) as mock_die,
+            ):
+                with self.assertRaises(SystemExit) as cm:
+                    self.handler.handler.cmd_run(
+                        project_id="test-project",
+                        no_up=False,
+                        no_wait=True,
+                        is_restart=True,
+                        paths=all_paths,
+                        project_meta=project_meta,
+                    )
+                self.assertEqual(str(cm.exception), "died")
+                mock_is_running.assert_any_call("test-project-wordpress")
+                mock_check_port.assert_any_call("127.0.0.1", 9000)
+                mock_die.assert_called_once()
+                self.assertIn(
+                    "Custom container port 9000 for 'wordpress' is already in use",
+                    mock_die.call_args[0][0],
+                )
+
     def test_scan_for_expected_deployables(self):
         """Test _scan_for_expected_deployables detects jar manifests and client extensions."""
         import tempfile
@@ -1779,10 +1851,11 @@ class TestFragmentOverridesValidation(unittest.TestCase):
             self.handler.parse_version = MagicMock(return_value=(2025, 1, 0))  # type: ignore[method-assign]
 
             with (
-                patch("ldm_core.ui.UI.die") as mock_die,
+                patch("ldm_core.ui.UI.die", side_effect=SystemExit(1)) as mock_die,
                 patch("ldm_core.ui.UI.warning"),
             ):
-                self.handler.handler._patch_fragment_overrides(project_meta, paths)
+                with self.assertRaises(SystemExit):
+                    self.handler.handler._patch_fragment_overrides(project_meta, paths)
                 mock_die.assert_called_once()
                 call_kwargs = mock_die.call_args.kwargs
                 self.assertEqual(call_kwargs.get("exit_code"), 1)

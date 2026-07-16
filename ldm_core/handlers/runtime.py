@@ -1037,8 +1037,8 @@ class RuntimeService(BaseHandler):
                                 UI.info(
                                     f"Check full logs: {UI.WHITE}ldm logs -f {container_name}{UI.COLOR_OFF}"
                                 )
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        UI.detail(f"Warning checking startup logs context: {e}")
 
                     last_notified_time = elapsed
 
@@ -1087,10 +1087,12 @@ class RuntimeService(BaseHandler):
                                     import json
 
                                     json.dump(status_data, f, indent=2)
-                            except Exception:
-                                pass
-                except Exception:
-                    pass
+                            except Exception as e:
+                                UI.detail(
+                                    f"Warning writing milestone status tracking file: {e}"
+                                )
+                except Exception as e:
+                    UI.detail(f"Warning checking log milestones: {e}")
 
                 status = self.manager.run_command(
                     [
@@ -1160,8 +1162,8 @@ class RuntimeService(BaseHandler):
                                     ):
                                         break
 
-                            except Exception:
-                                pass
+                            except Exception as e:
+                                UI.detail(f"Warning tracking search reindex: {e}")
                             time.sleep(5)
 
                         # Clear the flag so we don't wait on future boots
@@ -1648,8 +1650,8 @@ class RuntimeService(BaseHandler):
                         self.manager.run_command(
                             ["docker", "volume", "rm", "-f", volume_name], check=False
                         )
-                except Exception:
-                    pass
+                except Exception as e:
+                    UI.detail(f"Warning removing docker volume {volume_name}: {e}")
 
             if path and path.exists():
                 UI.detail(f"  - Cleaning {t} (host)...")

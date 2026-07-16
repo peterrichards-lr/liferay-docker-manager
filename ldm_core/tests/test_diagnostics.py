@@ -932,6 +932,28 @@ class TestDiagnosticsSetupCompletion(unittest.TestCase):
                     )
                 self.assertEqual(cm.exception.code, 0)
 
+    @patch("ldm_core.diagnostics.info.run_command")
+    def test_cmd_status_custom_containers(self, mock_run):
+        # Verify that custom containers are successfully parsed in the status table
+        mock_run.return_value = (
+            "myproj-liferay-1\tUp 5 minutes (healthy)\tliferay/portal\t0.0.0.0:8080->8080/tcp, :::8080->8080/tcp\tliferay\n"
+            "myproj-db-1\tUp 5 minutes\tpostgres:15\t0.0.0.0:5432->5432/tcp\tdb\n"
+            "myproj-wordpress\tUp 5 minutes\twordpress:latest\t0.0.0.0:9000->80/tcp\twordpress\n"
+        )
+        with patch.object(
+            self.manager, "detect_project_path", return_value=Path("/tmp/myproj")
+        ):
+            with patch.object(
+                self.manager,
+                "read_meta",
+                return_value={"tag": "2024.q1.3", "container_name": "myproj"},
+            ):
+                with self.assertRaises(SystemExit) as cm:
+                    self.manager.diagnostics.cmd_status(
+                        project_id="myproj", detailed=True
+                    )
+                self.assertEqual(cm.exception.code, 0)
+
     @patch("ldm_core.diagnostics.completions.platform.system")
     @patch("ldm_core.diagnostics.completions.get_actual_home")
     @patch("ldm_core.diagnostics.completions.get_resource_path")

@@ -350,6 +350,30 @@ class SnapshotService(BaseHandler):
                 )
                 search_snapshot_name = None
 
+        # --- CUSTOM IMAGES PACKAGING (Issue #618) ---
+        custom_containers = project_meta.get("custom_containers")
+        if custom_containers and isinstance(custom_containers, list):
+            custom_images_dir = snap_dir / "custom_images"
+            from ldm_core.utils import safe_mkdir
+
+            safe_mkdir(custom_images_dir, parents=True, exist_ok=True)
+            for container in custom_containers:
+                image = container.get("image")
+                c_name = container.get("service_name")
+                if image and c_name:
+                    UI.info(f"Saving custom image {image} for service {c_name}...")
+                    image_tar = custom_images_dir / f"{c_name}.tar"
+                    try:
+                        res = self.manager.run_command(
+                            ["docker", "save", image, "-o", str(image_tar)], check=False
+                        )
+                        if res is None:
+                            UI.warning(
+                                f"Failed to save custom image {image}. It may not exist locally."
+                            )
+                    except Exception as e:
+                        UI.warning(f"Failed to save custom image {image}: {e}")
+
         # --- VOLUME DEHYDRATION (LDM-382) ---
         # If using Named Volumes (macOS), sync volume data back to host before archiving
         self._dehydrate_named_volumes(paths)
@@ -1101,6 +1125,17 @@ class SnapshotService(BaseHandler):
                 UI.error(
                     "Global search service not running. Could not restore search indices."
                 )
+
+        # --- CUSTOM IMAGES RESTORE (Issue #618) ---
+        custom_images_dir = choice_path / "custom_images"
+        if custom_images_dir.exists() and custom_images_dir.is_dir():
+            UI.info("Loading custom container images from snapshot...")
+            for tar_file in custom_images_dir.glob("*.tar"):
+                UI.detail(f"  + Loading image from {tar_file.name}...")
+                try:
+                    self.manager.run_command(["docker", "load", "-i", str(tar_file)])
+                except Exception as e:
+                    UI.warning(f"Failed to load custom image {tar_file.name}: {e}")
 
         UI.success("Restore complete.")
 

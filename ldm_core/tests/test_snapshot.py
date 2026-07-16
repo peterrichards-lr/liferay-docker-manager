@@ -1349,3 +1349,70 @@ class TestSnapshotService(unittest.TestCase):
                 "snap", "proj", timeout=1
             )
             self.assertFalse(res)
+
+    @patch("ldm_core.handlers.snapshot.tarfile.open")
+    def test_cmd_snapshot_custom_containers(self, mock_tarfile):
+        paths = {
+            "root": self.test_dir / "proj",
+            "backups": self.test_dir / "proj/.liferay-docker/backups",
+            "state": self.test_dir / "proj/osgi/state",
+        }
+
+        with (
+            patch.object(
+                self.manager, "detect_project_path", return_value=paths["root"]
+            ),
+            patch.object(self.manager, "setup_paths", return_value=paths),
+            patch.object(self.manager, "verify_runtime_environment"),
+            patch.object(
+                self.manager,
+                "read_meta",
+                return_value={
+                    "custom_containers": [
+                        {"service_name": "wordpress", "image": "wordpress:latest"}
+                    ]
+                },
+            ),
+            patch.object(self.manager, "write_meta"),
+            patch.object(self.manager, "run_command") as mock_run,
+        ):
+            self.manager.snapshot.cmd_snapshot("proj", name="test_snap")
+
+            # Verify docker save was called
+            mock_run.assert_any_call(
+                ["docker", "save", "wordpress:latest", "-o", ANY], check=False
+            )
+
+    @patch("ldm_core.handlers.snapshot.tarfile.open")
+    def test_cmd_restore_custom_containers(self, mock_tarfile):
+        paths = {
+            "root": self.test_dir / "proj",
+            "data": self.test_dir / "proj/data",
+            "backups": self.test_dir / "proj/.liferay-docker/backups",
+        }
+
+        choice_path = paths["backups"] / "test_snap"
+        custom_images = choice_path / "custom_images"
+        custom_images.mkdir(parents=True, exist_ok=True)
+        (custom_images / "wordpress.tar").touch()
+        (choice_path / "meta").write_text("{}")
+        (choice_path / "files.tar.gz").touch()
+
+        with (
+            patch.object(
+                self.manager, "detect_project_path", return_value=paths["root"]
+            ),
+            patch.object(self.manager, "setup_paths", return_value=paths),
+            patch.object(self.manager.snapshot, "flag_reindex", return_value=True),
+            patch.object(self.manager.runtime, "cmd_run"),
+            patch("ldm_core.utils.calculate_sha256", return_value="fake_sha"),
+            patch.object(self.manager, "run_command") as mock_run,
+        ):
+            self.manager.snapshot.cmd_restore(
+                project_id="proj", backup_dir=str(choice_path)
+            )
+
+            # Verify docker load was called
+            mock_run.assert_any_call(
+                ["docker", "load", "-i", str(custom_images / "wordpress.tar")]
+            )
