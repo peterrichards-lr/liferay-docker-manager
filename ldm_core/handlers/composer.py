@@ -1290,7 +1290,9 @@ class ComposerService:
     def _build_custom_containers(
         self, custom_containers, host_name, project_name, ssl_enabled, meta
     ):
-        services = {}
+        from typing import Any
+
+        services: dict[str, Any] = {}
         if not isinstance(custom_containers, list):
             return services
 
