@@ -157,6 +157,20 @@ class RuntimeValidationStage(PipelineStage):
         is_restart = context.get("is_restart")
         paths = context.get("paths")
 
+        custom_containers = project_meta.get("custom_containers")
+        if custom_containers:
+            from ldm_core.handlers.validation import CustomContainerValidator
+
+            container_errors = CustomContainerValidator.validate_custom_containers(
+                custom_containers
+            )
+            if container_errors:
+                for err in container_errors:
+                    UI.error(f"Custom container configuration error: {err}")
+                UI.die(
+                    "Custom container validation failed. Please fix your configuration in .ldmrc or project.json."
+                )
+
         from ldm_core.docker_service import DockerService
 
         container_name = project_meta.get("container_name") or project_id

@@ -27,6 +27,7 @@ CONVENTION_DEFAULTS = {
     "log_max_file": "3",
     "elasticsearch_heap_size": "512m",
     "custom_containers": [],
+    "search_kibana_enabled": "false",
 }
 
 

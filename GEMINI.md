@@ -121,9 +121,10 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
 
   **Audit Reference:** Technical Risk Assessment (file:///Users/peterrichards/.gemini/antigravity/brain/78137ee0-ce3c-4d01-9eae-a47d416f8dec/technical_risk_assessment.md)
 
-- **Current Active Task (July 15, 2026)**:
-  - [x] Epic #582: Implement Quickstart Host/SSL defaults, dynamic microservice port conflict resolution, and container status tracking.
-  - [x] Support committed repository-level `.ldmrc` files for default configuration overrides.
+- **Current Active Task (July 16, 2026)**:
+  - [x] Epic #625: Configurable optional Kibana service in LDM search stack.
+  - [x] Epic #618: Support custom container image packaging in .ldmp packages.
+  - [x] Epic #622: Validate custom container configurations natively.
 
 - **Current Active Task (July 14, 2026)**:
   - [x] Fix quickstart preseed prompt to proceed on decline (Issue #570) and conditionally bypass based on package database presence.
@@ -142,12 +143,12 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
   - [x] Issue #483: Add and update Mermaid diagrams (Architecture & Properties).
   - [x] Epic #439: Broken down into Sub-issues #486, #487, #488, and #489.
   - [x] Issue #499: Add version badges/pills for CLI flags and features in documentation.
-  - [ ] Issue #486: Implement Base Pipeline Architecture (`ldm_core.pipelines.base`).
-  - [ ] Issue #492: Implement Lock Expiry and Resiliency for Workspace FileLock and ProjectLock.
-  - [ ] Issue #493: Graceful Fallbacks and Headless Bypasses for OS Keyring Token Storage.
-  - [ ] Issue #494: Add Backwards-Compatible Delegation Shims and Fix Mock Tests for Modular Diagnostics.
-  - [ ] Issue #495: Implement Checksum-Based Caching for 5-Layer Properties Rebuilds.
-  - [ ] Issue #496: Clean Up Corrupted Partial Output Files on Database Dump Command Failures.
+  - [x] Issue #486: Implement Base Pipeline Architecture (`ldm_core.pipelines.base`).
+  - [x] Issue #492: Implement Lock Expiry and Resiliency for Workspace FileLock and ProjectLock.
+  - [x] Issue #493: Graceful Fallbacks and Headless Bypasses for OS Keyring Token Storage.
+  - [x] Issue #494: Add Backwards-Compatible Delegation Shims and Fix Mock Tests for Modular Diagnostics.
+  - [x] Issue #495: Implement Checksum-Based Caching for 5-Layer Properties Rebuilds.
+  - [x] Issue #496: Clean Up Corrupted Partial Output Files on Database Dump Command Failures.
 
 - **Add CSRF Protection and API Token Authentication to Web Dashboard Server (Issue #441)**:
   - [x] Introduce Blueprint and `create_app` factory in `ldm_core/dashboard/server.py`.

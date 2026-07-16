@@ -1779,10 +1779,11 @@ class TestFragmentOverridesValidation(unittest.TestCase):
             self.handler.parse_version = MagicMock(return_value=(2025, 1, 0))  # type: ignore[method-assign]
 
             with (
-                patch("ldm_core.ui.UI.die") as mock_die,
+                patch("ldm_core.ui.UI.die", side_effect=SystemExit(1)) as mock_die,
                 patch("ldm_core.ui.UI.warning"),
             ):
-                self.handler.handler._patch_fragment_overrides(project_meta, paths)
+                with self.assertRaises(SystemExit):
+                    self.handler.handler._patch_fragment_overrides(project_meta, paths)
                 mock_die.assert_called_once()
                 call_kwargs = mock_die.call_args.kwargs
                 self.assertEqual(call_kwargs.get("exit_code"), 1)
