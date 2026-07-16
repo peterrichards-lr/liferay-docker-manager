@@ -210,7 +210,7 @@ def get_lcp_environment_variables(workspace_path, environment_id):
 
     try:
         data = json.loads(lcp_json.read_text())
-        envs = {}
+        envs: dict = {}
 
         # 1. Global variables
         global_envs = data.get("env") or {}
