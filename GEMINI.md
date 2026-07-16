@@ -125,6 +125,8 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
   - [x] Epic #625: Configurable optional Kibana service in LDM search stack.
   - [x] Epic #618: Support custom container image packaging in .ldmp packages.
   - [x] Epic #622: Validate custom container configurations natively.
+  - [x] Epic #624: Custom Containers runtime port collisions checks.
+  - [x] Issue #600: Eliminate silent exceptions in runtime handler.
 
 - **Current Active Task (July 14, 2026)**:
   - [x] Fix quickstart preseed prompt to proceed on decline (Issue #570) and conditionally bypass based on package database presence.
