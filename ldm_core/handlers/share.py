@@ -1372,11 +1372,11 @@ class ShareService:
         if sub.get("conflict", False) or not sub.get("leased", True):
             return f"Subdomain Conflict: Subdomain '{subdomain}' is already taken by another active tunnel."
 
-        dest = info.get("destination", {})
+        dest = info.get("destination") or {}
         if not dest.get("responsive", True):
             return f"Downstream Offline: Local target port {dest.get('port', 8080)} is not responsive."
 
-        conn_state = info.get("connection", {}).get("state", "disconnected")
+        conn_state = (info.get("connection") or {}).get("state", "disconnected")
         return f"Tunnel Connection Error: Connection state is '{conn_state}'."
 
     def cmd_inspector(self, project_id=None, port=4040):

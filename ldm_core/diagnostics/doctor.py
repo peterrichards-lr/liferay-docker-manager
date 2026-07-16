@@ -719,9 +719,11 @@ class DoctorRunner:
         self.results.append(
             (
                 "Tool: netcat (nc/ncat)",
-                "Installed (Deprecated/Unused)"
-                if active_nc
-                else "Missing (Deprecated/Unused - Native file hot-reloads used)",
+                (
+                    "Installed (Deprecated/Unused)"
+                    if active_nc
+                    else "Missing (Deprecated/Unused - Native file hot-reloads used)"
+                ),
                 True,
             )
         )
@@ -1412,7 +1414,7 @@ class DoctorRunner:
                     with open(compose_file) as f:
                         compose_data = yaml.safe_load(f)
 
-                    liferay_service = compose_data.get("services", {}).get(
+                    liferay_service = (compose_data.get("services") or {}).get(
                         "liferay", {}
                     )
                     labels = liferay_service.get("labels", [])

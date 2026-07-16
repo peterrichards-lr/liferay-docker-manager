@@ -210,15 +210,15 @@ def get_lcp_environment_variables(workspace_path, environment_id):
 
     try:
         data = json.loads(lcp_json.read_text())
-        envs = {}
+        envs: dict = {}
 
         # 1. Global variables
-        global_envs = data.get("env", {})
+        global_envs = data.get("env") or {}
         envs.update(global_envs)
 
         # 2. Environment specific overrides
-        env_configs = data.get("environments", {}).get(environment_id, {})
-        env_specific = env_configs.get("env", {})
+        env_configs = (data.get("environments") or {}).get(environment_id) or {}
+        env_specific = env_configs.get("env") or {}
         envs.update(env_specific)
 
         return envs
@@ -2029,7 +2029,7 @@ def resolve_dependency_version(liferay_tag, dependency_name):
         if range_str.startswith(">="):
             range_val = range_str.replace(">=", "")
             if tag_tuple >= version_to_tuple(range_val):
-                return entry.get("dependencies", {}).get(dependency_name)
+                return (entry.get("dependencies") or {}).get(dependency_name)
 
     return None
 

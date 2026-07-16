@@ -559,7 +559,9 @@ def _get_env_info(self):
             )
             if inspect:
                 data = json.loads(inspect)[0]
-                endpoint = data.get("Endpoints", {}).get("docker", {}).get("Host", "")
+                endpoint = ((data.get("Endpoints") or {}).get("docker") or {}).get(
+                    "Host", ""
+                )
                 if endpoint:
                     if ".colima" in endpoint:
                         provider = "Colima"
