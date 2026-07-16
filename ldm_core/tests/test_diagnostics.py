@@ -971,3 +971,23 @@ class TestDiagnosticsSetupCompletion(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestDoctorEnvironmentMarkers(unittest.TestCase):
+    def test_evaluate_marker(self):
+        import sys
+
+        from ldm_core.diagnostics.doctor import _evaluate_marker
+
+        # Test empty marker evaluates to True
+        self.assertTrue(_evaluate_marker(""))
+
+        # Test matching sys_platform
+        self.assertTrue(_evaluate_marker(f"sys_platform == '{sys.platform}'"))
+        self.assertTrue(_evaluate_marker(f'sys_platform == "{sys.platform}"'))
+        self.assertFalse(_evaluate_marker(f"sys_platform != '{sys.platform}'"))
+
+        # Test non-matching sys_platform
+        fake_platform = "fakeos" if sys.platform != "fakeos" else "otheros"
+        self.assertFalse(_evaluate_marker(f"sys_platform == '{fake_platform}'"))
+        self.assertTrue(_evaluate_marker(f"sys_platform != '{fake_platform}'"))
