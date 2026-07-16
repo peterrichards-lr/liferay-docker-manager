@@ -25,6 +25,8 @@ dependencies = [
     "mcp==1.28.1",
     "packaging>=23.1",
     "keyring==25.7.0",
+    "pystray>=0.19.0",
+    "Pillow>=10.0.0",
 ]
 
 [project.scripts]
