@@ -719,9 +719,11 @@ class DoctorRunner:
         self.results.append(
             (
                 "Tool: netcat (nc/ncat)",
-                "Installed (Deprecated/Unused)"
-                if active_nc
-                else "Missing (Deprecated/Unused - Native file hot-reloads used)",
+                (
+                    "Installed (Deprecated/Unused)"
+                    if active_nc
+                    else "Missing (Deprecated/Unused - Native file hot-reloads used)"
+                ),
                 True,
             )
         )

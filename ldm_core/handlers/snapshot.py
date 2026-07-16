@@ -457,7 +457,9 @@ class SnapshotService(BaseHandler):
                 from ldm_core.utils import yaml_to_dict
 
                 compose_data = yaml_to_dict(compose_path.read_text())
-                liferay_service = (compose_data.get("services") or {}).get("liferay", {})
+                liferay_service = (compose_data.get("services") or {}).get(
+                    "liferay", {}
+                )
                 env_vars = liferay_service.get("environment", [])
                 if isinstance(env_vars, list):
                     # Filter for LIFERAY_ variables that aren't the standard ones managed by LDM
