@@ -457,7 +457,7 @@ ldm log-level [project] --list
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-07-15* | *Last Reviewed: 2026-07-10*
+*Last Updated: 2026-07-16* | *Last Reviewed: 2026-07-10*
 
 ## Global Flags
 
