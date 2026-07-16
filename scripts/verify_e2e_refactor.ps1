@@ -369,7 +369,7 @@ try {
     $commonDir = Join-Path $LDM_WORKSPACE "common"
     New-Item -ItemType Directory -Force -Path $commonDir | Out-Null
     "test.override.prop=456" | Out-File (Join-Path $commonDir "portal-ext.properties") -Encoding utf8
-    $pePath = Join-Path "files" "portal-ext.properties"
+    $pePath = Join-Path $PWD.Path "files\portal-ext.properties"
     try {
         [System.IO.File]::AppendAllText($pePath, "`ntest.override.prop=123 # !important", [System.Text.Encoding]::UTF8)
     } catch {
