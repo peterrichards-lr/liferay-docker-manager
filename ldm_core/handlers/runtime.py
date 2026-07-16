@@ -1502,6 +1502,16 @@ class RuntimeService(BaseHandler):
                     )
                 else:
                     UI.warning(f"Permanently deleting project directory: {root.name}")
+
+                    # Release the lock before attempting deletion to avoid WinError 32 on Windows
+                    path_key = Path(root).resolve().as_posix()
+                    if (
+                        hasattr(self.manager, "_active_locks")
+                        and path_key in self.manager._active_locks
+                    ):
+                        self.manager._active_locks[path_key].release()
+                        del self.manager._active_locks[path_key]
+
                     self.manager.unregister_project(root.name)
                     self.manager.safe_rmtree(root)
 
