@@ -1412,7 +1412,7 @@ class DoctorRunner:
                     with open(compose_file) as f:
                         compose_data = yaml.safe_load(f)
 
-                    liferay_service = compose_data.get("services", {}).get(
+                    liferay_service = (compose_data.get("services") or {}).get(
                         "liferay", {}
                     )
                     labels = liferay_service.get("labels", [])
