@@ -1118,6 +1118,31 @@ class DoctorRunner:
             else:
                 self.results.append((f"[{p_path.name}] Metadata", "Healthy", True))
 
+            from ldm_core.handlers.validation import CustomContainerValidator
+
+            custom_containers = meta.get("custom_containers")
+            if custom_containers:
+                container_errors = CustomContainerValidator.validate_custom_containers(
+                    custom_containers
+                )
+                if container_errors:
+                    self.results.append(
+                        (
+                            f"[{p_path.name}] Custom Containers",
+                            f"Invalid ({len(container_errors)} errors)",
+                            False,
+                        )
+                    )
+                    self.add_hint(
+                        f"[{p_path.name}] Fix the custom container schema errors in your .ldmrc file.",
+                    )
+                    for err in container_errors:
+                        UI.raw(f"  {UI.RED}✗{UI.COLOR_OFF} {err}")
+                else:
+                    self.results.append(
+                        (f"[{p_path.name}] Custom Containers", "Valid", True)
+                    )
+
             if self.handler.manager.require_compose(p_path, silent=True):
                 self.results.append(
                     (f"[{p_path.name}] Config", "docker-compose.yml OK", True)

@@ -75,3 +75,66 @@ class TestClientExtensionAnalyzer(unittest.TestCase):
                 "loadBalancer defined but no ports are marked as 'external: true'",
                 mock_error.call_args[0][0],
             )
+
+
+class TestCustomContainerValidator(unittest.TestCase):
+    def setUp(self):
+        from ldm_core.handlers.validation import CustomContainerValidator
+
+        self.validator = CustomContainerValidator.validate_custom_containers
+
+    def test_not_a_list(self):
+        errors = self.validator({"service_name": "foo"})  # type: ignore
+        self.assertEqual(len(errors), 1)
+        self.assertIn("'custom_containers' must be a list", errors[0])
+
+    def test_valid_container(self):
+        containers = [
+            {
+                "service_name": "wordpress",
+                "image": "wordpress:latest",
+                "ports": ["8080:80"],
+                "environment": ["WORDPRESS_DB_USER=root"],
+                "networks": ["frontend"],
+                "depends_on": ["db"],
+            }
+        ]
+        errors = self.validator(containers)
+        self.assertEqual(len(errors), 0, f"Expected 0 errors, got: {errors}")
+
+    def test_missing_required_fields(self):
+        containers = [{"image": "wordpress"}]
+        errors = self.validator(containers)
+        self.assertEqual(len(errors), 1)
+        self.assertIn("missing required field 'service_name'", errors[0])
+
+        containers = [{"service_name": "wordpress"}]
+        errors = self.validator(containers)
+        self.assertEqual(len(errors), 1)
+        self.assertIn("missing required field 'image'", errors[0])
+
+    def test_invalid_service_name(self):
+        containers = [{"service_name": "my server!", "image": "nginx"}]
+        errors = self.validator(containers)
+        self.assertEqual(len(errors), 1)
+        self.assertIn("invalid characters", errors[0])
+
+    def test_service_name_collision(self):
+        containers = [{"service_name": "liferay", "image": "nginx"}]
+        errors = self.validator(containers)
+        self.assertEqual(len(errors), 1)
+        self.assertIn("collides with an LDM core service", errors[0])
+
+    def test_invalid_ports(self):
+        containers = [{"service_name": "wp", "image": "wp", "ports": ["8080"]}]
+        errors = self.validator(containers)
+        self.assertEqual(len(errors), 1)
+        self.assertIn("format 'host_port:container_port'", errors[0])
+
+    def test_invalid_environment(self):
+        containers = [
+            {"service_name": "wp", "image": "wp", "environment": ["123INVALID=value"]}
+        ]
+        errors = self.validator(containers)
+        self.assertEqual(len(errors), 1)
+        self.assertIn("valid KEY or KEY=VALUE", errors[0])
