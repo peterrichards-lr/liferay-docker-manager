@@ -1358,3 +1358,66 @@ class TestCommandRunner(unittest.TestCase):
             "running",
         )
         self.assertEqual(runner.run(["docker", "inspect", "container"]), "[]")
+
+
+class TestZeroDependencyVersionParsing(unittest.TestCase):
+    def test_version_parsing_fallback(self):
+        # We can test the fallback directly by temporarily mocking sys.modules['packaging']
+        import builtins
+
+        from ldm_core.utils import resolve_infrastructure_mode
+
+        original_import = builtins.__import__
+
+        def mock_import(name, *args, **kwargs):
+            if name == "packaging.version":
+                raise ImportError("Mocked missing packaging")
+            return original_import(name, *args, **kwargs)
+
+        builtins.__import__ = mock_import
+        try:
+            # v2.13.0 falls back to legacy modes
+            self.assertEqual(
+                resolve_infrastructure_mode(
+                    "database_mode", {"ldm_version": "2.13.0"}, {}
+                ),
+                "isolated",
+            )
+            self.assertEqual(
+                resolve_infrastructure_mode(
+                    "search_mode", {"ldm_version": "v2.13.9-pre.1"}, {}
+                ),
+                "sidecar",
+            )
+
+            # v2.14.0+ uses modern defaults
+            self.assertEqual(
+                resolve_infrastructure_mode(
+                    "database_mode",
+                    {"ldm_version": "2.14.0"},
+                    {"database_mode": "shared"},
+                ),
+                "shared",
+            )
+            self.assertEqual(
+                resolve_infrastructure_mode(
+                    "search_mode",
+                    {"ldm_version": "v2.15.18-pre.1"},
+                    {"search_mode": "shared"},
+                ),
+                "shared",
+            )
+
+            # Invalid/empty versions default to 0.0.0 and use legacy fallback
+            self.assertEqual(
+                resolve_infrastructure_mode(
+                    "database_mode", {"ldm_version": "invalid"}, {}
+                ),
+                "isolated",
+            )
+            self.assertEqual(
+                resolve_infrastructure_mode("database_mode", {}, {}), "isolated"
+            )
+
+        finally:
+            builtins.__import__ = original_import

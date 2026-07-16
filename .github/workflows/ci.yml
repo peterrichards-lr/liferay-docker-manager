@@ -327,6 +327,22 @@ jobs:
           pyinstaller --onefile --name ldm-windows --add-data "ldm_core/resources;ldm_core/resources" liferay_docker.py
           echo "BINARY_PATH=dist/ldm-windows.exe" >> "$GITHUB_ENV"
 
+      - name: Verify Compiled Binary (Smoke Test)
+        shell: bash
+        run: |
+          if [ "${{ matrix.os }}" == "macos-latest" ]; then
+            # Verify arm64 binary
+            ./${{ env.BINARY_PATH_ARM }} --version
+            ./${{ env.BINARY_PATH_ARM }} init test-project-arm -y
+            # Verify x86_64 binary
+            ./${{ env.BINARY_PATH_X86 }} --version
+            ./${{ env.BINARY_PATH_X86 }} init test-project-x86 -y
+          else
+            # Verify Linux/Windows binary
+            ./${{ env.BINARY_PATH }} --version
+            ./${{ env.BINARY_PATH }} init test-project -y
+          fi
+
       - name: Upload Artifacts (Linux/Windows)
         if: matrix.os != 'macos-latest'
         uses: actions/upload-artifact@v7

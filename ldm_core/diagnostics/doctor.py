@@ -27,6 +27,33 @@ from ldm_core.utils import (
 )
 
 
+def _evaluate_marker(marker_str: str) -> bool:
+    """Safely evaluates basic environment markers (e.g. sys_platform == 'darwin') without external libraries."""
+    marker_str = marker_str.strip()
+    if not marker_str:
+        return True
+
+    env = {
+        "sys_platform": sys.platform,
+        "platform_system": platform.system(),
+        "os_name": os.name,
+        "python_version": platform.python_version(),
+    }
+
+    for k, v in env.items():
+        if k in marker_str:
+            for op in ["==", "!="]:
+                if op in marker_str:
+                    left, right = marker_str.split(op, 1)
+                    left = left.strip()
+                    right = right.strip().strip("'\"")
+                    if left == k:
+                        if op == "==":
+                            return str(v) == right
+                        return str(v) != right
+    return True
+
+
 class DoctorRunner:
     """Isolated context for running LDM Doctor checks."""
 
@@ -205,7 +232,15 @@ class DoctorRunner:
                         line = line.strip()
                         if not line or line.startswith("#"):
                             continue
-                        name = line.split("==")[0].split(";")[0].strip()
+
+                        parts = line.split(";")
+                        name = parts[0].split("==")[0].strip()
+
+                        if len(parts) > 1:
+                            marker_str = parts[1].strip()
+                            if not _evaluate_marker(marker_str):
+                                continue
+
                         if name:
                             packages.append((name, req_filename))
                 except Exception:

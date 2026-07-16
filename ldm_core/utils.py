@@ -2371,7 +2371,24 @@ def resolve_infrastructure_mode(mode_key, meta, defaults, args_override=None):
     Resolves the infrastructure mode (database_mode or search_mode), respecting legacy fallbacks.
     Prioritizes: 1. CLI Override, 2. Project Meta, 3. Defaults (with version-aware fallbacks).
     """
-    from packaging.version import parse as parse_version
+    try:
+        from packaging.version import parse as parse_version
+    except ImportError:
+
+        def _fallback_parse(v_str):
+            """Robust zero-dependency fallback for LDM version strings."""
+            cleaned = str(v_str).lstrip("v").split("-")[0]
+            parts = []
+            for part in cleaned.split("."):
+                try:
+                    parts.append(int(part))
+                except ValueError:
+                    parts.append(0)
+            while len(parts) < 3:
+                parts.append(0)
+            return tuple(parts[:3])
+
+        parse_version = _fallback_parse  # type: ignore[assignment]
 
     if args_override:
         return args_override
