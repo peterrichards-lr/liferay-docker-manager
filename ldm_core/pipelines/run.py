@@ -1053,12 +1053,15 @@ class ComposerStage(PipelineStage):
             paths, project_meta, liferay_env=liferay_env
         )
 
-        UI.debug("Validating generated docker-compose.yml syntax...")
-        manager.run_command(
-            [*get_compose_cmd(), "config", "--quiet"],
-            cwd=str(paths["root"]),
-            check=True,
-        )
+        import shutil
+
+        if shutil.which("docker"):
+            UI.debug("Validating generated docker-compose.yml syntax...")
+            manager.run_command(
+                [*get_compose_cmd(), "config", "--quiet"],
+                cwd=str(paths["root"]),
+                check=True,
+            )
 
         compose_file = paths["root"] / "docker-compose.yml"
         if compose_file.exists() and not no_up:
