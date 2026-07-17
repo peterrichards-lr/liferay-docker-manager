@@ -60,8 +60,12 @@ ldm quickstart aica
 ldm snapshot my-project
 ldm restore my-project
 
-# 6. THE PORTABLE PACKAGE: Export project snapshot into a .ldmp package
+# 6. THE CLONE FLOW: Clone and setup a remote Git workspace repository
+ldm clone https://github.com/my-org/my-workspace.git my-project
+
+# 7. THE PORTABLE PACKAGE: Export and Import compiled project snapshots (.ldmp)
 ldm package my-project
+ldm import /path/to/my-project.ldmp
 ```
 
 > [!NOTE]
