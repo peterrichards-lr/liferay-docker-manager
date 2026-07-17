@@ -319,6 +319,45 @@ LDM coordinates several third-party binaries to perform system-level tasks (e.g.
 
 For a complete breakdown of each third-party dependency, including their optional vs. mandatory statuses, feature impacts, and deprecation details (such as the deprecation of the `nc/ncat` check in favor of native Log4j hot-reloading), see the [THIRD_PARTY_TOOLS.md](../reference/third_party_tools.md) guide.
 
+## 7. Liferay Tunnel GUI Integration
+
+To provide a seamless, unified UX where CLI users and GUI users share the exact same state, configurations, and behaviors, LDM and the standalone Liferay Tunnel System Tray App are integrated via an **API-Driven Architecture**.
+
+- **API Bridge**: The GUI app (written natively in Go) hosts a local REST API (`http://127.0.0.1:4141`) that LDM calls whenever a tunnel is initiated or stopped from the CLI. This updates the Tray App's visual state instantly without fragile file locks.
+  - **Start/Sync**: `POST /api/tunnels/sync` with JSON payload `{"source": "ldm", "project": "project-name", ...}`
+  - **Stop/Remove**: `DELETE /api/tunnels/sync?project=project-name`
+- **CLI Subprocessing**: When a user clicks "Share" inside the GUI for an LDM-managed project, the GUI delegates the task by executing the `ldm share start <project> --provider lfr-tunnel` CLI command as a subprocess. This ensures LDM retains control over complex orchestration tasks, such as generating `.env` properties and rewriting `portal-ext.properties` via `ssl-mode share`.
+- **Direct Tomcat Bypass**: The tunnel securely binds downstream traffic to Liferay's internal port `127.0.0.1:8080`, entirely bypassing Traefik proxy and avoiding 404 Gateway SNI mismatch errors.
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant GUI as Tunnel GUI (Tray + API)
+    participant LDM as LDM CLI Engine
+    participant Tunnel as lfr-tunnel Daemon
+    participant Liferay as Liferay (Port 8080)
+
+    Note over User,Liferay: Scenario: CLI-Driven Start (LDM -> GUI API)
+    
+    User->>LDM: Exec `ldm share start Project_X`
+    activate LDM
+    LDM->>LDM: Exec `ssl-mode share` (Update properties)
+    LDM->>Tunnel: Spawn background daemon (Target 127.0.0.1:8080)
+    LDM->>GUI: POST /api/tunnels/sync {status: "live"}
+    deactivate LDM
+    GUI->>GUI: Update Tray Icon to Green
+
+    Note over User,Liferay: Scenario: GUI-Driven Start (GUI -> LDM CLI)
+
+    User->>GUI: Clicks "Share Project_Y"
+    GUI->>LDM: Subprocess `ldm share start Project_Y`
+    activate LDM
+    LDM->>Tunnel: Spawn background daemon
+    LDM->>GUI: POST /api/tunnels/sync {status: "live"}
+    deactivate LDM
+    GUI->>GUI: Update Tray Icon to Green
+```
+
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-07-17* | *Last Reviewed: 2026-07-02*
+*Last Updated: 2026-07-17* | *Last Reviewed: 2026-07-17*

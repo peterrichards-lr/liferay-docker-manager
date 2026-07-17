@@ -16,6 +16,7 @@ nav:
     - Data Management: how-to/data_management.md
     - Sharing & Tunnels: how-to/sharing_tunnels.md
     - Custom Containers: how-to/custom_containers.md
+    - Multi-Compose Architecture: how-to/multi_compose.md
     - Runtime Overrides: how-to/runtime_overrides.md
     - AI MCP Guide: how-to/ai_mcp_guide.md
     - Development: how-to/development.md
