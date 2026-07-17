@@ -1,3 +1,7 @@
+import os
+
+os.environ["PYSTRAY_BACKEND"] = "dummy"
+
 from unittest.mock import MagicMock, patch
 
 import pytest
