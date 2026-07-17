@@ -131,7 +131,7 @@ class ExtractionStage(PipelineStage):
 class ProjectSetupStage(PipelineStage):
     """Sets up the project directory and meta configuration."""
 
-    def execute(self, context: PipelineContext) -> None:
+    def execute(self, context: PipelineContext) -> None:  # noqa: C901, PLR0912, PLR0915
         context = typing.cast(ImportPipelineContext, context)
         manager = context.manager
         backup_dir = context.get("backup_dir")
@@ -318,7 +318,7 @@ class DatabaseRestoreStage(PipelineStage):
 class VolumeSyncStage(PipelineStage):
     """Synchronizes files and artifacts from the source workspace to the project paths."""
 
-    def execute(self, context: PipelineContext) -> None:
+    def execute(self, context: PipelineContext) -> None:  # noqa: C901, PLR0912, PLR0915
         import os
         import shutil
         import typing

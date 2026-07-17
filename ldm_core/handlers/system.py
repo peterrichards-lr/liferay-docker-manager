@@ -9,7 +9,7 @@ class SystemService(BaseHandler):
         super().__init__(manager.args)
         self.manager = manager
 
-    def cmd_nuke(self, force=False, keep_config=False):
+    def cmd_nuke(self, force=False, keep_config=False):  # noqa: C901, PLR0912, PLR0915
         """Completely wipes LDM state, caches, certificates, hosts, and containers."""
         if getattr(self.manager, "dry_run", False):
             UI.info(
@@ -141,7 +141,7 @@ class SystemService(BaseHandler):
         )
         return True
 
-    def cmd_rescue(self, project_id=None, clear_lock=False):
+    def cmd_rescue(self, project_id=None, clear_lock=False):  # noqa: C901, PLR0912, PLR0915
         """Active self-healing and recovery for LDM local environments."""
         if clear_lock:
             root = self.detect_project_path(project_id, fatal=True)
@@ -435,7 +435,7 @@ class SystemService(BaseHandler):
                 )
         return False
 
-    def cmd_init_ci(
+    def cmd_init_ci(  # noqa: C901, PLR0912
         self,
         repo=None,
         workflow_name="ldm-package-release.yml",

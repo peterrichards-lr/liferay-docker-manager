@@ -99,7 +99,7 @@ def get_projects() -> str:
     return json.dumps(projects, indent=2)
 
 
-def get_logs(
+def get_logs(  # noqa: C901, PLR0911, PLR0912
     project_id: str,
     lines: int = 200,
     grep: str | None = None,

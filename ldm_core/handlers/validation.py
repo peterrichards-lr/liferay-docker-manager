@@ -153,7 +153,7 @@ class CustomContainerValidator:
     CORE_SERVICES = frozenset({"liferay", "db", "search", "kibana", "proxy", "ngrok"})
 
     @staticmethod
-    def validate_custom_containers(containers: list) -> list[str]:
+    def validate_custom_containers(containers: list) -> list[str]:  # noqa: C901, PLR0912
         """Validates a list of custom container dictionaries. Returns a list of errors."""
         errors = []
 

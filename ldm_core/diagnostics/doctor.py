@@ -135,7 +135,7 @@ class DoctorRunner:
         self._check_project_specific()
         self._check_dangling_and_print()
 
-    def _check_tooling_and_integrity(self):
+    def _check_tooling_and_integrity(self):  # noqa: C901, PLR0912, PLR0915
         # 0. Version Check
         v_display = f"v{VERSION}{UI.get_beta_label(VERSION)}"
         if BUILD_INFO:
@@ -294,7 +294,7 @@ class DoctorRunner:
                     ("Shell Completion", f"Unsupported ({shell})", "warn")
                 )
 
-    def _check_docker_runtime(self):
+    def _check_docker_runtime(self):  # noqa: C901, PLR0912, PLR0915
         # 2. Docker Check
         # Perform a silent check first to avoid double error reporting in the UI
         self.docker_version = None
@@ -496,7 +496,7 @@ class DoctorRunner:
                     "WSL: To use Docker Desktop, ensure 'WSL Integration' is enabled in the Docker Desktop dashboard."
                 )
 
-    def _check_global_config_and_network(self):
+    def _check_global_config_and_network(self):  # noqa: C901, PLR0912, PLR0915
         # 3. mkcert Check
         mkcert_status, mkcert_ok, ca_root = check_mkcert(self.handler)
 
@@ -1084,7 +1084,7 @@ class DoctorRunner:
                 ("Global Infrastructure", "Skipped (Engine down)", "warn")
             )
 
-    def _check_project_specific(self):
+    def _check_project_specific(self):  # noqa: C901, PLR0912, PLR0915
         # 7. Project-Specific Check (Optional)
         for p_path in self.project_paths:
             UI.heading(f"Project Health: {p_path.name}")
@@ -1667,7 +1667,7 @@ class DoctorRunner:
             except Exception:
                 pass
 
-    def _check_dangling_and_print(self):
+    def _check_dangling_and_print(self):  # noqa: C901, PLR0912, PLR0915
         # 4.4 Dangling Docker Resources Check
         df_out = run_command(
             ["docker", "system", "df", "--format", "{{json .}}"], check=False
@@ -1937,7 +1937,7 @@ class DoctorRunner:
             UI.error(msg)
             sys.exit(1)
 
-    def _check_ssl_diagnostics(self):
+    def _check_ssl_diagnostics(self):  # noqa: C901, PLR0912, PLR0915
         UI.heading("LDM Doctor - SSL Diagnostics")
         target_domain = getattr(self.args, "domain", None)
         domains_to_check = []
@@ -2108,7 +2108,7 @@ def _verify_dependency_integrity(self, package_name: str) -> tuple[str, str | bo
     return "OK", True
 
 
-def check_mkcert(self):
+def check_mkcert(self):  # noqa: PLR0911
     """Checks for mkcert installation, root CA trust, and write permissions."""
     try:
         mkcert_bin = shutil.which("mkcert")
@@ -2311,7 +2311,7 @@ def _check_docker_resources(self, docker_info_raw):
         return []
 
 
-def validate_properties_file(self, file_path):
+def validate_properties_file(self, file_path):  # noqa: C901, PLR0912
     """Checks for structural errors and duplicate keys in a .properties file."""
     errors = []
     try:
@@ -2393,7 +2393,7 @@ def validate_lcp_json(self, file_path):
         return f"Check Failed ({e})", "warn", [str(e)]
 
 
-def _check_container_health_logs(self, container_name, add_hint=None, tail=20):
+def _check_container_health_logs(self, container_name, add_hint=None, tail=20):  # noqa: C901, PLR0912
     """Checks the last N lines of container logs for errors or warnings."""
     from ldm_core.docker_service import DockerService
 
@@ -2506,7 +2506,7 @@ def _check_container_health_logs(self, container_name, add_hint=None, tail=20):
         return None, None
 
 
-def _check_liferay_health_logs(self, container_name, tail=50):
+def _check_liferay_health_logs(self, container_name, tail=50):  # noqa: PLR0911
     """Checks the last N lines of Liferay logs for startup status and errors."""
     from ldm_core.docker_service import DockerService
 

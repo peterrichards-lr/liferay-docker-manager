@@ -324,7 +324,7 @@ class TestBaseProject(unittest.TestCase):
     @patch("ldm_core.handlers.base.get_actual_home")
     @patch("ldm_core.ui.UI.ask")
     @patch("ldm_core.ui.UI.die")
-    def test_check_registry_collisions_scenarios(self, mock_die, mock_ask, mock_home):
+    def test_check_registry_collisions_scenarios(self, mock_die, mock_ask, mock_home):  # noqa: PLR0915
         from ldm_core.constants import REGISTRY_FILE
 
         with tempfile.TemporaryDirectory() as base_tmp:

@@ -16,7 +16,7 @@ class SnapshotService(BaseHandler):
         super().__init__(manager.args)
         self.manager = manager
 
-    def _manage_snapshots(self, paths, delete_arg, keep_last, older_than):
+    def _manage_snapshots(self, paths, delete_arg, keep_last, older_than):  # noqa: C901, PLR0912
         backups_dir = paths["backups"]
         if not backups_dir.exists():
             UI.warning("No snapshots found to manage.")
@@ -152,7 +152,7 @@ class SnapshotService(BaseHandler):
 
         return backups
 
-    def cmd_snapshot(self, project_id=None, name=None):
+    def cmd_snapshot(self, project_id=None, name=None):  # noqa: C901, PLR0912, PLR0915
         """Creates or manages snapshots of the project state."""
         is_dry_run = os.environ.get("LDM_DRY_RUN", "").lower() == "true"
         if is_dry_run:
@@ -636,7 +636,7 @@ class SnapshotService(BaseHandler):
 
         UI.success(f"Snapshot saved: {snap_dir}")
 
-    def cmd_restore(
+    def cmd_restore(  # noqa: C901, PLR0912, PLR0915
         self, project_id=None, auto_index=None, backup_dir=None, no_run=None
     ):
         is_dry_run = os.environ.get("LDM_DRY_RUN", "").lower() == "true"
@@ -1418,7 +1418,7 @@ class SnapshotService(BaseHandler):
                 )
                 self._sync_volume(host_path, volume_name, direction="to_volume")
 
-    def _execute_orchestrated_db_restore(
+    def _execute_orchestrated_db_restore(  # noqa: C901, PLR0912, PLR0915
         self, db_container, db_type, sql_file, paths, project_meta
     ):
         """Internal helper to execute a robust SQL import into a running DB container."""
@@ -1757,7 +1757,7 @@ class SnapshotService(BaseHandler):
 
         return [{"path": d, "name": d.name} for d in subdirs]
 
-    def cmd_package(
+    def cmd_package(  # noqa: C901, PLR0912, PLR0915
         self,
         project_id=None,
         output_dir=None,

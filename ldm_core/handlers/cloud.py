@@ -65,7 +65,7 @@ class CloudService:
         UI.die("Authentication required for cloud operations.")
         return None
 
-    def _run_lcp_cmd(
+    def _run_lcp_cmd(  # noqa: C901, PLR0911, PLR0912, PLR0915
         self, args, capture_json=True, project=None, env=None, spinner=None, timeout=300
     ):
         """Runs an LCP command and returns parsed JSON or output string.
@@ -236,7 +236,7 @@ class CloudService:
                         return image.split(":")[1]
         return None
 
-    def cmd_cloud_fetch(
+    def cmd_cloud_fetch(  # noqa: C901, PLR0911, PLR0912, PLR0915
         self,
         project_id=None,
         env_id=None,

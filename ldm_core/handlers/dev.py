@@ -102,7 +102,7 @@ class DevService:
                 if not UI.confirm("Continue in Developer Mode?", "N"):
                     sys.exit(0)
 
-    def cmd_version(
+    def cmd_version(  # noqa: C901, PLR0912
         self,
         bump_type=None,
         promote=False,

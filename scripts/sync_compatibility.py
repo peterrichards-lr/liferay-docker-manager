@@ -23,7 +23,7 @@ def anonymize_content(content):
     return re.sub(r"Binary:\s+[^\n]+", "Binary:    [ANONYMIZED]", content)
 
 
-def get_report_metadata(report_path):
+def get_report_metadata(report_path):  # noqa: C901, PLR0912, PLR0915
     """Parses an LDM E2E verification report and returns metadata."""
     raw_content = report_path.read_text()
     content = strip_ansi(raw_content)
@@ -284,7 +284,7 @@ def get_report_metadata(report_path):
     }
 
 
-def sync_reports():
+def sync_reports():  # noqa: C901, PLR0912, PLR0915
     """Main synchronization logic."""
     results_dir = Path("references/verification-results")
     archive_dir = results_dir / "archived_findings"

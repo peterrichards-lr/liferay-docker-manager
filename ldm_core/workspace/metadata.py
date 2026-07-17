@@ -141,7 +141,7 @@ def _parse_lcp_json(self, content, context_name=None):
     return info
 
 
-def _scan_extension_metadata(self, folder_path=None, zip_ref=None):
+def _scan_extension_metadata(self, folder_path=None, zip_ref=None):  # noqa: C901
     info: dict[str, Any] = {
         "id": None,
         "type": None,
@@ -215,7 +215,7 @@ def _scan_extension_metadata(self, folder_path=None, zip_ref=None):
     return info
 
 
-def scan_client_extensions(self, root_dir, osgi_cx_dir, ce_build_dir, host_name=None):
+def scan_client_extensions(self, root_dir, osgi_cx_dir, ce_build_dir, host_name=None):  # noqa: C901, PLR0912, PLR0915
     extensions: list[dict[str, Any]] = []
     if not root_dir.exists():
         return extensions

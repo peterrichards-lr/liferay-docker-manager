@@ -262,7 +262,7 @@ class TestArchitecturalContracts(unittest.TestCase):
         mock_get.assert_called_once()
         self.assertEqual(samples_root, Path("/tmp/mock_samples"))
 
-    def test_cli_preprocess_gating_contracts(self):
+    def test_cli_preprocess_gating_contracts(self):  # noqa: C901
         """Mandate: All registered CLI subparsers/commands MUST be synchronized with preprocess_args."""
         import argparse
         import ast

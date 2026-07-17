@@ -31,7 +31,7 @@ def project_completer(prefix, **kwargs):
     return [r["path"].name for r in roots if r["path"].name.startswith(prefix)]
 
 
-def preprocess_args(args_list: list[str]) -> list[str]:
+def preprocess_args(args_list: list[str]) -> list[str]:  # noqa: C901, PLR0912
     if not args_list:
         return args_list
 
@@ -251,7 +251,7 @@ def preprocess_args(args_list: list[str]) -> list[str]:
     return processed_list
 
 
-def get_parser():
+def get_parser():  # noqa: PLR0915
     # Define a parent parser for common arguments shared by all subparsers
     # This allows flags like -v and -y to be placed both before AND after subcommands
     base_parent = argparse.ArgumentParser(add_help=False)
@@ -2081,7 +2081,7 @@ def check_and_display_upgrade_banner():
         pass
 
 
-def main():
+def main():  # noqa: C901, PLR0912, PLR0915
     from ldm_core.utils import reset_dry_run_vfs
 
     reset_dry_run_vfs()

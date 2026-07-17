@@ -13,7 +13,7 @@ from ldm_core.utils import (
 )
 
 
-def cmd_monitor(self, source_path=None, project_id=None):
+def cmd_monitor(self, source_path=None, project_id=None):  # noqa: C901, PLR0912, PLR0915
     try:
         from watchdog.events import FileSystemEventHandler
         from watchdog.observers import Observer

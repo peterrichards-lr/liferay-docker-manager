@@ -14,7 +14,7 @@ from ldm_core.utils import (
 )
 
 
-def _hydrate_from_workspace(self, workspace_root, paths, overwrite=True):
+def _hydrate_from_workspace(self, workspace_root, paths, overwrite=True):  # noqa: C901, PLR0912
     """Initial scan and sync of artifacts from workspace to project."""
     UI.info("Scanning workspace for built artifacts...")
 

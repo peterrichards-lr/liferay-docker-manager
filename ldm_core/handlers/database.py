@@ -88,7 +88,7 @@ class DatabaseService(BaseHandler):
 
         return True, None
 
-    def cmd_query(
+    def cmd_query(  # noqa: C901, PLR0911, PLR0912, PLR0915
         self, project_id=None, sql=None, output_format="table", allow_query=False
     ):
         """Execute a safe SELECT SQL query against the project database."""
