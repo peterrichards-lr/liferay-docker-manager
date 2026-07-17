@@ -54,8 +54,10 @@ class LiferayManager(
         self.system = SystemService(self)
 
         from ldm_core.handlers.share import ShareService
+        from ldm_core.handlers.tray import TrayService
 
         self.share = ShareService(self)
+        self.tray = TrayService(self)
 
         # Automatic CI detection
         if os.getenv("CI") or os.getenv("GITHUB_ACTIONS") or os.getenv("GITLAB_CI"):

@@ -118,6 +118,7 @@ def preprocess_args(args_list: list[str]) -> list[str]:
         "roi",
         "start",
         "inspector",
+        "tray",
         "setup",
         "fetch",
         "get",
@@ -1296,6 +1297,13 @@ def get_parser():
     )
     dashboard.add_argument("--token", help="CSRF/Authentication token for mutations")
 
+    # Command: tray
+    subparsers.add_parser(
+        "tray",
+        parents=[base_sub_parent],
+        help="Launch the cross-platform System Tray GUI",
+    )
+
     # Command: mcp
     subparsers.add_parser(
         "mcp",
@@ -2235,6 +2243,7 @@ def main():
             background=getattr(args, "background", False),
             token=getattr(args, "token", None),
         ),
+        ("tray", None): manager.tray.cmd_tray,
         ("hydrate", None): lambda: manager.cloud.cmd_hydrate(
             args.backup_path, getattr(args, "project", None)
         ),
