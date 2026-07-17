@@ -371,8 +371,8 @@ class TestWorkspaceImport(unittest.TestCase):
             )
             self.assertTrue(res)
 
-    @patch("ldm_core.handlers.workspace.safe_copy")
-    @patch("ldm_core.handlers.workspace.safe_move")
+    @patch("ldm_core.workspace.hydration.safe_copy")
+    @patch("ldm_core.workspace.hydration.safe_move")
     def test_hydrate_from_workspace_success(self, mock_move, mock_copy):
         with tempfile.TemporaryDirectory() as tmp_dir:
             source = Path(tmp_dir) / "source"
@@ -395,9 +395,9 @@ class TestWorkspaceImport(unittest.TestCase):
             self.assertTrue(mock_copy.called)
 
     @patch("ldm_core.docker_service.DockerService.is_running")
-    @patch("ldm_core.handlers.workspace.UI.confirm")
-    @patch("ldm_core.handlers.workspace.UI.die")
-    @patch("ldm_core.handlers.workspace.UI.info")
+    @patch("ldm_core.workspace.importer.UI.confirm")
+    @patch("ldm_core.workspace.importer.UI.die")
+    @patch("ldm_core.workspace.importer.UI.info")
     def test_ensure_stopped_not_running(
         self, mock_info, mock_die, mock_confirm, mock_is_running
     ):
@@ -410,9 +410,9 @@ class TestWorkspaceImport(unittest.TestCase):
             self.assertFalse(mock_confirm.called)
 
     @patch("ldm_core.docker_service.DockerService.is_running")
-    @patch("ldm_core.handlers.workspace.UI.confirm")
-    @patch("ldm_core.handlers.workspace.UI.die")
-    @patch("ldm_core.handlers.workspace.UI.info")
+    @patch("ldm_core.workspace.importer.UI.confirm")
+    @patch("ldm_core.workspace.importer.UI.die")
+    @patch("ldm_core.workspace.importer.UI.info")
     @patch.object(RuntimeService, "cmd_stop")
     def test_ensure_stopped_stop_running_flag(
         self, mock_stop, mock_info, mock_die, mock_confirm, mock_is_running
@@ -428,9 +428,9 @@ class TestWorkspaceImport(unittest.TestCase):
             self.assertFalse(mock_confirm.called)
 
     @patch("ldm_core.docker_service.DockerService.is_running")
-    @patch("ldm_core.handlers.workspace.UI.confirm")
-    @patch("ldm_core.handlers.workspace.UI.die")
-    @patch("ldm_core.handlers.workspace.UI.info")
+    @patch("ldm_core.workspace.importer.UI.confirm")
+    @patch("ldm_core.workspace.importer.UI.die")
+    @patch("ldm_core.workspace.importer.UI.info")
     @patch.object(RuntimeService, "cmd_stop")
     def test_ensure_stopped_non_interactive_auto_stop(
         self, mock_stop, mock_info, mock_die, mock_confirm, mock_is_running
@@ -447,8 +447,8 @@ class TestWorkspaceImport(unittest.TestCase):
             self.assertFalse(mock_confirm.called)
 
     @patch("ldm_core.docker_service.DockerService.is_running")
-    @patch("ldm_core.handlers.workspace.UI.confirm")
-    @patch("ldm_core.handlers.workspace.UI.die")
+    @patch("ldm_core.workspace.importer.UI.confirm")
+    @patch("ldm_core.workspace.importer.UI.die")
     @patch.object(RuntimeService, "cmd_stop")
     def test_ensure_stopped_leave_running(
         self, mock_stop, mock_die, mock_confirm, mock_is_running
@@ -469,8 +469,8 @@ class TestWorkspaceImport(unittest.TestCase):
             self.assertFalse(mock_confirm.called)
 
     @patch("ldm_core.docker_service.DockerService.is_running")
-    @patch("ldm_core.handlers.workspace.UI.confirm")
-    @patch("ldm_core.handlers.workspace.UI.die")
+    @patch("ldm_core.workspace.importer.UI.confirm")
+    @patch("ldm_core.workspace.importer.UI.die")
     @patch.object(RuntimeService, "cmd_stop")
     def test_ensure_stopped_interactive_confirm_yes(
         self, mock_stop, mock_die, mock_confirm, mock_is_running
@@ -487,8 +487,8 @@ class TestWorkspaceImport(unittest.TestCase):
             self.assertFalse(mock_die.called)
 
     @patch("ldm_core.docker_service.DockerService.is_running")
-    @patch("ldm_core.handlers.workspace.UI.confirm")
-    @patch("ldm_core.handlers.workspace.UI.die")
+    @patch("ldm_core.workspace.importer.UI.confirm")
+    @patch("ldm_core.workspace.importer.UI.die")
     @patch.object(RuntimeService, "cmd_stop")
     def test_ensure_stopped_interactive_confirm_no(
         self, mock_stop, mock_die, mock_confirm, mock_is_running
@@ -665,8 +665,8 @@ class TestWorkspaceScanners(unittest.TestCase):
             self.assertEqual(info["loadBalancer"]["targetPort"], 8081)
             self.assertEqual(info["env"]["VAR1"], "VAL1")
 
-    @patch("ldm_core.handlers.workspace.safe_copy")
-    @patch("ldm_core.handlers.workspace.safe_move")
+    @patch("ldm_core.workspace.hydration.safe_copy")
+    @patch("ldm_core.workspace.hydration.safe_move")
     def test_sync_cx_artifact(self, mock_move, mock_copy):
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp_path = Path(tmp_dir)
@@ -782,7 +782,7 @@ class TestWorkspaceRemoteImport(unittest.TestCase):
 
     @patch("subprocess.run")
     @patch("requests.get")
-    @patch("ldm_core.handlers.workspace.calculate_sha256", return_value="matching_hash")
+    @patch("ldm_core.workspace.importer.calculate_sha256", return_value="matching_hash")
     @patch("tarfile.open")
     def test_cmd_import_git_url_success(
         self, mock_tar_open, mock_calc_sha, mock_get, mock_sub_run
@@ -885,7 +885,7 @@ class TestWorkspaceRemoteImport(unittest.TestCase):
 
     @patch("subprocess.run")
     @patch("requests.get")
-    @patch("ldm_core.handlers.workspace.calculate_sha256", return_value="matching_hash")
+    @patch("ldm_core.workspace.importer.calculate_sha256", return_value="matching_hash")
     @patch("tarfile.open")
     def test_cmd_import_git_url_clone_only(
         self, mock_tar_open, mock_calc_sha, mock_get, mock_sub_run
@@ -1027,7 +1027,7 @@ class TestWorkspaceRemoteImport(unittest.TestCase):
 
     @patch("subprocess.run")
     @patch("requests.get")
-    @patch("ldm_core.handlers.workspace.calculate_sha256", return_value="matching_hash")
+    @patch("ldm_core.workspace.importer.calculate_sha256", return_value="matching_hash")
     @patch("tarfile.open")
     def test_cmd_import_remote_unsupported_db_type(
         self, mock_tar_open, mock_calc_sha, mock_get, mock_sub_run
@@ -1109,7 +1109,7 @@ class TestWorkspaceRemoteImport(unittest.TestCase):
 
     @patch("subprocess.run")
     @patch("requests.get")
-    @patch("ldm_core.handlers.workspace.calculate_sha256", return_value="matching_hash")
+    @patch("ldm_core.workspace.importer.calculate_sha256", return_value="matching_hash")
     @patch("tarfile.open")
     def test_cmd_import_git_url_empty_ldmp_fallback(
         self, mock_tar_open, mock_calc_sha, mock_get, mock_sub_run
