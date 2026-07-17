@@ -102,7 +102,7 @@ class ShareService:
             pass
         return None
 
-    def _ensure_binary(self):
+    def _ensure_binary(self):  # noqa: C901, PLR0912, PLR0915
         """Ensures the correct version of lfr-tunnel is installed, downloading it if necessary."""
         bin_path = self._get_binary_path()
         installed_ver = self._get_installed_version(bin_path)
@@ -321,7 +321,7 @@ class ShareService:
         )
         return None
 
-    def resolve_share_config(self, project_meta=None, provider=None, domain=None):
+    def resolve_share_config(self, project_meta=None, provider=None, domain=None):  # noqa: PLR0912
         """Resolves share provider and share domain, prompting the user if not configured."""
         # 1. Resolve provider
         if not provider:
@@ -467,7 +467,7 @@ class ShareService:
 
         return f"https://{subdomain}.{domain}"
 
-    def cmd_start(
+    def cmd_start(  # noqa: C901, PLR0912, PLR0915
         self,
         project_id=None,
         subdomain=None,
@@ -813,7 +813,7 @@ class ShareService:
                 if res.stderr:
                     print(res.stderr.strip())
 
-    def cmd_status(self, project_id=None):
+    def cmd_status(self, project_id=None):  # noqa: C901, PLR0912, PLR0915
         """Queries the status of the active sharing tunnel."""
         root = self.manager.detect_project_path(project_id)
         project_meta = self.manager.read_meta(root) if root else {}
@@ -988,7 +988,7 @@ class ShareService:
             except Exception as e:
                 UI.die(f"Process invocation error: {e}")
 
-    def cmd_stop(self, project_id=None):
+    def cmd_stop(self, project_id=None):  # noqa: C901, PLR0912, PLR0915
         """Terminates the active sharing tunnel."""
         root = self.manager.detect_project_path(project_id)
         project_meta = self.manager.read_meta(root) if root else {}
@@ -1149,7 +1149,7 @@ class ShareService:
             # Silently ignore if the GUI app is not running
             pass
 
-    def _poll_tunnel_health(self, subdomain, container_name=None, timeout=10):
+    def _poll_tunnel_health(self, subdomain, container_name=None, timeout=10):  # noqa: C901, PLR0912, PLR0915
         """Polls the lfr-tunnel status to verify connection health using -status-json."""
         import time
 

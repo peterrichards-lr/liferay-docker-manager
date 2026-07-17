@@ -151,7 +151,7 @@ class ComposerService:
 
         return active
 
-    def write_docker_compose(self, paths, meta, liferay_env=None):
+    def write_docker_compose(self, paths, meta, liferay_env=None):  # noqa: C901, PLR0912, PLR0915
         """Generates the docker-compose.yml file using the Builder Pattern."""
         # Ensure paths is a dictionary for subscripting
         if not isinstance(paths, dict):
@@ -529,7 +529,7 @@ class ComposerService:
         # Current policy: Named Volumes are used on all platforms to prevent locking errors.
         return True
 
-    def _build_liferay_service(
+    def _build_liferay_service(  # noqa: C901, PLR0912, PLR0915
         self, paths, meta, host_name, project_name, ssl_enabled, base_env
     ):
         """Constructs the primary Liferay service definition."""
@@ -1194,7 +1194,7 @@ class ComposerService:
             return service
         return None
 
-    def _build_extensions_services(
+    def _build_extensions_services(  # noqa: C901, PLR0912
         self, paths, meta, host_name, project_name, ssl_enabled
     ):
         # 4. Append Microservices/Client Extensions

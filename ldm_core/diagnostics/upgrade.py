@@ -43,7 +43,7 @@ def _get_manual_upgrade_cmd(handler, url, exe_path):
     return f'{prefix}curl -L "{url}" -o "{exe_path}" && {prefix}chmod +x "{exe_path}"'
 
 
-def run_upgrade(handler):
+def run_upgrade(handler):  # noqa: C901, PLR0911, PLR0912, PLR0915
     """Self-upgrade the LDM binary to the latest version."""
     UI.heading("LDM Self-Upgrade")
     is_repair = getattr(handler.manager.args, "repair", False)

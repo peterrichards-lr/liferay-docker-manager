@@ -51,7 +51,7 @@ def run_cache(handler, target="all"):
         UI.success(f"Successfully cleared: {', '.join(cleared)}")
 
 
-def run_prune(handler):
+def run_prune(handler):  # noqa: C901, PLR0912, PLR0915
     UI.heading("LDM Global Maintenance - Pruning Orphaned Resources")
     is_dry_run = getattr(handler.manager, "dry_run", False)
     prune_all = getattr(handler.manager.args, "all", False)

@@ -119,7 +119,7 @@ class BaseHandler:
 
         return True
 
-    def _pre_flight_checks(self, host_name, port, ssl_enabled=False, meta=None):
+    def _pre_flight_checks(self, host_name, port, ssl_enabled=False, meta=None):  # noqa: C901, PLR0912
         """Runs critical safety checks before starting containers."""
         root = Path(meta.get("root"))
         # 1. RAM Check
@@ -434,7 +434,7 @@ class BaseHandler:
                 UI.die("No available ports found.")
         return port
 
-    def check_registry_collisions(self, project_name, project_root, host_name=None):
+    def check_registry_collisions(self, project_name, project_root, host_name=None):  # noqa: C901, PLR0912, PLR0915
         """Checks if another project with the same name or hostname exists at a different path."""
         from ldm_core.constants import REGISTRY_FILE
 
@@ -793,7 +793,7 @@ class BaseHandler:
             pass
         return "unknown"
 
-    def select_project_interactively(self, roots=None, heading="Select Project"):
+    def select_project_interactively(self, roots=None, heading="Select Project"):  # noqa: C901, PLR0912
         """Prompts the user to select a project from a list."""
         if self.non_interactive:
             return None
@@ -940,7 +940,7 @@ class BaseHandler:
                 except RuntimeError as e:
                     UI.die(str(e))
 
-    def _detect_project_path_raw(self, project_id=None, for_init=False, fatal=True):
+    def _detect_project_path_raw(self, project_id=None, for_init=False, fatal=True):  # noqa: C901, PLR0911, PLR0912, PLR0915
         """Resolves a project ID or path to a full filesystem path."""
         no_home_warn = False
         if hasattr(self, "args") and self.args is not None:
@@ -1185,7 +1185,7 @@ class BaseHandler:
         parts = re.findall(r"\d+", str(tag))
         return tuple(map(int, parts))
 
-    def get_common_dir(self, project_path=None):
+    def get_common_dir(self, project_path=None):  # noqa: PLR0911
         """Finds the 'common' directory by prioritizing Env, CWD, Project Parent, then Global ~/.ldm/common."""
         # Priority 1: Environment override
         env_common = os.environ.get("LDM_COMMON_DIR")
@@ -1300,7 +1300,7 @@ class BaseHandler:
             "compose": root / "docker-compose.yml",
         }
 
-    def verify_runtime_environment(self, paths):
+    def verify_runtime_environment(self, paths):  # noqa: C901, PLR0912, PLR0915
         """Verifies volume mounts and synchronizes permissions across the project root."""
         # Safety: If passed a direct path (common error in refactored handlers), initialize paths dict
         if not isinstance(paths, dict):

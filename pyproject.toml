@@ -62,19 +62,16 @@ select = [
     "N",    # pep8-naming
     "PL",   # pylint
     "RUF",  # Ruff-specific rules
+    "C90",  # mccabe
 ]
 ignore = [
     "E501",    # Line too long (fix gradually)
     "PLC0415", # localized imports (intentional for performance/dependency isolation)
-    "PLR0912", # Too many branches
-    "PLR0913", # Too many arguments
-    "PLR0915", # Too many statements
     "PLR2004", # Magic value in comparison
     "B904",    # Within an except clause, raise exceptions with raise ... from err
     "N806",    # Variable name should be lowercase
     "PTH123",  # open() should be replaced by Path.open()
     "RUF001",  # Ambiguous unicode character
-    "PLR0911", # Too many return statements
     "ARG001",  # Unused function argument
     "ARG002",  # Unused method argument
     "ARG004",  # Unused static method argument
@@ -104,8 +101,14 @@ ignore = [
 [tool.ruff.lint.isort]
 known-first-party = ["ldm_core"]
 
+[tool.ruff.lint.mccabe]
+max-complexity = 15
+
 [tool.ruff.lint.pylint]
 max-args = 8
+max-branches = 15
+max-returns = 6
+max-statements = 60
 
 [tool.pytest.ini_options]
 testpaths = ["ldm_core/tests"]

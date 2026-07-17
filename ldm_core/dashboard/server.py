@@ -381,7 +381,7 @@ def api_logs(project_name):
 
 
 @bp.route("/api/projects/<project_name>/properties")
-def api_project_properties(project_name):
+def api_project_properties(project_name):  # noqa: C901, PLR0912, PLR0915
     import re
 
     if not re.match(r"^[a-zA-Z0-9_-]+$", project_name):
@@ -602,7 +602,7 @@ def api_project_properties(project_name):
 
 
 @bp.route("/api/projects/<project_name>/properties", methods=["PUT"])
-def api_update_project_property(project_name):
+def api_update_project_property(project_name):  # noqa: PLR0911
     import contextlib
     import re
 

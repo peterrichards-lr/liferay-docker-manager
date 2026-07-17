@@ -14,7 +14,7 @@ from ldm_core.utils import (
 )
 
 
-def cmd_import(
+def cmd_import(  # noqa: C901, PLR0912, PLR0915
     self,
     source_path,
     is_init_from=False,

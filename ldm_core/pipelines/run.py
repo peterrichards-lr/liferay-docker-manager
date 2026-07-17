@@ -60,7 +60,7 @@ class RunPipelineContext(PipelineContext):
 class ProjectInitializationStage(PipelineStage):
     """Handles project selection, discovery, and path setup."""
 
-    def execute(self, context: PipelineContext) -> None:
+    def execute(self, context: PipelineContext) -> None:  # noqa: C901, PLR0912
         context = typing.cast(RunPipelineContext, context)
         manager = context.manager
         paths = context.get("paths")
@@ -149,7 +149,7 @@ class ProjectInitializationStage(PipelineStage):
 class RuntimeValidationStage(PipelineStage):
     """Validates runtime, Docker engine state, port collisions, and downgrade constraints."""
 
-    def execute(self, context: PipelineContext) -> None:
+    def execute(self, context: PipelineContext) -> None:  # noqa: C901, PLR0912, PLR0915
         context = typing.cast(RunPipelineContext, context)
         manager = context.manager
         project_meta = context.get("project_meta")
@@ -303,7 +303,7 @@ class RuntimeValidationStage(PipelineStage):
 class ConfigResolutionStage(PipelineStage):
     """Resolves tags, databases, archtypes, and constructs project configuration."""
 
-    def execute(self, context: PipelineContext) -> None:
+    def execute(self, context: PipelineContext) -> None:  # noqa: C901, PLR0912, PLR0915
         context = typing.cast(RunPipelineContext, context)
         manager = context.manager
         project_meta = context.get("project_meta")
@@ -699,7 +699,7 @@ class ConfigResolutionStage(PipelineStage):
 class EnvironmentSetupStage(PipelineStage):
     """Initializes external volumes, seeds templates, and clears obsolete locks."""
 
-    def execute(self, context: PipelineContext) -> None:
+    def execute(self, context: PipelineContext) -> None:  # noqa: C901, PLR0912, PLR0915
         context = typing.cast(RunPipelineContext, context)
         manager = context.manager
         project_meta = context.get("project_meta")
@@ -803,7 +803,7 @@ class EnvironmentSetupStage(PipelineStage):
 class ComposerStage(PipelineStage):
     """Generates compose definitions and applies overrides."""
 
-    def execute(self, context: PipelineContext) -> None:
+    def execute(self, context: PipelineContext) -> None:  # noqa: C901, PLR0912, PLR0915
         context = typing.cast(RunPipelineContext, context)
         manager = context.manager
         project_meta = context.get("project_meta")
@@ -1139,7 +1139,7 @@ class ComposerStage(PipelineStage):
 class ExecutionStage(PipelineStage):
     """Boots dependencies, checks readiness, and starts Liferay."""
 
-    def execute(self, context: PipelineContext) -> None:
+    def execute(self, context: PipelineContext) -> None:  # noqa: C901, PLR0912, PLR0915
         context = typing.cast(RunPipelineContext, context)
         manager = context.manager
         paths = context.get("paths")

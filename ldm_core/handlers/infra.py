@@ -217,7 +217,7 @@ class InfraService:
                 UI.error(f"Failed to reclaim ownership: {e}")
         return False
 
-    def setup_ssl(self, cert_dir, host_name):
+    def setup_ssl(self, cert_dir, host_name):  # noqa: PLR0911, PLR0912
         """Ensures valid locally-trusted wildcard certificates exist for the host."""
         if not shutil.which("mkcert"):
             UI.error("LDM Requirement Missing: mkcert")
@@ -504,7 +504,7 @@ tls:
                     break
                 time.sleep(2)
 
-    def setup_global_search(self, force=False, _depth=0):
+    def setup_global_search(self, force=False, _depth=0):  # noqa: C901, PLR0912, PLR0915
         """Ensures the global ES8 search service is running."""
         # LDM-369: Sidecar Protection. If the current project metadata explicitly
         # disables shared search, we MUST NOT touch the global search infrastructure.
@@ -743,7 +743,7 @@ tls:
         else:
             UI.die(f"Unknown system subcommand: {subcommand}")
 
-    def cmd_system_relocate(self, target_path):
+    def cmd_system_relocate(self, target_path):  # noqa: C901, PLR0912
         """Safely moves LDM and Docker data to an external drive via symbolic links."""
         from pathlib import Path
 

@@ -219,7 +219,7 @@ def create_and_push_tag(version):
     )
 
 
-def main():
+def main():  # noqa: C901, PLR0912, PLR0915
     parser = argparse.ArgumentParser(description="Automated Release Script")
     parser.add_argument(
         "--bump",

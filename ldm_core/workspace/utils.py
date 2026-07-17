@@ -47,7 +47,7 @@ def _ensure_stopped(self, project_name, project_path):
             UI.die("Import aborted. Cannot modify a running project's foundation.")
 
 
-def _rewrite_oauth_urls_in_zip(
+def _rewrite_oauth_urls_in_zip(  # noqa: C901, PLR0912, PLR0915
     self,
     zip_path: Path,
     host_name: str,

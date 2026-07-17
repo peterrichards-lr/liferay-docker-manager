@@ -18,7 +18,7 @@ class AssetService:
     def __init__(self, manager=None):
         self.manager = manager
 
-    def _fetch_seed(self, tag, db_type, search_mode, paths):
+    def _fetch_seed(self, tag, db_type, search_mode, paths):  # noqa: C901, PLR0911, PLR0912, PLR0915
         """Discovers and downloads a pre-warmed seed from GitHub Releases with Offline-First logic."""
         from ldm_core.constants import SEED_VERSION
 

@@ -404,7 +404,7 @@ class CommandRunner:
     def __init__(self, env: dict[str, str] | None = None):
         self.env = env
 
-    def run(
+    def run(  # noqa: C901, PLR0912, PLR0913
         self,
         cmd,
         shell: bool = False,
@@ -537,7 +537,7 @@ class CommandRunner:
 
 
 class DryRunCommandRunner(CommandRunner):
-    def run(
+    def run(  # noqa: PLR0913
         self,
         cmd,
         shell: bool = False,
@@ -584,7 +584,7 @@ def set_runner(runner: CommandRunner | None) -> None:
     _CURRENT_RUNNER = runner
 
 
-def run_command(
+def run_command(  # noqa: PLR0913
     cmd,
     shell: bool = False,
     capture_output: bool = True,
@@ -953,7 +953,7 @@ def validate_liferay_tag(tag):
         return True
 
 
-def resolve_liferay_docker_tag(tag, manager=None):
+def resolve_liferay_docker_tag(tag, manager=None):  # noqa: C901, PLR0912, PLR0915
     """
     Resolves a partial or user-supplied tag (e.g., '2026.q1.7', 'dxp-2026.q1.7')
     to the official Docker image tag (e.g., '2026.q1.7-lts') using releases.json.
@@ -1077,7 +1077,7 @@ def resolve_liferay_docker_tag(tag, manager=None):
     return None, None
 
 
-def discover_latest_tag(
+def discover_latest_tag(  # noqa: C901, PLR0912, PLR0915
     api_url, release_type="any", prefix_filter=None, verbose=False, refresh=False
 ):
     cache_path = get_actual_home() / ".liferay_docker_cache.json"
@@ -1270,7 +1270,7 @@ def is_within_root(path, root):
         return False
 
 
-def read_meta(path):
+def read_meta(path):  # noqa: C901, PLR0912
     """Reads LDM project metadata from a file (supports JSON and Flat formats)."""
     meta: dict[str, Any] = {}
     path = Path(path)
@@ -1405,7 +1405,7 @@ def write_meta(path, meta):
         UI.warning(f"Could not write metadata at {path}: {e}")
 
 
-def find_dxp_roots(search_dir=None):
+def find_dxp_roots(search_dir=None):  # noqa: C901, PLR0912, PLR0915
     """Discovers LDM projects in the target directory by looking for metadata or specific structure."""
     from ldm_core.constants import PROJECT_META_FILE, REGISTRY_FILE
 
@@ -1624,7 +1624,7 @@ def get_docker_socket_path():
     return "/var/run/docker.sock"
 
 
-def verify_executable_checksum(version):
+def verify_executable_checksum(version):  # noqa: C901, PLR0911, PLR0912
     """Verifies the current binary against the official checksums.txt from GitHub."""
     exe_path = Path(sys.argv[0]).resolve()
 
@@ -1816,7 +1816,7 @@ def _check_updates_fallback(cache_file, now):
     return None, None
 
 
-def check_for_updates(current_version, force=False, pre_release=False, tag=None):
+def check_for_updates(current_version, force=False, pre_release=False, tag=None):  # noqa: C901, PLR0911, PLR0912, PLR0915
     """Checks GitHub for the latest release of LDM."""
     cache_suffix = "_pre" if pre_release else ""
     cache_file = Path.home() / f".ldm_update_cache{cache_suffix}"
@@ -2374,7 +2374,7 @@ def check_troubleshooting_signatures(line):
     return None
 
 
-def resolve_infrastructure_mode(mode_key, meta, defaults, args_override=None):
+def resolve_infrastructure_mode(mode_key, meta, defaults, args_override=None):  # noqa: PLR0911
     """
     Resolves the infrastructure mode (database_mode or search_mode), respecting legacy fallbacks.
     Prioritizes: 1. CLI Override, 2. Project Meta, 3. Defaults (with version-aware fallbacks).

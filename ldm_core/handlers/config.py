@@ -161,7 +161,7 @@ class ConfigService:
 
         return props, important_keys
 
-    def validate_properties(
+    def validate_properties(  # noqa: C901, PLR0912, PLR0915
         self, paths, properties_dict, project_meta, is_dry_run=False
     ):
         """Statically verifies properties for quotes, JDBC structure, database compatibility, and mount paths."""
@@ -304,7 +304,7 @@ class ConfigService:
                 "Config Integrity check failed: properties validation errors detected."
             )
 
-    def update_portal_ext(self, paths, updates, important_keys=None):
+    def update_portal_ext(self, paths, updates, important_keys=None):  # noqa: C901, PLR0912
         """Updates or adds properties in portal-ext.properties, handling multi-line values."""
         if not updates:
             return
@@ -625,7 +625,7 @@ class ConfigService:
 
                 traceback.print_exc()
 
-    def sync_common_assets(
+    def sync_common_assets(  # noqa: C901, PLR0912, PLR0915
         self, paths, host_updates=None, version=None, project_meta=None
     ):
         # Safety: If passed a direct path (common error in refactored handlers), initialize paths dict
@@ -1343,7 +1343,7 @@ class ConfigService:
             self.manager.write_meta(project_path, meta)
             UI.success(f"Project database mode set to: {UI.CYAN}{mode}{UI.COLOR_OFF}")
 
-    def cmd_edit(self, project_id=None, target="meta", tui=False):
+    def cmd_edit(self, project_id=None, target="meta", tui=False):  # noqa: C901, PLR0912, PLR0915
         root_path = self.manager.detect_project_path(project_id)
         if not root_path:
             return
@@ -1635,7 +1635,7 @@ class ConfigService:
                 except Exception:
                     pass
 
-    def cmd_env(self, project_id=None):
+    def cmd_env(self, project_id=None):  # noqa: C901, PLR0912, PLR0915
         pid = project_id
         vars_to_apply = getattr(self.manager.args, "vars", [])
         if vars_to_apply and "=" not in vars_to_apply[0] and not pid:
@@ -1955,7 +1955,7 @@ class ConfigService:
                 f"Synchronized Liferay URL configuration in {updated_count} local environment file(s) to: {target_url}"
             )
 
-    def cmd_config_add_container(self, args):
+    def cmd_config_add_container(self, args):  # noqa: C901, PLR0912, PLR0915
         """Interactively add a custom container to the project configuration by inspecting the image."""
         import json
         import subprocess

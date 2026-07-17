@@ -224,7 +224,7 @@ def run_man(handler):
         UI.info(f"You can view the raw manual file at: {man_path}")
 
 
-def run_setup_completion(handler, target_shell=None):
+def run_setup_completion(handler, target_shell=None):  # noqa: C901, PLR0912, PLR0915
     """Automates the setup of autocomplete for the detected or specified shell."""
     # 1. Verify/install argcomplete
     try:

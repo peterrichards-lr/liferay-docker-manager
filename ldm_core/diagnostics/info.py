@@ -11,7 +11,7 @@ from ldm_core.utils import (
 )
 
 
-def run_info(handler, project_id=None):
+def run_info(handler, project_id=None):  # noqa: C901, PLR0912, PLR0915
     """Displays user-friendly project metadata."""
     root = handler.manager.detect_project_path(project_id)
     if not root:
@@ -193,7 +193,7 @@ def run_info(handler, project_id=None):
     UI.raw("")
 
 
-def run_status(handler, project_id=None, all_projects=False, detailed=False):
+def run_status(handler, project_id=None, all_projects=False, detailed=False):  # noqa: C901, PLR0912, PLR0915
     """Displays a summary of active global services and projects."""
     UI.heading("LDM Service Status")
 
@@ -465,7 +465,7 @@ def run_status(handler, project_id=None, all_projects=False, detailed=False):
             sys.exit(0)
 
 
-def _get_env_info(self):
+def _get_env_info(self):  # noqa: C901, PLR0912, PLR0915
     """Extracts architecture, OS, and Docker provider information."""
     arch = "Unknown"
     host_os = "Unknown"

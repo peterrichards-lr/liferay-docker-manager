@@ -142,7 +142,7 @@ class RuntimeService(BaseHandler):
                 UI.error("Reseed failed.")
         return None
 
-    def _scan_for_expected_deployables(self, root_path):
+    def _scan_for_expected_deployables(self, root_path):  # noqa: C901, PLR0912
         """Scans workspace deploy and client-extensions paths for deployable targets.
 
         Returns a dict of {bundle_symbolic_name_or_cx_id: expected_state}
@@ -258,7 +258,7 @@ class RuntimeService(BaseHandler):
                 )
         return errors
 
-    def _patch_fragment_overrides(self, project_meta, paths):
+    def _patch_fragment_overrides(self, project_meta, paths):  # noqa: C901, PLR0912, PLR0915
         """Execute headless API requests to dynamically patch fragment configurations."""
         import base64
         import json
@@ -592,7 +592,7 @@ class RuntimeService(BaseHandler):
         else:
             UI.warning("No matching fragments found on any site pages after waiting.")
 
-    def cmd_wait(
+    def cmd_wait(  # noqa: C901, PLR0912, PLR0915
         self,
         project_id=None,
         timeout=None,
@@ -908,7 +908,7 @@ class RuntimeService(BaseHandler):
             UI.debug(f"Could not retrieve ngrok public URL: {e}")
         UI.warning("ngrok container is running, but failed to retrieve public URL.")
 
-    def _wait_for_ready(
+    def _wait_for_ready(  # noqa: C901, PLR0912, PLR0915
         self,
         project_meta,
         host_name,
@@ -1361,7 +1361,7 @@ class RuntimeService(BaseHandler):
                 cmd.append(service)
             self.manager.run_command(cmd, capture_output=capture, cwd=str(root))
 
-    def cmd_down(
+    def cmd_down(  # noqa: C901, PLR0912, PLR0915
         self,
         project_id=None,
         service=None,
@@ -1682,7 +1682,7 @@ class RuntimeService(BaseHandler):
         except KeyboardInterrupt:
             pass
 
-    def _cmd_logs_instance(
+    def _cmd_logs_instance(  # noqa: PLR0913
         self,
         project_id=None,
         service=None,
@@ -1787,7 +1787,7 @@ class RuntimeService(BaseHandler):
             export_prefix=f"{root.name}-{container_name}",
         )
 
-    def _run_log_command(
+    def _run_log_command(  # noqa: C901, PLR0912, PLR0913, PLR0915
         self,
         cmd,
         env=None,
@@ -1970,7 +1970,7 @@ class RuntimeService(BaseHandler):
                 except subprocess.TimeoutExpired:
                     process.kill()
 
-    def cmd_logs(
+    def cmd_logs(  # noqa: C901, PLR0912, PLR0913, PLR0915
         self,
         project_id=None,
         service=None,
