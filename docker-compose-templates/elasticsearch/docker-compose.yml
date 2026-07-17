@@ -1,0 +1,35 @@
+version: '3.8'
+
+services:
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.11.3
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - xpack.security.enrollment.enabled=false
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+    ports:
+      - "9200:9200"
+    networks:
+      - elastic-internal
+      - shared-search-net
+
+  kibana:
+    image: docker.elastic.co/kibana/kibana:8.11.3
+    profiles:
+      - kibana
+    environment:
+      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+    ports:
+      - "5601:5601"
+    depends_on:
+      - elasticsearch
+    networks:
+      - elastic-internal
+      - shared-search-net
+
+networks:
+  elastic-internal:
+    driver: bridge
+  shared-search-net:
+    external: true

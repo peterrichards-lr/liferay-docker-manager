@@ -574,6 +574,12 @@ class ShareService:
                         UI.success(
                             f"🌍 Public Tunnel Active: {UI.CYAN}{public_url}{UI.COLOR_OFF}"
                         )
+                        self._sync_gui_state(
+                            "start",
+                            project_id,
+                            public_url,
+                            int(ports) if str(ports).isdigit() else 8080,
+                        )
                         if res.stdout:
                             print(res.stdout.strip())
                     else:
@@ -709,6 +715,12 @@ class ShareService:
                     public_url = self.resolve_public_tunnel_url(subdomain, project_id)
                     UI.success(
                         f"🌍 Public Tunnel Active: {UI.CYAN}{public_url}{UI.COLOR_OFF}"
+                    )
+                    self._sync_gui_state(
+                        "start",
+                        project_id,
+                        public_url,
+                        int(ports) if str(ports).isdigit() else 8080,
                     )
                 else:
                     UI.error(f"Tunnel container healthcheck failed: {err_msg}")
@@ -1056,6 +1068,7 @@ class ShareService:
             )
             if res.returncode == 0:
                 UI.success("Tunnel container stopped and removed.")
+                self._sync_gui_state("stop", project_id)
             else:
                 UI.error(f"Failed to stop tunnel container (Exit {res.returncode})")
                 if res.stderr:
@@ -1079,12 +1092,62 @@ class ShareService:
                 return
             try:
                 res = subprocess.run(cmd, capture_output=True, text=True, check=False)
+                if res.returncode == 0:
+                    UI.success("Tunnel stopped.")
+                    self._sync_gui_state("stop", project_id)
                 if res.stdout:
                     print(res.stdout.strip())
                 if res.stderr and res.returncode != 0:
                     print(res.stderr.strip())
             except Exception as e:
                 UI.die(f"Process invocation error: {e}")
+
+    def _sync_gui_state(
+        self,
+        action: str,
+        project_id: str,
+        public_url: str | None = None,
+        target_port: int = 8080,
+    ):
+        """Synchronizes tunnel state with the standalone Liferay Tunnel GUI Tray App."""
+        import json
+        import urllib.error
+        import urllib.parse
+        import urllib.request
+
+        if getattr(self.manager, "dry_run", False):
+            return
+
+        try:
+            if action == "start":
+                req = urllib.request.Request(
+                    "http://127.0.0.1:4141/api/tunnels/sync",
+                    data=json.dumps(
+                        {
+                            "source": "ldm",
+                            "project": project_id,
+                            "status": "active",
+                            "target_port": target_port,
+                            "public_url": public_url,
+                        }
+                    ).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+            elif action == "stop":
+                safe_project = urllib.parse.quote(project_id or "")
+                req = urllib.request.Request(
+                    f"http://127.0.0.1:4141/api/tunnels/sync?project={safe_project}",
+                    method="DELETE",
+                )
+            else:
+                return
+
+            with urllib.request.urlopen(req, timeout=1.0):  # nosec B310
+                pass
+        except Exception:
+            # Silently ignore if the GUI app is not running
+            pass
 
     def _poll_tunnel_health(self, subdomain, container_name=None, timeout=10):
         """Polls the lfr-tunnel status to verify connection health using -status-json."""

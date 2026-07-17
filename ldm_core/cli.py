@@ -55,6 +55,7 @@ def preprocess_args(args_list: list[str]) -> list[str]:
         "feature",
         "log-level",
         "edit",
+        "add-container",
         "rebuild-properties",
         "revert-properties",
         "reset-properties",
@@ -193,6 +194,7 @@ def preprocess_args(args_list: list[str]) -> list[str]:
                 "feature",
                 "log-level",
                 "edit",
+                "add-container",
                 "rebuild-properties",
                 "revert-properties",
                 "reset-properties",
@@ -1706,6 +1708,20 @@ def get_parser():
         help="Do not automatically stop and restart the containers",
     )
 
+    add_container = config_subparsers.add_parser(
+        "add-container",
+        parents=[base_sub_parent],
+        help="Interactively add a custom container to the LDM project configuration",
+    )
+    add_container.add_argument(
+        "--image", required=True, help="Docker image name (e.g. wordpress:latest)"
+    )
+    add_container.add_argument(
+        "--service-name", help="Name for the service in docker-compose.yml"
+    )
+    add_container.add_argument("project", nargs="?")
+    add_container.add_argument("-p", "--project", dest="project_flag")
+
     # Namespace: db
     db = subparsers.add_parser(
         "db",
@@ -2466,6 +2482,9 @@ def main():
             getattr(args, "project", None),
             subdomain=getattr(args, "subdomain", None),
             domain=getattr(args, "domain", None),
+        ),
+        ("config", "add-container"): lambda: manager.config.cmd_config_add_container(
+            args
         ),
         # db namespace:
         ("db", "query"): lambda: manager.database.cmd_query(

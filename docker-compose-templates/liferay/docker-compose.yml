@@ -1,0 +1,39 @@
+version: '3.8'
+
+services:
+  liferay:
+    image: liferay/portal:7.4.3.112-ga112
+    ports:
+      - "8080:8080"
+    environment:
+      - LIFERAY_JDBC_PERIOD_DEFAULT_PERIOD_DRIVER_UPPERCASE_CLASS_NAME=org.postgresql.Driver
+      - LIFERAY_JDBC_PERIOD_DEFAULT_PERIOD_URL=jdbc:postgresql://postgres:5432/lportal
+      - LIFERAY_JDBC_PERIOD_DEFAULT_PERIOD_USERNAME=lportal
+      - LIFERAY_JDBC_PERIOD_DEFAULT_PERIOD_PASSWORD=lportal
+      - LIFERAY_COMPANY_PERIOD_SECURITY_PERIOD_STRANGERS_PERIOD_VERIFY=false
+      # Connect to Elasticsearch
+      - LIFERAY_ELASTICSEARCH_CLUSTER_NAME=LiferayElasticsearchCluster
+      - LIFERAY_ELASTICSEARCH_NODE_NAMES=elasticsearch
+      - LIFERAY_ELASTICSEARCH_URL=http://elasticsearch:9200
+    depends_on:
+      - postgres
+    networks:
+      - liferay-internal
+      - shared-search-net
+
+  postgres:
+    image: postgres:14
+    environment:
+      - POSTGRES_DB=lportal
+      - POSTGRES_USER=lportal
+      - POSTGRES_PASSWORD=lportal
+    ports:
+      - "5432:5432"
+    networks:
+      - liferay-internal
+
+networks:
+  liferay-internal:
+    driver: bridge
+  shared-search-net:
+    external: true

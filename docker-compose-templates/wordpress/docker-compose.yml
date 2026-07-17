@@ -1,0 +1,45 @@
+version: '3.8'
+
+services:
+  wordpress:
+    image: wordpress:latest
+    ports:
+      - "8000:80"
+    environment:
+      WORDPRESS_DB_HOST: db
+      WORDPRESS_DB_USER: wpuser
+      WORDPRESS_DB_PASSWORD: test  # pragma: allowlist secret
+      WORDPRESS_DB_NAME: wpdb
+    depends_on:
+      - db
+    networks:
+      - wordpress-internal
+      - shared-crawl-net
+
+  db:
+    image: mariadb:10.6.4-focal
+    environment:
+      MYSQL_DATABASE: wpdb
+      MYSQL_USER: wpuser
+      MYSQL_PASSWORD: test  # pragma: allowlist secret
+      MYSQL_RANDOM_ROOT_PASSWORD: '1'
+    networks:
+      - wordpress-internal
+
+  elastic-connectors:
+    image: docker.elastic.co/enterprise-search/elastic-connectors:8.11.3
+    environment:
+      - ELASTICSEARCH_HOST=http://elasticsearch:9200
+      - ELASTICSEARCH_USERNAME=elastic
+      - ELASTICSEARCH_PASSWORD=changeme
+    networks:
+      - shared-search-net
+      - shared-crawl-net
+
+networks:
+  wordpress-internal:
+    driver: bridge
+  shared-search-net:
+    external: true
+  shared-crawl-net:
+    external: true

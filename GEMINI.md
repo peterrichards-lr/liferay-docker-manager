@@ -85,6 +85,7 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
   - [x] Created implementation plan and designed external Docker network architecture.
   - [x] Created GitHub Issue #618 for custom image packaging.
   - [x] Created GitHub Issue #619 for multi-compose stack integration.
+  - [x] Integrate WordPress LAMP and ES Web Crawler into multi-compose local architecture (Epic #619 completed).
   - [x] Designed cross-platform GUI system tray application and created GitHub Issue #637.
   - [x] Write target docker-compose.yml files for WordPress, Elasticsearch, and Liferay.
 
