@@ -44,4 +44,4 @@ When running `ldm run <project-name>` (or creating a fresh stack targeting the l
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-07-16* | *Last Reviewed: 2026-07-02*
+*Last Updated: 2026-07-17* | *Last Reviewed: 2026-07-02*
