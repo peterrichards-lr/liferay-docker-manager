@@ -1,4 +1,7 @@
+import json
 import os
+import subprocess
+import sys
 import threading
 import time
 import webbrowser
@@ -8,7 +11,9 @@ import pystray
 from PIL import Image, ImageDraw
 from pystray import MenuItem
 
+from ldm_core.constants import REGISTRY_FILE
 from ldm_core.ui import UI
+from ldm_core.utils import get_actual_home
 
 
 class LdmTrayApp:
@@ -66,51 +71,69 @@ class LdmTrayApp:
                 pass
             time.sleep(5)
 
-    def _start_project_thread(self):
+    def _get_registry(self):
+        registry_path = get_actual_home() / ".ldm" / REGISTRY_FILE
+        if registry_path.exists():
+            try:
+                return json.loads(registry_path.read_text())
+            except Exception:
+                return {}
+        return {}
+
+    def _open_file_or_dir(self, path):
+        if sys.platform == "win32":
+            os.startfile(path)  # type: ignore
+        elif sys.platform == "darwin":
+            subprocess.run(["open", path], check=False)
+        else:
+            subprocess.run(["xdg-open", path], check=False)
+
+    def on_open_portal(self, host_name):
+        webbrowser.open(f"http://{host_name}")
+
+    def on_copy_tunnel(self, tunnel_url):
+        webbrowser.open(tunnel_url)
+
+    def on_edit_properties(self, project_path):
+        props_path = os.path.join(project_path, "portal-ext.properties")
+        if not os.path.exists(props_path):
+            Path(props_path).touch()
+        self._open_file_or_dir(props_path)
+
+    def on_view_compose(self, project_path):
+        compose_path = os.path.join(project_path, "docker-compose.yml")
+        if os.path.exists(compose_path):
+            self._open_file_or_dir(compose_path)
+
+    def _stop_project_thread(self, project_id):
         try:
-            # We bypass the foreground log tailing by temporarily patching args
-            original_no_logs = getattr(self.manager.args, "no_logs", False)
-            self.manager.args.no_logs = True
-
-            project_path = self.manager.detect_project_path()
-            if project_path:
-                project_id = Path(project_path).name
-                self.manager.runtime.cmd_run(project_id=project_id)
-            else:
-                UI.warning("Not inside an LDM workspace.")
-
-            self.manager.args.no_logs = original_no_logs
+            self.manager.runtime.cmd_stop(project_id=project_id)
         except Exception as e:
-            UI.warning(f"Failed to start: {e}")
+            UI.warning(f"Failed to stop {project_id}: {e}")
 
-    def on_start(self, icon, item):
-        t = threading.Thread(target=self._start_project_thread, daemon=True)
+    def on_stop_project(self, project_id):
+        t = threading.Thread(
+            target=self._stop_project_thread, args=(project_id,), daemon=True
+        )
         t.start()
 
-    def _stop_project_thread(self):
+    def _stop_all_thread(self):
         try:
-            project_path = self.manager.detect_project_path()
-            if project_path:
-                project_id = Path(project_path).name
-                self.manager.runtime.cmd_stop(project_id=project_id)
-            else:
-                self.manager.runtime.cmd_stop(all_projects=True)
+            self.manager.runtime.cmd_stop(all_projects=True)
         except Exception as e:
-            UI.warning(f"Failed to stop: {e}")
+            UI.warning(f"Failed to stop all projects: {e}")
 
-    def on_stop(self, icon, item):
-        t = threading.Thread(target=self._stop_project_thread, daemon=True)
+    def on_stop_all(self, icon, item):
+        t = threading.Thread(target=self._stop_all_thread, daemon=True)
         t.start()
 
     def on_dashboard(self, icon, item):
         webbrowser.open("http://127.0.0.1:19000")
-        # Also start dashboard server in background if not running
         t = threading.Thread(target=self._run_dashboard, daemon=True)
         t.start()
 
     def _run_dashboard(self):
         try:
-            # We don't want to block, dashboard runs its own Flask server
             self.manager.dashboard.cmd_dashboard(
                 port=19000, host="127.0.0.1", background=False, token=None
             )
@@ -121,13 +144,68 @@ class LdmTrayApp:
         self.running = False
         icon.stop()
 
+    def _menu_generator(self):
+        registry = self._get_registry()
+
+        if registry:
+            for project_id, project_data in registry.items():
+                project_path = project_data.get("path")
+                host_name = project_data.get("host_name", f"{project_id}.local")
+
+                sub_items = [
+                    MenuItem(
+                        "Open Local Portal",
+                        lambda _icon, _item, h=host_name: self.on_open_portal(h),
+                    )
+                ]
+
+                tunnel_url = project_data.get("tunnel_url")
+                if tunnel_url:
+                    sub_items.append(
+                        MenuItem(
+                            "Copy Public URL",
+                            lambda _icon, _item, t=tunnel_url: self.on_copy_tunnel(t),
+                        )
+                    )
+
+                sub_items.append(pystray.Menu.SEPARATOR)
+                sub_items.append(
+                    MenuItem(
+                        "Edit portal-ext.properties",
+                        lambda _icon, _item, path=project_path: self.on_edit_properties(
+                            path
+                        ),
+                    )
+                )
+                sub_items.append(
+                    MenuItem(
+                        "View docker-compose.yml",
+                        lambda _icon, _item, path=project_path: self.on_view_compose(
+                            path
+                        ),
+                    )
+                )
+                sub_items.append(
+                    MenuItem(
+                        "Stop Project",
+                        lambda _icon, _item, p=project_id: self.on_stop_project(p),
+                    )
+                )
+
+                yield MenuItem(f"🟢 {project_id}", pystray.Menu(*sub_items))
+
+            yield pystray.Menu.SEPARATOR
+
+        yield MenuItem("Open Diagnostics Dashboard", self.on_dashboard)
+
+        if registry:
+            yield MenuItem("Stop All Running Projects", self.on_stop_all)
+
+        yield pystray.Menu.SEPARATOR
+        yield MenuItem("Quit LDM Tray", self.on_quit)
+
     def get_menu(self):
-        return pystray.Menu(
-            MenuItem("Start Project", self.on_start),
-            MenuItem("Stop Project", self.on_stop),
-            MenuItem("Open Dashboard", self.on_dashboard),
-            MenuItem("Quit LDM Tray", self.on_quit),
-        )
+        return pystray.Menu(self._menu_generator)
 
     def run(self):
         self.running = True
