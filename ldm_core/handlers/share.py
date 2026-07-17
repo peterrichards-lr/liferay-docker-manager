@@ -1143,7 +1143,7 @@ class ShareService:
             else:
                 return
 
-            with urllib.request.urlopen(req, timeout=1.0):
+            with urllib.request.urlopen(req, timeout=1.0):  # nosec B310
                 pass
         except Exception:
             # Silently ignore if the GUI app is not running

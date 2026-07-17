@@ -8,7 +8,7 @@ services:
     environment:
       WORDPRESS_DB_HOST: db
       WORDPRESS_DB_USER: wpuser
-      WORDPRESS_DB_PASSWORD: wppassword
+      WORDPRESS_DB_PASSWORD: test  # pragma: allowlist secret
       WORDPRESS_DB_NAME: wpdb
     depends_on:
       - db
@@ -21,7 +21,7 @@ services:
     environment:
       MYSQL_DATABASE: wpdb
       MYSQL_USER: wpuser
-      MYSQL_PASSWORD: wppassword
+      MYSQL_PASSWORD: test  # pragma: allowlist secret
       MYSQL_RANDOM_ROOT_PASSWORD: '1'
     networks:
       - wordpress-internal

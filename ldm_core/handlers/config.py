@@ -1954,3 +1954,124 @@ class ConfigService:
             UI.success(
                 f"Synchronized Liferay URL configuration in {updated_count} local environment file(s) to: {target_url}"
             )
+
+    def cmd_config_add_container(self, args):
+        """Interactively add a custom container to the project configuration by inspecting the image."""
+        import json
+        import subprocess
+
+        from ldm_core.ui import UI
+
+        root = self.manager.detect_project_path(
+            getattr(args, "project", None) or getattr(args, "project_flag", None)
+        )
+        if not root:
+            UI.die("Project not found.")
+
+        image_name = args.image
+        service_name = args.service_name or image_name.split(":")[0].split("/")[-1]
+
+        UI.info(f"Inspecting image '{image_name}'...")
+        try:
+            output = subprocess.check_output(
+                ["docker", "image", "inspect", image_name],
+                text=True,
+                stderr=subprocess.STDOUT,
+            )
+        except subprocess.CalledProcessError:
+            UI.info(f"Image '{image_name}' not found locally. Attempting to pull...")
+            try:
+                subprocess.check_call(["docker", "pull", image_name])
+                output = subprocess.check_output(
+                    ["docker", "image", "inspect", image_name], text=True
+                )
+            except Exception as e2:
+                UI.die(f"Failed to inspect or pull image '{image_name}': {e2}")
+
+        data = json.loads(output)[0]
+        config = data.get("Config", {})
+        exposed_ports = list(config.get("ExposedPorts", {}).keys())
+        volumes = (
+            list(config.get("Volumes", {}).keys()) if config.get("Volumes") else []
+        )
+
+        service_config = {
+            "image": image_name,
+        }
+
+        # Handle Ports
+        if exposed_ports:
+            UI.heading("Port Mappings")
+            UI.info(
+                f"The image exposes the following ports: {', '.join(exposed_ports)}"
+            )
+            ports_config = []
+            for port in exposed_ports:
+                # Ask user for target port
+                port_num = port.split("/")[0]
+                target = UI.ask(
+                    f"Enter host port to bind for exposed port {port} (leave empty to not bind)",
+                    default="",
+                )
+                if target:
+                    # Very basic validation could be added here
+                    ports_config.append(f"{target}:{port_num}")
+            if ports_config:
+                service_config["ports"] = ports_config
+
+        # Handle Volumes
+        if volumes:
+            UI.heading("Volume Mappings")
+            UI.info(f"The image declares the following volumes: {', '.join(volumes)}")
+            volumes_config = []
+            for vol in volumes:
+                bind_path = UI.ask(
+                    f"Enter local path or named volume to mount to {vol} (leave empty for ephemeral/anonymous)",
+                    default="",
+                )
+                if bind_path:
+                    volumes_config.append(f"{bind_path}:{vol}")
+            if volumes_config:
+                service_config["volumes"] = volumes_config
+
+        # Ask for Custom Env Vars?
+        UI.heading("Environment Variables")
+        if UI.confirm("Do you want to add custom environment variables?"):
+            env_config = []
+            while True:
+                env_k = UI.ask("Enter ENV KEY (leave empty to finish)", default="")
+                if not env_k:
+                    break
+                env_v = UI.ask(f"Enter Value for {env_k}")
+                env_config.append(f"{env_k}={env_v}")
+            if env_config:
+                service_config["environment"] = env_config
+
+        # Load existing project meta
+        meta = self.manager.read_meta(root)
+        custom_containers = meta.get("custom_containers")
+        if isinstance(custom_containers, str):
+            try:
+                custom_containers = json.loads(custom_containers)
+            except Exception:
+                custom_containers = []
+        if not isinstance(custom_containers, list):
+            custom_containers = []
+
+        service_config["service_name"] = service_name
+
+        # Remove existing service with same name if any
+        custom_containers = [
+            c for c in custom_containers if c.get("service_name") != service_name
+        ]
+        custom_containers.append(service_config)
+
+        meta["custom_containers"] = custom_containers
+        self.manager.write_meta(root, meta)
+
+        UI.success(
+            f"Added service '{service_name}' to custom containers configuration."
+        )
+        UI.info(
+            "Run 'ldm run' or 'ldm deploy' to regenerate docker-compose.yml and bring up the updated stack."
+        )
