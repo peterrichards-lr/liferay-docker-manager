@@ -192,10 +192,12 @@ def cmd_monitor(self, source_path=None, project_id=None):
         if self.manager.verbose:
             UI.info("Using PollingObserver for macOS stability.")
         observer = PollingObserverVFS(
-            stat=os.stat, listdir=filtered_scandir, polling_interval=delay
+            stat=os.stat,
+            listdir=filtered_scandir,
+            polling_interval=delay,  # type: ignore[arg-type]
         )
     else:
-        observer = Observer()
+        observer = Observer()  # type: ignore[assignment]
 
     UI.info("Scanning for workspace branches...")
     watch_targets = []

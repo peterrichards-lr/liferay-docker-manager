@@ -242,8 +242,8 @@ def cmd_import(
                 )
                 temp_pkg_dir.mkdir(parents=True, exist_ok=True)
 
-                ldmp_name = Path(ldmp_asset["name"]).name
-                sha_name = Path(sha_asset["name"]).name
+                ldmp_name = Path(ldmp_asset["name"]).name  # type: ignore[index]
+                sha_name = Path(sha_asset["name"]).name  # type: ignore[index]
 
                 ldmp_path = (temp_pkg_dir / ldmp_name).resolve()
                 sha_path = (temp_pkg_dir / sha_name).resolve()
@@ -261,7 +261,7 @@ def cmd_import(
                     if github_token:
                         headers_dl["Authorization"] = f"token {github_token}"
 
-                    dl_url = ldmp_asset["url"]
+                    dl_url = ldmp_asset["url"]  # type: ignore[index]
                     r = requests.get(
                         dl_url, headers=headers_dl, stream=True, timeout=60
                     )
@@ -270,7 +270,7 @@ def cmd_import(
                         for chunk in r.iter_content(chunk_size=8192):
                             f.write(chunk)
 
-                    dl_sha_url = sha_asset["url"]
+                    dl_sha_url = sha_asset["url"]  # type: ignore[index]
                     r_sha = requests.get(dl_sha_url, headers=headers_dl, timeout=20)
                     r_sha.raise_for_status()
                     sha_path.write_text(r_sha.text.strip())
@@ -346,7 +346,7 @@ def cmd_import(
                         "Security Violation: Manifest is missing 'github_repository' attribute."
                     )
 
-                if github_repo_manifest.lower() != f"{owner}/{repo}".lower():
+                if github_repo_manifest.lower() != f"{owner}/{repo}".lower():  # type: ignore[union-attr]
                     if temp_pkg_dir.exists():
                         shutil.rmtree(temp_pkg_dir)
                     if temp_extract_dir.exists():

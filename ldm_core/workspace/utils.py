@@ -61,7 +61,7 @@ def _rewrite_oauth_urls_in_zip(
 
     from ldm_core.utils import safe_extract
 
-    meta = {}
+    meta: dict = {}
     if root_dir is not None:
         meta = self.manager.read_meta(root_dir) or {}
     ssl_enabled = str(meta.get("ssl", "false")).lower() == "true"

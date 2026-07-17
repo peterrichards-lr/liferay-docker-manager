@@ -302,7 +302,7 @@ def scan_client_extensions(self, root_dir, osgi_cx_dir, ce_build_dir, host_name=
                             load_balancer.get("targetPort", 8080),
                         )
                         try:
-                            default_port = int(default_port)
+                            default_port = int(default_port)  # type: ignore[arg-type]
                         except (ValueError, TypeError):
                             default_port = 8080
 
@@ -379,7 +379,7 @@ def scan_client_extensions(self, root_dir, osgi_cx_dir, ce_build_dir, host_name=
                     load_balancer.get("targetPort", 8080),
                 )
                 try:
-                    default_port = int(default_port)
+                    default_port = int(default_port)  # type: ignore[arg-type]
                 except (ValueError, TypeError):
                     default_port = 8080
 

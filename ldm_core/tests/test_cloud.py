@@ -621,10 +621,10 @@ class TestCloudFetchCoverage(unittest.TestCase):
 
     @patch("ldm_core.handlers.cloud.CloudService.ensure_cloud_auth")
     def test_cmd_cloud_fetch_no_root(self, mock_auth):
-        self.manager.detect_project_path = MagicMock(return_value=None)
+        self.manager.detect_project_path = MagicMock(return_value=None)  # type: ignore[method-assign]
         self.cloud.cmd_cloud_fetch("proj1")
         # Should return early
-        self.assertFalse(self.manager.snapshot.cmd_restore.called)
+        self.assertFalse(self.manager.snapshot.cmd_restore.called)  # type: ignore[attr-defined]
 
     @patch("ldm_core.handlers.cloud.CloudService.ensure_cloud_auth")
     @patch("ldm_core.handlers.cloud.CloudService._run_lcp_cmd")
@@ -632,7 +632,7 @@ class TestCloudFetchCoverage(unittest.TestCase):
         self.manager.args.list_backups = True
         self.manager.args.env_id = "uat"
         mock_root = Path("/tmp/proj")
-        self.manager.detect_project_path = MagicMock(return_value=mock_root)
+        self.manager.detect_project_path = MagicMock(return_value=mock_root)  # type: ignore[method-assign]
         mock_run.return_value = "id1   date1\nid2   date2"
         with patch(
             "ldm_core.utils.parse_lcp_backups",
@@ -657,7 +657,7 @@ class TestCloudFetchCoverage(unittest.TestCase):
         self.manager.args.list_backups = True
         self.manager.args.env_id = "uat"
         mock_root = Path("/tmp/proj")
-        self.manager.detect_project_path = MagicMock(return_value=mock_root)
+        self.manager.detect_project_path = MagicMock(return_value=mock_root)  # type: ignore[method-assign]
         mock_run.return_value = "No backups found"
         with patch("ldm_core.utils.parse_lcp_backups", return_value=[]):
             with patch("builtins.print") as mock_print:
@@ -667,11 +667,11 @@ class TestCloudFetchCoverage(unittest.TestCase):
     @patch("ldm_core.handlers.cloud.CloudService.ensure_cloud_auth")
     @patch("ldm_core.handlers.cloud.CloudService._run_lcp_cmd")
     def test_cmd_cloud_fetch_logs(self, mock_run, mock_auth):
-        self.manager.args.logs = True
+        self.manager.args.logs = True  # type: ignore[attr-defined]
         self.manager.args.follow = True
         self.manager.args.env_id = "uat"
         mock_root = Path("/tmp/proj")
-        self.manager.detect_project_path = MagicMock(return_value=mock_root)
+        self.manager.detect_project_path = MagicMock(return_value=mock_root)  # type: ignore[method-assign]
         self.cloud.cmd_cloud_fetch("proj1")
         mock_run.assert_called_with(
             ["log", "--service", "liferay", "--follow"],
@@ -685,9 +685,9 @@ class TestCloudFetchCoverage(unittest.TestCase):
     def test_cmd_cloud_fetch_sync_env_no_lcp_json(self, mock_warn, mock_auth):
         self.manager.args.sync_env = True
         self.manager.args.env_id = "uat"
-        self.manager.args.source_path = "/tmp/source"
+        self.manager.args.source_path = "/tmp/source"  # type: ignore[attr-defined]
         mock_root = Path("/tmp/proj")
-        self.manager.detect_project_path = MagicMock(return_value=mock_root)
+        self.manager.detect_project_path = MagicMock(return_value=mock_root)  # type: ignore[method-assign]
         with patch("ldm_core.utils.get_lcp_environment_variables", return_value=None):
             self.cloud.cmd_cloud_fetch("proj1")
             mock_warn.assert_called_with(
@@ -699,9 +699,9 @@ class TestCloudFetchCoverage(unittest.TestCase):
     def test_cmd_cloud_fetch_sync_env_no_sync(self, mock_info, mock_auth):
         self.manager.args.sync_env = True
         self.manager.args.env_id = "uat"
-        self.manager.args.no_env_sync = True
+        self.manager.args.no_env_sync = True  # type: ignore[attr-defined]
         mock_root = Path("/tmp/proj")
-        self.manager.detect_project_path = MagicMock(return_value=mock_root)
+        self.manager.detect_project_path = MagicMock(return_value=mock_root)  # type: ignore[method-assign]
         with patch(
             "ldm_core.utils.get_lcp_environment_variables", return_value={"VAR": "val"}
         ):
@@ -716,7 +716,7 @@ class TestCloudFetchCoverage(unittest.TestCase):
         self.manager.args.sync_env = True
         self.manager.args.env_id = "uat"
         mock_root = Path("/tmp/proj")
-        self.manager.detect_project_path = MagicMock(return_value=mock_root)
+        self.manager.detect_project_path = MagicMock(return_value=mock_root)  # type: ignore[method-assign]
         with (
             patch(
                 "ldm_core.utils.get_lcp_environment_variables",
@@ -736,7 +736,7 @@ class TestCloudFetchCoverage(unittest.TestCase):
         self.manager.args.download = True
         self.manager.args.env_id = "uat"
         mock_root = Path("/tmp/proj")
-        self.manager.detect_project_path = MagicMock(return_value=mock_root)
+        self.manager.detect_project_path = MagicMock(return_value=mock_root)  # type: ignore[method-assign]
         mock_run.return_value = ""
         with patch("ldm_core.utils.parse_lcp_backups", return_value=[]):
             self.cloud.cmd_cloud_fetch("proj1")
@@ -751,7 +751,7 @@ class TestCloudFetchCoverage(unittest.TestCase):
         self.manager.args.download = True
         self.manager.args.env_id = "uat"
         mock_root = Path("/tmp/proj")
-        self.manager.detect_project_path = MagicMock(return_value=mock_root)
+        self.manager.detect_project_path = MagicMock(return_value=mock_root)  # type: ignore[method-assign]
         mock_run.side_effect = [
             "backups",
             None,
@@ -774,7 +774,7 @@ class TestCloudFetchCoverage(unittest.TestCase):
         self.manager.args.download = True
         self.manager.args.env_id = "uat"
         mock_root = Path("/tmp/proj")
-        self.manager.detect_project_path = MagicMock(return_value=mock_root)
+        self.manager.detect_project_path = MagicMock(return_value=mock_root)  # type: ignore[method-assign]
         mock_run.side_effect = ["backups", "ok"]
         with patch("ldm_core.utils.parse_lcp_backups", return_value=[{"id": "b1"}]):
             with patch("pathlib.Path.glob", return_value=[]):
@@ -789,7 +789,7 @@ class TestCloudFetchCoverage(unittest.TestCase):
     def test_cmd_cloud_fetch_none(self, mock_info, mock_auth):
         self.manager.args.env_id = "uat"
         mock_root = Path("/tmp/proj")
-        self.manager.detect_project_path = MagicMock(return_value=mock_root)
+        self.manager.detect_project_path = MagicMock(return_value=mock_root)  # type: ignore[method-assign]
         self.cloud.cmd_cloud_fetch("proj1")
         mock_info.assert_called_with(
             "Environment 'uat' (Project: proj) selected. Use flags (--list-backups, --download, --logs, --sync-env) to perform actions."
@@ -806,7 +806,7 @@ class TestCloudFetchCoverage(unittest.TestCase):
         self.manager.args.restore = True
         self.manager.args.env_id = "uat"
         mock_root = Path("/tmp/proj")
-        self.manager.detect_project_path = MagicMock(return_value=mock_root)
+        self.manager.detect_project_path = MagicMock(return_value=mock_root)  # type: ignore[method-assign]
         mock_run.side_effect = ["backups", "ok"]
         mock_get_ver.return_value = "7.4"
         with patch("ldm_core.utils.parse_lcp_backups", return_value=[{"id": "b1"}]):
@@ -828,7 +828,7 @@ class TestCloudFetchCoverage(unittest.TestCase):
                             )
 
     def test_cmd_hydrate_no_root(self):
-        self.manager.detect_project_path = MagicMock(return_value=None)
+        self.manager.detect_project_path = MagicMock(return_value=None)  # type: ignore[method-assign]
         import tempfile
 
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -843,14 +843,14 @@ class TestCloudFetchCoverage(unittest.TestCase):
         import tempfile
 
         self.manager.non_interactive = True
-        self.manager.defaults.get = MagicMock(return_value=None)
+        self.manager.defaults.get = MagicMock(return_value=None)  # type: ignore[method-assign]
         with tempfile.TemporaryDirectory() as tmp_dir:
             backup_dir = Path(tmp_dir)
             (backup_dir / "database.gz").write_text("a")
             (backup_dir / "volume.tgz").write_text("a")
             mock_root = backup_dir / "proj1"
             mock_root.mkdir()
-            self.manager.detect_project_path = MagicMock(return_value=mock_root)
+            self.manager.detect_project_path = MagicMock(return_value=mock_root)  # type: ignore[method-assign]
             mock_die.side_effect = SystemExit
             with self.assertRaises(SystemExit):
                 self.cloud.cmd_hydrate(str(backup_dir), project_id="proj1")
@@ -882,7 +882,7 @@ class TestCloudHydrate(unittest.TestCase):
     )
     def test_hydrate_cloud_backup_new_project(self, mock_resolve_db):
         mock_root = Path("/tmp/proj")
-        self.manager.detect_project_path = MagicMock(return_value=mock_root)
+        self.manager.detect_project_path = MagicMock(return_value=mock_root)  # type: ignore[method-assign]
         self.manager.assets._ensure_seeded.return_value = True
 
         with patch("pathlib.Path.exists", return_value=False):
@@ -890,11 +890,11 @@ class TestCloudHydrate(unittest.TestCase):
                 "proj", Path("/tmp/backup"), "7.4", True
             )
             self.assertTrue(res)
-            self.manager.snapshot.cmd_restore.assert_called_with(
+            self.manager.snapshot.cmd_restore.assert_called_with(  # type: ignore[attr-defined]
                 project_id="proj", backup_dir=Path("/tmp/backup"), no_run=True
             )
 
     def test_hydrate_cloud_backup_no_root(self):
-        self.manager.detect_project_path = MagicMock(return_value=None)
+        self.manager.detect_project_path = MagicMock(return_value=None)  # type: ignore[method-assign]
         res = self.cloud.hydrate_cloud_backup("proj", Path("/tmp/backup"))
         self.assertFalse(res)
