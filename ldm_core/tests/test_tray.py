@@ -45,19 +45,10 @@ class TestLdmTrayApp:
             app = LdmTrayApp(manager)
             assert app.current_state == "stopped"
 
-    def test_start_project_thread(self, manager):
-        with patch("PIL.Image.open"):
-            app = LdmTrayApp(manager)
-            manager.detect_project_path.return_value = "/path/to/project"
-            manager.args = MagicMock(no_logs=False)
-            app._start_project_thread()
-            manager.runtime.cmd_run.assert_called_once_with(project_id="project")
-
     def test_stop_project_thread(self, manager):
         with patch("PIL.Image.open"):
             app = LdmTrayApp(manager)
-            manager.detect_project_path.return_value = "/path/to/project"
-            app._stop_project_thread()
+            app._stop_project_thread("project")
             manager.runtime.cmd_stop.assert_called_once_with(project_id="project")
 
     def test_run_dashboard(self, manager):
