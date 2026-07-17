@@ -478,3 +478,145 @@ class TestDashboard(unittest.TestCase):
         self.manager.find_dxp_roots.return_value = []
         response = self.client.get("/api/projects")
         self.assertEqual(response.status_code, 200)
+
+    def test_get_dir_size(self):
+        import tempfile
+
+        from ldm_core.dashboard.server import get_dir_size
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+
+            # Empty dir
+            self.assertEqual(get_dir_size(temp_path), "0.0 B")
+
+            # File with bytes
+            file1 = temp_path / "file1.txt"
+            file1.write_text("A" * 500)
+            self.assertEqual(get_dir_size(temp_path), "500.0 B")
+
+            # File with KB
+            file2 = temp_path / "file2.txt"
+            file2.write_text("A" * 2000)
+            self.assertEqual(get_dir_size(temp_path), "2.4 KB")
+
+            # File with MB
+            file3 = temp_path / "file3.txt"
+            file3.write_text("A" * 1500000)
+            self.assertEqual(get_dir_size(temp_path), "1.4 MB")
+
+        # Exception handling
+        with patch("pathlib.Path.rglob", side_effect=Exception):
+            self.assertEqual(get_dir_size(Path("/dummy")), "unknown")
+
+    @patch("subprocess.Popen")
+    def test_run_background_ldm_cmd(self, mock_popen):
+        from ldm_core.dashboard.server import run_background_ldm_cmd
+
+        with patch("sys.platform", "linux"):
+            run_background_ldm_cmd(["status"])
+            mock_popen.assert_called_once()
+            args, kwargs = mock_popen.call_args
+            # The exact executable will vary, but the last argument should be the command
+            self.assertEqual(args[0][-1], "status")
+            self.assertTrue(kwargs.get("start_new_session"))
+
+    @patch("subprocess.Popen")
+    def test_run_background_ldm_cmd_mac(self, mock_popen):
+        from ldm_core.dashboard.server import run_background_ldm_cmd
+
+        with patch("sys.platform", "darwin"):
+            run_background_ldm_cmd(["status"])
+            mock_popen.assert_called_once()
+            args, kwargs = mock_popen.call_args
+            self.assertEqual(args[0][-1], "status")
+            self.assertTrue(kwargs.get("start_new_session"))
+
+    @patch("ldm_core.dashboard.server.run_command")
+    @patch("ldm_core.handlers.workspace.WorkspaceService.scan_client_extensions")
+    def test_api_projects_with_client_extensions_and_share(
+        self, mock_scan, mock_run_command
+    ):
+        self.manager.find_dxp_roots.return_value = [
+            {"path": Path("/dummy/project1"), "version": "7.4"}
+        ]
+        # Setup paths to simulate cx existing
+        cx_mock = MagicMock()
+        cx_mock.exists.return_value = True
+        paths_mock = {
+            "root": Path("/dummy/project1"),
+            "cx": cx_mock,
+            "ce_dir": Path("/dummy/project1/client-extensions"),
+        }
+        self.manager.setup_paths.return_value = paths_mock
+
+        # Mock meta
+        self.manager.read_meta.return_value = {
+            "liferay_container_name": "my-project1",
+            "host_name": "liferay.local",
+            "port": "8080",
+            "ssl": "false",
+            "db_type": "postgresql",
+            "archetype": "theme",
+            "share": True,
+            "share_subdomain": "my-awesome-site",
+        }
+
+        mock_scan.return_value = [
+            {"name": "ext1", "type": "theme", "is_service": True, "id": "ext1"}
+        ]
+        mock_run_command.return_value = "running\n"
+
+        response = self.client.get("/api/projects")
+        self.assertEqual(response.status_code, 200)
+        data = response.get_json()
+
+        self.assertEqual(len(data), 1)
+        self.assertEqual(data[0]["client_extensions"][0]["name"], "my-project1-ext1")
+        self.assertEqual(data[0]["url"], "http://liferay.local:8080")
+        self.assertEqual(
+            data[0]["client_extensions"][0]["public_url"],
+            "https://my-awesome-site-ext1.lfr-demo.online",
+        )
+
+    @patch("ldm_core.dashboard.server.run_command")
+    def test_api_projects_with_legacy_json_extensions(self, mock_run_command):
+        self.manager.find_dxp_roots.return_value = [
+            {"path": Path("/dummy/project1"), "version": "7.4"}
+        ]
+        # Setup paths to simulate cx missing
+        cx_mock = MagicMock()
+        cx_mock.exists.return_value = False
+        paths_mock = {
+            "root": Path("/dummy/project1"),
+            "cx": cx_mock,
+            "ce_dir": Path("/dummy/project1/client-extensions"),
+        }
+        self.manager.setup_paths.return_value = paths_mock
+
+        # Mock meta with json extensions list
+        self.manager.read_meta.return_value = {
+            "liferay_container_name": "my-project1",
+            "extensions": [
+                {
+                    "name": "json-ext1",
+                    "type": "theme",
+                    "is_service": True,
+                    "id": "json-ext1",
+                }
+            ],
+            "ssl": "true",
+            "host_name": "liferay.local",
+            "port": "443",
+        }
+
+        mock_run_command.return_value = "running\n"
+
+        response = self.client.get("/api/projects")
+        self.assertEqual(response.status_code, 200)
+        data = response.get_json()
+
+        self.assertEqual(
+            data[0]["client_extensions"][0]["name"], "my-project1-json-ext1"
+        )
+        self.assertEqual(data[0]["url"], "https://liferay.local")
