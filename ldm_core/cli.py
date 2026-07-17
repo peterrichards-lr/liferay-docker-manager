@@ -130,7 +130,6 @@ def preprocess_args(args_list: list[str]) -> list[str]:
         "fork",
         "db",
         "query",
-        "tray",
     }
 
     if first.startswith("-") or first in all_cmds:
