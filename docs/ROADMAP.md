@@ -25,23 +25,7 @@ While the v2.4.0 release solidified the modular architecture, the focus will now
 - **Inconsistency Recovery**: Implement a command to restore projects in "half-baked" states (e.g., missing `docker-compose.yml` but valid `meta`).
 - **Permission Re-sync**: A dedicated trigger to re-apply the "Zero-Race" permission fixups across an entire existing project stack.
 
-### 4. Interactive Configuration Management
-
-- **TUI & Web Dashboard Editing**: Extend the Properties Inspector drawer in the diagnostics web interface to support inline property editing and toggle controls. Add a corresponding `ldm config edit --tui` terminal user interface.
-  - **LOE**: M (Medium)
-  - **Risk**: Medium (requires robust write validations)
-  - **Business Value**: High (prevents manual filesystem edit errors)
-  - **Priority**: P2
-
-### 5. Config Integrity & Validation
-
-- **Pre-Flight Properties Analyzer**: Add static verification rules during `rebuild-properties` to detect unclosed quotes, malformed JDBC URLs, conflicting overrides (e.g. Hypersonic and PostgreSQL active at the same time), and missing mount paths.
-  - **LOE**: S (Small)
-  - **Risk**: Low (static checking only)
-  - **Business Value**: High (reduces debug cycles caused by bad configurations)
-  - **Priority**: P1
-
-### 6. Multi-Environment Target Profiles
+### 4. Multi-Environment Target Profiles
 
 - **Profile Switching**: Introduce a profile switching system (e.g. `ldm profile switch <profile>`) to support running LDM using environment-specific properties layers (matching Dev, QA, or Production configurations).
   - **LOE**: M (Medium)
@@ -49,7 +33,7 @@ While the v2.4.0 release solidified the modular architecture, the focus will now
   - **Business Value**: High (guarantees local-to-cloud profile parity testing)
   - **Priority**: P2
 
-### 7. Smart Cache & Hydration Optimization
+### 5. Smart Cache & Hydration Optimization
 
 - **Selective Snapshot Hydration**: Introduce hash-based file change detection for heavy volume document library archives (`volume.tgz`) and lazy-loading document assets on-demand instead of blocking container boots.
   - **LOE**: L (Large)
@@ -57,13 +41,33 @@ While the v2.4.0 release solidified the modular architecture, the focus will now
   - **Business Value**: Critical (reduces developer setup/restore time from minutes to seconds)
   - **Priority**: P1
 
-### 8. Real-Time Log Analytics & Troubleshooting Engine
+### 6. Real-Time Log Analytics & Troubleshooting Engine
 
 - **Error-Pattern OSGi Matching**: Build a background log listener that streams Liferay logs to the Web Dashboard, matching stack traces (unresolved OSGi constraints, db deadlocks, JVM memory warning limits) against known resolution recipes.
   - **LOE**: M (Medium)
   - **Risk**: Low (passive analysis)
   - **Business Value**: High (tremendous UX value for junior developers resolving boot errors)
   - **Priority**: P2
+
+## ✅ Completed Improvements (v2.15.x - Custom Containers & GUI)
+
+### **System Tray GUI**
+
+- **Cross-Platform System Tray**: Designed and implemented a cross-platform system tray application for easier access to diagnostics and local orchestration controls without needing a terminal.
+
+### **Custom Containers & Multi-Compose**
+
+- **Multi-Compose Integration**: Supported custom container image packaging in `.ldmp` packages and decoupled multi-compose external architectures (e.g., WordPress LAMP, ES Web Crawler) to run alongside Liferay natively.
+
+## ✅ Completed Improvements (v2.12.x - Configuration & Validation)
+
+### **Interactive Configuration Management**
+
+- **TUI & Web Dashboard Editing**: Extended the Properties Inspector drawer in the diagnostics web interface to support inline property editing and toggle controls. Added a corresponding `ldm config edit --tui` terminal user interface.
+
+### **Config Integrity & Validation**
+
+- **Pre-Flight Properties Analyzer**: Added static verification rules during `rebuild-properties` to detect unclosed quotes, malformed JDBC URLs, conflicting overrides, and missing mount paths.
 
 ## ✅ Completed Improvements (v2.11.x - Sequential Overrides & Web Diagnostics)
 
