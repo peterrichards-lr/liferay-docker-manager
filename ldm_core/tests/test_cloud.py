@@ -30,6 +30,8 @@ class MockManager:
 
         self.defaults = DefaultsManager()
         self.assets = MagicMock()
+        self.snapshot = MagicMock()
+        self.workspace = MagicMock()
 
     def detect_project_path(self, *args, **kwargs):
         return Path("/tmp/proj")

@@ -192,7 +192,7 @@ class TestWorkspaceImport(unittest.TestCase):
                     self.handler, "detect_project_path", return_value=project_dir
                 ),
                 patch.object(self.handler, "write_meta") as mock_write,
-                patch("ldm_core.handlers.workspace.UI.info") as mock_info,
+                patch("ldm_core.utils.UI.info") as mock_info,
             ):
                 self.handler.non_interactive = True
                 self.handler.args.project = "My Awesome Project"
@@ -395,9 +395,9 @@ class TestWorkspaceImport(unittest.TestCase):
             self.assertTrue(mock_copy.called)
 
     @patch("ldm_core.docker_service.DockerService.is_running")
-    @patch("ldm_core.workspace.importer.UI.confirm")
-    @patch("ldm_core.workspace.importer.UI.die")
-    @patch("ldm_core.workspace.importer.UI.info")
+    @patch("ldm_core.utils.UI.confirm")
+    @patch("ldm_core.utils.UI.die")
+    @patch("ldm_core.utils.UI.info")
     def test_ensure_stopped_not_running(
         self, mock_info, mock_die, mock_confirm, mock_is_running
     ):
@@ -410,9 +410,9 @@ class TestWorkspaceImport(unittest.TestCase):
             self.assertFalse(mock_confirm.called)
 
     @patch("ldm_core.docker_service.DockerService.is_running")
-    @patch("ldm_core.workspace.importer.UI.confirm")
-    @patch("ldm_core.workspace.importer.UI.die")
-    @patch("ldm_core.workspace.importer.UI.info")
+    @patch("ldm_core.utils.UI.confirm")
+    @patch("ldm_core.utils.UI.die")
+    @patch("ldm_core.utils.UI.info")
     @patch.object(RuntimeService, "cmd_stop")
     def test_ensure_stopped_stop_running_flag(
         self, mock_stop, mock_info, mock_die, mock_confirm, mock_is_running
@@ -428,9 +428,9 @@ class TestWorkspaceImport(unittest.TestCase):
             self.assertFalse(mock_confirm.called)
 
     @patch("ldm_core.docker_service.DockerService.is_running")
-    @patch("ldm_core.workspace.importer.UI.confirm")
-    @patch("ldm_core.workspace.importer.UI.die")
-    @patch("ldm_core.workspace.importer.UI.info")
+    @patch("ldm_core.utils.UI.confirm")
+    @patch("ldm_core.utils.UI.die")
+    @patch("ldm_core.utils.UI.info")
     @patch.object(RuntimeService, "cmd_stop")
     def test_ensure_stopped_non_interactive_auto_stop(
         self, mock_stop, mock_info, mock_die, mock_confirm, mock_is_running
@@ -447,8 +447,8 @@ class TestWorkspaceImport(unittest.TestCase):
             self.assertFalse(mock_confirm.called)
 
     @patch("ldm_core.docker_service.DockerService.is_running")
-    @patch("ldm_core.workspace.importer.UI.confirm")
-    @patch("ldm_core.workspace.importer.UI.die")
+    @patch("ldm_core.utils.UI.confirm")
+    @patch("ldm_core.utils.UI.die")
     @patch.object(RuntimeService, "cmd_stop")
     def test_ensure_stopped_leave_running(
         self, mock_stop, mock_die, mock_confirm, mock_is_running
@@ -469,8 +469,8 @@ class TestWorkspaceImport(unittest.TestCase):
             self.assertFalse(mock_confirm.called)
 
     @patch("ldm_core.docker_service.DockerService.is_running")
-    @patch("ldm_core.workspace.importer.UI.confirm")
-    @patch("ldm_core.workspace.importer.UI.die")
+    @patch("ldm_core.utils.UI.confirm")
+    @patch("ldm_core.utils.UI.die")
     @patch.object(RuntimeService, "cmd_stop")
     def test_ensure_stopped_interactive_confirm_yes(
         self, mock_stop, mock_die, mock_confirm, mock_is_running
@@ -487,8 +487,8 @@ class TestWorkspaceImport(unittest.TestCase):
             self.assertFalse(mock_die.called)
 
     @patch("ldm_core.docker_service.DockerService.is_running")
-    @patch("ldm_core.workspace.importer.UI.confirm")
-    @patch("ldm_core.workspace.importer.UI.die")
+    @patch("ldm_core.utils.UI.confirm")
+    @patch("ldm_core.utils.UI.die")
     @patch.object(RuntimeService, "cmd_stop")
     def test_ensure_stopped_interactive_confirm_no(
         self, mock_stop, mock_die, mock_confirm, mock_is_running
@@ -711,9 +711,7 @@ class TestWorkspaceScanners(unittest.TestCase):
             with (
                 patch("tarfile.open"),
                 patch("ldm_core.utils.safe_extract", side_effect=mock_safe_extract),
-                patch(
-                    "ldm_core.handlers.workspace.UI.die", side_effect=SystemExit
-                ) as mock_die,
+                patch("ldm_core.utils.UI.die", side_effect=SystemExit) as mock_die,
             ):
                 with self.assertRaises(SystemExit):
                     self.handler.workspace.cmd_import(str(source_ldmp))
@@ -1094,9 +1092,7 @@ class TestWorkspaceRemoteImport(unittest.TestCase):
                     "ldm_core.handlers.base.BaseHandler.detect_project_path",
                     return_value=project_path,
                 ),
-                patch(
-                    "ldm_core.handlers.workspace.UI.die", side_effect=SystemExit
-                ) as mock_die,
+                patch("ldm_core.utils.UI.die", side_effect=SystemExit) as mock_die,
             ):
                 self.handler.args.project = "my-project"
                 self.handler.args.verify = True
