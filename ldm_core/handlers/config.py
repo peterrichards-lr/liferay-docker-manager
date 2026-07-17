@@ -625,82 +625,67 @@ class ConfigService:
 
                 traceback.print_exc()
 
-    def sync_common_assets(  # noqa: C901, PLR0912, PLR0915
-        self, paths, host_updates=None, version=None, project_meta=None
-    ):
-        # Safety: If passed a direct path (common error in refactored handlers), initialize paths dict
-        if not isinstance(paths, dict):
-            paths = self.manager.setup_paths(paths)
+    def _configure_captcha(self, project_meta, host_updates, paths):
+        """Configures Captcha settings based on project metadata."""
+        if not project_meta:
+            return
 
-        # Backward compatibility: populate common_dirs if missing
-        if "common_dirs" not in paths:
-            if paths.get("common"):
-                paths["common_dirs"] = [paths["common"]]
-            else:
-                paths["common_dirs"] = []
+        no_captcha = str(project_meta.get("no_captcha", "false")).lower() == "true"
+        captcha_cfg = (
+            paths["configs"]
+            / "com.liferay.captcha.configuration.CaptchaConfiguration.config"
+        )
+        if no_captcha:
+            host_updates["captcha.enforce.disabled"] = "true"
 
-        # Handle Captcha Configuration
-        if project_meta:
-            no_captcha = str(project_meta.get("no_captcha", "false")).lower() == "true"
-            captcha_cfg = (
-                paths["configs"]
-                / "com.liferay.captcha.configuration.CaptchaConfiguration.config"
-            )
-            if no_captcha:
-                if host_updates is None:
-                    host_updates = {}
-                host_updates["captcha.enforce.disabled"] = "true"
+            if not captcha_cfg.exists():
+                with contextlib.suppress(PermissionError, OSError):
+                    captcha_cfg.parent.mkdir(parents=True, exist_ok=True)
+                from ldm_core.utils import safe_write_text
 
-                if not captcha_cfg.exists():
-                    with contextlib.suppress(PermissionError, OSError):
-                        captcha_cfg.parent.mkdir(parents=True, exist_ok=True)
-                    from ldm_core.utils import safe_write_text
+                safe_write_text(captcha_cfg, 'maxChallenges=I"-1"\n')
+        else:
+            # LDM-369: If not explicitly disabled, ensure it's enabled (reversible)
+            if captcha_cfg.exists():
+                with contextlib.suppress(PermissionError, OSError):
+                    captcha_cfg.unlink()
 
-                    safe_write_text(captcha_cfg, 'maxChallenges=I"-1"\n')
-            else:
-                # LDM-369: If not explicitly disabled, ensure it's enabled (reversible)
-                if captcha_cfg.exists():
-                    with contextlib.suppress(PermissionError, OSError):
-                        captcha_cfg.unlink()
+            host_updates["captcha.enforce.disabled"] = "false"
 
-                if host_updates is None:
-                    host_updates = {}
-                host_updates["captcha.enforce.disabled"] = "false"
+    def _configure_fast_login(self, project_meta, host_updates):
+        """Configures fast-login developer bypasses."""
+        if not project_meta:
+            return
 
-        # Handle Fast-Login Configuration
-        if project_meta:
-            fast_login = str(project_meta.get("fast_login", "false")).lower() == "true"
-            if fast_login:
-                db_type = project_meta.get("db_type", "postgresql")
-                if db_type == "hypersonic":
-                    UI.warning(
-                        "The '--fast-login' feature (specifically password policy bypass) does not fully work with the default Hypersonic database. "
-                        "For best results, use an external database like PostgreSQL or MySQL."
-                    )
-
-                if host_updates is None:
-                    host_updates = {}
-
-                host_updates.update(
-                    {
-                        "captcha.check.portal.create_account": "false",
-                        "captcha.check.portal.send_password": "false",
-                        "company.security.strangers.verify": "false",
-                        "enterprise.product.notification.enabled": "false",
-                        "live.users.enabled": "true",
-                        "passwords.default.policy.change.required": "false",
-                        "passwords.passwordpolicytoolkit.generator": "static",
-                        "passwords.passwordpolicytoolkit.static": "test",
-                        "setup.wizard.enabled": "false",
-                        "terms.of.use.required": "false",
-                        "users.last.name.required": "false",
-                        "users.reminder.queries.custom.question.enabled": "false",
-                        "users.reminder.queries.enabled": "false",
-                    }
+        fast_login = str(project_meta.get("fast_login", "false")).lower() == "true"
+        if fast_login:
+            db_type = project_meta.get("db_type", "postgresql")
+            if db_type == "hypersonic":
+                UI.warning(
+                    "The '--fast-login' feature (specifically password policy bypass) does not fully work with the default Hypersonic database. "
+                    "For best results, use an external database like PostgreSQL or MySQL."
                 )
 
-        # Handle Feature Flags (Global Defaults + Project Specific)
-        global_config = self.get_global_config()
+            host_updates.update(
+                {
+                    "captcha.check.portal.create_account": "false",
+                    "captcha.check.portal.send_password": "false",
+                    "company.security.strangers.verify": "false",
+                    "enterprise.product.notification.enabled": "false",
+                    "live.users.enabled": "true",
+                    "passwords.default.policy.change.required": "false",
+                    "passwords.passwordpolicytoolkit.generator": "static",
+                    "passwords.passwordpolicytoolkit.static": "test",
+                    "setup.wizard.enabled": "false",
+                    "terms.of.use.required": "false",
+                    "users.last.name.required": "false",
+                    "users.reminder.queries.custom.question.enabled": "false",
+                    "users.reminder.queries.enabled": "false",
+                }
+            )
+
+    def _configure_feature_flags(self, project_meta, global_config, host_updates):
+        """Merges global and project-specific feature flags."""
         global_features = global_config.get("features", "")
         project_features = project_meta.get("features", "") if project_meta else ""
 
@@ -713,15 +698,14 @@ class ConfigService:
                         all_features.add(f.strip())
 
         if all_features:
-            if host_updates is None:
-                host_updates = {}
             for f in sorted(all_features):
                 if f.lower() in ["dev", "beta", "release"]:
                     host_updates[f"feature.flag.ui.visible[{f.lower()}]"] = "true"
                 else:
                     host_updates[f"feature.flag.{f}"] = "true"
 
-        # Handle Preferred Admin User Details from Global Configuration
+    def _configure_admin_user(self, global_config, host_updates):
+        """Maps global configuration admin user details into portal properties."""
         admin_mappings = {
             "admin_password": "default.admin.password",  # pragma: allowlist secret
             "admin_screen_name": "default.admin.screen.name",
@@ -733,13 +717,14 @@ class ConfigService:
         for config_key, portal_key in admin_mappings.items():
             val = global_config.get(config_key)
             if val is not None:
-                if host_updates is None:
-                    host_updates = {}
                 host_updates[portal_key] = val
 
+    def _resolve_properties_cascade(  # noqa: C901, PLR0912, PLR0915
+        self, paths, host_updates, project_meta, is_dry_run
+    ):
+        """Resolves the 5-layer properties hierarchy and syncs to portal-ext.properties."""
         target_ext = paths["files"] / "portal-ext.properties"
 
-        # --- Checksum Caching Logic ---
         import hashlib
         import json
 
@@ -785,12 +770,6 @@ class ConfigService:
 
         ldm_dir = paths["root"] / ".liferay-docker"
         manifest_path = ldm_dir / "properties_manifest.json"
-
-        is_dry_run = (
-            getattr(self.manager.args, "dry_run_properties", False)
-            or getattr(self.manager.args, "dry_run", False)
-            or os.environ.get("LDM_DRY_RUN", "").lower() == "true"
-        )
 
         bypass_engine = False
         if not is_dry_run and manifest_path.exists():
@@ -972,7 +951,8 @@ class ConfigService:
                     ldm_dir.mkdir(parents=True, exist_ok=True)
                     manifest_path.write_text(json.dumps(current_hashes, indent=2))
 
-        # Copy other common assets (license, configs, xml etc.) from multiple common dirs
+    def _sync_common_assets_files(self, paths, project_meta):  # noqa: C901, PLR0912, PLR0915
+        """Copies global or local common assets (license, configs, xml) into the project."""
         history_file = paths["root"] / ".liferay-docker.deployed"
         history = set()
         if history_file.exists():
@@ -1141,6 +1121,38 @@ class ConfigService:
             UI.info(
                 f"You can recreate the baseline by running: {UI.CYAN}ldm init-common{UI.COLOR_OFF}"
             )
+
+    def sync_common_assets(
+        self, paths, host_updates=None, version=None, project_meta=None
+    ):
+        """Synchronizes configuration, assets, and properties from global/local common to the project."""
+        if not isinstance(paths, dict):
+            paths = self.manager.setup_paths(paths)
+
+        if "common_dirs" not in paths:
+            if paths.get("common"):
+                paths["common_dirs"] = [paths["common"]]
+            else:
+                paths["common_dirs"] = []
+
+        if host_updates is None:
+            host_updates = {}
+
+        global_config = self.get_global_config()
+
+        self._configure_captcha(project_meta, host_updates, paths)
+        self._configure_fast_login(project_meta, host_updates)
+        self._configure_feature_flags(project_meta, global_config, host_updates)
+        self._configure_admin_user(global_config, host_updates)
+
+        is_dry_run = (
+            getattr(self.manager.args, "dry_run_properties", False)
+            or getattr(self.manager.args, "dry_run", False)
+            or os.environ.get("LDM_DRY_RUN", "").lower() == "true"
+        )
+        self._resolve_properties_cascade(paths, host_updates, project_meta, is_dry_run)
+
+        self._sync_common_assets_files(paths, project_meta)
 
     def cmd_log_level(self, project_id=None):
         """Manage Liferay internal logging levels via file-based hot-reloading."""

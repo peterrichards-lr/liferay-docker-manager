@@ -152,64 +152,10 @@ class SnapshotService(BaseHandler):
 
         return backups
 
-    def cmd_snapshot(self, project_id=None, name=None):  # noqa: C901, PLR0912, PLR0915
-        """Creates or manages snapshots of the project state."""
-        is_dry_run = os.environ.get("LDM_DRY_RUN", "").lower() == "true"
-        if is_dry_run:
-            UI.info(
-                f"{UI.BYELLOW}[DRY RUN] Would create or manage snapshots for project: {project_id}{UI.COLOR_OFF}"
-            )
-            return
-        root = self.manager.detect_project_path(project_id)
-        if not root:
-            return
-        paths = self.manager.setup_paths(root)
-        project_meta = self.manager.read_meta(root)
-
-        # Reclaim permissions on potential root-owned files before starting
-        self.manager.verify_runtime_environment(paths)
-
-        delete_arg = getattr(self.manager.args, "delete", None)
-        keep_last = getattr(self.manager.args, "keep_last", None)
-        older_than = getattr(self.manager.args, "older_than", None)
-        if name is None:
-            name = getattr(self.manager.args, "name", None)
-
-        if delete_arg or keep_last is not None or older_than is not None:
-            self._manage_snapshots(paths, delete_arg, keep_last, older_than)
-            # If the user only provided management flags (no --name), exit after managing
-            if not name and not self.manager.non_interactive and not delete_arg:
-                # If they just said --keep-last 5, we shouldn't automatically create a new snapshot named "Manual Snapshot"
-                # unless they actually want to. It's safer to exit.
-                return
-            if delete_arg:
-                return  # Explicit delete command doesn't create a new snapshot
-
-        if not name:
-            if self.manager.non_interactive:
-                name = f"Auto-snapshot {datetime.now().strftime('%Y-%m-%d %H:%M')}"
-            else:
-                name = UI.ask("Snapshot Name", "Manual Snapshot")
-
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        snap_dir = paths["backups"] / timestamp
-        from ldm_core.utils import safe_mkdir
-
-        safe_mkdir(snap_dir, parents=True, exist_ok=True)
-        UI.info(f"Creating snapshot: {name}...")
-
-        # --- SEARCH SNAPSHOT (Orchestrated) ---
+    def _snapshot_search(self, project_meta, root, timestamp, container_name):
         search_snapshot_name = None
         search_name = "liferay-search-global"
-        from ldm_core.utils import sanitize_id
 
-        container_name = sanitize_id(
-            project_meta.get("liferay_container_name")
-            or project_meta.get("container_name")
-            or root.name
-        )
-
-        # Check if project uses shared search and service is running
         if str(project_meta.get("use_shared_search", "false")).lower() == "true":
             if self.manager.run_command(
                 ["docker", "ps", "-q", "-f", f"name={search_name}"]
@@ -234,12 +180,12 @@ class SnapshotService(BaseHandler):
                         json.dumps({"indices": f"{container_name}-*"}),
                     ]
                 )
+        return search_snapshot_name
 
-        # --- DATABASE SNAPSHOT (Orchestrated) ---
+    def _snapshot_database(self, project_meta, container_name, snap_dir, paths):  # noqa: C901, PLR0912
         db_type = project_meta.get("db_type", "hypersonic")
         db_snapshot_file = None
         if db_type in ["mysql", "postgresql", "mariadb"]:
-            # LDM-388: Priority: Metadata -> Explicit Heuristic
             db_container = project_meta.get("db_container_name")
             from ldm_core.utils import resolve_infrastructure_mode
 
@@ -273,7 +219,6 @@ class SnapshotService(BaseHandler):
                     )
 
                 if db_type in ["mysql", "mariadb"]:
-                    # MySQL/MariaDB Dump (Explicitly include drop tables for rollback)
                     dump_cmd = [
                         "docker",
                         "exec",
@@ -287,7 +232,6 @@ class SnapshotService(BaseHandler):
                         db_name,
                     ]
                 else:
-                    # PostgreSQL Dump (Include clean/drop commands for rollback)
                     dump_cmd = [
                         "docker",
                         "exec",
@@ -327,30 +271,9 @@ class SnapshotService(BaseHandler):
                             except OSError:
                                 time.sleep(0.2)
                     UI.die(f"Database dump failed: {e}", exit_code=3)
+        return db_snapshot_file
 
-        # Wait for search snapshot if it was triggered
-        if search_snapshot_name:
-            if self._wait_for_search_snapshot(search_snapshot_name):
-                UI.success("Search snapshot completed.")
-                # Copy ES snapshot files to the backup dir so they are portable
-                try:
-                    es_backup_source = (
-                        get_actual_home() / ".ldm" / "infra" / "search" / "backup"
-                    )
-                    if es_backup_source.exists():
-                        snap_es_dir = paths["backups"] / timestamp / "search"
-                        from ldm_core.utils import safe_mkdir
-
-                        safe_mkdir(snap_es_dir, parents=True, exist_ok=True)
-                except Exception as e:
-                    UI.warning(f"Could not copy search snapshots: {e}")
-            else:
-                UI.warning(
-                    "Search snapshot failed or timed out. Project snapshot will proceed without it."
-                )
-                search_snapshot_name = None
-
-        # --- CUSTOM IMAGES PACKAGING (Issue #618) ---
+    def _snapshot_custom_containers(self, project_meta, snap_dir):
         custom_containers = project_meta.get("custom_containers")
         if custom_containers and isinstance(custom_containers, list):
             custom_images_dir = snap_dir / "custom_images"
@@ -374,17 +297,9 @@ class SnapshotService(BaseHandler):
                     except Exception as e:
                         UI.warning(f"Failed to save custom image {image}: {e}")
 
-        # --- VOLUME DEHYDRATION (LDM-382) ---
-        # If using Named Volumes (macOS), sync volume data back to host before archiving
-        self._dehydrate_named_volumes(paths)
-
-        # --- ARCHIVE ---
-        # Final permission sync before archiving (Fixes late-created Docker file issues)
-        # We call this again to ensure even files created by search snapshot are unlocked.
+    def _create_archive(self, paths, snap_dir, search_snapshot_name):  # noqa: C901
         self.manager.verify_runtime_environment(paths)
 
-        # LDM-388: Proactively reclaim ownership of the project directories to ensure we can read all files for archiving.
-        # We use 1000:1000 (Liferay standard) and 777 for bind mounts so LDM (host user) can read them.
         try:
             from ldm_core.utils import reclaim_volume_permissions
 
@@ -432,18 +347,14 @@ class SnapshotService(BaseHandler):
                 f_path = paths["root"] / f
                 if f_path.exists():
                     try:
-                        # Re-verify specific path permissions before adding
                         UI.detail(f"Adding {f} to archive...")
                         tar.add(f_path, arcname=f)
                     except (PermissionError, OSError) as e:
                         UI.warning(f"Skipping {f} due to permission error: {e}")
 
-            # Explicitly ensure osgi/state is included if it was missed by the generic 'osgi' add
-            # (Happens if osgi/ exists but state was empty or handled as a separate mount point)
-            osgi_state = paths["state"]
-            if osgi_state.exists() and osgi_state.is_dir():
+            osgi_state = paths.get("state")
+            if osgi_state and osgi_state.exists() and osgi_state.is_dir():
                 try:
-                    # Check if it's already in the tar to avoid duplicates
                     tar_names = [m.name for m in tar.getmembers()]
                     if "osgi/state" not in tar_names:
                         UI.detail("Adding missing osgi/state to archive...")
@@ -451,7 +362,6 @@ class SnapshotService(BaseHandler):
                 except Exception:
                     pass
 
-            # Explicitly add .ldm/fragment-overrides.json if it exists, since the .ldm dir is not archived entirely
             fragment_overrides = paths["root"] / ".ldm" / "fragment-overrides.json"
             if fragment_overrides.exists():
                 try:
@@ -462,7 +372,6 @@ class SnapshotService(BaseHandler):
                         f"Skipping .ldm/fragment-overrides.json due to error: {e}"
                     )
 
-            # If we have a search snapshot, bundle the global backup repo into the archive
             if search_snapshot_name:
                 es_infra_backup = (
                     get_actual_home() / ".ldm" / "infra" / "search" / "backup"
@@ -473,7 +382,19 @@ class SnapshotService(BaseHandler):
                     reclaim_volume_permissions(es_infra_backup, chmod_val="777")
                     tar.add(es_infra_backup, arcname="search_backup")
 
-        # Capture custom environment variables from docker-compose.yml
+        return files_tar
+
+    def _generate_snapshot_metadata(  # noqa: C901, PLR0912, PLR0915
+        self,
+        name,
+        timestamp,
+        project_meta,
+        root,
+        paths,
+        snap_dir,
+        db_snapshot_file,
+        search_snapshot_name,
+    ):
         custom_env_dict = {}
         compose_path = paths["root"] / "docker-compose.yml"
         if compose_path.exists():
@@ -486,7 +407,6 @@ class SnapshotService(BaseHandler):
                 )
                 env_vars = liferay_service.get("environment", [])
                 if isinstance(env_vars, list):
-                    # Filter for LIFERAY_ variables that aren't the standard ones managed by LDM
                     standard_vars = [
                         "LIFERAY_JVM_OPTS",
                         "LIFERAY_HOME",
@@ -502,7 +422,6 @@ class SnapshotService(BaseHandler):
                     f"Could not parse docker-compose.yml for environment variables: {e}"
                 )
 
-        # Determine included resources dynamically
         db_included = db_snapshot_file is not None and db_snapshot_file.exists()
 
         has_data = False
@@ -553,7 +472,6 @@ class SnapshotService(BaseHandler):
                     except Exception:
                         pass
 
-        # Collect client extensions list
         cx_list = []
         ce_dir = paths.get("ce_dir")
         if ce_dir and ce_dir.exists() and ce_dir.is_dir():
@@ -564,7 +482,6 @@ class SnapshotService(BaseHandler):
             except Exception:
                 pass
 
-        # Collect OSGi modules list
         modules_list = []
         for d in ["modules", "deploy", "themes"]:
             dir_path = paths.get(d)
@@ -576,7 +493,6 @@ class SnapshotService(BaseHandler):
                     pass
         modules_list = sorted(set(modules_list))
 
-        # Collect active services list
         active_services = []
         try:
             from ldm_core.utils import sanitize_id
@@ -600,7 +516,6 @@ class SnapshotService(BaseHandler):
         except Exception:
             pass
 
-        # Save metadata
         meta = {
             "name": name,
             "timestamp": timestamp,
@@ -625,7 +540,100 @@ class SnapshotService(BaseHandler):
         }
         self.manager.write_meta(snap_dir, meta)
 
-        # 4. Generate SHA-256 Checksum
+    def cmd_snapshot(self, project_id=None, name=None):  # noqa: PLR0912
+        """Creates or manages snapshots of the project state."""
+        is_dry_run = os.environ.get("LDM_DRY_RUN", "").lower() == "true"
+        if is_dry_run:
+            UI.info(
+                f"{UI.BYELLOW}[DRY RUN] Would create or manage snapshots for project: {project_id}{UI.COLOR_OFF}"
+            )
+            return
+        root = self.manager.detect_project_path(project_id)
+        if not root:
+            return
+        paths = self.manager.setup_paths(root)
+        project_meta = self.manager.read_meta(root)
+
+        self.manager.verify_runtime_environment(paths)
+
+        delete_arg = getattr(self.manager.args, "delete", None)
+        keep_last = getattr(self.manager.args, "keep_last", None)
+        older_than = getattr(self.manager.args, "older_than", None)
+        if name is None:
+            name = getattr(self.manager.args, "name", None)
+
+        if delete_arg or keep_last is not None or older_than is not None:
+            self._manage_snapshots(paths, delete_arg, keep_last, older_than)
+            if not name and not self.manager.non_interactive and not delete_arg:
+                return
+            if delete_arg:
+                return
+
+        if not name:
+            if self.manager.non_interactive:
+                name = f"Auto-snapshot {datetime.now().strftime('%Y-%m-%d %H:%M')}"
+            else:
+                name = UI.ask("Snapshot Name", "Manual Snapshot")
+
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        snap_dir = paths["backups"] / timestamp
+        from ldm_core.utils import safe_mkdir
+
+        safe_mkdir(snap_dir, parents=True, exist_ok=True)
+        UI.info(f"Creating snapshot: {name}...")
+
+        from ldm_core.utils import sanitize_id
+
+        container_name = sanitize_id(
+            project_meta.get("liferay_container_name")
+            or project_meta.get("container_name")
+            or root.name
+        )
+
+        search_snapshot_name = self._snapshot_search(
+            project_meta, root, timestamp, container_name
+        )
+        db_snapshot_file = self._snapshot_database(
+            project_meta, container_name, snap_dir, paths
+        )
+
+        if search_snapshot_name:
+            if self._wait_for_search_snapshot(search_snapshot_name):
+                UI.success("Search snapshot completed.")
+                try:
+                    es_backup_source = (
+                        get_actual_home() / ".ldm" / "infra" / "search" / "backup"
+                    )
+                    if es_backup_source.exists():
+                        snap_es_dir = paths["backups"] / timestamp / "search"
+                        from ldm_core.utils import safe_mkdir
+
+                        safe_mkdir(snap_es_dir, parents=True, exist_ok=True)
+                except Exception as e:
+                    UI.warning(f"Could not copy search snapshots: {e}")
+            else:
+                UI.warning(
+                    "Search snapshot failed or timed out. Project snapshot will proceed without it."
+                )
+                search_snapshot_name = None
+
+        self._snapshot_custom_containers(project_meta, snap_dir)
+
+        self._dehydrate_named_volumes(paths)
+
+        files_tar = self._create_archive(paths, snap_dir, search_snapshot_name)
+
+        self._generate_snapshot_metadata(
+            name,
+            timestamp,
+            project_meta,
+            root,
+            paths,
+            snap_dir,
+            db_snapshot_file,
+            search_snapshot_name,
+        )
+
         from ldm_core.utils import calculate_sha256
 
         if files_tar.exists() and getattr(self.manager.args, "verify", True):
@@ -636,30 +644,7 @@ class SnapshotService(BaseHandler):
 
         UI.success(f"Snapshot saved: {snap_dir}")
 
-    def cmd_restore(  # noqa: C901, PLR0912, PLR0915
-        self, project_id=None, auto_index=None, backup_dir=None, no_run=None
-    ):
-        is_dry_run = os.environ.get("LDM_DRY_RUN", "").lower() == "true"
-        if is_dry_run:
-            UI.info(
-                f"{UI.BYELLOW}[DRY RUN] Would restore snapshot for project: {project_id}{UI.COLOR_OFF}"
-            )
-            return
-        root_path = self.manager.detect_project_path(project_id, for_init=True)
-        if not root_path:
-            return
-        self.manager.check_uncommitted_changes(root_path)
-        project_id = root_path.name
-        paths = self.manager.setup_paths(root_path)
-        # For new projects (seeding), meta might not exist yet
-        project_meta = self.manager.read_meta(paths["root"]) or {}
-
-        # 0. Support for --list (Non-interactive overview)
-        if getattr(self.manager.args, "list", False):
-            self.cmd_snapshots(paths)
-            return
-
-        # 1. Resolve choice (direct dir, index, or interactive)
+    def _resolve_snapshot_choice(self, paths, auto_index, backup_dir):  # noqa: C901, PLR0912
         choice = None
         if backup_dir:
             choice = Path(backup_dir)
@@ -669,17 +654,16 @@ class SnapshotService(BaseHandler):
             backups = self.cmd_snapshots(paths)
             if not backups:
                 UI.die("No snapshots available for --latest.")
-            choice = backups[0]  # sorted reverse=True, so index 0 is latest
+            choice = backups[0]
 
         if not choice:
             backups = self.cmd_snapshots(paths)
             if not backups:
                 if auto_index is not None or backup_dir is not None:
-                    # Internal call path (run --samples or --snapshot)
                     UI.warning(
                         "No snapshots available. Proceeding with vanilla startup."
                     )
-                    return
+                    return None
                 UI.die("No snapshots available.")
 
             if auto_index is not None:
@@ -705,243 +689,117 @@ class SnapshotService(BaseHandler):
         if not choice or not choice.exists():
             UI.die(f"Snapshot directory not found: {choice}")
 
-        # At this point Mypy should know choice is a Path and not None
-        choice_path = cast(Path, choice)
+        return cast(Path, choice)
 
-        # 1.5 Ensure Compose file exists (Mandate 2.1)
-        if not (paths["root"] / "docker-compose.yml").exists():
-            UI.info("Scaffolding Docker environment for restore...")
-            self.manager.runtime.cmd_run(
-                project_id=project_meta.get("container_name") or paths["root"].name,
-                no_up=True,
-                show_summary=False,
-                paths=paths,
-                project_meta=project_meta,
-            )
+    def _restore_cloud_volume(self, paths, choice_path, project_meta):  # noqa: C901, PLR0912, PLR0915
+        UI.detail("  + Restoring cloud data volume...")
+        target_data = paths["data"]
+        from ldm_core.utils import safe_mkdir
 
-        # 2. Reset the Environment (Clean Slate)
-        from ldm_core.utils import sanitize_id
+        safe_mkdir(target_data, parents=True, exist_ok=True)
 
-        container_name = sanitize_id(
-            project_meta.get("liferay_container_name")
-            or project_meta.get("container_name")
-            or paths["root"].name
-        )
-        if (
-            self.manager.run_command(
-                ["docker", "ps", "-q", "-f", f"name=^{container_name}$"], check=False
-            )
-            or (paths["root"] / "docker-compose.yml").exists()
-        ):
-            # LDM-388/389: Do a FULL reset (wipe host volumes and down -v for anonymous DB volumes)
-            # This ensures the restore is a 100% clean slate, preventing leftover files or DB rows.
-            self.manager.runtime.cmd_reset(project_id=paths["root"].name, target="all")
-            time.sleep(2)
-
-        # 3. File System Restore (Standard or Cloud)
-        files_tar = choice_path / "files.tar.gz"
         volume_tgz = choice_path / "volume.tgz"
 
-        if files_tar.exists():
-            # Verify Integrity (Mandate 6.2)
-            sha_file = choice_path / "files.tar.gz.sha256"
-            verify_enabled = getattr(self.manager.args, "verify", True)
+        if volume_tgz.exists():
+            hash_file = target_data / ".ldm_volume.sha256"
+            skip_extraction = False
+            has_files = False
+            try:
+                if target_data.exists():
+                    has_files = any(
+                        item
+                        for item in target_data.iterdir()
+                        if item.name not in (".DS_Store", ".ldm_volume.sha256")
+                    )
+            except Exception:
+                pass
 
-            if verify_enabled:
-                if sha_file.exists():
-                    UI.info("Verifying snapshot integrity...")
+            if has_files and hash_file.exists():
+                try:
                     from ldm_core.utils import calculate_sha256
 
-                    actual_sha = calculate_sha256(files_tar)
-                    expected_sha = sha_file.read_text().strip()
-                    if actual_sha != expected_sha:
-                        UI.die(
-                            f"Integrity check failed for snapshot: {choice_path.name}\n"
-                            f"Expected: {expected_sha}\n"
-                            f"Actual:   {actual_sha}\n"
-                            f"The snapshot file may be corrupted or tampered with."
-                        )
-                    UI.success("Snapshot integrity verified.")
-                else:
-                    UI.warning(
-                        "Snapshot does not have an integrity checksum. Verification skipped."
-                    )
-            else:
-                UI.warning("Integrity verification disabled via --no-verify.")
-
-            self._extract_snapshot_archive(files_tar, paths)
-
-            # Back up the restored/imported portal-ext.properties to serve as .ldmp/snapshot baseline
-            if "files" in paths:
-                target_pe = paths["files"] / "portal-ext.properties"
-                if target_pe.exists():
-                    ldm_dir = paths["root"] / ".liferay-docker"
-                    ldm_dir.mkdir(parents=True, exist_ok=True)
-                    import shutil
-
-                    shutil.copy2(target_pe, ldm_dir / "ldmp-portal-ext.properties")
-
-            # Fallback for older or custom packaging scripts that place .ldm outside files.tar.gz
-            if (choice_path / ".ldm").exists():
-                import shutil
-
-                shutil.copytree(
-                    choice_path / ".ldm", paths["root"] / ".ldm", dirs_exist_ok=True
-                )
-        elif volume_tgz.exists() or (choice_path / "volume").is_dir():
-            UI.detail("  + Restoring cloud data volume...")
-            target_data = paths["data"]
-            from ldm_core.utils import safe_mkdir
-
-            safe_mkdir(target_data, parents=True, exist_ok=True)
-
-            if volume_tgz.exists():
-                hash_file = target_data / ".ldm_volume.sha256"
-                skip_extraction = False
-                # If target directory is empty or missing, we must extract
-                has_files = False
-                try:
-                    if target_data.exists():
-                        has_files = any(
-                            item
-                            for item in target_data.iterdir()
-                            if item.name not in (".DS_Store", ".ldm_volume.sha256")
+                    current_hash = calculate_sha256(volume_tgz)
+                    cached_hash = hash_file.read_text().strip()
+                    if current_hash == cached_hash:
+                        skip_extraction = True
+                        UI.info(
+                            "  + Volume archive unchanged (hash matched). Skipping extraction."
                         )
                 except Exception:
                     pass
 
-                if has_files and hash_file.exists():
-                    try:
-                        from ldm_core.utils import calculate_sha256
+            if not skip_extraction:
+                self.manager.run_command(
+                    ["tar", "-xzf", str(volume_tgz), "-C", str(target_data)]
+                )
+                try:
+                    from ldm_core.utils import calculate_sha256
 
-                        current_hash = calculate_sha256(volume_tgz)
-                        cached_hash = hash_file.read_text().strip()
-                        if current_hash == cached_hash:
-                            skip_extraction = True
-                            UI.info(
-                                "  + Volume archive unchanged (hash matched). Skipping extraction."
-                            )
-                    except Exception:
-                        pass
-
-                if not skip_extraction:
-                    self.manager.run_command(
-                        ["tar", "-xzf", str(volume_tgz), "-C", str(target_data)]
-                    )
-                    try:
-                        from ldm_core.utils import calculate_sha256
-
-                        current_hash = calculate_sha256(volume_tgz)
-                        hash_file.write_text(current_hash)
-                    except Exception:
-                        pass
-            else:
-                # LDM-408/422/423: Robust Volume Hydration (Mac Sync Resilience)
-                # 1. First, synchronously copy the snapshot to the host project folder.
-                # This ensures the files are physically on the disk and owned by the user.
-                import shutil
-
-                from ldm_core.utils import safe_rmtree
-
-                if target_data.exists():
-                    safe_rmtree(target_data)
-
-                UI.detail("  + Unpacking volume to host...")
-                shutil.copytree(str(choice_path / "volume"), str(target_data))
-
-                # 2. On macOS (Named Volumes), we must push the host data into the Docker volume.
-                if self.manager.composer.is_using_named_volumes():
-                    # LDM-423: Critical 'Sync Wait'. On macOS, the Docker hypervisor (VirtioFS)
-                    # needs a moment to 'see' the files we just wrote to the host before we
-                    # can mount them into a container for the tar-sync.
-                    time.sleep(2)
-
-                    UI.detail("  + Hydrating internal Docker volumes...")
-
-                    self._hydrate_named_volumes(paths)
-
-            UI.success("Cloud volume restoration completed.")
-
-            # LDM-424: Smart Store Detection (Automatic path resolution)
-            # We look at the physical folders in the document library to see if they follow
-            # the simplified FileSystemStore layout or the nested AdvancedFileSystemStore.
-            try:
-                doclib_root = target_data / "document_library"
-                if doclib_root.exists():
-                    is_simple = False
-                    for company_dir in doclib_root.iterdir():
-                        if company_dir.is_dir() and company_dir.name.isdigit():
-                            # If the company dir contains any folders that are NOT numbers (like ._*)
-                            # or if it contains folder IDs directly that are referenced in the DB
-                            # we assume it might be simple.
-                            # Better heuristic: Advanced store has repositoryId (Group ID) as 2nd level.
-                            # Simple store has folderId as 2nd level.
-                            # If we find a deep file at level 3 instead of level 4, it's simple.
-                            subdirs = [
-                                d
-                                for d in company_dir.iterdir()
-                                if d.is_dir() and d.name.isdigit()
-                            ]
-                            if subdirs:
-                                # Check if any of these subdirs contain further numbered subdirs
-                                for s in subdirs:
-                                    grandkids = [
-                                        d
-                                        for d in s.iterdir()
-                                        if d.is_dir() and d.name.isdigit()
-                                    ]
-                                    if not grandkids:
-                                        is_simple = True
-                                        break
-                        if is_simple:
-                            break
-
-                    if is_simple:
-                        UI.info("  + Detected simplified FileSystemStore layout.")
-                        project_meta["dl_store_impl"] = (
-                            "com.liferay.portal.store.file.system.FileSystemStore"
-                        )
-                    else:
-                        project_meta["dl_store_impl"] = (
-                            "com.liferay.portal.store.file.system.AdvancedFileSystemStore"
-                        )
-                    self.manager.write_meta(paths["root"], project_meta)
-            except Exception as e:
-                UI.debug(f"Store detection failed: {e}")
+                    current_hash = calculate_sha256(volume_tgz)
+                    hash_file.write_text(current_hash)
+                except Exception:
+                    pass
         else:
-            UI.die(f"Snapshot files not found in {choice_path}")
+            import shutil
 
-        # --- SEARCH RESTORE (Orchestrated) ---
-        snap_meta = self.manager.read_meta(choice_path / "meta")
-        search_snapshot_name = snap_meta.get("search_snapshot")
-        search_name = "liferay-search-global"
+            from ldm_core.utils import safe_rmtree
 
-        # Restore custom environment variables to project metadata
-        custom_env = snap_meta.get("custom_env")
-        if custom_env:
-            project_meta["custom_env"] = custom_env
-            self.manager.write_meta(paths["root"], project_meta)
+            if target_data.exists():
+                safe_rmtree(target_data)
 
-        # Restore tag/version to project metadata so we revert to the correct Liferay version (Issue #246)
-        snap_tag = snap_meta.get("tag")
-        if snap_tag:
-            project_meta["tag"] = snap_tag
-            project_meta["last_run_liferay_version"] = snap_tag
-            self.manager.write_meta(paths["root"], project_meta)
-            self.manager.runtime.cmd_run(
-                project_id=project_meta.get("container_name") or paths["root"].name,
-                no_up=True,
-                show_summary=False,
-                is_restore=True,
-                paths=paths,
-                project_meta=project_meta,
-            )
+            UI.detail("  + Unpacking volume to host...")
+            shutil.copytree(str(choice_path / "volume"), str(target_data))
 
-        # --- DATABASE RESTORE (Orchestrated) ---
+            if self.manager.composer.is_using_named_volumes():
+                time.sleep(2)
+
+                UI.detail("  + Hydrating internal Docker volumes...")
+
+                self._hydrate_named_volumes(paths)
+
+        UI.success("Cloud volume restoration completed.")
+
+        try:
+            doclib_root = target_data / "document_library"
+            if doclib_root.exists():
+                is_simple = False
+                for company_dir in doclib_root.iterdir():
+                    if company_dir.is_dir() and company_dir.name.isdigit():
+                        subdirs = [
+                            d
+                            for d in company_dir.iterdir()
+                            if d.is_dir() and d.name.isdigit()
+                        ]
+                        if subdirs:
+                            for s in subdirs:
+                                grandkids = [
+                                    d
+                                    for d in s.iterdir()
+                                    if d.is_dir() and d.name.isdigit()
+                                ]
+                                if not grandkids:
+                                    is_simple = True
+                                    break
+                    if is_simple:
+                        break
+
+                if is_simple:
+                    UI.info("  + Detected simplified FileSystemStore layout.")
+                    project_meta["dl_store_impl"] = (
+                        "com.liferay.portal.store.file.system.FileSystemStore"
+                    )
+                else:
+                    project_meta["dl_store_impl"] = (
+                        "com.liferay.portal.store.file.system.AdvancedFileSystemStore"
+                    )
+                self.manager.write_meta(paths["root"], project_meta)
+        except Exception as e:
+            UI.debug(f"Store detection failed: {e}")
+
+    def _restore_database(self, paths, choice_path, project_meta, container_name):  # noqa: C901, PLR0912, PLR0915
         sql_file = choice_path / "database.sql"
         db_gz = choice_path / "database.gz"
 
-        # If cloud database dump exists but hasn't been extracted yet
         if db_gz.exists() and not sql_file.exists():
             UI.detail("  + Decompressing cloud database dump...")
             import gzip
@@ -959,8 +817,6 @@ class SnapshotService(BaseHandler):
         if db_type == "hypersonic":
             UI.success("  + Hypersonic database restored successfully (file-based).")
         elif sql_file.exists():
-            # LDM-413: Scrub proprietary LCP \restrict meta-commands
-            # These commands cause standard psql to fail when ON_ERROR_STOP=1 is active
             try:
                 import tempfile
 
@@ -971,7 +827,6 @@ class SnapshotService(BaseHandler):
                     temp_sql = Path(temp_file.name)
 
                     with open(str(sql_file), encoding="utf-8", errors="ignore") as f_in:
-                        # Quick check: does it even have \restrict near the top?
                         first_chunk = f_in.read(4096)
                         if "\\restrict" in first_chunk:
                             UI.info(
@@ -986,7 +841,6 @@ class SnapshotService(BaseHandler):
                                 temp_file.write(line)
                             scrubbed = True
 
-                # We must close the NamedTemporaryFile block before moving it to avoid file locks on some OSs
                 if scrubbed:
                     from ldm_core.utils import safe_move
 
@@ -1000,10 +854,7 @@ class SnapshotService(BaseHandler):
 
             UI.info(f"Triggering orchestrated database restore ({db_type})...")
 
-            # 1. Ensure DB container is running, but Liferay is STOPPED
-            # This is critical to prevent Liferay from locking the database or
-            # attempting to initialize schemas during the restore process.
-            self.manager.runtime.cmd_stop(project_id, service="liferay")
+            self.manager.runtime.cmd_stop(paths["root"].name, service="liferay")
 
             from ldm_core.utils import resolve_infrastructure_mode
 
@@ -1043,7 +894,6 @@ class SnapshotService(BaseHandler):
                             [*compose_base, "up", "-d", "db"], cwd=str(paths["root"])
                         )
 
-                        # Wait for DB to be responsive
                         for _i in range(10):
                             time.sleep(2)
                             for suffix in ["-db", "-db-1"]:
@@ -1056,7 +906,6 @@ class SnapshotService(BaseHandler):
                             if db_container:
                                 break
 
-            # Wait for shared database to be responsive before importing
             if db_mode == "shared" and db_container:
                 UI.detail(
                     f"Waiting for shared database ({UI.CYAN}{db_container}{UI.COLOR_OFF}) to be ready..."
@@ -1081,6 +930,10 @@ class SnapshotService(BaseHandler):
             else:
                 UI.error("  ! Could not find database container for restore.")
 
+    def _restore_search(self, choice_path, meta, container_name):
+        search_snapshot_name = meta.get("search_snapshot")
+        search_name = "liferay-search-global"
+
         if search_snapshot_name and search_snapshot_name != "None":
             if self.manager.run_command(
                 ["docker", "ps", "-q", "-f", f"name={search_name}"]
@@ -1089,10 +942,8 @@ class SnapshotService(BaseHandler):
                     f"Triggering orchestrated search restore: {search_snapshot_name}..."
                 )
 
-                # 1. Clear existing indices for this project
                 self._delete_project_indices(container_name)
 
-                # 2. Trigger restore
                 self.manager.run_command(
                     [
                         "docker",
@@ -1126,7 +977,7 @@ class SnapshotService(BaseHandler):
                     "Global search service not running. Could not restore search indices."
                 )
 
-        # --- CUSTOM IMAGES RESTORE (Issue #618) ---
+    def _restore_custom_images(self, choice_path):
         custom_images_dir = choice_path / "custom_images"
         if custom_images_dir.exists() and custom_images_dir.is_dir():
             UI.info("Loading custom container images from snapshot...")
@@ -1137,17 +988,142 @@ class SnapshotService(BaseHandler):
                 except Exception as e:
                     UI.warning(f"Failed to load custom image {tar_file.name}: {e}")
 
+    def cmd_restore(  # noqa: C901, PLR0912, PLR0915
+        self, project_id=None, auto_index=None, backup_dir=None, no_run=None
+    ):
+        is_dry_run = os.environ.get("LDM_DRY_RUN", "").lower() == "true"
+        if is_dry_run:
+            UI.info(
+                f"{UI.BYELLOW}[DRY RUN] Would restore snapshot for project: {project_id}{UI.COLOR_OFF}"
+            )
+            return
+        root_path = self.manager.detect_project_path(project_id, for_init=True)
+        if not root_path:
+            return
+        self.manager.check_uncommitted_changes(root_path)
+        project_id = root_path.name
+        paths = self.manager.setup_paths(root_path)
+        project_meta = self.manager.read_meta(paths["root"]) or {}
+
+        if getattr(self.manager.args, "list", False):
+            self.cmd_snapshots(paths)
+            return
+
+        choice_path = self._resolve_snapshot_choice(paths, auto_index, backup_dir)
+        if not choice_path:
+            return
+
+        if not (paths["root"] / "docker-compose.yml").exists():
+            UI.info("Scaffolding Docker environment for restore...")
+            self.manager.runtime.cmd_run(
+                project_id=project_meta.get("container_name") or paths["root"].name,
+                no_up=True,
+                show_summary=False,
+                paths=paths,
+                project_meta=project_meta,
+            )
+
+        from ldm_core.utils import sanitize_id
+
+        container_name = sanitize_id(
+            project_meta.get("liferay_container_name")
+            or project_meta.get("container_name")
+            or paths["root"].name
+        )
+        if (
+            self.manager.run_command(
+                ["docker", "ps", "-q", "-f", f"name=^{container_name}$"], check=False
+            )
+            or (paths["root"] / "docker-compose.yml").exists()
+        ):
+            self.manager.runtime.cmd_reset(project_id=paths["root"].name, target="all")
+            time.sleep(2)
+
+        files_tar = choice_path / "files.tar.gz"
+        volume_tgz = choice_path / "volume.tgz"
+
+        if files_tar.exists():
+            sha_file = choice_path / "files.tar.gz.sha256"
+            verify_enabled = getattr(self.manager.args, "verify", True)
+
+            if verify_enabled:
+                if sha_file.exists():
+                    UI.info("Verifying snapshot integrity...")
+                    from ldm_core.utils import calculate_sha256
+
+                    actual_sha = calculate_sha256(files_tar)
+                    expected_sha = sha_file.read_text().strip()
+                    if actual_sha != expected_sha:
+                        UI.die(
+                            f"Integrity check failed for snapshot: {choice_path.name}\n"
+                            f"Expected: {expected_sha}\n"
+                            f"Actual:   {actual_sha}\n"
+                            f"The snapshot file may be corrupted or tampered with."
+                        )
+                    UI.success("Snapshot integrity verified.")
+                else:
+                    UI.warning(
+                        "Snapshot does not have an integrity checksum. Verification skipped."
+                    )
+            else:
+                UI.warning("Integrity verification disabled via --no-verify.")
+
+            self._extract_snapshot_archive(files_tar, paths)
+
+            if "files" in paths:
+                target_pe = paths["files"] / "portal-ext.properties"
+                if target_pe.exists():
+                    ldm_dir = paths["root"] / ".liferay-docker"
+                    ldm_dir.mkdir(parents=True, exist_ok=True)
+                    import shutil
+
+                    shutil.copy2(target_pe, ldm_dir / "ldmp-portal-ext.properties")
+
+            if (choice_path / ".ldm").exists():
+                import shutil
+
+                shutil.copytree(
+                    choice_path / ".ldm", paths["root"] / ".ldm", dirs_exist_ok=True
+                )
+        elif volume_tgz.exists() or (choice_path / "volume").is_dir():
+            self._restore_cloud_volume(paths, choice_path, project_meta)
+        else:
+            UI.die(f"Snapshot files not found in {choice_path}")
+
+        snap_meta = self.manager.read_meta(choice_path / "meta")
+
+        custom_env = snap_meta.get("custom_env")
+        if custom_env:
+            project_meta["custom_env"] = custom_env
+            self.manager.write_meta(paths["root"], project_meta)
+
+        snap_tag = snap_meta.get("tag")
+        if snap_tag:
+            project_meta["tag"] = snap_tag
+            project_meta["last_run_liferay_version"] = snap_tag
+            self.manager.write_meta(paths["root"], project_meta)
+            self.manager.runtime.cmd_run(
+                project_id=project_meta.get("container_name") or paths["root"].name,
+                no_up=True,
+                show_summary=False,
+                is_restore=True,
+                paths=paths,
+                project_meta=project_meta,
+            )
+
+        self._restore_database(paths, choice_path, project_meta, container_name)
+
+        self._restore_search(choice_path, snap_meta, container_name)
+
+        self._restore_custom_images(choice_path)
+
         UI.success("Restore complete.")
 
-        # LDM-422: Flag for one-time automatic reindex on next boot
-        # Liferay won't automatically reindex imported databases. We set a metadata
-        # flag that tells the composer to inject index.on.startup=true for the next run.
         if self.flag_reindex(paths["root"]):
             UI.info("  + Scheduled automatic search reindex for next boot.")
         else:
             UI.warning("  ! Could not schedule automatic reindex (metadata missing).")
 
-        # --- OPTIONAL STARTUP (LDM-388) ---
         if no_run is None:
             no_run = getattr(self.manager.args, "no_run", False)
         up_flag = getattr(self.manager.args, "up", False)
