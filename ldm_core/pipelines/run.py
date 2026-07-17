@@ -303,19 +303,10 @@ class RuntimeValidationStage(PipelineStage):
 class ConfigResolutionStage(PipelineStage):
     """Resolves tags, databases, archtypes, and constructs project configuration."""
 
-    def execute(self, context: PipelineContext) -> None:  # noqa: C901, PLR0912, PLR0915
-        context = typing.cast(RunPipelineContext, context)
-        manager = context.manager
-        project_meta = context.get("project_meta")
-        paths = context.get("paths")
-        project_id = context.get("project_id")
-
-        no_up = context.get("no_up")
-        if no_up is None:
-            no_up = getattr(manager.args, "no_up", False)
-
+    def _resolve_tag(self, manager, project_meta, is_samples, is_portal):  # noqa: C901, PLR0912
         tag_latest = getattr(manager.args, "tag_latest", False)
         prefix = getattr(manager.args, "tag_prefix", None)
+
         if tag_latest or prefix:
             tag = None
         else:
@@ -324,11 +315,6 @@ class ConfigResolutionStage(PipelineStage):
                 or project_meta.get("tag")
                 or manager.defaults.get("tag")
             )
-        is_portal = (
-            getattr(manager.args, "portal", False)
-            or str(project_meta.get("portal", manager.defaults.get("portal"))).lower()
-            == "true"
-        )
 
         if tag:
             from ldm_core.utils import resolve_liferay_docker_tag
@@ -344,6 +330,194 @@ class ConfigResolutionStage(PipelineStage):
                 is_portal = True
                 tag = tag[7:]
 
+        if is_samples and not tag:
+            tag = manager.config.get_samples_tag()
+
+        if not tag:
+            can_discover = tag_latest or bool(prefix)
+            if manager.non_interactive:
+                can_discover = True
+
+            from ldm_core.constants import API_BASE_DXP, API_BASE_PORTAL
+            from ldm_core.utils import discover_latest_tag
+
+            api_base = API_BASE_PORTAL if is_portal else API_BASE_DXP
+            default_rt = manager.defaults.get("release_type", "lts")
+            rt = getattr(manager.args, "release_type", None)
+            if not rt:
+                rt = "any" if prefix else default_rt
+
+            if not can_discover:
+                if manager.verbose:
+                    UI.info(
+                        f"Pre-resolving latest {rt.upper()} release to populate default prompt..."
+                    )
+                default_resolved_tag = discover_latest_tag(
+                    api_base,
+                    release_type=rt,
+                    prefix_filter=prefix,
+                    verbose=manager.verbose,
+                )
+                ans = UI.ask(
+                    "Release type (lts|u|qr|latest), prefix, or specific tag",
+                    default_resolved_tag,
+                )
+                if ans == default_resolved_tag:
+                    tag = default_resolved_tag
+                elif ans.lower() in ["any", "latest", "u", "lts", "qr"]:
+                    release_type = "any" if ans.lower() == "latest" else ans.lower()
+                    if manager.verbose:
+                        UI.info(f"Discovering latest {ans.upper()} release...")
+                    tag = discover_latest_tag(
+                        api_base, release_type=release_type, verbose=manager.verbose
+                    )
+                    if not tag:
+                        UI.die(f"Could not find any tags for release type: {ans}")
+                else:
+                    if manager.verbose:
+                        UI.info(f"Discovering latest tag matching prefix: {ans}...")
+                    tag = discover_latest_tag(
+                        api_base,
+                        release_type="any",
+                        prefix_filter=ans,
+                        verbose=manager.verbose,
+                    )
+                    if not tag:
+                        tag = ans
+            else:
+                if manager.verbose:
+                    UI.info("Automatically discovering latest Liferay tag...")
+                tag = discover_latest_tag(
+                    api_base,
+                    release_type=rt,
+                    prefix_filter=prefix,
+                    verbose=manager.verbose,
+                )
+                if not tag:
+                    UI.die(
+                        "Failed to discover latest Liferay tag. Please specify one explicitly with -t."
+                    )
+                if manager.verbose:
+                    UI.success(f"Using tag: {tag}")
+
+        return tag, is_portal
+
+    def _resolve_database(self, manager, project_meta, is_samples):
+        db_type = (
+            getattr(manager.args, "db", None)
+            or project_meta.get("db_type")
+            or manager.defaults.get("db_type")
+            or "postgresql"
+        )
+        if (
+            is_samples
+            and not getattr(manager.args, "db", None)
+            and not project_meta.get("db_type")
+        ):
+            db_type = manager.config.get_samples_db_type()
+
+        if db_type == "external" and not project_meta.get("jdbc_url"):
+            UI.heading("External Database Configuration")
+            project_meta["jdbc_url"] = UI.ask(
+                "JDBC URL (e.g. jdbc:postgresql://host:5432/db)",
+                "jdbc:postgresql://db:5432/lportal",
+            )
+            project_meta["jdbc_user"] = UI.ask("Database Username", "liferay")
+            project_meta["jdbc_pass"] = UI.ask("Database Password", "liferay")
+
+        return db_type
+
+    def _resolve_share_and_expose(self, manager, project_meta):
+        is_share = (
+            getattr(manager.args, "share", False) is True
+            or getattr(manager.args, "expose", False) is True
+            or str(project_meta.get("share", "false")).lower() == "true"
+        )
+        share_subdomain = getattr(
+            manager.args, "share_subdomain", None
+        ) or project_meta.get("share_subdomain")
+        share_image = getattr(manager.args, "share_image", None) or project_meta.get(
+            "share_image"
+        )
+        share_inspector = (
+            getattr(manager.args, "share_inspector", False) is True
+            or str(project_meta.get("share_inspector", "false")).lower() == "true"
+        )
+
+        share_domain = getattr(manager.args, "share_domain", None) or project_meta.get(
+            "share_domain"
+        )
+        share_provider = getattr(
+            manager.args, "share_provider", None
+        ) or project_meta.get("share_provider")
+
+        if is_share and getattr(manager.args, "expose", False) is True:
+            share_provider = "ngrok"
+
+        if is_share and share_provider != "ngrok":
+            share_provider, share_domain = manager.share.resolve_share_config(
+                project_meta
+            )
+
+        if not share_provider:
+            share_provider = "lfr-tunnel"
+
+        is_expose = (
+            getattr(manager.args, "expose", False) is True
+            or str(project_meta.get("expose", "false")).lower() == "true"
+            or (is_share and share_provider == "ngrok")
+        )
+        if is_expose:
+            auth_token = manager.config.get_ngrok_auth_token()
+            if not auth_token:
+                UI.info(
+                    "An ngrok Auth Token is required to use the expose feature (it enables custom host headers and HTTPS)."
+                )
+                UI.info(
+                    f"You can find yours at: {UI.CYAN}https://dashboard.ngrok.com/get-started/your-authtoken{UI.COLOR_OFF}"
+                )
+                auth_token = UI.ask("Enter your ngrok Auth Token")
+                if auth_token:
+                    manager.config.set_ngrok_auth_token(auth_token)
+                    UI.success("Saved ngrok token to global configuration.")
+                else:
+                    UI.warning("No token provided. Ngrok will not be configured.")
+                    is_expose = False
+                    if hasattr(manager.args, "expose"):
+                        manager.args.expose = False
+                    is_share = False
+
+        return {
+            "is_share": is_share,
+            "share_subdomain": share_subdomain,
+            "share_image": share_image,
+            "share_inspector": share_inspector,
+            "share_domain": share_domain,
+            "share_provider": share_provider,
+            "is_expose": is_expose,
+        }
+
+    def execute(self, context: PipelineContext) -> None:  # noqa: C901, PLR0912, PLR0915
+        context = typing.cast(RunPipelineContext, context)
+        manager = context.manager
+        project_meta = context.get("project_meta")
+        paths = context.get("paths")
+        project_id = context.get("project_id")
+
+        no_up = context.get("no_up")
+        if no_up is None:
+            no_up = getattr(manager.args, "no_up", False)
+
+        is_samples = getattr(manager.args, "samples", False)
+
+        is_portal = (
+            getattr(manager.args, "portal", False)
+            or str(project_meta.get("portal", manager.defaults.get("portal"))).lower()
+            == "true"
+        )
+
+        tag, is_portal = self._resolve_tag(manager, project_meta, is_samples, is_portal)
+
         host_name = (
             manager.args.host_name
             or project_meta.get("host_name")
@@ -351,18 +525,19 @@ class ConfigResolutionStage(PipelineStage):
             or "localhost"
         )
 
+        if is_samples:
+            if host_name == "localhost":
+                if manager.non_interactive:
+                    UI.die("--samples requires a custom hostname.")
+                host_name = UI.ask("Enter project Virtual Hostname", "samples.local")
+
         if getattr(manager.args, "ssl", None) is True and not getattr(
             manager.args, "host_name", None
         ):
             if not manager.non_interactive:
                 host_name = UI.ask("Enter project Virtual Hostname", host_name)
 
-        db_type = (
-            getattr(manager.args, "db", None)
-            or project_meta.get("db_type")
-            or manager.defaults.get("db_type")
-            or "postgresql"
-        )
+        db_type = self._resolve_database(manager, project_meta, is_samples)
 
         archetype_name = getattr(manager.args, "archetype", None) or project_meta.get(
             "archetype"
@@ -378,15 +553,6 @@ class ConfigResolutionStage(PipelineStage):
                     f"Archetype '{archetype_name}' not found. Available archetypes: {[d.name for d in (SCRIPT_DIR / 'ldm_core' / 'resources' / 'archetypes').iterdir() if d.is_dir()]}"
                 )
             project_meta["archetype"] = archetype_name
-
-        if db_type == "external" and not project_meta.get("jdbc_url"):
-            UI.heading("External Database Configuration")
-            project_meta["jdbc_url"] = UI.ask(
-                "JDBC URL (e.g. jdbc:postgresql://host:5432/db)",
-                "jdbc:postgresql://db:5432/lportal",
-            )
-            project_meta["jdbc_user"] = UI.ask("Database Username", "liferay")
-            project_meta["jdbc_pass"] = UI.ask("Database Password", "liferay")
 
         jvm_args = getattr(manager.args, "jvm_args", None) or project_meta.get(
             "jvm_args"
@@ -463,88 +629,6 @@ class ConfigResolutionStage(PipelineStage):
         if not jvm_args:
             jvm_args = manager.composer.get_default_jvm_args()
 
-        is_samples = getattr(manager.args, "samples", False)
-        if is_samples:
-            config_handler = manager.config
-            if host_name == "localhost":
-                if manager.non_interactive:
-                    UI.die("--samples requires a custom hostname.")
-                host_name = UI.ask("Enter project Virtual Hostname", "samples.local")
-            if not tag:
-                tag = config_handler.get_samples_tag()
-            if not db_type:
-                db_type = config_handler.get_samples_db_type()
-
-        if not tag:
-            tag_latest = getattr(manager.args, "tag_latest", False)
-            prefix = getattr(manager.args, "tag_prefix", None)
-
-            can_discover = tag_latest or bool(prefix)
-            if manager.non_interactive:
-                can_discover = True
-
-            from ldm_core.constants import API_BASE_DXP, API_BASE_PORTAL
-            from ldm_core.utils import discover_latest_tag
-
-            api_base = API_BASE_PORTAL if is_portal else API_BASE_DXP
-            default_rt = manager.defaults.get("release_type", "lts")
-            rt = getattr(manager.args, "release_type", None)
-            if not rt:
-                rt = "any" if prefix else default_rt
-
-            if not can_discover:
-                if manager.verbose:
-                    UI.info(
-                        f"Pre-resolving latest {rt.upper()} release to populate default prompt..."
-                    )
-                default_resolved_tag = discover_latest_tag(
-                    api_base,
-                    release_type=rt,
-                    prefix_filter=prefix,
-                    verbose=manager.verbose,
-                )
-                ans = UI.ask(
-                    "Release type (lts|u|qr|latest), prefix, or specific tag",
-                    default_resolved_tag,
-                )
-                if ans == default_resolved_tag:
-                    tag = default_resolved_tag
-                elif ans.lower() in ["any", "latest", "u", "lts", "qr"]:
-                    release_type = "any" if ans.lower() == "latest" else ans.lower()
-                    if manager.verbose:
-                        UI.info(f"Discovering latest {ans.upper()} release...")
-                    tag = discover_latest_tag(
-                        api_base, release_type=release_type, verbose=manager.verbose
-                    )
-                    if not tag:
-                        UI.die(f"Could not find any tags for release type: {ans}")
-                else:
-                    if manager.verbose:
-                        UI.info(f"Discovering latest tag matching prefix: {ans}...")
-                    tag = discover_latest_tag(
-                        api_base,
-                        release_type="any",
-                        prefix_filter=ans,
-                        verbose=manager.verbose,
-                    )
-                    if not tag:
-                        tag = ans
-            else:
-                if manager.verbose:
-                    UI.info("Automatically discovering latest Liferay tag...")
-                tag = discover_latest_tag(
-                    api_base,
-                    release_type=rt,
-                    prefix_filter=prefix,
-                    verbose=manager.verbose,
-                )
-                if not tag:
-                    UI.die(
-                        "Failed to discover latest Liferay tag. Please specify one explicitly with -t."
-                    )
-                if manager.verbose:
-                    UI.success(f"Using tag: {tag}")
-
         external_snapshot = getattr(manager.args, "snapshot", None)
         if external_snapshot:
             snap_path = Path(external_snapshot).resolve()
@@ -562,64 +646,7 @@ class ConfigResolutionStage(PipelineStage):
                     f"Tag '{tag}' is not listed in official Liferay releases. If this is not a custom image, the Docker pull may fail."
                 )
 
-        is_share = (
-            getattr(manager.args, "share", False) is True
-            or getattr(manager.args, "expose", False) is True
-            or str(project_meta.get("share", "false")).lower() == "true"
-        )
-        share_subdomain = getattr(
-            manager.args, "share_subdomain", None
-        ) or project_meta.get("share_subdomain")
-        share_image = getattr(manager.args, "share_image", None) or project_meta.get(
-            "share_image"
-        )
-        share_inspector = (
-            getattr(manager.args, "share_inspector", False) is True
-            or str(project_meta.get("share_inspector", "false")).lower() == "true"
-        )
-
-        share_domain = getattr(manager.args, "share_domain", None) or project_meta.get(
-            "share_domain"
-        )
-        share_provider = getattr(
-            manager.args, "share_provider", None
-        ) or project_meta.get("share_provider")
-
-        if is_share and getattr(manager.args, "expose", False) is True:
-            share_provider = "ngrok"
-
-        if is_share and share_provider != "ngrok":
-            share_provider, share_domain = manager.share.resolve_share_config(
-                project_meta
-            )
-
-        if not share_provider:
-            share_provider = "lfr-tunnel"
-
-        is_expose = (
-            getattr(manager.args, "expose", False) is True
-            or str(project_meta.get("expose", "false")).lower() == "true"
-            or (is_share and share_provider == "ngrok")
-        )
-        if is_expose:
-            auth_token = manager.config.get_ngrok_auth_token()
-            if not auth_token:
-                UI.info(
-                    "An ngrok Auth Token is required to use the expose feature (it enables custom host headers and HTTPS)."
-                )
-                UI.info(
-                    f"You can find yours at: {UI.CYAN}https://dashboard.ngrok.com/get-started/your-authtoken{UI.COLOR_OFF}"
-                )
-                auth_token = UI.ask("Enter your ngrok Auth Token")
-                if auth_token:
-                    manager.config.set_ngrok_auth_token(auth_token)
-                    UI.success("Saved ngrok token to global configuration.")
-                else:
-                    UI.warning("No token provided. Ngrok will not be configured.")
-                    is_expose = False
-                    if hasattr(manager.args, "expose"):
-                        manager.args.expose = False
-                    is_share = False
+        share_expose_config = self._resolve_share_and_expose(manager, project_meta)
 
         from ldm_core.utils import resolve_infrastructure_mode
 
@@ -657,7 +684,7 @@ class ConfigResolutionStage(PipelineStage):
         project_meta.update(
             {
                 "project_name": project_id,
-                "tag": tag or tag_latest or "",
+                "tag": tag or "",
                 "portal": str(is_portal).lower(),
                 "host_name": host_name,
                 "container_name": project_id,
@@ -677,13 +704,13 @@ class ConfigResolutionStage(PipelineStage):
                 "env_type": env_type,
                 "cpu_limit": cpu_limit,
                 "mem_limit": mem_limit,
-                "expose": str(is_expose).lower(),
-                "share": str(is_share).lower(),
-                "share_subdomain": share_subdomain or "",
-                "share_provider": share_provider,
-                "share_image": share_image or "",
-                "share_inspector": str(share_inspector).lower(),
-                "share_domain": share_domain or "",
+                "expose": str(share_expose_config["is_expose"]).lower(),
+                "share": str(share_expose_config["is_share"]).lower(),
+                "share_subdomain": share_expose_config["share_subdomain"] or "",
+                "share_provider": share_expose_config["share_provider"],
+                "share_image": share_expose_config["share_image"] or "",
+                "share_inspector": str(share_expose_config["share_inspector"]).lower(),
+                "share_domain": share_expose_config["share_domain"] or "",
                 "archetype": archetype_name or project_meta.get("archetype", ""),
             }
         )
