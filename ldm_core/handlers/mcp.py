@@ -3,8 +3,6 @@ import logging
 import os
 import time
 
-
-
 from ldm_core.utils import run_command
 
 # Initialize FastMCP Server
@@ -409,19 +407,19 @@ def get_cli_help(command: str | None = None) -> str:
     return f"Error: Command '{command}' not found. Available commands: {', '.join(available)}"
 
 
-
-
 def get_mcp_server():
-    global _mcp_server_instance
+    global _mcp_server_instance  # noqa: PLW0603  # noqa: PLW0603
     if _mcp_server_instance is not None:
         return _mcp_server_instance
 
     from ldm_core.plugin_manager import ensure_mcp_installed
+
     ensure_mcp_installed()
 
     from mcp.server.fastmcp import FastMCP
+
     server = FastMCP("LDM Diagnostics Server")
-    
+
     server.tool()(get_projects)
     server.tool()(get_logs)
     server.tool()(start_project)

@@ -40,6 +40,7 @@ class AiService(BaseHandler):
     def _get_mcp_tools_schema(self):
         """Converts our FastMCP tools into Google Gemini Function Calling schema."""
         from ldm_core.handlers.mcp import get_mcp_server
+
         server = get_mcp_server()
         tools = []
         for tool_name, tool in server._tool_manager._tools.items():
