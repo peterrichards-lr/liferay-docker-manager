@@ -142,6 +142,9 @@ def api_projects():
 
                     extensions = json.loads(extensions)
                 except Exception:
+                    import traceback
+
+                    traceback.print_exc()
                     extensions = []
 
         is_shared = meta.get("share") or meta.get("share_provider")
