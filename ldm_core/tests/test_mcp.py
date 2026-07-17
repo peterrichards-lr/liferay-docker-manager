@@ -238,3 +238,58 @@ def test_circuit_breaker_env_vars(mock_manager):
     # 3rd action trips it
     res2 = start_project("liferay-project1")
     assert "Error: AI Action Circuit Breaker TRIPPED" in res2
+
+
+@patch("ldm_core.plugin_manager.ensure_mcp_installed")
+def test_get_mcp_server(mock_ensure_mcp, mock_manager):
+    import sys
+
+    mock_fastmcp_module = MagicMock()
+    mock_fast_mcp = MagicMock()
+    mock_fastmcp_module.FastMCP = mock_fast_mcp
+    sys.modules["mcp.server.fastmcp"] = mock_fastmcp_module
+
+    import ldm_core.handlers.mcp as mcp_module
+
+    # Reset singleton
+    mcp_module._mcp_server_instance = None
+
+    server_mock = MagicMock()
+    mock_fast_mcp.return_value = server_mock
+
+    # Act
+    server = mcp_module.get_mcp_server()
+
+    # Assert
+    mock_ensure_mcp.assert_called_once()
+    mock_fast_mcp.assert_called_once_with("LDM Diagnostics Server")
+    assert server == server_mock
+
+    # Check tools were registered
+    assert server_mock.tool.call_count >= 7
+
+    # Call it again to test singleton
+    server2 = mcp_module.get_mcp_server()
+    assert server2 == server_mock
+    # Ensure it wasn't re-initialized
+    mock_ensure_mcp.assert_called_once()
+
+
+@patch("ldm_core.handlers.mcp.get_mcp_server")
+@patch("ldm_core.handlers.mcp.logging.getLogger")
+def test_mcp_service_cmd_mcp(mock_get_logger, mock_get_mcp_server, mock_manager):
+    import ldm_core.handlers.mcp as mcp_module
+
+    server_mock = MagicMock()
+    mock_get_mcp_server.return_value = server_mock
+
+    logger_mock = MagicMock()
+    mock_get_logger.return_value = logger_mock
+
+    service = mcp_module.McpService(mock_manager)
+    service.cmd_mcp()
+
+    mock_get_mcp_server.assert_called_once()
+    mock_get_logger.assert_called_with("mcp")
+    logger_mock.setLevel.assert_called_with(mcp_module.logging.CRITICAL)
+    server_mock.run.assert_called_once()

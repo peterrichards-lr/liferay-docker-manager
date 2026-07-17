@@ -30,6 +30,8 @@ class MockManager:
 
         self.defaults = DefaultsManager()
         self.assets = MagicMock()
+        self.snapshot = MagicMock()
+        self.workspace = MagicMock()
 
     def detect_project_path(self, *args, **kwargs):
         return Path("/tmp/proj")
@@ -516,3 +518,385 @@ class TestRunLcpCmdTimeout(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestCloudServiceAdditions(unittest.TestCase):
+    def setUp(self):
+        from ldm_core.tests.test_cloud import MockManager
+
+        self.manager = MockManager()
+        self.cloud = CloudService(self.manager)
+
+    @patch("shutil.which")
+    def test_is_cloud_authenticated_no_cli(self, mock_which):
+        mock_which.return_value = None
+        is_auth, reason = self.cloud._is_cloud_authenticated()
+        self.assertFalse(is_auth)
+        self.assertEqual(reason, "LCP CLI not installed")
+
+    @patch("shutil.which")
+    @patch("subprocess.run")
+    def test_is_cloud_authenticated_exception(self, mock_run, mock_which):
+        mock_which.return_value = "/usr/local/bin/lcp"
+        mock_run.side_effect = Exception("error")
+        is_auth, reason = self.cloud._is_cloud_authenticated()
+        self.assertFalse(is_auth)
+        self.assertEqual(reason, "Error checking authentication")
+
+    @patch("ldm_core.handlers.cloud.CloudService._is_cloud_authenticated")
+    @patch("ldm_core.ui.UI.die")
+    def test_ensure_cloud_auth_non_interactive(self, mock_die, mock_auth):
+        mock_auth.return_value = (False, "Not authenticated")
+        self.manager.non_interactive = True
+        mock_die.side_effect = SystemExit
+        with self.assertRaises(SystemExit):
+            self.cloud.ensure_cloud_auth()
+        mock_die.assert_called_with(
+            "Not logged into Liferay Cloud. Please run 'lcp login' first.", exit_code=2
+        )
+
+    @patch("ldm_core.handlers.cloud.CloudService._is_cloud_authenticated")
+    @patch("ldm_core.ui.UI.confirm", return_value=True)
+    @patch("shutil.which")
+    @patch("subprocess.run")
+    def test_ensure_cloud_auth_interactive_login_success(
+        self, mock_run, mock_which, mock_confirm, mock_auth
+    ):
+        mock_auth.return_value = (False, "Not authenticated")
+        self.manager.non_interactive = False
+        mock_which.return_value = "/usr/local/bin/lcp"
+        self.assertTrue(self.cloud.ensure_cloud_auth())
+        mock_run.assert_called_with(["/usr/local/bin/lcp", "login"], check=True)
+
+    @patch("ldm_core.handlers.cloud.CloudService._is_cloud_authenticated")
+    @patch("ldm_core.ui.UI.confirm", return_value=True)
+    @patch("shutil.which")
+    @patch("ldm_core.ui.UI.die")
+    def test_ensure_cloud_auth_interactive_login_cli_missing(
+        self, mock_die, mock_which, mock_confirm, mock_auth
+    ):
+        mock_auth.return_value = (False, "Not authenticated")
+        self.manager.non_interactive = False
+        mock_which.return_value = None
+        mock_die.side_effect = SystemExit
+        with self.assertRaises(SystemExit):
+            self.cloud.ensure_cloud_auth()
+        mock_die.assert_called_with("Liferay Cloud CLI (lcp) not found.")
+
+    @patch("ldm_core.handlers.cloud.CloudService._is_cloud_authenticated")
+    @patch("ldm_core.ui.UI.confirm", return_value=True)
+    @patch("shutil.which")
+    @patch("subprocess.run")
+    @patch("ldm_core.ui.UI.error")
+    @patch("ldm_core.ui.UI.die")
+    def test_ensure_cloud_auth_interactive_login_exception(
+        self, mock_die, mock_error, mock_run, mock_which, mock_confirm, mock_auth
+    ):
+        mock_auth.return_value = (False, "Not authenticated")
+        self.manager.non_interactive = False
+        mock_which.return_value = "/usr/local/bin/lcp"
+        mock_run.side_effect = Exception("failed login")
+        mock_die.side_effect = SystemExit
+        with self.assertRaises(SystemExit):
+            self.cloud.ensure_cloud_auth()
+        mock_error.assert_called_with("Login failed: failed login")
+        mock_die.assert_called_with("Authentication required for cloud operations.")
+
+    @patch("ldm_core.handlers.cloud.CloudService._is_cloud_authenticated")
+    @patch("ldm_core.ui.UI.confirm", return_value=False)
+    @patch("ldm_core.ui.UI.die")
+    def test_ensure_cloud_auth_interactive_login_decline(
+        self, mock_die, mock_confirm, mock_auth
+    ):
+        mock_auth.return_value = (False, "Not authenticated")
+        self.manager.non_interactive = False
+        mock_die.side_effect = SystemExit
+        with self.assertRaises(SystemExit):
+            self.cloud.ensure_cloud_auth()
+        mock_die.assert_called_with("Authentication required for cloud operations.")
+
+
+class TestCloudFetchCoverage(unittest.TestCase):
+    def setUp(self):
+        self.manager = MockManager()
+        self.cloud = CloudService(self.manager)
+
+    @patch("ldm_core.handlers.cloud.CloudService.ensure_cloud_auth")
+    def test_cmd_cloud_fetch_no_root(self, mock_auth):
+        self.manager.detect_project_path = MagicMock(return_value=None)  # type: ignore[method-assign]
+        self.cloud.cmd_cloud_fetch("proj1")
+        # Should return early
+        self.assertFalse(self.manager.snapshot.cmd_restore.called)  # type: ignore[attr-defined]
+
+    @patch("ldm_core.handlers.cloud.CloudService.ensure_cloud_auth")
+    @patch("ldm_core.handlers.cloud.CloudService._run_lcp_cmd")
+    def test_cmd_cloud_fetch_list_backups(self, mock_run, mock_auth):
+        self.manager.args.list_backups = True
+        self.manager.args.env_id = "uat"
+        mock_root = Path("/tmp/proj")
+        self.manager.detect_project_path = MagicMock(return_value=mock_root)  # type: ignore[method-assign]
+        mock_run.return_value = "id1   date1\nid2   date2"
+        with patch(
+            "ldm_core.utils.parse_lcp_backups",
+            return_value=[
+                {"id": "id1", "created": "date1"},
+                {"id": "id2", "created": "date2"},
+            ],
+        ):
+            with patch("builtins.print") as mock_print:
+                self.cloud.cmd_cloud_fetch("proj1")
+                call_args = mock_print.call_args_list
+                self.assertTrue(
+                    any(
+                        "id1" in str(call) and "date1" in str(call)
+                        for call in call_args
+                    )
+                )
+
+    @patch("ldm_core.handlers.cloud.CloudService.ensure_cloud_auth")
+    @patch("ldm_core.handlers.cloud.CloudService._run_lcp_cmd")
+    def test_cmd_cloud_fetch_list_backups_empty(self, mock_run, mock_auth):
+        self.manager.args.list_backups = True
+        self.manager.args.env_id = "uat"
+        mock_root = Path("/tmp/proj")
+        self.manager.detect_project_path = MagicMock(return_value=mock_root)  # type: ignore[method-assign]
+        mock_run.return_value = "No backups found"
+        with patch("ldm_core.utils.parse_lcp_backups", return_value=[]):
+            with patch("builtins.print") as mock_print:
+                self.cloud.cmd_cloud_fetch("proj1")
+                mock_print.assert_any_call("No backups found")
+
+    @patch("ldm_core.handlers.cloud.CloudService.ensure_cloud_auth")
+    @patch("ldm_core.handlers.cloud.CloudService._run_lcp_cmd")
+    def test_cmd_cloud_fetch_logs(self, mock_run, mock_auth):
+        self.manager.args.logs = True  # type: ignore[attr-defined]
+        self.manager.args.follow = True
+        self.manager.args.env_id = "uat"
+        mock_root = Path("/tmp/proj")
+        self.manager.detect_project_path = MagicMock(return_value=mock_root)  # type: ignore[method-assign]
+        self.cloud.cmd_cloud_fetch("proj1")
+        mock_run.assert_called_with(
+            ["log", "--service", "liferay", "--follow"],
+            capture_json=False,
+            project="proj",
+            env="uat",
+        )
+
+    @patch("ldm_core.handlers.cloud.CloudService.ensure_cloud_auth")
+    @patch("ldm_core.ui.UI.warning")
+    def test_cmd_cloud_fetch_sync_env_no_lcp_json(self, mock_warn, mock_auth):
+        self.manager.args.sync_env = True
+        self.manager.args.env_id = "uat"
+        self.manager.args.source_path = "/tmp/source"  # type: ignore[attr-defined]
+        mock_root = Path("/tmp/proj")
+        self.manager.detect_project_path = MagicMock(return_value=mock_root)  # type: ignore[method-assign]
+        with patch("ldm_core.utils.get_lcp_environment_variables", return_value=None):
+            self.cloud.cmd_cloud_fetch("proj1")
+            mock_warn.assert_called_with(
+                "LCP.json not found in the workspace. Skipping environment variable sync."
+            )
+
+    @patch("ldm_core.handlers.cloud.CloudService.ensure_cloud_auth")
+    @patch("ldm_core.ui.UI.info")
+    def test_cmd_cloud_fetch_sync_env_no_sync(self, mock_info, mock_auth):
+        self.manager.args.sync_env = True
+        self.manager.args.env_id = "uat"
+        self.manager.args.no_env_sync = True  # type: ignore[attr-defined]
+        mock_root = Path("/tmp/proj")
+        self.manager.detect_project_path = MagicMock(return_value=mock_root)  # type: ignore[method-assign]
+        with patch(
+            "ldm_core.utils.get_lcp_environment_variables", return_value={"VAR": "val"}
+        ):
+            self.cloud.cmd_cloud_fetch("proj1")
+            mock_info.assert_called_with(
+                "  - Skipping environment variable sync (--no-env-sync)."
+            )
+
+    @patch("ldm_core.handlers.cloud.CloudService.ensure_cloud_auth")
+    @patch("ldm_core.ui.UI.error")
+    def test_cmd_cloud_fetch_sync_env_exception(self, mock_error, mock_auth):
+        self.manager.args.sync_env = True
+        self.manager.args.env_id = "uat"
+        mock_root = Path("/tmp/proj")
+        self.manager.detect_project_path = MagicMock(return_value=mock_root)  # type: ignore[method-assign]
+        with (
+            patch(
+                "ldm_core.utils.get_lcp_environment_variables",
+                return_value={"VAR": "val"},
+            ),
+            patch("json.dumps", side_effect=Exception("parse error")),
+        ):
+            self.cloud.cmd_cloud_fetch("proj1")
+            mock_error.assert_called_with(
+                "Failed to sync environment variables: parse error"
+            )
+
+    @patch("ldm_core.handlers.cloud.CloudService.ensure_cloud_auth")
+    @patch("ldm_core.handlers.cloud.CloudService._run_lcp_cmd")
+    @patch("ldm_core.ui.UI.warning")
+    def test_cmd_cloud_fetch_download_no_backups(self, mock_warn, mock_run, mock_auth):
+        self.manager.args.download = True
+        self.manager.args.env_id = "uat"
+        mock_root = Path("/tmp/proj")
+        self.manager.detect_project_path = MagicMock(return_value=mock_root)  # type: ignore[method-assign]
+        mock_run.return_value = ""
+        with patch("ldm_core.utils.parse_lcp_backups", return_value=[]):
+            self.cloud.cmd_cloud_fetch("proj1")
+            mock_warn.assert_called_with(
+                "No backups found in environment 'uat'. Skipping download."
+            )
+
+    @patch("ldm_core.handlers.cloud.CloudService.ensure_cloud_auth")
+    @patch("ldm_core.handlers.cloud.CloudService._run_lcp_cmd")
+    @patch("ldm_core.ui.UI.die")
+    def test_cmd_cloud_fetch_download_fail(self, mock_die, mock_run, mock_auth):
+        self.manager.args.download = True
+        self.manager.args.env_id = "uat"
+        mock_root = Path("/tmp/proj")
+        self.manager.detect_project_path = MagicMock(return_value=mock_root)  # type: ignore[method-assign]
+        mock_run.side_effect = [
+            "backups",
+            None,
+        ]  # list returns backups, download returns None
+        with patch("ldm_core.utils.parse_lcp_backups", return_value=[{"id": "b1"}]):
+            mock_die.side_effect = SystemExit
+            with self.assertRaises(SystemExit):
+                self.cloud.cmd_cloud_fetch("proj1")
+            mock_die.assert_called_with(
+                "Backup download failed. Aborting hydration.", exit_code=3
+            )
+
+    @patch("ldm_core.handlers.cloud.CloudService.ensure_cloud_auth")
+    @patch("ldm_core.handlers.cloud.CloudService._run_lcp_cmd")
+    @patch("ldm_core.handlers.cloud.CloudService._verify_cloud_backup_checksums")
+    @patch("ldm_core.ui.UI.die")
+    def test_cmd_cloud_fetch_download_no_assets(
+        self, mock_die, mock_verify, mock_run, mock_auth
+    ):
+        self.manager.args.download = True
+        self.manager.args.env_id = "uat"
+        mock_root = Path("/tmp/proj")
+        self.manager.detect_project_path = MagicMock(return_value=mock_root)  # type: ignore[method-assign]
+        mock_run.side_effect = ["backups", "ok"]
+        with patch("ldm_core.utils.parse_lcp_backups", return_value=[{"id": "b1"}]):
+            with patch("pathlib.Path.glob", return_value=[]):
+                mock_die.side_effect = SystemExit
+                with self.assertRaises(SystemExit):
+                    self.cloud.cmd_cloud_fetch("proj1")
+                mock_die.assert_called_once()
+                self.assertIn("no valid assets found", mock_die.call_args[0][0])
+
+    @patch("ldm_core.handlers.cloud.CloudService.ensure_cloud_auth")
+    @patch("ldm_core.ui.UI.info")
+    def test_cmd_cloud_fetch_none(self, mock_info, mock_auth):
+        self.manager.args.env_id = "uat"
+        mock_root = Path("/tmp/proj")
+        self.manager.detect_project_path = MagicMock(return_value=mock_root)  # type: ignore[method-assign]
+        self.cloud.cmd_cloud_fetch("proj1")
+        mock_info.assert_called_with(
+            "Environment 'uat' (Project: proj) selected. Use flags (--list-backups, --download, --logs, --sync-env) to perform actions."
+        )
+
+    @patch("ldm_core.handlers.cloud.CloudService.ensure_cloud_auth")
+    @patch("ldm_core.handlers.cloud.CloudService._run_lcp_cmd")
+    @patch("ldm_core.handlers.cloud.CloudService._get_cloud_liferay_version")
+    @patch("ldm_core.handlers.cloud.CloudService.hydrate_cloud_backup")
+    @patch("ldm_core.handlers.cloud.PROJECT_META_FILE", "meta_fake")
+    def test_cmd_cloud_fetch_restore_new_project(
+        self, mock_hydrate, mock_get_ver, mock_run, mock_auth
+    ):
+        self.manager.args.restore = True
+        self.manager.args.env_id = "uat"
+        mock_root = Path("/tmp/proj")
+        self.manager.detect_project_path = MagicMock(return_value=mock_root)  # type: ignore[method-assign]
+        mock_run.side_effect = ["backups", "ok"]
+        mock_get_ver.return_value = "7.4"
+        with patch("ldm_core.utils.parse_lcp_backups", return_value=[{"id": "b1"}]):
+            with patch("pathlib.Path.glob") as mock_glob:
+                mock_db = MagicMock()
+                mock_db.is_dir.return_value = False
+                mock_db.name = "database.gz"
+                mock_glob.side_effect = [[mock_db], []]
+                with patch("shutil.move"):
+                    with patch("pathlib.Path.iterdir", return_value=[]):
+                        with patch(
+                            "ldm_core.handlers.cloud.CloudService._verify_cloud_backup_checksums"
+                        ):
+                            self.cloud.cmd_cloud_fetch("proj1")
+                            mock_get_ver.assert_called_once()
+                            mock_hydrate.assert_called_once()
+                            self.assertEqual(
+                                mock_hydrate.call_args[1]["tag_for_seed"], "7.4"
+                            )
+
+    def test_cmd_hydrate_no_root(self):
+        self.manager.detect_project_path = MagicMock(return_value=None)  # type: ignore[method-assign]
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            backup_dir = Path(tmp_dir)
+            (backup_dir / "database.gz").write_text("a")
+            (backup_dir / "volume.tgz").write_text("a")
+            res = self.cloud.cmd_hydrate(str(backup_dir))
+            self.assertIsNone(res)
+
+    @patch("ldm_core.ui.UI.die")
+    def test_cmd_hydrate_non_interactive_no_tag(self, mock_die):
+        import tempfile
+
+        self.manager.non_interactive = True
+        self.manager.defaults.get = MagicMock(return_value=None)  # type: ignore[method-assign]
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            backup_dir = Path(tmp_dir)
+            (backup_dir / "database.gz").write_text("a")
+            (backup_dir / "volume.tgz").write_text("a")
+            mock_root = backup_dir / "proj1"
+            mock_root.mkdir()
+            self.manager.detect_project_path = MagicMock(return_value=mock_root)  # type: ignore[method-assign]
+            mock_die.side_effect = SystemExit
+            with self.assertRaises(SystemExit):
+                self.cloud.cmd_hydrate(str(backup_dir), project_id="proj1")
+            mock_die.assert_called_with(
+                "A Liferay tag must be provided in non-interactive mode via --tag."
+            )
+
+    @patch("ldm_core.handlers.cloud.CloudService._run_lcp_cmd")
+    def test_get_cloud_liferay_version_string(self, mock_run):
+        mock_run.return_value = "id name image \n  liferay liferay my-image:7.4"
+        ver = self.cloud._get_cloud_liferay_version("proj", "uat")
+        self.assertEqual(ver, "7.4")
+
+    @patch("ldm_core.handlers.cloud.CloudService._run_lcp_cmd")
+    def test_get_cloud_liferay_version_none(self, mock_run):
+        mock_run.return_value = None
+        ver = self.cloud._get_cloud_liferay_version("proj", "uat")
+        self.assertIsNone(ver)
+
+
+class TestCloudHydrate(unittest.TestCase):
+    def setUp(self):
+        self.manager = MockManager()
+        self.cloud = CloudService(self.manager)
+
+    @patch(
+        "ldm_core.handlers.cloud.CloudService._resolve_hydrate_db_type",
+        return_value="mysql",
+    )
+    def test_hydrate_cloud_backup_new_project(self, mock_resolve_db):
+        mock_root = Path("/tmp/proj")
+        self.manager.detect_project_path = MagicMock(return_value=mock_root)  # type: ignore[method-assign]
+        self.manager.assets._ensure_seeded.return_value = True
+
+        with patch("pathlib.Path.exists", return_value=False):
+            res = self.cloud.hydrate_cloud_backup(
+                "proj", Path("/tmp/backup"), "7.4", True
+            )
+            self.assertTrue(res)
+            self.manager.snapshot.cmd_restore.assert_called_with(  # type: ignore[attr-defined]
+                project_id="proj", backup_dir=Path("/tmp/backup"), no_run=True
+            )
+
+    def test_hydrate_cloud_backup_no_root(self):
+        self.manager.detect_project_path = MagicMock(return_value=None)  # type: ignore[method-assign]
+        res = self.cloud.hydrate_cloud_backup("proj", Path("/tmp/backup"))
+        self.assertFalse(res)
