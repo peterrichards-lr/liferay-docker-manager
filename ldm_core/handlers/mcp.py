@@ -3,12 +3,10 @@ import logging
 import os
 import time
 
-from mcp.server.fastmcp import FastMCP
-
 from ldm_core.utils import run_command
 
 # Initialize FastMCP Server
-mcp_server = FastMCP("LDM Diagnostics Server")
+_mcp_server_instance = None
 # Store manager as a global for the MCP tools to access
 _manager = None
 
@@ -54,7 +52,6 @@ def _check_circuit_breaker() -> str | None:
     return None
 
 
-@mcp_server.tool()
 def get_projects() -> str:
     """Lists all managed Liferay Docker environments and their status."""
     if not _manager:
@@ -102,7 +99,6 @@ def get_projects() -> str:
     return json.dumps(projects, indent=2)
 
 
-@mcp_server.tool()
 def get_logs(
     project_id: str,
     lines: int = 200,
@@ -226,7 +222,6 @@ def get_logs(
     return "\n".join(filtered_lines)
 
 
-@mcp_server.tool()
 def start_project(project_id: str) -> str:
     """Starts the Liferay stack (containers) for a specific project."""
     cb_err = _check_circuit_breaker()
@@ -260,7 +255,6 @@ def start_project(project_id: str) -> str:
         return f"Error: Failed to start project '{project_id}': {e}"
 
 
-@mcp_server.tool()
 def stop_project(project_id: str) -> str:
     """Stops the Liferay stack (containers) for a specific project."""
     cb_err = _check_circuit_breaker()
@@ -294,7 +288,6 @@ def stop_project(project_id: str) -> str:
         return f"Error: Failed to stop project '{project_id}': {e}"
 
 
-@mcp_server.tool()
 def restart_project(project_id: str, service: str | None = None) -> str:
     """Restarts specific services or the entire stack for a project."""
     cb_err = _check_circuit_breaker()
@@ -330,7 +323,6 @@ def restart_project(project_id: str, service: str | None = None) -> str:
         return f"Error: Failed to restart project '{project_id}': {e}"
 
 
-@mcp_server.tool()
 def get_config(project_id: str) -> str:
     """Retrieves the properties and configuration metadata for a project."""
     if not _manager:
@@ -379,7 +371,6 @@ def get_config(project_id: str) -> str:
     return json.dumps({"error": f"Project '{project_id}' not found."})
 
 
-@mcp_server.tool()
 def get_cli_help(command: str | None = None) -> str:
     """Retrieves the CLI usage and help manual for LDM commands to prevent flag hallucinations.
 
@@ -416,6 +407,31 @@ def get_cli_help(command: str | None = None) -> str:
     return f"Error: Command '{command}' not found. Available commands: {', '.join(available)}"
 
 
+def get_mcp_server():
+    global _mcp_server_instance  # noqa: PLW0603  # noqa: PLW0603
+    if _mcp_server_instance is not None:
+        return _mcp_server_instance
+
+    from ldm_core.plugin_manager import ensure_mcp_installed
+
+    ensure_mcp_installed()
+
+    from mcp.server.fastmcp import FastMCP
+
+    server = FastMCP("LDM Diagnostics Server")
+
+    server.tool()(get_projects)
+    server.tool()(get_logs)
+    server.tool()(start_project)
+    server.tool()(stop_project)
+    server.tool()(restart_project)
+    server.tool()(get_config)
+    server.tool()(get_cli_help)
+
+    _mcp_server_instance = server
+    return server
+
+
 class McpService:
     """Service to handle the MCP JSON-RPC Server lifecycle."""
 
@@ -426,8 +442,9 @@ class McpService:
 
     def cmd_mcp(self):
         """Starts the MCP JSON-RPC Server over stdio."""
+        server = get_mcp_server()
         # Suppress logging to stdout so it doesn't corrupt the JSON-RPC stream
         logging.getLogger("mcp").setLevel(logging.CRITICAL)
 
         # Run the FastMCP server
-        mcp_server.run()
+        server.run()

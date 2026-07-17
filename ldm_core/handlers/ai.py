@@ -1,13 +1,10 @@
 import sys
 
 import requests
-from mcp.client.session import ClientSession
-from mcp.client.stdio import stdio_client
 
 from ldm_core.handlers.base import BaseHandler
 
 # We will use the existing mcp_server logic to mock the tool definitions for the REST API
-from ldm_core.handlers.mcp import mcp_server
 from ldm_core.ui import UI
 
 
@@ -42,8 +39,11 @@ class AiService(BaseHandler):
 
     def _get_mcp_tools_schema(self):
         """Converts our FastMCP tools into Google Gemini Function Calling schema."""
+        from ldm_core.handlers.mcp import get_mcp_server
+
+        server = get_mcp_server()
         tools = []
-        for tool_name, tool in mcp_server._tool_manager._tools.items():
+        for tool_name, tool in server._tool_manager._tools.items():
             params: dict = {
                 "type": "object",
                 "properties": {},
@@ -74,6 +74,9 @@ class AiService(BaseHandler):
 
     async def _execute_mcp_tool(self, tool_name, tool_args):
         """Executes the local MCP tool to gather data."""
+        from mcp.client.session import ClientSession
+        from mcp.client.stdio import stdio_client
+
         UI.info(
             f"🤖 AI is investigating using local tool: {UI.CYAN}{tool_name}({tool_args}){UI.COLOR_OFF}..."
         )
