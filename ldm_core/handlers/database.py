@@ -97,7 +97,7 @@ class DatabaseService(BaseHandler):
             )
             return
 
-        cmd = get_compose_cmd(str(infra_compose))
+        cmd = [*get_compose_cmd(), "-f", str(infra_compose)]
         cmd.extend(["start", "db"])
 
         UI.info("Starting global shared database (db)...")
@@ -112,7 +112,7 @@ class DatabaseService(BaseHandler):
             )
             return
 
-        cmd = get_compose_cmd(str(infra_compose))
+        cmd = [*get_compose_cmd(), "-f", str(infra_compose)]
         cmd.extend(["stop", "db"])
 
         UI.info("Stopping global shared database (db)...")
