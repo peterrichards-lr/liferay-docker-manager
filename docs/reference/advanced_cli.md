@@ -79,14 +79,9 @@ Controls whether LDM provisions an isolated PostgreSQL database or connects to t
   - **`-f`, `--format {table,csv,json}`**: Output format (default: `table`).
   - **`--allow-db-query`**: Explicitly bypasses the interactive confirmation prompt.
 
-- **`ldm db start [project]`** ![Added in v2.15.16](https://img.shields.io/badge/Added%20in-v2.15.16-blue): Start only the database service for a project without booting the full Liferay stack. Useful for performing database maintenance, running migrations, or connecting external tools without a full environment start.
+- **`ldm db start`** ![Added in v2.15.16](https://img.shields.io/badge/Added%20in-v2.15.16-blue): Starts the shared global databases (e.g. Postgres, MySQL) defined in the infrastructure mode.
 
-  ```bash
-  ldm db start my-project
-
-  # Alias — the bare 'start' keyword is also routed to db start:
-  ldm start my-project
-  ```
+- **`ldm db stop`** ![Added in v2.15.16](https://img.shields.io/badge/Added%20in-v2.15.16-blue): Stops the shared global databases defined in the infrastructure mode.
 
 <!-- markdownlint-disable MD049 -->
 ---

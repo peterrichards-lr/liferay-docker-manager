@@ -8,7 +8,7 @@ import sys
 
 from ldm_core.handlers.base import BaseHandler
 from ldm_core.ui import UI
-from ldm_core.utils import resolve_infrastructure_mode, sanitize_id
+from ldm_core.utils import get_compose_cmd, resolve_infrastructure_mode, sanitize_id
 
 
 class DatabaseService(BaseHandler):
@@ -87,6 +87,36 @@ class DatabaseService(BaseHandler):
                 )
 
         return True, None
+
+    def cmd_start(self):
+        """Starts the shared global database."""
+        infra_compose = self.manager.get_resource_path("infra-compose.yml")
+        if not infra_compose or not infra_compose.exists():
+            UI.die(
+                "Infrastructure compose file 'infra-compose.yml' not found in resources."
+            )
+            return
+
+        cmd = get_compose_cmd(str(infra_compose))
+        cmd.extend(["start", "db"])
+
+        UI.info("Starting global shared database (db)...")
+        self.manager.run_command(cmd, capture_output=False)
+
+    def cmd_stop(self):
+        """Stops the shared global database."""
+        infra_compose = self.manager.get_resource_path("infra-compose.yml")
+        if not infra_compose or not infra_compose.exists():
+            UI.die(
+                "Infrastructure compose file 'infra-compose.yml' not found in resources."
+            )
+            return
+
+        cmd = get_compose_cmd(str(infra_compose))
+        cmd.extend(["stop", "db"])
+
+        UI.info("Stopping global shared database (db)...")
+        self.manager.run_command(cmd, capture_output=False)
 
     def cmd_query(  # noqa: C901, PLR0911, PLR0912, PLR0915
         self, project_id=None, sql=None, output_format="table", allow_query=False

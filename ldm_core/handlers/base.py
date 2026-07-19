@@ -415,7 +415,7 @@ class BaseHandler:
                     res = conn_s.connect_ex((ip, int(port)))
                     return res != 0
             except OSError as e:
-                if e.errno in (errno.EACCES, errno.EPERM):
+                if e.errno in (errno.EACCES, errno.EPERM, errno.EADDRINUSE):
                     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as conn_s:
                         conn_s.settimeout(0.5)
                         res = conn_s.connect_ex((ip, int(port)))

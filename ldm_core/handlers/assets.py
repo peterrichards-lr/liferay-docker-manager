@@ -302,3 +302,40 @@ class AssetService:
                 UI.die(f"Could not find any tags for release type: {ans}")
             return resolved
         return ans
+
+    def cmd_list_seeds(self):
+        """Fetches and displays the list of available pre-warmed database seeds."""
+        url = "https://api.github.com/repos/peterrichards-lr/liferay-docker-manager/releases/tags/seeded-states"
+        UI.info("Querying GitHub for available seeds...")
+
+        try:
+            response = requests.get(url, headers={"User-Agent": "ldm-cli"}, timeout=10)
+            response.raise_for_status()
+            data = response.json()
+        except requests.RequestException as e:
+            UI.error(f"Failed to fetch available seeds from GitHub: {e}")
+            return False
+
+        assets = data.get("assets", [])
+        if not assets:
+            UI.warning("No pre-warmed seeds found.")
+            return True
+
+        import re
+
+        tags = set()
+        for asset in assets:
+            name = asset.get("name", "")
+            match = re.search(r"^seeded-(.*?)-(?:postgresql|mysql|hypersonic)-", name)
+            if match:
+                tags.add(match.group(1))
+
+        if not tags:
+            UI.warning("No valid seed packages found.")
+            return True
+
+        UI.success("\nAvailable Pre-Warmed Liferay Seeds:")
+        for tag in sorted(tags, reverse=True):
+            UI.info(f"  • {tag}")
+
+        return True

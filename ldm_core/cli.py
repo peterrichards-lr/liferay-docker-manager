@@ -393,10 +393,10 @@ def get_parser():  # noqa: PLR0915
     parser.add_argument("--version", action="version", version=f"%(prog)s {VERSION}")
     subparsers = parser.add_subparsers(dest="command")
 
-    # Command: run (alias: up, start)
+    # Command: run (alias: up)
     run = subparsers.add_parser(
         "run",
-        aliases=["up", "start"],
+        aliases=["up"],
         parents=[base_sub_parent],
         conflict_handler="resolve",
     )
@@ -975,8 +975,8 @@ def get_parser():  # noqa: PLR0915
     monitor.add_argument("-p", "--project")
     monitor.add_argument("--delay", type=float, default=2.0)
 
-    # Command: stop, restart, down (alias: rm), logs, deploy
-    for cmd in ["stop", "restart", "down", "logs", "deploy"]:
+    # Command: start, stop, restart, down (alias: rm), logs, deploy
+    for cmd in ["start", "stop", "restart", "down", "logs", "deploy"]:
         aliases = []
         if cmd == "down":
             aliases = ["rm"]
@@ -1096,7 +1096,7 @@ def get_parser():  # noqa: PLR0915
                 ],
                 help="Filter log lines at or above this severity level",
             )
-        if cmd in ["stop", "restart", "down", "logs"]:
+        if cmd in ["start", "stop", "restart", "down", "logs"]:
             p.add_argument(
                 "--all", action="store_true", help="Apply to all running projects"
             )
@@ -1730,6 +1730,18 @@ def get_parser():  # noqa: PLR0915
     )
     db_subparsers = db.add_subparsers(dest="subcommand")
 
+    db_subparsers.add_parser(
+        "start",
+        parents=[base_sub_parent],
+        help="Start the shared global databases (e.g. Postgres, MySQL)",
+    )
+
+    db_subparsers.add_parser(
+        "stop",
+        parents=[base_sub_parent],
+        help="Stop the shared global databases (e.g. Postgres, MySQL)",
+    )
+
     db_query = db_subparsers.add_parser(
         "query",
         parents=[base_sub_parent],
@@ -1759,6 +1771,12 @@ def get_parser():  # noqa: PLR0915
         help="System utility diagnostics and configurations",
     )
     system_subparsers = system.add_subparsers(dest="subcommand")
+
+    system_subparsers.add_parser(
+        "seeds",
+        parents=[base_sub_parent],
+        help="List available pre-warmed database seeds from GitHub",
+    )
 
     relocate = system_subparsers.add_parser(
         "relocate", help="Safely move LDM/Docker data to an external drive"
@@ -2124,7 +2142,7 @@ def _resolve_service_disambiguation(args):
     # Disambiguation Heuristic:
     # If the user provides 'ldm logs liferay', argparse puts 'liferay' in project.
     # We detect if the first positional arg is actually a service name.
-    if args.command in ["logs", "stop", "restart", "down", "rm", "deploy"]:
+    if args.command in ["start", "logs", "stop", "restart", "down", "rm", "deploy"]:
         service_id = getattr(args, "project", None)
         # Standard Liferay services
         known_services = ["liferay", "db", "search", "proxy", "elasticsearch"]
@@ -2145,6 +2163,7 @@ def _get_docker_required_commands():
         ("up", None),
         ("init-from", None),
         ("monitor", None),
+        ("start", None),
         ("stop", None),
         ("restart", None),
         ("down", None),
@@ -2230,6 +2249,11 @@ def _build_command_map(args, manager):
         ("monitor", None): lambda: manager.workspace.cmd_monitor(args.source),
         ("init", None): lambda: manager.workspace.cmd_init(
             getattr(args, "project", None)
+        ),
+        ("start", None): lambda: manager.runtime.cmd_start(
+            getattr(args, "project", None),
+            getattr(args, "service", None),
+            all_projects=args.all,
         ),
         ("stop", None): lambda: manager.runtime.cmd_stop(
             getattr(args, "project", None),
@@ -2434,6 +2458,8 @@ def _build_command_map(args, manager):
             output_format=getattr(args, "format", "table"),
             allow_query=getattr(args, "allow_db_query", False),
         ),
+        ("db", "start"): manager.database.cmd_start,
+        ("db", "stop"): manager.database.cmd_stop,
         # system namespace:
         ("system", "relocate"): lambda: manager.infra.cmd_system("relocate"),
         ("system", "prune"): manager.diagnostics.cmd_prune,
@@ -2450,6 +2476,7 @@ def _build_command_map(args, manager):
             print_only=args.print,
         ),
         ("system", "dev-setup"): manager.dev.cmd_dev_setup,
+        ("system", "seeds"): manager.assets.cmd_list_seeds,
         ("system", "completion"): lambda: manager.diagnostics.cmd_completion(
             args.shell
         ),
