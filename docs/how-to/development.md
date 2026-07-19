@@ -101,4 +101,4 @@ When executing external binaries or shell commands (e.g. docker, git, mkcert, lc
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-07-17* | *Last Reviewed: 2026-07-10*
+*Last Updated: 2026-07-19* | *Last Reviewed: 2026-07-10*

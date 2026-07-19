@@ -603,4 +603,4 @@ LDM binaries use **"Magic Byte" detection** to accurately report their checksum 
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-07-17* | *Last Reviewed: 2026-07-07*
+*Last Updated: 2026-07-19* | *Last Reviewed: 2026-07-07*
