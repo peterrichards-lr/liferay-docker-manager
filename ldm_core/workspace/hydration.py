@@ -14,23 +14,18 @@ from ldm_core.utils import (
 )
 
 
-def _hydrate_from_workspace(self, workspace_root, paths, overwrite=True):  # noqa: C901, PLR0912
-    """Initial scan and sync of artifacts from workspace to project."""
-    UI.info("Scanning workspace for built artifacts...")
-
-    # 1. Sync Client Extensions (ZIPs)
+def _sync_client_extensions(self, workspace_root, paths, overwrite):
     ce_dir = workspace_root / "client-extensions"
     if ce_dir.exists():
-        # Look in root and standard dist folders
         for dist_zip in list(ce_dir.glob("*.zip")) + list(ce_dir.glob("*/dist/*.zip")):
-            self._sync_cx_artifact(dist_zip, paths, overwrite=overwrite)
+            _sync_cx_artifact(self, dist_zip, paths, overwrite=overwrite)
 
-    # 2. Sync Modules & Themes (JARs from build/libs)
+
+def _sync_modules_and_themes(self, workspace_root, paths, overwrite):
     for folder in ["modules", "themes"]:
         base_dir = workspace_root / folder
         if base_dir.exists():
             for jar in base_dir.glob("**/build/libs/*.[jw]ar"):
-                # Check if it's a valid bundle (not sources/javadoc)
                 if not any(
                     x in jar.name.lower() for x in ["-sources", "-javadoc", "-tests"]
                 ):
@@ -41,14 +36,13 @@ def _hydrate_from_workspace(self, workspace_root, paths, overwrite=True):  # noq
                     atomic_copy(jar, dest)
                     UI.detail(f"  + Synced {folder.capitalize()[:-1]}: {jar.name}")
 
-    # 3. Sync Fragments (ZIPs)
+
+def _sync_fragments(self, workspace_root, paths, overwrite):
     frag_dir = workspace_root / "fragments"
     if frag_dir.exists():
-        # Look in root and any nested zips
         for zip_file in list(frag_dir.glob("*.zip")) + list(
             frag_dir.glob("*/dist/*.zip")
         ):
-            # Check if it's a fragment or a CX being miscategorized
             try:
                 with zipfile.ZipFile(zip_file, "r") as zip_ref:
                     if "liferay-deploy-fragments.json" in zip_ref.namelist():
@@ -61,12 +55,12 @@ def _hydrate_from_workspace(self, workspace_root, paths, overwrite=True):  # noq
                         atomic_copy(zip_file, dest)
                         UI.detail(f"  + Synced Fragment: {zip_file.name}")
                     else:
-                        # If it's a ZIP in fragments but not a fragment, try syncing as CX
-                        self._sync_cx_artifact(zip_file, paths, overwrite=overwrite)
+                        _sync_cx_artifact(self, zip_file, paths, overwrite=overwrite)
             except Exception:
                 pass
 
-    # 4. Sync Fragment Overrides
+
+def _sync_fragment_overrides(self, workspace_root, paths, overwrite):
     for override_file in [
         workspace_root / ".ldm" / "fragment-overrides.json",
         workspace_root / "configs" / "fragment-overrides.json",
@@ -83,6 +77,16 @@ def _hydrate_from_workspace(self, workspace_root, paths, overwrite=True):  # noq
                     UI.detail("  + Synced Fragment Overrides")
             except Exception:
                 pass
+
+
+def _hydrate_from_workspace(self, workspace_root, paths, overwrite=True):
+    """Initial scan and sync of artifacts from workspace to project."""
+    UI.info("Scanning workspace for built artifacts...")
+
+    _sync_client_extensions(self, workspace_root, paths, overwrite)
+    _sync_modules_and_themes(self, workspace_root, paths, overwrite)
+    _sync_fragments(self, workspace_root, paths, overwrite)
+    _sync_fragment_overrides(self, workspace_root, paths, overwrite)
 
     return True
 
@@ -149,7 +153,7 @@ def _prompt_cloud_hydration(self, source_path, project_name=None):
 
     # Automation Path: If --hydrate-from is provided, we skip prompts
     if is_cloud and hydrate_env:
-        self._execute_cloud_hydration(hydrate_env, source_path, project_name)
+        _execute_cloud_hydration(self, hydrate_env, source_path, project_name)
         return
 
     # Interactive Path
@@ -165,7 +169,9 @@ def _prompt_cloud_hydration(self, source_path, project_name=None):
                 default_env,
             )
             if env_id:
-                self._execute_cloud_hydration(env_id.strip(), source_path, project_name)
+                _execute_cloud_hydration(
+                    self, env_id.strip(), source_path, project_name
+                )
 
 
 def _execute_cloud_hydration(self, env_id, source_path, project_name):

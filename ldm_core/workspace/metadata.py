@@ -141,7 +141,71 @@ def _parse_lcp_json(self, content, context_name=None):
     return info
 
 
-def _scan_extension_metadata(self, folder_path=None, zip_ref=None):  # noqa: C901
+def _merge_metadata_info(self, info, new_info):
+    for k in info:
+        if new_info.get(k) is not None:
+            if k == "has_load_balancer":
+                info[k] = info[k] or new_info[k]
+            elif k == "ports" and new_info[k]:
+                cast(list, info[k]).extend(new_info[k])
+            elif k == "loadBalancer" and new_info[k]:
+                if info[k] is None:
+                    info[k] = {}
+                cast(dict, info[k]).update(new_info[k])
+            else:
+                info[k] = new_info[k]
+    if new_info.get("env"):
+        cast(dict, info["env"]).update(new_info["env"])
+
+
+def _scan_extension_zip_metadata(self, zip_ref, info):
+    for f in zip_ref.namelist():
+        name = Path(f).name
+        if name in ["client-extension.yaml", "client-extension.yml"]:
+            _merge_metadata_info(
+                self,
+                info,
+                _parse_client_extension_yaml(self, zip_ref.read(f).decode("utf-8")),
+            )
+        elif name == "LCP.json":
+            _merge_metadata_info(
+                self,
+                info,
+                _parse_lcp_json(
+                    self, zip_ref.read(f).decode("utf-8"), info.get("contextName")
+                ),
+            )
+        elif name == "client-extension-config.json" or f.endswith(
+            ".client-extension-config.json"
+        ):
+            erc = _parse_client_extension_config_json(
+                self, zip_ref.read(f).decode("utf-8")
+            )
+            if erc:
+                info["oauth_erc"] = erc
+
+
+def _scan_extension_folder_metadata(self, folder_path, info):
+    yaml_file = next(folder_path.glob("client-extension.y*ml"), None)
+    if yaml_file:
+        _merge_metadata_info(
+            self, info, _parse_client_extension_yaml(self, yaml_file.read_text())
+        )
+    lcp_file = folder_path / "LCP.json"
+    if lcp_file.exists():
+        _merge_metadata_info(
+            self,
+            info,
+            _parse_lcp_json(self, lcp_file.read_text(), info.get("contextName")),
+        )
+    cfg_file = next(folder_path.glob("*client-extension-config.json"), None)
+    if cfg_file:
+        erc = _parse_client_extension_config_json(self, cfg_file.read_text())
+        if erc:
+            info["oauth_erc"] = erc
+
+
+def _scan_extension_metadata(self, folder_path=None, zip_ref=None):
     info: dict[str, Any] = {
         "id": None,
         "type": None,
@@ -158,86 +222,50 @@ def _scan_extension_metadata(self, folder_path=None, zip_ref=None):  # noqa: C90
         "has_load_balancer": False,
     }
 
-    def merge_info(new_info):
-        for k in info:
-            if new_info.get(k) is not None:
-                if k == "has_load_balancer":
-                    info[k] = info[k] or new_info[k]
-                elif k == "ports" and new_info[k]:
-                    cast(list, info[k]).extend(new_info[k])
-                elif k == "loadBalancer" and new_info[k]:
-                    if info[k] is None:
-                        info[k] = {}
-                    cast(dict, info[k]).update(new_info[k])
-                else:
-                    info[k] = new_info[k]
-        if new_info.get("env"):
-            cast(dict, info["env"]).update(new_info["env"])
-
     if zip_ref:
-        for f in zip_ref.namelist():
-            name = Path(f).name
-            if name in ["client-extension.yaml", "client-extension.yml"]:
-                merge_info(
-                    self._parse_client_extension_yaml(zip_ref.read(f).decode("utf-8"))
-                )
-            elif name == "LCP.json":
-                ctx = Path(zip_ref.filename).name
-                merge_info(
-                    self._parse_lcp_json(
-                        zip_ref.read(f).decode("utf-8"), context_name=ctx
-                    )
-                )
-            elif name == "client-extension-config.json" or f.endswith(
-                ".client-extension-config.json"
-            ):
-                erc = self._parse_client_extension_config_json(
-                    zip_ref.read(f).decode("utf-8")
-                )
-                if erc:
-                    info["oauth_erc"] = erc
+        _scan_extension_zip_metadata(self, zip_ref, info)
     elif folder_path:
-        yaml_file = next(folder_path.glob("client-extension.y*ml"), None)
-        if yaml_file:
-            merge_info(self._parse_client_extension_yaml(yaml_file.read_text()))
-        lcp_file = folder_path / "LCP.json"
-        if lcp_file.exists():
-            merge_info(
-                self._parse_lcp_json(
-                    lcp_file.read_text(), context_name=folder_path.name
-                )
-            )
-        cfg_file = next(folder_path.glob("*client-extension-config.json"), None)
-        if cfg_file:
-            erc = self._parse_client_extension_config_json(cfg_file.read_text())
-            if erc:
-                info["oauth_erc"] = erc
+        _scan_extension_folder_metadata(self, folder_path, info)
     return info
 
 
-def scan_client_extensions(self, root_dir, osgi_cx_dir, ce_build_dir, host_name=None):  # noqa: C901, PLR0912, PLR0915
-    extensions: list[dict[str, Any]] = []
-    if not root_dir.exists():
-        return extensions
-    meta = self.manager.read_meta(root_dir) or {}
+def _resolve_and_persist_cx_port(self, ext_info, ext_id, meta, root_dir):
+    load_balancer = ext_info.get("loadBalancer") or {}
+    default_port = next(
+        (p.get("port") for p in ext_info.get("ports", []) if isinstance(p, dict)),
+        load_balancer.get("targetPort", 8080),
+    )
+    try:
+        default_port = int(default_port)  # type: ignore[arg-type]
+    except (ValueError, TypeError):
+        default_port = 8080
 
-    # Paths based on Core Mandates:
-    # root_dir / client-extensions -> Build Source of Truth
-    # root_dir / osgi / client-extensions -> Liferay Auto-deploy (ZIPs)
-    ce_source_truth = root_dir / "client-extensions"
-    ce_source_truth.mkdir(parents=True, exist_ok=True)
-    osgi_cx_dir.mkdir(parents=True, exist_ok=True)
+    meta_port_key = f"port_{ext_id}"
+    if meta_port_key not in meta:
+        resolved_port = self.manager.find_available_port("127.0.0.1", default_port)
+        meta[meta_port_key] = str(resolved_port)
+        self.manager.write_meta(root_dir, meta)
 
-    found_ids = set()
 
-    # 1. Process ZIPs from the workspace build directory (ldm-cx-samples/client-extensions/*/dist/*.zip)
+def _process_built_cx_zips(
+    self,
+    ce_build_dir,
+    ce_source_truth,
+    osgi_cx_dir,
+    root_dir,
+    host_name,
+    meta,
+    extensions,
+):
+    import os
+
+    from ldm_core.utils import UI
+
     for item in [i for i in ce_build_dir.iterdir() if i.suffix.lower() == ".zip"]:
         try:
-            # Root project folder is the build context (Source of Truth)
             target_folder = ce_source_truth / item.stem
             root_zip_copy = ce_source_truth / item.name
 
-            # Copy to root first to expand (if not already there)
             is_same = False
             try:
                 if item.resolve() == root_zip_copy.resolve() or os.path.samefile(
@@ -251,7 +279,7 @@ def scan_client_extensions(self, root_dir, osgi_cx_dir, ce_build_dir, host_name=
                 safe_copy(item, root_zip_copy)
 
             with zipfile.ZipFile(root_zip_copy, "r") as zip_ref:
-                ext_info = self._scan_extension_metadata(zip_ref=zip_ref)
+                ext_info = _scan_extension_metadata(self, zip_ref=zip_ref)
                 namelist = zip_ref.namelist()
 
                 if ext_info["type"] or any(
@@ -272,7 +300,6 @@ def scan_client_extensions(self, root_dir, osgi_cx_dir, ce_build_dir, host_name=
 
                         safe_extract(zip_ref, target_folder)
 
-                    # Move the original ZIP from root to OSGI for Liferay's scanner
                     dest_zip = osgi_cx_dir / item.name
                     is_same_dest = False
                     try:
@@ -289,30 +316,11 @@ def scan_client_extensions(self, root_dir, osgi_cx_dir, ce_build_dir, host_name=
                             os.remove(dest_zip)
                         safe_copy(root_zip_copy, dest_zip)
 
-                    # Resolve and persist port first
                     ext_id = ext_info.get("id") or item.stem
                     if is_service:
-                        load_balancer = ext_info.get("loadBalancer") or {}
-                        default_port = next(
-                            (
-                                p.get("port")
-                                for p in ext_info.get("ports", [])
-                                if isinstance(p, dict)
-                            ),
-                            load_balancer.get("targetPort", 8080),
+                        _resolve_and_persist_cx_port(
+                            self, ext_info, ext_id, meta, root_dir
                         )
-                        try:
-                            default_port = int(default_port)  # type: ignore[arg-type]
-                        except (ValueError, TypeError):
-                            default_port = 8080
-
-                        meta_port_key = f"port_{ext_id}"
-                        if meta_port_key not in meta:
-                            resolved_port = self.manager.find_available_port(
-                                "127.0.0.1", default_port
-                            )
-                            meta[meta_port_key] = str(resolved_port)
-                            self.manager.write_meta(root_dir, meta)
 
                     if host_name:
                         self._rewrite_oauth_urls_in_zip(
@@ -326,7 +334,7 @@ def scan_client_extensions(self, root_dir, osgi_cx_dir, ce_build_dir, host_name=
                         {
                             "name": item.stem.lower().replace("_", "-"),
                             "id": ext_info.get("id") or item.stem,
-                            "path": target_folder,  # Build from root/client-extensions/
+                            "path": target_folder,
                             "is_service": is_service,
                             "port": next(
                                 (
@@ -342,13 +350,16 @@ def scan_client_extensions(self, root_dir, osgi_cx_dir, ce_build_dir, host_name=
         except Exception as e:
             UI.error(f"Failed to process {item.name}: {e}")
 
-    # 2. Process existing folders in the Source of Truth
+
+def _process_existing_cx_folders(
+    self, ce_source_truth, osgi_cx_dir, root_dir, host_name, meta, extensions, found_ids
+):
     for item in [
         i
         for i in ce_source_truth.iterdir()
         if i.is_dir() and not i.name.startswith(".")
     ]:
-        ext_info = self._scan_extension_metadata(folder_path=item)
+        ext_info = _scan_extension_metadata(self, folder_path=item)
         if ext_info["type"] or (item / "LCP.json").exists():
             found_ids.add(item.name)
             is_service = (item / "Dockerfile").exists() and ext_info.get(
@@ -362,34 +373,13 @@ def scan_client_extensions(self, root_dir, osgi_cx_dir, ce_build_dir, host_name=
                 "id": ext_info.get("id") or item.name,
                 "name": item.name.lower().replace("_", "-"),
                 "port": port,
-                "path": item,  # Already in source of truth
+                "path": item,
                 "is_service": is_service,
                 **ext_info,
             }
-            # Resolve and persist port first
             ext_id = ext_info.get("id") or item.name
             if is_service:
-                load_balancer = ext_info.get("loadBalancer") or {}
-                default_port = next(
-                    (
-                        p.get("port")
-                        for p in ext_info.get("ports", [])
-                        if isinstance(p, dict)
-                    ),
-                    load_balancer.get("targetPort", 8080),
-                )
-                try:
-                    default_port = int(default_port)  # type: ignore[arg-type]
-                except (ValueError, TypeError):
-                    default_port = 8080
-
-                meta_port_key = f"port_{ext_id}"
-                if meta_port_key not in meta:
-                    resolved_port = self.manager.find_available_port(
-                        "127.0.0.1", default_port
-                    )
-                    meta[meta_port_key] = str(resolved_port)
-                    self.manager.write_meta(root_dir, meta)
+                _resolve_and_persist_cx_port(self, ext_info, ext_id, meta, root_dir)
 
             if host_name:
                 dest_zip = osgi_cx_dir / f"{item.name}.zip"
@@ -414,6 +404,40 @@ def scan_client_extensions(self, root_dir, osgi_cx_dir, ce_build_dir, host_name=
             else:
                 extensions.append(entry)
 
+
+def scan_client_extensions(self, root_dir, osgi_cx_dir, ce_build_dir, host_name=None):
+    extensions: list[dict[str, Any]] = []
+    if not root_dir.exists():
+        return extensions
+    meta = self.manager.read_meta(root_dir) or {}
+
+    ce_source_truth = root_dir / "client-extensions"
+    ce_source_truth.mkdir(parents=True, exist_ok=True)
+    osgi_cx_dir.mkdir(parents=True, exist_ok=True)
+
+    found_ids: set[str] = set()
+
+    _process_built_cx_zips(
+        self,
+        ce_build_dir,
+        ce_source_truth,
+        osgi_cx_dir,
+        root_dir,
+        host_name,
+        meta,
+        extensions,
+    )
+    _process_existing_cx_folders(
+        self,
+        ce_source_truth,
+        osgi_cx_dir,
+        root_dir,
+        host_name,
+        meta,
+        extensions,
+        found_ids,
+    )
+
     return extensions
 
 
@@ -426,7 +450,7 @@ def scan_standalone_services(self, root_path):
         i for i in services_dir.iterdir() if i.is_dir() and not i.name.startswith(".")
     ]:
         if (item / "LCP.json").exists() and (item / "Dockerfile").exists():
-            ext_info = self._scan_extension_metadata(folder_path=item)
+            ext_info = _scan_extension_metadata(self, folder_path=item)
             port = next(
                 (p.get("port") for p in ext_info.get("ports", []) if p.get("external")),
                 80,
@@ -445,7 +469,7 @@ def scan_standalone_services(self, root_path):
 
 
 def get_host_passthrough_env(self, paths=None, target_id=None):
-    blacklist = self._get_effective_blacklist(paths)
+    blacklist = _get_effective_blacklist(self, paths)
 
     # 1. Global Strip-Forwarding (LDM_VAR=xxx -> VAR=xxx in ALL containers)
     global_pool = {
