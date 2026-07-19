@@ -31,12 +31,106 @@ def project_completer(prefix, **kwargs):
     return [r["path"].name for r in roots if r["path"].name.startswith(prefix)]
 
 
-def preprocess_args(args_list: list[str]) -> list[str]:  # noqa: C901, PLR0912
+def _resolve_legacy_commands(cmd, cmd_idx, processed_list):
+    legacy_map = {
+        "infra-setup": ("infra", "setup"),
+        "infra-down": ("infra", "down"),
+        "infra-restart": ("infra", "restart"),
+        "init-common": ("infra", "init-common"),
+        "renew-ssl": ("infra", "renew-ssl"),
+        "migrate-search": ("infra", "migrate-search"),
+        "cloud-fetch": ("cloud", "fetch"),
+        "defaults": ("config", "defaults"),
+        "env": ("config", "env"),
+        "feature": ("config", "feature"),
+        "log-level": ("config", "log-level"),
+        "edit": ("config", "edit"),
+        "rebuild-properties": ("config", "rebuild-properties"),
+        "revert-properties": ("config", "revert-properties"),
+        "reset-properties": ("config", "reset-properties"),
+        "ssl-mode": ("config", "ssl-mode"),
+        "prune": ("system", "prune"),
+        "doctor": ("system", "doctor"),
+        "upgrade": ("system", "upgrade"),
+        "version": ("system", "version"),
+        "dev-setup": ("system", "dev-setup"),
+        "completion": ("system", "completion"),
+        "setup-completion": ("system", "setup-completion"),
+        "man": ("system", "man"),
+        "fix-hosts": ("system", "fix-hosts"),
+        "nuke": ("system", "nuke"),
+        "rescue": ("system", "rescue"),
+    }
+    if cmd in legacy_map:
+        ns, subcmd = legacy_map[cmd]
+        new_args = list(processed_list)
+        new_args[cmd_idx : cmd_idx + 1] = [ns, subcmd]
+        return new_args
+    return None
+
+
+def _resolve_legacy_config_commands(cmd_idx, processed_list):
+    subcmds = [
+        "get",
+        "set",
+        "remove",
+        "defaults",
+        "env",
+        "feature",
+        "log-level",
+        "edit",
+        "add-container",
+        "rebuild-properties",
+        "revert-properties",
+        "reset-properties",
+        "ssl-mode",
+        "database-mode",
+    ]
+    if cmd_idx + 1 < len(processed_list) and processed_list[cmd_idx + 1] in subcmds:
+        return processed_list
+
+    remaining = processed_list[cmd_idx + 1 :]
+    remove_present = False
+    non_flag_args = []
+    other_flags = []
+
+    for arg in remaining:
+        if arg == "--remove":
+            remove_present = True
+        elif arg.startswith("-"):
+            other_flags.append(arg)
+        else:
+            non_flag_args.append(arg)
+
+    new_args = processed_list[:cmd_idx]
+    if remove_present:
+        new_args += ["config", "remove"]
+        if non_flag_args:
+            new_args.append(non_flag_args[0])
+        new_args += other_flags
+        if len(non_flag_args) > 1:
+            new_args += non_flag_args[1:]
+    elif len(non_flag_args) >= 2:
+        new_args += [
+            "config",
+            "set",
+            non_flag_args[0],
+            non_flag_args[1],
+            *non_flag_args[2:],
+            *other_flags,
+        ]
+    elif len(non_flag_args) == 1:
+        new_args += ["config", "get", non_flag_args[0], *other_flags]
+    else:
+        new_args += ["config", "get", *other_flags]
+
+    return new_args
+
+
+def preprocess_args(args_list: list[str]) -> list[str]:
     if not args_list:
         return args_list
 
-    # Determine if args_list has a program/executable name at index 0.
-    # If args_list[0] starts with '-' or is a known command/namespace, it does not have a prog name.
     has_prog = True
     first = args_list[0]
 
@@ -135,7 +229,6 @@ def preprocess_args(args_list: list[str]) -> list[str]:  # noqa: C901, PLR0912
     if first.startswith("-") or first in all_cmds:
         has_prog = False
 
-    # Prepend dummy prog name if not present
     processed_list = args_list if has_prog else ["ldm", *args_list]
 
     cmd_idx = -1
@@ -146,104 +239,11 @@ def preprocess_args(args_list: list[str]) -> list[str]:  # noqa: C901, PLR0912
 
     if cmd_idx != -1:
         cmd = processed_list[cmd_idx]
-
-        # Map of legacy flat commands to (namespace, subcommand)
-        legacy_map = {
-            "infra-setup": ("infra", "setup"),
-            "infra-down": ("infra", "down"),
-            "infra-restart": ("infra", "restart"),
-            "init-common": ("infra", "init-common"),
-            "renew-ssl": ("infra", "renew-ssl"),
-            "migrate-search": ("infra", "migrate-search"),
-            "cloud-fetch": ("cloud", "fetch"),
-            "defaults": ("config", "defaults"),
-            "env": ("config", "env"),
-            "feature": ("config", "feature"),
-            "log-level": ("config", "log-level"),
-            "edit": ("config", "edit"),
-            "rebuild-properties": ("config", "rebuild-properties"),
-            "revert-properties": ("config", "revert-properties"),
-            "reset-properties": ("config", "reset-properties"),
-            "ssl-mode": ("config", "ssl-mode"),
-            "prune": ("system", "prune"),
-            "doctor": ("system", "doctor"),
-            "upgrade": ("system", "upgrade"),
-            "version": ("system", "version"),
-            "dev-setup": ("system", "dev-setup"),
-            "completion": ("system", "completion"),
-            "setup-completion": ("system", "setup-completion"),
-            "man": ("system", "man"),
-            "fix-hosts": ("system", "fix-hosts"),
-            "nuke": ("system", "nuke"),
-            "rescue": ("system", "rescue"),
-        }
-
-        if cmd in legacy_map:
-            ns, subcmd = legacy_map[cmd]
-            new_args = list(processed_list)
-            new_args[cmd_idx : cmd_idx + 1] = [ns, subcmd]
-            processed_list = new_args
+        legacy_resolved = _resolve_legacy_commands(cmd, cmd_idx, processed_list)
+        if legacy_resolved:
+            processed_list = legacy_resolved
         elif cmd == "config":
-            # Check if the next argument is a known subcommand
-            subcmds = [
-                "get",
-                "set",
-                "remove",
-                "defaults",
-                "env",
-                "feature",
-                "log-level",
-                "edit",
-                "add-container",
-                "rebuild-properties",
-                "revert-properties",
-                "reset-properties",
-                "ssl-mode",
-                "database-mode",
-            ]
-            if (
-                cmd_idx + 1 < len(processed_list)
-                and processed_list[cmd_idx + 1] in subcmds
-            ):
-                pass
-            else:
-                # Legacy config processing
-                remaining = processed_list[cmd_idx + 1 :]
-                remove_present = False
-                non_flag_args = []
-                other_flags = []
-
-                for arg in remaining:
-                    if arg == "--remove":
-                        remove_present = True
-                    elif arg.startswith("-"):
-                        other_flags.append(arg)
-                    else:
-                        non_flag_args.append(arg)
-
-                new_args = processed_list[:cmd_idx]
-                if remove_present:
-                    new_args += ["config", "remove"]
-                    if non_flag_args:
-                        new_args.append(non_flag_args[0])
-                    new_args += other_flags
-                    if len(non_flag_args) > 1:
-                        new_args += non_flag_args[1:]
-                elif len(non_flag_args) >= 2:
-                    new_args += [
-                        "config",
-                        "set",
-                        non_flag_args[0],
-                        non_flag_args[1],
-                        *non_flag_args[2:],
-                        *other_flags,
-                    ]
-                elif len(non_flag_args) == 1:
-                    new_args += ["config", "get", non_flag_args[0], *other_flags]
-                else:
-                    new_args += ["config", "get", *other_flags]
-
-                processed_list = new_args
+            processed_list = _resolve_legacy_config_commands(cmd_idx, processed_list)
 
     if not has_prog:
         processed_list = processed_list[1:]
@@ -2081,46 +2081,7 @@ def check_and_display_upgrade_banner():
         pass
 
 
-def main():  # noqa: C901, PLR0912, PLR0915
-    from ldm_core.utils import reset_dry_run_vfs
-
-    reset_dry_run_vfs()
-
-    # Suppress watchdog warning on macOS when fsevents is missing (kqueue is a fine fallback)
-    warnings.filterwarnings("ignore", message="Failed to import fsevents")
-
-    import sys
-
-    # Restore default SIGPIPE handler to avoid BrokenPipeError traceback when using pipelines
-    if sys.platform != "win32":
-        import signal
-
-        try:
-            signal.signal(signal.SIGPIPE, signal.SIG_DFL)
-        except AttributeError:
-            pass
-
-    sys.argv = preprocess_args(sys.argv)
-
-    parser, subparsers = get_parser()
-    UI.init_trace_log(sys.argv)
-
-    if argcomplete:
-        # Recursively attach project completer to all choices under subparsers
-        def attach_completers(p):
-            for action in p._actions:
-                if action.dest in ["project", "project_flag"]:
-                    action.completer = project_completer
-                if isinstance(action, argparse._SubParsersAction):
-                    for sub_p in action.choices.values():
-                        attach_completers(sub_p)
-
-        attach_completers(parser)
-        argcomplete.autocomplete(parser)
-
-    # Use parse_args (intermixed is not supported by subparsers)
-    args = parser.parse_args()
-
+def _check_root_safety(args):
     # Root Safety Guard: Prevent running as sudo for non-upgrade/non-fix-hosts commands
     # This protects the ~/.shiv cache from ownership issues.
     is_safe_command = args.command == "system" and getattr(
@@ -2151,28 +2112,15 @@ def main():  # noqa: C901, PLR0912, PLR0915
                             f"\nIf you are using sudo because of Docker permissions, please run:\n"
                             f"{UI.CYAN}sudo usermod -aG docker $USER{UI.COLOR_OFF} and restart your terminal session."
                         )
+                    import sys
+
                     sys.exit(1)
         except AttributeError:
             # os.geteuid() not available on this platform (though handled by system check)
             pass
 
-    if not args.command:
-        parser.print_help()
-        return
 
-    namespaces = ["infra", "cloud", "config", "system"]
-    if args.command in namespaces and not getattr(args, "subcommand", None):
-        sub_parser = subparsers.choices[args.command]
-        sub_parser.print_help()
-        return
-
-    # Set environment variable LDM_DRY_RUN if dry-run is specified
-    if getattr(args, "dry_run", False) is True:
-        os.environ["LDM_DRY_RUN"] = "true"
-
-    manager = LiferayManager(args)
-    check_and_display_upgrade_banner()
-
+def _resolve_service_disambiguation(args):
     # Disambiguation Heuristic:
     # If the user provides 'ldm logs liferay', argparse puts 'liferay' in project.
     # We detect if the first positional arg is actually a service name.
@@ -2190,9 +2138,9 @@ def main():  # noqa: C901, PLR0912, PLR0915
                 args.service = service_id
             args.project = None
 
-    # Use a simpler project name detection for the docker_required check
-    # to avoid failing if the detected root doesn't have a name yet (initialization case)
-    docker_required = [
+
+def _get_docker_required_commands():
+    return [
         ("run", None),
         ("up", None),
         ("init-from", None),
@@ -2226,17 +2174,9 @@ def main():  # noqa: C901, PLR0912, PLR0915
         ("config", "ssl-mode"),
         ("system", "prune"),
     ]
-    cmd = getattr(args, "command", None)
-    if cmd is not None and not isinstance(cmd, str):
-        cmd = None
-    subcommand = getattr(args, "subcommand", None)
-    if subcommand is not None and not isinstance(subcommand, str):
-        subcommand = None
-    current_cmd = (cmd, subcommand)
-    if current_cmd in docker_required and not manager.check_docker():
-        UI.die("Docker not accessible.")
 
-    # Execution map
+
+def _build_command_map(args, manager):
     from collections.abc import Callable
     from typing import Any
 
@@ -2538,58 +2478,154 @@ def main():  # noqa: C901, PLR0912, PLR0915
             or getattr(args, "project_flag", None),
         ),
     }
+    return cmds
 
-    if current_cmd in cmds:
-        import threading
 
-        update_info = {}
+def _execute_command(args, current_cmd, cmds):
+    import sys
+    import threading
+    from typing import Any
 
-        def run_update_check():
-            latest: Any = None
-            latest, _url = check_for_updates(VERSION)
-            update_info["latest"] = latest
+    update_info = {}
 
-        update_thread = None
-        is_upgrade_or_completion = args.command == "system" and getattr(
-            args, "subcommand", None
-        ) in ["upgrade", "completion", "setup-completion"]
-        if not is_upgrade_or_completion:
-            update_thread = threading.Thread(target=run_update_check, daemon=True)
-            update_thread.start()
+    def run_update_check():
+        latest: Any = None
+        latest, _url = check_for_updates(VERSION)
+        update_info["latest"] = latest
+
+    update_thread = None
+    is_upgrade_or_completion = args.command == "system" and getattr(
+        args, "subcommand", None
+    ) in ["upgrade", "completion", "setup-completion"]
+    if not is_upgrade_or_completion:
+        update_thread = threading.Thread(target=run_update_check, daemon=True)
+        update_thread.start()
+
+    try:
+        from ldm_core.utils import Benchmarker
+
+        if getattr(args, "benchmark", False):
+            Benchmarker.start()
+
+        cmds[current_cmd]()
+
+        if getattr(args, "benchmark", False):
+            Benchmarker.print_report()
+
+    except KeyboardInterrupt:
+        print(f"\n{UI.WHITE}Aborted.{UI.COLOR_OFF}")
+        sys.exit(130)
+    except Exception as e:
+        UI.die("An unexpected error occurred.", details=e)
+
+    is_completion = args.command == "system" and getattr(args, "subcommand", None) in [
+        "completion",
+        "setup-completion",
+    ]
+    if update_thread and not is_completion:
+        update_thread.join(timeout=0.05)
+        latest = update_info.get("latest")
+        if latest:
+            from ldm_core.utils import version_to_tuple
+
+            if version_to_tuple(latest) > version_to_tuple(VERSION):
+                print(
+                    f"\n{UI.BYELLOW}[!] A new version of LDM is available: v{latest}{UI.COLOR_OFF}"
+                )
+                print(
+                    f"    Run {UI.CYAN}ldm system upgrade{UI.COLOR_OFF} to install the latest version.\n"
+                )
+
+
+def _setup_sigpipe_handler():
+    import sys
+
+    if sys.platform != "win32":
+        import signal
 
         try:
-            from ldm_core.utils import Benchmarker
+            signal.signal(signal.SIGPIPE, signal.SIG_DFL)
+        except AttributeError:
+            pass
 
-            if getattr(args, "benchmark", False):
-                Benchmarker.start()
 
-            cmds[current_cmd]()
+def _setup_argcomplete(parser):
+    if argcomplete:
 
-            if getattr(args, "benchmark", False):
-                Benchmarker.print_report()
+        def attach_completers(p):
+            for action in p._actions:
+                if action.dest in ["project", "project_flag"]:
+                    action.completer = project_completer
+                if isinstance(action, argparse._SubParsersAction):
+                    for sub_p in action.choices.values():
+                        attach_completers(sub_p)
 
-        except KeyboardInterrupt:
-            print(f"\n{UI.WHITE}Aborted.{UI.COLOR_OFF}")
-            sys.exit(130)
-        except Exception as e:
-            UI.die("An unexpected error occurred.", details=e)
+        attach_completers(parser)
+        argcomplete.autocomplete(parser)
 
-        is_completion = args.command == "system" and getattr(
-            args, "subcommand", None
-        ) in ["completion", "setup-completion"]
-        if update_thread and not is_completion:
-            update_thread.join(timeout=0.05)
-            latest = update_info.get("latest")
-            if latest:
-                from ldm_core.utils import version_to_tuple
 
-                if version_to_tuple(latest) > version_to_tuple(VERSION):
-                    print(
-                        f"\n{UI.BYELLOW}[!] A new version of LDM is available: v{latest}{UI.COLOR_OFF}"
-                    )
-                    print(
-                        f"    Run {UI.CYAN}ldm system upgrade{UI.COLOR_OFF} to install the latest version.\n"
-                    )
+def main():
+    from ldm_core.utils import reset_dry_run_vfs
+
+    reset_dry_run_vfs()
+
+    # Suppress watchdog warning on macOS when fsevents is missing (kqueue is a fine fallback)
+    warnings.filterwarnings("ignore", message="Failed to import fsevents")
+
+    import sys
+
+    _setup_sigpipe_handler()
+
+    sys.argv = preprocess_args(sys.argv)
+
+    parser, subparsers = get_parser()
+    UI.init_trace_log(sys.argv)
+
+    _setup_argcomplete(parser)
+
+    # Use parse_args (intermixed is not supported by subparsers)
+    args = parser.parse_args()
+
+    _check_root_safety(args)
+
+    if not args.command:
+        parser.print_help()
+        return
+
+    namespaces = ["infra", "cloud", "config", "system"]
+    if args.command in namespaces and not getattr(args, "subcommand", None):
+        sub_parser = subparsers.choices[args.command]
+        sub_parser.print_help()
+        return
+
+    # Set environment variable LDM_DRY_RUN if dry-run is specified
+    if getattr(args, "dry_run", False) is True:
+        import os
+
+        os.environ["LDM_DRY_RUN"] = "true"
+
+    manager = LiferayManager(args)
+    check_and_display_upgrade_banner()
+
+    _resolve_service_disambiguation(args)
+
+    # Use a simpler project name detection for the docker_required check
+    # to avoid failing if the detected root doesn't have a name yet (initialization case)
+    docker_required = _get_docker_required_commands()
+    cmd = getattr(args, "command", None)
+    if cmd is not None and not isinstance(cmd, str):
+        cmd = None
+    subcommand = getattr(args, "subcommand", None)
+    if subcommand is not None and not isinstance(subcommand, str):
+        subcommand = None
+    current_cmd = (cmd, subcommand)
+    if current_cmd in docker_required and not manager.check_docker():
+        UI.die("Docker not accessible.")
+
+    cmds = _build_command_map(args, manager)
+
+    if current_cmd in cmds:
+        _execute_command(args, current_cmd, cmds)
     else:
         parser.print_help()
 

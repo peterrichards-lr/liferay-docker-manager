@@ -268,10 +268,11 @@ class TestArchitecturalContracts(unittest.TestCase):
         import ast
         import inspect
 
-        from ldm_core.cli import get_parser, preprocess_args
+        import ldm_core.cli as cli_module
+        from ldm_core.cli import get_parser
 
-        # 1. Extract sets and lists from preprocess_args AST
-        source = inspect.getsource(preprocess_args)
+        # 1. Extract sets and lists from AST
+        source = inspect.getsource(cli_module)
         tree = ast.parse(source)
 
         all_cmds_val = set()
