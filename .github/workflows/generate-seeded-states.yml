@@ -166,3 +166,24 @@ jobs:
           body: "Last updated on ${{ github.event.repository.updated_at }}. These seeds are maintained for the latest 4 Quarters and 2 LTS lines."
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  prune-obsolete-seeds:
+    needs: publish-release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+      
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          
+      - name: Install Dependencies
+        run: pip install requests
+        
+      - name: Prune Old Seeds
+        run: python3 scripts/prune_old_seeds.py
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

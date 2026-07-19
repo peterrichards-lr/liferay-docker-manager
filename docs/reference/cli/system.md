@@ -37,6 +37,17 @@ ldm system doctor --fix-hosts
 ldm fix-hosts my-project
 ```
 
+## `system seeds`
+
+List available pre-warmed database seeds from GitHub.
+
+```bash
+ldm system seeds
+```
+
+> [!NOTE]  
+> **Seed Retention Policy:** LDM only maintains one pre-warmed seed per quarterly release (the absolute latest patch). When a new patch is released, the previous seed is deleted to conserve storage and reduce confusion.
+
 ## `wait` (Readiness Gating)
 
 Blocks execution until a Liferay instance is genuinely ready for work. This is highly recommended for CI/CD pipelines and complex deployment scripts. Unlike basic Docker healthchecks, `ldm wait` performs a **3-Phase Verification**:

@@ -8,7 +8,13 @@ from pathlib import Path
 from ldm_core.docker_service import DockerService
 from ldm_core.handlers.base import BaseHandler
 from ldm_core.ui import UI
-from ldm_core.utils import get_actual_home, get_compose_cmd, open_browser, strip_ansi
+from ldm_core.utils import (
+    ProjectLock,
+    get_actual_home,
+    get_compose_cmd,
+    open_browser,
+    strip_ansi,
+)
 
 
 class RuntimeService(BaseHandler):
@@ -1314,6 +1320,30 @@ class RuntimeService(BaseHandler):
 
         UI.error("\nTimed out waiting for Liferay to become healthy.")
         return False
+
+    def cmd_start(self, project_id=None, service=None, all_projects=False):
+        """Starts project containers."""
+        targets = []
+        if all_projects:
+            targets = [r["path"] for r in self.manager.find_dxp_roots()]
+        else:
+            root = self.manager.detect_project_path(project_id)
+            if root:
+                targets = [root]
+
+        if not targets:
+            UI.info("No projects found to start.")
+            return
+
+        compose_base = get_compose_cmd()
+        capture = not (UI.INFO_MODE or UI.VERBOSE)
+        for root in targets:
+            UI.info(f"Starting project: {root.name}...")
+            with ProjectLock(root):
+                cmd = [*compose_base, "start"]
+                if service:
+                    cmd.append(service)
+                self.manager.run_command(cmd, capture_output=capture, cwd=str(root))
 
     def cmd_stop(self, project_id=None, service=None, all_projects=False):
         """Stops project containers."""

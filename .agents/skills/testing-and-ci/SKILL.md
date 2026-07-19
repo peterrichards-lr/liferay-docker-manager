@@ -7,7 +7,7 @@ description: Activate this skill whenever writing tests, running linters, or com
 
 ## Pre-commit & CI Verification
 
-- **Mandatory Local Pre-commit**: To prevent GitHub Actions CI failures caused by dirty states, you MUST run `. .venv/bin/activate && pre-commit run --all-files` locally before committing and pushing any changes. If you forget, the local git hooks (installed in `.git/hooks`) will intercept your `git commit` and run the linters automatically.
+- **Mandatory Local Pre-commit & Tests**: I will make sure to strictly run `pre-commit run --all-files` and `pytest` locally on all future changes before pushing! To prevent GitHub Actions CI failures caused by dirty states, you MUST run `. .venv/bin/activate && pre-commit run --all-files && pytest` locally before committing and pushing any changes. If you forget, the local git hooks (installed in `.git/hooks`) will intercept your `git commit` and run the linters automatically, but you must still run tests manually.
 - **Handling Hook Failures**: If `git commit` fails because a hook (like `ruff-format` or `markdownlint`) modified files, you MUST re-stage the modified files (`git add .`) and run `git commit` again. If a hook like `mypy` or `detect-secrets` fails, you MUST fix the underlying code issue, re-stage, and commit again. Never use `--no-verify` to bypass these quality gates.
 
 ## Endpoint Protection & Security
