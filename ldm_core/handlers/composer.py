@@ -151,6 +151,58 @@ class ComposerService:
 
         return active
 
+    def _update_tunnel_env_file(
+        self, project_name, meta, subdomain, token, server_url, share_domain
+    ):
+        import re
+        from pathlib import Path
+
+        if hasattr(self.manager, "detect_project_path"):
+            project_path = self.manager.detect_project_path(project_name)
+            if project_path and isinstance(project_path, (str, Path)):
+                if share_domain:
+                    meta["share_domain"] = share_domain
+                    self.manager.write_meta(project_path, meta)
+
+                env_file = Path(project_path) / ".env"
+                env_content = ""
+                if env_file.exists():
+                    env_content = env_file.read_text()
+
+                if "LFT_SUBDOMAIN=" in env_content:
+                    env_content = re.sub(
+                        r"LFT_SUBDOMAIN=.*",
+                        f"LFT_SUBDOMAIN={subdomain}",
+                        env_content,
+                    )
+                else:
+                    env_content = (
+                        env_content.rstrip() + f"\nLFT_SUBDOMAIN={subdomain}\n"
+                    )
+
+                if "LFT_CLIENT_TOKEN=" in env_content:
+                    env_content = re.sub(
+                        r"LFT_CLIENT_TOKEN=.*",
+                        f"LFT_CLIENT_TOKEN={token}",
+                        env_content,
+                    )
+                else:
+                    env_content = env_content.rstrip() + f"\nLFT_CLIENT_TOKEN={token}\n"
+
+                if server_url:
+                    if "LFT_SERVER_URL=" in env_content:
+                        env_content = re.sub(
+                            r"LFT_SERVER_URL=.*",
+                            f"LFT_SERVER_URL={server_url}",
+                            env_content,
+                        )
+                    else:
+                        env_content = (
+                            env_content.rstrip() + f"\nLFT_SERVER_URL={server_url}\n"
+                        )
+
+                env_file.write_text(env_content.strip() + "\n")
+
     def write_docker_compose(self, paths, meta, liferay_env=None):  # noqa: C901, PLR0912, PLR0915
         """Generates the docker-compose.yml file using the Builder Pattern."""
         # Ensure paths is a dictionary for subscripting
@@ -228,197 +280,20 @@ class ComposerService:
             if kibana_service:
                 services["kibana"] = kibana_service
 
-        is_expose = (
-            getattr(self.manager.args, "expose", False) is True
-            or str(meta.get("expose", "false")).lower() == "true"
-        )
-        if is_expose:
-            auth_token = self.manager.config.get_ngrok_auth_token()
-            if auth_token:
-                services["ngrok"] = {
-                    "image": "ngrok/ngrok:latest",
-                    "networks": ["liferay-net"],
-                    "environment": [f"NGROK_AUTHTOKEN={auth_token}"],
-                    "command": [
-                        "http",
-                        "https://proxy:443",
-                        f"--host-header={host_name}",
-                    ],
-                }
-            else:
-                UI.warning(
-                    "ngrok authtoken not found, ngrok service will not be started."
-                )
+        ngrok_service = self._build_ngrok_service(host_name, meta)
+        if ngrok_service:
+            services["ngrok"] = ngrok_service
 
-        is_share = (
-            getattr(self.manager.args, "share", False) is True
-            or str(meta.get("share", "false")).lower() == "true"
-        )
-        share_provider = (
-            getattr(self.manager.args, "share_provider", None)
-            or meta.get("share_provider")
-            or "lfr-tunnel"
-        )
-        if is_share and share_provider == "lfr-tunnel-docker":
-            token = self.manager.share._get_auth_token()
-            if token:
-                subdomain = (
-                    getattr(self.manager.args, "share_subdomain", None)
-                    or meta.get("share_subdomain")
-                    or project_name
-                )
-                import os
-                import re
-
-                share_domain = getattr(
-                    self.manager.args, "share_domain", None
-                ) or meta.get("share_domain")
-                if not share_domain:
-                    _, share_domain = self.manager.share.resolve_share_config(meta)
-
-                server_url = os.environ.get("LFT_SERVER_URL")
-                if not server_url and share_domain:
-                    server_url = f"https://tunnel.{share_domain}"
-
-                # Update/write local .env file in project directory
-                if hasattr(self.manager, "detect_project_path"):
-                    project_path = self.manager.detect_project_path(project_name)
-                    if project_path and isinstance(project_path, (str, Path)):
-                        if share_domain:
-                            meta["share_domain"] = share_domain
-                            self.manager.write_meta(project_path, meta)
-
-                        env_file = Path(project_path) / ".env"
-                        env_content = ""
-                        if env_file.exists():
-                            env_content = env_file.read_text()
-
-                        # Update LFT_SUBDOMAIN
-                        if "LFT_SUBDOMAIN=" in env_content:
-                            env_content = re.sub(
-                                r"LFT_SUBDOMAIN=.*",
-                                f"LFT_SUBDOMAIN={subdomain}",
-                                env_content,
-                            )
-                        else:
-                            env_content = (
-                                env_content.rstrip() + f"\nLFT_SUBDOMAIN={subdomain}\n"
-                            )
-
-                        # Update LFT_CLIENT_TOKEN
-                        if "LFT_CLIENT_TOKEN=" in env_content:
-                            env_content = re.sub(
-                                r"LFT_CLIENT_TOKEN=.*",
-                                f"LFT_CLIENT_TOKEN={token}",
-                                env_content,
-                            )
-                        else:
-                            env_content = (
-                                env_content.rstrip() + f"\nLFT_CLIENT_TOKEN={token}\n"
-                            )
-
-                        # Update LFT_SERVER_URL if custom
-                        if server_url:
-                            if "LFT_SERVER_URL=" in env_content:
-                                env_content = re.sub(
-                                    r"LFT_SERVER_URL=.*",
-                                    f"LFT_SERVER_URL={server_url}",
-                                    env_content,
-                                )
-                            else:
-                                env_content = (
-                                    env_content.rstrip()
-                                    + f"\nLFT_SERVER_URL={server_url}\n"
-                                )
-
-                        env_file.write_text(env_content.strip() + "\n")
-
-                share_inspector = (
-                    getattr(self.manager.args, "share_inspector", False) is True
-                    or str(meta.get("share_inspector", "false")).lower() == "true"
-                )
-
-                lfr_env = [
-                    f"LFT_CLIENT_TOKEN=${{LFT_CLIENT_TOKEN:-{token}}}",
-                    "LFT_TARGET_HOST=liferay",
-                    f"LFT_CLIENT_SUBDOMAIN=${{LFT_SUBDOMAIN:-{subdomain}}}",
-                    "LFT_PRESERVE_HOST=true",
-                ]
-                lfr_env.append("LFT_INSPECTOR_BIND=${LFT_INSPECTOR_BIND:-0.0.0.0}")
-
-                if server_url:
-                    lfr_env.append(
-                        f"LFT_CLIENT_SERVER=${{LFT_SERVER_URL:-{server_url}}}"
-                    )
-                else:
-                    lfr_env.append(
-                        "LFT_CLIENT_SERVER=${LFT_SERVER_URL:-https://tunnel.lfr-demo.online}"
-                    )
-
-                image = (
-                    getattr(self.manager.args, "share_image", None)
-                    or meta.get("share_image")
-                    or "peterjrichards/lfr-tunnel:latest"
-                )
-
-                logs_dir = str(paths["root"] / "logs")
-                services["lfr-tunnel"] = {
-                    "image": image,
-                    "pull_policy": "always",
-                    "container_name": sanitize_id(
-                        meta.get("tunnel_container_name")
-                        or f"{project_name}-lfr-tunnel"
-                    ),
-                    "networks": ["liferay-net"],
-                    "environment": lfr_env,
-                    "volumes": [f"{logs_dir}:/opt/liferay/logs"],
-                    "entrypoint": [
-                        "/bin/sh",
-                        "-c",
-                        f"./lfr-tunnel -ports {meta.get('share_ports', '8080')} 2>&1 | tee /opt/liferay/logs/lfr-tunnel.log",
-                    ],
-                    "deploy": {
-                        "resources": {
-                            "limits": {
-                                "cpus": "0.10",
-                                "memory": "50M",
-                            },
-                            "reservations": {
-                                "cpus": "0.05",
-                                "memory": "20M",
-                            },
-                        }
-                    },
-                    "depends_on": {"liferay": {"condition": "service_healthy"}},
-                }
-                if share_inspector:
-                    services["lfr-tunnel"]["ports"] = ["4040:4040"]
-            else:
-                UI.warning(
-                    "Liferay Tunnel token not found, lfr-tunnel service will not be started."
-                )
+        lfr_tunnel_service = self._build_lfr_tunnel_service(paths, meta, project_name)
+        if lfr_tunnel_service:
+            services["lfr-tunnel"] = lfr_tunnel_service
 
         compose = {
             "services": services,
             "networks": {"liferay-net": {"external": True}},
         }
 
-        # LDM-381: Ensure all services have standard LDM labels for pruning
-        for _, svc_data in services.items():
-            if "labels" not in svc_data:
-                svc_data["labels"] = []
-
-            # Convert to list if it's a dict (though LDM uses lists)
-            if isinstance(svc_data["labels"], dict):
-                svc_data["labels"] = [f"{k}={v}" for k, v in svc_data["labels"].items()]
-
-            standard_labels = [
-                f"com.liferay.ldm.project={project_name}",
-                "com.liferay.ldm.managed=true",
-            ]
-            for label in standard_labels:
-                if label not in svc_data["labels"]:
-                    svc_data["labels"].append(label)
+        self._inject_ldm_labels(services, project_name)
 
         # LDM-369: Add top-level volumes for Named Volumes (data/state)
         named_volumes: dict[str, dict] = {}
@@ -455,70 +330,9 @@ class ComposerService:
         if named_volumes:
             compose["volumes"] = named_volumes
 
-        # --- Extensible Stack Archetypes Merge ---
-        archetype_name = meta.get("archetype")
-        if archetype_name:
-            from ldm_core.constants import SCRIPT_DIR
+        self._merge_archetype_overlay(meta, compose)
 
-            archetype_overlay_path = (
-                SCRIPT_DIR
-                / "ldm_core"
-                / "resources"
-                / "archetypes"
-                / archetype_name
-                / "compose-overlay.yml"
-            )
-            if archetype_overlay_path.exists():
-                import yaml
-
-                def deep_merge(dict1, dict2):
-                    for key, val in dict2.items():
-                        if isinstance(val, dict):
-                            dict1[key] = deep_merge(dict1.get(key, {}), val)
-                        elif isinstance(val, list):
-                            dict1[key] = dict1.get(key, []) + val
-                        else:
-                            dict1[key] = val
-                    return dict1
-
-                try:
-                    overlay_data = (
-                        yaml.safe_load(
-                            archetype_overlay_path.read_text(encoding="utf-8")
-                        )
-                        or {}
-                    )
-                    compose = deep_merge(compose, overlay_data)
-
-                    # Dynamic Clustered Image Sync
-                    if (
-                        "liferay2" in compose["services"]
-                        and "liferay" in compose["services"]
-                    ):
-                        compose["services"]["liferay2"]["image"] = compose["services"][
-                            "liferay"
-                        ]["image"]
-
-                except Exception as e:
-                    UI.error(f"Failed to merge archetype overlay: {e}")
-
-        # Inject standard logging limits to all services to prevent disk bloat
-        max_size = "10m"
-        max_file = "3"
-        if hasattr(self.manager, "defaults") and self.manager.defaults is not None:
-            max_size = self.manager.defaults.get("log_max_size", "10m")
-            max_file = str(self.manager.defaults.get("log_max_file", "3"))
-
-        logging_block = {
-            "driver": "json-file",
-            "options": {
-                "max-size": max_size,
-                "max-file": max_file,
-            },
-        }
-        for svc_conf in compose.get("services", {}).values():
-            if "logging" not in svc_conf:
-                svc_conf["logging"] = logging_block
+        self._inject_logging_limits(compose)
 
         from ldm_core.utils import safe_write_text
 
@@ -528,6 +342,42 @@ class ComposerService:
         """Returns True if the current platform/configuration uses Docker Named Volumes for data/state."""
         # Current policy: Named Volumes are used on all platforms to prevent locking errors.
         return True
+
+    def _resolve_liferay_image(self, meta):
+        # LDM-381: Determine base image and sanitized tag
+        tag = str(meta.get("tag") or "latest")
+        is_portal = str(meta.get("portal", "false")).lower() == "true"
+
+        # Explicit tag prefixes take precedence and are stripped
+        if tag.startswith("dxp-"):
+            is_portal = False
+            tag = tag[4:]
+        elif tag.startswith("portal-"):
+            is_portal = True
+            tag = tag[7:]
+
+        # Heuristic: Is it a legacy portal update tag? (e.g. 7.4.13-u102)
+        is_legacy_portal_u_tag = (
+            "u" in tag and "." in tag and tag.index("u") > tag.rindex(".")
+        )
+
+        image = meta.get("image_tag")
+        if not image:
+            # LDM-381: Portal is deprecated, default to DXP
+            if is_portal or is_legacy_portal_u_tag:
+                image = f"liferay/portal:{tag}"
+            else:
+                image = f"liferay/dxp:{tag}"
+        elif str(image).startswith("-"):
+            # It's a suffix
+            suffix = str(image)
+            image_base = (
+                "liferay/portal"
+                if (is_portal or is_legacy_portal_u_tag)
+                else "liferay/dxp"
+            )
+            image = f"{image_base}:{tag}{suffix}"
+        return image
 
     def _build_liferay_service(  # noqa: C901, PLR0912, PLR0915
         self, paths, meta, host_name, project_name, ssl_enabled, base_env
@@ -699,269 +549,17 @@ class ComposerService:
             if k.startswith("LIFERAY_JDBC_PERIOD_"):
                 has_jdbc_env = True
 
-        # Inject LIFERAY_ROUTES_CLIENT_EXTENSION_... for microservices
-        extensions = []
-        if self.manager and hasattr(self.manager, "workspace"):
-            extensions = self.manager.workspace.scan_client_extensions(
-                paths["root"],
-                paths.get("cx"),
-                paths.get("ce_dir"),
-                host_name=meta.get("host_name"),
-            )
-        elif self.manager:
-            from ldm_core.handlers.workspace import WorkspaceService
+        self._inject_liferay_extensions_routes(paths, meta, project_name, liferay_env)
 
-            cx_handler = WorkspaceService(self.manager)
-            extensions = cx_handler.scan_client_extensions(
-                paths["root"],
-                paths.get("cx"),
-                paths.get("ce_dir"),
-                host_name=meta.get("host_name"),
-            )
-
-        for ext in extensions:
-            if ext.get("deploy") and ext.get("is_service"):
-                ext_id = ext.get("id")
-                if ext_id:
-                    svc_id = f"{project_name}-{ext_id}"
-                    ms_port = next(
-                        (
-                            p.get("port")
-                            for p in ext.get("ports", [])
-                            if isinstance(p, dict) and p.get("external")
-                        ),
-                        ext.get("loadBalancer", {}).get("targetPort", 8080),
-                    )
-                    env_key = f"LIFERAY_ROUTES_CLIENT_EXTENSION_{ext_id.replace('-', '_').upper()}"
-                    liferay_env.append(f"{env_key}=http://{svc_id}:{ms_port}")
-
-        db_type = meta.get("db_type", "postgresql")
-
-        # 1. Determine baseline default based on LDM version when project was created
-        baseline_default = "isolated"
-        ldm_version = meta.get("ldm_version")
-        if ldm_version and self.manager.parse_version(ldm_version) >= (2, 11, 75):
-            baseline_default = "shared"
-
-        # 2. Allow global config to override baseline
-        if hasattr(self.manager, "defaults") and self.manager.defaults is not None:
-            baseline_default = self.manager.defaults.get(
-                "database_mode", baseline_default
-            )
-
-        # 3. Project-specific explicit setting wins
-        from ldm_core.utils import resolve_infrastructure_mode
-
-        db_mode = resolve_infrastructure_mode(
-            "database_mode", meta, self.manager.defaults
+        db_type, db_mode = self._inject_liferay_db_env(
+            paths, meta, project_name, tag, has_jdbc_env, liferay_env
         )
 
-        if db_mode == "shared":
-            UI.info("Utilizing Global Shared Infrastructure")
-
-        # 4. Enforce Hypersonic isolation
-        if db_type == "hypersonic" and db_mode == "shared":
-            UI.warning(
-                "Hypersonic database cannot be shared. Enforcing 'isolated' mode."
-            )
-            db_mode = "isolated"
-
-        db_updates = {}
-        if db_type == "external":
-            if not has_jdbc_env:
-                db_updates = {
-                    "jdbc.default.url": meta.get("jdbc_url", ""),
-                    "jdbc.default.username": meta.get("jdbc_user", ""),
-                    "jdbc.default.password": meta.get("jdbc_pass", ""),
-                }
-            liferay_env.append("LIFERAY_HSQL_PERIOD_ENABLED=false")
-        elif db_type in ["mysql", "mariadb"]:
-            driver = (
-                resolve_dependency_version(tag, "jdbc_driver_mysql")
-                or "org.mariadb.jdbc.Driver"
-            )
-            dialect = "org.hibernate.dialect.MariaDB103Dialect"
-            host = "db"
-            db_name = "lportal"
-            if db_mode == "shared":
-                host = "liferay-db-global"
-                db_name = f"lportal_{sanitize_id(project_name).replace('-', '_')}"
-
-            url = (
-                f"jdbc:mariadb://{host}:3306/{db_name}?"
-                "characterEncoding=UTF-8"
-                "&dontTrackOpenResources=true"
-                "&holdResultsOpenOverStatementClose=true"
-                "&serverTimezone=GMT"
-                "&useFastDateParsing=false"
-                "&useUnicode=true"
-                "&useSSL=false"
-                "&allowPublicKeyRetrieval=true"
-                "&rewriteBatchedStatements=true"
-                "&prepStmtCacheSize=1000"
-                "&prepStmtCacheSqlLimit=2048"
-                "&useLocalSessionState=true"
-                "&useLocalTransactionState=true"
-                "&permitMysqlScheme=true"
-            )
-            if not has_jdbc_env:
-                db_updates = {
-                    "jdbc.default.driverClassName": driver,
-                    "jdbc.default.url": url,
-                    "jdbc.default.username": "lportal",
-                    "jdbc.default.password": "test",  # nosec B105
-                    "hibernate.dialect": dialect,
-                }
-            liferay_env.append("LIFERAY_HSQL_PERIOD_ENABLED=false")
-        elif db_type == "postgresql":
-            driver = (
-                resolve_dependency_version(tag, "jdbc_driver_postgresql")
-                or "org.postgresql.Driver"
-            )
-            url = "jdbc:postgresql://db:5432/lportal"
-            if db_mode == "shared":
-                db_name = f"lportal_{sanitize_id(project_name).replace('-', '_')}"
-                url = f"jdbc:postgresql://liferay-db-global:5432/{db_name}"
-
-            dialect = (
-                resolve_dependency_version(tag, "jdbc_dialect_postgresql")
-                or "org.hibernate.dialect.PostgreSQL10Dialect"
-            )
-            if not has_jdbc_env:
-                db_updates = {
-                    "jdbc.default.driverClassName": driver,
-                    "jdbc.default.url": url,
-                    "jdbc.default.username": "lportal",
-                    "jdbc.default.password": "test",  # nosec B105
-                    "hibernate.dialect": dialect,
-                }
-            liferay_env.append("LIFERAY_HSQL_PERIOD_ENABLED=false")
-
-        if db_updates:
-            # Optimize connection pool limits for local development
-            db_max_active = "15"
-            db_min_idle = "2"
-            db_max_idle = "5"
-            if hasattr(self.manager, "defaults") and self.manager.defaults is not None:
-                db_max_active = self.manager.defaults.get("db_max_active", "15")
-                db_min_idle = self.manager.defaults.get("db_min_idle", "2")
-                db_max_idle = self.manager.defaults.get("db_max_idle", "5")
-
-            db_updates.update(
-                {
-                    "jdbc.default.maxActive": db_max_active,
-                    "jdbc.default.minIdle": db_min_idle,
-                    "jdbc.default.maxIdle": db_max_idle,
-                }
-            )
-            self.manager.config.update_portal_ext(paths, db_updates)
-
-        # Determine if we are sharing via a tunnel
-        is_share = (
-            getattr(self.manager.args, "share", False) is True
-            or str(meta.get("share", "false")).lower() == "true"
-        )
-        share_provider = (
-            getattr(self.manager.args, "share_provider", None)
-            or meta.get("share_provider")
-            or "lfr-tunnel"
-        )
-        share_subdomain = (
-            getattr(self.manager.args, "share_subdomain", None)
-            or meta.get("share_subdomain")
-            or project_name
+        port_list = self._inject_liferay_share_env(
+            paths, meta, host_name, project_name, ssl_enabled, port
         )
 
-        share_host = None
-        if is_share and share_provider in ["lfr-tunnel", "lfr-tunnel-docker"]:
-            public_url = self.manager.share.resolve_public_tunnel_url(share_subdomain)
-            if public_url:
-                from urllib.parse import urlparse
-
-                parsed = urlparse(public_url)
-                share_host = parsed.netloc or parsed.path
-
-        port_list = []
-        if host_name == "localhost" or not ssl_enabled:
-            bind_ip = self.manager.get_resolved_ip(host_name) or "127.0.0.1"
-            port_list.append(f"{bind_ip}:{port}:8080")
-
-        tunnel_managed_cors = getattr(
-            self.manager.args, "tunnel_managed_cors", False
-        ) or self.manager.config.get_global_config().get("tunnel_managed_cors", False)
-
-        valid_hosts = f"localhost,127.0.0.1,{host_name},liferay"
-        if not tunnel_managed_cors:
-            valid_hosts += ",*.lfr-demo.online,*.lfr-demo.se"
-
-        # Configure Liferay web server proxy and header forwarding settings
-        forwarded_props = {
-            "web.server.forwarded.host.header": "X-Forwarded-Host",
-            "web.server.forwarded.port.header": "X-Forwarded-Port",
-            "web.server.forwarded.proto.header": "X-Forwarded-Proto",
-            "virtual.hosts.valid.hosts": valid_hosts,
-        }
-
-        if not tunnel_managed_cors and share_host:
-            forwarded_props.update(
-                {
-                    "web.server.host": share_host,
-                    "web.server.https.port": "443",
-                    "web.server.protocol": "https",
-                }
-            )
-        elif not tunnel_managed_cors and ssl_enabled:
-            forwarded_props.update(
-                {
-                    "web.server.host": host_name,
-                    "web.server.https.port": "443",
-                    "web.server.protocol": "https",
-                }
-            )
-        else:
-            forwarded_props.update(
-                {
-                    "web.server.host": "",
-                    "web.server.https.port": "",
-                    "web.server.protocol": "",
-                }
-            )
-
-        self.manager.config.update_portal_ext(paths, forwarded_props)
-
-        # LDM-381: Determine base image and sanitized tag
-        tag = str(meta.get("tag") or "latest")
-        is_portal = str(meta.get("portal", "false")).lower() == "true"
-
-        # Explicit tag prefixes take precedence and are stripped
-        if tag.startswith("dxp-"):
-            is_portal = False
-            tag = tag[4:]
-        elif tag.startswith("portal-"):
-            is_portal = True
-            tag = tag[7:]
-
-        # Heuristic: Is it a legacy portal update tag? (e.g. 7.4.13-u102)
-        is_legacy_portal_u_tag = (
-            "u" in tag and "." in tag and tag.index("u") > tag.rindex(".")
-        )
-
-        image = meta.get("image_tag")
-        if not image:
-            # LDM-381: Portal is deprecated, default to DXP
-            if is_portal or is_legacy_portal_u_tag:
-                image = f"liferay/portal:{tag}"
-            else:
-                image = f"liferay/dxp:{tag}"
-        elif str(image).startswith("-"):
-            # It's a suffix
-            suffix = str(image)
-            image_base = (
-                "liferay/portal"
-                if (is_portal or is_legacy_portal_u_tag)
-                else "liferay/dxp"
-            )
-            image = f"{image_base}:{tag}{suffix}"
+        image = self._resolve_liferay_image(meta)
 
         depends_on = []
         if db_type not in ["hypersonic", "external"] and db_mode != "shared":
@@ -1050,6 +648,591 @@ class ComposerService:
             )
 
         return service
+
+    def _build_liferay_jvm_opts(self, meta):
+        jvm_opts = str(meta.get("jvm_args", ""))
+        if "-Dfile.encoding" not in jvm_opts:
+            jvm_opts += " -Dfile.encoding=UTF8"
+        if "-Duser.timezone" not in jvm_opts:
+            jvm_opts += " -Duser.timezone=GMT"
+
+        mandatory_opens = [
+            "java.base/java.lang=ALL-UNNAMED",
+            "java.base/java.lang.invoke=ALL-UNNAMED",
+            "java.base/java.lang.reflect=ALL-UNNAMED",
+            "java.base/java.net=ALL-UNNAMED",
+            "java.base/java.util=ALL-UNNAMED",
+            "java.base/java.util.concurrent=ALL-UNNAMED",
+            "java.base/java.text=ALL-UNNAMED",
+            "java.base/java.time=ALL-UNNAMED",
+            "java.base/sun.net.www.protocol.http=ALL-UNNAMED",
+            "java.base/sun.net.www.protocol.https=ALL-UNNAMED",
+            "java.base/sun.nio.ch=ALL-UNNAMED",
+            "java.base/sun.security.action=ALL-UNNAMED",
+            "java.base/sun.security.ssl=ALL-UNNAMED",
+            "java.base/sun.security.util=ALL-UNNAMED",
+            "java.base/sun.security.x509=ALL-UNNAMED",
+            "java.base/sun.util.calendar=ALL-UNNAMED",
+            "java.management/sun.management=ALL-UNNAMED",
+            "java.rmi/sun.rmi.transport=ALL-UNNAMED",
+            "jdk.management/com.sun.management.internal=ALL-UNNAMED",
+            "jdk.zipfs/jdk.nio.zipfs=ALL-UNNAMED",
+        ]
+        for opt in mandatory_opens:
+            flag = f"--add-opens={opt}"
+            if flag not in jvm_opts:
+                jvm_opts += f" {flag}"
+
+        return self._merge_jvm_opts(jvm_opts)
+
+    def _merge_jvm_opts(self, jvm_opts):
+        opt_map = {}
+        for opt in jvm_opts.split(" "):
+            if opt:
+                if "=" in opt:
+                    key = opt.split("=")[0]
+                    opt_map[key] = opt
+                else:
+                    opt_map[opt] = opt
+
+        return f"LIFERAY_JVM_OPTS={' '.join(opt_map.values())}"
+
+    def _inject_liferay_search_env(
+        self, meta, project_name, use_shared_search, liferay_env
+    ):
+        if use_shared_search:
+            from ldm_core.utils import sanitize_id
+
+            safe_project_name = sanitize_id(project_name)
+            liferay_env.append(
+                f"LIFERAY_ELASTICSEARCH7_PERIOD_INDEX_PERIOD_NAME_PERIOD_PREFIX=ldm_{safe_project_name}"
+            )
+            liferay_env.append(
+                f"LIFERAY_ELASTICSEARCH8_PERIOD_INDEX_PERIOD_NAME_PERIOD_PREFIX=ldm_{safe_project_name}"
+            )
+            liferay_env.append(
+                "LIFERAY_ELASTICSEARCH7_PERIOD_PRODUCTION_PERIOD_MODE_PERIOD_ENABLED=true"
+            )
+            liferay_env.append(
+                "LIFERAY_ELASTICSEARCH8_PERIOD_PRODUCTION_PERIOD_MODE_PERIOD_ENABLED=true"
+            )
+            liferay_env.append(
+                "LIFERAY_ELASTICSEARCH7_PERIOD_NETWORK_PERIOD_HOST_PERIOD_ADDRESSES=liferay-search-global:9200"
+            )
+            liferay_env.append(
+                "LIFERAY_ELASTICSEARCH8_PERIOD_NETWORK_PERIOD_HOST_PERIOD_ADDRESSES=liferay-search-global:9200"
+            )
+        else:
+            liferay_env.append(
+                "LIFERAY_ELASTICSEARCH7_PERIOD_PRODUCTION_PERIOD_MODE_PERIOD_ENABLED=true"
+            )
+            liferay_env.append(
+                "LIFERAY_ELASTICSEARCH8_PERIOD_PRODUCTION_PERIOD_MODE_PERIOD_ENABLED=true"
+            )
+            liferay_env.append(
+                "LIFERAY_ELASTICSEARCH7_PERIOD_NETWORK_PERIOD_HOST_PERIOD_ADDRESSES=search:9200"
+            )
+            liferay_env.append(
+                "LIFERAY_ELASTICSEARCH8_PERIOD_NETWORK_PERIOD_HOST_PERIOD_ADDRESSES=search:9200"
+            )
+
+    def _inject_liferay_custom_env(self, meta, liferay_env, base_env):
+        if str(meta.get("reindex_required", "false")).lower() == "true":
+            liferay_env.append("LIFERAY_INDEX_PERIOD_ON_PERIOD_STARTUP=true")
+
+        has_jdbc_env = False
+        if base_env:
+            for env in base_env:
+                if env.startswith("LIFERAY_JDBC_PERIOD_DEFAULT_PERIOD_"):
+                    has_jdbc_env = True
+                liferay_env.append(env)
+        return has_jdbc_env
+
+    def _inject_liferay_extensions_routes(self, paths, meta, project_name, liferay_env):
+        extensions = []
+        if self.manager and hasattr(self.manager, "workspace"):
+            extensions = self.manager.workspace.scan_client_extensions(
+                paths["root"],
+                paths.get("cx"),
+                paths.get("ce_dir"),
+                host_name=meta.get("host_name"),
+            )
+        elif self.manager:
+            from ldm_core.handlers.workspace import WorkspaceService
+
+            cx_handler = WorkspaceService(self.manager)
+            extensions = cx_handler.scan_client_extensions(
+                paths["root"],
+                paths.get("cx"),
+                paths.get("ce_dir"),
+                host_name=meta.get("host_name"),
+            )
+
+        for ext in extensions:
+            if ext.get("deploy") and ext.get("is_service"):
+                ext_id = ext.get("id")
+                if ext_id:
+                    svc_id = f"{project_name}-{ext_id}"
+                    ms_port = next(
+                        (
+                            p.get("port")
+                            for p in ext.get("ports", [])
+                            if isinstance(p, dict) and p.get("external")
+                        ),
+                        ext.get("loadBalancer", {}).get("targetPort", 8080),
+                    )
+                    env_key = f"LIFERAY_ROUTES_CLIENT_EXTENSION_{ext_id.replace('-', '_').upper()}"
+                    liferay_env.append(f"{env_key}=http://{svc_id}:{ms_port}")
+
+    def _inject_liferay_db_env(
+        self, paths, meta, project_name, tag, has_jdbc_env, liferay_env
+    ):
+        db_type = meta.get("db_type", "postgresql")
+        baseline_default = "isolated"
+        ldm_version = meta.get("ldm_version")
+        if ldm_version and self.manager.parse_version(ldm_version) >= (2, 11, 75):
+            baseline_default = "shared"
+
+        if hasattr(self.manager, "defaults") and self.manager.defaults is not None:
+            baseline_default = self.manager.defaults.get(
+                "database_mode", baseline_default
+            )
+
+        from ldm_core.utils import resolve_infrastructure_mode
+
+        db_mode = resolve_infrastructure_mode(
+            "database_mode", meta, self.manager.defaults
+        )
+
+        if db_mode == "shared":
+            from ldm_core.ui import UI
+
+            UI.info("Utilizing Global Shared Infrastructure")
+
+        if db_type == "hypersonic" and db_mode == "shared":
+            from ldm_core.ui import UI
+
+            UI.warning(
+                "Hypersonic database cannot be shared. Enforcing 'isolated' mode."
+            )
+            db_mode = "isolated"
+
+        db_updates = {}
+        if db_type == "external":
+            if not has_jdbc_env:
+                db_updates = {
+                    "jdbc.default.url": meta.get("jdbc_url", ""),
+                    "jdbc.default.username": meta.get("jdbc_user", ""),
+                    "jdbc.default.password": meta.get("jdbc_pass", ""),
+                }
+            liferay_env.append("LIFERAY_HSQL_PERIOD_ENABLED=false")
+        elif db_type in ["mysql", "mariadb"]:
+            from ldm_core.utils import resolve_dependency_version
+
+            driver = (
+                resolve_dependency_version(tag, "jdbc_driver_mysql")
+                or "org.mariadb.jdbc.Driver"
+            )
+            dialect = "org.hibernate.dialect.MariaDB103Dialect"
+            host = "db"
+            db_name = "lportal"
+            if db_mode == "shared":
+                from ldm_core.utils import sanitize_id
+
+                host = "liferay-db-global"
+                db_name = f"lportal_{sanitize_id(project_name).replace('-', '_')}"
+
+            url = (
+                f"jdbc:mariadb://{host}:3306/{db_name}?"
+                "characterEncoding=UTF-8"
+                "&dontTrackOpenResources=true"
+                "&holdResultsOpenOverStatementClose=true"
+                "&serverTimezone=GMT"
+                "&useFastDateParsing=false"
+                "&useUnicode=true"
+                "&useSSL=false"
+                "&allowPublicKeyRetrieval=true"
+                "&rewriteBatchedStatements=true"
+                "&prepStmtCacheSize=1000"
+                "&prepStmtCacheSqlLimit=2048"
+                "&useLocalSessionState=true"
+                "&useLocalTransactionState=true"
+                "&permitMysqlScheme=true"
+            )
+            if not has_jdbc_env:
+                db_updates = {
+                    "jdbc.default.driverClassName": driver,
+                    "jdbc.default.url": url,
+                    "jdbc.default.username": "lportal",
+                    "jdbc.default.password": "test",  # nosec B105
+                    "hibernate.dialect": dialect,
+                }
+            liferay_env.append("LIFERAY_HSQL_PERIOD_ENABLED=false")
+        elif db_type == "postgresql":
+            from ldm_core.utils import resolve_dependency_version
+
+            driver = (
+                resolve_dependency_version(tag, "jdbc_driver_postgresql")
+                or "org.postgresql.Driver"
+            )
+            url = "jdbc:postgresql://db:5432/lportal"
+            if db_mode == "shared":
+                from ldm_core.utils import sanitize_id
+
+                db_name = f"lportal_{sanitize_id(project_name).replace('-', '_')}"
+                url = f"jdbc:postgresql://liferay-db-global:5432/{db_name}"
+
+            dialect = (
+                resolve_dependency_version(tag, "jdbc_dialect_postgresql")
+                or "org.hibernate.dialect.PostgreSQL10Dialect"
+            )
+            if not has_jdbc_env:
+                db_updates = {
+                    "jdbc.default.driverClassName": driver,
+                    "jdbc.default.url": url,
+                    "jdbc.default.username": "lportal",
+                    "jdbc.default.password": "test",  # nosec B105
+                    "hibernate.dialect": dialect,
+                }
+            liferay_env.append("LIFERAY_HSQL_PERIOD_ENABLED=false")
+
+        if db_updates:
+            db_max_active = "15"
+            db_min_idle = "2"
+            db_max_idle = "5"
+            if hasattr(self.manager, "defaults") and self.manager.defaults is not None:
+                db_max_active = self.manager.defaults.get("db_max_active", "15")
+                db_min_idle = self.manager.defaults.get("db_min_idle", "2")
+                db_max_idle = self.manager.defaults.get("db_max_idle", "5")
+
+            db_updates.update(
+                {
+                    "jdbc.default.maxActive": db_max_active,
+                    "jdbc.default.minIdle": db_min_idle,
+                    "jdbc.default.maxIdle": db_max_idle,
+                }
+            )
+            self.manager.config.update_portal_ext(paths, db_updates)
+
+        return db_type, db_mode
+
+    def _inject_liferay_share_env(
+        self, paths, meta, host_name, project_name, ssl_enabled, port
+    ):
+        is_share = (
+            getattr(self.manager.args, "share", False) is True
+            or str(meta.get("share", "false")).lower() == "true"
+        )
+        share_provider = (
+            getattr(self.manager.args, "share_provider", None)
+            or meta.get("share_provider")
+            or "lfr-tunnel"
+        )
+        share_subdomain = (
+            getattr(self.manager.args, "share_subdomain", None)
+            or meta.get("share_subdomain")
+            or project_name
+        )
+
+        share_host = None
+        if is_share and share_provider in ["lfr-tunnel", "lfr-tunnel-docker"]:
+            public_url = self.manager.share.resolve_public_tunnel_url(share_subdomain)
+            if public_url:
+                from urllib.parse import urlparse
+
+                parsed = urlparse(public_url)
+                share_host = parsed.netloc or parsed.path
+
+        port_list = []
+        if host_name == "localhost" or not ssl_enabled:
+            bind_ip = self.manager.get_resolved_ip(host_name) or "127.0.0.1"
+            port_list.append(f"{bind_ip}:{port}:8080")
+
+        tunnel_managed_cors = getattr(
+            self.manager.args, "tunnel_managed_cors", False
+        ) or self.manager.config.get_global_config().get("tunnel_managed_cors", False)
+
+        valid_hosts = f"localhost,127.0.0.1,{host_name},liferay"
+        if not tunnel_managed_cors:
+            valid_hosts += ",*.lfr-demo.online,*.lfr-demo.se"
+
+        forwarded_props = {
+            "web.server.forwarded.host.header": "X-Forwarded-Host",
+            "web.server.forwarded.port.header": "X-Forwarded-Port",
+            "web.server.forwarded.proto.header": "X-Forwarded-Proto",
+            "virtual.hosts.valid.hosts": valid_hosts,
+        }
+
+        if not tunnel_managed_cors and share_host:
+            forwarded_props.update(
+                {
+                    "web.server.host": share_host,
+                    "web.server.https.port": "443",
+                    "web.server.protocol": "https",
+                }
+            )
+        elif not tunnel_managed_cors and ssl_enabled:
+            forwarded_props.update(
+                {
+                    "web.server.host": host_name,
+                    "web.server.https.port": "443",
+                    "web.server.protocol": "https",
+                }
+            )
+        else:
+            forwarded_props.update(
+                {
+                    "web.server.host": "",
+                    "web.server.https.port": "",
+                    "web.server.protocol": "",
+                }
+            )
+
+        self.manager.config.update_portal_ext(paths, forwarded_props)
+        return port_list
+
+    def _build_ngrok_service(self, host_name, meta):
+        is_expose = (
+            getattr(self.manager.args, "expose", False) is True
+            or str(meta.get("expose", "false")).lower() == "true"
+        )
+        if is_expose:
+            auth_token = self.manager.config.get_ngrok_auth_token()
+            if auth_token:
+                return {
+                    "image": "ngrok/ngrok:latest",
+                    "networks": ["liferay-net"],
+                    "environment": [f"NGROK_AUTHTOKEN={auth_token}"],
+                    "command": [
+                        "http",
+                        "https://proxy:443",
+                        f"--host-header={host_name}",
+                    ],
+                }
+            from ldm_core.ui import UI
+
+            UI.warning("ngrok authtoken not found, ngrok service will not be started.")
+        return None
+
+    def _build_lfr_tunnel_service(self, paths, meta, project_name):
+        is_share = (
+            getattr(self.manager.args, "share", False) is True
+            or str(meta.get("share", "false")).lower() == "true"
+        )
+        share_provider = (
+            getattr(self.manager.args, "share_provider", None)
+            or meta.get("share_provider")
+            or "lfr-tunnel"
+        )
+        if is_share and share_provider == "lfr-tunnel-docker":
+            token = self.manager.share._get_auth_token()
+            if token:
+                subdomain = (
+                    getattr(self.manager.args, "share_subdomain", None)
+                    or meta.get("share_subdomain")
+                    or project_name
+                )
+                import os
+
+                share_domain = getattr(
+                    self.manager.args, "share_domain", None
+                ) or meta.get("share_domain")
+                if not share_domain:
+                    _, share_domain = self.manager.share.resolve_share_config(meta)
+
+                server_url = os.environ.get("LFT_SERVER_URL")
+                if not server_url and share_domain:
+                    server_url = f"https://tunnel.{share_domain}"
+
+                self._update_tunnel_env_file(
+                    project_name, meta, subdomain, token, server_url, share_domain
+                )
+
+                share_inspector = (
+                    getattr(self.manager.args, "share_inspector", False) is True
+                    or str(meta.get("share_inspector", "false")).lower() == "true"
+                )
+
+                lfr_env = [
+                    f"LFT_CLIENT_TOKEN=${{LFT_CLIENT_TOKEN:-{token}}}",
+                    "LFT_TARGET_HOST=liferay",
+                    f"LFT_CLIENT_SUBDOMAIN=${{LFT_SUBDOMAIN:-{subdomain}}}",
+                    "LFT_PRESERVE_HOST=true",
+                ]
+                lfr_env.append("LFT_INSPECTOR_BIND=${LFT_INSPECTOR_BIND:-0.0.0.0}")
+
+                if server_url:
+                    lfr_env.append(
+                        f"LFT_CLIENT_SERVER=${{LFT_SERVER_URL:-{server_url}}}"
+                    )
+                else:
+                    lfr_env.append(
+                        "LFT_CLIENT_SERVER=${LFT_SERVER_URL:-https://tunnel.lfr-demo.online}"
+                    )
+
+                image = (
+                    getattr(self.manager.args, "share_image", None)
+                    or meta.get("share_image")
+                    or "peterjrichards/lfr-tunnel:latest"
+                )
+
+                from ldm_core.utils import sanitize_id
+
+                logs_dir = str(paths["root"] / "logs")
+                tunnel_svc = {
+                    "image": image,
+                    "pull_policy": "always",
+                    "container_name": sanitize_id(
+                        meta.get("tunnel_container_name")
+                        or f"{project_name}-lfr-tunnel"
+                    ),
+                    "networks": ["liferay-net"],
+                    "environment": lfr_env,
+                    "volumes": [f"{logs_dir}:/opt/liferay/logs"],
+                    "entrypoint": [
+                        "/bin/sh",
+                        "-c",
+                        f"./lfr-tunnel -ports {meta.get('share_ports', '8080')} 2>&1 | tee /opt/liferay/logs/lfr-tunnel.log",
+                    ],
+                    "deploy": {
+                        "resources": {
+                            "limits": {
+                                "cpus": "0.10",
+                                "memory": "50M",
+                            },
+                            "reservations": {
+                                "cpus": "0.05",
+                                "memory": "20M",
+                            },
+                        }
+                    },
+                    "depends_on": {"liferay": {"condition": "service_healthy"}},
+                }
+                if share_inspector:
+                    tunnel_svc["ports"] = ["4040:4040"]
+                return tunnel_svc
+            from ldm_core.ui import UI
+
+            UI.warning(
+                "Liferay Tunnel token not found, lfr-tunnel service will not be started."
+            )
+        return None
+
+    def _inject_ldm_labels(self, services, project_name):
+        for _, svc_data in services.items():
+            if "labels" not in svc_data:
+                svc_data["labels"] = []
+
+            if isinstance(svc_data["labels"], dict):
+                svc_data["labels"] = [f"{k}={v}" for k, v in svc_data["labels"].items()]
+
+            standard_labels = [
+                f"com.liferay.ldm.project={project_name}",
+                "com.liferay.ldm.managed=true",
+            ]
+            for label in standard_labels:
+                if label not in svc_data["labels"]:
+                    svc_data["labels"].append(label)
+
+    def _extract_named_volumes(self, services, compose):
+        from ldm_core.utils import sanitize_id
+
+        named_volumes: dict[str, dict] = {}
+        for svc in services.values():
+            for vol in svc.get("volumes", []):
+                if ":" in vol:
+                    parts = vol.split(":")
+                    if len(parts) >= 2:
+                        if (
+                            len(parts[0]) == 1
+                            and parts[0].isalpha()
+                            and (
+                                parts[1].startswith("/") or parts[1].startswith("\\\\")
+                            )
+                        ):
+                            host_side = parts[0] + ":" + parts[1]
+                        else:
+                            host_side = parts[0]
+                    else:
+                        host_side = vol
+
+                    if not (
+                        host_side.startswith(".")
+                        or host_side.startswith("/")
+                        or "/" in host_side
+                        or "\\\\" in host_side
+                    ):
+                        safe_vol_key = sanitize_id(host_side)
+                        named_volumes[safe_vol_key] = {"name": safe_vol_key}
+
+        if named_volumes:
+            compose["volumes"] = named_volumes
+
+    def _merge_archetype_overlay(self, meta, compose):
+        archetype_name = meta.get("archetype")
+        if archetype_name:
+            from ldm_core.constants import SCRIPT_DIR
+
+            archetype_overlay_path = (
+                SCRIPT_DIR
+                / "ldm_core"
+                / "resources"
+                / "archetypes"
+                / archetype_name
+                / "compose-overlay.yml"
+            )
+            if archetype_overlay_path.exists():
+                import yaml
+
+                def deep_merge(dict1, dict2):
+                    for key, val in dict2.items():
+                        if isinstance(val, dict):
+                            dict1[key] = deep_merge(dict1.get(key, {}), val)
+                        elif isinstance(val, list):
+                            dict1[key] = dict1.get(key, []) + val
+                        else:
+                            dict1[key] = val
+                    return dict1
+
+                try:
+                    overlay_data = (
+                        yaml.safe_load(
+                            archetype_overlay_path.read_text(encoding="utf-8")
+                        )
+                        or {}
+                    )
+                    compose = deep_merge(compose, overlay_data)
+
+                    if (
+                        "liferay2" in compose["services"]
+                        and "liferay" in compose["services"]
+                    ):
+                        compose["services"]["liferay2"]["image"] = compose["services"][
+                            "liferay"
+                        ]["image"]
+
+                except Exception as e:
+                    from ldm_core.ui import UI
+
+                    UI.error(f"Failed to merge archetype overlay: {e}")
+
+    def _inject_logging_limits(self, compose):
+        max_size = "10m"
+        max_file = "3"
+        if hasattr(self.manager, "defaults") and self.manager.defaults is not None:
+            max_size = self.manager.defaults.get("log_max_size", "10m")
+            max_file = str(self.manager.defaults.get("log_max_file", "3"))
+
+        logging_block = {
+            "driver": "json-file",
+            "options": {
+                "max-size": max_size,
+                "max-file": max_file,
+            },
+        }
+        for svc_conf in compose.get("services", {}).values():
+            if "logging" not in svc_conf:
+                svc_conf["logging"] = logging_block
 
     def _build_search_service(self, meta):
         """Constructs the Sidecar Elasticsearch service if required."""
