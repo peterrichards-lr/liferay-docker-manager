@@ -415,7 +415,7 @@ def scan_client_extensions(self, root_dir, osgi_cx_dir, ce_build_dir, host_name=
     ce_source_truth.mkdir(parents=True, exist_ok=True)
     osgi_cx_dir.mkdir(parents=True, exist_ok=True)
 
-    found_ids = set()
+    found_ids: set[str] = set()
 
     _process_built_cx_zips(
         self,
