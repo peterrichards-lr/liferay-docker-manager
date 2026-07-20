@@ -1617,7 +1617,7 @@ class BaseHandler:
         if not target:
             # If no target provided, run doctor's fix-hosts logic (scans all/current project)
             manager = getattr(self, "manager", None) or self
-            return manager.diagnostics.cmd_doctor(fix_hosts=True)
+            return manager.diagnostics.cmd_doctor(fix_hosts=True)  # type: ignore[union-attr]
 
         # 1. Try to treat as a project first (non-fatal)
         root = self.detect_project_path(target, fatal=False)
