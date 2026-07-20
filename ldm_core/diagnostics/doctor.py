@@ -318,8 +318,8 @@ class DoctorRunner:
 
         # Check Python imports
         try:
-            import pystray
-            from PIL import Image
+            import pystray  # noqa: F401
+            from PIL import Image  # noqa: F401
 
             self.results.append(("Native GUI Tray", "Ready", True))
         except ImportError as e:
