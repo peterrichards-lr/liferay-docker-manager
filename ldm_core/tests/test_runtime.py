@@ -62,8 +62,7 @@ class MockRuntime(BaseHandler):
     def _wait_for_ready(self, *args, **kwargs):
         return self.handler._wait_for_ready(*args, **kwargs)
 
-    def detect_project_path(self, *args, **kwargs):
-        return Path("/tmp/runtime-project")
+
 
     def get_resource_path(self, name):
         return Path("/tmp/res") / name
@@ -98,12 +97,13 @@ class MockRuntime(BaseHandler):
 
 class TestRuntime(unittest.TestCase):
     def setUp(self):
+        from unittest.mock import MagicMock, patch
+        self.tmp_dir_obj = tempfile.TemporaryDirectory()
+        self.tmp_dir = Path(self.tmp_dir_obj.name)
         self.handler = MockRuntime()
-        self.tmp_dir = Path("/tmp/runtime-project")
+        self.handler.detect_project_path = MagicMock(return_value=self.tmp_dir)
 
         # Globally mock requests.get for _wait_for_ready tests to prevent hanging/failing
-        from unittest.mock import MagicMock, patch
-
         self.req_patcher = patch("requests.get")
         self.mock_req = self.req_patcher.start()
         self.mock_req.return_value = MagicMock(status_code=200)
@@ -683,9 +683,9 @@ class TestRuntime(unittest.TestCase):
         ):
             self.handler.handler.cmd_reindex("test")
             mock_flag.assert_called_once_with(self.tmp_dir)
-            mock_run.assert_called_once_with("runtime-project")
+            mock_run.assert_called_once_with(self.tmp_dir.name)
             mock_success.assert_called_with(
-                "Project 'runtime-project' scheduled for search reindex on next boot."
+                f"Project '{self.tmp_dir.name}' scheduled for search reindex on next boot."
             )
 
     @patch("ldm_core.ui.UI.success")
@@ -763,7 +763,7 @@ class TestRuntime(unittest.TestCase):
             # Verify we fell back to scheduling for next boot
             mock_flag.assert_called_once_with(self.tmp_dir)
             mock_success.assert_called_with(
-                "Project 'runtime-project' scheduled for search reindex on next boot."
+                f"Project '{self.tmp_dir.name}' scheduled for search reindex on next boot."
             )
 
     @patch("ldm_core.ui.UI.success")
@@ -795,9 +795,9 @@ class TestRuntime(unittest.TestCase):
 
             # Should flag for reindex and restart
             mock_flag.assert_called_once_with(self.tmp_dir)
-            mock_run.assert_called_once_with("runtime-project")
+            mock_run.assert_called_once_with(self.tmp_dir.name)
             mock_success.assert_called_with(
-                "Project 'runtime-project' scheduled for search reindex on next boot."
+                f"Project '{self.tmp_dir.name}' scheduled for search reindex on next boot."
             )
 
     @patch("ldm_core.ui.UI.success")
