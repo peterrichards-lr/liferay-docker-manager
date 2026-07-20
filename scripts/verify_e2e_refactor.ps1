@@ -175,7 +175,7 @@ try {
     Write-Host "[WARNING]  Skipping behavioral Sudo Guard check (Sudo allowed in CI/Windows environment)."
 
     Write-Host ">> Verifying System Tray (GUI)..."
-    $trayProcess = Start-Process -FilePath $LDM_CMD -ArgumentList "tray" -NoNewWindow -PassThru -RedirectStandardOutput "tray.log" -RedirectStandardError "tray.log"
+    $trayProcess = Start-Process -FilePath $LDM_CMD -ArgumentList "tray" -NoNewWindow -PassThru -RedirectStandardOutput "tray.log" -RedirectStandardError "tray_err.log"
     Start-Sleep -Seconds 5
     if (-not $trayProcess.HasExited) {
         Write-Host "[SUCCESS] System Tray application started successfully and remained alive."
