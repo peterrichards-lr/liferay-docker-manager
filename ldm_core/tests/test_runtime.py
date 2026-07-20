@@ -100,7 +100,7 @@ class TestRuntime(unittest.TestCase):
         self.tmp_dir_obj = tempfile.TemporaryDirectory()
         self.tmp_dir = Path(self.tmp_dir_obj.name)
         self.handler = MockRuntime()
-        self.handler.detect_project_path = MagicMock(return_value=self.tmp_dir)
+        self.handler.detect_project_path = MagicMock(return_value=self.tmp_dir)  # type: ignore[method-assign]
 
         # Globally mock requests.get for _wait_for_ready tests to prevent hanging/failing
         self.req_patcher = patch("requests.get")
