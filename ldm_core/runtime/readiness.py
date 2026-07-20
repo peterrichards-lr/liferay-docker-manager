@@ -83,7 +83,9 @@ class ReadinessService(BaseHandler):
         # Determine target expected deployables
         expected_targets = {}
         if wait_for_deployables:
-            expected_targets.update(self._scan_for_expected_deployables(root))
+            expected_targets.update(
+                self.manager.runtime._scan_for_expected_deployables(root)
+            )
         if wait_for_bundles:
             for b in wait_for_bundles.split(","):
                 expected_targets[b.strip()] = "Active"
@@ -581,7 +583,10 @@ class ReadinessService(BaseHandler):
                         project_id=project_id, for_init=True
                     )
                     paths = self.manager.setup_paths(root_path)
-                    self._patch_fragment_overrides(project_meta, paths)
+                    print("TYPE OF FRAGMENTS: ", type(self.manager.runtime.fragments))
+                    self.manager.runtime.fragments._patch_fragment_overrides(
+                        project_meta, paths
+                    )
 
                     share_enabled = (
                         str(project_meta.get("share", "false")).lower() == "true"

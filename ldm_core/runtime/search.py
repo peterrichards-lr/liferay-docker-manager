@@ -75,7 +75,7 @@ class SearchService(BaseHandler):
 
         if not self.manager.non_interactive:
             if UI.ask("Restart project now?", "Y").upper() == "Y":
-                self.cmd_run(project_id)
+                self.manager.cmd_run(project_id)
 
     def cmd_reindex(self, project_id=None):
         """Triggers search reindexing (immediately if running, otherwise on next boot)."""
@@ -122,6 +122,6 @@ class SearchService(BaseHandler):
             )
             if not self.manager.non_interactive:
                 if UI.confirm("Do you want to restart the project now to apply?", "Y"):
-                    self.cmd_run(root.name)
+                    self.manager.runtime.cmd_run(root.name)
         else:
             UI.error(f"Failed to schedule reindex for project '{root.name}'.")

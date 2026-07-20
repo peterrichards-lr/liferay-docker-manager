@@ -39,6 +39,7 @@ class MockRuntime(BaseHandler):
         self.config.update_portal_ext = MagicMock()  # type: ignore[method-assign]
         self.composer = ComposerService(self)
         self.handler = RuntimeService(self)
+        self.runtime = self.handler
         self.verify_runtime_environment = MagicMock()  # type: ignore[method-assign]
 
     def cmd_run(self, *args, **kwargs):
@@ -440,7 +441,7 @@ class TestRuntime(unittest.TestCase):
             self.assertNotIn("--until", logs_call)
 
     @patch("ldm_core.runtime.orchestration.get_compose_cmd")
-    @patch("ldm_core.handlers.runtime.shutil.rmtree")
+    @patch("ldm_core.runtime.orchestration.shutil.rmtree")
     def test_cmd_down_with_delete(self, mock_rmtree, mock_compose):
         mock_compose.return_value = ["docker", "compose"]
         with (
@@ -452,7 +453,7 @@ class TestRuntime(unittest.TestCase):
             self.assertTrue(mock_rmtree.called)
 
     @patch("ldm_core.runtime.orchestration.get_compose_cmd")
-    @patch("ldm_core.handlers.runtime.shutil.rmtree")
+    @patch("ldm_core.runtime.orchestration.shutil.rmtree")
     def test_cmd_down_dry_run(self, mock_rmtree, mock_compose):
         mock_compose.return_value = ["docker", "compose"]
         self.handler.dry_run = True
@@ -464,7 +465,7 @@ class TestRuntime(unittest.TestCase):
             self.assertFalse(mock_rmtree.called)
             self.assertFalse(mock_run.called)
 
-    @patch("ldm_core.handlers.runtime.datetime")
+    @patch("ldm_core.runtime.readiness.datetime")
     @patch("time.sleep")
     def test_wait_for_ready_timeout(self, mock_sleep, mock_datetime):
         # Mock run_command to always return "starting"
@@ -503,7 +504,7 @@ class TestRuntime(unittest.TestCase):
                 "read_meta",
                 return_value={"tag": "2026.q1", "db_type": "mysql"},
             ),
-            patch.object(self.handler.handler, "cmd_reset"),
+            patch.object(self.handler.handler.orchestration, "cmd_reset"),
             patch.object(
                 self.handler,
                 "setup_paths",
@@ -515,7 +516,7 @@ class TestRuntime(unittest.TestCase):
             ),
             patch.object(self.handler.assets, "_fetch_seed", return_value=True),
             patch.object(self.handler, "verify_runtime_environment"),
-            patch.object(self.handler.handler, "cmd_run"),
+            patch.object(self.handler.handler.orchestration, "cmd_run"),
         ):
             self.handler.handler.cmd_reseed("test")
             mock_success.assert_called_with("Reseed complete.")
@@ -531,7 +532,7 @@ class TestRuntime(unittest.TestCase):
                 "read_meta",
                 return_value={"tag": "2026.q1", "db_type": "mysql"},
             ),
-            patch.object(self.handler.handler, "cmd_reset") as mock_reset,
+            patch.object(self.handler.handler.orchestration, "cmd_reset") as mock_reset,
             patch.object(self.handler.assets, "_fetch_seed") as mock_fetch,
         ):
             res = self.handler.handler.cmd_reseed("test")
@@ -539,7 +540,7 @@ class TestRuntime(unittest.TestCase):
             self.assertFalse(mock_reset.called)
             self.assertFalse(mock_fetch.called)
 
-    @patch("ldm_core.handlers.runtime.shutil.rmtree")
+    @patch("ldm_core.runtime.orchestration.shutil.rmtree")
     def test_cmd_reset_dry_run(self, mock_rmtree):
         self.handler.dry_run = True
         with (
@@ -551,13 +552,13 @@ class TestRuntime(unittest.TestCase):
                 "setup_paths",
                 return_value={"data": self.tmp_dir / "data"},
             ),
-            patch.object(self.handler.handler, "cmd_down") as mock_down,
+            patch.object(self.handler.handler.orchestration, "cmd_down") as mock_down,
         ):
             # Create data folder to simulate existence
             data_dir = self.tmp_dir / "data"
             data_dir.mkdir(parents=True, exist_ok=True)
 
-            res = self.handler.handler.cmd_reset("test", target="data")
+            res = self.handler.handler.orchestration.cmd_reset("test", target="data")
             self.assertTrue(res)
             self.assertFalse(mock_rmtree.called)
             self.assertFalse(mock_down.called)
@@ -574,7 +575,7 @@ class TestRuntime(unittest.TestCase):
                 "read_meta",
                 return_value={"tag": "2026.q1", "db_type": "mysql"},
             ),
-            patch.object(self.handler.handler, "cmd_reset"),
+            patch.object(self.handler.handler.orchestration, "cmd_reset"),
             patch.object(self.handler, "setup_paths", return_value={}),
             patch.object(self.handler.assets, "_fetch_seed", return_value=False),
         ):
@@ -612,7 +613,7 @@ class TestRuntime(unittest.TestCase):
             mock_time.side_effect = mock_time_side_effect()
 
             project_meta = {"container_name": "test-container"}
-            self.handler.readiness._wait_for_ready(project_meta, "test.local")
+            self.handler.handler.readiness._wait_for_ready(project_meta, "test.local")
 
             mock_warning.assert_any_call("LDM detected 1 new error(s) in the logs.")
             mock_success.assert_any_call(
@@ -659,7 +660,7 @@ class TestRuntime(unittest.TestCase):
             if hasattr(self, "_log_count"):
                 delattr(self, "_log_count")
 
-            self.handler.readiness._wait_for_ready(project_meta, "test.local")
+            self.handler.handler.readiness._wait_for_ready(project_meta, "test.local")
 
             # Verify we saw the reindex message
             mock_success.assert_any_call("Liferay is ready! (Total time: 0s)")
@@ -677,10 +678,10 @@ class TestRuntime(unittest.TestCase):
             patch.object(
                 self.handler, "detect_project_path", return_value=self.tmp_dir
             ),
-            patch.object(self.handler.handler, "flag_reindex") as mock_flag,
-            patch.object(self.handler.handler, "cmd_run") as mock_run,
+            patch.object(self.handler.handler.search, "flag_reindex") as mock_flag,
+            patch.object(self.handler.handler.orchestration, "cmd_run") as mock_run,
         ):
-            self.handler.handler.cmd_reindex("test")
+            self.handler.handler.search.cmd_reindex("test")
             mock_flag.assert_called_once_with(self.tmp_dir)
             mock_run.assert_called_once_with(self.tmp_dir.name)
             mock_success.assert_called_with(
@@ -705,10 +706,10 @@ class TestRuntime(unittest.TestCase):
                 "read_meta",
                 return_value={"liferay_container_name": "test-container"},
             ),
-            patch.object(self.handler.handler, "flag_reindex") as mock_flag,
-            patch.object(self.handler.handler, "cmd_run") as mock_run,
+            patch.object(self.handler.handler.search, "flag_reindex") as mock_flag,
+            patch.object(self.handler.handler.orchestration, "cmd_run") as mock_run,
         ):
-            self.handler.handler.cmd_reindex("test")
+            self.handler.handler.search.cmd_reindex("test")
 
             # Verify DockerService.exec was called to run telnet command
             mock_is_running.assert_called_once_with("test-container")
@@ -747,10 +748,10 @@ class TestRuntime(unittest.TestCase):
                 return_value={"liferay_container_name": "test-container"},
             ),
             patch.object(
-                self.handler.handler, "flag_reindex", return_value=True
+                self.handler.handler.search, "flag_reindex", return_value=True
             ) as mock_flag,
         ):
-            self.handler.handler.cmd_reindex("test")
+            self.handler.handler.search.cmd_reindex("test")
 
             mock_is_running.assert_called_once_with("test-container")
             mock_exec.assert_called_once()
@@ -783,11 +784,11 @@ class TestRuntime(unittest.TestCase):
                 return_value={"liferay_container_name": "test-container"},
             ),
             patch.object(
-                self.handler.handler, "flag_reindex", return_value=True
+                self.handler.handler.search, "flag_reindex", return_value=True
             ) as mock_flag,
-            patch.object(self.handler.handler, "cmd_run") as mock_run,
+            patch.object(self.handler.handler.orchestration, "cmd_run") as mock_run,
         ):
-            self.handler.handler.cmd_reindex("test")
+            self.handler.handler.search.cmd_reindex("test")
 
             # Should check status, see it's running, but skip because force_boot is true
             mock_is_running.assert_called_once_with("test-container")
@@ -861,7 +862,9 @@ class TestRuntime(unittest.TestCase):
             # We want to exercise the port-inspect block; the method will return early
             # before sending any API calls. Patch the file existence check.
             with patch("pathlib.Path.is_file", return_value=False):
-                self.handler.fragments._patch_fragment_overrides(project_meta, paths)
+                self.handler.handler.fragments._patch_fragment_overrides(
+                    project_meta, paths
+                )
             # Verify debug was called (may be called for port inspect, may not if
             # early-return triggers before port block; the key assertion is no exception raised)
             # The absence of an uncaught exception IS the primary assertion here.
@@ -884,7 +887,9 @@ class TestRuntime(unittest.TestCase):
             }
             paths = {"root": Path("/fake/project")}
             with patch("pathlib.Path.is_file", return_value=False):
-                self.handler.fragments._patch_fragment_overrides(project_meta, paths)
+                self.handler.handler.fragments._patch_fragment_overrides(
+                    project_meta, paths
+                )
             # Primary assertion: no uncaught exception raised.
             # If the docker inspect block was reached and failed, UI.warning is called.
             # (Early return may bypass the block entirely if fragment-overrides.json is absent.)
@@ -894,14 +899,15 @@ class TestRuntime(unittest.TestCase):
         with (
             patch("time.time", side_effect=[0, 1, 2, 3, 4, 5, 6]),
             patch.object(BaseHandler, "run_command", return_value="healthy"),
-            patch.object(self.handler.handler, "_patch_fragment_overrides"),
-            patch.object(BaseHandler, "detect_project_path") as mock_detect,
+            patch.object(self.handler.handler.fragments, "_patch_fragment_overrides"),
         ):
             project_meta = {"id": "test-project-123", "container_name": "liferay-test"}
-            self.handler.readiness._wait_for_ready(project_meta, "localhost")
+            self.handler.handler.readiness._wait_for_ready(project_meta, "localhost")
 
             # Check that detect_project_path was called with project_id="test-project-123"
-            mock_detect.assert_any_call(project_id="test-project-123", for_init=True)
+            self.handler.detect_project_path.assert_any_call(
+                project_id="test-project-123", for_init=True
+            )
 
     @patch("ldm_core.ui.UI.success")
     def test_wait_for_ready_triggers_share(self, mock_success):
@@ -922,7 +928,7 @@ class TestRuntime(unittest.TestCase):
                 "healthy",
             ]
 
-            res = self.handler.readiness._wait_for_ready(
+            res = self.handler.handler.readiness._wait_for_ready(
                 project_meta, "localhost", timeout=10
             )
             self.assertTrue(res)
@@ -982,13 +988,12 @@ services:
                     self.handler, "check_port", return_value=False
                 ) as mock_check_port,
                 patch.object(BaseHandler, "run_command"),
-                patch.object(BaseHandler, "setup_infrastructure"),
                 patch.object(
                     self.handler, "get_container_status", return_value="healthy"
                 ),
                 patch("ldm_core.ui.UI.die") as mock_die,
             ):
-                self.handler.handler.cmd_run(
+                self.handler.handler.orchestration.cmd_run(
                     project_id="test-project-liferay-1",
                     no_up=False,
                     no_wait=True,
@@ -1009,11 +1014,10 @@ services:
                     self.handler, "check_port", return_value=False
                 ) as mock_check_port,
                 patch.object(BaseHandler, "run_command"),
-                patch.object(BaseHandler, "setup_infrastructure"),
                 patch("ldm_core.ui.UI.die", side_effect=SystemExit("died")) as mock_die,
             ):
                 with self.assertRaises(SystemExit) as cm:
-                    self.handler.handler.cmd_run(
+                    self.handler.handler.orchestration.cmd_run(
                         project_id="test-project-liferay-1",
                         no_up=False,
                         no_wait=True,
@@ -1035,13 +1039,12 @@ services:
                     self.handler, "check_port", return_value=True
                 ) as mock_check_port,
                 patch.object(BaseHandler, "run_command"),
-                patch.object(BaseHandler, "setup_infrastructure"),
                 patch.object(
                     self.handler, "get_container_status", return_value="healthy"
                 ),
                 patch("ldm_core.ui.UI.die") as mock_die,
             ):
-                self.handler.handler.cmd_run(
+                self.handler.handler.orchestration.cmd_run(
                     project_id="test-project-liferay-1",
                     no_up=False,
                     no_wait=True,
@@ -1104,11 +1107,10 @@ services:
                     self.handler, "check_port", side_effect=lambda _ip, p: p != 9000
                 ) as mock_check_port,
                 patch.object(BaseHandler, "run_command"),
-                patch.object(BaseHandler, "setup_infrastructure"),
                 patch("ldm_core.ui.UI.die", side_effect=SystemExit("died")) as mock_die,
             ):
                 with self.assertRaises(SystemExit) as cm:
-                    self.handler.handler.cmd_run(
+                    self.handler.handler.orchestration.cmd_run(
                         project_id="test-project",
                         no_up=False,
                         no_wait=True,
@@ -1176,7 +1178,7 @@ services:
                 yaml.dump(yaml_content, f)
 
             # Call scanner
-            targets = self.handler.orchestration._scan_for_expected_deployables(
+            targets = self.handler.handler.orchestration._scan_for_expected_deployables(
                 root_path
             )
 
@@ -1202,7 +1204,9 @@ services:
         }
 
         with (
-            patch.object(self.handler.handler, "_wait_for_ready", return_value=True),
+            patch.object(
+                self.handler.handler.readiness, "_wait_for_ready", return_value=True
+            ),
             patch.object(
                 self.handler.handler,
                 "_scan_for_expected_deployables",
@@ -1224,7 +1228,7 @@ services:
                 "285|Active|10|com.liferay.portal.osgi.web.client.extension.internal.model.WebClientExtensionOSGiBundle-my-cx-id\n",
             ]
 
-            res = self.handler.handler.cmd_wait(
+            res = self.handler.handler.readiness.cmd_wait(
                 "test-project", timeout=600, wait_for_deployables=True
             )
             self.assertTrue(res)
@@ -1243,7 +1247,9 @@ services:
         ] * 10
 
         with (
-            patch.object(self.handler.handler, "_wait_for_ready", return_value=True),
+            patch.object(
+                self.handler.handler.readiness, "_wait_for_ready", return_value=True
+            ),
             patch.object(DockerService, "exec") as mock_exec,
             patch.object(BaseHandler, "run_command", return_value="10%"),
             patch("ldm_core.ui.UI.die") as mock_die,
@@ -1251,7 +1257,7 @@ services:
         ):
             mock_exec.side_effect = ["", Exception("telnet not found")]
 
-            res = self.handler.handler.cmd_wait(
+            res = self.handler.handler.readiness.cmd_wait(
                 "test-project", timeout=600, wait_for_bundles="com.liferay.commerce"
             )
             self.assertTrue(res)
@@ -1410,7 +1416,9 @@ services:
                 ctx_manager,
             ]
 
-            self.handler.fragments._patch_fragment_overrides(project_meta, paths)
+            self.handler.handler.fragments._patch_fragment_overrides(
+                project_meta, paths
+            )
 
             mock_success.assert_any_call(
                 "  -> Patched configuration for fragment 'test-frag' on page 'Home'"
@@ -1468,7 +1476,7 @@ services:
             patch.object(BaseHandler, "run_command", return_value="8080"),
             patch.object(self.handler.defaults, "get", return_value="my-subdomain"),
         ):
-            self.handler.fragments._patch_fragment_overrides(
+            self.handler.handler.fragments._patch_fragment_overrides(
                 project_meta_public, paths={"root": self.tmp_dir}
             )
 
@@ -1500,7 +1508,7 @@ services:
             patch.object(BaseHandler, "run_command", return_value="8080"),
             patch.object(self.handler.defaults, "get", return_value=None),
         ):
-            self.handler.fragments._patch_fragment_overrides(
+            self.handler.handler.fragments._patch_fragment_overrides(
                 project_meta_local, paths={"root": self.tmp_dir}
             )
 
@@ -1570,7 +1578,9 @@ services:
             ),
             patch.object(BaseHandler, "run_command", return_value="8080"),
         ):
-            self.handler.fragments._patch_fragment_overrides(project_meta, paths)
+            self.handler.handler.fragments._patch_fragment_overrides(
+                project_meta, paths
+            )
 
             patch_req = mock_urlopen.call_args_list[-1][0][0]
             payload = json.loads(patch_req.data.decode("utf-8"))
@@ -1617,7 +1627,9 @@ services:
             ),
             patch.object(BaseHandler, "run_command", return_value="8080"),
         ):
-            self.handler.fragments._patch_fragment_overrides(project_meta, paths)
+            self.handler.handler.fragments._patch_fragment_overrides(
+                project_meta, paths
+            )
 
             patch_req = mock_urlopen.call_args_list[-1][0][0]
             payload = json.loads(patch_req.data.decode("utf-8"))
@@ -1664,7 +1676,9 @@ services:
             patch.object(BaseHandler, "run_command", return_value="8080"),
             patch.object(self.handler.defaults, "get", return_value="my-subdomain"),
         ):
-            self.handler.fragments._patch_fragment_overrides(project_meta, paths)
+            self.handler.handler.fragments._patch_fragment_overrides(
+                project_meta, paths
+            )
 
             patch_req = mock_urlopen.call_args_list[-1][0][0]
             payload = json.loads(patch_req.data.decode("utf-8"))
@@ -1861,7 +1875,7 @@ class TestFragmentOverridesValidation(unittest.TestCase):
                 patch("ldm_core.ui.UI.warning"),
             ):
                 with self.assertRaises(SystemExit):
-                    self.handler.fragments._patch_fragment_overrides(
+                    self.handler.handler.fragments._patch_fragment_overrides(
                         project_meta, paths
                     )
                 mock_die.assert_called_once()
@@ -1903,7 +1917,7 @@ class TestFragmentOverridesValidation(unittest.TestCase):
                 # Run — if "ignore" works it won't die; it will proceed to API
                 # (which will fail quickly since there's no real Liferay).
                 try:
-                    self.handler.fragments._patch_fragment_overrides(
+                    self.handler.handler.fragments._patch_fragment_overrides(
                         project_meta, paths
                     )
                 except Exception:
