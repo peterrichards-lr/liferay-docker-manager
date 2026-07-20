@@ -62,8 +62,6 @@ class MockRuntime(BaseHandler):
     def _wait_for_ready(self, *args, **kwargs):
         return self.handler._wait_for_ready(*args, **kwargs)
 
-
-
     def get_resource_path(self, name):
         return Path("/tmp/res") / name
 
@@ -98,6 +96,7 @@ class MockRuntime(BaseHandler):
 class TestRuntime(unittest.TestCase):
     def setUp(self):
         from unittest.mock import MagicMock, patch
+
         self.tmp_dir_obj = tempfile.TemporaryDirectory()
         self.tmp_dir = Path(self.tmp_dir_obj.name)
         self.handler = MockRuntime()
