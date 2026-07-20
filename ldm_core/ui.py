@@ -595,7 +595,7 @@ class UI:
     @staticmethod
     def interruptible_pause(seconds: int, message: str = "Press CTRL+C to cancel "):
         """Pauses execution while printing dots, gracefully allowing KeyboardInterrupt."""
-        if UI.NON_INTERACTIVE:
+        if UI.NON_INTERACTIVE or os.environ.get("PYTEST_CURRENT_TEST"):
             return
 
         import time

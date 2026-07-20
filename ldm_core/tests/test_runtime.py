@@ -1688,6 +1688,7 @@ services:
             patch.object(self.handler.config, "sync_common_assets"),
             patch.object(self.handler, "get_container_status", return_value="running"),
             patch.object(self.handler, "run_command") as mock_run_cmd,
+            patch.object(self.handler.manager, "resolve_tag", return_value="2024.q1.1"),
         ):
             result = self.handler.cmd_run(
                 "test",
