@@ -28,6 +28,14 @@ After implementing any code change, the agent MUST review the project documentat
 2. **Review Only**: If a document was reviewed in relation to a change but no content updates were necessary, the agent MUST still update the *Last Reviewed* timestamp footer to reflect the review.
 3. **New Documentation**: If no documentation exists around the implemented change, and it makes logical sense to document it, the agent MUST create a new document (with timestamp footers) unless the information can be appropriately added as a new section to an existing document.
 
+## Active Technical Debt Recording Rule
+
+When working on any task, if you encounter code smells, overly complex functions, or other forms of technical debt, you MUST record it by creating a GitHub Issue using the `gh` CLI. 
+
+1. **Tagging**: The issue must include the label `tech-debt` (e.g., `gh issue create ... --label "tech-debt"`).
+2. **Actionability**: You do not need to resolve the technical debt immediately if it would significantly divert effort from the primary task. The primary requirement is to ensure the debt is recorded in the backlog.
+3. **Context**: Ensure the issue includes the file path, the specific nature of the debt (e.g., "God Object", "unbounded complexity"), and a brief proposed remediation.
+
 <!-- markdownlint-disable MD049 -->
 ---
 *Last Updated: 2026-07-20* | *Last Reviewed: 2026-07-20*
