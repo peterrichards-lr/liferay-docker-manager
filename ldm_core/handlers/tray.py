@@ -13,9 +13,9 @@ class TrayService(BaseHandler):
 
     def cmd_tray(self):
         """Entry point for ldm tray command."""
-        # Check if running under headless WSL
-        if self._is_wsl():
-            UI.info("WSL environment detected. System tray UI is unsupported.")
+        # Check if running under unsupported GUI environments (WSL, Linux Wayland/headless)
+        if self._is_unsupported_gui_env():
+            UI.info("Native UI tray is unsupported in this environment (Linux/WSL).")
             UI.info("Falling back to Dashboard mode...")
             self.manager.dashboard.cmd_dashboard(
                 port=19000, host="127.0.0.1", background=False, token=None
@@ -35,16 +35,26 @@ class TrayService(BaseHandler):
             app = LdmTrayApp(self.manager)
             app.run()
         except Exception as e:
+            import sys
+
+            if sys.platform.startswith("linux"):
+                UI.info(f"Tray initialization failed: {e}")
+                UI.info(
+                    "Native UI tray may lack dependencies on this Linux distribution."
+                )
+                UI.info("Falling back to Dashboard mode...")
+                self.manager.dashboard.cmd_dashboard(
+                    port=19000, host="127.0.0.1", background=False, token=None
+                )
+                return
             UI.die(f"Tray application crashed: {e}")
 
-    def _is_wsl(self) -> bool:
-        """Detect if we are running under WSL where native UI tray isn't easily supported."""
-        if os.name == "nt":
-            return False
-        try:
-            with open("/proc/version") as f:
-                if "microsoft" in f.read().lower():
-                    return True
-        except Exception:
-            pass
+    def _is_unsupported_gui_env(self) -> bool:
+        """Detect if we are running in an environment where native UI tray isn't easily supported."""
+        import sys
+
+        # Native Linux (including WSL) often lacks consistent AppIndicator/Wayland support for pystray out of the box
+        if sys.platform.startswith("linux"):
+            return True
+
         return False
