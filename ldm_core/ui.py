@@ -591,3 +591,22 @@ class UI:
         hours = minutes // 60
         remaining_minutes = minutes % 60
         return f"{hours}h {remaining_minutes}m {remaining_seconds}s"
+
+    @staticmethod
+    def interruptible_pause(seconds: int, message: str = "Press CTRL+C to cancel "):
+        """Pauses execution while printing dots, gracefully allowing KeyboardInterrupt."""
+        if UI.NON_INTERACTIVE:
+            return
+
+        import time
+
+        sys.stdout.write(message)
+        try:
+            for _ in range(seconds):
+                sys.stdout.write(".")
+                sys.stdout.flush()
+                time.sleep(1)
+            sys.stdout.write("\n")
+        except KeyboardInterrupt:
+            sys.stdout.write("\n")
+            raise

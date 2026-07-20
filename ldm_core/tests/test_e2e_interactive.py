@@ -59,5 +59,67 @@ class TestE2EInteractive(unittest.TestCase):
         )
 
 
+    def test_ldm_start_fails_fast_on_missing_project(self):
+        import sys
+        import tempfile
+
+        ldm_executable = [
+            sys.executable,
+            str(Path(__file__).parent.parent.parent / "liferay_docker.py"),
+        ]
+
+        tmp_dir = tempfile.mkdtemp()
+        import shutil
+
+        try:
+            process = subprocess.run(
+                [*ldm_executable, "start", "non-existent-project-xyz"],
+                capture_output=True,
+                text=True,
+                cwd=str(tmp_dir),
+                check=False,
+            )
+            output = process.stdout + process.stderr
+            self.assertIn(
+                "Project not found or not initialized. Please use 'ldm run' to initialize and configure a new project.",
+                output,
+            )
+        finally:
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+
+    def test_ldm_run_warns_on_existing_project(self):
+        import sys
+        import tempfile
+
+        ldm_executable = [
+            sys.executable,
+            str(Path(__file__).parent.parent.parent / "liferay_docker.py"),
+        ]
+
+        tmp_dir = tempfile.mkdtemp()
+        import shutil
+
+        try:
+            # Create a mock initialized project
+            (Path(tmp_dir) / ".ldm.meta").write_text("{}")
+            (Path(tmp_dir) / "files").mkdir()
+            (Path(tmp_dir) / "deploy").mkdir()
+
+            process = subprocess.run(
+                [*ldm_executable, "-y", "run"],
+                capture_output=True,
+                text=True,
+                cwd=str(tmp_dir),
+                check=False,
+            )
+            output = process.stdout + process.stderr
+            self.assertIn(
+                "already exists and this command will reconfigure it.",
+                output,
+            )
+        finally:
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+
+
 if __name__ == "__main__":
     unittest.main()

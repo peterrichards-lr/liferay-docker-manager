@@ -111,6 +111,11 @@ class ProjectInitializationStage(PipelineStage):
             UI.print_banner()
             if getattr(manager.args, "vanilla", False):
                 UI.info("Vanilla start requested: Bypassing pre-warmed seeding.")
+        else:
+            UI.info(
+                f"The LDM project '{project_id}' already exists and this command will reconfigure it."
+            )
+            UI.interruptible_pause(5, "Press CTRL+C to cancel ")
 
         paths = manager.setup_paths(root)
         project_meta = manager.read_meta(paths["root"])

@@ -401,6 +401,22 @@ else
     echo "❌ ERROR: Logs Export file not generated." && exit 1
 fi
 
+echo ">> Verifying ldm start UX fast-fail..."
+START_FAIL_OUT=$("$LDM_CMD" start fake-non-existent-project 2>&1 || true)
+if echo "$START_FAIL_OUT" | grep -q "Project not found or not initialized"; then
+    echo "✅ ldm start fast-fail verified."
+else
+    echo "❌ ERROR: ldm start fast-fail message not found. Output was: $START_FAIL_OUT" && exit 1
+fi
+
+echo ">> Verifying ldm run reconfigure UX message..."
+RUN_RECONFIG_OUT=$("$LDM_CMD" -y run . --no-wait 2>&1 || true)
+if echo "$RUN_RECONFIG_OUT" | grep -q "already exists and this command will reconfigure it"; then
+    echo "✅ ldm run reconfigure UX message verified."
+else
+    echo "❌ ERROR: ldm run reconfigure message not found. Output was: $RUN_RECONFIG_OUT" && exit 1
+fi
+
 echo ">> Verifying Safe SELECT SQL Query..."
 DB_QUERY_OUT=$("$LDM_CMD" db query . -s "SELECT 1 as test_val;" --allow-db-query 2>&1 || true)
 if echo "$DB_QUERY_OUT" | grep -q "test_val"; then

@@ -355,6 +355,21 @@ try {
     } else {
         throw "Logs Export file not generated."
     }
+    Write-Host ">> Verifying ldm start UX fast-fail..."
+    $startFailOut = & $LDM_CMD start fake-non-existent-project 2>&1
+    if ($startFailOut -match "Project not found or not initialized") {
+        Write-Host "[SUCCESS] ldm start fast-fail verified."
+    } else {
+        throw "ldm start fast-fail message not found. Output: $startFailOut"
+    }
+
+    Write-Host ">> Verifying ldm run reconfigure UX message..."
+    $runReconfigOut = & $LDM_CMD -y run . --no-wait 2>&1
+    if ($runReconfigOut -match "already exists and this command will reconfigure it") {
+        Write-Host "[SUCCESS] ldm run reconfigure UX message verified."
+    } else {
+        throw "ldm run reconfigure message not found. Output: $runReconfigOut"
+    }
 
     Write-Host ">> Verifying Safe SELECT SQL Query..."
     $dbQueryOut = & $LDM_CMD db query . -s "SELECT 1 as test_val;" --allow-db-query 2>&1
