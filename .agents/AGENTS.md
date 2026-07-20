@@ -30,11 +30,21 @@ After implementing any code change, the agent MUST review the project documentat
 
 ## Active Technical Debt Recording Rule
 
-When working on any task, if you encounter code smells, overly complex functions, or other forms of technical debt, you MUST record it by creating a GitHub Issue using the `gh` CLI. 
+When working on any task, if you encounter any of the following 10 categories of technical debt, you MUST record it by creating a GitHub Issue using the `gh` CLI:
+1. **Code Smells** (e.g., God Objects, large classes)
+2. **Duplication** (e.g., copy-pasted logic, violating DRY)
+3. **Over-complexity** (e.g., high cyclomatic complexity, deep nesting)
+4. **Fragile Coupling** (e.g., circular dependencies, tight coupling)
+5. **Missing Safety Guards** (e.g., silent except blocks, missing error boundaries)
+6. **Missing Tests** (e.g., untested hot paths)
+7. **Security Hygiene** (e.g., hardcoded secrets, dangerous permissions like `chmod 777`)
+8. **Deprecated Patterns** (e.g., outdated library usage, legacy patterns)
+9. **Config Drift** (e.g., undocumented environment variables, misaligned property defaults)
+10. **Documentation Debt** (e.g., stale READMEs, inaccurate docstrings)
 
 1. **Tagging**: The issue must include the label `tech-debt` (e.g., `gh issue create ... --label "tech-debt"`).
 2. **Actionability**: You do not need to resolve the technical debt immediately if it would significantly divert effort from the primary task. The primary requirement is to ensure the debt is recorded in the backlog.
-3. **Context**: Ensure the issue includes the file path, the specific nature of the debt (e.g., "God Object", "unbounded complexity"), and a brief proposed remediation.
+3. **Context**: Ensure the issue includes the file path, the specific nature of the debt (referencing one of the 10 categories), and a brief proposed remediation.
 
 <!-- markdownlint-disable MD049 -->
 ---
