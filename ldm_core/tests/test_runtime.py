@@ -901,15 +901,15 @@ class TestRuntime(unittest.TestCase):
             patch("time.time", side_effect=[0, 1, 2, 3, 4, 5, 6]),
             patch.object(BaseHandler, "run_command", return_value="healthy"),
             patch.object(self.handler.handler.fragments, "_patch_fragment_overrides"),
-            patch.object(self.handler, "detect_project_path", return_value=self.tmp_dir) as mock_detect,
+            patch.object(
+                self.handler, "detect_project_path", return_value=self.tmp_dir
+            ) as mock_detect,
         ):
             project_meta = {"id": "test-project-123", "container_name": "liferay-test"}
             self.handler.handler.readiness._wait_for_ready(project_meta, "localhost")
 
             # Check that detect_project_path was called with project_id="test-project-123"
-            mock_detect.assert_any_call(
-                project_id="test-project-123", for_init=True
-            )
+            mock_detect.assert_any_call(project_id="test-project-123", for_init=True)
 
     @patch("ldm_core.ui.UI.success")
     def test_wait_for_ready_triggers_share(self, mock_success):

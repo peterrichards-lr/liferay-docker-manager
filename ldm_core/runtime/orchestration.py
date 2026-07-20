@@ -288,7 +288,8 @@ class OrchestrationService(BaseHandler):
         if not targets:
             # Full stack sync
             self.cmd_run(
-                project_id=project_id, rebuild=getattr(self.manager.args, "rebuild", False)
+                project_id=project_id,
+                rebuild=getattr(self.manager.args, "rebuild", False),
             )
             return
 

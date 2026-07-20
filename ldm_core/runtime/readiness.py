@@ -650,7 +650,9 @@ class ReadinessService(BaseHandler):
                         and str(project_meta.get("share", "false")).lower() != "true"
                     )
                     if is_legacy_expose:
-                        self.manager.runtime.logs._print_ngrok_url(project_meta.get("container_name"))
+                        self.manager.runtime.logs._print_ngrok_url(
+                            project_meta.get("container_name")
+                        )
 
                     if str(project_meta.get("share", "false")).lower() == "true":
                         share_subdomain = project_meta.get(
