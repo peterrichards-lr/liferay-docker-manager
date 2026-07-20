@@ -178,6 +178,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added runtime state-awareness checks to commands (run, import) to prevent unexpected container collisions.
 - Enabled non-interactive bypass for internal developer utility prompts.
 
+## [v2.15.19] - 2026-07-20
+
+### Added
+
+-
+
+## [v2.15.19-pre.8] - 2026-07-20
+
+### Added
+
+-
+
 ## [v2.15.19-pre.7] - 2026-07-20
 
 ### Added
