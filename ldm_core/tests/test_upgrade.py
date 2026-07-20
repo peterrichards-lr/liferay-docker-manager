@@ -66,10 +66,10 @@ class TestVersionUpgrades(unittest.TestCase):
         self.tmp_dir.cleanup()
 
     @patch(
-        "ldm_core.handlers.runtime.get_compose_cmd", return_value=["docker", "compose"]
+        "ldm_core.runtime.orchestration.get_compose_cmd", return_value=["docker", "compose"]
     )
-    @patch("ldm_core.handlers.runtime.UI.confirm", return_value=True)
-    @patch("ldm_core.handlers.runtime.UI.warning")
+    @patch("ldm_core.runtime.orchestration.UI.confirm", return_value=True)
+    @patch("ldm_core.runtime.orchestration.UI.warning")
     def test_upgrade_triggers_backup_and_upgrade_on_confirm(
         self, mock_warn, mock_confirm, mock_compose_cmd
     ):
@@ -128,10 +128,10 @@ class TestVersionUpgrades(unittest.TestCase):
             )
 
     @patch(
-        "ldm_core.handlers.runtime.get_compose_cmd", return_value=["docker", "compose"]
+        "ldm_core.runtime.orchestration.get_compose_cmd", return_value=["docker", "compose"]
     )
-    @patch("ldm_core.handlers.runtime.UI.confirm", return_value=False)
-    @patch("ldm_core.handlers.runtime.UI.warning")
+    @patch("ldm_core.runtime.orchestration.UI.confirm", return_value=False)
+    @patch("ldm_core.runtime.orchestration.UI.warning")
     def test_upgrade_skips_backup_and_upgrade_on_decline(
         self, mock_warn, mock_confirm, mock_compose_cmd
     ):
@@ -164,10 +164,10 @@ class TestVersionUpgrades(unittest.TestCase):
             )
 
     @patch(
-        "ldm_core.handlers.runtime.get_compose_cmd", return_value=["docker", "compose"]
+        "ldm_core.runtime.orchestration.get_compose_cmd", return_value=["docker", "compose"]
     )
-    @patch("ldm_core.handlers.runtime.UI.confirm")
-    @patch("ldm_core.handlers.runtime.UI.warning")
+    @patch("ldm_core.runtime.orchestration.UI.confirm")
+    @patch("ldm_core.runtime.orchestration.UI.warning")
     def test_upgrade_obey_no_flags(self, mock_warn, mock_confirm, mock_compose_cmd):
         project_meta = {
             "container_name": "test-project",
@@ -201,10 +201,10 @@ class TestVersionUpgrades(unittest.TestCase):
             )
 
     @patch(
-        "ldm_core.handlers.runtime.get_compose_cmd", return_value=["docker", "compose"]
+        "ldm_core.runtime.orchestration.get_compose_cmd", return_value=["docker", "compose"]
     )
-    @patch("ldm_core.handlers.runtime.UI.confirm")
-    @patch("ldm_core.handlers.runtime.UI.warning")
+    @patch("ldm_core.runtime.orchestration.UI.confirm")
+    @patch("ldm_core.runtime.orchestration.UI.warning")
     def test_upgrade_obey_yes_flags(self, mock_warn, mock_confirm, mock_compose_cmd):
         project_meta = {
             "container_name": "test-project",
@@ -244,10 +244,10 @@ class TestVersionUpgrades(unittest.TestCase):
             )
 
     @patch(
-        "ldm_core.handlers.runtime.get_compose_cmd", return_value=["docker", "compose"]
+        "ldm_core.runtime.orchestration.get_compose_cmd", return_value=["docker", "compose"]
     )
-    @patch("ldm_core.handlers.runtime.UI.confirm")
-    @patch("ldm_core.handlers.runtime.UI.warning")
+    @patch("ldm_core.runtime.orchestration.UI.confirm")
+    @patch("ldm_core.runtime.orchestration.UI.warning")
     def test_non_interactive_skips_prompts_and_defaults_false(
         self, mock_warn, mock_confirm, mock_compose_cmd
     ):
