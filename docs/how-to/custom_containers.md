@@ -1,4 +1,4 @@
-# Managing Custom Containers ![Added in v2.15.19](https://img.shields.io/badge/Added%20in-v2.15.19-blue)
+# Managing Custom Containers ![Added in v2.15.20](https://img.shields.io/badge/Added%20in-v2.15.20-blue)
 
 Liferay Docker Manager (LDM) natively supports injecting user-defined custom containers (e.g., MySQL, WordPress, Node.js frontends, or Elasticsearch Web Crawlers) directly into your project's `docker-compose.yml` lifecycle.
 

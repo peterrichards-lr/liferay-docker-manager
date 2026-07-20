@@ -96,7 +96,7 @@ Controls whether LDM provisions an isolated PostgreSQL database or connects to t
 ---
 *Last Updated: 2026-07-20* | *Last Reviewed: 2026-07-09*
 
-## Custom Containers ![Added in v2.15.19](https://img.shields.io/badge/Added%20in-v2.15.19-blue)
+## Custom Containers ![Added in v2.15.20](https://img.shields.io/badge/Added%20in-v2.15.20-blue)
 
 - **`ldm config add-container [project]`**: Interactively inspects and provisions an arbitrary Docker image to run alongside the Liferay stack.
   - **`--image <image_name>`**: Required. The fully qualified Docker image name to add (e.g., `wordpress:latest`).

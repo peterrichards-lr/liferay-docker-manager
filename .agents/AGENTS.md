@@ -45,6 +45,10 @@ When working on any task, if you encounter any of the following 10 categories of
 - **Actionability**: You do not need to resolve the technical debt immediately if it would significantly divert effort from the primary task. The primary requirement is to ensure the debt is recorded in the backlog.
 - **Context**: Ensure the issue includes the file path, the specific nature of the debt (referencing one of the 10 categories), and a brief proposed remediation.
 
+## No Assumptions (Anti-Hallucination Rule)
+
+Any technical statement, explanation, or conclusion you make MUST be strictly based on actual, referenceable code or documentation in this repository. You are expressly forbidden from making blind assumptions about how systems (like edge nodes or routing logic) behave without verifying them via search, reading the code, or consulting AGENTS.md/GEMINI.md. When the resources are available to you, use them before you speak.
+
 <!-- markdownlint-disable MD049 -->
 ---
 *Last Updated: 2026-07-20* | *Last Reviewed: 2026-07-20*
