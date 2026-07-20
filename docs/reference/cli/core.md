@@ -8,6 +8,7 @@ ldm ls
 ```
 
 ## `run` (alias: `up`)
+
 Initialize and start a project stack. If the project is already initialized, it will print an informational message and provide a 5-second window to safely abort (CTRL+C) before reconfiguring.
 
 ```bash
