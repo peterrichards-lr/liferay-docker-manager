@@ -166,7 +166,7 @@ class TestSidecarImplementation(unittest.TestCase):
             patch.object(self.manager.infra, "_ensure_docker_proxy"),
             patch.object(self.manager.infra, "manager"),
             patch(
-                "ldm_core.handlers.runtime.get_compose_cmd",
+                "ldm_core.runtime.orchestration.get_compose_cmd",
                 return_value=["docker", "compose"],
             ),
         ):

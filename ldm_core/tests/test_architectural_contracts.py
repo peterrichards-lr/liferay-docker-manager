@@ -79,7 +79,7 @@ class TestArchitecturalContracts(unittest.TestCase):
 
         # Patch get_compose_cmd to avoid dependencies on external docker bin in unit tests
         self.patcher_compose = patch(
-            "ldm_core.handlers.runtime.get_compose_cmd",
+            "ldm_core.runtime.orchestration.get_compose_cmd",
             return_value=["docker", "compose"],
         )
         self.mock_compose = self.patcher_compose.start()

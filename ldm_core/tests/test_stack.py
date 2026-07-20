@@ -319,7 +319,7 @@ class TestStackOrchestration(unittest.TestCase):
 
     @patch("time.time")
     @patch("time.sleep")
-    @patch("ldm_core.handlers.runtime.get_compose_cmd")
+    @patch("ldm_core.runtime.orchestration.get_compose_cmd")
     def test_cmd_run_readiness_timeout(self, mock_compose, mock_sleep, mock_time):
         """Verifies that the Service Readiness Gate correctly times out if a dependency hangs."""
         import tempfile
@@ -428,7 +428,7 @@ class TestStackOrchestration(unittest.TestCase):
 
             mock_run.side_effect = run_cmd_side_effect
 
-            with patch("ldm_core.handlers.runtime.datetime") as mock_dt:
+            with patch("ldm_core.runtime.readiness.datetime") as mock_dt:
                 mock_dt.now().strftime.return_value = "12:00:00"
                 self.manager._wait_for_ready(
                     {"container_name": "test-container"}, "test-host", 0
@@ -529,7 +529,7 @@ class TestStackOrchestration(unittest.TestCase):
         with (
             patch.object(self.manager, "run_command", return_value=None),
             patch.object(Path, "exists", return_value=True),
-            patch("ldm_core.handlers.runtime.shutil.rmtree") as mock_rmtree,
+            patch("ldm_core.runtime.orchestration.shutil.rmtree") as mock_rmtree,
         ):
             self.manager.runtime.cmd_reset("test", target="state")
             self.assertTrue(mock_rmtree.called)

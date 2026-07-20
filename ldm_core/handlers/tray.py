@@ -49,5 +49,4 @@ class TrayService(BaseHandler):
         # Native Linux (including WSL) often lacks consistent AppIndicator/Wayland support for pystray out of the box
         if sys.platform.startswith("linux"):
             return True
-
         return False

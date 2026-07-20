@@ -60,9 +60,10 @@ class TestDowngradePrevention(unittest.TestCase):
         self.tmp_dir.cleanup()
 
     @patch(
-        "ldm_core.handlers.runtime.get_compose_cmd", return_value=["docker", "compose"]
+        "ldm_core.runtime.orchestration.get_compose_cmd",
+        return_value=["docker", "compose"],
     )
-    @patch("ldm_core.handlers.runtime.UI.die", side_effect=SystemExit(1))
+    @patch("ldm_core.runtime.orchestration.UI.die", side_effect=SystemExit(1))
     def test_liferay_downgrade_fails(self, mock_die, mock_compose_cmd):
         project_meta = {
             "container_name": "test-project",
@@ -87,9 +88,10 @@ class TestDowngradePrevention(unittest.TestCase):
         )
 
     @patch(
-        "ldm_core.handlers.runtime.get_compose_cmd", return_value=["docker", "compose"]
+        "ldm_core.runtime.orchestration.get_compose_cmd",
+        return_value=["docker", "compose"],
     )
-    @patch("ldm_core.handlers.runtime.UI.die", side_effect=SystemExit(1))
+    @patch("ldm_core.runtime.orchestration.UI.die", side_effect=SystemExit(1))
     def test_postgres_downgrade_fails(self, mock_die, mock_compose_cmd):
         project_meta = {
             "container_name": "test-project",
@@ -116,9 +118,10 @@ class TestDowngradePrevention(unittest.TestCase):
         )
 
     @patch(
-        "ldm_core.handlers.runtime.get_compose_cmd", return_value=["docker", "compose"]
+        "ldm_core.runtime.orchestration.get_compose_cmd",
+        return_value=["docker", "compose"],
     )
-    @patch("ldm_core.handlers.runtime.UI.die", side_effect=SystemExit(1))
+    @patch("ldm_core.runtime.orchestration.UI.die", side_effect=SystemExit(1))
     def test_postgres_major_upgrade_fails(self, mock_die, mock_compose_cmd):
         project_meta = {
             "container_name": "test-project",
@@ -146,9 +149,10 @@ class TestDowngradePrevention(unittest.TestCase):
         )
 
     @patch(
-        "ldm_core.handlers.runtime.get_compose_cmd", return_value=["docker", "compose"]
+        "ldm_core.runtime.orchestration.get_compose_cmd",
+        return_value=["docker", "compose"],
     )
-    @patch("ldm_core.handlers.runtime.UI.die", side_effect=SystemExit(1))
+    @patch("ldm_core.runtime.orchestration.UI.die", side_effect=SystemExit(1))
     def test_mysql_major_upgrade_fails(self, mock_die, mock_compose_cmd):
         project_meta = {
             "container_name": "test-project",
@@ -176,10 +180,11 @@ class TestDowngradePrevention(unittest.TestCase):
         )
 
     @patch(
-        "ldm_core.handlers.runtime.get_compose_cmd", return_value=["docker", "compose"]
+        "ldm_core.runtime.orchestration.get_compose_cmd",
+        return_value=["docker", "compose"],
     )
-    @patch("ldm_core.handlers.runtime.UI.warning")
-    @patch("ldm_core.handlers.runtime.UI.info")
+    @patch("ldm_core.runtime.orchestration.UI.warning")
+    @patch("ldm_core.runtime.orchestration.UI.info")
     @patch("ldm_core.utils.safe_rmtree")
     def test_elasticsearch_major_upgrade_wipes_indices(
         self, mock_rmtree, mock_info, mock_warning, mock_compose_cmd
@@ -214,9 +219,10 @@ class TestDowngradePrevention(unittest.TestCase):
         mock_rmtree.assert_called_once_with(es_path)
 
     @patch(
-        "ldm_core.handlers.runtime.get_compose_cmd", return_value=["docker", "compose"]
+        "ldm_core.runtime.orchestration.get_compose_cmd",
+        return_value=["docker", "compose"],
     )
-    @patch("ldm_core.handlers.runtime.UI.die", side_effect=SystemExit(1))
+    @patch("ldm_core.runtime.orchestration.UI.die", side_effect=SystemExit(1))
     def test_force_downgrade_bypasses(self, mock_die, mock_compose_cmd):
         project_meta = {
             "container_name": "test-project",
@@ -226,7 +232,7 @@ class TestDowngradePrevention(unittest.TestCase):
         }
         self.manager.args.force_downgrade = True
 
-        with patch("ldm_core.handlers.runtime.UI.info"):
+        with patch("ldm_core.runtime.orchestration.UI.info"):
             with patch.object(self.manager, "verify_runtime_environment"):
                 self.manager.runtime.cmd_run(
                     project_id="test-project",
@@ -258,9 +264,10 @@ class TestElasticsearchVersionDetection(unittest.TestCase):
         self.tmp_dir.cleanup()
 
     @patch(
-        "ldm_core.handlers.runtime.get_compose_cmd", return_value=["docker", "compose"]
+        "ldm_core.runtime.orchestration.get_compose_cmd",
+        return_value=["docker", "compose"],
     )
-    @patch("ldm_core.handlers.runtime.UI.info")
+    @patch("ldm_core.runtime.orchestration.UI.info")
     def test_future_tag_with_73_substring_resolves_es8(
         self, mock_info, mock_compose_cmd
     ):
@@ -302,10 +309,11 @@ class TestElasticsearchVersionDetection(unittest.TestCase):
             mock_rmtree.assert_not_called()
 
     @patch(
-        "ldm_core.handlers.runtime.get_compose_cmd", return_value=["docker", "compose"]
+        "ldm_core.runtime.orchestration.get_compose_cmd",
+        return_value=["docker", "compose"],
     )
-    @patch("ldm_core.handlers.runtime.UI.warning")
-    @patch("ldm_core.handlers.runtime.UI.info")
+    @patch("ldm_core.runtime.orchestration.UI.warning")
+    @patch("ldm_core.runtime.orchestration.UI.info")
     @patch("ldm_core.utils.safe_rmtree")
     def test_legacy_7x_tag_resolves_es7(
         self, mock_rmtree, mock_info, mock_warning, mock_compose_cmd
@@ -346,9 +354,10 @@ class TestElasticsearchVersionDetection(unittest.TestCase):
         )
 
     @patch(
-        "ldm_core.handlers.runtime.get_compose_cmd", return_value=["docker", "compose"]
+        "ldm_core.runtime.orchestration.get_compose_cmd",
+        return_value=["docker", "compose"],
     )
-    @patch("ldm_core.handlers.runtime.UI.info")
+    @patch("ldm_core.runtime.orchestration.UI.info")
     def test_no_tag_defaults_to_es8(self, mock_info, mock_compose_cmd):
         """When tag is None/empty and resolve returns None, ES major must default to '8'.
 
