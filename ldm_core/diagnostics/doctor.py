@@ -276,7 +276,10 @@ class DoctorRunner:
                     ("Dependency Integrity", "Verified (All packages OK)", True)
                 )
 
+        self._check_gui_dependencies()
+
         # 1.1 Shell Completion Check
+
         if is_completion_enabled(self.handler):
             self.results.append(("Shell Completion", "Enabled (Active)", True))
         else:
@@ -292,6 +295,42 @@ class DoctorRunner:
             else:
                 self.results.append(
                     ("Shell Completion", f"Unsupported ({shell})", "warn")
+                )
+
+    def _check_gui_dependencies(self):
+        """Checks if native UI tray dependencies are met."""
+        if not getattr(self.args, "detailed", False):
+            return
+
+        import sys
+
+        # On Linux, OS-level dependencies are often missing
+        if sys.platform.startswith("linux"):
+            self.results.append(("Native GUI Tray", "Unsupported (Linux)", "warn"))
+            self.add_hint(
+                "System Tray GUI: Native tray is not officially supported on Linux due to Wayland/AppIndicator fragmentation. The CLI will gracefully fallback to the Web Dashboard.",
+                "https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/reference/advanced_cli.md",
+            )
+            self.add_hint(
+                "If you wish to try it, ensure you have AppIndicator GTK3 libraries installed (e.g. `sudo dnf install libappindicator-gtk3` or `sudo apt install libappindicator3-1`)."
+            )
+            return
+
+        # Check Python imports
+        try:
+            import pystray  # noqa: F401
+            from PIL import Image  # noqa: F401
+
+            self.results.append(("Native GUI Tray", "Ready", True))
+        except ImportError as e:
+            self.results.append(("Native GUI Tray", "Missing Dependencies", "warn"))
+            self.add_hint(
+                f"System Tray GUI dependencies failed to load: {e}. The CLI will gracefully fallback to the Web Dashboard.",
+                "https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/reference/advanced_cli.md",
+            )
+            if sys.platform == "darwin":
+                self.add_hint(
+                    "On macOS, if running from a bundle across different Python versions, you may need to install them locally: pip install pystray Pillow"
                 )
 
     def _check_docker_runtime(self):  # noqa: C901, PLR0912, PLR0915
