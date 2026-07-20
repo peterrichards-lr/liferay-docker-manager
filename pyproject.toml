@@ -129,3 +129,6 @@ extend_exclude = [
     "ldm_core/tests",
     "scripts"
 ]
+
+[tool.deptry.per_rule_ignores]
+DEP002 = ["pyobjc-framework-FSEvents"]
