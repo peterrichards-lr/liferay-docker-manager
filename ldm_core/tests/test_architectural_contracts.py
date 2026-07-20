@@ -2,6 +2,7 @@ import importlib
 import inspect
 import pkgutil
 import tempfile
+import typing
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -43,7 +44,7 @@ class TestArchitecturalContracts(unittest.TestCase):
                 if obj.__module__ == module_name and name.endswith("Handler"):
                     try:
                         # 1. Verification: Instantiation
-                        instance = obj(mock_args)
+                        instance: typing.Any = obj(mock_args)  # type: ignore[call-arg]
                         self.assertIsNotNone(
                             instance, f"Failed to instantiate {name} in {module_name}"
                         )
