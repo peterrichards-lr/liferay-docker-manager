@@ -1,5 +1,3 @@
-import os
-
 from ldm_core.handlers.base import BaseHandler
 from ldm_core.ui import UI
 

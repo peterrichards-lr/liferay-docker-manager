@@ -58,6 +58,7 @@ Advanced options for memory constraints and Java-level debugging.
 The `ldm tray` command launches a native system tray application (menu bar icon) to quickly manage projects, view status, and open the dashboard. The tray is **syntactic sugar** and is entirely optional. If the UI dependencies fail to load, LDM will gracefully fallback to opening the Web Dashboard.
 
 **Dependencies:**
+
 - macOS / Windows: Dependencies (`pystray`, `Pillow`) are bundled in the standalone binaries.
 - Linux: Native tray is not officially supported due to Wayland/AppIndicator fragmentation. If you wish to use it, you must manually install AppIndicator libraries (e.g., `sudo dnf install libappindicator-gtk3` on Fedora/RHEL, or `sudo apt install libappindicator3-1` on Ubuntu/Debian).
 
