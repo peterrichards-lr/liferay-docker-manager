@@ -182,7 +182,10 @@ try {
         Stop-Process -Id $trayProcess.Id -Force -ErrorAction SilentlyContinue
     } else {
         Write-Host "[ERROR] ERROR: System Tray application crashed or failed to start!" -ForegroundColor Red
-        Get-Content "tray.log"
+        Write-Host "--- STDOUT ---"
+        Get-Content "tray.log" -ErrorAction SilentlyContinue
+        Write-Host "--- STDERR ---"
+        Get-Content "tray_err.log" -ErrorAction SilentlyContinue
         exit 1
     }
 
