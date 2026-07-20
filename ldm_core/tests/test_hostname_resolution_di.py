@@ -90,3 +90,57 @@ class TestHostnameResolutionDI(unittest.TestCase):
         mock_check_hostname.assert_any_call("example.local", silent=True)
         mock_check_hostname.assert_any_call("ext-fallback.example.local", silent=True)
         self.assertTrue(resolved)
+
+    @patch("ldm_core.handlers.base.BaseHandler.setup_paths")
+    @patch("ldm_core.handlers.base.BaseHandler.check_hostname", return_value=True)
+    def test_ensure_hostnames_resolve_with_orchestrator_manager(
+        self, mock_check_hostname, mock_setup_paths
+    ):
+        # GIVEN an orchestrator manager (subclassing BaseHandler without self.manager defined, but has workspace composed)
+        class MockOrchestratorManager(BaseHandler):
+            def __init__(self, args):
+                # No super().__init__ called, mimicking LiferayManager
+                self.args = args
+                self.non_interactive = True
+                self.verbose = False
+                self.workspace = MagicMock()
+
+        orchestrator = MockOrchestratorManager(self.manager.args)
+
+        # Verify it has no manager attribute (to mimic the AttributeError trigger condition)
+        with self.assertRaises(AttributeError):
+            _ = orchestrator.manager
+
+        tmp_root = Path("/tmp/fake_root_resolution")
+        mock_setup_paths.return_value = {
+            "root": tmp_root,
+            "cx": MagicMock(exists=MagicMock(return_value=True)),
+            "ce_dir": tmp_root / "ce_dir",
+        }
+
+        orchestrator.workspace.scan_client_extensions.return_value = [
+            {"id": "ext-orch", "deploy": True, "has_load_balancer": True}
+        ]
+
+        # WHEN calling ensure_hostnames_resolve
+        resolved = orchestrator.ensure_hostnames_resolve(tmp_root, "example.local")
+
+        # THEN it should succeed and call the composed workspace directly
+        self.assertTrue(resolved)
+        orchestrator.workspace.scan_client_extensions.assert_called_once()
+        mock_check_hostname.assert_any_call("ext-orch.example.local", silent=True)
+
+    def test_cmd_fix_hosts_with_orchestrator_manager(self):
+        # GIVEN an orchestrator manager (subclassing BaseHandler without self.manager defined, but has diagnostics composed)
+        class MockOrchestratorManager(BaseHandler):
+            def __init__(self, args):
+                self.args = args
+                self.diagnostics = MagicMock()
+
+        orchestrator = MockOrchestratorManager(self.manager.args)
+
+        # WHEN calling cmd_fix_hosts with no target
+        orchestrator.cmd_fix_hosts(target=None)
+
+        # THEN it should delegate to diagnostics.cmd_doctor
+        orchestrator.diagnostics.cmd_doctor.assert_called_once_with(fix_hosts=True)

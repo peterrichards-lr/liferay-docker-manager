@@ -68,14 +68,17 @@ class BaseHandler:
         required_hosts = [host_name]
         paths = self.setup_paths(root)
         if paths["cx"].exists():
-            if self.manager and hasattr(self.manager, "workspace"):
-                extensions = self.manager.workspace.scan_client_extensions(
+            manager = getattr(self, "manager", None) or (
+                self if hasattr(self, "workspace") else None
+            )
+            if manager and hasattr(manager, "workspace"):
+                extensions = manager.workspace.scan_client_extensions(
                     paths["root"], paths["cx"], paths["ce_dir"]
                 )
             else:
                 from ldm_core.handlers.workspace import WorkspaceService
 
-                handler = WorkspaceService(self.manager if self.manager else self)
+                handler = WorkspaceService(getattr(self, "manager", None) or self)
                 extensions = handler.scan_client_extensions(
                     paths["root"], paths["cx"], paths["ce_dir"]
                 )
@@ -1613,7 +1616,8 @@ class BaseHandler:
         """Fixes missing host entries for a specific hostname or a LDM project."""
         if not target:
             # If no target provided, run doctor's fix-hosts logic (scans all/current project)
-            return self.manager.diagnostics.cmd_doctor(fix_hosts=True)
+            manager = getattr(self, "manager", None) or self
+            return manager.diagnostics.cmd_doctor(fix_hosts=True)  # type: ignore[union-attr]
 
         # 1. Try to treat as a project first (non-fatal)
         root = self.detect_project_path(target, fatal=False)
