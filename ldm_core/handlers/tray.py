@@ -27,27 +27,22 @@ class TrayService(BaseHandler):
         try:
             from ldm_core.gui.tray import LdmTrayApp
         except ImportError as e:
-            UI.die(
-                f"Failed to load GUI dependencies: {e}\nPlease ensure pystray and Pillow are installed."
+            UI.info(f"Native UI tray dependencies are missing or incompatible: {e}")
+            UI.info("Falling back to Dashboard mode...")
+            self.manager.dashboard.cmd_dashboard(
+                port=19000, host="127.0.0.1", background=False, token=None
             )
+            return
 
         try:
             app = LdmTrayApp(self.manager)
             app.run()
         except Exception as e:
-            import sys
-
-            if sys.platform.startswith("linux"):
-                UI.info(f"Tray initialization failed: {e}")
-                UI.info(
-                    "Native UI tray may lack dependencies on this Linux distribution."
-                )
-                UI.info("Falling back to Dashboard mode...")
-                self.manager.dashboard.cmd_dashboard(
-                    port=19000, host="127.0.0.1", background=False, token=None
-                )
-                return
-            UI.die(f"Tray application crashed: {e}")
+            UI.info(f"Tray application crashed on startup: {e}")
+            UI.info("Falling back to Dashboard mode...")
+            self.manager.dashboard.cmd_dashboard(
+                port=19000, host="127.0.0.1", background=False, token=None
+            )
 
     def _is_unsupported_gui_env(self) -> bool:
         """Detect if we are running in an environment where native UI tray isn't easily supported."""
