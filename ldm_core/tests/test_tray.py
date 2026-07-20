@@ -19,7 +19,7 @@ class TestTrayService:
 
     def test_cmd_tray_wsl(self, manager):
         tray_service = TrayService(manager)
-        with patch.object(tray_service, "_is_wsl", return_value=True):
+        with patch.object(tray_service, "_is_unsupported_gui_env", return_value=True):
             tray_service.cmd_tray()
             manager.dashboard.cmd_dashboard.assert_called_once_with(
                 port=19000, host="127.0.0.1", background=False, token=None
@@ -27,7 +27,7 @@ class TestTrayService:
 
     def test_cmd_tray_gui(self, manager):
         tray_service = TrayService(manager)
-        with patch.object(tray_service, "_is_wsl", return_value=False):
+        with patch.object(tray_service, "_is_unsupported_gui_env", return_value=False):
             with patch("ldm_core.gui.tray.LdmTrayApp") as MockApp:
                 mock_app_instance = MockApp.return_value
                 tray_service.cmd_tray()

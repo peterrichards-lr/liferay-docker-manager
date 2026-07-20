@@ -53,6 +53,15 @@ Advanced options for memory constraints and Java-level debugging.
 - **`--no-tld-skip`**: Re-enables Tomcat's aggressive TLD (Tag Library Descriptor) scanning. LDM skips scanning non-Liferay jars by default to dramatically improve Tomcat initialization speed.
 - **`--jvm-args="<args>"`**: Pass raw JVM arguments directly to Liferay, completely overriding LDM's defaults. Example: `--jvm-args="-Xmx8g -Xms8g"`
 
+## System Tray GUI
+
+The `ldm tray` command launches a native system tray application (menu bar icon) to quickly manage projects, view status, and open the dashboard. The tray is **syntactic sugar** and is entirely optional. If the UI dependencies fail to load, LDM will gracefully fallback to opening the Web Dashboard.
+
+**Dependencies:**
+
+- macOS / Windows: Dependencies (`pystray`, `Pillow`) are bundled in the standalone binaries.
+- Linux: Native tray is not officially supported due to Wayland/AppIndicator fragmentation. If you wish to use it, you must manually install AppIndicator libraries (e.g., `sudo dnf install libappindicator-gtk3` on Fedora/RHEL, or `sudo apt install libappindicator3-1` on Ubuntu/Debian).
+
 ## Debugging & Diagnostics
 
 - **`--gogo-port <port>`**: Exposes the OSGi Gogo shell on a specific host port. Required if you plan to use `ldm gogo [project]`.
@@ -61,8 +70,8 @@ Advanced options for memory constraints and Java-level debugging.
 
 ## Search & Legacy Infrastructure
 
-- **`--sidecar`**: Forces the project to use Liferay's internal Sidecar search process rather than the shared Global Search container. LDM does this automatically if the global container is offline. *(Note: Sidecar uses Elasticsearch 7 and is deprecated in Liferay 2025.Q2+. LDM will automatically ignore this flag and force Shared Search for newer releases).*
-- **`--es7`**: Forces the Global Search infrastructure to use Elasticsearch 7 (legacy) instead of the default Elasticsearch 8. Use with `ldm infra-setup --es7`. *(Note: Elasticsearch 7 is deprecated in Liferay 2025.Q2+; future releases require Elasticsearch 8).*
+- **`--sidecar`** ![Deprecated](https://img.shields.io/badge/Deprecated-2025.Q2+-orange): Forces the project to use Liferay's internal Sidecar search process rather than the shared Global Search container. LDM does this automatically if the global container is offline. *(Note: Sidecar uses Elasticsearch 7 and is deprecated in Liferay 2025.Q2+. LDM will automatically ignore this flag and force Shared Search for newer releases).*
+- **`--es7`** ![Deprecated](https://img.shields.io/badge/Deprecated-2025.Q2+-orange): Forces the Global Search infrastructure to use Elasticsearch 7 (legacy) instead of the default Elasticsearch 8. Use with `ldm infra-setup --es7`. *(Note: Elasticsearch 7 is deprecated in Liferay 2025.Q2+; future releases require Elasticsearch 8).*
 
 ### `--search-mode`
 
@@ -87,7 +96,7 @@ Controls whether LDM provisions an isolated PostgreSQL database or connects to t
 ---
 *Last Updated: 2026-07-20* | *Last Reviewed: 2026-07-09*
 
-## Custom Containers
+## Custom Containers ![Added in v2.15.19](https://img.shields.io/badge/Added%20in-v2.15.19-blue)
 
 - **`ldm config add-container [project]`**: Interactively inspects and provisions an arbitrary Docker image to run alongside the Liferay stack.
   - **`--image <image_name>`**: Required. The fully qualified Docker image name to add (e.g., `wordpress:latest`).
