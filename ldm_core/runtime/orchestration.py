@@ -277,7 +277,7 @@ class OrchestrationService(BaseHandler):
         root = self.manager.detect_project_path(project_id)
         if not root:
             return
-        paths, meta = self.manager.setup_paths(root), self.manager.read_meta(root)
+        paths = self.manager.setup_paths(root)
 
         # Normalize targets (legacy support for service parameter)
         if service and not targets:
