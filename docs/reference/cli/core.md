@@ -119,7 +119,7 @@ LDM automatically hardens modern environments (DXP 2024+ and modern Quarterly Re
   - Prioritizes `LIFERAY_JDBC_DEFAULT_*` environment variables ONLY for runtime user overrides; LDM baseline always uses `portal-ext.properties`.
 - **Proactive Boot Sequencing**: Configures `depends_on` with healthchecks to ensure Liferay only starts once the database is fully ready to accept connections.
 
-## `link` (alias: `init-from`) ![Added in v2.15.16](https://img.shields.io/badge/Added%20in-v2.15.16-blue)
+## `link` (alias: `init-from` ![Deprecated](https://img.shields.io/badge/Deprecated%20in-v2.15.16-red)) ![Added in v2.15.16](https://img.shields.io/badge/Added%20in-v2.15.16-blue)
 
 Initialize a project from a source workspace and establish a **persistent link**. This command records the workspace path in the project metadata and automatically starts the `monitor` process to sync your code changes in real-time. If a Liferay Cloud Workspace is detected, it will also launch an interactive wizard to hydrate the data from the remote environment.
 
