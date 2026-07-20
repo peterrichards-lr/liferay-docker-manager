@@ -174,6 +174,18 @@ try {
     Write-Host ">> Verifying Sudo Guard (Behavioral)..."
     Write-Host "[WARNING]  Skipping behavioral Sudo Guard check (Sudo allowed in CI/Windows environment)."
 
+    Write-Host ">> Verifying System Tray (GUI)..."
+    $trayProcess = Start-Process -FilePath $LDM_CMD -ArgumentList "tray" -NoNewWindow -PassThru -RedirectStandardOutput "tray.log" -RedirectStandardError "tray.log"
+    Start-Sleep -Seconds 5
+    if (-not $trayProcess.HasExited) {
+        Write-Host "[SUCCESS] System Tray application started successfully and remained alive."
+        Stop-Process -Id $trayProcess.Id -Force -ErrorAction SilentlyContinue
+    } else {
+        Write-Host "[ERROR] ERROR: System Tray application crashed or failed to start!" -ForegroundColor Red
+        Get-Content "tray.log"
+        exit 1
+    }
+
     Write-Host ">> Verifying Project Collision Detection..."
     $colRes = & $LDM_CMD -y run "collision-test" --tag "2026.q1.4-lts" --port 8099 --no-wait --no-up --no-seed 2>&1
     # Check if collision-test directory exists
