@@ -6,8 +6,10 @@
 
 ## Active Work State & Plan (July 16, 2026)
 
-- **Current Active Task (July 16, 2026) — Documentation Cleanup & Verification**:
-  - [x] Clean up empty pre-release stubs (`v2.15.18-pre`, `v2.15.17-pre`) from `CHANGELOG.md`.
+- **Current Active Task (July 20, 2026)**:
+  - [x] Orchestrate `v2.15.19-pre.8` release and subsequently promote it to stable `v2.15.19` once PR #708 and #709 are resolved.
+  - [x] Extract `refactor/709-runtime-facade` to a dedicated branch so the unstable refactor does not poison the `v2.15.19` release.
+  - [x] Verify stable monolith codebase test coverage and execute release orchestrator.
   - [x] Formally deprecate `ldm init-from` and replace with `ldm link` in `README.md` and `docs/ROADMAP.md`.
   - [x] Add backward compatibility mapping for `init-from` to `docs/reference/cli/system.md`.
   - [x] Document CLI boot sequence and `post-upgrade` hooks in `docs/explanation/architecture.md`.
