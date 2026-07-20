@@ -32,7 +32,7 @@ sudo ldm defaults port 9090 --global
 ldm defaults --remove tag
 ```
 
-## Custom Containers (`custom_containers`)
+## Custom Containers (`custom_containers`) ![Added in v2.15.19](https://img.shields.io/badge/Added%20in-v2.15.19-blue)
 
 You can inject external services or orchestrate multi-compose architectures (such as WordPress sidecars, specialized caching layers, or monitoring agents) into the LDM runtime by defining `custom_containers` in your `.ldmrc` file.
 

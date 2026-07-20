@@ -70,8 +70,8 @@ The `ldm tray` command launches a native system tray application (menu bar icon)
 
 ## Search & Legacy Infrastructure
 
-- **`--sidecar`**: Forces the project to use Liferay's internal Sidecar search process rather than the shared Global Search container. LDM does this automatically if the global container is offline. *(Note: Sidecar uses Elasticsearch 7 and is deprecated in Liferay 2025.Q2+. LDM will automatically ignore this flag and force Shared Search for newer releases).*
-- **`--es7`**: Forces the Global Search infrastructure to use Elasticsearch 7 (legacy) instead of the default Elasticsearch 8. Use with `ldm infra-setup --es7`. *(Note: Elasticsearch 7 is deprecated in Liferay 2025.Q2+; future releases require Elasticsearch 8).*
+- **`--sidecar`** ![Deprecated](https://img.shields.io/badge/Deprecated-2025.Q2+-orange): Forces the project to use Liferay's internal Sidecar search process rather than the shared Global Search container. LDM does this automatically if the global container is offline. *(Note: Sidecar uses Elasticsearch 7 and is deprecated in Liferay 2025.Q2+. LDM will automatically ignore this flag and force Shared Search for newer releases).*
+- **`--es7`** ![Deprecated](https://img.shields.io/badge/Deprecated-2025.Q2+-orange): Forces the Global Search infrastructure to use Elasticsearch 7 (legacy) instead of the default Elasticsearch 8. Use with `ldm infra-setup --es7`. *(Note: Elasticsearch 7 is deprecated in Liferay 2025.Q2+; future releases require Elasticsearch 8).*
 
 ### `--search-mode`
 
@@ -96,7 +96,7 @@ Controls whether LDM provisions an isolated PostgreSQL database or connects to t
 ---
 *Last Updated: 2026-07-20* | *Last Reviewed: 2026-07-09*
 
-## Custom Containers
+## Custom Containers ![Added in v2.15.19](https://img.shields.io/badge/Added%20in-v2.15.19-blue)
 
 - **`ldm config add-container [project]`**: Interactively inspects and provisions an arbitrary Docker image to run alongside the Liferay stack.
   - **`--image <image_name>`**: Required. The fully qualified Docker image name to add (e.g., `wordpress:latest`).
