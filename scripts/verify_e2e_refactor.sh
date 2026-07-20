@@ -235,6 +235,26 @@ else
     echo "⚠️  Skipping behavioral Sudo Guard check (unshare not available or not Linux)."
 fi
 
+echo ">> Verifying System Tray (GUI)..."
+if [[ "$OSTYPE" == "linux"* ]] && [ -z "$DISPLAY" ]; then
+    echo "⚠️  Skipping System Tray check (DISPLAY not set on Linux)."
+else
+    # Launch ldm tray in background
+    "$LDM_CMD" tray > tray.log 2>&1 &
+    TRAY_PID=$!
+    
+    # Wait to see if it crashes
+    sleep 5
+    if kill -0 $TRAY_PID 2>/dev/null; then
+        echo "✅ System Tray application started successfully and remained alive."
+        kill $TRAY_PID 2>/dev/null || true
+    else
+        echo "❌ ERROR: System Tray application crashed or failed to start."
+        cat tray.log
+        exit 1
+    fi
+fi
+
 echo ">> Verifying Project Collision Detection..."
 # Use --no-seed to avoid 1GB download for a simple collision test
 if ! "$LDM_CMD" -y run "${COLLISION_PROJECT}" --tag 2026.q1.4-lts --port 8099 --no-wait --no-up --no-seed > col_init.log 2>&1; then
@@ -399,6 +419,22 @@ if [ -n "$EXPORT_FILE" ]; then
     rm "$EXPORT_FILE"
 else
     echo "❌ ERROR: Logs Export file not generated." && exit 1
+fi
+
+echo ">> Verifying ldm start UX fast-fail..."
+START_FAIL_OUT=$("$LDM_CMD" start fake-non-existent-project 2>&1 || true)
+if echo "$START_FAIL_OUT" | grep -q "Project not found or not initialized"; then
+    echo "✅ ldm start fast-fail verified."
+else
+    echo "❌ ERROR: ldm start fast-fail message not found. Output was: $START_FAIL_OUT" && exit 1
+fi
+
+echo ">> Verifying ldm run reconfigure UX message..."
+RUN_RECONFIG_OUT=$("$LDM_CMD" -y run . --no-wait 2>&1 || true)
+if echo "$RUN_RECONFIG_OUT" | grep -q "already exists and this command will reconfigure it"; then
+    echo "✅ ldm run reconfigure UX message verified."
+else
+    echo "❌ ERROR: ldm run reconfigure message not found. Output was: $RUN_RECONFIG_OUT" && exit 1
 fi
 
 echo ">> Verifying Safe SELECT SQL Query..."

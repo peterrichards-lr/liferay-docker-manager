@@ -18,6 +18,7 @@ readme = "docs/README.md"
 requires-python = ">=3.10"
 dependencies = [
     "watchdog==6.0.0",
+    "pyobjc-framework-FSEvents; sys_platform == 'darwin'",
     "requests==2.34.2",
     "PyYAML==6.0.3",
     "argcomplete==3.7.0",
@@ -128,3 +129,6 @@ extend_exclude = [
     "ldm_core/tests",
     "scripts"
 ]
+
+[tool.deptry.per_rule_ignores]
+DEP002 = ["pyobjc-framework-FSEvents"]

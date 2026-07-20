@@ -9,7 +9,7 @@ ldm ls
 
 ## `run` (alias: `up`)
 
-Initialize and start a project stack.
+Initialize and start a project stack. If the project is already initialized, it will print an informational message and provide a 5-second window to safely abort (CTRL+C) before reconfiguring.
 
 ```bash
 # Run with a specific tag and virtual hostname
@@ -304,15 +304,20 @@ ldm logs demo liferay -i 3 -n 50
 > [!TIP]
 > If you request an out-of-range instance (e.g. `--instance 5` when only 3 replicas are running), LDM will report the valid range and exit cleanly.
 
-## `stop`, `restart`, `down` (alias: `rm`)
+## `start`, `stop`, `restart`, `down` (alias: `rm`)
 
 Manage the lifecycle of a project or a specific service.
 
+> [!NOTE]
+> The `start` command simply boots existing containers without running configuration or network scaffolding. If a project does not exist, `start` will immediately fail and recommend `ldm run`.
+
 ```bash
+ldm start [project] [service]     # Start existing containers
 ldm stop [project] [service]      # Stop containers gracefully
 ldm restart [project] [service]   # Stop and then start
 ldm down [project] [service]      # Remove containers (and optionally -v volumes)
 ldm rm [project]                  # Alias for 'down'
+
 
 # Examples:
 ldm stop --all            # Stop all running projects in the workspace
@@ -457,7 +462,7 @@ ldm log-level [project] --list
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-07-19* | *Last Reviewed: 2026-07-10*
+*Last Updated: 2026-07-20* | *Last Reviewed: 2026-07-10*
 
 ## Global Flags
 

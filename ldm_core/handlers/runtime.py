@@ -1327,9 +1327,12 @@ class RuntimeService(BaseHandler):
         if all_projects:
             targets = [r["path"] for r in self.manager.find_dxp_roots()]
         else:
-            root = self.manager.detect_project_path(project_id)
-            if root:
-                targets = [root]
+            root = self.manager.detect_project_path(project_id, fatal=False)
+            if not root:
+                UI.die(
+                    "Project not found or not initialized. Please use 'ldm run' to initialize and configure a new project."
+                )
+            targets = [root]
 
         if not targets:
             UI.info("No projects found to start.")
