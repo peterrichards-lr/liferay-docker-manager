@@ -20,6 +20,14 @@ This file serves as a routing index to prevent cognitive overload. Before execut
   *Activate this skill whenever designing new features, modifying Docker compose logic, or interacting with Liferay environments.*
   (Contains volume strategies, infrastructure enforcement, custom containers logic, and exit code standards).
 
+## Active Documentation Maintenance Rule
+
+After implementing any code change, the agent MUST review the project documentation to determine if updates are needed:
+
+1. **Review and Update**: If a code change requires documentation updates, the agent must update the relevant document(s) AND update both the *Last Updated* and *Last Reviewed* timestamp footer at the bottom of the document. A single code change may require updates to multiple documents.
+2. **Review Only**: If a document was reviewed in relation to a change but no content updates were necessary, the agent MUST still update the *Last Reviewed* timestamp footer to reflect the review.
+3. **New Documentation**: If no documentation exists around the implemented change, and it makes logical sense to document it, the agent MUST create a new document (with timestamp footers) unless the information can be appropriately added as a new section to an existing document.
+
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-07-19* | *Last Reviewed: 2026-07-19*
+*Last Updated: 2026-07-20* | *Last Reviewed: 2026-07-20*

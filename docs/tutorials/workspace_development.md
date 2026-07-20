@@ -108,4 +108,4 @@ Now that your workspace is linked, you can develop assets using standard Liferay
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-07-19* | *Last Reviewed: 2026-07-13*
+*Last Updated: 2026-07-20* | *Last Reviewed: 2026-07-13*

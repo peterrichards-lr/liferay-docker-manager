@@ -13,6 +13,8 @@ def check_links():
     total_links = 0
     ignore_dirs = {
         ".venv",
+        ".pytest_venv",
+        ".verify-venv",
         "node_modules",
         ".git",
         ".smoke_venv",

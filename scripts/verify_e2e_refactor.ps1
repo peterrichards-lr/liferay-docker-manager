@@ -174,6 +174,18 @@ try {
     Write-Host ">> Verifying Sudo Guard (Behavioral)..."
     Write-Host "[WARNING]  Skipping behavioral Sudo Guard check (Sudo allowed in CI/Windows environment)."
 
+    Write-Host ">> Verifying System Tray (GUI)..."
+    $trayProcess = Start-Process -FilePath $LDM_CMD -ArgumentList "tray" -NoNewWindow -PassThru -RedirectStandardOutput "tray.log" -RedirectStandardError "tray.log"
+    Start-Sleep -Seconds 5
+    if (-not $trayProcess.HasExited) {
+        Write-Host "[SUCCESS] System Tray application started successfully and remained alive."
+        Stop-Process -Id $trayProcess.Id -Force -ErrorAction SilentlyContinue
+    } else {
+        Write-Host "[ERROR] ERROR: System Tray application crashed or failed to start!" -ForegroundColor Red
+        Get-Content "tray.log"
+        exit 1
+    }
+
     Write-Host ">> Verifying Project Collision Detection..."
     $colRes = & $LDM_CMD -y run "collision-test" --tag "2026.q1.4-lts" --port 8099 --no-wait --no-up --no-seed 2>&1
     # Check if collision-test directory exists
@@ -354,6 +366,21 @@ try {
         Remove-Item $exportFile -Force
     } else {
         throw "Logs Export file not generated."
+    }
+    Write-Host ">> Verifying ldm start UX fast-fail..."
+    $startFailOut = & $LDM_CMD start fake-non-existent-project 2>&1
+    if ($startFailOut -match "Project not found or not initialized") {
+        Write-Host "[SUCCESS] ldm start fast-fail verified."
+    } else {
+        throw "ldm start fast-fail message not found. Output: $startFailOut"
+    }
+
+    Write-Host ">> Verifying ldm run reconfigure UX message..."
+    $runReconfigOut = & $LDM_CMD -y run . --no-wait 2>&1
+    if ($runReconfigOut -match "already exists and this command will reconfigure it") {
+        Write-Host "[SUCCESS] ldm run reconfigure UX message verified."
+    } else {
+        throw "ldm run reconfigure message not found. Output: $runReconfigOut"
     }
 
     Write-Host ">> Verifying Safe SELECT SQL Query..."
