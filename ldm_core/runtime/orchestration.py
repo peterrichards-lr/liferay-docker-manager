@@ -287,8 +287,8 @@ class OrchestrationService(BaseHandler):
 
         if not targets:
             # Full stack sync
-            self.sync_stack(
-                paths, meta, rebuild=getattr(self.manager.args, "rebuild", False)
+            self.cmd_run(
+                project_id=project_id, rebuild=getattr(self.manager.args, "rebuild", False)
             )
             return
 
@@ -671,7 +671,7 @@ class OrchestrationService(BaseHandler):
                                     "META-INF/MANIFEST.MF"
                                 ).decode("utf-8", errors="ignore")
                                 # Unfold manifest lines
-                                unfolded_lines = []
+                                unfolded_lines: list[str] = []
                                 for line in manifest_content.splitlines():
                                     if line.startswith(" ") and unfolded_lines:
                                         unfolded_lines[-1] += line[1:]

@@ -451,6 +451,9 @@ class LogsService(BaseHandler):
             export_file = None
 
             try:
+                if not process.stdout:
+                    return
+
                 while True:
                     line = process.stdout.readline()
                     if not line and process.poll() is not None:

@@ -349,7 +349,7 @@ class ReadinessService(BaseHandler):
         with spinner_ctx(
             f"Waiting for Liferay to become healthy ({container_name})..."
         ) as spinner:
-            last_notified_time = 0
+            last_notified_time = 0.0
             seen_errors = set()
             while time.time() - start_time < timeout:
                 elapsed = time.time() - start_time
@@ -650,7 +650,7 @@ class ReadinessService(BaseHandler):
                         and str(project_meta.get("share", "false")).lower() != "true"
                     )
                     if is_legacy_expose:
-                        self._print_ngrok_url(project_meta.get("container_name"))
+                        self.manager.runtime.logs._print_ngrok_url(project_meta.get("container_name"))
 
                     if str(project_meta.get("share", "false")).lower() == "true":
                         share_subdomain = project_meta.get(

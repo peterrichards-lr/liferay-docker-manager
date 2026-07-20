@@ -6,6 +6,7 @@ from unittest.mock import MagicMock, patch
 from ldm_core.docker_service import DockerService
 from ldm_core.handlers.base import BaseHandler
 from ldm_core.handlers.runtime import RuntimeService
+from ldm_core.runtime.fragments import FragmentsService
 
 
 class MockRuntime(BaseHandler):
@@ -900,12 +901,13 @@ class TestRuntime(unittest.TestCase):
             patch("time.time", side_effect=[0, 1, 2, 3, 4, 5, 6]),
             patch.object(BaseHandler, "run_command", return_value="healthy"),
             patch.object(self.handler.handler.fragments, "_patch_fragment_overrides"),
+            patch.object(self.handler, "detect_project_path", return_value=self.tmp_dir) as mock_detect,
         ):
             project_meta = {"id": "test-project-123", "container_name": "liferay-test"}
             self.handler.handler.readiness._wait_for_ready(project_meta, "localhost")
 
             # Check that detect_project_path was called with project_id="test-project-123"
-            self.handler.detect_project_path.assert_any_call(
+            mock_detect.assert_any_call(
                 project_id="test-project-123", for_init=True
             )
 
@@ -1818,34 +1820,34 @@ class TestFragmentOverridesValidation(unittest.TestCase):
             "my-fragment": {"textColor": "#fff"},
             "other-frag": {"padding": "1rem"},
         }
-        errors = RuntimeService._validate_fragment_overrides(data, self.file_path)
+        errors = FragmentsService._validate_fragment_overrides(data, self.file_path)
         self.assertEqual(errors, [])
 
     def test_legacy_list_format_is_rejected(self):
         """A JSON list (legacy format) must produce exactly one error."""
         data = [{"key": "value"}]
-        errors = RuntimeService._validate_fragment_overrides(data, self.file_path)
+        errors = FragmentsService._validate_fragment_overrides(data, self.file_path)
         self.assertEqual(len(errors), 1)
         self.assertIn("list", errors[0])
         self.assertIn("legacy", errors[0])
 
     def test_non_dict_root_is_rejected(self):
         """A scalar root (e.g. a bare string) must produce an error."""
-        errors = RuntimeService._validate_fragment_overrides("bad", self.file_path)
+        errors = FragmentsService._validate_fragment_overrides("bad", self.file_path)
         self.assertEqual(len(errors), 1)
         self.assertIn("str", errors[0])
 
     def test_non_dict_value_is_rejected(self):
         """A value that is not a dict (e.g. a string config) must produce an error."""
         data = {"my-fragment": "not-a-dict"}
-        errors = RuntimeService._validate_fragment_overrides(data, self.file_path)
+        errors = FragmentsService._validate_fragment_overrides(data, self.file_path)
         self.assertEqual(len(errors), 1)
         self.assertIn("my-fragment", errors[0])
 
     def test_empty_string_key_is_rejected(self):
         """A whitespace-only key must produce an error."""
         data = {"   ": {"color": "red"}}
-        errors = RuntimeService._validate_fragment_overrides(data, self.file_path)
+        errors = FragmentsService._validate_fragment_overrides(data, self.file_path)
         self.assertEqual(len(errors), 1)
 
     # --- Integration: non-interactive dispatch ---
