@@ -66,7 +66,8 @@ class TestVersionUpgrades(unittest.TestCase):
         self.tmp_dir.cleanup()
 
     @patch(
-        "ldm_core.runtime.orchestration.get_compose_cmd", return_value=["docker", "compose"]
+        "ldm_core.runtime.orchestration.get_compose_cmd",
+        return_value=["docker", "compose"],
     )
     @patch("ldm_core.runtime.orchestration.UI.confirm", return_value=True)
     @patch("ldm_core.runtime.orchestration.UI.warning")
@@ -128,7 +129,8 @@ class TestVersionUpgrades(unittest.TestCase):
             )
 
     @patch(
-        "ldm_core.runtime.orchestration.get_compose_cmd", return_value=["docker", "compose"]
+        "ldm_core.runtime.orchestration.get_compose_cmd",
+        return_value=["docker", "compose"],
     )
     @patch("ldm_core.runtime.orchestration.UI.confirm", return_value=False)
     @patch("ldm_core.runtime.orchestration.UI.warning")
@@ -164,7 +166,8 @@ class TestVersionUpgrades(unittest.TestCase):
             )
 
     @patch(
-        "ldm_core.runtime.orchestration.get_compose_cmd", return_value=["docker", "compose"]
+        "ldm_core.runtime.orchestration.get_compose_cmd",
+        return_value=["docker", "compose"],
     )
     @patch("ldm_core.runtime.orchestration.UI.confirm")
     @patch("ldm_core.runtime.orchestration.UI.warning")
@@ -201,7 +204,8 @@ class TestVersionUpgrades(unittest.TestCase):
             )
 
     @patch(
-        "ldm_core.runtime.orchestration.get_compose_cmd", return_value=["docker", "compose"]
+        "ldm_core.runtime.orchestration.get_compose_cmd",
+        return_value=["docker", "compose"],
     )
     @patch("ldm_core.runtime.orchestration.UI.confirm")
     @patch("ldm_core.runtime.orchestration.UI.warning")
@@ -244,7 +248,8 @@ class TestVersionUpgrades(unittest.TestCase):
             )
 
     @patch(
-        "ldm_core.runtime.orchestration.get_compose_cmd", return_value=["docker", "compose"]
+        "ldm_core.runtime.orchestration.get_compose_cmd",
+        return_value=["docker", "compose"],
     )
     @patch("ldm_core.runtime.orchestration.UI.confirm")
     @patch("ldm_core.runtime.orchestration.UI.warning")
