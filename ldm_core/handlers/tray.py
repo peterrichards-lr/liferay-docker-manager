@@ -21,8 +21,10 @@ class TrayService(BaseHandler):
             return
 
         UI.info("Starting LDM System Tray Application...")
-        # Lazy import GUI to prevent slowing down CLI
+        # Lazy import GUI to prevent slowing down CLI and avoid ABI mismatches
         try:
+            from ldm_core.plugin_manager import ensure_gui_installed
+            ensure_gui_installed()
             from ldm_core.gui.tray import LdmTrayApp
         except ImportError as e:
             UI.info(f"Native UI tray dependencies are missing or incompatible: {e}")
