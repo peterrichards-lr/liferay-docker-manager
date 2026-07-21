@@ -385,15 +385,16 @@ def main():  # noqa: C901, PLR0912, PLR0915
     # 3. Quality Gate check: Format and Lint
     run_pre_commit_checks(current_branch)
 
-    print(f"Forcing version with --set 2.15.22-pre.1...")
+    # 4. Bump the version using ldm system version
+    print(f"Bumping version with logic: {args.bump}...")
     run_cmd(
         [
             sys.executable,
             str(project_root / "liferay_docker.py"),
             "system",
             "version",
-            "--set",
-            "2.15.22-pre.1",
+            "--bump",
+            args.bump,
             "-y",
         ]
     )
