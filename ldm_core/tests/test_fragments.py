@@ -561,7 +561,8 @@ class TestFragments(unittest.TestCase):
                 call_kwargs = mock_die.call_args.kwargs
                 self.assertEqual(call_kwargs.get("exit_code"), 1)
 
-    def test_non_interactive_ignore_continues(self):
+    @patch("time.sleep")
+    def test_non_interactive_ignore_continues(self, mock_sleep):
         """In non-interactive mode with ignore policy, execution must continue past validation."""
         import json as _json
 
