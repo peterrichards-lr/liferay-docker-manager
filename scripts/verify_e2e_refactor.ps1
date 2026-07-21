@@ -114,7 +114,7 @@ function Finalize-Verification {
         # ignore exceptions during finalization
     }
     
-    $FinalName = "verify-$slug-$status.txt"
+    $FinalName = "verify-$slug-$Timestamp-$status.txt"
     
     if (Test-Path $RESULTS_FILE_TMP) {
         if ($status -eq "pass") {
