@@ -602,4 +602,4 @@ When modifying `client-extension.yaml` files, **NEVER change or remove `.service
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-07-20* | *Last Reviewed: 2026-07-15*
+*Last Updated: 2026-07-21* | *Last Reviewed: 2026-07-15*
