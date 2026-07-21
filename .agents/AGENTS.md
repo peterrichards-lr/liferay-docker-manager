@@ -49,6 +49,10 @@ When working on any task, if you encounter any of the following 10 categories of
 
 Any technical statement, explanation, or conclusion you make MUST be strictly based on actual, referenceable code or documentation in this repository. You are expressly forbidden from making blind assumptions about how systems (like edge nodes or routing logic) behave without verifying them via search, reading the code, or consulting AGENTS.md/GEMINI.md. When the resources are available to you, use them before you speak.
 
+## Active Pre-commit Enforcement Rule
+
+**Mandatory Local Pre-commit**: To prevent GitHub Actions CI failures caused by dirty states, you MUST run `.venv/bin/pre-commit run --all-files` locally before committing and pushing any changes. If a formatting hook makes modifications, you must re-stage the files and run it again.
+
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-07-20* | *Last Reviewed: 2026-07-20*
+*Last Updated: 2026-07-21* | *Last Reviewed: 2026-07-21*
