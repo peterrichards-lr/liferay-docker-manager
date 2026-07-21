@@ -56,13 +56,16 @@ def ensure_gui_installed():
     if plugins_dir_str not in sys.path:
         sys.path.insert(0, plugins_dir_str)
 
-    if importlib.util.find_spec("pystray") is None or importlib.util.find_spec("PIL") is None:
+    if (
+        importlib.util.find_spec("pystray") is None
+        or importlib.util.find_spec("PIL") is None
+    ):
         print("🟢 Initializing GUI Plugin dependencies (one-time setup)...")
         # Install the dependencies dynamically
         packages = ["pystray>=0.19.0", "Pillow>=10.0.0"]
         if sys.platform == "darwin":
             packages.append("pyobjc-framework-FSEvents")
-            
+
         cmd = [
             sys.executable,
             "-m",

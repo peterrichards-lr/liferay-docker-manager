@@ -24,6 +24,7 @@ class TrayService(BaseHandler):
         # Lazy import GUI to prevent slowing down CLI and avoid ABI mismatches
         try:
             from ldm_core.plugin_manager import ensure_gui_installed
+
             ensure_gui_installed()
             from ldm_core.gui.tray import LdmTrayApp
         except ImportError as e:
