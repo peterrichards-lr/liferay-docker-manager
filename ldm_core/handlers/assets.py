@@ -153,6 +153,7 @@ class AssetService:
         except Exception as e:
             UI.warning(f"Failed to extract bootstrap seed: {e}")
             UI.info("Continuing with fresh/vanilla initialization...")
+            UI.interruptible_pause(5, "Press CTRL+C to cancel ")
             return True
 
     def _ensure_seeded(self, tag, db_type, paths):
