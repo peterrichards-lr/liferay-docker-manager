@@ -312,7 +312,7 @@ class ReadinessService(BaseHandler):
     ):
         """Wait for Liferay to become healthy and provide access information."""
         container_name = project_meta.get("container_name")
-        project_id = project_meta.get("id")
+        project_id = project_meta.get("project_name") or project_meta.get("id")
         root_path = (
             self.manager.detect_project_path(project_id, for_init=True)
             if project_id
