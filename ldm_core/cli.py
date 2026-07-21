@@ -2557,12 +2557,14 @@ def _execute_command(args, current_cmd, cmds):
             from ldm_core.utils import version_to_tuple
 
             if version_to_tuple(latest) > version_to_tuple(VERSION):
-                print(
-                    f"\n{UI.BYELLOW}[!] A new version of LDM is available: v{latest}{UI.COLOR_OFF}"
-                )
-                print(
-                    f"    Run {UI.CYAN}ldm system upgrade{UI.COLOR_OFF} to install the latest version.\n"
-                )
+                quiet = getattr(args, "quiet", False)
+                if sys.stdout.isatty() and not quiet:
+                    print(
+                        f"\n{UI.BYELLOW}[!] A new version of LDM is available: v{latest}{UI.COLOR_OFF}"
+                    )
+                    print(
+                        f"    Run {UI.CYAN}ldm system upgrade{UI.COLOR_OFF} to install the latest version.\n"
+                    )
 
 
 def _setup_sigpipe_handler():
