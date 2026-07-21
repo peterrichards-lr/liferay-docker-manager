@@ -411,7 +411,7 @@ def main():  # noqa: C901, PLR0912, PLR0915
         ],
         capture=True,
     )
-    new_version = ver_res.stdout.strip()
+    new_version = ver_res.stdout.strip().split("\n")[0].strip()
     print(f"Bumped to new version: {new_version}")
 
     # 6. Create a release branch for the PR
