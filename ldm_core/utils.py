@@ -1840,6 +1840,11 @@ def check_for_updates(current_version, force=False, pre_release=False, tag=None)
         if force or tag:
             headers["Cache-Control"] = "no-cache"
 
+        # Try to use GitHub token to avoid API rate limiting
+        token = get_github_token()
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
+
         if tag:
             # Specific release tag lookup
             if not tag.startswith("v"):
