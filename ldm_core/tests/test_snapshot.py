@@ -908,7 +908,7 @@ class TestSnapshotService(unittest.TestCase):
             )
             self.assertEqual(written_meta["active_services"], "db,liferay,tunnel")
 
-    @patch("ldm_core.handlers.runtime.UI.die", side_effect=SystemExit(1))
+    @patch("ldm_core.runtime.orchestration.UI.die", side_effect=SystemExit(1))
     @patch("shutil.disk_usage")
     def test_extract_snapshot_low_disk_space_fails(self, mock_disk_usage, mock_die):
         # 100 bytes free space
@@ -930,7 +930,7 @@ class TestSnapshotService(unittest.TestCase):
         mock_die.assert_called_once()
         self.assertIn("Insufficient disk space", mock_die.call_args[0][0])
 
-    @patch("ldm_core.handlers.runtime.UI.die", side_effect=SystemExit(1))
+    @patch("ldm_core.runtime.orchestration.UI.die", side_effect=SystemExit(1))
     @patch("shutil.disk_usage")
     @patch("tarfile.open")
     def test_extract_snapshot_sufficient_disk_space_succeeds(
