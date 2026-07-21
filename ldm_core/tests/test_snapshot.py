@@ -1166,7 +1166,9 @@ class TestSnapshotService(unittest.TestCase):
             self.manager, "run_command", return_value="success output"
         ) as mock_run:
             with tempfile.TemporaryDirectory() as tmp_dir:
-                res = self.manager.snapshot.volumes._sync_volume(tmp_dir, "my-vol", "to_volume")
+                res = self.manager.snapshot.volumes._sync_volume(
+                    tmp_dir, "my-vol", "to_volume"
+                )
                 self.assertTrue(res)
                 mock_run.assert_called()
 

@@ -1,15 +1,7 @@
-import json
-import os
-import tarfile
-import time
-from datetime import datetime
-from pathlib import Path
-from typing import cast
-
 from ldm_core.ui import UI
-from ldm_core.utils import get_actual_home, safe_extract
 
-class Custom_containersSnapshotService:
+
+class CustomContainersSnapshotService:
     def __init__(self, facade):
         self.facade = facade
         self.manager = facade.manager
@@ -49,4 +41,3 @@ class Custom_containersSnapshotService:
                     self.manager.run_command(["docker", "load", "-i", str(tar_file)])
                 except Exception as e:
                     UI.warning(f"Failed to load custom image {tar_file.name}: {e}")
-

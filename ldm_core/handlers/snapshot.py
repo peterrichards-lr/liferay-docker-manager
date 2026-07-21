@@ -1,21 +1,18 @@
 import os
-from datetime import datetime
-from typing import cast
-from pathlib import Path
-import json
 import tarfile
 import time
+from datetime import datetime
+from pathlib import Path
 
 from ldm_core.handlers.base import BaseHandler
-from ldm_core.ui import UI
-from ldm_core.utils import get_actual_home, safe_extract
-
+from ldm_core.snapshot.archive import ArchiveSnapshotService
+from ldm_core.snapshot.custom_containers import CustomContainersSnapshotService
 from ldm_core.snapshot.database import DatabaseSnapshotService
 from ldm_core.snapshot.search import SearchSnapshotService
-from ldm_core.snapshot.volumes import VolumesSnapshotService
-from ldm_core.snapshot.custom_containers import Custom_containersSnapshotService
-from ldm_core.snapshot.archive import ArchiveSnapshotService
 from ldm_core.snapshot.utils import UtilsSnapshotService
+from ldm_core.snapshot.volumes import VolumesSnapshotService
+from ldm_core.ui import UI
+from ldm_core.utils import get_actual_home
 
 
 class SnapshotService(BaseHandler):
@@ -25,10 +22,9 @@ class SnapshotService(BaseHandler):
         self.database = DatabaseSnapshotService(self)
         self.search = SearchSnapshotService(self)
         self.volumes = VolumesSnapshotService(self)
-        self.custom_containers = Custom_containersSnapshotService(self)
+        self.custom_containers = CustomContainersSnapshotService(self)
         self.archive = ArchiveSnapshotService(self)
         self.utils = UtilsSnapshotService(self)
-
 
     def cmd_snapshots(self, paths=None):
         """Lists snapshots for a project."""
@@ -313,7 +309,9 @@ class SnapshotService(BaseHandler):
                 project_meta=project_meta,
             )
 
-        self.database._restore_database(paths, choice_path, project_meta, container_name)
+        self.database._restore_database(
+            paths, choice_path, project_meta, container_name
+        )
 
         self.search._restore_search(choice_path, snap_meta, container_name)
 
@@ -457,4 +455,3 @@ class SnapshotService(BaseHandler):
         sha_file.write_text(f"{sha}  {package_file.name}\n")
 
         UI.success(f"Successfully created LDM package: {package_file}")
-
