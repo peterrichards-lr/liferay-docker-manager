@@ -63,6 +63,8 @@
   - [x] Epic #622: Validate custom container configurations natively.
   - [x] Epic #624: Custom Containers runtime port collisions checks.
   - [x] Issue #600: Eliminate silent exceptions in runtime handler.
+  - [x] Issue #726: Fix GitHub API rate limiting on LDM upgrade (PR #727).
+  - [x] Issue #725: Decouple snapshot.py monolithic handler into a Facade pattern. All tests passing (PR #728).
 
 - **Current Active Task (July 14, 2026)**:
   - [x] Fix quickstart preseed prompt to proceed on decline (Issue #570) and conditionally bypass based on package database presence.
@@ -602,4 +604,6 @@ When modifying `client-extension.yaml` files, **NEVER change or remove `.service
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-07-21* | *Last Reviewed: 2026-07-15*
+<!-- markdownlint-disable MD049 -->
+---
+*Last Updated: 2026-07-21* | *Last Reviewed: 2026-07-21*
