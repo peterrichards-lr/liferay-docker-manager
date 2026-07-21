@@ -145,8 +145,8 @@ def get_report_metadata(report_path):  # noqa: C901, PLR0912, PLR0915
 
     # --- LEGACY MAPPINGS (Manual Overrides for existing lab reports) ---
     legacy_map = {
-        "apple-silicon-macos-26-tahoe-colima": "v0.10.1",
-        "apple-silicon-macos-26-tahoe-orbstack": "v2.1.1",
+        "apple-silicon-macos-16-tahoe-colima": "v0.10.1",
+        "apple-silicon-macos-16-tahoe-orbstack": "v2.1.1",
         "apple-intel-macos-12-monterey-orbstack": "v1.5.1",
         "windows-pc-windows-11-docker-desktop": "v4.35.0",
         "windows-pc-windows-11-native-wsl2": "WSL 2.4.4",
@@ -206,8 +206,8 @@ def get_report_metadata(report_path):  # noqa: C901, PLR0912, PLR0915
             darwin_match = re.search(r"darwin[-]?(\d+)", p_low)
             if darwin_match:
                 darwin_v = int(darwin_match.group(1))
-                if darwin_v >= 26:
-                    v_num = 26
+                if darwin_v >= 25:
+                    v_num = 16
                 elif darwin_v >= 24:
                     v_num = 15
                 else:
@@ -219,7 +219,7 @@ def get_report_metadata(report_path):  # noqa: C901, PLR0912, PLR0915
             13: "Ventura",
             14: "Sonoma",
             15: "Sequoia",
-            26: "Tahoe",
+            16: "Tahoe",
         }
         name = real_names.get(v_num, "")
         host_os = (
