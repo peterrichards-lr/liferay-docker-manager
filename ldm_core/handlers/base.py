@@ -970,6 +970,7 @@ class BaseHandler:
                             "For better performance and to avoid noise, it is recommended to "
                             "run LDM from a dedicated workspace folder (e.g. ~/ldm)."
                         )
+                        UI.interruptible_pause(5, "Press CTRL+C to cancel ")
             except Exception:
                 pass
 
@@ -1001,6 +1002,7 @@ class BaseHandler:
                             "For better performance and to avoid noise, it is recommended to "
                             "run LDM from a dedicated workspace folder (e.g. ~/ldm)."
                         )
+                        UI.interruptible_pause(5, "Press CTRL+C to cancel ")
                     return p
                 # If for_init, we allow the path as long as it doesn't exist as a file
                 if for_init:
@@ -1021,6 +1023,7 @@ class BaseHandler:
                                 "For better performance and to avoid noise, it is recommended to "
                                 "run LDM from a dedicated workspace folder (e.g. ~/ldm)."
                             )
+                            UI.interruptible_pause(5, "Press CTRL+C to cancel ")
                         return p
             except PermissionError:
                 # If we get permission denied, but the path exists, it's definitely the project

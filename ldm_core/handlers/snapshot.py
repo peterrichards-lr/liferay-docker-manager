@@ -263,8 +263,10 @@ class SnapshotService(BaseHandler):
                     UI.warning(
                         "Snapshot does not have an integrity checksum. Verification skipped."
                     )
+                    UI.interruptible_pause(3, "Press CTRL+C to cancel ")
             else:
                 UI.warning("Integrity verification disabled via --no-verify.")
+                UI.interruptible_pause(3, "Press CTRL+C to cancel ")
 
             self.archive._extract_snapshot_archive(files_tar, paths)
 
