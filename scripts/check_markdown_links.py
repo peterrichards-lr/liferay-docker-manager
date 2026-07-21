@@ -15,6 +15,7 @@ def check_links():
         ".venv",
         ".pytest_venv",
         ".verify-venv",
+        ".temp_venv",
         "node_modules",
         ".git",
         ".smoke_venv",
