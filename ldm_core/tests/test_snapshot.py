@@ -112,9 +112,9 @@ class TestSnapshotService(unittest.TestCase):
         }
         self.manager.composer.is_using_named_volumes.return_value = True
 
-        with patch.object(self.manager.snapshot, "_sync_volume") as mock_sync:
+        with patch.object(self.manager.snapshot.volumes, "_sync_volume") as mock_sync:
             # 1. Test Dehydration
-            self.manager.snapshot._dehydrate_named_volumes(paths)
+            self.manager.snapshot.volumes._dehydrate_named_volumes(paths)
             self.assertEqual(mock_sync.call_count, 2)
             mock_sync.assert_any_call(paths["data"], ANY, direction="from_volume")
 
@@ -123,7 +123,7 @@ class TestSnapshotService(unittest.TestCase):
             # Create host dirs to trigger hydration
             paths["data"].mkdir()
             paths["state"].mkdir()
-            self.manager.snapshot._hydrate_named_volumes(paths)
+            self.manager.snapshot.volumes._hydrate_named_volumes(paths)
             self.assertEqual(mock_sync.call_count, 2)
             mock_sync.assert_any_call(paths["data"], ANY, direction="to_volume")
 
@@ -257,7 +257,7 @@ class TestSnapshotService(unittest.TestCase):
 
     def test_get_dir_size_empty(self):
         with patch("pathlib.Path.rglob", return_value=[]):
-            size = self.manager.snapshot._get_dir_size(Path("/tmp"))
+            size = self.manager.snapshot.utils._get_dir_size(Path("/tmp"))
             self.assertEqual(size, "0.0 B")
 
     def test_get_dir_size_kb(self):
@@ -265,7 +265,7 @@ class TestSnapshotService(unittest.TestCase):
         mock_file.is_file.return_value = True
         mock_file.stat.return_value.st_size = 1024
         with patch("pathlib.Path.rglob", return_value=[mock_file]):
-            size = self.manager.snapshot._get_dir_size(Path("/tmp"))
+            size = self.manager.snapshot.utils._get_dir_size(Path("/tmp"))
             self.assertEqual(size, "1.0 KB")
 
     @patch("ldm_core.handlers.base.BaseHandler.detect_project_path")
@@ -294,7 +294,7 @@ class TestSnapshotService(unittest.TestCase):
 
         with (
             patch("ldm_core.utils.calculate_sha256", return_value="match-sha"),
-            patch.object(self.manager.snapshot, "_extract_snapshot_archive"),
+            patch.object(self.manager.snapshot.archive, "_extract_snapshot_archive"),
             patch("ldm_core.ui.UI.success") as mock_success,
             patch("ldm_core.handlers.base.BaseHandler.read_meta", return_value={}),
         ):
@@ -353,7 +353,7 @@ class TestSnapshotService(unittest.TestCase):
             mock_success_res,  # import
         ]
 
-        self.manager.snapshot._execute_orchestrated_db_restore(
+        self.manager.snapshot.database._execute_orchestrated_db_restore(
             "db-container", "postgresql", "sql-file", {}, {"host_name": "localhost"}
         )
         self.assertEqual(mock_sub_run.call_count, 6)
@@ -379,7 +379,7 @@ class TestSnapshotService(unittest.TestCase):
             mock_success_res,  # import
         ]
 
-        self.manager.snapshot._execute_orchestrated_db_restore(
+        self.manager.snapshot.database._execute_orchestrated_db_restore(
             "db-container", "postgresql", "sql-file", {}, {"host_name": "localhost"}
         )
         self.assertEqual(mock_sub_run.call_count, 3)
@@ -395,7 +395,7 @@ class TestSnapshotService(unittest.TestCase):
         mock_res.returncode = 0
         mock_sub_run.return_value = mock_res
 
-        self.manager.snapshot._execute_orchestrated_db_restore(
+        self.manager.snapshot.database._execute_orchestrated_db_restore(
             "db-container", "postgresql", "sql-file", {}, {"host_name": "my-local-host"}
         )
 
@@ -451,7 +451,7 @@ class TestSnapshotService(unittest.TestCase):
         ]
 
         with self.assertRaises(SystemExit):
-            self.manager.snapshot._execute_orchestrated_db_restore(
+            self.manager.snapshot.database._execute_orchestrated_db_restore(
                 "db-container", "postgresql", "sql-file", {}, {}
             )
         self.assertEqual(mock_sub_run.call_count, 9)
@@ -491,7 +491,7 @@ class TestSnapshotService(unittest.TestCase):
         self.manager.args.backup_dir = None
 
         with (
-            patch.object(self.manager.snapshot, "_hydrate_named_volumes"),
+            patch.object(self.manager.snapshot.volumes, "_hydrate_named_volumes"),
             patch("ldm_core.handlers.base.BaseHandler.read_meta", return_value={}),
             patch("ldm_core.handlers.base.BaseHandler.write_meta") as mock_write_meta,
         ):
@@ -539,7 +539,7 @@ class TestSnapshotService(unittest.TestCase):
         self.manager.args.backup_dir = None
 
         with (
-            patch.object(self.manager.snapshot, "_hydrate_named_volumes"),
+            patch.object(self.manager.snapshot.volumes, "_hydrate_named_volumes"),
             patch("ldm_core.handlers.base.BaseHandler.read_meta", return_value={}),
             patch("ldm_core.handlers.base.BaseHandler.write_meta") as mock_write_meta,
         ):
@@ -553,7 +553,7 @@ class TestSnapshotService(unittest.TestCase):
 
     @patch("ldm_core.handlers.base.BaseHandler.detect_project_path")
     @patch("ldm_core.handlers.base.BaseHandler.setup_paths")
-    @patch("ldm_core.handlers.snapshot.SnapshotService._list_backups")
+    @patch("ldm_core.snapshot.utils.UtilsSnapshotService._list_backups")
     @patch("ldm_core.handlers.snapshot.SnapshotService.cmd_snapshot")
     @patch("ldm_core.handlers.base.BaseHandler.read_meta")
     @patch("ldm_core.handlers.base.BaseHandler.write_meta")
@@ -627,7 +627,7 @@ class TestSnapshotService(unittest.TestCase):
         mock_res.returncode = 0
         mock_sub_run.return_value = mock_res
 
-        self.manager.snapshot._execute_orchestrated_db_restore(
+        self.manager.snapshot.database._execute_orchestrated_db_restore(
             "zukunft digital-db",
             "postgresql",
             "sql-file",
@@ -679,7 +679,7 @@ class TestSnapshotService(unittest.TestCase):
 
         with (
             patch("ldm_core.utils.calculate_sha256", return_value="match-sha"),
-            patch.object(self.manager.snapshot, "_extract_snapshot_archive"),
+            patch.object(self.manager.snapshot.archive, "_extract_snapshot_archive"),
             patch("ldm_core.ui.UI.success") as mock_success,
             patch(
                 "ldm_core.handlers.base.BaseHandler.read_meta",
@@ -687,7 +687,7 @@ class TestSnapshotService(unittest.TestCase):
             ),
             patch.object(self.manager.runtime, "cmd_stop") as mock_stop,
             patch.object(
-                self.manager.snapshot, "_execute_orchestrated_db_restore"
+                self.manager.snapshot.database, "_execute_orchestrated_db_restore"
             ) as mock_db_restore,
         ):
             self.manager.snapshot.cmd_restore("test")
@@ -700,7 +700,7 @@ class TestSnapshotService(unittest.TestCase):
 
     @patch("ldm_core.handlers.base.BaseHandler.detect_project_path")
     @patch("ldm_core.handlers.base.BaseHandler.setup_paths")
-    @patch("ldm_core.handlers.snapshot.SnapshotService._list_backups")
+    @patch("ldm_core.snapshot.utils.UtilsSnapshotService._list_backups")
     @patch("ldm_core.handlers.snapshot.SnapshotService.cmd_snapshot")
     @patch("ldm_core.handlers.base.BaseHandler.read_meta")
     @patch("ldm_core.handlers.base.BaseHandler.write_meta")
@@ -762,7 +762,7 @@ class TestSnapshotService(unittest.TestCase):
 
     @patch("ldm_core.handlers.base.BaseHandler.detect_project_path")
     @patch("ldm_core.handlers.base.BaseHandler.setup_paths")
-    @patch("ldm_core.handlers.snapshot.SnapshotService._list_backups")
+    @patch("ldm_core.snapshot.utils.UtilsSnapshotService._list_backups")
     @patch("ldm_core.ui.UI.die", side_effect=SystemExit)
     def test_cmd_package_snapshot_missing(
         self,
@@ -792,7 +792,7 @@ class TestSnapshotService(unittest.TestCase):
 
     @patch("ldm_core.handlers.base.BaseHandler.detect_project_path")
     @patch("ldm_core.handlers.base.BaseHandler.setup_paths")
-    @patch("ldm_core.handlers.snapshot.SnapshotService._list_backups")
+    @patch("ldm_core.snapshot.utils.UtilsSnapshotService._list_backups")
     @patch("ldm_core.handlers.snapshot.SnapshotService.cmd_snapshot")
     @patch("ldm_core.handlers.base.BaseHandler.read_meta")
     @patch("ldm_core.handlers.base.BaseHandler.write_meta")
@@ -925,7 +925,7 @@ class TestSnapshotService(unittest.TestCase):
         archive.write_bytes(b"0" * 500)
 
         with self.assertRaises(SystemExit):
-            self.manager.snapshot._extract_snapshot_archive(archive, paths)
+            self.manager.snapshot.archive._extract_snapshot_archive(archive, paths)
 
         mock_die.assert_called_once()
         self.assertIn("Insufficient disk space", mock_die.call_args[0][0])
@@ -948,7 +948,7 @@ class TestSnapshotService(unittest.TestCase):
         archive = Path(self.test_dir) / "dummy.tgz"
         archive.write_bytes(b"0" * 50)
 
-        self.manager.snapshot._extract_snapshot_archive(archive, paths)
+        self.manager.snapshot.archive._extract_snapshot_archive(archive, paths)
         mock_die.assert_not_called()
         mock_tar_open.assert_called_once_with(archive, "r:gz")
 
@@ -1105,7 +1105,7 @@ class TestSnapshotService(unittest.TestCase):
             return current_meta
 
         with (
-            patch.object(self.manager.snapshot, "_hydrate_named_volumes"),
+            patch.object(self.manager.snapshot.volumes, "_hydrate_named_volumes"),
             patch.object(MockSnapshotManager, "read_meta", side_effect=mock_read_meta),
             patch.object(MockSnapshotManager, "write_meta") as mock_write_meta,
         ):
@@ -1166,7 +1166,9 @@ class TestSnapshotService(unittest.TestCase):
             self.manager, "run_command", return_value="success output"
         ) as mock_run:
             with tempfile.TemporaryDirectory() as tmp_dir:
-                res = self.manager.snapshot._sync_volume(tmp_dir, "my-vol", "to_volume")
+                res = self.manager.snapshot.volumes._sync_volume(
+                    tmp_dir, "my-vol", "to_volume"
+                )
                 self.assertTrue(res)
                 mock_run.assert_called()
 
@@ -1175,7 +1177,7 @@ class TestSnapshotService(unittest.TestCase):
         with patch.object(self.manager, "run_command", return_value=None):
             with tempfile.TemporaryDirectory() as tmp_dir:
                 with patch("ldm_core.ui.UI.warning") as mock_warn:
-                    res = self.manager.snapshot._sync_volume(
+                    res = self.manager.snapshot.volumes._sync_volume(
                         tmp_dir, "my-vol", "to_volume"
                     )
                     self.assertFalse(res)
@@ -1335,7 +1337,7 @@ class TestSnapshotService(unittest.TestCase):
     def test_wait_for_search_restore_success(self, mock_sleep, mock_time):
         mock_time.side_effect = [100.0, 101.0]
         with patch.object(self.manager, "run_command", return_value='"stage":"DONE"'):
-            res = self.manager.snapshot._wait_for_search_restore(
+            res = self.manager.snapshot.search._wait_for_search_restore(
                 "snap", "proj", timeout=10
             )
             self.assertTrue(res)
@@ -1345,7 +1347,7 @@ class TestSnapshotService(unittest.TestCase):
     def test_wait_for_search_restore_timeout(self, mock_sleep, mock_time):
         mock_time.side_effect = [100.0, 101.0, 102.0]
         with patch.object(self.manager, "run_command", return_value='"stage":"INDEX"'):
-            res = self.manager.snapshot._wait_for_search_restore(
+            res = self.manager.snapshot.search._wait_for_search_restore(
                 "snap", "proj", timeout=1
             )
             self.assertFalse(res)
