@@ -72,6 +72,7 @@ def cmd_quickstart(self, template_name, share=False, share_subdomain=None):
         UI.warning(
             f"Project metadata missing 'tag'. Falling back to default Liferay tag: {tag}"
         )
+        UI.interruptible_pause(3, "Press CTRL+C to cancel ")
 
     # 2. Determine search mode
     default_shared = (
