@@ -95,7 +95,7 @@ cleanup_test_projects() {
     fi
 
     local env_slug
-    env_slug=$("$LDM_CMD" system doctor --slug 2>/dev/null | tr -d '\r' | tr ' ' '-')
+    env_slug=$("$LDM_CMD" system doctor --slug 2>/dev/null | tail -n 1 | tr -d '\r' | tr ' ' '-')
     local final_name
     final_name="verify-${env_slug:-unknown}-${TIMESTAMP}-${status}.txt"
     
