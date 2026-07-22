@@ -247,6 +247,7 @@ else
     sleep 5
     if kill -0 $TRAY_PID 2>/dev/null; then
         echo "✅ System Tray application started successfully and remained alive."
+        disown $TRAY_PID 2>/dev/null || true
         kill $TRAY_PID 2>/dev/null || true
     else
         echo "❌ ERROR: System Tray application crashed or failed to start."
