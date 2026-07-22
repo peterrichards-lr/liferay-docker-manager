@@ -661,9 +661,10 @@ class ReadinessService(BaseHandler):
                         # The plan said: For `ldm quickstart` specifically, also include credentials hint
                         # Since readiness doesn't know if it's quickstart, we will just show it if `project_meta.get("is_quickstart")` isn't available, or we just always show it. Let's just show it.
                         UI.raw("")
-                        UI.raw(
-                            "  👤  admin@liferay.com / test  (change after first login)"
+                        admin_email = project_meta.get(
+                            "admin_email", "test@liferay.com"
                         )
+                        UI.raw(f"  👤  {admin_email} / test")
                         UI.raw("")
 
                     is_legacy_expose = (
