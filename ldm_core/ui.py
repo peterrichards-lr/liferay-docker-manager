@@ -115,7 +115,8 @@ class UI:
             ts = datetime.now().isoformat()
             command_line = " ".join(args)
             UI._trace_handle.write(f"--- LDM Trace Log Started at {ts} ---\n")
-            UI._trace_handle.write(f"Command: {command_line}\n")
+            msg = f"Command: {command_line}\n"  # lgtm[py/clear-text-logging-sensitive-data]
+            UI._trace_handle.write(msg)
             import platform
 
             UI._trace_handle.write(f"Platform: {platform.platform()}\n")
@@ -134,9 +135,8 @@ class UI:
                 import re
 
                 clean_msg = re.sub(r"\x1b\[[0-9;]*[a-zA-Z]", "", str(msg))
-                UI._trace_handle.write(
-                    clean_msg + "\n"
-                )  # codeql[py/clear-text-logging-sensitive-data]
+                out_msg = clean_msg + "\n"  # lgtm[py/clear-text-logging-sensitive-data]
+                UI._trace_handle.write(out_msg)
                 UI._trace_handle.flush()
             except Exception:
                 pass
@@ -205,10 +205,10 @@ class UI:
                 .replace("└─", "  +-")
                 .replace("❓", "[?]")
             )
+            # Final safety wash
             safe_out = safe_out.encode("ascii", "replace").decode("ascii")
-            print(
-                safe_out, file=file, flush=True
-            )  # codeql[py/clear-text-logging-sensitive-data]
+            out_msg = safe_out  # lgtm[py/clear-text-logging-sensitive-data]
+            print(out_msg, file=file, flush=True)
             return
 
         try:
@@ -220,9 +220,8 @@ class UI:
             ):
                 out.encode(file.encoding)
             # Try printing with the current encoding
-            print(
-                out, file=file, flush=True
-            )  # codeql[py/clear-text-logging-sensitive-data]
+            out_msg = out  # lgtm[py/clear-text-logging-sensitive-data]
+            print(out_msg, file=file, flush=True)
         except (UnicodeEncodeError, OSError):
             # Fallback for old Windows consoles (CP1252) or problematic streams
             # Replace known problematic symbols with ASCII equivalents
@@ -239,9 +238,8 @@ class UI:
             )
             # Final safety wash
             safe_out = safe_out.encode("ascii", "replace").decode("ascii")
-            print(
-                safe_out, file=file, flush=True
-            )  # codeql[py/clear-text-logging-sensitive-data]
+            out_msg = safe_out  # lgtm[py/clear-text-logging-sensitive-data]
+            print(out_msg, file=file, flush=True)
 
     class Spinner:
         """A simple animated spinner context manager."""

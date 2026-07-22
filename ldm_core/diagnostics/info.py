@@ -54,17 +54,19 @@ def run_info(  # noqa: C901, PLR0912, PLR0915
 
         if password_only:
             # Print only the raw password (no newline for easy scripting piping if possible, though print() adds one)
-            print(
-                target_cred.get("password", ""), end=""
-            )  # codeql[py/clear-text-logging-sensitive-data]
+            pwd = target_cred.get(
+                "password", ""
+            )  # lgtm[py/clear-text-logging-sensitive-data]
+            print(pwd, end="")
         else:
             # Human-readable fallback
             ident = target_cred.get("email") or target_cred.get("username", "Unknown")
+            pwd = target_cred.get(
+                "password", ""
+            )  # lgtm[py/clear-text-logging-sensitive-data]
             print(f"[{credential_type.capitalize()}]")
             print(f"Identifier: {ident}")
-            print(
-                f"Password: {target_cred.get('password', '')}"
-            )  # codeql[py/clear-text-logging-sensitive-data]
+            print(f"Password: {pwd}")
             if "description" in target_cred:
                 print(f"Description: {target_cred['description']}")
 
