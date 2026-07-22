@@ -4,7 +4,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from ldm_core.constants import VERSION
+from ldm_core.constants import GITHUB_REPO_URL, VERSION
 from ldm_core.diagnostics.completions import is_completion_enabled
 from ldm_core.ui import UI
 from ldm_core.utils import (
@@ -75,7 +75,7 @@ def run_upgrade(handler):  # noqa: C901, PLR0911, PLR0912, PLR0915
                 target_asset = "ldm-macos-x86_64"
         elif system in ["win32", "windows"]:
             target_asset = "ldm-windows.exe"
-        url = f"https://github.com/peterrichards-lr/liferay-docker-manager/releases/download/v{VERSION}/{target_asset}"
+        url = f"{GITHUB_REPO_URL}/releases/download/v{VERSION}/{target_asset}"
     else:
         # 1. Check for updates / specific version tag
         if target_version_str:
@@ -220,7 +220,7 @@ def run_upgrade(handler):  # noqa: C901, PLR0911, PLR0912, PLR0915
     new_hash = sha.hexdigest()
 
     # Fetch official checksums.txt
-    checksum_url = f"https://github.com/peterrichards-lr/liferay-docker-manager/releases/download/v{latest}/checksums.txt"
+    checksum_url = f"{GITHUB_REPO_URL}/releases/download/v{latest}/checksums.txt"
     try:
         import requests
 

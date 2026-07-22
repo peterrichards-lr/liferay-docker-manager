@@ -655,16 +655,29 @@ class ReadinessService(BaseHandler):
                         UI.raw(f"  Next:  ldm logs {project_id:<12}  View live logs")
                         UI.raw(f"         ldm snapshot {project_id:<8}  Take a backup")
 
-                        # Show credentials hint for quickstart explicitly?
-                        # Actually we can just always show it or check if it's quickstart.
-                        # The plan said: For `ldm quickstart` specifically, also include credentials hint
-                        # Since readiness doesn't know if it's quickstart, we will just show it if `project_meta.get("is_quickstart")` isn't available, or we just always show it. Let's just show it.
-                        UI.raw("")
-                        admin_email = project_meta.get(
-                            "admin_email", "test@liferay.com"
-                        )
-                        UI.raw(f"  👤  {admin_email} / test")
-                        UI.raw("")
+                        # Show custom banner notes if defined
+                        banner_notes = project_meta.get("banner_notes")
+                        if banner_notes and isinstance(banner_notes, list):
+                            for line in banner_notes:
+                                UI.raw(f"  📝  {line}")
+                            UI.raw("")
+                        else:
+                            from ldm_core.constants import (
+                                DEFAULT_ADMIN_EMAIL,
+                                DEFAULT_ADMIN_PASSWORD,
+                            )
+
+                            admin_email = project_meta.get(
+                                "admin_email", DEFAULT_ADMIN_EMAIL
+                            )
+
+                            UI.raw(
+                                f"  👤  {admin_email} / {UI.HIDDEN}{DEFAULT_ADMIN_PASSWORD}{UI.COLOR_OFF}"
+                            )
+                            UI.raw(
+                                f"      {UI.DIM}(password hidden, highlight to copy or use 'ldm info --credentials'){UI.COLOR_OFF}"
+                            )
+                            UI.raw("")
 
                     is_legacy_expose = (
                         str(project_meta.get("expose", "false")).lower() == "true"

@@ -1176,6 +1176,11 @@ def get_parser():  # noqa: PLR0915
     info = subparsers.add_parser("info", parents=[base_sub_parent])
     info.add_argument("project", nargs="?")
     info.add_argument("-p", "--project", dest="project_flag")
+    info.add_argument(
+        "--credentials",
+        action="store_true",
+        help="Print only the project credentials and exit (useful for scripting)",
+    )
     reset = subparsers.add_parser("reset", parents=[base_sub_parent])
     reset.add_argument("project", nargs="?")
     reset.add_argument(

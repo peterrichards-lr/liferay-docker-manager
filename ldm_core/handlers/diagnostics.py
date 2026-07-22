@@ -7,10 +7,10 @@ class DiagnosticsService(BaseHandler):
     def __init__(self, manager=None):
         self.manager = manager
 
-    def cmd_info(self, project_id=None):
+    def cmd_info(self, project_id=None, credentials_only=False):
         from ldm_core.diagnostics.info import run_info
 
-        run_info(self, project_id)
+        run_info(self, project_id, credentials_only)
 
     def cmd_status(self, project_id=None, all_projects=False, detailed=False):
         from ldm_core.diagnostics.info import run_status
