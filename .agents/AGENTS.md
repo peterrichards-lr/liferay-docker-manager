@@ -52,7 +52,8 @@ Any technical statement, explanation, or conclusion you make MUST be strictly ba
 ## Active Pre-commit Enforcement Rule
 
 **Mandatory Local Pre-commit**: To prevent GitHub Actions CI failures caused by dirty states, you MUST run `.venv/bin/pre-commit run --all-files` locally before committing and pushing any changes. If a formatting hook makes modifications, you must re-stage the files and run it again.
+**STRICT PROHIBITION**: *Active Constraint*: You are FORBIDDEN from using the `--no-verify` flag with `git commit`. If a hook fails locally due to missing dependencies (e.g. `semgrep` or `detect-secrets`), you MUST explicitly skip ONLY those specific hooks by passing `SKIP=semgrep,detect-secrets git commit` instead of bypassing the entire quality gate.
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-07-21* | *Last Reviewed: 2026-07-21*
+*Last Updated: 2026-07-22* | *Last Reviewed: 2026-07-22*
