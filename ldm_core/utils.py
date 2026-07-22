@@ -2214,9 +2214,10 @@ def reclaim_volume_permissions(path, uid=None, gid=None, chmod_val="750"):
 
     from ldm_core.ui import UI
 
-    UI.warning(
-        f"Reclaiming volume permissions for {path} (Docker volume may have root-owned files)..."
-    )
+    if UI.VERBOSE:
+        UI.warning(
+            f"Reclaiming volume permissions for {path} (Docker volume may have root-owned files)..."
+        )
 
     docker_cmd = f"chown -R {uid}:{gid} /workspace; chmod -R {chmod_val} /workspace; "
 
