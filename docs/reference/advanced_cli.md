@@ -91,13 +91,14 @@ Controls whether LDM provisions an isolated PostgreSQL database or connects to t
 - **`ldm db start`** ![Added in v2.15.16](https://img.shields.io/badge/Added%20in-v2.15.16-blue): Starts the shared global databases (e.g. Postgres, MySQL) defined in the infrastructure mode.
 
 - **`ldm db stop`** ![Added in v2.15.16](https://img.shields.io/badge/Added%20in-v2.15.16-blue): Stops the shared global databases defined in the infrastructure mode.
-
-<!-- markdownlint-disable MD049 -->
----
-*Last Updated: 2026-07-21* | *Last Reviewed: 2026-07-09*
+- **`ldm db reset-admin [project]`**: Forcefully resets the password for the default admin account (`test@liferay.com`) to `test` by injecting the known PBKDF2 hash directly into the database. Also activates the account and resets failed login locks.
 
 ## Custom Containers ![Added in v2.15.20](https://img.shields.io/badge/Added%20in-v2.15.20-blue)
 
 - **`ldm config add-container [project]`**: Interactively inspects and provisions an arbitrary Docker image to run alongside the Liferay stack.
   - **`--image <image_name>`**: Required. The fully qualified Docker image name to add (e.g., `wordpress:latest`).
   - **`--service-name <name>`**: Optional. Overrides the extracted service name (e.g., `my-wordpress`).
+
+<!-- markdownlint-disable MD049 -->
+---
+*Last Updated: 2026-07-22* | *Last Reviewed: 2026-07-22*

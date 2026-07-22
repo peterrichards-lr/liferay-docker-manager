@@ -80,8 +80,14 @@ Displays a user-friendly, formatted view of a project's internal metadata (`.lif
 
 ```bash
 ldm info [project]
-ldm info [project] --credentials  # Print only the default or configured credentials
+ldm info [project] --credentials  # Print the default admin credentials block
+ldm info [project] --credentials --credential-type database  # Print the database credentials
+ldm info [project] --credentials --password-only  # Print ONLY the raw password string (useful for CI scripts: `export PASS=$(ldm info --credentials --password-only)`)
 ```
+
+> [!NOTE]
+> **Security Posture regarding `ldm info --credentials`:**
+> This feature intentionally outputs clear-text credentials to stdout. Because LDM is a local development and CI tool, the caller already has read access to the local `.liferay-docker.meta` file on disk. Providing a native extraction method encourages developers to dynamically source passwords in automated integration scripts, rather than hardcoding sensitive data into version control (which is significantly riskier).
 
 ## `browser` (alias: `open`)
 

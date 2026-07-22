@@ -163,6 +163,7 @@ def preprocess_args(args_list: list[str]) -> list[str]:
         "nuke",
         "rescue",
         "quickstart",
+        "reset-admin",
         "set-version",
         "man",
         "fix-hosts",
@@ -1181,6 +1182,16 @@ def get_parser():  # noqa: PLR0915
         action="store_true",
         help="Print only the project credentials and exit (useful for scripting)",
     )
+    info.add_argument(
+        "--credential-type",
+        default="admin",
+        help="Specify the credential type to extract (default: admin)",
+    )
+    info.add_argument(
+        "--password-only",
+        action="store_true",
+        help="Output only the raw password string for piping into other commands",
+    )
     reset = subparsers.add_parser("reset", parents=[base_sub_parent])
     reset.add_argument("project", nargs="?")
     reset.add_argument(
@@ -1770,6 +1781,13 @@ def get_parser():  # noqa: PLR0915
         help="Explicitly bypass query execution prompt / config check",
     )
 
+    db_reset_admin = db_subparsers.add_parser(
+        "reset-admin",
+        help="Reset the default admin user (test@liferay.com) password to 'test' and unlock the account",
+    )
+    db_reset_admin.add_argument("project", nargs="?")
+    db_reset_admin.add_argument("-p", "--project", dest="project_flag")
+
     # Namespace: system
     system = subparsers.add_parser(
         "system",
@@ -2319,7 +2337,10 @@ def _build_command_map(args, manager):
             getattr(args, "project", None)
         ),
         ("info", None): lambda: manager.diagnostics.cmd_info(
-            getattr(args, "project", None)
+            getattr(args, "project", None),
+            credentials_only=getattr(args, "credentials", False),
+            credential_type=getattr(args, "credential_type", "admin"),
+            password_only=getattr(args, "password_only", False),
         ),
         ("reset", None): lambda: manager.runtime.cmd_reset(
             getattr(args, "project", None), getattr(args, "target", "state")
@@ -2466,6 +2487,10 @@ def _build_command_map(args, manager):
         ),
         ("db", "start"): manager.database.cmd_start,
         ("db", "stop"): manager.database.cmd_stop,
+        ("db", "reset-admin"): lambda: manager.database.cmd_reset_admin(
+            project_id=getattr(args, "project", None)
+            or getattr(args, "project_flag", None)
+        ),
         # system namespace:
         ("system", "relocate"): lambda: manager.infra.cmd_system("relocate"),
         ("system", "prune"): manager.diagnostics.cmd_prune,

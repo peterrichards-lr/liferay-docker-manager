@@ -186,6 +186,64 @@ class TestDatabaseQueryCommand(unittest.TestCase):
             mock_die.assert_not_called()
             mock_warn.assert_not_called()
 
+    @patch("ldm_core.ui.UI.die")
+    @patch("ldm_core.ui.UI.success")
+    @patch("subprocess.run")
+    def test_cmd_reset_admin_success(self, mock_run, mock_success, mock_die):
+        """Test resetting the admin password builds the correct SQL and calls subprocess run."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            project_path = Path(tmpdir)
+
+            # Create dummy docker-compose.yml so the existence check passes
+            (project_path / "docker-compose.yml").touch()
+
+            self.manager.detect_project_path = MagicMock(return_value=project_path)  # type: ignore[method-assign]
+            mock_meta = {
+                "db_type": "postgresql",
+                "database": "lportal",
+                "database_user": "liferay",
+                "container_name": "db-container-123",
+            }
+            self.manager.read_meta = MagicMock(return_value=mock_meta)  # type: ignore[method-assign]
+
+            # Mock the ps check so it looks like the DB is running
+            def mock_run_command(cmd, env_vars=None, **kwargs):
+                if "ps" in cmd:
+                    return "lportal-db"
+                return ""
+
+            self.manager.run_command = MagicMock(side_effect=mock_run_command)  # type: ignore[method-assign]
+
+            # Mock successful subprocess execution for the SQL execution
+            mock_res = MagicMock()
+            mock_res.returncode = 0
+            mock_run.return_value = mock_res
+
+            self.manager.database.cmd_reset_admin("test")
+
+            mock_die.assert_not_called()
+            mock_success.assert_called_with(
+                "Successfully reset 'test@liferay.com' and unlocked the account!"
+            )
+
+            # Assert subprocess.run was called with correct args
+            mock_run.assert_called_once()
+            called_args, called_kwargs = mock_run.call_args
+
+            # Validate target exec command
+            exec_cmd = called_args[0]
+            self.assertEqual(
+                exec_cmd[:4], ["docker", "exec", "-i", "db-container-123-db"]
+            )
+            self.assertIn("psql", exec_cmd)
+            self.assertIn("lportal", exec_cmd)
+
+            # Validate SQL input
+            sql_input = called_kwargs["input"].decode("utf-8")
+            self.assertIn("UPDATE User_", sql_input)
+            self.assertIn("{PBKDF2WITHHMACSHA1}", sql_input)
+            self.assertIn("test@liferay.com", sql_input)
+
 
 if __name__ == "__main__":
     unittest.main()
