@@ -1052,7 +1052,7 @@ class TestComposerService(unittest.TestCase):
 
     @patch("ldm_core.handlers.composer.UI")
     def test_shared_infra_ux_warning(self, mock_ui):
-        """Verify UI.info is called when shared mode is evaluated for search or db."""
+        """Verify UI.detail is called when shared mode is evaluated for search or db."""
         meta = {
             "database_mode": "shared",
             "search_mode": "shared",
@@ -1075,11 +1075,11 @@ class TestComposerService(unittest.TestCase):
         self.composer._build_liferay_service(
             paths, meta, "localhost", project_name, False, []
         )
-        mock_ui.info.assert_any_call("Utilizing Global Shared Infrastructure")
+        mock_ui.detail.assert_any_call("Utilizing Global Shared Infrastructure")
 
         mock_ui.reset_mock()
         self.composer._build_db_service(meta, project_name)
-        mock_ui.info.assert_any_call("Utilizing Global Shared Infrastructure")
+        mock_ui.detail.assert_any_call("Utilizing Global Shared Infrastructure")
 
     @patch("ldm_core.handlers.composer.dict_to_yaml")
     @patch("ldm_core.utils.safe_write_text")

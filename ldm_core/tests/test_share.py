@@ -387,8 +387,8 @@ class TestShareService(unittest.TestCase):
 
     @patch("ldm_core.utils.get_compose_cmd", return_value=["docker-compose"])
     @patch("subprocess.run")
-    @patch("ldm_core.ui.UI.info")
-    def test_cmd_status_docker_running(self, mock_info, mock_run, mock_get_compose):
+    @patch("ldm_core.ui.UI.detail")
+    def test_cmd_status_docker_running(self, mock_detail, mock_run, mock_get_compose):
         self.mock_manager.detect_project_path = MagicMock(  # type: ignore[method-assign]
             return_value=Path("/fake/myproj")
         )
@@ -435,8 +435,7 @@ class TestShareService(unittest.TestCase):
         self.assertEqual(
             logs_args, ["docker-compose", "logs", "--tail", "10", "lfr-tunnel"]
         )
-
-        mock_info.assert_called_with("lfr-tunnel container is running: Up 2 minutes")
+        mock_detail.assert_called_with("lfr-tunnel container is running: Up 2 minutes")
 
     @patch("ldm_core.utils.get_compose_cmd", return_value=["docker-compose"])
     @patch("subprocess.run")

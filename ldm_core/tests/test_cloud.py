@@ -255,10 +255,10 @@ class TestCloudService(unittest.TestCase):
             expected_md5 = hashlib.md5(b"DATA").hexdigest()
 
             meta = {"database": {"checksum": expected_md5}}
-            with patch("ldm_core.ui.UI.info") as mock_info:
+            with patch("ldm_core.ui.UI.detail") as mock_detail:
                 self.cloud._verify_cloud_backup_checksums(backup_dir, meta)
                 # Verify OK was logged
-                self.assertTrue(any("OK" in str(c) for c in mock_info.call_args_list))
+                self.assertTrue(any("OK" in str(c) for c in mock_detail.call_args_list))
 
     def test_detect_db_type_postgresql(self):
         import gzip
@@ -296,8 +296,8 @@ class TestCloudService(unittest.TestCase):
 
             self.assertIsNone(self.cloud._detect_db_type(backup_dir))
 
-    @patch("ldm_core.ui.UI.info")
-    def test_resolve_hydrate_db_type_auto_detect(self, mock_info):
+    @patch("ldm_core.ui.UI.detail")
+    def test_resolve_hydrate_db_type_auto_detect(self, mock_detail):
         import gzip
         import tempfile
 
@@ -311,7 +311,7 @@ class TestCloudService(unittest.TestCase):
             res = self.cloud._resolve_hydrate_db_type(backup_dir)
             self.assertEqual(res, "postgresql")
             self.assertTrue(
-                any("postgresql" in str(c) for c in mock_info.call_args_list)
+                any("postgresql" in str(c) for c in mock_detail.call_args_list)
             )
 
     @patch("ldm_core.ui.UI.die")
@@ -697,8 +697,8 @@ class TestCloudFetchCoverage(unittest.TestCase):
             )
 
     @patch("ldm_core.handlers.cloud.CloudService.ensure_cloud_auth")
-    @patch("ldm_core.ui.UI.info")
-    def test_cmd_cloud_fetch_sync_env_no_sync(self, mock_info, mock_auth):
+    @patch("ldm_core.ui.UI.detail")
+    def test_cmd_cloud_fetch_sync_env_no_sync(self, mock_detail, mock_auth):
         self.manager.args.sync_env = True
         self.manager.args.env_id = "uat"
         self.manager.args.no_env_sync = True  # type: ignore[attr-defined]
@@ -708,7 +708,7 @@ class TestCloudFetchCoverage(unittest.TestCase):
             "ldm_core.utils.get_lcp_environment_variables", return_value={"VAR": "val"}
         ):
             self.cloud.cmd_cloud_fetch("proj1")
-            mock_info.assert_called_with(
+            mock_detail.assert_called_with(
                 "  - Skipping environment variable sync (--no-env-sync)."
             )
 
@@ -787,13 +787,13 @@ class TestCloudFetchCoverage(unittest.TestCase):
                 self.assertIn("no valid assets found", mock_die.call_args[0][0])
 
     @patch("ldm_core.handlers.cloud.CloudService.ensure_cloud_auth")
-    @patch("ldm_core.ui.UI.info")
-    def test_cmd_cloud_fetch_none(self, mock_info, mock_auth):
+    @patch("ldm_core.ui.UI.detail")
+    def test_cmd_cloud_fetch_none(self, mock_detail, mock_auth):
         self.manager.args.env_id = "uat"
         mock_root = Path("/tmp/proj")
         self.manager.detect_project_path = MagicMock(return_value=mock_root)  # type: ignore[method-assign]
         self.cloud.cmd_cloud_fetch("proj1")
-        mock_info.assert_called_with(
+        mock_detail.assert_called_with(
             "Environment 'uat' (Project: proj) selected. Use flags (--list-backups, --download, --logs, --sync-env) to perform actions."
         )
 

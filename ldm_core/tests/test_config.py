@@ -541,16 +541,16 @@ class TestConfigService(unittest.TestCase):
             self.assertEqual(updated_env["KEY1"], "VAL1")
             self.assertEqual(updated_env["KEY3"], "VAL3")
 
-    @patch("ldm_core.ui.UI.info")
+    @patch("ldm_core.ui.UI.detail")
     @patch("ldm_core.ui.UI.success")
     @patch("ldm_core.ui.UI.raw")
-    def test_cmd_defaults(self, mock_raw, mock_success, mock_info):
+    def test_cmd_defaults(self, mock_raw, mock_success, mock_detail):
         self.manager.args.global_level = False
         self.manager.args.remove = False
 
         # Test viewing defaults
         self.config.cmd_defaults()
-        mock_info.assert_any_call("======================")
+        mock_detail.assert_any_call("======================")
 
         # Test setting a default
         self.config.cmd_defaults("tag", "2024.q1.4-lts")
@@ -811,10 +811,10 @@ class TestConfigService(unittest.TestCase):
             "root": Path("/tmp"),
             "deploy": mock_deploy,
         }
-        with patch("ldm_core.ui.UI.info") as mock_info:
+        with patch("ldm_core.ui.UI.detail") as mock_detail:
             self.config.validate_properties(paths, {}, {}, is_dry_run=False)
             mock_deploy.mkdir.assert_called_once_with(parents=True, exist_ok=True)
-            mock_info.assert_called_with(
+            mock_detail.assert_called_with(
                 f"Created missing mount directory: {mock_deploy}"
             )
 
