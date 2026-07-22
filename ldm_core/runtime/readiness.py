@@ -701,7 +701,7 @@ class ReadinessService(BaseHandler):
                             desc = cred.get("description", "")
 
                             UI.raw(
-                                f"  👤  [{cred_type.upper()}] {ident} / {UI.HIDDEN}{pwd}{UI.COLOR_OFF}"
+                                f"  👤  [{cred_type.upper()}] {ident} / [ {UI.HIDDEN}{pwd}{UI.COLOR_OFF} ]"
                             )
                             if desc:
                                 UI.raw(f"      {desc}")
