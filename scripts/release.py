@@ -349,7 +349,6 @@ def main():  # noqa: C901, PLR0912, PLR0915
         re.compile(r"^pyproject\.toml$"),
         re.compile(r"^GEMINI\.md$"),
         re.compile(r"^CHANGELOG\.md$"),
-        re.compile(r"^scripts/release\.py$"),
     ]
 
     unallowed_files = []
@@ -429,7 +428,6 @@ def main():  # noqa: C901, PLR0912, PLR0915
             "CHANGELOG.md",
             "ldm_core/constants.py",
             "pyproject.toml",
-            "scripts/release.py",
         ]
     )
 
