@@ -271,7 +271,7 @@ class FragmentsService(BaseHandler):
 
         # 3. Fetch Sites and Patch (with retry to wait for OSGi JAX-RS and Site Initializer)
 
-        max_retries = 12
+        max_retries = 60
         patched_count = 0
 
         for attempt in range(max_retries):
