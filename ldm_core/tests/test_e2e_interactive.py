@@ -68,9 +68,9 @@ class TestE2EInteractive(unittest.TestCase):
         ]
 
         tmp_dir = tempfile.mkdtemp()
+        import os
         import shutil
 
-        import os
         env = os.environ.copy()
         env["LDM_IGNORE_DOCKER"] = "true"
 
@@ -101,9 +101,9 @@ class TestE2EInteractive(unittest.TestCase):
         ]
 
         tmp_dir = tempfile.mkdtemp()
+        import os
         import shutil
 
-        import os
         env = os.environ.copy()
         env["LDM_IGNORE_DOCKER"] = "true"
 
