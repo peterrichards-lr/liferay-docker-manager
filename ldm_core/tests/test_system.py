@@ -227,7 +227,7 @@ class TestSystemService(unittest.TestCase):
             mock_success.assert_called_once()
             self.assertIn("Cleared project lock", mock_success.call_args[0][0])
 
-    @patch("ldm_core.ui.UI.info")
+    @patch("ldm_core.ui.UI.detail")
     def test_cmd_rescue_clear_lock_not_found(self, mock_info):
         project_root = Path(self.temp_home) / "my_project"
         project_root.mkdir()
