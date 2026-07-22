@@ -1236,6 +1236,8 @@ class TestWorkspaceQuickstart(unittest.TestCase):
             "aica", share=True, share_subdomain="my-aica-sub"
         )
 
+        mock_detect.assert_any_call("liferay-ai-commerce-accelerator", for_init=True)
+
         mock_cmd_import.assert_called_once_with(
             "https://github.com/peterrichards-lr/liferay-ai-commerce-accelerator.git",
             project_id="liferay-ai-commerce-accelerator",
@@ -1782,6 +1784,18 @@ class TestAtomicZipRepackaging(unittest.TestCase):
         # and then failing on target LDM package validation.
         with self.assertRaises(SystemExit):
             self.handler.workspace.cmd_import("http://invalid/path:with*illegal?chars")
+
+    @patch.object(MockWorkspaceManager, "detect_project_path")
+    def test_cmd_import_dry_run_project_detection(self, mock_detect):
+        """Verify cmd_import --dry-run calls detect_project_path with for_init=True"""
+        mock_detect.return_value = None
+
+        # Test import of an imaginary project
+        with patch.dict(os.environ, {"LDM_DRY_RUN": "true"}):
+            self.handler.workspace.cmd_import(
+                "dummy_project", project_id="my-new-project"
+            )
+        mock_detect.assert_any_call("my-new-project", for_init=True)
 
 
 if __name__ == "__main__":
