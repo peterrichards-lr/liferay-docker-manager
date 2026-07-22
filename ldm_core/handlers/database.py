@@ -297,3 +297,116 @@ class DatabaseService(BaseHandler):
             print(json.dumps(results, indent=2))
         else:
             UI.table(rows, headers=headers)
+
+    def cmd_reset_admin(self, project_id=None):
+        """Force reset the test@liferay.com admin password to 'test' and unlock the account."""
+        project_path = self.manager.detect_project_path(project_id)
+        if not project_path:
+            UI.die("Project path not resolved.")
+            return
+
+        project_meta = self.manager.read_meta(project_path)
+        db_type = project_meta.get("db_type", "postgresql")
+
+        if db_type not in ["postgresql", "mysql", "mariadb"]:
+            UI.die(
+                f"Password reset is not supported for database type '{db_type}'. "
+                "Only PostgreSQL and MySQL/MariaDB variants are supported."
+            )
+            return
+
+        # PBKDF2 hash for the word 'test'
+        test_hash = "{PBKDF2WITHHMACSHA1}AAAAoAAT1iBt8tGXvh0pOQAAAAAAAAAAp2Q/Gh3D7VjWFUgM+4aG54uaQjw="
+        target_email = "test@liferay.com"
+
+        update_sql = f"""
+        UPDATE User_
+        SET password_ = '{test_hash}',
+            passwordEncrypted = 1,
+            passwordReset = 0,
+            status = 0,
+            lockDate = NULL,
+            failedLoginAttempts = 0
+        WHERE emailAddress = '{target_email}';
+        """
+
+        from ldm_core.utils import resolve_infrastructure_mode, sanitize_id
+
+        container_name = project_meta.get("liferay_container_name") or project_meta.get(
+            "container_name"
+        )
+        if not container_name:
+            container_name = project_path.name
+
+        db_mode = resolve_infrastructure_mode(
+            "database_mode", project_meta or {}, self.manager.defaults
+        )
+        db_name = "lportal"
+        if db_mode == "shared":
+            db_container = "liferay-db-global"
+            db_name = f"lportal_{sanitize_id(project_path.name).replace('-', '_')}"
+        else:
+            db_container = project_meta.get("db_container_name", f"{container_name}-db")
+
+        # Verify DB container is running
+        is_running = self.manager.run_command(
+            ["docker", "ps", "-q", "-f", f"name=^{db_container}$"]
+        )
+        if not is_running:
+            UI.die(
+                f"The database container '{db_container}' is not running. "
+                "Please run `ldm start` (or `ldm db start` for shared DBs) first."
+            )
+            return
+
+        UI.info(f"Resetting {target_email} password to 'test'...")
+
+        # We execute the query directly by piggybacking on cmd_query's container execution
+        # But cmd_query enforces SELECT only. We must run our own exec.
+
+        # MySQL/MariaDB credentials
+        if db_type in ["mysql", "mariadb"]:
+            db_user = "root"
+            db_pass = project_meta.get("database_root_password", "my-secret-pw")
+            exec_cmd = [
+                "docker",
+                "exec",
+                "-i",
+                db_container,
+                "mysql",
+                f"--user={db_user}",
+                f"--password={db_pass}",
+                db_name,
+            ]
+        elif db_type == "postgresql":
+            db_user = project_meta.get("database_user", "lportal")
+            exec_cmd = [
+                "docker",
+                "exec",
+                "-i",
+                db_container,
+                "psql",
+                "-U",
+                db_user,
+                "-d",
+                db_name,
+            ]
+
+        # Use subprocess to pass the SQL string via stdin
+        import subprocess
+
+        try:
+            subprocess.run(
+                exec_cmd,
+                input=update_sql.encode("utf-8"),
+                capture_output=True,
+                check=True,
+            )
+            UI.success(f"Successfully reset '{target_email}' and unlocked the account!")
+            UI.info("You can now log in using:")
+            UI.info(f"  Email:    {target_email}")
+            UI.info("  Password: test")
+        except subprocess.CalledProcessError as e:
+            UI.die(
+                f"Failed to reset password:\n{e.stderr.decode('utf-8', errors='ignore')}"
+            )

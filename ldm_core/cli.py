@@ -2486,6 +2486,10 @@ def _build_command_map(args, manager):
         ),
         ("db", "start"): manager.database.cmd_start,
         ("db", "stop"): manager.database.cmd_stop,
+        ("db", "reset-admin"): lambda: manager.database.cmd_reset_admin(
+            project_id=getattr(args, "project", None)
+            or getattr(args, "project_flag", None)
+        ),
         # system namespace:
         ("system", "relocate"): lambda: manager.infra.cmd_system("relocate"),
         ("system", "prune"): manager.diagnostics.cmd_prune,
