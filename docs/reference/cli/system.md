@@ -85,6 +85,10 @@ ldm info [project] --credentials --credential-type database  # Print the databas
 ldm info [project] --credentials --password-only  # Print ONLY the raw password string (useful for CI scripts: `export PASS=$(ldm info --credentials --password-only)`)
 ```
 
+> [!NOTE]
+> **Security Posture regarding `ldm info --credentials`:**
+> This feature intentionally outputs clear-text credentials to stdout. Because LDM is a local development and CI tool, the caller already has read access to the local `.liferay-docker.meta` file on disk. Providing a native extraction method encourages developers to dynamically source passwords in automated integration scripts, rather than hardcoding sensitive data into version control (which is significantly riskier).
+
 ## `browser` (alias: `open`)
 
 Launch the project URL in your system browser. If no project is specified, LDM will present a list of currently running projects to select from.
