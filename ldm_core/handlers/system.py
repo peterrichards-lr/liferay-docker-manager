@@ -333,7 +333,8 @@ class SystemService(BaseHandler):
         import platform
 
         if platform.system().lower() in ["darwin", "linux"]:
-            UI.info("Reclaiming volume permissions for project directories...")
+            if UI.VERBOSE:
+                UI.info("Reclaiming volume permissions for project directories...")
             from ldm_core.utils import reclaim_volume_permissions
 
             try:
