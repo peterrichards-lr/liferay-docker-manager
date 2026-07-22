@@ -80,6 +80,7 @@ Displays a user-friendly, formatted view of a project's internal metadata (`.lif
 
 ```bash
 ldm info [project]
+ldm info [project] --credentials  # Print only the default or configured credentials
 ```
 
 ## `browser` (alias: `open`)
@@ -412,4 +413,4 @@ The following is a comprehensive index of all registered CLI option flags and th
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-07-21* | *Last Reviewed: 2026-07-10*
+*Last Updated: 2026-07-22* | *Last Reviewed: 2026-07-10*

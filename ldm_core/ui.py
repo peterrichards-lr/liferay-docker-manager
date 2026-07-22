@@ -45,6 +45,7 @@ class UI:
     BOLD = UIColors.BOLD
     DIM = UIColors.DIM
     UNDERLINE = UIColors.UNDERLINE
+    HIDDEN = "\033[8m"
 
     NON_INTERACTIVE = False
     VERBOSE = False

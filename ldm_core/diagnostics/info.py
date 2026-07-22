@@ -11,7 +11,7 @@ from ldm_core.utils import (
 )
 
 
-def run_info(handler, project_id=None):  # noqa: C901, PLR0912, PLR0915
+def run_info(handler, project_id=None, credentials_only=False):  # noqa: C901, PLR0912, PLR0915
     """Displays user-friendly project metadata."""
     root = handler.manager.detect_project_path(project_id)
     if not root:
@@ -20,6 +20,19 @@ def run_info(handler, project_id=None):  # noqa: C901, PLR0912, PLR0915
     meta = handler.manager.read_meta(root)
     if not meta:
         UI.warning(f"No metadata found for project at {root}")
+        return
+
+    if credentials_only:
+        from ldm_core.constants import DEFAULT_ADMIN_EMAIL, DEFAULT_ADMIN_PASSWORD
+
+        banner_notes = meta.get("banner_notes")
+        if banner_notes and isinstance(banner_notes, list):
+            for line in banner_notes:
+                print(line)
+        else:
+            admin_email = meta.get("admin_email", DEFAULT_ADMIN_EMAIL)
+            print(f"Email: {admin_email}")
+            print(f"Password: {DEFAULT_ADMIN_PASSWORD}")
         return
 
     UI.heading(

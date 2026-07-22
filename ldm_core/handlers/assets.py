@@ -5,6 +5,7 @@ import time
 
 import requests
 
+from ldm_core.constants import CX_SAMPLES_REPO_URL, GITHUB_API_URL, GITHUB_REPO_URL
 from ldm_core.ui import UI
 from ldm_core.utils import get_actual_home, safe_extract
 
@@ -24,7 +25,7 @@ class AssetService:
 
         tag_name = "seeded-states"
         seed_filename = f"seeded-{tag}-{db_type}-{search_mode}-v{SEED_VERSION}.tar.gz"
-        repo_url = "https://github.com/peterrichards-lr/liferay-docker-manager"
+        repo_url = GITHUB_REPO_URL
         download_url = f"{repo_url}/releases/download/{tag_name}/{seed_filename}"
 
         UI.detail(
@@ -56,11 +57,11 @@ class AssetService:
                 head_res = requests.head(download_url, allow_redirects=True, timeout=10)
 
                 if head_res.status_code != 200:
-                    api_url = f"https://api.github.com/repos/peterrichards-lr/liferay-docker-manager/releases/tags/{tag_name}"
+                    api_url = f"{GITHUB_API_URL}/releases/tags/{tag_name}"
                     api_res = requests.get(api_url, headers=headers, timeout=10)
 
                     if api_res.status_code != 200:
-                        api_url = "https://api.github.com/repos/peterrichards-lr/liferay-docker-manager/releases"
+                        api_url = f"{GITHUB_API_URL}/releases"
                         api_res = requests.get(api_url, headers=headers, timeout=10)
 
                     if api_res.status_code == 200:
@@ -184,7 +185,7 @@ class AssetService:
         """Downloads and extracts the samples pack from GitHub with Offline-First logic."""
         import tarfile
 
-        repo_url = "https://github.com/peterrichards-lr/ldm-cx-samples"
+        repo_url = CX_SAMPLES_REPO_URL
 
         actual_home = get_actual_home()
         cache_dir = actual_home / ".ldm" / "references" / "samples"
@@ -308,7 +309,7 @@ class AssetService:
 
     def cmd_list_seeds(self):
         """Fetches and displays the list of available pre-warmed database seeds."""
-        url = "https://api.github.com/repos/peterrichards-lr/liferay-docker-manager/releases/tags/seeded-states"
+        url = f"{GITHUB_API_URL}/releases/tags/seeded-states"
         UI.detail("Querying GitHub for available seeds...")
 
         try:

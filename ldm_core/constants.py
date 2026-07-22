@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 
 # --- Constants & Configuration ---
@@ -15,6 +16,24 @@ API_BASE_PORTAL = "https://hub.docker.com/v2/repositories/liferay/portal/tags?pa
 LIFERAY_PRODUCT_INFO_URL = (
     "https://releases-cdn.liferay.com/tools/workspace/.product_info.json"
 )
+
+# --- Repository & External URLs ---
+REPO_OWNER = os.getenv("LDM_REPO_OWNER", "peterrichards-lr")
+REPO_NAME = os.getenv("LDM_REPO_NAME", "liferay-docker-manager")
+GITHUB_REPO_URL = f"https://github.com/{REPO_OWNER}/{REPO_NAME}"
+GITHUB_API_URL = f"https://api.github.com/repos/{REPO_OWNER}/{REPO_NAME}"
+GITHUB_RAW_URL = f"https://raw.githubusercontent.com/{REPO_OWNER}/{REPO_NAME}/master"
+GITHUB_DOCS_URL = f"{GITHUB_REPO_URL}/blob/master/docs"
+
+CX_SAMPLES_REPO_URL = f"https://github.com/{REPO_OWNER}/ldm-cx-samples"
+LCP_CLI_DOWNLOAD_URL = (
+    "https://customer.liferay.com/downloads/-/download/liferay-cloud-cli"
+)
+
+# --- Default Project Data ---
+DEFAULT_ADMIN_EMAIL = "test@liferay.com"
+DEFAULT_ADMIN_PASSWORD = "test"
+
 META_VERSION = "2"
 MIN_META_VERSION = 2
 PROJECT_META_FILE = "meta"
