@@ -1052,7 +1052,7 @@ class TestComposerService(unittest.TestCase):
 
     @patch("ldm_core.handlers.composer.UI")
     def test_shared_infra_ux_warning(self, mock_ui):
-        """Verify UI.info is called when shared mode is evaluated for search or db."""
+        """Verify UI.detail is called when shared mode is evaluated for search or db."""
         meta = {
             "database_mode": "shared",
             "search_mode": "shared",

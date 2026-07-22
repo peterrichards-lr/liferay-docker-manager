@@ -197,6 +197,7 @@ class TestWorkspaceImport(unittest.TestCase):
                 self.handler.non_interactive = True
                 self.handler.args.project = "My Awesome Project"
                 self.handler.args.project_flag = None
+
                 self.handler.workspace.cmd_import(str(source_dir), is_internal=True)
 
                 mock_write.assert_called_once()
@@ -1430,6 +1431,9 @@ class TestWorkspaceQuickstart(unittest.TestCase):
             no_run=True,
         )
         mock_fetch_seed.assert_not_called()
+        mock_cmd_run.assert_called_once_with(
+            "liferay-ai-commerce-accelerator", browser=True
+        )
         self.manager.share.cmd_start.assert_called_once_with(
             "liferay-ai-commerce-accelerator", subdomain="my-aica-sub"
         )

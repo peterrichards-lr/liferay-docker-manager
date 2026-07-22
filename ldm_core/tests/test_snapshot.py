@@ -44,10 +44,10 @@ class TestSnapshotService(unittest.TestCase):
     def test_cmd_snapshots_empty(self, mock_detect):
         mock_detect.return_value = self.test_dir
 
-        with patch("ldm_core.ui.UI.info") as mock_info:
+        with patch("ldm_core.ui.UI.detail") as mock_detail:
             backups = self.manager.snapshot.cmd_snapshots()
             self.assertEqual(backups, [])
-            mock_info.assert_called_with("No snapshots found.")
+            mock_detail.assert_called_with("No snapshots found.")
 
     @patch("ldm_core.handlers.base.BaseHandler.detect_project_path")
     @patch("builtins.print")
@@ -1052,7 +1052,7 @@ class TestSnapshotService(unittest.TestCase):
                 "ldm_core.handlers.base.BaseHandler.read_meta",
                 return_value={"container_name": "test-c"},
             ),
-            patch("ldm_core.ui.UI.info"),
+            patch("ldm_core.ui.UI.detail"),
         ):
             # Run restore
             self.manager.snapshot.cmd_restore("test")

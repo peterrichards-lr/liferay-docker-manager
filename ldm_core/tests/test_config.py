@@ -811,10 +811,10 @@ class TestConfigService(unittest.TestCase):
             "root": Path("/tmp"),
             "deploy": mock_deploy,
         }
-        with patch("ldm_core.ui.UI.detail") as mock_info:
+        with patch("ldm_core.ui.UI.detail") as mock_detail:
             self.config.validate_properties(paths, {}, {}, is_dry_run=False)
             mock_deploy.mkdir.assert_called_once_with(parents=True, exist_ok=True)
-            mock_info.assert_called_with(
+            mock_detail.assert_called_with(
                 f"Created missing mount directory: {mock_deploy}"
             )
 

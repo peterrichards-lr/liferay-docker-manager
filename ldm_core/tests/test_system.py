@@ -228,7 +228,7 @@ class TestSystemService(unittest.TestCase):
             self.assertIn("Cleared project lock", mock_success.call_args[0][0])
 
     @patch("ldm_core.ui.UI.detail")
-    def test_cmd_rescue_clear_lock_not_found(self, mock_info):
+    def test_cmd_rescue_clear_lock_not_found(self, mock_detail):
         project_root = Path(self.temp_home) / "my_project"
         project_root.mkdir()
 
@@ -237,7 +237,7 @@ class TestSystemService(unittest.TestCase):
         ):
             res = self.system.cmd_rescue(project_id="my_project", clear_lock=True)
             self.assertTrue(res)
-            mock_info.assert_called_once_with("No active project lock file found.")
+            mock_detail.assert_called_once_with("No active project lock file found.")
 
     def test_properties_file_auto_repair_success(self):
         # Create a properties file with syntax errors

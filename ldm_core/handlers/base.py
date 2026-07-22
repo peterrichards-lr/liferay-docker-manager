@@ -997,34 +997,7 @@ class BaseHandler:
                         and not getattr(BaseHandler, "_warned_home", False)
                     ):
                         BaseHandler._warned_home = True  # type: ignore[attr-defined]
-                        UI.warning(
-                            "You are running LDM from your Home directory. "
-                            "For better performance and to avoid noise, it is recommended to "
-                            "run LDM from a dedicated workspace folder (e.g. ~/ldm)."
-                        )
-                        UI.interruptible_pause(5, "Press CTRL+C to cancel ")
                     return p
-                # If for_init, we allow the path as long as it doesn't exist as a file
-                if for_init:
-                    if p.is_file():
-                        UI.die(
-                            f"Cannot initialize project: '{p}' already exists and is a file."
-                        )
-                    if p.parent.exists():
-                        # If the new project is directly in the home directory, warn the user
-                        if (
-                            p.parent == Path.home().resolve()
-                            and not no_home_warn
-                            and not getattr(BaseHandler, "_warned_home", False)
-                        ):
-                            BaseHandler._warned_home = True  # type: ignore[attr-defined]
-                            UI.warning(
-                                "You are running LDM from your Home directory. "
-                                "For better performance and to avoid noise, it is recommended to "
-                                "run LDM from a dedicated workspace folder (e.g. ~/ldm)."
-                            )
-                            UI.interruptible_pause(5, "Press CTRL+C to cancel ")
-                        return p
             except PermissionError:
                 # If we get permission denied, but the path exists, it's definitely the project
                 if p.is_dir():
@@ -1098,8 +1071,6 @@ class BaseHandler:
                     ).exists()
                     if has_meta or has_structure:
                         return p_test
-                    if for_init and s_dir.exists() and not p_test.is_file():
-                        return p_test
                 except PermissionError:
                     if p_test.is_dir():
                         return p_test
@@ -1162,6 +1133,34 @@ class BaseHandler:
                 # If no pid or pid matches directory name, return CWD
                 if not pid or cwd.name == pid:
                     return cwd
+
+        if pid and for_init:
+            p = Path(pid).expanduser().resolve()
+            if p.is_file():
+                if fatal:
+                    UI.die(
+                        f"Cannot initialize project: '{p}' already exists and is a file."
+                    )
+                return None
+            if p.parent.exists():
+                no_home_warn = (
+                    getattr(self.args, "no_home_warn", False)
+                    if hasattr(self, "args")
+                    else False
+                )
+                if (
+                    p.parent == Path.home().resolve()
+                    and not no_home_warn
+                    and not getattr(BaseHandler, "_warned_home", False)
+                ):
+                    BaseHandler._warned_home = True  # type: ignore[attr-defined]
+                    UI.warning(
+                        "You are running LDM from your Home directory. "
+                        "For better performance and to avoid noise, it is recommended to "
+                        "run LDM from a dedicated workspace folder (e.g. ~/ldm)."
+                    )
+                    UI.interruptible_pause(5, "Press CTRL+C to cancel ")
+                return p
 
         if pid:
             # If we reached here, a PID was specified but not found in any search dir or CWD

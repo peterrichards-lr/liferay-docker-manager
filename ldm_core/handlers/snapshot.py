@@ -36,7 +36,7 @@ class SnapshotService(BaseHandler):
 
         backups_dir = paths["backups"]
         if not backups_dir.exists():
-            UI.info("No snapshots found.")
+            UI.detail("No snapshots found.")
             return []
 
         backups = sorted(
@@ -46,7 +46,7 @@ class SnapshotService(BaseHandler):
         )
 
         if not backups:
-            UI.info("No snapshots found.")
+            UI.detail("No snapshots found.")
             return []
 
         # Ensure paths is a dictionary for subscripting
