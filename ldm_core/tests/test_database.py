@@ -198,16 +198,13 @@ class TestDatabaseQueryCommand(unittest.TestCase):
             (project_path / "docker-compose.yml").touch()
 
             self.manager.detect_project_path = MagicMock(return_value=project_path)  # type: ignore[method-assign]
-            self.manager.read_meta = MagicMock(
-                return_value={
-                    "db_type": "postgresql",
-                    "database": "lportal",
-                    "database_user": "liferay",
-                    "container_name": "db-container-123",
-                }
-            )  # type: ignore[method-assign]
-            # Mock container name resolution
-            self.manager.get_container_name = MagicMock(return_value="db-container-123")  # type: ignore[method-assign]
+            mock_meta = {
+                "db_type": "postgresql",
+                "database": "lportal",
+                "database_user": "liferay",
+                "container_name": "db-container-123",
+            }
+            self.manager.read_meta = MagicMock(return_value=mock_meta)  # type: ignore[method-assign]
 
             # Mock the ps check so it looks like the DB is running
             def mock_run_command(cmd, env_vars=None, **kwargs):
