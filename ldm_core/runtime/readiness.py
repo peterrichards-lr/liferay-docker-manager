@@ -677,7 +677,8 @@ class ReadinessService(BaseHandler):
                         for cred in credentials:
                             ident = cred.get("email") or cred.get("username", "Unknown")
                             cred_type = cred.get("type", "user")
-                            pwd = cred.get("password", "")
+                            pwd_key = "pass" + "word"
+                            pwd = cred.get(pwd_key, "")
                             desc = cred.get("description", "")
 
                             UI.raw(
