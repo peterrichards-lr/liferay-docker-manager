@@ -35,8 +35,7 @@ def _handle_dry_run(self, source_path, should_project_name):
     UI.detail(
         f"{UI.BYELLOW}[DRY RUN] Would import workspace:{UI.COLOR_OFF} {source_path} -> project: {project_name}"
     )
-
-    project_path = self.manager.detect_project_path(project_name)
+    project_path = self.manager.detect_project_path(project_name, for_init=True)
     project_meta = {
         "project_name": project_name,
         "container_name": project_name,
