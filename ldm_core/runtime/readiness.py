@@ -581,7 +581,6 @@ class ReadinessService(BaseHandler):
                         project_id=project_id, for_init=True
                     )
                     paths = self.manager.setup_paths(root_path)
-                    print("TYPE OF FRAGMENTS: ", type(self.manager.runtime.fragments))
                     self.manager.runtime.fragments._patch_fragment_overrides(
                         project_meta, paths
                     )
