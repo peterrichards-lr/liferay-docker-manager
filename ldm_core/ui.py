@@ -204,6 +204,7 @@ class UI:
                 .replace("×", "x")
                 .replace("└─", "  +-")
                 .replace("❓", "[?]")
+                .replace("▶", ">")
             )
             # Final safety wash
             safe_out = safe_out.encode("ascii", "replace").decode("ascii")
