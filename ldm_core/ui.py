@@ -115,8 +115,8 @@ class UI:
             ts = datetime.now().isoformat()
             command_line = " ".join(args)
             UI._trace_handle.write(f"--- LDM Trace Log Started at {ts} ---\n")
-            msg = f"Command: {command_line}\n"  # lgtm[py/clear-text-logging-sensitive-data]
-            UI._trace_handle.write(msg)
+            msg = f"Command: {command_line}\n"
+            UI._trace_handle.write(msg)  # lgtm[py/clear-text-logging-sensitive-data]
             import platform
 
             UI._trace_handle.write(f"Platform: {platform.platform()}\n")
@@ -135,8 +135,10 @@ class UI:
                 import re
 
                 clean_msg = re.sub(r"\x1b\[[0-9;]*[a-zA-Z]", "", str(msg))
-                out_msg = clean_msg + "\n"  # lgtm[py/clear-text-logging-sensitive-data]
-                UI._trace_handle.write(out_msg)
+                out_msg = clean_msg + "\n"
+                UI._trace_handle.write(
+                    out_msg
+                )  # lgtm[py/clear-text-logging-sensitive-data]
                 UI._trace_handle.flush()
             except Exception:
                 pass
@@ -207,8 +209,10 @@ class UI:
             )
             # Final safety wash
             safe_out = safe_out.encode("ascii", "replace").decode("ascii")
-            out_msg = safe_out  # lgtm[py/clear-text-logging-sensitive-data]
-            print(out_msg, file=file, flush=True)
+            out_msg = safe_out
+            print(
+                out_msg, file=file, flush=True
+            )  # lgtm[py/clear-text-logging-sensitive-data]
             return
 
         try:
@@ -220,8 +224,10 @@ class UI:
             ):
                 out.encode(file.encoding)
             # Try printing with the current encoding
-            out_msg = out  # lgtm[py/clear-text-logging-sensitive-data]
-            print(out_msg, file=file, flush=True)
+            out_msg = out
+            print(
+                out_msg, file=file, flush=True
+            )  # lgtm[py/clear-text-logging-sensitive-data]
         except (UnicodeEncodeError, OSError):
             # Fallback for old Windows consoles (CP1252) or problematic streams
             # Replace known problematic symbols with ASCII equivalents
@@ -238,8 +244,10 @@ class UI:
             )
             # Final safety wash
             safe_out = safe_out.encode("ascii", "replace").decode("ascii")
-            out_msg = safe_out  # lgtm[py/clear-text-logging-sensitive-data]
-            print(out_msg, file=file, flush=True)
+            out_msg = safe_out
+            print(
+                out_msg, file=file, flush=True
+            )  # lgtm[py/clear-text-logging-sensitive-data]
 
     class Spinner:
         """A simple animated spinner context manager."""
