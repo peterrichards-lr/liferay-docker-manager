@@ -163,6 +163,7 @@ def preprocess_args(args_list: list[str]) -> list[str]:
         "nuke",
         "rescue",
         "quickstart",
+        "reset-admin",
         "set-version",
         "man",
         "fix-hosts",
