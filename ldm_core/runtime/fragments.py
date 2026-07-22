@@ -295,21 +295,53 @@ class FragmentsService(BaseHandler):
                 for page in pages_data["items"]:
                     page_def = page.get("pageDefinition")
                     if not page_def:
+                        # Collection endpoints omit heavy pageDefinition objects; fetch individual page details
+                        page_id = page.get("id")
+                        if page_id:
+                            page_details = api_request(
+                                "GET", f"/o/headless-delivery/v1.0/site-pages/{page_id}"
+                            )
+                            if page_details:
+                                page_def = page_details.get("pageDefinition")
+                    if not page_def:
                         continue
 
                     def patch_fragments(element, page_name):
                         nonlocal patched_count
                         if element.get("type") == "Fragment":
+                            def_obj = element.get("definition", {})
+                            frag_config = (
+                                def_obj.get("fragmentConfig", {})
+                                if isinstance(def_obj, dict)
+                                else {}
+                            )
                             frag_key = (
-                                element.get("definition", {})
-                                .get("fragmentConfig", {})
-                                .get("fragmentKey")
+                                (
+                                    frag_config.get("fragmentKey")
+                                    if isinstance(frag_config, dict)
+                                    else None
+                                )
+                                or (
+                                    def_obj.get("fragmentKey")
+                                    if isinstance(def_obj, dict)
+                                    else None
+                                )
+                                or (
+                                    def_obj.get("fragmentEntryKey")
+                                    if isinstance(def_obj, dict)
+                                    else None
+                                )
+                                or element.get("fragmentKey")
+                                or element.get("fragmentEntryKey")
                             )
                             if frag_key in overrides:
                                 element_id = element.get("id")
                                 if element_id:
                                     patch_payload = {
-                                        "definition": {"config": overrides[frag_key]}
+                                        "definition": {
+                                            "config": overrides[frag_key],
+                                            "fragmentConfig": overrides[frag_key],
+                                        }
                                     }
                                     res = api_request(
                                         "PATCH",

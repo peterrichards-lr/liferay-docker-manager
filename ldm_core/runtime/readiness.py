@@ -508,34 +508,46 @@ class ReadinessService(BaseHandler):
                     ):
                         spinner.update("Search reindexing in progress...")
                         reindex_start = time.time()
-                        reindex_timeout = 900  # 15 minutes max
+                        reindex_timeout = 180  # 3 minutes max cap
                         found_start = False
 
                         while time.time() - reindex_start < reindex_timeout:
                             try:
                                 # Fetch logs to catch the transition
                                 reindex_logs = self.manager.run_command(
-                                    ["docker", "logs", "--tail", "200", container_name],
+                                    ["docker", "logs", "--tail", "500", container_name],
                                     check=False,
                                     capture_output=True,
                                 )
 
-                                # Phase 1: Detect Start
-                                if not found_start and (
-                                    "reindexing all" in reindex_logs.lower()
-                                ):
-                                    spinner.update("Reindexing all search indexes...")
-                                    found_start = True
+                                if reindex_logs:
+                                    logs_lower = reindex_logs.lower()
+                                    # Phase 1: Detect Start
+                                    if not found_start and (
+                                        "reindexing" in logs_lower
+                                        or "reindex" in logs_lower
+                                    ):
+                                        spinner.update(
+                                            "Reindexing all search indexes..."
+                                        )
+                                        found_start = True
 
-                                # Phase 2: Detect Completion
-                                if "reindexing all" in reindex_logs.lower() and (
-                                    "completed in" in reindex_logs.lower()
-                                    or "finished" in reindex_logs.lower()
-                                ):
-                                    break
+                                    # Phase 2: Detect Completion
+                                    completion_keywords = [
+                                        "completed in",
+                                        "reindex completed",
+                                        "reindexing completed",
+                                        "reindex finished",
+                                        "reindexing finished",
+                                        "finished reindexing",
+                                    ]
+                                    if any(
+                                        kw in logs_lower for kw in completion_keywords
+                                    ):
+                                        break
 
-                                # Fallback: Idle CPU check
-                                if time.time() - reindex_start > 120:
+                                # Fallback: Idle CPU check after 45s
+                                if time.time() - reindex_start > 45:
                                     stats = self.manager.run_command(
                                         [
                                             "docker",
@@ -548,11 +560,18 @@ class ReadinessService(BaseHandler):
                                         check=False,
                                         capture_output=True,
                                     )
-                                    if (
-                                        stats
-                                        and float(stats.strip().replace("%", "")) < 5.0
-                                    ):
-                                        break
+                                    if stats:
+                                        import re
+
+                                        clean_stats = re.sub(
+                                            r"[^\d.]", "", stats.strip()
+                                        )
+                                        if clean_stats:
+                                            try:
+                                                if float(clean_stats) < 10.0:
+                                                    break
+                                            except ValueError:
+                                                pass
 
                             except Exception as e:
                                 UI.detail(f"Warning tracking search reindex: {e}")
@@ -682,7 +701,7 @@ class ReadinessService(BaseHandler):
                             desc = cred.get("description", "")
 
                             UI.raw(
-                                f"  👤  [{cred_type.upper()}] {ident} / {UI.HIDDEN}{pwd}{UI.COLOR_OFF}"
+                                f"  👤  [{cred_type.upper()}] {ident} / [ {UI.HIDDEN}{pwd}{UI.COLOR_OFF} ]"
                             )
                             if desc:
                                 UI.raw(f"      {desc}")
