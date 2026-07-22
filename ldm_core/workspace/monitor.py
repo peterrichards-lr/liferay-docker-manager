@@ -39,7 +39,7 @@ def cmd_monitor(self, source_path=None, project_id=None):  # noqa: C901, PLR0912
         source_path = project_meta.get("workspace_path")
         if not source_path:
             UI.die("No workspace path provided and project is not linked to a source.")
-        UI.info(f"Using linked workspace: {source_path}")
+        UI.detail(f"Using linked workspace: {source_path}")
 
     source = Path(source_path).resolve()
     from ldm_core.utils import is_lcp_workspace
@@ -185,12 +185,12 @@ def cmd_monitor(self, source_path=None, project_id=None):  # noqa: C901, PLR0912
             resource.setrlimit(resource.RLIMIT_NOFILE, (new_soft, hard))
 
             if self.manager.verbose:
-                UI.info(f"OS File Limits: Soft={new_soft}, Hard={hard}")
+                UI.detail(f"OS File Limits: Soft={new_soft}, Hard={hard}")
         except Exception:
             pass
 
         if self.manager.verbose:
-            UI.info("Using PollingObserver for macOS stability.")
+            UI.detail("Using PollingObserver for macOS stability.")
         observer = PollingObserverVFS(
             stat=os.stat,
             listdir=filtered_scandir,
@@ -199,7 +199,7 @@ def cmd_monitor(self, source_path=None, project_id=None):  # noqa: C901, PLR0912
     else:
         observer = Observer()  # type: ignore[assignment]
 
-    UI.info("Scanning for workspace branches...")
+    UI.detail("Scanning for workspace branches...")
     watch_targets = []
     allowed_branches = ["client-extensions", "modules", "fragments"]
 
@@ -248,10 +248,10 @@ def cmd_monitor(self, source_path=None, project_id=None):  # noqa: C901, PLR0912
     observer.start()
 
     try:
-        UI.info("Watching for changes (Press Ctrl+C to stop)...")
+        UI.detail("Watching for changes (Press Ctrl+C to stop)...")
         while True:
             time.sleep(1)
     except KeyboardInterrupt:
         observer.stop()
-        UI.info("Monitor stopped.")
+        UI.detail("Monitor stopped.")
     observer.join()

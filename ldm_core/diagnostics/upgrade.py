@@ -89,7 +89,7 @@ def run_upgrade(handler):  # noqa: C901, PLR0911, PLR0912, PLR0915
 
             if not latest:
                 UI.error("Failed to check for updates.")
-                UI.info("Please check your internet connection or try again later.")
+                UI.detail("Please check your internet connection or try again later.")
                 return
 
         is_beta = "-" in VERSION
@@ -105,31 +105,33 @@ def run_upgrade(handler):  # noqa: C901, PLR0911, PLR0912, PLR0915
 
         if check_only:
             if target_version_str:
-                UI.info(f"Target version v{latest} is available.")
+                UI.detail(f"Target version v{latest} is available.")
             else:
-                UI.info(
+                UI.detail(
                     f"A new version of LDM is available: {UI.GREEN}v{latest}{UI.COLOR_OFF}"
                 )
-            UI.info(f"Run {UI.CYAN}ldm upgrade{UI.COLOR_OFF} to install it.")
+            UI.detail(f"Run {UI.CYAN}ldm upgrade{UI.COLOR_OFF} to install it.")
             return
 
         if is_beta and not pre_release and not target_version_str:
             # User is on beta but wants stable (Switching Tiers)
-            UI.info(
+            UI.detail(
                 f"You are currently on a beta build ({UI.BYELLOW}v{VERSION}{UI.COLOR_OFF})."
             )
-            UI.info(f"The latest stable version is {UI.GREEN}v{latest}{UI.COLOR_OFF}.")
+            UI.detail(
+                f"The latest stable version is {UI.GREEN}v{latest}{UI.COLOR_OFF}."
+            )
             if not UI.confirm("Switch back to the stable release tier?", "N"):
                 return
 
     is_downgrade = version_to_tuple(latest) < version_to_tuple(VERSION)
 
     if is_repair:
-        UI.info(f"Repairing current version: v{latest}")
+        UI.detail(f"Repairing current version: v{latest}")
     elif is_downgrade:
-        UI.info(f"Target version (downgrade): v{latest}")
+        UI.detail(f"Target version (downgrade): v{latest}")
     else:
-        UI.info(f"New version found: v{latest}")
+        UI.detail(f"New version found: v{latest}")
 
     if not url or not url.startswith("http"):
         UI.die("Download URL not found for your architecture.")
@@ -174,7 +176,7 @@ def run_upgrade(handler):  # noqa: C901, PLR0911, PLR0912, PLR0915
     os.close(tmp_fd)
 
     # 3. Download
-    UI.info(f"Downloading v{latest}...")
+    UI.detail(f"Downloading v{latest}...")
     try:
         import requests
 
@@ -202,13 +204,13 @@ def run_upgrade(handler):  # noqa: C901, PLR0911, PLR0912, PLR0915
             temp_new.unlink()
         manual_cmd = _get_manual_upgrade_cmd(handler, url, exe_path)
         UI.error(f"Download failed: {e}")
-        UI.info(
+        UI.detail(
             f"You can upgrade manually by running:\n\n    {UI.CYAN}{manual_cmd}{UI.COLOR_OFF}\n"
         )
         sys.exit(1)
 
     # 4. Verify Integrity
-    UI.info("Verifying integrity...")
+    UI.detail("Verifying integrity...")
     import hashlib
 
     sha = hashlib.sha256()
@@ -246,7 +248,7 @@ def run_upgrade(handler):  # noqa: C901, PLR0911, PLR0912, PLR0915
                     temp_new.unlink()
                 manual_cmd = _get_manual_upgrade_cmd(handler, url, exe_path)
                 UI.error("Integrity verification failed! The hash does not match.")
-                UI.info(
+                UI.detail(
                     f"If you trust this build, install manually:\n\n    {UI.CYAN}{manual_cmd}{UI.COLOR_OFF}\n"
                 )
                 sys.exit(1)
@@ -264,7 +266,7 @@ def run_upgrade(handler):  # noqa: C901, PLR0911, PLR0912, PLR0915
         UI.warning(f"Could not verify hash remotely ({e}). Proceeding with caution...")
 
     # 5. Atomic Swap
-    UI.info("Applying update...")
+    UI.detail("Applying update...")
 
     try:
         if platform.system().lower() == "windows":
@@ -317,7 +319,7 @@ pause
                 # The path is internally generated and sanitized.
                 subprocess.Popen(["cmd.exe", "/c", str(bat_path)], shell=True)  # nosec B602
             else:
-                UI.info(
+                UI.detail(
                     "\nRequesting administrative privileges to replace the binary in system path..."
                 )
                 ps_cmd = (
@@ -340,7 +342,7 @@ pause
                 safe_move(str(temp_new), str(exe_path))
                 UI.success(f"Successfully upgraded to v{latest}!")
             except (PermissionError, OSError):
-                UI.info(
+                UI.detail(
                     "\nRequesting permission to replace the binary in system path..."
                 )
                 try:
@@ -375,7 +377,7 @@ pause
                         "Failed to replace binary. Elevated privileges were denied or incorrect."
                     )
                     UI.debug(f"Details: {e}")
-                    UI.info(
+                    UI.detail(
                         f'Please run manually: {UI.CYAN}sudo cp "{temp_new}" "{exe_path}" && sudo rm "{temp_new}"{UI.COLOR_OFF}'
                     )
                     return
@@ -385,16 +387,16 @@ pause
             temp_new.unlink()
         manual_cmd = _get_manual_upgrade_cmd(handler, url, exe_path)
         UI.error(f"Failed to apply update: {e}")
-        UI.info(
+        UI.detail(
             f"Please try the manual installation command:\n\n    {UI.CYAN}{manual_cmd}{UI.COLOR_OFF}\n"
         )
         sys.exit(1)
 
     # 7. Post-Upgrade: Shell Completion Check
-    UI.info("\nChecking shell completion status...")
+    UI.detail("\nChecking shell completion status...")
     if not is_completion_enabled(handler):
         UI.warning("Shell completion is not enabled for 'ldm' in this session.")
-        UI.info("To enable tab-completion for commands and projects, run:")
+        UI.detail("To enable tab-completion for commands and projects, run:")
         print(f"\n    {UI.CYAN}ldm completion{UI.COLOR_OFF}\n")
     else:
         UI.success("Shell completion is active.")

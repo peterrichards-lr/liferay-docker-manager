@@ -19,7 +19,7 @@ class SearchSnapshotService:
                 ["docker", "ps", "-q", "-f", f"name={search_name}"]
             ):
                 search_snapshot_name = f"{container_name}_{timestamp}"
-                UI.info(
+                UI.detail(
                     f"Triggering orchestrated search snapshot: {search_snapshot_name}..."
                 )
                 self.manager.run_command(
@@ -48,7 +48,7 @@ class SearchSnapshotService:
             if self.manager.run_command(
                 ["docker", "ps", "-q", "-f", f"name={search_name}"]
             ):
-                UI.info(
+                UI.detail(
                     f"Triggering orchestrated search restore: {search_snapshot_name}..."
                 )
 

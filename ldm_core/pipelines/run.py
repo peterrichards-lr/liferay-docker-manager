@@ -104,21 +104,26 @@ class ProjectInitializationStage(PipelineStage):
                 UI.die("Failed to resolve project path.")
 
         project_id = root.name
+        paths = manager.setup_paths(root)
+        project_meta = manager.read_meta(paths["root"])
+
         is_new_project = not any(
             (root / f).exists() for f in ["meta", ".liferay-docker.meta", ".ldm.meta"]
         )
         if is_new_project:
             UI.print_banner()
             if getattr(manager.args, "vanilla", False):
-                UI.info("Vanilla start requested: Bypassing pre-warmed seeding.")
-        else:
-            UI.info(
+                UI.detail("Vanilla start requested: Bypassing pre-warmed seeding.")
+        elif getattr(
+            manager.args, "command", ""
+        ) != "quickstart" and not project_meta.get("is_quickstart"):
+            UI.detail(
                 f"The LDM project '{project_id}' already exists and this command will reconfigure it."
             )
             UI.interruptible_pause(5, "Press CTRL+C to cancel ")
 
-        paths = manager.setup_paths(root)
-        project_meta = manager.read_meta(paths["root"])
+        if project_meta.pop("is_quickstart", None):
+            manager.write_meta(paths["root"], project_meta)
 
         scale_list = getattr(manager.args, "scale_list", None)
         if scale_list:
@@ -145,7 +150,7 @@ class ProjectInitializationStage(PipelineStage):
 
         if is_new_project and not init_success:
             if root and root.exists():
-                UI.info(f"Cleaning up failed initialization: {root}")
+                UI.detail(f"Cleaning up failed initialization: {root}")
                 context.manager.safe_rmtree(root)
             if project_id:
                 context.manager.unregister_project(project_id)
@@ -291,7 +296,7 @@ class RuntimeValidationStage(PipelineStage):
                     UI.warning(
                         f"Upgrade detected: Elasticsearch version changed from major '{last_es_major}' to '{current_es_major}'."
                     )
-                    UI.info(
+                    UI.detail(
                         f"Automatically clearing stale search indices at {es_path} to prevent container startup crashes..."
                     )
                     from ldm_core.utils import safe_rmtree
@@ -354,7 +359,7 @@ class ConfigResolutionStage(PipelineStage):
 
             if not can_discover:
                 if manager.verbose:
-                    UI.info(
+                    UI.detail(
                         f"Pre-resolving latest {rt.upper()} release to populate default prompt..."
                     )
                 default_resolved_tag = discover_latest_tag(
@@ -372,7 +377,7 @@ class ConfigResolutionStage(PipelineStage):
                 elif ans.lower() in ["any", "latest", "u", "lts", "qr"]:
                     release_type = "any" if ans.lower() == "latest" else ans.lower()
                     if manager.verbose:
-                        UI.info(f"Discovering latest {ans.upper()} release...")
+                        UI.detail(f"Discovering latest {ans.upper()} release...")
                     tag = discover_latest_tag(
                         api_base, release_type=release_type, verbose=manager.verbose
                     )
@@ -380,7 +385,7 @@ class ConfigResolutionStage(PipelineStage):
                         UI.die(f"Could not find any tags for release type: {ans}")
                 else:
                     if manager.verbose:
-                        UI.info(f"Discovering latest tag matching prefix: {ans}...")
+                        UI.detail(f"Discovering latest tag matching prefix: {ans}...")
                     tag = discover_latest_tag(
                         api_base,
                         release_type="any",
@@ -391,7 +396,7 @@ class ConfigResolutionStage(PipelineStage):
                         tag = ans
             else:
                 if manager.verbose:
-                    UI.info("Automatically discovering latest Liferay tag...")
+                    UI.detail("Automatically discovering latest Liferay tag...")
                 tag = discover_latest_tag(
                     api_base,
                     release_type=rt,
@@ -475,10 +480,10 @@ class ConfigResolutionStage(PipelineStage):
         if is_expose:
             auth_token = manager.config.get_ngrok_auth_token()
             if not auth_token:
-                UI.info(
+                UI.detail(
                     "An ngrok Auth Token is required to use the expose feature (it enables custom host headers and HTTPS)."
                 )
-                UI.info(
+                UI.detail(
                     f"You can find yours at: {UI.CYAN}https://dashboard.ngrok.com/get-started/your-authtoken{UI.COLOR_OFF}"
                 )
                 auth_token = UI.ask("Enter your ngrok Auth Token")
@@ -603,7 +608,7 @@ class ConfigResolutionStage(PipelineStage):
         ).startswith("/Volumes/")
         if is_external_volume and not getattr(manager.args, "internal_state", None):
             if str(project_meta.get("internal_state", "false")).lower() != "true":
-                UI.info(
+                UI.detail(
                     "External volume detected. Automatically enabling '--internal-state' for stability."
                 )
                 project_meta["internal_state"] = "true"
@@ -645,7 +650,7 @@ class ConfigResolutionStage(PipelineStage):
             from ldm_core.utils import validate_liferay_tag
 
             if manager.verbose:
-                UI.info(f"Validating tag '{tag}' against Liferay releases...")
+                UI.detail(f"Validating tag '{tag}' against Liferay releases...")
             if not validate_liferay_tag(tag):
                 UI.warning(
                     f"Tag '{tag}' is not listed in official Liferay releases. If this is not a custom image, the Docker pull may fail."
@@ -740,6 +745,9 @@ class EnvironmentSetupStage(PipelineStage):
         tag = context.get("tag")
         db_type = context.get("db_type")
         project_id = context.get("project_id")
+
+        if getattr(manager.args, "command", "") != "quickstart":
+            UI.phase(1, 3, "Synchronizing Assets")
 
         if is_new_project and manager.assets._ensure_seeded(tag, db_type, paths):
             from ldm_core.constants import SEED_VERSION
@@ -901,7 +909,7 @@ class ComposerStage(PipelineStage):
                     )
                     compose_file = paths["root"] / "docker-compose.yml"
                     if compose_file.exists() and not is_running:
-                        UI.info(
+                        UI.detail(
                             "Starting database container temporarily to take a snapshot backup..."
                         )
                         db_args = (
@@ -965,14 +973,16 @@ class ComposerStage(PipelineStage):
                 elif search_mode_arg == "remote":
                     choice = "1"
                 elif not manager.non_interactive:
-                    UI.info("How would you like to resolve this search configuration?")
-                    UI.info(
+                    UI.detail(
+                        "How would you like to resolve this search configuration?"
+                    )
+                    UI.detail(
                         "  [1] Keep configs: Connect to my own external Remote cluster (Default)"
                     )
-                    UI.info(
+                    UI.detail(
                         "  [2] Delete configs: Fallback to LDM Sidecar (Internal) mode"
                     )
-                    UI.info(
+                    UI.detail(
                         "  [3] Delete configs: Migrate to LDM Global (Shared) Search"
                     )
                     choice = UI.ask("Select an option [1/2/3]", "1").strip()
@@ -997,7 +1007,7 @@ class ComposerStage(PipelineStage):
                     context.set("use_shared_search", True)
                     UI.success("Migrating to Global Shared Search.")
                 else:
-                    UI.info(
+                    UI.detail(
                         "Keeping custom configs. LDM Sidecar injection will be bypassed."
                     )
 
@@ -1012,7 +1022,7 @@ class ComposerStage(PipelineStage):
         use_shared_db = db_mode == "shared"
         context.set("use_shared_db", use_shared_db)
         if use_shared_db or use_shared_search:
-            UI.info("Utilizing Global Shared Infrastructure")
+            UI.detail("Utilizing Global Shared Infrastructure")
 
         if host_name != "localhost":
             liferay_env.extend(
@@ -1064,7 +1074,7 @@ class ComposerStage(PipelineStage):
                 from ldm_core.utils import sanitize_id
 
                 db_name = f"lportal_{sanitize_id(context.get('project_id')).replace('-', '_')}"
-                UI.info(f"Ensuring global database '{db_name}' exists...")
+                UI.detail(f"Ensuring global database '{db_name}' exists...")
                 check_cmd = [
                     "docker",
                     "exec",
@@ -1197,6 +1207,9 @@ class ExecutionStage(PipelineStage):
                 backup_dir=external_snapshot if not is_samples else None,
             )
 
+        if getattr(manager.args, "command", "") != "quickstart":
+            UI.phase(2, 3, "Starting Container Stack")
+
         cmd = [*compose_base, "up", "-d", "--remove-orphans"]
         rebuild = context.get("rebuild") or getattr(manager.args, "rebuild", False)
         if rebuild:
@@ -1217,7 +1230,7 @@ class ExecutionStage(PipelineStage):
             if ssl_enabled and port_val == 8080:
                 display_port = ""
 
-            UI.info(
+            UI.detail(
                 f"{UI.WHITE}⚡{UI.COLOR_OFF} Starting {UI.BYELLOW}{project_id}{UI.COLOR_OFF} stack ({tag_val}, {db_val}, {host_name}{display_port})..."
             )
             UI.detail(f"=== Stack Configuration: {project_id} ===")
@@ -1343,6 +1356,10 @@ class ExecutionStage(PipelineStage):
                 timeout_val = getattr(manager.args, "timeout", 900)
                 if timeout_val is None:
                     timeout_val = 900
+
+                if getattr(manager.args, "command", "") != "quickstart":
+                    UI.phase(3, 3, "Awaiting Liferay Readiness")
+
                 return manager.runtime._wait_for_ready(
                     project_meta,
                     host_name,

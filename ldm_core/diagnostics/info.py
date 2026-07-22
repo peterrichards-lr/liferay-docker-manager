@@ -664,7 +664,7 @@ def run_list(handler):
     UI.heading("LDM Sandbox Projects")
     roots = handler.manager.find_dxp_roots()
     if not roots:
-        UI.info("No projects found.")
+        UI.detail("No projects found.")
         return
 
     headers = ["Project", "Version", "Status", "URL"]

@@ -44,7 +44,7 @@ def cmd_set_version(self, product_key):
     gradle_props.write_text(new_content, encoding="utf-8")
 
     # Verify compatibility
-    UI.info(
+    UI.detail(
         f"Updated liferay.workspace.product to {product_key} in {gradle_props.name}"
     )
 
@@ -69,5 +69,5 @@ def cmd_set_version(self, product_key):
     UI.success(
         f"Successfully bumped workspace version to {product_key} (Mapped Tag: {tag})."
     )
-    UI.info("To apply this upgrade to the running environment, execute:")
+    UI.detail("To apply this upgrade to the running environment, execute:")
     print(f"    {UI.BYELLOW}ldm restart --upgrade-db{UI.COLOR_OFF}")

@@ -32,7 +32,7 @@ def _handle_dry_run(self, source_path, should_project_name):
     if not project_name:
         project_name = "demo-project"
 
-    UI.info(
+    UI.detail(
         f"{UI.BYELLOW}[DRY RUN] Would import workspace:{UI.COLOR_OFF} {source_path} -> project: {project_name}"
     )
 
@@ -78,7 +78,7 @@ def _download_remote_archive(
             shutil.rmtree(temp_dir)
         UI.die("Security Violation: Invalid remote archive path.")
 
-    UI.info(f"Downloading remote archive: {source_path}...")
+    UI.detail(f"Downloading remote archive: {source_path}...")
     try:
         response = requests.get(source_path, stream=True, timeout=30)
         response.raise_for_status()
@@ -101,7 +101,7 @@ def _download_remote_archive(
                 sha_path = (temp_dir / sha_name).resolve()
                 if is_within_root(sha_path, temp_dir):
                     sha_path.write_text(sha_resp.text.strip())
-                    UI.info("Downloaded checksum signature.")
+                    UI.detail("Downloaded checksum signature.")
                 else:
                     UI.warning(
                         "Security Warning: Signature file containment check failed."
@@ -189,7 +189,7 @@ def _download_ldm_package_assets(
             shutil.rmtree(temp_pkg_dir)
         UI.die("Security Violation: Invalid package asset name.")
 
-    UI.info(f"Downloading LDM package: {ldmp_name}...")
+    UI.detail(f"Downloading LDM package: {ldmp_name}...")
     try:
         headers_dl = {"Accept": "application/octet-stream"}
         if github_token:
@@ -226,7 +226,7 @@ def _download_ldm_package_assets(
 def _extract_ldm_package(self, ldmp_path, temp_extract_dir, temp_pkg_dir):
     from ldm_core.utils import UI
 
-    UI.info("Extracting LDM package...")
+    UI.detail("Extracting LDM package...")
     try:
         with tarfile.open(ldmp_path, "r:gz") as tar:
             from ldm_core.utils import safe_extract
@@ -341,7 +341,7 @@ def _hydrate_ldm_package_to_project(
     )
     self.manager.write_meta(project_path, project_meta)
 
-    UI.info("Restoring database and volume assets from LDM package...")
+    UI.detail("Restoring database and volume assets from LDM package...")
     self.manager._skip_git_check = True
     try:
         self.manager.snapshot.cmd_restore(
@@ -369,7 +369,7 @@ def _import_ldm_package(
     if not project_name:
         project_name = repo
         if self.manager.non_interactive:
-            UI.info(f"Using default project name: {project_name}")
+            UI.detail(f"Using default project name: {project_name}")
         else:
             project_name = UI.ask("Project Name", project_name)
 
@@ -431,7 +431,7 @@ def _resolve_clone_project_name(self, source_path, parsed, should_project_name):
                 project_name = project_name[:-4]
 
         if self.manager.non_interactive:
-            UI.info(f"Using default project name: {project_name}")
+            UI.detail(f"Using default project name: {project_name}")
         else:
             project_name = UI.ask("Project Name", project_name)
     return project_name
@@ -443,7 +443,7 @@ def _execute_git_clone(self, source_path, temp_git_dir):
 
     from ldm_core.utils import UI
 
-    UI.info(f"Cloning remote repository: {source_path}...")
+    UI.detail(f"Cloning remote repository: {source_path}...")
     if source_path.startswith("git@"):
         UI.detail("Using SSH protocol for clone. Assumes SSH agent or key is loaded.")
     elif source_path.startswith("https://"):
@@ -462,7 +462,7 @@ def _execute_git_clone(self, source_path, temp_git_dir):
             and "GITHUB_TOKEN" not in os.environ
             and "GITHUB_PAT" not in os.environ
         ):
-            UI.info(
+            UI.detail(
                 "Note: GITHUB_TOKEN/GITHUB_PAT environment variable is not set. If this is a private repository, cloning may fail."
             )
 

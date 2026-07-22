@@ -532,7 +532,7 @@ class CommandRunner:
             return None
         except KeyboardInterrupt:
             # Standardize exit behavior on Ctrl+C to 130
-            UI.info("\nExecution interrupted by user.")
+            UI.detail("\nExecution interrupted by user.")
             sys.exit(130)
 
 
@@ -551,7 +551,7 @@ class DryRunCommandRunner(CommandRunner):
     ) -> str | None:
         display_cmd = UI.redact(" ".join(cmd) if isinstance(cmd, list) else cmd)
         cmd_str = " ".join(cmd) if isinstance(cmd, list) else cmd
-        UI.info(f"{UI.BYELLOW}[DRY RUN] Would execute:{UI.COLOR_OFF} {display_cmd}")
+        UI.detail(f"{UI.BYELLOW}[DRY RUN] Would execute:{UI.COLOR_OFF} {display_cmd}")
         mock_output = ""
         if "MemTotal" in cmd_str:
             mock_output = "17179869184"
@@ -678,7 +678,7 @@ def safe_write_text(path, content, encoding="utf-8", mode=None):
     path = Path(path).resolve()
     is_dry_run = os.environ.get("LDM_DRY_RUN", "").lower() == "true"
     if is_dry_run:
-        UI.info(f"{UI.BYELLOW}[DRY RUN] Would write file:{UI.COLOR_OFF} {path}")
+        UI.detail(f"{UI.BYELLOW}[DRY RUN] Would write file:{UI.COLOR_OFF} {path}")
         _DRY_RUN_VFS[str(path)] = content
         return
     tmp_path = path.with_suffix(".tmp" + path.suffix)
@@ -748,7 +748,7 @@ def safe_copy(src, dst):
     """Copies a file safely, ignoring metadata preservation errors (EPERM/OSError)."""
     is_dry_run = os.environ.get("LDM_DRY_RUN", "").lower() == "true"
     if is_dry_run:
-        UI.info(f"{UI.BYELLOW}[DRY RUN] Would copy:{UI.COLOR_OFF} {src} -> {dst}")
+        UI.detail(f"{UI.BYELLOW}[DRY RUN] Would copy:{UI.COLOR_OFF} {src} -> {dst}")
         return
     try:
         shutil.copyfile(src, dst)
@@ -807,7 +807,7 @@ def safe_move(src, dst):
     """Moves a file safely, handling cross-filesystem and permission nuances."""
     is_dry_run = os.environ.get("LDM_DRY_RUN", "").lower() == "true"
     if is_dry_run:
-        UI.info(f"{UI.BYELLOW}[DRY RUN] Would move:{UI.COLOR_OFF} {src} -> {dst}")
+        UI.detail(f"{UI.BYELLOW}[DRY RUN] Would move:{UI.COLOR_OFF} {src} -> {dst}")
         return
     # We follow the same atomic pattern for moves to ensure permissions are fixed
     # BEFORE the file becomes visible to any scanners.
@@ -905,7 +905,7 @@ def open_browser(url):
                 pass
 
         # If we are in WSL and cmd.exe failed or wasn't found
-        UI.info(
+        UI.detail(
             f"Please open this URL in your Windows browser: {UI.CYAN}{url}{UI.COLOR_OFF}"
         )
         return False
@@ -1363,7 +1363,7 @@ def write_meta(path, meta):
 
                     v = json.dumps(v)
                 content += f"{k}={v}\n"
-        UI.info(
+        UI.detail(
             f"{UI.BYELLOW}[DRY RUN] Would write metadata file:{UI.COLOR_OFF} {path}"
         )
         _DRY_RUN_VFS[str(path.resolve())] = content
@@ -1521,7 +1521,7 @@ def safe_extract(archive, target_path, members=None):
     target_path = Path(target_path).resolve()
     is_dry_run = os.environ.get("LDM_DRY_RUN", "").lower() == "true"
     if is_dry_run:
-        UI.info(
+        UI.detail(
             f"{UI.BYELLOW}[DRY RUN] Would extract archive to:{UI.COLOR_OFF} {target_path}"
         )
         return
@@ -2052,7 +2052,7 @@ def safe_mkdir(path, parents=True, exist_ok=True):
     path_obj = Path(path).resolve()
     is_dry_run = os.environ.get("LDM_DRY_RUN", "").lower() == "true"
     if is_dry_run:
-        UI.info(
+        UI.detail(
             f"{UI.BYELLOW}[DRY RUN] Would create directory:{UI.COLOR_OFF} {path_obj}"
         )
         return
@@ -2157,7 +2157,7 @@ def safe_rmtree(path):
     path_obj = Path(path).resolve()
     is_dry_run = os.environ.get("LDM_DRY_RUN", "").lower() == "true"
     if is_dry_run:
-        UI.info(
+        UI.detail(
             f"{UI.BYELLOW}[DRY RUN] Would delete directory tree:{UI.COLOR_OFF} {path_obj}"
         )
         return

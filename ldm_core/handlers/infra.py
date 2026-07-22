@@ -103,7 +103,7 @@ class InfraService:
         self._ensure_docker_proxy()
 
         if not quiet:
-            UI.info("Checking infrastructure stack (Traefik SSL Proxy)...")
+            UI.detail("Checking infrastructure stack (Traefik SSL Proxy)...")
         infra_compose = self.manager.get_resource_path("infra-compose.yml")
         if not infra_compose:
             UI.die(
@@ -208,7 +208,7 @@ class InfraService:
 
                 uid = os.getuid()
                 gid = os.getgid()
-                UI.info(f"Requesting permission to reclaim ownership of {path}...")
+                UI.detail(f"Requesting permission to reclaim ownership of {path}...")
                 self.manager.run_command(
                     ["sudo", "chown", "-R", f"{uid}:{gid}", str(path)]
                 )
@@ -221,13 +221,15 @@ class InfraService:
         """Ensures valid locally-trusted wildcard certificates exist for the host."""
         if not shutil.which("mkcert"):
             UI.error("LDM Requirement Missing: mkcert")
-            UI.info(
+            UI.detail(
                 "Local SSL requires 'mkcert'. Please install it to continue:\n"
                 "  - macOS: brew install mkcert nss\n"
                 "  - Windows: scoop install mkcert\n"
                 "  - Linux: sudo apt install mkcert libnss3-tools\n"
             )
-            UI.info(f"After installation, run: {UI.WHITE}mkcert -install{UI.COLOR_OFF}")
+            UI.detail(
+                f"After installation, run: {UI.WHITE}mkcert -install{UI.COLOR_OFF}"
+            )
             UI.warning("SSL proxy will use default self-signed certs for now.")
             return False
 
@@ -250,7 +252,7 @@ class InfraService:
         new_files_written = False
 
         if not cert_file.exists():
-            UI.info(
+            UI.detail(
                 f"Generating SSL certificates for {UI.CYAN}{host_name}{UI.COLOR_OFF}..."
             )
             try:
@@ -281,7 +283,7 @@ class InfraService:
                             return self.setup_ssl(cert_dir, host_name)
                     else:
                         UI.error("mkcert failed to generate certificates.")
-                        UI.info(
+                        UI.detail(
                             "Ensure mkcert is correctly installed and initialized ('mkcert -install')."
                         )
                     return False
@@ -316,7 +318,7 @@ tls:
             is_win = platform.system().lower() == "windows"
             is_wsl = "microsoft" in platform.uname().release.lower()
             if is_mac or is_win or is_wsl:
-                UI.info("Waiting for host certificates to sync with Docker VM...")
+                UI.detail("Waiting for host certificates to sync with Docker VM...")
                 time.sleep(2)
 
             # Restart Traefik to ensure it picks up the new files, as VirtioFS/SSHFS
@@ -326,7 +328,7 @@ tls:
             if DockerService.exists(
                 "liferay-proxy-global"
             ) and DockerService.is_running("liferay-proxy-global"):
-                UI.info(
+                UI.detail(
                     "Restarting Traefik proxy to ensure new certificates are detected..."
                 )
                 DockerService.restart("liferay-proxy-global")
@@ -344,7 +346,7 @@ tls:
                 "Are you sure you want to tear down global infrastructure? This will disrupt all active shared workspaces.",
                 default="N",
             ):
-                UI.info("Infra teardown aborted.")
+                UI.detail("Infra teardown aborted.")
                 return False
 
         UI.warning("Tearing down global infrastructure (Traefik)...")
@@ -375,7 +377,7 @@ tls:
 
     def cmd_infra_restart(self):
         """Restarts the global infrastructure services."""
-        UI.info("Restarting Global Infrastructure...")
+        UI.detail("Restarting Global Infrastructure...")
         self.cmd_infra_down()
         self.cmd_infra_setup()
 
@@ -384,7 +386,7 @@ tls:
         from ldm_core.docker_service import DockerService
 
         container_name = "liferay-proxy-global"
-        UI.info(f"Restarting proxy container: {container_name}...")
+        UI.detail(f"Restarting proxy container: {container_name}...")
 
         if DockerService.exists(container_name):
             DockerService.restart(container_name)
@@ -486,7 +488,7 @@ tls:
                     f"postgres:{pg_ver}",
                 ]
             )
-            UI.info("Waiting for Global Database to become ready...")
+            UI.detail("Waiting for Global Database to become ready...")
             import time
 
             for _ in range(60):
@@ -578,7 +580,7 @@ tls:
                     f"elasticsearch:{ELASTICSEARCH_VERSION}",
                 ]
             )
-            UI.info("Waiting for Elasticsearch to become ready...")
+            UI.detail("Waiting for Elasticsearch to become ready...")
 
             # Robust health check loop
             ready = False
@@ -621,7 +623,7 @@ tls:
 
                     reclaim_volume_permissions(es_data, chmod_val="777")
 
-                UI.info("Restarting Global Search with clean slate...")
+                UI.detail("Restarting Global Search with clean slate...")
                 return self.setup_global_search(force=force, _depth=_depth + 1)
 
             # Register backup repository (required for snapshots)
@@ -648,7 +650,7 @@ tls:
             )
 
             # Proactive analyzer installation
-            UI.info("Installing missing Liferay analyzers in Global Search...")
+            UI.detail("Installing missing Liferay analyzers in Global Search...")
 
             # Tests expect a 'plugin list' call first
             self.manager.run_command(
@@ -675,11 +677,11 @@ tls:
                     check=False,
                 )
 
-            UI.info("Restarting Global Search to activate plugins...")
+            UI.detail("Restarting Global Search to activate plugins...")
             self.manager.run_command(["docker", "restart", search_name])
 
             # Wait for it to come back up
-            UI.info("Waiting for Global Search to be ready after restart...")
+            UI.detail("Waiting for Global Search to be ready after restart...")
             ready = False
             for _ in range(30):
                 # Fail fast if container exited
@@ -771,7 +773,7 @@ tls:
                 or ""
             ).strip()
             if "colima" in context.lower() or context == "default":
-                UI.info("Stopping Colima to ensure data integrity...")
+                UI.detail("Stopping Colima to ensure data integrity...")
                 self.manager.run_command(["colima", "stop"], check=False)
         except Exception:
             pass
@@ -786,12 +788,12 @@ tls:
 
             if source.is_symlink():
                 target_link = source.readlink()
-                UI.info(
+                UI.detail(
                     f"{label} is already a link to: {UI.CYAN}{target_link}{UI.COLOR_OFF}"
                 )
                 continue
 
-            UI.info(f"Relocating {label}...")
+            UI.detail(f"Relocating {label}...")
 
             # 2. Move data if requested
             if not getattr(self.manager.args, "no_move", False):
@@ -805,7 +807,7 @@ tls:
                 # Perform the move
                 try:
                     # We use shutil.move which handles cross-device moves by copy+delete
-                    UI.info(f"  -> Moving data to {dest} (this may take a while)...")
+                    UI.detail(f"  -> Moving data to {dest} (this may take a while)...")
                     if dest.exists():
                         shutil.rmtree(dest)
                     shutil.move(str(source), str(dest))
@@ -814,7 +816,7 @@ tls:
                     continue
             # If no-move, we assume user already moved it or wants a fresh start
             elif source.exists():
-                UI.info(f"  -> Deleting local {source} (no-move flag active)...")
+                UI.detail(f"  -> Deleting local {source} (no-move flag active)...")
                 if source.is_dir():
                     shutil.rmtree(source)
                 else:
@@ -832,7 +834,7 @@ tls:
                 UI.error(f"Failed to create link for {label}: {e}")
 
         UI.success("Relocation complete. You can now restart Colima.")
-        UI.info(f"Run: {UI.WHITE}colima start{UI.COLOR_OFF}")
+        UI.detail(f"Run: {UI.WHITE}colima start{UI.COLOR_OFF}")
 
     def thaw_elasticsearch(self, quiet=False):
         """Attempts to lift disk watermarks on the global search container."""
@@ -840,7 +842,7 @@ tls:
 
         search_name = "liferay-search-global"
         if not quiet:
-            UI.info("Checking for blocked search indices (Disk Watermark)...")
+            UI.detail("Checking for blocked search indices (Disk Watermark)...")
 
         try:
             # First, lift the watermarks to 99%

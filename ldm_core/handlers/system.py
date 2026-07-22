@@ -12,23 +12,23 @@ class SystemService(BaseHandler):
     def cmd_nuke(self, force=False, keep_config=False):  # noqa: C901, PLR0912, PLR0915
         """Completely wipes LDM state, caches, certificates, hosts, and containers."""
         if getattr(self.manager, "dry_run", False):
-            UI.info(
+            UI.detail(
                 f"{UI.BYELLOW}[Dry Run] Would stop and tear down all registered projects.{UI.COLOR_OFF}"
             )
-            UI.info(
+            UI.detail(
                 f"{UI.BYELLOW}[Dry Run] Would tear down global Traefik infrastructure.{UI.COLOR_OFF}"
             )
-            UI.info(
+            UI.detail(
                 f"{UI.BYELLOW}[Dry Run] Would clean up LDM entries in hosts file.{UI.COLOR_OFF}"
             )
-            UI.info(
+            UI.detail(
                 f"{UI.BYELLOW}[Dry Run] Would prune dangling Docker volumes and networks.{UI.COLOR_OFF}"
             )
-            UI.info(
+            UI.detail(
                 f"{UI.BYELLOW}[Dry Run] Would delete global certificates, registry, and cache directories.{UI.COLOR_OFF}"
             )
             if not keep_config:
-                UI.info(
+                UI.detail(
                     f"{UI.BYELLOW}[Dry Run] Would delete ~/.ldmrc config file.{UI.COLOR_OFF}"
                 )
             UI.success("💥 [Dry Run] Nuke completed (no changes made).")
@@ -41,7 +41,7 @@ class SystemService(BaseHandler):
                 "n",
             )
             if str(confirm).lower() != "y":
-                UI.info("Nuke aborted.")
+                UI.detail("Nuke aborted.")
                 return False
 
         drop_global_vols = force
@@ -55,7 +55,7 @@ class SystemService(BaseHandler):
             )
 
         # 1. Stop all registered projects
-        UI.info("Stopping and tearing down all registered projects...")
+        UI.detail("Stopping and tearing down all registered projects...")
         try:
             roots = self.manager.find_dxp_roots()
             for r in roots:
@@ -66,27 +66,27 @@ class SystemService(BaseHandler):
                     or meta.get("container_name")
                     or path.name
                 )
-                UI.info(f"Tearing down project stack: {name}...")
+                UI.detail(f"Tearing down project stack: {name}...")
                 self.manager.runtime.cmd_down(project_id=path.name, delete=False)
         except Exception as e:
             UI.warning(f"Error stopping projects: {e}")
 
         # 2. Stop global Traefik infrastructure
-        UI.info("Tearing down global Traefik infrastructure...")
+        UI.detail("Tearing down global Traefik infrastructure...")
         try:
             self.manager.runtime.cmd_down(infra=True)
         except Exception as e:
             UI.warning(f"Error stopping Traefik: {e}")
 
         # 3. Remove all hosts file entries
-        UI.info("Cleaning up hosts file...")
+        UI.detail("Cleaning up hosts file...")
         try:
             self._remove_hosts_entries(all_ldm=True)
         except Exception as e:
             UI.warning(f"Error cleaning hosts file: {e}")
 
         # 4. Prune Docker networks/volumes
-        UI.info("Pruning dangling Docker resources...")
+        UI.detail("Pruning dangling Docker resources...")
         try:
             self.manager.run_command(
                 ["docker", "network", "rm", "liferay-net"], check=False
@@ -117,7 +117,7 @@ class SystemService(BaseHandler):
             for folder in ["certs", "cache", "registry.json"]:
                 target = ldm_dir / folder
                 if target.exists():
-                    UI.info(f"Deleting {target}...")
+                    UI.detail(f"Deleting {target}...")
                     try:
                         if target.is_dir():
                             safe_rmtree(target)
@@ -130,7 +130,7 @@ class SystemService(BaseHandler):
         if not keep_config:
             rc_file = get_actual_home() / ".ldmrc"
             if rc_file.exists():
-                UI.info("Deleting global config ~/.ldmrc...")
+                UI.detail("Deleting global config ~/.ldmrc...")
                 try:
                     rc_file.unlink()
                 except Exception as e:
@@ -153,30 +153,30 @@ class SystemService(BaseHandler):
                 except Exception as e:
                     UI.die(f"Failed to clear project lock: {e}")
             else:
-                UI.info("No active project lock file found.")
+                UI.detail("No active project lock file found.")
             return True
 
         is_dry_run = getattr(self.manager, "dry_run", False)
         if not project_id:
             # 1. Global Traefik SSL/Host rescue
-            UI.info("Executing LDM Global Infrastructure Rescue...")
+            UI.detail("Executing LDM Global Infrastructure Rescue...")
             if is_dry_run:
-                UI.info(
+                UI.detail(
                     f"{UI.BYELLOW}[Dry Run] Would check and auto-repair global common portal-ext.properties.{UI.COLOR_OFF}"
                 )
-                UI.info(
+                UI.detail(
                     f"{UI.BYELLOW}[Dry Run] Would check and auto-repair workspace common portal-ext.properties.{UI.COLOR_OFF}"
                 )
-                UI.info(
+                UI.detail(
                     f"{UI.BYELLOW}[Dry Run] Would scan for port 80/443 conflicts.{UI.COLOR_OFF}"
                 )
-                UI.info(
+                UI.detail(
                     f"{UI.BYELLOW}[Dry Run] Would recreate shared Docker network 'liferay-net'.{UI.COLOR_OFF}"
                 )
-                UI.info(
+                UI.detail(
                     f"{UI.BYELLOW}[Dry Run] Would regenerate global infrastructure SSL certificates.{UI.COLOR_OFF}"
                 )
-                UI.info(
+                UI.detail(
                     f"{UI.BYELLOW}[Dry Run] Would force-recreate Traefik infrastructure container.{UI.COLOR_OFF}"
                 )
                 UI.success("🏥 [Dry Run] Global rescue completed (no changes made).")
@@ -190,16 +190,16 @@ class SystemService(BaseHandler):
             actual_home = get_actual_home()
             global_pe = actual_home / ".ldm" / "common" / "portal-ext.properties"
             if global_pe.exists():
-                UI.info("Checking global common properties syntax...")
+                UI.detail("Checking global common properties syntax...")
                 self._rescue_properties_file(global_pe)
 
             local_common_pe = Path.cwd() / "common" / "portal-ext.properties"
             if local_common_pe.exists():
-                UI.info("Checking workspace common properties syntax...")
+                UI.detail("Checking workspace common properties syntax...")
                 self._rescue_properties_file(local_common_pe)
 
             # Port conflict scan
-            UI.info("Checking for port conflicts on 80 and 443...")
+            UI.detail("Checking for port conflicts on 80 and 443...")
             import socket
 
             for port in [80, 443]:
@@ -212,25 +212,25 @@ class SystemService(BaseHandler):
                     UI.warning(
                         f"Port {port} is already in use by another process on your host."
                     )
-                    UI.info(
+                    UI.detail(
                         f"Please ensure no local IIS, Apache, Nginx, or Skype process is binding to {port}."
                     )
 
             # Recreate shared network
-            UI.info("Restoring shared docker bridge network 'liferay-net'...")
+            UI.detail("Restoring shared docker bridge network 'liferay-net'...")
             self.manager.run_command(
                 ["docker", "network", "create", "liferay-net"], check=False
             )
 
             # Traefik SSL refresh
-            UI.info("Regenerating global infrastructure SSL certificates...")
+            UI.detail("Regenerating global infrastructure SSL certificates...")
             try:
                 self.manager.runtime.cmd_renew_ssl(all_projects=True)
             except Exception as e:
                 UI.warning(f"SSL certificate renewal failed: {e}")
 
             # Recreate Traefik container
-            UI.info("Force-recreating Traefik infrastructure container...")
+            UI.detail("Force-recreating Traefik infrastructure container...")
             try:
                 self.manager.infra.cmd_infra_setup()
             except Exception as e:
@@ -251,29 +251,29 @@ class SystemService(BaseHandler):
                 or meta.get("container_name")
                 or root.name
             )
-            UI.info(f"Executing LDM Rescue for project: {name}...")
-            UI.info(
+            UI.detail(f"Executing LDM Rescue for project: {name}...")
+            UI.detail(
                 f"{UI.BYELLOW}[Dry Run] Would check and auto-repair project portal-ext.properties syntax.{UI.COLOR_OFF}"
             )
-            UI.info(
+            UI.detail(
                 f"{UI.BYELLOW}[Dry Run] Would check and auto-repair project workspace common properties syntax.{UI.COLOR_OFF}"
             )
-            UI.info(
+            UI.detail(
                 f"{UI.BYELLOW}[Dry Run] Would stop project containers.{UI.COLOR_OFF}"
             )
-            UI.info(
+            UI.detail(
                 f"{UI.BYELLOW}[Dry Run] Would scan for and remove PostgreSQL postmaster.pid lock files.{UI.COLOR_OFF}"
             )
-            UI.info(
+            UI.detail(
                 f"{UI.BYELLOW}[Dry Run] Would scan for and remove OSGi state .lock files.{UI.COLOR_OFF}"
             )
-            UI.info(
+            UI.detail(
                 f"{UI.BYELLOW}[Dry Run] Would regenerate SSL certificates for project.{UI.COLOR_OFF}"
             )
-            UI.info(
+            UI.detail(
                 f"{UI.BYELLOW}[Dry Run] Would recreate project containers with clean volume initialization.{UI.COLOR_OFF}"
             )
-            UI.info(
+            UI.detail(
                 f"{UI.BYELLOW}[Dry Run] Would run post-rescue verification checks.{UI.COLOR_OFF}"
             )
             UI.success(
@@ -284,12 +284,12 @@ class SystemService(BaseHandler):
         # Check and rescue properties files for this project
         project_pe = root / "files" / "portal-ext.properties"
         if project_pe.exists():
-            UI.info("Checking project portal-ext.properties syntax...")
+            UI.detail("Checking project portal-ext.properties syntax...")
             self._rescue_properties_file(project_pe)
 
         workspace_pe = root.parent / "common" / "portal-ext.properties"
         if workspace_pe.exists():
-            UI.info("Checking project's workspace common properties syntax...")
+            UI.detail("Checking project's workspace common properties syntax...")
             self._rescue_properties_file(workspace_pe)
 
         meta = self.read_meta(root)
@@ -298,32 +298,32 @@ class SystemService(BaseHandler):
             or meta.get("container_name")
             or root.name
         )
-        UI.info(f"Executing LDM Rescue for project: {name}...")
+        UI.detail(f"Executing LDM Rescue for project: {name}...")
 
         # Stop project containers first
-        UI.info("Stopping project containers safely...")
+        UI.detail("Stopping project containers safely...")
         try:
             self.manager.runtime.cmd_down(project_id=root.name, delete=False)
         except Exception:
             pass
 
         # Clear common postgres crash-loop lock files (postmaster.pid)
-        UI.info("Scanning for postgres postmaster.pid lock files...")
+        UI.detail("Scanning for postgres postmaster.pid lock files...")
         postgres_data_dir = root / "data"
         if postgres_data_dir.exists():
             for p_file in postgres_data_dir.rglob("postmaster.pid"):
-                UI.info(f"Removing PostgreSQL lock file: {p_file.name}")
+                UI.detail(f"Removing PostgreSQL lock file: {p_file.name}")
                 try:
                     p_file.unlink()
                 except Exception as e:
                     UI.warning(f"Failed to remove pg lock file: {e}")
 
         # Clear OSGi state locks
-        UI.info("Scanning for OSGi state lock files...")
+        UI.detail("Scanning for OSGi state lock files...")
         osgi_state_dir = root / "osgi" / "state"
         if osgi_state_dir.exists():
             for lock in osgi_state_dir.rglob(".lock"):
-                UI.info(f"Removing OSGi state lock file: {lock.name}")
+                UI.detail(f"Removing OSGi state lock file: {lock.name}")
                 try:
                     lock.unlink()
                 except Exception as e:
@@ -334,7 +334,7 @@ class SystemService(BaseHandler):
 
         if platform.system().lower() in ["darwin", "linux"]:
             if UI.VERBOSE:
-                UI.info("Reclaiming volume permissions for project directories...")
+                UI.detail("Reclaiming volume permissions for project directories...")
             from ldm_core.utils import reclaim_volume_permissions
 
             try:
@@ -346,21 +346,21 @@ class SystemService(BaseHandler):
                 UI.warning(f"Could not reclaim volume permissions: {e}")
 
         # Renew SSL for project
-        UI.info(f"Regenerating SSL certificates for project '{root.name}'...")
+        UI.detail(f"Regenerating SSL certificates for project '{root.name}'...")
         try:
             self.manager.runtime.cmd_renew_ssl(project_id=root.name)
         except Exception as e:
             UI.warning(f"Failed to renew SSL: {e}")
 
         # Force recreate containers on start
-        UI.info("Recreating project containers with clean volume initialization...")
+        UI.detail("Recreating project containers with clean volume initialization...")
         try:
             self.manager.runtime.cmd_run(project_id=root.name)
         except Exception as e:
             UI.warning(f"Failed to run project: {e}")
 
         # Run doctor check to verify
-        UI.info("Running post-rescue verification checks...")
+        UI.detail("Running post-rescue verification checks...")
         self.manager.diagnostics.cmd_doctor(project_id=root.name)
 
         UI.success(f"Project '{root.name}' rescue completed successfully!")
@@ -612,7 +612,7 @@ jobs:
                     "N",
                 )
                 if not confirm:
-                    UI.info("Aborted. Scaffolding canceled.")
+                    UI.detail("Aborted. Scaffolding canceled.")
                     return False
 
         try:

@@ -81,7 +81,7 @@ def _sync_fragment_overrides(self, workspace_root, paths, overwrite):
 
 def _hydrate_from_workspace(self, workspace_root, paths, overwrite=True):
     """Initial scan and sync of artifacts from workspace to project."""
-    UI.info("Scanning workspace for built artifacts...")
+    UI.detail("Scanning workspace for built artifacts...")
 
     _sync_client_extensions(self, workspace_root, paths, overwrite)
     _sync_modules_and_themes(self, workspace_root, paths, overwrite)
@@ -158,7 +158,7 @@ def _prompt_cloud_hydration(self, source_path, project_name=None):
 
     # Interactive Path
     if is_cloud and not self.manager.non_interactive:
-        UI.info("\n> Detected Liferay Cloud Workspace structure.")
+        UI.detail("\n> Detected Liferay Cloud Workspace structure.")
         if UI.confirm(
             "Would you also like to pull the remote database and document library to complete the local replica?",
             "Y",
@@ -187,7 +187,7 @@ def _execute_cloud_hydration(self, env_id, source_path, project_name):
 
     self.manager.setup_paths(project_path)
 
-    UI.info(f"Fetching backups from '{env_id}'...")
+    UI.detail(f"Fetching backups from '{env_id}'...")
     try:
         # 1. Sync Env Vars (Do this first so they are in place for the restoration boot)
         # LDM-423: Skip env sync if --no-env-sync is provided
@@ -201,7 +201,7 @@ def _execute_cloud_hydration(self, env_id, source_path, project_name):
                 source_path=str(source_path),
             )
         else:
-            UI.info("  - Skipping environment variable sync (--no-env-sync).")
+            UI.detail("  - Skipping environment variable sync (--no-env-sync).")
 
         # 2. Fetch Data & Restore
         # We set no_run=True to prevent cmd_restore from starting the stack early.

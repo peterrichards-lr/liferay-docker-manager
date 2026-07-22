@@ -114,7 +114,7 @@ class TestE2EInteractive(unittest.TestCase):
             (Path(tmp_dir) / "deploy").mkdir()
 
             process = subprocess.run(
-                [*ldm_executable, "-y", "run", "--no-up"],
+                [*ldm_executable, "-y", "run", "--no-up", "--info"],
                 capture_output=True,
                 text=True,
                 cwd=str(tmp_dir),

@@ -38,7 +38,7 @@ class DashboardService:
                 "--token",
                 secret_key,
             ]
-            UI.info(
+            UI.detail(
                 f"Starting dashboard in background on http://{host}:{port}/?token={sanitize_taint(secret_key)}..."
             )
 
@@ -70,7 +70,7 @@ class DashboardService:
                 "Failed to import the dashboard server. Ensure 'flask' is installed."
             )
 
-        UI.info(
+        UI.detail(
             f"Server starting on http://{host}:{port}/?token={sanitize_taint(secret_key)}"
         )
         UI.detail("Press Ctrl+C to stop the dashboard.")

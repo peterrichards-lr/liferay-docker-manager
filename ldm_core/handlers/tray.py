@@ -13,14 +13,14 @@ class TrayService(BaseHandler):
         """Entry point for ldm tray command."""
         # Check if running under unsupported GUI environments (WSL, Linux Wayland/headless)
         if self._is_unsupported_gui_env():
-            UI.info("Native UI tray is unsupported in this environment (Linux/WSL).")
-            UI.info("Falling back to Dashboard mode...")
+            UI.detail("Native UI tray is unsupported in this environment (Linux/WSL).")
+            UI.detail("Falling back to Dashboard mode...")
             self.manager.dashboard.cmd_dashboard(
                 port=19000, host="127.0.0.1", background=False, token=None
             )
             return
 
-        UI.info("Starting LDM System Tray Application...")
+        UI.detail("Starting LDM System Tray Application...")
         # Lazy import GUI to prevent slowing down CLI and avoid ABI mismatches
         try:
             from ldm_core.plugin_manager import ensure_gui_installed
@@ -28,8 +28,8 @@ class TrayService(BaseHandler):
             ensure_gui_installed()
             from ldm_core.gui.tray import LdmTrayApp
         except ImportError as e:
-            UI.info(f"Native UI tray dependencies are missing or incompatible: {e}")
-            UI.info("Falling back to Dashboard mode...")
+            UI.detail(f"Native UI tray dependencies are missing or incompatible: {e}")
+            UI.detail("Falling back to Dashboard mode...")
             self.manager.dashboard.cmd_dashboard(
                 port=19000, host="127.0.0.1", background=False, token=None
             )
@@ -39,8 +39,8 @@ class TrayService(BaseHandler):
             app = LdmTrayApp(self.manager)
             app.run()
         except Exception as e:
-            UI.info(f"Tray application crashed on startup: {e}")
-            UI.info("Falling back to Dashboard mode...")
+            UI.detail(f"Tray application crashed on startup: {e}")
+            UI.detail("Falling back to Dashboard mode...")
             self.manager.dashboard.cmd_dashboard(
                 port=19000, host="127.0.0.1", background=False, token=None
             )

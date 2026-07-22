@@ -58,7 +58,7 @@ class UtilsSnapshotService:
                     to_delete.append(b)
 
         if not to_delete:
-            UI.info("No snapshots matched management criteria.")
+            UI.detail("No snapshots matched management criteria.")
             return
 
         for snap in to_delete:
@@ -66,7 +66,7 @@ class UtilsSnapshotService:
             name = meta.get("name", "Untitled")
             search_snap = meta.get("search_snapshot")
 
-            UI.info(f"Deleting snapshot: {name} ({snap.name})...")
+            UI.detail(f"Deleting snapshot: {name} ({snap.name})...")
 
             # Delete global search snapshot if it exists
             if search_snap:

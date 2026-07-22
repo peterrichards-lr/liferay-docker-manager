@@ -67,7 +67,7 @@ class FragmentsService(BaseHandler):
             ):
                 return
 
-        UI.info("Executing dynamic Headless API fragment configuration patches...")
+        UI.detail("Executing dynamic Headless API fragment configuration patches...")
 
         # Determine exposed port and API client
         container_name = project_meta.get("liferay_container_name") or project_meta.get(
@@ -277,7 +277,7 @@ class FragmentsService(BaseHandler):
         for attempt in range(max_retries):
             sites_data = api_request("GET", "/o/headless-delivery/v1.0/sites")
             if not sites_data or "items" not in sites_data:
-                UI.info(
+                UI.detail(
                     f"Waiting for Headless API to become ready (attempt {attempt + 1}/{max_retries})..."
                 )
                 time.sleep(5)
@@ -331,7 +331,7 @@ class FragmentsService(BaseHandler):
             if patched_count > 0:
                 break
 
-            UI.info(
+            UI.detail(
                 f"Waiting for Site Initializer to populate fragment pages (attempt {attempt + 1}/{max_retries})..."
             )
             time.sleep(5)

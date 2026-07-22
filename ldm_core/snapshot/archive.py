@@ -19,7 +19,7 @@ class ArchiveSnapshotService:
         try:
             from ldm_core.utils import reclaim_volume_permissions
 
-            UI.info("Reclaiming project permissions before snapshot...")
+            UI.detail("Reclaiming project permissions before snapshot...")
             for d in [
                 "deploy",
                 "files",

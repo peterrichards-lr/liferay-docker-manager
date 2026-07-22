@@ -22,7 +22,7 @@ class AiService(BaseHandler):
         gemini_val = config.get(cfg_key)
         if not gemini_val:
             UI.info("To use 'ldm ai', you need a free Google Gemini API Key.")
-            UI.info(
+            UI.detail(
                 f"Get one here: {UI.CYAN}https://aistudio.google.com/app/apikey{UI.COLOR_OFF}"
             )
             gemini_val = UI.ask("Enter your Gemini API Key")
@@ -91,7 +91,7 @@ class AiService(BaseHandler):
             if not UI.confirm(f"Allow LDM AI to run {tool_name}?"):
                 return "User rejected the action."
         else:
-            UI.info(
+            UI.detail(
                 f"🤖 AI is investigating using local tool: {UI.CYAN}{tool_name}({tool_args}){UI.COLOR_OFF}..."
             )
 
@@ -202,7 +202,7 @@ class AiService(BaseHandler):
                 "tools": tools,
             }
 
-            UI.info("🤖 AI is analyzing the diagnostic data...")
+            UI.detail("🤖 AI is analyzing the diagnostic data...")
             response = requests.post(url, headers=headers, json=payload, timeout=60)
             response.raise_for_status()
             data = response.json()

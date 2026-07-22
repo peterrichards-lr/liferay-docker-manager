@@ -13,7 +13,7 @@ from ldm_core.ui import UI
 
 def cmd_init(self, project_id=None):
     """Scaffolds a project without starting it."""
-    UI.info(f"Initializing project shell: {project_id or 'interactively'}")
+    UI.detail(f"Initializing project shell: {project_id or 'interactively'}")
     self.manager.runtime.cmd_run(project_id, no_up=True)
     UI.success("Initialization complete. You can now run 'ldm doctor' or 'ldm run'.")
 
@@ -36,7 +36,7 @@ def _ensure_stopped(self, project_name, project_path):
             getattr(self.manager.args, "stop_running", False)
             or self.manager.non_interactive
         ):
-            UI.info(f"Stopping running project '{project_name}' automatically...")
+            UI.detail(f"Stopping running project '{project_name}' automatically...")
             self.manager.runtime.cmd_stop(project_id=project_name)
         elif UI.confirm(
             f"Project '{project_name}' is currently running. Stop it before continuing?",
