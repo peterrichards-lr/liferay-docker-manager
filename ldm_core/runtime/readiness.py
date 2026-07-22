@@ -91,7 +91,7 @@ class ReadinessService(BaseHandler):
                 expected_targets[b.strip()] = "Active"
 
         # 2. Wait for HTTP Availability
-        UI.info(
+        UI.detail(
             f"Verifying HTTP accessibility for {UI.CYAN}{host_name}{UI.COLOR_OFF}..."
         )
         ssl_enabled = self.manager.composer._is_ssl_active(host_name, meta)
@@ -129,7 +129,7 @@ class ReadinessService(BaseHandler):
 
         # 2b. Wait for Deployables (OSGi & Client Extensions) if any targets exist
         if expected_targets:
-            UI.info(
+            UI.detail(
                 f"Waiting for {len(expected_targets)} deployable targets to be fully active..."
             )
             container_name = (
@@ -139,7 +139,7 @@ class ReadinessService(BaseHandler):
             )
 
             # Wait for deploy directory inside container to clear
-            UI.info("Checking deploy directory queue status...")
+            UI.detail("Checking deploy directory queue status...")
             deploy_clear = False
             deploy_start = time.time()
             while time.time() - deploy_start < timeout:
@@ -170,7 +170,7 @@ class ReadinessService(BaseHandler):
                 )
 
             # Wait for targets via Gogo Shell
-            UI.info("Verifying target OSGi bundle and Client Extension states...")
+            UI.detail("Verifying target OSGi bundle and Client Extension states...")
             gogo_ready = False
             gogo_start = time.time()
             while time.time() - gogo_start < timeout:
@@ -252,7 +252,7 @@ class ReadinessService(BaseHandler):
                 )
 
         # 3. Wait for System to become Idle (CPU Drop)
-        UI.info("Waiting for background initialization to complete (CPU Idle)...")
+        UI.detail("Waiting for background initialization to complete (CPU Idle)...")
         idle_checks = 0
         consecutive_required = 3
         cpu_threshold = 15.0  # Consider < 15% CPU to be "idle" for Liferay
@@ -312,7 +312,7 @@ class ReadinessService(BaseHandler):
     ):
         """Wait for Liferay to become healthy and provide access information."""
         container_name = project_meta.get("container_name")
-        project_id = project_meta.get("id")
+        project_id = project_meta.get("project_name") or container_name
         root_path = (
             self.manager.detect_project_path(project_id, for_init=True)
             if project_id
@@ -336,7 +336,7 @@ class ReadinessService(BaseHandler):
 
         @contextlib.contextmanager
         def null_spinner(msg):
-            UI.info(f"[LDM] {msg}")
+            UI.detail(f"[LDM] {msg}")
 
             class NullSpinner:
                 def update(self, m):
@@ -392,7 +392,7 @@ class ReadinessService(BaseHandler):
                                 last_unique_error = list(
                                     dict.fromkeys(new_error_lines)
                                 )[-1]
-                                UI.info(
+                                UI.detail(
                                     f"Recent log error: {UI.YELLOW}{last_unique_error[:120]}...{UI.COLOR_OFF}"
                                 )
 
@@ -422,11 +422,11 @@ class ReadinessService(BaseHandler):
                                             "Auto-Thaw successful. Liferay should now proceed."
                                         )
                                     else:
-                                        UI.info(
+                                        UI.detail(
                                             f"💡 {UI.CYAN}Hint:{UI.COLOR_OFF} Your disk is likely full. Run '{UI.WHITE}ldm prune --seeds --samples{UI.COLOR_OFF}' to free space."
                                         )
 
-                                UI.info(
+                                UI.detail(
                                     f"Check full logs: {UI.WHITE}ldm logs -f {container_name}{UI.COLOR_OFF}"
                                 )
                     except Exception as e:
@@ -458,7 +458,7 @@ class ReadinessService(BaseHandler):
                                 if title not in reached_milestones:
                                     reached_milestones.add(title)
                                     if stream_status:
-                                        UI.info(f"[LDM] ⏳ Phase reached: {title}")
+                                        UI.detail(f"[LDM] ⏳ Phase reached: {title}")
                                     else:
                                         UI.detail(
                                             f"Startup Milestone Reached: {UI.CYAN}{title}{UI.COLOR_OFF}"
@@ -576,8 +576,6 @@ class ReadinessService(BaseHandler):
 
                     duration_str = UI.format_duration(duration_total)
 
-                    UI.success(f"Liferay is ready! (Total time: {duration_str})")
-
                     # Execute Headless API patcher for fragment overrides
                     root_path = self.manager.detect_project_path(
                         project_id=project_id, for_init=True
@@ -642,9 +640,32 @@ class ReadinessService(BaseHandler):
                                 f"http://{host_name}:{project_meta.get('port', 8080)}"
                             )
 
-                    UI.info(
-                        f"Access your instance at: {UI.CYAN}{UI.BOLD}{access_url}{UI.COLOR_OFF}"
-                    )
+                    if UI.NON_INTERACTIVE:
+                        UI.raw(f"✅  Liferay ready: {access_url}  ({duration_str})")
+                    else:
+                        UI.raw("")
+                        UI.success(f"Liferay is ready  ({duration_str})")
+                        UI.raw("")
+                        UI.raw(f"  🌐  {UI.CYAN}{UI.BOLD}{access_url}{UI.COLOR_OFF}")
+                        root_path_str = self.manager.detect_project_path(
+                            project_id, for_init=True
+                        )
+                        if root_path_str:
+                            UI.raw(f"  📁  {root_path_str}")
+                        UI.raw("")
+                        UI.raw(f"  Next:  ldm logs {project_id:<12}  View live logs")
+                        UI.raw(f"         ldm snapshot {project_id:<8}  Take a backup")
+
+                        # Show credentials hint for quickstart explicitly?
+                        # Actually we can just always show it or check if it's quickstart.
+                        # The plan said: For `ldm quickstart` specifically, also include credentials hint
+                        # Since readiness doesn't know if it's quickstart, we will just show it if `project_meta.get("is_quickstart")` isn't available, or we just always show it. Let's just show it.
+                        UI.raw("")
+                        UI.raw(
+                            "  👤  admin@liferay.com / test  (change after first login)"
+                        )
+                        UI.raw("")
+
                     is_legacy_expose = (
                         str(project_meta.get("expose", "false")).lower() == "true"
                         and str(project_meta.get("share", "false")).lower() != "true"
@@ -674,28 +695,13 @@ class ReadinessService(BaseHandler):
                             == "true",
                         )
 
-                    UI.info("=== Useful Commands ===")
-                    UI.info(
-                        f"  {UI.CYAN}ldm logs -f {container_name}{UI.COLOR_OFF}  Tail logs"
-                    )
-                    UI.info(
-                        f"  {UI.CYAN}ldm shell {container_name}{UI.COLOR_OFF}    Enter bash"
-                    )
-                    UI.info(
-                        f"  {UI.CYAN}ldm status {container_name}{UI.COLOR_OFF}   Check health"
-                    )
-                    UI.info(
-                        f"  {UI.CYAN}ldm stop {container_name}{UI.COLOR_OFF}     Stop stack"
-                    )
-                    UI.info("")
-
                     should_open_browser = (
                         browser
                         if browser is not None
                         else getattr(self.manager.args, "browser", False)
                     )
                     if should_open_browser:
-                        UI.info(f"Launching browser: {access_url}/web/guest/home")
+                        UI.detail(f"Launching browser: {access_url}/web/guest/home")
                         open_browser(f"{access_url}/web/guest/home")
                     return True
 

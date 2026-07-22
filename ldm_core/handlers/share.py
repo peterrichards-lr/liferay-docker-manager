@@ -146,7 +146,7 @@ class ShareService:
         )
 
         if custom_cmd:
-            UI.info(f"Running custom installation command: {custom_cmd}")
+            UI.detail(f"Running custom installation command: {custom_cmd}")
             import shlex
 
             safe_cmd = shlex.split(custom_cmd)
@@ -505,7 +505,7 @@ class ShareService:
                             and len(lcp_data["ports"]) > 0
                         ):
                             ports = ",".join(str(p) for p in lcp_data["ports"])
-                            UI.info(f"Detected ports {ports} from {lcp_cand.name}")
+                            UI.detail(f"Detected ports {ports} from {lcp_cand.name}")
                             break
                     except Exception:
                         pass
@@ -545,7 +545,7 @@ class ShareService:
                 env["LFT_SERVER_URL"] = f"https://tunnel.{share_domain}"
 
             if getattr(self.manager, "dry_run", False):
-                UI.info(
+                UI.detail(
                     f"{UI.BYELLOW}[DRY RUN] Would execute:{UI.COLOR_OFF} {' '.join(cmd)}"
                 )
                 UI.success("Tunnel started in the background.")
@@ -555,7 +555,7 @@ class ShareService:
                 )
                 return
 
-            UI.info("Starting lfr-tunnel in the background...")
+            UI.detail("Starting lfr-tunnel in the background...")
             try:
                 res = subprocess.run(
                     cmd, env=env, capture_output=True, text=True, check=False
@@ -664,7 +664,7 @@ class ShareService:
 
             # Regenerate compose file and boot lfr-tunnel service
             paths = self.manager.setup_paths(root)
-            UI.info("Regenerating stack configuration with lfr-tunnel sidecar...")
+            UI.detail("Regenerating stack configuration with lfr-tunnel sidecar...")
             self.manager.runtime.cmd_run(
                 project_id=project_meta.get("container_name") or paths["root"].name,
                 no_up=True,
@@ -680,7 +680,7 @@ class ShareService:
                 UI.die("Docker Compose not found.")
 
             if getattr(self.manager, "dry_run", False):
-                UI.info(
+                UI.detail(
                     f"{UI.BYELLOW}[DRY RUN] Would execute:{UI.COLOR_OFF} {' '.join(compose_base)} up -d lfr-tunnel"
                 )
                 UI.success("Tunnel container started in the background.")
@@ -690,7 +690,7 @@ class ShareService:
                 )
                 return
 
-            UI.info("Starting lfr-tunnel container...")
+            UI.detail("Starting lfr-tunnel container...")
             res = subprocess.run(
                 [*compose_base, "up", "-d", "lfr-tunnel"],
                 cwd=str(root),
@@ -750,8 +750,8 @@ class ShareService:
             # Ensure ngrok auth token is set
             auth_token = self.manager.config.get_ngrok_auth_token()
             if not auth_token:
-                UI.info("An ngrok Auth Token is required to use the expose feature.")
-                UI.info(
+                UI.detail("An ngrok Auth Token is required to use the expose feature.")
+                UI.detail(
                     "You can find yours at: https://dashboard.ngrok.com/get-started/your-authtoken"
                 )
                 if not self.manager.non_interactive:
@@ -773,7 +773,7 @@ class ShareService:
 
             # Regenerate compose file and boot ngrok service
             paths = self.manager.setup_paths(root)
-            UI.info("Regenerating stack configuration with ngrok sidecar...")
+            UI.detail("Regenerating stack configuration with ngrok sidecar...")
             self.manager.runtime.cmd_run(
                 project_id=project_meta.get("container_name") or paths["root"].name,
                 no_up=True,
@@ -789,13 +789,13 @@ class ShareService:
                 UI.die("Docker Compose not found.")
 
             if getattr(self.manager, "dry_run", False):
-                UI.info(
+                UI.detail(
                     f"{UI.BYELLOW}[DRY RUN] Would execute:{UI.COLOR_OFF} {' '.join(compose_base)} up -d ngrok"
                 )
                 UI.success("Ngrok container started.")
                 return
 
-            UI.info("Starting ngrok sidecar container...")
+            UI.detail("Starting ngrok sidecar container...")
             res = subprocess.run(
                 [*compose_base, "up", "-d", "ngrok"],
                 cwd=str(root),
@@ -840,10 +840,10 @@ class ShareService:
                 UI.die("Docker Compose not found.")
 
             if getattr(self.manager, "dry_run", False):
-                UI.info(
+                UI.detail(
                     f"{UI.BYELLOW}[DRY RUN] Would execute:{UI.COLOR_OFF} {' '.join(compose_base)} ps lfr-tunnel --format {{{{.Status}}}}"
                 )
-                UI.info("lfr-tunnel container is running: Up 1 second")
+                UI.detail("lfr-tunnel container is running: Up 1 second")
                 return
 
             res = subprocess.run(
@@ -855,7 +855,7 @@ class ShareService:
             )
             status_output = res.stdout.strip()
             if status_output:
-                UI.info(f"lfr-tunnel container is running: {status_output}")
+                UI.detail(f"lfr-tunnel container is running: {status_output}")
 
                 # Query status-json inside the container
                 subdomain = (
@@ -930,7 +930,7 @@ class ShareService:
             if subdomain:
                 cmd = [str(bin_path), "-status-json", "-subdomain", subdomain]
                 if getattr(self.manager, "dry_run", False):
-                    UI.info(
+                    UI.detail(
                         f"{UI.BYELLOW}[DRY RUN] Would execute:{UI.COLOR_OFF} {' '.join(cmd)}"
                     )
                     print("Tunnel Status: Active")
@@ -974,7 +974,7 @@ class ShareService:
             # Fallback to legacy status check
             cmd = [str(bin_path), "-status"]
             if getattr(self.manager, "dry_run", False):
-                UI.info(
+                UI.detail(
                     f"{UI.BYELLOW}[DRY RUN] Would execute:{UI.COLOR_OFF} {' '.join(cmd)}"
                 )
                 print("Tunnel Status: Active")
@@ -1015,13 +1015,13 @@ class ShareService:
                 UI.die("Docker Compose not found.")
 
             if getattr(self.manager, "dry_run", False):
-                UI.info(
+                UI.detail(
                     f"{UI.BYELLOW}[DRY RUN] Would execute:{UI.COLOR_OFF} {' '.join(compose_base)} rm -fs ngrok"
                 )
                 UI.success("Ngrok sharing stopped.")
                 return
 
-            UI.info("Stopping ngrok sidecar container...")
+            UI.detail("Stopping ngrok sidecar container...")
             res = subprocess.run(
                 [*compose_base, "rm", "-fs", "ngrok"],
                 cwd=str(root),
@@ -1052,13 +1052,13 @@ class ShareService:
                 UI.die("Docker Compose not found.")
 
             if getattr(self.manager, "dry_run", False):
-                UI.info(
+                UI.detail(
                     f"{UI.BYELLOW}[DRY RUN] Would execute:{UI.COLOR_OFF} {' '.join(compose_base)} rm -fs lfr-tunnel"
                 )
                 UI.success("Tunnel container stopped and removed.")
                 return
 
-            UI.info("Stopping lfr-tunnel container...")
+            UI.detail("Stopping lfr-tunnel container...")
             res = subprocess.run(
                 [*compose_base, "rm", "-fs", "lfr-tunnel"],
                 cwd=str(root),
@@ -1085,7 +1085,7 @@ class ShareService:
             if subdomain:
                 cmd += ["-subdomain", subdomain]
             if getattr(self.manager, "dry_run", False):
-                UI.info(
+                UI.detail(
                     f"{UI.BYELLOW}[DRY RUN] Would execute:{UI.COLOR_OFF} {' '.join(cmd)}"
                 )
                 UI.success("Tunnel stopped.")
@@ -1156,7 +1156,7 @@ class ShareService:
         import requests
 
         start_time = time.time()
-        UI.info("Verifying tunnel connectivity and subdomain lease...")
+        UI.detail("Verifying tunnel connectivity and subdomain lease...")
         while time.time() - start_time < timeout:
             try:
                 if container_name:
@@ -1494,19 +1494,19 @@ class ShareService:
         ]
 
         if getattr(self.manager, "dry_run", False):
-            UI.info(
+            UI.detail(
                 f"{UI.BYELLOW}[DRY RUN] Would execute:{UI.COLOR_OFF} {' '.join(proxy_cmd)}"
             )
             return
 
-        UI.info(f"Forwarding local port {port} to {container_name}:4040...")
+        UI.detail(f"Forwarding local port {port} to {container_name}:4040...")
         UI.success(f"Inspector dashboard is now accessible at: http://localhost:{port}")
-        UI.info("Press Ctrl+C to stop forwarding.")
+        UI.detail("Press Ctrl+C to stop forwarding.")
 
         try:
             subprocess.run(proxy_cmd, check=True)
         except KeyboardInterrupt:
-            UI.info("\nStopping port forwarding...")
+            UI.detail("\nStopping port forwarding...")
             subprocess.run(
                 ["docker", "stop", proxy_name], capture_output=True, check=False
             )

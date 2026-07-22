@@ -217,7 +217,7 @@ class ComposerService:
         if original_name != project_name and getattr(
             self.manager.args, "verbose", False
         ):
-            UI.info(
+            UI.detail(
                 f"Project name '{original_name}' contains invalid characters for Docker. Using '{project_name}' for container names."
             )
 
@@ -393,7 +393,7 @@ class ComposerService:
         )
         use_shared_search = search_mode == "shared"
         if use_shared_search:
-            UI.info("Utilizing Global Shared Infrastructure")
+            UI.detail("Utilizing Global Shared Infrastructure")
 
         jvm_opts = str(meta.get("jvm_args", ""))
         if "-Dfile.encoding" not in jvm_opts:
@@ -807,7 +807,7 @@ class ComposerService:
         if db_mode == "shared":
             from ldm_core.ui import UI
 
-            UI.info("Utilizing Global Shared Infrastructure")
+            UI.detail("Utilizing Global Shared Infrastructure")
 
         if db_type == "hypersonic" and db_mode == "shared":
             from ldm_core.ui import UI
@@ -1254,7 +1254,7 @@ class ComposerService:
 
         if db_type == "external" or db_mode == "shared":
             if db_mode == "shared":
-                UI.info("Utilizing Global Shared Infrastructure")
+                UI.detail("Utilizing Global Shared Infrastructure")
             return None
 
         tag = str(meta.get("tag") or "latest")

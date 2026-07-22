@@ -148,12 +148,12 @@ def run_completion(handler, target_shell=None):
     UI.heading("LDM Shell Completion")
     shell = active_shell
     if shell not in ["bash", "zsh", "fish", "powershell"]:
-        UI.info(
+        UI.detail(
             f"Completion is currently optimized for bash, zsh, fish, and powershell. (Found: {shell})"
         )
         return
 
-    UI.info(
+    UI.detail(
         f"To enable tab-completion for {UI.BYELLOW}{shell}{UI.COLOR_OFF}, add this to your startup profile:"
     )
 
@@ -170,12 +170,12 @@ def run_completion(handler, target_shell=None):
         print("\n    ldm completion powershell | Out-String | Invoke-Expression\n")
         profile = "Microsoft.PowerShell_profile.ps1"
 
-    UI.info(
+    UI.detail(
         f"To support native {UI.BOLD}man ldm{UI.COLOR_OFF}, add this to the same file:"
     )
     print('\n    export MANPATH="$MANPATH:$HOME/.ldm/man"\n')
 
-    UI.info(
+    UI.detail(
         f"You may need to restart your terminal or source your profile ({UI.CYAN}~/{profile}{UI.COLOR_OFF})"
     )
     print("for the changes to take effect.")
@@ -221,7 +221,7 @@ def run_man(handler):
             subprocess.run(["notepad", str(man_path)], check=False)
     except Exception as e:
         UI.error(f"Failed to display manual: {e}")
-        UI.info(f"You can view the raw manual file at: {man_path}")
+        UI.detail(f"You can view the raw manual file at: {man_path}")
 
 
 def run_setup_completion(handler, target_shell=None):  # noqa: C901, PLR0912, PLR0915
@@ -230,7 +230,7 @@ def run_setup_completion(handler, target_shell=None):  # noqa: C901, PLR0912, PL
     try:
         import argcomplete  # noqa: F401
     except ImportError:
-        UI.info("Module 'argcomplete' not found. Attempting to install via pip...")
+        UI.detail("Module 'argcomplete' not found. Attempting to install via pip...")
         try:
             subprocess.run(
                 [sys.executable, "-m", "pip", "install", "argcomplete"],
@@ -240,7 +240,7 @@ def run_setup_completion(handler, target_shell=None):  # noqa: C901, PLR0912, PL
             UI.success("Successfully installed 'argcomplete'!")
         except Exception as e:
             UI.warning(f"Could not auto-install 'argcomplete': {e}")
-            UI.info("Please install it manually with: pip install argcomplete")
+            UI.detail("Please install it manually with: pip install argcomplete")
 
     # 2. Shell detection
     shell = target_shell
@@ -346,7 +346,7 @@ def run_setup_completion(handler, target_shell=None):  # noqa: C901, PLR0912, PL
             import shutil
 
             shutil.copy2(profile_path, bak_path)
-            UI.info(f"Created profile backup at: {bak_path}")
+            UI.detail(f"Created profile backup at: {bak_path}")
             content = profile_path.read_text(encoding="utf-8")
         else:
             content = ""
@@ -355,17 +355,17 @@ def run_setup_completion(handler, target_shell=None):  # noqa: C901, PLR0912, PL
             start_idx = content.find(start_marker)
             end_idx = content.find(end_marker) + len(end_marker)
             new_content = content[:start_idx] + block_content + content[end_idx:]
-            UI.info(f"Updating existing LDM completion block in {profile_path}...")
+            UI.detail(f"Updating existing LDM completion block in {profile_path}...")
         else:
             if content and not content.endswith("\n"):
                 new_content = content + "\n\n" + block_content + "\n"
             else:
                 new_content = content + "\n" + block_content + "\n"
-            UI.info(f"Appending LDM completion block to {profile_path}...")
+            UI.detail(f"Appending LDM completion block to {profile_path}...")
 
         profile_path.write_text(new_content, encoding="utf-8")
         UI.success(f"Autocomplete setup complete for {shell}!")
-        UI.info(
+        UI.detail(
             f"Please source your profile or restart your terminal: source {profile_path}"
         )
 

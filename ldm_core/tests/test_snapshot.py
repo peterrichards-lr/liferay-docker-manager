@@ -997,7 +997,7 @@ class TestSnapshotService(unittest.TestCase):
                 "ldm_core.handlers.base.BaseHandler.read_meta",
                 return_value={"container_name": "test-c"},
             ),
-            patch("ldm_core.ui.UI.info") as mock_info,
+            patch("ldm_core.ui.UI.detail") as mock_detail,
         ):
             # Run restore
             self.manager.snapshot.cmd_restore("test")
@@ -1008,7 +1008,7 @@ class TestSnapshotService(unittest.TestCase):
                 call for call in mock_run.call_args_list if "tar" in call[0][0]
             ]
             self.assertEqual(len(tar_calls), 0)
-            mock_info.assert_any_call(
+            mock_detail.assert_any_call(
                 "  + Volume archive unchanged (hash matched). Skipping extraction."
             )
 

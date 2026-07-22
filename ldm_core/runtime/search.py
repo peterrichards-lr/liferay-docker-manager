@@ -96,7 +96,7 @@ class SearchService(BaseHandler):
         is_running = DockerService.is_running(container_name)
 
         if is_running and not force_boot:
-            UI.info(
+            UI.detail(
                 f"Liferay container '{container_name}' is running. Triggering immediate runtime reindex..."
             )
             groovy_code = 'com.liferay.portal.kernel.search.IndexWriterHelperUtil.reindex(0, "reindex", [com.liferay.portal.kernel.util.PortalUtil.getDefaultCompanyId()] as long[], null)'

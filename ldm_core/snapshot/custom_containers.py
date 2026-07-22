@@ -18,7 +18,7 @@ class CustomContainersSnapshotService:
                 image = container.get("image")
                 c_name = container.get("service_name")
                 if image and c_name:
-                    UI.info(f"Saving custom image {image} for service {c_name}...")
+                    UI.detail(f"Saving custom image {image} for service {c_name}...")
                     image_tar = custom_images_dir / f"{c_name}.tar"
                     try:
                         res = self.manager.run_command(
@@ -34,7 +34,7 @@ class CustomContainersSnapshotService:
     def _restore_custom_images(self, choice_path):
         custom_images_dir = choice_path / "custom_images"
         if custom_images_dir.exists() and custom_images_dir.is_dir():
-            UI.info("Loading custom container images from snapshot...")
+            UI.detail("Loading custom container images from snapshot...")
             for tar_file in custom_images_dir.glob("*.tar"):
                 UI.detail(f"  + Loading image from {tar_file.name}...")
                 try:

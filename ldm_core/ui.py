@@ -295,7 +295,7 @@ class UI:
 
         def __enter__(self):
             if getattr(UI, "NON_INTERACTIVE", False) or not sys.stdout.isatty():
-                UI.info(self.message)
+                UI.detail(self.message)
                 return self
 
             import threading
@@ -436,6 +436,13 @@ class UI:
         # Redact headers just in case (e.g. project names containing sensitive words)
         msg = UI.redact(msg.strip())
         UI._print(f"\n=== {msg} ===", color=UI.BYELLOW)
+
+    @staticmethod
+    def phase(current: int, total: int, label: str):
+        """Prints a phase progress header for multi-step commands."""
+        if not UI.QUIET_MODE:
+            marker = f"[{current}/{total}]"
+            UI._print(f"{marker} {label}", color=UI.BCYAN)
 
     @staticmethod
     def debug(msg):

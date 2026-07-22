@@ -363,7 +363,7 @@ class CloudService:
                 return
 
             if getattr(self.manager.args, "no_env_sync", False):
-                UI.info("  - Skipping environment variable sync (--no-env-sync).")
+                UI.detail("  - Skipping environment variable sync (--no-env-sync).")
                 return
 
             try:
@@ -382,11 +382,11 @@ class CloudService:
                 custom_env = json.loads(project_meta.get("custom_env", "{}"))
                 for k, v in envs.items():
                     if is_env_var_blacklisted(k, blacklist):
-                        UI.info(f"  - Ignoring blacklisted cloud variable: {k}")
+                        UI.detail(f"  - Ignoring blacklisted cloud variable: {k}")
                         continue
 
                     custom_env[k] = v
-                    UI.info(f"  Synced {k}")
+                    UI.detail(f"  Synced {k}")
 
                 project_meta["custom_env"] = json.dumps(custom_env)
                 self.manager.write_meta(root_path, project_meta)
@@ -405,7 +405,7 @@ class CloudService:
 
             if not backups:
                 if data and self.manager.verbose:
-                    UI.info("Raw LCP Output:")
+                    UI.detail("Raw LCP Output:")
                     print(repr(data))
                 # Soft failure: just warn and skip download if no backups exist yet
                 UI.warning(
@@ -415,7 +415,7 @@ class CloudService:
 
             latest = backups[0]
             backup_id = latest.get("id")
-            UI.info(f"Latest Backup: {backup_id} ({latest.get('created')})")
+            UI.detail(f"Latest Backup: {backup_id} ({latest.get('created')})")
 
             snapshot_dir = root_path / "snapshots" / f"cloud_{target_env}_{backup_id}"
             snapshot_dir.mkdir(parents=True, exist_ok=True)
@@ -447,7 +447,7 @@ class CloudService:
             # We need to flatten this so LDM's standard restore logic can find the files.
             import shutil
 
-            UI.info("Organizing downloaded assets...")
+            UI.detail("Organizing downloaded assets...")
             found_db = False
             found_vol = False
 
@@ -503,7 +503,7 @@ class CloudService:
                 )
             return
 
-        UI.info(
+        UI.detail(
             f"Environment '{target_env}' (Project: {cp_id}) selected. Use flags (--list-backups, --download, --logs, --sync-env) to perform actions."
         )
 
@@ -539,7 +539,7 @@ class CloudService:
         project_meta["db_type"] = db_type
         self.manager.write_meta(root_path, project_meta)
 
-        UI.info(f"Triggering local restore from {backup_dir_path}...")
+        UI.detail(f"Triggering local restore from {backup_dir_path}...")
         self.manager.snapshot.cmd_restore(
             project_id=project_id, backup_dir=backup_dir_path, no_run=should_no_run
         )
@@ -560,7 +560,7 @@ class CloudService:
         if not db_target.exists():
             db_matches = list(backup_dir.glob("*database*.gz"))
             if db_matches:
-                UI.info(
+                UI.detail(
                     f"Auto-resolving database backup from {db_matches[0].name} to database.gz"
                 )
                 db_matches[0].rename(db_target)
@@ -570,7 +570,7 @@ class CloudService:
                 backup_dir.glob("*volume*.tar.gz")
             )
             if vol_matches:
-                UI.info(
+                UI.detail(
                     f"Auto-resolving volume backup from {vol_matches[0].name} to volume.tgz"
                 )
                 vol_matches[0].rename(vol_target)
@@ -639,7 +639,7 @@ class CloudService:
 
         if not db_type:
             if detected:
-                UI.info(
+                UI.detail(
                     f"Auto-detected database type: {UI.CYAN}{detected}{UI.COLOR_OFF}"
                 )
                 db_type = detected
@@ -669,7 +669,7 @@ class CloudService:
                 file_path = backup_dir / file_name
 
                 if file_path.exists():
-                    UI.info(f"Verifying {file_name} checksum...")
+                    UI.detail(f"Verifying {file_name} checksum...")
                     import hashlib
 
                     md5 = hashlib.md5()  # nosec B324
@@ -678,7 +678,7 @@ class CloudService:
                             md5.update(chunk)
                     actual = md5.hexdigest()
                     if actual == expected:
-                        UI.info(f"  {file_name}: {UI.GREEN}OK{UI.COLOR_OFF}")
+                        UI.detail(f"  {file_name}: {UI.GREEN}OK{UI.COLOR_OFF}")
                     else:
                         UI.warning(
                             f"  {file_name}: {UI.RED}CHECKSUM MISMATCH{UI.COLOR_OFF}"

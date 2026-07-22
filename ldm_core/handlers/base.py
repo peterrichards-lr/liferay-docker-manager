@@ -59,10 +59,10 @@ class BaseHandler:
             platform.system().lower() == "windows" or self.is_wsl()
         ):
             UI.warning(f"Hostname '{host_name}' uses the '.local' TLD.")
-            UI.info(
+            UI.detail(
                 "On Windows, '.local' is reserved for mDNS and may ignore your hosts file."
             )
-            UI.info("Recommended: Use '.test' or '.internal' instead.")
+            UI.detail("Recommended: Use '.test' or '.internal' instead.")
 
         # Collect all required hostnames (main + extensions)
         required_hosts = [host_name]
@@ -92,7 +92,7 @@ class BaseHandler:
 
         if unresolved:
             if self.non_interactive:
-                UI.info(
+                UI.detail(
                     f"Missing host entries detected: {', '.join(unresolved)}. Attempting non-interactive fix..."
                 )
                 if self._apply_hosts_fix(unresolved):
@@ -115,7 +115,7 @@ class BaseHandler:
                     )
             else:
                 UI.warning(f"Missing host entries detected: {', '.join(unresolved)}")
-                UI.info("LDM can try to fix this by adding entries to /etc/hosts.")
+                UI.detail("LDM can try to fix this by adding entries to /etc/hosts.")
                 if UI.confirm("Add host entries? (Requires sudo)", "Y"):
                     return self._apply_hosts_fix(unresolved)
                 UI.die("Aborted. Hostnames must resolve to continue.")
@@ -244,7 +244,7 @@ class BaseHandler:
             if is_windows or is_wsl:
                 # Target the Windows hosts file
                 win_hosts = r"C:\Windows\System32\drivers\etc\hosts"
-                UI.info(
+                UI.detail(
                     f"Requesting permission to update Windows hosts file: {win_hosts}..."
                 )
 
@@ -262,12 +262,12 @@ class BaseHandler:
 
                 if is_wsl:
                     UI.success("Windows hosts file updated via WSL interop.")
-                    UI.info(
+                    UI.detail(
                         "WSL will sync this change automatically (on next restart or via DNS cache)."
                     )
             else:
                 # Standard Linux / macOS (non-WSL)
-                UI.info(f"Requesting elevated privileges to update: {hosts_path}")
+                UI.detail(f"Requesting elevated privileges to update: {hosts_path}")
                 UI.detail(f"Adding entries:\n{content_to_add.strip()}")
 
                 sudo_prefix = ["sudo", "-n"] if self.non_interactive else ["sudo"]
@@ -322,7 +322,7 @@ class BaseHandler:
             )
 
             try:
-                UI.info("Requesting permission to clean Windows hosts file...")
+                UI.detail("Requesting permission to clean Windows hosts file...")
                 subprocess.run(
                     [
                         exe,
@@ -338,7 +338,7 @@ class BaseHandler:
         else:
             # macOS / Linux
             hosts_path = "/etc/hosts"
-            UI.info(f"Requesting elevated privileges to clean: {hosts_path}")
+            UI.detail(f"Requesting elevated privileges to clean: {hosts_path}")
 
             try:
                 # Use sudo sed to surgically remove lines
@@ -469,7 +469,7 @@ class BaseHandler:
 
             if abs_existing != abs_current:
                 if not Path(abs_existing).exists():
-                    UI.info(
+                    UI.detail(
                         f"Stale registry entry found for project '{project_name}' at: {existing_path} (path no longer exists). Cleaning up..."
                     )
                     self.unregister_project(project_name)
@@ -499,7 +499,7 @@ class BaseHandler:
                             from ldm_core.utils import get_compose_cmd
 
                             compose_base = get_compose_cmd()
-                            UI.info(
+                            UI.detail(
                                 f"Tearing down conflicting stack at: {existing_path}..."
                             )
                             try:
@@ -515,7 +515,7 @@ class BaseHandler:
                                     f"Failed to run compose down for old project stack: {e}"
                                 )
 
-                        UI.info(
+                        UI.detail(
                             f"Unregistering existing project '{project_name}' from: {existing_path}"
                         )
                         self.unregister_project(project_name)
@@ -623,7 +623,7 @@ class BaseHandler:
                 actual_version = int(match.group(1))
                 if actual_version >= int(expected):
                     if self.verbose:
-                        UI.info(
+                        UI.detail(
                             f"Verified system Java version is JDK {actual_version} (>= {expected})"
                         )
                     return True
@@ -655,7 +655,7 @@ class BaseHandler:
                 actual_version = int(match.group(1))
                 if actual_version >= int(expected):
                     if self.verbose:
-                        UI.info(
+                        UI.detail(
                             f"Verified Gradle JVM version is JDK {actual_version} (>= {expected})"
                         )
                     return True
@@ -1327,7 +1327,7 @@ class BaseHandler:
                     UI.warning(f"Could not ensure root directory exists: {e}")
 
             if self.verbose:
-                UI.info("Synchronizing directory permissions via Docker...")
+                UI.detail("Synchronizing directory permissions via Docker...")
 
             import uuid
 
@@ -1386,12 +1386,12 @@ class BaseHandler:
                     # ... (rest of error handling) ...
                     if "NO_WRITE" in (verify_res or ""):
                         UI.error("FATAL: VOLUME MOUNT IS READ-ONLY")
-                        UI.info(
+                        UI.detail(
                             f"{UI.BYELLOW}Reason:{UI.COLOR_OFF} Docker can see the files, but the 'liferay' user cannot write to: {root}"
                         )
                     else:
                         UI.error("FATAL: VOLUME MOUNTING IS BROKEN")
-                        UI.info(
+                        UI.detail(
                             f"{UI.BYELLOW}Reason:{UI.COLOR_OFF} Docker cannot see the files in: {root}"
                         )
 
@@ -1410,19 +1410,19 @@ class BaseHandler:
                         arch = platform.machine().lower()
                         is_intel = "x86" in arch or "i386" in arch
 
-                        UI.info(f"\n{UI.CYAN}To fix this, run:{UI.COLOR_OFF}")
-                        UI.info("colima stop")
+                        UI.info("\nTo fix this, run:")
+                        UI.detail("colima stop")
 
                         if is_intel:
                             # Intel Macs (especially on Monterey) often need sshfs with :w
                             # We explicitly suggest adding :w to the HOME mount
-                            UI.info("colima start --mount /Users/$(whoami):w")
-                            UI.info(
+                            UI.detail("colima start --mount /Users/$(whoami):w")
+                            UI.detail(
                                 f"{UI.WHITE}Note: If write errors persist, try: 'colima stop' then 'colima start --vm-type vz --mount /Users/$(whoami):w'{UI.COLOR_OFF}"
                             )
                         else:
                             # Apple Silicon defaults to vz/virtiofs
-                            UI.info(
+                            UI.detail(
                                 f"colima start {mount_hint} --vm-type vz --mount-type virtiofs"
                             )
 
@@ -1520,7 +1520,7 @@ class BaseHandler:
             if hasattr(os, "getuid") and os.getuid() == 0:
                 UI.error("FATAL: RUNNING AS ROOT/SUDO IS PROHIBITED")
                 if platform.system().lower() == "linux":
-                    UI.info(
+                    UI.detail(
                         f"If you are using sudo because of Docker permissions, please run:\n"
                         f"{UI.CYAN}sudo usermod -aG docker $USER{UI.COLOR_OFF} and restart your terminal session.\n"
                     )
@@ -1582,7 +1582,7 @@ class BaseHandler:
         if not resolved_ip:
             if not silent:
                 UI.error(f"Hostname '{host_name}' does not resolve to any IP address.")
-                UI.info(
+                UI.detail(
                     f"Please add it to your local hosts file or run '{UI.WHITE}ldm doctor --fix-hosts{UI.COLOR_OFF}'."
                 )
             return False
@@ -1612,7 +1612,7 @@ class BaseHandler:
             UI.warning(
                 f"Hostname '{host_name}' resolves to non-local IP: {resolved_ip}"
             )
-            UI.info("It should resolve to 127.0.0.1 for local development.")
+            UI.detail("It should resolve to 127.0.0.1 for local development.")
         return False
 
     def cmd_fix_hosts(self, target=None):
@@ -1625,7 +1625,7 @@ class BaseHandler:
         # 1. Try to treat as a project first (non-fatal)
         root = self.detect_project_path(target, fatal=False)
         if root:
-            UI.info(f"Scanning project '{target}' for required hostnames...")
+            UI.detail(f"Scanning project '{target}' for required hostnames...")
             dns_ok, unresolved, non_local = self.validate_project_dns(root)
             needs_fix = unresolved + [h for h, ip in non_local]
 
@@ -1633,7 +1633,7 @@ class BaseHandler:
                 UI.success(f"All domains for project '{target}' resolve correctly.")
                 return True
 
-            UI.info(f"Found {len(needs_fix)} domain(s) needing fix.")
+            UI.detail(f"Found {len(needs_fix)} domain(s) needing fix.")
             return self._apply_hosts_fix(needs_fix)
 
         # 2. Otherwise treat as direct hostname

@@ -1941,7 +1941,7 @@ class DoctorRunner:
         if fixable_commands:
             UI.heading("Auto-Remediation")
             for cmd_str in fixable_commands:
-                UI.info(f"Applying fix: {UI.CYAN}{cmd_str}{UI.COLOR_OFF}")
+                UI.detail(f"Applying fix: {UI.CYAN}{cmd_str}{UI.COLOR_OFF}")
                 # Use the absolute path to the currently running LDM script
                 full_cmd = [
                     sys.executable,
@@ -1984,7 +1984,7 @@ class DoctorRunner:
         if target_domain:
             domains_to_check.append(target_domain)
         else:
-            UI.info("Scanning for active projects with SSL enabled...")
+            UI.detail("Scanning for active projects with SSL enabled...")
             roots = self.handler.manager.find_dxp_roots()
             for r in roots:
                 p_meta = self.handler.manager.read_meta(r["path"])
@@ -2060,7 +2060,7 @@ class DoctorRunner:
                     )
 
                     if getattr(self.args, "fix", False):
-                        UI.info("Auto-fix: Restarting Traefik proxy...")
+                        UI.detail("Auto-fix: Restarting Traefik proxy...")
                         try:
                             self.manager.infra.cmd_restart_proxy()
                         except Exception as e:
@@ -2077,7 +2077,7 @@ class DoctorRunner:
                         "Certificate is a valid LDM local development certificate."
                     )
                 else:
-                    UI.info("Certificate is valid but issued by a third party.")
+                    UI.detail("Certificate is valid but issued by a third party.")
 
             except subprocess.TimeoutExpired:
                 UI.error("Timeout fetching certificate. Is port 443 open?")
@@ -2617,7 +2617,7 @@ def _generate_debug_bundle(self, results, project_paths):
     bundle_name = f"ldm-debug-bundle-{timestamp}.zip"
     bundle_path = Path.cwd() / bundle_name
 
-    UI.info(f"Generating sanitized debug bundle: {bundle_name}...")
+    UI.detail(f"Generating sanitized debug bundle: {bundle_name}...")
 
     with zipfile.ZipFile(bundle_path, "w") as z:
         # 1. Doctor Report
@@ -2676,5 +2676,5 @@ def _generate_debug_bundle(self, results, project_paths):
             z.write(trace_log, "last-command.log")
 
     UI.success(f"Debug bundle created: {bundle_name}")
-    UI.info("Please attach this file to your GitHub Issue.")
+    UI.detail("Please attach this file to your GitHub Issue.")
     return bundle_path

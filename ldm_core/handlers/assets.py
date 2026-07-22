@@ -27,7 +27,9 @@ class AssetService:
         repo_url = "https://github.com/peterrichards-lr/liferay-docker-manager"
         download_url = f"{repo_url}/releases/download/{tag_name}/{seed_filename}"
 
-        UI.info(f"Checking for pre-warmed seed: {UI.CYAN}{seed_filename}{UI.COLOR_OFF}")
+        UI.detail(
+            f"Checking for pre-warmed seed: {UI.CYAN}{seed_filename}{UI.COLOR_OFF}"
+        )
 
         headers = {}
         token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GITHUB_PAT")
@@ -41,7 +43,7 @@ class AssetService:
 
         tmp_path = None
         if os.path.exists(cached_seed):
-            UI.info(f"Using cached seed: {seed_filename}")
+            UI.detail(f"Using cached seed: {seed_filename}")
             tmp_path = cached_seed
         else:
             if not UI.confirm(
@@ -142,7 +144,7 @@ class AssetService:
             if getattr(self.manager.args, "no_osgi_seed", False):
                 UI.debug("User opted out of OSGi state seeding.")
 
-            UI.info("Bootstrapping project from seed...")
+            UI.detail("Bootstrapping project from seed...")
             handler._extract_snapshot_archive(tmp_path, paths)
 
             success_msg = "Project bootstrapped from seed."
@@ -152,7 +154,7 @@ class AssetService:
             return True
         except Exception as e:
             UI.warning(f"Failed to extract bootstrap seed: {e}")
-            UI.info("Continuing with fresh/vanilla initialization...")
+            UI.detail("Continuing with fresh/vanilla initialization...")
             UI.interruptible_pause(5, "Press CTRL+C to cancel ")
             return True
 
@@ -191,7 +193,7 @@ class AssetService:
         cached_zip = cache_dir / "samples_latest.ldmp"
 
         if os.path.exists(cached_zip):
-            UI.info(f"Using cached samples: {cached_zip.name}")
+            UI.detail(f"Using cached samples: {cached_zip.name}")
             temp_zip = cached_zip
         else:
             urls = [
@@ -242,7 +244,7 @@ class AssetService:
             UI.success(f"Samples cached: {cached_zip.name}")
 
         try:
-            UI.info("Extracting samples...")
+            UI.detail("Extracting samples...")
             destination.mkdir(parents=True, exist_ok=True)
 
             extract_temp = cache_dir / "temp_extract_samples"
@@ -275,7 +277,7 @@ class AssetService:
         from ldm_core.constants import API_BASE_DXP
         from ldm_core.utils import discover_latest_tag
 
-        UI.info("Discovering default Liferay tag...")
+        UI.detail("Discovering default Liferay tag...")
         default_tag = (
             discover_latest_tag(
                 API_BASE_DXP,
@@ -307,7 +309,7 @@ class AssetService:
     def cmd_list_seeds(self):
         """Fetches and displays the list of available pre-warmed database seeds."""
         url = "https://api.github.com/repos/peterrichards-lr/liferay-docker-manager/releases/tags/seeded-states"
-        UI.info("Querying GitHub for available seeds...")
+        UI.detail("Querying GitHub for available seeds...")
 
         try:
             response = requests.get(url, headers={"User-Agent": "ldm-cli"}, timeout=10)
@@ -337,6 +339,6 @@ class AssetService:
 
         UI.success("\nAvailable Pre-Warmed Liferay Seeds:")
         for tag in sorted(tags, reverse=True):
-            UI.info(f"  • {tag}")
+            UI.detail(f"  • {tag}")
 
         return True

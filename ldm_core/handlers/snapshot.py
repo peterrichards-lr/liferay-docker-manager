@@ -86,7 +86,7 @@ class SnapshotService(BaseHandler):
         """Creates or manages snapshots of the project state."""
         is_dry_run = os.environ.get("LDM_DRY_RUN", "").lower() == "true"
         if is_dry_run:
-            UI.info(
+            UI.detail(
                 f"{UI.BYELLOW}[DRY RUN] Would create or manage snapshots for project: {project_id}{UI.COLOR_OFF}"
             )
             return
@@ -122,7 +122,7 @@ class SnapshotService(BaseHandler):
         from ldm_core.utils import safe_mkdir
 
         safe_mkdir(snap_dir, parents=True, exist_ok=True)
-        UI.info(f"Creating snapshot: {name}...")
+        UI.detail(f"Creating snapshot: {name}...")
 
         from ldm_core.utils import sanitize_id
 
@@ -191,7 +191,7 @@ class SnapshotService(BaseHandler):
     ):
         is_dry_run = os.environ.get("LDM_DRY_RUN", "").lower() == "true"
         if is_dry_run:
-            UI.info(
+            UI.detail(
                 f"{UI.BYELLOW}[DRY RUN] Would restore snapshot for project: {project_id}{UI.COLOR_OFF}"
             )
             return
@@ -212,7 +212,7 @@ class SnapshotService(BaseHandler):
             return
 
         if not (paths["root"] / "docker-compose.yml").exists():
-            UI.info("Scaffolding Docker environment for restore...")
+            UI.detail("Scaffolding Docker environment for restore...")
             self.manager.runtime.cmd_run(
                 project_id=project_meta.get("container_name") or paths["root"].name,
                 no_up=True,
@@ -246,7 +246,8 @@ class SnapshotService(BaseHandler):
 
             if verify_enabled:
                 if sha_file.exists():
-                    UI.info("Verifying snapshot integrity...")
+                    UI.phase(1, 4, "Analyzing Snapshot Integrity")
+                    UI.detail("Verifying snapshot integrity...")
                     from ldm_core.utils import calculate_sha256
 
                     actual_sha = calculate_sha256(files_tar)
@@ -268,6 +269,7 @@ class SnapshotService(BaseHandler):
                 UI.warning("Integrity verification disabled via --no-verify.")
                 UI.interruptible_pause(3, "Press CTRL+C to cancel ")
 
+            UI.phase(2, 4, "Restoring Workspace Data")
             self.archive._extract_snapshot_archive(files_tar, paths)
 
             if "files" in paths:
@@ -290,6 +292,7 @@ class SnapshotService(BaseHandler):
         else:
             UI.die(f"Snapshot files not found in {choice_path}")
 
+        UI.phase(3, 4, "Finalizing Metadata")
         snap_meta = self.manager.read_meta(choice_path / "meta")
 
         custom_env = snap_meta.get("custom_env")
@@ -311,6 +314,7 @@ class SnapshotService(BaseHandler):
                 project_meta=project_meta,
             )
 
+        UI.phase(4, 4, "Restoring Database Components")
         self.database._restore_database(
             paths, choice_path, project_meta, container_name
         )
@@ -322,7 +326,7 @@ class SnapshotService(BaseHandler):
         UI.success("Restore complete.")
 
         if self.flag_reindex(paths["root"]):
-            UI.info("  + Scheduled automatic search reindex for next boot.")
+            UI.detail("  + Scheduled automatic search reindex for next boot.")
         else:
             UI.warning("  ! Could not schedule automatic reindex (metadata missing).")
 
@@ -337,7 +341,7 @@ class SnapshotService(BaseHandler):
             ):
                 self.manager.runtime.cmd_run(project_id)
             else:
-                UI.info(
+                UI.detail(
                     f"Run {UI.CYAN}ldm run {paths['root'].name}{UI.COLOR_OFF} to start the project."
                 )
 
@@ -352,7 +356,7 @@ class SnapshotService(BaseHandler):
         """Bundles a project snapshot into a .ldmp package for GitHub release."""
         is_dry_run = os.environ.get("LDM_DRY_RUN", "").lower() == "true"
         if is_dry_run:
-            UI.info(f"[DRY RUN] Would package project: {project_id}")
+            UI.detail(f"[DRY RUN] Would package project: {project_id}")
             return
 
         root = self.manager.detect_project_path(project_id)
@@ -386,7 +390,7 @@ class SnapshotService(BaseHandler):
             # Locate latest snapshot
             backups = self.utils._list_backups(paths)
             if not backups:
-                UI.info("No existing snapshots found. Creating a new one...")
+                UI.detail("No existing snapshots found. Creating a new one...")
                 self.cmd_snapshot(project_id)
                 backups = self.utils._list_backups(paths)
             if not backups:
@@ -395,7 +399,7 @@ class SnapshotService(BaseHandler):
             latest_snap_dir = backups[-1]["path"]
         else:
             # Create a fresh snapshot
-            UI.info("Creating a fresh snapshot for the package...")
+            UI.detail("Creating a fresh snapshot for the package...")
             self.cmd_snapshot(project_id)
             backups = self.utils._list_backups(paths)
             if not backups:
@@ -442,7 +446,7 @@ class SnapshotService(BaseHandler):
         package_file = output_path / f"{project_name}.ldmp"
         sha_file = output_path / f"{project_name}.ldmp.sha256"
 
-        UI.info(f"Generating LDM package at: {package_file}...")
+        UI.detail(f"Generating LDM package at: {package_file}...")
         try:
             with tarfile.open(package_file, "w:gz") as tar:
                 for item in latest_snap_dir.iterdir():

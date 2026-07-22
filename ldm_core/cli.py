@@ -2119,15 +2119,15 @@ def _check_root_safety(args):
                 )
                 if not allow_root:
                     UI.error("Security Risk: Do not run LDM with 'sudo'.")
-                    UI.info(
+                    UI.detail(
                         "Running as root causes cache ownership issues in your home directory (~/.shiv).\n"
                         "LDM will prompt for your password only when elevated privileges are needed (e.g. hosts file updates)."
                     )
-                    UI.info(
+                    UI.detail(
                         f"\nSee troubleshooting: {UI.CYAN}https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/INSTALLATION.md#troubleshooting-sudo--root-issues{UI.COLOR_OFF}"
                     )
                     if platform.system().lower() == "linux":
-                        UI.info(
+                        UI.detail(
                             f"\nIf you are using sudo because of Docker permissions, please run:\n"
                             f"{UI.CYAN}sudo usermod -aG docker $USER{UI.COLOR_OFF} and restart your terminal session."
                         )

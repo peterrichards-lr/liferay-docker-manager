@@ -36,7 +36,7 @@ class DatabaseSnapshotService:
                 ["docker", "ps", "-q", "-f", f"name=^{db_container}$"]
             ):
                 db_snapshot_file = snap_dir / "database.sql"
-                UI.info(f"Triggering orchestrated database snapshot ({db_type})...")
+                UI.detail(f"Triggering orchestrated database snapshot ({db_type})...")
 
                 db_name = "lportal"
                 if db_mode == "shared":
@@ -134,7 +134,7 @@ class DatabaseSnapshotService:
                     with open(str(sql_file), encoding="utf-8", errors="ignore") as f_in:
                         first_chunk = f_in.read(4096)
                         if "\\restrict" in first_chunk:
-                            UI.info(
+                            UI.detail(
                                 "  + Scrubbing Cloud-specific meta-commands from SQL dump..."
                             )
                             f_in.seek(0)
@@ -157,7 +157,7 @@ class DatabaseSnapshotService:
                 if "temp_sql" in locals() and temp_sql.exists():
                     temp_sql.unlink(missing_ok=True)
 
-            UI.info(f"Triggering orchestrated database restore ({db_type})...")
+            UI.detail(f"Triggering orchestrated database restore ({db_type})...")
 
             self.manager.runtime.cmd_stop(paths["root"].name, service="liferay")
 
@@ -187,7 +187,7 @@ class DatabaseSnapshotService:
             if not db_container or not self.manager.run_command(
                 ["docker", "ps", "-q", "-f", f"name=^{db_container}$"]
             ):
-                UI.info("  + Starting database container for restore...")
+                UI.detail("  + Starting database container for restore...")
                 if db_mode == "shared":
                     self.manager.infra.setup_global_database()
                 else:
@@ -470,7 +470,7 @@ class DatabaseSnapshotService:
 
             if not success:
                 if has_baseline and baseline_file.exists():
-                    UI.info("Restoring database to the pre-restore baseline...")
+                    UI.detail("Restoring database to the pre-restore baseline...")
                     _wipe_db()
                     try:
                         with open(baseline_file, "rb") as bf_read:
@@ -480,7 +480,7 @@ class DatabaseSnapshotService:
                                 check=True,
                                 capture_output=True,
                             )
-                        UI.info(
+                        UI.detail(
                             "Original database data has been successfully restored."
                         )
                     except Exception as e:
@@ -527,7 +527,7 @@ class DatabaseSnapshotService:
                     )
 
                 if db_type == "postgresql":
-                    UI.info(f"  - Synchronizing Virtual Host entries to: {host_name}")
+                    UI.detail(f"  - Synchronizing Virtual Host entries to: {host_name}")
                     self.manager.run_command(
                         [
                             "docker",
@@ -544,7 +544,7 @@ class DatabaseSnapshotService:
                         check=False,
                     )
                 elif db_type in ["mysql", "mariadb"]:
-                    UI.info(f"  - Synchronizing Virtual Host entries to: {host_name}")
+                    UI.detail(f"  - Synchronizing Virtual Host entries to: {host_name}")
                     self.manager.run_command(
                         [
                             "docker",

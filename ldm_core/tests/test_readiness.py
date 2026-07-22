@@ -199,8 +199,8 @@ class TestReadiness(unittest.TestCase):
             mock_success.assert_any_call(
                 "Auto-Thaw successful. Liferay should now proceed."
             )
-            # Also it should break the loop and succeed
-            mock_success.assert_any_call("Liferay is ready! (Total time: 2m 15s)")
+            # Verify it completed successfully
+            mock_success.assert_any_call("Liferay is ready  (2m 15s)")
 
     @patch("ldm_core.ui.UI.success")
     @patch("ldm_core.ui.UI.info")
@@ -243,7 +243,7 @@ class TestReadiness(unittest.TestCase):
             self.handler.handler.readiness._wait_for_ready(project_meta, "test.local")
 
             # Verify we saw the reindex message
-            mock_success.assert_any_call("Liferay is ready! (Total time: 0s)")
+            mock_success.assert_any_call("Liferay is ready  (0s)")
             # Metadata should have been updated to clear flag
             self.assertEqual(project_meta["reindex_required"], "false")
 
@@ -320,7 +320,10 @@ class TestReadiness(unittest.TestCase):
                 self.handler, "detect_project_path", return_value=self.tmp_dir
             ) as mock_detect,
         ):
-            project_meta = {"id": "test-project-123", "container_name": "liferay-test"}
+            project_meta = {
+                "project_name": "test-project-123",
+                "container_name": "liferay-test",
+            }
             self.handler.handler.readiness._wait_for_ready(project_meta, "localhost")
 
             # Check that detect_project_path was called with project_id="test-project-123"

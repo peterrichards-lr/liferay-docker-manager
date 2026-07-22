@@ -1075,11 +1075,11 @@ class TestComposerService(unittest.TestCase):
         self.composer._build_liferay_service(
             paths, meta, "localhost", project_name, False, []
         )
-        mock_ui.info.assert_any_call("Utilizing Global Shared Infrastructure")
+        mock_ui.detail.assert_any_call("Utilizing Global Shared Infrastructure")
 
         mock_ui.reset_mock()
         self.composer._build_db_service(meta, project_name)
-        mock_ui.info.assert_any_call("Utilizing Global Shared Infrastructure")
+        mock_ui.detail.assert_any_call("Utilizing Global Shared Infrastructure")
 
     @patch("ldm_core.handlers.composer.dict_to_yaml")
     @patch("ldm_core.utils.safe_write_text")

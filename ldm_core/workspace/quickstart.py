@@ -5,7 +5,7 @@ if TYPE_CHECKING:
 from ldm_core.ui import UI
 
 
-def cmd_quickstart(self, template_name, share=False, share_subdomain=None):
+def cmd_quickstart(self, template_name, share=False, share_subdomain=None):  # noqa: C901, PLR0912, PLR0915
     """Bootstraps a predefined accelerator stack, imports, seeds, runs, and exposes it."""
     templates = {
         "aica": {
@@ -53,9 +53,15 @@ def cmd_quickstart(self, template_name, share=False, share_subdomain=None):
 
     UI.heading(f"Starting Quickstart: {template_name.upper()}")
 
-    # 1. Import workspace repository
-    UI.info(f"Importing template workspace from: {repo_url}...")
-    self.cmd_import(repo_url, project_id=project_name)
+    # Cancellation Gate Hoisting (Issue #758)
+    project_path = self.manager.detect_project_path(project_name)
+    if project_path and project_path.exists():
+        UI.warning(f"Project '{project_name}' already exists.")
+        UI.interruptible_pause(3, "Press CTRL+C to cancel ")
+
+    # Phase 1: Download & Provision
+    UI.phase(1, 4, f"Provisioning '{template_name}' from GitHub")
+    self.cmd_import(repo_url, project_id=project_name, no_run=True)
 
     # Detect paths after import
     project_path = self.manager.detect_project_path(project_name)
@@ -64,6 +70,11 @@ def cmd_quickstart(self, template_name, share=False, share_subdomain=None):
         return
 
     project_meta = self.manager.read_meta(project_path)
+
+    # Let downstream components know this was initiated via quickstart
+    project_meta["is_quickstart"] = True
+    self.manager.write_meta(project_path, project_meta)
+
     tag = project_meta.get("tag")
     db_type = project_meta.get("db_type", "postgresql")
 
@@ -74,7 +85,8 @@ def cmd_quickstart(self, template_name, share=False, share_subdomain=None):
         )
         UI.interruptible_pause(3, "Press CTRL+C to cancel ")
 
-    # 2. Determine search mode
+    # Phase 2: Configuration
+    UI.phase(2, 4, "Configuring Environment")
     default_shared = (
         "true" if self.manager.parse_version(tag) >= (2025, 1, 0) else "false"
     )
@@ -91,23 +103,26 @@ def cmd_quickstart(self, template_name, share=False, share_subdomain=None):
     pkg_has_db = (
         str(project_meta.get("package_includes_database", "false")).lower() == "true"
     )
+
+    # Phase 3: Infrastructure (Database Seeding)
+    UI.phase(3, 4, "Setting up Infrastructure")
     if restored_from_pkg and pkg_has_db:
-        UI.info(
+        UI.detail(
             "Project was restored from LDM package snapshot. Skipping database seeding."
         )
     else:
-        # 3. Apply fresh database seed
-        UI.info(f"Seeding database for {tag} ({db_type}/{search_mode})...")
+        UI.detail(f"Seeding database for {tag} ({db_type}/{search_mode})...")
         paths = self.manager.setup_paths(project_path)
         if not self.manager.assets._fetch_seed(tag, db_type, search_mode, paths):
-            UI.info(
+            UI.detail(
                 "No pre-warmed seed applied. Liferay will initialize the database schema on first boot (this may take several minutes)."
             )
 
-        # 4. Start stack and launch browser
-        UI.info("Starting quickstart services stack...")
-        self.manager.runtime.cmd_run(project_name, browser=True)
-    # 5. Share via tunnel if requested
+    # Phase 4: Start Stack
+    UI.phase(4, 4, "Starting Services Stack")
+
     if share:
-        UI.info("Exposing quickstart tunnel...")
+        UI.detail("Exposing quickstart tunnel...")
         self.manager.share.cmd_start(project_name, subdomain=share_subdomain)
+
+    self.manager.runtime.cmd_run(project_name, browser=True)

@@ -57,13 +57,13 @@ class OrchestrationService(BaseHandler):
             targets = [root]
 
         if not targets:
-            UI.info("No projects found to start.")
+            UI.detail("No projects found to start.")
             return
 
         compose_base = get_compose_cmd()
         capture = not (UI.INFO_MODE or UI.VERBOSE)
         for root in targets:
-            UI.info(f"Starting project: {root.name}...")
+            UI.detail(f"Starting project: {root.name}...")
             with ProjectLock(root):
                 cmd = [*compose_base, "start"]
                 if service:
@@ -81,13 +81,13 @@ class OrchestrationService(BaseHandler):
                 targets = [root]
 
         if not targets:
-            UI.info("No projects found to stop.")
+            UI.detail("No projects found to stop.")
             return
 
         compose_base = get_compose_cmd()
         capture = not (UI.INFO_MODE or UI.VERBOSE)
         for root in targets:
-            UI.info(f"Stopping project: {root.name}...")
+            UI.detail(f"Stopping project: {root.name}...")
             cmd = [*compose_base, "stop"]
             if service:
                 cmd.append(service)
@@ -104,13 +104,13 @@ class OrchestrationService(BaseHandler):
                 targets = [root]
 
         if not targets:
-            UI.info("No projects found to restart.")
+            UI.detail("No projects found to restart.")
             return
 
         compose_base = get_compose_cmd()
         capture = not (UI.INFO_MODE or UI.VERBOSE)
         for root in targets:
-            UI.info(f"Restarting project: {root.name}...")
+            UI.detail(f"Restarting project: {root.name}...")
             cmd = [*compose_base, "restart"]
             if service:
                 cmd.append(service)
@@ -130,7 +130,7 @@ class OrchestrationService(BaseHandler):
 
         if infra:
             if is_dry_run:
-                UI.info(
+                UI.detail(
                     f"{UI.BYELLOW}[Dry Run] Would tear down global Traefik infrastructure.{UI.COLOR_OFF}"
                 )
             else:
@@ -145,7 +145,7 @@ class OrchestrationService(BaseHandler):
                 targets = [root]
 
         if not targets and not infra:
-            UI.info("No projects found to tear down.")
+            UI.detail("No projects found to tear down.")
             return
 
         for root in targets:
@@ -161,14 +161,14 @@ class OrchestrationService(BaseHandler):
                     # We remove the primary host and any unresolved subdomains
                     to_clean = [host, *unresolved]
                     if is_dry_run:
-                        UI.info(
+                        UI.detail(
                             f"  {UI.BYELLOW}- [Dry Run] Would remove hosts entries: {', '.join(to_clean)}{UI.COLOR_OFF}"
                         )
                     else:
                         self.manager._remove_hosts_entries(hostnames=to_clean)
 
             if is_dry_run:
-                UI.info(
+                UI.detail(
                     f"  {UI.BYELLOW}- [Dry Run] Would run docker compose down -v --remove-orphans in {root.name}{UI.COLOR_OFF}"
                 )
             else:
@@ -213,11 +213,11 @@ class OrchestrationService(BaseHandler):
                         )
 
                         if is_dry_run:
-                            UI.info(
+                            UI.detail(
                                 f"  {UI.BYELLOW}- [Dry Run] Would drop database {db_name} from shared container {global_db_container}{UI.COLOR_OFF}"
                             )
                         else:
-                            UI.info(f"Dropping shared database schema: {db_name}")
+                            UI.detail(f"Dropping shared database schema: {db_name}")
                             drop_cmd = []
                             if db_type == "postgresql":
                                 drop_cmd = [
@@ -319,7 +319,7 @@ class OrchestrationService(BaseHandler):
 
         if services_to_up:
             for svc in sorted(services_to_up):
-                UI.info(f"Deploying service '{svc}'...")
+                UI.detail(f"Deploying service '{svc}'...")
                 self.manager.run_command(
                     [*get_compose_cmd(), "up", "-d", svc],
                     capture_output=False,
@@ -378,7 +378,7 @@ class OrchestrationService(BaseHandler):
         if not ssl_enabled and port != 80:
             url += f":{port}"
 
-        UI.info(f"Opening browser: {UI.CYAN}{url}{UI.COLOR_OFF}")
+        UI.detail(f"Opening browser: {UI.CYAN}{url}{UI.COLOR_OFF}")
         open_browser(url)
 
     def cmd_renew_ssl(self, project_id=None, all_projects=False):
@@ -396,7 +396,7 @@ class OrchestrationService(BaseHandler):
                 targets.append({"path": root, "meta": meta})
 
         if not targets:
-            UI.info("No projects found for SSL renewal.")
+            UI.detail("No projects found for SSL renewal.")
             return
 
         actual_home = get_actual_home()
@@ -405,7 +405,7 @@ class OrchestrationService(BaseHandler):
         for target in targets:
             host_name = target["meta"].get("host_name")
             if host_name and host_name != "localhost":
-                UI.info(f"Renewing SSL for {UI.CYAN}{host_name}{UI.COLOR_OFF}...")
+                UI.detail(f"Renewing SSL for {UI.CYAN}{host_name}{UI.COLOR_OFF}...")
                 # Delete existing certs to force renewal
                 for f in [f"{host_name}.pem", f"{host_name}-key.pem"]:
                     if (cert_dir / f).exists():
@@ -430,11 +430,11 @@ class OrchestrationService(BaseHandler):
             meta = self.manager.read_meta(root)
             c_name = meta.get("container_name") or root.name
             if target == "all":
-                UI.info(
+                UI.detail(
                     f"  {UI.BYELLOW}- Would stop/tear down project stack (down).{UI.COLOR_OFF}"
                 )
             else:
-                UI.info(
+                UI.detail(
                     f"  {UI.BYELLOW}- Would stop project stack if running.{UI.COLOR_OFF}"
                 )
 
@@ -442,13 +442,13 @@ class OrchestrationService(BaseHandler):
             for t in targets:
                 if t in ["data", "state"]:
                     volume_name = f"{c_name}-{t}"
-                    UI.info(
+                    UI.detail(
                         f"  {UI.BYELLOW}- Would delete Docker named volume: {volume_name}{UI.COLOR_OFF}"
                     )
                 paths = self.manager.setup_paths(root)
                 path = paths.get(t)
                 if path and path.exists():
-                    UI.info(
+                    UI.detail(
                         f"  {UI.BYELLOW}- Would delete host directory: {path.relative_to(root) if path.is_relative_to(root) else path}{UI.COLOR_OFF}"
                     )
             UI.success(
@@ -553,7 +553,7 @@ class OrchestrationService(BaseHandler):
         # LDM-381: Resolve the actual container name using labels
         target_container = self.manager.resolve_container(root.name, service_name)
 
-        UI.info(f"Entering container: {target_container}")
+        UI.detail(f"Entering container: {target_container}")
         try:
             subprocess.run(
                 ["docker", "exec", "-it", target_container, "/bin/bash"], check=False
@@ -574,7 +574,7 @@ class OrchestrationService(BaseHandler):
                 "Gogo shell is not exposed. Run 'ldm run --gogo-port <port>' to enable it."
             )
 
-        UI.info(f"Connecting to Gogo shell on localhost:{port}...")
+        UI.detail(f"Connecting to Gogo shell on localhost:{port}...")
         try:
             subprocess.run(["telnet", "localhost", str(port)], check=False)
         except FileNotFoundError:
@@ -606,16 +606,16 @@ class OrchestrationService(BaseHandler):
 
         is_dry_run = getattr(self.manager, "dry_run", False)
         if is_dry_run:
-            UI.info(f"Reseed {root.name} from {tag} ({db_type}/{search_mode})...")
-            UI.info(
+            UI.detail(f"Reseed {root.name} from {tag} ({db_type}/{search_mode})...")
+            UI.detail(
                 f"  {UI.BYELLOW}- [Dry Run] Would reset project stack (cmd_reset all).{UI.COLOR_OFF}"
             )
-            UI.info(
+            UI.detail(
                 f"  {UI.BYELLOW}- [Dry Run] Would fetch and extract new seed for tag: {tag}.{UI.COLOR_OFF}"
             )
             up_flag = getattr(self.manager.args, "up", False)
             if up_flag:
-                UI.info(
+                UI.detail(
                     f"  {UI.BYELLOW}- [Dry Run] Would start the project containers (cmd_run).{UI.COLOR_OFF}"
                 )
             UI.success(
@@ -638,7 +638,7 @@ class OrchestrationService(BaseHandler):
                 ):
                     self.cmd_run(project_id)
                 else:
-                    UI.info(
+                    UI.detail(
                         f"Run {UI.CYAN}ldm run {root.name}{UI.COLOR_OFF} to start the project."
                     )
             else:

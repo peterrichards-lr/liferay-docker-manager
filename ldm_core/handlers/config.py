@@ -291,7 +291,7 @@ class ConfigService:
                 else:
                     try:
                         path.mkdir(parents=True, exist_ok=True)
-                        UI.info(f"Created missing mount directory: {path}")
+                        UI.detail(f"Created missing mount directory: {path}")
                     except Exception as e:
                         UI.warning(
                             f"Could not create missing mount directory '{name}' at {path}: {e}"
@@ -525,13 +525,13 @@ class ConfigService:
 
         # 4. Prompt & Download
         if self.manager.non_interactive:
-            UI.info(f"Auto-downloading sample pack for v{VERSION}...")
+            UI.detail(f"Auto-downloading sample pack for v{VERSION}...")
             if self.manager.assets.download_samples(VERSION, cache_versioned):
                 return cache_versioned
             UI.die("Failed to download sample pack.")
         else:
             UI.heading("On-Demand Sample Pack")
-            UI.info("Sample assets are not bundled with the standalone binary.")
+            UI.detail("Sample assets are not bundled with the standalone binary.")
             if UI.confirm(f"Download sample pack for v{VERSION} (~50MB)?", "Y"):
                 if self.manager.assets.download_samples(VERSION, cache_versioned):
                     UI.success("Sample pack ready.")
@@ -570,7 +570,7 @@ class ConfigService:
     def sync_samples(self, paths):
         """Sync global samples into the current project path with on-demand download support."""
         samples_root = self.get_samples_root()
-        UI.info("Syncing project samples...")
+        UI.detail("Syncing project samples...")
         try:
             shutil.copytree(
                 samples_root,
@@ -611,11 +611,11 @@ class ConfigService:
                 if not target_file.exists():
                     content = resource_file.read_text(encoding="utf-8")
                     safe_write_text(target_file, content)
-                    UI.info(f"  + Created {resource_file.name}")
+                    UI.detail(f"  + Created {resource_file.name}")
                     created_count += 1
 
             if created_count == 0:
-                UI.info("  (All baseline assets already present)")
+                UI.detail("  (All baseline assets already present)")
 
             UI.success(f"Baseline common assets initialized in: {common_dir}")
         except Exception as e:
@@ -923,10 +923,10 @@ class ConfigService:
 
             if to_update:
                 if is_dry_run:
-                    UI.info("[DRY RUN] Would update portal-ext.properties with:")
+                    UI.detail("[DRY RUN] Would update portal-ext.properties with:")
                     for k, v in to_update.items():
                         imp_str = " # !important" if k in winning_imp else ""
-                        UI.info(f"  {k}={v}{imp_str}")
+                        UI.detail(f"  {k}={v}{imp_str}")
                 else:
                     if not target_ext.exists():
                         with contextlib.suppress(PermissionError, OSError):
@@ -967,7 +967,7 @@ class ConfigService:
                 continue
             has_any_common = True
             if self.manager.verbose:
-                UI.info(f"Checking global assets in: {common_dir}")
+                UI.detail(f"Checking global assets in: {common_dir}")
 
             patterns = [
                 ("*.xml", paths["deploy"]),
@@ -1094,12 +1094,14 @@ class ConfigService:
                                             if old_path.exists() and old_path != dest:
                                                 with contextlib.suppress(OSError):
                                                     old_path.unlink()
-                                                    UI.info(
+                                                    UI.detail(
                                                         f"  - Removed conflicting project license: {old_path.name}"
                                                     )
                                 atomic_copy(match, dest)
                                 history.add(match.name)
-                                UI.info(f"  + Synced license from Common: {match.name}")
+                                UI.detail(
+                                    f"  + Synced license from Common: {match.name}"
+                                )
                             continue
 
                     if not dest.exists():
@@ -1118,7 +1120,7 @@ class ConfigService:
             UI.warning(
                 "Global or local 'common/' folder not found. Some baseline assets may be missing."
             )
-            UI.info(
+            UI.detail(
                 f"You can recreate the baseline by running: {UI.CYAN}ldm init-common{UI.COLOR_OFF}"
             )
 
@@ -1170,7 +1172,7 @@ class ConfigService:
         if list_levels:
             logging_json = root / "logging.json"
             if not logging_json.exists():
-                UI.info("No custom log levels defined.")
+                UI.detail("No custom log levels defined.")
                 return
             UI.heading(f"Log Levels for {root.name}")
             print(logging_json.read_text(encoding="utf-8"))
@@ -1226,7 +1228,7 @@ class ConfigService:
         if not key and not value:
             UI.heading("Global LDM Configuration")
             if not config:
-                UI.info("No global configuration found.")
+                UI.detail("No global configuration found.")
             else:
                 for k, v in sorted(config.items()):
                     print(f"  {k} = {v}")
@@ -1283,8 +1285,8 @@ class ConfigService:
         # View defaults
         resolved = defaults_mgr.get_resolved()
 
-        UI.info("\nLDM Cascading Defaults")
-        UI.info("======================")
+        UI.detail("\nLDM Cascading Defaults")
+        UI.detail("======================")
         for k in sorted(resolved.keys()):
             v = resolved[k]
             display_v = str(v)
@@ -1312,7 +1314,7 @@ class ConfigService:
                     db_mode = self.manager.defaults.global_defaults.get("database_mode")
                 if db_mode is None:
                     db_mode = "isolated"
-                UI.info(
+                UI.detail(
                     f"Global default database mode is set to: {UI.CYAN}{db_mode}{UI.COLOR_OFF}"
                 )
             else:
@@ -1325,13 +1327,13 @@ class ConfigService:
                         db_mode = meta.get("database_mode")
 
                 if db_mode is not None:
-                    UI.info(
+                    UI.detail(
                         f"Project database mode is set to: {UI.CYAN}{db_mode}{UI.COLOR_OFF} (local)"
                     )
                 else:
                     # Fallback to resolved defaults
                     db_mode = self.manager.defaults.get("database_mode", "isolated")
-                    UI.info(
+                    UI.detail(
                         f"Active database mode is: {UI.CYAN}{db_mode}{UI.COLOR_OFF} (from defaults)"
                     )
             return
@@ -1563,7 +1565,7 @@ class ConfigService:
 
         UI.heading(f"Rebuilding Properties for project: {root_path.name}")
         if is_dry_run:
-            UI.info("Running in DRY RUN mode. Showing properties changes:")
+            UI.detail("Running in DRY RUN mode. Showing properties changes:")
 
         self.sync_common_assets(paths, project_meta=project_meta)
 
@@ -1613,7 +1615,7 @@ class ConfigService:
 
         UI.heading(f"Resetting Properties for project: {root_path.name}")
         if is_dry_run:
-            UI.info("Running in DRY RUN mode. Showing properties reset cascade:")
+            UI.detail("Running in DRY RUN mode. Showing properties reset cascade:")
 
         temp_backup = None
         if target_pe.exists() and not is_dry_run:
@@ -1684,7 +1686,7 @@ class ConfigService:
             if self.manager.non_interactive:
                 # In non-interactive mode, if no vars are provided, we default to --import
                 # This enables 'ldm env <pid> -y' to sync all shell vars automatically.
-                UI.info(
+                UI.detail(
                     "No specific variables provided. Syncing all passthrough shell vars..."
                 )
                 for v in self.manager.get_host_passthrough_env(paths):
@@ -1698,7 +1700,7 @@ class ConfigService:
                         print(f"  {k}={v}")
                 passthroughs = self.manager.get_host_passthrough_env(paths)
                 if passthroughs:
-                    UI.info("\nHost Passthrough:")
+                    UI.detail("\nHost Passthrough:")
                     for v in passthroughs:
                         print(f"  {v}")
 
@@ -1781,14 +1783,14 @@ class ConfigService:
             meta["features"] = ",".join(sorted(features_set))
             self.manager.write_meta(root, meta)
             UI.success("Project metadata updated with new feature flags.")
-            UI.info(
+            UI.detail(
                 "Run 'ldm run' or 'ldm deploy' to apply changes to portal-ext.properties."
             )
             current_features = list(features_set)
 
         UI.heading(f"Feature Flags for '{root.name}'")
         if not current_features:
-            UI.info("No feature flags explicitly enabled for this project.")
+            UI.detail("No feature flags explicitly enabled for this project.")
         else:
             for f in sorted(current_features):
                 if f.lower() in ["dev", "beta", "release"]:
@@ -1899,7 +1901,7 @@ class ConfigService:
             # Synchronize environment files (.env)
             target_url = f"https://{project_meta['host_name']}"
             self._sync_env_files(root_path, target_url)
-            UI.info(
+            UI.detail(
                 "Tip: You can run 'ldm system fix-hosts' to update your local /etc/hosts file if needed."
             )
 
@@ -1928,7 +1930,7 @@ class ConfigService:
 
         # 3. Start back up if it was running and not --no-restart
         if is_running and not no_restart:
-            UI.info(
+            UI.detail(
                 f"Starting project container stack '{project_name}' in mode '{mode}'..."
             )
             self.manager.runtime.cmd_run(project_id=project_name)
@@ -1983,7 +1985,7 @@ class ConfigService:
         image_name = args.image
         service_name = args.service_name or image_name.split(":")[0].split("/")[-1]
 
-        UI.info(f"Inspecting image '{image_name}'...")
+        UI.detail(f"Inspecting image '{image_name}'...")
         try:
             output = subprocess.check_output(
                 ["docker", "image", "inspect", image_name],
@@ -1991,7 +1993,7 @@ class ConfigService:
                 stderr=subprocess.STDOUT,
             )
         except subprocess.CalledProcessError:
-            UI.info(f"Image '{image_name}' not found locally. Attempting to pull...")
+            UI.detail(f"Image '{image_name}' not found locally. Attempting to pull...")
             try:
                 subprocess.check_call(["docker", "pull", image_name])
                 output = subprocess.check_output(
@@ -2014,7 +2016,7 @@ class ConfigService:
         # Handle Ports
         if exposed_ports:
             UI.heading("Port Mappings")
-            UI.info(
+            UI.detail(
                 f"The image exposes the following ports: {', '.join(exposed_ports)}"
             )
             ports_config = []
@@ -2034,7 +2036,7 @@ class ConfigService:
         # Handle Volumes
         if volumes:
             UI.heading("Volume Mappings")
-            UI.info(f"The image declares the following volumes: {', '.join(volumes)}")
+            UI.detail(f"The image declares the following volumes: {', '.join(volumes)}")
             volumes_config = []
             for vol in volumes:
                 bind_path = UI.ask(
@@ -2084,6 +2086,6 @@ class ConfigService:
         UI.success(
             f"Added service '{service_name}' to custom containers configuration."
         )
-        UI.info(
+        UI.detail(
             "Run 'ldm run' or 'ldm deploy' to regenerate docker-compose.yml and bring up the updated stack."
         )

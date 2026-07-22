@@ -41,7 +41,7 @@ class LogsService(BaseHandler):
     ):
         """Shows logs for a project or global infrastructure."""
         if include_infra and export and not infra:
-            UI.info("Including infrastructure logs in export...")
+            UI.detail("Including infrastructure logs in export...")
             self.cmd_logs(
                 project_id=project_id,
                 service=service,
@@ -81,7 +81,7 @@ class LogsService(BaseHandler):
             return
 
         if infra:
-            UI.info("Showing infrastructure logs...")
+            UI.detail("Showing infrastructure logs...")
             containers = []
             if not service or "proxy" in service:
                 containers.append("liferay-proxy-global")
@@ -135,7 +135,7 @@ class LogsService(BaseHandler):
                     targets = [root]
 
             if not targets:
-                UI.info("No running projects found to show logs.")
+                UI.detail("No running projects found to show logs.")
                 return
 
             for root in targets:
@@ -169,7 +169,7 @@ class LogsService(BaseHandler):
                         )
                         continue
 
-                    UI.info(
+                    UI.detail(
                         f"Waiting for container {UI.CYAN}{root.name}{UI.COLOR_OFF} (service: {target_service})..."
                     )
                     start_wait = time.time()
@@ -177,7 +177,7 @@ class LogsService(BaseHandler):
                     while time.time() - start_wait < 60:
                         elapsed = int(time.time() - start_wait)
                         if elapsed > 0 and elapsed % 10 == 0:
-                            UI.info(
+                            UI.detail(
                                 f"  ... still waiting for '{root.name}' ({elapsed}s)"
                             )
 
@@ -203,7 +203,7 @@ class LogsService(BaseHandler):
                             )
                             continue
 
-                        UI.info(f"Waiting for logs directory in {root.name}...")
+                        UI.detail(f"Waiting for logs directory in {root.name}...")
                         start_wait = time.time()
                         while not log_dir.exists() and time.time() - start_wait < 30:
                             time.sleep(1)
@@ -316,7 +316,7 @@ class LogsService(BaseHandler):
             )
             return
 
-        UI.info(
+        UI.detail(
             f"Streaming logs for {UI.CYAN}{container_name}{UI.COLOR_OFF} "
             f"(instance {instance} of {max_instances})..."
         )
@@ -424,7 +424,7 @@ class LogsService(BaseHandler):
             UI.debug(f"Executing log command: {display_cmd}")
 
         if getattr(self.manager, "dry_run", False):
-            UI.info(
+            UI.detail(
                 f"{UI.BYELLOW}[DRY RUN] Would execute log command:{UI.COLOR_OFF} {display_cmd}"
             )
             return
@@ -508,7 +508,7 @@ class LogsService(BaseHandler):
                                     export_file = open(  # noqa: SIM115
                                         export_filename, "w", encoding="utf-8"
                                     )
-                                    UI.info(
+                                    UI.detail(
                                         f"Exporting logs to: {UI.CYAN}{export_filename}{UI.COLOR_OFF}"
                                     )
                                 export_file.write(stripped_line + "\n")

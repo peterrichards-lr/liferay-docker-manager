@@ -192,7 +192,7 @@ class TestWorkspaceImport(unittest.TestCase):
                     self.handler, "detect_project_path", return_value=project_dir
                 ),
                 patch.object(self.handler, "write_meta") as mock_write,
-                patch("ldm_core.utils.UI.info") as mock_info,
+                patch("ldm_core.utils.UI.detail") as mock_detail,
             ):
                 self.handler.non_interactive = True
                 self.handler.args.project = "My Awesome Project"
@@ -211,7 +211,7 @@ class TestWorkspaceImport(unittest.TestCase):
                 # Let's run it again with verbose=True to ensure the message triggers
                 self.handler.args.verbose = True
                 self.handler.workspace.cmd_import(str(source_dir), is_internal=True)
-                mock_info.assert_any_call(
+                mock_detail.assert_any_call(
                     "Project name 'My Awesome Project' contains invalid characters for Docker. Using 'My-Awesome-Project' for container names."
                 )
 
@@ -1238,6 +1238,7 @@ class TestWorkspaceQuickstart(unittest.TestCase):
         mock_cmd_import.assert_called_once_with(
             "https://github.com/peterrichards-lr/liferay-ai-commerce-accelerator.git",
             project_id="liferay-ai-commerce-accelerator",
+            no_run=True,
         )
         mock_fetch_seed.assert_called_once()
         mock_cmd_run.assert_called_once_with(
@@ -1283,6 +1284,7 @@ class TestWorkspaceQuickstart(unittest.TestCase):
         mock_cmd_import.assert_called_once_with(
             "https://github.com/peterrichards-lr/liferay-ai-commerce-accelerator.git",
             project_id="liferay-ai-commerce-accelerator",
+            no_run=True,
         )
         mock_fetch_seed.assert_called_once()
         mock_cmd_run.assert_called_once_with(
@@ -1328,6 +1330,7 @@ class TestWorkspaceQuickstart(unittest.TestCase):
             mock_cmd_import.assert_called_once_with(
                 "https://github.com/peterrichards-lr/liferay-ai-commerce-accelerator.git",
                 project_id="my-custom-aica",
+                no_run=True,
             )
             mock_fetch_seed.assert_called_once()
             mock_cmd_run.assert_called_once_with("my-custom-aica", browser=True)
@@ -1382,7 +1385,9 @@ class TestWorkspaceQuickstart(unittest.TestCase):
         )
 
         mock_cmd_import.assert_called_once_with(
-            "https://github.com/custom/my-aica.git", project_id="custom-aica-project"
+            "https://github.com/custom/my-aica.git",
+            project_id="custom-aica-project",
+            no_run=True,
         )
         mock_cmd_run.assert_called_once_with("custom-aica-project", browser=True)
         self.manager.share.cmd_start.assert_called_once_with(
@@ -1422,11 +1427,14 @@ class TestWorkspaceQuickstart(unittest.TestCase):
         mock_cmd_import.assert_called_once_with(
             "https://github.com/peterrichards-lr/liferay-ai-commerce-accelerator.git",
             project_id="liferay-ai-commerce-accelerator",
+            no_run=True,
         )
         mock_fetch_seed.assert_not_called()
-        mock_cmd_run.assert_not_called()
         self.manager.share.cmd_start.assert_called_once_with(
             "liferay-ai-commerce-accelerator", subdomain="my-aica-sub"
+        )
+        mock_cmd_run.assert_called_once_with(
+            "liferay-ai-commerce-accelerator", browser=True
         )
 
     @patch("ldm_core.handlers.workspace.WorkspaceService.cmd_import")
@@ -1463,6 +1471,7 @@ class TestWorkspaceQuickstart(unittest.TestCase):
         mock_cmd_import.assert_called_once_with(
             "https://github.com/peterrichards-lr/liferay-ai-commerce-accelerator.git",
             project_id="liferay-ai-commerce-accelerator",
+            no_run=True,
         )
         mock_fetch_seed.assert_called_once()
         mock_cmd_run.assert_called_once_with(

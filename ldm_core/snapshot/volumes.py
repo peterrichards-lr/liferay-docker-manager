@@ -45,7 +45,7 @@ class VolumesSnapshotService:
 
         try:
             if self.manager.verbose:
-                UI.info(
+                UI.detail(
                     f"  + Syncing volume {UI.CYAN}{volume_name}{UI.COLOR_OFF} ({direction})..."
                 )
             res = self.manager.run_command(cmd, check=False)
@@ -70,7 +70,7 @@ class VolumesSnapshotService:
         for target in ["data", "state"]:
             volume_name = f"{c_name}-{target}"
             host_path = paths[target]
-            UI.info(
+            UI.detail(
                 f"  + Dehydrating volume {UI.CYAN}{volume_name}{UI.COLOR_OFF} to host..."
             )
             self._sync_volume(host_path, volume_name, direction="from_volume")
@@ -87,7 +87,7 @@ class VolumesSnapshotService:
             volume_name = f"{c_name}-{target}"
             host_path = paths[target]
             if host_path.exists():
-                UI.info(
+                UI.detail(
                     f"  + Hydrating volume {UI.CYAN}{volume_name}{UI.COLOR_OFF} from host..."
                 )
                 self._sync_volume(host_path, volume_name, direction="to_volume")
@@ -123,7 +123,7 @@ class VolumesSnapshotService:
                     cached_hash = hash_file.read_text().strip()
                     if current_hash == cached_hash:
                         skip_extraction = True
-                        UI.info(
+                        UI.detail(
                             "  + Volume archive unchanged (hash matched). Skipping extraction."
                         )
                 except Exception:
@@ -185,7 +185,7 @@ class VolumesSnapshotService:
                         break
 
                 if is_simple:
-                    UI.info("  + Detected simplified FileSystemStore layout.")
+                    UI.detail("  + Detected simplified FileSystemStore layout.")
                     project_meta["dl_store_impl"] = (
                         "com.liferay.portal.store.file.system.FileSystemStore"
                     )

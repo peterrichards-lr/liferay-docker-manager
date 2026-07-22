@@ -10,7 +10,7 @@ def cmd_fork(self, source, target, snapshot=None):
     """Forks an existing project into a new one, cloning database and DL assets."""
     is_dry_run = os.environ.get("LDM_DRY_RUN", "").lower() == "true"
     if is_dry_run:
-        UI.info(
+        UI.detail(
             f"{UI.BYELLOW}[DRY RUN] Would fork project: {source} -> {target}{UI.COLOR_OFF}"
         )
         return target
@@ -54,7 +54,7 @@ def cmd_fork(self, source, target, snapshot=None):
             )
             return None
     else:
-        UI.info(f"Creating backup snapshot of '{source}' for forking...")
+        UI.detail(f"Creating backup snapshot of '{source}' for forking...")
         old_name = getattr(self.manager.args, "name", None)
         self.manager.args.name = f"Fork backup of {source}"
         try:
@@ -106,11 +106,11 @@ def cmd_fork(self, source, target, snapshot=None):
     self.manager.register_project(target, target_root, target_meta["host_name"])
 
     # 7. Restore the snapshot into the new target project
-    UI.info(f"Restoring cloned snapshot data to fork project '{target}'...")
+    UI.detail(f"Restoring cloned snapshot data to fork project '{target}'...")
     self.manager.snapshot.cmd_restore(project_id=target, backup_dir=str(snapshot_dir))
 
     # 8. Rebuild composition & configurations cleanly for target
-    UI.info(f"Synchronizing compose stack for fork project '{target}'...")
+    UI.detail(f"Synchronizing compose stack for fork project '{target}'...")
     self.manager.runtime.cmd_run(
         project_id=target_meta.get("container_name") or target_paths["root"].name,
         no_up=True,

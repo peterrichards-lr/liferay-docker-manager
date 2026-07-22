@@ -24,13 +24,13 @@ class DevService:
         # 1. Create Virtual Environment
         venv_dir = root / ".venv"
         if not venv_dir.exists():
-            UI.info("Creating virtual environment (.venv)...")
+            UI.detail("Creating virtual environment (.venv)...")
             from ldm_core.utils import run_command
 
             run_command([sys.executable, "-m", "venv", ".venv"])
             UI.success("Virtual environment created.")
         else:
-            UI.info("Virtual environment already exists.")
+            UI.detail("Virtual environment already exists.")
 
         # 2. Identify venv python/pip
         if platform.system().lower() == "windows":
@@ -44,7 +44,7 @@ class DevService:
             UI.die(f"Could not find python in venv: {venv_python}")
 
         # 3. Install Dependencies
-        UI.info("Installing dependencies...")
+        UI.detail("Installing dependencies...")
         from ldm_core.utils import run_command
 
         run_command([str(venv_pip), "install", "--upgrade", "pip"])
@@ -54,7 +54,7 @@ class DevService:
         UI.success("Dependencies installed.")
 
         # 4. Install pre-commit hooks
-        UI.info("Registering pre-commit and pre-push hooks...")
+        UI.detail("Registering pre-commit and pre-push hooks...")
         run_command(
             [
                 str(venv_python),
@@ -71,11 +71,11 @@ class DevService:
 
         UI.success("Development environment is ready!")
         if platform.system().lower() == "windows":
-            UI.info(
+            UI.detail(
                 f"To activate, run: {UI.CYAN}.\\.venv\\Scripts\\activate{UI.COLOR_OFF}"
             )
         else:
-            UI.info(
+            UI.detail(
                 f"To activate, run: {UI.CYAN}source .venv/bin/activate{UI.COLOR_OFF}"
             )
 
@@ -123,7 +123,7 @@ class DevService:
         current_version = VERSION
 
         if check:
-            UI.info("Checking version synchronization...")
+            UI.detail("Checking version synchronization...")
             p_toml = Path.cwd() / "pyproject.toml"
             if p_toml.exists():
                 match = re.search(r'version = "(.*?)"', p_toml.read_text())
@@ -136,12 +136,12 @@ class DevService:
 
         if set_version:
             new_version = set_version.lstrip("v")
-            UI.info(f"Setting version to: {UI.GREEN}v{new_version}{UI.COLOR_OFF}")
+            UI.detail(f"Setting version to: {UI.GREEN}v{new_version}{UI.COLOR_OFF}")
             self._apply_version_update(new_version, build_info)
             return
 
         if not bump_type and not promote:
-            UI.info(
+            UI.detail(
                 f"Current Version: {UI.CYAN}v{current_version}{UI.COLOR_OFF}{UI.get_beta_label(current_version)}"
             )
             return
@@ -162,7 +162,7 @@ class DevService:
         if promote:
             if not pre_release:
                 UI.die("Cannot promote: Current version is already a stable release.")
-            UI.info(
+            UI.detail(
                 f"Promoting {UI.YELLOW}{current_version}{UI.COLOR_OFF} to stable..."
             )
             new_version = base_version
@@ -187,7 +187,7 @@ class DevService:
         else:
             UI.die(f"Invalid bump type: {bump_type}")
 
-        UI.info(
+        UI.detail(
             f"Target Version:  {UI.GREEN}v{new_version}{UI.COLOR_OFF}{UI.get_beta_label(new_version)}"
         )
 
@@ -222,7 +222,7 @@ class DevService:
             header = f"## [v{new_version}] - {today}"
 
             if header not in content:
-                UI.info("Prepending version header to CHANGELOG.md...")
+                UI.detail("Prepending version header to CHANGELOG.md...")
                 # Insert after the initial boilerplate (first few lines)
                 lines = content.splitlines()
                 insert_idx = 0
@@ -273,10 +273,10 @@ class DevService:
                 updated_paths.append(rel_path)
                 UI.success(f"Updated {rel_path}")
 
-            UI.info(
+            UI.detail(
                 f"\n✅ Successfully updated to {UI.BOLD}v{new_version}{UI.COLOR_OFF}"
             )
-            UI.info("Note: Don't forget to commit and tag this change.")
+            UI.detail("Note: Don't forget to commit and tag this change.")
         except Exception as e:
             UI.error(f"Failed to update versions: {e}")
             sys.exit(1)

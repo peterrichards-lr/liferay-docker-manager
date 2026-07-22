@@ -60,7 +60,7 @@ class ImportValidationStage(PipelineStage):
 
             if verify_enabled:
                 if sha_file.exists():
-                    UI.info(f"Verifying integrity of {source.name}...")
+                    UI.detail(f"Verifying integrity of {source.name}...")
                     actual_sha = calculate_sha256(source)
                     expected_sha = sha_file.read_text().strip()
                     if actual_sha != expected_sha:
@@ -99,7 +99,7 @@ class ExtractionStage(PipelineStage):
             temp_dirs.append(temp_extract_dir)
             context.set("temp_dirs", temp_dirs)
 
-            UI.info("Extracting source archive...")
+            UI.detail("Extracting source archive...")
             from ldm_core.utils import safe_extract
 
             if source.suffix.lower() == ".zip":
@@ -168,7 +168,7 @@ class ProjectSetupStage(PipelineStage):
                 else context.get("source_resolved").name
             )
             if manager.non_interactive:
-                UI.info(f"Using default project name: {project_name}")
+                UI.detail(f"Using default project name: {project_name}")
             else:
                 project_name = UI.ask("Project Name", project_name)
 
@@ -183,7 +183,7 @@ class ProjectSetupStage(PipelineStage):
 
         if not is_brand_new:
             if manager.non_interactive:
-                UI.info(
+                UI.detail(
                     f"Project '{project_name}' exists. Overwriting in non-interactive mode."
                 )
             else:
@@ -192,12 +192,12 @@ class ProjectSetupStage(PipelineStage):
                     "Y",
                 ).upper()
                 if ans == "C":
-                    UI.info(f"Cleaning existing project directory: {project_path}")
+                    UI.detail(f"Cleaning existing project directory: {project_path}")
                     manager.safe_rmtree(project_path)
                     context.set("is_brand_new", True)
                 elif ans == "N":
                     context.set("overwrite", False)
-                    UI.info("Proceeding in 'skip existing' mode.")
+                    UI.detail("Proceeding in 'skip existing' mode.")
                 elif ans == "Y":
                     context.set("overwrite", True)
                 else:
@@ -220,7 +220,7 @@ class ProjectSetupStage(PipelineStage):
 
         safe_container_name = sanitize_id(project_name)
         if safe_container_name != project_name:
-            UI.info(
+            UI.detail(
                 f"Project name '{project_name}' contains invalid characters for Docker. "
                 f"Using '{safe_container_name}' for container names."
             )
@@ -275,7 +275,7 @@ class BackupStateStage(PipelineStage):
     def rollback(self, context: PipelineContext) -> None:
         context = typing.cast(ImportPipelineContext, context)
         manager = context.manager
-        UI.info("Rolling back ImportPipeline...")
+        UI.detail("Rolling back ImportPipeline...")
 
         # Resource Cleanup
         temp_dirs = context.get("temp_dirs", [])
@@ -304,7 +304,7 @@ class DatabaseRestoreStage(PipelineStage):
 
         # If it's an LDMP package, cmd_restore handles DB and Volumes
         if context.get("is_ldmp"):
-            UI.info("Restoring database and volume assets from LDM package...")
+            UI.detail("Restoring database and volume assets from LDM package...")
             try:
                 manager.snapshot.cmd_restore(
                     context.get("project_name"), backup_dir=context.get("backup_dir")
@@ -369,7 +369,7 @@ class VolumeSyncStage(PipelineStage):
 
         # Sync code elements directly
         # Standard structural folders
-        UI.info("Syncing workspace structure and files...")
+        UI.detail("Syncing workspace structure and files...")
         structural_mappings = {
             "configs": paths.get("configs"),
             "deploy": paths.get("deploy"),
@@ -477,7 +477,7 @@ class BuildWorkspaceStage(PipelineStage):
                     except Exception:
                         pass
                 try:
-                    UI.info(f"Executing clean build in {gradlew.parent}...")
+                    UI.detail(f"Executing clean build in {gradlew.parent}...")
                     manager.run_command(
                         [str(gradlew), "clean", "build", "-x", "test"],
                         capture_output=False,

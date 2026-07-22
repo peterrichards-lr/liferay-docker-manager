@@ -46,7 +46,7 @@ def run_cache(handler, target="all"):
             cleared.append("Sample pack cache")
 
     if not cleared:
-        UI.info("No caches found to clear.")
+        UI.detail("No caches found to clear.")
     else:
         UI.success(f"Successfully cleared: {', '.join(cleared)}")
 
@@ -106,12 +106,12 @@ def run_prune(handler):  # noqa: C901, PLR0912, PLR0915
                 orphans.append(name)
 
     if orphans:
-        UI.info(f"Found {len(orphans)} orphaned containers from deleted projects.")
+        UI.detail(f"Found {len(orphans)} orphaned containers from deleted projects.")
         if UI.INFO_MODE or UI.VERBOSE:
             for o in orphans:
                 print(f"  - {o}")
         if is_dry_run:
-            UI.info(
+            UI.detail(
                 f"{UI.BYELLOW}[Dry Run] Would remove orphaned containers: {', '.join(orphans)}{UI.COLOR_OFF}"
             )
         elif (
@@ -158,12 +158,12 @@ def run_prune(handler):  # noqa: C901, PLR0912, PLR0915
                         orphaned_snaps.append(s_name)
 
                 if orphaned_snaps:
-                    UI.info(f"Found {len(orphaned_snaps)} orphaned search snapshots.")
+                    UI.detail(f"Found {len(orphaned_snaps)} orphaned search snapshots.")
                     if UI.INFO_MODE or UI.VERBOSE:
                         for s in orphaned_snaps:
                             print(f"  - {s}")
                     if is_dry_run:
-                        UI.info(
+                        UI.detail(
                             f"{UI.BYELLOW}[Dry Run] Would remove orphaned search snapshots: {', '.join(orphaned_snaps)}{UI.COLOR_OFF}"
                         )
                     elif (
@@ -194,9 +194,9 @@ def run_prune(handler):  # noqa: C901, PLR0912, PLR0915
     # 3. Clean up .tmp files
     tmp_files = list(SCRIPT_DIR.glob("**/.*.tmp"))
     if tmp_files:
-        UI.info(f"Found {len(tmp_files)} temporary files.")
+        UI.detail(f"Found {len(tmp_files)} temporary files.")
         if is_dry_run:
-            UI.info(
+            UI.detail(
                 f"{UI.BYELLOW}[Dry Run] Would remove temporary files: {', '.join(str(f.relative_to(SCRIPT_DIR)) for f in tmp_files)}{UI.COLOR_OFF}"
             )
         elif (
@@ -229,12 +229,12 @@ def run_prune(handler):  # noqa: C901, PLR0912, PLR0915
                 orphaned_certs.append(f)
 
         if orphaned_certs:
-            UI.info(f"Found {len(orphaned_certs)} orphaned SSL artifacts.")
+            UI.detail(f"Found {len(orphaned_certs)} orphaned SSL artifacts.")
             if UI.INFO_MODE or UI.VERBOSE:
                 for c in orphaned_certs:
                     print(f"  - {c.name}")
             if is_dry_run:
-                UI.info(
+                UI.detail(
                     f"{UI.BYELLOW}[Dry Run] Would remove orphaned SSL certificates: {', '.join(f.name for f in orphaned_certs)}{UI.COLOR_OFF}"
                 )
             elif (
@@ -255,9 +255,9 @@ def run_prune(handler):  # noqa: C901, PLR0912, PLR0915
         if seed_files:
             size_bytes = sum(f.stat().st_size for f in seed_files)
             size_str = UI.format_size(size_bytes)
-            UI.info(f"Found {len(seed_files)} pre-warmed seeds ({size_str}).")
+            UI.detail(f"Found {len(seed_files)} pre-warmed seeds ({size_str}).")
             if is_dry_run:
-                UI.info(
+                UI.detail(
                     f"{UI.BYELLOW}[Dry Run] Would clear pre-warmed seed cache at {seeds_cache}{UI.COLOR_OFF}"
                 )
             elif prune_seeds or (
@@ -278,9 +278,9 @@ def run_prune(handler):  # noqa: C901, PLR0912, PLR0915
         if sample_files:
             size_bytes = sum(f.stat().st_size for f in sample_files)
             size_str = UI.format_size(size_bytes)
-            UI.info(f"Found sample extension cache ({size_str}).")
+            UI.detail(f"Found sample extension cache ({size_str}).")
             if is_dry_run:
-                UI.info(
+                UI.detail(
                     f"{UI.BYELLOW}[Dry Run] Would clear sample extension cache at {samples_cache}{UI.COLOR_OFF}"
                 )
             elif prune_samples or (
@@ -296,20 +296,20 @@ def run_prune(handler):  # noqa: C901, PLR0912, PLR0915
 
     # 7. Global Docker Pruning (Dangling Volumes)
     if is_dry_run:
-        UI.info(
+        UI.detail(
             f"{UI.BYELLOW}[Dry Run] Would run volume prune (docker volume prune -f).{UI.COLOR_OFF}"
         )
     elif prune_all or (
         not handler.manager.non_interactive
         and UI.confirm("Remove all dangling Docker volumes? (y/n/q)", "N")
     ):
-        UI.info("Pruning dangling Docker volumes...")
+        UI.detail("Pruning dangling Docker volumes...")
         UI.detail("Command: docker volume prune -f")
         run_command(["docker", "volume", "prune", "-f"], check=False)
         UI.success("Volume pruning complete.")
 
     if not handler.manager.non_interactive:
-        UI.info(
+        UI.detail(
             f"\n{UI.CYAN}ℹ{UI.COLOR_OFF} Hint: For a deep cleanup (including unused images), run: "
             f"{UI.WHITE}docker system prune -af{UI.COLOR_OFF}"
         )
@@ -317,7 +317,7 @@ def run_prune(handler):  # noqa: C901, PLR0912, PLR0915
     # 7. DNS Cleanup (Explicitly requested via --clean-hosts)
     if clean_hosts:
         if is_dry_run:
-            UI.info(
+            UI.detail(
                 f"{UI.BYELLOW}[Dry Run] Would remove ALL LDM-managed entries from hosts file.{UI.COLOR_OFF}"
             )
         elif prune_all or (
@@ -326,4 +326,4 @@ def run_prune(handler):  # noqa: C901, PLR0912, PLR0915
         ):
             handler.manager._remove_hosts_entries(all_ldm=True)
 
-    UI.info("Prune complete.")
+    UI.detail("Prune complete.")

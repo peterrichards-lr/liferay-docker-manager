@@ -100,7 +100,7 @@ class DatabaseService(BaseHandler):
         cmd = [*get_compose_cmd(), "-f", str(infra_compose)]
         cmd.extend(["start", "db"])
 
-        UI.info("Starting global shared database (db)...")
+        UI.detail("Starting global shared database (db)...")
         self.manager.run_command(cmd, capture_output=False)
 
     def cmd_stop(self):
@@ -115,7 +115,7 @@ class DatabaseService(BaseHandler):
         cmd = [*get_compose_cmd(), "-f", str(infra_compose)]
         cmd.extend(["stop", "db"])
 
-        UI.info("Stopping global shared database (db)...")
+        UI.detail("Stopping global shared database (db)...")
         self.manager.run_command(cmd, capture_output=False)
 
     def cmd_query(  # noqa: C901, PLR0911, PLR0912, PLR0915
@@ -178,7 +178,7 @@ class DatabaseService(BaseHandler):
         if not sql:
             if sys.stdin.isatty():
                 # Interactive stdin prompt
-                UI.info("Enter SQL query (SELECT-only, end with semicolon ';'):")
+                UI.detail("Enter SQL query (SELECT-only, end with semicolon ';'):")
                 sql = sys.stdin.read()
             else:
                 # Piped stdin
@@ -274,7 +274,7 @@ class DatabaseService(BaseHandler):
 
         raw_out = (res.stdout or b"").decode(errors="ignore").strip()
         if not raw_out:
-            UI.info("No rows returned.")
+            UI.detail("No rows returned.")
             return
 
         # 9. Format outputs
@@ -283,7 +283,7 @@ class DatabaseService(BaseHandler):
         try:
             headers = next(reader)
         except StopIteration:
-            UI.info("No rows returned.")
+            UI.detail("No rows returned.")
             return
 
         rows = list(reader)
