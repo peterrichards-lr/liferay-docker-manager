@@ -997,9 +997,6 @@ class BaseHandler:
                         and not getattr(BaseHandler, "_warned_home", False)
                     ):
                         BaseHandler._warned_home = True  # type: ignore[attr-defined]
-                    # Update local properties reference
-                    if p.name != "ldm_core":
-                        self.save_local_properties_reference(p)
                     return p
             except PermissionError:
                 # If we get permission denied, but the path exists, it's definitely the project
