@@ -1437,6 +1437,9 @@ class TestWorkspaceQuickstart(unittest.TestCase):
         self.manager.share.cmd_start.assert_called_once_with(
             "liferay-ai-commerce-accelerator", subdomain="my-aica-sub"
         )
+        mock_cmd_run.assert_called_once_with(
+            "liferay-ai-commerce-accelerator", browser=True
+        )
 
     @patch("ldm_core.handlers.workspace.WorkspaceService.cmd_import")
     @patch.object(MockWorkspaceManager, "detect_project_path")
