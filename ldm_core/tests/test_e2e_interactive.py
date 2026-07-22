@@ -70,12 +70,17 @@ class TestE2EInteractive(unittest.TestCase):
         tmp_dir = tempfile.mkdtemp()
         import shutil
 
+        import os
+        env = os.environ.copy()
+        env["LDM_IGNORE_DOCKER"] = "true"
+
         try:
             process = subprocess.run(
                 [*ldm_executable, "start", "non-existent-project-xyz"],
                 capture_output=True,
                 text=True,
                 cwd=str(tmp_dir),
+                env=env,
                 check=False,
             )
             output = process.stdout + process.stderr
@@ -98,6 +103,10 @@ class TestE2EInteractive(unittest.TestCase):
         tmp_dir = tempfile.mkdtemp()
         import shutil
 
+        import os
+        env = os.environ.copy()
+        env["LDM_IGNORE_DOCKER"] = "true"
+
         try:
             # Create a mock initialized project
             (Path(tmp_dir) / ".ldm.meta").write_text("{}")
@@ -105,10 +114,11 @@ class TestE2EInteractive(unittest.TestCase):
             (Path(tmp_dir) / "deploy").mkdir()
 
             process = subprocess.run(
-                [*ldm_executable, "-y", "run"],
+                [*ldm_executable, "-y", "run", "--no-up"],
                 capture_output=True,
                 text=True,
                 cwd=str(tmp_dir),
+                env=env,
                 check=False,
             )
             output = process.stdout + process.stderr
