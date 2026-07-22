@@ -319,16 +319,7 @@ class DatabaseService(BaseHandler):
         test_hash = "{PBKDF2WITHHMACSHA1}AAAAoAAT1iBt8tGXvh0pOQAAAAAAAAAAp2Q/Gh3D7VjWFUgM+4aG54uaQjw="
         target_email = "test@liferay.com"
 
-        update_sql = f"""
-        UPDATE User_
-        SET password_ = '{test_hash}',
-            passwordEncrypted = 1,
-            passwordReset = 0,
-            status = 0,
-            lockDate = NULL,
-            failedLoginAttempts = 0
-        WHERE emailAddress = '{target_email}';
-        """
+        update_sql = f"UPDATE User_ SET password_ = '{test_hash}', passwordEncrypted = 1, passwordReset = 0, status = 0, lockDate = NULL, failedLoginAttempts = 0 WHERE emailAddress = '{target_email}';"  # nosec B608
 
         from ldm_core.utils import resolve_infrastructure_mode, sanitize_id
 
