@@ -431,7 +431,7 @@ else
 fi
 
 echo ">> Verifying ldm run reconfigure UX message..."
-RUN_RECONFIG_OUT=$("$LDM_CMD" -y run . --no-wait 2>&1 || true)
+RUN_RECONFIG_OUT=$("$LDM_CMD" -y run . --no-wait --info 2>&1 || true)
 if echo "$RUN_RECONFIG_OUT" | grep -q "already exists and this command will reconfigure it"; then
     echo "✅ ldm run reconfigure UX message verified."
 else
