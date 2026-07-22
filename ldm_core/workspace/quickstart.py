@@ -54,7 +54,7 @@ def cmd_quickstart(self, template_name, share=False, share_subdomain=None):  # n
     UI.heading(f"Starting Quickstart: {template_name.upper()}")
 
     # Cancellation Gate Hoisting (Issue #758)
-    project_path = self.manager.detect_project_path(project_name)
+    project_path = self.manager.detect_project_path(project_name, for_init=True)
     if project_path and project_path.exists():
         UI.warning(f"Project '{project_name}' already exists.")
         UI.interruptible_pause(3, "Press CTRL+C to cancel ")
