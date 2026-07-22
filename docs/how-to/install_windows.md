@@ -56,7 +56,9 @@ scoop install git
 scoop bucket add extras
 
 # 4. Install SSL Tools
-scoop install mkcert openssl
+# Note: We use openssl-mingw instead of the default openssl to bypass a broken 
+# global Scoop dependency (innounp 404 error) that affects the standard installer.
+scoop install mkcert openssl-mingw
 ```
 
 _After Scoop finishes, open an **Administrator PowerShell** to initialize the trust store:_
@@ -68,4 +70,4 @@ mkcert -install
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-07-21* | *Last Reviewed: 2026-07-07*
+*Last Updated: 2026-07-22* | *Last Reviewed: 2026-07-22*

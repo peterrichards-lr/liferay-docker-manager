@@ -77,9 +77,23 @@ class AiService(BaseHandler):
         from mcp.client.session import ClientSession
         from mcp.client.stdio import stdio_client
 
-        UI.info(
-            f"🤖 AI is investigating using local tool: {UI.CYAN}{tool_name}({tool_args}){UI.COLOR_OFF}..."
-        )
+        mutating_tools = [
+            "start_project",
+            "stop_project",
+            "restart_project",
+            "execute_command",
+            "write_file",
+        ]
+        if tool_name in mutating_tools:
+            UI.warning(
+                f"🤖 AI wants to execute a mutating action: {UI.CYAN}{tool_name}({tool_args}){UI.COLOR_OFF}"
+            )
+            if not UI.confirm(f"Allow LDM AI to run {tool_name}?"):
+                return "User rejected the action."
+        else:
+            UI.info(
+                f"🤖 AI is investigating using local tool: {UI.CYAN}{tool_name}({tool_args}){UI.COLOR_OFF}..."
+            )
 
         # We spawn a subprocess connecting to our own `ldm mcp` command over stdio
         server_params = {"command": sys.executable, "args": [sys.argv[0], "mcp"]}
@@ -115,6 +129,7 @@ class AiService(BaseHandler):
                         "and file directory formats to this specific OS (e.g. Windows paths vs macOS/Linux paths). "
                         "To prevent flag and command option hallucinations, you MUST validate any LDM CLI command you recommend by querying the "
                         "`get_cli_help` tool first. Do not recommend flags or commands unless they are explicitly shown in the tool's help response. "
+                        "For complex tasks, output a structured plan before taking action, and perform a self-reflection critique before ending your turn. "
                         "You have access to other local tools to read project lists, logs, and configuration files. Do not ask for logs if you can fetch them yourself."
                     )
                 }
@@ -141,10 +156,19 @@ class AiService(BaseHandler):
 
         message = data["candidates"][0]["content"]
 
-        # Check if the AI wants to call a tool
-        if "parts" in message and any(
-            "functionCall" in part for part in message["parts"]
-        ):
+        iterations = 0
+        max_iterations = 5
+
+        while iterations < max_iterations:
+            iterations += 1
+
+            # Check if the AI wants to call a tool
+            if not (
+                "parts" in message
+                and any("functionCall" in part for part in message["parts"])
+            ):
+                break  # AI provided text without function calls, end the ReAct loop
+
             # Append AI's response to history
             messages.append(message)
 
@@ -183,6 +207,9 @@ class AiService(BaseHandler):
             response.raise_for_status()
             data = response.json()
             message = data["candidates"][0]["content"]
+
+        if iterations >= max_iterations:
+            UI.warning("🤖 AI reached the maximum iteration threshold.")
 
         # Print final response
         for part in message.get("parts", []):

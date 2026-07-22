@@ -166,7 +166,7 @@ jobs:
           # actionlint is a Go binary and does not belong in a Python-version matrix.
           # It is validated in the dedicated 'actionlint' job instead, which runs
           # the official binary directly and is unaffected by setuptools versions.
-          SKIP: bump-docs-timestamps,check-docs-review,actionlint
+          SKIP: bump-docs-timestamps,actionlint
         run: |
           pre-commit run --all-files --hook-stage pre-commit --show-diff-on-failure
 

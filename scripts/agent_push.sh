@@ -22,11 +22,11 @@ else
 fi
 
 echo "=> Running pre-commit hooks (Quality Gate)..."
-if ! SKIP=semgrep,detect-secrets .pytest_venv/bin/pre-commit run --all-files; then
+if ! SKIP=bump-docs-timestamps,actionlint,semgrep,detect-secrets .venv/bin/python3 -m pre_commit run --all-files; then
   echo "=> [WARN] Pre-commit hooks failed or auto-formatted files."
   echo "=> Automatically staging any hook modifications and retrying..."
   git add .
-  if ! SKIP=semgrep,detect-secrets .pytest_venv/bin/pre-commit run --all-files; then
+  if ! SKIP=bump-docs-timestamps,actionlint,semgrep,detect-secrets .venv/bin/python3 -m pre_commit run --all-files; then
     echo "=> [ERROR] Pre-commit hooks failed again. Manual intervention required."
     exit 1
   fi
