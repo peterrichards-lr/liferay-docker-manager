@@ -379,7 +379,7 @@ try {
     }
 
     Write-Host ">> Verifying ldm run reconfigure UX message..."
-    $runReconfigOut = & $LDM_CMD -y run . --no-wait 2>&1
+    $runReconfigOut = & $LDM_CMD -y run . --no-wait --info 2>&1
     if ($runReconfigOut -match "already exists and this command will reconfigure it") {
         Write-Host "[SUCCESS] ldm run reconfigure UX message verified."
     } else {
