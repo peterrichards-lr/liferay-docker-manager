@@ -32,7 +32,7 @@ LCP_CLI_DOWNLOAD_URL = (
 
 # --- Default Project Data ---
 DEFAULT_ADMIN_EMAIL = "test@liferay.com"
-DEFAULT_ADMIN_PASSWORD = "test"
+DEFAULT_ADMIN_PASSWORD = "test"  # pragma: allowlist secret
 
 META_VERSION = "2"
 MIN_META_VERSION = 2
