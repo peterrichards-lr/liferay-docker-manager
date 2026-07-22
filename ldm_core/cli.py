@@ -1780,6 +1780,13 @@ def get_parser():  # noqa: PLR0915
         help="Explicitly bypass query execution prompt / config check",
     )
 
+    db_reset_admin = db_subparsers.add_parser(
+        "reset-admin",
+        help="Reset the default admin user (test@liferay.com) password to 'test' and unlock the account",
+    )
+    db_reset_admin.add_argument("project", nargs="?")
+    db_reset_admin.add_argument("-p", "--project", dest="project_flag")
+
     # Namespace: system
     system = subparsers.add_parser(
         "system",

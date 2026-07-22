@@ -52,7 +52,7 @@ def run_info(  # noqa: C901, PLR0912, PLR0915
             UI.warning(f"No credentials of type '{credential_type}' found.")
             return
 
-        pwd_key = "pass" + "word"
+        pwd_key = "pass" + "word"  # pragma: allowlist secret
         if password_only:
             # Print only the raw password (no newline for easy scripting piping if possible, though print() adds one)
             pwd = target_cred.get(pwd_key, "")
