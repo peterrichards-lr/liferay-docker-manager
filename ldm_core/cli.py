@@ -1181,6 +1181,16 @@ def get_parser():  # noqa: PLR0915
         action="store_true",
         help="Print only the project credentials and exit (useful for scripting)",
     )
+    info.add_argument(
+        "--credential-type",
+        default="admin",
+        help="Specify the credential type to extract (default: admin)",
+    )
+    info.add_argument(
+        "--password-only",
+        action="store_true",
+        help="Output only the raw password string for piping into other commands",
+    )
     reset = subparsers.add_parser("reset", parents=[base_sub_parent])
     reset.add_argument("project", nargs="?")
     reset.add_argument(
@@ -2319,7 +2329,10 @@ def _build_command_map(args, manager):
             getattr(args, "project", None)
         ),
         ("info", None): lambda: manager.diagnostics.cmd_info(
-            getattr(args, "project", None)
+            getattr(args, "project", None),
+            credentials_only=getattr(args, "credentials", False),
+            credential_type=getattr(args, "credential_type", "admin"),
+            password_only=getattr(args, "password_only", False),
         ),
         ("reset", None): lambda: manager.runtime.cmd_reset(
             getattr(args, "project", None), getattr(args, "target", "state")

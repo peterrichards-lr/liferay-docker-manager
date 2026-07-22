@@ -80,7 +80,9 @@ Displays a user-friendly, formatted view of a project's internal metadata (`.lif
 
 ```bash
 ldm info [project]
-ldm info [project] --credentials  # Print only the default or configured credentials
+ldm info [project] --credentials  # Print the default admin credentials block
+ldm info [project] --credentials --credential-type database  # Print the database credentials
+ldm info [project] --credentials --password-only  # Print ONLY the raw password string (useful for CI scripts: `export PASS=$(ldm info --credentials --password-only)`)
 ```
 
 ## `browser` (alias: `open`)

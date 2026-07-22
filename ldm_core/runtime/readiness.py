@@ -655,28 +655,47 @@ class ReadinessService(BaseHandler):
                         UI.raw(f"  Next:  ldm logs {project_id:<12}  View live logs")
                         UI.raw(f"         ldm snapshot {project_id:<8}  Take a backup")
 
-                        # Show custom banner notes if defined
+                        from ldm_core.constants import (
+                            DEFAULT_ADMIN_EMAIL,
+                            DEFAULT_ADMIN_PASSWORD,
+                        )
+
+                        credentials = project_meta.get("credentials", [])
+
+                        # Fallback for backwards compatibility
+                        if not credentials:
+                            credentials.append(
+                                {
+                                    "type": "admin",
+                                    "email": project_meta.get(
+                                        "admin_email", DEFAULT_ADMIN_EMAIL
+                                    ),
+                                    "password": DEFAULT_ADMIN_PASSWORD,
+                                }
+                            )
+
+                        for cred in credentials:
+                            ident = cred.get("email") or cred.get("username", "Unknown")
+                            cred_type = cred.get("type", "user")
+                            pwd = cred.get("password", "")
+                            desc = cred.get("description", "")
+
+                            UI.raw(
+                                f"  👤  [{cred_type.upper()}] {ident} / {UI.HIDDEN}{pwd}{UI.COLOR_OFF}"
+                            )
+                            if desc:
+                                UI.raw(f"      {desc}")
+
+                        UI.raw(
+                            f"      {UI.DIM}(password hidden, highlight to copy or use 'ldm info --credentials'){UI.COLOR_OFF}"
+                        )
+                        UI.raw("")
+
+                        # Print legacy banner notes if any (just in case they were using it for other things)
                         banner_notes = project_meta.get("banner_notes")
                         if banner_notes and isinstance(banner_notes, list):
                             for line in banner_notes:
                                 UI.raw(f"  📝  {line}")
-                            UI.raw("")
-                        else:
-                            from ldm_core.constants import (
-                                DEFAULT_ADMIN_EMAIL,
-                                DEFAULT_ADMIN_PASSWORD,
-                            )
-
-                            admin_email = project_meta.get(
-                                "admin_email", DEFAULT_ADMIN_EMAIL
-                            )
-
-                            UI.raw(
-                                f"  👤  {admin_email} / {UI.HIDDEN}{DEFAULT_ADMIN_PASSWORD}{UI.COLOR_OFF}"
-                            )
-                            UI.raw(
-                                f"      {UI.DIM}(password hidden, highlight to copy or use 'ldm info --credentials'){UI.COLOR_OFF}"
-                            )
                             UI.raw("")
 
                     is_legacy_expose = (
