@@ -135,6 +135,7 @@ class TrayService(BaseHandler):
                     ["launchctl", "unload", str(plist_file)],
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
+                    check=False,
                 )
                 subprocess.run(
                     ["launchctl", "load", str(plist_file)],
@@ -213,6 +214,7 @@ class TrayService(BaseHandler):
                         ["launchctl", "unload", str(plist_file)],
                         stdout=subprocess.DEVNULL,
                         stderr=subprocess.DEVNULL,
+                        check=False,
                     )
                 except Exception:
                     pass

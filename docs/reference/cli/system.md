@@ -377,6 +377,7 @@ The following is a comprehensive index of all registered CLI option flags and th
 - **`--no-run`**: Update the metadata without automatically restarting the stack.
 - **`--no-unicode`**: Disable Unicode characters in output and force ASCII safe-replacements.
 - **`--older-than`**: Delete snapshots older than the specified number of days.
+
 ## `tray`
 
 Launch the cross-platform LDM System Tray GUI application to monitor runtime container health, view active URLs, and launch/stop instances.
@@ -405,11 +406,8 @@ ldm tray --uninstall-autostart  # Remove launch-on-login autostart
 - **`--format`**: Specify output format (`json`, `table`, `csv`).
 - **`--global`**: Apply setting globally.
 - **`--help`**: Display CLI help menu.
-- **`--icon`**: Path to custom system tray app icon.
 - **`--index`** / **`-i`**: Select project by 1-based index from list.
-- **`--input`**: Path to input snapshot or archive file.
 - **`--leave-running`**: Leave workspace containers running after operation.
-- **`--leave-temporary-files`**: Retain temporary files for debugging.
 - **`--list`**: List items or URLs.
 - **`--no-ssl`**: Bypass local SSL/mkcert generation and use HTTP.
 - **`--non-interactive`**: Run in non-interactive mode.
