@@ -8,8 +8,10 @@ OUTNAME="ldm-local"
 INSTALL_PATH="/usr/local/bin/ldm"
 VENV_TMP=".venv_build_tmp"
 
-echo "🔨 Preparing build environment..."
-python3 -m venv "$VENV_TMP"
+PYTHON_BIN="${PYTHON:-$(command -v python3.14 || command -v python3.13 || command -v python3.12 || command -v python3.11 || command -v python3)}"
+
+echo "🔨 Preparing build environment using $PYTHON_BIN..."
+"$PYTHON_BIN" -m venv "$VENV_TMP"
 # shellcheck disable=SC1091
 source "$VENV_TMP/bin/activate"
 
@@ -30,7 +32,7 @@ open(path, 'w').write(content)
 "
 
 echo "🔨 Building LDM binary with Shiv..."
-shiv -e ldm_core.cli:main -o "$OUTNAME" -p '/usr/bin/env python3' .
+shiv -e ldm_core.cli:main -o "$OUTNAME" -p '/usr/bin/env python3' --no-compile .
 chmod +x "$OUTNAME"
 
 echo "🧹 Reverting build metadata..."
