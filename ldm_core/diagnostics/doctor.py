@@ -237,11 +237,13 @@ class DoctorRunner:
                 try:
                     for line in req_file.read_text().splitlines():
                         line = line.strip()
-                        if not line or line.startswith("#"):
+                        if not line or line.startswith("#") or line.startswith("-"):
                             continue
 
                         parts = line.split(";")
-                        name = parts[0].split("==")[0].strip()
+                        # Strip all PEP 440 version specifiers (>=, <=, !=, ~=, >, <, ==)
+                        # and PEP 508 extras/URL markers before looking up the package name.
+                        name = re.split(r"[><=!~\s@;\[]+", parts[0])[0].strip()
 
                         if len(parts) > 1:
                             marker_str = parts[1].strip()
