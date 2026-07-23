@@ -1,5 +1,6 @@
 import json
 import os
+import ssl
 import time
 
 from ldm_core.handlers.base import BaseHandler
@@ -231,30 +232,21 @@ class FragmentsService(BaseHandler):
             "Content-Type": "application/json",
         }
 
-        import ssl
+        # Use loopback transport for all admin API calls — bypasses SSL cert issues
+        # with custom hostnames (e.g. aica.local) where mkcert certs are not trusted
+        # by Python's OpenSSL bundle.  ext_base_url is preserved for template expansion.
+        internal_api_base_url = f"http://127.0.0.1:{lfr_port}"
 
         def api_request(method, path, payload=None):
-            url = f"{ext_base_url}{path}"
+            url = f"{internal_api_base_url}{path}"
             req = urllib.request.Request(url, headers=headers, method=method)
             if payload:
                 req.data = json.dumps(payload).encode("utf-8")
 
-            import ipaddress
-            from urllib.parse import urlparse
-
             ctx = ssl.create_default_context()
-            parsed_url = urlparse(url)
-            host = parsed_url.hostname or "localhost"
-
-            is_loopback = False
-            try:
-                is_loopback = ipaddress.ip_address(host).is_loopback
-            except ValueError:
-                is_loopback = host.lower() in ("localhost", "127.0.0.1", "::1")
-
-            if is_loopback:
-                ctx.check_hostname = False
-                ctx.verify_mode = ssl.CERT_NONE
+            # Always loopback — bypass SSL verification
+            ctx.check_hostname = False
+            ctx.verify_mode = ssl.CERT_NONE
 
             try:
                 with urllib.request.urlopen(req, context=ctx) as response:  # nosec B310
@@ -273,6 +265,109 @@ class FragmentsService(BaseHandler):
 
         max_retries = 60
         patched_count = 0
+        all_discovered_keys: set = set()
+        debug_page_tree: list = []
+
+        def extract_candidates(element):
+            """Collect all candidate key identifiers from a page element.
+
+            Probes the element itself, its definition/fragmentConfig sub-objects, and
+            the fragmentEntryLink structure used by the Headless Delivery API (2025.Q1+).
+            """
+            def_obj = element.get("definition", {})
+            if not isinstance(def_obj, dict):
+                def_obj = {}
+            frag_config = def_obj.get("fragmentConfig", {})
+            if not isinstance(frag_config, dict):
+                frag_config = {}
+
+            candidates = []
+            for obj in (element, def_obj, frag_config):
+                if isinstance(obj, dict):
+                    for field in (
+                        "externalReferenceCode",
+                        "fragmentKey",
+                        "fragmentEntryKey",
+                        "key",
+                        "id",
+                    ):
+                        val = obj.get(field)
+                        if val and isinstance(val, str):
+                            candidates.append(val)
+
+            # Also probe fragmentEntryLink structure (Headless Delivery API 2025.Q1+)
+            fel = element.get("fragmentEntryLink", {})
+            if isinstance(fel, dict):
+                val = fel.get("fragmentKey")
+                if val and isinstance(val, str):
+                    candidates.append(val)
+                entry = fel.get("fragmentEntry", {})
+                if isinstance(entry, dict):
+                    val = entry.get("fragmentEntryKey")
+                    if val and isinstance(val, str):
+                        candidates.append(val)
+
+            return candidates
+
+        def patch_fragments(element, page_name):
+            nonlocal patched_count
+            elem_type = str(element.get("type", "")).lower()
+            candidates = extract_candidates(element)
+            all_discovered_keys.update(candidates)
+
+            if candidates:
+                UI.debug(
+                    f"  [fragment-scan] page={page_name!r} type={elem_type!r} candidates={candidates}"
+                )
+
+            matched_key = None
+            for c in candidates:
+                if c in overrides:
+                    matched_key = c
+                    break
+                if c.lower() in overrides:
+                    matched_key = c.lower()
+                    break
+
+            is_fragment = (
+                elem_type in ("fragment", "fragmententry", "component", "widget")
+                or "fragment" in elem_type
+            )
+
+            if matched_key and is_fragment:
+                element_id = element.get("id")
+                if element_id:
+                    patch_payload = {
+                        "definition": {
+                            "config": overrides[matched_key],
+                            "fragmentConfig": overrides[matched_key],
+                        }
+                    }
+                    res = api_request(
+                        "PATCH",
+                        f"/o/headless-delivery/v1.0/page-elements/{element_id}",
+                        payload=patch_payload,
+                    )
+                    if res:
+                        UI.success(
+                            f"  -> Patched configuration for fragment '{matched_key}' on page '{page_name}'"
+                        )
+                        patched_count += 1
+
+            # Traverse all child array keys used by different layout element types
+            for child_key in (
+                "pageElements",
+                "columns",
+                "rows",
+                "elements",
+                "children",
+                "components",
+            ):
+                children = element.get(child_key)
+                if isinstance(children, list):
+                    for child in children:
+                        if isinstance(child, dict):
+                            patch_fragments(child, page_name)
 
         for attempt in range(max_retries):
             sites_data = api_request("GET", "/o/headless-delivery/v1.0/sites")
@@ -306,68 +401,13 @@ class FragmentsService(BaseHandler):
                     if not page_def:
                         continue
 
-                    def patch_fragments(element, page_name):
-                        nonlocal patched_count
-                        elem_type = str(element.get("type", "")).lower()
+                    debug_page_tree.append(page_def)
 
-                        def_obj = element.get("definition", {})
-                        if not isinstance(def_obj, dict):
-                            def_obj = {}
-                        frag_config = def_obj.get("fragmentConfig", {})
-                        if not isinstance(frag_config, dict):
-                            frag_config = {}
-
-                        # Collect all potential key identifiers (ERC, fragmentKey, etc.)
-                        candidates = []
-                        for obj in (element, def_obj, frag_config):
-                            if isinstance(obj, dict):
-                                for field in (
-                                    "externalReferenceCode",
-                                    "fragmentKey",
-                                    "fragmentEntryKey",
-                                    "key",
-                                    "id",
-                                ):
-                                    val = obj.get(field)
-                                    if val and isinstance(val, str):
-                                        candidates.append(val)
-
-                        matched_key = None
-                        for c in candidates:
-                            if c in overrides:
-                                matched_key = c
-                                break
-
-                        if matched_key and elem_type in (
-                            "fragment",
-                            "fragmententry",
-                            "component",
-                            "widget",
-                        ):
-                            element_id = element.get("id")
-                            if element_id:
-                                patch_payload = {
-                                    "definition": {
-                                        "config": overrides[matched_key],
-                                        "fragmentConfig": overrides[matched_key],
-                                    }
-                                }
-                                res = api_request(
-                                    "PATCH",
-                                    f"/o/headless-delivery/v1.0/page-elements/{element_id}",
-                                    payload=patch_payload,
-                                )
-                                if res:
-                                    UI.success(
-                                        f"  -> Patched configuration for fragment '{matched_key}' on page '{page_name}'"
-                                    )
-                                    patched_count += 1
-
-                        for child in element.get("pageElements", []):
-                            patch_fragments(child, page_name)
-
+                    # Handle both pageElement (singular) and pageElements (plural) at root
                     if "pageElement" in page_def:
                         patch_fragments(page_def["pageElement"], page.get("name"))
+                    for root_elem in page_def.get("pageElements", []):
+                        patch_fragments(root_elem, page.get("name"))
 
             if patched_count > 0:
                 break
@@ -382,7 +422,28 @@ class FragmentsService(BaseHandler):
                 f"Successfully applied {patched_count} fragment configuration overrides."
             )
         else:
+            configured_keys = sorted(overrides.keys())
+            discovered_keys = sorted(all_discovered_keys)
+            unmatched = sorted(set(configured_keys) - set(discovered_keys))
             UI.warning("No matching fragments found on any site pages after waiting.")
+            UI.detail(
+                f"  Keys configured in fragment-overrides.json : {configured_keys}"
+            )
+            UI.detail(
+                f"  Keys discovered across all page elements   : "
+                f"{discovered_keys if discovered_keys else '(none)'}"
+            )
+            if unmatched:
+                UI.detail(f"  Unmatched keys (in config but not found)   : {unmatched}")
+            elif not discovered_keys:
+                UI.detail(
+                    "  No fragment elements found at all — Site Initializer may not have "
+                    "run yet, or the API page element structure is unexpected."
+                )
+            debug_path = paths["root"] / ".ldm" / "fragment-override-debug.json"
+            debug_path.parent.mkdir(parents=True, exist_ok=True)
+            debug_path.write_text(json.dumps(debug_page_tree, indent=2))
+            UI.detail(f"  Raw page tree written to: {debug_path}")
 
     @staticmethod
     def _validate_fragment_overrides(data, file_path):

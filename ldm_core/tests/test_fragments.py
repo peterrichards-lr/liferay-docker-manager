@@ -253,22 +253,29 @@ class TestFragments(unittest.TestCase):
     @patch("time.sleep")
     @patch("urllib.request.urlopen")
     def test_patch_fragment_overrides_ssl_verification(self, mock_urlopen, mock_sleep):
-        """Test that SSL context verification is only bypassed for loopback hosts."""
+        """All admin API calls use 127.0.0.1 loopback transport — SSL is always bypassed.
+
+        ext_base_url is preserved solely for template variable expansion (LDM_BASE_URL,
+        LDM_HOST_NAME). The transport URL is always http://127.0.0.1:{port}, which means
+        SSL certificate verification is always disabled regardless of the external hostname.
+        This prevents silent failures caused by mkcert certs not being trusted by Python's
+        OpenSSL bundle when using custom hostnames like aica.local.
+        """
         import json
         import ssl
 
-        # 1. Non-loopback case (public sharing subdomain)
-        project_meta_public = {
-            "tag": "2025.Q1.0",
-            "container_name": "liferay-demo",
-            "share": "true",
-        }
         configs_dir = self.tmp_dir / "configs"
         configs_dir.mkdir(parents=True, exist_ok=True)
         overrides_data = {"test-frag": {"url": "https://foo.${LDM_HOST_NAME}"}}
         with open(configs_dir / "fragment-overrides.json", "w") as f:
             json.dump(overrides_data, f)
 
+        # 1. Non-loopback case (public sharing subdomain) — transport is still 127.0.0.1
+        project_meta_public = {
+            "tag": "2025.Q1.0",
+            "container_name": "liferay-demo",
+            "share": "true",
+        }
         mock_response = MagicMock()
         mock_response.read.side_effect = [
             json.dumps({"items": [{"id": "20124"}]}).encode("utf-8"),
@@ -286,14 +293,17 @@ class TestFragments(unittest.TestCase):
                 project_meta_public, paths={"root": self.tmp_dir}
             )
 
-        # Get context parameter passed to urlopen for non-loopback
+        # All API requests go to 127.0.0.1 — SSL is always bypassed
         called_ctx_public = mock_urlopen.call_args_list[0].kwargs.get("context")
         self.assertIsNotNone(called_ctx_public)
-        # Should NOT bypass verification (i.e. check_hostname should be True, verify_mode should not be CERT_NONE)
-        self.assertTrue(called_ctx_public.check_hostname)
-        self.assertNotEqual(called_ctx_public.verify_mode, ssl.CERT_NONE)
+        self.assertFalse(called_ctx_public.check_hostname)
+        self.assertEqual(called_ctx_public.verify_mode, ssl.CERT_NONE)
 
-        # 2. Loopback case (local development host)
+        # Verify the transport URL is loopback, not the external tunnel host
+        request_url = mock_urlopen.call_args_list[0][0][0].full_url
+        self.assertIn("127.0.0.1:8080", request_url)
+
+        # 2. Loopback case (local development host) — same invariant holds
         project_meta_local = {
             "tag": "2025.Q1.0",
             "container_name": "liferay-demo",
@@ -320,7 +330,6 @@ class TestFragments(unittest.TestCase):
 
         called_ctx_local = mock_urlopen.call_args_list[0].kwargs.get("context")
         self.assertIsNotNone(called_ctx_local)
-        # Should bypass verification
         self.assertFalse(called_ctx_local.check_hostname)
         self.assertEqual(called_ctx_local.verify_mode, ssl.CERT_NONE)
 
@@ -492,6 +501,253 @@ class TestFragments(unittest.TestCase):
                 payload["definition"]["config"]["url"],
                 "https://my-subdomain.lfr.cloud/test",
             )
+
+    @patch("time.sleep")
+    @patch("urllib.request.urlopen")
+    def test_patch_fragment_overrides_nested_columns(self, mock_urlopen, mock_sleep):
+        """Fragments nested inside 'columns' layout arrays are discovered and patched.
+
+        Liferay uses different child array keys ('columns', 'rows', 'elements', etc.)
+        depending on the layout element type.  The traverser must descend through all
+        of them, not just 'pageElements'.
+        """
+        import json
+
+        project_meta = {
+            "tag": "2025.Q1.0",
+            "container_name": "liferay-demo",
+            "share": "false",
+        }
+        paths = {"root": self.tmp_dir}
+        configs_dir = self.tmp_dir / "configs"
+        configs_dir.mkdir(parents=True, exist_ok=True)
+
+        overrides_data = {"nested-frag": {"color": "blue"}}
+        with open(configs_dir / "fragment-overrides.json", "w") as f:
+            json.dump(overrides_data, f)
+
+        mock_response = MagicMock()
+        mock_response.read.side_effect = [
+            json.dumps({"items": [{"id": "20124"}]}).encode("utf-8"),  # sites
+            json.dumps(
+                {
+                    "items": [
+                        {
+                            "name": "Home",
+                            "pageDefinition": {
+                                "pageElement": {
+                                    "type": "Section",
+                                    "id": "section-1",
+                                    "columns": [
+                                        {
+                                            "type": "Column",
+                                            "id": "col-1",
+                                            "pageElements": [
+                                                {
+                                                    "type": "Fragment",
+                                                    "id": "frag-nested-1",
+                                                    "definition": {
+                                                        "fragmentConfig": {
+                                                            "fragmentKey": "nested-frag"
+                                                        }
+                                                    },
+                                                }
+                                            ],
+                                        }
+                                    ],
+                                }
+                            },
+                        }
+                    ]
+                }
+            ).encode("utf-8"),  # pages
+            json.dumps({"status": "ok"}).encode("utf-8"),  # patch response
+        ]
+        ctx_manager = MagicMock()
+        ctx_manager.__enter__.return_value = mock_response
+        mock_urlopen.return_value = ctx_manager
+
+        with (
+            patch("ldm_core.ui.UI.success") as mock_success,
+            patch.object(BaseHandler, "run_command", return_value="8080"),
+            patch.object(self.handler.defaults, "get", return_value=None),
+        ):
+            self.handler.handler.fragments._patch_fragment_overrides(
+                project_meta, paths
+            )
+
+        mock_success.assert_any_call(
+            "  -> Patched configuration for fragment 'nested-frag' on page 'Home'"
+        )
+
+    @patch("time.sleep")
+    @patch("urllib.request.urlopen")
+    def test_patch_fragment_overrides_fragment_entry_link(
+        self, mock_urlopen, mock_sleep
+    ):
+        """Fragment keys inside fragmentEntryLink are discovered and matched.
+
+        The Headless Delivery API (2025.Q1+) places fragment keys inside
+        fragmentEntryLink.fragmentKey / fragmentEntryLink.fragmentEntry.fragmentEntryKey
+        rather than (only) inside definition.fragmentConfig.
+        """
+        import json
+
+        project_meta = {
+            "tag": "2025.Q1.0",
+            "container_name": "liferay-demo",
+            "share": "false",
+        }
+        paths = {"root": self.tmp_dir}
+        configs_dir = self.tmp_dir / "configs"
+        configs_dir.mkdir(parents=True, exist_ok=True)
+
+        overrides_data = {"fel-frag-key": {"label": "Custom Label"}}
+        with open(configs_dir / "fragment-overrides.json", "w") as f:
+            json.dump(overrides_data, f)
+
+        mock_response = MagicMock()
+        mock_response.read.side_effect = [
+            json.dumps({"items": [{"id": "20124"}]}).encode("utf-8"),  # sites
+            json.dumps(
+                {
+                    "items": [
+                        {
+                            "name": "Home",
+                            "pageDefinition": {
+                                "pageElement": {
+                                    "type": "Fragment",
+                                    "id": "frag-1",
+                                    "fragmentEntryLink": {
+                                        "fragmentKey": "fel-frag-key",
+                                        "fragmentEntry": {
+                                            "fragmentEntryKey": "fel-frag-key"
+                                        },
+                                    },
+                                }
+                            },
+                        }
+                    ]
+                }
+            ).encode("utf-8"),  # pages
+            json.dumps({"status": "ok"}).encode("utf-8"),  # patch response
+        ]
+        ctx_manager = MagicMock()
+        ctx_manager.__enter__.return_value = mock_response
+        mock_urlopen.return_value = ctx_manager
+
+        with (
+            patch("ldm_core.ui.UI.success") as mock_success,
+            patch.object(BaseHandler, "run_command", return_value="8080"),
+            patch.object(self.handler.defaults, "get", return_value=None),
+        ):
+            self.handler.handler.fragments._patch_fragment_overrides(
+                project_meta, paths
+            )
+
+        mock_success.assert_any_call(
+            "  -> Patched configuration for fragment 'fel-frag-key' on page 'Home'"
+        )
+
+    @patch("time.sleep")
+    @patch("urllib.request.urlopen")
+    def test_patch_fragment_overrides_diagnostic_output(self, mock_urlopen, mock_sleep):
+        """When no fragments match, diagnostic output lists configured and discovered keys.
+
+        Verifies that UI.warning + UI.detail lines report configured keys, discovered keys,
+        and the path to the raw page tree debug dump file.
+        """
+        import json
+        import tempfile
+        from pathlib import Path
+
+        project_meta = {
+            "tag": "2025.Q1.0",
+            "container_name": "liferay-demo",
+            "share": "false",
+        }
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            configs_dir = root / "configs"
+            configs_dir.mkdir(parents=True, exist_ok=True)
+
+            # Configured key intentionally does not appear on any page element
+            overrides_data = {"missing-frag-key": {"color": "red"}}
+            with open(configs_dir / "fragment-overrides.json", "w") as f:
+                json.dump(overrides_data, f)
+
+            sites_ctx = MagicMock()
+            sites_resp = MagicMock()
+            sites_resp.read.return_value = json.dumps(
+                {"items": [{"id": "20124"}]}
+            ).encode("utf-8")
+            sites_ctx.__enter__.return_value = sites_resp
+
+            pages_ctx = MagicMock()
+            pages_resp = MagicMock()
+            pages_resp.read.return_value = json.dumps(
+                {
+                    "items": [
+                        {
+                            "name": "Home",
+                            "pageDefinition": {
+                                "pageElement": {
+                                    "type": "Fragment",
+                                    "id": "frag-1",
+                                    "definition": {
+                                        "fragmentConfig": {
+                                            "fragmentKey": "different-frag-key"
+                                        }
+                                    },
+                                }
+                            },
+                        }
+                    ]
+                }
+            ).encode("utf-8")
+            pages_ctx.__enter__.return_value = pages_resp
+
+            # Only 2 real responses — after that urlopen raises StopIteration
+            # which api_request catches and returns None, causing silent retry
+            mock_urlopen.side_effect = [sites_ctx, pages_ctx]
+
+            with (
+                patch("ldm_core.ui.UI.warning") as mock_warning,
+                patch("ldm_core.ui.UI.detail") as mock_detail,
+                patch.object(BaseHandler, "run_command", return_value="8080"),
+                patch.object(self.handler.defaults, "get", return_value=None),
+            ):
+                self.handler.handler.fragments._patch_fragment_overrides(
+                    project_meta, paths={"root": root}
+                )
+
+            # The "no match" warning must be emitted
+            warning_messages = [str(c) for c in mock_warning.call_args_list]
+            self.assertTrue(
+                any("No matching fragments found" in m for m in warning_messages)
+            )
+
+            detail_messages = [str(c) for c in mock_detail.call_args_list]
+
+            # The configured key must appear in at least one detail line
+            self.assertTrue(
+                any("missing-frag-key" in m for m in detail_messages),
+                msg=f"Expected 'missing-frag-key' in detail output. Got: {detail_messages}",
+            )
+
+            # The discovered key (from the page element) must appear in a detail line
+            self.assertTrue(
+                any("different-frag-key" in m for m in detail_messages),
+                msg=f"Expected 'different-frag-key' in detail output. Got: {detail_messages}",
+            )
+
+            # Debug dump file must be written to .ldm/fragment-override-debug.json
+            debug_path = root / ".ldm" / "fragment-override-debug.json"
+            self.assertTrue(debug_path.exists(), "Debug dump file not written")
+            debug_data = json.loads(debug_path.read_text())
+            self.assertIsInstance(debug_data, list)
+            self.assertGreaterEqual(len(debug_data), 1)
 
     def test_valid_dict_passes(self):
         """A well-formed dict of fragment-key -> config-dict must return no errors."""
