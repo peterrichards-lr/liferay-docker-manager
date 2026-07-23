@@ -62,6 +62,55 @@ The `ldm tray` command launches a native system tray application (menu bar icon)
 - macOS / Windows: Dependencies (`pystray`, `Pillow`) are bundled in the standalone binaries.
 - Linux: Native tray is not officially supported due to Wayland/AppIndicator fragmentation. If you wish to use it, you must manually install AppIndicator libraries (e.g., `sudo dnf install libappindicator-gtk3` on Fedora/RHEL, or `sudo apt install libappindicator3-1` on Ubuntu/Debian).
 
+### Autostart / Launch on Login Configuration
+
+To run `ldm tray` automatically when you log into your desktop environment, configure the native background launcher for your operating system:
+
+#### macOS (LaunchAgent)
+
+Create a user LaunchAgent file `~/Library/LaunchAgents/com.liferay.ldm.tray.plist`:
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.liferay.ldm.tray</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/local/bin/ldm</string>
+        <string>tray</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <false/>
+</dict>
+</plist>
+```
+
+Activate it using `launchctl load ~/Library/LaunchAgents/com.liferay.ldm.tray.plist`.
+
+#### Windows (Startup Folder)
+
+1. Press `Win + R`, type `shell:startup`, and press `Enter`.
+2. Create a shortcut pointing to `ldm.exe tray` (or create `ldm-tray.bat` containing `ldm tray`).
+
+#### Linux (Desktop Autostart / systemd)
+
+Create `~/.config/autostart/ldm-tray.desktop`:
+
+```ini
+[Desktop Entry]
+Type=Application
+Name=LDM System Tray
+Exec=ldm tray
+Icon=utilities-system-monitor
+Terminal=false
+Categories=Development;
+```
+
 ## Debugging & Diagnostics
 
 - **`--gogo-port <port>`**: Exposes the OSGi Gogo shell on a specific host port. Required if you plan to use `ldm gogo [project]`.
@@ -101,4 +150,4 @@ Controls whether LDM provisions an isolated PostgreSQL database or connects to t
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-07-23* | *Last Reviewed: 2026-07-22*
+*Last Updated: 2026-07-23* | *Last Reviewed: 2026-07-23*
