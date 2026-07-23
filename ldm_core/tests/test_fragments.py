@@ -213,8 +213,12 @@ class TestFragments(unittest.TestCase):
             ctx_manager = MagicMock()
             ctx_manager.__enter__.return_value = mock_response
 
-            # First two calls raise 404 (simulating race condition), then success
+            # First 6 calls (2 attempts * 3 endpoints) raise 404 (simulating race condition), then success
             mock_urlopen.side_effect = [
+                error_404,
+                error_404,
+                error_404,
+                error_404,
                 error_404,
                 error_404,
                 ctx_manager,
