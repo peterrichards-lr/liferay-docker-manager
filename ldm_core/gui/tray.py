@@ -7,9 +7,22 @@ import time
 import webbrowser
 from pathlib import Path
 
-import pystray
-from PIL import Image, ImageDraw
-from pystray import MenuItem
+try:
+    import pystray
+    from pystray import MenuItem
+except ImportError:
+    from unittest.mock import MagicMock
+
+    pystray = MagicMock()
+    MenuItem = MagicMock()
+
+try:
+    from PIL import Image, ImageDraw
+except ImportError:
+    from unittest.mock import MagicMock
+
+    Image = MagicMock()
+    ImageDraw = MagicMock()
 
 from ldm_core.constants import REGISTRY_FILE
 from ldm_core.ui import UI

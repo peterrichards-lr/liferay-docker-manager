@@ -813,11 +813,62 @@ class ShareService:
                 if res.stderr:
                     print(res.stderr.strip())
 
+    def _get_tunnel_api_state(self, port=4040):
+        """Queries lfr-tunnel embedded client API at http://127.0.0.1:4040/api/info and /api/state."""
+        results = {}
+        for endpoint in ("info", "state"):
+            url = f"http://127.0.0.1:{port}/api/{endpoint}"
+            try:
+                req = urllib.request.Request(url, headers={"User-Agent": "LDM-Client"})
+                with urllib.request.urlopen(req, timeout=2) as resp:
+                    if resp.status == 200:
+                        data = resp.read().decode("utf-8")
+                        results[endpoint] = json.loads(data)
+            except Exception:
+                pass
+        return results
+
     def cmd_status(self, project_id=None):  # noqa: C901, PLR0912, PLR0915
         """Queries the status of the active sharing tunnel."""
         root = self.manager.detect_project_path(project_id)
         project_meta = self.manager.read_meta(root) if root else {}
         provider = project_meta.get("share_provider")
+
+        # First attempt real-time query of lfr-tunnel embedded client API
+        api_data = self._get_tunnel_api_state(4040)
+        if api_data.get("info") or api_data.get("state"):
+            info = api_data.get("info", {})
+            state = api_data.get("state", {})
+
+            subdomain = (
+                state.get("subdomain")
+                or info.get("subdomain", {}).get("name")
+                or project_meta.get("share_subdomain")
+                or project_id
+                or (root.name if root else "tunnel")
+            )
+            status = info.get("status") or ("healthy" if state.get("connected") else "disconnected")
+            conn_state = state.get("connection_state") or (info.get("connection") or {}).get("state", "disconnected")
+            public_urls = state.get("public_urls") or info.get("public_urls") or []
+            if not public_urls and state.get("public_url"):
+                public_urls = [state["public_url"]]
+
+            UI.heading("Liferay Tunnel Status")
+            UI.raw(f"  ● {UI.WHITE}Subdomain: {UI.CYAN}{subdomain}{UI.COLOR_OFF}")
+            status_color = UI.GREEN if status == "healthy" or state.get("connected") else UI.RED
+            UI.raw(f"  ● {UI.WHITE}Status: {status_color}{status}{UI.COLOR_OFF}")
+            UI.raw(
+                f"  ● {UI.WHITE}Connection State: {UI.WHITE if conn_state in ('connected', 'active') else UI.RED}{conn_state}{UI.COLOR_OFF}"
+            )
+            if public_urls:
+                UI.raw(f"  ● {UI.WHITE}Public URLs:{UI.COLOR_OFF}")
+                for url in public_urls:
+                    UI.raw(f"    - {UI.GREEN}{url}{UI.COLOR_OFF}")
+            UI.raw(
+                f"  ● {UI.WHITE}Inspector Dashboard: {UI.CYAN}http://127.0.0.1:4040{UI.COLOR_OFF}"
+            )
+            UI.raw("")
+            return
 
         if (
             provider == "ngrok"

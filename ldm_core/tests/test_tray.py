@@ -44,10 +44,14 @@ class TestTrayService:
                         tmp_path
                         / "Library"
                         / "LaunchAgents"
-                        / "com.liferay.dockermanager.plist"
+                        / "com.liferay.ldm.plist"
                     )
                     assert app_dir.exists()
                     assert plist_file.exists()
+                    content = plist_file.read_text()
+                    assert "com.liferay.ldm.gui" in content
+                    assert "AssociatedBundleIdentifiers" in content
+                    assert "com.liferay.ldm" in content
                     assert (
                         "CFBundleDisplayName"
                         in (app_dir / "Contents" / "Info.plist").read_text()
@@ -57,7 +61,7 @@ class TestTrayService:
         tray_service = TrayService(manager)
         plist_dir = tmp_path / "Library" / "LaunchAgents"
         plist_dir.mkdir(parents=True)
-        plist_file = plist_dir / "com.liferay.dockermanager.plist"
+        plist_file = plist_dir / "com.liferay.ldm.plist"
         plist_file.write_text("test")
 
         with patch("platform.system", return_value="Darwin"):
@@ -65,6 +69,30 @@ class TestTrayService:
                 with patch("subprocess.run"):
                     tray_service.remove_autostart()
                     assert not plist_file.exists()
+
+    def test_setup_autostart_linux(self, manager, tmp_path):
+        tray_service = TrayService(manager)
+        with patch("platform.system", return_value="Linux"):
+            with patch("ldm_core.utils.get_actual_home", return_value=tmp_path):
+                tray_service.setup_autostart()
+                desktop_file = tmp_path / ".config" / "autostart" / "ldm.desktop"
+                assert desktop_file.exists()
+                content = desktop_file.read_text()
+                assert "Name=Liferay Docker Manager" in content
+                assert "Comment=Liferay Docker Manager Service" in content
+                assert "Icon=ldm" in content
+
+    def test_remove_autostart_linux(self, manager, tmp_path):
+        tray_service = TrayService(manager)
+        autostart_dir = tmp_path / ".config" / "autostart"
+        autostart_dir.mkdir(parents=True)
+        desktop_file = autostart_dir / "ldm.desktop"
+        desktop_file.write_text("test")
+
+        with patch("platform.system", return_value="Linux"):
+            with patch("ldm_core.utils.get_actual_home", return_value=tmp_path):
+                tray_service.remove_autostart()
+                assert not desktop_file.exists()
 
 
 class TestLdmTrayApp:
