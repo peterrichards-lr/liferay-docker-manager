@@ -60,6 +60,10 @@ def _resolve_legacy_commands(cmd, cmd_idx, processed_list):
         "fix-hosts": ("system", "fix-hosts"),
         "nuke": ("system", "nuke"),
         "rescue": ("system", "rescue"),
+        "roi": ("system", "roi"),
+        "seeds": ("system", "seeds"),
+        "relocate": ("system", "relocate"),
+        "init-ci": ("system", "init-ci"),
     }
     if cmd in legacy_map:
         ns, subcmd = legacy_map[cmd]
