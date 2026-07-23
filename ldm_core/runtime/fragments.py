@@ -423,7 +423,11 @@ class FragmentsService(BaseHandler):
                     patch_fragments(children, page_name)
 
         for attempt in range(max_retries):
-            sites_data = api_request("GET", "/o/headless-delivery/v1.0/sites")
+            sites_data = (
+                api_request("GET", "/o/headless-admin-site/v1.0/sites")
+                or api_request("GET", "/o/headless-delivery/v1.0/sites")
+                or api_request("GET", "/o/headless-admin-user/v1.0/sites")
+            )
             if not sites_data or "items" not in sites_data:
                 UI.detail(
                     f"Waiting for Headless API to become ready (attempt {attempt + 1}/{max_retries})..."
@@ -444,15 +448,24 @@ class FragmentsService(BaseHandler):
                     page_def = page.get("pageDefinition")
                     if not page_def:
                         # Collection endpoints omit heavy pageDefinition objects; fetch individual page details
-                        page_id = page.get("id")
-                        if page_id:
+                        friendly_path = str(page.get("friendlyUrlPath", "")).lstrip("/")
+                        if friendly_path:
                             page_details = api_request(
-                                "GET", f"/o/headless-delivery/v1.0/site-pages/{page_id}"
+                                "GET",
+                                f"/o/headless-delivery/v1.0/sites/{site_id}/site-pages/{friendly_path}",
                             )
-                            if page_details:
-                                page_def = (
-                                    page_details.get("pageDefinition") or page_details
-                                )
+                        elif page.get("id"):
+                            page_details = api_request(
+                                "GET",
+                                f"/o/headless-delivery/v1.0/site-pages/{page.get('id')}",
+                            )
+                        else:
+                            page_details = None
+
+                        if page_details:
+                            page_def = (
+                                page_details.get("pageDefinition") or page_details
+                            )
                     if not page_def:
                         continue
 
