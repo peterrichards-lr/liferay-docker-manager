@@ -980,6 +980,26 @@ class BaseHandler:
             or getattr(self.args, "project_flag", None)
         )
 
+        idx_flag = None
+        if hasattr(self, "args") and self.args is not None:
+            val = getattr(self.args, "index_flag", None)
+            if val is not None and not hasattr(val, "_mock_return_value"):
+                idx_flag = val
+
+        if idx_flag is not None:
+            try:
+                idx = int(idx_flag)
+                roots = self.find_dxp_roots()
+                if 1 <= idx <= len(roots):
+                    return roots[idx - 1]["path"].resolve()
+                if fatal:
+                    UI.die(
+                        f"Invalid project index: {idx}. Total available projects: {len(roots)}"
+                    )
+                return None
+            except (ValueError, TypeError):
+                pass
+
         if pid:
             p = Path(pid).expanduser().resolve()
             # Safety: exists() can raise PermissionError if the dir is 0700 root-owned
@@ -1161,6 +1181,12 @@ class BaseHandler:
                     )
                     UI.interruptible_pause(5, "Press CTRL+C to cancel ")
                 return p
+
+        if pid and str(pid).isdigit():
+            idx = int(pid)
+            roots = self.find_dxp_roots()
+            if 1 <= idx <= len(roots):
+                return roots[idx - 1]["path"].resolve()
 
         if pid:
             # If we reached here, a PID was specified but not found in any search dir or CWD

@@ -301,6 +301,14 @@ def get_parser():  # noqa: PLR0915
         help="Disable Unicode characters in output and force ASCII safe-replacements",
     )
 
+    base_parent.add_argument(
+        "-i",
+        "--index",
+        dest="index_flag",
+        type=int,
+        help="Select project by 1-based index from the project list",
+    )
+
     # For subparsers, we want the global flags but we SUPPRESS the default (False)
     # so they don't overwrite the value set by the main parser if provided before the command.
     base_sub_parent = argparse.ArgumentParser(
