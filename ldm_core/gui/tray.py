@@ -35,14 +35,18 @@ class LdmTrayApp:
         self.icon = None
         self.running = False
 
-        # Load base icon
+        # Load base icon with dynamic in-memory RGBA fallback
         self.base_image_path = os.path.join(
             os.path.dirname(__file__), "..", "resources", "ldm_app_icon.jpg"
         )
         try:
             self.base_image = Image.open(self.base_image_path).convert("RGBA")
-        except Exception as e:
-            UI.die(f"Failed to load icon from {self.base_image_path}: {e}")
+        except Exception:
+            # Dynamic 64x64 RGBA in-memory fallback icon (blue background with 'L' emblem)
+            self.base_image = Image.new("RGBA", (64, 64), (0, 102, 204, 255))
+            draw = ImageDraw.Draw(self.base_image)
+            draw.rectangle([16, 12, 24, 52], fill=(255, 255, 255, 255))
+            draw.rectangle([16, 44, 48, 52], fill=(255, 255, 255, 255))
 
         self.current_state = "stopped"  # stopped, running
 
