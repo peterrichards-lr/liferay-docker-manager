@@ -54,8 +54,9 @@ class TrayService(BaseHandler):
             return True
         return False
 
-    def setup_autostart(self):
+    def setup_autostart(self):  # noqa: PLR0915
         """Provisions native autostart / launch-on-login for LDM System Tray."""
+        import contextlib
         import platform
         import shutil
         import subprocess
@@ -90,7 +91,7 @@ class TrayService(BaseHandler):
                 "    <key>CFBundleExecutable</key>\n"
                 "    <string>ldm-tray</string>\n"
                 "    <key>CFBundleIdentifier</key>\n"
-                "    <string>com.liferay.dockermanager</string>\n"
+                "    <string>com.liferay.ldm</string>\n"
                 "    <key>CFBundleName</key>\n"
                 "    <string>Liferay Docker Manager</string>\n"
                 "    <key>CFBundleDisplayName</key>\n"
@@ -109,7 +110,23 @@ class TrayService(BaseHandler):
 
             agents_dir = home / "Library" / "LaunchAgents"
             agents_dir.mkdir(parents=True, exist_ok=True)
-            plist_file = agents_dir / "com.liferay.dockermanager.plist"
+
+            # Legacy plist cleanup
+            old_plist_file = agents_dir / "com.liferay.dockermanager.plist"
+            if old_plist_file.exists():
+                try:
+                    subprocess.run(
+                        ["launchctl", "unload", str(old_plist_file)],
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                        check=False,
+                    )
+                except Exception:
+                    pass
+                with contextlib.suppress(OSError):
+                    old_plist_file.unlink()
+
+            plist_file = agents_dir / "com.liferay.ldm.plist"
             launcher_path = str(macos_dir / "ldm-tray")
             plist_file.write_text(
                 '<?xml version="1.0" encoding="UTF-8"?>\n'
@@ -117,7 +134,11 @@ class TrayService(BaseHandler):
                 '<plist version="1.0">\n'
                 "<dict>\n"
                 "    <key>Label</key>\n"
-                "    <string>com.liferay.dockermanager</string>\n"
+                "    <string>com.liferay.ldm.gui</string>\n"
+                "    <key>AssociatedBundleIdentifiers</key>\n"
+                "    <array>\n"
+                "        <string>com.liferay.ldm</string>\n"
+                "    </array>\n"
                 "    <key>ProgramArguments</key>\n"
                 "    <array>\n"
                 f"        <string>{launcher_path}</string>\n"
@@ -172,16 +193,21 @@ class TrayService(BaseHandler):
             home = get_actual_home()
             autostart_dir = home / ".config" / "autostart"
             autostart_dir.mkdir(parents=True, exist_ok=True)
-            icon_src = Path(__file__).parent.parent / "resources" / "ldm_app_icon.jpg"
-            icon_str = (
-                str(icon_src) if icon_src.exists() else "utilities-system-monitor"
-            )
 
-            desktop_file = autostart_dir / "ldm-tray.desktop"
+            # Legacy cleanup
+            old_desktop = autostart_dir / "ldm-tray.desktop"
+            if old_desktop.exists():
+                with contextlib.suppress(OSError):
+                    old_desktop.unlink()
+
+            icon_str = "ldm"
+
+            desktop_file = autostart_dir / "ldm.desktop"
             desktop_file.write_text(
                 "[Desktop Entry]\n"
                 "Type=Application\n"
                 "Name=Liferay Docker Manager\n"
+                "Comment=Liferay Docker Manager Service\n"
                 f"Exec={ldm_bin} tray\n"
                 f"Icon={icon_str}\n"
                 "Terminal=false\n"
@@ -193,6 +219,7 @@ class TrayService(BaseHandler):
 
     def remove_autostart(self):
         """Removes native autostart / launch-on-login entries."""
+        import contextlib
         import platform
         import shutil
         import subprocess
@@ -203,22 +230,25 @@ class TrayService(BaseHandler):
         home = get_actual_home()
 
         if sys_type == "Darwin":
-            plist_file = (
+            plist_file = home / "Library" / "LaunchAgents" / "com.liferay.ldm.plist"
+            old_plist_file = (
                 home / "Library" / "LaunchAgents" / "com.liferay.dockermanager.plist"
             )
             app_dir = home / "Applications" / "Liferay Docker Manager.app"
 
-            if plist_file.exists():
-                try:
-                    subprocess.run(
-                        ["launchctl", "unload", str(plist_file)],
-                        stdout=subprocess.DEVNULL,
-                        stderr=subprocess.DEVNULL,
-                        check=False,
-                    )
-                except Exception:
-                    pass
-                plist_file.unlink()
+            for pf in (plist_file, old_plist_file):
+                if pf.exists():
+                    try:
+                        subprocess.run(
+                            ["launchctl", "unload", str(pf)],
+                            stdout=subprocess.DEVNULL,
+                            stderr=subprocess.DEVNULL,
+                            check=False,
+                        )
+                    except Exception:
+                        pass
+                    with contextlib.suppress(OSError):
+                        pf.unlink()
 
             if app_dir.exists():
                 shutil.rmtree(app_dir, ignore_errors=True)
@@ -253,9 +283,15 @@ class TrayService(BaseHandler):
                 UI.detail("No Windows Startup script found.")
 
         else:
-            desktop_file = home / ".config" / "autostart" / "ldm-tray.desktop"
-            if desktop_file.exists():
-                desktop_file.unlink()
+            desktop_file = home / ".config" / "autostart" / "ldm.desktop"
+            old_desktop_file = home / ".config" / "autostart" / "ldm-tray.desktop"
+            removed = False
+            for df in (desktop_file, old_desktop_file):
+                if df.exists():
+                    df.unlink()
+                    removed = True
+
+            if removed:
                 UI.success("Linux Desktop Entry autostart removed.")
             else:
                 UI.detail("No Linux Desktop Entry found.")
