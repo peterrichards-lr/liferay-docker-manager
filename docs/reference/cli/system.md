@@ -377,46 +377,83 @@ The following is a comprehensive index of all registered CLI option flags and th
 - **`--no-run`**: Update the metadata without automatically restarting the stack.
 - **`--no-unicode`**: Disable Unicode characters in output and force ASCII safe-replacements.
 - **`--older-than`**: Delete snapshots older than the specified number of days.
-- **`--output`**: Directory path to save the generated package.
-- **`--overwrite-registry`**: Automatically overwrite existing project registry entries in case of collisions.
-- **`--ports`**: Comma-separated ports to expose (defaults to 8080).
+## `tray`
+
+Launch the cross-platform LDM System Tray GUI application to monitor runtime container health, view active URLs, and launch/stop instances.
+
+```bash
+ldm tray                        # Launch System Tray GUI
+ldm tray --autostart            # Install launch-on-login autostart
+ldm tray --uninstall-autostart  # Remove launch-on-login autostart
+```
+
+---
+
+## Global and Subcommand Flags Reference
+
+- **`--all`**: Apply command across all managed projects.
+- **`--autostart`** / **`--install-autostart`**: Install System Tray application to launch automatically on user login.
+- **`--bundle`**: Generate a sanitized zip bundle of logs and config.
+- **`--credentials`**: Print admin or service credentials.
+- **`--detailed`**: Show detailed diagnostic information.
+- **`--domain`**: Specify target domain for diagnostics or routing.
+- **`--download`**: Download asset or seed.
+- **`--dry-run`**: Print actions without executing them.
+- **`--fix`**: Automatically apply recommended fixes.
+- **`--fix-hosts`**: Add missing domains to `/etc/hosts`.
+- **`--force`**: Force operation without prompting.
+- **`--format`**: Specify output format (`json`, `table`, `csv`).
+- **`--global`**: Apply setting globally.
+- **`--help`**: Display CLI help menu.
+- **`--icon`**: Path to custom system tray app icon.
+- **`--index`** / **`-i`**: Select project by 1-based index from list.
+- **`--input`**: Path to input snapshot or archive file.
+- **`--leave-running`**: Leave workspace containers running after operation.
+- **`--leave-temporary-files`**: Retain temporary files for debugging.
+- **`--list`**: List items or URLs.
+- **`--no-ssl`**: Bypass local SSL/mkcert generation and use HTTP.
+- **`--non-interactive`**: Run in non-interactive mode.
+- **`--output`**: Directory path to save generated output.
+- **`--overwrite-registry`**: Automatically overwrite existing project registry entries.
+- **`--ports`**: Comma-separated ports to expose.
 - **`--print`**: Output current version string only.
 - **`--project`**: Show detailed Project diagnostic checks.
-- **`--project-id`**: Specific project ID to rescue.
-- **`--promote`**: Promote the current beta to a stable release.
+- **`--project-id`**: Specific project ID to target.
+- **`--promote`**: Promote current pre-release to stable.
 - **`--provider`**: Tunnel provider (defaults to lfr-tunnel).
 - **`--quiet`**: Quiet mode (suppress info logs).
-- **`--reboot`**: Force a container reboot instead of immediate runtime reindexing.
-- **`--reindex`**: Force a full search reindex on startup.
+- **`--reboot`**: Force container reboot instead of runtime reindexing.
+- **`--reindex`**: Force full search reindex on startup.
 - **`--reset`**: Reset cumulative ROI metrics back to zero.
 - **`--restore`**: Restore project backup/snapshot.
-- **`--service`**: Specify specific container service.
-- **`--set`**: Directly set the version string.
-- **`--share-domain`**: Custom domain to use when sharing the instance.
-- **`--share-image`**: Custom Docker image to use for the sharing tunnel sidecar.
-- **`--share-inspector`**: Expose the lfr-tunnel local inspector dashboard on port 4040.
-- **`--share-provider`**: Sharing provider to use (defaults to lfr-tunnel).
-- **`--status`**: Check for updates without performing the upgrade.
-- **`--stop-running`** ![Added in v2.11.33](https://img.shields.io/badge/Added%20in-v2.11.33-blue): Automatically stop the project if it is currently running.
-- **`--subdomain`**: Custom subdomain prefix (defaults to machine hostname).
+- **`--service`**: Specify container service.
+- **`--set`**: Directly set version string.
+- **`--share-domain`**: Custom domain for sharing.
+- **`--share-image`**: Custom Docker image for sharing sidecar.
+- **`--share-inspector`**: Expose local inspector dashboard on port 4040.
+- **`--share-provider`**: Sharing provider to use.
+- **`--status`**: Check status without performing upgrade.
+- **`--stop-running`**: Automatically stop running project.
+- **`--subdomain`**: Custom subdomain prefix.
 - **`--sync-env`**: Sync configuration env vars.
 - **`--system`**: Show detailed system diagnostic checks.
-- **`--tail`**: Number of lines to show from the end of the logs.
+- **`--tail`**: Number of lines to show from end of logs.
 - **`--timestamps`**: Show timestamps.
-- **`--token`** ![Added in v2.16.0](https://img.shields.io/badge/Added%20in-v2.16.0-blue): CSRF/Authentication token for dashboard mutations.
-- **`--trigger`**: Event trigger for the release package workflow.
-- **`--tui`** ![Added in v2.11.43](https://img.shields.io/badge/Added%20in-v2.11.43-blue): Launch interactive terminal menu to configure property overrides.
-- **`--up`**: Automatically start the project after reseeding.
+- **`--token`**: CSRF/Authentication token for dashboard mutations.
+- **`--trigger`**: Event trigger for workflow.
+- **`--tui`**: Launch interactive terminal configuration menu.
+- **`--uninstall-autostart`**: Remove System Tray launch-on-login autostart.
+- **`--up`**: Automatically start project after reseeding.
 - **`--url`**: Remote packages download URL.
-- **`--version`**: Target a specific version of LDM (e.g. v2.11.53).
-- **`--wait-for-bundles`**: Comma-separated list of expected OSGi bundle symbolic names to wait for.
-- **`--wait-for-deployables`**: Scan local workspace for JARs/YAMLs and block until they are deployed in Liferay.
-- **`--stream-status`**: Stream Liferay startup milestones to stdout in real-time without using an interactive spinner.
-- **`--stream-logs`**: Stream raw Docker container logs to stdout in real-time while waiting.
-- **`--workflow-name`**: Name of the workflow file.
+- **`--version`**: Target specific version of LDM.
+- **`--wait-for-bundles`**: Comma-separated list of expected OSGi bundle symbolic names.
+- **`--wait-for-deployables`**: Scan workspace for JARs/YAMLs and block until deployed.
+- **`--stream-status`**: Stream Liferay startup milestones to stdout in real-time.
+- **`--stream-logs`**: Stream raw Docker container logs to stdout in real-time.
+- **`--workflow-name`**: Name of workflow file.
 - **`-V`**: Show LDM version.
 - **`-q`**: Quiet mode.
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-07-23* | *Last Reviewed: 2026-07-10*
+*Last Updated: 2026-07-23* | *Last Reviewed: 2026-07-23*

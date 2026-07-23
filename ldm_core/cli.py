@@ -1325,10 +1325,23 @@ def get_parser():  # noqa: PLR0915
     dashboard.add_argument("--token", help="CSRF/Authentication token for mutations")
 
     # Command: tray
-    subparsers.add_parser(
+    tray = subparsers.add_parser(
         "tray",
         parents=[base_sub_parent],
         help="Launch the cross-platform System Tray GUI",
+    )
+    tray.add_argument(
+        "--autostart",
+        "--install-autostart",
+        action="store_true",
+        dest="autostart",
+        help="Configure native autostart on system boot/login",
+    )
+    tray.add_argument(
+        "--uninstall-autostart",
+        action="store_true",
+        dest="uninstall_autostart",
+        help="Remove native autostart configuration",
     )
 
     # Command: mcp
@@ -2252,7 +2265,15 @@ def _build_command_map(args, manager):
             background=getattr(args, "background", False),
             token=getattr(args, "token", None),
         ),
-        ("tray", None): manager.tray.cmd_tray,
+        ("tray", None): lambda: (
+            manager.tray.setup_autostart()
+            if getattr(args, "autostart", False)
+            else (
+                manager.tray.remove_autostart()
+                if getattr(args, "uninstall_autostart", False)
+                else manager.tray.cmd_tray()
+            )
+        ),
         ("hydrate", None): lambda: manager.cloud.cmd_hydrate(
             args.backup_path, getattr(args, "project", None)
         ),
