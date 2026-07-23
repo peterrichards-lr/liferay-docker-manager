@@ -256,6 +256,20 @@ else
     fi
 fi
 
+echo ">> Verifying ldm doctor Dependency Integrity..."
+DOCTOR_OUT=$("$LDM_CMD" doctor --detailed 2>&1 || true)
+if echo "$DOCTOR_OUT" | grep -q "Dependency Integrity"; then
+    if echo "$DOCTOR_OUT" | grep -Ei "Dependency Integrity.*(❌|Failed|Missing)"; then
+        echo "❌ ERROR: ldm doctor Dependency Integrity check failed:" | tee -a "$RESULTS_FILE_TMP"
+        echo "$DOCTOR_OUT" | grep -i "Dependency Integrity" | tee -a "$RESULTS_FILE_TMP"
+        exit 1
+    else
+        echo "✅ ldm doctor Dependency Integrity verified." | tee -a "$RESULTS_FILE_TMP"
+    fi
+else
+    echo "⚠️  Skipping Dependency Integrity check (binary install — no requirements.txt found)."
+fi
+
 echo ">> Verifying Project Collision Detection..."
 # Use --no-seed to avoid 1GB download for a simple collision test
 if ! "$LDM_CMD" -y run "${COLLISION_PROJECT}" --tag 2026.q1.4-lts --port 8099 --no-wait --no-up --no-seed > col_init.log 2>&1; then
