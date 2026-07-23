@@ -49,6 +49,7 @@ def test_ensure_mcp_installed_not_present(mock_run, mock_get_home, mock_find_spe
             "--target",
             str(plugins_dir),
             "--upgrade",
+            "--break-system-packages",
         ],
         check=True,
         stdout=subprocess.DEVNULL,
@@ -71,3 +72,25 @@ def test_ensure_mcp_installed_fails(mock_exit, mock_run, mock_get_home, mock_fin
     ensure_mcp_installed()
 
     mock_exit.assert_called_once_with(1)
+
+
+@patch("ldm_core.plugin_manager.importlib.util.find_spec")
+@patch("ldm_core.plugin_manager.get_actual_home")
+@patch("ldm_core.plugin_manager.subprocess.run")
+def test_ensure_gui_installed(mock_run, mock_get_home, mock_find_spec):
+    from ldm_core.plugin_manager import ensure_gui_installed
+
+    mock_find_spec.return_value = None
+    home_path = MagicMock()
+    mock_get_home.return_value = home_path
+    plugins_dir = home_path / ".ldm" / "plugins" / "gui"
+
+    with patch("sys.platform", "darwin"):
+        ensure_gui_installed()
+        mock_run.assert_called_once()
+        args = mock_run.call_args[0][0]
+        assert "--break-system-packages" in args
+        assert "pyobjc-framework-Quartz" in args
+        assert "pyobjc-framework-Cocoa" in args
+        assert "--target" in args
+        assert str(plugins_dir) in sys.path

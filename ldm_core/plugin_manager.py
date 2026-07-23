@@ -30,6 +30,7 @@ def ensure_mcp_installed():
             "--target",
             plugins_dir_str,
             "--upgrade",
+            "--break-system-packages",
         ]
         try:
             subprocess.run(
@@ -64,7 +65,13 @@ def ensure_gui_installed():
         # Install the dependencies dynamically
         packages = ["pystray>=0.19.0", "Pillow>=10.0.0"]
         if sys.platform == "darwin":
-            packages.append("pyobjc-framework-FSEvents")
+            packages.extend(
+                [
+                    "pyobjc-framework-FSEvents",
+                    "pyobjc-framework-Quartz",
+                    "pyobjc-framework-Cocoa",
+                ]
+            )
 
         cmd = [
             sys.executable,
@@ -75,6 +82,7 @@ def ensure_gui_installed():
             "--target",
             plugins_dir_str,
             "--upgrade",
+            "--break-system-packages",
         ]
         try:
             subprocess.run(
