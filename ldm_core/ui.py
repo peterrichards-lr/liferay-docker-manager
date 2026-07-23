@@ -449,8 +449,7 @@ class UI:
     def phase(current: int, total: int, label: str):
         """Prints a phase progress header for multi-step commands."""
         if not UI.QUIET_MODE:
-            marker = f"[{current}/{total}]"
-            UI._print(f"{marker} {label}", color=UI.BCYAN)
+            UI._print(f"▶  {label}", color=UI.BCYAN)
 
     @staticmethod
     def debug(msg):

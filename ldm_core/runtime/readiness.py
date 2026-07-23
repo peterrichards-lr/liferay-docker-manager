@@ -595,6 +595,8 @@ class ReadinessService(BaseHandler):
 
                     duration_str = UI.format_duration(duration_total)
 
+                    spinner.stop()
+
                     # Execute Headless API patcher for fragment overrides
                     root_path = self.manager.detect_project_path(
                         project_id=project_id, for_init=True
