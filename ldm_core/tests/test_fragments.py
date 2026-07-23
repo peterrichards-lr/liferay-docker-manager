@@ -859,3 +859,85 @@ class TestFragments(unittest.TestCase):
                 except Exception:
                     pass
                 mock_die.assert_not_called()
+
+    @patch("time.sleep")
+    def test_namespaced_fragment_key_matching(self, mock_sleep):
+        """Verify collection-namespaced fragment keys (e.g. collection/key) match overrides."""
+        import json as _json
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            configs = root / "configs"
+            configs.mkdir()
+            (configs / "fragment-overrides.json").write_text(
+                _json.dumps(
+                    {
+                        "ai-commerce-accelerator": {
+                            "microserviceUrl": "http://localhost:3000"
+                        }
+                    }
+                )
+            )
+
+            project_meta = {"tag": "2025.q1.1-lts", "container_name": "test-c"}
+            paths = {"root": root}
+
+            self.handler.parse_version = MagicMock(return_value=(2025, 1, 0))  # type: ignore[method-assign]
+            self.handler.run_command = MagicMock(return_value="0.0.0.0:8080")  # type: ignore[method-assign]
+            self.handler.config = MagicMock()
+            self.handler.config.get_global_config.return_value = {}
+            self.handler.infra = MagicMock()
+            self.handler.infra.get_proxy_ports.return_value = {"http": 80, "https": 443}
+
+            # Mock Headless API response containing namespaced fragment key
+            sites_resp = {"items": [{"id": 101}]}
+            pages_resp = {
+                "items": [
+                    {
+                        "id": 201,
+                        "name": "Home",
+                        "pageDefinition": {
+                            "pageElement": {
+                                "id": "elem-1",
+                                "type": "fragment",
+                                "fragmentEntryLink": {
+                                    "fragmentEntry": {
+                                        "key": "ai-commerce-accelerator-fragments/ai-commerce-accelerator"
+                                    }
+                                },
+                            }
+                        },
+                    }
+                ]
+            }
+
+            def fake_api_request(method, path, payload=None):
+                if "/sites/101/site-pages" in path:
+                    return pages_resp
+                if "/sites" in path:
+                    return sites_resp
+                if "page-elements/elem-1" in path and method == "PATCH":
+                    return {"status": "success"}
+                return None
+
+            # Directly test patch_fragments key matching via _patch_fragment_overrides logic
+            with patch("urllib.request.urlopen") as mock_urlopen:
+                mock_resp = MagicMock()
+                mock_resp.read.side_effect = [
+                    _json.dumps(sites_resp).encode(),
+                    _json.dumps(pages_resp).encode(),
+                    _json.dumps({"status": "patched"}).encode(),
+                ]
+                mock_resp.__enter__.return_value = mock_resp
+                mock_urlopen.return_value = mock_resp
+
+                self.handler.handler.fragments._patch_fragment_overrides(
+                    project_meta, paths
+                )
+                # Verify PATCH request was made for elem-1
+                patch_calls = [
+                    c
+                    for c in mock_urlopen.call_args_list
+                    if "page-elements/elem-1" in c[0][0].full_url
+                ]
+                self.assertTrue(len(patch_calls) > 0)

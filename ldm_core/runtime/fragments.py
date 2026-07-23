@@ -375,6 +375,15 @@ class FragmentsService(BaseHandler):
                     matched_key = c.lower()
                     break
 
+                # Support collection-namespaced or prefixed fragment keys (e.g. "collection-key/fragment-key" -> "fragment-key")
+                c_tail = c.split("/")[-1].split(":")[-1]
+                if c_tail in overrides:
+                    matched_key = c_tail
+                    break
+                if c_tail.lower() in overrides:
+                    matched_key = c_tail.lower()
+                    break
+
             if matched_key:
                 element_id = element.get("id")
                 if element_id:
