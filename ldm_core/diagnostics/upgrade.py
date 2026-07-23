@@ -284,7 +284,7 @@ taskkill /F /IM ldm.exe /T >nul 2>&1
 
 move /y "{temp_new}" "{exe_path}" >nul 2>&1
 if !errorlevel! equ 0 (
-start "" "{exe_path}" doctor
+start "" "{exe_path}" doctor --skip-project
 goto :CLEANUP
 )
 
