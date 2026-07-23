@@ -118,3 +118,9 @@ class TestLdmTrayApp:
             app = LdmTrayApp(manager)
             app._run_dashboard()
             manager.dashboard.cmd_dashboard.assert_called_once()
+
+    def test_missing_icon_fallback(self, manager):
+        with patch("PIL.Image.open", side_effect=OSError("File not found")):
+            app = LdmTrayApp(manager)
+            assert app.base_image is not None
+            assert app.current_state == "stopped"
