@@ -333,7 +333,7 @@ jobs:
         if: matrix.os == 'ubuntu-latest'
         run: |
           pip install .
-          shiv -e ldm_core.cli:main -o ldm-linux -p '/usr/bin/env python3' .
+          shiv -e ldm_core.cli:main -o ldm-linux -p '/usr/bin/env python3' --no-compile .
           chmod +x ldm-linux
           echo "BINARY_PATH=ldm-linux" >> "$GITHUB_ENV"
 
@@ -341,12 +341,12 @@ jobs:
         if: matrix.os == 'macos-latest'
         run: |
           # 1. Build ARM64 (Native)
-          shiv -e ldm_core.cli:main -o ldm-macos-arm64 -p '/usr/bin/env python3' .
+          shiv -e ldm_core.cli:main -o ldm-macos-arm64 -p '/usr/bin/env python3' --no-compile .
           
           # 2. Build x86_64 (Cross-packaged)
           mkdir x86_64_site_packages
           pip install --platform macosx_11_0_x86_64 --only-binary=:all: --target x86_64_site_packages --python-version 3.13 --implementation cp -r requirements.txt
-          shiv -e ldm_core.cli:main -o ldm-macos-x86_64 -p '/usr/bin/env python3' --no-deps --site-packages x86_64_site_packages .
+          shiv -e ldm_core.cli:main -o ldm-macos-x86_64 -p '/usr/bin/env python3' --no-deps --site-packages x86_64_site_packages --no-compile .
           
           chmod +x ldm-macos-arm64 ldm-macos-x86_64
           echo "BINARY_PATH_ARM=ldm-macos-arm64" >> "$GITHUB_ENV"
