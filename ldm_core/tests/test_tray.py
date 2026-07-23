@@ -124,3 +124,18 @@ class TestLdmTrayApp:
             app = LdmTrayApp(manager)
             assert app.base_image is not None
             assert app.current_state == "stopped"
+
+    def test_menu_items_argcount_validation(self, manager):
+        with patch("PIL.Image.open"):
+            app = LdmTrayApp(manager)
+            mock_registry = {
+                "demo": {
+                    "path": "/tmp/demo",
+                    "host_name": "demo.local",
+                    "tunnel_url": "https://demo.tunnel.com",
+                }
+            }
+            with patch.object(app, "_get_registry", return_value=mock_registry):
+                # Evaluate menu items generator to verify no ValueError raised during pystray item validation
+                items = list(app._menu_generator())
+                assert len(items) > 0

@@ -39,7 +39,11 @@ class TrayService(BaseHandler):
             app = LdmTrayApp(self.manager)
             app.run()
         except Exception as e:
-            UI.detail(f"Tray application crashed on startup: {e}")
+            UI.error(f"Tray application error: {e}")
+            if self.manager.verbose:
+                import traceback
+
+                traceback.print_exc()
             UI.detail("Falling back to Dashboard mode...")
             self.manager.dashboard.cmd_dashboard(
                 port=19000, host="127.0.0.1", background=False, token=None
