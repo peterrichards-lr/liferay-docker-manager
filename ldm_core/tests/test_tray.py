@@ -128,15 +128,14 @@ class TestLdmTrayApp:
     def test_menu_items_argcount_validation(self, manager):
         with patch("PIL.Image.open"):
             app = LdmTrayApp(manager)
-            app._get_registry = MagicMock(
-                return_value={
-                    "demo": {
-                        "path": "/tmp/demo",
-                        "host_name": "demo.local",
-                        "tunnel_url": "https://demo.tunnel.com",
-                    }
+            mock_registry = {
+                "demo": {
+                    "path": "/tmp/demo",
+                    "host_name": "demo.local",
+                    "tunnel_url": "https://demo.tunnel.com",
                 }
-            )
-            # Evaluate menu items generator to verify no ValueError raised during pystray item validation
-            items = list(app._menu_generator())
-            assert len(items) > 0
+            }
+            with patch.object(app, "_get_registry", return_value=mock_registry):
+                # Evaluate menu items generator to verify no ValueError raised during pystray item validation
+                items = list(app._menu_generator())
+                assert len(items) > 0
