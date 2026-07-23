@@ -233,7 +233,7 @@ class FragmentsService(BaseHandler):
         }
 
         # Candidate API base targets (base_url, extra_headers) tried in order
-        candidate_api_targets = []
+        candidate_api_targets: list[tuple[str, dict[str, str]]] = []
 
         # 1. Mapped direct port or default localhost (direct access)
         candidate_api_targets.append((f"http://127.0.0.1:{lfr_port}", {}))
@@ -259,7 +259,7 @@ class FragmentsService(BaseHandler):
             except Exception:
                 pass
 
-        working_target = None
+        working_target: tuple[str, dict[str, str]] | None = None
 
         def api_request(method, path, payload=None):
             nonlocal working_target
