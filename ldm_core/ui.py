@@ -314,8 +314,12 @@ class UI:
             return self
 
         def __exit__(self, exc_type, exc_val, exc_tb):
+            self.stop()
+
+        def stop(self):
+            """Stops the spinner animation and clears line."""
             self.is_running = False
-            if self.thread:
+            if self.thread and self.thread.is_alive():
                 self.thread.join()
 
     @staticmethod
@@ -449,8 +453,7 @@ class UI:
     def phase(current: int, total: int, label: str):
         """Prints a phase progress header for multi-step commands."""
         if not UI.QUIET_MODE:
-            marker = f"[{current}/{total}]"
-            UI._print(f"{marker} {label}", color=UI.BCYAN)
+            UI._print(f"▶  {label}", color=UI.BCYAN)
 
     @staticmethod
     def debug(msg):

@@ -308,51 +308,60 @@ class FragmentsService(BaseHandler):
 
                     def patch_fragments(element, page_name):
                         nonlocal patched_count
-                        if element.get("type") == "Fragment":
-                            def_obj = element.get("definition", {})
-                            frag_config = (
-                                def_obj.get("fragmentConfig", {})
-                                if isinstance(def_obj, dict)
-                                else {}
-                            )
-                            frag_key = (
-                                (
-                                    frag_config.get("fragmentKey")
-                                    if isinstance(frag_config, dict)
-                                    else None
-                                )
-                                or (
-                                    def_obj.get("fragmentKey")
-                                    if isinstance(def_obj, dict)
-                                    else None
-                                )
-                                or (
-                                    def_obj.get("fragmentEntryKey")
-                                    if isinstance(def_obj, dict)
-                                    else None
-                                )
-                                or element.get("fragmentKey")
-                                or element.get("fragmentEntryKey")
-                            )
-                            if frag_key in overrides:
-                                element_id = element.get("id")
-                                if element_id:
-                                    patch_payload = {
-                                        "definition": {
-                                            "config": overrides[frag_key],
-                                            "fragmentConfig": overrides[frag_key],
-                                        }
+                        elem_type = str(element.get("type", "")).lower()
+
+                        def_obj = element.get("definition", {})
+                        if not isinstance(def_obj, dict):
+                            def_obj = {}
+                        frag_config = def_obj.get("fragmentConfig", {})
+                        if not isinstance(frag_config, dict):
+                            frag_config = {}
+
+                        # Collect all potential key identifiers (ERC, fragmentKey, etc.)
+                        candidates = []
+                        for obj in (element, def_obj, frag_config):
+                            if isinstance(obj, dict):
+                                for field in (
+                                    "externalReferenceCode",
+                                    "fragmentKey",
+                                    "fragmentEntryKey",
+                                    "key",
+                                    "id",
+                                ):
+                                    val = obj.get(field)
+                                    if val and isinstance(val, str):
+                                        candidates.append(val)
+
+                        matched_key = None
+                        for c in candidates:
+                            if c in overrides:
+                                matched_key = c
+                                break
+
+                        if matched_key and elem_type in (
+                            "fragment",
+                            "fragmententry",
+                            "component",
+                            "widget",
+                        ):
+                            element_id = element.get("id")
+                            if element_id:
+                                patch_payload = {
+                                    "definition": {
+                                        "config": overrides[matched_key],
+                                        "fragmentConfig": overrides[matched_key],
                                     }
-                                    res = api_request(
-                                        "PATCH",
-                                        f"/o/headless-delivery/v1.0/page-elements/{element_id}",
-                                        payload=patch_payload,
+                                }
+                                res = api_request(
+                                    "PATCH",
+                                    f"/o/headless-delivery/v1.0/page-elements/{element_id}",
+                                    payload=patch_payload,
+                                )
+                                if res:
+                                    UI.success(
+                                        f"  -> Patched configuration for fragment '{matched_key}' on page '{page_name}'"
                                     )
-                                    if res:
-                                        UI.success(
-                                            f"  -> Patched configuration for fragment '{frag_key}' on page '{page_name}'"
-                                        )
-                                        patched_count += 1
+                                    patched_count += 1
 
                         for child in element.get("pageElements", []):
                             patch_fragments(child, page_name)
