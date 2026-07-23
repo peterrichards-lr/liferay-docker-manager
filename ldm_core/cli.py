@@ -2085,7 +2085,7 @@ def check_and_display_upgrade_banner():
         return
 
     try:
-        from ldm_core.constants import VERSION
+        from ldm_core.constants import RELEASE_ANNOUNCEMENTS, VERSION
         from ldm_core.utils import (
             get_actual_home,
             load_global_config_safe,
@@ -2101,21 +2101,23 @@ def check_and_display_upgrade_banner():
 
             UI.heading("Welcome to Liferay Docker Manager")
             print(f"🎉 {UI.GREEN}LDM has been upgraded to v{VERSION}!{UI.COLOR_OFF}")
-            print(
-                f"\n📢 {UI.BYELLOW}Important Changes & UX Refactoring in this Release:{UI.COLOR_OFF}"
+
+            v_prefix = ".".join(VERSION.split(".")[:2]) if "." in VERSION else VERSION
+            announcements = RELEASE_ANNOUNCEMENTS.get(
+                VERSION, RELEASE_ANNOUNCEMENTS.get(v_prefix, [])
             )
-            print(
-                f"  * {UI.CYAN}ldm link <path>{UI.COLOR_OFF}  : Linked workspaces local integration (replaces {UI.CYAN}init-from{UI.COLOR_OFF})"
-            )
-            print(
-                f"  * {UI.CYAN}ldm clone <url>{UI.COLOR_OFF}  : Clone and setup a remote Git workspace repository"
-            )
-            print(
-                f"  * {UI.CYAN}ldm import <pkg>{UI.COLOR_OFF} : Import compiled hydrated data packages (.ldmp) only"
-            )
-            print(
-                f"  * {UI.CYAN}ldm init-from{UI.COLOR_OFF}     : Deprecated (forwarded to {UI.CYAN}ldm link{UI.COLOR_OFF})\n"
-            )
+
+            if announcements:
+                print(
+                    f"\n📢 {UI.BYELLOW}Important Changes & UX Refactoring in this Release:{UI.COLOR_OFF}"
+                )
+                for item in announcements:
+                    if isinstance(item, (tuple, list)) and len(item) == 2:
+                        cmd, desc = item
+                        print(f"  * {UI.CYAN}{cmd:<18}{UI.COLOR_OFF} : {desc}")
+                    else:
+                        print(f"  * {item}")
+                print()
 
             root_data["last_run_version"] = VERSION
             save_global_config_safe(user_path, root_data)

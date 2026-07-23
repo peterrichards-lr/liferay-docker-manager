@@ -45,6 +45,17 @@ ELASTICSEARCH7_VERSION = "7.17.24"
 TRAEFIK_VERSION = "v3.6.1"
 SOCAT_IMAGE = "alpine/socat"
 
+# --- Release Announcements Mapping ---
+# Maps major.minor or exact version keys to lists of (cmd, description) tuples.
+RELEASE_ANNOUNCEMENTS = {
+    "2.15": [
+        ("ldm link <path>", "Linked workspaces local integration (replaces init-from)"),
+        ("ldm clone <url>", "Clone and setup a remote Git workspace repository"),
+        ("ldm import <pkg>", "Import compiled hydrated data packages (.ldmp) only"),
+        ("ldm init-from", "Deprecated (forwarded to ldm link)"),
+    ],
+}
+
 # --- Global Infrastructure ---
 INFRA_SERVICES = [
     ("liferay-proxy-global", "SSL Proxy (Traefik)"),
