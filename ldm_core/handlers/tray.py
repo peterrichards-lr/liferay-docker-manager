@@ -54,8 +54,9 @@ class TrayService(BaseHandler):
             return True
         return False
 
-    def setup_autostart(self):
+    def setup_autostart(self):  # noqa: PLR0915
         """Provisions native autostart / launch-on-login for LDM System Tray."""
+        import contextlib
         import platform
         import shutil
         import subprocess
