@@ -33,6 +33,39 @@ class TestTrayService:
                 tray_service.cmd_tray()
                 mock_app_instance.run.assert_called_once()
 
+    def test_setup_autostart_macos(self, manager, tmp_path):
+        tray_service = TrayService(manager)
+        with patch("platform.system", return_value="Darwin"):
+            with patch("ldm_core.utils.get_actual_home", return_value=tmp_path):
+                with patch("subprocess.run"):
+                    tray_service.setup_autostart()
+                    app_dir = tmp_path / "Applications" / "Liferay Docker Manager.app"
+                    plist_file = (
+                        tmp_path
+                        / "Library"
+                        / "LaunchAgents"
+                        / "com.liferay.dockermanager.plist"
+                    )
+                    assert app_dir.exists()
+                    assert plist_file.exists()
+                    assert (
+                        "CFBundleDisplayName"
+                        in (app_dir / "Contents" / "Info.plist").read_text()
+                    )
+
+    def test_remove_autostart_macos(self, manager, tmp_path):
+        tray_service = TrayService(manager)
+        plist_dir = tmp_path / "Library" / "LaunchAgents"
+        plist_dir.mkdir(parents=True)
+        plist_file = plist_dir / "com.liferay.dockermanager.plist"
+        plist_file.write_text("test")
+
+        with patch("platform.system", return_value="Darwin"):
+            with patch("ldm_core.utils.get_actual_home", return_value=tmp_path):
+                with patch("subprocess.run"):
+                    tray_service.remove_autostart()
+                    assert not plist_file.exists()
+
 
 class TestLdmTrayApp:
     @pytest.fixture
