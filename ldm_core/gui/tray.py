@@ -161,6 +161,21 @@ class LdmTrayApp:
         self.running = False
         icon.stop()
 
+    def _make_open_portal(self, host_name):
+        return lambda _icon, _item: self.on_open_portal(host_name)
+
+    def _make_copy_tunnel(self, tunnel_url):
+        return lambda _icon, _item: self.on_copy_tunnel(tunnel_url)
+
+    def _make_edit_properties(self, project_path):
+        return lambda _icon, _item: self.on_edit_properties(project_path)
+
+    def _make_view_compose(self, project_path):
+        return lambda _icon, _item: self.on_view_compose(project_path)
+
+    def _make_stop_project(self, project_id):
+        return lambda _icon, _item: self.on_stop_project(project_id)
+
     def _menu_generator(self):
         registry = self._get_registry()
 
@@ -172,7 +187,7 @@ class LdmTrayApp:
                 sub_items = [
                     MenuItem(
                         "Open Local Portal",
-                        lambda _icon, _item, h=host_name: self.on_open_portal(h),
+                        self._make_open_portal(host_name),
                     )
                 ]
 
@@ -181,7 +196,7 @@ class LdmTrayApp:
                     sub_items.append(
                         MenuItem(
                             "Copy Public URL",
-                            lambda _icon, _item, t=tunnel_url: self.on_copy_tunnel(t),
+                            self._make_copy_tunnel(tunnel_url),
                         )
                     )
 
@@ -189,23 +204,19 @@ class LdmTrayApp:
                 sub_items.append(
                     MenuItem(
                         "Edit portal-ext.properties",
-                        lambda _icon, _item, path=project_path: self.on_edit_properties(
-                            path
-                        ),
+                        self._make_edit_properties(project_path),
                     )
                 )
                 sub_items.append(
                     MenuItem(
                         "View docker-compose.yml",
-                        lambda _icon, _item, path=project_path: self.on_view_compose(
-                            path
-                        ),
+                        self._make_view_compose(project_path),
                     )
                 )
                 sub_items.append(
                     MenuItem(
                         "Stop Project",
-                        lambda _icon, _item, p=project_id: self.on_stop_project(p),
+                        self._make_stop_project(project_id),
                     )
                 )
 
