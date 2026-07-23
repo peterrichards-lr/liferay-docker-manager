@@ -68,7 +68,7 @@ To run `ldm tray` automatically when you log into your desktop environment, conf
 
 #### macOS (LaunchAgent)
 
-Create a user LaunchAgent file `~/Library/LaunchAgents/com.liferay.ldm.tray.plist`:
+Create a user LaunchAgent file `~/Library/LaunchAgents/com.liferay.dockermanager.plist`:
 
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
@@ -76,7 +76,7 @@ Create a user LaunchAgent file `~/Library/LaunchAgents/com.liferay.ldm.tray.plis
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>com.liferay.ldm.tray</string>
+    <string>com.liferay.dockermanager</string>
     <key>ProgramArguments</key>
     <array>
         <string>/usr/local/bin/ldm</string>
@@ -90,7 +90,11 @@ Create a user LaunchAgent file `~/Library/LaunchAgents/com.liferay.ldm.tray.plis
 </plist>
 ```
 
+<<<<<<< HEAD
 Activate it using `launchctl load ~/Library/LaunchAgents/com.liferay.ldm.tray.plist`.
+=======
+Activate it using `launchctl load ~/Library/LaunchAgents/com.liferay.dockermanager.plist`.
+>>>>>>> 8bf1aaff (docs(tray): update LaunchAgent plist label to Liferay Docker Manager (#791))
 
 #### Windows (Startup Folder)
 
@@ -104,7 +108,11 @@ Create `~/.config/autostart/ldm-tray.desktop`:
 ```ini
 [Desktop Entry]
 Type=Application
+<<<<<<< HEAD
 Name=LDM System Tray
+=======
+Name=Liferay Docker Manager
+>>>>>>> 8bf1aaff (docs(tray): update LaunchAgent plist label to Liferay Docker Manager (#791))
 Exec=ldm tray
 Icon=utilities-system-monitor
 Terminal=false
