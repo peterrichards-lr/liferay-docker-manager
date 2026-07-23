@@ -289,9 +289,9 @@ class TestFragments(unittest.TestCase):
         # Get context parameter passed to urlopen for non-loopback
         called_ctx_public = mock_urlopen.call_args_list[0].kwargs.get("context")
         self.assertIsNotNone(called_ctx_public)
-        # Should NOT bypass verification (i.e. check_hostname should be True, verify_mode should not be CERT_NONE)
-        self.assertTrue(called_ctx_public.check_hostname)
-        self.assertNotEqual(called_ctx_public.verify_mode, ssl.CERT_NONE)
+        # Internal API calls use 127.0.0.1 loopback URL so SSL verification is safely bypassed
+        self.assertFalse(called_ctx_public.check_hostname)
+        self.assertEqual(called_ctx_public.verify_mode, ssl.CERT_NONE)
 
         # 2. Loopback case (local development host)
         project_meta_local = {

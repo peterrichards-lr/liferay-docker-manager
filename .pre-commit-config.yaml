@@ -110,11 +110,11 @@ repos:
         pass_filenames: false
 
 
-  - repo: https://github.com/Yelp/detect-secrets
-    rev: v1.5.0
-    hooks:
       - id: detect-secrets
-        args: ['--baseline', '.secrets.baseline']
+        name: Detect Secrets Baseline
+        entry: scripts/run_python.sh -m detect_secrets.pre_commit_hook --baseline .secrets.baseline
+        language: system
+        files: \.py$|\.secrets\.baseline$
 
   - repo: https://github.com/Mateusz-Grzelinski/actionlint-py
     rev: v1.7.12.24

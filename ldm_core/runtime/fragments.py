@@ -1,5 +1,6 @@
 import json
 import os
+import ssl
 import time
 
 from ldm_core.handlers.base import BaseHandler
@@ -231,10 +232,10 @@ class FragmentsService(BaseHandler):
             "Content-Type": "application/json",
         }
 
-        import ssl
+        internal_api_base_url = f"http://127.0.0.1:{lfr_port}"
 
         def api_request(method, path, payload=None):
-            url = f"{ext_base_url}{path}"
+            url = f"{internal_api_base_url}{path}"
             req = urllib.request.Request(url, headers=headers, method=method)
             if payload:
                 req.data = json.dumps(payload).encode("utf-8")
@@ -306,10 +307,7 @@ class FragmentsService(BaseHandler):
                     if not page_def:
                         continue
 
-                    def patch_fragments(element, page_name):
-                        nonlocal patched_count
-                        elem_type = str(element.get("type", "")).lower()
-
+                    def extract_candidates(element):
                         def_obj = element.get("definition", {})
                         if not isinstance(def_obj, dict):
                             def_obj = {}
@@ -317,7 +315,6 @@ class FragmentsService(BaseHandler):
                         if not isinstance(frag_config, dict):
                             frag_config = {}
 
-                        # Collect all potential key identifiers (ERC, fragmentKey, etc.)
                         candidates = []
                         for obj in (element, def_obj, frag_config):
                             if isinstance(obj, dict):
@@ -331,19 +328,28 @@ class FragmentsService(BaseHandler):
                                     val = obj.get(field)
                                     if val and isinstance(val, str):
                                         candidates.append(val)
+                        return candidates
+
+                    def patch_fragments(element, page_name):
+                        nonlocal patched_count
+                        elem_type = str(element.get("type", "")).lower()
 
                         matched_key = None
-                        for c in candidates:
+                        for c in extract_candidates(element):
                             if c in overrides:
                                 matched_key = c
                                 break
+                            if c.lower() in overrides:
+                                matched_key = c.lower()
+                                break
 
-                        if matched_key and elem_type in (
-                            "fragment",
-                            "fragmententry",
-                            "component",
-                            "widget",
-                        ):
+                        is_fragment = (
+                            elem_type
+                            in ("fragment", "fragmententry", "component", "widget")
+                            or "fragment" in elem_type
+                        )
+
+                        if matched_key and is_fragment:
                             element_id = element.get("id")
                             if element_id:
                                 patch_payload = {
@@ -363,8 +369,19 @@ class FragmentsService(BaseHandler):
                                     )
                                     patched_count += 1
 
-                        for child in element.get("pageElements", []):
-                            patch_fragments(child, page_name)
+                        for child_key in (
+                            "pageElements",
+                            "columns",
+                            "rows",
+                            "elements",
+                            "children",
+                            "components",
+                        ):
+                            children = element.get(child_key)
+                            if isinstance(children, list):
+                                for child in children:
+                                    if isinstance(child, dict):
+                                        patch_fragments(child, page_name)
 
                     if "pageElement" in page_def:
                         patch_fragments(page_def["pageElement"], page.get("name"))
