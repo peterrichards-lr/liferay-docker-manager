@@ -314,8 +314,12 @@ class UI:
             return self
 
         def __exit__(self, exc_type, exc_val, exc_tb):
+            self.stop()
+
+        def stop(self):
+            """Stops the spinner animation and clears line."""
             self.is_running = False
-            if self.thread:
+            if self.thread and self.thread.is_alive():
                 self.thread.join()
 
     @staticmethod

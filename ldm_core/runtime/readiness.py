@@ -595,7 +595,13 @@ class ReadinessService(BaseHandler):
 
                     duration_str = UI.format_duration(duration_total)
 
-                    spinner.stop()
+                    if hasattr(spinner, "stop") and callable(
+                        getattr(spinner, "stop", None)
+                    ):
+                        try:
+                            spinner.stop()
+                        except Exception:
+                            pass
 
                     # Execute Headless API patcher for fragment overrides
                     root_path = self.manager.detect_project_path(
