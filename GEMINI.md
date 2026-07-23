@@ -11,9 +11,12 @@
   - [x] Update E2E verify scripts (`verify_e2e_refactor.sh` and `verify_e2e_refactor.ps1`) to explicitly run `ldm doctor --detailed` health check gate.
   - [x] Fix Windows post-upgrade `ldm doctor` call to pass `--skip-project` flag for non-interactive execution.
   - [x] Tag and publish `v2.15.22-pre.11` (PR #784 merged).
-  - [x] Remove static ROI message (`"LDM database restore saved you 5m 0s of manual work!"`) from `ldm_core/snapshot/database.py`.
-  - [ ] User completing local verification scripts and quickstart retest.
-  - [ ] Commit database restore ROI fix, bump to pre.12 or promote to stable `v2.15.22` once E2E verification completes.
+  - [x] Remove static ROI message (`"LDM database restore saved you 5m 0s of manual work!"`) from `ldm_core/snapshot/database.py` (PR #786 merged).
+  - [x] Implement Candidate Target Resolution for Headless API Fragment Overrides in Traefik mode (`ldm_core/runtime/fragments.py`).
+  - [x] Implement CLI Project Index Selection (`--index` / `-i` / numeric project IDs like `ldm info 1`) in `ldm_core/cli.py` & `ldm_core/handlers/base.py`.
+  - [x] Tag and publish `v2.15.22-pre.12` (PR #787 merged).
+  - [ ] User testing `quickstart aica` and multi-platform verification on `v2.15.22-pre.12`.
+  - [ ] Promote to stable `v2.15.22` once E2E verification completes.
 
 - **Current Active Task (July 20, 2026)**:
   - [x] Orchestrate `v2.15.19-pre.8` release and subsequently promote it to stable `v2.15.19` once PR #708 and #709 are resolved.
