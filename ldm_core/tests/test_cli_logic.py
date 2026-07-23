@@ -7,6 +7,39 @@ class TestCLILogic(unittest.TestCase):
     def setUp(self):
         self.parser, _ = get_parser()
 
+    def test_system_alias_mappings(self):
+        # Test direct top-level system subcommands expand via preprocess_args/legacy_map
+        args = self.parser.parse_args(["roi"])
+        self.assertEqual(args.command, "system")
+        self.assertEqual(args.subcommand, "roi")
+
+        args = self.parser.parse_args(["seeds"])
+        self.assertEqual(args.command, "system")
+        self.assertEqual(args.subcommand, "seeds")
+
+        args = self.parser.parse_args(["relocate", "/tmp/ext"])
+        self.assertEqual(args.command, "system")
+        self.assertEqual(args.subcommand, "relocate")
+        self.assertEqual(args.target, "/tmp/ext")
+
+        args = self.parser.parse_args(["init-ci"])
+        self.assertEqual(args.command, "system")
+        self.assertEqual(args.subcommand, "init-ci")
+
+    def test_package_resources_integrity(self):
+        # Verify essential package resource files exist in ldm_core/resources
+        from pathlib import Path
+
+        import ldm_core
+
+        res_dir = Path(ldm_core.__file__).parent / "resources"
+        self.assertTrue((res_dir / "ldm_app_icon.jpg").exists())
+        self.assertTrue((res_dir / "infra-compose.yml").exists())
+        self.assertTrue((res_dir / "dashboard" / "index.html").exists())
+        self.assertTrue(
+            (res_dir / "common_baseline" / "portal-ext.properties").exists()
+        )
+
     def test_intermixed_flags_prune(self):
         # Test: ldm prune -y (legacy alias -> system prune)
         args = self.parser.parse_args(["prune", "-y"])
