@@ -113,6 +113,68 @@ class TestConfigSafe(unittest.TestCase):
     @patch("ldm_core.utils.get_actual_home")
     @patch("ldm_core.ui.UI.heading")
     @patch("builtins.print")
+    def test_upgrade_banner_dynamic_announcements(
+        self, mock_print, mock_heading, mock_home, mock_isatty
+    ):
+        """Verify dynamic announcement formatting and empty announcement fallback."""
+        import os
+        import sys
+
+        mock_isatty.return_value = True
+        orig_argv = sys.argv
+        sys.argv = ["ldm"]
+        orig_env = os.environ.copy()
+        if "PYTEST_CURRENT_TEST" in os.environ:
+            del os.environ["PYTEST_CURRENT_TEST"]
+
+        try:
+            mock_home.return_value = Path(self.test_dir)
+
+            from ldm_core.cli import check_and_display_upgrade_banner
+            from ldm_core.constants import RELEASE_ANNOUNCEMENTS
+
+            # Test with custom announcements
+            with patch.dict(
+                RELEASE_ANNOUNCEMENTS,
+                {"99.99": [("ldm test", "Custom test command")]},
+                clear=True,
+            ):
+                with patch("ldm_core.constants.VERSION", "99.99.1"):
+                    check_and_display_upgrade_banner()
+                    self.assertTrue(mock_heading.called)
+                    # Verify custom announcement text was printed
+                    printed_text = " ".join(
+                        str(call[0][0]) for call in mock_print.call_args_list if call[0]
+                    )
+                    self.assertIn("ldm test", printed_text)
+                    self.assertIn("Custom test command", printed_text)
+
+            mock_heading.reset_mock()
+            mock_print.reset_mock()
+
+            # Test with empty announcements (quiet upgrade)
+            config_path = Path(self.test_dir) / ".ldmrc"
+            if config_path.exists():
+                config_path.unlink()
+
+            with patch.dict(RELEASE_ANNOUNCEMENTS, {}, clear=True):
+                with patch("ldm_core.constants.VERSION", "99.99.2"):
+                    check_and_display_upgrade_banner()
+                    self.assertTrue(mock_heading.called)
+                    printed_text = " ".join(
+                        str(call[0][0]) for call in mock_print.call_args_list if call[0]
+                    )
+                    self.assertIn("LDM has been upgraded to v99.99.2!", printed_text)
+                    self.assertNotIn("Important Changes", printed_text)
+        finally:
+            sys.argv = orig_argv
+            os.environ.clear()
+            os.environ.update(orig_env)
+
+    @patch("sys.stdout.isatty")
+    @patch("ldm_core.utils.get_actual_home")
+    @patch("ldm_core.ui.UI.heading")
+    @patch("builtins.print")
     def test_upgrade_banner_non_tty(
         self, mock_print, mock_heading, mock_home, mock_isatty
     ):
