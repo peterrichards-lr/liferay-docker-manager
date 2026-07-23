@@ -189,6 +189,23 @@ try {
         exit 1
     }
 
+    Write-Host ">> Verifying ldm doctor Dependency Integrity..."
+    $doctorOut = & $LDM_CMD doctor --detailed 2>&1
+    $doctorStr = ($doctorOut -join "`n")
+    if ($doctorStr -match "Dependency Integrity") {
+        if ($doctorStr -match "Dependency Integrity.*(Failed|Missing|❌)") {
+            Write-Host "[ERROR] ERROR: ldm doctor Dependency Integrity check failed!" -ForegroundColor Red
+            $doctorOut | Where-Object { $_ -match "Dependency Integrity" } | Write-Host
+            Add-Content -Path $RESULTS_FILE_TMP -Value "ERROR: ldm doctor Dependency Integrity failed"
+            exit 1
+        } else {
+            Write-Host "[SUCCESS] ldm doctor Dependency Integrity verified."
+            Add-Content -Path $RESULTS_FILE_TMP -Value "ldm doctor Dependency Integrity: PASSED"
+        }
+    } else {
+        Write-Host "[WARNING] Skipping Dependency Integrity check (binary install — no requirements.txt found)."
+    }
+
     Write-Host ">> Verifying Project Collision Detection..."
     $colRes = & $LDM_CMD -y run "collision-test" --tag "2026.q1.4-lts" --port 8099 --no-wait --no-up --no-seed 2>&1
     # Check if collision-test directory exists
