@@ -6,6 +6,15 @@
 
 ## Active Work State & Plan (July 16, 2026)
 
+- **Current Active Task (July 23, 2026)**:
+  - [x] Fix Issue #774: Strip all PEP 440 version specifiers when checking dependency integrity in `ldm doctor`.
+  - [x] Update E2E verify scripts (`verify_e2e_refactor.sh` and `verify_e2e_refactor.ps1`) to explicitly run `ldm doctor --detailed` health check gate.
+  - [x] Fix Windows post-upgrade `ldm doctor` call to pass `--skip-project` flag for non-interactive execution.
+  - [x] Tag and publish `v2.15.22-pre.11` (PR #784 merged).
+  - [x] Remove static ROI message (`"LDM database restore saved you 5m 0s of manual work!"`) from `ldm_core/snapshot/database.py`.
+  - [ ] User completing local verification scripts and quickstart retest.
+  - [ ] Commit database restore ROI fix, bump to pre.12 or promote to stable `v2.15.22` once E2E verification completes.
+
 - **Current Active Task (July 20, 2026)**:
   - [x] Orchestrate `v2.15.19-pre.8` release and subsequently promote it to stable `v2.15.19` once PR #708 and #709 are resolved.
   - [x] Extract `refactor/709-runtime-facade` to a dedicated branch so the unstable refactor does not poison the `v2.15.19` release.
@@ -604,6 +613,4 @@ When modifying `client-extension.yaml` files, **NEVER change or remove `.service
 
 <!-- markdownlint-disable MD049 -->
 ---
-<!-- markdownlint-disable MD049 -->
----
-*Last Updated: 2026-07-23* | *Last Reviewed: 2026-07-21*
+*Last Updated: 2026-07-23* | *Last Reviewed: 2026-07-23*
