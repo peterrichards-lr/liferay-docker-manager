@@ -90,11 +90,7 @@ Create a user LaunchAgent file `~/Library/LaunchAgents/com.liferay.dockermanager
 </plist>
 ```
 
-<<<<<<< HEAD
-Activate it using `launchctl load ~/Library/LaunchAgents/com.liferay.ldm.tray.plist`.
-=======
 Activate it using `launchctl load ~/Library/LaunchAgents/com.liferay.dockermanager.plist`.
->>>>>>> 8bf1aaff (docs(tray): update LaunchAgent plist label to Liferay Docker Manager (#791))
 
 #### Windows (Startup Folder)
 
@@ -108,11 +104,7 @@ Create `~/.config/autostart/ldm-tray.desktop`:
 ```ini
 [Desktop Entry]
 Type=Application
-<<<<<<< HEAD
-Name=LDM System Tray
-=======
 Name=Liferay Docker Manager
->>>>>>> 8bf1aaff (docs(tray): update LaunchAgent plist label to Liferay Docker Manager (#791))
 Exec=ldm tray
 Icon=utilities-system-monitor
 Terminal=false
