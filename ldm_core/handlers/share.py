@@ -820,7 +820,7 @@ class ShareService:
             url = f"http://127.0.0.1:{port}/api/{endpoint}"
             try:
                 req = urllib.request.Request(url, headers={"User-Agent": "LDM-Client"})
-                with urllib.request.urlopen(req, timeout=2) as resp:
+                with urllib.request.urlopen(req, timeout=2) as resp:  # nosec B310
                     if resp.status == 200:
                         data = resp.read().decode("utf-8")
                         results[endpoint] = json.loads(data)
