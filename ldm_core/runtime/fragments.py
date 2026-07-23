@@ -310,18 +310,36 @@ class FragmentsService(BaseHandler):
         def extract_candidates(element):
             """Collect all candidate key identifiers from a page element.
 
-            Probes the element itself, its definition/fragmentConfig sub-objects, and
-            the fragmentEntryLink structure used by the Headless Delivery API (2025.Q1+).
+            Probes the element itself, definition, fragmentConfig, fragmentEntryLink,
+            and sub-objects used by the Headless Delivery API (2025.Q1+).
             """
-            def_obj = element.get("definition", {})
-            if not isinstance(def_obj, dict):
-                def_obj = {}
-            frag_config = def_obj.get("fragmentConfig", {})
-            if not isinstance(frag_config, dict):
-                frag_config = {}
-
             candidates = []
-            for obj in (element, def_obj, frag_config):
+
+            def_obj = (
+                element.get("definition")
+                if isinstance(element.get("definition"), dict)
+                else {}
+            )
+            frag_config = (
+                def_obj.get("fragmentConfig")
+                if isinstance(def_obj.get("fragmentConfig"), dict)
+                else {}
+            )
+            fel = (
+                element.get("fragmentEntryLink")
+                if isinstance(element.get("fragmentEntryLink"), dict)
+                else {}
+            )
+            fel_entry = (
+                fel.get("fragmentEntry")
+                if isinstance(fel.get("fragmentEntry"), dict)
+                else {}
+            )
+            fel_frag = (
+                fel.get("fragment") if isinstance(fel.get("fragment"), dict) else {}
+            )
+
+            for obj in (element, def_obj, frag_config, fel, fel_entry, fel_frag):
                 if isinstance(obj, dict):
                     for field in (
                         "externalReferenceCode",
@@ -329,22 +347,11 @@ class FragmentsService(BaseHandler):
                         "fragmentEntryKey",
                         "key",
                         "id",
+                        "name",
                     ):
                         val = obj.get(field)
                         if val and isinstance(val, str):
                             candidates.append(val)
-
-            # Also probe fragmentEntryLink structure (Headless Delivery API 2025.Q1+)
-            fel = element.get("fragmentEntryLink", {})
-            if isinstance(fel, dict):
-                val = fel.get("fragmentKey")
-                if val and isinstance(val, str):
-                    candidates.append(val)
-                entry = fel.get("fragmentEntry", {})
-                if isinstance(entry, dict):
-                    val = entry.get("fragmentEntryKey")
-                    if val and isinstance(val, str):
-                        candidates.append(val)
 
             return candidates
 
@@ -368,12 +375,7 @@ class FragmentsService(BaseHandler):
                     matched_key = c.lower()
                     break
 
-            is_fragment = (
-                elem_type in ("fragment", "fragmententry", "component", "widget")
-                or "fragment" in elem_type
-            )
-
-            if matched_key and is_fragment:
+            if matched_key:
                 element_id = element.get("id")
                 if element_id:
                     patch_payload = {
@@ -393,8 +395,9 @@ class FragmentsService(BaseHandler):
                         )
                         patched_count += 1
 
-            # Traverse all child array keys used by different layout element types
+            # Traverse all child keys used by different layout element types
             for child_key in (
+                "pageElement",
                 "pageElements",
                 "columns",
                 "rows",
@@ -407,6 +410,8 @@ class FragmentsService(BaseHandler):
                     for child in children:
                         if isinstance(child, dict):
                             patch_fragments(child, page_name)
+                elif isinstance(children, dict):
+                    patch_fragments(children, page_name)
 
         for attempt in range(max_retries):
             sites_data = api_request("GET", "/o/headless-delivery/v1.0/sites")
@@ -436,17 +441,14 @@ class FragmentsService(BaseHandler):
                                 "GET", f"/o/headless-delivery/v1.0/site-pages/{page_id}"
                             )
                             if page_details:
-                                page_def = page_details.get("pageDefinition")
+                                page_def = (
+                                    page_details.get("pageDefinition") or page_details
+                                )
                     if not page_def:
                         continue
 
                     debug_page_tree.append(page_def)
-
-                    # Handle both pageElement (singular) and pageElements (plural) at root
-                    if "pageElement" in page_def:
-                        patch_fragments(page_def["pageElement"], page.get("name"))
-                    for root_elem in page_def.get("pageElements", []):
-                        patch_fragments(root_elem, page.get("name"))
+                    patch_fragments(page_def, page.get("name"))
 
             if patched_count > 0:
                 break
