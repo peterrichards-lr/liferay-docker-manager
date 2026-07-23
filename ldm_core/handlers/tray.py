@@ -229,9 +229,7 @@ class TrayService(BaseHandler):
         home = get_actual_home()
 
         if sys_type == "Darwin":
-            plist_file = (
-                home / "Library" / "LaunchAgents" / "com.liferay.ldm.plist"
-            )
+            plist_file = home / "Library" / "LaunchAgents" / "com.liferay.ldm.plist"
             old_plist_file = (
                 home / "Library" / "LaunchAgents" / "com.liferay.dockermanager.plist"
             )

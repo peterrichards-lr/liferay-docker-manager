@@ -847,15 +847,21 @@ class ShareService:
                 or project_id
                 or (root.name if root else "tunnel")
             )
-            status = info.get("status") or ("healthy" if state.get("connected") else "disconnected")
-            conn_state = state.get("connection_state") or (info.get("connection") or {}).get("state", "disconnected")
+            status = info.get("status") or (
+                "healthy" if state.get("connected") else "disconnected"
+            )
+            conn_state = state.get("connection_state") or (
+                info.get("connection") or {}
+            ).get("state", "disconnected")
             public_urls = state.get("public_urls") or info.get("public_urls") or []
             if not public_urls and state.get("public_url"):
                 public_urls = [state["public_url"]]
 
             UI.heading("Liferay Tunnel Status")
             UI.raw(f"  ● {UI.WHITE}Subdomain: {UI.CYAN}{subdomain}{UI.COLOR_OFF}")
-            status_color = UI.GREEN if status == "healthy" or state.get("connected") else UI.RED
+            status_color = (
+                UI.GREEN if status == "healthy" or state.get("connected") else UI.RED
+            )
             UI.raw(f"  ● {UI.WHITE}Status: {status_color}{status}{UI.COLOR_OFF}")
             UI.raw(
                 f"  ● {UI.WHITE}Connection State: {UI.WHITE if conn_state in ('connected', 'active') else UI.RED}{conn_state}{UI.COLOR_OFF}"

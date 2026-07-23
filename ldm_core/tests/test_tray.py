@@ -41,10 +41,7 @@ class TestTrayService:
                     tray_service.setup_autostart()
                     app_dir = tmp_path / "Applications" / "Liferay Docker Manager.app"
                     plist_file = (
-                        tmp_path
-                        / "Library"
-                        / "LaunchAgents"
-                        / "com.liferay.ldm.plist"
+                        tmp_path / "Library" / "LaunchAgents" / "com.liferay.ldm.plist"
                     )
                     assert app_dir.exists()
                     assert plist_file.exists()
