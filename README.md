@@ -35,7 +35,15 @@ sudo curl -L https://github.com/peterrichards-lr/liferay-docker-manager/releases
 sudo chmod +x /usr/local/bin/ldm
 ```
 
-For detailed setup on Windows (including PowerShell instructions), see the **[Full Installation Guide](docs/tutorials/quick_start.md)**.
+### Windows (PowerShell)
+
+```powershell
+New-Item -ItemType Directory -Force -Path "$HOME\bin"
+Invoke-WebRequest -Uri "https://github.com/peterrichards-lr/liferay-docker-manager/releases/latest/download/ldm-windows.exe" -OutFile "$HOME\bin\ldm.exe"
+[Environment]::SetEnvironmentVariable("Path", [Environment]::GetEnvironmentVariable("Path", "User") + ";$HOME\bin", "User")
+```
+
+For detailed platform-specific prerequisites, see the **[Full Installation Guide](docs/tutorials/quick_start.md)**.
 
 ---
 
@@ -118,4 +126,4 @@ For a complete structured table of contents, visit the **[Documentation Index](d
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-07-23* | *Last Reviewed: 2026-07-09*
+*Last Updated: 2026-07-26* | *Last Reviewed: 2026-07-26*

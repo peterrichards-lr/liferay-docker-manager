@@ -15,7 +15,9 @@
   - [x] Implement Candidate Target Resolution for Headless API Fragment Overrides in Traefik mode (`ldm_core/runtime/fragments.py`).
   - [x] Implement CLI Project Index Selection (`--index` / `-i` / numeric project IDs like `ldm info 1`) in `ldm_core/cli.py` & `ldm_core/handlers/base.py`.
   - [x] Tag and publish `v2.15.22-pre.12` (PR #787 merged).
-  - [ ] User testing `quickstart aica` and multi-platform verification on `v2.15.22-pre.12`.
+  - [x] Fix Issue #817: Chown `1000:1000` Liferay Docker named volumes before starting Liferay to prevent OSGi lock manager crashes, and add `--clean-state` option to `ldm run` and `ldm start` (PR #818 merged).
+  - [x] Tag and publish `v2.15.22-pre.24` (PR #819).
+  - [ ] User testing and multi-platform verification on `v2.15.22-pre.24`.
   - [ ] Promote to stable `v2.15.22` once E2E verification completes.
 
 - **Current Active Task (July 20, 2026)**:
@@ -616,4 +618,4 @@ When modifying `client-extension.yaml` files, **NEVER change or remove `.service
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-07-23* | *Last Reviewed: 2026-07-23*
+*Last Updated: 2026-07-26* | *Last Reviewed: 2026-07-23*
