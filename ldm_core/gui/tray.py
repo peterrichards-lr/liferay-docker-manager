@@ -40,7 +40,10 @@ class LdmTrayApp:
             os.path.dirname(__file__), "..", "resources", "ldm_app_icon.jpg"
         )
         try:
-            self.base_image = Image.open(self.base_image_path).convert("RGBA")
+            raw_img = Image.open(self.base_image_path).convert("RGBA")
+            # Resize 1024x1024 artwork to high-DPI 128x128 status bar dimensions with Lanczos resampling
+            resample_filter = getattr(Image, "Resampling", Image).LANCZOS
+            self.base_image = raw_img.resize((128, 128), resample_filter)
         except Exception:
             # Dynamic 64x64 RGBA in-memory fallback icon (blue background with 'L' emblem)
             self.base_image = Image.new("RGBA", (64, 64), (0, 102, 204, 255))
