@@ -322,6 +322,7 @@ ldm rm [project]                  # Alias for 'down'
 ### Options
 
 - **`--clean-state`** (Only for `start` and `run`): Explicitly wipes the contents of the OSGi state volume before starting the container to remove any stale bundle locks.
+- **`--fix-permissions`** (Only for `start` and `run`): Forces root permission reclamation on bind-mounted host directories. Useful for resolving Liferay lock crashes when running macOS/Windows Docker Desktop against external drives or network shares.
 
 ### Examples
 
@@ -466,10 +467,6 @@ ldm config log-level
 ldm log-level [project] --list
 ```
 
-<!-- markdownlint-disable MD049 -->
----
-*Last Updated: 2026-07-26* | *Last Reviewed: 2026-07-10*
-
 ## Global Flags
 
 The following flags can be passed to almost any command:
@@ -484,3 +481,7 @@ The following flags can be passed to almost any command:
 - **`--tag-prefix`**: Force specific tag discovery prefix when resolving latest tags.
 - **`--skip-project`**: Skips project discovery. Useful for global diagnostics like `ldm doctor --skip-project`.
 - **`--delete`**: Specifically removes global infrastructure components or bypasses safety prompts.
+
+<!-- markdownlint-disable MD049 -->
+---
+*Last Updated: 2026-07-26* | *Last Reviewed: 2026-07-26*
