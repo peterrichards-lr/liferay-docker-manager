@@ -74,9 +74,9 @@ ldm tray --autostart
 ldm tray --uninstall-autostart
 ```
 
-* **macOS**: Provisions a macOS App Bundle (`~/Applications/Liferay Docker Manager.app`) and a user LaunchAgent (`~/Library/LaunchAgents/com.liferay.ldm.plist`) configured to run automatically in the background at login.
-* **Windows**: Creates a startup script in `AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup\Liferay Docker Manager.bat`.
-* **Linux**: Creates a FreeDesktop Autostart entry at `~/.config/autostart/ldm.desktop`.
+- **macOS**: Provisions a macOS App Bundle (`~/Applications/Liferay Docker Manager.app`) and a user LaunchAgent (`~/Library/LaunchAgents/com.liferay.ldm.plist`) configured to run automatically in the background at login.
+- **Windows**: Creates a startup script in `AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup\Liferay Docker Manager.bat`.
+- **Linux**: Creates a FreeDesktop Autostart entry at `~/.config/autostart/ldm.desktop`.
 
 ### Running in Background (Detached Terminal)
 
