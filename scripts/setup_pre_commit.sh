@@ -17,12 +17,12 @@ source .venv/bin/activate
 # Check if pre-commit is installed
 if ! command -v pre-commit &> /dev/null; then
     echo "=> pre-commit not found. Installing from requirements-dev.txt..."
-    pip install -r requirements-dev.txt
+    python3 -m pip install -r requirements-dev.txt
     echo "=> Installing git hooks..."
-    pre-commit install
+    python3 -m pre_commit install
 fi
 
 echo "=> Running pre-commit on all files..."
 # We use || true so the script doesn't abort if pre-commit finds issues,
 # allowing the user to see the output.
-pre-commit run --all-files || true
+python3 -m pre_commit run --all-files || true

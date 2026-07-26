@@ -467,7 +467,6 @@ ldm config log-level
 ldm log-level [project] --list
 ```
 
-
 ## Global Flags
 
 The following flags can be passed to almost any command:
