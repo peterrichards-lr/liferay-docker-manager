@@ -139,3 +139,18 @@ class TestLdmTrayApp:
                 # Evaluate menu items generator to verify no ValueError raised during pystray item validation
                 items = list(app._menu_generator())
                 assert len(items) > 0
+
+    def test_autostart_toggle(self, manager):
+        with patch("PIL.Image.open"):
+            app = LdmTrayApp(manager)
+            manager.tray.is_autostart_enabled.return_value = False
+            assert app.is_autostart_enabled() is False
+
+            app.on_toggle_autostart(None, None)
+            manager.tray.setup_autostart.assert_called_once()
+
+            manager.tray.is_autostart_enabled.return_value = True
+            assert app.is_autostart_enabled() is True
+
+            app.on_toggle_autostart(None, None)
+            manager.tray.remove_autostart.assert_called_once()
