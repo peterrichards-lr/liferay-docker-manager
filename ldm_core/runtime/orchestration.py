@@ -43,7 +43,9 @@ class OrchestrationService(BaseHandler):
         )
         return pipeline.run(context)
 
-    def cmd_start(self, project_id=None, service=None, all_projects=False):
+    def cmd_start(
+        self, project_id=None, service=None, all_projects=False, clean_state=False
+    ):
         """Starts project containers."""
         targets = []
         if all_projects:
@@ -65,6 +67,49 @@ class OrchestrationService(BaseHandler):
         for root in targets:
             UI.detail(f"Starting project: {root.name}...")
             with ProjectLock(root):
+                if clean_state:
+                    UI.detail(
+                        "Wiping OSGi state volume as requested by --clean-state..."
+                    )
+                    # We can use the wipe logic for the state volume
+                    meta_path = root / ".liferay-docker" / "meta.json"
+                    is_persist = False
+                    if meta_path.exists():
+                        import json
+
+                        try:
+                            meta = json.loads(meta_path.read_text())
+                            is_persist = (
+                                str(meta.get("persist_osgi", "false")).lower() == "true"
+                            )
+                        except Exception:
+                            pass
+                    if is_persist:
+                        state_dir = root / "osgi" / "state"
+                        if state_dir.exists():
+                            import shutil
+
+                            shutil.rmtree(state_dir, ignore_errors=True)
+                            state_dir.mkdir(parents=True, exist_ok=True)
+                    else:
+                        from ldm_core.utils import sanitize_id
+
+                        vol_name = f"{sanitize_id(root.name)}-state"
+                        self.manager.run_command(
+                            [
+                                "docker",
+                                "run",
+                                "--rm",
+                                "-v",
+                                f"{vol_name}:/state",
+                                "alpine",
+                                "sh",
+                                "-c",
+                                "rm -rf /state/*",
+                            ],
+                            check=False,
+                        )
+
                 cmd = [*compose_base, "start"]
                 if service:
                     cmd.append(service)
