@@ -164,6 +164,55 @@ class LdmTrayApp:
         self.running = False
         icon.stop()
 
+    def is_autostart_enabled(self) -> bool:
+        try:
+            return self.manager.tray.is_autostart_enabled()
+        except Exception:
+            return False
+
+    def on_toggle_autostart(self, icon, item):
+        try:
+            if self.is_autostart_enabled():
+                self.manager.tray.remove_autostart()
+            else:
+                self.manager.tray.setup_autostart()
+        except Exception as e:
+            from ldm_core.ui import UI
+
+            UI.error(f"Failed to toggle autostart: {e}")
+
+    def on_dashboard_tab(self, tab=None):
+        url = "http://127.0.0.1:19000"
+        if tab:
+            url += f"#{tab}"
+        webbrowser.open(url)
+        t = threading.Thread(target=self._run_dashboard, daemon=True)
+        t.start()
+
+    def on_health_doctor(self, icon, item):
+        t = threading.Thread(
+            target=lambda: self.manager.system.cmd_doctor(fix=False, detailed=True),
+            daemon=True,
+        )
+        t.start()
+
+    def on_edit_global_config(self, icon, item):
+        from ldm_core.utils import get_actual_home
+
+        rc_path = get_actual_home() / ".ldmrc"
+        if rc_path.exists():
+            webbrowser.open(f"file://{rc_path}")
+
+    def on_reindex_project(self, project_id):
+        t = threading.Thread(
+            target=lambda: self.manager.snapshot.cmd_reindex(project_id=project_id),
+            daemon=True,
+        )
+        t.start()
+
+    def _make_reindex_project(self, project_id):
+        return lambda _icon, _item: self.on_reindex_project(project_id)
+
     def _make_open_portal(self, host_name):
         return lambda _icon, _item: self.on_open_portal(host_name)
 
@@ -189,7 +238,7 @@ class LdmTrayApp:
 
                 sub_items = [
                     MenuItem(
-                        "Open Local Portal",
+                        "🌐 Open Local Portal",
                         self._make_open_portal(host_name),
                     )
                 ]
@@ -198,7 +247,7 @@ class LdmTrayApp:
                 if tunnel_url:
                     sub_items.append(
                         MenuItem(
-                            "Copy Public URL",
+                            "🔗 Copy Public Share URL",
                             self._make_copy_tunnel(tunnel_url),
                         )
                     )
@@ -206,19 +255,26 @@ class LdmTrayApp:
                 sub_items.append(pystray.Menu.SEPARATOR)
                 sub_items.append(
                     MenuItem(
-                        "Edit portal-ext.properties",
+                        "⚙️ Edit portal-ext.properties",
                         self._make_edit_properties(project_path),
                     )
                 )
                 sub_items.append(
                     MenuItem(
-                        "View docker-compose.yml",
+                        "📄 View docker-compose.yml",
                         self._make_view_compose(project_path),
                     )
                 )
                 sub_items.append(
                     MenuItem(
-                        "Stop Project",
+                        "🔄 Trigger Elasticsearch Reindex",
+                        self._make_reindex_project(project_id),
+                    )
+                )
+                sub_items.append(pystray.Menu.SEPARATOR)
+                sub_items.append(
+                    MenuItem(
+                        "⏹️ Stop Project",
                         self._make_stop_project(project_id),
                     )
                 )
@@ -227,7 +283,31 @@ class LdmTrayApp:
 
             yield pystray.Menu.SEPARATOR
 
-        yield MenuItem("Open Diagnostics Dashboard", self.on_dashboard)
+        # Visual Control Center Submenu
+        control_center_items = [
+            MenuItem(
+                "📊 Open Visual Dashboard",
+                lambda _icon, _item: self.on_dashboard_tab(None),
+            ),
+            MenuItem(
+                "⚙️ Open Property Inspector & Editor",
+                lambda _icon, _item: self.on_dashboard_tab("properties"),
+            ),
+            MenuItem(
+                "🌐 Open Public Sharing & Tunnels",
+                lambda _icon, _item: self.on_dashboard_tab("sharing"),
+            ),
+        ]
+        yield MenuItem("🖥️ Visual Control Center", pystray.Menu(*control_center_items))
+
+        # System Tools & Diagnostics Submenu
+        tools_items = [
+            MenuItem("🩺 Run Health Doctor", self.on_health_doctor),
+            MenuItem("⚙️ Edit Global Config (~/.ldmrc)", self.on_edit_global_config),
+        ]
+        yield MenuItem("🛠️ System Tools & Diagnostics", pystray.Menu(*tools_items))
+
+        yield pystray.Menu.SEPARATOR
         yield MenuItem(
             "Launch on Login",
             self.on_toggle_autostart,
@@ -239,23 +319,6 @@ class LdmTrayApp:
 
         yield pystray.Menu.SEPARATOR
         yield MenuItem("Quit LDM Tray", self.on_quit)
-
-    def is_autostart_enabled(self) -> bool:
-        try:
-            return self.manager.tray.is_autostart_enabled()
-        except Exception:
-            return False
-
-    def on_toggle_autostart(self, icon, item):
-        try:
-            if self.is_autostart_enabled():
-                self.manager.tray.remove_autostart()
-            else:
-                self.manager.tray.setup_autostart()
-        except Exception as e:
-            from ldm_core.ui import UI
-
-            UI.error(f"Failed to toggle autostart: {e}")
 
     def get_menu(self):
         return pystray.Menu(self._menu_generator)
