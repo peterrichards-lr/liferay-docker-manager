@@ -64,51 +64,30 @@ The `ldm tray` command launches a native system tray application (menu bar icon)
 
 ### Autostart / Launch on Login Configuration
 
-To run `ldm tray` automatically when you log into your desktop environment, configure the native background launcher for your operating system:
+LDM includes built-in commands to automatically configure native system autostart on boot or user login across macOS, Windows, and Linux:
 
-#### macOS (LaunchAgent)
+```bash
+# Enable launch-on-login for System Tray
+ldm tray --autostart
 
-Create a user LaunchAgent file `~/Library/LaunchAgents/com.liferay.dockermanager.plist`:
-
-```xml
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>Label</key>
-    <string>com.liferay.dockermanager</string>
-    <key>ProgramArguments</key>
-    <array>
-        <string>/usr/local/bin/ldm</string>
-        <string>tray</string>
-    </array>
-    <key>RunAtLoad</key>
-    <true/>
-    <key>KeepAlive</key>
-    <false/>
-</dict>
-</plist>
+# Disable launch-on-login for System Tray
+ldm tray --uninstall-autostart
 ```
 
-Activate it using `launchctl load ~/Library/LaunchAgents/com.liferay.dockermanager.plist`.
+* **macOS**: Provisions a macOS App Bundle (`~/Applications/Liferay Docker Manager.app`) and a user LaunchAgent (`~/Library/LaunchAgents/com.liferay.ldm.plist`) configured to run automatically in the background at login.
+* **Windows**: Creates a startup script in `AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup\Liferay Docker Manager.bat`.
+* **Linux**: Creates a FreeDesktop Autostart entry at `~/.config/autostart/ldm.desktop`.
 
-#### Windows (Startup Folder)
+### Running in Background (Detached Terminal)
 
-1. Press `Win + R`, type `shell:startup`, and press `Enter`.
-2. Create a shortcut pointing to `ldm.exe tray` (or create `ldm-tray.bat` containing `ldm tray`).
+To launch the System Tray manually in the background without keeping a terminal window open:
 
-#### Linux (Desktop Autostart / systemd)
+```bash
+# macOS / Linux (nohup)
+nohup ldm tray >/dev/null 2>&1 &
 
-Create `~/.config/autostart/ldm-tray.desktop`:
-
-```ini
-[Desktop Entry]
-Type=Application
-Name=Liferay Docker Manager
-Exec=ldm tray
-Icon=utilities-system-monitor
-Terminal=false
-Categories=Development;
+# zsh / bash
+ldm tray & disown
 ```
 
 ## Debugging & Diagnostics
@@ -150,4 +129,4 @@ Controls whether LDM provisions an isolated PostgreSQL database or connects to t
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-07-23* | *Last Reviewed: 2026-07-23*
+*Last Updated: 2026-07-26* | *Last Reviewed: 2026-07-26*
