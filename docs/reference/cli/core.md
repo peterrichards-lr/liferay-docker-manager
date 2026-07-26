@@ -317,9 +317,15 @@ ldm stop [project] [service]      # Stop containers gracefully
 ldm restart [project] [service]   # Stop and then start
 ldm down [project] [service]      # Remove containers (and optionally -v volumes)
 ldm rm [project]                  # Alias for 'down'
+```
 
+### Options
 
-# Examples:
+- **`--clean-state`** (Only for `start` and `run`): Explicitly wipes the contents of the OSGi state volume before starting the container to remove any stale bundle locks.
+
+### Examples
+
+```bash
 ldm stop --all            # Stop all running projects in the workspace
 ldm restart --all         # Restart all running projects
 ldm restart               # Full stack restart (graceful stop + run)
@@ -462,7 +468,7 @@ ldm log-level [project] --list
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-07-23* | *Last Reviewed: 2026-07-10*
+*Last Updated: 2026-07-26* | *Last Reviewed: 2026-07-10*
 
 ## Global Flags
 
