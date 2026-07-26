@@ -428,6 +428,11 @@ def get_parser():  # noqa: PLR0915
     run.add_argument("--ssl", action="store_true", default=None)
     run.add_argument("--no-ssl", action="store_false", dest="ssl")
     run.add_argument("--force-ssl", action="store_true")
+    run.add_argument(
+        "--clean-state",
+        action="store_true",
+        help="Wipe the OSGi state volume contents before starting Liferay.",
+    )
     run.add_argument("--port", type=int)
     run.add_argument("--db", choices=["postgresql", "mysql", "hypersonic"])
     run.add_argument(
@@ -1021,6 +1026,12 @@ def get_parser():  # noqa: PLR0915
                 "--clean-hosts",
                 action="store_true",
                 help="Remove project entries from hosts file",
+            )
+        elif cmd == "start":
+            p.add_argument(
+                "--clean-state",
+                action="store_true",
+                help="Wipe the OSGi state volume contents before starting Liferay.",
             )
         if cmd == "logs":
             p.add_argument("-f", "--follow", action="store_true")
