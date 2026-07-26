@@ -1335,7 +1335,9 @@ class ExecutionStage(PipelineStage):
                         return None
                     time.sleep(2)
 
-            if platform.system().lower() == "linux" or getattr(manager.args, "fix_permissions", False):
+            if platform.system().lower() == "linux" or getattr(
+                manager.args, "fix_permissions", False
+            ):
                 from ldm_core.utils import reclaim_volume_permissions
 
                 for p_key in ["deploy", "logs", "osgi", "files"]:
