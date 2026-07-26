@@ -58,6 +58,33 @@ class TrayService(BaseHandler):
             return True
         return False
 
+    def is_autostart_enabled(self) -> bool:
+        """Checks if native autostart / launch-on-login is currently configured."""
+        import platform
+
+        from ldm_core.utils import get_actual_home
+
+        sys_type = platform.system()
+        home = get_actual_home()
+
+        if sys_type == "Darwin":
+            return (
+                home / "Library" / "LaunchAgents" / "com.liferay.ldm.plist"
+            ).exists()
+        if sys_type == "Windows":
+            startup_dir = (
+                home
+                / "AppData"
+                / "Roaming"
+                / "Microsoft"
+                / "Windows"
+                / "Start Menu"
+                / "Programs"
+                / "Startup"
+            )
+            return (startup_dir / "Liferay Docker Manager.bat").exists()
+        return (home / ".config" / "autostart" / "ldm.desktop").exists()
+
     def setup_autostart(self):  # noqa: PLR0915
         """Provisions native autostart / launch-on-login for LDM System Tray."""
         import contextlib

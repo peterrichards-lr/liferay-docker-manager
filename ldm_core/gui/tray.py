@@ -228,12 +228,34 @@ class LdmTrayApp:
             yield pystray.Menu.SEPARATOR
 
         yield MenuItem("Open Diagnostics Dashboard", self.on_dashboard)
+        yield MenuItem(
+            "Launch on Login",
+            self.on_toggle_autostart,
+            checked=lambda _item: self.is_autostart_enabled(),
+        )
 
         if registry:
             yield MenuItem("Stop All Running Projects", self.on_stop_all)
 
         yield pystray.Menu.SEPARATOR
         yield MenuItem("Quit LDM Tray", self.on_quit)
+
+    def is_autostart_enabled(self) -> bool:
+        try:
+            return self.manager.tray.is_autostart_enabled()
+        except Exception:
+            return False
+
+    def on_toggle_autostart(self, icon, item):
+        try:
+            if self.is_autostart_enabled():
+                self.manager.tray.remove_autostart()
+            else:
+                self.manager.tray.setup_autostart()
+        except Exception as e:
+            from ldm_core.ui import UI
+
+            UI.error(f"Failed to toggle autostart: {e}")
 
     def get_menu(self):
         return pystray.Menu(self._menu_generator)
