@@ -3,8 +3,8 @@
 Windows PowerShell 5.1 parse errors on ANSI code pages.
 """
 
-from pathlib import Path
 import sys
+from pathlib import Path
 
 
 def main() -> int:
@@ -16,9 +16,7 @@ def main() -> int:
             continue
 
         raw = ps_file.read_bytes()
-        non_ascii = [
-            (idx, byte) for idx, byte in enumerate(raw) if byte > 127
-        ]
+        non_ascii = [(idx, byte) for idx, byte in enumerate(raw) if byte > 127]
         if non_ascii:
             print(
                 f"[ERROR] {ps_file.relative_to(root)} contains {len(non_ascii)} non-ASCII bytes!"
