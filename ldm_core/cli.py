@@ -433,6 +433,11 @@ def get_parser():  # noqa: PLR0915
         action="store_true",
         help="Wipe the OSGi state volume contents before starting Liferay.",
     )
+    run.add_argument(
+        "--fix-permissions",
+        action="store_true",
+        help="Fix root permissions on bind-mounted directories for macOS/Windows external drives.",
+    )
     run.add_argument("--port", type=int)
     run.add_argument("--db", choices=["postgresql", "mysql", "hypersonic"])
     run.add_argument(
@@ -1032,6 +1037,11 @@ def get_parser():  # noqa: PLR0915
                 "--clean-state",
                 action="store_true",
                 help="Wipe the OSGi state volume contents before starting Liferay.",
+            )
+            p.add_argument(
+                "--fix-permissions",
+                action="store_true",
+                help="Fix root permissions on bind-mounted directories for macOS/Windows external drives.",
             )
         if cmd == "logs":
             p.add_argument("-f", "--follow", action="store_true")
