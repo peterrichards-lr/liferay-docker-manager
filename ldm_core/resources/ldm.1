@@ -29,10 +29,10 @@ LDM maintains a local cache of all downloaded assets (seeds, samples, configurat
 Display an overview of all initialized LDM sandbox environments.
 .TP
 \fBrun\fR [\fIPROJECT\fR] (alias: \fBup\fR)
-Initialize and start a project stack. Automatically detects context if run inside a project folder. Use \fB--open\fR to launch the browser automatically after startup. Use \fB--scale SERVICE=N\fR to boot a scaled stack in one command. Use \fB--clean-state\fR to wipe the OSGi state volume contents before starting.
+Initialize and start a project stack. Automatically detects context if run inside a project folder. Use \fB--open\fR to launch the browser automatically after startup. Use \fB--scale SERVICE=N\fR to boot a scaled stack in one command. Use \fB--clean-state\fR to wipe the OSGi state volume contents before starting. Use \fB--fix-permissions\fR to reclaim root ownership on bind-mounted directories for macOS/Windows external drives.
 .TP
 \fBstart\fR [\fIPROJECT\fR]
-Start project containers gracefully. Use \fB--clean-state\fR to wipe the OSGi state volume contents before starting.
+Start project containers gracefully. Use \fB--clean-state\fR to wipe the OSGi state volume contents before starting. Use \fB--fix-permissions\fR to reclaim root ownership on bind-mounted directories for macOS/Windows external drives.
 .TP
 \fBstop\fR [\fIPROJECT\fR] [\fISERVICE\fR]
 Stop project containers gracefully. Use \fB--all\fR to stop all projects.

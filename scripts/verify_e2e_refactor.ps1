@@ -193,7 +193,7 @@ try {
     $doctorOut = & $LDM_CMD doctor --detailed 2>&1
     $doctorStr = ($doctorOut -join "`n")
     if ($doctorStr -match "Dependency Integrity") {
-        if ($doctorStr -match "Dependency Integrity.*(Failed|Missing|❌)") {
+        if ($doctorStr -match "Dependency Integrity.*(Failed|Missing|FAILED)") {
             Write-Host "[ERROR] ERROR: ldm doctor Dependency Integrity check failed!" -ForegroundColor Red
             $doctorOut | Where-Object { $_ -match "Dependency Integrity" } | Write-Host
             Add-Content -Path $RESULTS_FILE_TMP -Value "ERROR: ldm doctor Dependency Integrity failed"
@@ -203,7 +203,7 @@ try {
             Add-Content -Path $RESULTS_FILE_TMP -Value "ldm doctor Dependency Integrity: PASSED"
         }
     } else {
-        Write-Host "[WARNING] Skipping Dependency Integrity check (binary install — no requirements.txt found)."
+        Write-Host "[WARNING] Skipping Dependency Integrity check (binary install - no requirements.txt found)."
     }
 
     Write-Host ">> Verifying Project Collision Detection..."
@@ -271,7 +271,7 @@ try {
     # Hot Deploy
     Write-Host ">> Deploying Test OSGi Bundle..."
     New-Item -ItemType Directory -Path "delayed-deploy" -Force | Out-Null
-    $zipScript = "import zipfile; zf = zipfile.ZipFile('delayed-deploy/test-bundle.jar', 'w'); zf.writestr('META-INF/MANIFEST.MF', 'Manifest-Version: 1.0\nBundle-ManifestVersion: 2\nBundle-Name: Test Bundle\nBundle-SymbolicName: com.liferay.test.bundle\nBundle-Version: 1.0.0\n'); zf.close()"
+    $zipScript = 'import zipfile; zf = zipfile.ZipFile("delayed-deploy/test-bundle.jar", "w"); zf.writestr("META-INF/MANIFEST.MF", "Manifest-Version: 1.0\nBundle-ManifestVersion: 2\nBundle-Name: Test Bundle\nBundle-SymbolicName: com.liferay.test.bundle\nBundle-Version: 1.0.0\n"); zf.close()'
     & $VENV_PYTHON -c $zipScript
 
     # Secondary permission fix for Linux/WSL2 host side access (via Docker)
@@ -411,7 +411,7 @@ try {
         throw "Safe SELECT SQL Query failed. Output: $dbQueryOut"
     }
 
-    Write-Host ">> Verifying Properties Override Cascade & Reset..."
+    Write-Host ">> Verifying Properties Override Cascade and Reset..."
     Log-AndRun "Stopping project to release file locks" $LDM_CMD "-y stop ."
     $commonDir = Join-Path $LDM_WORKSPACE "common"
     New-Item -ItemType Directory -Force -Path $commonDir | Out-Null
