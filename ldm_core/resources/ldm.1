@@ -1,4 +1,4 @@
-.TH LDM 1 "June 2026" "2.11.0" "Liferay Docker Manager Manual"
+.TH LDM 1 "July 2026" "2.15.22" "Liferay Docker Manager Manual"
 .SH NAME
 ldm \- Liferay Docker Manager orchestrator (Hardened Edition)
 .SH SYNOPSIS
@@ -90,14 +90,17 @@ Display formatted project metadata.
 
 .SH DEVELOPMENT COMMANDS
 .TP
-\fBinit\fR [\fIPROJECT\fR]
-Initialize project scaffolding without starting containers.
+\fBinit\fR [\fIPROJECT\fR] [\fB--vanilla\fR]
+Initialize project scaffolding without starting containers. Use \fB--vanilla\fR to bypass project seeding.
 .TP
-\fBinit-from\fR \fISOURCE_PATH\fR [\fINAME\fR]
-Initialize a project linked to a source workspace with real-time sync.
+\fBlink\fR \fISOURCE_PATH\fR [\fINAME\fR]
+Initialize a project linked to a source workspace with real-time sync. (legacy alias: \fBinit-from\fR)
+.TP
+\fBclone\fR \fIGIT_URL\fR [\fINAME\fR]
+Clone a Git repository and initialize it as an LDM project workspace.
 .TP
 \fBimport\fR \fISOURCE_PATH\fR [\fINAME\fR]
-One-time static import of a Liferay workspace.
+One-time static import of a Liferay workspace or data package archive.
 .TP
 \fBquickstart\fR \fITEMPLATE\fR [\fB--share\fR] [\fB--share-subdomain\fR \fISUBDOMAIN\fR]
 Bootstrap and start a predefined accelerator demo stack (e.g. \fBaica\fR).
@@ -136,6 +139,20 @@ Migrate a project from Sidecar to the shared Global Search container. (legacy: \
 \fBldm cloud fetch\fR [\fIPROJECT\fR] [\fIENV_ID\fR]
 Sync an existing local project directly with a live Liferay Cloud environment. (legacy: \fBldm cloud-fetch\fR)
 
+.SS db \- Database Utilities
+.TP
+\fBldm db query\fR [\fIPROJECT\fR] \fISQL_QUERY\fR
+Execute a safe, SELECT-only read query against the project database container with formatted table/json output.
+.TP
+\fBldm db mode\fR [\fB--shared\fR|\fB--dedicated\fR]
+Inspect or set the global database topology mode.
+.TP
+\fBldm db start\fR / \fBldm db stop\fR
+Start or stop the shared global database infrastructure.
+.TP
+\fBldm db reset-admin\fR [\fIPROJECT\fR]
+Forcefully reset the default admin account credentials (`test@liferay.com`).
+
 .SS config \- Configuration Management
 All subcommands have backward-compatible flat aliases (e.g. \fBldm env\fR, \fBldm defaults\fR, \fBldm feature\fR, \fBldm log-level\fR, \fBldm edit\fR).
 .TP
@@ -164,6 +181,12 @@ Manage Liferay internal Log4j2 logging levels without restarts.
 Open project config files in \fB$EDITOR\fR.
 
 .SS system \- System Utilities & Diagnostics
+.TP
+\fBldm tray\fR [\fB--autostart\fR|\fB--uninstall-autostart\fR]
+Launch the cross-platform System Tray GUI menu bar application. Use \fB--autostart\fR to configure launch-on-login.
+.TP
+\fBldm dashboard\fR [\fB--port\fR \fIPORT\fR] [\fB--token\fR \fITOKEN\fR]
+Launch the web-based Visual Diagnostics Dashboard and property editor.
 .TP
 \fBldm system doctor\fR [\fB--ssl\fR] [\fB--domain\fR \fIDOMAIN\fR] [\fB--fix\fR]
 Verify host health, Docker resources, and project dependencies. Use \fB--ssl\fR to check certificate routing, and \fB--fix\fR to automatically apply suggested solutions. (legacy: \fBldm doctor\fR)
