@@ -17,7 +17,8 @@
   - [x] Tag and publish `v2.15.22-pre.12` (PR #787 merged).
   - [x] Fix Issue #817: Chown `1000:1000` Liferay Docker named volumes before starting Liferay to prevent OSGi lock manager crashes, and add `--clean-state` option to `ldm run` and `ldm start` (PR #818 merged).
   - [x] Tag and publish `v2.15.22-pre.24` (PR #819).
-  - [ ] User testing and multi-platform verification on `v2.15.22-pre.24`.
+  - [x] Implement `--fix-permissions` flag for `ldm run` and `ldm start` to reclaim root bind mounts on macOS/Windows external drives.
+  - [ ] User testing and multi-platform verification on `v2.15.22-pre.24` (and any further pre-releases).
   - [ ] Promote to stable `v2.15.22` once E2E verification completes.
 
 - **Current Active Task (July 20, 2026)**:
