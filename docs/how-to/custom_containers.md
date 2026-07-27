@@ -105,6 +105,105 @@ When exporting an environment snapshot via `ldm snapshot`, LDM will detect any r
 
 Upon restoration (`ldm import` or environment hydration), LDM invokes `docker load` to reinflate these images. This guarantees that your full multi-compose architecture—Liferay, Postgres, Elasticsearch, and your custom Node.js/WordPress services—are fully portable and completely independent of external Docker Hub network availability during CI/CD test runs.
 
+## Case Study: Packaging a Multi-Service Stack (Rafa's WordPress & Crawler)
+
+The following walkthrough demonstrates how to configure and package a multi-service stack containing a namespaced PostgreSQL database, MySQL, WordPress, and a custom Spring Boot crawler client extension into a single portable `.ldmp` archive.
+
+### 1. Project Scaffolding
+
+Create a new LDM project workspace:
+
+```bash
+ldm init ldm-rafa-project
+```
+
+### 2. Building Custom Image
+
+Because Rafa's crawler is a custom Spring Boot microservice containing a `Dockerfile`, build it locally on the Docker host:
+
+```bash
+docker build -t liferay-cx-crawler:latest ./crawler-src
+```
+
+### 3. Project Configuration
+
+Define the custom services in the project's `meta` configuration file using valid JSON format:
+
+```json
+{
+  "container_name": "ldm-rafa-project",
+  "tag": "2025.q1.0-lts",
+  "db_type": "postgresql",
+  "host_name": "rafa-project.localhost",
+  "ssl": true,
+  "search_kibana_enabled": true,
+  "custom_containers": [
+    {
+      "service_name": "wp-db",
+      "image": "mysql:8.0",
+      "environment": [
+        "MYSQL_ROOT_PASSWORD=wordpress_root_password",
+        "MYSQL_DATABASE=wordpress",
+        "MYSQL_USER=wordpress_user",
+        "MYSQL_PASSWORD=wordpress_password"
+      ],
+      "volumes": [
+        "wp_db_data:/var/lib/mysql"
+      ]
+    },
+    {
+      "service_name": "wordpress",
+      "image": "wordpress:latest",
+      "depends_on": ["wp-db"],
+      "ports": ["8090:80"],
+      "environment": [
+        "WORDPRESS_DB_HOST=wp-db:3306",
+        "WORDPRESS_DB_USER=wordpress_user",
+        "WORDPRESS_DB_PASSWORD=wordpress_password",
+        "WORDPRESS_DB_NAME=wordpress"
+      ],
+      "subdomain": "wordpress",
+      "volumes": [
+        "wp_data:/var/www/html"
+      ]
+    },
+    {
+      "service_name": "cx-spring-boot",
+      "image": "liferay-cx-crawler:latest",
+      "depends_on": ["wordpress"],
+      "ports": ["58081:58081"],
+      "environment": [
+        "COM_LIFERAY_LXC_DXP_DOMAINS=liferay:8080",
+        "COM_LIFERAY_LXC_DXP_MAINDOMAIN=liferay:8080",
+        "ELASTICSEARCH_HOSTS=http://liferay-search-global:9200"
+      ]
+    }
+  ]
+}
+```
+
+* **Namespaced Database:** The core database service is compiled as `ldm-rafa-project-db` (namespaced to the project name), ensuring no DNS conflicts occur with other active stacks on the `liferay-net` network.
+* **WordPress Subdomain:** Traefik exposes WordPress externally on the host at `https://wordpress.rafa-project.localhost` using the `subdomain` attribute.
+* **Internal Networking:** The Spring Boot crawler connects natively to Elasticsearch via `http://liferay-search-global:9200` using LDM's unified bridge network.
+
+### 4. Compiling and Booting the Stack
+
+Compile the Compose configuration and run the environment:
+
+```bash
+ldm run -y
+```
+
+### 5. Packaging into Standalone `.ldmp`
+
+Export the entire workspace and custom service binaries into a portable package:
+
+```bash
+ldm snapshot --export
+```
+
+LDM will save the Postgres, MySQL, WordPress, and custom crawler container image binaries, packaging them into the output archive. A developer on another machine can then recreate the exact multi-compose architecture out-of-the-box by running `ldm import`.
+
 <!-- markdownlint-disable MD049 -->
 ---
 *Last Updated: 2026-07-27* | *Last Reviewed: 2026-07-27*

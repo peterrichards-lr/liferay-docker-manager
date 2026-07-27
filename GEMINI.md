@@ -18,6 +18,13 @@
   - [x] Mitigate aggressive `ldm down` logic by selectively passing the volumes flag.
   - [x] Tag and publish `v2.15.23-pre.2` (PR #845 merged).
 
+- **Current Active Task (July 27, 2026) — Headless API PUT Patcher & Hydration Pruning**:
+  - [x] Refactor `_patch_fragment_overrides` in `ldm_core/runtime/fragments.py` to route layout fragment updates through `headless-admin-site` PUT REST endpoints (Issue #837).
+  - [x] Implement HTML/JS tag substring matching for specifications page elements and backward-compatible fallbacks for mock tests and legacy DXP versions.
+  - [x] Prune pre-existing host `node_modules` during custom container ZIP hydration in `ldm_core/workspace/hydration.py` (Issue #851).
+  - [x] Open Pull Request [#852](https://github.com/peterrichards-lr/liferay-docker-manager/pull/852) on `release/v2.15.23-pre.4`.
+  - [x] Created tracking issue [#1](https://github.com/peterrichards-lr/ldm-tooling/issues/1) in `ldm-tooling` and issue [#8](https://github.com/peterrichards-lr/ldm-cx-samples/issues/8) in `ldm-cx-samples`.
+
 - **Current Active Task (July 27, 2026)**:
   - [x] Fix Headless API candidate target resolution and port check collision in Traefik mode (`ldm_core/runtime/fragments.py`).
   - [x] Implement database service name namespacing/prefixing to avoid Traefik DNS hostname collisions.
