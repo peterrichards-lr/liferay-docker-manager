@@ -889,7 +889,44 @@ class BaseHandler:
         path = self._detect_project_path_raw(project_id, for_init=for_init, fatal=fatal)
         if path:
             self._acquire_lock_if_needed(path)
+            self._check_external_drive_warning(path)
         return path
+
+    def _check_external_drive_warning(self, project_path):
+        """Warns the user if the project is located on a macOS external drive (/Volumes/)."""
+        if getattr(self, "_warned_volumes", False):
+            return
+
+        try:
+            resolved_path = Path(project_path).resolve()
+            if len(resolved_path.parts) >= 2 and resolved_path.parts[1] == "Volumes":
+                self._warned_volumes = True
+
+                marker_file = resolved_path / ".ldm_external_drive_accepted"
+                if marker_file.exists():
+                    return
+
+                UI.warning(
+                    f"Project path '{resolved_path}' is located on an external drive (/Volumes/)."
+                )
+                UI.warning(
+                    "Running Docker bind-mounts against macOS external drives can cause performance issues or OSGi lock crashes."
+                )
+                UI.warning(
+                    "You may need to use the '--fix-permissions' flag if you encounter file permission errors."
+                )
+
+                if sys.stdout.isatty() and not getattr(UI, "NON_INTERACTIVE", False):
+                    if not UI.confirm("Do you want to continue?", default="Y"):
+                        UI.die("Aborted by user.")
+                    else:
+                        try:
+                            resolved_path.mkdir(parents=True, exist_ok=True)
+                            marker_file.touch()
+                        except Exception:
+                            pass
+        except Exception:
+            pass
 
     def _acquire_lock_if_needed(self, path):
         if not path:
