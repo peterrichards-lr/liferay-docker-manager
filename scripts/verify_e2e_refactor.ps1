@@ -271,8 +271,14 @@ try {
     # Hot Deploy
     Write-Host ">> Deploying Test OSGi Bundle..."
     New-Item -ItemType Directory -Path "delayed-deploy" -Force | Out-Null
-    $zipScript = 'import zipfile; zf = zipfile.ZipFile("delayed-deploy/test-bundle.jar", "w"); zf.writestr("META-INF/MANIFEST.MF", "Manifest-Version: 1.0\nBundle-ManifestVersion: 2\nBundle-Name: Test Bundle\nBundle-SymbolicName: com.liferay.test.bundle\nBundle-Version: 1.0.0\n"); zf.close()'
-    & $VENV_PYTHON -c $zipScript
+    $zipScript = @"
+import zipfile
+zf = zipfile.ZipFile('delayed-deploy/test-bundle.jar', 'w')
+zf.writestr('META-INF/MANIFEST.MF', 'Manifest-Version: 1.0\nBundle-ManifestVersion: 2\nBundle-Name: Test Bundle\nBundle-SymbolicName: com.liferay.test.bundle\nBundle-Version: 1.0.0\n')
+zf.close()
+"@
+    Set-Content -Path "delayed-deploy/build_bundle.py" -Value $zipScript
+    & $VENV_PYTHON "delayed-deploy/build_bundle.py"
 
     # Secondary permission fix for Linux/WSL2 host side access (via Docker)
     & docker run --rm -v "$(Get-Location):/workspace" alpine chmod -R 777 /workspace/deploy /workspace/logs 2>$null
