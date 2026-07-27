@@ -14,8 +14,9 @@
   - [x] Run full test suite to guarantee 100% pass rate and meet the 40% test coverage gate (66.42% coverage achieved).
 
 - **Current Active Task (July 27, 2026)**:
-  - [ ] Fix Headless API candidate target resolution and port check collision in Traefik mode (`ldm_core/runtime/fragments.py`).
-  - [ ] Run test suite verification.
+  - [x] Fix Headless API candidate target resolution and port check collision in Traefik mode (`ldm_core/runtime/fragments.py`).
+  - [x] Implement database service name namespacing/prefixing to avoid Traefik DNS hostname collisions.
+  - [x] Run test suite verification.
 
 - **Current Active Task (July 23, 2026)**:
   - [x] Fix Issue #774: Strip all PEP 440 version specifiers when checking dependency integrity in `ldm doctor`.

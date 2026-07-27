@@ -387,7 +387,7 @@ class TestStackOrchestration(unittest.TestCase):
             self.manager.composer.write_docker_compose(self.paths, config)
             compose_data = yaml.safe_load(mock_write.call_args[0][1])
             liferay_service = compose_data["services"]["liferay"]
-            db_service = compose_data["services"]["db"]
+            db_service = compose_data["services"]["test-db"]
 
             self.assertEqual(liferay_service["image"], "liferay/dxp:2026.q1.4-lts")
             self.assertEqual(db_service["image"], "mysql:8.4.0")

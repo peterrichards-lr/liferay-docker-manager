@@ -237,9 +237,12 @@ class ComposerService:
 
         db_service = self._build_db_service(meta, project_name)
         if db_service:
-            services["db"] = db_service
+            db_service_name = f"{project_name}-db"
+            services[db_service_name] = db_service
             # Add dependency from liferay to db
-            services["liferay"]["depends_on"] = {"db": {"condition": "service_healthy"}}
+            services["liferay"]["depends_on"] = {
+                db_service_name: {"condition": "service_healthy"}
+            }
 
         # Append Microservices/Client Extensions
         ext_services = self._build_extensions_services(
@@ -563,7 +566,7 @@ class ComposerService:
 
         depends_on = []
         if db_type not in ["hypersonic", "external"] and db_mode != "shared":
-            depends_on.append("db")
+            depends_on.append(f"{project_name}-db")
 
         # 80/20 DESIGN: SELinux compatibility for Fedora/RHEL
         z_label = ":z" if platform.system().lower() == "linux" else ""
@@ -834,7 +837,7 @@ class ComposerService:
                 or "org.mariadb.jdbc.Driver"
             )
             dialect = "org.hibernate.dialect.MariaDB103Dialect"
-            host = "db"
+            host = f"{project_name}-db"
             db_name = "lportal"
             if db_mode == "shared":
                 from ldm_core.utils import sanitize_id
@@ -875,7 +878,7 @@ class ComposerService:
                 resolve_dependency_version(tag, "jdbc_driver_postgresql")
                 or "org.postgresql.Driver"
             )
-            url = "jdbc:postgresql://db:5432/lportal"
+            url = f"jdbc:postgresql://{project_name}-db:5432/lportal"
             if db_mode == "shared":
                 from ldm_core.utils import sanitize_id
 
