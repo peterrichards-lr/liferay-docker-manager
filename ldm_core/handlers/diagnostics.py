@@ -73,3 +73,8 @@ class DiagnosticsService(BaseHandler):
         from ldm_core.diagnostics.completions import run_setup_completion
 
         run_setup_completion(self, target_shell)
+
+    def validate_lcp_json(self, file_path):
+        from ldm_core.diagnostics.doctor import validate_lcp_json
+
+        return validate_lcp_json(self, file_path)

@@ -13,6 +13,11 @@
   - [x] Verify project validation via `ldm doctor` and compiled compose config file generation.
   - [x] Run full test suite to guarantee 100% pass rate and meet the 40% test coverage gate (66.42% coverage achieved).
 
+- **Current Active Task (July 27, 2026) — Force Recreate Logic**:
+  - [x] Implement `--force-recreate` flag for `ldm run`, `ldm start`, and `ldm restart`.
+  - [x] Mitigate aggressive `ldm down` logic by selectively passing the volumes flag.
+  - [x] Tag and publish `v2.15.23-pre.2` (PR #845 merged).
+
 - **Current Active Task (July 27, 2026)**:
   - [x] Fix Headless API candidate target resolution and port check collision in Traefik mode (`ldm_core/runtime/fragments.py`).
   - [x] Implement database service name namespacing/prefixing to avoid Traefik DNS hostname collisions.
