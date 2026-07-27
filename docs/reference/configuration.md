@@ -32,7 +32,7 @@ sudo ldm defaults port 9090 --global
 ldm defaults --remove tag
 ```
 
-## Custom Containers (`custom_containers`) ![Added in v2.15.20](https://img.shields.io/badge/Added%20in-v2.15.20-blue)
+## Custom Containers (`custom_containers`) ![Added in v2.15.22](https://img.shields.io/badge/Added%20in-v2.15.22-blue)
 
 You can inject external services or orchestrate multi-compose architectures (such as WordPress sidecars, specialized caching layers, or monitoring agents) into the LDM runtime by defining `custom_containers` in your `.ldmrc` file.
 
@@ -119,4 +119,4 @@ You can target a specific service (including Client Extensions) by prefixing the
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-07-26* | *Last Reviewed: 2026-07-02*
+*Last Updated: 2026-07-27* | *Last Reviewed: 2026-07-02*
