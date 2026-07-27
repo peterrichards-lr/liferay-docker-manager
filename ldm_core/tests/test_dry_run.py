@@ -114,11 +114,20 @@ class TestDryRun(unittest.TestCase):
         resolved_path = str(meta_path.resolve())
         self.assertIn(resolved_path, _DRY_RUN_VFS)
         content = _DRY_RUN_VFS[resolved_path]
-        self.assertIn("project_name=dry-run-demo", content)
-        self.assertIn("tag=2026.q1.4-lts", content)
+        self.assertIn('"project_name": "dry-run-demo"', content)
+        self.assertIn('"tag": "2026.q1.4-lts"', content)
 
     def test_reclaim_volume_permissions_dry_run(self):
         self.assertTrue(reclaim_volume_permissions("/some/path"))
+
+    def test_try_parse_json(self):
+        from ldm_core.utils import try_parse_json
+
+        self.assertEqual(try_parse_json("hello"), "hello")
+        self.assertEqual(try_parse_json("123"), "123")
+        self.assertEqual(try_parse_json('[1, 2, "three"]'), [1, 2, "three"])
+        self.assertEqual(try_parse_json('{"key": "value"}'), {"key": "value"})
+        self.assertEqual(try_parse_json("[invalid-json"), "[invalid-json")
 
     def test_handlers_early_exit_dry_run(self):
         from unittest.mock import MagicMock
