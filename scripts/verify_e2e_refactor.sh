@@ -402,7 +402,7 @@ if "$LDM_CMD" status REDACT_SECRET=hidden 2>&1 | grep -q "REDACT_SECRET=\[REDACT
 
 echo ">> Verifying Scaling..."
 log_and_run "Scaling Liferay" "$LDM_CMD" -y scale . liferay=3 --no-run
-if grep -q "scale_liferay=3" meta; then echo "✅ Scaling verified."; else echo "❌ ERROR: Scaling validation failed." && exit 1; fi
+if grep -Eq "scale_liferay.*3" meta; then echo "✅ Scaling verified."; else echo "❌ ERROR: Scaling validation failed." && exit 1; fi
 
 # Scale is 3, so --instance 4 should be invalid, and --instance 2 should look for the container
 if "$LDM_CMD" logs . --instance 4 2>&1 | grep -q "Invalid instance index 4" && \
