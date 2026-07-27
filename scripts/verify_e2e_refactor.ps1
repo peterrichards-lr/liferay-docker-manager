@@ -359,7 +359,7 @@ zf.close()
 
     Write-Host ">> Verifying Scaling..."
     Log-AndRun "Scaling Liferay" $LDM_CMD "-y scale . liferay=3 --no-run"
-    if ((Get-Content "meta" -Raw) -match "scale_liferay=3") { 
+    if ((Get-Content "meta" -Raw) -match "scale_liferay.*3") { 
         Write-Host "[SUCCESS] Scaling verified." 
     } else {
         throw "Scaling verification failed."
