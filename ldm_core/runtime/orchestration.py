@@ -44,7 +44,12 @@ class OrchestrationService(BaseHandler):
         return pipeline.run(context)
 
     def cmd_start(
-        self, project_id=None, service=None, all_projects=False, clean_state=False
+        self,
+        project_id=None,
+        service=None,
+        all_projects=False,
+        clean_state=False,
+        force_recreate=False,
     ):
         """Starts project containers."""
         targets = []
@@ -110,7 +115,16 @@ class OrchestrationService(BaseHandler):
                             check=False,
                         )
 
-                cmd = [*compose_base, "start"]
+                if force_recreate:
+                    cmd = [
+                        *compose_base,
+                        "up",
+                        "-d",
+                        "--force-recreate",
+                        "--remove-orphans",
+                    ]
+                else:
+                    cmd = [*compose_base, "start"]
                 if service:
                     cmd.append(service)
                 self.manager.run_command(cmd, capture_output=capture, cwd=str(root))
@@ -138,7 +152,9 @@ class OrchestrationService(BaseHandler):
                 cmd.append(service)
             self.manager.run_command(cmd, capture_output=capture, cwd=str(root))
 
-    def cmd_restart(self, project_id=None, service=None, all_projects=False):
+    def cmd_restart(
+        self, project_id=None, service=None, all_projects=False, force_recreate=False
+    ):
         """Restarts project containers."""
         targets = []
         if all_projects:
@@ -156,7 +172,16 @@ class OrchestrationService(BaseHandler):
         capture = not (UI.INFO_MODE or UI.VERBOSE)
         for root in targets:
             UI.detail(f"Restarting project: {root.name}...")
-            cmd = [*compose_base, "restart"]
+            if force_recreate:
+                cmd = [
+                    *compose_base,
+                    "up",
+                    "-d",
+                    "--force-recreate",
+                    "--remove-orphans",
+                ]
+            else:
+                cmd = [*compose_base, "restart"]
             if service:
                 cmd.append(service)
             self.manager.run_command(cmd, capture_output=capture, cwd=str(root))
@@ -169,6 +194,7 @@ class OrchestrationService(BaseHandler):
         delete=False,
         infra=False,
         clean_hosts=False,
+        volumes=False,
     ):
         """Tears down project containers and volumes."""
         is_dry_run = getattr(self.manager, "dry_run", False)
@@ -214,12 +240,16 @@ class OrchestrationService(BaseHandler):
 
             if is_dry_run:
                 UI.detail(
-                    f"  {UI.BYELLOW}- [Dry Run] Would run docker compose down -v --remove-orphans in {root.name}{UI.COLOR_OFF}"
+                    f"  {UI.BYELLOW}- [Dry Run] Would run docker compose down{' -v' if volumes or delete else ''} --remove-orphans in {root.name}{UI.COLOR_OFF}"
                 )
             else:
                 compose_base = get_compose_cmd()
                 capture = not (UI.INFO_MODE or UI.VERBOSE)
-                cmd = [*compose_base, "down", "-v", "--remove-orphans"]
+                cmd = [*compose_base, "down"]
+                if volumes or delete:
+                    cmd.append("-v")
+                cmd.append("--remove-orphans")
+
                 if (root / "docker-compose.yml").exists():
                     self.manager.run_command(cmd, capture_output=capture, cwd=str(root))
                 else:

@@ -438,6 +438,11 @@ def get_parser():  # noqa: PLR0915
         action="store_true",
         help="Fix root permissions on bind-mounted directories for macOS/Windows external drives.",
     )
+    run.add_argument(
+        "--force-recreate",
+        action="store_true",
+        help="Recreate containers even if their configuration and image haven't changed.",
+    )
     run.add_argument("--port", type=int)
     run.add_argument("--db", choices=["postgresql", "mysql", "hypersonic"])
     run.add_argument(
@@ -1034,6 +1039,11 @@ def get_parser():  # noqa: PLR0915
             )
         elif cmd == "start":
             p.add_argument(
+                "--force-recreate",
+                action="store_true",
+                help="Recreate containers (internally aliases to run --force-recreate).",
+            )
+            p.add_argument(
                 "--clean-state",
                 action="store_true",
                 help="Wipe the OSGi state volume contents before starting Liferay.",
@@ -1042,6 +1052,12 @@ def get_parser():  # noqa: PLR0915
                 "--fix-permissions",
                 action="store_true",
                 help="Fix root permissions on bind-mounted directories for macOS/Windows external drives.",
+            )
+        if cmd == "restart":
+            p.add_argument(
+                "--force-recreate",
+                action="store_true",
+                help="Recreate containers during restart (internally aliases to run --force-recreate).",
             )
         if cmd == "logs":
             p.add_argument("-f", "--follow", action="store_true")
@@ -2334,6 +2350,7 @@ def _build_command_map(args, manager):
             getattr(args, "project", None),
             getattr(args, "service", None),
             all_projects=args.all,
+            force_recreate=getattr(args, "force_recreate", False),
         ),
         ("stop", None): lambda: manager.runtime.cmd_stop(
             getattr(args, "project", None),
@@ -2344,6 +2361,7 @@ def _build_command_map(args, manager):
             getattr(args, "project", None),
             getattr(args, "service", None),
             all_projects=args.all,
+            force_recreate=getattr(args, "force_recreate", False),
         ),
         ("down", None): lambda: manager.runtime.cmd_down(
             getattr(args, "project", None),
@@ -2352,6 +2370,7 @@ def _build_command_map(args, manager):
             delete=getattr(args, "delete", False),
             infra=getattr(args, "infra", False),
             clean_hosts=getattr(args, "clean_hosts", False),
+            volumes=getattr(args, "volumes", False),
         ),
         ("rm", None): lambda: manager.runtime.cmd_down(
             getattr(args, "project", None),
@@ -2360,6 +2379,7 @@ def _build_command_map(args, manager):
             delete=getattr(args, "delete", False),
             infra=getattr(args, "infra", False),
             clean_hosts=getattr(args, "clean_hosts", False),
+            volumes=getattr(args, "volumes", False),
         ),
         ("logs", None): lambda: manager.runtime.cmd_logs(
             getattr(args, "project", None),

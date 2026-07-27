@@ -323,6 +323,7 @@ ldm rm [project]                  # Alias for 'down'
 
 - **`--clean-state`** (Only for `start` and `run`): Explicitly wipes the contents of the OSGi state volume before starting the container to remove any stale bundle locks. ![Added in v2.15.22](https://img.shields.io/badge/Added%20in-v2.15.22-blue)
 - **`--fix-permissions`** (Only for `start` and `run`): Forces root permission reclamation on bind-mounted host directories. Useful for resolving Liferay lock crashes when running macOS/Windows Docker Desktop against external drives or network shares. ![Added in v2.15.22](https://img.shields.io/badge/Added%20in-v2.15.22-blue)
+- **`--force-recreate`** (For `run`, `start`, and `restart`): Recreates containers even if their configuration and image haven't changed. **Note:** Since native Docker `start` doesn't support recreation, passing this to `ldm start` or `ldm restart` will smoothly intercept and route to `up -d --force-recreate` under the hood. ![Added in v2.15.23](https://img.shields.io/badge/Added%20in-v2.15.23-blue)
 
 ### Examples
 
@@ -484,4 +485,4 @@ The following flags can be passed to almost any command:
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-07-27* | *Last Reviewed: 2026-07-26*
+*Last Updated: 2026-07-27* | *Last Reviewed: 2026-07-27*
