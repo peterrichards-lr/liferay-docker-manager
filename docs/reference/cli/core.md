@@ -321,8 +321,8 @@ ldm rm [project]                  # Alias for 'down'
 
 ### Options
 
-- **`--clean-state`** (Only for `start` and `run`): Explicitly wipes the contents of the OSGi state volume before starting the container to remove any stale bundle locks.
-- **`--fix-permissions`** (Only for `start` and `run`): Forces root permission reclamation on bind-mounted host directories. Useful for resolving Liferay lock crashes when running macOS/Windows Docker Desktop against external drives or network shares.
+- **`--clean-state`** (Only for `start` and `run`): Explicitly wipes the contents of the OSGi state volume before starting the container to remove any stale bundle locks. ![Added in v2.15.22](https://img.shields.io/badge/Added%20in-v2.15.22-blue)
+- **`--fix-permissions`** (Only for `start` and `run`): Forces root permission reclamation on bind-mounted host directories. Useful for resolving Liferay lock crashes when running macOS/Windows Docker Desktop against external drives or network shares. ![Added in v2.15.22](https://img.shields.io/badge/Added%20in-v2.15.22-blue)
 
 ### Examples
 
@@ -484,4 +484,4 @@ The following flags can be passed to almost any command:
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-07-26* | *Last Reviewed: 2026-07-26*
+*Last Updated: 2026-07-27* | *Last Reviewed: 2026-07-26*

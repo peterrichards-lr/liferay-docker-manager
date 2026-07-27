@@ -406,7 +406,7 @@ ldm tray --uninstall-autostart  # Remove launch-on-login autostart
 - **`--format`**: Specify output format (`json`, `table`, `csv`).
 - **`--global`**: Apply setting globally.
 - **`--help`**: Display CLI help menu.
-- **`--index`** / **`-i`**: Select project by 1-based index from list.
+- **`--index`** / **`-i`**: Select project by 1-based index from list. ![Added in v2.15.22](https://img.shields.io/badge/Added%20in-v2.15.22-blue)
 - **`--leave-running`**: Leave workspace containers running after operation.
 - **`--list`**: List items or URLs.
 - **`--no-ssl`**: Bypass local SSL/mkcert generation and use HTTP.
@@ -454,4 +454,4 @@ ldm tray --uninstall-autostart  # Remove launch-on-login autostart
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-07-26* | *Last Reviewed: 2026-07-23*
+*Last Updated: 2026-07-27* | *Last Reviewed: 2026-07-23*

@@ -1,4 +1,4 @@
-# Multi-Compose Architecture Integration ![Added in v2.15.20](https://img.shields.io/badge/Added%20in-v2.15.20-blue)
+# Multi-Compose Architecture Integration ![Added in v2.15.22](https://img.shields.io/badge/Added%20in-v2.15.22-blue)
 
 While Liferay Docker Manager (LDM) typically manages a single, unified `docker-compose.yml` for your project (including databases and sidecar search), some enterprise architectures require **decoupled environments**.
 
@@ -67,4 +67,4 @@ Once all three environments are running, you can validate the connections:
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-07-26* | *Last Reviewed: 2026-07-17*
+*Last Updated: 2026-07-27* | *Last Reviewed: 2026-07-17*
