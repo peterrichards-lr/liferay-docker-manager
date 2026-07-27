@@ -1679,7 +1679,7 @@ class ConfigService:
                             custom_env[k.strip()] = v.strip()
 
         if getattr(self.manager.args, "import_env", False):
-            for v in self.manager.get_host_passthrough_env(paths):
+            for v in self.manager.workspace.get_host_passthrough_env(paths):
                 if "=" in v:
                     k, val = v.split("=", 1)
                     custom_env[k] = val
@@ -1692,7 +1692,7 @@ class ConfigService:
                 UI.detail(
                     "No specific variables provided. Syncing all passthrough shell vars..."
                 )
-                for v in self.manager.get_host_passthrough_env(paths):
+                for v in self.manager.workspace.get_host_passthrough_env(paths):
                     if "=" in v:
                         k, val = v.split("=", 1)
                         custom_env[k] = val
@@ -1701,7 +1701,7 @@ class ConfigService:
                 if custom_env:
                     for k, v in sorted(custom_env.items()):
                         print(f"  {k}={v}")
-                passthroughs = self.manager.get_host_passthrough_env(paths)
+                passthroughs = self.manager.workspace.get_host_passthrough_env(paths)
                 if passthroughs:
                     UI.detail("\nHost Passthrough:")
                     for v in passthroughs:
@@ -1710,7 +1710,7 @@ class ConfigService:
                 key = UI.ask("\nEnter Key (or Enter to apply current shell vars)")
                 if not key:
                     # Apply shell vars as promised by the prompt
-                    for v in self.manager.get_host_passthrough_env(paths):
+                    for v in self.manager.workspace.get_host_passthrough_env(paths):
                         if "=" in v:
                             k, val = v.split("=", 1)
                             custom_env[k] = val

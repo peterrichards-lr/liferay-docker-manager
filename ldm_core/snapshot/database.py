@@ -195,8 +195,9 @@ class DatabaseSnapshotService:
 
                     compose_base = get_compose_cmd()
                     if compose_base:
+                        db_svc = f"{paths['root'].name}-db"
                         self.manager.run_command(
-                            [*compose_base, "up", "-d", "db"], cwd=str(paths["root"])
+                            [*compose_base, "up", "-d", db_svc], cwd=str(paths["root"])
                         )
 
                         for _i in range(10):

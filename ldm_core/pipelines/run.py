@@ -912,8 +912,9 @@ class ComposerStage(PipelineStage):
                         UI.detail(
                             "Starting database container temporarily to take a snapshot backup..."
                         )
+                        db_svc = f"{paths['root'].name}-db"
                         db_args = (
-                            ["up", "-d", "db"] if not use_shared_db else ["up", "-d"]
+                            ["up", "-d", db_svc] if not use_shared_db else ["up", "-d"]
                         )
                         manager.run_command(
                             [*get_compose_cmd(), "-f", str(compose_file), *db_args]
@@ -1198,7 +1199,8 @@ class ExecutionStage(PipelineStage):
         use_shared_db = context.get("use_shared_db")
 
         if is_samples or external_snapshot:
-            db_args = ["up", "-d", "db"] if not use_shared_db else ["up", "-d"]
+            db_svc = f"{paths['root'].name}-db"
+            db_args = ["up", "-d", db_svc] if not use_shared_db else ["up", "-d"]
             manager.run_command([*compose_base, *db_args], cwd=str(paths["root"]))
             time.sleep(5)
             manager.snapshot.cmd_restore(
