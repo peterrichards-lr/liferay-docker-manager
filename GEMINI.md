@@ -6,6 +6,13 @@
 
 ## Active Work State & Plan (July 27, 2026)
 
+- **Current Active Task (July 27, 2026) — JSON Metadata Format & Custom Containers Scaffolding**:
+  - [x] Migrate LDM metadata (`meta`) from properties format to formatted, human-readable JSON.
+  - [x] Implement a backward-compatible parser `try_parse_json` in `utils.py` to parse JSON lists/dicts from legacy properties-based files.
+  - [x] Replicate Rafa's WordPress & Spring Boot Crawler project using pre-built images and the LDM CLI configuration loop.
+  - [x] Verify project validation via `ldm doctor` and compiled compose config file generation.
+  - [x] Run full test suite to guarantee 100% pass rate and meet the 40% test coverage gate (66.42% coverage achieved).
+
 - **Current Active Task (July 27, 2026)**:
   - [ ] Fix Headless API candidate target resolution and port check collision in Traefik mode (`ldm_core/runtime/fragments.py`).
   - [ ] Run test suite verification.
