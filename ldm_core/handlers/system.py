@@ -594,7 +594,7 @@ jobs:
             dist/*.ldmp
             dist/*.ldmp.sha256
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{{{ secrets.GITHUB_TOKEN }}}}
 """
 
         # 6. Save workflow file with collision check
