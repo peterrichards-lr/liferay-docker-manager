@@ -127,6 +127,14 @@ def _sync_cx_artifact(self, zip_path, paths, overwrite=True):
 
                 safe_extract(zip_ref, target_folder)
 
+            # Prune pre-existing host node_modules to force clean native compilation in Docker
+            host_node_modules = target_folder / "node_modules"
+            if host_node_modules.exists():
+                shutil.rmtree(host_node_modules, ignore_errors=True)
+                UI.detail(
+                    f"  + Pruned host node_modules from CX build context: {zip_path.name}"
+                )
+
             if overwrite or not dest_zip.exists():
                 UI.detail(f"  + Synced & Expanded CX: {zip_path.name}")
     except Exception as e:
