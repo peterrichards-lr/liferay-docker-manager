@@ -1287,7 +1287,7 @@ def try_parse_json(val_str: str) -> Any:
     return val_str
 
 
-def read_meta(path):  # noqa: C901, PLR0912
+def read_meta(path):  # noqa: C901, PLR0912, PLR0915
     """Reads LDM project metadata from a file (supports JSON and Flat formats)."""
     meta: dict[str, Any] = {}
     path = Path(path)
@@ -1327,9 +1327,11 @@ def read_meta(path):  # noqa: C901, PLR0912
 
     try:
         content = path.read_text(encoding="utf-8").strip()
+        is_legacy = False
         if content.startswith("{"):
             meta = json.loads(content)
         else:
+            is_legacy = True
             with path.open(encoding="utf-8") as f:
                 for line in f:
                     stripped_line = line.strip()
@@ -1350,6 +1352,12 @@ def read_meta(path):  # noqa: C901, PLR0912
                         else:
                             v = try_parse_json(v_str)
                         meta[k] = v
+            if is_legacy:
+                # Silently auto-upgrade the legacy flat file to JSON format
+                try:
+                    write_meta(path, meta)
+                except Exception:
+                    pass
     except Exception as e:
         UI.warning(f"Could not read metadata at {path}: {e}")
 

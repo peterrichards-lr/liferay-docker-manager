@@ -303,7 +303,7 @@ fi
 echo "ℹ  Provisioning standalone test project..."
 mkdir -p "$LDM_WORKSPACE/${PROJECT_NAME}/files"
 cd "$LDM_WORKSPACE/${PROJECT_NAME}"
-echo -e "tag=2026.q1.7-lts\ncontainer_name=${PROJECT_NAME}\nport=${TEST_PORT}\ndb_type=postgresql" > meta
+echo "{\"tag\": \"2026.q1.7-lts\", \"container_name\": \"${PROJECT_NAME}\", \"port\": ${TEST_PORT}, \"db_type\": \"postgresql\"}" > meta
 
 log_and_run "Running LDM Project" "$LDM_CMD" -y run . --no-wait
 

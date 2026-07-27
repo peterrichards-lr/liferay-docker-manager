@@ -48,10 +48,8 @@ rm -rf "$SMOKE_ROOT"
 mkdir -p "$SMOKE_ROOT/files"
 touch "$SMOKE_ROOT/files/portal-ext.properties"
 
-# Create a project via legacy meta file (tests compatibility)
-echo "tag=2026.q1.4-lts" > "$SMOKE_ROOT/.liferay-docker.meta"
-echo "container_name=smoke-test" >> "$SMOKE_ROOT/.liferay-docker.meta"
-echo "image_tag=liferay/dxp:2026.q1.4-lts" >> "$SMOKE_ROOT/.liferay-docker.meta"
+# Create a project via JSON meta file
+echo '{"tag": "2026.q1.4-lts", "container_name": "smoke-test", "image_tag": "liferay/dxp:2026.q1.4-lts"}' > "$SMOKE_ROOT/.liferay-docker.meta"
 
 echo "   > Generating compose..."
 python3 liferay_docker.py -y run "$SMOKE_ROOT" --no-up --sidecar --no-wait

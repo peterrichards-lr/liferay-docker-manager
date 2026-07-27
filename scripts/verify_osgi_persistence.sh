@@ -72,12 +72,7 @@ mkdir -p "$WORK_DIR/files"
 touch "$WORK_DIR/files/portal-ext.properties"
 
 # Generate metadata
-{
-    echo "tag=$TAG"
-    echo "container_name=$PROJECT_NAME"
-    echo "db_type=postgresql"
-    echo "port=8085"
-} > "$WORK_DIR/.liferay-docker.meta"
+echo "{\"tag\": \"$TAG\", \"container_name\": \"$PROJECT_NAME\", \"db_type\": \"postgresql\", \"port\": 8085}" > "$WORK_DIR/.liferay-docker.meta"
 
 # Python log parser helper
 parse_log_timings() {
