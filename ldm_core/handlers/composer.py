@@ -237,9 +237,12 @@ class ComposerService:
 
         db_service = self._build_db_service(meta, project_name)
         if db_service:
-            services["db"] = db_service
+            db_service_name = f"{project_name}-db"
+            services[db_service_name] = db_service
             # Add dependency from liferay to db
-            services["liferay"]["depends_on"] = {"db": {"condition": "service_healthy"}}
+            services["liferay"]["depends_on"] = {
+                db_service_name: {"condition": "service_healthy"}
+            }
 
         # Append Microservices/Client Extensions
         ext_services = self._build_extensions_services(
@@ -532,16 +535,19 @@ class ComposerService:
         if dl_store:
             liferay_env.append(f"LIFERAY_DL_PERIOD_STORE_PERIOD_IMPL={dl_store}")
 
-        custom_env_str = meta.get("custom_env", "{}")
-        try:
-            custom_env_dict = json.loads(custom_env_str)
-        except Exception:
-            custom_env_dict = {}
-            if custom_env_str:
-                for pair in custom_env_str.split(","):
-                    if "=" in pair:
-                        k, v = pair.split("=", 1)
-                        custom_env_dict[k] = v
+        custom_env_val = meta.get("custom_env", "{}")
+        if isinstance(custom_env_val, dict):
+            custom_env_dict = custom_env_val
+        else:
+            try:
+                custom_env_dict = json.loads(custom_env_val or "{}")
+            except Exception:
+                custom_env_dict = {}
+                if isinstance(custom_env_val, str) and custom_env_val:
+                    for pair in custom_env_val.split(","):
+                        if "=" in pair:
+                            k, v = pair.split("=", 1)
+                            custom_env_dict[k.strip()] = v.strip()
 
         has_jdbc_env = False
         for k, v in custom_env_dict.items():
@@ -563,7 +569,7 @@ class ComposerService:
 
         depends_on = []
         if db_type not in ["hypersonic", "external"] and db_mode != "shared":
-            depends_on.append("db")
+            depends_on.append(f"{project_name}-db")
 
         # 80/20 DESIGN: SELinux compatibility for Fedora/RHEL
         z_label = ":z" if platform.system().lower() == "linux" else ""
@@ -834,7 +840,7 @@ class ComposerService:
                 or "org.mariadb.jdbc.Driver"
             )
             dialect = "org.hibernate.dialect.MariaDB103Dialect"
-            host = "db"
+            host = f"{project_name}-db"
             db_name = "lportal"
             if db_mode == "shared":
                 from ldm_core.utils import sanitize_id
@@ -875,7 +881,7 @@ class ComposerService:
                 resolve_dependency_version(tag, "jdbc_driver_postgresql")
                 or "org.postgresql.Driver"
             )
-            url = "jdbc:postgresql://db:5432/lportal"
+            url = f"jdbc:postgresql://{project_name}-db:5432/lportal"
             if db_mode == "shared":
                 from ldm_core.utils import sanitize_id
 

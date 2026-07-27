@@ -1203,6 +1203,58 @@ class TestComposerService(unittest.TestCase):
             compose = mock_yaml.call_args[0][0]
             self.assertNotIn("kibana", compose["services"])
 
+    def test_custom_env_dict_and_string_support(self):
+        paths = {
+            "root": Path("/tmp/proj"),
+            "deploy": Path("/tmp/proj/deploy"),
+            "files": Path("/tmp/proj/files"),
+            "data": Path("/tmp/proj/data"),
+            "configs": Path("/tmp/proj/osgi/configs"),
+            "modules": Path("/tmp/proj/osgi/modules"),
+            "cx": Path("/tmp/proj/osgi/client-extensions"),
+            "scripts": Path("/tmp/proj/scripts"),
+            "state": Path("/tmp/proj/osgi/state"),
+            "logs": Path("/tmp/proj/logs"),
+            "portal_log4j": Path("/tmp/proj/osgi/log4j"),
+            "compose": Path("/tmp/proj/docker-compose.yml"),
+        }
+
+        # Test Case 1: dictionary value
+        meta_dict = {
+            "tag": "2026.q1.7-lts",
+            "container_name": "proj",
+            "custom_env": {"MY_VAR": "dict_val", "OTHER": "xyz"},
+            "db_type": "postgresql",
+        }
+        with patch.object(
+            self.composer,
+            "_inject_liferay_db_env",
+            return_value=("postgresql", "isolated"),
+        ):
+            service = self.composer._build_liferay_service(
+                paths, meta_dict, "proj.local", "proj", False, []
+            )
+        self.assertIn("MY_VAR=dict_val", service["environment"])
+        self.assertIn("OTHER=xyz", service["environment"])
+
+        # Test Case 2: string fallback
+        meta_str = {
+            "tag": "2026.q1.7-lts",
+            "container_name": "proj",
+            "custom_env": "MY_VAR=str_val,OTHER=abc",
+            "db_type": "postgresql",
+        }
+        with patch.object(
+            self.composer,
+            "_inject_liferay_db_env",
+            return_value=("postgresql", "isolated"),
+        ):
+            service_str = self.composer._build_liferay_service(
+                paths, meta_str, "proj.local", "proj", False, []
+            )
+        self.assertIn("MY_VAR=str_val", service_str["environment"])
+        self.assertIn("OTHER=abc", service_str["environment"])
+
 
 if __name__ == "__main__":
     unittest.main()

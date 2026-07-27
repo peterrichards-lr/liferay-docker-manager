@@ -226,17 +226,22 @@ def run_info(  # noqa: C901, PLR0912, PLR0915
     # Pretty print custom_env if it exists
     custom_env = meta.get("custom_env")
     if custom_env and custom_env != "{}":
-        try:
-            import json
+        if isinstance(custom_env, dict):
+            env_dict = custom_env
+        else:
+            try:
+                import json
 
-            env_dict = json.loads(custom_env)
+                env_dict = json.loads(custom_env)
+            except Exception:
+                env_dict = {}
+
+        if env_dict:
             UI.raw(f"\n  {UI.WHITE}Custom Environment Variables:{UI.COLOR_OFF}")
             for k, v in env_dict.items():
                 UI.raw(
                     f"    {UI.WHITE}{k:<20}{UI.COLOR_OFF} {UI.CYAN}{v}{UI.COLOR_OFF}"
                 )
-        except Exception:
-            pass
     UI.raw("")
 
 

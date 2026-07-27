@@ -1286,7 +1286,7 @@ class ExecutionStage(PipelineStage):
 
             deps = []
             if db_type != "hypersonic" and not use_shared_db:
-                deps.append("db")
+                deps.append(f"{project_id}-db")
 
             if deps:
                 UI.detail(
@@ -1303,7 +1303,12 @@ class ExecutionStage(PipelineStage):
                     )
                     start_wait = time.time()
                     while time.time() - start_wait < 60:
-                        status = manager.get_container_status(f"{project_id}-{dep}-1")
+                        container_target = (
+                            dep
+                            if dep.startswith(project_id)
+                            else f"{project_id}-{dep}-1"
+                        )
+                        status = manager.get_container_status(container_target)
                         if status in {"healthy", "running"}:
                             time.sleep(2)
                             break
