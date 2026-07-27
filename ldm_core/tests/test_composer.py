@@ -1255,6 +1255,93 @@ class TestComposerService(unittest.TestCase):
         self.assertIn("MY_VAR=str_val", service_str["environment"])
         self.assertIn("OTHER=abc", service_str["environment"])
 
+    def test_rafa_project_custom_containers(self):
+        config = {
+            "container_name": "ldm-rafa-project",
+            "tag": "2025.q1.0-lts",
+            "db_type": "postgresql",
+            "host_name": "rafa-project.localhost",
+            "ssl": True,
+            "search_kibana_enabled": True,
+            "custom_containers": [
+                {
+                    "service_name": "wp-db",
+                    "image": "mysql:8.0",
+                    "environment": [
+                        "MYSQL_ROOT_PASSWORD=wordpress_root_password",
+                        "MYSQL_DATABASE=wordpress",
+                        "MYSQL_USER=wordpress_user",
+                        "MYSQL_PASSWORD=wordpress_password"
+                    ],
+                    "volumes": [
+                        "wp_db_data:/var/lib/mysql"
+                    ]
+                },
+                {
+                    "service_name": "wordpress",
+                    "image": "wordpress:latest",
+                    "depends_on": ["wp-db"],
+                    "ports": ["8090:80"],
+                    "environment": [
+                        "WORDPRESS_DB_HOST=wp-db:3306",
+                        "WORDPRESS_DB_USER=wordpress_user",
+                        "WORDPRESS_DB_PASSWORD=wordpress_password",
+                        "WORDPRESS_DB_NAME=wordpress"
+                    ],
+                    "subdomain": "wordpress",
+                    "volumes": [
+                        "wp_data:/var/www/html"
+                    ]
+                },
+                {
+                    "service_name": "cx-spring-boot",
+                    "image": "liferay-cx-crawler:latest",
+                    "depends_on": ["wordpress"],
+                    "ports": ["58081:58081"],
+                    "environment": [
+                        "COM_LIFERAY_LXC_DXP_DOMAINS=liferay:8080",
+                        "COM_LIFERAY_LXC_DXP_MAINDOMAIN=liferay:8080",
+                        "ELASTICSEARCH_HOSTS=http://liferay-search-global:9200"
+                    ]
+                }
+            ]
+        }
+
+        with patch("ldm_core.utils.safe_write_text") as mock_write:
+            self.composer.write_docker_compose(self.paths, config)
+            compose_data = yaml.safe_load(mock_write.call_args[0][1])
+            services = compose_data["services"]
+
+            # 1. Assert namespaced DB service and dependency mapping
+            self.assertIn("ldm-rafa-project-db", services)
+            self.assertEqual(services["ldm-rafa-project-db"]["image"], "postgres:13")
+            self.assertIn("ldm-rafa-project-db", services["liferay"]["depends_on"])
+
+            # 2. Assert Liferay JDBC connection URL points directly to namespaced DB host
+            liferay_env = services["liferay"]["environment"]
+            self.assertIn(
+                "LIFERAY_JDBC_PERIOD_DEFAULT_PERIOD_URL=jdbc:postgresql://ldm-rafa-project-db:5432/lportal",
+                liferay_env
+            )
+
+            # 3. Assert Custom Containers are successfully generated
+            self.assertIn("wp-db", services)
+            self.assertEqual(services["wp-db"]["image"], "mysql:8.0")
+
+            self.assertIn("wordpress", services)
+            self.assertEqual(services["wordpress"]["image"], "wordpress:latest")
+            self.assertEqual(services["wordpress"]["ports"], ["8090:80"])
+            self.assertIn("wp-db", services["wordpress"]["depends_on"])
+
+            self.assertIn("cx-spring-boot", services)
+            self.assertEqual(services["cx-spring-boot"]["image"], "liferay-cx-crawler:latest")
+            self.assertEqual(services["cx-spring-boot"]["ports"], ["58081:58081"])
+            self.assertIn("wordpress", services["cx-spring-boot"]["depends_on"])
+
+            # 4. Assert Kibana is enabled
+            self.assertIn("kibana", services)
+            self.assertEqual(services["kibana"]["image"], "kibana:7.17.24")
+
 
 if __name__ == "__main__":
     unittest.main()
