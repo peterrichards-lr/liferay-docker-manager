@@ -267,52 +267,29 @@ class FragmentsService(BaseHandler):
             Probes the element itself, definition, fragmentConfig, fragmentEntryLink,
             and sub-objects used by the Headless Delivery API (2025.Q1+).
             """
-            candidates = []
+            candidates: list[str] = []
+            if not isinstance(element, dict):
+                return candidates
 
-            def_obj = (
-                element.get("definition")
-                if isinstance(element.get("definition"), dict)
-                else {}
-            )
-            frag_config = (
-                def_obj.get("fragmentConfig")
-                if isinstance(def_obj.get("fragmentConfig"), dict)
-                else {}
-            )
-            fel = (
-                element.get("fragmentEntryLink")
-                if isinstance(element.get("fragmentEntryLink"), dict)
-                else {}
-            )
-            fel_entry = (
-                fel.get("fragmentEntry")
-                if isinstance(fel.get("fragmentEntry"), dict)
-                else {}
-            )
-            fel_frag = (
-                fel.get("fragment") if isinstance(fel.get("fragment"), dict) else {}
-            )
-            def_frag = (
-                def_obj.get("fragment")
-                if isinstance(def_obj.get("fragment"), dict)
-                else {}
-            )
+            def_raw = element.get("definition")
+            def_obj = def_raw if isinstance(def_raw, dict) else {}
+            frag_config_raw = def_obj.get("fragmentConfig")
+            frag_config = frag_config_raw if isinstance(frag_config_raw, dict) else {}
+            fel_raw = element.get("fragmentEntryLink")
+            fel = fel_raw if isinstance(fel_raw, dict) else {}
+            fel_entry_raw = fel.get("fragmentEntry")
+            fel_entry = fel_entry_raw if isinstance(fel_entry_raw, dict) else {}
+            fel_frag_raw = fel.get("fragment")
+            fel_frag = fel_frag_raw if isinstance(fel_frag_raw, dict) else {}
+            def_frag_raw = def_obj.get("fragment")
+            def_frag = def_frag_raw if isinstance(def_frag_raw, dict) else {}
 
-            ped_obj = (
-                element.get("pageElementDefinition")
-                if isinstance(element.get("pageElementDefinition"), dict)
-                else {}
-            )
-            fi_obj = (
-                ped_obj.get("fragmentInstance")
-                if isinstance(ped_obj.get("fragmentInstance"), dict)
-                else {}
-            )
-            fr_obj = (
-                fi_obj.get("fragmentReference")
-                if isinstance(fi_obj.get("fragmentReference"), dict)
-                else {}
-            )
+            ped_raw = element.get("pageElementDefinition")
+            ped_obj: dict = ped_raw if isinstance(ped_raw, dict) else {}
+            fi_raw = ped_obj.get("fragmentInstance")
+            fi_obj: dict = fi_raw if isinstance(fi_raw, dict) else {}
+            fr_raw = fi_obj.get("fragmentReference")
+            fr_obj: dict = fr_raw if isinstance(fr_raw, dict) else {}
 
             for obj in (
                 element,
