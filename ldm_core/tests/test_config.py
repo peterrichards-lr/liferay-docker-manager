@@ -26,6 +26,8 @@ class MockConfigManager:
 
         self.defaults = DefaultsManager()
         self.runtime = MagicMock()
+        self.workspace = MagicMock()
+        self.workspace.get_host_passthrough_env = self.get_host_passthrough_env
 
     def update_portal_ext(self, target_file, updates, important_keys=None):
         content = ""
