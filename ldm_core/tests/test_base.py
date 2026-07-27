@@ -97,6 +97,7 @@ class TestBaseDiscovery(unittest.TestCase):
 class TestBaseDiscoveryPath(unittest.TestCase):
     def setUp(self):
         self.handler = MockBaseManager()
+        self.handler._check_external_drive_warning = lambda _: None
 
     def test_detect_project_path_by_id(self):
         with tempfile.TemporaryDirectory() as base_tmp:

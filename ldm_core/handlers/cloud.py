@@ -379,7 +379,11 @@ class CloudService:
                     )
                 blacklist = sorted(set(blacklist))
 
-                custom_env = json.loads(project_meta.get("custom_env", "{}"))
+                custom_env_val = project_meta.get("custom_env", "{}")
+                if isinstance(custom_env_val, dict):
+                    custom_env = custom_env_val
+                else:
+                    custom_env = json.loads(custom_env_val or "{}")
                 for k, v in envs.items():
                     if is_env_var_blacklisted(k, blacklist):
                         UI.detail(f"  - Ignoring blacklisted cloud variable: {k}")

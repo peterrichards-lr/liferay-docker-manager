@@ -535,16 +535,19 @@ class ComposerService:
         if dl_store:
             liferay_env.append(f"LIFERAY_DL_PERIOD_STORE_PERIOD_IMPL={dl_store}")
 
-        custom_env_str = meta.get("custom_env", "{}")
-        try:
-            custom_env_dict = json.loads(custom_env_str)
-        except Exception:
-            custom_env_dict = {}
-            if custom_env_str:
-                for pair in custom_env_str.split(","):
-                    if "=" in pair:
-                        k, v = pair.split("=", 1)
-                        custom_env_dict[k] = v
+        custom_env_val = meta.get("custom_env", "{}")
+        if isinstance(custom_env_val, dict):
+            custom_env_dict = custom_env_val
+        else:
+            try:
+                custom_env_dict = json.loads(custom_env_val or "{}")
+            except Exception:
+                custom_env_dict = {}
+                if isinstance(custom_env_val, str) and custom_env_val:
+                    for pair in custom_env_val.split(","):
+                        if "=" in pair:
+                            k, v = pair.split("=", 1)
+                            custom_env_dict[k.strip()] = v.strip()
 
         has_jdbc_env = False
         for k, v in custom_env_dict.items():
