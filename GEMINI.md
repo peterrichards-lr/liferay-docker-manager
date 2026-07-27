@@ -17,6 +17,7 @@
   - [x] Fix Headless API candidate target resolution and port check collision in Traefik mode (`ldm_core/runtime/fragments.py`).
   - [x] Implement database service name namespacing/prefixing to avoid Traefik DNS hostname collisions.
   - [x] Run test suite verification.
+  - [x] PR #844: Warn users when running LDM on macOS external drives (`/Volumes/`). Pre-release tagged as `v2.15.23-pre.1`.
 
 - **Current Active Task (July 23, 2026)**:
   - [x] Fix Issue #774: Strip all PEP 440 version specifiers when checking dependency integrity in `ldm doctor`.
