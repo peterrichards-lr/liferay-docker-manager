@@ -261,7 +261,7 @@ try {
     if (-not (Test-Path $projectDir)) { New-Item -ItemType Directory -Path $projectDir -Force | Out-Null }
     New-Item -ItemType Directory -Path (Join-Path $projectDir "files") -Force | Out-Null
     Set-Location $projectDir
-    "tag=2026.q1.7-lts`ncontainer_name=ldm-smoke-test`nport=$TEST_PORT`ndb_type=postgresql" | Out-File "meta" -Encoding utf8
+    '{"tag": "2026.q1.7-lts", "container_name": "ldm-smoke-test", "port": ' + $TEST_PORT + ', "db_type": "postgresql"}' | Out-File "meta" -Encoding utf8
 
     Log-AndRun "Running LDM Project" $LDM_CMD "-y run . --no-wait"
 

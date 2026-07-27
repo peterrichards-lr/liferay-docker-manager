@@ -1421,3 +1421,77 @@ class TestZeroDependencyVersionParsing(unittest.TestCase):
 
         finally:
             builtins.__import__ = original_import
+
+
+class TestMetadataParsing(unittest.TestCase):
+    def setUp(self):
+        import os
+        import shutil
+        import tempfile
+
+        self.shutil = shutil
+        self.os = os
+        # Create a temporary directory for meta file tests
+        self.test_dir = tempfile.mkdtemp()
+        self.meta_path = Path(self.test_dir) / ".liferay-docker.meta"
+        # Disable dry run for these tests
+        if "LDM_DRY_RUN" in os.environ:
+            del os.environ["LDM_DRY_RUN"]
+
+    def tearDown(self):
+        self.shutil.rmtree(self.test_dir)
+
+    def test_read_meta_legacy_properties_auto_upgrades(self):
+        from ldm_core.utils import read_meta
+
+        # Write legacy format
+        legacy_content = "tag=2026.q1\nport=8080\nscale_liferay=3\nenabled=true"
+        self.meta_path.write_text(legacy_content, encoding="utf-8")
+
+        # read_meta should read properties, infer types, and auto-upgrade to JSON
+        meta = read_meta(self.meta_path)
+
+        self.assertEqual(meta["tag"], "2026.q1")
+        self.assertEqual(meta["port"], "8080")
+        self.assertEqual(meta["scale_liferay"], "3")
+        self.assertEqual(meta["enabled"], True)
+
+        # Verify the file on disk is now JSON
+        new_content = self.meta_path.read_text(encoding="utf-8")
+        self.assertTrue(new_content.startswith("{"))
+        import json
+
+        json_meta = json.loads(new_content)
+        self.assertEqual(json_meta["tag"], "2026.q1")
+        self.assertEqual(json_meta["scale_liferay"], "3")
+
+    def test_read_meta_json(self):
+        import json
+
+        from ldm_core.utils import read_meta
+
+        # Write JSON format
+        json_content = json.dumps({"tag": "2026.q1", "port": 8080, "scale_liferay": 3})
+        self.meta_path.write_text(json_content, encoding="utf-8")
+
+        # read_meta should read JSON natively
+        meta = read_meta(self.meta_path)
+
+        self.assertEqual(meta["tag"], "2026.q1")
+        self.assertEqual(meta["port"], 8080)
+        self.assertEqual(meta["scale_liferay"], 3)
+
+    def test_write_meta(self):
+        from ldm_core.utils import write_meta
+
+        meta_dict = {"tag": "2026.q1", "port": 8080, "scale_liferay": 3}
+        write_meta(self.meta_path, meta_dict)
+
+        # Verify the file on disk is valid JSON
+        new_content = self.meta_path.read_text(encoding="utf-8")
+        self.assertTrue(new_content.startswith("{"))
+        import json
+
+        json_meta = json.loads(new_content)
+        self.assertEqual(json_meta["tag"], "2026.q1")
+        self.assertEqual(json_meta["scale_liferay"], 3)
