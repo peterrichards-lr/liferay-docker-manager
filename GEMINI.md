@@ -4,7 +4,11 @@
 > **Purpose of this file**: This file tracks the active work state, tasks, and historical progress.
 > For architectural and project mandates (e.g. Volume Strategies, Exit Codes, CI rules), please refer to `.agents/AGENTS.md` and the `.agents/skills/` modules.
 
-## Active Work State & Plan (July 16, 2026)
+## Active Work State & Plan (July 27, 2026)
+
+- **Current Active Task (July 27, 2026)**:
+  - [ ] Fix Headless API candidate target resolution and port check collision in Traefik mode (`ldm_core/runtime/fragments.py`).
+  - [ ] Run test suite verification.
 
 - **Current Active Task (July 23, 2026)**:
   - [x] Fix Issue #774: Strip all PEP 440 version specifiers when checking dependency integrity in `ldm doctor`.
@@ -620,4 +624,4 @@ When modifying `client-extension.yaml` files, **NEVER change or remove `.service
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-07-26* | *Last Reviewed: 2026-07-23*
+*Last Updated: 2026-07-27* | *Last Reviewed: 2026-07-27*
