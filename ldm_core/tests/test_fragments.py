@@ -303,9 +303,9 @@ class TestFragments(unittest.TestCase):
         self.assertFalse(called_ctx_public.check_hostname)
         self.assertEqual(called_ctx_public.verify_mode, ssl.CERT_NONE)
 
-        # Verify the transport URL is loopback, not the external tunnel host
+        # Verify the transport URL matches the external tunnel host from project metadata
         request_url = mock_urlopen.call_args_list[0][0][0].full_url
-        self.assertIn("127.0.0.1:8080", request_url)
+        self.assertIn("my-subdomain.lfr.cloud", request_url)
 
         # 2. Loopback case (local development host) — same invariant holds
         project_meta_local = {

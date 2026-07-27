@@ -12,35 +12,78 @@ Project-level definitions will always override global definitions.
 
 ### Configuration Schema
 
-Under the `custom_containers` block, define your services using a dictionary of standard Docker Compose attributes:
+Under the `custom_containers` block, define your services as a list of dictionaries containing standard Docker Compose attributes. Note that each custom container requires a `service_name` and an `image` key:
 
 ```json
 {
-  "custom_containers": {
-    "my-frontend": {
+  "custom_containers": [
+    {
+      "service_name": "my-frontend",
       "image": "node:18-alpine",
       "command": "npm run dev",
       "ports": ["3000:3000"],
-      "environment": {
-        "NODE_ENV": "development",
-        "API_URL": "http://liferay:8080"
-      },
-      "volumes": ["./frontend:/app"],
-      "working_dir": "/app"
+      "environment": [
+        "NODE_ENV=development",
+        "API_URL=http://liferay:8080"
+      ],
+      "volumes": ["./frontend:/app"]
     },
-    "wordpress": {
+    {
+      "service_name": "wordpress",
       "image": "wordpress:latest",
-      "ports": ["8000:80"],
-      "environment": {
-        "WORDPRESS_DB_HOST": "db:5432"
-      }
+      "ports": ["8090:80"],
+      "environment": [
+        "WORDPRESS_DB_HOST=wp-db:3306"
+      ],
+      "depends_on": ["wp-db"]
     }
-  }
+  ]
 }
 ```
 
 > [!TIP]
-> Custom containers are automatically connected to the shared `liferay-net` Docker network. This allows your custom services to reference `liferay`, `db`, and `search` directly via their internal DNS hostnames.
+> Custom containers are automatically connected to the shared `liferay-net` Docker network. This allows your custom services to reference `liferay`, `db`, and the search stack directly via their internal DNS hostnames.
+
+## Working with Custom Dockerfiles
+
+LDM integrates external custom services into a single unified `docker-compose.yml` lifecycle file. Because the LDM orchestrator compiles and runs this stack dynamically, **it requires pre-built Docker images and cannot work with raw `build` directives or Dockerfiles directly.**
+
+If your service contains a `Dockerfile`, follow this two-step process to run it inside LDM:
+
+### Step 1: Build the Image Locally
+
+Compile your Dockerfile into a tagged image on your local Docker daemon. Navigate to the directory containing your `Dockerfile` and run:
+
+```bash
+docker build -t my-custom-service:latest .
+```
+
+### Step 2: Reference the Image in your Configuration
+
+Reference the tagged image name (`my-custom-service:latest`) in your LDM `custom_containers` configuration list:
+
+```json
+{
+  "custom_containers": [
+    {
+      "service_name": "my-service",
+      "image": "my-custom-service:latest",
+      "ports": ["8080:8080"]
+    }
+  ]
+}
+```
+
+## Internal Networking and Domain Resolution
+
+All services defined under `custom_containers` are automatically attached to the LDM internal network, `liferay-net`.
+
+* **Hostname Resolution:** Within the internal network, containers can communicate with one another using their `service_name` as the DNS hostname:
+  * To connect to DXP Liferay, use the hostname: `liferay:8080` (e.g. `COM_LIFERAY_LXC_DXP_DOMAINS=liferay:8080`).
+  * To connect to the global shared search container, use the hostname: `http://liferay-search-global:9200`.
+  * If a custom database is defined with `service_name: "wp-db"`, other containers can access it at `wp-db:3306`.
+* **External Networks:** You do not need to define or create external Docker networks (e.g. `elastic-net`). All bridge networking is managed automatically by LDM's internal network.
+* **Traefik Route Generation:** You can expose your custom container to the host machine via Traefik secure subdomains. Simply define the `"subdomain"` attribute (e.g. `"subdomain": "blog"`). Traefik will automatically generate routing labels and resolve the service at `https://blog.lfr.local` on your host.
 
 ## Lifecycle Integration
 
@@ -64,4 +107,4 @@ Upon restoration (`ldm import` or environment hydration), LDM invokes `docker lo
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-07-27* | *Last Reviewed: 2026-07-16*
+*Last Updated: 2026-07-27* | *Last Reviewed: 2026-07-27*

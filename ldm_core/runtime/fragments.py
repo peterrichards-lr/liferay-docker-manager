@@ -232,73 +232,27 @@ class FragmentsService(BaseHandler):
             "Content-Type": "application/json",
         }
 
-        # Candidate API base targets (base_url, extra_headers) tried in order
-        candidate_api_targets: list[tuple[str, dict[str, str]]] = []
-
-        # 1. Mapped direct port or default localhost (direct access)
-        candidate_api_targets.append((f"http://127.0.0.1:{lfr_port}", {}))
-
-        # 2. External base URL (e.g. http://aica.local, https://aica.local, or http://localhost:8080)
-        if ext_base_url and ext_base_url != f"http://127.0.0.1:{lfr_port}":
-            candidate_api_targets.append((ext_base_url, {}))
-
-        # 3. If host_name is custom (e.g. aica.local), try loopback proxy with Host header
-        if host_name != "localhost":
-            try:
-                proxy_ports = self.manager.infra.get_proxy_ports()
-                http_p = proxy_ports.get("http", 80)
-                https_p = proxy_ports.get("https", 443)
-                p_suffix = f":{http_p}" if http_p != 80 else ""
-                candidate_api_targets.append(
-                    (f"http://127.0.0.1{p_suffix}", {"Host": host_name})
-                )
-                p_ssl_suffix = f":{https_p}" if https_p != 443 else ""
-                candidate_api_targets.append(
-                    (f"https://127.0.0.1{p_ssl_suffix}", {"Host": host_name})
-                )
-            except Exception:
-                pass
-
-        working_target: tuple[str, dict[str, str]] | None = None
-
         def api_request(method, path, payload=None):
-            nonlocal working_target
+            url = f"{ext_base_url}{path}"
+            req = urllib.request.Request(url, headers=headers, method=method)
+            if payload:
+                req.data = json.dumps(payload).encode("utf-8")
 
-            targets_to_try = (
-                [working_target] if working_target else candidate_api_targets
-            )
+            ctx = ssl.create_default_context()
+            ctx.check_hostname = False
+            ctx.verify_mode = ssl.CERT_NONE
 
-            for base_url, extra_headers in targets_to_try:
-                url = f"{base_url}{path}"
-                req_headers = headers.copy()
-                req_headers.update(extra_headers)
-
-                req = urllib.request.Request(url, headers=req_headers, method=method)
-                if payload:
-                    req.data = json.dumps(payload).encode("utf-8")
-
-                ctx = ssl.create_default_context()
-                ctx.check_hostname = False
-                ctx.verify_mode = ssl.CERT_NONE
-
-                try:
-                    with urllib.request.urlopen(req, context=ctx) as response:  # nosec B310
-                        res = json.loads(response.read().decode())
-                        working_target = (base_url, extra_headers)
-                        return res
-                except urllib.error.HTTPError as e:
-                    if e.code == 404:
-                        working_target = (base_url, extra_headers)
-                        return None
-                    UI.warning(
-                        f"Headless API {method} {path} failed: {e.code} {e.reason}"
-                    )
-                    working_target = (base_url, extra_headers)
+            try:
+                with urllib.request.urlopen(req, context=ctx) as response:  # nosec B310
+                    return json.loads(response.read().decode())
+            except urllib.error.HTTPError as e:
+                if e.code == 404:
                     return None
-                except Exception as e:
-                    UI.debug(f"Headless API candidate {base_url} failed: {e}")
-
-            return None
+                UI.warning(f"Headless API {method} {path} failed: {e.code} {e.reason}")
+                return None
+            except Exception as e:
+                UI.debug(f"Headless API connection to {ext_base_url} failed: {e}")
+                return None
 
         # 3. Fetch Sites and Patch (with retry to wait for OSGi JAX-RS and Site Initializer)
 
@@ -422,6 +376,7 @@ class FragmentsService(BaseHandler):
                 elif isinstance(children, dict):
                     patch_fragments(children, page_name)
 
+        connection_successful = False
         for attempt in range(max_retries):
             sites_data = (
                 api_request("GET", "/o/headless-admin-site/v1.0/sites")
@@ -435,6 +390,7 @@ class FragmentsService(BaseHandler):
                 time.sleep(5)
                 continue
 
+            connection_successful = True
             for site in sites_data["items"]:
                 site_id = site["id"]
 
@@ -479,6 +435,20 @@ class FragmentsService(BaseHandler):
                 f"Waiting for Site Initializer to populate fragment pages (attempt {attempt + 1}/{max_retries})..."
             )
             time.sleep(5)
+
+        if not connection_successful:
+            UI.warning(
+                f"Could not connect to Liferay Headless API at {ext_base_url} to apply fragment overrides."
+            )
+            if self.manager.non_interactive:
+                UI.warning(
+                    "Continuing start sequence without applying fragment overrides."
+                )
+            elif not UI.confirm(
+                "Continue starting without applying fragment overrides?", "Y"
+            ):
+                UI.die("Aborted by user.", exit_code=1)
+            return
 
         if patched_count > 0:
             UI.success(
