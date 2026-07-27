@@ -1215,6 +1215,12 @@ class ExecutionStage(PipelineStage):
         if rebuild:
             cmd.append("--build")
 
+        force_recreate = context.get("force_recreate") or getattr(
+            manager.args, "force_recreate", False
+        )
+        if force_recreate:
+            cmd.append("--force-recreate")
+
         show_summary = context.get("show_summary") and not getattr(
             manager.args, "quiet", False
         )
