@@ -531,7 +531,7 @@ class FragmentsService(BaseHandler):
 
     def _extract_candidates(self, element):  # noqa: C901, PLR0912
         """Collect all candidate key identifiers from a page element."""
-        candidates = []
+        candidates: list[str] = []
         if not isinstance(element, dict):
             return candidates
 
