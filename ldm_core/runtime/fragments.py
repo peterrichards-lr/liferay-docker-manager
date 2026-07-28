@@ -325,7 +325,9 @@ class FragmentsService(BaseHandler):
 
             return candidates
 
-        def process_elements(elements, spec_erc, experience_erc, page_name, site_erc):  # noqa: C901, PLR0912
+        def process_elements(  # noqa: C901, PLR0912, PLR0915
+            elements, spec_erc, experience_erc, page_name, site_erc
+        ):
             nonlocal patched_count
             for element in elements:
                 candidates = extract_candidates(element)
@@ -362,7 +364,11 @@ class FragmentsService(BaseHandler):
                     if element_erc:
                         try:
                             # Update fragment instance field values in-place
-                            definition = element.get("pageElementDefinition") or {}
+                            definition = (
+                                element.get("pageElementDefinition")
+                                or element.get("definition")
+                                or {}
+                            )
                             fragment_instance = definition.get("fragmentInstance") or {}
                             field_values = fragment_instance.get(
                                 "fragmentConfigurationFieldValues"
@@ -374,7 +380,31 @@ class FragmentsService(BaseHandler):
                                 ] = field_values
 
                             override_fields = overrides[matched_key]
+                            if isinstance(override_fields, dict):
+                                req_site = override_fields.get("siteKey")
+                                if req_site and req_site != site_erc:
+                                    continue
+                                req_page = override_fields.get(
+                                    "pagePath"
+                                ) or override_fields.get("pageName")
+                                if req_page and req_page not in (page_name, page_erc):
+                                    continue
+                                req_instance_id = override_fields.get("instanceId")
+                                if req_instance_id and req_instance_id not in (
+                                    element_erc,
+                                    element.get("id"),
+                                ):
+                                    continue
+
                             for field_key, field_val in override_fields.items():
+                                if field_key in (
+                                    "siteKey",
+                                    "pagePath",
+                                    "pageName",
+                                    "instanceId",
+                                    "instanceIndex",
+                                ):
+                                    continue
                                 if field_key in field_values:
                                     field_values[field_key]["value"] = field_val
                                 else:
@@ -479,6 +509,43 @@ class FragmentsService(BaseHandler):
         specs_supported = not hasattr(urllib.request.urlopen, "call_args_list")
         patched_via_specs = False
 
+        # Resolve target site scopes from project_meta or ZIP manifests
+        target_site_scopes: set[str] = set()
+        meta_targets = project_meta.get("target_sites") or project_meta.get(
+            "site_initializers"
+        )
+        if isinstance(meta_targets, list):
+            target_site_scopes.update(str(t) for t in meta_targets)
+        elif isinstance(meta_targets, str) and meta_targets:
+            target_site_scopes.add(meta_targets)
+
+        deploy_dir = paths.get("deploy")
+        if (
+            not target_site_scopes
+            and deploy_dir
+            and hasattr(deploy_dir, "exists")
+            and deploy_dir.exists()
+        ):
+            import zipfile
+
+            for zip_path in deploy_dir.glob("*.zip"):
+                try:
+                    with zipfile.ZipFile(zip_path) as z:
+                        if "client-extension.yaml" in z.namelist():
+                            import yaml
+
+                            manifest = yaml.safe_load(z.read("client-extension.yaml"))
+                            if isinstance(manifest, dict):
+                                for v in manifest.values():
+                                    if isinstance(v, dict):
+                                        sk = v.get("siteKey") or v.get(
+                                            "siteInitializerKey"
+                                        )
+                                        if sk:
+                                            target_site_scopes.add(str(sk))
+                except Exception:
+                    pass
+
         # 1. Try specifications-based updates first
         for attempt in range(max_retries):
             if not specs_supported:
@@ -502,7 +569,14 @@ class FragmentsService(BaseHandler):
             connection_successful = True
             for site in sites_data["items"]:
                 site_erc = site.get("externalReferenceCode")
-                if not site_erc:
+                site_key = site.get("key")
+                if not site_erc or site_erc == "L_GLOBAL":
+                    continue
+                if (
+                    target_site_scopes
+                    and site_erc not in target_site_scopes
+                    and site_key not in target_site_scopes
+                ):
                     continue
 
                 pages_data = api_request(
