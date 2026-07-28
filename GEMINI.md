@@ -14,6 +14,16 @@
   - [ ] Update project metadata schema (`meta.json`) to persist per-project target preferences (`local`, `win-wsl`, `aws-node`).
   - [ ] Add unit and integration tests verifying multi-target orchestration and simultaneous local/remote project handling.
 
+- **Current Active Task (July 28, 2026) — Remote Package Compilation, In-place Import fix, and Verification**:
+  - [x] Fix `shutil.SameFileError` during in-place `ldm import .` by skipping copying identical files in `safe_copy` (`ldm_core/utils.py`).
+  - [x] Bundle crawler source code into Rafa's project and configure release workflow to compile `liferay-cx-crawler:latest` locally on the runner.
+  - [x] Add `"pull_policy": "never"` to `cx-spring-boot` service definition in `meta` metadata file to bypass Docker Hub checks.
+  - [x] Reclaim disk space (dotnet, Android SDK, CodeQL, ghc) on GHA runner to avoid running out of space during image saves.
+  - [x] Add DNS mappings for local `.localhost` subdomains and remove redundant wait blocks to streamline CI packaging.
+  - [x] Verify remote `.ldmp` package compilation (tag `v1.0.0` published successfully on `peterrichards-lr/ldm-rafa-project`).
+  - [x] Test package remote import locally using `ldm import <github-url> <imported-name>` verifying database, files, and crawler docker image load.
+
+
 ## Active Work State & Plan (July 27, 2026)
 
 - **Current Active Task (July 27, 2026) — JSON Metadata Format & Custom Containers Scaffolding**:
@@ -655,4 +665,5 @@ When modifying `client-extension.yaml` files, **NEVER change or remove `.service
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-07-28* | *Last Reviewed: 2026-07-27*
+*Last Updated: 2026-07-28* | *Last Reviewed: 2026-07-28*
+
