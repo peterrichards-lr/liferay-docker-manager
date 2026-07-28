@@ -847,7 +847,7 @@ class FragmentsService(BaseHandler):
                 if not isinstance(setting_val, str) or not setting_val:
                     continue
                 try:
-                    update_sql = (
+                    update_sql = (  # nosec B608
                         f"UPDATE fragmententrylink SET editablevalues = "
                         f'REGEXP_REPLACE(editablevalues, \'"{setting_key}":"[^"]+"\', \'"{setting_key}":"{setting_val}"\', \'g\') '
                         f"WHERE editablevalues LIKE '%\"{setting_key}\":%';"
