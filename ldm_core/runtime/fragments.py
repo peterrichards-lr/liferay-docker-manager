@@ -876,6 +876,30 @@ class FragmentsService(BaseHandler):
                 except Exception as e:
                     UI.debug(f"Direct DB patch for '{setting_key}' failed: {e}")
 
+        if patched_db_count > 0:
+            container_name = project_meta.get("container_name") or project_meta.get(
+                "liferay_container_name"
+            )
+            if container_name:
+                try:
+                    self.manager.run_command(
+                        [
+                            "docker",
+                            "exec",
+                            container_name,
+                            "sh",
+                            "-c",
+                            "echo 'com.liferay.portal.kernel.cache.MultiVMPoolUtil.clear();' | telnet localhost 11311",
+                        ],
+                        check=False,
+                        capture_output=True,
+                    )
+                    UI.debug(
+                        "Flushed Liferay OSGi MultiVMPool cache after direct DB patch."
+                    )
+                except Exception as e:
+                    UI.debug(f"Failed to flush OSGi cache via telnet: {e}")
+
         return patched_db_count
 
     @staticmethod
