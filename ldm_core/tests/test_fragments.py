@@ -1,3 +1,4 @@
+import json as _json
 import tempfile
 import unittest
 from pathlib import Path
@@ -945,3 +946,86 @@ class TestFragments(unittest.TestCase):
                     if "page-elements/elem-1" in c[0][0].full_url
                 ]
                 self.assertTrue(len(patch_calls) > 0)
+
+    def test_target_site_and_scoped_overrides(self):
+        """Test target_sites metadata filtering and siteKey matching."""
+        project_meta = {
+            "tag": "2025.Q1.0",
+            "target_sites": ["my-site"],
+            "force_specs": True,
+        }
+        paths = {"root": self.tmp_dir, "deploy": self.tmp_dir / "deploy"}
+        configs_dir = self.tmp_dir / "configs"
+        configs_dir.mkdir(parents=True, exist_ok=True)
+        overrides_file = configs_dir / "fragment-overrides.json"
+
+        overrides = {
+            "my-frag": {
+                "siteKey": "my-site",
+                "pagePath": "Home",
+                "myField": "myValue",
+            }
+        }
+        overrides_file.write_text(_json.dumps(overrides))
+
+        sites_resp = {
+            "items": [
+                {"id": 1, "externalReferenceCode": "L_GLOBAL", "key": "L_GLOBAL"},
+                {"id": 2, "externalReferenceCode": "other-site", "key": "other-site"},
+                {"id": 3, "externalReferenceCode": "my-site", "key": "my-site"},
+            ]
+        }
+        pages_resp = {
+            "items": [
+                {
+                    "externalReferenceCode": "page-1",
+                    "name": "Home",
+                }
+            ]
+        }
+        specs_resp = {
+            "items": [
+                {
+                    "externalReferenceCode": "spec-1",
+                    "pageExperiences": [
+                        {
+                            "externalReferenceCode": "exp-1",
+                            "pageElements": [
+                                {
+                                    "externalReferenceCode": "elem-1",
+                                    "definition": {"fragment": {"key": "my-frag"}},
+                                }
+                            ],
+                        }
+                    ],
+                }
+            ]
+        }
+
+        called_urls = []
+
+        def fake_urlopen(req, **kwargs):
+            url = req.full_url if hasattr(req, "full_url") else str(req)
+            called_urls.append(url)
+            m = MagicMock()
+            if "/page-elements/" in url:
+                m.read.return_value = _json.dumps({"status": "ok"}).encode()
+            elif "/page-specifications" in url:
+                m.read.return_value = _json.dumps(specs_resp).encode()
+            elif "/site-pages" in url:
+                m.read.return_value = _json.dumps(pages_resp).encode()
+            elif url.endswith("/sites") or url.endswith("/sites/"):
+                m.read.return_value = _json.dumps(sites_resp).encode()
+            else:
+                m.read.return_value = _json.dumps({"status": "ok"}).encode()
+            m.__enter__.return_value = m
+            return m
+
+        with patch("urllib.request.urlopen", side_effect=fake_urlopen):
+            self.handler.handler.fragments._patch_fragment_overrides(
+                project_meta, paths
+            )
+
+        self.assertFalse(any("L_GLOBAL" in p for p in called_urls))
+        self.assertFalse(any("other-site" in p for p in called_urls))
+        self.assertTrue(any("my-site" in p for p in called_urls))
