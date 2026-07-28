@@ -952,6 +952,7 @@ class TestFragments(unittest.TestCase):
         project_meta = {
             "tag": "2025.Q1.0",
             "target_sites": ["my-site"],
+            "force_specs": True,
         }
         paths = {"root": self.tmp_dir, "deploy": self.tmp_dir / "deploy"}
         configs_dir = self.tmp_dir / "configs"
@@ -1001,8 +1002,11 @@ class TestFragments(unittest.TestCase):
             ]
         }
 
+        called_urls = []
+
         def fake_urlopen(req, **kwargs):
             url = req.full_url if hasattr(req, "full_url") else str(req)
+            called_urls.append(url)
             m = MagicMock()
             if "/page-elements/" in url:
                 m.read.return_value = _json.dumps({"status": "ok"}).encode()
@@ -1017,13 +1021,11 @@ class TestFragments(unittest.TestCase):
             m.__enter__.return_value = m
             return m
 
-        with patch("urllib.request.urlopen", side_effect=fake_urlopen) as mock_urlopen:
+        with patch("urllib.request.urlopen", side_effect=fake_urlopen):
             self.handler.handler.fragments._patch_fragment_overrides(
                 project_meta, paths
             )
 
-            # Assert API requests targeted my-site and skipped L_GLOBAL and other-site
-            requested_urls = [c[0][0].full_url for c in mock_urlopen.call_args_list]
-            self.assertFalse(any("L_GLOBAL" in url for url in requested_urls))
-            self.assertFalse(any("other-site" in url for url in requested_urls))
-            self.assertTrue(any("my-site" in url for url in requested_urls))
+        self.assertFalse(any("L_GLOBAL" in p for p in called_urls))
+        self.assertFalse(any("other-site" in p for p in called_urls))
+        self.assertTrue(any("my-site" in p for p in called_urls))

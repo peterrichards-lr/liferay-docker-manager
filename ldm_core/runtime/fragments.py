@@ -506,7 +506,9 @@ class FragmentsService(BaseHandler):
                     patch_fragments_legacy(children, page_name)
 
         connection_successful = False
-        specs_supported = not hasattr(urllib.request.urlopen, "call_args_list")
+        specs_supported = not hasattr(urllib.request.urlopen, "call_args_list") or bool(
+            project_meta.get("force_specs", False)
+        )
         patched_via_specs = False
 
         # Resolve target site scopes from project_meta or ZIP manifests
