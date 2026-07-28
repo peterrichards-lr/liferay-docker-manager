@@ -746,6 +746,11 @@ def _fixup_unix_permissions(path):
 
 def safe_copy(src, dst):
     """Copies a file safely, ignoring metadata preservation errors (EPERM/OSError)."""
+    try:
+        if Path(src).resolve() == Path(dst).resolve():
+            return
+    except Exception:
+        pass
     is_dry_run = os.environ.get("LDM_DRY_RUN", "").lower() == "true"
     if is_dry_run:
         UI.detail(f"{UI.BYELLOW}[DRY RUN] Would copy:{UI.COLOR_OFF} {src} -> {dst}")

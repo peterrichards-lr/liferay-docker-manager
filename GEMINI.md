@@ -4,6 +4,16 @@
 > **Purpose of this file**: This file tracks the active work state, tasks, and historical progress.
 > For architectural and project mandates (e.g. Volume Strategies, Exit Codes, CI rules), please refer to `.agents/AGENTS.md` and the `.agents/skills/` modules.
 
+## Active Work State & Plan (July 28, 2026)
+
+- **Current Active Task (July 28, 2026) — LDM Centralized Multi-Node Orchestrator (`ldm target`)**:
+  - [ ] Implement target configuration schema and registry management (`ldm target add/ls/use/set/rm`).
+  - [ ] Update `DockerService` in `ldm_core/docker_service.py` to route CLI commands dynamically to active target SSH/Docker contexts.
+  - [ ] Build background SSH tunnel manager (`ldm_core/remote/tunnel.py`) for automatic local loopback port forwarding (`localhost:8080`).
+  - [ ] Build background file-sync engine (`ldm_core/remote/sync.py`) using `rsync` / `docker cp` tar streaming for hot deployments.
+  - [ ] Update project metadata schema (`meta.json`) to persist per-project target preferences (`local`, `win-wsl`, `aws-node`).
+  - [ ] Add unit and integration tests verifying multi-target orchestration and simultaneous local/remote project handling.
+
 ## Active Work State & Plan (July 27, 2026)
 
 - **Current Active Task (July 27, 2026) — JSON Metadata Format & Custom Containers Scaffolding**:
@@ -645,4 +655,4 @@ When modifying `client-extension.yaml` files, **NEVER change or remove `.service
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-07-27* | *Last Reviewed: 2026-07-27*
+*Last Updated: 2026-07-28* | *Last Reviewed: 2026-07-27*

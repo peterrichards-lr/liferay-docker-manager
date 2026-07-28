@@ -454,4 +454,4 @@ ldm tray --uninstall-autostart  # Remove launch-on-login autostart
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-07-27* | *Last Reviewed: 2026-07-23*
+*Last Updated: 2026-07-28* | *Last Reviewed: 2026-07-23*
