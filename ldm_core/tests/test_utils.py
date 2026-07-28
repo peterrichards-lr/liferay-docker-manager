@@ -1434,12 +1434,16 @@ class TestMetadataParsing(unittest.TestCase):
         # Create a temporary directory for meta file tests
         self.test_dir = tempfile.mkdtemp()
         self.meta_path = Path(self.test_dir) / ".liferay-docker.meta"
-        # Disable dry run for these tests
+
+        # Disable dry run for these tests and save old state
+        self.old_dry_run = os.environ.get("LDM_DRY_RUN")
         if "LDM_DRY_RUN" in os.environ:
             del os.environ["LDM_DRY_RUN"]
 
     def tearDown(self):
         self.shutil.rmtree(self.test_dir)
+        if self.old_dry_run is not None:
+            self.os.environ["LDM_DRY_RUN"] = self.old_dry_run
 
     def test_read_meta_legacy_properties_auto_upgrades(self):
         from ldm_core.utils import read_meta
