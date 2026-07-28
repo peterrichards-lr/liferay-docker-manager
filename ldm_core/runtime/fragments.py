@@ -456,6 +456,11 @@ class FragmentsService(BaseHandler):
                 UI.die("Aborted by user.", exit_code=1)
             return
 
+        if patched_count == 0:
+            db_patched = self._patch_database_fragmententrylink(project_meta, overrides)
+            if db_patched > 0:
+                patched_count = db_patched
+
         if patched_count > 0:
             UI.success(
                 f"Successfully applied {patched_count} fragment configuration overrides."
@@ -823,6 +828,55 @@ class FragmentsService(BaseHandler):
                     all_discovered_keys,
                 )
         return patched_count
+
+    def _patch_database_fragmententrylink(self, project_meta, overrides):
+        """Fallback direct database patcher for fragmententrylink editablevalues.
+
+        Updates editablevalues directly in PostgreSQL/MySQL when DXP Headless REST
+        APIs are restricted on published site initializer pages.
+        """
+        db_container = project_meta.get("db_container_name")
+        if not db_container:
+            return 0
+
+        patched_db_count = 0
+        for config in overrides.values():
+            if not isinstance(config, dict):
+                continue
+            for setting_key, setting_val in config.items():
+                if not isinstance(setting_val, str) or not setting_val:
+                    continue
+                try:
+                    update_sql = (
+                        f"UPDATE fragmententrylink SET editablevalues = "
+                        f'REGEXP_REPLACE(editablevalues, \'"{setting_key}":"[^"]+"\', \'"{setting_key}":"{setting_val}"\', \'g\') '
+                        f"WHERE editablevalues LIKE '%\"{setting_key}\":%';"
+                    )
+                    res = self.manager.run_command(
+                        [
+                            "docker",
+                            "exec",
+                            db_container,
+                            "psql",
+                            "-U",
+                            "lportal",
+                            "-d",
+                            "lportal",
+                            "-c",
+                            update_sql,
+                        ],
+                        check=False,
+                        capture_output=True,
+                    )
+                    if res and "UPDATE" in res:
+                        UI.debug(
+                            f"Direct DB patch for '{setting_key}' -> '{setting_val}' succeeded: {res.strip()}"
+                        )
+                        patched_db_count += 1
+                except Exception as e:
+                    UI.debug(f"Direct DB patch for '{setting_key}' failed: {e}")
+
+        return patched_db_count
 
     @staticmethod
     def _validate_fragment_overrides(data, file_path):
