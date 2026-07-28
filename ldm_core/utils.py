@@ -696,7 +696,7 @@ def safe_write_text(path, content, encoding="utf-8", mode=None):
         max_retries = 3
         for i in range(max_retries):
             try:
-                os.replace(tmp_path, path)
+                shutil.move(str(tmp_path), str(path))
                 if (
                     mode is not None
                     and platform.system().lower() != "windows"
@@ -790,7 +790,7 @@ def atomic_copy(src, dst):
             try:
                 # We rename the perfectly-permissioned file into its final place.
                 # Since it's on the same filesystem, this is atomic.
-                os.replace(tmp_dst, dst_path)
+                shutil.move(str(tmp_dst), str(dst_path))
                 return
             except (OSError, PermissionError):
                 if i == max_retries - 1:
@@ -824,7 +824,7 @@ def safe_move(src, dst):
         # Fallback for simple renames if they are definitely on the same device
         # and we can tolerate the permission fixup happening slightly after.
         try:
-            os.rename(src, dst)
+            shutil.move(str(src), str(dst))
             _fixup_unix_permissions(dst)
         except Exception as e:
             raise e
@@ -1413,7 +1413,7 @@ def write_meta(path, meta):
         max_retries = 3
         for i in range(max_retries):
             try:
-                os.replace(tmp_path, path)
+                shutil.move(str(tmp_path), str(path))
                 break
             except (OSError, PermissionError) as e:
                 if i == max_retries - 1:

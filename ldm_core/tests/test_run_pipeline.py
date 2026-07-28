@@ -38,7 +38,9 @@ class TestRunPipeline(unittest.TestCase):
     def test_composer_stage_dry_run(self):
         self.context.set("dry_run", True)
         stage = ComposerStage()
-        self.context.set("paths", {"root": MagicMock(), "configs": MagicMock()})
+        root_mock = MagicMock()
+        root_mock.__truediv__.return_value.exists.return_value = False
+        self.context.set("paths", {"root": root_mock, "configs": MagicMock()})
         self.context.set("infra_ports", {})
 
         stage.execute(self.context)

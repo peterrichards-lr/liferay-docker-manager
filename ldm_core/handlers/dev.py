@@ -1,6 +1,7 @@
 import os
 import platform
 import re
+import shutil
 import sys
 from pathlib import Path
 
@@ -269,7 +270,7 @@ class DevService:
                 # Atomic Write
                 temp_file = p.with_suffix(".tmp")
                 temp_file.write_text(new_content)
-                os.replace(temp_file, p)
+                shutil.move(str(temp_file), str(p))
                 updated_paths.append(rel_path)
                 UI.success(f"Updated {rel_path}")
 

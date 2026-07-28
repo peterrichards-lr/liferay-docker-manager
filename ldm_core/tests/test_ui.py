@@ -208,8 +208,12 @@ class TestUI(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmpdir:
             mock_home.return_value = Path(tmpdir)
             UI.init_trace_log(["cmd"])
-            UI.trace("Test Trace Message")
-            UI._print("Test Print Message", color=UI.CYAN)
+            UI.NO_COLOR = True
+            try:
+                UI.trace("Test Trace Message")
+                UI._print("Test Print Message", color=UI.CYAN)
+            finally:
+                UI.NO_COLOR = False
             assert UI._trace_handle is not None
             UI._trace_handle.close()
             UI._trace_handle = None

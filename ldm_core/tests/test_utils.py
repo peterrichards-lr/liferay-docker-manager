@@ -590,7 +590,7 @@ class TestUpdateChecks(unittest.TestCase):
 
         with (
             patch("ldm_core.utils.safe_copy") as mock_safe_copy,
-            patch("os.replace") as mock_replace,
+            patch("shutil.move") as mock_move,
         ):
             src = Path("/tmp/src.jar")
             dst = Path("/tmp/deploy/dst.jar")
@@ -604,7 +604,7 @@ class TestUpdateChecks(unittest.TestCase):
                 mock_safe_copy.assert_called_once_with(src, expected_tmp)
 
                 # Verify it atomically moved the temp file to destination
-                mock_replace.assert_called_once_with(expected_tmp, dst)
+                mock_move.assert_called_once_with(str(expected_tmp), str(dst))
 
     def test_safe_write_text_raises_on_permission_error(self):
         """safe_write_text should propagate PermissionError, not silently reclaim permissions."""

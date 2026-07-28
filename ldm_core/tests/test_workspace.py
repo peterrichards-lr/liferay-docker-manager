@@ -712,7 +712,7 @@ class TestWorkspaceScanners(unittest.TestCase):
             with (
                 patch("tarfile.open"),
                 patch("ldm_core.utils.safe_extract", side_effect=mock_safe_extract),
-                patch("ldm_core.utils.UI.die", side_effect=SystemExit) as mock_die,
+                patch("ldm_core.ui.UI.die", side_effect=SystemExit) as mock_die,
             ):
                 with self.assertRaises(SystemExit):
                     self.handler.workspace.cmd_import(str(source_ldmp))
