@@ -246,7 +246,7 @@ class FragmentsService(BaseHandler):
                 with urllib.request.urlopen(req, context=ctx) as response:  # nosec B310
                     return json.loads(response.read().decode())
             except urllib.error.HTTPError as e:
-                if e.code == 404:
+                if e.code in (400, 404):
                     return None
                 UI.warning(f"Headless API {method} {path} failed: {e.code} {e.reason}")
                 return None
@@ -502,7 +502,7 @@ class FragmentsService(BaseHandler):
             connection_successful = True
             for site in sites_data["items"]:
                 site_erc = site.get("externalReferenceCode")
-                if not site_erc:
+                if not site_erc or site_erc == "L_GLOBAL":
                     continue
 
                 pages_data = api_request(
