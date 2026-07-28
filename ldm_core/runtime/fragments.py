@@ -354,7 +354,7 @@ class FragmentsService(BaseHandler):
         # 2. Fall back to legacy flow if specs-based traversal failed or is not supported
         if specs_supported and not patched_via_specs and connection_successful:
             UI.detail(
-                "Specifications traversal found no fragments. Falling back to legacy patcher..."
+                "Page specifications updates failed or returned no matching fragments. Falling back to legacy patcher & database engine..."
             )
             specs_supported = False
 
