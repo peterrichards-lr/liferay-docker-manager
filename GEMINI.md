@@ -23,7 +23,6 @@
   - [x] Verify remote `.ldmp` package compilation (tag `v1.0.0` published successfully on `peterrichards-lr/ldm-rafa-project`).
   - [x] Test package remote import locally using `ldm import <github-url> <imported-name>` verifying database, files, and crawler docker image load.
 
-
 ## Active Work State & Plan (July 27, 2026)
 
 - **Current Active Task (July 27, 2026) — JSON Metadata Format & Custom Containers Scaffolding**:
@@ -666,4 +665,3 @@ When modifying `client-extension.yaml` files, **NEVER change or remove `.service
 <!-- markdownlint-disable MD049 -->
 ---
 *Last Updated: 2026-07-28* | *Last Reviewed: 2026-07-28*
-
