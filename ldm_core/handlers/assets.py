@@ -123,7 +123,7 @@ class AssetService:
                                         )
                                         sys.stdout.flush()
                     print()
-                    os.replace(temp_download, cached_seed)
+                    shutil.move(str(temp_download), str(cached_seed))
                     tmp_path = cached_seed
                     UI.success(f"Seed cached: {seed_filename}")
                 except Exception as e:
@@ -240,7 +240,7 @@ class AssetService:
                     temp_zip.unlink()
                 return False
 
-            os.replace(temp_zip, cached_zip)
+            shutil.move(str(temp_zip), str(cached_zip))
             temp_zip = cached_zip
             UI.success(f"Samples cached: {cached_zip.name}")
 
