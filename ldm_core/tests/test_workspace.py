@@ -1145,7 +1145,13 @@ class TestWorkspaceRemoteImport(unittest.TestCase):
         mock_origin_res.stdout = "git@github.com:owner/repo.git"
 
         # The git clone command should be run, and then the metadata read or get-url
-        mock_sub_run.side_effect = [mock_clone_res, mock_origin_res, mock_clone_res]
+        mock_sub_run.side_effect = [
+            mock_clone_res,
+            mock_origin_res,
+            mock_clone_res,
+            mock_clone_res,
+            mock_clone_res,
+        ]
 
         # 2. Mock requests.get to return a release with an empty/vanilla .ldmp asset (size 562 bytes)
         mock_release_resp = MagicMock()
@@ -1192,6 +1198,10 @@ class TestWorkspaceRemoteImport(unittest.TestCase):
                     return_value=project_path,
                 ),
                 patch("shutil.rmtree"),  # Avoid deleting temp directories during test
+                patch(
+                    "ldm_core.docker_service.DockerService.is_running",
+                    return_value=False,
+                ),
                 patch("ldm_core.workspace.utils._ensure_stopped"),
                 patch("ldm_core.handlers.workspace.WorkspaceService._ensure_stopped"),
             ):
