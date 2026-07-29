@@ -197,14 +197,12 @@ class TestDatabaseQueryCommand(unittest.TestCase):
             # Create dummy docker-compose.yml so the existence check passes
             (project_path / "docker-compose.yml").touch()
 
-            self.manager.detect_project_path = MagicMock(return_value=project_path)  # type: ignore[method-assign]
             mock_meta = {
                 "db_type": "postgresql",
                 "database": "lportal",
                 "database_user": "liferay",
                 "container_name": "db-container-123",
             }
-            self.manager.read_meta = MagicMock(return_value=mock_meta)  # type: ignore[method-assign]
 
             # Mock the ps check so it looks like the DB is running
             def mock_run_command(cmd, env_vars=None, **kwargs):
@@ -212,14 +210,19 @@ class TestDatabaseQueryCommand(unittest.TestCase):
                     return "lportal-db"
                 return ""
 
-            self.manager.run_command = MagicMock(side_effect=mock_run_command)  # type: ignore[method-assign]
+            with (
+                patch.object(
+                    self.manager, "detect_project_path", return_value=project_path
+                ),
+                patch.object(self.manager, "read_meta", return_value=mock_meta),
+                patch.object(self.manager, "run_command", side_effect=mock_run_command),
+            ):
+                # Mock successful subprocess execution for the SQL execution
+                mock_res = MagicMock()
+                mock_res.returncode = 0
+                mock_run.return_value = mock_res
 
-            # Mock successful subprocess execution for the SQL execution
-            mock_res = MagicMock()
-            mock_res.returncode = 0
-            mock_run.return_value = mock_res
-
-            self.manager.database.cmd_reset_admin("test")
+                self.manager.database.cmd_reset_admin("test")
 
             mock_die.assert_not_called()
             mock_success.assert_called_with(

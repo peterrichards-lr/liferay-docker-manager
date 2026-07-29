@@ -11,6 +11,7 @@ class MockInfraManager:
         self.verbose = False
         self.non_interactive = True
         self.defaults = MagicMock()
+        self.target: str | None = None
 
     def run_command(self, *args, **kwargs):
         pass

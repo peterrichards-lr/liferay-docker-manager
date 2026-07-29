@@ -1821,6 +1821,15 @@ def get_parser():  # noqa: PLR0915
     t_status.add_argument(
         "name", nargs="?", default="", help="Optional target node name to probe"
     )
+    t_migrate = target_subparsers.add_parser(
+        "migrate",
+        parents=[base_sub_parent],
+        help="Migrate active project workload live between target compute nodes",
+    )
+    t_migrate.add_argument("source", help="Source target node identifier (or 'local')")
+    t_migrate.add_argument(
+        "dest", help="Destination target node identifier (or 'local')"
+    )
 
     reset_props = config_subparsers.add_parser(
         "reset-properties",
@@ -2697,6 +2706,9 @@ def _build_command_map(args, manager):
         ("target", "set"): lambda: manager.config.cmd_target_set(args.name),
         ("target", "status"): lambda: manager.config.cmd_target_status(
             getattr(args, "name", "")
+        ),
+        ("target", "migrate"): lambda: manager.config.cmd_target_migrate(
+            args.source, args.dest
         ),
     }
     return cmds

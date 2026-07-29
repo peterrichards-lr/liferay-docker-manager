@@ -1418,3 +1418,41 @@ class TestSnapshotService(unittest.TestCase):
             mock_run.assert_any_call(
                 ["docker", "load", "-i", str(custom_images / "wordpress.tar")]
             )
+
+    def test_cmd_snapshot_remote_target(self) -> None:
+        """Test cmd_snapshot database dump passes target context prefix."""
+        with (
+            patch.object(
+                self.manager,
+                "read_meta",
+                return_value={"db_type": "postgresql", "target": "aws-1"},
+            ),
+            patch.object(self.manager, "run_command") as mock_run,
+            patch("ldm_core.docker_service.get_active_target") as mock_target,
+        ):
+            from ldm_core.config import TargetNode
+
+            mock_target.return_value = TargetNode(name="aws-1", host="34.1.1.1")
+
+            def mock_run_cmd(cmd, stdout_file=None, **kwargs):
+                if stdout_file:
+                    stdout_file.write(b"CREATE TABLE test;")
+                return "container-id"
+
+            mock_run.side_effect = mock_run_cmd
+
+            snap_dir = self.test_dir / "snap"
+            snap_dir.mkdir(exist_ok=True)
+            paths = {"root": self.test_dir}
+
+            self.manager.snapshot.database._snapshot_database(
+                {"db_type": "postgresql", "target": "aws-1"}, "proj", snap_dir, paths
+            )
+            mock_run.assert_called()
+            called_cmds = [call[0][0] for call in mock_run.call_args_list]
+            has_context = any(
+                "--context" in cmd and "aws-1" in cmd
+                for cmd in called_cmds
+                if isinstance(cmd, list)
+            )
+            self.assertTrue(has_context)

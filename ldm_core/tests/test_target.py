@@ -207,6 +207,29 @@ class TestTargetCLIHandlers(unittest.TestCase):
                 self.assertTrue(res)
                 self.assertGreaterEqual(mock_run.call_count, 2)
 
+    def test_cmd_target_migrate(self) -> None:
+        """Test cmd_target_migrate execution workflow."""
+        from unittest.mock import patch
+
+        with (
+            patch("ldm_core.config._get_config_path", return_value=self.config_path),
+            patch.object(
+                self.manager, "detect_project_path", return_value=self.temp_dir
+            ),
+            patch.object(self.manager, "read_meta", return_value={"target": "local"}),
+            patch.object(self.manager, "write_meta"),
+            patch.object(self.manager.snapshot, "cmd_snapshot") as mock_snap,
+            patch.object(self.manager.runtime, "cmd_down") as mock_down,
+            patch.object(self.manager.runtime, "cmd_run") as mock_run,
+            patch("ldm_core.config.sync_project_to_target", create=True) as mock_sync,
+        ):
+            self.service.cmd_target_add("aws", host="34.1.1.1")
+            self.service.cmd_target_migrate("local", "aws")
+            mock_snap.assert_called_once()
+            mock_down.assert_called_once()
+            mock_sync.assert_called_once()
+            mock_run.assert_called_once()
+
 
 if __name__ == "__main__":
     unittest.main()
