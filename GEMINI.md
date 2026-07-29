@@ -4,15 +4,14 @@
 > **Purpose of this file**: This file tracks the active work state, tasks, and historical progress.
 > For architectural and project mandates (e.g. Volume Strategies, Exit Codes, CI rules), please refer to `.agents/AGENTS.md` and the `.agents/skills/` modules.
 
-## Active Work State & Plan (July 28, 2026)
+## Active Work State & Plan (July 29, 2026)
 
-- **Current Active Task (July 28, 2026) — LDM Centralized Multi-Node Orchestrator (`ldm target`)**:
-  - [ ] Implement target configuration schema and registry management (`ldm target add/ls/use/set/rm`).
-  - [ ] Update `DockerService` in `ldm_core/docker_service.py` to route CLI commands dynamically to active target SSH/Docker contexts.
-  - [ ] Build background SSH tunnel manager (`ldm_core/remote/tunnel.py`) for automatic local loopback port forwarding (`localhost:8080`).
-  - [ ] Build background file-sync engine (`ldm_core/remote/sync.py`) using `rsync` / `docker cp` tar streaming for hot deployments.
-  - [ ] Update project metadata schema (`meta.json`) to persist per-project target preferences (`local`, `win-wsl`, `aws-node`).
-  - [ ] Add unit and integration tests verifying multi-target orchestration and simultaneous local/remote project handling.
+- **Current Active Task (July 29, 2026) — Fragment Overrides Metadata Resolution & Direct DB Patcher Fallback**:
+  - [x] Merge disk `meta` file into `project_meta` in `_patch_fragment_overrides` so all metadata keys (`tag`, `host_name`, `db_container_name`) are present.
+  - [x] Support tag/version fallback resolution (`tag` -> `version` -> `liferay_version` -> `last_run_liferay_version`).
+  - [x] Fix container/db_container name fallbacks in `_patch_database_fragmententrylink`.
+  - [x] Remove forced auto-scroll and viewport focus shifts on form submit in `DataGeneratorForm.jsx`.
+  - [x] Run fragment unit tests (`test_fragments.py`) and frontend vitest test suite verifying 100% pass rate.
 
 - **Current Active Task (July 28, 2026) — Remote Package Compilation, In-place Import fix, and Verification**:
   - [x] Fix `shutil.SameFileError` during in-place `ldm import .` by skipping copying identical files in `safe_copy` (`ldm_core/utils.py`).
@@ -664,4 +663,4 @@ When modifying `client-extension.yaml` files, **NEVER change or remove `.service
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-07-28* | *Last Reviewed: 2026-07-28*
+*Last Updated: 2026-07-29* | *Last Reviewed: 2026-07-29*
