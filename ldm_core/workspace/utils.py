@@ -18,15 +18,15 @@ def cmd_init(self, project_id=None):
     UI.success("Initialization complete. You can now run 'ldm doctor' or 'ldm run'.")
 
 
-def _ensure_stopped(self, project_name, project_path):
+def _ensure_stopped(self, project_name, project_path=None):
     """Ensures that the project is not running, stopping it if requested or possible."""
-    if not project_path.exists():
-        return
-
     from ldm_core.docker_service import DockerService
 
-    meta = self.manager.read_meta(project_path)
-    c_name = meta.get("container_name") or project_name
+    c_name = project_name
+    if project_path and hasattr(project_path, "exists") and project_path.exists():
+        meta = self.manager.read_meta(project_path)
+        c_name = meta.get("container_name") or project_name
+
     if DockerService.is_running(c_name):
         if getattr(self.manager.args, "leave_running", False):
             UI.die(

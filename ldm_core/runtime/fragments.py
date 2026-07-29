@@ -839,6 +839,33 @@ class FragmentsService(BaseHandler):
         if not db_container:
             return 0
 
+        db_type = project_meta.get("db_type", "postgresql").lower()
+        db_cmd_base = (
+            [
+                "docker",
+                "exec",
+                db_container,
+                "mysql",
+                "-u",
+                "lportal",
+                "-plportal",
+                "lportal",
+                "-e",
+            ]
+            if ("mysql" in db_type or "mariadb" in db_type)
+            else [
+                "docker",
+                "exec",
+                db_container,
+                "psql",
+                "-U",
+                "lportal",
+                "-d",
+                "lportal",
+                "-c",
+            ]
+        )
+
         patched_db_count = 0
         for config in overrides.values():
             if not isinstance(config, dict):
@@ -853,18 +880,7 @@ class FragmentsService(BaseHandler):
                         f"WHERE editablevalues LIKE '%\"{setting_key}\":%';"
                     )
                     res = self.manager.run_command(
-                        [
-                            "docker",
-                            "exec",
-                            db_container,
-                            "psql",
-                            "-U",
-                            "lportal",
-                            "-d",
-                            "lportal",
-                            "-c",
-                            update_sql,
-                        ],
+                        [*db_cmd_base, update_sql],
                         check=False,
                         capture_output=True,
                     )
