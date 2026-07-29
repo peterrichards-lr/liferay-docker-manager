@@ -456,6 +456,11 @@ class FragmentsService(BaseHandler):
                 UI.die("Aborted by user.", exit_code=1)
             return
 
+        if patched_count == 0:
+            db_patched = self._patch_database_fragmententrylink(project_meta, overrides)
+            if db_patched > 0:
+                patched_count = db_patched
+
         if patched_count > 0:
             UI.success(
                 f"Successfully applied {patched_count} fragment configuration overrides."
@@ -823,6 +828,98 @@ class FragmentsService(BaseHandler):
                     all_discovered_keys,
                 )
         return patched_count
+
+    def _patch_database_fragmententrylink(self, project_meta, overrides):
+        """Fallback direct database patcher for fragmententrylink editablevalues.
+
+        Updates editablevalues directly in PostgreSQL/MySQL when DXP Headless REST
+        APIs are restricted on published site initializer pages.
+        """
+        db_container = project_meta.get("db_container_name")
+        if not db_container:
+            return 0
+
+        db_type = project_meta.get("db_type", "postgresql").lower()
+        if "hsql" in db_type or "hypersonic" in db_type:
+            UI.warning(
+                f"Unable to auto-patch fragment overrides for database '{db_type}'. "
+                "Headless REST API was restricted on published site initializer pages. "
+                "Please manually update fragment settings in Liferay Site Administration or configure PostgreSQL/MySQL."
+            )
+            return 0
+        db_cmd_base = (
+            [
+                "docker",
+                "exec",
+                db_container,
+                "mysql",
+                "-u",
+                "lportal",
+                "-plportal",
+                "lportal",
+                "-e",
+            ]
+            if ("mysql" in db_type or "mariadb" in db_type)
+            else [
+                "docker",
+                "exec",
+                db_container,
+                "psql",
+                "-U",
+                "lportal",
+                "-d",
+                "lportal",
+                "-c",
+            ]
+        )
+
+        patched_db_count = 0
+        for config in overrides.values():
+            if not isinstance(config, dict):
+                continue
+            for setting_key, setting_val in config.items():
+                if not isinstance(setting_val, str) or not setting_val:
+                    continue
+                try:
+                    update_sql = f'UPDATE fragmententrylink SET editablevalues = REGEXP_REPLACE(editablevalues, \'"{setting_key}":"[^"]+"\', \'"{setting_key}":"{setting_val}"\', \'g\') WHERE editablevalues LIKE \'%"{setting_key}":%\';'  # nosec B608
+                    res = self.manager.run_command(
+                        [*db_cmd_base, update_sql],
+                        check=False,
+                        capture_output=True,
+                    )
+                    if res and "UPDATE" in res:
+                        UI.debug(
+                            f"Direct DB patch for '{setting_key}' -> '{setting_val}' succeeded: {res.strip()}"
+                        )
+                        patched_db_count += 1
+                except Exception as e:
+                    UI.debug(f"Direct DB patch for '{setting_key}' failed: {e}")
+
+        if patched_db_count > 0:
+            container_name = project_meta.get("container_name") or project_meta.get(
+                "liferay_container_name"
+            )
+            if container_name:
+                try:
+                    self.manager.run_command(
+                        [
+                            "docker",
+                            "exec",
+                            container_name,
+                            "sh",
+                            "-c",
+                            "echo 'com.liferay.portal.kernel.cache.MultiVMPoolUtil.clear();' | telnet localhost 11311",
+                        ],
+                        check=False,
+                        capture_output=True,
+                    )
+                    UI.debug(
+                        "Flushed Liferay OSGi MultiVMPool cache after direct DB patch."
+                    )
+                except Exception as e:
+                    UI.debug(f"Failed to flush OSGi cache via telnet: {e}")
+
+        return patched_db_count
 
     @staticmethod
     def _validate_fragment_overrides(data, file_path):
