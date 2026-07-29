@@ -6,6 +6,22 @@
 
 ## Active Work State & Plan (July 29, 2026)
 
+- **Current Active Task (July 29, 2026) — LDM Multi-Node Orchestrator Phase 1 Step 3 (Issue #857)**:
+  - [ ] Add `cmd_target_status(self, name: str = "")` to `ConfigService` in `ldm_core/handlers/config.py`.
+  - [ ] Implement `check_target_connectivity(target_name)` to run SSH / Docker engine probe (`docker --context <name> info`).
+  - [ ] Add unit test coverage in `ldm_core/tests/test_target.py` verifying status probe output and error reporting.
+
+- **Current Active Task (July 29, 2026) — LDM Multi-Node Orchestrator Phase 1 Step 2 (Issue #856)**:
+  - [x] Update `DockerService` in `ldm_core/docker_service.py` to resolve target context dynamically (`local` vs remote `ssh://`).
+  - [x] Implement `get_docker_cmd_prefix(target_name)` and `get_compose_cmd_prefix(target_name)` to inject `--context` or `DOCKER_HOST` parameters into CLI calls.
+  - [x] Add unit test coverage in `ldm_core/tests/test_docker_service.py` asserting correct command prefix generation for local and remote SSH targets.
+
+- **Current Active Task (July 29, 2026) — LDM Multi-Node Orchestrator Phase 1 Step 1 (Issue #855)**:
+  - [x] Implement `TargetNode` dataclass and Target Registry store in `ldm_core/config.py`.
+  - [x] Integrate `load_global_config_safe` and `save_global_config_safe` to persist target nodes under the `"targets"` key in `~/.ldmrc`.
+  - [x] Add `ldm target` CLI subcommand parser and handlers (`add`, `ls`, `use`, `set`, `rm`, `status`).
+  - [x] Write comprehensive unit test suite in `ldm_core/tests/test_target.py` verifying target CRUD, default selection, and persistence.
+
 - **Current Active Task (July 29, 2026) — Fragment Overrides Metadata Resolution & Direct DB Patcher Fallback**:
   - [x] Merge disk `meta` file into `project_meta` in `_patch_fragment_overrides` so all metadata keys (`tag`, `host_name`, `db_container_name`) are present.
   - [x] Support tag/version fallback resolution (`tag` -> `version` -> `liferay_version` -> `last_run_liferay_version`).

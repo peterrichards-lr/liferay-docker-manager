@@ -2092,3 +2092,161 @@ class ConfigService:
         UI.detail(
             "Run 'ldm run' or 'ldm deploy' to regenerate docker-compose.yml and bring up the updated stack."
         )
+
+    def cmd_target_add(
+        self,
+        name: str,
+        host: str = "localhost",
+        user: str = "",
+        key: str = "",
+        default: bool = False,
+    ) -> None:
+        """Handler for 'ldm target add <name> --host <host>'."""
+        from ldm_core.config import TargetNode, save_target_node
+
+        if not name:
+            UI.die(
+                "Target name is required (e.g. 'ldm target add win-wsl --host 192.168.1.50')."
+            )
+
+        node = TargetNode(
+            name=name,
+            host=host,
+            user=user,
+            key_path=key,
+            is_default=default,
+        )
+        save_target_node(node)
+        UI.success(f"Target node '{name}' ({host}) registered successfully.")
+        if default:
+            UI.detail(f"Target node '{name}' set as active global default.")
+
+    def cmd_target_ls(self) -> None:
+        """Handler for 'ldm target ls'."""
+        from ldm_core.config import load_targets
+
+        targets = load_targets()
+        UI.heading("Registered Target Compute Nodes")
+        if not targets:
+            UI.detail(
+                "No custom target nodes registered. Active target: local (localhost)."
+            )
+            return
+
+        headers = ["TARGET NAME", "HOST / ENDPOINT", "SSH USER", "ACTIVE DEFAULT"]
+        rows = []
+        for t_name, target in targets.items():
+            default_badge = "YES [DEFAULT]" if target.is_default else "NO"
+            user_str = target.user or "-"
+            rows.append([t_name, target.host, user_str, default_badge])
+
+        UI.table(rows, headers=headers)
+
+    def cmd_target_use(self, name: str) -> None:
+        """Handler for 'ldm target use <name>'."""
+        from ldm_core.config import set_default_target
+
+        if not name:
+            UI.die("Target name is required (e.g. 'ldm target use win-wsl').")
+
+        if set_default_target(name):
+            UI.success(f"Switched default target node to '{name}'.")
+        else:
+            UI.die(
+                f"Target node '{name}' not found. Use 'ldm target ls' to view registered nodes."
+            )
+
+    def cmd_target_rm(self, name: str) -> None:
+        """Handler for 'ldm target rm <name>'."""
+        from ldm_core.config import delete_target_node
+
+        if not name:
+            UI.die("Target name is required (e.g. 'ldm target rm win-wsl').")
+
+        if name == "local":
+            UI.die("Cannot delete built-in 'local' target node.")
+
+        if delete_target_node(name):
+            UI.success(f"Target node '{name}' removed.")
+        else:
+            UI.die(f"Target node '{name}' not found.")
+
+    def cmd_target_set(self, name: str) -> None:
+        """Handler for 'ldm target set <name>' for active project."""
+        from ldm_core.config import load_targets
+
+        if not name:
+            UI.die("Target name is required (e.g. 'ldm target set win-wsl').")
+
+        targets = load_targets()
+        if name not in targets:
+            UI.die(
+                f"Target node '{name}' not found. Register it first via 'ldm target add {name}'."
+            )
+
+        root = self.manager.detect_project_path(
+            getattr(self.manager.args, "project", None)
+        )
+        meta = self.manager.read_meta(root)
+        meta["target"] = name
+        self.manager.write_meta(root, meta)
+        UI.success(
+            f"Assigned project '{root.name}' to execute on target node '{name}'."
+        )
+
+    def cmd_target_status(self, name: str = "") -> None:
+        """Handler for 'ldm target status [name]'."""
+        from ldm_core.config import load_targets
+        from ldm_core.docker_service import DockerService
+        from ldm_core.utils import run_command
+
+        all_targets = load_targets()
+        if name:
+            if name not in all_targets:
+                UI.die(f"Target node '{name}' not found.")
+            targets_to_probe = {name: all_targets[name]}
+        else:
+            targets_to_probe = all_targets
+
+        UI.heading("Target Compute Nodes Status & Connectivity Probe")
+        headers = [
+            "TARGET",
+            "STATUS",
+            "ENGINE VERSION",
+            "CPUs / MEMORY",
+            "RUNNING CONTAINERS",
+        ]
+        rows = []
+
+        for t_name, _target in targets_to_probe.items():
+            cmd = [
+                *DockerService.get_docker_cmd_prefix(t_name),
+                "info",
+                "--format",
+                "{{.ServerVersion}}|{{.NCPU}}|{{.MemTotal}}|{{.ContainersRunning}}",
+            ]
+            res = run_command(cmd, check=False, capture_output=True, timeout=5)
+            if res and "|" in res:
+                parts = res.strip().split("|")
+                version = parts[0] if len(parts) > 0 else "unknown"
+                cpus = parts[1] if len(parts) > 1 else "-"
+                mem_bytes = (
+                    int(parts[2]) if len(parts) > 2 and parts[2].isdigit() else 0
+                )
+                mem_gb = f"{mem_bytes / (1024**3):.1f} GB" if mem_bytes else "-"
+                running = parts[3] if len(parts) > 3 else "0"
+                status_str = f"{UI.GREEN}ONLINE{UI.COLOR_OFF}"
+                rows.append(
+                    [
+                        t_name,
+                        status_str,
+                        f"v{version}",
+                        f"{cpus} CPUs / {mem_gb}",
+                        running,
+                    ]
+                )
+            else:
+                status_str = f"{UI.RED}OFFLINE{UI.COLOR_OFF}"
+                rows.append([t_name, status_str, "-", "-", "-"])
+
+        UI.table(rows, headers=headers)
