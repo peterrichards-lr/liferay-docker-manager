@@ -251,13 +251,19 @@ class TestDatabaseQueryCommand(unittest.TestCase):
         """Test cmd_query passes target context prefix to database exec command."""
         with tempfile.TemporaryDirectory() as tmpdir:
             project_path = Path(tmpdir)
-            self.manager.detect_project_path = MagicMock(return_value=project_path)  # type: ignore[method-assign]
-            self.manager.read_meta = MagicMock(
-                return_value={"db_type": "postgresql", "target": "aws-1"}
-            )  # type: ignore[method-assign]
-            self.manager.run_command = MagicMock(return_value="container-id")  # type: ignore[method-assign]
 
             with (
+                patch.object(
+                    self.manager, "detect_project_path", return_value=project_path
+                ),
+                patch.object(
+                    self.manager,
+                    "read_meta",
+                    return_value={"db_type": "postgresql", "target": "aws-1"},
+                ),
+                patch.object(
+                    self.manager, "run_command", return_value="container-id"
+                ) as mock_mgr_run,
                 patch("subprocess.run") as mock_run,
                 patch("ldm_core.docker_service.get_active_target") as mock_target,
             ):
@@ -276,9 +282,11 @@ class TestDatabaseQueryCommand(unittest.TestCase):
                     output_format="table",
                     allow_query=True,
                 )
-                self.manager.run_command.assert_called()
+                mock_mgr_run.assert_called()
                 called_cmds = [
-                    call[0][0] for call in self.manager.run_command.call_args_list
+                    call[0][0]
+                    for call in mock_mgr_run.call_args_list
+                    if isinstance(call[0][0], list)
                 ]
                 has_context = any(
                     "--context" in cmd and "aws-1" in cmd
