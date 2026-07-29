@@ -1165,7 +1165,7 @@ class TestWorkspaceRemoteImport(unittest.TestCase):
             ]
         }
 
-        mock_get.side_effect = [mock_release_resp]
+        mock_get.return_value = mock_release_resp
 
         import tempfile
 
