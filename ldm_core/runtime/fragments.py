@@ -840,6 +840,13 @@ class FragmentsService(BaseHandler):
             return 0
 
         db_type = project_meta.get("db_type", "postgresql").lower()
+        if "hsql" in db_type or "hypersonic" in db_type:
+            UI.warning(
+                f"Unable to auto-patch fragment overrides for database '{db_type}'. "
+                "Headless REST API was restricted on published site initializer pages. "
+                "Please manually update fragment settings in Liferay Site Administration or configure PostgreSQL/MySQL."
+            )
+            return 0
         db_cmd_base = (
             [
                 "docker",

@@ -53,11 +53,12 @@ def cmd_quickstart(self, template_name, share=False, share_subdomain=None):  # n
 
     UI.heading(f"Starting Quickstart: {template_name.upper()}")
 
-    # Cancellation Gate Hoisting (Issue #758)
+    # Ensure running project is stopped BEFORE downloading/provisioning from GitHub
     project_path = self.manager.detect_project_path(project_name, for_init=True)
+    self._ensure_stopped(project_name, project_path)
+
     if project_path and project_path.exists():
         UI.warning(f"Project '{project_name}' already exists.")
-        UI.interruptible_pause(3, "Press CTRL+C to cancel ")
 
     # Phase 1: Download & Provision
     UI.phase(1, 4, f"Provisioning '{template_name}' from GitHub")
