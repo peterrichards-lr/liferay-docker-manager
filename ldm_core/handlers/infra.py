@@ -6,7 +6,6 @@ import time
 from ldm_core.ui import UI
 from ldm_core.utils import (
     get_actual_home,
-    get_compose_cmd,
     get_docker_socket_path,
 )
 
@@ -48,24 +47,23 @@ class InfraService:
         )
         UI.success("Infrastructure setup complete.")
 
-    def get_proxy_ports(self):
+    def get_proxy_ports(self, target_name: str | None = None):
         """Returns the active mapped host ports for liferay-proxy-global."""
         ports = {"http": 80, "https": 443, "admin": 18080}
+        target = target_name or getattr(self.manager, "target", None)
         try:
             # Inspect the running proxy container
-            inspect_raw = self.manager.run_command(
-                [
-                    "docker",
-                    "inspect",
-                    "liferay-proxy-global",
-                    "--format",
-                    "{{json .NetworkSettings.Ports}}",
-                ],
-                check=False,
-                capture_output=True,
+            from ldm_core.docker_service import DockerService
+
+            inspect_raw = DockerService.inspect(
+                "liferay-proxy-global", target_name=target
             )
             if inspect_raw:
-                settings = json.loads(inspect_raw)
+                settings = (
+                    inspect_raw.get("NetworkSettings", {}).get("Ports", {})
+                    if isinstance(inspect_raw, dict)
+                    else json.loads(inspect_raw)
+                )
                 # settings is a dict like: {"443/tcp": [{"HostIp": "0.0.0.0", "HostPort": "443"}], ...}
                 if isinstance(settings, dict):
                     if settings.get("80/tcp"):
@@ -170,9 +168,14 @@ class InfraService:
         # Start infrastructure
         env = self._get_infra_env(resolved_ip, ssl_port, http_port, admin_port)
 
+        from ldm_core.docker_service import DockerService
+
+        target_name = getattr(self.manager, "target", None)
+        compose_prefix = DockerService.get_compose_cmd_prefix(target_name)
+
         self.manager.run_command(
             [
-                *get_compose_cmd(),
+                *compose_prefix,
                 "-f",
                 str(infra_compose),
                 "up",
@@ -355,10 +358,15 @@ tls:
             UI.die("Infrastructure compose file 'infra-compose.yml' not found.")
 
         # Down requires the same env as UP to resolve volume paths correctly
+        from ldm_core.docker_service import DockerService
+
+        target_name = getattr(self.manager, "target", None)
+        compose_prefix = DockerService.get_compose_cmd_prefix(target_name)
+
         env = self._get_infra_env()
         capture = not (UI.INFO_MODE or UI.VERBOSE)
         self.manager.run_command(
-            [*get_compose_cmd(), "-f", str(infra_compose), "down", "-v"],
+            [*compose_prefix, "-f", str(infra_compose), "down", "-v"],
             env=env,
             capture_output=capture,
         )

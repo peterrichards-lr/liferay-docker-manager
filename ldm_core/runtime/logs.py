@@ -143,7 +143,7 @@ class LogsService(BaseHandler):
                     UI.debug(f"Processing logs for project: {root.name} in {root}")
 
                 meta = self.manager.read_meta(root)
-                meta.get("container_name") or root.name
+                target_name = meta.get("target")
                 target_service = (
                     service if service and not isinstance(service, list) else "liferay"
                 )
@@ -154,8 +154,10 @@ class LogsService(BaseHandler):
                 )
 
                 # Check if it exists
+                from ldm_core.docker_service import DockerService
+
                 check_cmd = [
-                    "docker",
+                    *DockerService.get_docker_cmd_prefix(target_name),
                     "ps",
                     "-a",
                     "-q",
@@ -208,7 +210,7 @@ class LogsService(BaseHandler):
                         while not log_dir.exists() and time.time() - start_wait < 30:
                             time.sleep(1)
 
-                cmd = [*get_compose_cmd(), "logs"]
+                cmd = [*DockerService.get_compose_cmd_prefix(target_name), "logs"]
                 if follow:
                     cmd.append("-f")
 

@@ -155,3 +155,19 @@ class DockerService:
             container_name,
         ]
         return run_command(cmd, check=False, capture_output=True)
+
+    @staticmethod
+    def inspect(
+        container_name: str,
+        fmt: str = "{{json .NetworkSettings.Ports}}",
+        target_name: str | None = None,
+    ) -> str:
+        """Inspects a container on the target compute node."""
+        cmd = [
+            *DockerService.get_docker_cmd_prefix(target_name),
+            "inspect",
+            container_name,
+            "--format",
+            fmt,
+        ]
+        return run_command(cmd, check=False, capture_output=True) or ""

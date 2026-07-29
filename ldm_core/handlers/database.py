@@ -167,8 +167,12 @@ class DatabaseService(BaseHandler):
                 db_container = f"{container_name}-db"
 
         # Verify DB container is running
+        target_name = project_meta.get("target")
+        from ldm_core.docker_service import DockerService
+
+        docker_prefix = DockerService.get_docker_cmd_prefix(target_name)
         is_running = self.manager.run_command(
-            ["docker", "ps", "-q", "-f", f"name=^{db_container}$"]
+            [*docker_prefix, "ps", "-q", "-f", f"name=^{db_container}$"]
         )
         if not is_running:
             UI.warning(f"Database container '{db_container}' is not running.")
@@ -228,7 +232,7 @@ class DatabaseService(BaseHandler):
         # 7. Construct docker exec CLI args
         if db_type == "postgresql":
             cmd_args = [
-                "docker",
+                *docker_prefix,
                 "exec",
                 "-i",
                 db_container,
@@ -243,7 +247,7 @@ class DatabaseService(BaseHandler):
             delimiter = ","
         else:  # mysql / mariadb
             cmd_args = [
-                "docker",
+                *docker_prefix,
                 "exec",
                 "-i",
                 db_container,
@@ -340,8 +344,12 @@ class DatabaseService(BaseHandler):
             db_container = project_meta.get("db_container_name", f"{container_name}-db")
 
         # Verify DB container is running
+        target_name = project_meta.get("target")
+        from ldm_core.docker_service import DockerService
+
+        docker_prefix = DockerService.get_docker_cmd_prefix(target_name)
         is_running = self.manager.run_command(
-            ["docker", "ps", "-q", "-f", f"name=^{db_container}$"]
+            [*docker_prefix, "ps", "-q", "-f", f"name=^{db_container}$"]
         )
         if not is_running:
             UI.die(
@@ -360,7 +368,7 @@ class DatabaseService(BaseHandler):
             db_user = "root"
             db_pass = project_meta.get("database_root_password", "my-secret-pw")
             exec_cmd = [
-                "docker",
+                *docker_prefix,
                 "exec",
                 "-i",
                 db_container,
@@ -372,7 +380,7 @@ class DatabaseService(BaseHandler):
         elif db_type == "postgresql":
             db_user = project_meta.get("database_user", "lportal")
             exec_cmd = [
-                "docker",
+                *docker_prefix,
                 "exec",
                 "-i",
                 db_container,

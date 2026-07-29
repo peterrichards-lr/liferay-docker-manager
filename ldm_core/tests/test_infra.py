@@ -80,18 +80,23 @@ class TestInfraService(unittest.TestCase):
             self.assertTrue(any("HTTPS" in msg and "453" in msg for msg in warn_msgs))
 
     def test_get_proxy_ports_not_running(self):
-        with patch.object(self.manager, "run_command", return_value=""):
+        with patch("ldm_core.docker_service.DockerService.inspect", return_value=""):
             ports = self.infra.get_proxy_ports()
             self.assertEqual(ports, {"http": 80, "https": 443, "admin": 18080})
 
     def test_get_proxy_ports_running(self):
         mock_inspect_json = '{"80/tcp": [{"HostIp": "0.0.0.0", "HostPort": "8080"}], "443/tcp": [{"HostIp": "0.0.0.0", "HostPort": "8443"}], "8080/tcp": [{"HostIp": "0.0.0.0", "HostPort": "18081"}]}'
-        with patch.object(self.manager, "run_command", return_value=mock_inspect_json):
-            ports = self.infra.get_proxy_ports()
+        with patch(
+            "ldm_core.docker_service.DockerService.inspect",
+            return_value=mock_inspect_json,
+        ):
+            ports = self.infra.get_proxy_ports(target_name="aws-1")
             self.assertEqual(ports, {"http": 8080, "https": 8443, "admin": 18081})
 
     def test_get_proxy_ports_null_settings(self):
-        with patch.object(self.manager, "run_command", return_value="null"):
+        with patch(
+            "ldm_core.docker_service.DockerService.inspect", return_value="null"
+        ):
             ports = self.infra.get_proxy_ports()
             self.assertEqual(ports, {"http": 80, "https": 443, "admin": 18080})
 
@@ -231,6 +236,31 @@ class TestInfraService(unittest.TestCase):
                 self.infra.setup_global_search(force=True)
             mock_die.assert_called_once()
             self.assertEqual(mock_die.call_args[1].get("exit_code"), 3)
+
+    def test_cmd_infra_setup_remote_target(self) -> None:
+        """Test cmd_infra_setup passes target context prefix to docker compose command."""
+        self.manager.target = "aws-1"
+        self.manager.args.search = False
+        self.manager.check_docker = MagicMock(return_value=True)  # type: ignore[attr-defined]
+        self.manager.detect_project_path = MagicMock(return_value=None)  # type: ignore[attr-defined]
+        with (
+            patch.object(self.manager, "run_command") as mock_run,
+            patch("ldm_core.docker_service.get_active_target") as mock_target,
+        ):
+            from ldm_core.config import TargetNode
+
+            mock_target.return_value = TargetNode(name="aws-1", host="34.1.1.1")
+            mock_run.return_value = "OK"
+
+            self.infra.cmd_infra_setup()
+            mock_run.assert_called()
+            called_cmds = [call[0][0] for call in mock_run.call_args_list]
+            has_context = any(
+                "--context" in cmd and "aws-1" in cmd
+                for cmd in called_cmds
+                if isinstance(cmd, list)
+            )
+            self.assertTrue(has_context)
 
 
 if __name__ == "__main__":

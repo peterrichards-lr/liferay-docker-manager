@@ -67,10 +67,19 @@ class OrchestrationService(BaseHandler):
             UI.detail("No projects found to start.")
             return
 
-        compose_base = get_compose_cmd()
         capture = not (UI.INFO_MODE or UI.VERBOSE)
         for root in targets:
             UI.detail(f"Starting project: {root.name}...")
+            meta = self.manager.read_meta(root)
+            target_name = meta.get("target")
+            if target_name:
+                from ldm_core.config import sync_project_to_target
+
+                sync_project_to_target(root, target_name=target_name)
+
+            from ldm_core.docker_service import DockerService
+
+            compose_base = DockerService.get_compose_cmd_prefix(target_name)
             with ProjectLock(root):
                 if clean_state:
                     UI.detail(
@@ -99,21 +108,9 @@ class OrchestrationService(BaseHandler):
                     else:
                         from ldm_core.utils import sanitize_id
 
-                        vol_name = f"{sanitize_id(root.name)}-state"
-                        self.manager.run_command(
-                            [
-                                "docker",
-                                "run",
-                                "--rm",
-                                "-v",
-                                f"{vol_name}:/state",
-                                "alpine",
-                                "sh",
-                                "-c",
-                                "rm -rf /state/*",
-                            ],
-                            check=False,
-                        )
+                        sanitized = sanitize_id(root.name)
+                        vol_name = f"{sanitized}_osgi-state-volume"
+                        DockerService.rm(vol_name, force=True, target_name=target_name)
 
                 if force_recreate:
                     cmd = [
@@ -666,10 +663,17 @@ class OrchestrationService(BaseHandler):
         # LDM-381: Resolve the actual container name using labels
         target_container = self.manager.resolve_container(root.name, service_name)
 
+        meta = self.manager.read_meta(root)
+        target_name = meta.get("target")
+        from ldm_core.docker_service import DockerService
+
+        docker_prefix = DockerService.get_docker_cmd_prefix(target_name)
+
         UI.detail(f"Entering container: {target_container}")
         try:
             subprocess.run(
-                ["docker", "exec", "-it", target_container, "/bin/bash"], check=False
+                [*docker_prefix, "exec", "-it", target_container, "/bin/bash"],
+                check=False,
             )
         except KeyboardInterrupt:
             pass

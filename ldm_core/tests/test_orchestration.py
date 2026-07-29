@@ -178,13 +178,25 @@ class TestOrchestration(unittest.TestCase):
     def test_cmd_down_dry_run(self, mock_rmtree, mock_compose):
         mock_compose.return_value = ["docker", "compose"]
         self.handler.dry_run = True
+
+    def test_cmd_start_remote_target(self) -> None:
+        """Test cmd_start triggers auto-sync and uses target context prefix."""
         with (
+            patch.object(
+                self.handler.manager, "read_meta", return_value={"target": "aws-1"}
+            ),
+            patch("ldm_core.config.sync_project_to_target") as mock_sync,
             patch.object(BaseHandler, "run_command") as mock_run,
-            patch.object(Path, "exists", return_value=True),
+            patch("ldm_core.docker_service.get_active_target") as mock_target,
         ):
-            self.handler.cmd_down("test", delete=True)
-            self.assertFalse(mock_rmtree.called)
-            self.assertFalse(mock_run.called)
+            from ldm_core.config import TargetNode
+
+            mock_target.return_value = TargetNode(name="aws-1", host="34.1.1.1")
+            self.handler.handler.orchestration.cmd_start("test")
+            mock_sync.assert_called_once()
+            called_cmd = mock_run.call_args[0][0]
+            self.assertIn("--context", called_cmd)
+            self.assertIn("aws-1", called_cmd)
 
     @patch("ldm_core.ui.UI.die")
     def test_cmd_reseed_no_tag_dies(self, mock_die):

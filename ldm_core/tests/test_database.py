@@ -244,6 +244,46 @@ class TestDatabaseQueryCommand(unittest.TestCase):
             self.assertIn("{PBKDF2WITHHMACSHA1}", sql_input)
             self.assertIn("test@liferay.com", sql_input)
 
+    def test_cmd_query_remote_target(self) -> None:
+        """Test cmd_query passes target context prefix to database exec command."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            project_path = Path(tmpdir)
+            self.manager.detect_project_path = MagicMock(return_value=project_path)  # type: ignore[method-assign]
+            self.manager.read_meta = MagicMock(
+                return_value={"db_type": "postgresql", "target": "aws-1"}
+            )  # type: ignore[method-assign]
+            self.manager.run_command = MagicMock(return_value="container-id")  # type: ignore[method-assign]
+
+            with (
+                patch("subprocess.run") as mock_run,
+                patch("ldm_core.docker_service.get_active_target") as mock_target,
+            ):
+                from ldm_core.config import TargetNode
+
+                mock_target.return_value = TargetNode(name="aws-1", host="34.1.1.1")
+                mock_res = MagicMock()
+                mock_res.returncode = 0
+                mock_res.stdout = b"companyid\n10154\n"
+                mock_res.stderr = b""
+                mock_run.return_value = mock_res
+
+                self.manager.database.cmd_query(
+                    project_id="test",
+                    sql="SELECT companyid FROM company;",
+                    output_format="table",
+                    allow_query=True,
+                )
+                self.manager.run_command.assert_called()
+                called_cmds = [
+                    call[0][0] for call in self.manager.run_command.call_args_list
+                ]
+                has_context = any(
+                    "--context" in cmd and "aws-1" in cmd
+                    for cmd in called_cmds
+                    if isinstance(cmd, list)
+                )
+                self.assertTrue(has_context)
+
 
 if __name__ == "__main__":
     unittest.main()
