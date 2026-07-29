@@ -6,7 +6,35 @@
 
 ## Active Work State & Plan (July 29, 2026)
 
-- **Current Active Task (July 29, 2026) — LDM Multi-Node Orchestrator Phase 1 Step 3 (Issue #857)**:
+- **Current Active Task (July 29, 2026) — LDM Multi-Node Orchestrator Phase 4 Step 2 (Issue #868)**:
+  - [ ] Add `cmd_target_migrate(self, source_target: str, dest_target: str)` to `ConfigService` in `ldm_core/handlers/config.py`.
+  - [ ] Add `target migrate` CLI subcommand parser and execution routing in `ldm_core/cli.py`.
+  - [ ] Add unit test coverage in `ldm_core/tests/test_target.py` verifying live target migration pipeline.
+
+- **Current Active Task (July 29, 2026) — LDM Multi-Node Orchestrator Phase 4 Step 1 (Issue #867)**:
+  - [x] Update `cmd_snapshot` and `cmd_restore` in `ldm_core/handlers/snapshot.py` and `ldm_core/snapshot/database.py` to target compute node context (`DockerService.get_docker_cmd_prefix(target_name)`).
+  - [x] Add unit test coverage in `ldm_core/tests/test_snapshot.py` verifying target context database dump and volume restore execution.
+
+- **Current Active Task (July 29, 2026) — LDM Multi-Node Orchestrator Phase 3 Step 4 (Issue #865)**:
+  - [x] Update `get_proxy_ports` in `ldm_core/handlers/infra.py` to inspect proxy container port bindings via target compute node context (`DockerService.inspect(..., target_name=target_name)`).
+  - [x] Add unit test coverage in `ldm_core/tests/test_infra.py` verifying target context proxy port resolution.
+
+- **Current Active Task (July 29, 2026) — LDM Multi-Node Orchestrator Phase 3 Step 3 (Issue #864)**:
+  - [x] Update `cmd_infra_setup`, `cmd_infra_down`, and `cmd_infra_restart` in `ldm_core/handlers/infra.py` to route Traefik reverse proxy and shared search compose calls to active target context via `DockerService.get_compose_cmd_prefix(target_name)`.
+  - [x] Add unit test coverage in `ldm_core/tests/test_infra.py` verifying target context infrastructure deployment.
+
+- **Current Active Task (July 29, 2026) — LDM Multi-Node Orchestrator Phase 3 Step 2 (Issue #863)**:
+  - [x] Update `cmd_query` and `cmd_reset_admin` in `ldm_core/handlers/database.py` to route database container exec calls through target context prefix (`DockerService.exec(..., target_name=target_name)`).
+  - [x] Add unit test coverage in `ldm_core/tests/test_database.py` verifying target context database query execution.
+
+- **Current Active Task (July 29, 2026) — LDM Multi-Node Orchestrator Phase 3 Step 1 (Issue #862)**:
+  - [x] Update `cmd_logs` in `ldm_core/runtime/logs.py` to route compose log calls through target context prefix (`DockerService.get_compose_cmd_prefix(target_name)`).
+  - [x] Update `cmd_shell` and `cmd_gogo` in `ldm_core/runtime/orchestration.py` to route interactive container exec sessions to target node context via `DockerService.exec(..., target_name=target_name)`.
+  - [x] Add unit test coverage in `ldm_core/tests/test_logs.py` verifying target context log streaming.
+
+- **Current Active Task (July 29, 2026) — LDM Multi-Node Orchestrator Phase 4 Step 1 (Issue #867)**:
+  - [x] Update `cmd_snapshot` and `cmd_restore` in `ldm_core/handlers/snapshot.py` and `ldm_core/snapshot/database.py` to target compute node context (`DockerService.get_docker_cmd_prefix(target_name)`).
+  - [x] Add unit test coverage in `ldm_core/tests/test_snapshot.py` verifying target context database dump and volume restore execution.
   - [ ] Add `cmd_target_status(self, name: str = "")` to `ConfigService` in `ldm_core/handlers/config.py`.
   - [ ] Implement `check_target_connectivity(target_name)` to run SSH / Docker engine probe (`docker --context <name> info`).
   - [ ] Add unit test coverage in `ldm_core/tests/test_target.py` verifying status probe output and error reporting.

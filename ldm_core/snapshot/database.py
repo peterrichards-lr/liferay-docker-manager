@@ -23,17 +23,24 @@ class DatabaseSnapshotService:
             if db_mode == "shared":
                 db_container = "liferay-db-global"
 
+            target_name = (
+                project_meta.get("target") if isinstance(project_meta, dict) else None
+            )
+            from ldm_core.docker_service import DockerService
+
+            docker_prefix = DockerService.get_docker_cmd_prefix(target_name)
+
             if not db_container:
                 for suffix in ["-db", "-db-1"]:
                     candidate = f"{container_name}{suffix}"
                     if self.manager.run_command(
-                        ["docker", "ps", "-q", "-f", f"name=^{candidate}$"]
+                        [*docker_prefix, "ps", "-q", "-f", f"name=^{candidate}$"]
                     ):
                         db_container = candidate
                         break
 
             if db_container and self.manager.run_command(
-                ["docker", "ps", "-q", "-f", f"name=^{db_container}$"]
+                [*docker_prefix, "ps", "-q", "-f", f"name=^{db_container}$"]
             ):
                 db_snapshot_file = snap_dir / "database.sql"
                 UI.detail(f"Triggering orchestrated database snapshot ({db_type})...")
@@ -48,7 +55,7 @@ class DatabaseSnapshotService:
 
                 if db_type in ["mysql", "mariadb"]:
                     dump_cmd = [
-                        "docker",
+                        *docker_prefix,
                         "exec",
                         db_container,
                         "mysqldump",
@@ -61,7 +68,7 @@ class DatabaseSnapshotService:
                     ]
                 else:
                     dump_cmd = [
-                        "docker",
+                        *docker_prefix,
                         "exec",
                         db_container,
                         "pg_dump",

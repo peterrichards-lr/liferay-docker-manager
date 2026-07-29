@@ -197,14 +197,12 @@ class TestDatabaseQueryCommand(unittest.TestCase):
             # Create dummy docker-compose.yml so the existence check passes
             (project_path / "docker-compose.yml").touch()
 
-            self.manager.detect_project_path = MagicMock(return_value=project_path)  # type: ignore[method-assign]
             mock_meta = {
                 "db_type": "postgresql",
                 "database": "lportal",
                 "database_user": "liferay",
                 "container_name": "db-container-123",
             }
-            self.manager.read_meta = MagicMock(return_value=mock_meta)  # type: ignore[method-assign]
 
             # Mock the ps check so it looks like the DB is running
             def mock_run_command(cmd, env_vars=None, **kwargs):
@@ -212,14 +210,19 @@ class TestDatabaseQueryCommand(unittest.TestCase):
                     return "lportal-db"
                 return ""
 
-            self.manager.run_command = MagicMock(side_effect=mock_run_command)  # type: ignore[method-assign]
+            with (
+                patch.object(
+                    self.manager, "detect_project_path", return_value=project_path
+                ),
+                patch.object(self.manager, "read_meta", return_value=mock_meta),
+                patch.object(self.manager, "run_command", side_effect=mock_run_command),
+            ):
+                # Mock successful subprocess execution for the SQL execution
+                mock_res = MagicMock()
+                mock_res.returncode = 0
+                mock_run.return_value = mock_res
 
-            # Mock successful subprocess execution for the SQL execution
-            mock_res = MagicMock()
-            mock_res.returncode = 0
-            mock_run.return_value = mock_res
-
-            self.manager.database.cmd_reset_admin("test")
+                self.manager.database.cmd_reset_admin("test")
 
             mock_die.assert_not_called()
             mock_success.assert_called_with(
@@ -243,6 +246,54 @@ class TestDatabaseQueryCommand(unittest.TestCase):
             self.assertIn("UPDATE User_", sql_input)
             self.assertIn("{PBKDF2WITHHMACSHA1}", sql_input)
             self.assertIn("test@liferay.com", sql_input)
+
+    def test_cmd_query_remote_target(self) -> None:
+        """Test cmd_query passes target context prefix to database exec command."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            project_path = Path(tmpdir)
+
+            with (
+                patch.object(
+                    self.manager, "detect_project_path", return_value=project_path
+                ),
+                patch.object(
+                    self.manager,
+                    "read_meta",
+                    return_value={"db_type": "postgresql", "target": "aws-1"},
+                ),
+                patch.object(
+                    self.manager, "run_command", return_value="container-id"
+                ) as mock_mgr_run,
+                patch("subprocess.run") as mock_run,
+                patch("ldm_core.docker_service.get_active_target") as mock_target,
+            ):
+                from ldm_core.config import TargetNode
+
+                mock_target.return_value = TargetNode(name="aws-1", host="34.1.1.1")
+                mock_res = MagicMock()
+                mock_res.returncode = 0
+                mock_res.stdout = b"companyid\n10154\n"
+                mock_res.stderr = b""
+                mock_run.return_value = mock_res
+
+                self.manager.database.cmd_query(
+                    project_id="test",
+                    sql="SELECT companyid FROM company;",
+                    output_format="table",
+                    allow_query=True,
+                )
+                mock_mgr_run.assert_called()
+                called_cmds = [
+                    call[0][0]
+                    for call in mock_mgr_run.call_args_list
+                    if isinstance(call[0][0], list)
+                ]
+                has_context = any(
+                    "--context" in cmd and "aws-1" in cmd
+                    for cmd in called_cmds
+                    if isinstance(cmd, list)
+                )
+                self.assertTrue(has_context)
 
 
 if __name__ == "__main__":

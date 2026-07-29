@@ -178,6 +178,58 @@ class TestTargetCLIHandlers(unittest.TestCase):
             mock_run.return_value = ""
             self.service.cmd_target_status("local")
 
+    def test_sync_project_to_target_local(self) -> None:
+        """Test sync_project_to_target returns True immediately for local target."""
+        from ldm_core.config import sync_project_to_target
+
+        res = sync_project_to_target(
+            self.project_dir, target_name="local", config_path=self.config_path
+        )
+        self.assertTrue(res)
+
+    def test_sync_project_to_target_remote(self) -> None:
+        """Test sync_project_to_target generates rsync command for remote target."""
+        from unittest.mock import patch
+
+        from ldm_core.config import TargetNode, save_target_node, sync_project_to_target
+
+        with patch("ldm_core.config._get_config_path", return_value=self.config_path):
+            node = TargetNode(
+                name="aws", host="34.1.1.1", user="ubuntu", key_path="~/.ssh/id_rsa"
+            )
+            save_target_node(node, config_path=self.config_path)
+
+            with patch("ldm_core.config.run_command") as mock_run:
+                mock_run.return_value = "OK"
+                res = sync_project_to_target(
+                    self.project_dir, target_name="aws", config_path=self.config_path
+                )
+                self.assertTrue(res)
+                self.assertGreaterEqual(mock_run.call_count, 2)
+
+    def test_cmd_target_migrate(self) -> None:
+        """Test cmd_target_migrate execution workflow."""
+        from unittest.mock import patch
+
+        with (
+            patch("ldm_core.config._get_config_path", return_value=self.config_path),
+            patch.object(
+                self.manager, "detect_project_path", return_value=self.temp_dir
+            ),
+            patch.object(self.manager, "read_meta", return_value={"target": "local"}),
+            patch.object(self.manager, "write_meta"),
+            patch.object(self.manager.snapshot, "cmd_snapshot") as mock_snap,
+            patch.object(self.manager.runtime, "cmd_down") as mock_down,
+            patch.object(self.manager.runtime, "cmd_run") as mock_run,
+            patch("ldm_core.config.sync_project_to_target", create=True) as mock_sync,
+        ):
+            self.service.cmd_target_add("aws", host="34.1.1.1")
+            self.service.cmd_target_migrate("local", "aws")
+            mock_snap.assert_called_once()
+            mock_down.assert_called_once()
+            mock_sync.assert_called_once()
+            mock_run.assert_called_once()
+
 
 if __name__ == "__main__":
     unittest.main()

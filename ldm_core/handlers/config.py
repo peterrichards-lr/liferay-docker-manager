@@ -2250,3 +2250,45 @@ class ConfigService:
                 rows.append([t_name, status_str, "-", "-", "-"])
 
         UI.table(rows, headers=headers)
+
+    def cmd_target_migrate(self, source_target: str, dest_target: str) -> None:
+        """Handler for 'ldm target migrate <source> <dest>'."""
+        from ldm_core.config import load_targets, sync_project_to_target
+
+        all_targets = load_targets()
+        if source_target != "local" and source_target not in all_targets:
+            UI.die(f"Source target '{source_target}' not found in target registry.")
+        if dest_target != "local" and dest_target not in all_targets:
+            UI.die(f"Destination target '{dest_target}' not found in target registry.")
+
+        root = self.manager.detect_project_path(None, for_init=True)
+        if not root:
+            UI.die("No active project detected to migrate.")
+
+        UI.heading(
+            f"Migrating Project '{root.name}' from '{source_target}' to '{dest_target}'"
+        )
+
+        meta = self.manager.read_meta(root) or {}
+        meta["target"] = source_target
+        self.manager.write_meta(root, meta)
+
+        UI.detail("1/5 Creating snapshot of current workload on source node...")
+        self.manager.snapshot.cmd_snapshot(name=f"Pre-migration to {dest_target}")
+
+        UI.detail("2/5 Stopping container stack on source node...")
+        self.manager.runtime.cmd_down()
+
+        UI.detail("3/5 Syncing workspace state to destination node...")
+        if dest_target != "local":
+            sync_project_to_target(root, dest_target)
+
+        UI.detail("4/5 Reassigning project target metadata...")
+        meta["target"] = dest_target
+        self.manager.write_meta(root, meta)
+
+        UI.detail("5/5 Starting workload on destination target node...")
+        self.manager.runtime.cmd_run()
+        UI.success(
+            f"Successfully migrated project '{root.name}' to target node '{dest_target}'."
+        )

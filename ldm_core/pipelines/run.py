@@ -1040,7 +1040,10 @@ class ComposerStage(PipelineStage):
             no_up = getattr(manager.args, "no_up", False)
 
         if shutil.which("docker") and not no_up:
-            manager.infra._ensure_network()
+            target_name = (
+                project_meta.get("target") if isinstance(project_meta, dict) else None
+            )
+            manager.infra._ensure_network(target_name)
 
         ssl_enabled = str(project_meta.get("ssl", "false")).lower() == "true"
         ssl_port = project_meta.get("ssl_port", 443)
@@ -1192,10 +1195,22 @@ class ExecutionStage(PipelineStage):
         is_samples = context.get("is_samples")
         external_snapshot = context.get("external_snapshot")
         no_up = context.get("no_up")
-        if no_up is None:
-            no_up = getattr(manager.args, "no_up", False)
-        compose_base = get_compose_cmd()
-        db_type = project_meta.get("db_type", "postgresql")
+        target_name = (
+            project_meta.get("target") if isinstance(project_meta, dict) else None
+        )
+        if target_name:
+            from ldm_core.config import sync_project_to_target
+
+            sync_project_to_target(paths["root"], target_name=target_name)
+
+        from ldm_core.docker_service import DockerService
+
+        compose_base = DockerService.get_compose_cmd_prefix(target_name)
+        db_type = (
+            project_meta.get("db_type", "postgresql")
+            if isinstance(project_meta, dict)
+            else "postgresql"
+        )
         use_shared_db = context.get("use_shared_db")
 
         if is_samples or external_snapshot:

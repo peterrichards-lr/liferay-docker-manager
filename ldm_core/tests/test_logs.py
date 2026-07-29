@@ -469,3 +469,26 @@ class TestLogs(unittest.TestCase):
                     self.assertEqual(len(log_files), 2)
             finally:
                 os.chdir(old_cwd)
+
+    def test_cmd_logs_remote_target(self) -> None:
+        """Test cmd_logs routes compose log commands via target context prefix."""
+        with (
+            patch.object(
+                self.handler.manager, "read_meta", return_value={"target": "aws-1"}
+            ),
+            patch.object(BaseHandler, "run_command") as mock_run,
+            patch("ldm_core.docker_service.get_active_target") as mock_target,
+        ):
+            from ldm_core.config import TargetNode
+
+            mock_target.return_value = TargetNode(name="aws-1", host="34.1.1.1")
+            mock_run.return_value = "aws-1-liferay-1"
+            self.handler.cmd_logs(project_id="test", no_wait=True)
+            mock_run.assert_called()
+            called_cmds = [call[0][0] for call in mock_run.call_args_list]
+            has_context = any(
+                "--context" in cmd and "aws-1" in cmd
+                for cmd in called_cmds
+                if isinstance(cmd, list)
+            )
+            self.assertTrue(has_context)

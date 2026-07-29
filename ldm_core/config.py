@@ -7,6 +7,7 @@ from pathlib import Path
 from ldm_core.utils import (
     get_actual_home,
     load_global_config_safe,
+    run_command,
     save_global_config_safe,
 )
 
@@ -177,3 +178,52 @@ def get_active_target(
     return targets.get("local") or TargetNode(
         name="local", host="localhost", is_default=True
     )
+
+
+def sync_project_to_target(
+    project_path: Path,
+    target_name: str | None = None,
+    config_path: Path | None = None,
+) -> bool:
+    import shutil
+
+    target = get_active_target(project_target=target_name, config_path=config_path)
+
+    # Local execution needs no remote directory sync
+    if target.name == "local" or target.host in ("localhost", "127.0.0.1", ""):
+        return True
+
+    project_name = project_path.name
+    dest_dir = f"~/.liferay-docker/projects/{project_name}"
+    target_spec = f"{target.user}@{target.host}" if target.user else target.host
+
+    # Ensure remote directory exists
+    ssh_opts = ["-i", target.key_path] if target.key_path else []
+    mkdir_cmd = ["ssh", *ssh_opts, target_spec, f"mkdir -p {dest_dir}"]
+    run_command(mkdir_cmd, check=False)
+
+    exclusions = [
+        "--exclude=.git",
+        "--exclude=node_modules",
+        "--exclude=build",
+        "--exclude=.gradle",
+        "--exclude=.tmp",
+        "--exclude=*.log",
+    ]
+
+    # Use rsync if available locally
+    if shutil.which("rsync"):
+        rsync_cmd = ["rsync", "-avz", "--delete", *exclusions]
+        if target.key_path:
+            rsync_cmd.extend(["-e", f"ssh -i {target.key_path}"])
+        rsync_cmd.extend([f"{project_path!s}/", f"{target_spec}:{dest_dir}/"])
+        res = run_command(rsync_cmd, check=False)
+        return res is not None
+
+    # Fallback to SSH tar stream
+    tar_cmd = ["tar", "-czf", "-", "-C", str(project_path), "."]
+    res = run_command(
+        [*tar_cmd, "|", "ssh", *ssh_opts, target_spec, f"tar -xzf - -C {dest_dir}"],
+        check=False,
+    )
+    return res is not None
