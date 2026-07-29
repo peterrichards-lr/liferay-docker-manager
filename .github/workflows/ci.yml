@@ -267,6 +267,7 @@ jobs:
         run: |
           # Pre-pull alpine to prevent pull timeouts during verification
           docker pull alpine || true
+          docker network create liferay-net || true
 
           # Create a mock project
           mkdir -p smoke-project/files
