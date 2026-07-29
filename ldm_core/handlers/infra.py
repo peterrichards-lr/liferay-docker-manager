@@ -86,7 +86,7 @@ class InfraService:
         use_shared_db=False,
     ):
         """Initializes global Traefik proxy and search services."""
-        self._ensure_network()
+        self._ensure_network(self.target)
         # Orchestrated Global Search (ES8)
         if getattr(self.manager.args, "search", False) and use_shared_search:
             self.setup_global_search()
@@ -404,14 +404,19 @@ tls:
                 f"Container '{container_name}' does not exist. Is the infrastructure running?"
             )
 
-    def _ensure_network(self):
+    def _ensure_network(self, target_name: str | None = None):
         """Ensures the standard 'liferay-net' Docker network exists."""
+        from ldm_core.docker_service import DockerService
+
+        docker_prefix = DockerService.get_docker_cmd_prefix(target_name)
         networks = self.manager.run_command(
-            ["docker", "network", "ls", "--format", "{{.Name}}"]
+            [*docker_prefix, "network", "ls", "--format", "{{.Name}}"]
         )
         if "liferay-net" not in (networks or ""):
             UI.detail("Creating Docker network: liferay-net")
-            self.manager.run_command(["docker", "network", "create", "liferay-net"])
+            self.manager.run_command(
+                [*docker_prefix, "network", "create", "liferay-net"]
+            )
 
     def _ensure_docker_proxy(self):
         """Ensures a safe Docker socket proxy is running for Traefik."""

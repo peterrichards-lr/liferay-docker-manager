@@ -1040,7 +1040,10 @@ class ComposerStage(PipelineStage):
             no_up = getattr(manager.args, "no_up", False)
 
         if shutil.which("docker") and not no_up:
-            manager.infra._ensure_network()
+            target_name = (
+                project_meta.get("target") if isinstance(project_meta, dict) else None
+            )
+            manager.infra._ensure_network(target_name)
 
         ssl_enabled = str(project_meta.get("ssl", "false")).lower() == "true"
         ssl_port = project_meta.get("ssl_port", 443)
