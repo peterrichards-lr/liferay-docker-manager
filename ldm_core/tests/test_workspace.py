@@ -1093,6 +1093,7 @@ class TestWorkspaceRemoteImport(unittest.TestCase):
                     "ldm_core.handlers.base.BaseHandler.detect_project_path",
                     return_value=project_path,
                 ),
+                patch("ldm_core.workspace.utils._ensure_stopped"),
                 patch("ldm_core.utils.UI.die", side_effect=SystemExit) as mock_die,
             ):
                 self.handler.args.project = "my-project"
@@ -1177,6 +1178,7 @@ class TestWorkspaceRemoteImport(unittest.TestCase):
                     return_value=project_path,
                 ),
                 patch("shutil.rmtree"),  # Avoid deleting temp directories during test
+                patch("ldm_core.workspace.utils._ensure_stopped"),
                 patch("ldm_core.handlers.workspace.WorkspaceService._ensure_stopped"),
             ):
                 self.handler.args.project = "my-project"
