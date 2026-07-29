@@ -15,6 +15,7 @@ class InfraService:
 
     def __init__(self, manager=None):
         self.manager = manager
+        self.target: str | None = None
 
     def cmd_infra_setup(self):
         """Sets up the global infrastructure (Traefik, Search)."""
