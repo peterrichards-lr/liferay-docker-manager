@@ -27,6 +27,9 @@ class MockInfraManager:
     def check_port(self, ip, port):
         pass
 
+    def get_resolved_ip(self, *args, **kwargs):
+        return "127.0.0.1"
+
     def find_available_port(self, ip, start_port, exclude=None):
         pass
 

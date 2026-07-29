@@ -234,6 +234,7 @@ def preprocess_args(args_list: list[str]) -> list[str]:
         "add",
         "use",
         "select",
+        "migrate",
     }
 
     if first.startswith("-") or first in all_cmds:
