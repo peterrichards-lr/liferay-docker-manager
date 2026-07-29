@@ -108,14 +108,40 @@ class TestDockerService(unittest.TestCase):
 
     @patch("ldm_core.docker_service.run_command")
     def test_get_logs(self, mock_run):
-        mock_run.return_value = "log line 1\nlog line 2"
+        mock_run.return_value = "logs"
         res = DockerService.get_logs("test-container", tail=50)
-        self.assertEqual(res, "log line 1\nlog line 2")
+        self.assertEqual(res, "logs")
         mock_run.assert_called_with(
             ["docker", "logs", "--tail", "50", "test-container"],
             check=False,
             capture_output=True,
         )
+
+    @patch("ldm_core.docker_service.get_active_target")
+    def test_get_docker_cmd_prefix_local(self, mock_get_target):
+        from ldm_core.config import TargetNode
+
+        mock_get_target.return_value = TargetNode(
+            name="local", host="localhost", is_default=True
+        )
+        prefix = DockerService.get_docker_cmd_prefix()
+        self.assertEqual(prefix, ["docker"])
+
+    @patch("ldm_core.docker_service.get_active_target")
+    def test_get_docker_cmd_prefix_remote(self, mock_get_target):
+        from ldm_core.config import TargetNode
+
+        mock_get_target.return_value = TargetNode(name="win-wsl", host="192.168.1.50")
+        prefix = DockerService.get_docker_cmd_prefix("win-wsl")
+        self.assertEqual(prefix, ["docker", "--context", "win-wsl"])
+
+    @patch("ldm_core.docker_service.get_active_target")
+    def test_get_compose_cmd_prefix_remote(self, mock_get_target):
+        from ldm_core.config import TargetNode
+
+        mock_get_target.return_value = TargetNode(name="aws-ec2", host="34.200.1.1")
+        prefix = DockerService.get_compose_cmd_prefix("aws-ec2")
+        self.assertEqual(prefix, ["docker", "--context", "aws-ec2", "compose"])
 
 
 if __name__ == "__main__":

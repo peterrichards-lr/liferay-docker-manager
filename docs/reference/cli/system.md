@@ -417,6 +417,10 @@ ldm tray --uninstall-autostart  # Remove launch-on-login autostart
 - **`--print`**: Output current version string only.
 - **`--project`**: Show detailed Project diagnostic checks.
 - **`--project-id`**: Specific project ID to target.
+- **`--default`**: Set target compute node as active global default.
+- **`--force-recreate`**: Force recreation of Docker containers.
+- **`--host`**: Host IP address or SSH connection string for target compute node.
+- **`--key`**: Path to SSH key identity file for target compute node.
 - **`--promote`**: Promote current pre-release to stable.
 - **`--provider`**: Tunnel provider (defaults to lfr-tunnel).
 - **`--quiet`**: Quiet mode (suppress info logs).
@@ -443,6 +447,7 @@ ldm tray --uninstall-autostart  # Remove launch-on-login autostart
 - **`--uninstall-autostart`**: Remove System Tray launch-on-login autostart.
 - **`--up`**: Automatically start project after reseeding.
 - **`--url`**: Remote packages download URL.
+- **`--user`**: SSH user name for target compute node connection.
 - **`--version`**: Target specific version of LDM.
 - **`--wait-for-bundles`**: Comma-separated list of expected OSGi bundle symbolic names.
 - **`--wait-for-deployables`**: Scan workspace for JARs/YAMLs and block until deployed.
@@ -452,6 +457,19 @@ ldm tray --uninstall-autostart  # Remove launch-on-login autostart
 - **`-V`**: Show LDM version.
 - **`-q`**: Quiet mode.
 
+## `target` (Multi-Node Compute Node Management)
+
+Manage local and remote compute target nodes for multi-node execution:
+
+```bash
+ldm target add win-wsl --host 192.168.1.50 --user developer --key ~/.ssh/id_rsa --default
+ldm target ls
+ldm target use win-wsl
+ldm target status win-wsl
+ldm target set win-wsl
+ldm target rm win-wsl
+```
+
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-07-28* | *Last Reviewed: 2026-07-23*
+*Last Updated: 2026-07-29* | *Last Reviewed: 2026-07-29*

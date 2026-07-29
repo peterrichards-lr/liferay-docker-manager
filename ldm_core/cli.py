@@ -230,6 +230,10 @@ def preprocess_args(args_list: list[str]) -> list[str]:
         "db",
         "query",
         "seeds",
+        "target",
+        "add",
+        "use",
+        "select",
     }
 
     if first.startswith("-") or first in all_cmds:
@@ -1748,10 +1752,75 @@ def get_parser():  # noqa: PLR0915
     revert_props = config_subparsers.add_parser(
         "revert-properties",
         parents=[base_sub_parent],
-        help="Restore files/portal-ext.properties from original-portal-ext.properties",
+        help="Revert property overrides, leaving default properties file intact",
     )
     revert_props.add_argument("project", nargs="?")
     revert_props.add_argument("-p", "--project", dest="project_flag")
+
+    target_parser = subparsers.add_parser(
+        "target",
+        parents=[base_sub_parent],
+        help="Manage local and remote compute target nodes for multi-node execution",
+    )
+    target_subparsers = target_parser.add_subparsers(dest="target_command")
+
+    t_add = target_subparsers.add_parser(
+        "add", parents=[base_sub_parent], help="Register a new compute target node"
+    )
+    t_add.add_argument(
+        "name", help="Name identifier for the target node (e.g. win-wsl, aws-1)"
+    )
+    t_add.add_argument(
+        "--host",
+        default="localhost",
+        help="Host IP or SSH connection string (e.g. 192.168.1.50)",
+    )
+    t_add.add_argument("--user", default="", help="SSH user name")
+    t_add.add_argument("--key", default="", help="Path to SSH key identity file")
+    t_add.add_argument(
+        "--default",
+        action="store_true",
+        help="Set this target node as active global default",
+    )
+
+    target_subparsers.add_parser(
+        "ls",
+        aliases=["list"],
+        parents=[base_sub_parent],
+        help="List all registered compute target nodes",
+    )
+
+    t_use = target_subparsers.add_parser(
+        "use",
+        aliases=["select"],
+        parents=[base_sub_parent],
+        help="Switch active global default target node",
+    )
+    t_use.add_argument("name", help="Target node name to activate as default")
+
+    t_rm = target_subparsers.add_parser(
+        "rm",
+        aliases=["remove"],
+        parents=[base_sub_parent],
+        help="Remove a registered compute target node",
+    )
+    t_rm.add_argument("name", help="Target node name to remove")
+
+    t_set = target_subparsers.add_parser(
+        "set",
+        parents=[base_sub_parent],
+        help="Assign current project to execute on target node",
+    )
+    t_set.add_argument("name", help="Target node name for current project")
+
+    t_status = target_subparsers.add_parser(
+        "status",
+        parents=[base_sub_parent],
+        help="Probe status and connectivity of registered target compute nodes",
+    )
+    t_status.add_argument(
+        "name", nargs="?", default="", help="Optional target node name to probe"
+    )
 
     reset_props = config_subparsers.add_parser(
         "reset-properties",
@@ -2611,6 +2680,24 @@ def _build_command_map(args, manager):
             project_id=getattr(args, "project", None)
             or getattr(args, "project_flag", None),
         ),
+        # target namespace:
+        ("target", "add"): lambda: manager.config.cmd_target_add(
+            args.name,
+            host=getattr(args, "host", "localhost"),
+            user=getattr(args, "user", ""),
+            key=getattr(args, "key", ""),
+            default=getattr(args, "default", False),
+        ),
+        ("target", "ls"): manager.config.cmd_target_ls,
+        ("target", "list"): manager.config.cmd_target_ls,
+        ("target", "use"): lambda: manager.config.cmd_target_use(args.name),
+        ("target", "select"): lambda: manager.config.cmd_target_use(args.name),
+        ("target", "rm"): lambda: manager.config.cmd_target_rm(args.name),
+        ("target", "remove"): lambda: manager.config.cmd_target_rm(args.name),
+        ("target", "set"): lambda: manager.config.cmd_target_set(args.name),
+        ("target", "status"): lambda: manager.config.cmd_target_status(
+            getattr(args, "name", "")
+        ),
     }
     return cmds
 
@@ -2749,7 +2836,9 @@ def main():
     cmd = getattr(args, "command", None)
     if cmd is not None and not isinstance(cmd, str):
         cmd = None
-    subcommand = getattr(args, "subcommand", None)
+    subcommand = getattr(args, "subcommand", None) or getattr(
+        args, "target_command", None
+    )
     if subcommand is not None and not isinstance(subcommand, str):
         subcommand = None
     current_cmd = (cmd, subcommand)
