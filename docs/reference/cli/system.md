@@ -459,7 +459,7 @@ ldm tray --uninstall-autostart  # Remove launch-on-login autostart
 
 ## `target` (Multi-Node Compute Node Management)
 
-Manage local and remote compute target nodes for multi-node execution:
+Manage local and remote compute target nodes for multi-node execution, live workload migration, and remote container orchestration:
 
 ```bash
 ldm target add win-wsl --host 192.168.1.50 --user developer --key ~/.ssh/id_rsa --default
@@ -467,8 +467,20 @@ ldm target ls
 ldm target use win-wsl
 ldm target status win-wsl
 ldm target set win-wsl
+ldm target migrate local win-wsl
 ldm target rm win-wsl
 ```
+
+### `target migrate`
+
+Migrate a running project workload live between target compute nodes with zero manual data loss:
+
+```bash
+ldm target migrate local win-wsl
+ldm target migrate win-wsl aws-1
+```
+
+*(Performs pre-flight target probe -> creates live snapshot on source -> stops source stack -> syncs workspace via `rsync` -> reassigns project target metadata -> starts workload on destination node).*
 
 <!-- markdownlint-disable MD049 -->
 ---
