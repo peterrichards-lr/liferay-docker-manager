@@ -1165,7 +1165,21 @@ class TestWorkspaceRemoteImport(unittest.TestCase):
             ]
         }
 
-        mock_get.return_value = mock_release_resp
+        mock_ldmp_content_resp = MagicMock()
+        mock_ldmp_content_resp.status_code = 200
+        mock_ldmp_content_resp.content = b"fake ldmp content"
+
+        mock_sha_content_resp = MagicMock()
+        mock_sha_content_resp.status_code = 200
+        mock_sha_content_resp.text = "matching_hash  project.ldmp"
+
+        mock_get.side_effect = [
+            mock_release_resp,
+            mock_ldmp_content_resp,
+            mock_sha_content_resp,
+            mock_release_resp,
+            mock_release_resp,
+        ]
 
         import tempfile
 
