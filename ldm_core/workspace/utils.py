@@ -27,6 +27,15 @@ def _ensure_stopped(self, project_name, project_path=None):
         meta = self.manager.read_meta(project_path)
         c_name = meta.get("container_name") or project_name
 
+    def stop_container():
+        if project_path and hasattr(project_path, "exists") and project_path.exists():
+            try:
+                self.manager.runtime.cmd_stop(project_id=project_name)
+                return
+            except Exception:
+                pass
+        DockerService.stop(c_name)
+
     if DockerService.is_running(c_name):
         if getattr(self.manager.args, "leave_running", False):
             UI.die(
@@ -37,12 +46,12 @@ def _ensure_stopped(self, project_name, project_path=None):
             or self.manager.non_interactive
         ):
             UI.detail(f"Stopping running project '{project_name}' automatically...")
-            self.manager.runtime.cmd_stop(project_id=project_name)
+            stop_container()
         elif UI.confirm(
             f"Project '{project_name}' is currently running. Stop it before continuing?",
             "Y",
         ):
-            self.manager.runtime.cmd_stop(project_id=project_name)
+            stop_container()
         else:
             UI.die("Import aborted. Cannot modify a running project's foundation.")
 
