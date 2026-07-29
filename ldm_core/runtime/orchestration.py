@@ -257,6 +257,44 @@ class OrchestrationService(BaseHandler):
                         f"No docker-compose.yml found in {root}. Skipping docker-compose down."
                     )
 
+                # Sweep and force-remove any leftover standalone/orphaned containers for this project
+                meta_disk = self.manager.read_meta(root)
+                project_name = (
+                    meta_disk.get("project_name", root.name) if meta_disk else root.name
+                )
+                try:
+                    for flt in [
+                        f"label=com.liferay.ldm.project={project_name}",
+                        f"name=^/{project_name}-",
+                    ]:
+                        ps_output = self.manager.run_command(
+                            [
+                                "docker",
+                                "ps",
+                                "-a",
+                                "--filter",
+                                flt,
+                                "--format",
+                                "{{.ID}}",
+                            ],
+                            check=False,
+                            capture_output=True,
+                        )
+                        if ps_output:
+                            c_ids = [
+                                c.strip() for c in ps_output.splitlines() if c.strip()
+                            ]
+                            if c_ids:
+                                self.manager.run_command(
+                                    ["docker", "rm", "-f", *c_ids],
+                                    check=False,
+                                    capture_output=True,
+                                )
+                except Exception as e:
+                    UI.debug(
+                        f"Standalone container sweeper warning for '{project_name}': {e}"
+                    )
+
             if delete:
                 meta = self.manager.read_meta(root)
                 if meta:
