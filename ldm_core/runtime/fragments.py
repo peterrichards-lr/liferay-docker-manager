@@ -9,6 +9,7 @@ import urllib.request
 
 from ldm_core.handlers.base import BaseHandler
 from ldm_core.ui import UI
+from ldm_core.utils import read_meta
 
 
 class FragmentsService(BaseHandler):
@@ -20,6 +21,11 @@ class FragmentsService(BaseHandler):
 
     def _patch_fragment_overrides(self, project_meta, paths):  # noqa: C901, PLR0912, PLR0915
         """Execute headless API requests to dynamically patch fragment configurations."""
+        meta_file = paths["root"] / "meta"
+        if meta_file.exists():
+            disk_meta = read_meta(meta_file)
+            project_meta = {**disk_meta, **(project_meta or {})}
+
         overrides_file = paths["root"] / "configs" / "fragment-overrides.json"
         if not overrides_file.exists():
             overrides_file = paths["root"] / ".ldm" / "fragment-overrides.json"
@@ -27,7 +33,14 @@ class FragmentsService(BaseHandler):
         if not overrides_file.exists():
             return
 
-        dxp_version = self.manager.parse_version(project_meta.get("tag", ""))
+        tag_str = (
+            project_meta.get("tag")
+            or project_meta.get("version")
+            or project_meta.get("liferay_version")
+            or project_meta.get("last_run_liferay_version")
+            or ""
+        )
+        dxp_version = self.manager.parse_version(tag_str)
         if dxp_version < (2025, 1, 0):
             UI.warning(
                 "fragment-overrides.json found, but DXP version is < 2025.Q1. Headless Page API not supported. Skipping patches."
@@ -835,9 +848,16 @@ class FragmentsService(BaseHandler):
         Updates editablevalues directly in PostgreSQL/MySQL when DXP Headless REST
         APIs are restricted on published site initializer pages.
         """
-        db_container = project_meta.get("db_container_name")
-        if not db_container:
-            return 0
+        project_name = (
+            project_meta.get("project_name")
+            or project_meta.get("container_name")
+            or "aica"
+        )
+        db_container = (
+            project_meta.get("db_container_name")
+            or project_meta.get("db_container")
+            or f"{project_name}-db"
+        )
 
         db_type = project_meta.get("db_type", "postgresql").lower()
         if "hsql" in db_type or "hypersonic" in db_type:
