@@ -818,7 +818,13 @@ class TestWorkspaceRemoteImport(unittest.TestCase):
         mock_origin_res.returncode = 0
         mock_origin_res.stdout = "git@github.com:owner/repo.git"
 
-        mock_sub_run.side_effect = [mock_clone_res, mock_origin_res]
+        mock_sub_run.side_effect = [
+            mock_clone_res,
+            mock_origin_res,
+            mock_clone_res,
+            mock_clone_res,
+            mock_clone_res,
+        ]
 
         # 2. Mock requests.get for GitHub Releases API and downloads
         mock_release_resp = MagicMock()
@@ -865,6 +871,11 @@ class TestWorkspaceRemoteImport(unittest.TestCase):
                 patch(
                     "ldm_core.handlers.base.BaseHandler.detect_project_path",
                     return_value=project_path,
+                ),
+                patch("ldm_core.workspace.utils._ensure_stopped"),
+                patch(
+                    "ldm_core.docker_service.DockerService.is_running",
+                    return_value=False,
                 ),
             ):
                 self.handler.args.project = "my-project"
