@@ -4,12 +4,13 @@
 > **Purpose of this file**: This file tracks the active work state, tasks, and historical progress.
 > For architectural and project mandates (e.g. Volume Strategies, Exit Codes, CI rules), please refer to `.agents/AGENTS.md` and the `.agents/skills/` modules.
 
-## Active Work State & Plan (July 29, 2026)
+## Active Work State & Plan (July 30, 2026)
 
-- **Current Active Task (July 29, 2026) — LDM Multi-Node Orchestrator Phase 4 Step 2 (Issue #868)**:
-  - [ ] Add `cmd_target_migrate(self, source_target: str, dest_target: str)` to `ConfigService` in `ldm_core/handlers/config.py`.
-  - [ ] Add `target migrate` CLI subcommand parser and execution routing in `ldm_core/cli.py`.
-  - [ ] Add unit test coverage in `ldm_core/tests/test_target.py` verifying live target migration pipeline.
+- **Current Active Task (July 30, 2026) — Post-Upgrade Banner Announcement & Pre-Release v2.15.25-pre.8**:
+  - [x] Add `ldm target <subcmd>` announcement entry to `RELEASE_ANNOUNCEMENTS` dictionary in `ldm_core/constants.py`.
+  - [x] Update line numbers in `.secrets.baseline` to pass `detect-secrets` pre-commit hook checks cleanly.
+  - [x] Merge PR [#915](https://github.com/peterrichards-lr/liferay-docker-manager/pull/915) into `master`.
+  - [x] Tag and push pre-release `v2.15.25-pre.8` via release orchestrator (PR [#916](https://github.com/peterrichards-lr/liferay-docker-manager/pull/916)).
 
 - **Current Active Task (July 29, 2026) — LDM Multi-Node Orchestrator Phase 4 Step 1 (Issue #867)**:
   - [x] Update `cmd_snapshot` and `cmd_restore` in `ldm_core/handlers/snapshot.py` and `ldm_core/snapshot/database.py` to target compute node context (`DockerService.get_docker_cmd_prefix(target_name)`).
@@ -707,4 +708,4 @@ When modifying `client-extension.yaml` files, **NEVER change or remove `.service
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-07-30* | *Last Reviewed: 2026-07-29*
+*Last Updated: 2026-07-30* | *Last Reviewed: 2026-07-30*
