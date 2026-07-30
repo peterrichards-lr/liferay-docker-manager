@@ -23,7 +23,25 @@ LDM multi-node orchestration can be used **anywhere Docker and SSH are running**
 - **Windows Compute Nodes**: Windows 10/11 running WSL2 (Ubuntu / Debian).
 - **Local Infrastructure**: LAN Linux servers, macOS nodes, local VMs, bare-metal hardware.
 
-### Remote Node Setup Commands (Copy-Paste on Target Server)
+### Remote Node Setup Commands
+
+Choose the package manager appropriate for your Linux distribution:
+
+#### Option A: Amazon Linux 2023 / RHEL / Fedora (`dnf`)
+
+```bash
+# Update system package index and install Docker & rsync
+sudo dnf install -y docker rsync
+
+# Enable and start Docker service
+sudo systemctl enable --now docker
+
+# Add your SSH user (e.g. ec2-user) to the docker group
+sudo usermod -aG docker $USER
+newgrp docker
+```
+
+#### Option B: Ubuntu / Debian (`apt-get`)
 
 ```bash
 # Update system package index and install prerequisites
@@ -32,21 +50,22 @@ sudo apt-get update && sudo apt-get install -y curl rsync ca-certificates gnupg
 # Install Docker Engine and Docker Compose V2
 curl -fsSL https://get.docker.com | sh
 
-# Add your SSH user to the docker group
+# Add your SSH user (e.g. ubuntu) to the docker group
 sudo usermod -aG docker $USER
-
-# Apply group membership
 newgrp docker
 ```
 
-### Platform Example 1: AWS EC2 Compute Node Setup
+### Platform Example 1: AWS EC2 Compute Node Setup (Amazon Linux 2023 / Ubuntu)
 
-1. **Security Group Config**: Allow inbound TCP port `22` (SSH) in the AWS EC2 Security Group.
+1. **Security Group Config**: Inbound rules needed:
+   - **TCP Port `22` (SSH)**: Required for LDM orchestrator control plane (`ldm target`). Restrict to your IP or VPN for security.
+   - **TCP Port `80` (HTTP) & Port `443` (HTTPS)**: Optional. Required ONLY for direct browser access. Can be closed if using outbound tunnels (`lfr-tunnel-docker`).
 2. **Key Pair**: Download the `.pem` key (e.g. `aws-key.pem`) and set permissions (`chmod 400 aws-key.pem`).
 3. **Register AWS Node**:
 
    ```bash
-   ldm target add aws-1 --host 34.200.10.5 --user ubuntu --key ~/.ssh/aws-key.pem
+   # Amazon Linux 2023 uses ec2-user (Ubuntu uses ubuntu)
+   ldm target add aws-1 --host 34.200.10.5 --user ec2-user --key ~/.ssh/aws-key.pem
    ldm target status aws-1
    ```
 
