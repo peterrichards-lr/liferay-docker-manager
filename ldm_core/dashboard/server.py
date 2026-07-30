@@ -86,6 +86,65 @@ def run_background_ldm_cmd(args_list):
         )
 
 
+@bp.route("/api/targets")
+def api_targets():
+    from ldm_core.config import load_targets
+    from ldm_core.docker_service import DockerService
+
+    all_targets = load_targets()
+    results = []
+
+    for t_name, target in all_targets.items():
+        cmd = [
+            *DockerService.get_docker_cmd_prefix(t_name),
+            "info",
+            "--format",
+            "{{.ServerVersion}}|{{.NCPU}}|{{.MemTotal}}|{{.ContainersRunning}}",
+        ]
+        res = run_command(cmd, check=False, capture_output=True, timeout=5)
+        status = "OFFLINE"
+        version = "-"
+        cpus_mem = "-"
+        running_count = 0
+
+        if res and "|" in res:
+            parts = res.strip().split("|")
+            status = "ONLINE"
+            version = parts[0] if len(parts) > 0 and parts[0] else "-"
+            cpus = parts[1] if len(parts) > 1 and parts[1] else "-"
+            mem_raw = parts[2] if len(parts) > 2 and parts[2] else "0"
+            try:
+                mem_bytes = int(mem_raw)
+                mem_gb = round(mem_bytes / (1024**3), 1)
+                cpus_mem = f"{cpus} CPUs / {mem_gb} GB"
+            except (ValueError, TypeError):
+                cpus_mem = f"{cpus} CPUs"
+
+            try:
+                running_count = int(parts[3]) if len(parts) > 3 else 0
+            except (ValueError, TypeError):
+                running_count = 0
+
+        results.append(
+            {
+                "name": t_name,
+                "host": target.host or "localhost",
+                "user": target.user or "-",
+                "status": status,
+                "active": getattr(target, "is_default", False),
+                "engine_version": (
+                    f"v{version}"
+                    if version != "-" and not version.startswith("v")
+                    else version
+                ),
+                "cpus_mem": cpus_mem,
+                "containers_running": running_count,
+            }
+        )
+
+    return jsonify(results)
+
+
 @bp.route("/api/projects")
 def api_projects():
     manager = current_app.config["MANAGER"]
