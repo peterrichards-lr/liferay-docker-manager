@@ -151,6 +151,58 @@ ldm target migrate prod-node aws-west
 5. **Target Metadata Reassignment**: Updates `.liferay-docker.meta` to point to the destination target.
 6. **Workload Launch**: Spins up containers and verifies health on the destination compute node.
 
+---
+
+## 6. Compute Node Sizing & Hardware Recommendations
+
+Liferay DXP/Portal stacks consist of three main memory-intensive server engines: the Liferay Tomcat JVM, PostgreSQL database, and Elasticsearch search engine. Choosing the correct compute node hardware prevents Out-Of-Memory (OOM) kernel crashes during deployment and snapshot restoration.
+
+### Component Resource Allocation Breakdown
+
+| Service Component | Recommended Memory | Recommended CPU | Details & Tuning Notes |
+| :--- | :--- | :--- | :--- |
+| **Liferay Tomcat JVM** | **4 GB – 8 GB** | 2 vCPUs | Default heap `-Xms2g -Xmx4g` + Metaspace (`768m`) + OS thread stacks. |
+| **PostgreSQL 16 DB** | **1 GB – 2 GB** | 1 vCPU | Shared buffers, `work_mem`, and connection pools. |
+| **Elasticsearch 8 / OpenSearch** | **2 GB – 4 GB** | 1 vCPU | JVM Heap (`-Xms1g -Xmx2g`) + Lucene `mmap` page cache. |
+| **Traefik & LDM Helpers** | **256 MB – 512 MB** | 0.5 vCPUs | Reverse proxy routing, zero-config SSL cert generation. |
+| **Operating System & Docker** | **1 GB** | 0.5 vCPUs | Linux kernel buffers, Docker daemon, systemd services. |
+| **Total Stack Requirement** | **8.5 GB – 15.5 GB** | **4 vCPUs** | **Ideal target envelope for 1 active LDM stack.** |
+
+### AWS EC2 Instance Selection Guide
+
+| EC2 Instance Type | vCPUs | Memory | Evaluation & Usage Verdict |
+| :--- | :--- | :--- | :--- |
+| `t3.medium` | 2 | 4 GB | ❌ **Under-Spec**: Will crash immediately with Out-Of-Memory (OOM) kills when launching Liferay + Elasticsearch together. |
+| `t3.large` | 2 | 8 GB | ⚠️ **Minimum Spec**: Bare minimum for a single Liferay instance. Risky during heavy database migrations or search reindexing. |
+| **`t3.xlarge`** | **4** | **16 GB** | ✅ **THE GOLDEN SWEET SPOT**: Perfect balance for 1–2 active LDM stacks. Ample RAM for Tomcat JVM, Elasticsearch, and DB snapshot imports without swap thrashing. |
+| `t3.2xlarge` | 8 | 32 GB | 🚀 **Multi-Stack / Heavy Production**: Recommended for multi-tenant compute nodes running 3+ concurrent LDM project stacks. |
+
+---
+
+## 7. Remote Node Security & Outbound Tunneling
+
+When hosting LDM stacks on a remote AWS EC2 compute node, you can choose between **Direct Inbound Routing** and **Outbound Tunnel Routing**.
+
+### A. Direct Inbound Routing (Public IP + Traefik)
+
+- **Security Group Inbound Rules**: Port `22` (SSH for `ldm target`), Port `80` (HTTP), and Port `443` (HTTPS).
+- **Access Flow**: Public users navigate directly to your EC2 public IP or wildcard domain (e.g. `https://my-project.34.200.10.5.nip.io`).
+
+### B. Outbound Tunnel Routing (`lfr-tunnel-docker` / `ngrok`)
+
+- **Security Group Inbound Rules**: **Port `22` (SSH ONLY)**. You can **CLOSE ports 80 & 443 entirely**!
+- **How It Works**: The LDM tunnel agent (`lfr-tunnel-docker` sidecar) runs inside the remote Docker container network on EC2. It creates an **outbound encrypted WebSocket connection** to a public tunnel gateway (`*.lfr.live` / `*.lfr-demo.online`).
+- **Benefits**:
+  - **Zero Inbound HTTP/HTTPS Firewall Exposure**: Your EC2 instance has no public web ports exposed to scanners or bot attacks.
+  - **Instant Public Subdomains**: Access your remote stack via a HTTPS URL (e.g. `https://my-subdomain.lfr-demo.online`) without configuring DNS records or AWS Elastic IPs.
+
+#### Running a Tunnel on a Remote Compute Node
+
+```bash
+# Boot project on remote node with outbound tunneling enabled
+ldm run my-project --target prod-node --share --share-provider lfr-tunnel-docker --share-subdomain my-aws-demo
+```
+
 <!-- markdownlint-disable MD049 -->
 ---
 *Last Updated: 2026-07-30* | *Last Reviewed: 2026-07-30*
