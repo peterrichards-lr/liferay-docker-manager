@@ -60,12 +60,21 @@ newgrp docker
 1. **Security Group Config**: Inbound rules needed:
    - **TCP Port `22` (SSH)**: Required for LDM orchestrator control plane (`ldm target`). Restrict to your IP or VPN for security.
    - **TCP Port `80` (HTTP) & Port `443` (HTTPS)**: Optional. Required ONLY for direct browser access. Can be closed if using outbound tunnels (`lfr-tunnel-docker`).
-2. **Key Pair**: Download the `.pem` key (e.g. `aws-key.pem`) and set permissions (`chmod 400 aws-key.pem`).
+2. **Key Pair & Local SSH Config**:
+   - Download the `.pem` key (e.g. `aws-key.pem`) and restrict file permissions (`chmod 400 ~/.ssh/aws-key.pem`).
+   - Add a host entry to `~/.ssh/config` on your local machine so OpenSSH and Docker CLI automatically use the key pair for this host:
+
+     ```ssh-config
+     Host 51.20.52.201
+         User ec2-user
+         IdentityFile ~/.ssh/aws-key.pem
+     ```
+
 3. **Register AWS Node**:
 
    ```bash
    # Amazon Linux 2023 uses ec2-user (Ubuntu uses ubuntu)
-   ldm target add aws-1 --host 34.200.10.5 --user ec2-user --key ~/.ssh/aws-key.pem
+   ldm target add aws-1 --host 51.20.52.201 --user ec2-user --key ~/.ssh/aws-key.pem
    ldm target status aws-1
    ```
 
