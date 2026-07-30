@@ -2129,7 +2129,6 @@ class ConfigService:
                     run_command(
                         ["ssh-add", str(expanded_key)], check=False, capture_output=True
                     )
-
             # Remove existing context if updating
             run_command(
                 ["docker", "context", "rm", name], check=False, capture_output=True
