@@ -317,6 +317,23 @@ LFT_INSPECTOR_BIND=0.0.0.0
 
 ---
 
+## Remote Compute Node Tunneling (Zero Inbound Port Security)
+
+When deploying LDM projects to remote cloud compute nodes (e.g. AWS EC2, DigitalOcean, or Azure VMs) via Multi-Node Orchestration (`ldm target`), running an outbound tunnel sidecar provides a powerful security advantage:
+
+### Closing Inbound HTTP/HTTPS Firewall Ports
+
+1. **Outbound Connection**: The `lfr-tunnel-docker` sidecar container running on the remote compute node establishes an **outbound encrypted WebSocket connection** to a public gateway (`*.lfr.live` / `*.lfr-demo.online`).
+2. **Firewall Lockdown**: Because traffic flows through an outbound socket, **you do NOT need to open Inbound HTTP (80) or HTTPS (443) ports** in your cloud Security Group / Firewall.
+3. **Control Plane Only**: The compute node's Security Group only requires **Inbound Port 22 (SSH)** open (restricted to your developer IP / VPN) for orchestrator CLI commands (`ldm target`).
+
+```bash
+# Run project on remote compute node with outbound tunneling enabled
+ldm run my-project --target prod-aws --share --share-provider lfr-tunnel-docker --share-subdomain my-remote-demo
+```
+
+---
+
 ## Handling SaaS Callbacks (The Host Header)
 
 By default, the sharing tunnels rewrite the `Host` header to match your project's `--host-name` (e.g., `forge.demo`). This ensures that Traefik knows how to route the request to your specific Liferay container.
