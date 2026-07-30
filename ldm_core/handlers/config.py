@@ -2122,6 +2122,13 @@ class ConfigService:
         if host not in ("localhost", "127.0.0.1", ""):
             ssh_prefix = f"{user}@" if user else ""
             endpoint = f"ssh://{ssh_prefix}{host}"
+            # Add SSH key to ssh-agent if key path provided
+            if key:
+                expanded_key = Path(key).expanduser()
+                if expanded_key.exists():
+                    run_command(
+                        ["ssh-add", str(expanded_key)], check=False, capture_output=True
+                    )
             # Remove existing context if updating
             run_command(
                 ["docker", "context", "rm", name], check=False, capture_output=True
