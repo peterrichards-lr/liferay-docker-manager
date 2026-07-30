@@ -2252,7 +2252,7 @@ class ConfigService:
                 "--format",
                 "{{.ServerVersion}}|{{.NCPU}}|{{.MemTotal}}|{{.ContainersRunning}}",
             ]
-            res = run_command(cmd, check=False, capture_output=True, timeout=5)
+            res = run_command(cmd, check=False, capture_output=True, timeout=15)
             host_display = target.host if target.host else "localhost"
             if res and "|" in res:
                 parts = res.strip().split("|")
