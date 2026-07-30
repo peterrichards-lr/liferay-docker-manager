@@ -53,29 +53,37 @@ Once installed, bootstrap or run your stacks instantly:
 
 ```bash
 # 1. THE CONFIDENCE BOOSTER: Run Liferay with pre-configured samples
+# For more information see LDM Conventions & Features
 ldm run my-sample-project --samples
 
 # 2. THE VANILLA FLOW: Run a fresh vanilla Liferay instance (LTS release)
+# For more information see Fresh Vanilla Start
 ldm run my-vanilla-project --vanilla --tag 2026.q1.7-lts
 
 # 3. THE DEVELOPER FLOW: Link a local workspace and start monitoring
+# For more information see Liferay Workspace Local Dev
 ldm link /path/to/workspace my-project
 
 # 4. THE PREDEFINED QUICKSTART: Bootstrap an accelerator demo stack
+# For more information see LDM Conventions & Features
 ldm quickstart aica
 
 # 5. THE TIME MACHINE: Take a snapshot of your database and volumes, and restore them later
+# For more information see Data Management & Backup Snapshots
 ldm snapshot my-project
 ldm restore my-project
 
 # 6. THE CLONE FLOW: Clone and setup a remote Git workspace repository
+# For more information see Liferay Workspace Local Dev
 ldm clone https://github.com/my-org/my-workspace.git my-project
 
 # 7. THE PORTABLE PACKAGE: Export and Import compiled project snapshots (.ldmp)
+# For more information see Portable Packages & Remote Repositories (.ldmp)
 ldm package my-project
 ldm import /path/to/my-project.ldmp
 
 # 8. THE MULTI-NODE FLOW: Register compute targets and live-migrate workloads
+# For more information see Multi-Node Orchestration & Remote Node Setup
 ldm target add prod-aws --host 34.200.10.5 --user ubuntu --key ~/.ssh/aws-key.pem
 ldm target migrate local prod-aws
 ```
@@ -85,8 +93,6 @@ ldm target migrate local prod-aws
 >
 > - By default, LDM checks for a cached pre-warmed database seed. If not cached, it will prompt you interactively to download it.
 > - **CI/CD / Headless Scripts**: To prevent interactive prompts from blocking headless environments, pass `-y` / `--yes` / `--non-interactive` to automatically confirm seed downloads, or pass `--vanilla` ![Added in v2.16.0](https://img.shields.io/badge/Added%20in-v2.16.0-blue) / `--no-seed` to skip seeding entirely and start a clean baseline database.
->
-> **Finding Out More**: For step-by-step walkthroughs, flag options, and architecture details for each common command flow above, consult the **Documentation Signposts** section below.
 
 **Legacy Commands Note**:
 `ldm init-from` has been **deprecated** and is superseded by the `ldm link` command.
