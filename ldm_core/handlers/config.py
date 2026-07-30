@@ -2117,6 +2117,22 @@ class ConfigService:
             is_default=default,
         )
         save_target_node(node)
+
+        # Auto-create/update Docker CLI context for remote SSH targets
+        if host not in ("localhost", "127.0.0.1", ""):
+            ssh_prefix = f"{user}@" if user else ""
+            endpoint = f"ssh://{ssh_prefix}{host}"
+            # Remove existing context if updating
+            run_command(
+                ["docker", "context", "rm", name], check=False, capture_output=True
+            )
+            # Create fresh docker context
+            run_command(
+                ["docker", "context", "create", name, "--docker", f"host={endpoint}"],
+                check=False,
+                capture_output=True,
+            )
+
         UI.success(f"Target node '{name}' ({host}) registered successfully.")
         if default:
             UI.detail(f"Target node '{name}' set as active global default.")
@@ -2167,6 +2183,9 @@ class ConfigService:
             UI.die("Cannot delete built-in 'local' target node.")
 
         if delete_target_node(name):
+            run_command(
+                ["docker", "context", "rm", name], check=False, capture_output=True
+            )
             UI.success(f"Target node '{name}' removed.")
         else:
             UI.die(f"Target node '{name}' not found.")
