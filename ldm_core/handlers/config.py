@@ -2237,6 +2237,7 @@ class ConfigService:
         UI.heading("Target Compute Nodes Status & Connectivity Probe")
         headers = [
             "TARGET",
+            "HOST / ENDPOINT",
             "STATUS",
             "ENGINE VERSION",
             "CPUs / MEMORY",
@@ -2244,7 +2245,7 @@ class ConfigService:
         ]
         rows = []
 
-        for t_name, _target in targets_to_probe.items():
+        for t_name, target in targets_to_probe.items():
             cmd = [
                 *DockerService.get_docker_cmd_prefix(t_name),
                 "info",
@@ -2252,6 +2253,7 @@ class ConfigService:
                 "{{.ServerVersion}}|{{.NCPU}}|{{.MemTotal}}|{{.ContainersRunning}}",
             ]
             res = run_command(cmd, check=False, capture_output=True, timeout=5)
+            host_display = target.host if target.host else "localhost"
             if res and "|" in res:
                 parts = res.strip().split("|")
                 version = parts[0] if len(parts) > 0 else "unknown"
@@ -2265,6 +2267,7 @@ class ConfigService:
                 rows.append(
                     [
                         t_name,
+                        host_display,
                         status_str,
                         f"v{version}",
                         f"{cpus} CPUs / {mem_gb}",
@@ -2273,7 +2276,7 @@ class ConfigService:
                 )
             else:
                 status_str = f"{UI.RED}OFFLINE{UI.COLOR_OFF}"
-                rows.append([t_name, status_str, "-", "-", "-"])
+                rows.append([t_name, host_display, status_str, "-", "-", "-"])
 
         UI.table(rows, headers=headers)
 
