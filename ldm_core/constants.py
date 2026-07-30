@@ -49,6 +49,10 @@ SOCAT_IMAGE = "alpine/socat"
 # Maps major.minor or exact version keys to lists of (cmd, description) tuples.
 RELEASE_ANNOUNCEMENTS = {
     "2.15": [
+        (
+            "ldm target <subcmd>",
+            "Multi-node compute target management (add/ls/use/status)",
+        ),
         ("ldm link <path>", "Linked workspaces local integration (replaces init-from)"),
         ("ldm clone <url>", "Clone and setup a remote Git workspace repository"),
         ("ldm import <pkg>", "Import compiled hydrated data packages (.ldmp) only"),
