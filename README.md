@@ -74,6 +74,10 @@ ldm clone https://github.com/my-org/my-workspace.git my-project
 # 7. THE PORTABLE PACKAGE: Export and Import compiled project snapshots (.ldmp)
 ldm package my-project
 ldm import /path/to/my-project.ldmp
+
+# 8. THE MULTI-NODE FLOW: Register compute targets and live-migrate workloads
+ldm target add prod-aws --host 34.200.10.5 --user ubuntu --key ~/.ssh/aws-key.pem
+ldm target migrate local prod-aws
 ```
 
 > [!NOTE]
@@ -100,6 +104,7 @@ LDM is conventions-driven and highly customizable. Choose a topic below for deta
 
 ### 2. Local Development & Customization
 
+- **[Multi-Node Orchestration & Remote Node Setup](docs/how-to/multi_node_orchestration.md)** — Registering compute nodes, remote stack execution, and live workload migration (`ldm target`).
 - **[Fresh Vanilla Start](docs/how-to/vanilla_start.md)** — Launching empty Liferay instances for quick tests.
 - **[PaaS "Golden Path" Local Dev](docs/tutorials/paas_local_dev.md)** — Fetching backups and replicating Liferay Cloud environments locally.
 - **[Liferay Workspace Local Dev](docs/tutorials/workspace_development.md)** — Linking local workspaces with LDM for active source code development.
