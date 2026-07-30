@@ -620,3 +620,32 @@ class TestDashboard(unittest.TestCase):
             data[0]["client_extensions"][0]["name"], "my-project1-json-ext1"
         )
         self.assertEqual(data[0]["url"], "https://liferay.local")
+
+    @patch("ldm_core.dashboard.server.run_command")
+    @patch("ldm_core.config.load_targets")
+    def test_api_targets_success(self, mock_load_targets, mock_run_command):
+        from ldm_core.config import TargetNode
+
+        mock_load_targets.return_value = {
+            "local": TargetNode(name="local", host="localhost", is_default=True),
+            "aws-1": TargetNode(
+                name="aws-1", host="51.20.52.201", user="ec2-user", is_default=False
+            ),
+        }
+        mock_run_command.side_effect = [
+            "v29.2.1|4|8267071488|2",
+            "v25.0.16|4|16553992192|0",
+        ]
+
+        response = self.client.get("/api/targets")
+        self.assertEqual(response.status_code, 200)
+        data = response.get_json()
+        self.assertEqual(len(data), 2)
+        self.assertEqual(data[0]["name"], "local")
+        self.assertEqual(data[0]["status"], "ONLINE")
+        self.assertTrue(data[0]["active"])
+        self.assertEqual(data[0]["engine_version"], "v29.2.1")
+        self.assertEqual(data[1]["name"], "aws-1")
+        self.assertEqual(data[1]["host"], "51.20.52.201")
+        self.assertEqual(data[1]["status"], "ONLINE")
+        self.assertFalse(data[1]["active"])
