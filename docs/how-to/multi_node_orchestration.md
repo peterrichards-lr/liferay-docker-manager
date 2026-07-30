@@ -15,6 +15,14 @@ LDM can orchestrate workloads on any remote machine (cloud VM, local Linux serve
 - **Docker**: Docker Engine and Docker Compose V2.
 - **User Permissions**: SSH user must be a member of the `docker` group (non-sudo Docker access).
 
+### Universal Platform Compatibility
+
+LDM multi-node orchestration can be used **anywhere Docker and SSH are running**. This includes:
+
+- **Cloud Infrastructure**: AWS EC2, GCP Compute Engine, Azure VMs, DigitalOcean Droplets.
+- **Windows Compute Nodes**: Windows 10/11 running WSL2 (Ubuntu / Debian).
+- **Local Infrastructure**: LAN Linux servers, macOS nodes, local VMs, bare-metal hardware.
+
 ### Remote Node Setup Commands (Copy-Paste on Target Server)
 
 ```bash
@@ -30,6 +38,34 @@ sudo usermod -aG docker $USER
 # Apply group membership
 newgrp docker
 ```
+
+### Platform Example 1: AWS EC2 Compute Node Setup
+
+1. **Security Group Config**: Allow inbound TCP port `22` (SSH) in the AWS EC2 Security Group.
+2. **Key Pair**: Download the `.pem` key (e.g. `aws-key.pem`) and set permissions (`chmod 400 aws-key.pem`).
+3. **Register AWS Node**:
+
+   ```bash
+   ldm target add aws-1 --host 34.200.10.5 --user ubuntu --key ~/.ssh/aws-key.pem
+   ldm target status aws-1
+   ```
+
+### Platform Example 2: Windows WSL2 Compute Node Setup
+
+1. **Enable OpenSSH inside WSL2**:
+
+   ```bash
+   sudo apt-get install -y openssh-server rsync
+   sudo service ssh start
+   ```
+
+2. **Add Local Public Key to WSL2**: Append your SSH public key (`~/.ssh/id_rsa.pub`) to `~/.ssh/authorized_keys` in WSL2.
+3. **Register Windows WSL2 Node**:
+
+   ```bash
+   ldm target add win-wsl --host 192.168.1.50 --user developer --key ~/.ssh/id_rsa
+   ldm target status win-wsl
+   ```
 
 ---
 
