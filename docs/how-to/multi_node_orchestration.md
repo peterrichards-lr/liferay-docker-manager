@@ -41,12 +41,14 @@ newgrp docker
 
 ### Platform Example 1: AWS EC2 Compute Node Setup
 
-1. **Security Group Config**: Allow inbound TCP port `22` (SSH) in the AWS EC2 Security Group.
+1. **Security Group Config**: Inbound rules needed:
+   - **TCP Port `22` (SSH)**: Required for LDM orchestrator control plane and SSH engine context (`ldm target`). Restrict to your IP or VPN for security.
+   - **TCP Port `80` (HTTP) & Port `443` (HTTPS)**: Required for browser/user access to Liferay projects and Traefik reverse proxy hostnames (`*.nip.io` or custom domain names).
 2. **Key Pair**: Download the `.pem` key (e.g. `aws-key.pem`) and set permissions (`chmod 400 aws-key.pem`).
 3. **Register AWS Node**:
 
    ```bash
-   ldm target add aws-1 --host 34.200.10.5 --user ubuntu --key ~/.ssh/aws-key.pem
+   ldm target add aws-1 --host 34.200.10.5 --user ec2-user --key ~/.ssh/aws-key.pem
    ldm target status aws-1
    ```
 
