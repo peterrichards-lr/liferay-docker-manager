@@ -14,6 +14,7 @@ export TEST_PORT
 PROJECT_NAME="ldm-smoke-test-${TEST_PORT}"
 COLLISION_PROJECT="collision-test-${TEST_PORT}"
 TAG_VAL_PROJECT="tag-val-test-${TEST_PORT}"
+TARGET_TEST_NODE="e2e-target-${TEST_PORT}"
 
 KEEP_ARTIFACTS=false
 for arg in "$@"; do
@@ -298,6 +299,35 @@ else
     exit 1
 fi
 "$LDM_CMD" -y rm "${TAG_VAL_PROJECT}" --delete >/dev/null 2>&1 && rm -rf "${TAG_VAL_PROJECT}"
+
+echo ">> Verifying Compute Target Management & Connectivity Probe..."
+log_and_run "Target List" "$LDM_CMD" target ls
+log_and_run "Target Status (Local)" "$LDM_CMD" target status local
+
+echo ">> Testing Target CRUD Cycle..."
+log_and_run "Target Add (Mock Node)" "$LDM_CMD" target add "$TARGET_TEST_NODE" --host 127.0.0.1
+if "$LDM_CMD" target ls | grep -q "$TARGET_TEST_NODE"; then
+    echo "✅ Target registration verified."
+else
+    echo "❌ ERROR: Target $TARGET_TEST_NODE not found in registry." | tee -a "$RESULTS_FILE_TMP"
+    exit 1
+fi
+log_and_run "Target Remove (Mock Node)" "$LDM_CMD" target rm "$TARGET_TEST_NODE"
+
+REMOTE_HOST="${LDM_TEST_REMOTE_HOST:-${LDM_REMOTE_TARGET}}"
+if [ -n "$REMOTE_HOST" ]; then
+    echo ">> Probing Remote Compute Target ($REMOTE_HOST)..."
+    REMOTE_NODE_NAME="remote-${TARGET_TEST_NODE}"
+    log_and_run "Target Add (Remote Host)" "$LDM_CMD" target add "$REMOTE_NODE_NAME" --host "$REMOTE_HOST"
+    REMOTE_STATUS_OUT=$("$LDM_CMD" target status "$REMOTE_NODE_NAME" 2>&1 || true)
+    echo "$REMOTE_STATUS_OUT" | tee -a "$RESULTS_FILE_TMP"
+    if echo "$REMOTE_STATUS_OUT" | grep -q "ONLINE"; then
+        echo "✅ Remote Target Probe verified (ONLINE)."
+    else
+        echo "⚠️  Remote Target Probe returned OFFLINE or unreachable for $REMOTE_HOST."
+    fi
+    "$LDM_CMD" target rm "$REMOTE_NODE_NAME" >/dev/null 2>&1 || true
+fi
 
 # 3. Project Run
 echo "ℹ  Provisioning standalone test project..."

@@ -8,6 +8,7 @@ $ErrorActionPreference = "Continue"
 $PSNativeCommandUseErrorActionPreference = $false
 $TEST_PORT = "8082"
 if ($env:LDM_TEST_PORT) { $TEST_PORT = $env:LDM_TEST_PORT }
+$TARGET_TEST_NODE = "e2e-target-${TEST_PORT}"
 $ORIGINAL_PWD = Get-Location
 $LDM_CMD = "ldm"
 $Timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
@@ -254,6 +255,37 @@ try {
     }
     Invoke-Cleanup $LDM_CMD "-y rm tag-val-test --delete"
     if (Test-Path "tag-val-test") { Remove-Item -Recurse -Force "tag-val-test" }
+
+    Write-Host ">> Verifying Compute Target Management & Connectivity Probe..."
+    Log-AndRun "Target List" $LDM_CMD "target ls"
+    Log-AndRun "Target Status (Local)" $LDM_CMD "target status local"
+
+    Write-Host ">> Testing Target CRUD Cycle..."
+    Log-AndRun "Target Add (Mock Node)" $LDM_CMD "target add $TARGET_TEST_NODE --host 127.0.0.1"
+    $targetLsRes = & $LDM_CMD target ls 2>&1
+    if ($targetLsRes -match $TARGET_TEST_NODE) {
+        Write-Host "[SUCCESS] Target registration verified."
+    } else {
+        Write-Host "[ERROR] ERROR: Target $TARGET_TEST_NODE not found in registry." -ForegroundColor Red
+        exit 1
+    }
+    Log-AndRun "Target Remove (Mock Node)" $LDM_CMD "target rm $TARGET_TEST_NODE"
+
+    $remoteHost = $env:LDM_TEST_REMOTE_HOST
+    if (-not $remoteHost) { $remoteHost = $env:LDM_REMOTE_TARGET }
+    if ($remoteHost) {
+        Write-Host ">> Probing Remote Compute Target ($remoteHost)..."
+        $remoteNodeName = "remote-${TARGET_TEST_NODE}"
+        Log-AndRun "Target Add (Remote Host)" $LDM_CMD "target add $remoteNodeName --host $remoteHost"
+        $remoteStatusOut = & $LDM_CMD target status $remoteNodeName 2>&1
+        Write-Host ($remoteStatusOut -join "`n")
+        if ($remoteStatusOut -match "ONLINE") {
+            Write-Host "[SUCCESS] Remote Target Probe verified (ONLINE)."
+        } else {
+            Write-Host "[WARNING] Remote Target Probe returned OFFLINE or unreachable for $remoteHost."
+        }
+        & $LDM_CMD target rm $remoteNodeName > $null 2>&1
+    }
 
     # 3. Project Run
     Write-Host "[INFO]  Provisioning standalone test project..."
