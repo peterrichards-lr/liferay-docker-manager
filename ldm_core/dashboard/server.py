@@ -251,6 +251,7 @@ def api_projects():
                 "path": str(path),
                 "db_type": meta.get("db_type", "N/A"),
                 "archetype": meta.get("archetype", "None"),
+                "target": meta.get("target", "local"),
                 "client_extensions": extensions_data,
             }
         )
