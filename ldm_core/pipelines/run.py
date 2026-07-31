@@ -359,12 +359,13 @@ class ConfigResolutionStage(PipelineStage):
             from ldm_core.utils import discover_latest_tag
 
             api_base = API_BASE_PORTAL if is_portal else API_BASE_DXP
-            default_rt = manager.defaults.get("release_type", "lts")
-            rt = getattr(manager.args, "release_type", None)
-            if is_nightly:
-                rt = "nightly"
-            elif not rt:
-                rt = "any" if prefix else default_rt
+            default_rt = str(manager.defaults.get("release_type", "lts") or "lts")
+            raw_rt = getattr(manager.args, "release_type", None)
+            rt = (
+                str(raw_rt)
+                if raw_rt
+                else ("nightly" if is_nightly else ("any" if prefix else default_rt))
+            )
 
             if not can_discover:
                 if manager.verbose:
