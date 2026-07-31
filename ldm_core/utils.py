@@ -1791,50 +1791,75 @@ def version_to_tuple(v):
     return (base_nums[0], base_nums[1], base_nums[2], weight, beta_num)
 
 
-def _check_updates_fallback(cache_file, now):
-    """Fallback check using HTML redirect to bypass GitHub API rate limiting."""
+def _check_updates_fallback(cache_file, now, pre_release=False):  # noqa: PLR0912
+    """Fallback check using RSS feed or HTML redirect to bypass GitHub API rate limiting."""
     try:
         headers = {"User-Agent": "ldm-cli", "Cache-Control": "no-cache"}
-        url = (
-            "https://github.com/peterrichards-lr/liferay-docker-manager/releases/latest"
-        )
-        response = requests.head(url, headers=headers, timeout=5, allow_redirects=False)
-        if response.status_code in [301, 302]:
-            location = response.headers.get("Location", "")
-            if "/releases/tag/" in location:
-                latest_version = location.split("/releases/tag/")[-1].lstrip("v")
+        system = sys.platform
+        machine = platform.machine().lower()
 
-                # Architecture-aware asset resolution
-                system = sys.platform
-                machine = platform.machine().lower()
+        if system == "darwin":
+            if machine == "arm64":
+                target_asset = "ldm-macos-arm64"
+            else:
+                target_asset = "ldm-macos-x86_64"
+        elif system in ["win32", "windows"]:
+            target_asset = "ldm-windows.exe"
+        else:
+            target_asset = "ldm-linux"
 
-                if system == "darwin":
-                    if machine == "arm64":
-                        target_asset = "ldm-macos-arm64"
-                    else:
-                        target_asset = "ldm-macos-x86_64"
-                elif system in ["win32", "windows"]:
-                    target_asset = "ldm-windows.exe"
-                else:
-                    target_asset = "ldm-linux"
-
-                release_url = f"https://github.com/peterrichards-lr/liferay-docker-manager/releases/download/v{latest_version}/{target_asset}"
-
-                # Update cache
-                try:
-                    cache_file.write_text(
-                        json.dumps(
-                            {
-                                "last_check": now,
-                                "latest_version": latest_version,
-                                "url": release_url,
-                            }
+        if pre_release:
+            atom_url = "https://github.com/peterrichards-lr/liferay-docker-manager/releases.atom"
+            response = requests.get(atom_url, headers=headers, timeout=5)
+            if response.status_code == 200:
+                titles = re.findall(r"<title>v?([^<]+)</title>", response.text)
+                discovered = []
+                for title in titles:
+                    clean_t = title.strip().lstrip("v")
+                    if re.match(r"^\d+\.\d+\.\d+", clean_t):
+                        discovered.append((version_to_tuple(clean_t), clean_t))
+                if discovered:
+                    discovered.sort(key=lambda x: x[0])
+                    latest_version = discovered[-1][1]
+                    release_url = f"https://github.com/peterrichards-lr/liferay-docker-manager/releases/download/v{latest_version}/{target_asset}"
+                    try:
+                        cache_file.write_text(
+                            json.dumps(
+                                {
+                                    "last_check": now,
+                                    "latest_version": latest_version,
+                                    "url": release_url,
+                                }
+                            )
                         )
-                    )
-                except Exception:
-                    pass
+                    except Exception:
+                        pass
+                    return latest_version, release_url
+        else:
+            url = "https://github.com/peterrichards-lr/liferay-docker-manager/releases/latest"
+            response = requests.head(
+                url, headers=headers, timeout=5, allow_redirects=False
+            )
+            if response.status_code in [301, 302]:
+                location = response.headers.get("Location", "")
+                if "/releases/tag/" in location:
+                    latest_version = location.split("/releases/tag/")[-1].lstrip("v")
+                    release_url = f"https://github.com/peterrichards-lr/liferay-docker-manager/releases/download/v{latest_version}/{target_asset}"
 
-                return latest_version, release_url
+                    try:
+                        cache_file.write_text(
+                            json.dumps(
+                                {
+                                    "last_check": now,
+                                    "latest_version": latest_version,
+                                    "url": release_url,
+                                }
+                            )
+                        )
+                    except Exception:
+                        pass
+
+                    return latest_version, release_url
     except Exception:
         pass
     return None, None
@@ -1858,6 +1883,21 @@ def check_for_updates(current_version, force=False, pre_release=False, tag=None)
                     return data.get("latest_version"), data.get("url")
         finally:
             lock.release()
+
+    # Direct tag asset resolution fallback if tag is specified
+    if tag:
+        clean_tag = tag.lstrip("v")
+        system = sys.platform
+        machine = platform.machine().lower()
+        if system == "darwin":
+            target_asset = (
+                "ldm-macos-arm64" if machine == "arm64" else "ldm-macos-x86_64"
+            )
+        elif system in ["win32", "windows"]:
+            target_asset = "ldm-windows.exe"
+        else:
+            target_asset = "ldm-linux"
+        candidate_url = f"https://github.com/peterrichards-lr/liferay-docker-manager/releases/download/v{clean_tag}/{target_asset}"
 
     try:
         headers = {"User-Agent": "ldm-cli"}
@@ -1967,27 +2007,50 @@ def check_for_updates(current_version, force=False, pre_release=False, tag=None)
             return latest_version, release_url
 
         if tag:
+            # Fallback HEAD check for direct asset download URL when GitHub API rate-limited
+            try:
+                head_resp = requests.head(
+                    candidate_url,
+                    headers={"User-Agent": "ldm-cli"},
+                    timeout=5,
+                    allow_redirects=True,
+                )
+                if head_resp.status_code in [200, 302]:
+                    return clean_tag, candidate_url
+            except Exception:
+                pass
             return None, None
 
         # Fallback if API status code is not 200 (e.g. 403 rate limited)
-        if not pre_release:
-            fallback_version, fallback_url = _check_updates_fallback(cache_file, now)
-            if fallback_version:
-                return fallback_version, fallback_url
+        fallback_version, fallback_url = _check_updates_fallback(
+            cache_file, now, pre_release=pre_release
+        )
+        if fallback_version:
+            return fallback_version, fallback_url
 
     except Exception:
         if tag:
-            return None, None
-        # Fallback if request failed completely (e.g. API DNS/connection error)
-        if not pre_release:
             try:
-                fallback_version, fallback_url = _check_updates_fallback(
-                    cache_file, now
+                head_resp = requests.head(
+                    candidate_url,
+                    headers={"User-Agent": "ldm-cli"},
+                    timeout=5,
+                    allow_redirects=True,
                 )
-                if fallback_version:
-                    return fallback_version, fallback_url
+                if head_resp.status_code in [200, 302]:
+                    return clean_tag, candidate_url
             except Exception:
                 pass
+            return None, None
+        # Fallback if request failed completely (e.g. API DNS/connection error)
+        try:
+            fallback_version, fallback_url = _check_updates_fallback(
+                cache_file, now, pre_release=pre_release
+            )
+            if fallback_version:
+                return fallback_version, fallback_url
+        except Exception:
+            pass
         return None, None
     return None, None
 
