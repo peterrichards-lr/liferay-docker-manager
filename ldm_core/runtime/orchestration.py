@@ -71,7 +71,7 @@ class OrchestrationService(BaseHandler):
         for root in targets:
             UI.detail(f"Starting project: {root.name}...")
             meta = self.manager.read_meta(root)
-            target_name = meta.get("target")
+            target_name = getattr(self.manager, "target", None) or meta.get("target")
             if target_name:
                 from ldm_core.config import sync_project_to_target
 
@@ -488,7 +488,18 @@ class OrchestrationService(BaseHandler):
         if not ssl_enabled and port != 80:
             url += f":{port}"
 
-        UI.detail(f"Opening browser: {UI.CYAN}{url}{UI.COLOR_OFF}")
+        container_name = meta.get("container_name", root.name)
+        target_name = getattr(self.manager, "target", None) or meta.get("target")
+        from ldm_core.docker_service import DockerService
+
+        status = DockerService.get_status(container_name, target_name=target_name)
+        if status != "running":
+            UI.warning(
+                f"Project '{root.name}' container is currently {status}. Opening browser for {url}..."
+            )
+        else:
+            UI.detail(f"Opening browser: {UI.CYAN}{url}{UI.COLOR_OFF}")
+
         open_browser(url)
 
     def cmd_renew_ssl(self, project_id=None, all_projects=False):
@@ -664,7 +675,7 @@ class OrchestrationService(BaseHandler):
         target_container = self.manager.resolve_container(root.name, service_name)
 
         meta = self.manager.read_meta(root)
-        target_name = meta.get("target")
+        target_name = getattr(self.manager, "target", None) or meta.get("target")
         from ldm_core.docker_service import DockerService
 
         docker_prefix = DockerService.get_docker_cmd_prefix(target_name)
