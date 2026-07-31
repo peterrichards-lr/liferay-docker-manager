@@ -300,6 +300,28 @@ else
 fi
 "$LDM_CMD" -y rm "${TAG_VAL_PROJECT}" --delete >/dev/null 2>&1 && rm -rf "${TAG_VAL_PROJECT}"
 
+echo ">> Verifying Nightly & Master Build Flags (--nightly / --master)..."
+NIGHTLY_TEST_PROJ="nightly-test-${TEST_PORT}"
+MASTER_TEST_PROJ="master-test-${TEST_PORT}"
+
+"$LDM_CMD" -y run "${NIGHTLY_TEST_PROJ}" --nightly --port 8098 --no-wait --no-up >/dev/null 2>&1
+if grep -q "nightly" "${NIGHTLY_TEST_PROJ}/meta"; then
+    echo "✅ --nightly flag resolution verified."
+else
+    echo "❌ ERROR: --nightly flag resolution failed." | tee -a "$RESULTS_FILE_TMP"
+    exit 1
+fi
+"$LDM_CMD" -y rm "${NIGHTLY_TEST_PROJ}" --delete >/dev/null 2>&1 && rm -rf "${NIGHTLY_TEST_PROJ}"
+
+"$LDM_CMD" -y run "${MASTER_TEST_PROJ}" --master --port 8097 --no-wait --no-up >/dev/null 2>&1
+if grep -q "nightly" "${MASTER_TEST_PROJ}/meta"; then
+    echo "✅ --master flag alias verified."
+else
+    echo "❌ ERROR: --master flag alias failed." | tee -a "$RESULTS_FILE_TMP"
+    exit 1
+fi
+"$LDM_CMD" -y rm "${MASTER_TEST_PROJ}" --delete >/dev/null 2>&1 && rm -rf "${MASTER_TEST_PROJ}"
+
 echo ">> Verifying Compute Target Management & Connectivity Probe..."
 log_and_run "Target List" "$LDM_CMD" target ls
 log_and_run "Target Status (Local)" "$LDM_CMD" target status local
