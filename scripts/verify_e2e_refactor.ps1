@@ -285,7 +285,30 @@ try {
             Write-Host "[WARNING] Remote Target Probe returned OFFLINE or unreachable for $remoteHost."
         }
         & $LDM_CMD target rm $remoteNodeName > $null 2>&1
+    Write-Host ">> Verifying Nightly and Master Build Flags..."
+    $nightlyProj = "nightly-test-$TEST_PORT"
+    & $LDM_CMD -y run $nightlyProj --nightly --port 8098 --no-wait --no-up > $null 2>&1
+    $metaContent = Get-Content (Join-Path $nightlyProj "meta") -Raw 2>$null
+    if ($metaContent -match "nightly") {
+        Write-Host "[SUCCESS] --nightly flag resolution verified."
+    } else {
+        Write-Host "[ERROR] --nightly flag resolution failed." -ForegroundColor Red
+        exit 1
     }
+    & $LDM_CMD -y rm $nightlyProj --delete > $null 2>&1
+    Remove-Item -Recurse -Force $nightlyProj -ErrorAction SilentlyContinue
+
+    $masterProj = "master-test-$TEST_PORT"
+    & $LDM_CMD -y run $masterProj --master --port 8097 --no-wait --no-up > $null 2>&1
+    $masterMetaContent = Get-Content (Join-Path $masterProj "meta") -Raw 2>$null
+    if ($masterMetaContent -match "nightly") {
+        Write-Host "[SUCCESS] --master flag alias verified."
+    } else {
+        Write-Host "[ERROR] --master flag alias failed." -ForegroundColor Red
+        exit 1
+    }
+    & $LDM_CMD -y rm $masterProj --delete > $null 2>&1
+    Remove-Item -Recurse -Force $masterProj -ErrorAction SilentlyContinue
 
     # 3. Project Run
     Write-Host "[INFO]  Provisioning standalone test project..."
