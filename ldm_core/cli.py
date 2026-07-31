@@ -318,10 +318,23 @@ def get_parser():  # noqa: PLR0915
         help="Select project by 1-based index from the project list",
     )
 
+    base_parent.add_argument(
+        "--target",
+        "--node",
+        dest="target",
+        help="Specify compute target node identifier (e.g. local, aws-1)",
+    )
+
     # For subparsers, we want the global flags but we SUPPRESS the default (False)
     # so they don't overwrite the value set by the main parser if provided before the command.
     base_sub_parent = argparse.ArgumentParser(
         add_help=False, argument_default=argparse.SUPPRESS
+    )
+    base_sub_parent.add_argument(
+        "--target",
+        "--node",
+        dest="target",
+        help="Specify compute target node identifier (e.g. local, aws-1)",
     )
     base_sub_parent.add_argument(
         "--info", action="store_true", help="Show informational logging"
@@ -1726,7 +1739,9 @@ def get_parser():  # noqa: PLR0915
     log_level.add_argument("--remove", action="store_true")
     log_level.add_argument("--list", action="store_true")
 
-    edit_cmd = config_subparsers.add_parser("edit", parents=[base_sub_parent])
+    edit_cmd = config_subparsers.add_parser(
+        "edit", parents=[base_sub_parent], conflict_handler="resolve"
+    )
     edit_cmd.add_argument("project", nargs="?")
     edit_cmd.add_argument("-p", "--project", dest="project_flag")
     edit_cmd.add_argument(

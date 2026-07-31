@@ -23,7 +23,7 @@ class DatabaseSnapshotService:
             if db_mode == "shared":
                 db_container = "liferay-db-global"
 
-            target_name = (
+            target_name = getattr(self.manager, "target", None) or (
                 project_meta.get("target") if isinstance(project_meta, dict) else None
             )
             from ldm_core.docker_service import DockerService

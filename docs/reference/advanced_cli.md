@@ -40,6 +40,7 @@ These flags are ideal for automated testing pipelines where interactivity is imp
 
 - **`--no-captcha`**: Disables Liferay's mandatory Omni-Admin CAPTCHA requirement. Strictly opt-in and easily reversible; running without this flag on a subsequent start will re-enable CAPTCHA.
 - **`--fast-login`**: Automatically bypasses typical post-startup prompts (Terms of Use acceptance, initial password reset). Best used with an external database (`--db mysql` or `postgresql`), as password policy bypass has known limitations with the embedded Hypersonic database.
+- **`--target <node>` / `--node <node>`**: Target a specific registered compute node (e.g. `--target aws-1`). Overrides the default compute target for the execution context.
 - **`--target-env`**: (Used with `link`, `clone`, and `import`). Overrides the environment name metadata.
 - **`--build`**: (Used with `link` and `clone`). Forces a full rebuild of any Server-Side Client Extensions found in the source workspace during initialization.
 - **`--on-validation-failure`**: Behaviour when a config file (e.g. `fragment-overrides.json`) fails schema validation in non-interactive mode. Choices: `die` (default) or `ignore`.
