@@ -39,11 +39,12 @@ def get_report_metadata(report_path):  # noqa: C901, PLR0912, PLR0915
     for line in lines:
         upper_line = line.upper()
         if ("ERROR:" in upper_line or "FATAL:" in upper_line) and "ℹ" not in line:
-            # Ignore Python Tracebacks/Subprocess encoding issues that don't block general success
+            # Ignore Python Tracebacks/Subprocess encoding issues and non-fatal retry warnings that don't block general success
             if (
                 "TRACEBACK" in upper_line
                 or "EXCEPTION IN THREAD" in upper_line
                 or "DECODEERROR" in upper_line
+                or "NON-FATAL" in upper_line
             ):
                 continue
             passed = False
