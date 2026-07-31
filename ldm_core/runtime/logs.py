@@ -143,7 +143,9 @@ class LogsService(BaseHandler):
                     UI.debug(f"Processing logs for project: {root.name} in {root}")
 
                 meta = self.manager.read_meta(root)
-                target_name = meta.get("target")
+                target_name = getattr(self.manager, "target", None) or meta.get(
+                    "target"
+                )
                 target_service = (
                     service if service and not isinstance(service, list) else "liferay"
                 )

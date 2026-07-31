@@ -1040,7 +1040,7 @@ class ComposerStage(PipelineStage):
             no_up = getattr(manager.args, "no_up", False)
 
         if shutil.which("docker") and not no_up:
-            target_name = (
+            target_name = getattr(manager, "target", None) or (
                 project_meta.get("target") if isinstance(project_meta, dict) else None
             )
             manager.infra._ensure_network(target_name)
@@ -1195,7 +1195,7 @@ class ExecutionStage(PipelineStage):
         is_samples = context.get("is_samples")
         external_snapshot = context.get("external_snapshot")
         no_up = context.get("no_up")
-        target_name = (
+        target_name = getattr(manager, "target", None) or (
             project_meta.get("target") if isinstance(project_meta, dict) else None
         )
         if target_name:

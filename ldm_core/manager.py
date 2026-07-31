@@ -89,6 +89,24 @@ class LiferayManager(
         )
         UI.NO_UNICODE = bool(no_unicode_val)
 
+        # Resolve target compute node context
+        raw_target = getattr(args, "target", None) or getattr(args, "node", None)
+        if isinstance(raw_target, str) and raw_target in (
+            "meta",
+            "properties",
+            "state",
+            "db",
+            "search",
+            "global-search",
+            "tags",
+            "seeds",
+            "samples",
+            "all",
+        ):
+            self.target = getattr(args, "node", None)
+        else:
+            self.target = raw_target
+
         # Ensure standard attributes exist on args
         for attr in RUN_ATTRS:
             if not hasattr(args, attr):
