@@ -285,6 +285,8 @@ try {
             Write-Host "[WARNING] Remote Target Probe returned OFFLINE or unreachable for $remoteHost."
         }
         & $LDM_CMD target rm $remoteNodeName > $null 2>&1
+    }
+
     Write-Host ">> Verifying Nightly and Master Build Flags..."
     $nightlyProj = "nightly-test-$TEST_PORT"
     & $LDM_CMD -y run $nightlyProj --nightly --port 8098 --no-wait --no-up > $null 2>&1
