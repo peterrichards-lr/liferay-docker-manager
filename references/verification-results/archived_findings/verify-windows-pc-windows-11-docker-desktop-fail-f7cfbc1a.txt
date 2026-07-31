@@ -1,0 +1,22 @@
+﻿=== LDM BINARY VERIFICATION REPORT ===
+Timestamp: 07/27/2026 09:08:47
+Platform:  
+Binary:    C:\Users\prichards\bin\ldm.exe
+Version:   ldm 2.15.22-pre.25
+Docker:    29.4.0
+[0;32m[OK]  Infrastructure setup complete.[0m
+[1;36m?  Synchronizing Assets[0m
+[1;36m?  Starting Container Stack[0m
+[0;32m[OK]  Project 'ldm-smoke-test' started in background.[0m
+[OK]  Liferay ready: http://localhost:8082  (2m 0s)
+[0;32m[OK]  Project '.' is responding to HTTP (200).[0m
+[0;32m[OK]  Project '.' is fully initialized and idle.[0m
+ldm.exe : no such service: delayed-deploy/test-bundle.jar
+At C:\Users\prichards\ldm-verify\verify_e2e_refactor.ps1:143 char:12
++     $res = & $cmd $args_list.Split(' ') 2>&1
++            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (no such service...test-bundle.jar:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+[1;31m[X]  Command failed (Exit 1): C:\Program Files\Docker\Docker\resources\bin\docker.EXE compose up -d 
+delayed-deploy/test-bundle.jar[0m
