@@ -23,6 +23,7 @@ Check out our **[Video Showcase](showcase/README.md)** to see short demonstratio
 ### 2. Local Development & Customization
 
 - **[Fresh Vanilla Start](how-to/vanilla_start.md)** — Launching empty Liferay instances for quick tests.
+- **[Liferay DXP Nightly & Master Builds Guide](how-to/nightly_master_builds.md)** — Orchestrating Liferay DXP nightly builds without compiling source code locally.
 - **[PaaS "Golden Path" Local Dev](tutorials/paas_local_dev.md)** — Hydrating local setups using remote Liferay Cloud backups.
 - **[Liferay Workspace Local Dev](tutorials/workspace_development.md)** — Linking workspaces with LDM for active source code development.
 - **[Liferay Version Upgrades](how-to/version_upgrades.md)** — Safely upgrading Liferay Docker image tags, database backup snapshots, and schema auto-upgrades.
@@ -51,4 +52,4 @@ Check out our **[Video Showcase](showcase/README.md)** to see short demonstratio
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-07-31* | *Last Reviewed: 2026-07-02*
+*Last Updated: 2026-07-31* | *Last Reviewed: 2026-07-31*

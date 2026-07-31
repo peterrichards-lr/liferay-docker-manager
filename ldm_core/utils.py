@@ -1130,6 +1130,8 @@ def discover_latest_tag(  # noqa: C901, PLR0912, PLR0915
     api_filter = prefix_filter
     if not api_filter and release_type in ["lts", "u", "qr"]:
         api_filter = f"-{release_type}"
+    elif not api_filter and release_type in ["nightly", "master"]:
+        api_filter = "nightly"
 
     if api_filter:
         url += f"&name={api_filter}"
@@ -1185,8 +1187,12 @@ def discover_latest_tag(  # noqa: C901, PLR0912, PLR0915
                 continue
             if release_type == "qr" and "-qr" not in name:
                 continue
+            if release_type in ["nightly", "master"] and "nightly" not in name:
+                continue
 
-            is_valid = bool(re.match(TAG_PATTERN, name))
+            is_valid = bool(re.match(TAG_PATTERN, name)) or (
+                release_type in ["nightly", "master"] and "nightly" in name
+            )
             if is_valid:
                 tags.append(name)
 

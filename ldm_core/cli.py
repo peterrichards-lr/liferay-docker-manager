@@ -325,6 +325,23 @@ def get_parser():  # noqa: PLR0915
         help="Specify compute target node identifier (e.g. local, aws-1)",
     )
 
+    base_parent.add_argument(
+        "-n",
+        "--nightly",
+        action="store_true",
+        help="Target latest Liferay DXP nightly build (7.4.13.nightly)",
+    )
+    base_parent.add_argument(
+        "--master",
+        action="store_true",
+        help="Target latest Liferay DXP master/nightly build (alias for --nightly)",
+    )
+    base_parent.add_argument(
+        "--pull",
+        action="store_true",
+        help="Force pull latest Docker image layers before running or starting",
+    )
+
     # For subparsers, we want the global flags but we SUPPRESS the default (False)
     # so they don't overwrite the value set by the main parser if provided before the command.
     base_sub_parent = argparse.ArgumentParser(
@@ -335,6 +352,22 @@ def get_parser():  # noqa: PLR0915
         "--node",
         dest="target",
         help="Specify compute target node identifier (e.g. local, aws-1)",
+    )
+    base_sub_parent.add_argument(
+        "-n",
+        "--nightly",
+        action="store_true",
+        help="Target latest Liferay DXP nightly build (7.4.13.nightly)",
+    )
+    base_sub_parent.add_argument(
+        "--master",
+        action="store_true",
+        help="Target latest Liferay DXP master/nightly build (alias for --nightly)",
+    )
+    base_sub_parent.add_argument(
+        "--pull",
+        action="store_true",
+        help="Force pull latest Docker image layers before running or starting",
     )
     base_sub_parent.add_argument(
         "--info", action="store_true", help="Show informational logging"

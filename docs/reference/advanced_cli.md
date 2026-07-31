@@ -17,6 +17,9 @@ These flags modify how LDM handles the initial startup of a Liferay environment.
 - **`--no-persist-osgi`**: Explicitly disables OSGi state persistence, forcing a clean OSGi resolution on every start.
 - **`--no-seed`**: Completely bypasses the pre-warmed database and OSGi cache. The project will start totally fresh, forcing Liferay to build its schema and resolve all OSGi bundles from scratch.
 - **`--vanilla`** ![Added in v2.16.0](https://img.shields.io/badge/Added%20in-v2.16.0-blue): Bypasses all seeding mechanisms to start a completely fresh, vanilla Liferay instance.
+- **`-n`, `--nightly`** ![Added in v2.16.0](https://img.shields.io/badge/Added%20in-v2.16.0-blue): Targets the latest Liferay DXP nightly build (`7.4.13.nightly`) from Docker Hub.
+- **`--master`** ![Added in v2.16.0](https://img.shields.io/badge/Added%20in-v2.16.0-blue): Alias for `--nightly`. Targets the latest Liferay DXP master/nightly build.
+- **`--pull`** ![Added in v2.16.0](https://img.shields.io/badge/Added%20in-v2.16.0-blue): Forces Docker to pull the latest image layers before running or starting containers.
 - **`--no-osgi-seed`**: Bypasses only the OSGi cache seed. Useful if you are testing custom OSGi resolution logic or diagnosing a corrupted `.osgi_state_archive`.
 - **`--verify` / `--no-verify`**: Controls whether LDM generates or checks the integrity checksum of snapshots and imports. Defaults to true. Disabling can speed up local imports slightly.
 - **`--snapshot`**: Initialize a project directly from an external snapshot folder.
@@ -130,4 +133,4 @@ Controls whether LDM provisions an isolated PostgreSQL database or connects to t
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-07-31* | *Last Reviewed: 2026-07-26*
+*Last Updated: 2026-07-31* | *Last Reviewed: 2026-07-31*
