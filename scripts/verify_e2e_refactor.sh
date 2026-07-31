@@ -29,7 +29,8 @@ echo "⚡ Starting Standalone Binary Verification on Port ${TEST_PORT}..."
 ORIGINAL_PWD=$(pwd)
 
 LDM_WORKSPACE_DIR_NAME="e2e-work-dir-${TEST_PORT}"
-LDM_WORKSPACE="${LDM_WORKSPACE:-${ORIGINAL_PWD}/${LDM_WORKSPACE_DIR_NAME}}"
+export LDM_WORKSPACE="${LDM_WORKSPACE:-${ORIGINAL_PWD}/${LDM_WORKSPACE_DIR_NAME}}"
+export LDM_COMMON_DIR="${LDM_WORKSPACE}/common"
 
 # Determine the binary command
 LDM_CMD="ldm"
