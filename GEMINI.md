@@ -6,10 +6,19 @@
 
 ## Active Work State & Plan (July 31, 2026)
 
-- **Current Active Task (July 31, 2026) — Binary Asset Availability Validation during LDM Upgrade**:
+- **Current Active Task (July 31, 2026) — Compute Target CLI Flag (`--target` / `--node`) Support across Subcommands, `ldm list`, and `ldm info`**:
+  - [x] Add `--target` and `--node` arguments to `base_parent` and `base_sub_parent` in `ldm_core/cli.py`.
+  - [x] Update `LiferayManager.__init__` in `ldm_core/manager.py` to store target node context.
+  - [x] Update target node resolution in `pipelines/run.py`, `logs.py`, `orchestration.py`, and `database.py`.
+  - [x] Update `run_list` in `ldm_core/diagnostics/info.py` to include `Target` column in `ldm list`.
+  - [x] Add unit test suite in `ldm_core/tests/test_target_cli.py`.
+
+- **Current Active Task (July 31, 2026) — Binary Asset Availability Validation during LDM Upgrade & Pre-Release v2.15.25-pre.12**:
   - [x] Identify root cause of premature upgrade prompt (GHA ~11 minute PyInstaller build window).
   - [x] Update `check_for_updates` and `_check_updates_fallback` in `ldm_core/utils.py` to filter release candidates by matching platform binary asset presence.
   - [x] Add unit test coverage in `ldm_core/tests/test_utils.py`.
+  - [x] Merge PR [#926](https://github.com/peterrichards-lr/liferay-docker-manager/pull/926) into `master`.
+  - [x] Tag and push pre-release `v2.15.25-pre.12` via release orchestrator (PR [#927](https://github.com/peterrichards-lr/liferay-docker-manager/pull/927)).
 
 - **Current Active Task (July 31, 2026) — GitHub API Rate-Limit Atom Feed Fallback & Pre-Release v2.15.25-pre.11**:
   - [x] Update `_check_updates_fallback` in `ldm_core/utils.py` to parse GitHub's unauthenticated RSS atom feed (`releases.atom`) when `--beta` is passed and `api.github.com` returns 403 Forbidden.

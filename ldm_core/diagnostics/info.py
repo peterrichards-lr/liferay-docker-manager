@@ -73,7 +73,9 @@ def run_info(  # noqa: C901, PLR0912, PLR0915
         f"Project Metadata: {meta.get('liferay_container_name', meta.get('container_name', root.name))}"
     )
     UI.raw(f"  {UI.WHITE}Path:{UI.COLOR_OFF}           {root}")
-    target_node = meta.get("target", "local")
+    target_node = getattr(handler.manager, "target", None) or meta.get(
+        "target", "local"
+    )
     UI.raw(
         f"  {UI.WHITE}Compute Target:{UI.COLOR_OFF} {UI.BCYAN}{target_node}{UI.COLOR_OFF}"
     )
@@ -86,7 +88,7 @@ def run_info(  # noqa: C901, PLR0912, PLR0915
     )
     from ldm_core.docker_service import DockerService
 
-    status = DockerService.get_status(container_name)
+    status = DockerService.get_status(container_name, target_name=target_node)
     status_color = UI.GREEN if status == "running" else UI.BYELLOW
     UI.raw(
         f"  {UI.WHITE}Status:{UI.COLOR_OFF}     {status_color}{status}{UI.COLOR_OFF}"
@@ -726,7 +728,7 @@ def run_list(handler):
         UI.detail("No projects found.")
         return
 
-    headers = ["Project", "Version", "Status", "URL"]
+    headers = ["Project", "Version", "Target", "Status", "URL"]
     rows = []
 
     for r in roots:
@@ -738,11 +740,16 @@ def run_list(handler):
             or path.name
         )
         version = r["version"]
+        target_node = meta.get("target", "local")
+
+        from ldm_core.docker_service import DockerService
+
+        docker_prefix = DockerService.get_docker_cmd_prefix(target_node)
 
         # Check container status
         containers_status = run_command(
             [
-                "docker",
+                *docker_prefix,
                 "ps",
                 "-a",
                 "--filter",
@@ -792,6 +799,7 @@ def run_list(handler):
             [
                 f"{UI.CYAN}{name}{UI.COLOR_OFF}{seeded_indicator}",
                 version,
+                f"{UI.BCYAN}{target_node}{UI.COLOR_OFF}",
                 f"{status_color}{status}{UI.COLOR_OFF}",
                 f"{UI.UNDERLINE}{url}{UI.COLOR_OFF}",
             ]

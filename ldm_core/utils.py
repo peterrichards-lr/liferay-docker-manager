@@ -874,7 +874,7 @@ def safe_cwd():
 def open_browser(url):
     """Launches the system browser, with special handling for WSL to use the host browser."""
     # Safety: Do not open browser tabs during automated tests
-    if os.getenv("LDM_TEST_MODE") == "true":
+    if os.getenv("LDM_TEST_MODE") == "true" or "unittest" in sys.modules:
         return True
 
     import webbrowser

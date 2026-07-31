@@ -167,7 +167,9 @@ class DatabaseService(BaseHandler):
                 db_container = f"{container_name}-db"
 
         # Verify DB container is running
-        target_name = project_meta.get("target")
+        target_name = getattr(self.manager, "target", None) or project_meta.get(
+            "target"
+        )
         from ldm_core.docker_service import DockerService
 
         docker_prefix = DockerService.get_docker_cmd_prefix(target_name)
@@ -344,7 +346,9 @@ class DatabaseService(BaseHandler):
             db_container = project_meta.get("db_container_name", f"{container_name}-db")
 
         # Verify DB container is running
-        target_name = project_meta.get("target")
+        target_name = getattr(self.manager, "target", None) or project_meta.get(
+            "target"
+        )
         from ldm_core.docker_service import DockerService
 
         docker_prefix = DockerService.get_docker_cmd_prefix(target_name)
