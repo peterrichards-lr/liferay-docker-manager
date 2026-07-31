@@ -43,6 +43,7 @@ class TestDashboard(unittest.TestCase):
         self.assertEqual(data[0]["status"], "Running")
         self.assertEqual(data[0]["url"], "http://liferay.local:8080")
         self.assertEqual(data[0]["db_type"], "postgresql")
+        self.assertEqual(data[0]["target"], "local")
         self.assertEqual(data[0]["version"], "7.4")
 
     @patch("ldm_core.dashboard.server.run_command")

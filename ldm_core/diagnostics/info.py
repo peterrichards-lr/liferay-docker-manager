@@ -72,7 +72,11 @@ def run_info(  # noqa: C901, PLR0912, PLR0915
     UI.heading(
         f"Project Metadata: {meta.get('liferay_container_name', meta.get('container_name', root.name))}"
     )
-    UI.raw(f"  {UI.WHITE}Path:{UI.COLOR_OFF}       {root}")
+    UI.raw(f"  {UI.WHITE}Path:{UI.COLOR_OFF}           {root}")
+    target_node = meta.get("target", "local")
+    UI.raw(
+        f"  {UI.WHITE}Compute Target:{UI.COLOR_OFF} {UI.BCYAN}{target_node}{UI.COLOR_OFF}"
+    )
 
     # Add Status and URL
     container_name = (
@@ -475,6 +479,7 @@ def run_status(handler, project_id=None, all_projects=False, detailed=False):  #
             if project_id:
                 is_requested_project_running = project_running
 
+            target_node = meta.get("target", "local")
             if project_running:
                 active_projects = True
                 project_rows.append(
@@ -482,6 +487,7 @@ def run_status(handler, project_id=None, all_projects=False, detailed=False):  #
                         f"{UI.GREEN}●{UI.COLOR_OFF} {UI.CYAN}{p_id}{UI.COLOR_OFF}",
                         r["version"],
                         f"{UI.UNDERLINE}{url}{UI.COLOR_OFF}",
+                        f"{UI.BCYAN}{target_node}{UI.COLOR_OFF}",
                     ]
                 )
             # If this is the specific project requested, or we requested all projects, show it stopped
@@ -491,6 +497,7 @@ def run_status(handler, project_id=None, all_projects=False, detailed=False):  #
                         f"{UI.WHITE}○{UI.COLOR_OFF} {p_id}",
                         r["version"],
                         f"{UI.DIM}Stopped{UI.COLOR_OFF}",
+                        f"{UI.DIM}{target_node}{UI.COLOR_OFF}",
                     ]
                 )
                 # Mark active_projects as true if we show at least one row, to prevent error exit
