@@ -1791,7 +1791,7 @@ def version_to_tuple(v):
     return (base_nums[0], base_nums[1], base_nums[2], weight, beta_num)
 
 
-def _check_updates_fallback(cache_file, now, pre_release=False):  # noqa: PLR0912
+def _check_updates_fallback(cache_file, now, pre_release=False):  # noqa: C901, PLR0912
     """Fallback check using RSS feed or HTML redirect to bypass GitHub API rate limiting."""
     try:
         headers = {"User-Agent": "ldm-cli", "Cache-Control": "no-cache"}
@@ -1819,22 +1819,32 @@ def _check_updates_fallback(cache_file, now, pre_release=False):  # noqa: PLR091
                     if re.match(r"^\d+\.\d+\.\d+", clean_t):
                         discovered.append((version_to_tuple(clean_t), clean_t))
                 if discovered:
-                    discovered.sort(key=lambda x: x[0])
-                    latest_version = discovered[-1][1]
-                    release_url = f"https://github.com/peterrichards-lr/liferay-docker-manager/releases/download/v{latest_version}/{target_asset}"
-                    try:
-                        cache_file.write_text(
-                            json.dumps(
-                                {
-                                    "last_check": now,
-                                    "latest_version": latest_version,
-                                    "url": release_url,
-                                }
+                    discovered.sort(key=lambda x: x[0], reverse=True)
+                    for _, candidate_version in discovered:
+                        release_url = f"https://github.com/peterrichards-lr/liferay-docker-manager/releases/download/v{candidate_version}/{target_asset}"
+                        try:
+                            head_resp = requests.head(
+                                release_url,
+                                headers={"User-Agent": "ldm-cli"},
+                                timeout=3,
+                                allow_redirects=True,
                             )
-                        )
-                    except Exception:
-                        pass
-                    return latest_version, release_url
+                            if head_resp.status_code in [200, 302]:
+                                try:
+                                    cache_file.write_text(
+                                        json.dumps(
+                                            {
+                                                "last_check": now,
+                                                "latest_version": candidate_version,
+                                                "url": release_url,
+                                            }
+                                        )
+                                    )
+                                except Exception:
+                                    pass
+                                return candidate_version, release_url
+                        except Exception:
+                            continue
         else:
             url = "https://github.com/peterrichards-lr/liferay-docker-manager/releases/latest"
             response = requests.head(
@@ -1928,32 +1938,6 @@ def check_for_updates(current_version, force=False, pre_release=False, tag=None)
         if response.status_code == 200:
             res_data = response.json()
 
-            # If pre_release, we get a list of releases. We must find the highest SemVer.
-            if isinstance(res_data, list):
-                if not res_data:
-                    return None, None
-
-                # Find the highest version in the list
-                highest_data = None
-                highest_version_tuple = (0, 0, 0, 0)
-
-                for release in res_data:
-                    v_str = release.get("tag_name", "").lstrip("v")
-                    v_tuple = version_to_tuple(v_str)
-                    if v_tuple > highest_version_tuple:
-                        highest_version_tuple = v_tuple
-                        highest_data = release
-
-                if not highest_data:
-                    return None, None
-                res_data = highest_data
-
-            latest_version = res_data.get("tag_name", "").lstrip("v")
-
-            # Architecture-aware asset resolution
-            release_url = res_data.get("html_url")  # Fallback to release page
-            assets = res_data.get("assets", [])
-
             system = sys.platform
             machine = platform.machine().lower()
 
@@ -1968,18 +1952,42 @@ def check_for_updates(current_version, force=False, pre_release=False, tag=None)
                 candidates.append("ldm-windows.exe")
             else:
                 candidates.append("ldm-linux")
-            # Search for the best match in assets
-            found_url = None
-            for cand in candidates:
-                for asset in assets:
-                    if asset.get("name") == cand:
-                        found_url = asset.get("browser_download_url")
-                        break
-                if found_url:
-                    break
 
-            if found_url:
-                release_url = found_url
+            def _find_asset_url(release_obj):
+                assets = release_obj.get("assets", [])
+                for cand in candidates:
+                    for asset in assets:
+                        if asset.get("name") == cand:
+                            return asset.get("browser_download_url")
+                return None
+
+            # If pre_release, we get a list of releases. We must find the highest SemVer with a matching binary asset.
+            if isinstance(res_data, list):
+                if not res_data:
+                    return None, None
+
+                highest_data = None
+                highest_version_tuple = (0, 0, 0, 0)
+                highest_asset_url = None
+
+                for release in res_data:
+                    v_str = release.get("tag_name", "").lstrip("v")
+                    v_tuple = version_to_tuple(v_str)
+                    asset_url = _find_asset_url(release)
+                    if asset_url and v_tuple > highest_version_tuple:
+                        highest_version_tuple = v_tuple
+                        highest_data = release
+                        highest_asset_url = asset_url
+
+                if not highest_data:
+                    return None, None
+                res_data = highest_data
+                found_url = highest_asset_url
+            else:
+                found_url = _find_asset_url(res_data)
+
+            latest_version = res_data.get("tag_name", "").lstrip("v")
+            release_url = found_url or res_data.get("html_url")
 
             # Update cache atomically with FileLock (only for general update checks, not tag lookups)
             if not tag:

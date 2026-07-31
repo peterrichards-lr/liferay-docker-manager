@@ -406,6 +406,53 @@ class TestUpdateChecks(unittest.TestCase):
                 self.assertEqual(version, "2.6.0")
                 self.assertEqual(url, "http://dl")
 
+    @patch("requests.get")
+    @patch("pathlib.Path.home")
+    def test_check_for_updates_ignores_releases_without_platform_assets(
+        self, mock_home, mock_get
+    ):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            mock_home.return_value = Path(tmp_dir)
+
+            mock_res = MagicMock()
+            mock_res.status_code = 200
+            # Release v2.7.0 is still building (no assets), while v2.6.0 is ready with assets
+            mock_res.json.return_value = [
+                {
+                    "tag_name": "v2.7.0",
+                    "html_url": "http://release-2.7",
+                    "assets": [
+                        {
+                            "name": "checksums.txt",
+                            "browser_download_url": "http://checksums",
+                        }
+                    ],
+                },
+                {
+                    "tag_name": "v2.6.0",
+                    "html_url": "http://release-2.6",
+                    "assets": [
+                        {
+                            "name": "ldm-macos-arm64",
+                            "browser_download_url": "http://dl-2.6",
+                        }
+                    ],
+                },
+            ]
+            mock_get.return_value = mock_res
+
+            from ldm_core.utils import check_for_updates
+
+            with (
+                patch("sys.platform", "darwin", create=True),
+                patch("platform.machine", return_value="arm64"),
+            ):
+                version, url = check_for_updates("2.5.0", force=True, pre_release=True)
+                self.assertEqual(version, "2.6.0")
+                self.assertEqual(url, "http://dl-2.6")
+
     @patch("requests.head")
     @patch("requests.get")
     @patch("pathlib.Path.home")

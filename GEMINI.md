@@ -6,7 +6,12 @@
 
 ## Active Work State & Plan (July 31, 2026)
 
-- **Current Active Task (July 31, 2026) — GitHub API Rate-Limit Atom Feed Fallback & Pre-Release v2.15.25-pre.10**:
+- **Current Active Task (July 31, 2026) — Binary Asset Availability Validation during LDM Upgrade**:
+  - [x] Identify root cause of premature upgrade prompt (GHA ~11 minute PyInstaller build window).
+  - [x] Update `check_for_updates` and `_check_updates_fallback` in `ldm_core/utils.py` to filter release candidates by matching platform binary asset presence.
+  - [x] Add unit test coverage in `ldm_core/tests/test_utils.py`.
+
+- **Current Active Task (July 31, 2026) — GitHub API Rate-Limit Atom Feed Fallback & Pre-Release v2.15.25-pre.11**:
   - [x] Update `_check_updates_fallback` in `ldm_core/utils.py` to parse GitHub's unauthenticated RSS atom feed (`releases.atom`) when `--beta` is passed and `api.github.com` returns 403 Forbidden.
   - [x] Add direct candidate HEAD URL probing in `check_for_updates` when `--version <tag>` is specified.
   - [x] Write unit test `test_check_for_updates_pre_release_rate_limit_fallback` in `ldm_core/tests/test_utils.py` verifying rate-limit fallback.
