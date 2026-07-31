@@ -4,6 +4,15 @@
 > **Purpose of this file**: This file tracks the active work state, tasks, and historical progress.
 > For architectural and project mandates (e.g. Volume Strategies, Exit Codes, CI rules), please refer to `.agents/AGENTS.md` and the `.agents/skills/` modules.
 
+## Active Work State & Plan (July 31, 2026)
+
+- **Current Active Task (July 31, 2026) — GitHub API Rate-Limit Atom Feed Fallback & Pre-Release v2.15.25-pre.10**:
+  - [x] Update `_check_updates_fallback` in `ldm_core/utils.py` to parse GitHub's unauthenticated RSS atom feed (`releases.atom`) when `--beta` is passed and `api.github.com` returns 403 Forbidden.
+  - [x] Add direct candidate HEAD URL probing in `check_for_updates` when `--version <tag>` is specified.
+  - [x] Write unit test `test_check_for_updates_pre_release_rate_limit_fallback` in `ldm_core/tests/test_utils.py` verifying rate-limit fallback.
+  - [x] Merge PR [#921](https://github.com/peterrichards-lr/liferay-docker-manager/pull/921) into `master`.
+  - [x] Tag and push pre-release `v2.15.25-pre.10` via release orchestrator (PR [#922](https://github.com/peterrichards-lr/liferay-docker-manager/pull/922)).
+
 ## Active Work State & Plan (July 30, 2026)
 
 - **Current Active Task (July 30, 2026) — Post-Upgrade Banner Announcement & Pre-Release v2.15.25-pre.8**:
