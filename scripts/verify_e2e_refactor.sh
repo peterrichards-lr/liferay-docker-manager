@@ -377,9 +377,14 @@ with zipfile.ZipFile('delayed-deploy/test-bundle.jar', 'w') as zf:
     zf.writestr('META-INF/MANIFEST.MF', 'Manifest-Version: 1.0\nBundle-ManifestVersion: 2\nBundle-Name: Test Bundle\nBundle-SymbolicName: com.liferay.test.bundle\nBundle-Version: 1.0.0\n')
 "
 
+# Fix host-side directory permissions for Linux/WSL2 host access (via Docker)
+mkdir -p deploy logs
+echo "ℹ  Adjusting host-side permissions on deploy/logs for WSL2/Linux bind mounts..."
+chmod -R 777 deploy logs 2>/dev/null || docker run --rm -v "$(pwd):/workspace" alpine chmod -R 777 /workspace/deploy /workspace/logs 2>/dev/null || true
+
 # We test hot-deploy via the LDM deploy command
 log_and_run "Deploying artifact" "$LDM_CMD" -y deploy . "delayed-deploy/test-bundle.jar"
-echo ">> Waiting for auto-deploy processing (up to 10m)..."
+echo ">> Waiting for auto-deploy processing (up to 10m; WSL2 filesystem sync may introduce slight delays)..."
 
 # Verify Hot Deploy via Logs with a polling loop
 HOT_DEPLOY_SUCCESS=false
