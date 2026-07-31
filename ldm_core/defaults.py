@@ -28,6 +28,7 @@ CONVENTION_DEFAULTS = {
     "elasticsearch_heap_size": "512m",
     "custom_containers": [],
     "search_kibana_enabled": "false",
+    "auto_pull_nightly": "prompt",
 }
 
 

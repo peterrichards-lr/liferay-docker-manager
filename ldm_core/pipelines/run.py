@@ -313,7 +313,7 @@ class RuntimeValidationStage(PipelineStage):
 class ConfigResolutionStage(PipelineStage):
     """Resolves tags, databases, archtypes, and constructs project configuration."""
 
-    def _resolve_tag(self, manager, project_meta, is_samples, is_portal):  # noqa: C901, PLR0912
+    def _resolve_tag(self, manager, project_meta, is_samples, is_portal):  # noqa: C901, PLR0912, PLR0915
         tag_latest = getattr(manager.args, "tag_latest", False)
         prefix = getattr(manager.args, "tag_prefix", None)
 
@@ -340,11 +340,18 @@ class ConfigResolutionStage(PipelineStage):
                 is_portal = True
                 tag = tag[7:]
 
+        is_nightly = getattr(manager.args, "nightly", False) or getattr(
+            manager.args, "master", False
+        )
+        if is_nightly and not tag:
+            rt = "nightly"
+            can_discover = True
+
         if is_samples and not tag:
             tag = manager.config.get_samples_tag()
 
         if not tag:
-            can_discover = tag_latest or bool(prefix)
+            can_discover = tag_latest or bool(prefix) or is_nightly
             if manager.non_interactive:
                 can_discover = True
 
@@ -354,7 +361,9 @@ class ConfigResolutionStage(PipelineStage):
             api_base = API_BASE_PORTAL if is_portal else API_BASE_DXP
             default_rt = manager.defaults.get("release_type", "lts")
             rt = getattr(manager.args, "release_type", None)
-            if not rt:
+            if is_nightly:
+                rt = "nightly"
+            elif not rt:
                 rt = "any" if prefix else default_rt
 
             if not can_discover:
@@ -369,12 +378,20 @@ class ConfigResolutionStage(PipelineStage):
                     verbose=manager.verbose,
                 )
                 ans = UI.ask(
-                    "Release type (lts|u|qr|latest), prefix, or specific tag",
+                    "Release type (lts|u|qr|nightly|master|latest), prefix, or specific tag",
                     default_resolved_tag,
                 )
                 if ans == default_resolved_tag:
                     tag = default_resolved_tag
-                elif ans.lower() in ["any", "latest", "u", "lts", "qr"]:
+                elif ans.lower() in [
+                    "any",
+                    "latest",
+                    "u",
+                    "lts",
+                    "qr",
+                    "nightly",
+                    "master",
+                ]:
                     release_type = "any" if ans.lower() == "latest" else ans.lower()
                     if manager.verbose:
                         UI.detail(f"Discovering latest {ans.upper()} release...")

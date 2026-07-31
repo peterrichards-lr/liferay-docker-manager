@@ -6,12 +6,22 @@
 
 ## Active Work State & Plan (July 31, 2026)
 
-- **Current Active Task (July 31, 2026) — Compute Target CLI Flag (`--target` / `--node`) Support across Subcommands, `ldm list`, and `ldm info`**:
+- **Current Active Task (July 31, 2026) — Liferay DXP Nightly & Master Builds Support (Issues #933, #934, #935)**:
+  - [x] Investigate Docker Hub `liferay/dxp` tags (`7.4.13.nightly`, multi-arch `amd64`/`arm64`).
+  - [x] Create GitHub Issue [#933](https://github.com/peterrichards-lr/liferay-docker-manager/issues/933) for CLI `--nightly` and `--master` flags.
+  - [x] Create GitHub Issue [#934](https://github.com/peterrichards-lr/liferay-docker-manager/issues/934) for configurable nightly auto-pull preferences.
+  - [x] Create GitHub Issue [#935](https://github.com/peterrichards-lr/liferay-docker-manager/issues/935) for documentation guide.
+  - [x] Write `docs/how-to/nightly_master_builds.md` documentation guide.
+  - [x] Update sitemap indexes in `README.md` and `docs/README.md`.
+
+- **Current Active Task (July 31, 2026) — Compute Target CLI Flag (`--target` / `--node`) Support & Pre-Release v2.15.25-pre.13**:
   - [x] Add `--target` and `--node` arguments to `base_parent` and `base_sub_parent` in `ldm_core/cli.py`.
   - [x] Update `LiferayManager.__init__` in `ldm_core/manager.py` to store target node context.
   - [x] Update target node resolution in `pipelines/run.py`, `logs.py`, `orchestration.py`, and `database.py`.
   - [x] Update `run_list` in `ldm_core/diagnostics/info.py` to include `Target` column in `ldm list`.
   - [x] Add unit test suite in `ldm_core/tests/test_target_cli.py`.
+  - [x] Merge PR [#930](https://github.com/peterrichards-lr/liferay-docker-manager/pull/930) into `master`.
+  - [x] Tag and push pre-release `v2.15.25-pre.13` via release orchestrator (PR [#931](https://github.com/peterrichards-lr/liferay-docker-manager/pull/931)).
 
 - **Current Active Task (July 31, 2026) — Binary Asset Availability Validation during LDM Upgrade & Pre-Release v2.15.25-pre.12**:
   - [x] Identify root cause of premature upgrade prompt (GHA ~11 minute PyInstaller build window).

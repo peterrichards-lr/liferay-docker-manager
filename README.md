@@ -114,6 +114,7 @@ LDM is conventions-driven and highly customizable. Choose a topic below for deta
 
 - **[Multi-Node Orchestration & Remote Node Setup](docs/how-to/multi_node_orchestration.md)** — Registering compute nodes, remote stack execution, and live workload migration (`ldm target`).
 - **[Fresh Vanilla Start](docs/how-to/vanilla_start.md)** — Launching empty Liferay instances for quick tests.
+- **[Liferay DXP Nightly & Master Builds Guide](docs/how-to/nightly_master_builds.md)** — Orchestrating Liferay DXP nightly builds without compiling source code locally.
 - **[PaaS "Golden Path" Local Dev](docs/tutorials/paas_local_dev.md)** — Fetching backups and replicating Liferay Cloud environments locally.
 - **[Liferay Workspace Local Dev](docs/tutorials/workspace_development.md)** — Linking local workspaces with LDM for active source code development.
 - **[Liferay Version Upgrades](docs/how-to/version_upgrades.md)** — Safely upgrading Liferay Docker image tags, database backup snapshots, and schema auto-upgrades.
@@ -142,4 +143,4 @@ For a complete structured table of contents, visit the **[Documentation Index](d
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-07-31* | *Last Reviewed: 2026-07-26*
+*Last Updated: 2026-07-31* | *Last Reviewed: 2026-07-31*
