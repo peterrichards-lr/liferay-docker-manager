@@ -385,18 +385,75 @@ def main():  # noqa: C901, PLR0912, PLR0915
     run_pre_commit_checks(current_branch)
 
     # 4. Bump the version using ldm system version
-    print(f"Bumping version with logic: {args.bump}...")
-    run_cmd(
+    # Retrieve current version before bump
+    ver_res_before = run_cmd(
         [
             sys.executable,
             str(project_root / "liferay_docker.py"),
             "system",
             "version",
-            "--bump",
-            args.bump,
+            "--print",
             "-y",
-        ]
+        ],
+        capture=True,
     )
+    current_version = ver_res_before.stdout.strip()
+    parts = current_version.split("-", 1)
+    base_version = parts[0]
+
+    tag_check = run_cmd(["git", "tag", "-l", f"v{base_version}"], capture=True)
+    if tag_check.stdout.strip():
+        if args.bump in ["beta", "pre"]:
+            base_parts = list(map(int, base_version.split(".")))
+            while len(base_parts) < 3:
+                base_parts.append(0)
+            major, minor, patch = base_parts
+            next_version = f"{major}.{minor}.{patch + 1}-pre.1"
+            print(
+                f"⚠️  Warning: Stable tag v{base_version} already exists. Auto-starting next cycle: {next_version}"
+            )
+            run_cmd(
+                [
+                    sys.executable,
+                    str(project_root / "liferay_docker.py"),
+                    "system",
+                    "version",
+                    "--set",
+                    next_version,
+                    "-y",
+                ]
+            )
+        elif args.bump == "patch":
+            print(
+                f"❌ Error: Tag v{base_version} already exists. Cannot release duplicate stable version."
+            )
+            sys.exit(1)
+        else:
+            print(f"Bumping version with logic: {args.bump}...")
+            run_cmd(
+                [
+                    sys.executable,
+                    str(project_root / "liferay_docker.py"),
+                    "system",
+                    "version",
+                    "--bump",
+                    args.bump,
+                    "-y",
+                ]
+            )
+    else:
+        print(f"Bumping version with logic: {args.bump}...")
+        run_cmd(
+            [
+                sys.executable,
+                str(project_root / "liferay_docker.py"),
+                "system",
+                "version",
+                "--bump",
+                args.bump,
+                "-y",
+            ]
+        )
 
     # 5. Get the bumped version
     ver_res = run_cmd(
