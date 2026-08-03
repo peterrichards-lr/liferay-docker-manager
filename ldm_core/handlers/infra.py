@@ -133,6 +133,7 @@ class InfraService:
 
         # Safety Check: Warn or abort if recreate/reconfigure would disrupt active running projects
         if is_proxy_running and force_recreate:
+            # NOTE: Best-effort check. There is a small TOCTOU window between this scan and stopping the proxy.
             running_projects = []
             try:
                 roots = self.manager.find_dxp_roots()
@@ -142,7 +143,7 @@ class InfraService:
                     name = (
                         meta.get("liferay_container_name")
                         or meta.get("container_name")
-                        or path.name
+                        or path.name.replace(".", "-")
                     )
                     target_node = meta.get("target", "local")
                     docker_prefix = DockerService.get_docker_cmd_prefix(target_node)
@@ -164,7 +165,16 @@ class InfraService:
                     if containers_status and "running" in containers_status:
                         running_projects.append((name, target_node))
             except Exception as e:
-                UI.warning(f"Could not verify active running projects: {e}")
+                import sys
+
+                print(
+                    f"\n{UI.BRED}[!] ERROR: Could not verify active running projects: {e}{UI.COLOR_OFF}",
+                    file=sys.stderr,
+                )
+                if not getattr(self.manager.args, "force", False):
+                    UI.die(
+                        "Aborted due to verification failure. Use --force to proceed anyway."
+                    )
 
             if running_projects:
                 print(
