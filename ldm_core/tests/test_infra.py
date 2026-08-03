@@ -83,6 +83,85 @@ class TestInfraService(unittest.TestCase):
             self.assertTrue(any("HTTP" in msg and "90" in msg for msg in warn_msgs))
             self.assertTrue(any("HTTPS" in msg and "453" in msg for msg in warn_msgs))
 
+    @patch("ldm_core.docker_service.DockerService.is_running", return_value=False)
+    def test_setup_infrastructure_custom_ssl_port(self, mock_is_running):
+        self.manager.args.search = False
+        with (
+            patch.object(self.manager, "check_port", return_value=True),
+            patch.object(self.manager, "run_command") as mock_run_cmd,
+        ):
+            ssl_port = self.infra.setup_infrastructure(
+                "127.0.0.1", 8443, use_ssl=True, quiet=True
+            )
+            self.assertEqual(ssl_port, 8443)
+            # Verify custom ssl_port was passed to Docker Compose env
+            self.assertTrue(mock_run_cmd.called)
+            called_env = mock_run_cmd.call_args[1].get("env", {})
+            self.assertEqual(called_env.get("LDM_SSL_PORT"), "8443")
+
+    @patch("ldm_core.docker_service.DockerService.is_running", return_value=True)
+    @patch("ldm_core.handlers.infra.InfraService.get_proxy_ports")
+    def test_setup_infrastructure_force_recreate(self, mock_get_ports, mock_is_running):
+        self.manager.args.search = False
+        mock_get_ports.return_value = {"http": 80, "https": 443, "admin": 18080}
+        with (
+            patch.object(self.manager, "check_port", return_value=True),
+            patch.object(self.manager, "run_command") as mock_run_cmd,
+        ):
+            # Without force_recreate, port reverts to running port (443)
+            ssl_port = self.infra.setup_infrastructure(
+                "127.0.0.1", 8443, use_ssl=True, quiet=True, force_recreate=False
+            )
+            self.assertEqual(ssl_port, 443)
+
+            # With force_recreate, port stays 8443 and --force-recreate is passed
+            ssl_port_recreate = self.infra.setup_infrastructure(
+                "127.0.0.1", 8443, use_ssl=True, quiet=True, force_recreate=True
+            )
+            self.assertEqual(ssl_port_recreate, 8443)
+            called_args = mock_run_cmd.call_args[0][0]
+            self.assertIn("--force-recreate", called_args)
+
+    @patch("ldm_core.handlers.infra.InfraService.setup_infrastructure")
+    def test_cmd_infra_setup_ssl_port_from_arg(self, mock_setup):
+        import sys
+
+        self.manager.check_docker = MagicMock(return_value=True)
+        self.manager.get_resolved_ip = MagicMock(return_value="127.0.0.1")
+        self.manager.detect_project_path = MagicMock(return_value=None)
+        self.manager.args.ssl_port = 8443
+        self.manager.args.force_recreate = True
+        self.manager.args.database_mode = "local"
+        self.infra.cmd_infra_setup()
+        mock_setup.assert_called_once_with(
+            "0.0.0.0" if sys.platform == "darwin" else "127.0.0.1",
+            8443,
+            use_ssl=True,
+            use_shared_db=False,
+            force_recreate=True,
+        )
+
+    @patch("ldm_core.handlers.infra.InfraService.setup_infrastructure")
+    def test_cmd_infra_setup_ssl_port_from_env(self, mock_setup):
+        import os
+        import sys
+
+        self.manager.check_docker = MagicMock(return_value=True)
+        self.manager.get_resolved_ip = MagicMock(return_value="127.0.0.1")
+        self.manager.detect_project_path = MagicMock(return_value=None)
+        self.manager.args.ssl_port = None
+        self.manager.args.force_recreate = False
+        self.manager.args.database_mode = "local"
+        with patch.dict(os.environ, {"LDM_SSL_PORT": "9443"}):
+            self.infra.cmd_infra_setup()
+            mock_setup.assert_called_once_with(
+                "0.0.0.0" if sys.platform == "darwin" else "127.0.0.1",
+                9443,
+                use_ssl=True,
+                use_shared_db=False,
+                force_recreate=False,
+            )
+
     def test_get_proxy_ports_not_running(self):
         with patch("ldm_core.docker_service.DockerService.inspect", return_value=""):
             ports = self.infra.get_proxy_ports()

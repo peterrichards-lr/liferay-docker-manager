@@ -43,8 +43,18 @@ class InfraService:
 
         use_shared_db = db_mode == "shared"
 
+        ssl_port = getattr(self.manager.args, "ssl_port", None)
+        if ssl_port is None:
+            ssl_port = int(os.getenv("LDM_SSL_PORT", "443"))
+
+        force_recreate = getattr(self.manager.args, "force_recreate", False)
+
         self.setup_infrastructure(
-            resolved_ip, 443, use_ssl=True, use_shared_db=use_shared_db
+            resolved_ip,
+            ssl_port,
+            use_ssl=True,
+            use_shared_db=use_shared_db,
+            force_recreate=force_recreate,
         )
         UI.success("Infrastructure setup complete.")
 
@@ -85,6 +95,7 @@ class InfraService:
         quiet=False,
         use_shared_search=True,
         use_shared_db=False,
+        force_recreate=False,
     ):
         """Initializes global Traefik proxy and search services."""
         self._ensure_network(self.target)
@@ -117,7 +128,7 @@ class InfraService:
         ssl_port = int(ssl_port)
         admin_port = int(os.getenv("LDM_ADMIN_PORT", "18080"))
 
-        if is_proxy_running:
+        if is_proxy_running and not force_recreate:
             # Use the currently running ports to keep compose state identical
             ports = self.get_proxy_ports()
             http_port = ports["http"]
@@ -174,15 +185,19 @@ class InfraService:
         target_name = getattr(self.manager, "target", None)
         compose_prefix = DockerService.get_compose_cmd_prefix(target_name)
 
+        cmd = [
+            *compose_prefix,
+            "-f",
+            str(infra_compose),
+            "up",
+            "-d",
+            "--remove-orphans",
+        ]
+        if force_recreate:
+            cmd.append("--force-recreate")
+
         self.manager.run_command(
-            [
-                *compose_prefix,
-                "-f",
-                str(infra_compose),
-                "up",
-                "-d",
-                "--remove-orphans",
-            ],
+            cmd,
             env=env,
             capture_output=True,
         )

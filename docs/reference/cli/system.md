@@ -191,6 +191,8 @@ Independently manage global infrastructure services (Traefik proxy, Search sidec
 ldm infra setup            # Start global services manually
 ldm infra setup --search   # Also initialize the Global Search container
 ldm infra setup --es7      # Force Global Search to use legacy Elasticsearch 7
+ldm infra setup --ssl-port 8443 # Custom SSL port for Traefik proxy (default: 443 or LDM_SSL_PORT)
+ldm infra setup --force-recreate # Force recreate proxy containers to re-apply ports
 ldm infra down             # Stop and remove global services
 ldm infra restart          # Reset all global services in one go
 ldm infra restart --search # Restart and also initialize/restart Global Search
@@ -484,4 +486,4 @@ ldm target migrate win-wsl aws-1
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-08-03* | *Last Reviewed: 2026-07-29*
+*Last Updated: 2026-08-03* | *Last Reviewed: 2026-08-03*
