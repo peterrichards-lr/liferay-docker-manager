@@ -13,7 +13,7 @@ class MockInfraManager:
         self.defaults = MagicMock()
         self.target: str | None = None
         self.check_docker = MagicMock()
-        self.get_resolved_ip = MagicMock()
+        self.get_resolved_ip = MagicMock(return_value="127.0.0.1")
         self.detect_project_path = MagicMock()
 
     def run_command(self, *args, **kwargs):
@@ -29,9 +29,6 @@ class MockInfraManager:
 
     def check_port(self, ip, port):
         pass
-
-    def get_resolved_ip(self, *args, **kwargs):
-        return "127.0.0.1"
 
     def find_available_port(self, ip, start_port, exclude=None):
         pass
@@ -130,7 +127,6 @@ class TestInfraService(unittest.TestCase):
         import sys
 
         self.manager.check_docker.return_value = True
-        self.manager.get_resolved_ip.return_value = "127.0.0.1"
         self.manager.detect_project_path.return_value = None
         self.manager.args.ssl_port = 8443
         self.manager.args.force_recreate = True
@@ -150,7 +146,6 @@ class TestInfraService(unittest.TestCase):
         import sys
 
         self.manager.check_docker.return_value = True
-        self.manager.get_resolved_ip.return_value = "127.0.0.1"
         self.manager.detect_project_path.return_value = None
         self.manager.args.ssl_port = None
         self.manager.args.force_recreate = False
