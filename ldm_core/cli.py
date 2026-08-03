@@ -1571,6 +1571,16 @@ def get_parser():  # noqa: PLR0915
     infra_setup.add_argument(
         "--es7", action="store_true", help="Use Elasticsearch 7 for global search"
     )
+    infra_setup.add_argument(
+        "--ssl-port",
+        type=int,
+        help="Custom SSL port for the Traefik proxy (defaults to LDM_SSL_PORT or 443)",
+    )
+    infra_setup.add_argument(
+        "--force-recreate",
+        action="store_true",
+        help="Force recreate Traefik proxy container even if already running",
+    )
 
     infra_subparsers.add_parser("down", parents=[base_sub_parent])
 

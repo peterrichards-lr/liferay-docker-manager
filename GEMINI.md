@@ -4,6 +4,14 @@
 > **Purpose of this file**: This file tracks the active work state, tasks, and historical progress.
 > For architectural and project mandates (e.g. Volume Strategies, Exit Codes, CI rules), please refer to `.agents/AGENTS.md` and the `.agents/skills/` modules.
 
+## Active Work State & Plan (August 3, 2026)
+
+- **Current Active Task (August 3, 2026) — Configurable SSL Proxy Port for Traefik (Issue #947)**:
+  - [x] Add `--ssl-port` and `--force-recreate` command-line arguments to CLI setup parser.
+  - [x] Implement config parsing and force_recreate logic in `InfraService` setup.
+  - [x] Implement unit test coverage in `test_infra.py`.
+  - [x] Run test suite and pre-commit verification.
+
 ## Active Work State & Plan (July 31, 2026)
 
 - **Current Active Task (July 31, 2026) — Liferay DXP Nightly & Master Builds Support (Issues #933, #934, #935)**:
