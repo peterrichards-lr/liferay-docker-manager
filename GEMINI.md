@@ -749,4 +749,4 @@ When modifying `client-extension.yaml` files, **NEVER change or remove `.service
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-08-03* | *Last Reviewed: 2026-07-30*
+*Last Updated: 2026-08-03* | *Last Reviewed: 2026-08-03*

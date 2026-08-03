@@ -1,6 +1,12 @@
 site_name: Liferay Docker Manager
+site_url: https://peterrichards-lr.github.io/liferay-docker-manager/
+site_description: "The ultimate CLI tool and Docker Compose orchestrator for running, managing, and developing Liferay DXP and Liferay Portal containers in Docker."
+site_author: Peter Richards
 theme:
   name: material
+
+plugins:
+  - search
 
 nav:
   - Home: README.md
