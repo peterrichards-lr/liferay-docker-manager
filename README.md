@@ -1,6 +1,16 @@
 # Liferay Docker Manager (ldm)
 
-A professional command-line orchestrator for quickly standing up Liferay Portal and DXP environments using Docker Compose.
+A professional command-line orchestrator for running, managing, and developing **Liferay Portal** and **Liferay DXP** environments in **Docker** using Docker Compose.
+
+---
+
+## 🐳 Why use LDM for Liferay in Docker?
+
+Setting up **Liferay in Docker** manually requires managing complex Docker Compose files, container health checks, database volume permissions, Traefik reverse proxies, and pre-seeded databases. **Liferay Docker Manager (LDM)** streamlines your entire **Liferay Docker environment** into simple, declarative CLI commands:
+
+- **Zero-Config Liferay Docker Stacks**: Boot production-grade Liferay DXP, PostgreSQL, and Search containers instantly.
+- **Fast Local Dev & Workspace Linking**: Link local Liferay Workspaces directly with running **Liferay Docker containers**.
+- **Instant Database Snapshots**: Save and restore complete state snapshots of your **Liferay Docker** volumes.
 
 ---
 
@@ -143,4 +153,4 @@ For a complete structured table of contents, visit the **[Documentation Index](d
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-08-03* | *Last Reviewed: 2026-07-31*
+*Last Updated: 2026-08-03* | *Last Reviewed: 2026-08-03*
