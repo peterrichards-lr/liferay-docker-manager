@@ -249,6 +249,11 @@ def test_get_mcp_server(mock_ensure_mcp, mock_manager):
     mock_fastmcp_module.FastMCP = mock_fast_mcp
     sys.modules["mcp.server.fastmcp"] = mock_fastmcp_module
 
+    mock_mcpserver_module = MagicMock()
+    mock_mcpserver = MagicMock()
+    mock_mcpserver_module.MCPServer = mock_mcpserver
+    sys.modules["mcp.server.mcpserver"] = mock_mcpserver_module
+
     import ldm_core.handlers.mcp as mcp_module
 
     # Reset singleton
@@ -256,13 +261,18 @@ def test_get_mcp_server(mock_ensure_mcp, mock_manager):
 
     server_mock = MagicMock()
     mock_fast_mcp.return_value = server_mock
+    mock_mcpserver.return_value = server_mock
 
     # Act
     server = mcp_module.get_mcp_server()
 
     # Assert
     mock_ensure_mcp.assert_called_once()
-    mock_fast_mcp.assert_called_once_with("LDM Diagnostics Server")
+    assert mock_fast_mcp.called or mock_mcpserver.called
+    if mock_mcpserver.called:
+        mock_mcpserver.assert_called_once_with("LDM Diagnostics Server")
+    else:
+        mock_fast_mcp.assert_called_once_with("LDM Diagnostics Server")
     assert server == server_mock
 
     # Check tools were registered

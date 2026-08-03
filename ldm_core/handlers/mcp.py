@@ -416,9 +416,14 @@ def get_mcp_server():
 
     ensure_mcp_installed()
 
-    from mcp.server.fastmcp import FastMCP
+    try:
+        from mcp.server.mcpserver import MCPServer
 
-    server = FastMCP("LDM Diagnostics Server")
+        server = MCPServer("LDM Diagnostics Server")
+    except ImportError:
+        from mcp.server.fastmcp import FastMCP
+
+        server = FastMCP("LDM Diagnostics Server")
 
     server.tool()(get_projects)
     server.tool()(get_logs)

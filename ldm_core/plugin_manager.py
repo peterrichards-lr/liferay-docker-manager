@@ -26,7 +26,7 @@ def ensure_mcp_installed():
             "-m",
             "pip",
             "install",
-            "mcp==1.28.1",
+            "mcp==2.0.0",
             "--target",
             plugins_dir_str,
             "--upgrade",

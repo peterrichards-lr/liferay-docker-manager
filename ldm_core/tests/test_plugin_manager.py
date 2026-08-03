@@ -45,7 +45,7 @@ def test_ensure_mcp_installed_not_present(mock_run, mock_get_home, mock_find_spe
             "-m",
             "pip",
             "install",
-            "mcp==1.28.1",
+            "mcp==2.0.0",
             "--target",
             str(plugins_dir),
             "--upgrade",
