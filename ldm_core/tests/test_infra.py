@@ -33,6 +33,12 @@ class MockInfraManager:
     def find_available_port(self, ip, start_port, exclude=None):
         pass
 
+    def find_dxp_roots(self, *args, **kwargs):
+        return []
+
+    def read_meta(self, *args, **kwargs):
+        return {}
+
 
 class TestInfraService(unittest.TestCase):
     def setUp(self):
@@ -342,6 +348,74 @@ class TestInfraService(unittest.TestCase):
                 if isinstance(cmd, list)
             )
             self.assertTrue(has_context)
+
+    @patch("ldm_core.docker_service.DockerService.is_running", return_value=True)
+    @patch("ldm_core.handlers.infra.InfraService.get_proxy_ports")
+    def test_setup_infrastructure_active_projects_guard(
+        self, mock_get_ports, mock_is_running
+    ):
+        self.manager.args.search = False
+        self.manager.args.force = False
+        mock_get_ports.return_value = {"http": 80, "https": 443, "admin": 18080}
+
+        # Mock active running project
+        with (
+            patch.object(
+                self.manager,
+                "find_dxp_roots",
+                return_value=[{"path": Path("/tmp/my-project"), "version": "v1"}],
+            ),
+            patch.object(
+                self.manager,
+                "read_meta",
+                return_value={"container_name": "my-project-container"},
+            ),
+            patch("ldm_core.utils.run_command", return_value="running"),
+            patch.object(self.manager, "check_port", return_value=True),
+            patch.object(self.manager, "run_command"),
+        ):
+            # 1. Active running projects without --force should raise SystemExit (die)
+            with self.assertRaises(SystemExit):
+                self.infra.setup_infrastructure(
+                    "127.0.0.1", 8443, use_ssl=True, quiet=True, force_recreate=True
+                )
+
+            # 2. Active running projects with --force should succeed
+            self.manager.args.force = True
+            ssl_port = self.infra.setup_infrastructure(
+                "127.0.0.1", 8443, use_ssl=True, quiet=True, force_recreate=True
+            )
+            self.assertEqual(ssl_port, 8443)
+
+    @patch("ldm_core.docker_service.DockerService.is_running", return_value=True)
+    @patch("ldm_core.handlers.infra.InfraService.get_proxy_ports")
+    def test_setup_infrastructure_fail_closed_on_exception(
+        self, mock_get_ports, mock_is_running
+    ):
+        self.manager.args.search = False
+        self.manager.args.force = False
+        mock_get_ports.return_value = {"http": 80, "https": 443, "admin": 18080}
+
+        # Mock find_dxp_roots raising exception
+        with (
+            patch.object(
+                self.manager, "find_dxp_roots", side_effect=Exception("Disk error")
+            ),
+            patch.object(self.manager, "check_port", return_value=True),
+            patch.object(self.manager, "run_command"),
+        ):
+            # 1. Verification exception without --force should raise SystemExit (die)
+            with self.assertRaises(SystemExit):
+                self.infra.setup_infrastructure(
+                    "127.0.0.1", 8443, use_ssl=True, quiet=True, force_recreate=True
+                )
+
+            # 2. Verification exception with --force should succeed
+            self.manager.args.force = True
+            ssl_port = self.infra.setup_infrastructure(
+                "127.0.0.1", 8443, use_ssl=True, quiet=True, force_recreate=True
+            )
+            self.assertEqual(ssl_port, 8443)
 
 
 if __name__ == "__main__":

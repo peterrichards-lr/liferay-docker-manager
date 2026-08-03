@@ -201,6 +201,15 @@ docker pull postgres:16.2 --quiet
 
 log_and_run "Initializing Infrastructure" "$LDM_CMD" -y infra setup --search
 
+echo ">> Verifying Custom SSL Port & Recreate..."
+log_and_run "Custom SSL Port Setup" "$LDM_CMD" -y infra setup --ssl-port 8443 --force-recreate
+if docker inspect liferay-proxy-global | grep -q '"HostPort": "8443"'; then
+    echo "✅ Custom SSL Port & Recreate verified."
+else
+    echo "❌ ERROR: Traefik proxy was not recreated on custom port 8443!" && exit 1
+fi
+
+
 # 2. Guardrails
 echo ">> Verifying Dev Guardrails..."
 DEV_GUARD_OUT=$(env CI=true "$LDM_CMD" system version --bump patch 2>&1 || true)
