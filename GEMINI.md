@@ -11,6 +11,7 @@
   - [x] Implement config parsing and force_recreate logic in `InfraService` setup.
   - [x] Implement unit test coverage in `test_infra.py`.
   - [x] Run test suite and pre-commit verification.
+  - [x] Tag and push pre-release `v2.15.26-pre.1` via release orchestrator (PR [#950](https://github.com/peterrichards-lr/liferay-docker-manager/pull/950)).
 
 ## Active Work State & Plan (July 31, 2026)
 
