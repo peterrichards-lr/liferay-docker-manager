@@ -87,7 +87,7 @@ class InfraService:
             pass
         return ports
 
-    def setup_infrastructure(
+    def setup_infrastructure(  # noqa: C901, PLR0912, PLR0915
         self,
         resolved_ip,
         ssl_port,
@@ -122,11 +122,69 @@ class InfraService:
 
         from ldm_core.docker_service import DockerService
 
-        is_proxy_running = DockerService.is_running("liferay-proxy-global")
+        target_name = getattr(self.manager, "target", None)
+        is_proxy_running = DockerService.is_running(
+            "liferay-proxy-global", target_name=target_name
+        )
 
         http_port = int(os.getenv("LDM_HTTP_PORT", "80"))
         ssl_port = int(ssl_port)
         admin_port = int(os.getenv("LDM_ADMIN_PORT", "18080"))
+
+        # Safety Check: Warn or abort if recreate/reconfigure would disrupt active running projects
+        if is_proxy_running and force_recreate:
+            running_projects = []
+            try:
+                roots = self.manager.find_dxp_roots()
+                for r in roots:
+                    path = r["path"]
+                    meta = self.manager.read_meta(path)
+                    name = (
+                        meta.get("liferay_container_name")
+                        or meta.get("container_name")
+                        or path.name
+                    )
+                    target_node = meta.get("target", "local")
+                    docker_prefix = DockerService.get_docker_cmd_prefix(target_node)
+
+                    from ldm_core.utils import run_command
+
+                    containers_status = run_command(
+                        [
+                            *docker_prefix,
+                            "ps",
+                            "-a",
+                            "--filter",
+                            f"name=^{name}$",
+                            "--format",
+                            "{{.State}}",
+                        ],
+                        check=False,
+                    )
+                    if containers_status and "running" in containers_status:
+                        running_projects.append((name, target_node))
+            except Exception as e:
+                UI.warning(f"Could not verify active running projects: {e}")
+
+            if running_projects:
+                print(
+                    f"\n{UI.BRED}[!] WARNING: Active LDM projects are currently running on this machine:{UI.COLOR_OFF}"
+                )
+                for p_name, node in running_projects:
+                    print(f"  - {UI.CYAN}{p_name}{UI.COLOR_OFF} (on node: {node})")
+                print(
+                    f"\n{UI.YELLOW}Recreating or reconfiguring the global SSL proxy will disrupt connectivity for these projects.{UI.COLOR_OFF}"
+                )
+                if not getattr(self.manager.args, "force", False):
+                    UI.die("Aborted. Use --force to proceed anyway.")
+
+            # Stop and remove existing Traefik to release port bindings cleanly before checks
+            UI.detail("Stopping existing Traefik SSL proxy to release port bindings...")
+            DockerService.stop("liferay-proxy-global", target_name=target_name)
+            DockerService.rm(
+                "liferay-proxy-global", force=True, target_name=target_name
+            )
+            is_proxy_running = False
 
         if is_proxy_running and not force_recreate:
             # Use the currently running ports to keep compose state identical

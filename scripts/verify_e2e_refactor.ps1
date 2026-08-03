@@ -160,6 +160,17 @@ try {
 
     Log-AndRun "Initializing Infrastructure" $LDM_CMD "-y infra setup --search"
 
+    Write-Host ">> Verifying Custom SSL Port & Recreate..."
+    Log-AndRun "Custom SSL Port Setup" $LDM_CMD "-y infra setup --ssl-port 8443 --force-recreate"
+    $dockerInspect = & docker inspect liferay-proxy-global
+    if ($dockerInspect -match '"HostPort": "8443"') {
+        Write-Host "[SUCCESS] Custom SSL Port & Recreate verified."
+    } else {
+        Write-Host "[ERROR] ERROR: Traefik proxy was not recreated on custom port 8443!" -ForegroundColor Red
+        exit 1
+    }
+
+
     # 2. Guardrails
     Write-Host ">> Verifying Dev Guardrails..."
     $env:CI = "true"
