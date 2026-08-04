@@ -1,4 +1,5 @@
 import argparse
+import os
 import platform
 import sys
 import warnings
@@ -1387,6 +1388,18 @@ def get_parser():  # noqa: PLR0915
         action="store_true",
         help="Stream raw Docker container logs to stdout in real-time while waiting",
     )
+    wait_cmd.add_argument(
+        "--cpu-idle-threshold",
+        type=float,
+        default=float(os.getenv("LDM_CPU_IDLE_THRESHOLD", "15.0")),
+        help="CPU percentage threshold below which Liferay is considered idle (default: 15.0)",
+    )
+    wait_cmd.add_argument(
+        "--cpu-idle-checks",
+        type=int,
+        default=int(os.getenv("LDM_CPU_IDLE_CHECKS", "3")),
+        help="Number of consecutive checks required to verify Liferay is idle (default: 3)",
+    )
 
     status = subparsers.add_parser("status", aliases=["ps"], parents=[base_sub_parent])
     status.add_argument("project", nargs="?")
@@ -2572,6 +2585,9 @@ def _build_command_map(args, manager):
             wait_for_deployables=getattr(args, "wait_for_deployables", False),
             wait_for_bundles=getattr(args, "wait_for_bundles", None),
             stream_status=getattr(args, "stream_status", False),
+            stream_logs=getattr(args, "stream_logs", False),
+            cpu_idle_threshold=getattr(args, "cpu_idle_threshold", 15.0),
+            cpu_idle_checks=getattr(args, "cpu_idle_checks", 3),
         ),
         ("status", None): lambda: manager.diagnostics.cmd_status(
             getattr(args, "project", None),

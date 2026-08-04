@@ -54,7 +54,7 @@ Blocks execution until a Liferay instance is genuinely ready for work. This is h
 
 1. **Log Readiness**: Scans Docker logs for the Tomcat `"Server startup"` marker.
 2. **HTTP Availability**: Polls the instance until it responds with an `HTTP 200` or `302` on its primary port.
-3. **CPU Idle State**: Actively monitors the container's CPU usage, blocking until it drops below 15% for three consecutive checks. This ensures background OSGi initialization (like `BundleSiteInitializer`) is truly finished.
+3. **CPU Idle State**: Actively monitors the container's CPU usage, blocking until it drops below the threshold (default: 15.0%) for consecutive checks (default: 3). This is configurable via `--cpu-idle-threshold` and `--cpu-idle-checks` options.
 
 ```bash
 # Wait for the current project to be fully idle (up to 10 minutes)
@@ -398,6 +398,8 @@ ldm tray --uninstall-autostart  # Remove launch-on-login autostart
 - **`--autostart`** / **`--install-autostart`**: Install System Tray application to launch automatically on user login.
 - **`--bundle`**: Generate a sanitized zip bundle of logs and config.
 - **`--credentials`**: Print admin or service credentials.
+- **`--cpu-idle-checks`**: Number of consecutive checks required to verify Liferay is idle (default: 3). ![Added in v2.15.26](https://img.shields.io/badge/Added%20in-v2.15.26-blue)
+- **`--cpu-idle-threshold`**: CPU percentage threshold below which Liferay is considered idle (default: 15.0). ![Added in v2.15.26](https://img.shields.io/badge/Added%20in-v2.15.26-blue)
 - **`--detailed`**: Show detailed diagnostic information.
 - **`--domain`**: Specify target domain for diagnostics or routing.
 - **`--download`**: Download asset or seed.
@@ -486,4 +488,4 @@ ldm target migrate win-wsl aws-1
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-08-04* | *Last Reviewed: 2026-08-03*
+*Last Updated: 2026-08-04* | *Last Reviewed: 2026-08-04*

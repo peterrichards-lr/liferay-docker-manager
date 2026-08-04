@@ -12,6 +12,12 @@
   - [x] Add comprehensive test coverage in `ldm_core/tests/test_readiness.py`.
   - [x] Run full pytest suite and pre-commit checks locally.
 
+- **Current Active Task (August 4, 2026) — Configurable CPU-idle threshold/consecutive-checks (Issue #961)**:
+  - [x] Implement CLI arguments (`--cpu-idle-threshold` and `--cpu-idle-checks`) and environment variable fallbacks in `cli.py`.
+  - [x] Update `cmd_wait()` in `readiness.py` to accept and use the custom CPU parameters.
+  - [x] Add comprehensive unit test coverage in `test_readiness.py` and document options in `system.md`.
+  - [x] Verify all pre-commit hooks and tests pass cleanly.
+
 ## Active Work State & Plan (August 3, 2026)
 
 - **Current Active Task (August 3, 2026) — Configurable SSL Proxy Port for Traefik (Issue #947)**:

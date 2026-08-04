@@ -23,6 +23,8 @@ class ReadinessService(BaseHandler):
         wait_for_bundles=None,
         stream_status=False,
         stream_logs=False,
+        cpu_idle_threshold=15.0,
+        cpu_idle_checks=3,
     ):
         """Block execution until project is fully ready (HTTP 200/302)."""
         if timeout is None:
@@ -273,8 +275,10 @@ class ReadinessService(BaseHandler):
         # 3. Wait for System to become Idle (CPU Drop)
         UI.detail("Waiting for background initialization to complete (CPU Idle)...")
         idle_checks = 0
-        consecutive_required = 3
-        cpu_threshold = 15.0  # Consider < 15% CPU to be "idle" for Liferay
+        consecutive_required = cpu_idle_checks
+        cpu_threshold = (
+            cpu_idle_threshold  # Consider < threshold CPU to be "idle" for Liferay
+        )
 
         phase_start = time.time()
         while time.time() - phase_start < timeout:

@@ -839,3 +839,58 @@ services:
                 mock_get.return_value.status_code = 200
                 self.handler.handler.readiness.cmd_wait("test-project", timeout=600)
                 mock_get.assert_called_with("http://127.0.0.1", timeout=5, verify=False)
+
+    def test_cmd_wait_configurable_cpu_idle(self):
+        """Verify cmd_wait respects configurable cpu_idle_threshold and cpu_idle_checks."""
+        with (
+            patch.object(
+                self.handler.handler.readiness, "_wait_for_ready", return_value=True
+            ),
+            patch("time.sleep"),
+            patch("requests.get") as mock_get,
+            patch("time.time", return_value=100.0),
+        ):
+            mock_get.return_value.status_code = 200
+
+            # 1. Custom checks = 5. should check stats 5 times before succeeding.
+            with patch.object(
+                self.handler, "run_command", return_value="5.0"
+            ) as mock_run:
+                self.handler.handler.readiness.cmd_wait(
+                    "test-project",
+                    timeout=600,
+                    cpu_idle_threshold=10.0,
+                    cpu_idle_checks=5,
+                )
+                # Count calls to docker stats command: should be exactly 5
+                stats_calls = [c for c in mock_run.call_args_list if "stats" in c[0][0]]
+                self.assertEqual(len(stats_calls), 5)
+
+            # 2. Custom threshold = 5.0. 8.0 > 5.0 (not idle) -> loops until timeout.
+            with (
+                patch.object(self.handler, "run_command", return_value="8.0"),
+                patch(
+                    "time.time",
+                    side_effect=[
+                        100.0,
+                        100.0,
+                        100.0,
+                        100.0,
+                        100.0,
+                        700.0,
+                        700.0,
+                        700.0,
+                        700.0,
+                    ],
+                ),
+                patch("ldm_core.ui.UI.warning") as mock_warning,
+            ):
+                self.handler.handler.readiness.cmd_wait(
+                    "test-project",
+                    timeout=600,
+                    cpu_idle_threshold=5.0,
+                    cpu_idle_checks=3,
+                )
+                mock_warning.assert_any_call(
+                    "Project 'test-project' did not reach an idle state within the timeout, but is responding to HTTP."
+                )
