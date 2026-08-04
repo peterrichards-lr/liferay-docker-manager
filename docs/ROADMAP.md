@@ -105,7 +105,7 @@ While the v2.4.0 release solidified the modular architecture, the focus will now
 
 ### **Advanced Orchestration**
 
-- **3-Phase Readiness Gating**: Introduced a high-precision `ldm wait` command that combines log markers, HTTP probing, and **CPU Idle detection** (< 15% load) to guarantee Liferay is fully stabilized before proceeding.
+- **3-Phase Readiness Gating**: Introduced a high-precision `ldm wait` command that combines log markers, HTTP probing, and **CPU Idle detection** (default < 15% load, now configurable) to guarantee Liferay is fully stabilized before proceeding.
 - **Local Cloud Hydration**: Implemented the `ldm hydrate` command, allowing developers to recreate full project environments from local Liferay Cloud backup archives (`database.gz` and `volume.tgz`).
 - **Lean JVM Profile**: Added a resource-optimized JVM profile for 7GB runners, with **automatic GHA detection** to prevent OOM kills in CI/CD pipelines.
 - **Atomic Initialization & Rollback**: Hardened project creation with a commit/rollback pattern that automatically cleans up failed initialization attempts.
@@ -186,4 +186,4 @@ While the v2.4.0 release solidified the modular architecture, the focus will now
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-08-04* | *Last Reviewed: 2026-07-02*
+*Last Updated: 2026-08-04* | *Last Reviewed: 2026-08-04*
