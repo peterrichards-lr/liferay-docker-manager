@@ -144,3 +144,66 @@ class TestHostnameResolutionDI(unittest.TestCase):
 
         # THEN it should delegate to diagnostics.cmd_doctor
         orchestrator.diagnostics.cmd_doctor.assert_called_once_with(fix_hosts=True)
+
+    @patch("platform.system", return_value="Darwin")
+    @patch("sys.stdout.isatty", return_value=True)
+    @patch("ldm_core.ui.UI.NON_INTERACTIVE", False)
+    @patch("ldm_core.ui.UI.confirm")
+    @patch("ldm_core.ui.UI.die")
+    @patch("ldm_core.handlers.base.BaseHandler.setup_paths")
+    @patch("ldm_core.handlers.base.BaseHandler.check_hostname", return_value=True)
+    def test_ensure_hostnames_resolve_macos_local_interactive_decline(
+        self, mock_check, mock_setup, mock_die, mock_confirm, mock_isatty, mock_platform
+    ):
+        tmp_root = Path("/tmp/fake_root_resolution")
+        mock_setup.return_value = {
+            "root": tmp_root,
+            "cx": MagicMock(exists=MagicMock(return_value=False)),
+        }
+        mock_confirm.return_value = False
+        mock_die.side_effect = Exception("UI.die called")
+
+        with self.assertRaises(Exception) as ctx:
+            self.handler.ensure_hostnames_resolve(tmp_root, "example.local")
+        self.assertEqual(str(ctx.exception), "UI.die called")
+        mock_confirm.assert_called_once()
+        mock_die.assert_called_once_with("Aborted by user.")
+
+    @patch("platform.system", return_value="Darwin")
+    @patch("sys.stdout.isatty", return_value=True)
+    @patch("ldm_core.ui.UI.NON_INTERACTIVE", False)
+    @patch("ldm_core.ui.UI.confirm", return_value=True)
+    @patch("ldm_core.ui.UI.die")
+    @patch("ldm_core.handlers.base.BaseHandler.setup_paths")
+    @patch("ldm_core.handlers.base.BaseHandler.check_hostname", return_value=True)
+    def test_ensure_hostnames_resolve_macos_local_interactive_accept(
+        self, mock_check, mock_setup, mock_die, mock_confirm, mock_isatty, mock_platform
+    ):
+        tmp_root = Path("/tmp/fake_root_resolution")
+        mock_setup.return_value = {
+            "root": tmp_root,
+            "cx": MagicMock(exists=MagicMock(return_value=False)),
+        }
+        resolved = self.handler.ensure_hostnames_resolve(tmp_root, "example.local")
+        self.assertTrue(resolved)
+        mock_confirm.assert_called_once()
+        mock_die.assert_not_called()
+
+    @patch("platform.system", return_value="Darwin")
+    @patch("sys.stdout.isatty", return_value=False)
+    @patch("ldm_core.ui.UI.confirm")
+    @patch("ldm_core.ui.UI.die")
+    @patch("ldm_core.handlers.base.BaseHandler.setup_paths")
+    @patch("ldm_core.handlers.base.BaseHandler.check_hostname", return_value=True)
+    def test_ensure_hostnames_resolve_macos_local_non_interactive(
+        self, mock_check, mock_setup, mock_die, mock_confirm, mock_isatty, mock_platform
+    ):
+        tmp_root = Path("/tmp/fake_root_resolution")
+        mock_setup.return_value = {
+            "root": tmp_root,
+            "cx": MagicMock(exists=MagicMock(return_value=False)),
+        }
+        resolved = self.handler.ensure_hostnames_resolve(tmp_root, "example.local")
+        self.assertTrue(resolved)
+        mock_confirm.assert_not_called()
+        mock_die.assert_not_called()

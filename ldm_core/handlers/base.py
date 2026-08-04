@@ -49,7 +49,7 @@ class BaseHandler:
                 pass
         return False
 
-    def ensure_hostnames_resolve(self, root, host_name, project_id=None):
+    def ensure_hostnames_resolve(self, root, host_name, project_id=None):  # noqa: PLR0912
         """Verifies that the main host and all extension subdomains resolve, fixing them if needed."""
         if host_name == "localhost":
             return True
@@ -63,6 +63,24 @@ class BaseHandler:
                 "On Windows, '.local' is reserved for mDNS and may ignore your hosts file."
             )
             UI.detail("Recommended: Use '.test' or '.internal' instead.")
+
+        # macOS .local warning
+        if host_name.endswith(".local") and platform.system().lower() == "darwin":
+            UI.warning(f"Hostname '{host_name}' uses the '.local' TLD.")
+            UI.warning(
+                "On macOS, '.local' hostnames can resolve slowly due to mDNS/Bonjour overhead."
+            )
+            UI.detail(
+                "Recommended: Consider a different TLD like '.test' or '.internal' instead."
+            )
+
+            import sys
+
+            if sys.stdout.isatty() and not getattr(UI, "NON_INTERACTIVE", False):
+                if not UI.confirm(
+                    "Do you want to continue with this hostname?", default="Y"
+                ):
+                    UI.die("Aborted by user.")
 
         # Collect all required hostnames (main + extensions)
         required_hosts = [host_name]
