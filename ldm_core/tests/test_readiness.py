@@ -734,3 +734,108 @@ services:
         self.assertIsNone(
             check_troubleshooting_signatures("Everything is running fine")
         )
+
+    def test_wait_for_ready_http_and_https_ports(self):
+        """Verify URL construction handles default and custom ports for both http and https."""
+        with (
+            patch.object(
+                self.handler.handler.readiness, "_wait_for_ready", return_value=True
+            ),
+            patch.object(self.handler, "run_command", return_value="5.0"),
+            patch("time.sleep"),
+            patch("requests.get") as mock_get,
+            patch("time.time", return_value=100.0),
+        ):
+            # 1. Custom HTTPS port (e.g. 8443) -> should be appended
+            self.handler.infra.get_proxy_ports.return_value = {
+                "http": 80,
+                "https": 8443,
+            }
+            with (
+                patch.object(
+                    self.handler.composer, "_is_ssl_active", return_value=True
+                ),
+                patch.object(
+                    self.handler,
+                    "read_meta",
+                    return_value={
+                        "container_name": "test-runtime",
+                        "host_name": "test.local",
+                    },
+                ),
+            ):
+                mock_get.reset_mock()
+                mock_get.return_value.status_code = 200
+                self.handler.handler.readiness.cmd_wait("test-project", timeout=600)
+                mock_get.assert_called_with(
+                    "https://test.local:8443", timeout=5, verify=False
+                )
+
+            # 2. Default HTTPS port (443) -> should not append port
+            self.handler.infra.get_proxy_ports.return_value = {"http": 80, "https": 443}
+            with (
+                patch.object(
+                    self.handler.composer, "_is_ssl_active", return_value=True
+                ),
+                patch.object(
+                    self.handler,
+                    "read_meta",
+                    return_value={
+                        "container_name": "test-runtime",
+                        "host_name": "test.local",
+                    },
+                ),
+            ):
+                mock_get.reset_mock()
+                mock_get.return_value.status_code = 200
+                self.handler.handler.readiness.cmd_wait("test-project", timeout=600)
+                mock_get.assert_called_with(
+                    "https://test.local", timeout=5, verify=False
+                )
+
+            # 3. Custom HTTP port (e.g. 8080) -> should be appended
+            self.handler.infra.get_proxy_ports.return_value = {
+                "http": 8080,
+                "https": 443,
+            }
+            with (
+                patch.object(
+                    self.handler.composer, "_is_ssl_active", return_value=False
+                ),
+                patch.object(
+                    self.handler,
+                    "read_meta",
+                    return_value={
+                        "container_name": "test-runtime",
+                        "host_name": "localhost",
+                        "port": 8080,
+                    },
+                ),
+            ):
+                mock_get.reset_mock()
+                mock_get.return_value.status_code = 200
+                self.handler.handler.readiness.cmd_wait("test-project", timeout=600)
+                mock_get.assert_called_with(
+                    "http://127.0.0.1:8080", timeout=5, verify=False
+                )
+
+            # 4. Default HTTP port (80) -> should not append port
+            self.handler.infra.get_proxy_ports.return_value = {"http": 80, "https": 443}
+            with (
+                patch.object(
+                    self.handler.composer, "_is_ssl_active", return_value=False
+                ),
+                patch.object(
+                    self.handler,
+                    "read_meta",
+                    return_value={
+                        "container_name": "test-runtime",
+                        "host_name": "localhost",
+                        "port": 80,
+                    },
+                ),
+            ):
+                mock_get.reset_mock()
+                mock_get.return_value.status_code = 200
+                self.handler.handler.readiness.cmd_wait("test-project", timeout=600)
+                mock_get.assert_called_with("http://127.0.0.1", timeout=5, verify=False)

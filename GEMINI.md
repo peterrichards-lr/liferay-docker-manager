@@ -4,6 +4,14 @@
 > **Purpose of this file**: This file tracks the active work state, tasks, and historical progress.
 > For architectural and project mandates (e.g. Volume Strategies, Exit Codes, CI rules), please refer to `.agents/AGENTS.md` and the `.agents/skills/` modules.
 
+## Active Work State & Plan (August 4, 2026)
+
+- **Current Active Task (August 4, 2026) — Configurable SSL Proxy Port in Readiness Checking (Issue #958)**:
+  - [x] Refactor HTTP accessibility check loop in `ldm_core/runtime/readiness.py` to dynamically fetch proxy ports.
+  - [x] Omit protocol default ports in URLs (443 for HTTPS, 80 for HTTP).
+  - [x] Add comprehensive test coverage in `ldm_core/tests/test_readiness.py`.
+  - [x] Run full pytest suite and pre-commit checks locally.
+
 ## Active Work State & Plan (August 3, 2026)
 
 - **Current Active Task (August 3, 2026) — Configurable SSL Proxy Port for Traefik (Issue #947)**:
@@ -750,4 +758,4 @@ When modifying `client-extension.yaml` files, **NEVER change or remove `.service
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-08-03* | *Last Reviewed: 2026-08-03*
+*Last Updated: 2026-08-04* | *Last Reviewed: 2026-08-03*

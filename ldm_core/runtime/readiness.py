@@ -95,13 +95,32 @@ class ReadinessService(BaseHandler):
             f"Verifying HTTP accessibility for {UI.CYAN}{host_name}{UI.COLOR_OFF}..."
         )
         ssl_enabled = self.manager.composer._is_ssl_active(host_name, meta)
-        port = meta.get("port", 8080)
-        protocol = "https" if ssl_enabled else "http"
+
+        # Retrieve ports dynamically from the running proxy container if available
+        proxy_ports = None
+        try:
+            proxy_ports = self.manager.infra.get_proxy_ports()
+        except Exception:
+            pass
+
+        if ssl_enabled:
+            protocol = "https"
+            port = 443
+            if proxy_ports and "https" in proxy_ports:
+                port = proxy_ports["https"]
+        else:
+            protocol = "http"
+            port = meta.get("port", 8080)
+            if proxy_ports and "http" in proxy_ports:
+                port = proxy_ports["http"]
 
         # LDM-388: Use explicit IP for local checks to avoid CI IPv6 quirks
         target_host = "127.0.0.1" if host_name == "localhost" else host_name
         url = f"{protocol}://{target_host}"
-        if not ssl_enabled and port != 80:
+        if protocol == "https":
+            if port != 443:
+                url += f":{port}"
+        elif port != 80:
             url += f":{port}"
 
         phase_start = time.time()
