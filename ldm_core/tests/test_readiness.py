@@ -1,3 +1,4 @@
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -894,3 +895,28 @@ services:
                 mock_warning.assert_any_call(
                     "Project 'test-project' did not reach an idle state within the timeout, but is responding to HTTP."
                 )
+
+            # 3. Malformed env vars: should warn and fall back to 15.0 and 3.
+            with (
+                patch.dict(
+                    os.environ,
+                    {
+                        "LDM_CPU_IDLE_THRESHOLD": "invalid",
+                        "LDM_CPU_IDLE_CHECKS": "three",
+                    },
+                ),
+                patch.object(
+                    self.handler, "run_command", return_value="5.0"
+                ) as mock_run,
+                patch("ldm_core.ui.UI.warning") as mock_warning,
+            ):
+                self.handler.handler.readiness.cmd_wait("test-project", timeout=600)
+                mock_warning.assert_any_call(
+                    "Malformed LDM_CPU_IDLE_THRESHOLD; falling back to 15.0"
+                )
+                mock_warning.assert_any_call(
+                    "Malformed LDM_CPU_IDLE_CHECKS; falling back to 3"
+                )
+                # With fallback to 3 checks, run_command should be called exactly 3 times
+                stats_calls = [c for c in mock_run.call_args_list if "stats" in c[0][0]]
+                self.assertEqual(len(stats_calls), 3)

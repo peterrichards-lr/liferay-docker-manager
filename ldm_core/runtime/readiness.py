@@ -1,4 +1,5 @@
 import contextlib
+import os
 import time
 from datetime import datetime
 
@@ -23,12 +24,26 @@ class ReadinessService(BaseHandler):
         wait_for_bundles=None,
         stream_status=False,
         stream_logs=False,
-        cpu_idle_threshold=15.0,
-        cpu_idle_checks=3,
+        cpu_idle_threshold=None,
+        cpu_idle_checks=None,
     ):
         """Block execution until project is fully ready (HTTP 200/302)."""
         if timeout is None:
             timeout = 900
+
+        if cpu_idle_threshold is None:
+            try:
+                cpu_idle_threshold = float(os.getenv("LDM_CPU_IDLE_THRESHOLD", "15.0"))
+            except ValueError:
+                UI.warning("Malformed LDM_CPU_IDLE_THRESHOLD; falling back to 15.0")
+                cpu_idle_threshold = 15.0
+
+        if cpu_idle_checks is None:
+            try:
+                cpu_idle_checks = int(os.getenv("LDM_CPU_IDLE_CHECKS", "3"))
+            except ValueError:
+                UI.warning("Malformed LDM_CPU_IDLE_CHECKS; falling back to 3")
+                cpu_idle_checks = 3
 
         root = self.manager.detect_project_path(project_id)
         if not root:
