@@ -126,7 +126,7 @@ class TestReadiness(unittest.TestCase):
         mock_die.side_effect = Exception("UI.die called")
         with patch.object(self.handler.manager, "run_command", return_value="10%"):
             # Use a time mock that jumps forward by 1000 seconds on the second call
-            t = [100, 1100, 1100, 1100, 1100]
+            t = [100, 100, 1100, 1100, 1100, 1100]
 
             def mock_time():
                 return t.pop(0)
@@ -683,7 +683,7 @@ services:
             )
             self.assertTrue(res)
             mock_die.assert_not_called()
-            mock_warning.assert_called_with(
+            mock_warning.assert_any_call(
                 "Some deployable targets did not reach active state via Gogo console verification."
             )
 
@@ -923,3 +923,35 @@ services:
                 # With fallback to 3 checks, run_command should be called exactly 3 times
                 stats_calls = [c for c in mock_run.call_args_list if "stats" in c[0][0]]
                 self.assertEqual(len(stats_calls), 3)
+
+    def test_cmd_wait_overall_timeout_budgeting(self):
+        """Verify that sequential phases in cmd_wait share a single overall timeout budget."""
+        with (
+            patch.object(
+                self.handler.handler.readiness, "_wait_for_ready", return_value=True
+            ),
+            patch("time.sleep"),
+            patch("requests.get"),
+            patch("ldm_core.ui.UI.die") as mock_die,
+            # Mock time.time() to return progression values that exhaust the budget
+            patch(
+                "time.time",
+                side_effect=[
+                    100.0,  # overall_start (cmd_wait start)
+                    100.0,  # container log wait elapsed calc
+                    100.0,  # container log wait remaining timeout check
+                    # Phase 1 starts (inside _wait_for_ready start)
+                    100.0,  # start_time
+                    300.0,  # inside _wait_for_ready loop checks (elapsed = 200s)
+                    300.0,  # inside _wait_for_ready check healthy (returns True)
+                    # Phase 1 completes
+                    300.0,  # Phase 2 HTTP start
+                    700.0,  # HTTP loop check (elapsed = 600s, timeout = 600s!)
+                    700.0,  # HTTP loop body
+                ],
+            ),
+        ):
+            self.handler.handler.readiness.cmd_wait("test-project", timeout=600)
+            mock_die.assert_called_with(
+                "Project 'test-project' is running but HTTP http://127.0.0.1:8080 is not responding correctly."
+            )
