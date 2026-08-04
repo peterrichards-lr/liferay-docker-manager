@@ -794,9 +794,9 @@ services:
                     "https://test.local", timeout=5, verify=False
                 )
 
-            # 3. Custom HTTP port (e.g. 8080) -> should be appended
+            # 3. Custom HTTP port (e.g. 8080) -> should be appended (ignoring global proxy port 9999)
             self.handler.infra.get_proxy_ports.return_value = {
-                "http": 8080,
+                "http": 9999,
                 "https": 443,
             }
             with (
@@ -820,8 +820,11 @@ services:
                     "http://127.0.0.1:8080", timeout=5, verify=False
                 )
 
-            # 4. Default HTTP port (80) -> should not append port
-            self.handler.infra.get_proxy_ports.return_value = {"http": 80, "https": 443}
+            # 4. Default HTTP port (80) -> should not append port (ignoring global proxy port 9999)
+            self.handler.infra.get_proxy_ports.return_value = {
+                "http": 9999,
+                "https": 443,
+            }
             with (
                 patch.object(
                     self.handler.composer, "_is_ssl_active", return_value=False

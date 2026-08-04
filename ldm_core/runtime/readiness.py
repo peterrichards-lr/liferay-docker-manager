@@ -128,8 +128,6 @@ class ReadinessService(BaseHandler):
         else:
             protocol = "http"
             port = meta.get("port", 8080)
-            if proxy_ports and "http" in proxy_ports:
-                port = proxy_ports["http"]
 
         # LDM-388: Use explicit IP for local checks to avoid CI IPv6 quirks
         target_host = "127.0.0.1" if host_name == "localhost" else host_name
