@@ -6,6 +6,14 @@
 
 ## Active Work State & Plan (August 4, 2026)
 
+- **Current Active Task (August 4, 2026) — Wait timeout budgeting, logs tail & macOS hostname warning (Issues #966, #967, #969)**:
+  - [x] Resolve proxy ports dynamically only if `ssl_enabled` is `True` to fix standalone project wait checking.
+  - [x] Refactor wait sequential loop phases in `cmd_wait` to check against a single overall start time and deadline budget.
+  - [x] Increase `docker logs` tail query size in `_wait_for_ready` log scanning checks from 100 to 1000 lines.
+  - [x] Add macOS `.local` hostname mDNS slowness warning and interactive confirmation checks.
+  - [x] Add comprehensive unit test coverage verifying overall deadline budgeting and macOS warnings.
+  - [x] Tag and push pre-release `v2.15.26-pre.5` via release orchestrator (PR [#971](https://github.com/peterrichards-lr/liferay-docker-manager/pull/971)).
+
 - **Current Active Task (August 4, 2026) — Configurable SSL Proxy Port in Readiness Checking (Issue #958)**:
   - [x] Refactor HTTP accessibility check loop in `ldm_core/runtime/readiness.py` to dynamically fetch proxy ports.
   - [x] Omit protocol default ports in URLs (443 for HTTPS, 80 for HTTP).
