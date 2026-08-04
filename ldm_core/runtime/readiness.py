@@ -51,6 +51,9 @@ class ReadinessService(BaseHandler):
         meta = self.manager.read_meta(root)
         host_name = meta.get("host_name", "localhost")
 
+        overall_start = time.time()
+        overall_timeout = timeout
+
         container_name = (
             meta.get("liferay_container_name")
             or meta.get("container_name")
@@ -59,6 +62,7 @@ class ReadinessService(BaseHandler):
 
         log_proc = None
         if stream_logs:
+            # Streams Liferay logs to stdout in background
             import subprocess
             import sys
 
@@ -89,7 +93,7 @@ class ReadinessService(BaseHandler):
         if not self._wait_for_ready(
             meta,
             host_name,
-            timeout=timeout,
+            timeout=overall_timeout,
             stream_status=stream_status,
             stream_logs=stream_logs,
         ):
@@ -138,11 +142,10 @@ class ReadinessService(BaseHandler):
         elif port != 80:
             url += f":{port}"
 
-        phase_start = time.time()
         import requests
 
         http_ready = False
-        while time.time() - phase_start < timeout:
+        while (time.time() - overall_start) < overall_timeout:
             try:
                 # Use a short timeout for the request itself
                 response = requests.get(url, timeout=5, verify=False)  # nosec B501
@@ -175,8 +178,7 @@ class ReadinessService(BaseHandler):
             # Wait for deploy directory inside container to clear
             UI.detail("Checking deploy directory queue status...")
             deploy_clear = False
-            deploy_start = time.time()
-            while time.time() - deploy_start < timeout:
+            while (time.time() - overall_start) < overall_timeout:
                 try:
                     res = DockerService.exec(
                         container_name,
@@ -207,7 +209,7 @@ class ReadinessService(BaseHandler):
             UI.detail("Verifying target OSGi bundle and Client Extension states...")
             gogo_ready = False
             gogo_start = time.time()
-            while time.time() - gogo_start < timeout:
+            while (time.time() - overall_start) < overall_timeout:
                 try:
                     res = DockerService.exec(
                         container_name,
@@ -293,8 +295,7 @@ class ReadinessService(BaseHandler):
             cpu_idle_threshold  # Consider < threshold CPU to be "idle" for Liferay
         )
 
-        phase_start = time.time()
-        while time.time() - phase_start < timeout:
+        while (time.time() - overall_start) < overall_timeout:
             try:
                 result = self.manager.run_command(
                     [
@@ -402,7 +403,7 @@ class ReadinessService(BaseHandler):
                     # Proactive Log Monitoring: Look for ERRORS
                     try:
                         logs = self.manager.run_command(
-                            ["docker", "logs", "--tail", "100", container_name],
+                            ["docker", "logs", "--tail", "1000", container_name],
                             check=False,
                             capture_output=True,
                         )
@@ -476,7 +477,7 @@ class ReadinessService(BaseHandler):
                 ready_by_logs = False
                 try:
                     logs = self.manager.run_command(
-                        ["docker", "logs", "--tail", "100", container_name],
+                        ["docker", "logs", "--tail", "1000", container_name],
                         check=False,
                         capture_output=True,
                     )
