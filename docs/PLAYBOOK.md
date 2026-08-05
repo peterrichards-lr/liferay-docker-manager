@@ -123,4 +123,4 @@ Release binary code-signing is now fully automated via the GitHub Actions CI pip
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-08-04* | *Last Reviewed: 2026-07-22*
+*Last Updated: 2026-08-05* | *Last Reviewed: 2026-07-22*
