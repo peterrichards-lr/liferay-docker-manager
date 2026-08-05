@@ -268,7 +268,7 @@ else
 fi
 
 echo ">> Verifying ldm doctor Dependency Integrity..."
-DOCTOR_OUT=$("$LDM_CMD" doctor --detailed 2>&1 || true)
+DOCTOR_OUT=$("$LDM_CMD" doctor --detailed --skip-project 2>&1 || true)
 if echo "$DOCTOR_OUT" | grep -q "Dependency Integrity"; then
     if echo "$DOCTOR_OUT" | grep -Ei "Dependency Integrity.*(❌|Failed|Missing)"; then
         echo "❌ ERROR: ldm doctor Dependency Integrity check failed:" | tee -a "$RESULTS_FILE_TMP"

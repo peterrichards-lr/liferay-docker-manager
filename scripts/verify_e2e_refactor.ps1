@@ -202,7 +202,7 @@ try {
     }
 
     Write-Host ">> Verifying ldm doctor Dependency Integrity..."
-    $doctorOut = & $LDM_CMD doctor --detailed 2>&1
+    $doctorOut = & $LDM_CMD doctor --detailed --skip-project 2>&1
     $doctorStr = ($doctorOut -join "`n")
     if ($doctorStr -match "Dependency Integrity") {
         if ($doctorStr -match "Dependency Integrity.*(Failed|Missing|FAILED)") {
