@@ -316,10 +316,16 @@ def sync_reports():  # noqa: C901, PLR0912, PLR0915
             expected_name = f"verify-{meta['internal_slug']}-{meta['status_slug']}.txt"
             if r.name != expected_name:
                 if normalize_version(meta["version"]) != normalize_version(VERSION):
+                    # Generate a unique hash for the archived filename to avoid collisions
+                    name_hash = hashlib.md5(
+                        f"{meta['internal_slug']}{meta['timestamp']}".encode()
+                    ).hexdigest()[:8]
+                    archived_name = f"verify-{meta['internal_slug']}-{meta['status_slug']}-{name_hash}.txt"
                     UI.warning(
-                        f"Skipping raw report {r.name}: version {meta['version']} "
-                        f"does not match current LDM version {VERSION}."
+                        f"Archiving outdated raw report {r.name} -> {archived_name} "
+                        f"(version {meta['version']} != {VERSION})."
                     )
+                    shutil.move(str(r), str(archive_dir / archived_name))
                     continue
 
             report_metas.append(meta)
