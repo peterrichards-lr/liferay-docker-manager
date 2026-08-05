@@ -4,7 +4,13 @@ import shutil
 from datetime import datetime
 from pathlib import Path
 
+from ldm_core.constants import VERSION
 from ldm_core.ui import UI
+
+
+def normalize_version(v):
+    """Normalizes a version string by stripping leading 'v' and whitespace."""
+    return v.lstrip("v").strip()
 
 
 def strip_ansi(text):
@@ -305,6 +311,17 @@ def sync_reports():  # noqa: C901, PLR0912, PLR0915
             meta = get_report_metadata(r)
             if meta["internal_slug"] == "IGNORE":
                 continue
+
+            # Ensure that raw/new reports match the current codebase version
+            expected_name = f"verify-{meta['internal_slug']}-{meta['status_slug']}.txt"
+            if r.name != expected_name:
+                if normalize_version(meta["version"]) != normalize_version(VERSION):
+                    UI.warning(
+                        f"Skipping raw report {r.name}: version {meta['version']} "
+                        f"does not match current LDM version {VERSION}."
+                    )
+                    continue
+
             report_metas.append(meta)
         except Exception as e:
             UI.warning(f"Failed to parse {r.name}: {e}")
