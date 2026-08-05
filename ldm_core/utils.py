@@ -840,7 +840,11 @@ def get_github_token() -> str | None:
         import subprocess
 
         res = subprocess.run(
-            ["gh", "auth", "token"], capture_output=True, text=True, check=False
+            ["gh", "auth", "token"],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=2,
         )
         if res.returncode == 0:
             return res.stdout.strip()
