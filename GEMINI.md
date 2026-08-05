@@ -4,6 +4,15 @@
 > **Purpose of this file**: This file tracks the active work state, tasks, and historical progress.
 > For architectural and project mandates (e.g. Volume Strategies, Exit Codes, CI rules), please refer to `.agents/AGENTS.md` and the `.agents/skills/` modules.
 
+## Active Work State & Plan (August 5, 2026)
+
+- **Current Active Task (August 5, 2026) — Universal Subprocess timeouts (run_query design pattern)**:
+  - [x] Design and implement central `run_query` helper function in `utils.py` supporting `LDM_QUERY_TIMEOUT` config.
+  - [x] Refactor `get_github_token` in `utils.py` and `_is_cloud_authenticated` in `cloud.py` to use `run_query` preventing WSL interop hangs.
+  - [x] Refactor `_check_docker_runtime` in `doctor.py` to use standard command execution with timeouts.
+  - [x] Verify unit tests and format checks locally.
+  - [x] Tag and push pre-release `v2.15.26-pre.8` via release orchestrator (PR [#978](https://github.com/peterrichards-lr/liferay-docker-manager/pull/978)).
+
 ## Active Work State & Plan (August 4, 2026)
 
 - **Current Active Task (August 4, 2026) — Wait timeout budgeting, logs tail & macOS hostname warning (Issues #966, #967, #969)**:
@@ -772,4 +781,4 @@ When modifying `client-extension.yaml` files, **NEVER change or remove `.service
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-08-04* | *Last Reviewed: 2026-08-03*
+*Last Updated: 2026-08-05* | *Last Reviewed: 2026-08-03*
