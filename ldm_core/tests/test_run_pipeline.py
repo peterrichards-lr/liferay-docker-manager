@@ -7,6 +7,7 @@ from unittest.mock import MagicMock, patch
 from ldm_core.pipelines.run import (
     ComposerStage,
     ConfigResolutionStage,
+    EnvironmentSetupStage,
     ExecutionStage,
     ProjectInitializationStage,
     RunPipelineContext,
@@ -102,6 +103,47 @@ class TestRunPipeline(unittest.TestCase):
             stage._resolve_tag(manager, {}, is_samples=False, is_portal=False)
         mock_die.assert_called_once()
         self.assertEqual(mock_die.call_args.kwargs.get("exit_code"), 3)
+
+    # --- Named-volume ownership regression tests (LDM-#817) ---
+    # Locks in that the plain run/import pipeline explicitly (re-)chowns
+    # Named Volumes before containers boot, not just the snapshot-restore
+    # path -- the gap that let "Unable to create lock manager" recur on a
+    # brand-new project despite #817 having been (incorrectly) closed as
+    # already fixed.
+
+    def _paths_for_environment_setup(self):
+        paths = {"root": MagicMock(), "data": MagicMock(), "state": MagicMock()}
+        paths["data"].__truediv__.return_value.exists.return_value = False
+        return paths
+
+    def test_environment_setup_hydrates_named_volumes_before_boot(self):
+        self.context.set("paths", self._paths_for_environment_setup())
+        self.context.set("no_up", False)
+        self.context.manager.composer.is_using_named_volumes.return_value = True
+
+        EnvironmentSetupStage().execute(self.context)
+
+        self.context.manager.snapshot.volumes.hydrate_named_volumes_with_sync_wait.assert_called_once_with(
+            self.context.get("paths")
+        )
+
+    def test_environment_setup_skips_hydration_when_no_up(self):
+        self.context.set("paths", self._paths_for_environment_setup())
+        self.context.set("no_up", True)
+        self.context.manager.composer.is_using_named_volumes.return_value = True
+
+        EnvironmentSetupStage().execute(self.context)
+
+        self.context.manager.snapshot.volumes.hydrate_named_volumes_with_sync_wait.assert_not_called()
+
+    def test_environment_setup_skips_hydration_when_bind_mounts_used(self):
+        self.context.set("paths", self._paths_for_environment_setup())
+        self.context.set("no_up", False)
+        self.context.manager.composer.is_using_named_volumes.return_value = False
+
+        EnvironmentSetupStage().execute(self.context)
+
+        self.context.manager.snapshot.volumes.hydrate_named_volumes_with_sync_wait.assert_not_called()
 
     def test_composer_stage_port_conflict_uses_orchestration_exit_code(self):
         tmp_root = Path(tempfile.mkdtemp())

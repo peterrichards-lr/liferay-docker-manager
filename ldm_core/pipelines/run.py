@@ -851,8 +851,23 @@ class EnvironmentSetupStage(PipelineStage):
             if tag:
                 tag_marker.write_text(tag)
 
-        es_data = paths["data"] / "elasticsearch8"
         use_volumes = manager.composer.is_using_named_volumes()
+        if use_volumes and not no_up:
+            # LDM-#817: a freshly-created Named Volume (via `docker volume
+            # create` / `docker compose up` on first use, or after `ldm reset`
+            # deletes and recreates one) starts out root-owned. Equinox runs
+            # as UID 1000 inside the Liferay container and cannot create its
+            # OSGi lock file in a root-owned, empty volume, crashing on first
+            # boot with "Unable to create lock manager". #817 was closed
+            # claiming this was fixed, but the actual chown injection was
+            # never implemented -- reopened and fixed here for real, reusing
+            # the same volume-ownership mechanism the snapshot-restore path
+            # already relies on (LDM-420 in ldm_core/snapshot/volumes.py),
+            # rather than depending entirely on the Liferay image's own
+            # entrypoint to self-chown a volume it didn't create.
+            manager.snapshot.volumes.hydrate_named_volumes_with_sync_wait(paths)
+
+        es_data = paths["data"] / "elasticsearch8"
         if es_data.exists() and not use_volumes:
             UI.detail("Clearing stale search locks and enforcing permissions...")
             for lock_file in es_data.rglob("write.lock"):
