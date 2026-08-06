@@ -205,7 +205,10 @@ class DevService:
                 (r'^VERSION = ".*?"', f'VERSION = "{new_version}"'),
                 (r"LDM_MAGIC_VERSION: .*", f"LDM_MAGIC_VERSION: {new_version}"),
             ],
-            "pyproject.toml": [(r'^version = ".*?"', f'version = "{new_version}"')],
+            "pyproject.toml": [
+                (r'^version = ".*?"', f'version = "{new_version}"'),
+                (r"LDM_MAGIC_VERSION: .*", f"LDM_MAGIC_VERSION: {new_version}"),
+            ],
         }
 
         if build_info:

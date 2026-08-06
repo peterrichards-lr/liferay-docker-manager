@@ -7,10 +7,16 @@ from pathlib import Path
 def get_version_from_pyproject():
     path = Path("pyproject.toml")
     if not path.exists():
-        return None
+        return None, None
     content = path.read_text()
+
     match = re.search(r'version\s*=\s*"([^"]+)"', content)
-    return match.group(1) if match else None
+    version_val = match.group(1) if match else None
+
+    magic_match = re.search(r"# LDM_MAGIC_VERSION:\s*([^\n]+)", content)
+    magic_val = magic_match.group(1).strip() if magic_match else None
+
+    return version_val, magic_val
 
 
 def get_version_from_constants():
@@ -31,7 +37,7 @@ def get_version_from_constants():
 
 
 def main():
-    v_pyproject = get_version_from_pyproject()
+    v_pyproject, v_pyproject_magic = get_version_from_pyproject()
     v_constants, v_magic = get_version_from_constants()
 
     if not v_pyproject or not v_constants:
@@ -52,6 +58,13 @@ def main():
     if v_magic and v_magic != v_constants:
         errors.append(
             f"Mismatch: ldm_core/constants.py variable ({v_constants}) != magic comment ({v_magic})"
+        )
+
+    # Check 3: pyproject.toml's own magic comment vs its version value
+    # (previously unchecked -- this drifted silently for multiple releases)
+    if v_pyproject_magic and v_pyproject_magic != v_pyproject:
+        errors.append(
+            f"Mismatch: pyproject.toml version ({v_pyproject}) != pyproject.toml magic comment ({v_pyproject_magic})"
         )
 
     if errors:
