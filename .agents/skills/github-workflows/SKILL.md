@@ -17,3 +17,7 @@ To prevent unnecessary code churn, sweeping reformatting, and out-of-scope chang
 
 - Every Pull Request body MUST contain reference keywords linking to the related issue (e.g. `Closes #XYZ` or `Resolves #XYZ`) to ensure GitHub automatically closes the issues on merge.
 - **MANDATORY REQUIREMENT**: PRs will be rejected if they do not include the GitHub issue link. You MUST ensure an issue is created and linked on every single PR you open.
+
+<!-- markdownlint-disable MD049 -->
+---
+*Last Updated: 2026-08-06* | *Last Reviewed: 2026-08-06*

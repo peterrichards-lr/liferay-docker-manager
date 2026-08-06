@@ -76,3 +76,7 @@ When you discover an upstream bug or platform limitation:
 2. **Implement Workaround**: Implement the necessary resilient logic or configuration workaround in the codebase, documenting it in the file.
 3. **Register JIRA Key**: When the issue is raised on JIRA, use `git mv` to rename the file to include the JIRA Key and move it to `jira/open/`. Update the JIRA link inside the file.
 4. **Audit Statuses**: Periodically audit the open tickets. If a ticket has been resolved or closed on JIRA, move it to `jira/closed/`.
+
+<!-- markdownlint-disable MD049 -->
+---
+*Last Updated: 2026-08-06* | *Last Reviewed: 2026-08-06*
