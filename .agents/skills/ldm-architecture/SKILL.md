@@ -12,6 +12,15 @@ To resolve critical filesystem locking deadlocks (e.g., `Unable to create lock m
 - **Named Docker Volumes**: MUST be used for directories requiring POSIX file locking.
   - `/opt/liferay/data`
   - `/opt/liferay/osgi/state`
+  - **Documented exception**: when the user opts into `--persist-osgi`, LDM
+    deliberately maps `/opt/liferay/osgi/state` to a host bind-mount instead of
+    a Named Volume, trading the POSIX-locking guarantee for dramatically faster
+    subsequent startups (bypassing OSGi bundle resolution). LDM automatically
+    invalidates and wipes this bind-mounted state if the underlying Liferay
+    image tag changes, to prevent stale-bundle conflicts. See
+    `docs/reference/advanced_cli.md` and `ldm_core/handlers/composer.py`
+    (the `persist_osgi` branch of the compose volume builder). This is the
+    only sanctioned exception to the Named Volume mandate above.
 - **Host Bind-Mounts**: SHOULD be used for directories facilitating developer hot-reloads.
   - `/mnt/liferay/deploy`
   - `/mnt/liferay/files`
@@ -52,3 +61,7 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
 
 - **Custom Containers Integration**: When a user requests to run external services (e.g., WordPress, Node.js, Web Crawler) alongside Liferay, use the LDM `custom_containers` feature rather than altering the native LDM Python orchestration.
 - **Multi-Compose Decoupled Networks**: For enterprise multi-compose decoupled architecture setups, always refer to the reference templates in `docker-compose-templates/` to understand the standard `shared-search-net` and `shared-crawl-net` external networking boundaries. Do not invent new bridging architectures if these templates suffice.
+
+<!-- markdownlint-disable MD049 -->
+---
+*Last Updated: 2026-08-06* | *Last Reviewed: 2026-08-06*
