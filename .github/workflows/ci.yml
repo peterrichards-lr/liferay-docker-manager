@@ -112,26 +112,26 @@ jobs:
             fi
           fi
 
-  # LDM-#983: pre-release version-bump PRs (release/vX.Y.Z-pre.N branches)
-  # were being merged directly into master repeatedly, contradicting
+  # LDM-#983 / LDM-#1007: pre-release version-bump PRs (release/vX.Y.Z-pre.N
+  # branches) were being merged directly into master repeatedly, contradicting
   # scripts/release.py's own design (tag on the branch, leave the PR open,
   # only merge via `--promote` once bumped to a stable version). This gate
-  # inspects the version string at the ref actually being merged/pushed and
-  # rejects it if it's still a pre-release, regardless of how the merge was
-  # triggered (PR merge button, `gh pr merge`, or a direct push).
+  # inspects the version string at the ref actually pushed to master and
+  # rejects it if it's still a pre-release.
   #
-  # The PR-triggered half is scoped to release/* branches ONLY -- not every
-  # PR. An ordinary bugfix/feature PR that never touches the version files
-  # still inherits whatever version happens to be checked in on master right
-  # now, which is very often itself a pre-release mid-cycle; checking every
-  # PR against that would fail unrelated PRs for a pre-existing condition
-  # they have nothing to do with, not just PRs actually trying to merge a
-  # pre-release into master.
+  # push-only, deliberately: a release-tracking PR is *by design* at a
+  # pre-release version for its entire natural lifetime until `--promote`
+  # runs, so a pull_request-triggered version of this check would show
+  # failing continuously on every open release PR (confirmed on PR #1004) --
+  # not incorrect, but indistinguishable from a real problem unless someone
+  # already knows to expect it, and it isn't registered as a required check
+  # anyway. This push-only version instead fires (after the fact) only if a
+  # pre-release version actually lands on master via any path -- merge
+  # button, `gh pr merge`, or a direct push -- giving a real, low-noise
+  # safety net without a permanently-red check on normal open PRs.
   block-prerelease-on-master:
     runs-on: ubuntu-latest
-    if: |
-      (github.event_name == 'pull_request' && startsWith(github.head_ref, 'release/')) ||
-      (github.event_name == 'push' && !startsWith(github.ref, 'refs/tags/'))
+    if: github.event_name == 'push' && !startsWith(github.ref, 'refs/tags/')
     steps:
       - uses: actions/checkout@v7
         with:
