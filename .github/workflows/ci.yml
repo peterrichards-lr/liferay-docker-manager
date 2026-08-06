@@ -92,8 +92,13 @@ jobs:
             exit 0
           fi
           
+          # Matches dash-style (fix-foo) and slash-style (fix/foo) branches, and
+          # both bare (fix: ...) and Conventional-Commit-scoped (fix(scope): ...)
+          # titles. Hoisted into a variable because bash's [[ =~ ]] parser chokes
+          # on a literal unescaped ')' written inline, even inside a char class.
+          TITLE_REGEX='^(fix|bugfix|bug)(\([^)]*\))?:'
           IS_BUGFIX=false
-          if [[ "$BRANCH_NAME" =~ ^(fix|bugfix)/ ]] || [[ "$PR_TITLE" =~ ^(fix|bugfix|bug): ]]; then
+          if [[ "$BRANCH_NAME" =~ ^(fix|bugfix)[/-] ]] || [[ "$PR_TITLE" =~ $TITLE_REGEX ]]; then
             IS_BUGFIX=true
           fi
           
