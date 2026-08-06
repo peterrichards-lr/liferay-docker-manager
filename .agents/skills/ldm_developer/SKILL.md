@@ -96,3 +96,7 @@ Do not manually bump versions or tag releases. Instead, use the automated releas
 7. Polls until GitHub Actions builds pass and the PR merges.
 
 8. Checks out master locally, pulls changes, tags the release (`v2.11.43`), and pushes the tag to trigger the final GitHub release workflows.
+
+<!-- markdownlint-disable MD049 -->
+---
+*Last Updated: 2026-08-06* | *Last Reviewed: 2026-08-06*

@@ -21,3 +21,7 @@ description: Activate this skill whenever writing tests, running linters, or com
 
 - **Mandatory Alignment**: All development, testing, linting, and Git operations MUST be conducted within the project's Python virtual environment (`.venv`).
 - **Hook Isolation**: Git hooks and pre-commit checks rely on packages installed in the virtual environment. Running operations outside the virtual environment (e.g. using global system Python) will trigger hook failures.
+
+<!-- markdownlint-disable MD049 -->
+---
+*Last Updated: 2026-08-06* | *Last Reviewed: 2026-08-06*

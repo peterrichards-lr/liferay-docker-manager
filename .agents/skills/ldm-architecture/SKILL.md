@@ -52,3 +52,7 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
 
 - **Custom Containers Integration**: When a user requests to run external services (e.g., WordPress, Node.js, Web Crawler) alongside Liferay, use the LDM `custom_containers` feature rather than altering the native LDM Python orchestration.
 - **Multi-Compose Decoupled Networks**: For enterprise multi-compose decoupled architecture setups, always refer to the reference templates in `docker-compose-templates/` to understand the standard `shared-search-net` and `shared-crawl-net` external networking boundaries. Do not invent new bridging architectures if these templates suffice.
+
+<!-- markdownlint-disable MD049 -->
+---
+*Last Updated: 2026-08-06* | *Last Reviewed: 2026-08-06*
