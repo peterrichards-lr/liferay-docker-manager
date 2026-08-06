@@ -46,8 +46,30 @@ To support CI/CD pipelines and headless automation, all LDM commands MUST adhere
 - `1`: Generic/Validation Error.
 - `2`: Authentication/Permission Error (e.g. LCP login required).
 - `3`: Infrastructure/Data Error (e.g. Backup download failure).
-- `4`: Orchestration/Deployment Error.
-- `126`: Command Invocation Error.
+- `4`: Orchestration/Deployment Error. **Aspirational**: no `UI.die(...)` call site
+  currently passes `exit_code=4` -- orchestration/deployment failures across
+  `ldm_core/runtime/orchestration.py` and `ldm_core/pipelines/run.py` all
+  currently fall back to the generic `1` default. Classifying which of those
+  ~15+ call sites are genuinely orchestration errors (vs. validation errors
+  that also belong under `1`) is real, judgment-heavy work, not a mechanical
+  find-and-replace -- tracked separately as
+  [#996](https://github.com/peterrichards-lr/liferay-docker-manager/issues/996)
+  rather than rushed, so the work lands as one deliberate pass instead of
+  ad hoc, inconsistent choices made call site by call site.
+- `126`: Command Invocation Error. Same caveat as above: currently
+  aspirational at the top-level LDM command contract.
+- **Low-level subprocess wrapper exception**: `ldm_core/utils.py`'s
+  `run_command()` helper -- called from a very large number of sites across
+  the codebase -- intentionally uses POSIX-standard shell conventions instead
+  of the contract above for its own direct failure exits: `124` for a timed-out
+  subprocess (matching GNU `timeout`'s convention) and `127` for
+  "command not found" (matching the shell's own convention), and otherwise
+  passes through the wrapped subprocess's own `returncode` unchanged on a
+  generic failure, since discarding that information would make wrapped-tool
+  failures harder to diagnose. This is a deliberate, standard choice for a
+  subprocess-wrapping utility, not a violation of the contract above -- the
+  0-4/126 contract governs LDM's own top-level command outcomes, not every
+  exit path of every subprocess it shells out to.
 
 ## Liferay Cloud Golden Path
 
