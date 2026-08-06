@@ -196,8 +196,12 @@ class ArchiveSnapshotService:
                         tar.extract(m, path=es_infra_root)  # nosec B202
 
             # 3. Hydrate Named Volumes (LDM-382)
-            # If using Named Volumes (macOS), sync the extracted files into Docker volumes
-            self.facade.volumes._hydrate_named_volumes(paths)
+            # If using Named Volumes (macOS), sync the extracted files into Docker
+            # volumes. Goes through hydrate_named_volumes_with_sync_wait() (not
+            # _hydrate_named_volumes() directly) so the mandatory 2-second host
+            # filesystem sync wait (VirtioFS/gRPC-FUSE lag) is never skipped on
+            # this restore path -- see ldm-architecture/SKILL.md.
+            self.facade.volumes.hydrate_named_volumes_with_sync_wait(paths)
 
     def _generate_snapshot_metadata(  # noqa: C901, PLR0912, PLR0915
         self,
