@@ -167,7 +167,7 @@ def get_pr_state(pr_number):
     return api_get_pr_state(pr_number)
 
 
-def run_pre_commit_checks(branch_name):
+def run_pre_commit_checks(branch_name, delete_branch_on_failure=True):
     print("Running code formatting and lint checks...")
     pre_commit_bin = project_root / ".venv" / "bin" / "pre-commit"
     if pre_commit_bin.exists():
@@ -180,7 +180,13 @@ def run_pre_commit_checks(branch_name):
                 f"\n❌ Error: Pre-commit quality gate checks failed. Please resolve lint issues before release:\n{res.stdout}\n{res.stderr or ''}"
             )
             run_cmd(["git", "checkout", "master"])
-            run_cmd(["git", "branch", "-D", branch_name])
+            if delete_branch_on_failure:
+                # Only safe to delete when we're about to create a brand-new,
+                # single-commit branch. An existing release/* branch being
+                # continued may already have an open PR and prior history --
+                # deleting the *local* copy there just means re-fetching it,
+                # but never do it silently for a branch we didn't just create.
+                run_cmd(["git", "branch", "-D", branch_name])
             sys.exit(res.returncode)
         print("✅ Pre-commit quality gate checks passed.")
 
@@ -375,14 +381,41 @@ def main():  # noqa: C901, PLR0912, PLR0915
 
     print("✅ Workspace contains only documentation and version configuration files.")
 
-    if current_branch != "master":
-        print("❌ Error: Releases must be initiated from the 'master' branch.")
+    # LDM-#983: a bump can either start a brand-new release cycle (from
+    # master) or continue an already-open pre-release cycle (from its
+    # existing release/vX.Y.Z-pre.N branch). Continuing on the existing
+    # branch -- instead of always cutting a fresh release/vX.Y.Z-pre.{N+1}
+    # branch and PR -- is what keeps every beta increment off master: only
+    # `--promote` (below) is ever allowed to merge into master.
+    is_continuing_release = current_branch.startswith("release/")
+
+    if current_branch != "master" and not is_continuing_release:
+        print(
+            "❌ Error: Releases must be initiated from the 'master' branch (to start "
+            "a new cycle) or from an existing 'release/*' pre-release branch (to "
+            "continue one)."
+        )
         sys.exit(1)
 
-    print("Pulling latest from master...")
-    run_cmd(["git", "pull", "origin", "master"])
+    if is_continuing_release and args.bump not in ("beta", "pre"):
+        print(
+            f"❌ Error: --bump {args.bump} is not valid while continuing an existing "
+            f"release branch ('{current_branch}'). Continuing a cycle only accepts "
+            "--bump beta; use --promote to finish it, or switch to 'master' to start "
+            f"a fresh --bump {args.bump} cycle."
+        )
+        sys.exit(1)
+
+    if is_continuing_release:
+        print(f"Continuing existing pre-release cycle on '{current_branch}'...")
+        run_cmd(["git", "pull", "origin", current_branch])
+    else:
+        print("Pulling latest from master...")
+        run_cmd(["git", "pull", "origin", "master"])
     # 3. Quality Gate check: Format and Lint
-    run_pre_commit_checks(current_branch)
+    run_pre_commit_checks(
+        current_branch, delete_branch_on_failure=not is_continuing_release
+    )
 
     # 4. Bump the version using ldm system version
     # Retrieve current version before bump
@@ -470,10 +503,17 @@ def main():  # noqa: C901, PLR0912, PLR0915
     new_version = ver_res.stdout.strip()
     print(f"Bumped to new version: {new_version}")
 
-    # 6. Create a release branch for the PR
-    release_branch = f"release/v{new_version}"
-    print(f"Creating release branch: {release_branch}...")
-    run_cmd(["git", "checkout", "-b", release_branch])
+    # 6. Create the release branch for a new cycle, or stay on the existing
+    # one when continuing an already-open pre-release cycle (LDM-#983: this
+    # is what lets multiple beta increments land without ever touching
+    # master -- only `--promote` merges).
+    if is_continuing_release:
+        release_branch = current_branch
+        print(f"Reusing existing release branch: {release_branch}")
+    else:
+        release_branch = f"release/v{new_version}"
+        print(f"Creating release branch: {release_branch}...")
+        run_cmd(["git", "checkout", "-b", release_branch])
 
     # 7. Add, commit, and push
     print("Staging and committing files...")
@@ -502,56 +542,71 @@ def main():  # noqa: C901, PLR0912, PLR0915
     print("Pushing to origin...")
     run_cmd(["git", "push", "origin", "HEAD"])
 
-    # 8. Create the PR using gh CLI (with fallback)
-    print("Creating pull request...")
+    # 8. Reuse the existing open tracking PR when continuing a cycle already
+    # in progress, otherwise create a new one via gh CLI (with API fallback).
     pr_base = "master"
     pr_head = release_branch
-    pr_body = (
-        f"Automated release bump to v{new_version}."
-        if "-" not in new_version
-        else f"Pre-release tracking PR for v{new_version}. Merging this PR will promote the changes to master, after which a stable release can be tagged."
-    )
 
-    # Try gh first
-    pr_url = None
-    try:
-        pr_cmd = [
-            "gh",
-            "pr",
-            "create",
-            "--base",
-            pr_base,
-            "--head",
-            pr_head,
-            "--title",
-            commit_msg,
-            "--body",
-            pr_body,
-        ]
-        pr_res = run_cmd(pr_cmd, capture=True)
-        pr_url = pr_res.stdout.strip()
-    except Exception:
-        pass
-
-    if not pr_url:
-        print("Falling back to GitHub API for PR creation...")
-        try:
-            res_data = call_github_api(
-                "/pulls",
-                method="POST",
-                data={
-                    "title": commit_msg,
-                    "head": pr_head,
-                    "base": pr_base,
-                    "body": pr_body,
-                },
+    if is_continuing_release:
+        existing_pr_num = get_pr_number(release_branch)
+        if not existing_pr_num:
+            print(
+                f"❌ Error: Could not find an open tracking PR for branch {release_branch}. "
+                "It may have been merged or closed already -- if this cycle is done, "
+                "there's nothing to continue; start a fresh one from master instead."
             )
-            pr_url = res_data["html_url"]
-        except Exception as e:
-            print("❌ Error creating PR via API:", e)
             sys.exit(1)
+        pr_url = f"https://github.com/peterrichards-lr/liferay-docker-manager/pull/{existing_pr_num}"
+        print(f"Reusing existing tracking PR: {pr_url}")
+    else:
+        print("Creating pull request...")
+        pr_body = (
+            f"Automated release bump to v{new_version}."
+            if "-" not in new_version
+            else f"Pre-release tracking PR for v{new_version}. Merging this PR will promote the changes to master, after which a stable release can be tagged."
+        )
 
-    print(f"PR Created: {pr_url}")
+        # Try gh first
+        pr_url = None
+        try:
+            pr_cmd = [
+                "gh",
+                "pr",
+                "create",
+                "--base",
+                pr_base,
+                "--head",
+                pr_head,
+                "--title",
+                commit_msg,
+                "--body",
+                pr_body,
+            ]
+            pr_res = run_cmd(pr_cmd, capture=True)
+            pr_url = pr_res.stdout.strip()
+        except Exception:
+            pass
+
+        if not pr_url:
+            print("Falling back to GitHub API for PR creation...")
+            try:
+                res_data = call_github_api(
+                    "/pulls",
+                    method="POST",
+                    data={
+                        "title": commit_msg,
+                        "head": pr_head,
+                        "base": pr_base,
+                        "body": pr_body,
+                    },
+                )
+                pr_url = res_data["html_url"]
+            except Exception as e:
+                print("❌ Error creating PR via API:", e)
+                sys.exit(1)
+
+        print(f"PR Created: {pr_url}")
+
     pr_num = pr_url.split("/")[-1]
 
     # If pre-release, tag directly on the branch and exit
