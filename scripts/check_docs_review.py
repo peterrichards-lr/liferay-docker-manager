@@ -1,12 +1,9 @@
 import argparse
-import re
 import sys
 from datetime import datetime
 from pathlib import Path
 
-FOOTER_REGEX = re.compile(
-    r"\*Last Updated: ([\d\-]+)\* \| \*Last Reviewed: ([\d\-]+)\*"
-)
+from ldm_docs_common import FOOTER_REGEX, is_ignored_path
 
 
 def check_docs(max_review_days, max_update_days, max_gap_days):
@@ -16,16 +13,11 @@ def check_docs(max_review_days, max_update_days, max_gap_days):
     needs_review: list[tuple[str, str, int | None, int | None]] = []
 
     for file_path in md_files:
-        # Ignore virtual environments, node_modules, etc.
-        if any(
-            ignored in file_path
-            for ignored in [
-                "/.venv/",
-                "/node_modules/",
-                "/e2e-work-dir/",
-                "/.smoke_venv/",
-            ]
-        ) or file_path.startswith("."):
+        # NOTE: previously skipped any path starting with "." (e.g. relative
+        # paths under .agents/, .gemini/), which silently exempted those
+        # governance docs from ever being checked for staleness. Fixed to use
+        # the same explicit noise-directory ignore-list as append_timestamps.py.
+        if is_ignored_path(file_path):
             continue
 
         with open(file_path, encoding="utf-8") as f:

@@ -92,8 +92,13 @@ jobs:
             exit 0
           fi
           
+          # Matches dash-style (fix-foo) and slash-style (fix/foo) branches, and
+          # both bare (fix: ...) and Conventional-Commit-scoped (fix(scope): ...)
+          # titles. Hoisted into a variable because bash's [[ =~ ]] parser chokes
+          # on a literal unescaped ')' written inline, even inside a char class.
+          TITLE_REGEX='^(fix|bugfix|bug)(\([^)]*\))?:'
           IS_BUGFIX=false
-          if [[ "$BRANCH_NAME" =~ ^(fix|bugfix)/ ]] || [[ "$PR_TITLE" =~ ^(fix|bugfix|bug): ]]; then
+          if [[ "$BRANCH_NAME" =~ ^(fix|bugfix)[/-] ]] || [[ "$PR_TITLE" =~ $TITLE_REGEX ]]; then
             IS_BUGFIX=true
           fi
           
@@ -107,6 +112,33 @@ jobs:
             fi
           fi
 
+  # LDM-#983: pre-release version-bump PRs (release/vX.Y.Z-pre.N branches)
+  # were being merged directly into master repeatedly, contradicting
+  # scripts/release.py's own design (tag on the branch, leave the PR open,
+  # only merge via `--promote` once bumped to a stable version). This gate
+  # inspects the version string at the ref actually being merged/pushed and
+  # rejects it if it's still a pre-release, regardless of how the merge was
+  # triggered (PR merge button, `gh pr merge`, or a direct push).
+  block-prerelease-on-master:
+    runs-on: ubuntu-latest
+    if: |
+      github.event_name == 'pull_request' ||
+      (github.event_name == 'push' && !startsWith(github.ref, 'refs/tags/'))
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Verify this ref's version is not a pre-release
+        shell: bash
+        run: |
+          VERSION=$(grep -m1 -oE '^VERSION = "[^"]+"' ldm_core/constants.py | sed -E 's/VERSION = "([^"]+)"/\1/')
+          echo "Version at this ref: $VERSION"
+          if [[ "$VERSION" == *-* ]]; then
+            echo "::error::This ref's version ($VERSION) is a pre-release (contains '-'). Pre-release branches must never be merged into or pushed onto master. Run 'python3 scripts/release.py --promote' from the release branch instead -- it bumps to a stable version and merges automatically."
+            exit 1
+          fi
+          echo "Version check passed: $VERSION is a stable version."
 
   lint-and-test:
     needs: validate-tag
