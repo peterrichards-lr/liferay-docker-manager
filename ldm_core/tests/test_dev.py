@@ -92,7 +92,9 @@ class TestDevService(unittest.TestCase):
         )
 
         pyproject_path = self.base / "pyproject.toml"
-        pyproject_path.write_text('version = "2.4.26-beta.4"')
+        pyproject_path.write_text(
+            '# LDM_MAGIC_VERSION: 2.4.26-beta.4\nversion = "2.4.26-beta.4"'
+        )
 
         self.handler._apply_version_update("2.4.26")
 
@@ -100,7 +102,12 @@ class TestDevService(unittest.TestCase):
         self.assertIn('VERSION = "2.4.26"', content)
         self.assertIn('ELASTICSEARCH_VERSION = "8.19.1"', content)  # UNCHANGED
         self.assertIn("LDM_MAGIC_VERSION: 2.4.26", content)
-        self.assertIn('version = "2.4.26"', pyproject_path.read_text())
+
+        pyproject_content = pyproject_path.read_text()
+        self.assertIn('version = "2.4.26"', pyproject_content)
+        # Regression test (#991): pyproject.toml's own magic comment was
+        # never updated by the bump script, letting it drift silently.
+        self.assertIn("LDM_MAGIC_VERSION: 2.4.26", pyproject_content)
 
     @patch("ldm_core.handlers.dev.Path.cwd")
     def test_promote_blocks_stable(self, mock_cwd):
