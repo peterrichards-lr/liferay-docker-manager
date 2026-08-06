@@ -609,6 +609,18 @@ def main():  # noqa: C901, PLR0912, PLR0915
 
     pr_num = pr_url.split("/")[-1]
 
+    if not is_continuing_release:
+        # LDM-#1005: release/promote PRs aren't tied to a tracked issue --
+        # label them so the mandatory issue-link-check (see #987) doesn't
+        # fail on every single release cycle, requiring manual intervention.
+        try:
+            run_cmd(
+                ["gh", "pr", "edit", str(pr_num), "--add-label", "no-issue-needed"],
+                check=False,
+            )
+        except Exception as e:
+            print(f"⚠️  Could not label PR #{pr_num} as no-issue-needed: {e}")
+
     # If pre-release, tag directly on the branch and exit
     if "-" in new_version:
         tag_name = f"v{new_version}"
