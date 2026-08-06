@@ -101,7 +101,11 @@ class ProjectInitializationStage(PipelineStage):
                 return
             root = manager.detect_project_path(project_id, for_init=True)
             if not root:
-                UI.die("Failed to resolve project path.")
+                # LDM-#996: this is LDM's own initialization/orchestration layer
+                # failing to establish the project's directory structure after
+                # the user already supplied a valid name -- an orchestration
+                # error, not a user-input validation problem.
+                UI.die("Failed to resolve project path.", exit_code=4)
 
         project_id = root.name
         paths = manager.setup_paths(root)
@@ -400,7 +404,12 @@ class ConfigResolutionStage(PipelineStage):
                         api_base, release_type=release_type, verbose=manager.verbose
                     )
                     if not tag:
-                        UI.die(f"Could not find any tags for release type: {ans}")
+                        # LDM-#996: a failed external API lookup (Docker Hub tag
+                        # discovery), not a user-input validation error.
+                        UI.die(
+                            f"Could not find any tags for release type: {ans}",
+                            exit_code=3,
+                        )
                 else:
                     if manager.verbose:
                         UI.detail(f"Discovering latest tag matching prefix: {ans}...")
@@ -422,8 +431,11 @@ class ConfigResolutionStage(PipelineStage):
                     verbose=manager.verbose,
                 )
                 if not tag:
+                    # LDM-#996: same external-API-failure category as the
+                    # release-type branch above.
                     UI.die(
-                        "Failed to discover latest Liferay tag. Please specify one explicitly with -t."
+                        "Failed to discover latest Liferay tag. Please specify one explicitly with -t.",
+                        exit_code=3,
                     )
                 if manager.verbose:
                     UI.success(f"Using tag: {tag}")
@@ -1185,10 +1197,13 @@ class ComposerStage(PipelineStage):
 
                     if not DockerService.is_running(container_name):
                         if not manager.check_port("127.0.0.1", mapped_port):
+                            # LDM-#996: a genuine deployment/orchestration error --
+                            # the host environment can't accommodate this deployment.
                             UI.die(
                                 f"Port conflict detected: Port {mapped_port} is already in use on the host "
                                 f"and is required by service '{svc_name}' in your compose configuration.\n"
-                                f"Please stop the service currently using port {mapped_port} before starting LDM."
+                                f"Please stop the service currently using port {mapped_port} before starting LDM.",
+                                exit_code=4,
                             )
             except SystemExit:
                 raise
