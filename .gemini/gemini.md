@@ -12,6 +12,8 @@
 - **Visual Confirmation**: Always use the VS Code Diff view to present changes before applying them.
 - **Logic-First Planning**: For any function or logic block >10 lines, output a `<plan>` tag with the step-by-step algorithm. Wait for a "Proceed" command before writing code.
 - **Virtual Environment Execution**: The agent MUST run tests, linters, and git commit operations with the Python virtual environment (`.venv`) activated, or explicitly invoke the binaries inside `.venv/bin/` to prevent dependency mismatch and pre-commit hook failures on host environments.
+- **Scope Sprawl Limit**: Bugfix branches/PR titles (`fix`, `bugfix`) MUST NOT modify more than 10 files -- the `pr-sprawl-check` CI gate enforces this, and can only be bypassed by including `[bypass sprawl]` or `[bypass limit]` in the PR title/description. See `.agents/skills/github-workflows/SKILL.md`.
+- **No `--no-verify`**: NEVER use `git commit --no-verify` or otherwise bypass the quality gate. Use `./scripts/agent_push.sh "<commit message>"`, which mechanically forces `pre-commit run --all-files` and the full `pytest` suite before every push. If a hook fails locally due to a missing binary (e.g. `semgrep`, `detect-secrets`, `actionlint`), skip only that specific hook via the `SKIP` environment variable -- never the whole gate. See `.agents/skills/testing-and-ci/SKILL.md`.
 
 ## 2. Code Quality, Architecture & Deduplication
 
@@ -23,6 +25,7 @@
 - **macOS Sync Wait**: When writing high volumes of files to the host (e.g. during backup extraction), LDM MUST wait at least 2 seconds before mounting those folders into a container. This prevents race conditions where the macOS VirtioFS driver reports a successful write to the host OS before the files are physically available to the Docker hypervisor.
 - **macOS VirtioFS Resilience**: When writing a large number of files to the host (e.g. during snapshot extraction) that must be immediately visible to a Docker container, you MUST implement a **Sync Wait** (minimum 2 seconds). On macOS, the Docker hypervisor (VirtioFS/gRPC-FUSE) lags behind the host OS's file creation; failing to wait results in empty directories inside the container.
 - **Script Parity**: All cross-platform utility, verification, and wrapper scripts (e.g., `.sh` vs `.ps1` or `.bat`) MUST be kept in perfect functional parity. Any hardening check or logic update applied to one must be immediately synchronized to the others.
+- **Pure ASCII PowerShell**: All `.ps1`/`.psm1` scripts MUST use pure ASCII encoding -- no smart quotes, em-dashes, or emoji. Non-ASCII bytes without a UTF-8 BOM cause Windows PowerShell 5.1 to misparse AST string boundaries on ANSI code pages. Validate with `python3 scripts/check_powershell_ascii.py` before committing.
 - **Terminal UI Integrity**: When implementing long-running operations with spinners, you MUST use the `\033[K` ANSI code to clear the terminal line before each update to prevent character bleed. Truncation must be whitespace-aware to prevent word cutting.
 
 ## 3. Testing & Hard-Gates
@@ -57,12 +60,11 @@
 ## 8. Git Management & Branching Strategy
 
 - **Logical Squashing**: Avoid creating a commit for every minor bugfix. Group related fixes and features into single, descriptive commits.
-- **Release Automation**:
-  - **Stable Strategy**: Use `[release]` in the commit summary to trigger a stable GitHub Release. This MUST be reserved for hardened features and verified bugfixes.
-  - **Pre-Release Strategy**: Use `[pre-release]` in the commit summary to trigger a Beta/Test build (e.g., `v2.10.x-pre.y`). All pre-release tags (`v*.pre*`) MUST be created and pushed directly on their respective development/feature branches, never on `master`.
+- **Release Automation**: AI agents MUST NEVER manually bump version strings, hand-edit `pyproject.toml`/`ldm_core/constants.py`, or push a `git tag` directly. All version changes go through `python3 scripts/release.py`:
+  - **Pre-Release Strategy**: `python3 scripts/release.py --bump beta` bumps to (or increments) a `-pre.N` version, tags directly on the `release/vX.Y.Z-pre.N` branch, and leaves its tracking PR open -- it deliberately does NOT merge that PR. `master` must only ever advance to a pre-release version via `--promote` below; a CI gate rejects merging any branch whose version string contains a hyphen into `master`.
+  - **Stable Strategy**: `python3 scripts/release.py --promote`, run from the active `release/` branch, bumps the pre-release to a stable version, merges its PR into `master`, and tags the stable release there. The merge commit message MUST contain `[release]`. Stable releases MUST be reserved for hardened features and verified bugfixes.
   - **Experimental Mandate**: All brand new or experimental functionality (specifically the **Liferay Cloud Golden Path** / `ldm import from cloud`) MUST use pre-releases until a full E2E verification is completed by the user.
-  - **Bumping**: Use `./ldm version --bump pre` to start or increment a pre-release cycle, and `./ldm version --promote` to convert a successful pre-release to a stable version.
-  - Ensure version tags match the `VERSION` in `ldm_core/constants.py`.
+  - Ensure version tags match the `VERSION` in `ldm_core/constants.py` (verify with `python3 scripts/release.py`'s own checks, or `python3 scripts/check_version_sync.py`).
 - **Branching Separation**:
   - **`master` / `main`**: Strictly for environmental hardening, stable maintenance, and verified hotfixes.
   - **Roadmap Items**: All large roadmap items, complex features, or experimental refactors MUST be developed in dedicated feature branches (e.g., `roadmap/feature-name`).
