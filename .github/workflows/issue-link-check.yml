@@ -1,0 +1,49 @@
+name: Issue Link Check
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened, labeled, unlabeled]
+    branches:
+      - master
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  check-issue-link:
+    name: Verify PR references an issue
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check for a closing issue reference or override label
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+
+          labels=$(gh pr view "$PR_NUMBER" --repo "$REPO" --json labels -q '.labels[].name')
+          if echo "$labels" | grep -qx "no-issue-needed"; then
+            echo "OK: 'no-issue-needed' label present, skipping issue-link requirement."
+            exit 0
+          fi
+
+          title=$(gh pr view "$PR_NUMBER" --repo "$REPO" --json title -q '.title')
+          body=$(gh pr view "$PR_NUMBER" --repo "$REPO" --json body -q '.body // ""')
+
+          if echo "$title"$'\n'"$body" | grep -qiE '\b(close[sd]?|fix(e[sd])?|resolve[sd]?)\b[[:space:]]*:?[[:space:]]*#[0-9]+'; then
+            echo "OK: found a Closes/Fixes/Resolves #N reference."
+            exit 0
+          fi
+
+          echo "::error::This PR doesn't reference a closing issue (e.g. 'Closes #123' in the title or body)."
+          echo "Every PR must link a tracked GitHub issue, per CONTRIBUTING.md and"
+          echo ".agents/skills/github-workflows/SKILL.md, so work stays trackable and"
+          echo "CHANGELOG.md entries generate correctly."
+          echo "If this change is genuinely too trivial to need one, add the 'no-issue-needed' label instead."
+          exit 1
