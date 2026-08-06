@@ -46,18 +46,22 @@ To support CI/CD pipelines and headless automation, all LDM commands MUST adhere
 - `1`: Generic/Validation Error.
 - `2`: Authentication/Permission Error (e.g. LCP login required).
 - `3`: Infrastructure/Data Error (e.g. Backup download failure).
-- `4`: Orchestration/Deployment Error. **Aspirational**: no `UI.die(...)` call site
-  currently passes `exit_code=4` -- orchestration/deployment failures across
-  `ldm_core/runtime/orchestration.py` and `ldm_core/pipelines/run.py` all
-  currently fall back to the generic `1` default. Classifying which of those
-  ~15+ call sites are genuinely orchestration errors (vs. validation errors
-  that also belong under `1`) is real, judgment-heavy work, not a mechanical
-  find-and-replace -- tracked separately as
+- `4`: Orchestration/Deployment Error. Used for LDM-internal failures at the
+  orchestration layer -- e.g. `ldm_core/pipelines/run.py`'s port-conflict-detected
+  and project-path-resolution-failed cases -- as opposed to a user-input
+  validation problem (which stays under `1`) or an external data/API failure
+  (which uses `3`, e.g. the same file's Docker Hub tag-discovery failures).
+  This triage was done deliberately, one call site at a time, per
   [#996](https://github.com/peterrichards-lr/liferay-docker-manager/issues/996)
-  rather than rushed, so the work lands as one deliberate pass instead of
-  ad hoc, inconsistent choices made call site by call site.
-- `126`: Command Invocation Error. Same caveat as above: currently
-  aspirational at the top-level LDM command contract.
+  -- not every failure in `ldm_core/runtime/orchestration.py`/`pipelines/run.py`
+  belongs under `4`; most are genuinely `1` (bad project id, missing flag,
+  precondition not met) and were deliberately left alone.
+- `126`: Command Invocation Error. No genuine candidate for this exists in the
+  orchestration/pipeline layer as of the #996 triage -- every "not found"-shaped
+  message there (project not found, archetype not found) is a validation error
+  (`1`), not a failure to invoke a command. This code is reserved for a true
+  invocation failure at that layer if one is ever added; see the `run_command()`
+  exception below for where invocation-shaped failures currently do occur.
 - **Low-level subprocess wrapper exception**: `ldm_core/utils.py`'s
   `run_command()` helper -- called from a very large number of sites across
   the codebase -- intentionally uses POSIX-standard shell conventions instead
