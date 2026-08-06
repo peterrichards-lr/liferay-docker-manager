@@ -12,6 +12,15 @@ To resolve critical filesystem locking deadlocks (e.g., `Unable to create lock m
 - **Named Docker Volumes**: MUST be used for directories requiring POSIX file locking.
   - `/opt/liferay/data`
   - `/opt/liferay/osgi/state`
+  - **Documented exception**: when the user opts into `--persist-osgi`, LDM
+    deliberately maps `/opt/liferay/osgi/state` to a host bind-mount instead of
+    a Named Volume, trading the POSIX-locking guarantee for dramatically faster
+    subsequent startups (bypassing OSGi bundle resolution). LDM automatically
+    invalidates and wipes this bind-mounted state if the underlying Liferay
+    image tag changes, to prevent stale-bundle conflicts. See
+    `docs/reference/advanced_cli.md` and `ldm_core/handlers/composer.py`
+    (the `persist_osgi` branch of the compose volume builder). This is the
+    only sanctioned exception to the Named Volume mandate above.
 - **Host Bind-Mounts**: SHOULD be used for directories facilitating developer hot-reloads.
   - `/mnt/liferay/deploy`
   - `/mnt/liferay/files`

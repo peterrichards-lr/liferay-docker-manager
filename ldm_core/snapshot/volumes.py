@@ -75,6 +75,23 @@ class VolumesSnapshotService:
             )
             self._sync_volume(host_path, volume_name, direction="from_volume")
 
+    def hydrate_named_volumes_with_sync_wait(self, paths):
+        """Hydrates Named Volumes after a mandatory host filesystem sync wait.
+
+        LDM Architecture Mandate: after extracting a backup/snapshot to the host,
+        LDM MUST wait a minimum of 2 seconds before hydrating Docker Named Volumes,
+        to compensate for VirtioFS/gRPC-FUSE sync lag on macOS hypervisors. Every
+        restore path that hydrates named volumes from freshly-extracted host files
+        MUST go through this helper rather than calling _hydrate_named_volumes()
+        directly, so the sync wait can't be forgotten on a new code path.
+        """
+        if not self.manager.composer.is_using_named_volumes():
+            return
+
+        time.sleep(2)
+        UI.detail("  + Hydrating internal Docker volumes...")
+        self._hydrate_named_volumes(paths)
+
     def _hydrate_named_volumes(self, paths):
         """Copies data from the host into Docker Named Volumes after extraction."""
         if not self.manager.composer.is_using_named_volumes():
@@ -151,12 +168,7 @@ class VolumesSnapshotService:
             UI.detail("  + Unpacking volume to host...")
             shutil.copytree(str(choice_path / "volume"), str(target_data))
 
-            if self.manager.composer.is_using_named_volumes():
-                time.sleep(2)
-
-                UI.detail("  + Hydrating internal Docker volumes...")
-
-                self._hydrate_named_volumes(paths)
+            self.hydrate_named_volumes_with_sync_wait(paths)
 
         UI.success("Cloud volume restoration completed.")
 
