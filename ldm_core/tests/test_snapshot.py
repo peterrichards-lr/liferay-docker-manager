@@ -127,6 +127,77 @@ class TestSnapshotService(unittest.TestCase):
             self.assertEqual(mock_sync.call_count, 2)
             mock_sync.assert_any_call(paths["data"], ANY, direction="to_volume")
 
+    @patch("time.sleep")
+    def test_hydrate_named_volumes_with_sync_wait_sleeps_when_named_volumes_used(
+        self, mock_sleep
+    ):
+        # LDM Architecture Mandate: a minimum 2-second sync wait MUST occur before
+        # hydrating Named Volumes to compensate for macOS VirtioFS/gRPC-FUSE lag.
+        paths = {
+            "root": self.test_dir,
+            "data": self.test_dir / "data",
+            "state": self.test_dir / "state",
+        }
+        self.manager.composer.is_using_named_volumes.return_value = True
+
+        with patch.object(
+            self.manager.snapshot.volumes, "_hydrate_named_volumes"
+        ) as mock_hydrate:
+            self.manager.snapshot.volumes.hydrate_named_volumes_with_sync_wait(paths)
+            mock_sleep.assert_called_once_with(2)
+            mock_hydrate.assert_called_once_with(paths)
+
+    @patch("time.sleep")
+    def test_hydrate_named_volumes_with_sync_wait_noop_when_bind_mounts_used(
+        self, mock_sleep
+    ):
+        paths = {"root": self.test_dir}
+        self.manager.composer.is_using_named_volumes.return_value = False
+
+        with patch.object(
+            self.manager.snapshot.volumes, "_hydrate_named_volumes"
+        ) as mock_hydrate:
+            self.manager.snapshot.volumes.hydrate_named_volumes_with_sync_wait(paths)
+            mock_sleep.assert_not_called()
+            mock_hydrate.assert_not_called()
+
+    @patch("ldm_core.runtime.orchestration.UI.die", side_effect=SystemExit(1))
+    @patch("shutil.disk_usage")
+    @patch("tarfile.open")
+    @patch("time.sleep")
+    def test_extract_snapshot_archive_uses_sync_wait_helper_not_raw_hydrate(
+        self, mock_sleep, mock_tar_open, mock_disk_usage, mock_die
+    ):
+        # Regression test for the primary local-restore path (ldm restore) missing
+        # the mandatory sync wait that the cloud-backup path already had. Asserts
+        # _extract_snapshot_archive goes through hydrate_named_volumes_with_sync_wait
+        # rather than calling _hydrate_named_volumes() directly.
+        from collections import namedtuple
+
+        Usage = namedtuple("Usage", "total used free")
+        mock_disk_usage.return_value = Usage(10**10, 10**9, 10**9)
+
+        paths = {"root": self.test_dir}
+        archive = self.test_dir / "dummy.tgz"
+        archive.write_bytes(b"0" * 50)
+
+        self.manager.composer.is_using_named_volumes.return_value = True
+
+        with (
+            patch.object(
+                self.manager.snapshot.volumes, "_hydrate_named_volumes"
+            ) as mock_hydrate,
+            patch.object(
+                self.manager.snapshot.volumes,
+                "hydrate_named_volumes_with_sync_wait",
+                wraps=self.manager.snapshot.volumes.hydrate_named_volumes_with_sync_wait,
+            ) as mock_wait_helper,
+        ):
+            self.manager.snapshot.archive._extract_snapshot_archive(archive, paths)
+            mock_wait_helper.assert_called_once_with(paths)
+            mock_sleep.assert_called_once_with(2)
+            mock_hydrate.assert_called_once_with(paths)
+
     @patch("ldm_core.handlers.base.BaseHandler.detect_project_path")
     def test_cmd_snapshot_abort_no_project(self, mock_detect):
         mock_detect.return_value = None
