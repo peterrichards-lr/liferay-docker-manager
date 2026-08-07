@@ -306,16 +306,16 @@ def main():  # noqa: C901, PLR0912, PLR0915
         print(f"Promoted to stable version: {new_version}")
 
         # Regenerate the compatibility table now that VERSION is the new
-        # stable release. LDM_PROMOTED_FROM tells sync_compatibility.py which
-        # pre-release version it's *provably* safe to relabel in the table
-        # display as the new stable one -- never in the underlying raw
-        # reports, and only if nothing outside docs/version-metadata changed
-        # between that tag and this point (see get_promotion_normalization()
-        # there for the actual safety gate; this is what stops a promote that
-        # happens to carry real code changes from silently overstating what
-        # was verified).
+        # stable release. sync_compatibility.py checks each report's own
+        # recorded pre-release version against HEAD (see
+        # get_promotable_stable_version() there) and only displays it under
+        # the new stable version if nothing outside docs/version-metadata
+        # changed since that report's tag -- so a promote that happens to
+        # carry real code changes can't silently overstate what was
+        # verified. Not gated behind any state passed from here: the same
+        # check runs identically (and reaches the same answer) on any later,
+        # unrelated re-sync too.
         print("Regenerating compatibility table for the promoted version...")
-        os.environ["LDM_PROMOTED_FROM"] = current_version
         run_cmd(
             [sys.executable, str(project_root / "scripts" / "sync_compatibility.py")],
             check=False,
