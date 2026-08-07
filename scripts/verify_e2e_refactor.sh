@@ -9,8 +9,8 @@ set -e
 # by scripts/release.py on every bump) so a locally-held copy can be checked
 # against what actually shipped, rather than guessing from a file mtime -- git
 # checkout/pull doesn't preserve original commit timestamps.
-# LDM_MAGIC_VERSION: 2.15.26-pre.8
-SCRIPT_VERSION="2.15.26-pre.8"
+# LDM_MAGIC_VERSION: 2.15.25
+SCRIPT_VERSION="2.15.25"
 
 TEST_PORT="${LDM_TEST_PORT}"
 if [ -z "$TEST_PORT" ]; then
@@ -68,6 +68,12 @@ INSTALLED_VERSION=$(echo "$INSTALLED_VERSION_RAW" | grep -oE '[0-9]+\.[0-9]+\.[0
     echo "Hostname:     $HOSTNAME"
     echo "Platform:     $PLATFORM_INFO"
     echo "Binary:       $(which "$LDM_CMD")"
+} >"$RESULTS_FILE_TMP"
+
+# LDM-#1011 follow-up: tee (not just write) the version lines so both the
+# installed binary version and this script's own SCRIPT_VERSION are visible
+# on the console as the run starts, not only inside the report afterward.
+{
     echo "Version:      $INSTALLED_VERSION_RAW"
     echo "Script Ver:   $SCRIPT_VERSION"
 
@@ -76,7 +82,9 @@ INSTALLED_VERSION=$(echo "$INSTALLED_VERSION_RAW" | grep -oE '[0-9]+\.[0-9]+\.[0
         echo "   This may be intentional (verifying a specific older/newer binary), but if not,"
         echo "   re-pull this script: git fetch && git checkout origin/master -- scripts/verify_e2e_refactor.sh"
     fi
+} | tee -a "$RESULTS_FILE_TMP"
 
+{
     if command -v docker &>/dev/null; then
         echo "Docker:    $(docker version --format '{{.Server.Version}}' 2>/dev/null || echo "running")"
         if docker compose version &>/dev/null; then
@@ -84,7 +92,7 @@ INSTALLED_VERSION=$(echo "$INSTALLED_VERSION_RAW" | grep -oE '[0-9]+\.[0-9]+\.[0
         fi
     fi
     echo ""
-} >"$RESULTS_FILE_TMP"
+} >>"$RESULTS_FILE_TMP"
 
 # Helpers
 get_hash() {
