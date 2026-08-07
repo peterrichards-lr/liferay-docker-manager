@@ -305,6 +305,22 @@ def main():  # noqa: C901, PLR0912, PLR0915
         new_version = ver_res2.stdout.strip()
         print(f"Promoted to stable version: {new_version}")
 
+        # Regenerate the compatibility table now that VERSION is the new
+        # stable release. LDM_PROMOTED_FROM tells sync_compatibility.py which
+        # pre-release version it's *provably* safe to relabel in the table
+        # display as the new stable one -- never in the underlying raw
+        # reports, and only if nothing outside docs/version-metadata changed
+        # between that tag and this point (see get_promotion_normalization()
+        # there for the actual safety gate; this is what stops a promote that
+        # happens to carry real code changes from silently overstating what
+        # was verified).
+        print("Regenerating compatibility table for the promoted version...")
+        os.environ["LDM_PROMOTED_FROM"] = current_version
+        run_cmd(
+            [sys.executable, str(project_root / "scripts" / "sync_compatibility.py")],
+            check=False,
+        )
+
         # Add, commit, and push
         print("Staging and committing promoted version...")
         run_cmd(
@@ -324,6 +340,9 @@ def main():  # noqa: C901, PLR0912, PLR0915
                 # promoted to (caught before it ever bit a real promote).
                 "scripts/verify_e2e_refactor.sh",
                 "scripts/verify_e2e_refactor.ps1",
+                # Compatibility table regenerated above.
+                "docs/reference/compatibility.md",
+                "docs/TESTING.md",
             ]
         )
         commit_msg = f"chore(release): promote version to v{new_version} [release]"
