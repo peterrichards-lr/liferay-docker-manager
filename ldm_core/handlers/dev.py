@@ -209,6 +209,17 @@ class DevService:
                 (r'^version = ".*?"', f'version = "{new_version}"'),
                 (r"LDM_MAGIC_VERSION: .*", f"LDM_MAGIC_VERSION: {new_version}"),
             ],
+            "scripts/verify_e2e_refactor.sh": [
+                (r'^SCRIPT_VERSION=".*?"', f'SCRIPT_VERSION="{new_version}"'),
+                (r"LDM_MAGIC_VERSION: .*", f"LDM_MAGIC_VERSION: {new_version}"),
+            ],
+            "scripts/verify_e2e_refactor.ps1": [
+                (
+                    r'^\$SCRIPT_VERSION = ".*?"',
+                    f'$SCRIPT_VERSION = "{new_version}"',
+                ),
+                (r"LDM_MAGIC_VERSION: .*", f"LDM_MAGIC_VERSION: {new_version}"),
+            ],
         }
 
         if build_info:
