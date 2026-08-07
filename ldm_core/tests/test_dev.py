@@ -96,6 +96,17 @@ class TestDevService(unittest.TestCase):
             '# LDM_MAGIC_VERSION: 2.4.26-beta.4\nversion = "2.4.26-beta.4"'
         )
 
+        scripts_dir = self.base / "scripts"
+        scripts_dir.mkdir(parents=True, exist_ok=True)
+        sh_path = scripts_dir / "verify_e2e_refactor.sh"
+        sh_path.write_text(
+            '#!/bin/bash\n# LDM_MAGIC_VERSION: 2.4.26-beta.4\nSCRIPT_VERSION="2.4.26-beta.4"\n'
+        )
+        ps1_path = scripts_dir / "verify_e2e_refactor.ps1"
+        ps1_path.write_text(
+            '# LDM_MAGIC_VERSION: 2.4.26-beta.4\n$SCRIPT_VERSION = "2.4.26-beta.4"\n'
+        )
+
         self.handler._apply_version_update("2.4.26")
 
         content = constants_path.read_text()
@@ -108,6 +119,17 @@ class TestDevService(unittest.TestCase):
         # Regression test (#991): pyproject.toml's own magic comment was
         # never updated by the bump script, letting it drift silently.
         self.assertIn("LDM_MAGIC_VERSION: 2.4.26", pyproject_content)
+
+        # Regression test (#1011): verify_e2e_refactor.sh/.ps1 embed their own
+        # SCRIPT_VERSION so a locally-held copy can be checked against what
+        # actually shipped, rather than guessing from a file mtime.
+        sh_content = sh_path.read_text()
+        self.assertIn('SCRIPT_VERSION="2.4.26"', sh_content)
+        self.assertIn("LDM_MAGIC_VERSION: 2.4.26", sh_content)
+
+        ps1_content = ps1_path.read_text()
+        self.assertIn('$SCRIPT_VERSION = "2.4.26"', ps1_content)
+        self.assertIn("LDM_MAGIC_VERSION: 2.4.26", ps1_content)
 
     @patch("ldm_core.handlers.dev.Path.cwd")
     def test_promote_blocks_stable(self, mock_cwd):

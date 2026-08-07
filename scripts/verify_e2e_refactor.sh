@@ -5,6 +5,13 @@ set -e
 # Target: Verifies the INSTALLED binary, not the source code.
 # Optimized for macOS (Intel/Silicon) and Linux.
 
+# LDM-#1011: version this script itself (kept in sync with ldm_core/constants.py
+# by scripts/release.py on every bump) so a locally-held copy can be checked
+# against what actually shipped, rather than guessing from a file mtime -- git
+# checkout/pull doesn't preserve original commit timestamps.
+# LDM_MAGIC_VERSION: 2.15.26-pre.8
+SCRIPT_VERSION="2.15.26-pre.8"
+
 TEST_PORT="${LDM_TEST_PORT}"
 if [ -z "$TEST_PORT" ]; then
     TEST_PORT=$(python3 -c 'import socket; s=socket.socket(); s.bind(("", 0)); print(s.getsockname()[1]); s.close()')
@@ -52,14 +59,24 @@ if [[ "$OSTYPE" == "linux"* ]] && [ -f /etc/os-release ]; then
     PLATFORM_INFO="${DISTRO:-$OSTYPE}"
 fi
 
+INSTALLED_VERSION_RAW=$("$LDM_CMD" --version 2>/dev/null || echo "unknown")
+INSTALLED_VERSION=$(echo "$INSTALLED_VERSION_RAW" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?' | head -1)
+
 {
     echo "=== LDM BINARY VERIFICATION REPORT ==="
-    echo "Timestamp: $(date)"
-    echo "Hostname:  $HOSTNAME"
-    echo "Platform:  $PLATFORM_INFO"
-    echo "Binary:    $(which "$LDM_CMD")"
-    echo "Version:   $("$LDM_CMD" --version 2>/dev/null || echo "unknown")"
-    
+    echo "Timestamp:    $(date)"
+    echo "Hostname:     $HOSTNAME"
+    echo "Platform:     $PLATFORM_INFO"
+    echo "Binary:       $(which "$LDM_CMD")"
+    echo "Version:      $INSTALLED_VERSION_RAW"
+    echo "Script Ver:   $SCRIPT_VERSION"
+
+    if [ -n "$INSTALLED_VERSION" ] && [ "$INSTALLED_VERSION" != "$SCRIPT_VERSION" ]; then
+        echo "⚠️  WARNING: this script (v$SCRIPT_VERSION) does not match the installed ldm binary (v$INSTALLED_VERSION)."
+        echo "   This may be intentional (verifying a specific older/newer binary), but if not,"
+        echo "   re-pull this script: git fetch && git checkout origin/master -- scripts/verify_e2e_refactor.sh"
+    fi
+
     if command -v docker &>/dev/null; then
         echo "Docker:    $(docker version --format '{{.Server.Version}}' 2>/dev/null || echo "running")"
         if docker compose version &>/dev/null; then
