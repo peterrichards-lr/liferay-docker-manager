@@ -1,16 +1,113 @@
 import hashlib
+import os
 import re
 import shutil
+import subprocess
 from datetime import datetime
 from pathlib import Path
 
 from ldm_core.constants import VERSION
 from ldm_core.ui import UI
 
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+
+# Paths that scripts/release.py's `--promote` can *only* ever touch when
+# bumping a pre-release to stable: docs, version metadata, and the
+# release/verification tooling itself -- never anything that ends up
+# compiled into the shipped `ldm` binary. Used by _is_metadata_only_diff()
+# below to decide whether it's provably safe to relabel a compatibility-table
+# entry's pre-release version as its now-stable equivalent (see
+# get_promotion_normalization()).
+_METADATA_ONLY_ALLOWLIST = [
+    re.compile(r".*\.md$", re.IGNORECASE),
+    re.compile(r"^ldm_core/constants\.py$"),
+    re.compile(r"^pyproject\.toml$"),
+    re.compile(r"^scripts/release\.py$"),
+    re.compile(r"^scripts/verify_e2e_refactor\.(sh|ps1)$"),
+    re.compile(r"^scripts/(sync_compatibility|check_version_sync)\.py$"),
+    re.compile(r"^references/verification-results/"),
+    re.compile(r"^\.gitignore$"),
+    re.compile(r"^\.secrets\.baseline$"),
+]
+
 
 def normalize_version(v):
     """Normalizes a version string by stripping leading 'v' and whitespace."""
     return v.lstrip("v").strip()
+
+
+def _is_metadata_only_diff(old_ref, new_ref="HEAD"):
+    """True only if every file changed between old_ref and new_ref matches
+    _METADATA_ONLY_ALLOWLIST -- i.e. nothing that ends up in the shipped ldm
+    binary moved between them. Fails safe (False) on any git error or an
+    empty/missing ref, since relabeling a compatibility-table version is only
+    ever safe when we can *prove* nothing functional changed; an inconclusive
+    check must never be treated as a green light.
+    """
+    try:
+        res = subprocess.run(
+            ["git", "diff", "--name-only", old_ref, new_ref],
+            capture_output=True,
+            text=True,
+            cwd=PROJECT_ROOT,
+            check=False,
+        )
+    except Exception:
+        return False
+    if res.returncode != 0:
+        return False
+    changed = [f for f in res.stdout.splitlines() if f.strip()]
+    return all(
+        any(pattern.match(f) for pattern in _METADATA_ONLY_ALLOWLIST) for f in changed
+    )
+
+
+def get_promotion_normalization():
+    """Returns (old_version, new_version) if scripts/release.py --promote set
+    LDM_PROMOTED_FROM and it's provably safe (see _is_metadata_only_diff) to
+    display that pre-release version's compatibility-table rows under the new
+    stable VERSION instead -- otherwise None.
+
+    This only ever affects what the generated table *displays*. The
+    underlying verification-results/*.txt reports are never rewritten: they
+    stay a verbatim, honest record of the exact binary that was actually
+    tested, which is also what the staleness check in sync_reports() above
+    keys off of. A promote that's provably metadata-only doesn't invalidate
+    that record -- the binary that shipped as stable is bit-for-bit what was
+    verified as the pre-release -- but if anything functional changed, this
+    returns None and the table keeps showing the honest pre-release label
+    until a fresh run actually verifies the new stable binary.
+    """
+    old_version = os.environ.get("LDM_PROMOTED_FROM", "").strip()
+    if not old_version or "-" in VERSION:
+        # Not promoting (unset), or the current VERSION is itself still a
+        # pre-release -- there's no stable version to normalize towards.
+        return None
+
+    old_tag = f"v{old_version}"
+    tag_check = subprocess.run(
+        ["git", "rev-parse", "--verify", "--quiet", old_tag],
+        capture_output=True,
+        text=True,
+        cwd=PROJECT_ROOT,
+        check=False,
+    )
+    if tag_check.returncode != 0:
+        UI.warning(
+            f"Promotion tag {old_tag} not found locally -- skipping "
+            "compatibility-table version-label normalization."
+        )
+        return None
+
+    if not _is_metadata_only_diff(old_tag):
+        UI.warning(
+            f"Changes between {old_tag} and HEAD touch more than docs/version "
+            f"metadata -- keeping the honest pre-release label in the "
+            f"compatibility table until a fresh verification run confirms v{VERSION}."
+        )
+        return None
+
+    return (old_version, VERSION)
 
 
 def strip_ansi(text):
@@ -463,6 +560,13 @@ def sync_reports():  # noqa: C901, PLR0912, PLR0915
         }
         return mapping.get(provider, f"`{provider}`")
 
+    promotion = get_promotion_normalization()
+    if promotion:
+        UI.info(
+            f"Promotion detected: displaying v{promotion[0]} rows as v{promotion[1]} "
+            "in the compatibility table (verification-results/*.txt left untouched)."
+        )
+
     table_header = "| Architecture | Host OS | Docker Provider | Docker Engine | Hardening | LDM Version | Verified | Report |"
     table_sep = "| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |"
     rows = []
@@ -475,8 +579,14 @@ def sync_reports():  # noqa: C901, PLR0912, PLR0915
         if meta["provider_v"]:
             provider_display += f" `{meta['provider_v']}`"
 
+        display_version = meta["version"]
+        if promotion and normalize_version(display_version) == normalize_version(
+            promotion[0]
+        ):
+            display_version = promotion[1]
+
         rows.append(
-            f"| **{meta['arch']}** | {meta['os']} | {provider_display} | `{meta['engine_v']}` | {badge} | `{meta['version']}` | {icon} | {report_link} |"
+            f"| **{meta['arch']}** | {meta['os']} | {provider_display} | `{meta['engine_v']}` | {badge} | `{display_version}` | {icon} | {report_link} |"
         )
 
     new_table = f"{table_header}\n{table_sep}\n" + "\n".join(rows)
