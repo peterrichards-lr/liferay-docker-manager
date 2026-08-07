@@ -1398,6 +1398,18 @@ def get_parser():  # noqa: PLR0915
         type=int,
         help="Number of consecutive checks required to verify Liferay is idle (default: 3)",
     )
+    wait_cmd.add_argument(
+        "--fragment-patch-timeout",
+        type=int,
+        help=(
+            "Per-loop seconds to poll the headless-admin-site API for OSGi/Site "
+            "Initializer readiness before patching fragment overrides (default: 300, "
+            "or 900 when auto-detected on an external drive). Runs after -- and "
+            "additive to -- this command's own --timeout, so raise this on slow or "
+            "external-drive filesystems where redeploys see spurious "
+            "'failed to process deployables' failures. (LDM-#1020)"
+        ),
+    )
 
     status = subparsers.add_parser("status", aliases=["ps"], parents=[base_sub_parent])
     status.add_argument("project", nargs="?")
@@ -2585,6 +2597,7 @@ def _build_command_map(args, manager):
             stream_logs=getattr(args, "stream_logs", False),
             cpu_idle_threshold=getattr(args, "cpu_idle_threshold", None),
             cpu_idle_checks=getattr(args, "cpu_idle_checks", None),
+            fragment_patch_timeout=getattr(args, "fragment_patch_timeout", None),
         ),
         ("status", None): lambda: manager.diagnostics.cmd_status(
             getattr(args, "project", None),

@@ -1029,3 +1029,111 @@ class TestFragments(unittest.TestCase):
         self.assertFalse(any("L_GLOBAL" in p for p in called_urls))
         self.assertFalse(any("other-site" in p for p in called_urls))
         self.assertTrue(any("my-site" in p for p in called_urls))
+
+
+class TestFragmentPatchTimeout(unittest.TestCase):
+    """LDM-#1020: _resolve_fragment_patch_timeout's precedence and the
+    external-drive auto-bump, plus a wiring check that
+    _patch_fragment_overrides actually delegates to it instead of
+    reintroducing an inline hardcoded retry budget."""
+
+    def setUp(self):
+        self.tmp_dir_obj = tempfile.TemporaryDirectory()
+        self.tmp_dir = Path(self.tmp_dir_obj.name)
+        self.handler = MockRuntime()
+        self.handler.handler = RuntimeService(self.handler)
+
+    def tearDown(self):
+        self.tmp_dir_obj.cleanup()
+
+    @patch("platform.system", return_value="Linux")
+    @patch.dict("os.environ", {}, clear=True)
+    def test_default_when_nothing_set(self, mock_platform):
+        result = self.handler.handler.fragments._resolve_fragment_patch_timeout(
+            None, Path("/home/user/project")
+        )
+        self.assertEqual(result, 300)
+
+    def test_explicit_timeout_always_wins(self):
+        # Even on a path that would otherwise trigger the external-drive
+        # auto-bump, an explicit value must never be overridden.
+        result = self.handler.handler.fragments._resolve_fragment_patch_timeout(
+            45, Path("/Volumes/SanDisk/project")
+        )
+        self.assertEqual(result, 45)
+
+    @patch.dict("os.environ", {"LDM_FRAGMENT_PATCH_TIMEOUT": "120"}, clear=True)
+    def test_env_var_respected(self):
+        result = self.handler.handler.fragments._resolve_fragment_patch_timeout(
+            None, Path("/home/user/project")
+        )
+        self.assertEqual(result, 120)
+
+    @patch("ldm_core.ui.UI.warning")
+    @patch("platform.system", return_value="Linux")
+    @patch.dict(
+        "os.environ", {"LDM_FRAGMENT_PATCH_TIMEOUT": "not-a-number"}, clear=True
+    )
+    def test_malformed_env_var_warns_and_falls_back(self, mock_platform, mock_warning):
+        result = self.handler.handler.fragments._resolve_fragment_patch_timeout(
+            None, Path("/home/user/project")
+        )
+        self.assertEqual(result, 300)
+        mock_warning.assert_called_once()
+        self.assertIn("LDM_FRAGMENT_PATCH_TIMEOUT", mock_warning.call_args[0][0])
+
+    @patch("platform.system", return_value="Darwin")
+    @patch.dict("os.environ", {}, clear=True)
+    def test_external_drive_auto_bump(self, mock_platform):
+        result = self.handler.handler.fragments._resolve_fragment_patch_timeout(
+            None, Path("/Volumes/SanDisk/repos/project")
+        )
+        self.assertEqual(result, 900)
+
+    @patch("platform.system", return_value="Linux")
+    @patch.dict("os.environ", {}, clear=True)
+    def test_external_drive_bump_is_darwin_only(self, mock_platform):
+        # Same /Volumes/-prefixed path, but not on macOS -- Linux legitimately
+        # has a top-level /Volumes directory in some setups and it carries no
+        # special meaning there, unlike on macOS where it's always an
+        # external/mounted drive.
+        result = self.handler.handler.fragments._resolve_fragment_patch_timeout(
+            None, Path("/Volumes/mounted/project")
+        )
+        self.assertEqual(result, 300)
+
+    @patch("platform.system", return_value="Darwin")
+    @patch.dict("os.environ", {}, clear=True)
+    def test_non_volumes_path_not_bumped(self, mock_platform):
+        result = self.handler.handler.fragments._resolve_fragment_patch_timeout(
+            None, Path("/Users/peter/project")
+        )
+        self.assertEqual(result, 300)
+
+    @patch("platform.system", return_value="Darwin")
+    @patch.dict("os.environ", {"LDM_FRAGMENT_PATCH_TIMEOUT": "60"}, clear=True)
+    def test_env_var_overrides_external_drive_bump(self, mock_platform):
+        result = self.handler.handler.fragments._resolve_fragment_patch_timeout(
+            None, Path("/Volumes/SanDisk/project")
+        )
+        self.assertEqual(result, 60)
+
+    def test_patch_fragment_overrides_delegates_to_resolver(self):
+        """_patch_fragment_overrides must resolve its retry budget via
+        _resolve_fragment_patch_timeout -- not reintroduce an inline
+        hardcoded max_retries -- and pass through the caller's timeout and
+        paths['root'] untouched."""
+        paths = {"root": self.tmp_dir}
+        project_meta = {"container_name": "test"}
+        with patch.object(
+            self.handler.handler.fragments,
+            "_resolve_fragment_patch_timeout",
+            return_value=300,
+        ) as mock_resolve:
+            # No fragment-overrides.json exists in tmp_dir, so the method
+            # returns right after resolving the timeout -- exercising the
+            # delegation without needing to drive the full retry loop.
+            self.handler.handler.fragments._patch_fragment_overrides(
+                project_meta, paths, timeout=42
+            )
+        mock_resolve.assert_called_once_with(42, self.tmp_dir)
