@@ -6,8 +6,8 @@
 # by scripts/release.py on every bump) so a locally-held copy can be checked
 # against what actually shipped, rather than guessing from a file mtime -- git
 # checkout/pull doesn't preserve original commit timestamps.
-# LDM_MAGIC_VERSION: 2.15.26-pre.8
-$SCRIPT_VERSION = "2.15.26-pre.8"
+# LDM_MAGIC_VERSION: 2.15.25
+$SCRIPT_VERSION = "2.15.25"
 
 $env:PYTHONUTF8 = 1
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
@@ -69,15 +69,27 @@ if (-not (Test-Path $VENV_PYTEST)) {
     } catch {
         $ldmVer = "Unknown (Exception: $($_.Exception.Message))"
     }
+    # LDM-#1011 follow-up: Write-Host bypasses the pipeline entirely (unlike
+    # Write-Output, which is captured below by Out-File), so this prints the
+    # version lines to the console as the run starts, in addition to them
+    # still landing in the report via Write-Output.
     Write-Output "Version:   $ldmVer"
+    Write-Host "Version:   $ldmVer"
     Write-Output "Script Ver: $SCRIPT_VERSION"
+    Write-Host "Script Ver: $SCRIPT_VERSION"
 
     if ($ldmVer -match '(\d+\.\d+\.\d+(-[a-zA-Z0-9.]+)?)') {
         $installedVersion = $Matches[1]
         if ($installedVersion -ne $SCRIPT_VERSION) {
-            Write-Output "WARNING: this script (v$SCRIPT_VERSION) does not match the installed ldm binary (v$installedVersion)."
-            Write-Output "  This may be intentional (verifying a specific older/newer binary), but if not,"
-            Write-Output "  re-pull this script: git fetch; git checkout origin/master -- scripts/verify_e2e_refactor.ps1"
+            $warnLines = @(
+                "WARNING: this script (v$SCRIPT_VERSION) does not match the installed ldm binary (v$installedVersion)."
+                "  This may be intentional (verifying a specific older/newer binary), but if not,"
+                "  re-pull this script: git fetch; git checkout origin/master -- scripts/verify_e2e_refactor.ps1"
+            )
+            $warnLines | ForEach-Object {
+                Write-Output $_
+                Write-Host $_
+            }
         }
     }
 
