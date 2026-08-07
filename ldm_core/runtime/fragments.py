@@ -1,6 +1,7 @@
 import base64
 import json
 import os
+import platform
 import ssl
 import string
 import time
@@ -19,12 +20,61 @@ class FragmentsService(BaseHandler):
         super().__init__(manager)
         self.manager = manager
 
-    def _patch_fragment_overrides(self, project_meta, paths):  # noqa: C901, PLR0912, PLR0915
+    def _resolve_fragment_patch_timeout(self, timeout, root_path):
+        """Resolves the effective per-loop OSGi/Site-Initializer-readiness
+        poll budget (LDM-#1020): explicit `timeout` arg (from
+        --fragment-patch-timeout) > LDM_FRAGMENT_PATCH_TIMEOUT env var >
+        900 on an auto-detected macOS external drive > 300 default.
+
+        This method's own polling runs *after* the caller's `ldm wait
+        --timeout` deadline has already been satisfied (readiness.py's
+        cmd_wait/_wait_for_ready call this with no reference to their own
+        overall timeout) -- so this budget is fully additive on top of that,
+        not shared with or capped by it.
+
+        The external-drive auto-bump mirrors the detection in
+        ldm_core/pipelines/run.py that auto-enables --internal-state -- same
+        condition, same rationale: bind-mounts against macOS external drives
+        are measurably slower, and this is exactly the retry loop a slow
+        redeploy on one can exhaust (see
+        peterrichards-lr/liferay-ai-commerce-accelerator#445). It only ever
+        adjusts the *default*; an explicit override above always wins.
+        """
+        if timeout is None:
+            try:
+                timeout = int(os.getenv("LDM_FRAGMENT_PATCH_TIMEOUT", "0")) or None
+            except ValueError:
+                UI.warning("Malformed LDM_FRAGMENT_PATCH_TIMEOUT; ignoring.")
+                timeout = None
+        if timeout is None:
+            timeout = 300
+            try:
+                if (
+                    platform.system().lower() == "darwin"
+                    and len(root_path.parts) >= 2
+                    and root_path.parts[1] == "Volumes"
+                ):
+                    timeout = 900
+                    UI.detail(
+                        "External volume detected -- extending OSGi-readiness poll "
+                        f"budget to {timeout}s (override with "
+                        "--fragment-patch-timeout or LDM_FRAGMENT_PATCH_TIMEOUT)."
+                    )
+            except Exception:
+                pass
+        return timeout
+
+    def _patch_fragment_overrides(  # noqa: C901, PLR0912, PLR0915
+        self, project_meta, paths, timeout=None
+    ):
         """Execute headless API requests to dynamically patch fragment configurations."""
         meta_file = paths["root"] / "meta"
         if meta_file.exists():
             disk_meta = read_meta(meta_file)
             project_meta = {**disk_meta, **(project_meta or {})}
+
+        timeout = self._resolve_fragment_patch_timeout(timeout, paths["root"])
+        max_retries = max(1, timeout // 5)
 
         overrides_file = paths["root"] / "configs" / "fragment-overrides.json"
         if not overrides_file.exists():
@@ -219,8 +269,8 @@ class FragmentsService(BaseHandler):
             "Content-Type": "application/json",
         }
 
-        # 3. Fetch Sites and Patch (with retry to wait for OSGi JAX-RS and Site Initializer)
-        max_retries = 60
+        # 3. Fetch Sites and Patch (with retry to wait for OSGi JAX-RS and Site
+        # Initializer). max_retries was already resolved above from timeout.
         patched_count = 0
         all_discovered_keys: set = set()
         debug_page_tree: list = []

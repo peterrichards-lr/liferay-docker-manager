@@ -16,7 +16,7 @@ class ReadinessService(BaseHandler):
         super().__init__(manager)
         self.manager = manager
 
-    def cmd_wait(  # noqa: C901, PLR0912, PLR0915
+    def cmd_wait(  # noqa: C901, PLR0912, PLR0913, PLR0915
         self,
         project_id=None,
         timeout=None,
@@ -26,6 +26,7 @@ class ReadinessService(BaseHandler):
         stream_logs=False,
         cpu_idle_threshold=None,
         cpu_idle_checks=None,
+        fragment_patch_timeout=None,
     ):
         """Block execution until project is fully ready (HTTP 200/302)."""
         if timeout is None:
@@ -96,6 +97,7 @@ class ReadinessService(BaseHandler):
             timeout=overall_timeout,
             stream_status=stream_status,
             stream_logs=stream_logs,
+            fragment_patch_timeout=fragment_patch_timeout,
         ):
             _die_with_logs(
                 f"Project '{project_id}' failed to become ready within {timeout}s."
@@ -346,6 +348,7 @@ class ReadinessService(BaseHandler):
         stream_status=False,
         stream_logs=False,
         browser=None,
+        fragment_patch_timeout=None,
     ):
         """Wait for Liferay to become healthy and provide access information."""
         container_name = project_meta.get("container_name")
@@ -646,7 +649,7 @@ class ReadinessService(BaseHandler):
                     )
                     paths = self.manager.setup_paths(root_path)
                     self.manager.runtime.fragments._patch_fragment_overrides(
-                        project_meta, paths
+                        project_meta, paths, timeout=fragment_patch_timeout
                     )
 
                     share_enabled = (

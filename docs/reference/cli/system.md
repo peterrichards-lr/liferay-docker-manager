@@ -408,6 +408,7 @@ ldm tray --uninstall-autostart  # Remove launch-on-login autostart
 - **`--fix-hosts`**: Add missing domains to `/etc/hosts`.
 - **`--force`**: Force operation without prompting.
 - **`--format`**: Specify output format (`json`, `table`, `csv`).
+- **`--fragment-patch-timeout`** (`wait`): Per-loop seconds to poll the headless-admin-site API for OSGi/Site Initializer readiness before patching fragment overrides (default: 300, or 900 when auto-detected on an external drive). Runs after — and additive to — `wait`'s own `--timeout`; also overridable via `LDM_FRAGMENT_PATCH_TIMEOUT`. ![Added in v2.15.27](https://img.shields.io/badge/Added%20in-v2.15.27-blue)
 - **`--global`**: Apply setting globally.
 - **`--help`**: Display CLI help menu.
 - **`--index`** / **`-i`**: Select project by 1-based index from list. ![Added in v2.15.22](https://img.shields.io/badge/Added%20in-v2.15.22-blue)
