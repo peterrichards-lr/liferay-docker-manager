@@ -162,8 +162,14 @@ jobs:
           # Manual reports (macOS/Windows) are intentionally never touched here.
           rm -f references/verification-results/verify-linux-workstation-ubuntu-*.txt
           rm -f references/verification-results/verify-linux-workstation-fedora-*.txt
-          # Copy only passing reports from this CI run
-          find ci-reports/ -name "verify-*-pass-*.txt" -exec cp {} references/verification-results/ \; 2>/dev/null || true
+          # Copy only passing reports from this CI run.
+          # LDM-#1018: verify_e2e_refactor.sh --ci writes a plain
+          # verify-{slug}-pass.txt (nothing after "pass" but the extension) --
+          # the previous "-pass-*.txt" pattern required a suffix after "pass"
+          # and only ever matched archived/hash-suffixed filenames, silently
+          # matching zero real reports and leaving the rm -f above with
+          # nothing to replace what it just deleted.
+          find ci-reports/ -name "verify-*-pass*.txt" -exec cp {} references/verification-results/ \; 2>/dev/null || true
           echo "Reports now in references/verification-results/:"
           ls -1 references/verification-results/verify-*.txt 2>/dev/null || echo "  (none found)"
 
