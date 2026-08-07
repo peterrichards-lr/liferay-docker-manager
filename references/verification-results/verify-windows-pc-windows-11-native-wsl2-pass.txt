@@ -1,13 +1,16 @@
 === LDM BINARY VERIFICATION REPORT ===
-Timestamp: Fri Jul 31 14:11:28 BST 2026
+Timestamp:    Fri Aug  7 12:43:27 BST 2026
 Hostname:  [ANONYMIZED]
-Platform:  Ubuntu 24.04.4 LTS
+Platform:     Ubuntu 24.04.4 LTS
 Binary:    [ANONYMIZED]
-Version:   ldm 2.15.25-pre.14
+Version:      ldm 2.15.26-pre.10
+Script Ver:   2.15.26-pre.10
 Docker:    29.3.0
 Compose:   5.1.1
 
 >> Initializing Infrastructure
+[0;32m✅  Infrastructure setup complete.[0m
+>> Custom SSL Port Setup
 [0;32m✅  Infrastructure setup complete.[0m
 >> Target List
 [1;33m=== Registered Target Compute Nodes ===[0m
@@ -24,26 +27,26 @@ Compose:   5.1.1
 │ local  │ localhost       │ [0;32mONLINE[0m │ v29.3.0        │ 12 CPUs / 7.6 GB │ 3                  │
 [2m╰────────┴─────────────────┴────────┴────────────────┴──────────────────┴────────────────────╯[0m
 >> Target Add (Mock Node)
-[0;32m✅  Target node 'e2e-target-34595' (127.0.0.1) registered successfully.[0m
+[0;32m✅  Target node 'e2e-target-43497' (127.0.0.1) registered successfully.[0m
 >> Target Remove (Mock Node)
-[0;32m✅  Target node 'e2e-target-34595' removed.[0m
+[0;32m✅  Target node 'e2e-target-43497' removed.[0m
 >> Running LDM Project
 MockManager module: ldm_core.manager
 [1;36m▶  Synchronizing Assets[0m
 [1;36m▶  Starting Container Stack[0m
-[0;32m✅  Project 'ldm-smoke-test-34595' started in background.[0m
+[0;32m✅  Project 'ldm-smoke-test-43497' started in background.[0m
 >> Deploying artifact
 [0;32m✅  Artifact deployment complete.[0m
 ✅ Hot Deploy verified.
 >> Creating Snapshot
 [0;32m✅  Database dump completed.[0m
-[0;32m✅  Snapshot saved: /home/prichards/ldm-verify/e2e-work-dir-34595/ldm-smoke-test-34595/snapshots/20260731_144508[0m
+[0;32m✅  Snapshot saved: /home/prichards/ldm-verify/e2e-work-dir-43497/ldm-smoke-test-43497/snapshots/20260807_125005[0m
 >> Bypassing Integrity
-[1;33m=== Snapshots for ldm-smoke-test-34595 ===[0m
-[1] [0;36m20260731_144508[0m - [1mBinary-Verify[0m (1.0 GB)[2m [DB,VOL,MOD][0m
-[0;33m⚠️  Resetting [1mldm-smoke-test-34595[0m (all)...[0m
-[0;33m⚠️  Tearing down stack: ldm-smoke-test-34595[0m
-[0;32m✅  Project ldm-smoke-test-34595 reset successful.[0m
+[1;33m=== Snapshots for ldm-smoke-test-43497 ===[0m
+[1] [0;36m20260807_125005[0m - [1mBinary-Verify[0m (1.0 GB)[2m [DB,VOL,MOD][0m
+[0;33m⚠️  Resetting [1mldm-smoke-test-43497[0m (all)...[0m
+[0;33m⚠️  Tearing down stack: ldm-smoke-test-43497[0m
+[0;32m✅  Project ldm-smoke-test-43497 reset successful.[0m
 [0;33m⚠️  Integrity verification disabled via --no-verify.[0m
 [1;36m▶  Restoring Workspace Data[0m
 [1;36m▶  Finalizing Metadata[0m
@@ -54,21 +57,21 @@ MockManager module: ldm_core.manager
 [0;32m✅  + Database restored successfully.[0m
 [0;32m✅  Restore complete.[0m
 >> Scaling Liferay
-[0;32m✅  Updated scale factors for project ldm-smoke-test-34595[0m
+[0;32m✅  Updated scale factors for project ldm-smoke-test-43497[0m
 >> Scaling Liferay back to 1 for logs export check
-[0;32m✅  Updated scale factors for project ldm-smoke-test-34595[0m
+[0;32m✅  Updated scale factors for project ldm-smoke-test-43497[0m
 >> Starting project for logs export check
 MockManager module: ldm_core.manager
 [1;36m▶  Synchronizing Assets[0m
 [1;36m▶  Starting Container Stack[0m
-[0;32m✅  Project 'ldm-smoke-test-34595' started in background.[0m
+[0;32m✅  Project 'ldm-smoke-test-43497' started in background.[0m
 >> Exporting project logs
 >> Stopping project to release file locks
 >> Rebuilding properties
-[1;33m=== Rebuilding Properties for project: ldm-smoke-test-34595 ===[0m
+[1;33m=== Rebuilding Properties for project: ldm-smoke-test-43497 ===[0m
 [0;32m✅  Properties successfully rebuilt.[0m
 >> Resetting properties
-[1;33m=== Resetting Properties for project: ldm-smoke-test-34595 ===[0m
+[1;33m=== Resetting Properties for project: ldm-smoke-test-43497 ===[0m
 [0;32m✅  Properties successfully reset.[0m
 >> Checking Status
 [1;33m=== LDM Service Status ===[0m

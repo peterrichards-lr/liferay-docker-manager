@@ -65,12 +65,21 @@ def get_report_metadata(report_path):  # noqa: C901, PLR0912, PLR0915
     if timestamp_str:
         try:
             # Format: Tue 28 Apr 2026 12:48:13 BST or Tue 28 Apr 12:25:38 BST 2026
+            # or (GNU/Linux `date` default, e.g. WSL2/Fedora) Tue Apr 28 12:25:38 BST 2026
             ts_clean = re.sub(r"\b[A-Z]{3,5}\b", "", timestamp_str)
-            ts_clean = re.sub(r"\s+", " ", ts_clean)
+            # Stripping a trailing timezone abbrev (e.g. "... 16:13:49 BST") leaves
+            # a trailing space that %S can't absorb -- strptime then rejects the
+            # whole string as "unconverted data remains", silently falling through
+            # to the mtime fallback below for every non-Windows report. This bit
+            # us directly: two verify runs landed within minutes of a git
+            # checkout/mv that reset mtimes, and mtime-order silently won out
+            # over (broken) header-order, picking the wrong report as "latest".
+            ts_clean = re.sub(r"\s+", " ", ts_clean).strip()
             for fmt in [
                 "%a %d %b %Y %H:%M:%S",
                 "%a %d %b %H:%M:%S %Y",
                 "%m/%d/%Y %H:%M:%S",
+                "%a %b %d %H:%M:%S %Y",
             ]:
                 try:
                     dt = datetime.strptime(ts_clean, fmt)
@@ -194,7 +203,19 @@ def get_report_metadata(report_path):  # noqa: C901, PLR0912, PLR0915
     if is_mac:
         if provider in {"Unknown", "Docker Desktop"}:
             provider = "Colima"
-            if "orbstack" in content.lower() or "orbstack" in p_low:
+            # LDM-#1011 fallout: current verify_e2e_refactor.sh/.ps1 only log the
+            # full `ldm doctor` output (which used to contain the disambiguating
+            # "Docker Provider ... OrbStack" line) on failure, so a passing
+            # OrbStack run's *content* no longer mentions "orbstack" at all.
+            # Fall back to the raw report filename, same as the is_wsl/
+            # is_windows_native/is_fedora/is_ubuntu checks above already do --
+            # contributors name raw reports verify-{slug}-{timestamp}-{status}.txt,
+            # so the filename remains a reliable signal even when content isn't.
+            if (
+                "orbstack" in content.lower()
+                or "orbstack" in p_low
+                or "orbstack" in fn_low
+            ):
                 provider = "OrbStack"
     elif is_wsl:
         if provider in {"Unknown", "desktop-linux"}:
@@ -366,35 +387,43 @@ def sync_reports():  # noqa: C901, PLR0912, PLR0915
     for meta in sorted(report_metas, key=lambda x: x["timestamp"]):
         latest_by_env[meta["internal_slug"]] = meta
 
-    for meta in report_metas:
-        is_latest = latest_by_env[meta["internal_slug"]] == meta
+    # Archive every non-latest report *before* any latest report writes to its
+    # canonical target path. These two groups must not be interleaved: when an
+    # existing canonical file (e.g. verify-{slug}-pass.txt) is the non-latest
+    # report for its slug, its meta["report_path"] *is* that canonical path --
+    # if the latest report for the same slug were written there first (glob
+    # order is not guaranteed to match timestamp order), the archive step
+    # below would then move the just-written *new* content into
+    # archived_findings/ under an old hash-named file, silently vanishing the
+    # canonical report from the root directory entirely. Doing all archiving
+    # first guarantees the target path is always clear before it's written.
+    non_latest = [m for m in report_metas if latest_by_env[m["internal_slug"]] is not m]
+    latest = [m for m in report_metas if latest_by_env[m["internal_slug"]] is m]
 
+    for meta in non_latest:
         expected_name = f"verify-{meta['internal_slug']}-{meta['status_slug']}"
-        new_name = f"{expected_name}.txt"
+        # Generate a unique hash for the filename to prevent collisions if timestamps are identical
+        name_hash = hashlib.md5(
+            f"{meta['internal_slug']}{meta['timestamp']}".encode()
+        ).hexdigest()[:8]
+        archived_name = f"{expected_name}-{name_hash}.txt"
+        UI.info(f"Archiving old report: {meta['report_path'].name} -> {archived_name}")
+        shutil.move(str(meta["report_path"]), str(archive_dir / archived_name))
 
-        if is_latest:
-            target_path = results_dir / new_name
-            UI.info(
-                f"Standardizing & Anonymizing: {meta['report_path'].name} -> {new_name}"
-            )
-            clean_content = anonymize_content(meta["content"])
+    for meta in latest:
+        new_name = f"verify-{meta['internal_slug']}-{meta['status_slug']}.txt"
+        target_path = results_dir / new_name
+        UI.info(
+            f"Standardizing & Anonymizing: {meta['report_path'].name} -> {new_name}"
+        )
+        clean_content = anonymize_content(meta["content"])
 
-            # Remove the old file if it has a different name
-            if meta["report_path"].exists() and meta["report_path"] != target_path:
-                meta["report_path"].unlink()
+        # Remove the old file if it has a different name
+        if meta["report_path"].exists() and meta["report_path"] != target_path:
+            meta["report_path"].unlink()
 
-            target_path.write_text(clean_content)
-            meta["report_path"] = target_path
-        else:
-            # Generate a unique hash for the filename to prevent collisions if timestamps are identical
-            name_hash = hashlib.md5(
-                f"{meta['internal_slug']}{meta['timestamp']}".encode()
-            ).hexdigest()[:8]
-            archived_name = f"{expected_name}-{name_hash}.txt"
-            UI.info(
-                f"Archiving old report: {meta['report_path'].name} -> {archived_name}"
-            )
-            shutil.move(str(meta["report_path"]), str(archive_dir / archived_name))
+        target_path.write_text(clean_content)
+        meta["report_path"] = target_path
 
     # 3. Table Generation Logic
     root_reports = list(results_dir.glob("*.txt"))
