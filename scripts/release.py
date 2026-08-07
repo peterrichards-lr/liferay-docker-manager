@@ -316,6 +316,14 @@ def main():  # noqa: C901, PLR0912, PLR0915
                 "ldm_core/constants.py",
                 "pyproject.toml",
                 "scripts/release.py",
+                # LDM-#1011: _apply_version_update() (ldm_core/handlers/dev.py)
+                # also bumps these two files' embedded SCRIPT_VERSION on every
+                # version change -- omitting them here left that bump
+                # perpetually uncommitted/unstaged after every promote run,
+                # silently drifting out of sync with the version it just
+                # promoted to (caught before it ever bit a real promote).
+                "scripts/verify_e2e_refactor.sh",
+                "scripts/verify_e2e_refactor.ps1",
             ]
         )
         commit_msg = f"chore(release): promote version to v{new_version} [release]"
@@ -525,6 +533,10 @@ def main():  # noqa: C901, PLR0912, PLR0915
             "CHANGELOG.md",
             "ldm_core/constants.py",
             "pyproject.toml",
+            # LDM-#1011: kept in sync with the --promote branch's git-add list
+            # above -- see the comment there.
+            "scripts/verify_e2e_refactor.sh",
+            "scripts/verify_e2e_refactor.ps1",
         ]
     )
 
