@@ -1,0 +1,90 @@
+=== LDM BINARY VERIFICATION REPORT ===
+Timestamp:    Mon Aug 10 17:34:28 UTC 2026
+Hostname:     runnervmvrwv9
+Platform:     Ubuntu 24.04.4 LTS
+Binary:       /home/runner/work/liferay-docker-manager/liferay-docker-manager/.venv/bin/ldm
+Version:      ldm 2.15.27-pre.2
+Script Ver:   2.15.27-pre.2
+Docker:    28.0.4
+Compose:   2.38.2
+
+>> Initializing Infrastructure
+✅  Infrastructure setup complete.
+>> Custom SSL Port Setup
+✅  Infrastructure setup complete.
+>> Target List
+=== Registered Target Compute Nodes ===
+╭─────────────┬─────────────────┬──────────┬────────────────╮
+│ TARGET NAME │ HOST / ENDPOINT │ SSH USER │ ACTIVE DEFAULT │
+├─────────────┼─────────────────┼──────────┼────────────────┤
+│ local       │ localhost       │ -        │ YES [DEFAULT]  │
+╰─────────────┴─────────────────┴──────────┴────────────────╯
+>> Target Status (Local)
+=== Target Compute Nodes Status & Connectivity Probe ===
+╭────────┬─────────────────┬────────┬────────────────┬──────────────────┬────────────────────╮
+│ TARGET │ HOST / ENDPOINT │ STATUS │ ENGINE VERSION │ CPUs / MEMORY    │ RUNNING CONTAINERS │
+├────────┼─────────────────┼────────┼────────────────┼──────────────────┼────────────────────┤
+│ local  │ localhost       │ ONLINE │ v28.0.4        │ 4 CPUs / 15.6 GB │ 3                  │
+╰────────┴─────────────────┴────────┴────────────────┴──────────────────┴────────────────────╯
+>> Target Add (Mock Node)
+✅  Target node 'e2e-target-41777' (127.0.0.1) registered successfully.
+>> Target Remove (Mock Node)
+✅  Target node 'e2e-target-41777' removed.
+>> Running LDM Project
+MockManager module: ldm_core.manager
+▶  Synchronizing Assets
+⚠️  Global or local 'common/' folder not found. Some baseline assets may be missing.
+▶  Starting Container Stack
+✅  Project 'ldm-smoke-test-41777' started in background.
+>> Deploying artifact
+✅  Artifact deployment complete.
+✅ Hot Deploy verified.
+>> Creating Snapshot
+✅  Database dump completed.
+✅  Snapshot saved: /home/runner/work/liferay-docker-manager/liferay-docker-manager/e2e-work-dir-41777/ldm-smoke-test-41777/snapshots/20260810_174206
+>> Bypassing Integrity
+=== Snapshots for ldm-smoke-test-41777 ===
+[1] 20260810_174206 - Binary-Verify (1.0 GB) [DB,VOL,MOD]
+⚠️  Resetting ldm-smoke-test-41777 (all)...
+⚠️  Tearing down stack: ldm-smoke-test-41777
+✅  Project ldm-smoke-test-41777 reset successful.
+⚠️  Integrity verification disabled via --no-verify.
+▶  Restoring Workspace Data
+▶  Finalizing Metadata
+MockManager module: ldm_core.manager
+▶  Synchronizing Assets
+⚠️  Global or local 'common/' folder not found. Some baseline assets may be missing.
+▶  Starting Container Stack
+▶  Restoring Database Components
+✅  + Database restored successfully.
+✅  Restore complete.
+>> Scaling Liferay
+✅  Updated scale factors for project ldm-smoke-test-41777
+>> Scaling Liferay back to 1 for logs export check
+✅  Updated scale factors for project ldm-smoke-test-41777
+>> Starting project for logs export check
+MockManager module: ldm_core.manager
+▶  Synchronizing Assets
+⚠️  Global or local 'common/' folder not found. Some baseline assets may be missing.
+▶  Starting Container Stack
+✅  Project 'ldm-smoke-test-41777' started in background.
+>> Exporting project logs
+>> Stopping project to release file locks
+>> Rebuilding properties
+=== Rebuilding Properties for project: ldm-smoke-test-41777 ===
+✅  Properties successfully rebuilt.
+>> Resetting properties
+=== Resetting Properties for project: ldm-smoke-test-41777 ===
+✅  Properties successfully reset.
+>> Checking Status
+=== LDM Service Status ===
+Global Infrastructure:
+╭───────────────────────┬─────────┬───────────────────────────────╮
+│ ● SSL Proxy (Traefik) │ Running │ traefik:v3.6.1                │
+│ ● Search (ES)         │ Running │ elasticsearch:8.19.1          │
+│ ● macOS Socket Bridge │ Running │ tecnativa/docker-socket-proxy │
+╰───────────────────────┴─────────┴───────────────────────────────╯
+
+No projects are currently running.
+
+🎯 ALL E2E VERIFICATIONS PASSED!
