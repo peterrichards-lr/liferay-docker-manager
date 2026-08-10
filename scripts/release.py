@@ -594,7 +594,18 @@ def main():  # noqa: C901, PLR0912, PLR0915
         pr_body = (
             f"Automated release bump to v{new_version}."
             if "-" not in new_version
-            else f"Pre-release tracking PR for v{new_version}. Merging this PR will promote the changes to master, after which a stable release can be tagged."
+            else (
+                f"Pre-release tracking PR for v{new_version}.\n\n"
+                "**Do not merge this PR manually.** It stays open and keeps "
+                "collecting commits (further `--bump beta` cycles, fixes, "
+                "verification results) for the duration of this pre-release "
+                "cycle. Merging it as-is would land an unpromoted pre-release "
+                "version directly on master.\n\n"
+                "When testing confirms this pre-release is ready to ship, run "
+                "`python3 scripts/release.py --promote` from the "
+                f"`{release_branch}` branch instead -- it bumps the version to "
+                "stable, commits that, and *then* merges this PR automatically."
+            )
         )
 
         # Try gh first
