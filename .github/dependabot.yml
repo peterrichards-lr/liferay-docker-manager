@@ -9,6 +9,15 @@ updates:
       github-actions:
         patterns:
           - "*"
+    # LDM: explicit `labels:` replaces GitHub's automatic per-ecosystem
+    # labeling rather than adding to it, so the defaults ("dependencies",
+    # "github_actions") must be re-listed alongside the new one --
+    # otherwise-untouchable Dependabot PRs were failing the mandatory
+    # issue-link-check on every single update.
+    labels:
+      - "dependencies"
+      - "github_actions"
+      - "no-issue-needed"
 
   # Maintain Python pip dependencies
   - package-ecosystem: "pip"
@@ -16,3 +25,7 @@ updates:
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "python"
+      - "no-issue-needed"
