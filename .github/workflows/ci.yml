@@ -148,6 +148,44 @@ jobs:
           fi
           echo "Version check passed: $VERSION is a stable version."
 
+  # LDM-#1029: block-prerelease-on-master above is push-only, so it only ever
+  # catches a premature merge *after the fact* -- too late to stop the merge
+  # button itself. This is the actual prevention: a required PR check that
+  # fails a release/* -> master PR while its version is still a pre-release,
+  # which is exactly the state such a PR sits in for its entire natural
+  # lifetime until `scripts/release.py --promote` bumps it to stable and
+  # merges it automatically. Deliberately always runs (never skipped via a
+  # job-level `if:` on branch name) so it always reports a status --
+  # registering it as a required check while some PRs never trigger it would
+  # leave those PRs permanently "Expected -- waiting for status", blocking
+  # merges repo-wide. The release/* branch-name gate lives inside the step
+  # instead, so every other PR gets a trivial, instant pass.
+  block-premature-release-merge:
+    name: Block premature release-PR merge
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Verify a release-tracking PR's version is stable before allowing merge
+        shell: bash
+        env:
+          HEAD_REF: ${{ github.head_ref }}
+        run: |
+          if [[ "$HEAD_REF" != release/* ]]; then
+            echo "Not a release/* branch ($HEAD_REF) -- nothing to check."
+            exit 0
+          fi
+          VERSION=$(grep -m1 -oE '^VERSION = "[^"]+"' ldm_core/constants.py | sed -E 's/VERSION = "([^"]+)"/\1/')
+          echo "Version on this release-tracking PR ($HEAD_REF): $VERSION"
+          if [[ "$VERSION" == *-* ]]; then
+            echo "::error::This release-tracking PR is still at a pre-release version ($VERSION). It must NOT be merged manually -- run 'python3 scripts/release.py --promote' from the release branch instead, which bumps to stable and merges automatically."
+            exit 1
+          fi
+          echo "Version check passed: $VERSION is stable. (Normally this state is only ever reached via --promote, right before it merges this PR itself.)"
+
   lint-and-test:
     needs: validate-tag
     runs-on: ubuntu-latest
