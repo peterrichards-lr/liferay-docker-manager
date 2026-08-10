@@ -8,11 +8,20 @@ import requests
 
 
 def version_key(version_str):
-    # e.g. 2026.q2.8 -> (2026, 'q2', 8)
+    # e.g. 2026.q2.8 -> (2026, 'q2', 8); 2026.q1.11-lts -> (2026, 'q1', 11)
+    # LDM-#1034: parts[2] for an LTS tag is "11-lts", not "11" -- .isdigit()
+    # is False for the whole string, so patch silently fell back to 0 for
+    # *every* LTS patch in a quarter, collapsing them all to the same sort
+    # key. A stable sort on tied keys then kept whichever was uploaded
+    # first (oldest) and deleted every subsequently-uploaded (i.e. actually
+    # newer) LTS seed as "obsolete". Matching only the leading digits fixes
+    # this regardless of what suffix (if any) follows the patch number.
     parts = version_str.split(".")
     year = int(parts[0]) if parts[0].isdigit() else 0
     q = parts[1] if len(parts) > 1 else ""
-    patch = int(parts[2]) if len(parts) > 2 and parts[2].isdigit() else 0
+    patch_str = parts[2] if len(parts) > 2 else ""
+    patch_match = re.match(r"(\d+)", patch_str)
+    patch = int(patch_match.group(1)) if patch_match else 0
     return (year, q, patch)
 
 
