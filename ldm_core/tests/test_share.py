@@ -527,6 +527,38 @@ class TestShareService(unittest.TestCase):
         self.assertTrue(success)
         self.assertIsNone(err)
 
+    @patch("ldm_core.handlers.share.UI")
+    def test_resolve_share_config_custom_domain_shows_portal_note(self, mock_ui):
+        # LDM-#1038: a vanity domain should get an always-visible note about
+        # portal registration -- UI.info, not UI.detail, so it isn't hidden
+        # behind --info/--verbose.
+        provider, domain = self.service.resolve_share_config(
+            provider="lfr-tunnel", domain="dev.solaramoto.com"
+        )
+        self.assertEqual(domain, "dev.solaramoto.com")
+        mock_ui.info.assert_called_once()
+        note = mock_ui.info.call_args[0][0]
+        self.assertIn("dev.solaramoto.com", note)
+        self.assertIn("lfr-demo.online", note)
+        self.assertIn("lfr-demo.se", note)
+
+    @patch("ldm_core.handlers.share.UI")
+    def test_resolve_share_config_known_domain_no_note(self, mock_ui):
+        provider, domain = self.service.resolve_share_config(
+            provider="lfr-tunnel", domain="lfr-demo.se"
+        )
+        self.assertEqual(domain, "lfr-demo.se")
+        mock_ui.info.assert_not_called()
+
+    @patch("ldm_core.handlers.share.UI")
+    def test_resolve_share_config_ngrok_custom_value_no_note(self, mock_ui):
+        # Scope constraint: custom-domain guidance is Liferay Tunnel-only.
+        provider, domain = self.service.resolve_share_config(
+            provider="ngrok", domain="whatever.example.com"
+        )
+        self.assertEqual(provider, "ngrok")
+        mock_ui.info.assert_not_called()
+
     def test_diagnose_tunnel_info_auth_failure(self):
         info = {"auth": {"valid": False, "error_message": "Invalid token"}}
         res = self.service._diagnose_tunnel_info(info, "sub")
@@ -738,7 +770,10 @@ class TestShareService(unittest.TestCase):
         self.assertIn("Subdomain Conflict", err)
 
     @patch("subprocess.run")
-    def test_poll_tunnel_health_docker_logs_running_but_unresponsive(self, mock_run):
+    def test_poll_tunnel_health_docker_logs_dns_failure_known_domain(self, mock_run):
+        # LDM-#1038: a DNS lookup failure against a *known* base domain is a
+        # genuine connectivity problem, not a missing portal registration --
+        # the message should not suggest registering a vanity domain.
         self.service._poll_tunnel_health = ShareService._poll_tunnel_health.__get__(  # type: ignore[method-assign]
             self.service, ShareService
         )
@@ -768,13 +803,62 @@ class TestShareService(unittest.TestCase):
         ]
 
         success, err = self.service._poll_tunnel_health(
-            "custom-sub", container_name="myproj-lfr-tunnel", timeout=0.1
+            "custom-sub",
+            container_name="myproj-lfr-tunnel",
+            timeout=0.1,
+            domain="lfr-demo.online",
         )
         self.assertFalse(success)
-        self.assertIn(
-            "Tunnel connection timeout. Container is running but not responsive", err
+        self.assertIn("DNS Resolution Failed", err)
+        self.assertIn("tunnel.lfr-demo.online", err)
+        self.assertNotIn("portal", err.lower())
+
+    @patch("subprocess.run")
+    def test_poll_tunnel_health_docker_logs_dns_failure_custom_domain(self, mock_run):
+        # LDM-#1038: the exact bug report -- a custom vanity domain that was
+        # never registered/approved in the Liferay Tunnel portal fails DNS
+        # resolution. The message must point at the portal instead of
+        # reading like the gateway itself is down.
+        self.service._poll_tunnel_health = ShareService._poll_tunnel_health.__get__(  # type: ignore[method-assign]
+            self.service, ShareService
         )
-        self.assertIn("dial tcp: lookup tunnel.lfr-demo.online: no such host", err)
+
+        mock_wget_healthz = MagicMock()
+        mock_wget_healthz.returncode = 1
+        mock_wget_healthz.stderr = "Connection refused"
+
+        mock_inspect = MagicMock()
+        mock_inspect.returncode = 0
+        mock_inspect.stdout = "true"
+
+        mock_wget_info = MagicMock()
+        mock_wget_info.returncode = 1
+        mock_wget_info.stderr = "Connection refused"
+
+        mock_logs = MagicMock()
+        mock_logs.returncode = 0
+        mock_logs.stdout = "dial tcp: lookup tunnel.dev.solaramoto.com: no such host"
+        mock_logs.stderr = ""
+
+        mock_run.side_effect = [
+            mock_wget_healthz,
+            mock_inspect,
+            mock_wget_info,
+            mock_logs,
+        ]
+
+        success, err = self.service._poll_tunnel_health(
+            "custom-sub",
+            container_name="myproj-lfr-tunnel",
+            timeout=0.1,
+            domain="dev.solaramoto.com",
+        )
+        self.assertFalse(success)
+        self.assertIn("DNS Resolution Failed", err)
+        self.assertIn("tunnel.dev.solaramoto.com", err)
+        self.assertIn("dev.solaramoto.com", err)
+        self.assertIn("portal", err.lower())
+        self.assertIn("lfr-demo.online", err)
 
     @patch("subprocess.run")
     def test_poll_tunnel_health_uses_busybox_args(self, mock_run):
