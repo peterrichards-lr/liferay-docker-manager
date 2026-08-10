@@ -210,3 +210,8 @@ jobs:
             --body "$PR_BODY" \
             --base master \
             --head "$BRANCH"
+          # This PR isn't tied to a tracked issue (mirrors the same label
+          # scripts/release.py applies to its own release-bump PRs, #1005) --
+          # without it, the mandatory issue-link-check fails on every single
+          # run of this workflow.
+          gh pr edit "$BRANCH" --add-label no-issue-needed || true
