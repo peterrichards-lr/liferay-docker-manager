@@ -121,7 +121,13 @@ class ProjectInitializationStage(PipelineStage):
         elif getattr(
             manager.args, "command", ""
         ) != "quickstart" and not project_meta.get("is_quickstart"):
-            UI.detail(
+            # LDM-#1036: this is the only context the user gets before the
+            # countdown below asks them to decide whether to cancel -- it
+            # must stay visible by default (UI.info, gated only on
+            # --quiet), not UI.detail (gated behind --info/--verbose, which
+            # nothing here implies), or the countdown fires with zero
+            # explanation of what continuing will do.
+            UI.info(
                 f"The LDM project '{project_id}' already exists and this command will reconfigure it."
             )
             UI.interruptible_pause(5, "Press CTRL+C to cancel ")

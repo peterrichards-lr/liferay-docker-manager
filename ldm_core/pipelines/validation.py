@@ -18,7 +18,6 @@ class ValidationStage(PipelineStage):
         project_id = context.get("project_id")
 
         # Run silent checks
-        print(f"MockManager module: {manager.__class__.__module__}")
         runner = DoctorRunner(manager.diagnostics, project_id=project_id)
 
         # We can check docker runtime or tooling

@@ -88,7 +88,7 @@ class AssetService:
                             if asset:
                                 download_url = asset.get("browser_download_url")
                             else:
-                                UI.warning(f"No seed found for tag: {tag_name}")
+                                UI.warning(f"No seed found for tag: {tag}")
                                 return False
                         else:
                             UI.warning(f"Release not found for tag: {tag_name}")

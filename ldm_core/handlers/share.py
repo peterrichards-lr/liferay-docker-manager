@@ -7,6 +7,7 @@ import shutil
 import subprocess
 import urllib.request
 from pathlib import Path
+from typing import ClassVar
 
 from ldm_core.ui import UI
 from ldm_core.utils import download_file, get_actual_home, run_command, version_to_tuple
@@ -14,6 +15,12 @@ from ldm_core.utils import download_file, get_actual_home, run_command, version_
 
 class ShareService:
     """Service for lfr-tunnel management (downloader, start, status, stop)."""
+
+    # LDM-#1038: the only domains guaranteed to resolve out of the box.
+    # Anything else is a vanity domain that must be registered and approved
+    # in the Liferay Tunnel portal first -- this is a Liferay Tunnel-only
+    # concept and must never be extended to ngrok/Cloudflare.
+    KNOWN_TUNNEL_BASE_DOMAINS: ClassVar[set[str]] = {"lfr-demo.online", "lfr-demo.se"}
 
     def __init__(self, manager):
         self.manager = manager
@@ -321,7 +328,7 @@ class ShareService:
         )
         return None
 
-    def resolve_share_config(self, project_meta=None, provider=None, domain=None):  # noqa: PLR0912
+    def resolve_share_config(self, project_meta=None, provider=None, domain=None):  # noqa: C901, PLR0912
         """Resolves share provider and share domain, prompting the user if not configured."""
         # 1. Resolve provider
         if not provider:
@@ -371,6 +378,23 @@ class ShareService:
                     self.manager.config.set_global_config("share_domain", domain)
             else:
                 domain = ""
+
+        # LDM-#1038: a custom vanity domain silently "just works" from LDM's
+        # side (LFT_SERVER_URL is built from whatever string was typed in),
+        # but the gateway will only route it once it's been registered and
+        # approved in the Liferay Tunnel portal. Without this note, a typo'd
+        # or unregistered domain fails with nothing to explain why.
+        if (
+            provider in ("lfr-tunnel", "lfr-tunnel-docker")
+            and domain
+            and domain not in self.KNOWN_TUNNEL_BASE_DOMAINS
+        ):
+            UI.info(
+                f"Using custom domain '{domain}' for Liferay Tunnel sharing. "
+                "Custom domains must be registered and approved in the Liferay "
+                "Tunnel portal (https://lfr-demo.online or https://lfr-demo.se) "
+                "before they will resolve."
+            )
 
         return provider, domain
 
@@ -561,7 +585,9 @@ class ShareService:
                     cmd, env=env, capture_output=True, text=True, check=False
                 )
                 if res.returncode == 0:
-                    success, err_msg = self._poll_tunnel_health(subdomain)
+                    success, err_msg = self._poll_tunnel_health(
+                        subdomain, domain=share_domain
+                    )
                     if success:
                         UI.success("Tunnel started in the background.")
                         if hasattr(self.manager, "config") and hasattr(
@@ -704,7 +730,7 @@ class ShareService:
                     or f"{base_container}-lfr-tunnel"
                 )
                 success, err_msg = self._poll_tunnel_health(
-                    subdomain, container_name=container_name
+                    subdomain, container_name=container_name, domain=share_domain
                 )
                 if success:
                     UI.success("Tunnel container started in the background.")
@@ -1206,7 +1232,40 @@ class ShareService:
             # Silently ignore if the GUI app is not running
             pass
 
-    def _poll_tunnel_health(self, subdomain, container_name=None, timeout=10):  # noqa: C901, PLR0912, PLR0915
+    def _diagnose_dns_failure(self, logs_str, domain):
+        """LDM-#1038: recognizes a DNS resolution failure against the tunnel
+        gateway host and, if the domain isn't one of the known base domains,
+        points at the Liferay Tunnel portal instead of leaving the user with
+        a generic timeout/raw-log message that reads like the gateway itself
+        is down."""
+        dns_failure_markers = (
+            "no such host",
+            "lookup ",
+            "could not resolve",
+            "name or service not known",
+            "server misbehaving",
+            "dial tcp: lookup",
+        )
+        if not any(marker in logs_str.lower() for marker in dns_failure_markers):
+            return None
+
+        host = f"tunnel.{domain}" if domain else "the tunnel gateway"
+        if domain and domain not in self.KNOWN_TUNNEL_BASE_DOMAINS:
+            return (
+                f"DNS Resolution Failed: Could not resolve '{host}'. "
+                f"'{domain}' looks like a custom vanity domain -- it must be "
+                "registered and approved in the Liferay Tunnel portal "
+                "(https://lfr-demo.online or https://lfr-demo.se) before it "
+                "will resolve."
+            )
+        return (
+            f"DNS Resolution Failed: Could not resolve '{host}'. "
+            "Please check your network/DNS connectivity."
+        )
+
+    def _poll_tunnel_health(  # noqa: C901, PLR0912, PLR0915
+        self, subdomain, container_name=None, timeout=10, domain=None
+    ):
         """Polls the lfr-tunnel status to verify connection health using -status-json."""
         import time
 
@@ -1337,8 +1396,11 @@ class ShareService:
                         log_cmd, capture_output=True, text=True, check=False
                     )
                     logs_str = (log_res.stdout or "") + (log_res.stderr or "")
+                    dns_reason = self._diagnose_dns_failure(logs_str, domain)
 
-                    if "unauthorized" in logs_str.lower() or "401" in logs_str:
+                    if dns_reason:
+                        error_reason = dns_reason
+                    elif "unauthorized" in logs_str.lower() or "401" in logs_str:
                         error_reason = "Authentication Failed: Gateway returned 401 Unauthorized. Please verify your LFT_CLIENT_TOKEN."
                     elif (
                         "conflict" in logs_str.lower()
@@ -1431,7 +1493,12 @@ class ShareService:
                         try:
                             logs_str = log_file.read_text(encoding="utf-8").strip()
                             if logs_str:
-                                if (
+                                dns_reason = self._diagnose_dns_failure(
+                                    logs_str, domain
+                                )
+                                if dns_reason:
+                                    error_reason = dns_reason
+                                elif (
                                     "unauthorized" in logs_str.lower()
                                     or "401" in logs_str
                                 ):

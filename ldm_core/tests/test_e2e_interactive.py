@@ -129,6 +129,48 @@ class TestE2EInteractive(unittest.TestCase):
         finally:
             shutil.rmtree(tmp_dir, ignore_errors=True)
 
+    def test_ldm_run_warns_on_existing_project_without_info_flag(self):
+        """LDM-#1036: the reconfigure warning must precede the CTRL+C
+        countdown by default, not just when --info is explicitly passed --
+        it was previously gated behind UI.detail() (--info/--verbose only)
+        while the countdown itself fired unconditionally, leaving users with
+        no context for what they were being asked to cancel."""
+        import sys
+        import tempfile
+
+        ldm_executable = [
+            sys.executable,
+            str(Path(__file__).parent.parent.parent / "liferay_docker.py"),
+        ]
+
+        tmp_dir = tempfile.mkdtemp()
+        import os
+        import shutil
+
+        env = os.environ.copy()
+        env["LDM_IGNORE_DOCKER"] = "true"
+
+        try:
+            (Path(tmp_dir) / ".ldm.meta").write_text("{}")
+            (Path(tmp_dir) / "files").mkdir()
+            (Path(tmp_dir) / "deploy").mkdir()
+
+            process = subprocess.run(
+                [*ldm_executable, "-y", "run", "--no-up"],
+                capture_output=True,
+                text=True,
+                cwd=str(tmp_dir),
+                env=env,
+                check=False,
+            )
+            output = process.stdout + process.stderr
+            self.assertIn(
+                "already exists and this command will reconfigure it.",
+                output,
+            )
+        finally:
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+
 
 if __name__ == "__main__":
     unittest.main()
