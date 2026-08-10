@@ -1,0 +1,58 @@
+name: Release Branch Version Guard
+
+# LDM-#1029: catches a release/* branch's VERSION getting silently reverted
+# (e.g. by GitHub's "Update branch" button cleanly, non-conflictingly
+# resolving a merge-from-master in master's favor -- see the incident this
+# issue documents). This can't *prevent* such a push -- anything that pushes
+# here does so with the same account/permissions scripts/release.py itself
+# uses, so there's no way to tell them apart at the git level -- but it
+# fires on every push to any release/* branch and fails loudly, fast
+# (usually well under a minute), rather than the problem sitting silent
+# until someone happens to notice a stale version during testing.
+on:
+  push:
+    branches: ["release/**"]
+
+permissions:
+  contents: read
+
+jobs:
+  verify-release-version:
+    name: Verify release branch version matches its own name
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Verify VERSION still matches this branch's own pre-release cycle
+        shell: bash
+        env:
+          BRANCH_NAME: ${{ github.ref_name }}
+        run: |
+          # release/vX.Y.Z-pre.N branches keep this exact name for their
+          # entire lifetime -- only the -pre.N suffix advances via further
+          # `--bump beta` calls, until the branch is promoted to stable and
+          # merged away. So the base X.Y.Z encoded in the branch name must
+          # always match VERSION's own base, and VERSION must still be a
+          # pre-release, for as long as the branch exists.
+          BRANCH_BASE=$(echo "$BRANCH_NAME" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)
+          if [ -z "$BRANCH_BASE" ]; then
+            echo "Could not parse a version out of branch name '$BRANCH_NAME' -- skipping."
+            exit 0
+          fi
+
+          VERSION=$(grep -m1 -oE '^VERSION = "[^"]+"' ldm_core/constants.py | sed -E 's/VERSION = "([^"]+)"/\1/')
+          echo "Branch: $BRANCH_NAME (expects base $BRANCH_BASE)"
+          echo "Actual VERSION on this push: $VERSION"
+
+          if [[ "$VERSION" != *-* ]]; then
+            echo "::error::VERSION ($VERSION) is stable, but this is still an open release branch ($BRANCH_NAME) -- it should stay a pre-release until scripts/release.py --promote runs. This usually means something (e.g. GitHub's 'Update branch' button merging master in) silently reverted VERSION. Restore it and re-push: see LDM-#1029 for the exact fix pattern."
+            exit 1
+          fi
+
+          VERSION_BASE="${VERSION%%-*}"
+          if [ "$VERSION_BASE" != "$BRANCH_BASE" ]; then
+            echo "::error::VERSION's base ($VERSION_BASE) doesn't match this branch's own base ($BRANCH_BASE, from '$BRANCH_NAME'). This usually means something (e.g. GitHub's 'Update branch' button merging master in) silently reverted VERSION. Restore it and re-push: see LDM-#1029 for the exact fix pattern."
+            exit 1
+          fi
+
+          echo "Version check passed: $VERSION is a pre-release matching this branch's own base ($BRANCH_BASE)."
