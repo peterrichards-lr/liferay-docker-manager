@@ -543,6 +543,19 @@ class TestShareService(unittest.TestCase):
         self.assertIn("lfr-demo.se", note)
 
     @patch("ldm_core.handlers.share.UI")
+    def test_resolve_share_config_custom_domain_note_shown_only_once(self, mock_ui):
+        # LDM-#1075: resolve_share_config() is legitimately called multiple
+        # times across a single `ldm run --share` invocation (config
+        # resolution, compose-file generation, then cmd_start itself) -- the
+        # note must not repeat every time, even though the domain is
+        # re-resolved on each call.
+        for _ in range(3):
+            self.service.resolve_share_config(
+                provider="lfr-tunnel", domain="dev.solaramoto.com"
+            )
+        mock_ui.info.assert_called_once()
+
+    @patch("ldm_core.handlers.share.UI")
     def test_resolve_share_config_known_domain_no_note(self, mock_ui):
         provider, domain = self.service.resolve_share_config(
             provider="lfr-tunnel", domain="lfr-demo.se"

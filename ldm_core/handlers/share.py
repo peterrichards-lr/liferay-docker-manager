@@ -24,6 +24,14 @@ class ShareService:
 
     def __init__(self, manager):
         self.manager = manager
+        # LDM-#1075: resolve_share_config() is legitimately called multiple
+        # times across a single `ldm run --share` invocation (config
+        # resolution, compose-file generation, then cmd_start itself) --
+        # each call needs the resolved domain for its own purpose, but the
+        # custom-domain note is purely informational and shouldn't repeat
+        # every time. One flag per process (this service is a manager
+        # singleton, see ldm_core/manager.py), not per call.
+        self._custom_domain_note_shown = False
 
     def _resolve_existing_binary(self):
         """Resolves the path to an existing, working lfr-tunnel binary if available."""
@@ -388,7 +396,9 @@ class ShareService:
             provider in ("lfr-tunnel", "lfr-tunnel-docker")
             and domain
             and domain not in self.KNOWN_TUNNEL_BASE_DOMAINS
+            and not self._custom_domain_note_shown
         ):
+            self._custom_domain_note_shown = True
             UI.info(
                 f"Using custom domain '{domain}' for Liferay Tunnel sharing. "
                 "Custom domains must be registered and approved in the Liferay "
