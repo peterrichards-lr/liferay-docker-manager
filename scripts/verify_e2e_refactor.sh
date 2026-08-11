@@ -80,7 +80,13 @@ INSTALLED_VERSION=$(echo "$INSTALLED_VERSION_RAW" | grep -oE '[0-9]+\.[0-9]+\.[0
     if [ -n "$INSTALLED_VERSION" ] && [ "$INSTALLED_VERSION" != "$SCRIPT_VERSION" ]; then
         echo "⚠️  WARNING: this script (v$SCRIPT_VERSION) does not match the installed ldm binary (v$INSTALLED_VERSION)."
         echo "   This may be intentional (verifying a specific older/newer binary), but if not,"
-        echo "   re-pull this script: git fetch && git checkout origin/master -- scripts/verify_e2e_refactor.sh"
+        # LDM-#1049: the real verification workflow copies this script onto
+        # plain test rigs with no git checkout at all (upgrade the target
+        # machine via `ldm system upgrade --beta`, copy the script over, run
+        # it) -- `git checkout` is useless advice there. A raw-file download
+        # keyed to the installed binary's own tag needs no git and resolves
+        # correctly whether that binary is stable or pre-release.
+        echo "   re-pull this script: curl -fsSL \"https://raw.githubusercontent.com/peterrichards-lr/liferay-docker-manager/v$INSTALLED_VERSION/scripts/verify_e2e_refactor.sh\" -o scripts/verify_e2e_refactor.sh"
     fi
 } | tee -a "$RESULTS_FILE_TMP"
 

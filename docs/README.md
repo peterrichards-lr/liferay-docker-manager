@@ -2,6 +2,8 @@
 
 Welcome to the Liferay Docker Manager (LDM) documentation index. Use the categorized guides below to explore installation, configuration, features, and developer tools.
 
+> 📰 **As featured on the Liferay Blog:** [*Effortless Liferay Orchestration: Advanced Docker Scripts for Local Development*](https://liferay.dev/b/liferay-docker-automation-python-scripts) — Peter Richards, March 2026.
+
 ---
 
 ## 🎥 Seeing is Believing (Showcase)

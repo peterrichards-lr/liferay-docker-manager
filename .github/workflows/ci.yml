@@ -6,6 +6,7 @@ on:
     tags: ["v*"] # Trigger on tags like v1.0.0
   pull_request:
     branches: ["master"]
+  merge_group: # LDM-#1045: required checks must also fire for merge-queue entries
   workflow_dispatch: # Allow manual triggers
 
 # LDM-385: Prevent simultaneous release updates for the same tag/branch
@@ -288,8 +289,11 @@ jobs:
   smoke-test:
     needs: lint-and-test
     runs-on: ubuntu-latest
+    # LDM-#1045: smoke-test is a required status check, so it must also run
+    # for merge_group events (merge-queue entries) -- otherwise the queue
+    # hangs waiting on a check that never fires for that event.
     if: |
-      (github.event_name == 'push' || github.event_name == 'pull_request' || startsWith(github.ref, 'refs/tags/v')) &&
+      (github.event_name == 'push' || github.event_name == 'pull_request' || github.event_name == 'merge_group' || startsWith(github.ref, 'refs/tags/v')) &&
       (github.event_name != 'push' || github.ref_name != 'master' || !contains(github.event.head_commit.message, '[release]')) &&
       needs.lint-and-test.outputs.code_changed != 'false'
 

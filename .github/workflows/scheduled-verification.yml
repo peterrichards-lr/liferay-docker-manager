@@ -118,8 +118,18 @@ jobs:
     name: Sync Compatibility Table
     needs: [verify-linux]
     runs-on: ubuntu-latest
-    # Only sync on release tag pushes — not on nightly cron or manual dispatch
-    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    # Only sync on STABLE release tag pushes -- not nightly cron, manual
+    # dispatch, or pre-release tags. This job checks out master (which only
+    # ever holds the latest stable VERSION) to author its PR; a Linux report
+    # generated from a pre-release tag bakes in a pre-release version that
+    # will never match master's, so sync_compatibility.py's staleness check
+    # always rejects it -- it gets silently archived and never reaches the
+    # table (LDM-#1043). Mirrors the same "-" check validate-tag already
+    # uses to distinguish stable vs. pre-release tags.
+    if: |
+      github.event_name == 'push' &&
+      startsWith(github.ref, 'refs/tags/v') &&
+      !contains(github.ref_name, '-')
     permissions:
       contents: write
       pull-requests: write
@@ -215,3 +225,9 @@ jobs:
           # without it, the mandatory issue-link-check fails on every single
           # run of this workflow.
           gh pr edit "$BRANCH" --add-label no-issue-needed || true
+          # LDM-#1041: this PR is a deterministic, docs-only regeneration
+          # from CI's own verification data -- once the same required
+          # checks every other PR must pass are green, there's nothing left
+          # for a human to gate on. Auto-merge removes the manual click
+          # without skipping any of those checks.
+          gh pr merge "$BRANCH" --auto --squash || true

@@ -81,10 +81,17 @@ if (-not (Test-Path $VENV_PYTEST)) {
     if ($ldmVer -match '(\d+\.\d+\.\d+(-[a-zA-Z0-9.]+)?)') {
         $installedVersion = $Matches[1]
         if ($installedVersion -ne $SCRIPT_VERSION) {
+            # LDM-#1049: the real verification workflow copies this script
+            # onto plain test rigs with no git checkout at all (upgrade the
+            # target machine via `ldm system upgrade --beta`, copy the script
+            # over, run it) -- `git checkout` is useless advice there. A raw-
+            # file download keyed to the installed binary's own tag needs no
+            # git and resolves correctly whether that binary is stable or
+            # pre-release.
             $warnLines = @(
                 "WARNING: this script (v$SCRIPT_VERSION) does not match the installed ldm binary (v$installedVersion)."
                 "  This may be intentional (verifying a specific older/newer binary), but if not,"
-                "  re-pull this script: git fetch; git checkout origin/master -- scripts/verify_e2e_refactor.ps1"
+                "  re-pull this script: Invoke-WebRequest -Uri `"https://raw.githubusercontent.com/peterrichards-lr/liferay-docker-manager/v$installedVersion/scripts/verify_e2e_refactor.ps1`" -OutFile `"scripts\verify_e2e_refactor.ps1`""
             )
             $warnLines | ForEach-Object {
                 Write-Output $_

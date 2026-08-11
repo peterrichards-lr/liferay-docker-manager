@@ -4,6 +4,7 @@ site_description: "The ultimate CLI tool and Docker Compose orchestrator for run
 site_author: Peter Richards
 theme:
   name: material
+  favicon: assets/favicon.png
 
 plugins:
   - search

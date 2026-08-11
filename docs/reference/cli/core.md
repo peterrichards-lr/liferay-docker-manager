@@ -324,6 +324,10 @@ ldm rm [project]                  # Alias for 'down'
 - **`--clean-state`** (Only for `start` and `run`): Explicitly wipes the contents of the OSGi state volume before starting the container to remove any stale bundle locks. ![Added in v2.15.22](https://img.shields.io/badge/Added%20in-v2.15.22-blue)
 - **`--fix-permissions`** (Only for `start` and `run`): Forces root permission reclamation on bind-mounted host directories. Useful for resolving Liferay lock crashes when running macOS/Windows Docker Desktop against external drives or network shares. ![Added in v2.15.22](https://img.shields.io/badge/Added%20in-v2.15.22-blue)
 - **`--force-recreate`** (For `run`, `start`, and `restart`): Recreates containers even if their configuration and image haven't changed. **Note:** Since native Docker `start` doesn't support recreation, passing this to `ldm start` or `ldm restart` will smoothly intercept and route to `up -d --force-recreate` under the hood. ![Added in v2.15.23](https://img.shields.io/badge/Added%20in-v2.15.23-blue)
+- **`-V`, `--volumes`** (Only for `down`/`rm`): Also removes the project's Docker Compose volumes. Implied automatically by `--delete`.
+- **`--infra`** (Only for `down`/`rm`): Also tears down the shared global infrastructure (Proxy, Search, etc.), independently of whatever project is targeted -- can be combined with a project target or passed alone.
+- **`--clean-hosts`** (Only for `down`/`rm`): Removes the project's entries from your `/etc/hosts` file.
+- **`-d`, `--delete`** (Only for `down`/`rm`): Escalates teardown beyond just stopping/removing containers -- drops the project's schema from the shared database (if it uses shared-mode DB), unregisters the project, and **permanently deletes its directory from disk**. This cannot be undone. `ldm rm`/`ldm down` *without* `--delete` only tears down containers and keeps the project registered, so it can be `ldm run` again later; `--delete` is the one-way, destructive option.
 
 ### Examples
 
@@ -334,6 +338,7 @@ ldm restart               # Full stack restart (graceful stop + run)
 ldm down --volumes        # Tear down stack and clear all database/data state
 ldm down --infra          # Also tear down the global infrastructure (Proxy, Search)
 ldm down --clean-hosts    # Remove project entries from your /etc/hosts file upon deletion
+ldm rm --delete           # Permanently delete the project's directory, DB schema, and registry entry
 ```
 
 ## `status`
@@ -481,7 +486,6 @@ The following flags can be passed to almost any command:
 - **`--no-backup-on-upgrade`**: Force-disables automatic database backup snapshot creation before running version upgrades.
 - **`--tag-prefix`**: Force specific tag discovery prefix when resolving latest tags.
 - **`--skip-project`**: Skips project discovery. Useful for global diagnostics like `ldm doctor --skip-project`.
-- **`--delete`**: Specifically removes global infrastructure components or bypasses safety prompts.
 
 <!-- markdownlint-disable MD049 -->
 ---
