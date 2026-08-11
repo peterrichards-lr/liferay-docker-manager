@@ -80,7 +80,12 @@ INSTALLED_VERSION=$(echo "$INSTALLED_VERSION_RAW" | grep -oE '[0-9]+\.[0-9]+\.[0
     if [ -n "$INSTALLED_VERSION" ] && [ "$INSTALLED_VERSION" != "$SCRIPT_VERSION" ]; then
         echo "⚠️  WARNING: this script (v$SCRIPT_VERSION) does not match the installed ldm binary (v$INSTALLED_VERSION)."
         echo "   This may be intentional (verifying a specific older/newer binary), but if not,"
-        echo "   re-pull this script: git fetch && git checkout origin/master -- scripts/verify_e2e_refactor.sh"
+        # LDM-#1047: master only ever holds the latest *stable* version, so
+        # pointing at origin/master here can never resolve a mismatch while
+        # testing a pre-release -- every version (stable or pre-release) gets
+        # its own tag, so check out from the tag matching the installed
+        # binary instead.
+        echo "   re-pull this script: git fetch --tags && git checkout \"v$INSTALLED_VERSION\" -- scripts/verify_e2e_refactor.sh"
     fi
 } | tee -a "$RESULTS_FILE_TMP"
 
