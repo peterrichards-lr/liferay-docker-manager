@@ -24,6 +24,23 @@ class MockComposerManager:
         self.config.get_global_config.return_value = {}
         self.share = MagicMock()
         self.share.resolve_share_config.return_value = (None, None)
+        # LDM-#1077: mirror ShareService's real defaults so composer tests
+        # that don't care about custom-domain/self-hosted-override behavior
+        # don't have to configure these individually -- tests exercising
+        # that behavior can still override any of these per-test.
+        self.share.get_known_tunnel_base_domains.return_value = [
+            "lfr-demo.online",
+            "lfr-demo.se",
+        ]
+        self.share.get_default_tunnel_domain.return_value = "lfr-demo.online"
+        self.share.resolve_tunnel_gateway_url.side_effect = lambda share_domain: (
+            "https://tunnel."
+            + (
+                share_domain
+                if share_domain in ("lfr-demo.online", "lfr-demo.se")
+                else "lfr-demo.online"
+            )
+        )
         self.defaults = MagicMock()
         self.get_resolved_ip = MagicMock(return_value="127.0.0.1")
         self.run_command = MagicMock(return_value="")

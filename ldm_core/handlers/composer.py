@@ -960,7 +960,13 @@ class ComposerService:
 
         valid_hosts = f"localhost,127.0.0.1,{host_name},liferay"
         if not tunnel_managed_cors:
-            valid_hosts += ",*.lfr-demo.online,*.lfr-demo.se"
+            # LDM-#1077: dynamic, not hardcoded -- a self-hosted Liferay
+            # Tunnel deployment (~/.ldmrc "tunnel_base_domains" override)
+            # needs its own gateway domain(s) allow-listed here too, or
+            # requests proxied through it get rejected by Liferay's own
+            # virtual-host validation.
+            for known_domain in self.manager.share.get_known_tunnel_base_domains():
+                valid_hosts += f",*.{known_domain}"
 
         forwarded_props = {
             "web.server.forwarded.host.header": "X-Forwarded-Host",
@@ -1048,7 +1054,11 @@ class ComposerService:
 
                 server_url = os.environ.get("LFT_SERVER_URL")
                 if not server_url and share_domain:
-                    server_url = f"https://tunnel.{share_domain}"
+                    # LDM-#1077: the gateway itself is always a real Liferay
+                    # base domain -- a custom vanity domain is public-URL-only.
+                    server_url = self.manager.share.resolve_tunnel_gateway_url(
+                        share_domain
+                    )
 
                 self._update_tunnel_env_file(
                     project_name, meta, subdomain, token, server_url, share_domain
@@ -1072,8 +1082,12 @@ class ComposerService:
                         f"LFT_CLIENT_SERVER=${{LFT_SERVER_URL:-{server_url}}}"
                     )
                 else:
+                    # LDM-#1077: dynamic default, not a hardcoded literal --
+                    # honors a ~/.ldmrc "tunnel_base_domains" override for
+                    # self-hosted Liferay Tunnel deployments.
+                    default_gateway = self.manager.share.get_default_tunnel_domain()
                     lfr_env.append(
-                        "LFT_CLIENT_SERVER=${LFT_SERVER_URL:-https://tunnel.lfr-demo.online}"
+                        f"LFT_CLIENT_SERVER=${{LFT_SERVER_URL:-https://tunnel.{default_gateway}}}"
                     )
 
                 image = (

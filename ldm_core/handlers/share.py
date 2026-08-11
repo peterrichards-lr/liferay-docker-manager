@@ -16,11 +16,17 @@ from ldm_core.utils import download_file, get_actual_home, run_command, version_
 class ShareService:
     """Service for lfr-tunnel management (downloader, start, status, stop)."""
 
-    # LDM-#1038: the only domains guaranteed to resolve out of the box.
-    # Anything else is a vanity domain that must be registered and approved
-    # in the Liferay Tunnel portal first -- this is a Liferay Tunnel-only
-    # concept and must never be extended to ngrok/Cloudflare.
-    KNOWN_TUNNEL_BASE_DOMAINS: ClassVar[set[str]] = {"lfr-demo.online", "lfr-demo.se"}
+    # LDM-#1038/#1077: the default known domains -- Liferay's own officially
+    # hosted gateways. This is only ever the *default*, not a hard limit:
+    # both Liferay Tunnel and LDM are open source, so a self-hosted Liferay
+    # Tunnel deployment may run entirely different gateway domain(s). Real
+    # runtime configuration lives in ~/.ldmrc ("tunnel_base_domains", a JSON
+    # list) via get_known_tunnel_base_domains() below -- never read this
+    # constant directly, it's only the fallback when nothing's configured.
+    DEFAULT_TUNNEL_BASE_DOMAINS: ClassVar[list[str]] = [
+        "lfr-demo.online",
+        "lfr-demo.se",
+    ]
 
     def __init__(self, manager):
         self.manager = manager
@@ -32,6 +38,49 @@ class ShareService:
         # every time. One flag per process (this service is a manager
         # singleton, see ldm_core/manager.py), not per call.
         self._custom_domain_note_shown = False
+
+    def get_known_tunnel_base_domains(self):
+        """LDM-#1077: the Liferay Tunnel gateway domain(s) considered
+        "known" -- i.e. real gateways the tunnel client can dial into
+        directly, as opposed to a custom vanity domain that's public-URL-only
+        (#1038). Overridable via ~/.ldmrc's "tunnel_base_domains" (a JSON
+        list), which *replaces* the default rather than adding to it -- a
+        self-hosted Liferay Tunnel deployment (both it and LDM are open
+        source) may run entirely different gateway domain(s) than Liferay's
+        own officially hosted ones.
+        """
+        override = self.manager.config.get_global_config().get("tunnel_base_domains")
+        if isinstance(override, list) and override:
+            return [str(d) for d in override]
+        return list(self.DEFAULT_TUNNEL_BASE_DOMAINS)
+
+    def get_default_tunnel_domain(self):
+        """The domain to fall back to when nothing else is configured --
+        always the first of the known base domains (see
+        get_known_tunnel_base_domains)."""
+        return self.get_known_tunnel_base_domains()[0]
+
+    def _tunnel_portal_urls_text(self):
+        """Human-readable "https://a or https://b" text for the known base
+        domains, for user-facing messages."""
+        return " or ".join(f"https://{d}" for d in self.get_known_tunnel_base_domains())
+
+    def resolve_tunnel_gateway_url(self, share_domain):
+        """LDM-#1077: a custom vanity domain is public-URL-only (#1038) --
+        confirmed with the product owner that the tunnel *client* must
+        always dial into a real Liferay gateway, never the custom domain
+        itself, which the gateway doesn't operate on and will never resolve
+        for. The gateway may pick an edge server by the client's
+        geolocation once connected, but that negotiation happens inside the
+        lfr-tunnel client/protocol itself after reaching this initial
+        central server -- LDM's only job is pointing at a real, resolvable
+        one.
+        """
+        known = self.get_known_tunnel_base_domains()
+        gateway_domain = (
+            share_domain if share_domain in known else self.get_default_tunnel_domain()
+        )
+        return f"https://tunnel.{gateway_domain}"
 
     def _resolve_existing_binary(self):
         """Resolves the path to an existing, working lfr-tunnel binary if available."""
@@ -376,12 +425,14 @@ class ShareService:
             domain = global_config.get("share_domain")
         if not domain:
             if provider in ["lfr-tunnel", "lfr-tunnel-docker"]:
+                known_domains = self.get_known_tunnel_base_domains()
+                default_domain = known_domains[0]
                 if self.manager.non_interactive:
-                    domain = "lfr-demo.online"
+                    domain = default_domain
                 else:
                     domain = UI.ask(
-                        "Choose sharing domain (lfr-demo.online, lfr-demo.se)",
-                        "lfr-demo.online",
+                        f"Choose sharing domain ({', '.join(known_domains)})",
+                        default_domain,
                     )
                     self.manager.config.set_global_config("share_domain", domain)
             else:
@@ -395,14 +446,14 @@ class ShareService:
         if (
             provider in ("lfr-tunnel", "lfr-tunnel-docker")
             and domain
-            and domain not in self.KNOWN_TUNNEL_BASE_DOMAINS
+            and domain not in self.get_known_tunnel_base_domains()
             and not self._custom_domain_note_shown
         ):
             self._custom_domain_note_shown = True
             UI.info(
                 f"Using custom domain '{domain}' for Liferay Tunnel sharing. "
                 "Custom domains must be registered and approved in the Liferay "
-                "Tunnel portal (https://lfr-demo.online or https://lfr-demo.se) "
+                f"Tunnel portal ({self._tunnel_portal_urls_text()}) "
                 "before they will resolve."
             )
 
@@ -497,7 +548,7 @@ class ShareService:
                 _, domain = self.resolve_share_config()
 
         if not domain:
-            domain = "lfr-demo.online"
+            domain = self.get_default_tunnel_domain()
 
         return f"https://{subdomain}.{domain}"
 
@@ -576,7 +627,7 @@ class ShareService:
             env["LFT_CLIENT_TOKEN"] = token
             env["LFR_TUNNEL_TOKEN"] = token
             if "LFT_SERVER_URL" not in env and share_domain:
-                env["LFT_SERVER_URL"] = f"https://tunnel.{share_domain}"
+                env["LFT_SERVER_URL"] = self.resolve_tunnel_gateway_url(share_domain)
 
             if getattr(self.manager, "dry_run", False):
                 UI.detail(
@@ -1260,12 +1311,12 @@ class ShareService:
             return None
 
         host = f"tunnel.{domain}" if domain else "the tunnel gateway"
-        if domain and domain not in self.KNOWN_TUNNEL_BASE_DOMAINS:
+        if domain and domain not in self.get_known_tunnel_base_domains():
             return (
                 f"DNS Resolution Failed: Could not resolve '{host}'. "
                 f"'{domain}' looks like a custom vanity domain -- it must be "
                 "registered and approved in the Liferay Tunnel portal "
-                "(https://lfr-demo.online or https://lfr-demo.se) before it "
+                f"({self._tunnel_portal_urls_text()}) before it "
                 "will resolve."
             )
         return (
