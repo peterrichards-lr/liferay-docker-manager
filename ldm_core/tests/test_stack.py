@@ -65,6 +65,14 @@ class MockManager(
         self.workspace = WorkspaceService(self)
         self.composer = ComposerService(self)
         self.runtime = RuntimeService(self)
+        self.share = MagicMock()
+        # LDM-#1077: _build_liferay_service() always consults known tunnel
+        # base domains for the CORS/virtual-hosts allowlist, even when
+        # sharing isn't under test here -- give it a real-shaped default.
+        self.share.get_known_tunnel_base_domains.return_value = [
+            "lfr-demo.online",
+            "lfr-demo.se",
+        ]
         self.defaults = MagicMock()
 
         def mock_defaults_get(key, default=None):

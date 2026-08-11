@@ -29,6 +29,14 @@ class MockManager(BaseHandler):
         self.infra = InfraService(self)
         self.runtime = RuntimeService(self)
         self.config = ConfigService(self)
+        self.share = MagicMock()
+        # LDM-#1077: _build_liferay_service() always consults known tunnel
+        # base domains for the CORS/virtual-hosts allowlist, even when
+        # sharing isn't under test here -- give it a real-shaped default.
+        self.share.get_known_tunnel_base_domains.return_value = [
+            "lfr-demo.online",
+            "lfr-demo.se",
+        ]
         self.defaults = MagicMock()
         self.defaults.get = MagicMock(return_value="isolated")
         self.parse_version = MagicMock(return_value=(2024, 1, 0))  # type: ignore[method-assign]
