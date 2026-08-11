@@ -2,6 +2,8 @@
 
 A professional command-line orchestrator for running, managing, and developing **Liferay Portal** and **Liferay DXP** environments in **Docker** using Docker Compose.
 
+> 📰 **As featured on the Liferay Blog:** [*Effortless Liferay Orchestration: Advanced Docker Scripts for Local Development*](https://liferay.dev/b/liferay-docker-automation-python-scripts) — Peter Richards, March 2026.
+
 ---
 
 ## 🐳 Why use LDM for Liferay in Docker?
