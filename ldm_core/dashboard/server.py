@@ -763,11 +763,16 @@ def dashboard_assets(filename="favicon.ico"):
     # /assets/<file> for the PNG/touch-icon variants) resolve to the same
     # bundled directory, on-disk in every packaged build (shiv/pyinstaller
     # bundle ldm_core/resources/ wholesale; setuptools package-data globs it).
+    #
+    # Deliberately no manual path-join/exists() pre-check here (flagged by
+    # CodeQL as an uncontrolled-path-expression risk on the first attempt):
+    # send_from_directory already resolves `filename` through Werkzeug's own
+    # safe_join and returns 404 for both a missing file and any traversal
+    # attempt on its own -- adding a second, hand-rolled check ahead of it
+    # only reintroduces the risk it already guards against.
     from ldm_core.constants import SCRIPT_DIR
 
     dashboard_dir = SCRIPT_DIR / "ldm_core" / "resources" / "dashboard"
-    if not (dashboard_dir / filename).exists():
-        abort(404)
     return send_from_directory(dashboard_dir, filename)
 
 
