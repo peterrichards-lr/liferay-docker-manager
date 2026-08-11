@@ -114,6 +114,33 @@ class TestDashboard(unittest.TestCase):
         response = self.client.get("/")
         self.assertEqual(response.status_code, 404)
 
+    def test_dashboard_favicon_ico_served(self):
+        # LDM-#1053: the browser's automatic /favicon.ico request must
+        # resolve to the real bundled icon, not 404.
+        response = self.client.get("/favicon.ico")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(response.mimetype, ("image/vnd.microsoft.icon", "image/x-icon"))
+
+    def test_dashboard_assets_png_served(self):
+        response = self.client.get("/assets/favicon-32x32.png")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.mimetype, "image/png")
+
+    def test_dashboard_assets_apple_touch_icon_served(self):
+        response = self.client.get("/assets/apple-touch-icon.png")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.mimetype, "image/png")
+
+    def test_dashboard_assets_unknown_file_404(self):
+        response = self.client.get("/assets/does-not-exist.png")
+        self.assertEqual(response.status_code, 404)
+
+    def test_dashboard_assets_path_traversal_blocked(self):
+        # send_from_directory itself rejects attempts to escape the
+        # dashboard resources directory via '..' segments.
+        response = self.client.get("/assets/../../../etc/passwd")
+        self.assertIn(response.status_code, (400, 404))
+
     @patch("ldm_core.dashboard.server.run_background_ldm_cmd")
     def test_api_start_project_success(self, mock_run_background):
         self.manager.find_dxp_roots.return_value = [
