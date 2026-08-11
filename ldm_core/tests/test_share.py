@@ -572,6 +572,83 @@ class TestShareService(unittest.TestCase):
         self.assertEqual(provider, "ngrok")
         mock_ui.info.assert_not_called()
 
+    def test_get_known_tunnel_base_domains_default(self):
+        # No ~/.ldmrc override -- falls back to the built-in Liferay
+        # Tunnel gateway domains.
+        self.assertEqual(
+            self.service.get_known_tunnel_base_domains(),
+            ["lfr-demo.online", "lfr-demo.se"],
+        )
+
+    def test_get_known_tunnel_base_domains_ldmrc_override(self):
+        # LDM-#1077: self-hosted Liferay Tunnel deployments run their own
+        # gateway on entirely different domain(s) -- a ~/.ldmrc
+        # "tunnel_base_domains" list *replaces* the built-in defaults
+        # rather than adding to them.
+        self.mock_manager.config.get_global_config = MagicMock(  # type: ignore[method-assign]
+            return_value={"tunnel_base_domains": ["tunnel.example.internal"]}
+        )
+        self.assertEqual(
+            self.service.get_known_tunnel_base_domains(),
+            ["tunnel.example.internal"],
+        )
+
+    def test_get_known_tunnel_base_domains_ignores_invalid_override(self):
+        # A malformed ~/.ldmrc value (wrong type, or an empty list) should
+        # never leave the service with zero known domains -- fall back to
+        # the built-in defaults instead.
+        bad_values: list[object] = ["not-a-list", [], None, 42]
+        for bad_value in bad_values:
+            self.mock_manager.config.get_global_config = MagicMock(  # type: ignore[method-assign]
+                return_value={"tunnel_base_domains": bad_value}
+            )
+            self.assertEqual(
+                self.service.get_known_tunnel_base_domains(),
+                ["lfr-demo.online", "lfr-demo.se"],
+            )
+
+    def test_get_default_tunnel_domain_default(self):
+        self.assertEqual(self.service.get_default_tunnel_domain(), "lfr-demo.online")
+
+    def test_get_default_tunnel_domain_ldmrc_override(self):
+        self.mock_manager.config.get_global_config = MagicMock(  # type: ignore[method-assign]
+            return_value={"tunnel_base_domains": ["tunnel.example.internal"]}
+        )
+        self.assertEqual(
+            self.service.get_default_tunnel_domain(), "tunnel.example.internal"
+        )
+
+    def test_resolve_tunnel_gateway_url_known_domain(self):
+        self.assertEqual(
+            self.service.resolve_tunnel_gateway_url("lfr-demo.se"),
+            "https://tunnel.lfr-demo.se",
+        )
+
+    def test_resolve_tunnel_gateway_url_custom_domain_falls_back_to_default(self):
+        # LDM-#1077: the exact bug report -- a custom vanity domain
+        # (public-URL-only, #1038) must never be dialed as the gateway
+        # itself; it falls back to the default known base domain.
+        self.assertEqual(
+            self.service.resolve_tunnel_gateway_url("dev.solaramoto.com"),
+            "https://tunnel.lfr-demo.online",
+        )
+
+    def test_resolve_tunnel_gateway_url_respects_ldmrc_override(self):
+        self.mock_manager.config.get_global_config = MagicMock(  # type: ignore[method-assign]
+            return_value={"tunnel_base_domains": ["tunnel.example.internal"]}
+        )
+        # A domain matching the self-hosted override resolves directly...
+        self.assertEqual(
+            self.service.resolve_tunnel_gateway_url("tunnel.example.internal"),
+            "https://tunnel.tunnel.example.internal",
+        )
+        # ...and anything else still falls back to that override's default,
+        # not the built-in Liferay domains.
+        self.assertEqual(
+            self.service.resolve_tunnel_gateway_url("some-vanity-domain.com"),
+            "https://tunnel.tunnel.example.internal",
+        )
+
     def test_diagnose_tunnel_info_auth_failure(self):
         info = {"auth": {"valid": False, "error_message": "Invalid token"}}
         res = self.service._diagnose_tunnel_info(info, "sub")
