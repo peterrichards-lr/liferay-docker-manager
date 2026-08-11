@@ -100,6 +100,16 @@ class TestCLILogic(unittest.TestCase):
         self.assertTrue(args.tag_latest)
         self.assertEqual(args.source, "source_path")
 
+        # LDM-#1080: `ldm init` shares ConfigResolutionStage._resolve_tag()
+        # with `run` (it calls cmd_run(no_up=True) internally), so it must
+        # accept --release-type too -- pairing --tag-latest with
+        # --release-type lts is otherwise unreachable on `init`.
+        args = self.parser.parse_args(
+            ["init", "demo", "--tag-latest", "--release-type", "lts"]
+        )
+        self.assertTrue(args.tag_latest)
+        self.assertEqual(args.release_type, "lts")
+
         # Test: ldm infra-restart --search (legacy alias -> infra restart)
         args = self.parser.parse_args(["infra-restart", "--search"])
         self.assertEqual(args.command, "infra")

@@ -18,6 +18,9 @@ ldm run --tag 2024.q4.0 --host-name demo.local
 # Automatically grab the latest Quarterly Release
 ldm run demo --tag-latest --release-type qr
 
+# Automatically grab the latest LTS release (not the true latest tag -- see below)
+ldm run demo --tag-latest --release-type lts
+
 # Run with a resource-optimized JVM profile (great for laptops with less RAM)
 ldm run my-project --lean
 
@@ -52,6 +55,20 @@ ldm run demo --scale liferay=2 --open
 # Prompts are automatically pre-filled using the Cascading Defaults system
 ldm run
 ```
+
+### `--tag-latest` vs. `--release-type lts`
+
+`--tag-latest` alone resolves the true latest Liferay tag **across every release channel** -- which may be a newer quarterly RC, not a stable LTS build. If you specifically want the latest LTS release, pair it with `--release-type lts`:
+
+```bash
+# "Latest" across any channel -- may land on a quarterly RC
+ldm run demo --tag-latest
+
+# Pinned to the latest stable LTS release
+ldm run demo --tag-latest --release-type lts
+```
+
+`--release-type` accepts `any`, `latest`, `u`, `lts`, `qr`, `nightly`, or `master`, and is also available on `ldm init` (both share the same tag-resolution logic as `run`).
 
 ### `--open` Switch
 
@@ -489,4 +506,4 @@ The following flags can be passed to almost any command:
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-08-05* | *Last Reviewed: 2026-07-27*
+*Last Updated: 2026-08-11* | *Last Reviewed: 2026-08-11*

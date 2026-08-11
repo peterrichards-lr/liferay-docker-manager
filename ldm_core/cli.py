@@ -471,7 +471,7 @@ def get_parser():  # noqa: PLR0915
     run.add_argument(
         "--tag-latest",
         action="store_true",
-        help="Automatically use the latest Liferay tag",
+        help="Automatically use the latest Liferay tag across every release channel (may resolve a newer quarterly RC, not just the latest LTS -- pair with --release-type lts to pin to the latest LTS instead)",
     )
     run.add_argument("--tag-prefix")
     run.add_argument("-p", "--project", dest="project_flag")
@@ -758,7 +758,7 @@ def get_parser():  # noqa: PLR0915
     imp.add_argument(
         "--tag-latest",
         action="store_true",
-        help="Automatically use the latest Liferay tag",
+        help="Automatically use the latest Liferay tag across every release channel (may resolve a newer quarterly RC rather than the latest LTS)",
     )
     imp.add_argument("--tag-prefix", help="Prefix for Liferay tag discovery")
     imp.add_argument("--no-vol-cache", action="store_true")
@@ -828,7 +828,12 @@ def get_parser():  # noqa: PLR0915
     init.add_argument(
         "--tag-latest",
         action="store_true",
-        help="Automatically use the latest Liferay tag",
+        help="Automatically use the latest Liferay tag across every release channel (may resolve a newer quarterly RC, not just the latest LTS -- pair with --release-type lts to pin to the latest LTS instead)",
+    )
+    init.add_argument(
+        "--release-type",
+        choices=["any", "latest", "u", "lts", "qr", "nightly", "master"],
+        help="Release channel to discover the latest tag from when no -t/--tag-prefix is given (LDM-#1061: kept in sync with the interactive prompt's own advertised options).",
     )
     init.add_argument("--host-name", help="Virtual Hostname")
     init.add_argument("--db", choices=["postgresql", "mysql", "hypersonic", "external"])
@@ -907,7 +912,7 @@ def get_parser():  # noqa: PLR0915
     init_from.add_argument(
         "--tag-latest",
         action="store_true",
-        help="Automatically use the latest Liferay tag",
+        help="Automatically use the latest Liferay tag across every release channel (may resolve a newer quarterly RC rather than the latest LTS)",
     )
     init_from.add_argument("--tag-prefix", help="Prefix for Liferay tag discovery")
     init_from.add_argument("--no-vol-cache", action="store_true")
@@ -967,7 +972,7 @@ def get_parser():  # noqa: PLR0915
     link.add_argument(
         "--tag-latest",
         action="store_true",
-        help="Automatically use the latest Liferay tag",
+        help="Automatically use the latest Liferay tag across every release channel (may resolve a newer quarterly RC rather than the latest LTS)",
     )
     link.add_argument("--tag-prefix", help="Prefix for Liferay tag discovery")
     link.add_argument("--no-vol-cache", action="store_true")
@@ -1030,7 +1035,7 @@ def get_parser():  # noqa: PLR0915
     clone.add_argument(
         "--tag-latest",
         action="store_true",
-        help="Automatically use the latest Liferay tag",
+        help="Automatically use the latest Liferay tag across every release channel (may resolve a newer quarterly RC rather than the latest LTS)",
     )
     clone.add_argument("--tag-prefix", help="Prefix for Liferay tag discovery")
     clone.add_argument("--no-vol-cache", action="store_true")
