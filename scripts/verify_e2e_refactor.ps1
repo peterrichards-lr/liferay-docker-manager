@@ -81,10 +81,15 @@ if (-not (Test-Path $VENV_PYTEST)) {
     if ($ldmVer -match '(\d+\.\d+\.\d+(-[a-zA-Z0-9.]+)?)') {
         $installedVersion = $Matches[1]
         if ($installedVersion -ne $SCRIPT_VERSION) {
+            # LDM-#1047: master only ever holds the latest *stable* version,
+            # so pointing at origin/master here can never resolve a mismatch
+            # while testing a pre-release -- every version (stable or
+            # pre-release) gets its own tag, so check out from the tag
+            # matching the installed binary instead.
             $warnLines = @(
                 "WARNING: this script (v$SCRIPT_VERSION) does not match the installed ldm binary (v$installedVersion)."
                 "  This may be intentional (verifying a specific older/newer binary), but if not,"
-                "  re-pull this script: git fetch; git checkout origin/master -- scripts/verify_e2e_refactor.ps1"
+                "  re-pull this script: git fetch --tags; git checkout `"v$installedVersion`" -- scripts/verify_e2e_refactor.ps1"
             )
             $warnLines | ForEach-Object {
                 Write-Output $_
