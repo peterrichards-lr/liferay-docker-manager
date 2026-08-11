@@ -585,7 +585,7 @@ class TestShareService(unittest.TestCase):
         # gateway on entirely different domain(s) -- a ~/.ldmrc
         # "tunnel_base_domains" list *replaces* the built-in defaults
         # rather than adding to them.
-        self.mock_manager.config.get_global_config = MagicMock(
+        self.mock_manager.config.get_global_config = MagicMock(  # type: ignore[method-assign]
             return_value={"tunnel_base_domains": ["tunnel.example.internal"]}
         )
         self.assertEqual(
@@ -597,8 +597,9 @@ class TestShareService(unittest.TestCase):
         # A malformed ~/.ldmrc value (wrong type, or an empty list) should
         # never leave the service with zero known domains -- fall back to
         # the built-in defaults instead.
-        for bad_value in ("not-a-list", [], None, 42):
-            self.mock_manager.config.get_global_config = MagicMock(
+        bad_values: list[object] = ["not-a-list", [], None, 42]
+        for bad_value in bad_values:
+            self.mock_manager.config.get_global_config = MagicMock(  # type: ignore[method-assign]
                 return_value={"tunnel_base_domains": bad_value}
             )
             self.assertEqual(
@@ -610,7 +611,7 @@ class TestShareService(unittest.TestCase):
         self.assertEqual(self.service.get_default_tunnel_domain(), "lfr-demo.online")
 
     def test_get_default_tunnel_domain_ldmrc_override(self):
-        self.mock_manager.config.get_global_config = MagicMock(
+        self.mock_manager.config.get_global_config = MagicMock(  # type: ignore[method-assign]
             return_value={"tunnel_base_domains": ["tunnel.example.internal"]}
         )
         self.assertEqual(
@@ -633,7 +634,7 @@ class TestShareService(unittest.TestCase):
         )
 
     def test_resolve_tunnel_gateway_url_respects_ldmrc_override(self):
-        self.mock_manager.config.get_global_config = MagicMock(
+        self.mock_manager.config.get_global_config = MagicMock(  # type: ignore[method-assign]
             return_value={"tunnel_base_domains": ["tunnel.example.internal"]}
         )
         # A domain matching the self-hosted override resolves directly...
