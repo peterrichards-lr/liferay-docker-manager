@@ -166,6 +166,22 @@ class AssetService:
         ):
             return False
 
+        # LDM-#1074: pre-warmed seeds are only ever generated for quarterly/
+        # LTS tags (see scripts/get_release_tags.py, which drives
+        # generate-seeded-states.yml) -- nightly/master builds change too
+        # often for a seed to exist, so skip the lookup entirely instead of
+        # prompting for, then failing to find, a seed that can never exist.
+        # Same nightly/master detection ConfigResolutionStage._resolve_tag()
+        # already uses upstream, rather than re-parsing the tag string.
+        if getattr(self.manager.args, "nightly", False) or getattr(
+            self.manager.args, "master", False
+        ):
+            UI.detail(
+                "Skipping pre-warmed seed lookup for nightly/master builds -- "
+                "these builds change too often for a seed to exist."
+            )
+            return False
+
         sidecar_flag = getattr(self.manager.args, "sidecar", False)
         search_mode = (
             "sidecar"

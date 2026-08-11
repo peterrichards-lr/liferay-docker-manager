@@ -12,6 +12,7 @@ class MockAssetManager:
         self.verbose = False
         self.non_interactive = True
         self.snapshot = MagicMock()
+        self.parse_version = MagicMock(return_value=(2026, 1, 0))
 
     def verify_runtime_environment(self, paths):
         pass
@@ -107,6 +108,51 @@ class TestAssetService(unittest.TestCase):
             ):
                 res = self.assets._fetch_seed("7.4", "mysql", "local", paths)
                 self.assertTrue(res)
+
+    def _configure_args(self, **overrides):
+        """MagicMock() auto-creates every attribute as a truthy child mock,
+        so _ensure_seeded's early-return guards need real False defaults
+        unless a test wants to exercise one of them."""
+        defaults = {
+            "no_seed": False,
+            "vanilla": False,
+            "nightly": False,
+            "master": False,
+            "sidecar": False,
+        }
+        defaults.update(overrides)
+        for key, value in defaults.items():
+            setattr(self.manager.args, key, value)
+
+    @patch.object(AssetService, "_fetch_seed")
+    def test_ensure_seeded_skips_nightly(self, mock_fetch):
+        # LDM-#1074: pre-warmed seeds never exist for nightly/master builds
+        # -- skip the (guaranteed to fail) lookup entirely.
+        self._configure_args(nightly=True)
+        with patch("ldm_core.handlers.assets.UI") as mock_ui:
+            res = self.assets._ensure_seeded("nightly", "postgresql", {})
+        self.assertFalse(res)
+        mock_fetch.assert_not_called()
+        mock_ui.detail.assert_called_once()
+
+    @patch.object(AssetService, "_fetch_seed")
+    def test_ensure_seeded_skips_master(self, mock_fetch):
+        self._configure_args(master=True)
+        with patch("ldm_core.handlers.assets.UI") as mock_ui:
+            res = self.assets._ensure_seeded("master", "postgresql", {})
+        self.assertFalse(res)
+        mock_fetch.assert_not_called()
+        mock_ui.detail.assert_called_once()
+
+    @patch.object(AssetService, "_fetch_seed")
+    def test_ensure_seeded_proceeds_for_quarterly_tag(self, mock_fetch):
+        # Sanity check: the nightly/master guard must not swallow the
+        # normal, seed-eligible case.
+        self._configure_args()
+        mock_fetch.return_value = True
+        res = self.assets._ensure_seeded("2026.q1.7-lts", "postgresql", {})
+        self.assertTrue(res)
+        mock_fetch.assert_called_once()
 
     @patch("ldm_core.ui.UI.ask")
     @patch("ldm_core.utils.discover_latest_tag")
