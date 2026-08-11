@@ -131,6 +131,30 @@ class TestRunPipeline(unittest.TestCase):
         mock_discover.assert_called_once()
         self.assertEqual(mock_discover.call_args.kwargs.get("release_type"), "any")
 
+    # LDM-#1080: `--tag-latest` alone (no --release-type) must resolve the
+    # true latest tag across every release channel, not silently narrow
+    # down to the global release_type default ("lts") -- which would make
+    # "latest" mean "latest LTS" and miss a newer quarterly RC.
+    @patch("ldm_core.utils.discover_latest_tag", return_value="2026.q3.9")
+    def test_resolve_tag_latest_flag_not_narrowed_to_lts_default(self, mock_discover):
+        manager = MagicMock()
+        manager.non_interactive = True
+        manager.verbose = False
+        manager.args.tag_latest = True
+        manager.args.tag_prefix = None
+        manager.args.tag = None
+        manager.args.nightly = False
+        manager.args.master = False
+        manager.args.release_type = None
+        manager.defaults.get.return_value = "lts"
+
+        stage = ConfigResolutionStage()
+        tag, _ = stage._resolve_tag(manager, {}, is_samples=False, is_portal=False)
+
+        self.assertEqual(tag, "2026.q3.9")
+        mock_discover.assert_called_once()
+        self.assertEqual(mock_discover.call_args.kwargs.get("release_type"), "any")
+
     # --- Named-volume ownership regression tests (LDM-#817) ---
     # Locks in that the plain run/import pipeline explicitly (re-)chowns
     # Named Volumes before containers boot, not just the snapshot-restore

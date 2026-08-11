@@ -374,7 +374,19 @@ class ConfigResolutionStage(PipelineStage):
             rt = (
                 str(raw_rt)
                 if raw_rt
-                else ("nightly" if is_nightly else ("any" if prefix else default_rt))
+                else (
+                    "nightly"
+                    if is_nightly
+                    # LDM-#1080: --tag-latest means "the latest Liferay tag,
+                    # period" -- it must not be silently narrowed down to
+                    # the global release_type default (normally "lts"),
+                    # which would make it resolve the latest *LTS* tag
+                    # instead of the true latest (which may well be a
+                    # newer quarterly RC). Only fall back to that default
+                    # when the user gave neither --tag-latest nor a prefix
+                    # and hasn't specified --release-type either.
+                    else ("any" if (prefix or tag_latest) else default_rt)
+                )
             )
             # LDM-#1061: explicit "latest" -> "any" normalization, matching the
             # interactive prompt's own mapping below, rather than relying on
