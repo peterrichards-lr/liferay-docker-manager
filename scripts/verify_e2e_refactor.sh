@@ -60,7 +60,6 @@ if [[ "$OSTYPE" == "linux"* ]] && [ -f /etc/os-release ]; then
 fi
 
 INSTALLED_VERSION_RAW=$("$LDM_CMD" --version 2>/dev/null || echo "unknown")
-INSTALLED_VERSION=$(echo "$INSTALLED_VERSION_RAW" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?' | head -1)
 
 {
     echo "=== LDM BINARY VERIFICATION REPORT ==="
@@ -70,15 +69,23 @@ INSTALLED_VERSION=$(echo "$INSTALLED_VERSION_RAW" | grep -oE '[0-9]+\.[0-9]+\.[0
     echo "Binary:       $(which "$LDM_CMD")"
 } >"$RESULTS_FILE_TMP"
 
-# LDM-#1011 follow-up: tee (not just write) the version lines so both the
-# installed binary version and this script's own SCRIPT_VERSION are visible
-# on the console as the run starts, not only inside the report afterward.
-{
-    echo "Version:      $INSTALLED_VERSION_RAW"
+# LDM-#1058: extracted into a named function (still in this same file --
+# the real verification workflow copies just this one file onto test rigs
+# with no git checkout and no accompanying lib/ directory, see #1049, so
+# splitting this into a separate sourced file would break that) so it can be
+# tested in isolation (see ldm_core/tests/test_verify_scripts.py) without
+# needing a full E2E Docker/ldm run. This logic has had 3 real bugs this
+# cycle already (#1047, #1049, #1058).
+print_version_banner() {
+    local installed_version_raw="$1"
+    local installed_version
+    installed_version=$(echo "$installed_version_raw" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?' | head -1)
+
+    echo "Version:      $installed_version_raw"
     echo "Script Ver:   $SCRIPT_VERSION"
 
-    if [ -n "$INSTALLED_VERSION" ] && [ "$INSTALLED_VERSION" != "$SCRIPT_VERSION" ]; then
-        echo "⚠️  WARNING: this script (v$SCRIPT_VERSION) does not match the installed ldm binary (v$INSTALLED_VERSION)."
+    if [ -n "$installed_version" ] && [ "$installed_version" != "$SCRIPT_VERSION" ]; then
+        echo "⚠️  WARNING: this script (v$SCRIPT_VERSION) does not match the installed ldm binary (v$installed_version)."
         echo "   This may be intentional (verifying a specific older/newer binary), but if not,"
         # LDM-#1049: the real verification workflow copies this script onto
         # plain test rigs with no git checkout at all (upgrade the target
@@ -86,9 +93,14 @@ INSTALLED_VERSION=$(echo "$INSTALLED_VERSION_RAW" | grep -oE '[0-9]+\.[0-9]+\.[0
         # it) -- `git checkout` is useless advice there. A raw-file download
         # keyed to the installed binary's own tag needs no git and resolves
         # correctly whether that binary is stable or pre-release.
-        echo "   re-pull this script: curl -fsSL \"https://raw.githubusercontent.com/peterrichards-lr/liferay-docker-manager/v$INSTALLED_VERSION/scripts/verify_e2e_refactor.sh\" -o scripts/verify_e2e_refactor.sh"
+        echo "   re-pull this script: curl -fsSL \"https://raw.githubusercontent.com/peterrichards-lr/liferay-docker-manager/v$installed_version/scripts/verify_e2e_refactor.sh\" -o scripts/verify_e2e_refactor.sh"
     fi
-} | tee -a "$RESULTS_FILE_TMP"
+}
+
+# LDM-#1011 follow-up: tee (not just write) the version lines so both the
+# installed binary version and this script's own SCRIPT_VERSION are visible
+# on the console as the run starts, not only inside the report afterward.
+print_version_banner "$INSTALLED_VERSION_RAW" | tee -a "$RESULTS_FILE_TMP"
 
 {
     if command -v docker &>/dev/null; then

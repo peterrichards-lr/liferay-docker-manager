@@ -9,6 +9,42 @@
 # LDM_MAGIC_VERSION: 2.15.27-pre.3
 $SCRIPT_VERSION = "2.15.27-pre.3"
 
+# LDM-#1058: extracted into a named function (still in this same file -- the
+# real verification workflow copies just this one file onto test rigs with
+# no git checkout and no accompanying lib/ directory, see #1049, so
+# dot-sourcing a separate file would break that) so it can be tested in
+# isolation (see ldm_core/tests/test_verify_scripts.py) without needing a
+# full E2E Docker/ldm run. This logic has had 3 real bugs this cycle already
+# (#1047, #1049, #1058).
+function Get-VersionBannerLines {
+    param(
+        [string]$ScriptVersion,
+        [string]$LdmVer
+    )
+    $lines = @(
+        "Version:   $LdmVer"
+        "Script Ver: $ScriptVersion"
+    )
+    if ($LdmVer -match '(\d+\.\d+\.\d+(-[a-zA-Z0-9.]+)?)') {
+        $installedVersion = $Matches[1]
+        if ($installedVersion -ne $ScriptVersion) {
+            # LDM-#1049: the real verification workflow copies this script
+            # onto plain test rigs with no git checkout at all (upgrade the
+            # target machine via `ldm system upgrade --beta`, copy the script
+            # over, run it) -- `git checkout` is useless advice there. A raw-
+            # file download keyed to the installed binary's own tag needs no
+            # git and resolves correctly whether that binary is stable or
+            # pre-release.
+            $lines += @(
+                "WARNING: this script (v$ScriptVersion) does not match the installed ldm binary (v$installedVersion)."
+                "  This may be intentional (verifying a specific older/newer binary), but if not,"
+                "  re-pull this script: Invoke-WebRequest -Uri `"https://raw.githubusercontent.com/peterrichards-lr/liferay-docker-manager/v$installedVersion/scripts/verify_e2e_refactor.ps1`" -OutFile `"scripts\verify_e2e_refactor.ps1`""
+            )
+        }
+    }
+    return $lines
+}
+
 $env:PYTHONUTF8 = 1
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 $ErrorActionPreference = "Continue"
@@ -73,31 +109,18 @@ if (-not (Test-Path $VENV_PYTEST)) {
     # Write-Output, which is captured below by Out-File), so this prints the
     # version lines to the console as the run starts, in addition to them
     # still landing in the report via Write-Output.
-    Write-Output "Version:   $ldmVer"
-    Write-Host "Version:   $ldmVer"
-    Write-Output "Script Ver: $SCRIPT_VERSION"
-    Write-Host "Script Ver: $SCRIPT_VERSION"
-
-    if ($ldmVer -match '(\d+\.\d+\.\d+(-[a-zA-Z0-9.]+)?)') {
-        $installedVersion = $Matches[1]
-        if ($installedVersion -ne $SCRIPT_VERSION) {
-            # LDM-#1049: the real verification workflow copies this script
-            # onto plain test rigs with no git checkout at all (upgrade the
-            # target machine via `ldm system upgrade --beta`, copy the script
-            # over, run it) -- `git checkout` is useless advice there. A raw-
-            # file download keyed to the installed binary's own tag needs no
-            # git and resolves correctly whether that binary is stable or
-            # pre-release.
-            $warnLines = @(
-                "WARNING: this script (v$SCRIPT_VERSION) does not match the installed ldm binary (v$installedVersion)."
-                "  This may be intentional (verifying a specific older/newer binary), but if not,"
-                "  re-pull this script: Invoke-WebRequest -Uri `"https://raw.githubusercontent.com/peterrichards-lr/liferay-docker-manager/v$installedVersion/scripts/verify_e2e_refactor.ps1`" -OutFile `"scripts\verify_e2e_refactor.ps1`""
-            )
-            $warnLines | ForEach-Object {
-                Write-Output $_
-                Write-Host $_
-            }
-        }
+    #
+    # LDM-#1058: Get-VersionBannerLines is a named function (still in this
+    # same file -- the real verification workflow copies just this one file
+    # onto test rigs with no git checkout and no accompanying lib/ directory,
+    # see #1049, so splitting this into a separate dot-sourced file would
+    # break that) so it can be tested in isolation (see
+    # ldm_core/tests/test_verify_scripts.py) without needing a full E2E
+    # Docker/ldm run. This logic has had 3 real bugs this cycle already
+    # (#1047, #1049, #1058).
+    (Get-VersionBannerLines -ScriptVersion $SCRIPT_VERSION -LdmVer $ldmVer) | ForEach-Object {
+        Write-Output $_
+        Write-Host $_
     }
 
 

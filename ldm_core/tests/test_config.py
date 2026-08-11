@@ -17,6 +17,7 @@ class MockConfigManager:
                 self.global_level = False
                 self.reset = False
                 self.no_restart = False
+                self.dry_run = False
 
         self.args = Args()
         self.verbose = False
@@ -404,6 +405,99 @@ class TestConfigService(unittest.TestCase):
             self.assertEqual(host_updates["default.admin.last.name"], "Doe")
             self.assertNotIn("default.admin.middle.name", host_updates)
 
+    def test_sync_common_assets_persists_resolved_admin_credentials(self):
+        # LDM-#1062: `ldm info --credentials` and the run-completion banner
+        # were permanently blind to any admin-credential override (via
+        # ~/.ldmrc or a raw portal-ext.properties layer), always showing
+        # LDM's hardcoded defaults. Locks in that a real override actually
+        # ends up in project_meta["credentials"], the key both display
+        # sites already prefer.
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            configs_dir = tmp_path / "osgi" / "configs"
+            configs_dir.mkdir(parents=True)
+            files_dir = tmp_path / "files"
+            files_dir.mkdir(parents=True)
+
+            paths = {
+                "root": tmp_path,
+                "configs": configs_dir,
+                "files": files_dir,
+                "common": tmp_path / "common",
+            }
+            project_meta: dict = {}
+
+            with patch.object(self.config, "get_global_config") as mock_global:
+                mock_global.return_value = {
+                    "admin_password": "CustomPass123",  # pragma: allowlist secret
+                    "admin_email_prefix": "siteadmin",
+                }
+
+                self.config.sync_common_assets(paths, project_meta=project_meta)
+
+            self.assertIn("credentials", project_meta)
+            creds = project_meta["credentials"]
+            self.assertEqual(len(creds), 1)
+            self.assertEqual(creds[0]["type"], "admin")
+            self.assertEqual(creds[0]["email"], "siteadmin@liferay.com")
+            self.assertEqual(creds[0]["password"], "CustomPass123")
+
+    def test_sync_common_assets_persists_default_admin_credentials_when_unset(self):
+        # No overrides configured anywhere -> falls back to LDM's own
+        # documented defaults (which mirror Liferay's built-in defaults),
+        # not silently skipping persistence altogether.
+        import tempfile
+
+        from ldm_core.constants import DEFAULT_ADMIN_EMAIL, DEFAULT_ADMIN_PASSWORD
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            configs_dir = tmp_path / "osgi" / "configs"
+            configs_dir.mkdir(parents=True)
+            files_dir = tmp_path / "files"
+            files_dir.mkdir(parents=True)
+
+            paths = {
+                "root": tmp_path,
+                "configs": configs_dir,
+                "files": files_dir,
+                "common": tmp_path / "common",
+            }
+            project_meta: dict = {}
+
+            with patch.object(self.config, "get_global_config", return_value={}):
+                self.config.sync_common_assets(paths, project_meta=project_meta)
+
+            creds = project_meta["credentials"]
+            self.assertEqual(creds[0]["email"], DEFAULT_ADMIN_EMAIL)
+            self.assertEqual(creds[0]["password"], DEFAULT_ADMIN_PASSWORD)
+
+    def test_sync_common_assets_skips_credentials_on_dry_run(self):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            configs_dir = tmp_path / "osgi" / "configs"
+            configs_dir.mkdir(parents=True)
+            files_dir = tmp_path / "files"
+            files_dir.mkdir(parents=True)
+
+            paths = {
+                "root": tmp_path,
+                "configs": configs_dir,
+                "files": files_dir,
+                "common": tmp_path / "common",
+            }
+            project_meta: dict = {}
+            self.manager.args.dry_run = True
+
+            with patch.object(self.config, "get_global_config", return_value={}):
+                self.config.sync_common_assets(paths, project_meta=project_meta)
+
+            self.assertNotIn("credentials", project_meta)
+
     def test_sync_common_assets_smart_merge(self):
         """Verify global common portal properties override vanilla defaults but not project overrides."""
         import tempfile
@@ -711,6 +805,128 @@ class TestConfigService(unittest.TestCase):
 
             self.config.cmd_revert_properties("project")
             self.assertEqual(target_pe.read_text().strip(), "my.prop=original")
+
+    def test_cmd_rebuild_properties_persists_project_meta(self):
+        # LDM-#1066: sync_common_assets() mutates project_meta in place
+        # (e.g. the #1062 admin-credentials resolution), but
+        # cmd_rebuild_properties never called write_meta afterward, so that
+        # mutation was silently dropped.
+        import tempfile
+        from pathlib import Path
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            files_dir = tmp_path / "files"
+            files_dir.mkdir(parents=True)
+
+            paths = {
+                "root": tmp_path,
+                "configs": tmp_path / "osgi" / "configs",
+                "files": files_dir,
+                "common_dirs": [],
+                "deploy": tmp_path / "deploy",
+            }
+
+            self.manager.detect_project_path = MagicMock(return_value=tmp_path)  # type: ignore[method-assign]
+            self.manager.setup_paths = MagicMock(return_value=paths)  # type: ignore[method-assign]
+            self.manager.read_meta = MagicMock(return_value={})  # type: ignore[method-assign]
+            self.manager.verify_runtime_environment = MagicMock()  # type: ignore[method-assign]
+            self.manager.write_meta = MagicMock()  # type: ignore[method-assign]
+            self.manager.args.dry_run = False
+
+            self.config.cmd_rebuild_properties("project")
+
+            self.manager.write_meta.assert_called_once()
+            written_root, written_meta = self.manager.write_meta.call_args[0]
+            self.assertEqual(written_root, tmp_path)
+            self.assertIn("credentials", written_meta)
+
+    def test_cmd_rebuild_properties_dry_run_skips_persistence(self):
+        import tempfile
+        from pathlib import Path
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            files_dir = tmp_path / "files"
+            files_dir.mkdir(parents=True)
+
+            paths = {
+                "root": tmp_path,
+                "configs": tmp_path / "osgi" / "configs",
+                "files": files_dir,
+                "common_dirs": [],
+                "deploy": tmp_path / "deploy",
+            }
+
+            self.manager.detect_project_path = MagicMock(return_value=tmp_path)  # type: ignore[method-assign]
+            self.manager.setup_paths = MagicMock(return_value=paths)  # type: ignore[method-assign]
+            self.manager.read_meta = MagicMock(return_value={})  # type: ignore[method-assign]
+            self.manager.verify_runtime_environment = MagicMock()  # type: ignore[method-assign]
+            self.manager.write_meta = MagicMock()  # type: ignore[method-assign]
+            self.manager.args.dry_run = True
+
+            self.config.cmd_rebuild_properties("project")
+
+            self.manager.write_meta.assert_not_called()
+
+    def test_cmd_reset_properties_persists_project_meta(self):
+        import tempfile
+        from pathlib import Path
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            files_dir = tmp_path / "files"
+            files_dir.mkdir(parents=True)
+
+            paths = {
+                "root": tmp_path,
+                "configs": tmp_path / "osgi" / "configs",
+                "files": files_dir,
+                "common_dirs": [],
+                "deploy": tmp_path / "deploy",
+            }
+
+            self.manager.detect_project_path = MagicMock(return_value=tmp_path)  # type: ignore[method-assign]
+            self.manager.setup_paths = MagicMock(return_value=paths)  # type: ignore[method-assign]
+            self.manager.read_meta = MagicMock(return_value={})  # type: ignore[method-assign]
+            self.manager.verify_runtime_environment = MagicMock()  # type: ignore[method-assign]
+            self.manager.write_meta = MagicMock()  # type: ignore[method-assign]
+            self.manager.args.dry_run = False
+
+            self.config.cmd_reset_properties("project")
+
+            self.manager.write_meta.assert_called_once()
+            written_root, written_meta = self.manager.write_meta.call_args[0]
+            self.assertEqual(written_root, tmp_path)
+            self.assertIn("credentials", written_meta)
+
+    def test_cmd_reset_properties_dry_run_skips_persistence(self):
+        import tempfile
+        from pathlib import Path
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            files_dir = tmp_path / "files"
+            files_dir.mkdir(parents=True)
+
+            paths = {
+                "root": tmp_path,
+                "configs": tmp_path / "osgi" / "configs",
+                "files": files_dir,
+                "common_dirs": [],
+                "deploy": tmp_path / "deploy",
+            }
+
+            self.manager.detect_project_path = MagicMock(return_value=tmp_path)  # type: ignore[method-assign]
+            self.manager.setup_paths = MagicMock(return_value=paths)  # type: ignore[method-assign]
+            self.manager.read_meta = MagicMock(return_value={})  # type: ignore[method-assign]
+            self.manager.verify_runtime_environment = MagicMock()  # type: ignore[method-assign]
+            self.manager.write_meta = MagicMock()  # type: ignore[method-assign]
+            self.manager.args.dry_run = True
+
+            self.config.cmd_reset_properties("project")
+
+            self.manager.write_meta.assert_not_called()
 
     def test_validate_properties_success(self):
         """Test properties validation with correct settings."""

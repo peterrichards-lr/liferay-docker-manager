@@ -719,6 +719,50 @@ class ConfigService:
             if val is not None:
                 host_updates[portal_key] = val
 
+    def _persist_resolved_admin_credentials(self, paths, project_meta):
+        """LDM-#1062: reads the final, fully-resolved portal-ext.properties
+        (after _resolve_properties_cascade has applied the 5-layer cascade)
+        and persists the REAL admin email/password into
+        project_meta["credentials"] -- the single source of truth
+        `ldm info --credentials` and the run-completion banner already
+        prefer (ldm_core/diagnostics/info.py, ldm_core/runtime/readiness.py).
+
+        Without this, both display sites are permanently blind to any
+        override -- via ~/.ldmrc (mapped in _configure_admin_user above) or
+        a raw portal-ext.properties layer -- always showing LDM's hardcoded
+        DEFAULT_ADMIN_EMAIL/DEFAULT_ADMIN_PASSWORD regardless of what's
+        actually configured on the real Liferay instance.
+        """
+        if project_meta is None:
+            return
+
+        from ldm_core.constants import DEFAULT_ADMIN_EMAIL, DEFAULT_ADMIN_PASSWORD
+
+        target_ext = paths["files"] / "portal-ext.properties"
+        if not target_ext.exists():
+            return
+
+        try:
+            props = self._get_properties(target_ext.read_text(encoding="utf-8"))
+        except OSError:
+            return
+
+        default_prefix, _, default_suffix = DEFAULT_ADMIN_EMAIL.partition("@")
+        prefix = props.get("default.admin.email.address.prefix", default_prefix)
+        suffix = props.get("default.admin.email.address.suffix", default_suffix)
+        password = props.get(
+            "default.admin.password",  # pragma: allowlist secret
+            DEFAULT_ADMIN_PASSWORD,
+        )
+
+        project_meta["credentials"] = [
+            {
+                "type": "admin",
+                "email": f"{prefix}@{suffix}",
+                "password": password,
+            }
+        ]
+
     def _resolve_properties_cascade(  # noqa: C901, PLR0912, PLR0915
         self, paths, host_updates, project_meta, is_dry_run
     ):
@@ -1154,6 +1198,9 @@ class ConfigService:
         )
         self._resolve_properties_cascade(paths, host_updates, project_meta, is_dry_run)
 
+        if not is_dry_run:
+            self._persist_resolved_admin_credentials(paths, project_meta)
+
         self._sync_common_assets_files(paths, project_meta)
 
     def cmd_log_level(self, project_id=None):
@@ -1570,6 +1617,12 @@ class ConfigService:
         self.sync_common_assets(paths, project_meta=project_meta)
 
         if not is_dry_run:
+            # LDM-#1066: sync_common_assets() mutates project_meta in place
+            # (e.g. _configure_captcha, _configure_fast_login, and
+            # _persist_resolved_admin_credentials per #1062) -- without this,
+            # those mutations were computed correctly but silently dropped,
+            # never reaching disk.
+            self.manager.write_meta(root_path, project_meta)
             UI.success("Properties successfully rebuilt.")
 
     def cmd_revert_properties(self, project_id=None):
@@ -1641,6 +1694,10 @@ class ConfigService:
                     os.environ.pop("LDM_DRY_RUN", None)
             else:
                 self.sync_common_assets(paths, project_meta=project_meta)
+                # LDM-#1066: see matching comment in cmd_rebuild_properties --
+                # project_meta mutations from sync_common_assets() were never
+                # persisted here either.
+                self.manager.write_meta(root_path, project_meta)
                 UI.success("Properties successfully reset.")
         finally:
             if temp_backup and temp_backup.exists() and not is_dry_run:
