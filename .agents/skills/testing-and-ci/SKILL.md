@@ -14,6 +14,12 @@ description: Activate this skill whenever writing tests, running linters, or com
 - **Handling Secrets Baseline Shifts**: The `detect-secrets` hook will fail in CI if line numbers for existing tracked secrets shift due to code changes above them (e.g., adding lines to `ci.yml`). When making structural changes or adding lines to files tracked in `.secrets.baseline`, you MUST proactively run `.venv/bin/pre-commit run detect-secrets --all-files` (or manually patch the line numbers in `.secrets.baseline`) and commit the updated baseline file to prevent CI cascade failures.
 - **Pure ASCII PowerShell Encoding**: All PowerShell scripts (`.ps1` and `.psm1`) MUST strictly use pure ASCII encoding without non-ASCII multi-byte characters. Windows PowerShell 5.1 misparses non-ASCII UTF-8 bytes on ANSI code pages. Validate via `scripts/check_powershell_ascii.py`.
 
+## Post-Push CI Monitoring (No Silent Failures)
+
+- **Never leave a red GitHub Action unaddressed**: After pushing to a PR branch (or after a merge/push to `master` you triggered or observe), you MUST watch the run to completion (e.g. via `gh pr checks`/`gh run watch` or the `Monitor` tool) and, if it fails, investigate the actual failure log (`gh run view --job <id> --log`) before doing anything else with that PR/branch. Do not just report "CI failed" and move on, and do not assume a failure is unrelated/transient without reading the log to confirm.
+- **Fix or triage, then re-trigger**: If the failure is caused by the change under review, fix it, push, and watch the re-run. If it is a genuine one-off infra hiccup unrelated to the diff (verify by re-reading the actual error, not by guessing), rerun the failed jobs (`gh run rerun --failed`) rather than leaving them red -- but only after confirming the failure isn't a real regression the rerun would just mask.
+- **A failure on `master` is not "someone else's problem"**: If a push/merge you performed triggers a CI run on `master` and it fails, that failure must be investigated and resolved (fix + re-push, or rerun if transient) before considering the task done -- do not treat PR-merge as the finish line while a resulting `master`-branch CI run sits failed and unexamined.
+
 ## Endpoint Protection & Security
 
 - **Mocking System Calls in Tests**: Never execute actual compiled binaries (like `lfr-tunnel`, `ldm`) during unit/integration tests using `subprocess` or `os.system`. All system and binary execution calls MUST be correctly mocked (`@patch("ldm_core.utils.run_command")` or `@patch("subprocess.Popen")`) to prevent triggering corporate endpoint protection tools (e.g., SentinelOne), which may detect these test invocations as malicious activity and aggressively quarantine/delete the binaries and surrounding development tools (like `brew`, `jenv`, etc.).
@@ -25,4 +31,4 @@ description: Activate this skill whenever writing tests, running linters, or com
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-08-06* | *Last Reviewed: 2026-08-06*
+*Last Updated: 2026-08-11* | *Last Reviewed: 2026-08-11*
