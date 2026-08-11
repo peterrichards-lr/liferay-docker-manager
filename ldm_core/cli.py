@@ -507,7 +507,11 @@ def get_parser():  # noqa: PLR0915
         choices=["isolated", "shared"],
         help="Explicitly force a specific Database mode (overrides local repository configs)",
     )
-    run.add_argument("--release-type", choices=["any", "u", "lts", "qr"])
+    run.add_argument(
+        "--release-type",
+        choices=["any", "latest", "u", "lts", "qr", "nightly", "master"],
+        help="Release channel to discover the latest tag from when no -t/--tag-prefix is given (LDM-#1061: kept in sync with the interactive prompt's own advertised options).",
+    )
     run.add_argument("--portal", action="store_true")
     run.add_argument("--refresh", action="store_true")
     run.add_argument(
