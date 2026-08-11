@@ -225,3 +225,9 @@ jobs:
           # without it, the mandatory issue-link-check fails on every single
           # run of this workflow.
           gh pr edit "$BRANCH" --add-label no-issue-needed || true
+          # LDM-#1041: this PR is a deterministic, docs-only regeneration
+          # from CI's own verification data -- once the same required
+          # checks every other PR must pass are green, there's nothing left
+          # for a human to gate on. Auto-merge removes the manual click
+          # without skipping any of those checks.
+          gh pr merge "$BRANCH" --auto --squash || true
