@@ -1081,9 +1081,29 @@ def get_parser():  # noqa: PLR0915
         p.add_argument("-p", "--project", dest="project_flag")
 
         if cmd == "down":
-            p.add_argument("-V", "--volumes", action="store_true")
-            p.add_argument("-d", "--delete", action="store_true")
-            p.add_argument("--infra", action="store_true")
+            p.add_argument(
+                "-V",
+                "--volumes",
+                action="store_true",
+                help="Also remove the project's Docker Compose volumes (implied by --delete).",
+            )
+            p.add_argument(
+                "-d",
+                "--delete",
+                action="store_true",
+                help=(
+                    "Beyond stopping/removing containers: drop the project's schema "
+                    "from the shared database (if applicable), unregister the "
+                    "project, and permanently delete its directory from disk. "
+                    "This cannot be undone -- use 'ldm rm' without --delete to "
+                    "just tear down containers and keep the project."
+                ),
+            )
+            p.add_argument(
+                "--infra",
+                action="store_true",
+                help="Also tear down the shared global infrastructure (proxy, search, etc.), independently of any project target.",
+            )
             p.add_argument(
                 "--clean-hosts",
                 action="store_true",
