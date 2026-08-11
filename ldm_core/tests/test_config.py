@@ -17,6 +17,7 @@ class MockConfigManager:
                 self.global_level = False
                 self.reset = False
                 self.no_restart = False
+                self.dry_run = False
 
         self.args = Args()
         self.verbose = False
