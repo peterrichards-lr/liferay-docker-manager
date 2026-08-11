@@ -104,6 +104,33 @@ class TestRunPipeline(unittest.TestCase):
         mock_die.assert_called_once()
         self.assertEqual(mock_die.call_args.kwargs.get("exit_code"), 3)
 
+    # LDM-#1061: `--release-type latest` is now a valid argparse choice
+    # (previously rejected -- choices=["any", "u", "lts", "qr"] was never
+    # updated when nightly/master/latest support was added to the
+    # interactive prompt). This locks in that the non-interactive
+    # resolution branch also normalizes "latest" -> "any" explicitly,
+    # rather than relying on discover_latest_tag()'s implicit
+    # no-recognized-filter fallthrough to coincidentally match.
+    @patch("ldm_core.utils.discover_latest_tag", return_value="2026.q3.9")
+    def test_resolve_tag_release_type_latest_normalized_to_any(self, mock_discover):
+        manager = MagicMock()
+        manager.non_interactive = True
+        manager.verbose = False
+        manager.args.tag_latest = False
+        manager.args.tag_prefix = None
+        manager.args.tag = None
+        manager.args.nightly = False
+        manager.args.master = False
+        manager.args.release_type = "latest"
+        manager.defaults.get.return_value = None
+
+        stage = ConfigResolutionStage()
+        tag, _ = stage._resolve_tag(manager, {}, is_samples=False, is_portal=False)
+
+        self.assertEqual(tag, "2026.q3.9")
+        mock_discover.assert_called_once()
+        self.assertEqual(mock_discover.call_args.kwargs.get("release_type"), "any")
+
     # --- Named-volume ownership regression tests (LDM-#817) ---
     # Locks in that the plain run/import pipeline explicitly (re-)chowns
     # Named Volumes before containers boot, not just the snapshot-restore

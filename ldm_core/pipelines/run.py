@@ -376,6 +376,12 @@ class ConfigResolutionStage(PipelineStage):
                 if raw_rt
                 else ("nightly" if is_nightly else ("any" if prefix else default_rt))
             )
+            # LDM-#1061: explicit "latest" -> "any" normalization, matching the
+            # interactive prompt's own mapping below, rather than relying on
+            # discover_latest_tag()'s implicit "no recognized filter -> no
+            # filtering" fallthrough to coincidentally produce the same result.
+            if rt.lower() == "latest":
+                rt = "any"
 
             if not can_discover:
                 if manager.verbose:
