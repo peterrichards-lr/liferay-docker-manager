@@ -61,6 +61,62 @@ def _is_metadata_only_diff(old_ref, new_ref="HEAD"):
     )
 
 
+# LDM-#1058: a changed/added line in the verify scripts' diff that can only
+# ever be a comment, the version constant itself, or a plain user-facing
+# message string -- never a control-flow or logic line. Deliberately
+# conservative: only lines *provably* limited to these shapes count as safe;
+# anything else (including a line this pattern simply fails to recognize)
+# falls through to "not cosmetic" in _is_verify_script_diff_cosmetic_only.
+_VERIFY_SCRIPT_SAFE_LINE = re.compile(
+    r"^[+-]\s*(?:"
+    r"#.*"  # bash/PowerShell comment
+    r"|SCRIPT_VERSION\s*=.*"  # bash: SCRIPT_VERSION="..."
+    r"|\$SCRIPT_VERSION\s*=.*"  # PowerShell: $SCRIPT_VERSION = "..."
+    r"|(?:echo|Write-Output|Write-Host)\s+[\"'].*[\"']\s*"  # message via echo/Write-*
+    r"|[\"'].*[\"'],?"  # bare quoted string (e.g. a PowerShell @() array element,
+    # looped over separately with Write-Output/Write-Host rather than called
+    # inline -- still just message text, not a control-flow/logic line.
+    r")\s*$"
+)
+
+
+def _is_verify_script_diff_cosmetic_only(old_ref, new_ref="HEAD"):
+    """True only if every changed line in the verify scripts' own diff
+    between old_ref and new_ref is provably cosmetic (a comment, the
+    SCRIPT_VERSION/LDM_MAGIC_VERSION line, or a plain message string) --
+    never a control-flow or logic line that could change what the script
+    actually verifies. Fails safe (False) on any git error, an empty/missing
+    ref, or any changed line this can't positively classify as cosmetic.
+
+    Deliberately narrower than _is_metadata_only_diff(): that helper checks
+    the *whole repo's* changed-file list against an allowlist, which is the
+    right granularity for "did the shipped binary change" but the wrong one
+    here -- unrelated functional files change between any two tags in a real
+    repo, so what matters is only whether the verify scripts *themselves*
+    changed in a way that could affect what they exercise.
+    """
+    paths = ["scripts/verify_e2e_refactor.sh", "scripts/verify_e2e_refactor.ps1"]
+    try:
+        res = subprocess.run(
+            ["git", "diff", "--unified=0", old_ref, new_ref, "--", *paths],
+            capture_output=True,
+            text=True,
+            cwd=PROJECT_ROOT,
+            check=False,
+        )
+    except Exception:
+        return False
+    if res.returncode != 0:
+        return False
+
+    for line in res.stdout.splitlines():
+        if not line.startswith(("+", "-")) or line.startswith(("+++", "---")):
+            continue
+        if not _VERIFY_SCRIPT_SAFE_LINE.match(line):
+            return False
+    return True
+
+
 def get_promotable_stable_version(report_version):
     """Returns the current stable VERSION if report_version is a pre-release
     that's provably safe (see _is_metadata_only_diff) to display as that
@@ -472,9 +528,33 @@ def sync_reports():  # noqa: C901, PLR0912, PLR0915
                     # a discrepancy that undermines the validity of the result,
                     # distinct from (and checked separately from) the binary
                     # version check above.
-                    stale_reason = (
-                        f"verify script version {meta['script_version']} != {VERSION}"
+                    #
+                    # LDM-#1058: unless that script-version drift is provably
+                    # cosmetic (e.g. a warning-message wording fix) -- the
+                    # real verification workflow upgrades the ldm binary
+                    # independently of the standalone verify-script copy on
+                    # each test rig (see #1049), so the script naturally lags
+                    # between refreshes even when nothing it checks changed.
+                    script_tag = f"v{normalize_version(meta['script_version'])}"
+                    tag_check = subprocess.run(
+                        ["git", "rev-parse", "--verify", "--quiet", script_tag],
+                        capture_output=True,
+                        text=True,
+                        cwd=PROJECT_ROOT,
+                        check=False,
                     )
+                    cosmetic = (
+                        tag_check.returncode == 0
+                        and _is_verify_script_diff_cosmetic_only(script_tag)
+                    )
+                    if cosmetic:
+                        UI.info(
+                            f"{r.name}: verify script version {meta['script_version']} != "
+                            f"{VERSION}, but the diff between them is provably cosmetic-only "
+                            "-- accepting this report."
+                        )
+                    else:
+                        stale_reason = f"verify script version {meta['script_version']} != {VERSION}"
 
                 if stale_reason:
                     # Generate a unique hash for the archived filename to avoid collisions
