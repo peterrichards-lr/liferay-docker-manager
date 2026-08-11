@@ -27,13 +27,25 @@ jobs:
         shell: bash
         env:
           BRANCH_NAME: ${{ github.ref_name }}
+          COMMIT_MSG: ${{ github.event.head_commit.message }}
         run: |
           # release/vX.Y.Z-pre.N branches keep this exact name for their
           # entire lifetime -- only the -pre.N suffix advances via further
           # `--bump beta` calls, until the branch is promoted to stable and
           # merged away. So the base X.Y.Z encoded in the branch name must
           # always match VERSION's own base, and VERSION must still be a
-          # pre-release, for as long as the branch exists.
+          # pre-release, for as long as the branch exists --
+          #
+          # LDM-#1069: ...with exactly one legitimate exception.
+          # `scripts/release.py --promote` itself pushes a stable-version
+          # commit to this same branch as its own first step, immediately
+          # before merging it into master -- the guard was tripping over its
+          # own intended target's normal, expected behavior. Recognize that
+          # one specific commit message (the exact text --promote produces)
+          # as an allowed exception, rather than treating every stable
+          # VERSION on a release branch as a silent revert. Every other case
+          # (an accidental revert via a bad merge/rebase) still fails loudly
+          # and fast, exactly as before.
           BRANCH_BASE=$(echo "$BRANCH_NAME" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)
           if [ -z "$BRANCH_BASE" ]; then
             echo "Could not parse a version out of branch name '$BRANCH_NAME' -- skipping."
@@ -45,6 +57,10 @@ jobs:
           echo "Actual VERSION on this push: $VERSION"
 
           if [[ "$VERSION" != *-* ]]; then
+            if [[ "$COMMIT_MSG" == "chore(release): promote version to v${BRANCH_BASE}"* ]]; then
+              echo "Version check passed: $VERSION is scripts/release.py --promote's own expected stable push for this branch's base ($BRANCH_BASE), made immediately before it merges into master."
+              exit 0
+            fi
             echo "::error::VERSION ($VERSION) is stable, but this is still an open release branch ($BRANCH_NAME) -- it should stay a pre-release until scripts/release.py --promote runs. This usually means something (e.g. GitHub's 'Update branch' button merging master in) silently reverted VERSION. Restore it and re-push: see LDM-#1029 for the exact fix pattern."
             exit 1
           fi
