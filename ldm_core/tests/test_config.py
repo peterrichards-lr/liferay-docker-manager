@@ -806,6 +806,128 @@ class TestConfigService(unittest.TestCase):
             self.config.cmd_revert_properties("project")
             self.assertEqual(target_pe.read_text().strip(), "my.prop=original")
 
+    def test_cmd_rebuild_properties_persists_project_meta(self):
+        # LDM-#1066: sync_common_assets() mutates project_meta in place
+        # (e.g. the #1062 admin-credentials resolution), but
+        # cmd_rebuild_properties never called write_meta afterward, so that
+        # mutation was silently dropped.
+        import tempfile
+        from pathlib import Path
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            files_dir = tmp_path / "files"
+            files_dir.mkdir(parents=True)
+
+            paths = {
+                "root": tmp_path,
+                "configs": tmp_path / "osgi" / "configs",
+                "files": files_dir,
+                "common_dirs": [],
+                "deploy": tmp_path / "deploy",
+            }
+
+            self.manager.detect_project_path = MagicMock(return_value=tmp_path)  # type: ignore[method-assign]
+            self.manager.setup_paths = MagicMock(return_value=paths)  # type: ignore[method-assign]
+            self.manager.read_meta = MagicMock(return_value={})  # type: ignore[method-assign]
+            self.manager.verify_runtime_environment = MagicMock()  # type: ignore[method-assign]
+            self.manager.write_meta = MagicMock()  # type: ignore[method-assign]
+            self.manager.args.dry_run = False
+
+            self.config.cmd_rebuild_properties("project")
+
+            self.manager.write_meta.assert_called_once()
+            written_root, written_meta = self.manager.write_meta.call_args[0]
+            self.assertEqual(written_root, tmp_path)
+            self.assertIn("credentials", written_meta)
+
+    def test_cmd_rebuild_properties_dry_run_skips_persistence(self):
+        import tempfile
+        from pathlib import Path
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            files_dir = tmp_path / "files"
+            files_dir.mkdir(parents=True)
+
+            paths = {
+                "root": tmp_path,
+                "configs": tmp_path / "osgi" / "configs",
+                "files": files_dir,
+                "common_dirs": [],
+                "deploy": tmp_path / "deploy",
+            }
+
+            self.manager.detect_project_path = MagicMock(return_value=tmp_path)  # type: ignore[method-assign]
+            self.manager.setup_paths = MagicMock(return_value=paths)  # type: ignore[method-assign]
+            self.manager.read_meta = MagicMock(return_value={})  # type: ignore[method-assign]
+            self.manager.verify_runtime_environment = MagicMock()  # type: ignore[method-assign]
+            self.manager.write_meta = MagicMock()  # type: ignore[method-assign]
+            self.manager.args.dry_run = True
+
+            self.config.cmd_rebuild_properties("project")
+
+            self.manager.write_meta.assert_not_called()
+
+    def test_cmd_reset_properties_persists_project_meta(self):
+        import tempfile
+        from pathlib import Path
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            files_dir = tmp_path / "files"
+            files_dir.mkdir(parents=True)
+
+            paths = {
+                "root": tmp_path,
+                "configs": tmp_path / "osgi" / "configs",
+                "files": files_dir,
+                "common_dirs": [],
+                "deploy": tmp_path / "deploy",
+            }
+
+            self.manager.detect_project_path = MagicMock(return_value=tmp_path)  # type: ignore[method-assign]
+            self.manager.setup_paths = MagicMock(return_value=paths)  # type: ignore[method-assign]
+            self.manager.read_meta = MagicMock(return_value={})  # type: ignore[method-assign]
+            self.manager.verify_runtime_environment = MagicMock()  # type: ignore[method-assign]
+            self.manager.write_meta = MagicMock()  # type: ignore[method-assign]
+            self.manager.args.dry_run = False
+
+            self.config.cmd_reset_properties("project")
+
+            self.manager.write_meta.assert_called_once()
+            written_root, written_meta = self.manager.write_meta.call_args[0]
+            self.assertEqual(written_root, tmp_path)
+            self.assertIn("credentials", written_meta)
+
+    def test_cmd_reset_properties_dry_run_skips_persistence(self):
+        import tempfile
+        from pathlib import Path
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            files_dir = tmp_path / "files"
+            files_dir.mkdir(parents=True)
+
+            paths = {
+                "root": tmp_path,
+                "configs": tmp_path / "osgi" / "configs",
+                "files": files_dir,
+                "common_dirs": [],
+                "deploy": tmp_path / "deploy",
+            }
+
+            self.manager.detect_project_path = MagicMock(return_value=tmp_path)  # type: ignore[method-assign]
+            self.manager.setup_paths = MagicMock(return_value=paths)  # type: ignore[method-assign]
+            self.manager.read_meta = MagicMock(return_value={})  # type: ignore[method-assign]
+            self.manager.verify_runtime_environment = MagicMock()  # type: ignore[method-assign]
+            self.manager.write_meta = MagicMock()  # type: ignore[method-assign]
+            self.manager.args.dry_run = True
+
+            self.config.cmd_reset_properties("project")
+
+            self.manager.write_meta.assert_not_called()
+
     def test_validate_properties_success(self):
         """Test properties validation with correct settings."""
         paths = {

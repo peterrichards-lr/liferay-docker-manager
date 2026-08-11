@@ -1617,6 +1617,12 @@ class ConfigService:
         self.sync_common_assets(paths, project_meta=project_meta)
 
         if not is_dry_run:
+            # LDM-#1066: sync_common_assets() mutates project_meta in place
+            # (e.g. _configure_captcha, _configure_fast_login, and
+            # _persist_resolved_admin_credentials per #1062) -- without this,
+            # those mutations were computed correctly but silently dropped,
+            # never reaching disk.
+            self.manager.write_meta(root_path, project_meta)
             UI.success("Properties successfully rebuilt.")
 
     def cmd_revert_properties(self, project_id=None):
@@ -1688,6 +1694,10 @@ class ConfigService:
                     os.environ.pop("LDM_DRY_RUN", None)
             else:
                 self.sync_common_assets(paths, project_meta=project_meta)
+                # LDM-#1066: see matching comment in cmd_rebuild_properties --
+                # project_meta mutations from sync_common_assets() were never
+                # persisted here either.
+                self.manager.write_meta(root_path, project_meta)
                 UI.success("Properties successfully reset.")
         finally:
             if temp_backup and temp_backup.exists() and not is_dry_run:
