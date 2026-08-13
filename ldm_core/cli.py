@@ -540,13 +540,7 @@ def get_parser():  # noqa: PLR0915
     run.add_argument(
         "--internal-state",
         action="store_true",
-        help=(
-            "Use a Docker Named Volume instead of a live host bind-mount for "
-            "OSGi state and client-extensions (fixes locking/bundle-startup "
-            "issues on slow or external drives, at the cost of live "
-            "hot-deploy into osgi/client-extensions). Auto-enabled on "
-            "detected external volumes."
-        ),
+        help="Use internal anonymous volume for OSGi state (fixes locking issues on external drives)",
     )
     run.add_argument(
         "--no-jvm-verify",

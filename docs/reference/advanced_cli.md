@@ -6,7 +6,7 @@ This document covers advanced flags and commands intended for CI/CD automation, 
 
 These flags control how LDM mounts volumes to bypass filesystem locking limitations on non-Linux hosts.
 
-- **`--internal-state`**: Forces the use of Docker Named Volumes instead of live host bind-mounts for `osgi/state` **and** `osgi/client-extensions`. LDM enables this automatically if it detects the project is on an external drive (`/Volumes/`). Use this to manually bypass `access_denied_exception` lock errors, or OSGi client-extension bundles that never reach `STARTED`, on slow or external filesystems. Trade-off: hot-deploying a new client extension into `osgi/client-extensions` while the container is running is no longer picked up automatically -- restart the project to pick up new content.
+- **`--internal-state`**: Forces the use of an internal Docker volume for the OSGi state folder (`osgi/state`). LDM enables this automatically if it detects the project is on an external drive (`/Volumes/`). Use this to manually bypass `access_denied_exception` lock errors on slow or external filesystems.
 - **`--no-vol-cache`**: Disables the `:cached` mount delegation flag on macOS and Windows. Use this if you are experiencing severe file synchronization delays between the host and the container.
 
 ## Initialization & Seeding State
@@ -133,4 +133,4 @@ Controls whether LDM provisions an isolated PostgreSQL database or connects to t
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-08-13* | *Last Reviewed: 2026-08-13*
+*Last Updated: 2026-08-05* | *Last Reviewed: 2026-07-31*
