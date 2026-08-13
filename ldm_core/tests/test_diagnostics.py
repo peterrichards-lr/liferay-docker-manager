@@ -1122,6 +1122,74 @@ class TestDiagnosticsSetupCompletion(unittest.TestCase):
                     )
                 self.assertEqual(cm.exception.code, 0)
 
+    @patch("ldm_core.diagnostics.info.run_command")
+    def test_cmd_status_json_standard(self, mock_run):
+        # LDM-#1093: --json for status/ps -- same underlying data, no
+        # table/color formatting, exit codes unchanged.
+        mock_run.side_effect = [
+            "",  # liferay-proxy-global
+            "",  # liferay-search-global
+            "",  # liferay-docker-proxy
+            "some-running-container-id\n",  # project running check
+        ]
+        with (
+            patch.object(
+                self.manager, "detect_project_path", return_value=Path("/tmp/myproj")
+            ),
+            patch.object(
+                self.manager,
+                "read_meta",
+                return_value={"tag": "2024.q1.3", "container_name": "myproj"},
+            ),
+        ):
+            import io
+            from contextlib import redirect_stdout
+
+            f = io.StringIO()
+            with self.assertRaises(SystemExit) as cm, redirect_stdout(f):
+                self.manager.diagnostics.cmd_status(project_id="myproj", as_json=True)
+            self.assertEqual(cm.exception.code, 0)
+
+        parsed = json.loads(f.getvalue())
+        self.assertIn("infrastructure", parsed)
+        self.assertIn("projects", parsed)
+        self.assertEqual(len(parsed["projects"]), 1)
+        entry = parsed["projects"][0]
+        self.assertEqual(entry["project"], "myproj")
+        self.assertTrue(entry["running"])
+        self.assertNotIn("\x1b[", f.getvalue())
+
+    @patch("ldm_core.diagnostics.info.run_command")
+    def test_cmd_status_json_detailed(self, mock_run):
+        mock_run.return_value = "myproj-liferay-1\tUp 5 minutes (healthy)\tliferay/portal\t0.0.0.0:8080->8080/tcp, :::8080->8080/tcp\tliferay\n"
+        with (
+            patch.object(
+                self.manager, "detect_project_path", return_value=Path("/tmp/myproj")
+            ),
+            patch.object(
+                self.manager,
+                "read_meta",
+                return_value={"tag": "2024.q1.3", "container_name": "myproj"},
+            ),
+        ):
+            import io
+            from contextlib import redirect_stdout
+
+            f = io.StringIO()
+            with self.assertRaises(SystemExit) as cm, redirect_stdout(f):
+                self.manager.diagnostics.cmd_status(
+                    project_id="myproj", detailed=True, as_json=True
+                )
+            self.assertEqual(cm.exception.code, 0)
+
+        parsed = json.loads(f.getvalue())
+        entry = parsed["projects"][0]
+        self.assertEqual(entry["project"], "myproj")
+        self.assertTrue(entry["running"])
+        self.assertEqual(len(entry["containers"]), 1)
+        self.assertEqual(entry["containers"][0]["service"], "liferay")
+        self.assertNotIn("\x1b[", f.getvalue())
+
     @patch("ldm_core.diagnostics.completions.platform.system")
     @patch("ldm_core.diagnostics.completions.get_actual_home")
     @patch("ldm_core.diagnostics.completions.get_resource_path")
