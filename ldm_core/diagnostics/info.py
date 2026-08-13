@@ -251,9 +251,18 @@ def run_info(  # noqa: C901, PLR0912, PLR0915
     UI.raw("")
 
 
-def run_status(handler, project_id=None, all_projects=False, detailed=False):  # noqa: C901, PLR0912, PLR0915
+def run_status(  # noqa: C901, PLR0912, PLR0915
+    handler, project_id=None, all_projects=False, detailed=False, as_json=False
+):
     """Displays a summary of active global services and projects."""
-    UI.heading("LDM Service Status")
+    # LDM-#1093: --json bypasses every UI.raw()/UI.table() print below and
+    # accumulates the same underlying data into json_infra/json_projects
+    # instead, printed once as a single object at the very end. Exit-code
+    # logic is untouched -- only the presentation differs.
+    json_infra = []
+    json_projects = []
+    if not as_json:
+        UI.heading("LDM Service Status")
 
     # 1. Global Infrastructure (skipped in detailed project view to avoid clutter if a specific project was asked,
     # but shown by default otherwise)
@@ -286,16 +295,25 @@ def run_status(handler, project_id=None, all_projects=False, detailed=False):  #
                             image,
                         ]
                     )
+                    json_infra.append(
+                        {
+                            "name": label,
+                            "container": container,
+                            "status": status.capitalize(),
+                            "image": image,
+                        }
+                    )
                     any_infra = True
 
-        if infra_rows:
-            UI.raw(f"{UI.WHITE}Global Infrastructure:{UI.COLOR_OFF}")
-            UI.table(infra_rows)
-        elif not project_id or not detailed:
-            UI.raw(
-                f"  {UI.WHITE}No global services are currently running.{UI.COLOR_OFF}"
-            )
-        UI.raw("")
+        if not as_json:
+            if infra_rows:
+                UI.raw(f"{UI.WHITE}Global Infrastructure:{UI.COLOR_OFF}")
+                UI.table(infra_rows)
+            elif not project_id or not detailed:
+                UI.raw(
+                    f"  {UI.WHITE}No global services are currently running.{UI.COLOR_OFF}"
+                )
+            UI.raw("")
 
     # Helper functions for detailed view formatting
     def clean_ports(ports_str):
@@ -382,6 +400,7 @@ def run_status(handler, project_id=None, all_projects=False, detailed=False):  #
             # Check if this project is running
             project_running = False
             detailed_rows = []
+            json_containers = []
             if res and res.strip():
                 for line in res.strip().splitlines():
                     parts = line.split("\t")
@@ -412,9 +431,29 @@ def run_status(handler, project_id=None, all_projects=False, detailed=False):  #
                                 c_image,
                             ]
                         )
+                        json_containers.append(
+                            {
+                                "service": svc,
+                                "name": c_names,
+                                "status": c_status,
+                                "ports": c_ports or None,
+                                "image": c_image,
+                            }
+                        )
 
             if project_id:
                 is_requested_project_running = project_running
+
+            if as_json:
+                json_projects.append(
+                    {
+                        "project": p_id,
+                        "version": r["version"],
+                        "running": project_running,
+                        "containers": json_containers,
+                    }
+                )
+                continue
 
             # Only print if we requested a specific project, or if we have containers,
             # or if all_projects is set.
@@ -429,7 +468,13 @@ def run_status(handler, project_id=None, all_projects=False, detailed=False):  #
                 UI.raw("")
                 any_detailed_printed = True
 
-        if not any_detailed_printed:
+        if as_json:
+            print(
+                json.dumps(
+                    {"infrastructure": json_infra, "projects": json_projects}, indent=2
+                )
+            )
+        elif not any_detailed_printed:
             UI.raw(f"  {UI.WHITE}No projects are currently running.{UI.COLOR_OFF}")
 
         # Exit logic for detailed view
@@ -482,6 +527,21 @@ def run_status(handler, project_id=None, all_projects=False, detailed=False):  #
                 is_requested_project_running = project_running
 
             target_node = meta.get("target", "local")
+
+            if as_json:
+                json_projects.append(
+                    {
+                        "project": p_id,
+                        "version": r["version"],
+                        "target": target_node,
+                        "running": project_running,
+                        "url": url if project_running else None,
+                    }
+                )
+                if project_running or all_projects:
+                    active_projects = True
+                continue
+
             if project_running:
                 active_projects = True
                 project_rows.append(
@@ -506,7 +566,13 @@ def run_status(handler, project_id=None, all_projects=False, detailed=False):  #
                 if all_projects:
                     active_projects = True
 
-        if project_rows:
+        if as_json:
+            print(
+                json.dumps(
+                    {"infrastructure": json_infra, "projects": json_projects}, indent=2
+                )
+            )
+        elif project_rows:
             label = (
                 "All Managed Projects"
                 if all_projects

@@ -19,10 +19,12 @@ class DiagnosticsService(BaseHandler):
 
         run_info(self, project_id, credentials_only, credential_type, password_only)
 
-    def cmd_status(self, project_id=None, all_projects=False, detailed=False):
+    def cmd_status(
+        self, project_id=None, all_projects=False, detailed=False, as_json=False
+    ):
         from ldm_core.diagnostics.info import run_status
 
-        run_status(self, project_id, all_projects, detailed)
+        run_status(self, project_id, all_projects, detailed, as_json=as_json)
 
     def cmd_update_check(self, force=True):
         from ldm_core.diagnostics.upgrade import run_update_check

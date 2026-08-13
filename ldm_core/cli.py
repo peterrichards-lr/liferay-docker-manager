@@ -1444,6 +1444,11 @@ def get_parser():  # noqa: PLR0915
         action="store_true",
         help="Show detailed container listing",
     )
+    status.add_argument(
+        "--json",
+        action="store_true",
+        help="Emit a stable, machine-readable JSON object instead of the formatted tables",
+    )
     list_cmd = subparsers.add_parser("list", aliases=["ls"], parents=[base_sub_parent])
     list_cmd.add_argument(
         "--json",
@@ -2642,11 +2647,13 @@ def _build_command_map(args, manager):
             getattr(args, "project", None),
             all_projects=args.all,
             detailed=getattr(args, "detailed", False),
+            as_json=getattr(args, "json", False),
         ),
         ("ps", None): lambda: manager.diagnostics.cmd_status(
             getattr(args, "project", None),
             all_projects=args.all,
             detailed=getattr(args, "detailed", False),
+            as_json=getattr(args, "json", False),
         ),
         ("list", None): lambda: manager.diagnostics.cmd_list(
             as_json=getattr(args, "json", False)

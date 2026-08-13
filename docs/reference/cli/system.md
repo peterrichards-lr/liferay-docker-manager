@@ -72,6 +72,11 @@ Lightweight summary of all active global services and running projects.
 ldm status          # Show active global services and running projects
 ldm status --all    # Show all managed projects (including stopped ones)
 ldm ps
+
+# Machine-readable output for scripts/automation, instead of the color-coded
+# tables -- a stable JSON object: {"infrastructure": [...], "projects": [...]}.
+# Combines with --detailed (per-container service/status/ports/image) and -a/--all.
+ldm status --json
 ```
 
 ## `info`
