@@ -574,6 +574,25 @@ class ComposerService:
         # 80/20 DESIGN: SELinux compatibility for Fedora/RHEL
         z_label = ":z" if platform.system().lower() == "linux" else ""
 
+        # LDM-#1083: osgi/client-extensions is a live, permanent host
+        # bind-mount by default -- fine on internal storage, but on a slow
+        # external drive Liferay's own OSGi bundle-resolution watcher reading
+        # it over real host I/O latency was the confirmed root cause of
+        # client-extension bundles never reaching STARTED (the AICA
+        # quickstart investigation). "internal_state" already gets
+        # auto-enabled on exactly this condition (see run.py) but never
+        # actually did anything -- this is what finally wires it up: a Docker
+        # Named Volume (hydrated once from host content at start, like
+        # data/state already are) instead of a live bind-mount, trading away
+        # live hot-deploy into this folder on that specific case for
+        # reliable bundle activation.
+        cx_internal = str(meta.get("internal_state", "false")).lower() == "true"
+        cx_volume = (
+            f"{project_name}-cx:/opt/liferay/osgi/client-extensions"
+            if cx_internal
+            else f"{paths['cx'].as_posix()}:/opt/liferay/osgi/client-extensions{z_label}"
+        )
+
         service = {
             "image": image,
             "ports": port_list,
@@ -589,7 +608,7 @@ class ComposerService:
                 f"{paths.get('routes', paths['root'] / 'routes').as_posix()}:/workspace/routes{z_label}",
                 f"{project_name}-data:/opt/liferay/data",
                 f"{paths['modules'].as_posix()}:/opt/liferay/osgi/modules{z_label}",
-                f"{paths['cx'].as_posix()}:/opt/liferay/osgi/client-extensions{z_label}",
+                cx_volume,
                 f"{paths['portal_log4j'].as_posix()}:/opt/liferay/osgi/log4j{z_label}",
             ],
             "networks": ["liferay-net"],

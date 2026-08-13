@@ -59,6 +59,18 @@ class VolumesSnapshotService:
             UI.warning(f"Failed to sync volume {volume_name}: {e}")
             return False
 
+    def _named_volume_targets(self, meta):
+        """LDM-#1083: "data"/"state" always use Named Volumes; "cx"
+        (osgi/client-extensions) only joins them when internal_state is
+        active -- i.e. an external/slow drive was detected, or the user
+        explicitly opted in. Everywhere else, client-extensions stays a live
+        host bind-mount so hot-deploying a new extension in is picked up
+        immediately."""
+        targets = ["data", "state"]
+        if str(meta.get("internal_state", "false")).lower() == "true":
+            targets.append("cx")
+        return targets
+
     def _dehydrate_named_volumes(self, paths):
         """Copies data from Docker Named Volumes back to the host for snapshotting."""
         if not self.manager.composer.is_using_named_volumes():
@@ -67,7 +79,7 @@ class VolumesSnapshotService:
         meta = self.manager.read_meta(paths["root"])
         c_name = meta.get("container_name") or paths["root"].name
 
-        for target in ["data", "state"]:
+        for target in self._named_volume_targets(meta):
             volume_name = f"{c_name}-{target}"
             host_path = paths[target]
             UI.detail(
@@ -93,7 +105,16 @@ class VolumesSnapshotService:
         self._hydrate_named_volumes(paths)
 
     def _hydrate_named_volumes(self, paths):
-        """Copies data from the host into Docker Named Volumes after extraction."""
+        """Copies data from the host into Docker Named Volumes after extraction.
+
+        Deliberately data/state only, even when internal_state is active --
+        this runs early (EnvironmentSetupStage), before write_docker_compose()
+        has had a chance to rewrite OAuth URLs into client-extension zips
+        (ComposerStage). Hydrating "cx" here would bake in pre-rewrite
+        content with nothing to correct it afterward. See
+        hydrate_cx_volume_if_internal() for that target's own, correctly
+        ordered hydration point.
+        """
         if not self.manager.composer.is_using_named_volumes():
             return
 
@@ -108,6 +129,35 @@ class VolumesSnapshotService:
                     f"  + Hydrating volume {UI.CYAN}{volume_name}{UI.COLOR_OFF} from host..."
                 )
                 self._sync_volume(host_path, volume_name, direction="to_volume")
+
+    def hydrate_cx_volume_if_internal(self, paths):
+        """LDM-#1083: hydrates osgi/client-extensions into its Named Volume
+        when internal_state is active. Must be called from ComposerStage,
+        after write_docker_compose() -- deliberately not folded into
+        _hydrate_named_volumes()/EnvironmentSetupStage, which runs before
+        write_docker_compose() has rewritten OAuth URLs into the
+        client-extension zips. Hydrating any earlier would copy pre-rewrite
+        content into the volume with nothing left to correct it.
+
+        A no-op (including the meta re-read) unless internal_state is
+        actually on, so this costs nothing for the vast majority of
+        projects that keep the default live bind-mount.
+        """
+        if not self.manager.composer.is_using_named_volumes():
+            return
+
+        meta = self.manager.read_meta(paths["root"])
+        if str(meta.get("internal_state", "false")).lower() != "true":
+            return
+
+        c_name = meta.get("container_name") or paths["root"].name
+        volume_name = f"{c_name}-cx"
+        host_path = paths["cx"]
+        if host_path.exists():
+            UI.detail(
+                f"  + Hydrating volume {UI.CYAN}{volume_name}{UI.COLOR_OFF} from host..."
+            )
+            self._sync_volume(host_path, volume_name, direction="to_volume")
 
     def _restore_cloud_volume(self, paths, choice_path, project_meta):  # noqa: C901, PLR0912, PLR0915
         UI.detail("  + Restoring cloud data volume...")
