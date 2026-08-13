@@ -355,6 +355,70 @@ class TestDiagnostics(unittest.TestCase):
             self.assertIn("Running", output)
             self.assertIn("http://localhost:8080", output)
 
+    @patch("ldm_core.diagnostics.info.run_command")
+    def test_cmd_list_json(self, mock_run):
+        # LDM-#1093: --json must emit a stable, parseable array instead of
+        # the color-coded table -- this is what a caller reported having to
+        # fragile-parse before this existed.
+        with (
+            patch.object(
+                self.manager,
+                "find_dxp_roots",
+                return_value=[
+                    {
+                        "path": Path("/tmp/proj1"),
+                        "version": "2024.q1.0",
+                        "last_seen": None,
+                    }
+                ],
+            ),
+            patch.object(
+                self.manager,
+                "read_meta",
+                return_value={
+                    "container_name": "proj1",
+                    "port": 8080,
+                    "host_name": "localhost",
+                    "seeded": "true",
+                },
+            ),
+        ):
+            mock_run.return_value = "running"
+
+            import io
+            from contextlib import redirect_stdout
+
+            f = io.StringIO()
+            with redirect_stdout(f):
+                self.manager.diagnostics.cmd_list(as_json=True)
+
+            parsed = json.loads(f.getvalue())
+            self.assertEqual(len(parsed), 1)
+            entry = parsed[0]
+            self.assertEqual(entry["project"], "proj1")
+            self.assertEqual(entry["version"], "2024.q1.0")
+            self.assertEqual(entry["target"], "local")
+            self.assertEqual(entry["status"], "Running")
+            self.assertEqual(entry["running_containers"], 1)
+            self.assertEqual(entry["total_containers"], 1)
+            self.assertEqual(entry["url"], "http://localhost:8080")
+            self.assertTrue(entry["seeded"])
+            self.assertEqual(entry["path"], str(Path("/tmp/proj1")))
+            # No ANSI color codes should ever leak into JSON output.
+            self.assertNotIn("\x1b[", f.getvalue())
+
+    @patch("ldm_core.diagnostics.info.run_command")
+    def test_cmd_list_json_empty(self, mock_run):
+        with patch.object(self.manager, "find_dxp_roots", return_value=[]):
+            import io
+            from contextlib import redirect_stdout
+
+            f = io.StringIO()
+            with redirect_stdout(f):
+                self.manager.diagnostics.cmd_list(as_json=True)
+
+            self.assertEqual(json.loads(f.getvalue()), [])
+
     @patch("ldm_core.diagnostics.prune.run_command")
     @patch.object(
         MockDiagManager, "find_dxp_roots", return_value=[{"path": Path("/tmp/p1")}]

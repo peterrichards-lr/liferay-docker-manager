@@ -5,6 +5,12 @@ Display a tabulated overview of all initialized LDM sandbox environments.
 ```bash
 ldm list
 ldm ls
+
+# Machine-readable output for scripts/automation, instead of the color-coded
+# table -- a stable JSON array with one object per project (project, version,
+# target, status, running_containers, total_containers, url, seeded, path,
+# last_seen).
+ldm list --json
 ```
 
 ## `run` (alias: `up`)
@@ -489,4 +495,4 @@ The following flags can be passed to almost any command:
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-08-05* | *Last Reviewed: 2026-07-27*
+*Last Updated: 2026-08-13* | *Last Reviewed: 2026-08-13*
