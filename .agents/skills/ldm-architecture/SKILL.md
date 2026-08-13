@@ -62,6 +62,12 @@ To support CI/CD pipelines and headless automation, all LDM commands MUST adhere
   (`1`), not a failure to invoke a command. This code is reserved for a true
   invocation failure at that layer if one is ever added; see the `run_command()`
   exception below for where invocation-shaped failures currently do occur.
+- `5`: Idempotent No-Op -- the desired state already held, so nothing needed
+  to happen (e.g. `ldm run`/`up` in non-interactive mode against a project
+  that's already running). Distinct from `1` deliberately: automation
+  branching on "did this actually change anything" needs a code that isn't
+  the same generic bucket as a real validation failure. Added per
+  [#1094](https://github.com/peterrichards-lr/liferay-docker-manager/issues/1094).
 - **Low-level subprocess wrapper exception**: `ldm_core/utils.py`'s
   `run_command()` helper -- called from a very large number of sites across
   the codebase -- intentionally uses POSIX-standard shell conventions instead
@@ -90,4 +96,4 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-08-06* | *Last Reviewed: 2026-08-06*
+*Last Updated: 2026-08-13* | *Last Reviewed: 2026-08-13*
