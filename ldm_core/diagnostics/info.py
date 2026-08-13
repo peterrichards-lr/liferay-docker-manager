@@ -721,15 +721,23 @@ def _get_env_info(self):  # noqa: C901, PLR0912, PLR0915
     return arch, host_os, provider, mount_type
 
 
-def run_list(handler):
-    UI.heading("LDM Sandbox Projects")
+def run_list(handler, as_json=False):  # noqa: PLR0915
+    # LDM-#1093: --json bypasses the table/color-formatting path entirely --
+    # a stable, machine-readable array instead of fragile table-parsing,
+    # which was reported as a real automation breakage.
+    if not as_json:
+        UI.heading("LDM Sandbox Projects")
     roots = handler.manager.find_dxp_roots()
     if not roots:
-        UI.detail("No projects found.")
+        if as_json:
+            print(json.dumps([]))
+        else:
+            UI.detail("No projects found.")
         return
 
     headers = ["Project", "Version", "Target", "Status", "URL"]
     rows = []
+    json_entries = []
 
     for r in roots:
         path = r["path"]
@@ -774,6 +782,8 @@ def run_list(handler):
                 status = states[0].capitalize()
                 status_color = UI.GREEN if status == "Running" else UI.WHITE
         else:
+            running_count = 0
+            total_count = 0
             status = "Stopped"
             status_color = UI.WHITE
 
@@ -795,6 +805,25 @@ def run_list(handler):
         seeded = str(meta.get("seeded", "false")).lower() == "true"
         seeded_indicator = " 🌱" if seeded else ""
 
+        last_seen_ts = r.get("last_seen")
+
+        if as_json:
+            json_entries.append(
+                {
+                    "project": name,
+                    "version": version,
+                    "target": target_node,
+                    "status": status,
+                    "running_containers": running_count,
+                    "total_containers": total_count,
+                    "url": url,
+                    "seeded": seeded,
+                    "path": str(path),
+                    "last_seen": last_seen_ts,
+                }
+            )
+            continue
+
         rows.append(
             [
                 f"{UI.CYAN}{name}{UI.COLOR_OFF}{seeded_indicator}",
@@ -804,6 +833,10 @@ def run_list(handler):
                 f"{UI.UNDERLINE}{url}{UI.COLOR_OFF}",
             ]
         )
+
+    if as_json:
+        print(json.dumps(json_entries, indent=2))
+        return
 
     UI.table(rows, headers=headers)
     UI.raw("")

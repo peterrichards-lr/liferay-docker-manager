@@ -49,10 +49,10 @@ class DiagnosticsService(BaseHandler):
 
         run_doctor(self, project_id, all_projects, fix_hosts)
 
-    def cmd_list(self):
+    def cmd_list(self, as_json=False):
         from ldm_core.diagnostics.info import run_list
 
-        run_list(self)
+        run_list(self, as_json=as_json)
 
     def cmd_prune(self):
         from ldm_core.diagnostics.prune import run_prune
