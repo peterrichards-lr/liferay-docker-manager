@@ -40,6 +40,12 @@ class TestRunPipeline(unittest.TestCase):
         with self.assertRaises(SystemExit):
             stage.execute(self.context)
 
+        # LDM-#1094: "already running" (non-interactive) is exit_code=5
+        # (Idempotent No-Op), not the generic 1 -- automation needs to tell
+        # "nothing to do" apart from a real validation failure.
+        mock_die.assert_called_once()
+        self.assertEqual(mock_die.call_args.kwargs.get("exit_code"), 5)
+
     def test_composer_stage_dry_run(self):
         self.context.set("dry_run", True)
         stage = ComposerStage()

@@ -201,8 +201,13 @@ class RuntimeValidationStage(PipelineStage):
         if not no_up and not is_restart:
             if DockerService.is_running(container_name):
                 if manager.non_interactive:
+                    # LDM-#1094: exit_code=5 (Idempotent No-Op), not the
+                    # generic 1 -- automation calling `ldm run`/`up`
+                    # non-interactively needs to tell "nothing to do, it's
+                    # already up" apart from an actual validation failure.
                     UI.die(
-                        f"Project '{project_id}' is already running. Use 'ldm restart' to apply updates, or 'ldm stop' it first."
+                        f"Project '{project_id}' is already running. Use 'ldm restart' to apply updates, or 'ldm stop' it first.",
+                        exit_code=5,
                     )
                 elif not UI.confirm(
                     f"Project '{project_id}' is already running. Reconfigure and restart?",
