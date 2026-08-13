@@ -240,6 +240,53 @@ class TestDiagnostics(unittest.TestCase):
             runner._check_dangling_and_print()
             self.assertTrue(mock_exit.called)
 
+    def test_check_absolute_disk_space_warns_below_threshold(self):
+        # LDM-#1095: docker system df's "Reclaimable" figure says nothing
+        # when the disk is genuinely running out (nothing reclaimable, it's
+        # just full) -- this is the separate, absolute-free-space check.
+        runner = DoctorRunner(self.manager.diagnostics)
+        # 2GB free (2 * 1024 * 1024 KB), below the 3GB threshold.
+        df_output = (
+            "Filesystem           1024-blocks    Used Available Capacity Mounted on\n"
+            "overlay               8000000  5900000   2097152      21% /"
+        )
+        with patch("ldm_core.diagnostics.doctor.run_command", return_value=df_output):
+            runner._check_absolute_disk_space()
+
+        matches = [r for r in runner.results if r[0] == "Disk Space (Available)"]
+        self.assertEqual(len(matches), 1)
+        self.assertEqual(matches[0][2], "warn")
+        self.assertTrue(
+            any("2.0GB of absolute free space" in h["text"] for h in runner.hints),
+            runner.hints,
+        )
+
+    def test_check_absolute_disk_space_ok_above_threshold(self):
+        runner = DoctorRunner(self.manager.diagnostics)
+        # 76GB free, comfortably above the 3GB threshold.
+        df_output = (
+            "Filesystem           1024-blocks    Used Available Capacity Mounted on\n"
+            "overlay             102624184 20469644  76895380      21% /"
+        )
+        with patch("ldm_core.diagnostics.doctor.run_command", return_value=df_output):
+            runner._check_absolute_disk_space()
+
+        matches = [r for r in runner.results if r[0] == "Disk Space (Available)"]
+        self.assertEqual(len(matches), 1)
+        self.assertIs(matches[0][2], True)
+        self.assertEqual(len(runner.hints), 0)
+
+    def test_check_absolute_disk_space_noop_on_docker_failure(self):
+        # A throwaway `docker run` failing (Docker not available, image pull
+        # failure, etc.) must not itself surface as a false "disk full"
+        # warning -- it just skips the check silently.
+        runner = DoctorRunner(self.manager.diagnostics)
+        with patch("ldm_core.diagnostics.doctor.run_command", return_value=""):
+            runner._check_absolute_disk_space()
+        self.assertEqual(
+            [r for r in runner.results if r[0] == "Disk Space (Available)"], []
+        )
+
     @patch("ldm_core.diagnostics.doctor.get_actual_home", return_value=Path("/tmp"))
     @patch("pathlib.Path.exists", return_value=True)
     @patch("shutil.which", return_value="/usr/bin/helper")

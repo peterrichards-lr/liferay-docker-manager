@@ -1715,8 +1715,71 @@ class DoctorRunner:
             except Exception:
                 pass
 
+    def _check_absolute_disk_space(self):
+        """LDM-#1095: `docker system df`'s Reclaimable figure only reports
+        unused Docker resources -- it says nothing about actual free space,
+        and reports nothing at all when the disk is genuinely running out
+        (nothing reclaimable, it's just filling up). Confirmed real-world
+        failure: images fit an 8GB EC2 root volume (~3.6GB), but the
+        running stack (DB/OSGi state/search/document library) consumed the
+        remaining headroom mid-run, causing a PostgreSQL PANIC with nothing
+        in "reclaimable" to have flagged it.
+
+        Queries free space via a throwaway container's own view of "/"
+        rather than the host filesystem directly -- on Docker Desktop/Colima
+        (macOS/Windows), Docker's actual storage lives inside a VM with its
+        own separate, often far more constrained disk than the host's; a
+        host-side shutil.disk_usage() check would silently pass while the
+        VM's disk is the one actually full (confirmed directly against a
+        real Colima setup during the #1083 investigation this same day).
+        """
+        min_free_bytes = 3 * 1024 * 1024 * 1024  # 3GB
+        try:
+            df_out = run_command(
+                ["docker", "run", "--rm", "alpine", "df", "-P", "-k", "/"],
+                check=False,
+            )
+            if not df_out:
+                return
+            lines = [line for line in df_out.strip().splitlines() if line.strip()]
+            if len(lines) < 2:
+                return
+            fields = lines[-1].split()
+            if len(fields) < 4 or not fields[3].isdigit():
+                return
+            available_bytes = int(fields[3]) * 1024
+        except Exception:
+            return
+
+        available_gb = available_bytes / (1024**3)
+        if available_bytes < min_free_bytes:
+            self.results.append(
+                (
+                    "Disk Space (Available)",
+                    f"{available_gb:.1f}GB free",
+                    "warn",
+                )
+            )
+            self.add_hint(
+                f"Only {available_gb:.1f}GB of absolute free space remains on Docker's "
+                "filesystem. This is separate from reclaimable Docker resources -- a "
+                "running stack (database, OSGi state, search index, document library) "
+                "can consume the remaining headroom mid-run even when nothing is "
+                f"reclaimable. Free up space or move to a larger disk before starting "
+                "a new project."
+            )
+        else:
+            self.results.append(
+                (
+                    "Disk Space (Available)",
+                    f"{available_gb:.1f}GB free",
+                    True,
+                )
+            )
+
     def _check_dangling_and_print(self):  # noqa: C901, PLR0912, PLR0915
         # 4.4 Dangling Docker Resources Check
+        self._check_absolute_disk_space()
         df_out = run_command(
             ["docker", "system", "df", "--format", "{{json .}}"], check=False
         )
@@ -1796,6 +1859,7 @@ class DoctorRunner:
                 "Docker Socket Bridge",
                 "Liferay Docker Tags",
                 "Disk Space",
+                "Disk Space (Available)",
             }
             if component_name in system_comps:
                 return "system"
