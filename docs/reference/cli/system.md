@@ -228,12 +228,13 @@ ldm migrate-search [project]
 
 ## `system prune` (legacy: `prune`)
 
-Identify and reclaim disk space by safely removing orphaned resources. This command scans your Docker environment for containers and global search snapshots that no longer have a matching project folder on your disk, as well as cleaning up temporary files and large asset caches. If `ldm system doctor` warns you about low disk space, run this along with `docker system prune --volumes`.
+Identify and reclaim disk space by safely removing orphaned resources. This command scans your Docker environment for containers and global search snapshots that no longer have a matching project folder on your disk, as well as cleaning up temporary files, large asset caches, and (with `--images`) unused Docker images and build cache. If `ldm system doctor` warns you about low disk space, run this with `--all`.
 
 ```bash
 ldm system prune
 ldm system prune --seeds --samples   # Also clear large pre-warmed asset caches
-ldm system prune --all               # Run all pruning operations without asking
+ldm system prune --images            # Also reclaim unused Docker images and build cache
+ldm system prune --all               # Run all pruning operations without asking (includes --images)
 ldm system prune --clean-hosts       # Remove all LDM-tagged entries from /etc/hosts
 
 # Legacy flat form (still works):
@@ -246,6 +247,7 @@ ldm prune --seeds --samples
 - **Orphaned Search Snapshots**: Leftover Elasticsearch 8.x snapshots in the global vault from deleted projects.
 - **Pre-warmed Seeds**: (Optional) Large Database + Search + OSGi state archives used for instant project initialization.
 - **Sample Extensions**: (Optional) Cached sample client extensions.
+- **Docker Images & Build Cache**: (Optional, `--images`) Unused/dangling Docker images and unused build cache -- usually the single biggest reclaimable consumer on a long-lived dev machine, via `docker image prune -af` and `docker builder prune -af`.
 - **Temporary Files**: Residual `.*.tmp` files left behind by interrupted sync or build operations.
 
 ## `clear-cache`
@@ -489,4 +491,4 @@ ldm target migrate win-wsl aws-1
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-08-05* | *Last Reviewed: 2026-08-04*
+*Last Updated: 2026-08-13* | *Last Reviewed: 2026-08-13*
