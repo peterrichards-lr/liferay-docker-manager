@@ -892,7 +892,7 @@ class FragmentsService(BaseHandler):
                 )
         return patched_count
 
-    def _patch_database_fragmententrylink(self, project_meta, overrides):
+    def _patch_database_fragmententrylink(self, project_meta, overrides):  # noqa: PLR0912
         """Fallback direct database patcher for fragmententrylink editablevalues.
 
         Updates editablevalues directly in PostgreSQL/MySQL when DXP Headless REST
@@ -917,19 +917,24 @@ class FragmentsService(BaseHandler):
                 "Please manually update fragment settings in Liferay Site Administration or configure PostgreSQL/MySQL."
             )
             return 0
+        is_mysql = "mysql" in db_type or "mariadb" in db_type
         db_cmd_base = (
             [
                 "docker",
                 "exec",
                 db_container,
                 "mysql",
+                # LDM-#1083: -N (skip-column-names) so the appended
+                # SELECT ROW_COUNT() below comes back as a bare integer,
+                # not a header row, for reliable parsing.
+                "-N",
                 "-u",
                 "lportal",
                 "-plportal",
                 "lportal",
                 "-e",
             ]
-            if ("mysql" in db_type or "mariadb" in db_type)
+            if is_mysql
             else [
                 "docker",
                 "exec",
@@ -943,6 +948,8 @@ class FragmentsService(BaseHandler):
             ]
         )
 
+        import re
+
         patched_db_count = 0
         for config in overrides.values():
             if not isinstance(config, dict):
@@ -952,16 +959,52 @@ class FragmentsService(BaseHandler):
                     continue
                 try:
                     update_sql = f'UPDATE fragmententrylink SET editablevalues = REGEXP_REPLACE(editablevalues, \'"{setting_key}":"[^"]+"\', \'"{setting_key}":"{setting_val}"\', \'g\') WHERE editablevalues LIKE \'%"{setting_key}":%\';'  # nosec B608
+                    # LDM-#1083: mysql's -e batch mode prints nothing for a
+                    # plain UPDATE's affected-row count -- ask for it
+                    # explicitly via ROW_COUNT(). psql already prints its
+                    # own "UPDATE <n>" command tag, parsed below instead.
+                    query = (
+                        f"{update_sql} SELECT ROW_COUNT();" if is_mysql else update_sql
+                    )
                     res = self.manager.run_command(
-                        [*db_cmd_base, update_sql],
+                        [*db_cmd_base, query],
                         check=False,
                         capture_output=True,
                     )
-                    if res and "UPDATE" in res:
+
+                    # LDM-#1083: psql's "UPDATE <n>" command tag (and, before
+                    # this fix, a bare `"UPDATE" in res` check) is present
+                    # even when n == 0 -- the SQL succeeding is not the same
+                    # as it having matched anything. Require an actual
+                    # positive row count before counting this as a real
+                    # patch, or a 0-row match (e.g. the fragment was never
+                    # created because its OSGi bundle never started) gets
+                    # silently reported as a success.
+                    rows_affected = 0
+                    if res:
+                        if is_mysql:
+                            last_line = (
+                                res.strip().splitlines()[-1] if res.strip() else ""
+                            )
+                            if last_line.strip().isdigit():
+                                rows_affected = int(last_line.strip())
+                        else:
+                            match = re.search(r"UPDATE\s+(\d+)", res)
+                            if match:
+                                rows_affected = int(match.group(1))
+
+                    if rows_affected > 0:
                         UI.debug(
-                            f"Direct DB patch for '{setting_key}' -> '{setting_val}' succeeded: {res.strip()}"
+                            f"Direct DB patch for '{setting_key}' -> '{setting_val}' "
+                            f"succeeded: {rows_affected} row(s) updated."
                         )
                         patched_db_count += 1
+                    else:
+                        UI.debug(
+                            f"Direct DB patch for '{setting_key}' -> '{setting_val}' "
+                            "matched 0 rows -- the fragment's editablevalues may not "
+                            "contain this key, or its OSGi bundle never started."
+                        )
                 except Exception as e:
                     UI.debug(f"Direct DB patch for '{setting_key}' failed: {e}")
 
