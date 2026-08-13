@@ -1031,6 +1031,80 @@ class TestFragments(unittest.TestCase):
         self.assertTrue(any("my-site" in p for p in called_urls))
 
 
+class TestPatchDatabaseFragmentEntryLink(unittest.TestCase):
+    """LDM-#1083: _patch_database_fragmententrylink() must count a patch as
+    successful only when the UPDATE actually matched rows -- a bare
+    `"UPDATE" in res` check matches PostgreSQL's own "UPDATE 0" command tag
+    just as readily as "UPDATE 3", silently reporting success (e.g. via
+    "Successfully applied N fragment configuration overrides") for a
+    fragment that was never created because its OSGi bundle never started."""
+
+    def setUp(self):
+        self.tmp_dir_obj = tempfile.TemporaryDirectory()
+        self.handler = MockRuntime()
+        self.handler.handler = RuntimeService(self.handler)
+        self.overrides = {
+            "AICA-SEARCH-BAR-FRAGMENT": {
+                "microserviceUrl": "https://ai-commerce-accelerator-microservice.aica.demo"
+            }
+        }
+
+    def tearDown(self):
+        self.tmp_dir_obj.cleanup()
+
+    @patch.object(BaseHandler, "run_command")
+    def test_postgres_zero_rows_not_counted(self, mock_run):
+        # psql prints "UPDATE 0" as its own command tag even when nothing
+        # matched -- the substring "UPDATE" is present either way.
+        mock_run.return_value = "UPDATE 0\n"
+        project_meta = {"db_type": "postgresql", "project_name": "aica"}
+        count = self.handler.handler.fragments._patch_database_fragmententrylink(
+            project_meta, self.overrides
+        )
+        self.assertEqual(count, 0)
+
+    @patch.object(BaseHandler, "run_command")
+    def test_postgres_rows_updated_is_counted(self, mock_run):
+        mock_run.return_value = "UPDATE 2\n"
+        project_meta = {"db_type": "postgresql", "project_name": "aica"}
+        count = self.handler.handler.fragments._patch_database_fragmententrylink(
+            project_meta, self.overrides
+        )
+        self.assertEqual(count, 1)
+
+    @patch.object(BaseHandler, "run_command")
+    def test_mysql_zero_rows_not_counted(self, mock_run):
+        # mysql's -e batch mode prints nothing for a plain UPDATE's affected
+        # row count -- the fix appends "SELECT ROW_COUNT();" and expects the
+        # bare integer back (via -N/skip-column-names).
+        mock_run.return_value = "0\n"
+        project_meta = {"db_type": "mysql", "project_name": "aica"}
+        count = self.handler.handler.fragments._patch_database_fragmententrylink(
+            project_meta, self.overrides
+        )
+        self.assertEqual(count, 0)
+
+    @patch.object(BaseHandler, "run_command")
+    def test_mysql_rows_updated_is_counted(self, mock_run):
+        mock_run.return_value = "3\n"
+        project_meta = {"db_type": "mysql", "project_name": "aica"}
+        count = self.handler.handler.fragments._patch_database_fragmententrylink(
+            project_meta, self.overrides
+        )
+        self.assertEqual(count, 1)
+
+    @patch.object(BaseHandler, "run_command")
+    def test_mysql_appends_row_count_query(self, mock_run):
+        mock_run.return_value = "1\n"
+        project_meta = {"db_type": "mysql", "project_name": "aica"}
+        self.handler.handler.fragments._patch_database_fragmententrylink(
+            project_meta, self.overrides
+        )
+        query_arg = mock_run.call_args[0][0][-1]
+        self.assertIn("SELECT ROW_COUNT();", query_arg)
+        self.assertIn("-N", mock_run.call_args[0][0])
+
+
 class TestFragmentPatchTimeout(unittest.TestCase):
     """LDM-#1020: _resolve_fragment_patch_timeout's precedence and the
     external-drive auto-bump, plus a wiring check that
