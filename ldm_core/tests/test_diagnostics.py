@@ -331,6 +331,63 @@ class TestDiagnostics(unittest.TestCase):
             self.manager.diagnostics.cmd_prune()
             self.assertFalse(mock_rm.called)
 
+    @patch("ldm_core.diagnostics.prune.run_command")
+    @patch.object(
+        MockDiagManager, "find_dxp_roots", return_value=[{"path": Path("/tmp/p1")}]
+    )
+    @patch("ldm_core.docker_service.DockerService.is_running", return_value=False)
+    def test_cmd_prune_images_runs_docker_image_and_builder_prune(
+        self, mock_running, mock_roots, mock_run
+    ):
+        # LDM-#1086: --images (or --all) must actually reclaim unused Docker
+        # images and build cache, not just print a hint pointing the user at
+        # a raw docker command themselves -- this is almost always the real
+        # disk hog on a long-lived dev machine, unlike the few-MB orphaned
+        # containers/certs/volumes the rest of prune already handles.
+        self.manager.args.images = True
+        mock_run.side_effect = [
+            "",  # orphaned containers query -> none found
+            "Total reclaimed space: 1.5GB",  # docker image prune
+            "Total reclaimed space: 500MB",  # docker builder prune
+        ]
+        with patch("builtins.print"):
+            self.manager.diagnostics.cmd_prune()
+
+        commands = [c.args[0] for c in mock_run.call_args_list]
+        self.assertIn(["docker", "image", "prune", "-af"], commands)
+        self.assertIn(["docker", "builder", "prune", "-af"], commands)
+
+    @patch("ldm_core.diagnostics.prune.run_command")
+    @patch.object(
+        MockDiagManager, "find_dxp_roots", return_value=[{"path": Path("/tmp/p1")}]
+    )
+    @patch("ldm_core.docker_service.DockerService.is_running", return_value=False)
+    def test_cmd_prune_images_dry_run_does_not_execute(
+        self, mock_running, mock_roots, mock_run
+    ):
+        self.manager.args.images = True
+        self.manager.dry_run = True
+        mock_run.return_value = ""
+        with patch("builtins.print"):
+            self.manager.diagnostics.cmd_prune()
+
+        commands = [c.args[0] for c in mock_run.call_args_list]
+        self.assertNotIn(["docker", "image", "prune", "-af"], commands)
+        self.assertNotIn(["docker", "builder", "prune", "-af"], commands)
+
+    def test_sum_reclaimed_space_parses_and_combines_units(self):
+        from ldm_core.diagnostics.prune import _sum_reclaimed_space
+
+        self.assertEqual(_sum_reclaimed_space(None), 0)
+        self.assertEqual(_sum_reclaimed_space("Total reclaimed space: 0B"), 0)
+        self.assertEqual(
+            _sum_reclaimed_space("Total reclaimed space: 1.5GB"), 1.5 * 1024**3
+        )
+        combined = _sum_reclaimed_space(
+            "Total reclaimed space: 1.5GB"
+        ) + _sum_reclaimed_space("Total reclaimed space: 500MB")
+        self.assertAlmostEqual(combined, 1.5 * 1024**3 + 500 * 1024**2)
+
     @patch("ldm_core.diagnostics.prune.get_actual_home", return_value=Path("/tmp"))
     @patch("pathlib.Path.exists", return_value=True)
     @patch("os.remove")

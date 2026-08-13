@@ -2063,7 +2063,7 @@ def get_parser():  # noqa: PLR0915
     prune = system_subparsers.add_parser(
         "prune",
         parents=[base_sub_parent],
-        help="Reclaim disk space by safely removing orphaned containers, search snapshots, dangling Docker volumes, and temporary files.",
+        help="Reclaim disk space by safely removing orphaned containers, search snapshots, dangling Docker volumes/images/build cache, and temporary files.",
     )
     prune.add_argument(
         "--clean-hosts",
@@ -2081,9 +2081,19 @@ def get_parser():  # noqa: PLR0915
         help="Also clear the sample extension cache",
     )
     prune.add_argument(
+        "--images",
+        action="store_true",
+        help=(
+            "Also remove dangling/unused Docker images and unused build cache "
+            "(docker image prune -af && docker builder prune -af) -- the usual "
+            "cause of a Docker VM disk filling up, previously left to a printed "
+            "hint instead of something LDM actually did"
+        ),
+    )
+    prune.add_argument(
         "--all",
         action="store_true",
-        help="Run all pruning operations without asking (includes seeds, samples, and hosts)",
+        help="Run all pruning operations without asking (includes seeds, samples, images, and hosts)",
     )
 
     doctor = system_subparsers.add_parser(

@@ -51,6 +51,27 @@ def run_cache(handler, target="all"):
         UI.success(f"Successfully cleared: {', '.join(cleared)}")
 
 
+def _sum_reclaimed_space(docker_output):
+    """Parses the byte count out of docker's own "Total reclaimed space:
+    <n><unit>" line (e.g. from `docker image prune -af` / `docker builder
+    prune -af`), so LDM can report one combined, human-readable total
+    instead of just echoing docker's raw per-command lines."""
+    if not docker_output:
+        return 0.0
+
+    import re
+
+    units = {"B": 1, "KB": 1024, "MB": 1024**2, "GB": 1024**3, "TB": 1024**4}
+    total = 0.0
+    for match in re.finditer(
+        r"Total reclaimed space:\s*([\d.]+)\s*([KMGT]?B)", docker_output, re.IGNORECASE
+    ):
+        value = float(match.group(1))
+        unit = match.group(2).upper()
+        total += value * units.get(unit, 1)
+    return total
+
+
 def run_prune(handler):  # noqa: C901, PLR0912, PLR0915
     UI.heading("LDM Global Maintenance - Pruning Orphaned Resources")
     is_dry_run = getattr(handler.manager, "dry_run", False)
@@ -58,6 +79,7 @@ def run_prune(handler):  # noqa: C901, PLR0912, PLR0915
     clean_hosts = getattr(handler.manager.args, "clean_hosts", False) or prune_all
     prune_seeds = getattr(handler.manager.args, "seeds", False) or prune_all
     prune_samples = getattr(handler.manager.args, "samples", False) or prune_all
+    prune_images = getattr(handler.manager.args, "images", False) or prune_all
 
     roots = handler.manager.find_dxp_roots()
     active_projects = set()
@@ -308,9 +330,40 @@ def run_prune(handler):  # noqa: C901, PLR0912, PLR0915
         run_command(["docker", "volume", "prune", "-f"], check=False)
         UI.success("Volume pruning complete.")
 
-    if not handler.manager.non_interactive:
+    # 7b. Dangling/unused Docker images and unused build cache (LDM-#1086).
+    # Volume/container/cert/cache pruning above only ever reclaims a few MB --
+    # unused images and build cache are almost always the actual disk hog on
+    # a long-lived dev machine, and this used to be nothing more than a
+    # printed hint pointing the user at raw `docker system prune -af`
+    # themselves instead of LDM doing it.
+    if is_dry_run:
         UI.detail(
-            f"\n{UI.CYAN}ℹ{UI.COLOR_OFF} Hint: For a deep cleanup (including unused images), run: "
+            f"{UI.BYELLOW}[Dry Run] Would run image prune (docker image prune "
+            f"-af) and build cache prune (docker builder prune -af).{UI.COLOR_OFF}"
+        )
+    elif prune_images or (
+        not handler.manager.non_interactive
+        and UI.confirm(
+            "Remove unused Docker images and build cache? (can be large, safe to re-pull/rebuild)",
+            "N",
+        )
+    ):
+        UI.detail("Pruning unused Docker images and build cache...")
+        UI.detail("Command: docker image prune -af")
+        image_res = run_command(["docker", "image", "prune", "-af"], check=False)
+        UI.detail("Command: docker builder prune -af")
+        cache_res = run_command(["docker", "builder", "prune", "-af"], check=False)
+        reclaimed = _sum_reclaimed_space(image_res) + _sum_reclaimed_space(cache_res)
+        if reclaimed:
+            UI.success(
+                f"Docker image/build-cache pruning complete ({UI.format_size(reclaimed)} reclaimed)."
+            )
+        else:
+            UI.success("Docker image/build-cache pruning complete.")
+    elif not handler.manager.non_interactive:
+        UI.detail(
+            f"\n{UI.CYAN}ℹ{UI.COLOR_OFF} Hint: run again with --images (or --all) to also "
+            f"reclaim unused Docker images and build cache, or do it yourself: "
             f"{UI.WHITE}docker system prune -af{UI.COLOR_OFF}"
         )
 
