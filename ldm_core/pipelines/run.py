@@ -1195,6 +1195,13 @@ class ComposerStage(PipelineStage):
             paths, project_meta, liferay_env=liferay_env
         )
 
+        # LDM-#1083: must happen here, after write_docker_compose() has
+        # rewritten OAuth URLs into client-extension zips (scan_client_
+        # extensions()), not earlier alongside data/state in
+        # EnvironmentSetupStage -- see hydrate_cx_volume_if_internal()'s own
+        # docstring. A no-op unless internal_state is active.
+        manager.snapshot.volumes.hydrate_cx_volume_if_internal(paths)
+
         import shutil
 
         if shutil.which("docker"):

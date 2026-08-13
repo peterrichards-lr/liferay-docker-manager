@@ -55,6 +55,27 @@ class TestRunPipeline(unittest.TestCase):
         args, kwargs = self.context.manager.composer.write_docker_compose.call_args
         pass  # is_dry_run is handled dynamically
 
+        # LDM-#1083: must run after write_docker_compose(), never before --
+        # see hydrate_cx_volume_if_internal()'s own docstring for why.
+        self.context.manager.snapshot.volumes.hydrate_cx_volume_if_internal.assert_called_once_with(
+            self.context.get("paths")
+        )
+        compose_call_order = self.context.manager.method_calls.index(
+            next(
+                c
+                for c in self.context.manager.method_calls
+                if c[0] == "composer.write_docker_compose"
+            )
+        )
+        hydrate_call_order = self.context.manager.method_calls.index(
+            next(
+                c
+                for c in self.context.manager.method_calls
+                if c[0] == "snapshot.volumes.hydrate_cx_volume_if_internal"
+            )
+        )
+        self.assertLess(compose_call_order, hydrate_call_order)
+
     def test_execution_stage_dry_run(self):
         self.context.set("dry_run", True)
         self.context.set("no_up", True)
