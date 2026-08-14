@@ -385,9 +385,18 @@ def run_status(  # noqa: C901, PLR0912, PLR0915
             )
             safe_name = sanitize_id(p_id)
 
+            # LDM-#1090: this must go through the project's own target
+            # --context, not always the local Docker daemon -- a project
+            # running on a remote --node was silently checked against the
+            # orchestrating host's local containers instead.
+            target_node = meta.get("target", "local")
+            from ldm_core.docker_service import DockerService
+
+            docker_prefix = DockerService.get_docker_cmd_prefix(target_node)
+
             # Query all containers matching label com.liferay.ldm.project={safe_name}
             cmd = [
-                "docker",
+                *docker_prefix,
                 "ps",
                 "-a",
                 "--filter",
@@ -497,10 +506,18 @@ def run_status(  # noqa: C901, PLR0912, PLR0915
             )
             safe_name = sanitize_id(p_id)
 
+            # LDM-#1090: same as the --detailed branch above -- resolve the
+            # project's own target --context rather than always querying
+            # the local Docker daemon.
+            target_node = meta.get("target", "local")
+            from ldm_core.docker_service import DockerService
+
+            docker_prefix = DockerService.get_docker_cmd_prefix(target_node)
+
             # Query all containers matching label com.liferay.ldm.project={safe_name}
             # A project is running if any of its containers are active/running
             cmd = [
-                "docker",
+                *docker_prefix,
                 "ps",
                 "-q",
                 "--filter",
@@ -525,8 +542,6 @@ def run_status(  # noqa: C901, PLR0912, PLR0915
 
             if project_id:
                 is_requested_project_running = project_running
-
-            target_node = meta.get("target", "local")
 
             if as_json:
                 json_projects.append(

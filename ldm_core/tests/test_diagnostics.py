@@ -1284,6 +1284,71 @@ class TestDiagnosticsSetupCompletion(unittest.TestCase):
         self.assertEqual(entry["containers"][0]["service"], "liferay")
         self.assertNotIn("\x1b[", f.getvalue())
 
+    @patch("ldm_core.docker_service.get_active_target")
+    @patch("ldm_core.diagnostics.info.run_command")
+    def test_cmd_status_standard_uses_remote_context(self, mock_run, mock_target):
+        # LDM-#1090: the standard (non-detailed) status view built a bare
+        # ["docker", "ps", ...] command, silently querying the local Docker
+        # daemon even for a project running on a remote --node target.
+        from ldm_core.config import TargetNode
+
+        mock_target.return_value = TargetNode(name="aws-1", host="10.0.0.5")
+        mock_run.side_effect = [
+            "",  # liferay-proxy-global
+            "",  # liferay-search-global
+            "",  # liferay-docker-proxy
+            "some-running-container-id\n",  # project running check
+        ]
+        with (
+            patch.object(
+                self.manager, "detect_project_path", return_value=Path("/tmp/myproj")
+            ),
+            patch.object(
+                self.manager,
+                "read_meta",
+                return_value={
+                    "tag": "2024.q1.3",
+                    "container_name": "myproj",
+                    "target": "aws-1",
+                },
+            ),
+        ):
+            with self.assertRaises(SystemExit):
+                self.manager.diagnostics.cmd_status(project_id="myproj")
+
+        project_ps_call = mock_run.call_args_list[-1]
+        cmd = project_ps_call[0][0]
+        self.assertIn("--context", cmd)
+        self.assertIn("aws-1", cmd)
+
+    @patch("ldm_core.docker_service.get_active_target")
+    @patch("ldm_core.diagnostics.info.run_command")
+    def test_cmd_status_detailed_uses_remote_context(self, mock_run, mock_target):
+        from ldm_core.config import TargetNode
+
+        mock_target.return_value = TargetNode(name="aws-1", host="10.0.0.5")
+        mock_run.return_value = "myproj-liferay-1\tUp 5 minutes (healthy)\tliferay/portal\t0.0.0.0:8080->8080/tcp\tliferay\n"
+        with (
+            patch.object(
+                self.manager, "detect_project_path", return_value=Path("/tmp/myproj")
+            ),
+            patch.object(
+                self.manager,
+                "read_meta",
+                return_value={
+                    "tag": "2024.q1.3",
+                    "container_name": "myproj",
+                    "target": "aws-1",
+                },
+            ),
+        ):
+            with self.assertRaises(SystemExit):
+                self.manager.diagnostics.cmd_status(project_id="myproj", detailed=True)
+
+        cmd = mock_run.call_args_list[-1][0][0]
+        self.assertIn("--context", cmd)
+        self.assertIn("aws-1", cmd)
+
     @patch("ldm_core.diagnostics.completions.platform.system")
     @patch("ldm_core.diagnostics.completions.get_actual_home")
     @patch("ldm_core.diagnostics.completions.get_resource_path")
