@@ -1258,6 +1258,39 @@ class BaseHandler:
                         f"Cannot initialize project: '{p}' already exists and is a file."
                     )
                 return None
+            # LDM-#1120: a bare project name resolved here is relative to
+            # CWD/search dirs, not necessarily the workspace the caller
+            # intended -- if it happens to collide with the name of an
+            # unrelated, pre-existing git checkout (e.g. a developer's own
+            # separate clone of the same upstream repo living alongside
+            # LDM's workspace), this path previously returned it silently
+            # with zero verification, and callers like quickstart/import's
+            # snapshot-restore then wrote/deleted directly into it --
+            # confirmed to have destroyed ~150 tracked files in a real
+            # repo, twice. Refuse when the resolved directory already has
+            # a .git of its own and no LDM metadata, unless --force.
+            if p.exists() and (p / ".git").exists():
+                has_own_meta = any(
+                    (p / f).exists()
+                    for f in ("meta", ".liferay-docker.meta", ".ldm.meta")
+                )
+                force = (
+                    getattr(self.args, "force", False)
+                    if hasattr(self, "args")
+                    else False
+                )
+                if not has_own_meta and not force:
+                    if fatal:
+                        UI.die(
+                            f"'{p}' looks like an unrelated git repository (contains "
+                            "its own .git directory) with no existing LDM project "
+                            "metadata. Refusing to initialize a new LDM project here "
+                            "-- this would risk overwriting or deleting tracked "
+                            "source during snapshot-restore/reset operations. Pass "
+                            "--force if this is genuinely intended, or run from a "
+                            "different directory / choose a different project name."
+                        )
+                    return None
             if p.parent.exists():
                 no_home_warn = (
                     getattr(self.args, "no_home_warn", False)
