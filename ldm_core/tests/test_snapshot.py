@@ -200,6 +200,33 @@ class TestSnapshotService(unittest.TestCase):
             mock_sleep.assert_called_once_with(2)
             mock_hydrate.assert_called_once_with(paths)
 
+    @patch("ldm_core.snapshot.archive.UI.die", side_effect=SystemExit(1))
+    @patch("shutil.disk_usage")
+    @patch("tarfile.open")
+    def test_extract_snapshot_archive_aborts_on_git_repo_without_force(
+        self, mock_tar_open, mock_disk_usage, mock_die
+    ):
+        from collections import namedtuple
+
+        Usage = namedtuple("Usage", "total used free")
+        mock_disk_usage.return_value = Usage(10**10, 10**9, 10**9)
+
+        paths = {"root": self.test_dir}
+        archive = self.test_dir / "dummy.tgz"
+        archive.write_bytes(b"0" * 50)
+
+        # Create .git directory in test_dir without meta
+        (self.test_dir / ".git").mkdir()
+
+        with self.assertRaises(SystemExit):
+            self.manager.snapshot.archive._extract_snapshot_archive(archive, paths)
+
+        mock_die.assert_called()
+        self.assertIn(
+            "Refusing to extract snapshot over active git repository",
+            mock_die.call_args[0][0],
+        )
+
     @patch("ldm_core.handlers.base.BaseHandler.detect_project_path")
     def test_cmd_snapshot_abort_no_project(self, mock_detect):
         mock_detect.return_value = None
