@@ -328,6 +328,23 @@ class TestBaseProject(unittest.TestCase):
             self.assertEqual(res_port, 8080)
             mock_check_port.assert_not_called()
 
+    def test_pre_flight_checks_skips_port_check_for_new_project_remote_target(self):
+        # LDM-#1090 (regression, live-verified against a real remote node):
+        # meta["target"] is only ever populated by `ldm target set`/migrate
+        # -- it's NEVER written during `ldm run` itself, so a brand-new
+        # project's first `ldm run --node <target>` had meta.get("target")
+        # always empty, silently falling back to "local" even with --node
+        # explicitly passed on the CLI. self.target (set from
+        # args.node/args.target at LiferayManager construction) must be
+        # consulted instead/first, since it's authoritative and available
+        # immediately regardless of whether meta has been persisted yet.
+        meta = {"root": "/tmp/p1", "project_name": "p1"}  # no "target" key at all
+        self.handler.target = "aws-1"  # type: ignore[attr-defined]
+        with patch.object(self.handler, "check_port") as mock_check_port:
+            res_port = self.handler._pre_flight_checks("localhost", 8080, meta=meta)
+            self.assertEqual(res_port, 8080)
+            mock_check_port.assert_not_called()
+
     def test_pre_flight_checks_still_checks_port_for_local_target(self):
         meta = {
             "root": "/tmp/p1",

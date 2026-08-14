@@ -157,7 +157,22 @@ class BaseHandler:
         # target, since the port that matters is the target's, not ours.
         # Reported case: --port 8080 refused locally due to an unrelated
         # stale SSH forward, while 8080 was actually free on the target.
-        target_node = (meta.get("target", "local") if meta else None) or "local"
+        #
+        # LDM-#1090 (regression, live-verified): meta["target"] is only
+        # ever populated by `ldm target set`/migrate (config.py) -- it's
+        # NEVER written during `ldm run` itself, so for a brand-new
+        # project's first `ldm run --node <target>`, meta.get("target")
+        # is always empty and this fell back to "local" even with --node
+        # explicitly passed, silently re-enabling the exact broken local
+        # check this comment block claims to have fixed. self.target
+        # (set from args.node/args.target at LiferayManager construction,
+        # manager.py) is authoritative and available immediately
+        # regardless of whether meta has been persisted yet -- prefer it.
+        target_node = (
+            getattr(self, "target", None)
+            or (meta.get("target", "local") if meta else None)
+            or "local"
+        )
         is_remote_target = target_node != "local"
 
         # 3. Port Check (Only if not using SSL proxy which handles routing dynamically)
