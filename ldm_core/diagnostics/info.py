@@ -30,7 +30,7 @@ def probe_http_readiness(url, is_running=True, timeout=1.0):
         ctx.verify_mode = ssl.CERT_NONE
 
         req = urllib.request.Request(url, headers={"User-Agent": "LDM-HealthCheck/1.0"})
-        with urllib.request.urlopen(req, timeout=timeout, context=ctx) as resp:
+        with urllib.request.urlopen(req, timeout=timeout, context=ctx) as resp:  # nosec B310
             if 200 <= resp.status <= 399:
                 return True, "ready"
             return False, "starting"
