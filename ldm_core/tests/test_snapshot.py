@@ -121,7 +121,7 @@ class TestSnapshotService(unittest.TestCase):
 
             # 2. Test Hydration
             mock_sync.reset_mock()
-            # Create host dirs to trigger hydration
+            # 2. Test Hydration (Ensure exist_ok=True for host directories created during dehydration)
             paths["data"].mkdir(exist_ok=True)
             paths["state"].mkdir(exist_ok=True)
             self.manager.snapshot.volumes._hydrate_named_volumes(paths)
