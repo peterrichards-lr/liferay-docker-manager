@@ -11,6 +11,8 @@ class DockerService:
     @staticmethod
     def get_docker_cmd_prefix(target_name: str | None = None) -> list[str]:
         """Returns the docker CLI command prefix, injecting --context for remote targets."""
+        if not target_name or target_name == "local":
+            return ["docker"]
         target = get_active_target(target_name)
         if (
             target
@@ -18,6 +20,8 @@ class DockerService:
             and target.host not in ("localhost", "127.0.0.1", "")
         ):
             return ["docker", "--context", target.name]
+        if target_name and target_name != "local":
+            return ["docker", "--context", target_name]
         return ["docker"]
 
     @staticmethod

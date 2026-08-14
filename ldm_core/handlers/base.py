@@ -168,12 +168,20 @@ class BaseHandler:
         # (set from args.node/args.target at LiferayManager construction,
         # manager.py) is authoritative and available immediately
         # regardless of whether meta has been persisted yet -- prefer it.
-        target_node = (
+        from ldm_core.config import get_active_target
+
+        target_name = (
             getattr(self, "target", None)
-            or (meta.get("target", "local") if meta else None)
-            or "local"
+            or getattr(self.args, "node", None)
+            or (meta.get("target") if meta else None)
         )
-        is_remote_target = target_node != "local"
+        active_target = get_active_target(target_name)
+        target_node = active_target.name if active_target else "local"
+        is_remote_target = (
+            active_target is not None
+            and active_target.name != "local"
+            and active_target.host not in ("localhost", "127.0.0.1", "")
+        )
 
         # 3. Port Check (Only if not using SSL proxy which handles routing dynamically)
         if is_remote_target and not ssl_enabled:
@@ -424,8 +432,14 @@ class BaseHandler:
     def check_ram(self, mem_limit=None):
         """Verifies if the host has enough RAM allocated to Docker."""
         try:
+            from ldm_core.docker_service import DockerService
+
+            target_name = getattr(self, "target", None) or getattr(
+                getattr(self, "args", None), "node", None
+            )
+            docker_prefix = DockerService.get_docker_cmd_prefix(target_name)
             res = self.run_command(
-                ["docker", "info", "--format", "{{.MemTotal}}"], check=False
+                [*docker_prefix, "info", "--format", "{{.MemTotal}}"], check=False
             )
             if not res:
                 return
@@ -1479,6 +1493,25 @@ class BaseHandler:
             except Exception as e:
                 if self.verbose:
                     UI.warning(f"Could not ensure root directory exists: {e}")
+
+            from ldm_core.config import get_active_target
+
+            target_name = getattr(self, "target", None) or getattr(
+                getattr(self, "args", None), "node", None
+            )
+            active_target = get_active_target(target_name)
+            is_remote_target = (
+                active_target is not None
+                and active_target.name != "local"
+                and active_target.host not in ("localhost", "127.0.0.1", "")
+            )
+
+            if is_remote_target:
+                if self.verbose:
+                    UI.detail(
+                        f"Skipping local host volume mount check for remote target '{active_target.name}'."
+                    )
+                return
 
             if self.verbose:
                 UI.detail("Synchronizing directory permissions via Docker...")
