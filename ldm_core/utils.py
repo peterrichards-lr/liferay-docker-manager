@@ -404,7 +404,7 @@ class CommandRunner:
     def __init__(self, env: dict[str, str] | None = None):
         self.env = env
 
-    def run(  # noqa: C901, PLR0912, PLR0913
+    def run(  # noqa: C901, PLR0912, PLR0913, PLR0915
         self,
         cmd,
         shell: bool = False,
@@ -425,6 +425,20 @@ class CommandRunner:
         resolved_env["DOCKER_CLI_HINTS"] = "false"
         if "DOCKER_API_VERSION" not in resolved_env:
             resolved_env["DOCKER_API_VERSION"] = "1.44"
+
+        # LDM-#1090: DOCKER_HOST -- often inherited from the calling shell
+        # (e.g. Colima's `eval $(colima env)`) -- takes precedence over
+        # --context per Docker CLI's own connection-resolution rules,
+        # silently redirecting a deliberately-targeted remote --context
+        # command back to whatever socket DOCKER_HOST points at. Every
+        # DockerService.get_docker_cmd_prefix() call site relies on
+        # --context alone to redirect to a remote node, with no explicit
+        # env= override of its own -- strip DOCKER_HOST here, once,
+        # whenever a command explicitly requests a Docker context, so
+        # --context actually wins regardless of what the caller's shell
+        # happened to export.
+        if isinstance(cmd, list) and "--context" in cmd:
+            resolved_env.pop("DOCKER_HOST", None)
 
         # Hardening: Sanitize if shell is enabled
         if shell:
