@@ -110,6 +110,55 @@ class TestBaseDiscoveryPath(unittest.TestCase):
                 res = self.handler.detect_project_path("myproj")
                 self.assertEqual(res.name, "myproj")
 
+    def test_detect_project_path_for_init_refuses_foreign_git_repo(self):
+        # LDM-#1120: a project path resolved here that happens to be an
+        # unrelated, pre-existing git checkout (no LDM meta of its own)
+        # must be refused, not silently accepted as a fresh init target --
+        # confirmed to have caused real data loss (snapshot-restore
+        # deleting ~150 tracked files in an unrelated repo, twice).
+        with tempfile.TemporaryDirectory() as base_tmp:
+            foreign_repo = Path(base_tmp) / "foreign-repo"
+            foreign_repo.mkdir()
+            (foreign_repo / ".git").mkdir()
+            (foreign_repo / "routes").mkdir()
+            (foreign_repo / "routes" / "index.js").write_text("// tracked source")
+
+            # self.args is a MagicMock -- any attribute auto-vivifies as a
+            # truthy MagicMock, so --force must be explicitly disabled here
+            # to simulate the real (unset) case.
+            self.handler.args.force = False
+
+            with patch("ldm_core.ui.UI.die", side_effect=SystemExit(1)) as mock_die:
+                with self.assertRaises(SystemExit):
+                    self.handler.detect_project_path(str(foreign_repo), for_init=True)
+                self.assertTrue(mock_die.called)
+                self.assertIn("unrelated git repository", mock_die.call_args[0][0])
+
+    def test_detect_project_path_for_init_allows_foreign_git_repo_with_force(self):
+        with tempfile.TemporaryDirectory() as base_tmp:
+            foreign_repo = Path(base_tmp) / "foreign-repo"
+            foreign_repo.mkdir()
+            (foreign_repo / ".git").mkdir()
+
+            self.handler.args.force = True
+            try:
+                res = self.handler.detect_project_path(str(foreign_repo), for_init=True)
+                self.assertEqual(res.resolve(), foreign_repo.resolve())
+            finally:
+                self.handler.args.force = False
+
+    def test_detect_project_path_for_init_allows_own_ldm_project_with_git(self):
+        # A directory that's BOTH a git repo AND already has LDM's own meta
+        # (e.g. `ldm clone` creates exactly this) must not be blocked.
+        with tempfile.TemporaryDirectory() as base_tmp:
+            own_project = Path(base_tmp) / "own-project"
+            own_project.mkdir()
+            (own_project / ".git").mkdir()
+            (own_project / "meta").write_text("tag=7.4")
+
+            res = self.handler.detect_project_path(str(own_project), for_init=True)
+            self.assertEqual(res.resolve(), own_project.resolve())
+
     def test_detect_project_path_for_init_missing(self):
         with tempfile.TemporaryDirectory() as base_tmp:
             base_path = Path(base_tmp)
@@ -323,6 +372,23 @@ class TestBaseProject(unittest.TestCase):
             "project_name": "p1",
             "target": "aws-1",
         }
+        with patch.object(self.handler, "check_port") as mock_check_port:
+            res_port = self.handler._pre_flight_checks("localhost", 8080, meta=meta)
+            self.assertEqual(res_port, 8080)
+            mock_check_port.assert_not_called()
+
+    def test_pre_flight_checks_skips_port_check_for_new_project_remote_target(self):
+        # LDM-#1090 (regression, live-verified against a real remote node):
+        # meta["target"] is only ever populated by `ldm target set`/migrate
+        # -- it's NEVER written during `ldm run` itself, so a brand-new
+        # project's first `ldm run --node <target>` had meta.get("target")
+        # always empty, silently falling back to "local" even with --node
+        # explicitly passed on the CLI. self.target (set from
+        # args.node/args.target at LiferayManager construction) must be
+        # consulted instead/first, since it's authoritative and available
+        # immediately regardless of whether meta has been persisted yet.
+        meta = {"root": "/tmp/p1", "project_name": "p1"}  # no "target" key at all
+        self.handler.target = "aws-1"  # type: ignore[attr-defined]
         with patch.object(self.handler, "check_port") as mock_check_port:
             res_port = self.handler._pre_flight_checks("localhost", 8080, meta=meta)
             self.assertEqual(res_port, 8080)
