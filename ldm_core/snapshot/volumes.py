@@ -1,6 +1,7 @@
 import time
 from pathlib import Path
 
+from ldm_core.docker_service import DockerService
 from ldm_core.ui import UI
 
 
@@ -16,9 +17,14 @@ class VolumesSnapshotService:
         if not host_path_abs.exists():
             host_path_abs.mkdir(parents=True, exist_ok=True)
 
+        target_name = getattr(self.manager, "target", None) or getattr(
+            self.args, "node", None
+        )
+        docker_prefix = DockerService.get_docker_cmd_prefix(target_name)
+
         # Ensure volume exists
         self.manager.run_command(
-            ["docker", "volume", "create", volume_name], check=False
+            [*docker_prefix, "volume", "create", volume_name], check=False
         )
 
         src = "/host" if direction == "to_volume" else "/vol"
@@ -30,7 +36,7 @@ class VolumesSnapshotService:
         # otherwise the Alpine container creates them as root, causing 404 access errors.
         chown_cmd = f" && chown -R 1000:1000 {dst}" if direction == "to_volume" else ""
         cmd = [
-            "docker",
+            *docker_prefix,
             "run",
             "--rm",
             "-v",
@@ -99,15 +105,46 @@ class VolumesSnapshotService:
 
         meta = self.manager.read_meta(paths["root"])
         c_name = meta.get("container_name") or paths["root"].name
+        target_name = getattr(self.manager, "target", None) or getattr(
+            self.args, "node", None
+        )
+        docker_prefix = DockerService.get_docker_cmd_prefix(target_name)
 
         for target in ["data", "state"]:
             volume_name = f"{c_name}-{target}"
             host_path = paths[target]
+            self.manager.run_command(
+                [*docker_prefix, "volume", "create", volume_name], check=False
+            )
+
+            has_files = False
             if host_path.exists():
+                try:
+                    has_files = any(host_path.iterdir())
+                except Exception:
+                    has_files = False
+
+            if has_files:
                 UI.detail(
                     f"  + Hydrating volume {UI.CYAN}{volume_name}{UI.COLOR_OFF} from host..."
                 )
                 self._sync_volume(host_path, volume_name, direction="to_volume")
+            else:
+                # LDM-#1117: Guarantee 1000:1000 (liferay) ownership on empty named volume root
+                # before container boot so Docker Compose initialization doesn't leave it root-owned.
+                chown_cmd = [
+                    *docker_prefix,
+                    "run",
+                    "--rm",
+                    "-v",
+                    f"{volume_name}:/vol",
+                    "alpine",
+                    "chown",
+                    "-R",
+                    "1000:1000",
+                    "/vol",
+                ]
+                self.manager.run_command(chown_cmd, check=False)
 
     def _restore_cloud_volume(self, paths, choice_path, project_meta):  # noqa: C901, PLR0912, PLR0915
         UI.detail("  + Restoring cloud data volume...")

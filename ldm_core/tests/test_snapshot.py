@@ -1527,3 +1527,70 @@ class TestSnapshotService(unittest.TestCase):
                 if isinstance(cmd, list)
             )
             self.assertTrue(has_context)
+
+
+class TestVolumesSnapshotService(unittest.TestCase):
+    def setUp(self):
+        self.manager = MockSnapshotManager()
+        self.test_dir = Path(tempfile.mkdtemp())
+
+    def tearDown(self):
+        shutil.rmtree(self.test_dir)
+
+    def test_sync_volume_uses_docker_context_for_remote_target(self):
+        from ldm_core.snapshot.volumes import VolumesSnapshotService
+
+        vol_service = VolumesSnapshotService(self.manager.snapshot)
+        self.manager.target = "aws-1"
+
+        with (
+            patch.object(self.manager, "run_command") as mock_run,
+            patch("ldm_core.docker_service.get_active_target") as mock_target,
+        ):
+            from ldm_core.config import TargetNode
+
+            mock_target.return_value = TargetNode(name="aws-1", host="34.1.1.1")
+            vol_service._sync_volume(
+                self.test_dir, "myproj-data", direction="to_volume"
+            )
+
+            called_cmds = [call[0][0] for call in mock_run.call_args_list]
+            has_context = any(
+                "--context" in cmd and "aws-1" in cmd
+                for cmd in called_cmds
+                if isinstance(cmd, list)
+            )
+            self.assertTrue(
+                has_context,
+                "Remote --context aws-1 missing from _sync_volume docker calls",
+            )
+
+    def test_hydrate_named_volumes_initializes_empty_volume_ownership(self):
+        from ldm_core.snapshot.volumes import VolumesSnapshotService
+
+        vol_service = VolumesSnapshotService(self.manager.snapshot)
+        self.manager.composer.is_using_named_volumes.return_value = True
+
+        paths = {
+            "root": self.test_dir,
+            "data": self.test_dir / "data",
+            "state": self.test_dir / "state",
+        }
+
+        with (
+            patch.object(self.manager, "read_meta") as mock_meta,
+            patch.object(self.manager, "run_command") as mock_run,
+        ):
+            mock_meta.return_value = {"container_name": "myproj"}
+            vol_service._hydrate_named_volumes(paths)
+
+            called_cmds = [call[0][0] for call in mock_run.call_args_list]
+            has_chown = any(
+                "chown" in cmd and "1000:1000" in cmd
+                for cmd in called_cmds
+                if isinstance(cmd, list)
+            )
+            self.assertTrue(
+                has_chown,
+                "Empty volume 1000:1000 chown initialization missing from _hydrate_named_volumes",
+            )
