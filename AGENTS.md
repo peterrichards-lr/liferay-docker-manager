@@ -66,32 +66,29 @@ search, reading the code, or consulting this file and the skill modules.
 
 ## Current Work State
 
-> Keep this section ≤20 lines. Track only **active, in-flight work**.
-> Completed items belong in git history and CHANGELOG.md.
+> Keep this section ≤20 lines. Track high-level release cycles and open issues here.
+> For transient, in-flight sub-step tracking, consult `.agent-state.md` (git-ignored).
 
 ### Active Pre-Release Cycle: v2.15.28
 
-- **v2.15.28-pre.1** tagged Aug 14 — awaiting downstream verification.
-- Verification request sent to dependent project agents (9 fixes bundled).
-- Feedback needed on: #1090 (--node gaps), #1091 (health signals),
-  #1092 (triple warning repro), #1088 (fragment PUT fallback).
+- **v2.15.28-pre.1** verified by downstream e2e testing team (all 9 features passed).
+- **v2.15.28-pre.2** in progress: branch `fix/1090-1091-1092-bundle` addresses:
+  - #1090: Skip local port check for remote `--node` targets.
+  - #1091 / #1115: Surface `http_ready` & `http_status` in `--json` outputs.
+  - #1092: Deduplicate external-drive warning in `ldm stop`.
+- #1088 closed (verified DB fallback works end-to-end).
 
-### Open Issues (6)
+### Open Issues (3)
 
 | # | Title | Type |
 |---|-------|------|
-| #1092 | `ldm stop` prints external-drive warning 3× | bug |
-| #1091 | Health/readiness signals disagree with reality | bug |
 | #1090 | `--node` inconsistently wired across commands | bug |
-| #1088 | Fragment PUT patch always 400s | bug |
 | #1097 | Add synthetic CX deploy check to verify_e2e | tech-debt |
 | #883 | [Upstream] Headless REST API PUT for Site Initializer pages | JIRA |
 
 ### Uncommitted In-Flight Work
 
-- `ldm_core/handlers/base.py` (+20): Skip local port-check for remote
-  `--node` targets (#1090)
-- `ldm_core/tests/test_base.py` (+30): Tests for above
+- Branch `fix/1090-1091-1092-bundle` pushed; PR creation in progress for `v2.15.28-pre.2`.
 
 <!-- markdownlint-disable MD049 -->
 ---
