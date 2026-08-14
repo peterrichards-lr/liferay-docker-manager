@@ -100,14 +100,34 @@ class ArchiveSnapshotService:
 
         return files_tar
 
-    def _extract_snapshot_archive(self, files_tar, paths):
+    def _extract_snapshot_archive(self, files_tar, paths):  # noqa: C901, PLR0912, PLR0915
         """Extracts a snapshot tarball into the project root with security checks."""
         # Ensure paths is a dictionary for subscripting
         if not isinstance(paths, dict):
             paths = self.manager.setup_paths(paths)
 
-        # Guardrail: Pre-Flight System Resource & Disk Space Checks for Hydration (Issue #168)
+        # Guardrail: Active Git Repository Source Tree Overwrite Protection (Issue #1126)
         target_root = paths["root"].resolve()
+        is_git_repo = (target_root / ".git").exists()
+        has_meta = bool(self.manager.read_meta(target_root))
+        force = bool(getattr(self.manager.args, "force", False))
+
+        if is_git_repo and not has_meta and not force:
+            if getattr(self.manager, "non_interactive", False):
+                UI.die(
+                    f"Refusing to extract snapshot over active git repository '{target_root}' without LDM project metadata.\n"
+                    f"Use --force to override this safety guard or specify a dedicated project path."
+                )
+            else:
+                UI.warning(
+                    f"Target directory '{target_root}' is a git repository root without LDM project metadata."
+                )
+                if not UI.ask(
+                    "Extracting this snapshot will overwrite source files in your working repository. Proceed?",
+                    default="n",
+                ):
+                    UI.die("Snapshot restore cancelled by user.")
+
         import shutil
 
         try:
