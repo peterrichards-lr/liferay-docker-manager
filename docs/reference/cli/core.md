@@ -8,10 +8,12 @@ ldm ls
 
 # Machine-readable output for scripts/automation, instead of the color-coded
 # table -- a stable JSON array with one object per project (project, version,
-# target, status, running_containers, total_containers, url, seeded, path,
-# last_seen).
+# target, status, running_containers, total_containers, db_unhealthy, url,
+# seeded, path, last_seen).
 ldm list --json
 ```
+
+The `Status` column reflects more than just whether the container process is alive: a project whose container is running but has failed its own Docker `HEALTHCHECK` (e.g. Postgres crash-looping after an out-of-disk `PANIC`) is reported as `Unhealthy` rather than `Running`, and a project whose app container is healthy but whose DB container has failed its healthcheck is reported as `Running (DB unhealthy)`. This does not perform a live HTTP probe -- for that, use `ldm wait` after starting a project.
 
 ## `run` (alias: `up`)
 
@@ -495,4 +497,4 @@ The following flags can be passed to almost any command:
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-08-13* | *Last Reviewed: 2026-08-13*
+*Last Updated: 2026-08-14* | *Last Reviewed: 2026-08-14*

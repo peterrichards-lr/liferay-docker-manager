@@ -787,7 +787,7 @@ def _get_env_info(self):  # noqa: C901, PLR0912, PLR0915
     return arch, host_os, provider, mount_type
 
 
-def run_list(handler, as_json=False):  # noqa: PLR0915
+def run_list(handler, as_json=False):  # noqa: C901, PLR0912, PLR0915
     # LDM-#1093: --json bypasses the table/color-formatting path entirely --
     # a stable, machine-readable array instead of fragile table-parsing,
     # which was reported as a real automation breakage.
@@ -853,6 +853,34 @@ def run_list(handler, as_json=False):  # noqa: PLR0915
             status = "Stopped"
             status_color = UI.WHITE
 
+        # LDM-#1091: a container reporting "running" can still have failed
+        # its own HEALTHCHECK (e.g. Postgres crash-looping after ENOSPC).
+        # `ldm list` previously only ever looked at .State.Status, so a
+        # process that stayed alive while unhealthy was reported green
+        # indefinitely. Surface Docker's own health verdict -- for the app
+        # container and its DB -- when one is actually defined, without
+        # requiring a live HTTP probe on every listed project.
+        db_unhealthy = False
+        if running_count > 0:
+            app_health = run_command(
+                [*docker_prefix, "inspect", "-f", "{{.State.Health.Status}}", name],
+                check=False,
+            )
+            if app_health and app_health.strip().lower() == "unhealthy":
+                status = "Unhealthy"
+                status_color = UI.RED
+
+            db_name = meta.get("db_container_name") or f"{name}-db"
+            db_health = run_command(
+                [*docker_prefix, "inspect", "-f", "{{.State.Health.Status}}", db_name],
+                check=False,
+            )
+            if db_health and db_health.strip().lower() == "unhealthy":
+                db_unhealthy = True
+                if status_color != UI.RED:
+                    status = f"{status} (DB unhealthy)"
+                    status_color = UI.YELLOW
+
         # Access URL
         host = meta.get("host_name", "localhost")
         port = meta.get("port", "8080")
@@ -882,6 +910,7 @@ def run_list(handler, as_json=False):  # noqa: PLR0915
                     "status": status,
                     "running_containers": running_count,
                     "total_containers": total_count,
+                    "db_unhealthy": db_unhealthy,
                     "url": url,
                     "seeded": seeded,
                     "path": str(path),
