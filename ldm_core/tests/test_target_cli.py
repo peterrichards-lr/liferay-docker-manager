@@ -36,6 +36,51 @@ class TestTargetCLI(unittest.TestCase):
         mgr = LiferayManager(args)
         self.assertEqual(mgr.target, "aws-1")
 
+    def test_manager_broadened_ci_detection(self) -> None:
+        # LDM-#1092: previously only CI/GITHUB_ACTIONS/GITLAB_CI were
+        # recognized -- an automation harness running under any other CI
+        # provider fell through to sys.stdout.isatty(), which behaves
+        # unpredictably depending on how the harness captures output,
+        # causing interactive prompts to fire when the caller never
+        # wanted them to.
+        args = argparse.Namespace(
+            target=None,
+            node=None,
+            verbose=False,
+            info=False,
+            quiet=False,
+            non_interactive=False,
+            dry_run=False,
+        )
+        # Force-clear the 3 originally-recognized vars (empty string is
+        # falsy in the `os.getenv(x) or ...` chain) so this test actually
+        # proves the broadened list, rather than passing trivially because
+        # the real CI runner already sets CI/GITHUB_ACTIONS.
+        base_env = dict.fromkeys(("CI", "GITHUB_ACTIONS", "GITLAB_CI"), "")
+
+        for var in (
+            "CIRCLECI",
+            "TRAVIS",
+            "APPVEYOR",
+            "JENKINS_URL",
+            "BUILD_NUMBER",
+            "TEAMCITY_VERSION",
+            "BUILDKITE",
+            "DRONE",
+            "TF_BUILD",
+            "CODEBUILD_BUILD_ID",
+            "BITBUCKET_BUILD_NUMBER",
+            "SEMAPHORE",
+            "bamboo_buildKey",
+            "GO_PIPELINE_LABEL",
+            "CONTINUOUS_INTEGRATION",
+        ):
+            with patch.dict("os.environ", {**base_env, var: "true"}):
+                mgr = LiferayManager(args)
+                self.assertTrue(
+                    mgr.non_interactive, f"{var} should trigger non_interactive"
+                )
+
     def test_config_edit_target_file_exclusion(self) -> None:
         args = argparse.Namespace(
             target="properties",
