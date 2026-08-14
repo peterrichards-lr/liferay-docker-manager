@@ -11,6 +11,37 @@ from ldm_core.utils import (
 )
 
 
+def probe_http_readiness(url, is_running=True, timeout=1.0):
+    """Probes an HTTP/HTTPS endpoint with a short timeout.
+
+    Returns tuple: (http_ready: bool, http_status: str)
+    http_status values: "ready" | "starting" | "unresponsive"
+    """
+    if not is_running or not url:
+        return False, "unresponsive"
+
+    try:
+        import ssl
+        import urllib.error
+        import urllib.request
+
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+
+        req = urllib.request.Request(url, headers={"User-Agent": "LDM-HealthCheck/1.0"})
+        with urllib.request.urlopen(req, timeout=timeout, context=ctx) as resp:  # nosec B310
+            if 200 <= resp.status <= 399:
+                return True, "ready"
+            return False, "starting"
+    except urllib.error.HTTPError as e:
+        if e.code in (401, 403, 404):
+            return True, "ready"
+        return False, "unresponsive"
+    except Exception:
+        return False, "starting"
+
+
 def run_info(  # noqa: C901, PLR0912, PLR0915
     handler,
     project_id=None,
@@ -450,6 +481,22 @@ def run_status(  # noqa: C901, PLR0912, PLR0915
                             }
                         )
 
+            host = meta.get("host_name", "localhost")
+            ssl = str(meta.get("ssl")).lower() == "true"
+            proto = "https" if ssl else "http"
+            port = (
+                str(meta.get("ssl_port", "443"))
+                if ssl
+                else str(meta.get("port", "8080"))
+            )
+            url = f"{proto}://{host}"
+            if (ssl and port != "443") or (not ssl and port != "80"):
+                url += f":{port}"
+
+            http_ready, http_status = probe_http_readiness(
+                url, is_running=project_running
+            )
+
             if project_id:
                 is_requested_project_running = project_running
 
@@ -459,6 +506,8 @@ def run_status(  # noqa: C901, PLR0912, PLR0915
                         "project": p_id,
                         "version": r["version"],
                         "running": project_running,
+                        "http_ready": http_ready,
+                        "http_status": http_status,
                         "containers": json_containers,
                     }
                 )
@@ -540,6 +589,10 @@ def run_status(  # noqa: C901, PLR0912, PLR0915
             if (ssl and port != "443") or (not ssl and port != "80"):
                 url += f":{port}"
 
+            http_ready, http_status = probe_http_readiness(
+                url, is_running=project_running
+            )
+
             if project_id:
                 is_requested_project_running = project_running
 
@@ -550,6 +603,8 @@ def run_status(  # noqa: C901, PLR0912, PLR0915
                         "version": r["version"],
                         "target": target_node,
                         "running": project_running,
+                        "http_ready": http_ready,
+                        "http_status": http_status,
                         "url": url if project_running else None,
                     }
                 )
@@ -914,6 +969,10 @@ def run_list(handler, as_json=False):  # noqa: C901, PLR0912, PLR0915
         seeded = str(meta.get("seeded", "false")).lower() == "true"
         seeded_indicator = " 🌱" if seeded else ""
 
+        http_ready, http_status = probe_http_readiness(
+            url, is_running=(running_count > 0)
+        )
+
         last_seen_ts = r.get("last_seen")
 
         if as_json:
@@ -926,6 +985,8 @@ def run_list(handler, as_json=False):  # noqa: C901, PLR0912, PLR0915
                     "running_containers": running_count,
                     "total_containers": total_count,
                     "db_unhealthy": db_unhealthy,
+                    "http_ready": http_ready,
+                    "http_status": http_status,
                     "url": url,
                     "seeded": seeded,
                     "path": str(path),
