@@ -932,7 +932,7 @@ class BaseHandler:
         """Warns the user if the project is located on a macOS external drive (/Volumes/)."""
         # LDM-#1092: deduplicate external-drive warning across all handler/service
         # instances in the process by tracking warned paths on BaseHandler.
-        warned_paths = getattr(BaseHandler, "_warned_volume_paths", set())
+        warned_paths: set[Path] = getattr(BaseHandler, "_warned_volume_paths", set())
         if getattr(self, "_warned_volumes", False):
             return
 
