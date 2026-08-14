@@ -1404,6 +1404,15 @@ def read_meta(path):  # noqa: C901, PLR0912, PLR0915
             f"Invalid port value in {path}: {meta['port']}. Falling back to 8080."
         )
         meta["port"] = 8080
+        # LDM-#1119: without this, a one-time corruption (e.g. a stray test
+        # double's repr somehow persisted into a real meta file) re-prints
+        # this warning on every single subsequent read forever, since
+        # nothing ever corrects the file on disk -- self-heal by writing
+        # the fix back, matching the legacy-format auto-upgrade above.
+        # Read-only callers (e.g. scanning many projects for `ldm list`)
+        # must not be broken by a failed write here, so this is best-effort.
+        with contextlib.suppress(Exception):
+            write_meta(path, meta)
 
     return meta
 
