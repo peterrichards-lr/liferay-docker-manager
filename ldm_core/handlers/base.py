@@ -151,8 +151,22 @@ class BaseHandler:
         project_id = meta.get("project_name") if meta else None
         self.ensure_hostnames_resolve(root, host_name, project_id=project_id)
 
+        # LDM-#1090: port availability was always checked via a raw local
+        # socket bind/connect against the orchestrating host -- meaningless
+        # (and actively wrong) for a project running on a remote --node
+        # target, since the port that matters is the target's, not ours.
+        # Reported case: --port 8080 refused locally due to an unrelated
+        # stale SSH forward, while 8080 was actually free on the target.
+        target_node = (meta.get("target", "local") if meta else None) or "local"
+        is_remote_target = target_node != "local"
+
         # 3. Port Check (Only if not using SSL proxy which handles routing dynamically)
-        if not ssl_enabled:
+        if is_remote_target and not ssl_enabled:
+            UI.detail(
+                f"Skipping local port availability check for remote target '{target_node}' "
+                "-- port conflicts must be resolved on the target node itself."
+            )
+        if not ssl_enabled and not is_remote_target:
             resolved_ip = (
                 self.get_resolved_ip(host_name)
                 if host_name != "localhost"
@@ -189,7 +203,11 @@ class BaseHandler:
             except Exception:
                 custom_containers = []
 
-        if custom_containers and isinstance(custom_containers, list):
+        if (
+            custom_containers
+            and isinstance(custom_containers, list)
+            and not is_remote_target
+        ):
             resolved_ip = (
                 self.get_resolved_ip(host_name)
                 if host_name != "localhost"
@@ -912,13 +930,21 @@ class BaseHandler:
 
     def _check_external_drive_warning(self, project_path):
         """Warns the user if the project is located on a macOS external drive (/Volumes/)."""
+        # LDM-#1092: deduplicate external-drive warning across all handler/service
+        # instances in the process by tracking warned paths on BaseHandler.
+        warned_paths = getattr(BaseHandler, "_warned_volume_paths", set())
         if getattr(self, "_warned_volumes", False):
             return
 
         try:
             resolved_path = Path(project_path).resolve()
+            if resolved_path in warned_paths:
+                return
+
             if len(resolved_path.parts) >= 2 and resolved_path.parts[1] == "Volumes":
                 self._warned_volumes = True
+                warned_paths.add(resolved_path)
+                BaseHandler._warned_volume_paths = warned_paths  # type: ignore[attr-defined]
 
                 marker_file = resolved_path / ".ldm_external_drive_accepted"
                 if marker_file.exists():

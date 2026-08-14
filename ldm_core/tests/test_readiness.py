@@ -420,7 +420,10 @@ services:
                     no_wait=True,
                     is_restart=True,
                     paths=all_paths,
-                    project_meta={"container_name": "test-project-liferay-1"},
+                    project_meta={
+                        "container_name": "test-project-liferay-1",
+                        "tag": "7.4.3.132",
+                    },
                 )
                 mock_is_running.assert_called_with("test-project-liferay-1")
                 mock_check_port.assert_not_called()
@@ -444,7 +447,10 @@ services:
                         no_wait=True,
                         is_restart=True,
                         paths=all_paths,
-                        project_meta={"container_name": "test-project-liferay-1"},
+                        project_meta={
+                            "container_name": "test-project-liferay-1",
+                            "tag": "7.4.3.132",
+                        },
                     )
                 self.assertEqual(str(cm.exception), "died")
                 mock_is_running.assert_called_with("test-project-liferay-1")
@@ -471,7 +477,10 @@ services:
                     no_wait=True,
                     is_restart=True,
                     paths=all_paths,
-                    project_meta={"container_name": "test-project-liferay-1"},
+                    project_meta={
+                        "container_name": "test-project-liferay-1",
+                        "tag": "7.4.3.132",
+                    },
                 )
                 mock_is_running.assert_called_with("test-project-liferay-1")
                 mock_check_port.assert_any_call("127.0.0.1", 8080)
@@ -510,6 +519,7 @@ services:
             project_meta = {
                 "container_name": "test-project-liferay-1",
                 "project_name": "test-project",
+                "tag": "7.4.3.132",
                 "custom_containers": [
                     {
                         "service_name": "wordpress",

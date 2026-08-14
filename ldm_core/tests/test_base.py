@@ -312,6 +312,55 @@ class TestBaseProject(unittest.TestCase):
             res_port = self.handler._pre_flight_checks("localhost", 8080, meta=meta)
             self.assertEqual(res_port, 8080)
 
+    def test_pre_flight_checks_skips_port_check_for_remote_target(self):
+        # LDM-#1090: port availability was checked via a raw local socket
+        # bind/connect against the orchestrating host -- meaningless (and
+        # actively wrong) for a project on a remote --node target. Reported
+        # case: --port 8080 refused locally due to an unrelated stale SSH
+        # forward, while 8080 was actually free on the target.
+        meta = {
+            "root": "/tmp/p1",
+            "project_name": "p1",
+            "target": "aws-1",
+        }
+        with patch.object(self.handler, "check_port") as mock_check_port:
+            res_port = self.handler._pre_flight_checks("localhost", 8080, meta=meta)
+            self.assertEqual(res_port, 8080)
+            mock_check_port.assert_not_called()
+
+    def test_pre_flight_checks_still_checks_port_for_local_target(self):
+        meta = {
+            "root": "/tmp/p1",
+            "project_name": "p1",
+            "target": "local",
+        }
+        with patch.object(self.handler, "check_port") as mock_check_port:
+            mock_check_port.return_value = False
+            self.handler.non_interactive = True
+            with patch("ldm_core.ui.UI.die", side_effect=SystemExit(1)) as mock_die:
+                with self.assertRaises(SystemExit):
+                    self.handler._pre_flight_checks("localhost", 8080, meta=meta)
+                self.assertTrue(mock_die.called)
+
+    def test_external_drive_warning_deduplication_across_instances(self):
+        # LDM-#1092: external drive warning must be deduplicated across multiple
+        # handler/service instances within the same CLI process.
+        if hasattr(BaseHandler, "_warned_volume_paths"):
+            delattr(BaseHandler, "_warned_volume_paths")
+
+        h1 = MockBaseManager()
+        h2 = MockBaseManager()
+
+        ext_path = Path("/Volumes/SanDisk/myproject")
+        with patch("ldm_core.ui.UI.warning") as mock_warning:
+            h1._check_external_drive_warning(ext_path)
+            self.assertEqual(mock_warning.call_count, 3)
+
+            mock_warning.reset_mock()
+            # Second call on a completely separate instance must be deduplicated
+            h2._check_external_drive_warning(ext_path)
+            mock_warning.assert_not_called()
+
     @patch("ldm_core.handlers.base.get_actual_home")
     def test_check_registry_collisions_none(self, mock_home):
         with tempfile.TemporaryDirectory() as base_tmp:

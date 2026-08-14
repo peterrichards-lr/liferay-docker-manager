@@ -404,6 +404,8 @@ class TestDiagnostics(unittest.TestCase):
             self.assertEqual(entry["url"], "http://localhost:8080")
             self.assertTrue(entry["seeded"])
             self.assertEqual(entry["path"], str(Path("/tmp/proj1")))
+            self.assertIn("http_ready", entry)
+            self.assertIn("http_status", entry)
             # No ANSI color codes should ever leak into JSON output.
             self.assertNotIn("\x1b[", f.getvalue())
 
@@ -1251,6 +1253,8 @@ class TestDiagnosticsSetupCompletion(unittest.TestCase):
         entry = parsed["projects"][0]
         self.assertEqual(entry["project"], "myproj")
         self.assertTrue(entry["running"])
+        self.assertIn("http_ready", entry)
+        self.assertIn("http_status", entry)
         self.assertNotIn("\x1b[", f.getvalue())
 
     @patch("ldm_core.diagnostics.info.run_command")
@@ -1280,6 +1284,8 @@ class TestDiagnosticsSetupCompletion(unittest.TestCase):
         entry = parsed["projects"][0]
         self.assertEqual(entry["project"], "myproj")
         self.assertTrue(entry["running"])
+        self.assertIn("http_ready", entry)
+        self.assertIn("http_status", entry)
         self.assertEqual(len(entry["containers"]), 1)
         self.assertEqual(entry["containers"][0]["service"], "liferay")
         self.assertNotIn("\x1b[", f.getvalue())
