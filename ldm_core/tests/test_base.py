@@ -415,7 +415,7 @@ class TestBaseProject(unittest.TestCase):
     def test_check_ram_uses_docker_context_for_remote_node(self):
         # LDM-#1130: verify check_ram passes --context for remote target
         handler = MockBaseManager()
-        handler.target = "aws-1"  # type: ignore[attr-defined]
+        handler.target = "aws-1"
         with patch.object(handler, "run_command") as mock_run:
             mock_run.return_value = "8589934592"
             from ldm_core.handlers.base import BaseHandler
