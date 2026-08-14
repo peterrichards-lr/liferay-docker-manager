@@ -71,24 +71,24 @@ search, reading the code, or consulting this file and the skill modules.
 
 ### Active Pre-Release Cycle: v2.15.28
 
-- **v2.15.28-pre.1** verified by downstream e2e testing team (all 9 features passed).
-- **v2.15.28-pre.2** in progress: branch `fix/1090-1091-1092-bundle` addresses:
+- **v2.15.28-pre.1**: Verified by downstream e2e testing team (all 9 features passed).
+- **v2.15.28-pre.2**: Tagged & released. Bundles fixes for:
   - #1090: Skip local port check for remote `--node` targets.
   - #1091 / #1115: Surface `http_ready` & `http_status` in `--json` outputs.
   - #1092: Deduplicate external-drive warning in `ldm stop`.
+  - #1097: Expanded E2E verify script coverage (`verify_e2e_refactor.sh`/`.ps1`).
 - #1088 closed (verified DB fallback works end-to-end).
 
-### Open Issues (3)
+### Open Issues (2)
 
 | # | Title | Type |
 |---|-------|------|
-| #1090 | `--node` inconsistently wired across commands | bug |
-| #1097 | Add synthetic CX deploy check to verify_e2e | tech-debt |
+| #1117 | Root-owned bind mounts/volumes under `--node` break `--fix-permissions` and license placement (follow-up to closed #1090) | bug |
 | #883 | [Upstream] Headless REST API PUT for Site Initializer pages | JIRA |
 
 ### Uncommitted In-Flight Work
 
-- Branch `fix/1090-1091-1092-bundle` pushed; PR creation in progress for `v2.15.28-pre.2`.
+- None. Tracking PR #1113 remains open across the `v2.15.28-pre.1`/`pre.2` cycle by design (see `.agent-state.md`); awaiting downstream verification before `--promote`.
 
 <!-- markdownlint-disable MD049 -->
 ---
