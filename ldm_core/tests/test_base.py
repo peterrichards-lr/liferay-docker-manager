@@ -16,6 +16,7 @@ class MockBaseManager(BaseHandler):
     def __init__(self):
         self.args = MagicMock()
         self.args.project = None
+        self.target: str | None = None
         self.verbose = False
         self.non_interactive = True
         self.workspace = WorkspaceService(self)
