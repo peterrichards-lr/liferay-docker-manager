@@ -67,7 +67,7 @@ search, reading the code, or consulting this file and the skill modules.
 ## Current Work State
 
 > Keep this section ≤20 lines. Track high-level release cycles and open issues here.
-> For transient, in-flight sub-step tracking, consult [`.agent-state.md`](./.agent-state.md) (git-ignored).
+> For transient, in-flight sub-step tracking, consult `.agent-state.md` (git-ignored).
 
 ### Active Pre-Release Cycle: v2.15.28
 
