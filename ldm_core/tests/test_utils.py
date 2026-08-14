@@ -1368,6 +1368,56 @@ class TestCommandRunner(unittest.TestCase):
         self.assertEqual(output, "success_output")
         mock_run.assert_called_once()
 
+    @patch("subprocess.run")
+    def test_command_runner_strips_docker_host_for_remote_context(self, mock_run):
+        # LDM-#1090: DOCKER_HOST (often inherited from the calling shell, e.g.
+        # Colima's `eval $(colima env)`) takes precedence over --context per
+        # Docker's own connection-resolution rules, silently redirecting a
+        # deliberately-targeted remote --context command back to the local
+        # socket. Must be stripped whenever --context is present.
+        import os
+
+        from ldm_core.utils import CommandRunner
+
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = b""
+        mock_run.return_value = mock_result
+
+        env_with_docker_host = {
+            **os.environ,
+            "DOCKER_HOST": "unix:///Users/me/.colima/default/docker.sock",
+        }
+        runner = CommandRunner(env=env_with_docker_host)
+        runner.run(["docker", "--context", "aws-1", "ps"], capture_output=True)
+
+        actual_env = mock_run.call_args.kwargs["env"]
+        self.assertNotIn("DOCKER_HOST", actual_env)
+
+    @patch("subprocess.run")
+    def test_command_runner_keeps_docker_host_for_local_commands(self, mock_run):
+        # A plain (non-remote-context) docker command must not have
+        # DOCKER_HOST stripped -- that would be a real behavior change for
+        # anyone deliberately using DOCKER_HOST for their own local setup.
+        import os
+
+        from ldm_core.utils import CommandRunner
+
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = b""
+        mock_run.return_value = mock_result
+
+        env_with_docker_host = {
+            **os.environ,
+            "DOCKER_HOST": "unix:///var/run/docker.sock",
+        }
+        runner = CommandRunner(env=env_with_docker_host)
+        runner.run(["docker", "ps"], capture_output=True)
+
+        actual_env = mock_run.call_args.kwargs["env"]
+        self.assertEqual(actual_env["DOCKER_HOST"], "unix:///var/run/docker.sock")
+
     @patch("ldm_core.utils.UI.die", side_effect=SystemExit)
     def test_command_runner_shell_sanitization(self, mock_die):
         from ldm_core.utils import CommandRunner
