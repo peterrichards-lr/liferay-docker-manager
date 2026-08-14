@@ -408,6 +408,100 @@ class TestDiagnostics(unittest.TestCase):
             self.assertNotIn("\x1b[", f.getvalue())
 
     @patch("ldm_core.diagnostics.info.run_command")
+    def test_cmd_list_reports_unhealthy_app_container(self, mock_run):
+        # LDM-#1091: a container can stay "running" while its own
+        # HEALTHCHECK has failed (e.g. Postgres crash-looping after
+        # ENOSPC) -- `ldm list` must not report that as plain "Running".
+        def side_effect(cmd, **kwargs):
+            if "ps" in cmd:
+                return "running"
+            if "inspect" in cmd and cmd[-1] == "proj1":
+                return "unhealthy"
+            return "healthy"
+
+        mock_run.side_effect = side_effect
+
+        with (
+            patch.object(
+                self.manager,
+                "find_dxp_roots",
+                return_value=[
+                    {
+                        "path": Path("/tmp/proj1"),
+                        "version": "2024.q1.0",
+                        "last_seen": None,
+                    }
+                ],
+            ),
+            patch.object(
+                self.manager,
+                "read_meta",
+                return_value={
+                    "container_name": "proj1",
+                    "port": 8080,
+                    "host_name": "localhost",
+                },
+            ),
+        ):
+            import io
+            from contextlib import redirect_stdout
+
+            f = io.StringIO()
+            with redirect_stdout(f):
+                self.manager.diagnostics.cmd_list(as_json=True)
+
+            entry = json.loads(f.getvalue())[0]
+            self.assertEqual(entry["status"], "Unhealthy")
+
+    @patch("ldm_core.diagnostics.info.run_command")
+    def test_cmd_list_reports_unhealthy_db_container(self, mock_run):
+        # LDM-#1091: the app container itself can be perfectly healthy
+        # while its DB has failed its HEALTHCHECK -- this must be
+        # surfaced too, since it's exactly the failure mode reported
+        # (Postgres PANIC, stack reported green for hours).
+        def side_effect(cmd, **kwargs):
+            if "ps" in cmd:
+                return "running"
+            if "inspect" in cmd and cmd[-1] == "proj1-db":
+                return "unhealthy"
+            return "healthy"
+
+        mock_run.side_effect = side_effect
+
+        with (
+            patch.object(
+                self.manager,
+                "find_dxp_roots",
+                return_value=[
+                    {
+                        "path": Path("/tmp/proj1"),
+                        "version": "2024.q1.0",
+                        "last_seen": None,
+                    }
+                ],
+            ),
+            patch.object(
+                self.manager,
+                "read_meta",
+                return_value={
+                    "container_name": "proj1",
+                    "port": 8080,
+                    "host_name": "localhost",
+                },
+            ),
+        ):
+            import io
+            from contextlib import redirect_stdout
+
+            f = io.StringIO()
+            with redirect_stdout(f):
+                self.manager.diagnostics.cmd_list(as_json=True)
+
+            entry = json.loads(f.getvalue())[0]
+            self.assertIn("DB unhealthy", entry["status"])
+            self.assertTrue(entry["db_unhealthy"])
+
+    @patch("ldm_core.diagnostics.info.run_command")
     def test_cmd_list_json_empty(self, mock_run):
         with patch.object(self.manager, "find_dxp_roots", return_value=[]):
             import io
