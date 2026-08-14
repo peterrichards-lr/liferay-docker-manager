@@ -1582,6 +1582,46 @@ class TestMetadataParsing(unittest.TestCase):
         self.assertEqual(meta["port"], 8080)
         self.assertEqual(meta["scale_liferay"], 3)
 
+    def test_read_meta_self_heals_invalid_port_on_disk(self):
+        # LDM-#1119: a corrupted port value (e.g. a stray test double's
+        # repr somehow persisted into a real meta file) must not keep
+        # re-triggering the same warning on every subsequent read forever
+        # -- the fix (fall back to 8080) needs to be written back to disk,
+        # matching the legacy-format auto-upgrade's existing self-heal
+        # pattern in this same function.
+        import json
+
+        from ldm_core.utils import read_meta
+
+        json_content = json.dumps(
+            {
+                "tag": "2026.q1",
+                "container_name": "my-project",
+                "db_type": "postgresql",
+                "port": "<MagicMock name='mock.port' id='123'>",
+            }
+        )
+        self.meta_path.write_text(json_content, encoding="utf-8")
+
+        with patch("ldm_core.ui.UI.warning") as mock_warn:
+            meta = read_meta(self.meta_path)
+            self.assertEqual(meta["port"], 8080)
+            self.assertTrue(
+                any("Invalid port value" in c.args[0] for c in mock_warn.call_args_list)
+            )
+
+        # The corrected value must now be persisted -- a second read
+        # should be clean, with no "Invalid port value" warning fired again.
+        with patch("ldm_core.ui.UI.warning") as mock_warn_second:
+            meta_again = read_meta(self.meta_path)
+            self.assertEqual(meta_again["port"], 8080)
+            self.assertFalse(
+                any(
+                    "Invalid port value" in c.args[0]
+                    for c in mock_warn_second.call_args_list
+                )
+            )
+
     def test_write_meta(self):
         from ldm_core.utils import write_meta
 
