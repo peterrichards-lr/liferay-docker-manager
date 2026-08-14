@@ -66,29 +66,12 @@ search, reading the code, or consulting this file and the skill modules.
 
 ## Current Work State
 
-> Keep this section ≤20 lines. Track high-level release cycles and open issues here.
-> For transient, in-flight sub-step tracking, consult `.agent-state.md` (git-ignored).
-
-### Active Pre-Release Cycle: v2.15.28
-
-- **v2.15.28-pre.1**: Verified by downstream e2e testing team (all 9 features passed).
-- **v2.15.28-pre.2**: Tagged & released. Bundles fixes for:
-  - #1090: Skip local port check for remote `--node` targets.
-  - #1091 / #1115: Surface `http_ready` & `http_status` in `--json` outputs.
-  - #1092: Deduplicate external-drive warning in `ldm stop`.
-  - #1097: Expanded E2E verify script coverage (`verify_e2e_refactor.sh`/`.ps1`).
-- #1088 closed (verified DB fallback works end-to-end).
-
-### Open Issues (2)
-
-| # | Title | Type |
-|---|-------|------|
-| #1117 | Root-owned bind mounts/volumes under `--node` break `--fix-permissions` and license placement (follow-up to closed #1090) | bug |
-| #883 | [Upstream] Headless REST API PUT for Site Initializer pages | JIRA |
-
-### Uncommitted In-Flight Work
-
-- None. Tracking PR #1113 remains open across the `v2.15.28-pre.1`/`pre.2` cycle by design (see `.agent-state.md`); awaiting downstream verification before `--promote`.
+Status updates, active release cycles, open-issue tracking, and any other
+transient/in-flight information live exclusively in `.agent-state.md`
+(git-ignored). **Read that file upon starting work to resume seamlessly
+across AI providers.** This file (`AGENTS.md`) intentionally carries no
+status content of its own -- it is a routing/conventions file only, and
+should not need to change as work progresses.
 
 <!-- markdownlint-disable MD049 -->
 ---
