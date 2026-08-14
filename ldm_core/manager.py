@@ -60,7 +60,36 @@ class LiferayManager(
         self.tray = TrayService(self)
 
         # Automatic CI detection
-        if os.getenv("CI") or os.getenv("GITHUB_ACTIONS") or os.getenv("GITLAB_CI"):
+        # LDM-#1092: only checking these 3 vars missed automation harnesses
+        # running under any other CI provider (or a custom orchestration
+        # wrapper) -- those fell through to sys.stdout.isatty(), which
+        # behaves unpredictably depending on how the harness captures the
+        # child process's output (PTY vs. plain pipe), causing prompts to
+        # fire when the caller never wanted them to. Broadened to the
+        # common CI-provider env vars most CI-detection libraries check.
+        if any(
+            os.getenv(var)
+            for var in (
+                "CI",
+                "CONTINUOUS_INTEGRATION",
+                "GITHUB_ACTIONS",
+                "GITLAB_CI",
+                "CIRCLECI",
+                "TRAVIS",
+                "APPVEYOR",
+                "JENKINS_URL",
+                "BUILD_NUMBER",
+                "TEAMCITY_VERSION",
+                "BUILDKITE",
+                "DRONE",
+                "TF_BUILD",
+                "CODEBUILD_BUILD_ID",
+                "BITBUCKET_BUILD_NUMBER",
+                "SEMAPHORE",
+                "bamboo_buildKey",
+                "GO_PIPELINE_LABEL",
+            )
+        ):
             self.non_interactive = True
 
         # Synchronize global UI state
