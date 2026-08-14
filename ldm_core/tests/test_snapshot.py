@@ -19,6 +19,7 @@ class MockSnapshotManager(BaseHandler):
             lean=False,
             tunnel_managed_cors=False,
         )
+        self.target: str | None = None
         self.verbose = False
         self.non_interactive = True
         self.snapshot = SnapshotService(self)
