@@ -437,7 +437,14 @@ class ComposerService:
         return image
 
     def _build_liferay_service(  # noqa: C901, PLR0912, PLR0915
-        self, paths, meta, host_name, project_name, ssl_enabled, base_env, mount_paths=None
+        self,
+        paths,
+        meta,
+        host_name,
+        project_name,
+        ssl_enabled,
+        base_env,
+        mount_paths=None,
     ):
         """Constructs the primary Liferay service definition.
 
