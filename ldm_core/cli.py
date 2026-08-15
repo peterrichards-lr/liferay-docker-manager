@@ -244,8 +244,31 @@ def preprocess_args(args_list: list[str]) -> list[str]:
     processed_list = args_list if has_prog else ["ldm", *args_list]
 
     cmd_idx = -1
+    skip_next = False
     for i in range(1, len(processed_list)):
-        if not processed_list[i].startswith("-"):
+        if skip_next:
+            skip_next = False
+            continue
+
+        arg = processed_list[i]
+        if arg in (
+            "--node",
+            "-p",
+            "--project",
+            "--target",
+            "--backup-dir",
+            "--config",
+            "--env-id",
+            "--output",
+            "--template",
+            "--source",
+            "--key",
+            "--value",
+        ):
+            skip_next = True
+            continue
+
+        if not arg.startswith("-"):
             cmd_idx = i
             break
 

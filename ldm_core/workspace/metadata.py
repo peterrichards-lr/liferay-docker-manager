@@ -247,7 +247,7 @@ def _resolve_and_persist_cx_port(self, ext_info, ext_id, meta, root_dir):
         self.manager.write_meta(root_dir, meta)
 
 
-def _process_built_cx_zips(
+def _process_built_cx_zips(  # noqa: C901
     self,
     ce_build_dir,
     ce_source_truth,
@@ -260,6 +260,9 @@ def _process_built_cx_zips(
     import os
 
     from ldm_core.utils import UI
+
+    if not ce_build_dir or not ce_build_dir.exists():
+        return
 
     for item in [i for i in ce_build_dir.iterdir() if i.suffix.lower() == ".zip"]:
         try:

@@ -520,6 +520,7 @@ services:
                 "container_name": "test-project-liferay-1",
                 "project_name": "test-project",
                 "tag": "7.4.3.132",
+                "target": "local",
                 "custom_containers": [
                     {
                         "service_name": "wordpress",

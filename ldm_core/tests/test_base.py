@@ -16,6 +16,7 @@ class MockBaseManager(BaseHandler):
     def __init__(self):
         self.args = MagicMock()
         self.args.project = None
+        self.target: str | None = None
         self.verbose = False
         self.non_interactive = True
         self.workspace = WorkspaceService(self)
@@ -394,7 +395,47 @@ class TestBaseProject(unittest.TestCase):
             self.assertEqual(res_port, 8080)
             mock_check_port.assert_not_called()
 
-    def test_pre_flight_checks_still_checks_port_for_local_target(self):
+    @patch("ldm_core.config.get_active_target")
+    def test_pre_flight_checks_skips_port_check_for_active_default_target_from_config(
+        self, mock_get_target
+    ):
+        # LDM-#1129: verify active default target from ldm target use skips local port check
+        from ldm_core.config import TargetNode
+
+        mock_get_target.return_value = TargetNode(
+            name="aws-2", host="10.0.0.1", is_default=True
+        )
+
+        meta = {"root": "/tmp/p1", "project_name": "p1"}
+        self.handler.target = None  # No --node flag explicitly passed on CLI
+        with patch.object(self.handler, "check_port") as mock_check_port:
+            res_port = self.handler._pre_flight_checks("localhost", 8080, meta=meta)
+            self.assertEqual(res_port, 8080)
+            mock_check_port.assert_not_called()
+
+    def test_check_ram_uses_docker_context_for_remote_node(self):
+        # LDM-#1130: verify check_ram passes --context for remote target
+        handler = MockBaseManager()
+        handler.target = "aws-1"
+        with patch.object(handler, "run_command") as mock_run:
+            mock_run.return_value = "8589934592"
+            from ldm_core.handlers.base import BaseHandler
+
+            BaseHandler.check_ram(handler)
+            self.assertTrue(mock_run.called)
+            cmd = mock_run.call_args[0][0]
+            self.assertIn("--context", cmd)
+            self.assertIn("aws-1", cmd)
+
+    @patch("ldm_core.config.get_active_target")
+    def test_pre_flight_checks_still_checks_port_for_local_target(
+        self, mock_get_target
+    ):
+        from ldm_core.config import TargetNode
+
+        mock_get_target.return_value = TargetNode(
+            name="local", host="localhost", is_default=True
+        )
         meta = {
             "root": "/tmp/p1",
             "project_name": "p1",
