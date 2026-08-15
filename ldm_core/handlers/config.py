@@ -271,6 +271,14 @@ class ConfigService:
                 )
 
         # 4. Missing Mount Paths check
+        # LDM-#1134: "logs" and "routes" were missing from this list, so
+        # they never got proactively created locally -- meaning they
+        # didn't exist yet when sync_project_to_target() rsyncs the
+        # project tree to a remote --node target (rsync only copies what
+        # exists on the source), and Docker then auto-created them fresh
+        # on the remote engine as root-owned when the container first
+        # bind-mounted them, causing permission errors distinct from
+        # (but related to) the ones #1117 already fixed for named volumes.
         mount_dirs = [
             ("deploy", paths.get("deploy")),
             ("files", paths.get("files")),
@@ -280,6 +288,8 @@ class ConfigService:
             ("scripts", paths.get("scripts")),
             ("log4j", paths.get("log4j")),
             ("portal_log4j", paths.get("portal_log4j")),
+            ("logs", paths.get("logs")),
+            ("routes", paths.get("routes")),
         ]
 
         for name, path in mount_dirs:

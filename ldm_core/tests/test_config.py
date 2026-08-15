@@ -1036,6 +1036,28 @@ class TestConfigService(unittest.TestCase):
                 f"Created missing mount directory: {mock_deploy}"
             )
 
+    def test_validate_properties_creates_logs_and_routes_mounts(self):
+        # LDM-#1134: "logs" and "routes" were previously missing from the
+        # proactive mount-directory-creation list -- meaning they never
+        # existed locally before sync_project_to_target() rsyncs the
+        # project tree to a remote --node target (rsync only copies what
+        # exists on the source), so Docker auto-created them fresh on the
+        # remote engine as root-owned, live-verified against a real
+        # remote node.
+        mock_logs = MagicMock()
+        mock_logs.exists.return_value = False
+        mock_routes = MagicMock()
+        mock_routes.exists.return_value = False
+        paths = {
+            "root": Path("/tmp"),
+            "logs": mock_logs,
+            "routes": mock_routes,
+        }
+        with patch("ldm_core.ui.UI.detail"):
+            self.config.validate_properties(paths, {}, {}, is_dry_run=False)
+            mock_logs.mkdir.assert_called_once_with(parents=True, exist_ok=True)
+            mock_routes.mkdir.assert_called_once_with(parents=True, exist_ok=True)
+
     @patch("builtins.input")
     def test_cmd_edit_tui(self, mock_input):
         import tempfile
