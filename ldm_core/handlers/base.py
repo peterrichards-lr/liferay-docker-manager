@@ -140,7 +140,18 @@ class BaseHandler:
 
         return True
 
-    def _pre_flight_checks(self, host_name, port, ssl_enabled=False, meta=None):  # noqa: C901, PLR0912
+    def _get_effective_target_name(self, meta: dict | None = None) -> str | None:
+        target_name = getattr(self, "target", None)
+        if isinstance(target_name, str):
+            return target_name
+        node_arg = getattr(getattr(self, "args", None), "node", None)
+        if isinstance(node_arg, str):
+            return node_arg
+        if isinstance(meta, dict) and isinstance(meta.get("target"), str):
+            return meta["target"]
+        return None
+
+    def _pre_flight_checks(self, host_name, port, ssl_enabled=False, meta=None):  # noqa: C901, PLR0912, PLR0915
         """Runs critical safety checks before starting containers."""
         root = Path(meta.get("root"))
         # 1. RAM Check
@@ -170,18 +181,15 @@ class BaseHandler:
         # regardless of whether meta has been persisted yet -- prefer it.
         from ldm_core.config import get_active_target
 
-        target_name = (
-            getattr(self, "target", None)
-            or getattr(self.args, "node", None)
-            or (meta.get("target") if meta else None)
-        )
+        target_name = getattr(self, "target", None)
+        if not isinstance(target_name, str):
+            node_arg = getattr(getattr(self, "args", None), "node", None)
+            target_name = node_arg if isinstance(node_arg, str) else None
+        if not isinstance(target_name, str):
+            target_name = meta.get("target") if isinstance(meta, dict) else None
         active_target = get_active_target(target_name)
         target_node = active_target.name if active_target else "local"
-        is_remote_target = (
-            active_target is not None
-            and active_target.name != "local"
-            and active_target.host not in ("localhost", "127.0.0.1", "")
-        )
+        is_remote_target = active_target is not None and active_target.name != "local"
 
         # 3. Port Check (Only if not using SSL proxy which handles routing dynamically)
         if is_remote_target and not ssl_enabled:
@@ -189,6 +197,7 @@ class BaseHandler:
                 f"Skipping local port availability check for remote target '{target_node}' "
                 "-- port conflicts must be resolved on the target node itself."
             )
+            return port
         if not ssl_enabled and not is_remote_target:
             resolved_ip = (
                 self.get_resolved_ip(host_name)
@@ -1501,9 +1510,7 @@ class BaseHandler:
             )
             active_target = get_active_target(target_name)
             is_remote_target = (
-                active_target is not None
-                and active_target.name != "local"
-                and active_target.host not in ("localhost", "127.0.0.1", "")
+                active_target is not None and active_target.name != "local"
             )
 
             if is_remote_target:
