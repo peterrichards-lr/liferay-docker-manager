@@ -168,8 +168,18 @@ def get_active_target(
 ) -> TargetNode:
     """Resolve active target node for a project or global default."""
     targets = load_targets(config_path)
-    if project_target and project_target in targets:
-        return targets[project_target]
+    if project_target:
+        if not isinstance(project_target, str):
+            return targets.get("local") or TargetNode(
+                name="local", host="localhost", is_default=True
+            )
+        if project_target in targets:
+            return targets[project_target]
+        if project_target == "local":
+            return targets.get("local") or TargetNode(
+                name="local", host="localhost", is_default=True
+            )
+        return TargetNode(name=project_target, host=project_target)
 
     for target in targets.values():
         if target.is_default:

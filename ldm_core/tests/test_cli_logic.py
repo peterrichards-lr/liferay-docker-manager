@@ -26,6 +26,16 @@ class TestCLILogic(unittest.TestCase):
         self.assertEqual(args.command, "system")
         self.assertEqual(args.subcommand, "init-ci")
 
+    def test_global_node_flag_before_legacy_commands(self):
+        # LDM-#1131: Verify global flags with option values before subcommands expand correctly
+        from ldm_core.cli import preprocess_args
+
+        res = preprocess_args(["ldm", "--node", "aws-1", "init-common"])
+        self.assertEqual(res, ["ldm", "--node", "aws-1", "infra", "init-common"])
+
+        res = preprocess_args(["ldm", "--node", "aws-1", "version"])
+        self.assertEqual(res, ["ldm", "--node", "aws-1", "system", "version"])
+
     def test_package_resources_integrity(self):
         # Verify essential package resource files exist in ldm_core/resources
         from pathlib import Path
