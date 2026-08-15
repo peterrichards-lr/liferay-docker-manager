@@ -520,6 +520,7 @@ services:
                 "container_name": "test-project-liferay-1",
                 "project_name": "test-project",
                 "tag": "7.4.3.132",
+                "target": "local",
                 "custom_containers": [
                     {
                         "service_name": "wordpress",
@@ -554,7 +555,7 @@ services:
                 mock_check_port.assert_any_call("127.0.0.1", 9000)
                 mock_die.assert_called_once()
                 self.assertIn(
-                    "Port 9000 is already in use on the host and is required by service 'wordpress'",
+                    "Custom container port 9000 for 'wordpress' is already in use",
                     mock_die.call_args[0][0],
                 )
 
