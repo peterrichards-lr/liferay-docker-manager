@@ -191,6 +191,49 @@ class TestComposerService(unittest.TestCase):
         )
         self.assertEqual(service["image"], "liferay/dxp:2026.q1.4-lts")
 
+    def test_write_docker_compose_uses_persisted_default_target(self):
+        """LDM-#1135: even with no explicit target on manager/meta, a
+        persisted default target (set via `ldm target use`) must still be
+        consulted -- get_active_target() must never be skipped just
+        because target_name starts out falsy (self.manager has no
+        `.target` attribute here, and meta has no "target" key -- exactly
+        the "no explicit override, rely on the persisted default" case)."""
+        paths = {"root": Path("/tmp/proj"), "compose": Path("/tmp/proj/compose.yml")}
+        meta = {"container_name": "proj"}
+
+        from ldm_core.config import TargetNode
+
+        remote_target = TargetNode(name="aws-1", host="1.2.3.4", user="ec2-user")
+
+        with (
+            patch("ldm_core.handlers.composer.dict_to_yaml", return_value="yaml"),
+            patch("ldm_core.utils.safe_write_text"),
+            patch(
+                "ldm_core.config.get_active_target", return_value=remote_target
+            ) as mock_get_active,
+            patch(
+                "ldm_core.config.get_remote_project_root",
+                return_value="/home/ec2-user/.liferay-docker/projects/proj",
+            ),
+            patch.object(
+                self.composer, "_build_liferay_service", return_value={}
+            ) as mock_build,
+            patch.object(self.composer, "_build_db_service", return_value={}),
+            patch.object(self.composer, "_build_search_service", return_value={}),
+            patch.object(self.composer, "_build_extensions_services", return_value={}),
+        ):
+            self.composer.write_docker_compose(paths, meta)
+
+            # get_active_target must have been called even though neither
+            # self.manager.target nor meta["target"] provided a value.
+            mock_get_active.assert_called_once_with(None)
+
+            mount_paths_arg = mock_build.call_args[0][6]
+            self.assertEqual(
+                str(mount_paths_arg["root"]),
+                "/home/ec2-user/.liferay-docker/projects/proj",
+            )
+
     def test_explicit_volume_naming(self):
         """Verify that named volumes have an explicit 'name' property to prevent prefixing."""
         paths = {"root": Path("/tmp/proj"), "compose": Path("/tmp/proj/compose.yml")}

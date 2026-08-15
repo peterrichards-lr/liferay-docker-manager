@@ -237,46 +237,56 @@ class ComposerService:
         # itself (only via `ldm target set`/migrate) -- the live
         # CLI-resolved self.manager.target is authoritative and must be
         # checked first, exactly like _pre_flight_checks's own fix.
+        #
+        # LDM-#1135: even when NEITHER self.manager.target NOR
+        # meta["target"] provide a value, get_active_target() must still
+        # be called (with None) rather than skipped -- it has its own
+        # fallback to the *persisted* default target set via
+        # `ldm target use`, which this code was silently bypassing by
+        # only calling get_active_target() inside an `if target_name:`
+        # guard. A user who set a remote default via `ldm target use`
+        # but passed no explicit --node/--target on this particular
+        # command would otherwise always get local (wrong) bind-mount
+        # paths.
         target_name = getattr(self.manager, "target", None) or meta.get("target")
-        if target_name and target_name != "local":
-            from ldm_core.config import get_active_target, get_remote_project_root
+        from ldm_core.config import get_active_target, get_remote_project_root
 
-            active_target = get_active_target(target_name)
-            if active_target.name != "local" and active_target.host not in (
-                "localhost",
-                "127.0.0.1",
-                "",
-            ):
-                remote_root_str = get_remote_project_root(active_target, project_name)
-                if remote_root_str:
-                    from pathlib import PurePosixPath
+        active_target = get_active_target(target_name)
+        if active_target.name != "local" and active_target.host not in (
+            "localhost",
+            "127.0.0.1",
+            "",
+        ):
+            remote_root_str = get_remote_project_root(active_target, project_name)
+            if remote_root_str:
+                from pathlib import PurePosixPath
 
-                    remote_root = PurePosixPath(remote_root_str)
-                    mount_paths = {
-                        **paths,
-                        "root": remote_root,
-                        "data": remote_root / "data",
-                        "deploy": remote_root / "deploy",
-                        "files": remote_root / "files",
-                        "osgi": remote_root / "osgi",
-                        "configs": remote_root / "osgi" / "configs",
-                        "marketplace": remote_root / "osgi" / "marketplace",
-                        "state": remote_root / "osgi" / "state",
-                        "modules": remote_root / "osgi" / "modules",
-                        "backups": remote_root / "snapshots",
-                        "cx": remote_root / "osgi" / "client-extensions",
-                        "routes": remote_root / "routes",
-                        "scripts": remote_root / "scripts",
-                        "logs": remote_root / "logs",
-                        "log4j": remote_root / "osgi" / "log4j",
-                        "portal_log4j": remote_root / "osgi" / "portal-log4j",
-                    }
-                else:
-                    UI.warning(
-                        f"Could not resolve the home directory on remote target "
-                        f"'{active_target.name}' -- bind mounts may point at the "
-                        "wrong host's paths. Check SSH connectivity."
-                    )
+                remote_root = PurePosixPath(remote_root_str)
+                mount_paths = {
+                    **paths,
+                    "root": remote_root,
+                    "data": remote_root / "data",
+                    "deploy": remote_root / "deploy",
+                    "files": remote_root / "files",
+                    "osgi": remote_root / "osgi",
+                    "configs": remote_root / "osgi" / "configs",
+                    "marketplace": remote_root / "osgi" / "marketplace",
+                    "state": remote_root / "osgi" / "state",
+                    "modules": remote_root / "osgi" / "modules",
+                    "backups": remote_root / "snapshots",
+                    "cx": remote_root / "osgi" / "client-extensions",
+                    "routes": remote_root / "routes",
+                    "scripts": remote_root / "scripts",
+                    "logs": remote_root / "logs",
+                    "log4j": remote_root / "osgi" / "log4j",
+                    "portal_log4j": remote_root / "osgi" / "portal-log4j",
+                }
+            else:
+                UI.warning(
+                    f"Could not resolve the home directory on remote target "
+                    f"'{active_target.name}' -- bind mounts may point at the "
+                    "wrong host's paths. Check SSH connectivity."
+                )
 
         services = {}
 
