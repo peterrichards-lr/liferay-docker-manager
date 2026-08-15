@@ -207,6 +207,61 @@ class TestTargetCLIHandlers(unittest.TestCase):
                 self.assertTrue(res)
                 self.assertGreaterEqual(mock_run.call_count, 2)
 
+    def test_resolve_remote_home_local_returns_none(self) -> None:
+        from ldm_core.config import TargetNode, resolve_remote_home
+
+        local = TargetNode(name="local", host="localhost")
+        self.assertIsNone(resolve_remote_home(local))
+
+    def test_resolve_remote_home_remote(self) -> None:
+        # LDM-#1134: bind-mount sources must be absolute paths -- the
+        # remote Docker daemon does not shell-expand `~`.
+        from unittest.mock import patch
+
+        from ldm_core.config import TargetNode, resolve_remote_home
+
+        target = TargetNode(name="aws", host="34.1.1.1", user="ec2-user")
+        with patch("ldm_core.config.run_command") as mock_run:
+            mock_run.return_value = "/home/ec2-user\n"
+            home = resolve_remote_home(target)
+            self.assertEqual(home, "/home/ec2-user")
+            ssh_cmd = mock_run.call_args[0][0]
+            self.assertIn("ssh", ssh_cmd)
+            self.assertIn("ec2-user@34.1.1.1", ssh_cmd)
+
+    def test_resolve_remote_home_ssh_failure_returns_none(self) -> None:
+        from unittest.mock import patch
+
+        from ldm_core.config import TargetNode, resolve_remote_home
+
+        target = TargetNode(name="aws", host="34.1.1.1", user="ec2-user")
+        with patch("ldm_core.config.run_command") as mock_run:
+            mock_run.return_value = None
+            self.assertIsNone(resolve_remote_home(target))
+
+    def test_get_remote_project_root(self) -> None:
+        from unittest.mock import patch
+
+        from ldm_core.config import TargetNode, get_remote_project_root
+
+        target = TargetNode(name="aws", host="34.1.1.1", user="ec2-user")
+        with patch(
+            "ldm_core.config.resolve_remote_home", return_value="/home/ec2-user"
+        ):
+            root = get_remote_project_root(target, "my-project")
+            self.assertEqual(root, "/home/ec2-user/.liferay-docker/projects/my-project")
+
+    def test_get_remote_project_root_returns_none_when_home_unresolvable(
+        self,
+    ) -> None:
+        from unittest.mock import patch
+
+        from ldm_core.config import TargetNode, get_remote_project_root
+
+        target = TargetNode(name="aws", host="34.1.1.1", user="ec2-user")
+        with patch("ldm_core.config.resolve_remote_home", return_value=None):
+            self.assertIsNone(get_remote_project_root(target, "my-project"))
+
     def test_cmd_target_migrate(self) -> None:
         """Test cmd_target_migrate execution workflow."""
         from unittest.mock import patch

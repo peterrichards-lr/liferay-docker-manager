@@ -224,11 +224,65 @@ class ComposerService:
         host_name = meta.get("host_name", "localhost")
         ssl_enabled = self._is_ssl_active(host_name, meta)
 
+        # LDM-#1134: bind-mount sources must reference the *remote* host's
+        # filesystem when a --node target is active, not this host's --
+        # otherwise Docker auto-creates them empty (and root-owned) on the
+        # remote engine, matching the previously-reported bootstrap/deploy
+        # failures. `paths` is still used unchanged everywhere else in the
+        # builders below (local filesystem reads); `mount_paths` is the
+        # remote-mapped equivalent, used exclusively for bind-mount source
+        # strings.
+        mount_paths = paths
+        # LDM-#1121: meta["target"] is never populated during `ldm run`
+        # itself (only via `ldm target set`/migrate) -- the live
+        # CLI-resolved self.manager.target is authoritative and must be
+        # checked first, exactly like _pre_flight_checks's own fix.
+        target_name = getattr(self.manager, "target", None) or meta.get("target")
+        if target_name and target_name != "local":
+            from ldm_core.config import get_active_target, get_remote_project_root
+
+            active_target = get_active_target(target_name)
+            if active_target.name != "local" and active_target.host not in (
+                "localhost",
+                "127.0.0.1",
+                "",
+            ):
+                remote_root_str = get_remote_project_root(active_target, project_name)
+                if remote_root_str:
+                    from pathlib import PurePosixPath
+
+                    remote_root = PurePosixPath(remote_root_str)
+                    mount_paths = {
+                        **paths,
+                        "root": remote_root,
+                        "data": remote_root / "data",
+                        "deploy": remote_root / "deploy",
+                        "files": remote_root / "files",
+                        "osgi": remote_root / "osgi",
+                        "configs": remote_root / "osgi" / "configs",
+                        "marketplace": remote_root / "osgi" / "marketplace",
+                        "state": remote_root / "osgi" / "state",
+                        "modules": remote_root / "osgi" / "modules",
+                        "backups": remote_root / "snapshots",
+                        "cx": remote_root / "osgi" / "client-extensions",
+                        "routes": remote_root / "routes",
+                        "scripts": remote_root / "scripts",
+                        "logs": remote_root / "logs",
+                        "log4j": remote_root / "osgi" / "log4j",
+                        "portal_log4j": remote_root / "osgi" / "portal-log4j",
+                    }
+                else:
+                    UI.warning(
+                        f"Could not resolve the home directory on remote target "
+                        f"'{active_target.name}' -- bind mounts may point at the "
+                        "wrong host's paths. Check SSH connectivity."
+                    )
+
         services = {}
 
         # Build individual services
         services["liferay"] = self._build_liferay_service(
-            paths, meta, host_name, project_name, ssl_enabled, liferay_env
+            paths, meta, host_name, project_name, ssl_enabled, liferay_env, mount_paths
         )
 
         search_service = self._build_search_service(meta)
@@ -246,7 +300,7 @@ class ComposerService:
 
         # Append Microservices/Client Extensions
         ext_services = self._build_extensions_services(
-            paths, meta, host_name, project_name, ssl_enabled
+            paths, meta, host_name, project_name, ssl_enabled, mount_paths
         )
         services.update(ext_services)
 
@@ -383,9 +437,29 @@ class ComposerService:
         return image
 
     def _build_liferay_service(  # noqa: C901, PLR0912, PLR0915
-        self, paths, meta, host_name, project_name, ssl_enabled, base_env
+        self,
+        paths,
+        meta,
+        host_name,
+        project_name,
+        ssl_enabled,
+        base_env,
+        mount_paths=None,
     ):
-        """Constructs the primary Liferay service definition."""
+        """Constructs the primary Liferay service definition.
+
+        LDM-#1134: `paths` is used for BOTH local filesystem reads (e.g.
+        checking whether a custom ES config file already exists on this
+        host) AND bind-mount source construction -- those must NOT be the
+        same thing when a remote --node target is active, since the
+        bind-mount source needs to be a path that exists on the *remote*
+        host, not this one. `mount_paths` (defaults to `paths` for local
+        targets/callers that don't pass it) is used exclusively for the
+        bind-mount source strings below; `paths` continues to be used for
+        every local filesystem check.
+        """
+        if mount_paths is None:
+            mount_paths = paths
         tag = str(meta.get("tag") or "latest")
         scale = int(meta.get("scale_liferay", 1))
         port = meta.get("port", 8080)
@@ -583,14 +657,14 @@ class ComposerService:
                 "com.liferay.ldm.managed=true",
             ],
             "volumes": [
-                f"{paths['deploy'].as_posix()}:/mnt/liferay/deploy{z_label}",
-                f"{paths['files'].as_posix()}:/mnt/liferay/files{z_label}",
-                f"{paths['scripts'].as_posix()}:/mnt/liferay/scripts{z_label}",
-                f"{paths.get('routes', paths['root'] / 'routes').as_posix()}:/workspace/routes{z_label}",
+                f"{mount_paths['deploy'].as_posix()}:/mnt/liferay/deploy{z_label}",
+                f"{mount_paths['files'].as_posix()}:/mnt/liferay/files{z_label}",
+                f"{mount_paths['scripts'].as_posix()}:/mnt/liferay/scripts{z_label}",
+                f"{mount_paths.get('routes', mount_paths['root'] / 'routes').as_posix()}:/workspace/routes{z_label}",
                 f"{project_name}-data:/opt/liferay/data",
-                f"{paths['modules'].as_posix()}:/opt/liferay/osgi/modules{z_label}",
-                f"{paths['cx'].as_posix()}:/opt/liferay/osgi/client-extensions{z_label}",
-                f"{paths['portal_log4j'].as_posix()}:/opt/liferay/osgi/log4j{z_label}",
+                f"{mount_paths['modules'].as_posix()}:/opt/liferay/osgi/modules{z_label}",
+                f"{mount_paths['cx'].as_posix()}:/opt/liferay/osgi/client-extensions{z_label}",
+                f"{mount_paths['portal_log4j'].as_posix()}:/opt/liferay/osgi/log4j{z_label}",
             ],
             "networks": ["liferay-net"],
         }
@@ -617,9 +691,7 @@ class ComposerService:
             # Host-mapped state if requested
             is_persist_osgi = str(meta.get("persist_osgi", "false")).lower() == "true"
             if is_persist_osgi:
-                state_mapping = (
-                    f"{paths['state'].as_posix()}:/opt/liferay/osgi/state{z_label}"
-                )
+                state_mapping = f"{mount_paths['state'].as_posix()}:/opt/liferay/osgi/state{z_label}"
             else:
                 safe_volume_prefix = sanitize_id(liferay_container)
                 state_mapping = f"{safe_volume_prefix}-state:/opt/liferay/osgi/state"
@@ -627,7 +699,7 @@ class ComposerService:
             service["volumes"].extend(
                 [
                     state_mapping,
-                    f"{paths['logs'].as_posix()}:/opt/liferay/logs{z_label}",
+                    f"{mount_paths['logs'].as_posix()}:/opt/liferay/logs{z_label}",
                 ]
             )
         else:
@@ -1398,8 +1470,15 @@ class ComposerService:
         return None
 
     def _build_extensions_services(  # noqa: C901, PLR0912
-        self, paths, meta, host_name, project_name, ssl_enabled
+        self, paths, meta, host_name, project_name, ssl_enabled, mount_paths=None
     ):
+        # LDM-#1134: see _build_liferay_service's docstring -- `paths` is
+        # used for local filesystem scanning (scan_client_extensions must
+        # read the actual extensions present on this host), `mount_paths`
+        # is used exclusively for the `routes` bind-mount source below.
+        if mount_paths is None:
+            mount_paths = paths
+
         # 4. Append Microservices/Client Extensions
         services = {}
         extensions = []
@@ -1446,7 +1525,7 @@ class ComposerService:
                     "networks": ["liferay-net"],
                     "labels": labels,
                     "volumes": [
-                        f"{paths.get('routes', paths['root'] / 'routes').as_posix()}:/workspace/routes",
+                        f"{mount_paths.get('routes', mount_paths['root'] / 'routes').as_posix()}:/workspace/routes",
                     ],
                 }
 

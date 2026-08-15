@@ -190,6 +190,49 @@ def get_active_target(
     )
 
 
+def resolve_remote_home(target: TargetNode) -> str | None:
+    """Resolves a remote target's absolute home directory via SSH.
+
+    LDM-#1134: Docker bind-mount sources must be absolute paths -- the
+    remote daemon does not shell-expand `~`. `sync_project_to_target`'s
+    own SSH-executed mkdir/rsync commands can use a literal `~` because
+    the remote shell expands it, but the *compose file* itself needs a
+    real absolute string to hand to the Docker Engine API, so this
+    resolves it explicitly, once, via a trivial `echo $HOME` round trip.
+    """
+    if target.name == "local" or target.host in ("localhost", "127.0.0.1", ""):
+        return None
+    target_spec = f"{target.user}@{target.host}" if target.user else target.host
+    ssh_opts = ["-i", target.key_path] if target.key_path else []
+    result = run_command(
+        [
+            "ssh",
+            *ssh_opts,
+            "-o",
+            "BatchMode=yes",
+            "-o",
+            "ConnectTimeout=10",
+            target_spec,
+            "echo $HOME",
+        ],
+        check=False,
+    )
+    home = result.strip() if result else None
+    return home or None
+
+
+def get_remote_project_root(target: TargetNode, project_name: str) -> str | None:
+    """Returns the absolute remote project directory, matching the exact
+    destination convention `sync_project_to_target` rsyncs/tars into
+    (`~/.liferay-docker/projects/{project_name}`) -- there must be a
+    single source of truth for this path so the compose file's bind-mount
+    sources actually point at where the project files really land."""
+    home = resolve_remote_home(target)
+    if not home:
+        return None
+    return f"{home}/.liferay-docker/projects/{project_name}"
+
+
 def sync_project_to_target(
     project_path: Path,
     target_name: str | None = None,
