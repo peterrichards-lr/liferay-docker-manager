@@ -1440,12 +1440,12 @@ class TestRunInfoCredentialsMasking(unittest.TestCase):
         handler.manager.read_meta.return_value = {
             "container_name": "test-app",
             "tag": "7.4.3.132",
-            "admin_password": "supersecretpassword",
+            "admin_password": "supersecretpassword",  # pragma: allowlist secret
             "credentials": [
                 {
                     "type": "admin",
                     "email": "test@liferay.com",
-                    "password": "supersecretpassword",
+                    "password": "supersecretpassword",  # pragma: allowlist secret
                 }
             ],
         }
