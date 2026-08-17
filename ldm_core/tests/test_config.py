@@ -1,4 +1,5 @@
 import json
+import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -1377,6 +1378,69 @@ class TestConfigService(unittest.TestCase):
                 mock_parse_2.assert_called()
                 content_2 = target_ext.read_text()
                 self.assertIn("test.prop=2", content_2)
+
+
+class TestCmdConfigTargetKeyCollision(unittest.TestCase):
+    """LDM-#1151: `ldm config target <value>` used to silently write a
+    generic, unused config key -- get_active_target()/
+    resolve_target_context() never read it, only the `targets` registry's
+    `is_default` flag. This gave false confidence that a real routing
+    decision had changed when it hadn't."""
+
+    def setUp(self):
+        self.manager = MockConfigManager()
+        self.config = ConfigService(self.manager)
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp_dir.cleanup)
+        self.fake_home = Path(self.temp_dir.name)
+        self.home_patcher = patch(
+            "ldm_core.handlers.config.get_actual_home", return_value=self.fake_home
+        )
+        self.home_patcher.start()
+        self.addCleanup(self.home_patcher.stop)
+
+    def _config_path(self):
+        return self.fake_home / ".ldmrc"
+
+    @patch("ldm_core.handlers.config.UI.die", side_effect=SystemExit)
+    def test_setting_target_is_rejected_with_guidance(self, mock_die):
+        with self.assertRaises(SystemExit):
+            self.config.cmd_config(key="target", value="localhost")
+
+        mock_die.assert_called_once()
+        message = mock_die.call_args[0][0]
+        self.assertIn("ldm target use", message)
+        # Must not have written the decoy key.
+        self.assertFalse(self._config_path().exists())
+
+    @patch("ldm_core.handlers.config.UI.die", side_effect=SystemExit)
+    def test_setting_other_keys_is_unaffected(self, mock_die):
+        self.config.cmd_config(key="share_domain", value="dev.example.com")
+
+        mock_die.assert_not_called()
+        written = json.loads(self._config_path().read_text())
+        self.assertEqual(written["share_domain"], "dev.example.com")
+
+    @patch("ldm_core.handlers.config.UI.die", side_effect=SystemExit)
+    def test_removing_target_is_still_allowed(self, mock_die):
+        self._config_path().write_text(json.dumps({"target": "localhost"}))
+        self.manager.args.remove = True
+
+        self.config.cmd_config(key="target", value="localhost")
+
+        mock_die.assert_not_called()
+        written = json.loads(self._config_path().read_text())
+        self.assertNotIn("target", written)
+
+    @patch("ldm_core.handlers.config.UI.die", side_effect=SystemExit)
+    def test_unsetting_target_via_value_is_still_allowed(self, mock_die):
+        self._config_path().write_text(json.dumps({"target": "localhost"}))
+
+        self.config.cmd_config(key="target", value="unset")
+
+        mock_die.assert_not_called()
+        written = json.loads(self._config_path().read_text())
+        self.assertNotIn("target", written)
 
 
 if __name__ == "__main__":

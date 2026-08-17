@@ -1301,8 +1301,30 @@ class ConfigService:
             return
 
         if key and value:
+            is_removal = (
+                getattr(self.manager.args, "remove", False) or value.lower() == "unset"
+            )
+            # LDM-#1151: `target` is not a plain config value -- the actual
+            # default-target resolution (get_active_target()/
+            # resolve_target_context()) never reads this generic key at
+            # all, only the `targets` registry's `is_default` flag
+            # (maintained by `ldm target use`/`ldm target set`). Silently
+            # accepting `ldm config target <value>` here would print a
+            # convincing success message while having zero effect on which
+            # node commands actually run against -- worse than a no-op,
+            # since it gives false confidence a real routing decision
+            # changed. Removal is harmless (it's just clearing an inert,
+            # possibly stale key) so that's still allowed through.
+            if key == "target" and not is_removal:
+                UI.die(
+                    "'target' is not a plain config value -- it has no effect on "
+                    "which node commands run against. Use 'ldm target use "
+                    f"{value}' to change the default target, or 'ldm target set "
+                    f"<project> {value}' to pin a specific project."
+                )
+
             # Set specific key
-            if getattr(self.manager.args, "remove", False) or value.lower() == "unset":
+            if is_removal:
                 config.pop(key, None)
                 UI.success(f"Configuration key '{key}' removed.")
             else:
