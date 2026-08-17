@@ -52,6 +52,9 @@ class ReadinessService(BaseHandler):
         meta = self.manager.read_meta(root)
         host_name = meta.get("host_name", "localhost")
 
+        target_name = getattr(self.manager, "target", None) or meta.get("target")
+        docker_prefix = DockerService.get_docker_cmd_prefix(target_name)
+
         overall_start = time.time()
         overall_timeout = timeout
 
@@ -68,7 +71,7 @@ class ReadinessService(BaseHandler):
             import sys
 
             log_proc = subprocess.Popen(
-                ["docker", "logs", "-f", container_name],
+                [*docker_prefix, "logs", "-f", container_name],
                 stdout=sys.stdout,
                 stderr=sys.stderr,
             )
@@ -83,7 +86,7 @@ class ReadinessService(BaseHandler):
                 f"Timeout exhausted. Dumping last 200 lines of logs for {container_name}:"
             )
             subprocess.run(
-                ["docker", "logs", "--tail", "200", container_name],
+                [*docker_prefix, "logs", "--tail", "200", container_name],
                 stdout=sys.stderr,
                 stderr=sys.stderr,
                 check=False,
@@ -186,6 +189,7 @@ class ReadinessService(BaseHandler):
                         container_name,
                         ["ls", "/opt/liferay/deploy"],
                         check=False,
+                        target_name=target_name,
                     )
                     if res:
                         files = [f.strip() for f in res.splitlines() if f.strip()]
@@ -217,6 +221,7 @@ class ReadinessService(BaseHandler):
                         container_name,
                         ["sh", "-c", "echo 'lb -s' | telnet localhost 11311"],
                         check=False,
+                        target_name=target_name,
                     )
                     if res and "|" in res:
                         # Parse lb -s output
@@ -301,7 +306,7 @@ class ReadinessService(BaseHandler):
             try:
                 result = self.manager.run_command(
                     [
-                        "docker",
+                        *docker_prefix,
                         "stats",
                         "--no-stream",
                         "--format",
@@ -353,6 +358,10 @@ class ReadinessService(BaseHandler):
         """Wait for Liferay to become healthy and provide access information."""
         container_name = project_meta.get("container_name")
         project_id = project_meta.get("project_name") or container_name
+        target_name = getattr(self.manager, "target", None) or project_meta.get(
+            "target"
+        )
+        docker_prefix = DockerService.get_docker_cmd_prefix(target_name)
         root_path = (
             self.manager.detect_project_path(project_id, for_init=True)
             if project_id
@@ -406,7 +415,7 @@ class ReadinessService(BaseHandler):
                     # Proactive Log Monitoring: Look for ERRORS
                     try:
                         logs = self.manager.run_command(
-                            ["docker", "logs", "--tail", "1000", container_name],
+                            [*docker_prefix, "logs", "--tail", "1000", container_name],
                             check=False,
                             capture_output=True,
                         )
@@ -480,7 +489,7 @@ class ReadinessService(BaseHandler):
                 ready_by_logs = False
                 try:
                     logs = self.manager.run_command(
-                        ["docker", "logs", "--tail", "1000", container_name],
+                        [*docker_prefix, "logs", "--tail", "1000", container_name],
                         check=False,
                         capture_output=True,
                     )
@@ -528,7 +537,7 @@ class ReadinessService(BaseHandler):
 
                 status = self.manager.run_command(
                     [
-                        "docker",
+                        *docker_prefix,
                         "inspect",
                         "-f",
                         "{{.State.Health.Status}}",
@@ -555,7 +564,13 @@ class ReadinessService(BaseHandler):
                             try:
                                 # Fetch logs to catch the transition
                                 reindex_logs = self.manager.run_command(
-                                    ["docker", "logs", "--tail", "500", container_name],
+                                    [
+                                        *docker_prefix,
+                                        "logs",
+                                        "--tail",
+                                        "500",
+                                        container_name,
+                                    ],
                                     check=False,
                                     capture_output=True,
                                 )
@@ -590,7 +605,7 @@ class ReadinessService(BaseHandler):
                                 if time.time() - reindex_start > 45:
                                     stats = self.manager.run_command(
                                         [
-                                            "docker",
+                                            *docker_prefix,
                                             "stats",
                                             "--no-stream",
                                             "--format",
@@ -826,7 +841,9 @@ class ReadinessService(BaseHandler):
                     return True
 
                 # Fail fast if container exited
-                container_state = self.manager.get_container_status(container_name)
+                container_state = self.manager.get_container_status(
+                    container_name, target_name=target_name
+                )
                 if container_state == "exited":
                     UI.error(
                         f"Liferay container '{container_name}' exited unexpectedly."
