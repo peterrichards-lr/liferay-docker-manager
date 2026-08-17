@@ -435,7 +435,7 @@ class CommandRunner:
     def __init__(self, env: dict[str, str] | None = None):
         self.env = env
 
-    def run(  # noqa: C901, PLR0912, PLR0913, PLR0915, PLR0917
+    def run(  # noqa: C901, PLR0912, PLR0913, PLR0915
         self,
         cmd,
         shell: bool = False,
@@ -582,7 +582,7 @@ class CommandRunner:
 
 
 class DryRunCommandRunner(CommandRunner):
-    def run(  # noqa: PLR0913, PLR0917
+    def run(  # noqa: PLR0913
         self,
         cmd,
         shell: bool = False,
@@ -629,7 +629,7 @@ def set_runner(runner: CommandRunner | None) -> None:
     _CURRENT_RUNNER = runner
 
 
-def run_command(  # noqa: PLR0913, PLR0917
+def run_command(  # noqa: PLR0913
     cmd,
     shell: bool = False,
     capture_output: bool = True,
