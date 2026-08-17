@@ -16,6 +16,7 @@ class MockManager(BaseHandler):
         self.non_interactive = True
         self.dry_run = False
         self.verbose = False
+        self.target: str | None = None
 
         from typing import Any, cast
 
@@ -24,6 +25,9 @@ class MockManager(BaseHandler):
         self.defaults = MagicMock()
         self.defaults.get.return_value = "isolated"
         self.database: Any = None
+
+    def get_resource_path(self, name):
+        return Path(f"/tmp/{name}")
 
 
 class TestDatabaseQuerySafety(unittest.TestCase):
@@ -308,6 +312,61 @@ class TestDatabaseQueryCommand(unittest.TestCase):
                     if isinstance(cmd, list)
                 )
                 self.assertTrue(has_context)
+
+
+class TestSharedDatabaseCommandsResolvePerTarget(unittest.TestCase):
+    """Shared infra (cmd_start/cmd_stop) resolves --node/--target exactly
+    like any other command -- "shared" means shared among projects on the
+    *same* target, not a single global instance for every target. See
+    docs/explanation/remote-node-architecture.md §5."""
+
+    def setUp(self):
+        self.manager = MockManager()
+        self.manager.database = DatabaseService(self.manager)
+        self.mock_run = MagicMock(return_value="")
+        self.manager.run_command = self.mock_run  # type: ignore[method-assign]
+        self.exists_patcher = patch.object(Path, "exists", return_value=True)
+        self.exists_patcher.start()
+        self.addCleanup(self.exists_patcher.stop)
+
+    @patch("ldm_core.docker_service.get_active_target")
+    def test_cmd_start_uses_remote_context_when_target_explicit(self, mock_target):
+        from ldm_core.config import TargetNode
+
+        mock_target.return_value = TargetNode(name="aws-1", host="34.1.1.1")
+        self.manager.target = "aws-1"
+        self.manager.database.cmd_start()
+
+        call_args = self.mock_run.call_args[0][0]
+        self.assertIn("--context", call_args)
+        self.assertIn("aws-1", call_args)
+        self.assertIn("start", call_args)
+
+    @patch("ldm_core.docker_service.get_active_target")
+    def test_cmd_start_stays_local_without_explicit_target(self, mock_target):
+        from ldm_core.config import TargetNode
+
+        mock_target.return_value = TargetNode(
+            name="local", host="localhost", is_default=True
+        )
+        self.manager.target = None
+        self.manager.database.cmd_start()
+
+        call_args = self.mock_run.call_args[0][0]
+        self.assertNotIn("--context", call_args)
+
+    @patch("ldm_core.docker_service.get_active_target")
+    def test_cmd_stop_uses_remote_context_when_target_explicit(self, mock_target):
+        from ldm_core.config import TargetNode
+
+        mock_target.return_value = TargetNode(name="aws-2", host="5.6.7.8")
+        self.manager.target = "aws-2"
+        self.manager.database.cmd_stop()
+
+        call_args = self.mock_run.call_args[0][0]
+        self.assertIn("--context", call_args)
+        self.assertIn("aws-2", call_args)
+        self.assertIn("stop", call_args)
 
 
 if __name__ == "__main__":
