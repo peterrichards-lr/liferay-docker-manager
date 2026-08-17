@@ -92,6 +92,20 @@ class TestDatabaseQueryCommand(unittest.TestCase):
     def setUp(self):
         self.manager = MockManager()
         self.manager.database = DatabaseService(self.manager)
+        # Isolate from whatever persisted default target a *real* ~/.ldmrc
+        # on the machine running the tests happens to have --
+        # DockerService.get_docker_cmd_prefix() now always consults
+        # get_active_target(), even with no explicit target_name, so an
+        # unmocked call here would otherwise pick up e.g. a tester's own
+        # persisted "aws-2" default instead of "local".
+        from ldm_core.config import TargetNode
+
+        self.target_patcher = patch(
+            "ldm_core.docker_service.get_active_target",
+            return_value=TargetNode(name="local", host="localhost", is_default=True),
+        )
+        self.target_patcher.start()
+        self.addCleanup(self.target_patcher.stop)
 
     @patch("ldm_core.ui.UI.die")
     @patch("ldm_core.ui.UI.warning")
