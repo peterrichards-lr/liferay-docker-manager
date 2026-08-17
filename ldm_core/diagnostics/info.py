@@ -242,7 +242,7 @@ def run_info(  # noqa: C901, PLR0912, PLR0915
     UI.raw("")
 
     # Determine specific colors for known keys
-    keys_to_skip = ["root", "custom_env"]
+    keys_to_skip = ["root", "custom_env", "credentials"]
 
     # Inject extension share subdomains into meta for display
     if is_shared and share_subdomain:
@@ -262,6 +262,8 @@ def run_info(  # noqa: C901, PLR0912, PLR0915
         val_str = str(value)
         if val_str.lower() == "true":
             val_str = f"{UI.GREEN}{val_str}{UI.COLOR_OFF}"
+        elif "password" in key.lower() or "secret" in key.lower():
+            val_str = f"{UI.DIM}[hidden]{UI.COLOR_OFF}"
         elif val_str.lower() == "false":
             val_str = f"{UI.BYELLOW}{val_str}{UI.COLOR_OFF}"
         else:

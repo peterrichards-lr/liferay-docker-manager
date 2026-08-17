@@ -1423,3 +1423,45 @@ class TestDoctorEnvironmentMarkers(unittest.TestCase):
         fake_platform = "fakeos" if sys.platform != "fakeos" else "otheros"
         self.assertFalse(_evaluate_marker(f"sys_platform == '{fake_platform}'"))
         self.assertTrue(_evaluate_marker(f"sys_platform != '{fake_platform}'"))
+
+
+class TestRunInfoCredentialsMasking(unittest.TestCase):
+    """Verifies that ldm info suppresses raw credentials array and masks sensitive password keys."""
+
+    def test_run_info_credentials_masked_in_metadata(self):
+        from pathlib import Path
+        from unittest.mock import MagicMock, patch
+
+        from ldm_core.diagnostics.info import run_info
+
+        handler = MagicMock()
+        handler.manager.detect_project_path.return_value = Path("/tmp/test-app")
+        handler.manager.parse_version.return_value = (7, 4, 3, 132)
+        handler.manager.read_meta.return_value = {
+            "container_name": "test-app",
+            "tag": "7.4.3.132",
+            "admin_password": "supersecretpassword",  # pragma: allowlist secret
+            "credentials": [
+                {
+                    "type": "admin",
+                    "email": "test@liferay.com",
+                    "password": "supersecretpassword",  # pragma: allowlist secret
+                }
+            ],
+        }
+
+        with (
+            patch("ldm_core.ui.UI.raw") as mock_raw,
+            patch(
+                "ldm_core.docker_service.DockerService.get_status",
+                return_value="stopped",
+            ),
+            patch("ldm_core.config.load_targets", return_value={}),
+        ):
+            run_info(handler, "test-app")
+
+            output = "\n".join(
+                call[0][0] for call in mock_raw.call_args_list if call[0]
+            )
+            self.assertNotIn("credentials", output)
+            self.assertNotIn("supersecretpassword", output)
