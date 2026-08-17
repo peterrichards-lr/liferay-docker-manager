@@ -26,6 +26,7 @@ nav:
     - Multi-Compose Architecture: how-to/multi_compose.md
     - Runtime Overrides: how-to/runtime_overrides.md
     - AI MCP Guide: how-to/ai_mcp_guide.md
+    - Multi-Node Orchestration: how-to/multi_node_orchestration.md
     - Development: how-to/development.md
   - Reference:
     - Configuration: reference/configuration.md
@@ -41,6 +42,7 @@ nav:
     - Logging Strategy: reference/logging-strategy.md
   - Explanation:
     - Architecture: explanation/architecture.md
+    - Remote Node Architecture: explanation/remote-node-architecture.md
     - Properties: explanation/properties.md
     - Conventions: explanation/conventions.md
     - FAQ: explanation/faq.md
