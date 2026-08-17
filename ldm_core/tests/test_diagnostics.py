@@ -223,6 +223,24 @@ class TestDiagnostics(unittest.TestCase):
 
     @patch("ldm_core.diagnostics.doctor.DoctorRunner.add_hint")
     @patch("ldm_core.diagnostics.doctor.run_command")
+    def test_check_elasticsearch_watermarks_uses_docker_prefix(
+        self, mock_run, mock_hint
+    ):
+        """LDM-#1090/#1133/#1165: shared search's health check must ask the
+        same engine setup_global_search() actually provisioned it on, not
+        always the local daemon."""
+        mock_run.return_value = ""
+        _check_elasticsearch_watermarks(
+            self.manager.diagnostics,
+            mock_hint,
+            docker_prefix=["docker", "--context", "aws-1"],
+        )
+        for call in mock_run.call_args_list:
+            self.assertIn("--context", call.args[0])
+            self.assertIn("aws-1", call.args[0])
+
+    @patch("ldm_core.diagnostics.doctor.DoctorRunner.add_hint")
+    @patch("ldm_core.diagnostics.doctor.run_command")
     def test_check_elasticsearch_watermarks_flood(self, mock_run, mock_hint):
         runner = DoctorRunner(self.manager.diagnostics)
         mock_run.side_effect = [
@@ -332,6 +350,36 @@ class TestDiagnostics(unittest.TestCase):
             runner._check_dangling_and_print()
             self.assertTrue(mock_exit.called)
 
+    @patch("ldm_core.docker_service.get_active_target")
+    def test_check_dangling_and_print_redirects_to_remote_node(self, mock_target):
+        """LDM-#1090/#1133: disk space/reclaimable-resources are properties
+        of whichever Docker engine you ask -- with an explicit --node, both
+        the 'docker system df' call and _check_absolute_disk_space's own
+        'docker run ... df' must reflect the resolved remote engine, not
+        always the local daemon."""
+        from ldm_core.config import TargetNode
+
+        mock_target.return_value = TargetNode(name="aws-1", host="34.1.1.1")
+        self.manager.target = "aws-1"
+        runner = DoctorRunner(self.manager.diagnostics)
+        runner.results.append(("Test", "Warning", "warn"))
+
+        with (
+            patch(
+                "ldm_core.diagnostics.doctor.run_command", return_value=""
+            ) as mock_run,
+            patch("sys.exit"),
+        ):
+            self.manager.args.bundle = False
+            runner._check_dangling_and_print()
+
+        calls_with_context = [
+            c for c in mock_run.call_args_list if "--context" in c.args[0]
+        ]
+        self.assertTrue(calls_with_context, "No run_command call used --context aws-1")
+        for c in calls_with_context:
+            self.assertIn("aws-1", c.args[0])
+
     def test_check_absolute_disk_space_warns_below_threshold(self):
         # LDM-#1095: docker system df's "Reclaimable" figure says nothing
         # when the disk is genuinely running out (nothing reclaimable, it's
@@ -378,6 +426,26 @@ class TestDiagnostics(unittest.TestCase):
         self.assertEqual(
             [r for r in runner.results if r[0] == "Disk Space (Available)"], []
         )
+
+    def test_check_absolute_disk_space_uses_remote_docker_prefix(self):
+        """LDM-#1090/#1133: disk space is a property of whichever engine
+        you ask -- with docker_prefix given (from an explicit --node), the
+        throwaway 'df' container must run there, not always locally."""
+        runner = DoctorRunner(self.manager.diagnostics)
+        df_output = (
+            "Filesystem           1024-blocks    Used Available Capacity Mounted on\n"
+            "overlay             102624184 20469644  76895380      21% /"
+        )
+        with patch(
+            "ldm_core.diagnostics.doctor.run_command", return_value=df_output
+        ) as mock_run:
+            runner._check_absolute_disk_space(
+                docker_prefix=["docker", "--context", "aws-1"]
+            )
+
+        call_args = mock_run.call_args[0][0]
+        self.assertIn("--context", call_args)
+        self.assertIn("aws-1", call_args)
 
     @patch("ldm_core.diagnostics.doctor.get_actual_home", return_value=Path("/tmp"))
     @patch("pathlib.Path.exists", return_value=True)

@@ -1046,9 +1046,22 @@ class DoctorRunner:
             if platform.system().lower() == "darwin":
                 global_services.append(("liferay-docker-proxy", "Docker Socket Bridge"))
 
+            # LDM-#1090/#1133/#1165: shared infra resolves to whichever
+            # target is active for this invocation (a project on a remote
+            # node has its shared search/proxy *on that node*, not always
+            # local -- see docs/explanation/remote-node-architecture.md
+            # §5), so these health checks must ask the same engine
+            # setup_global_search()/setup_global_database() actually use,
+            # not always the local daemon.
+            infra_target_name = getattr(self.manager, "target", None)
+            from ldm_core.docker_service import DockerService
+
+            infra_docker_prefix = DockerService.get_docker_cmd_prefix(infra_target_name)
+
             for container, label in global_services:
                 is_running = run_command(
-                    ["docker", "ps", "-q", "-f", f"name=^{container}$"], check=False
+                    [*infra_docker_prefix, "ps", "-q", "-f", f"name=^{container}$"],
+                    check=False,
                 )
                 if is_running:
                     status = "Running"
@@ -1081,7 +1094,7 @@ class DoctorRunner:
 
                         running_ver = run_command(
                             [
-                                "docker",
+                                *infra_docker_prefix,
                                 "inspect",
                                 "-f",
                                 "{{.Config.Image}}",
@@ -1097,6 +1110,13 @@ class DoctorRunner:
                             )
 
                     if container == "liferay-docker-proxy":
+                        # Deliberately always local, unlike the rest of this
+                        # loop: this macOS-only socket bridge (see the
+                        # platform.system() == "darwin" guard above where
+                        # this entry is added) is a concept specific to
+                        # *this* orchestrating machine's Docker Desktop/
+                        # Colima setup -- a remote Linux target has no
+                        # equivalent to redirect to.
                         inspect = run_command(
                             [
                                 "docker",
@@ -1120,7 +1140,7 @@ class DoctorRunner:
                             # 1. Connectivity Check
                             search_res = run_command(
                                 [
-                                    "docker",
+                                    *infra_docker_prefix,
                                     "exec",
                                     "liferay-search-global",
                                     "curl",
@@ -1142,7 +1162,9 @@ class DoctorRunner:
                             else:
                                 # 2. Disk Watermark / Blocked Indices Check
                                 watermark_status = _check_elasticsearch_watermarks(
-                                    self.handler, self.add_hint
+                                    self.handler,
+                                    self.add_hint,
+                                    docker_prefix=infra_docker_prefix,
                                 )
                                 if watermark_status:
                                     status = watermark_status
@@ -1151,7 +1173,14 @@ class DoctorRunner:
                             pass
 
                     log_status, log_ok = _check_container_health_logs(
-                        self.handler, container, add_hint=self.add_hint
+                        self.handler,
+                        container,
+                        add_hint=self.add_hint,
+                        target_name=(
+                            infra_target_name
+                            if container != "liferay-docker-proxy"
+                            else None
+                        ),
                     )
                     if log_status:
                         status = log_status
@@ -1829,7 +1858,7 @@ class DoctorRunner:
             except Exception:
                 pass
 
-    def _check_absolute_disk_space(self):
+    def _check_absolute_disk_space(self, docker_prefix=None):
         """LDM-#1095: `docker system df`'s Reclaimable figure only reports
         unused Docker resources -- it says nothing about actual free space,
         and reports nothing at all when the disk is genuinely running out
@@ -1846,11 +1875,17 @@ class DoctorRunner:
         host-side shutil.disk_usage() check would silently pass while the
         VM's disk is the one actually full (confirmed directly against a
         real Colima setup during the #1083 investigation this same day).
+
+        `docker_prefix` (e.g. `["docker", "--context", "aws-1"]`) redirects
+        this to a remote target's engine -- disk space is a property of
+        whichever engine you're asking, so an explicit --node/--target
+        should reflect that engine's disk, not always the local one.
         """
         min_free_bytes = 3 * 1024 * 1024 * 1024  # 3GB
+        docker_prefix = docker_prefix or ["docker"]
         try:
             df_out = run_command(
-                ["docker", "run", "--rm", "alpine", "df", "-P", "-k", "/"],
+                [*docker_prefix, "run", "--rm", "alpine", "df", "-P", "-k", "/"],
                 check=False,
             )
             if not df_out:
@@ -1892,10 +1927,29 @@ class DoctorRunner:
             )
 
     def _check_dangling_and_print(self):  # noqa: C901, PLR0912, PLR0915
+        # LDM-#1090/#1133: disk space/reclaimable-resources are properties
+        # of whichever Docker engine you ask -- redirect both to an
+        # explicit --node/--target's engine instead of always the local
+        # one, matching _check_docker_runtime's own remote redirect.
+        explicit_target_name = getattr(self.manager, "target", None)
+        docker_prefix = None
+        if explicit_target_name and explicit_target_name != "local":
+            from ldm_core.config import get_active_target
+            from ldm_core.docker_service import DockerService
+
+            active_target = get_active_target(explicit_target_name)
+            if active_target.name != "local" and active_target.host not in (
+                "localhost",
+                "127.0.0.1",
+                "",
+            ):
+                docker_prefix = DockerService.get_docker_cmd_prefix(active_target.name)
+
         # 4.4 Dangling Docker Resources Check
-        self._check_absolute_disk_space()
+        self._check_absolute_disk_space(docker_prefix=docker_prefix)
         df_out = run_command(
-            ["docker", "system", "df", "--format", "{{json .}}"], check=False
+            [*(docker_prefix or ["docker"]), "system", "df", "--format", "{{json .}}"],
+            check=False,
         )
         if df_out:
             reclaimable_bytes = 0
@@ -2409,14 +2463,15 @@ def _check_lcp_cli(self):
         return None, None
 
 
-def _check_elasticsearch_watermarks(self, add_hint):
+def _check_elasticsearch_watermarks(self, add_hint, docker_prefix=None):
     """Checks if Elasticsearch is blocking indices due to disk watermarks."""
     search_name = "liferay-search-global"
+    docker_prefix = docker_prefix or ["docker"]
     try:
         # 1. Check for unassigned shards and allocation decisions
         explain_raw = run_command(
             [
-                "docker",
+                *docker_prefix,
                 "exec",
                 search_name,
                 "curl",
@@ -2453,7 +2508,7 @@ def _check_elasticsearch_watermarks(self, add_hint):
         # 2. Check for explicitly read-only indices
         settings_raw = run_command(
             [
-                "docker",
+                *docker_prefix,
                 "exec",
                 search_name,
                 "curl",
