@@ -1518,7 +1518,27 @@ class ExecutionStage(PipelineStage):
                         return None
                     time.sleep(2)
 
-            if platform.system().lower() == "linux" or getattr(
+            # LDM-#1090/#1133: this used to always reclaim permissions on
+            # the LOCAL path via a plain local `docker run`, gated only on
+            # *this* machine's OS -- for a project on a remote target, the
+            # files that matter are the already-synced remote copies (this
+            # host's OS is irrelevant to them), and a plain local `docker
+            # run` can't even see them. Redirect via the same
+            # docker_prefix/map_path the rest of this stage already uses
+            # for a remote target; otherwise keep the existing local-only
+            # gating unchanged.
+            target_context = context.get("target_context")
+            if target_context is not None and target_context.is_remote:
+                from ldm_core.utils import reclaim_volume_permissions
+
+                for p_key in ["deploy", "logs", "osgi", "files"]:
+                    if p_key in paths:
+                        reclaim_volume_permissions(
+                            target_context.map_path(paths[p_key]),
+                            chmod_val="777",
+                            docker_prefix=target_context.docker_prefix,
+                        )
+            elif platform.system().lower() == "linux" or getattr(
                 manager.args, "fix_permissions", False
             ):
                 from ldm_core.utils import reclaim_volume_permissions

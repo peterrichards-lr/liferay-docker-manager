@@ -154,6 +154,68 @@ class TestRunPipeline(unittest.TestCase):
         mock_sync.assert_called_once_with(Path("/tmp/proj"), target_name="aws-2")
         self.context.manager.run_command.assert_not_called()
 
+    def test_execution_stage_reclaims_permissions_on_remote_mapped_path(self):
+        """LDM-#1090/#1133: the permission-reclaim step used to always run
+        a plain local `docker run -v {local_path}:/workspace alpine ...`,
+        gated only on *this* machine's OS -- meaningless (and unreachable)
+        for a project on a remote target, whose relevant files are the
+        already-synced remote copies. With a remote TargetContext, this
+        must redirect via docker_prefix and the remote-mapped path."""
+        from ldm_core.config import TargetContext, TargetNode
+
+        target_ctx = TargetContext(
+            target=TargetNode(name="aws-1", host="34.1.1.1"),
+            is_remote=True,
+            docker_prefix=["docker", "--context", "aws-1"],
+            compose_prefix=["docker", "--context", "aws-1", "compose"],
+            local_root=Path("/tmp/proj"),
+            remote_root="/home/ec2-user/.liferay-docker/projects/proj",
+        )
+
+        self.context.set("dry_run", True)
+        self.context.set("no_up", False)
+        self.context.set(
+            "paths",
+            {
+                "root": Path("/tmp/proj"),
+                "deploy": Path("/tmp/proj/deploy"),
+                "logs": Path("/tmp/proj/logs"),
+                "osgi": Path("/tmp/proj/osgi"),
+                "files": Path("/tmp/proj/files"),
+            },
+        )
+        self.context.set("target_context", target_ctx)
+        # db_type="hypersonic" (no separate DB container) so this never
+        # enters the dependency-readiness wait loop -- avoids a 60s real
+        # sleep spin against a MagicMock container status in this test.
+        self.context.set(
+            "project_meta", {"container_name": "test-project", "db_type": "hypersonic"}
+        )
+        self.context.manager.args.force_recreate = False
+        self.context.manager.args.rebuild = False
+        self.context.manager.args.quiet = True
+        self.context.manager.args.no_wait = True
+        self.context.manager.args.follow = False
+
+        with (
+            patch("ldm_core.config.sync_project_to_target"),
+            patch(
+                "ldm_core.utils.reclaim_volume_permissions", return_value=True
+            ) as mock_reclaim,
+        ):
+            stage = ExecutionStage()
+            stage.execute(self.context)
+
+        self.assertEqual(mock_reclaim.call_count, 4)
+        for call in mock_reclaim.call_args_list:
+            reclaimed_path = call.args[0]
+            self.assertTrue(
+                str(reclaimed_path).startswith(
+                    "/home/ec2-user/.liferay-docker/projects/proj"
+                )
+            )
+            self.assertEqual(call.kwargs.get("docker_prefix"), target_ctx.docker_prefix)
+
     def test_execution_stage_skips_sync_for_local_target_context(self):
         from ldm_core.config import TargetContext, TargetNode
 
