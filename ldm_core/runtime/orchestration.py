@@ -140,10 +140,20 @@ class OrchestrationService(BaseHandler):
             UI.detail("No projects found to stop.")
             return
 
-        compose_base = get_compose_cmd()
+        # LDM-#1090/#1133: get_compose_cmd() always returns a plain local
+        # ["docker", "compose"] prefix regardless of the project's target --
+        # a project running on a remote node would have this command sent
+        # to the LOCAL Docker daemon instead, where the containers don't
+        # exist. Resolve per-project, matching cmd_start's own (correct)
+        # pattern, which this was inconsistent with.
+        from ldm_core.docker_service import DockerService
+
         capture = not (UI.INFO_MODE or UI.VERBOSE)
         for root in targets:
             UI.detail(f"Stopping project: {root.name}...")
+            meta = self.manager.read_meta(root)
+            target_name = getattr(self.manager, "target", None) or meta.get("target")
+            compose_base = DockerService.get_compose_cmd_prefix(target_name)
             cmd = [*compose_base, "stop"]
             if service:
                 cmd.append(service)
@@ -165,10 +175,15 @@ class OrchestrationService(BaseHandler):
             UI.detail("No projects found to restart.")
             return
 
-        compose_base = get_compose_cmd()
+        # LDM-#1090/#1133: see cmd_stop above -- same issue, same fix.
+        from ldm_core.docker_service import DockerService
+
         capture = not (UI.INFO_MODE or UI.VERBOSE)
         for root in targets:
             UI.detail(f"Restarting project: {root.name}...")
+            meta = self.manager.read_meta(root)
+            target_name = getattr(self.manager, "target", None) or meta.get("target")
+            compose_base = DockerService.get_compose_cmd_prefix(target_name)
             if force_recreate:
                 cmd = [
                     *compose_base,
@@ -240,7 +255,19 @@ class OrchestrationService(BaseHandler):
                     f"  {UI.BYELLOW}- [Dry Run] Would run docker compose down{' -v' if volumes or delete else ''} --remove-orphans in {root.name}{UI.COLOR_OFF}"
                 )
             else:
-                compose_base = get_compose_cmd()
+                # LDM-#1090/#1133: get_compose_cmd()/raw "docker" calls below
+                # always target the local daemon regardless of this
+                # project's actual target -- a project running remotely
+                # would leave its containers running untouched while this
+                # reports success. Resolve per-project, matching cmd_start.
+                from ldm_core.docker_service import DockerService
+
+                meta_for_target = self.manager.read_meta(root)
+                target_name = getattr(self.manager, "target", None) or (
+                    meta_for_target.get("target") if meta_for_target else None
+                )
+                compose_base = DockerService.get_compose_cmd_prefix(target_name)
+                docker_prefix = DockerService.get_docker_cmd_prefix(target_name)
                 capture = not (UI.INFO_MODE or UI.VERBOSE)
                 cmd = [*compose_base, "down"]
                 if volumes or delete:
@@ -266,7 +293,7 @@ class OrchestrationService(BaseHandler):
                     ]:
                         ps_output = self.manager.run_command(
                             [
-                                "docker",
+                                *docker_prefix,
                                 "ps",
                                 "-a",
                                 "--filter",
@@ -283,7 +310,7 @@ class OrchestrationService(BaseHandler):
                             ]
                             if c_ids:
                                 self.manager.run_command(
-                                    ["docker", "rm", "-f", *c_ids],
+                                    [*docker_prefix, "rm", "-f", *c_ids],
                                     check=False,
                                     capture_output=True,
                                 )
@@ -583,7 +610,14 @@ class OrchestrationService(BaseHandler):
         c_name = meta.get("container_name") or root.name
         from ldm_core.docker_service import DockerService
 
-        is_running = DockerService.is_running(c_name)
+        # LDM-#1090/#1133: is_running/volume ls/volume rm all used to run
+        # unconditionally against the local Docker daemon -- for a project
+        # running on a remote node, this would report "not running" (the
+        # container lives remotely) and silently fail to find/remove its
+        # volumes there.
+        node_target = getattr(self.manager, "target", None) or meta.get("target")
+        is_running = DockerService.is_running(c_name, target_name=node_target)
+        docker_prefix = DockerService.get_docker_cmd_prefix(node_target)
 
         # LDM-388: If target is 'all', we must 'down -v' to destroy anonymous DB volumes
         if target == "all":
@@ -605,7 +639,14 @@ class OrchestrationService(BaseHandler):
                 # Check if this volume exists in Docker
                 try:
                     res = self.manager.run_command(
-                        ["docker", "volume", "ls", "-q", "-f", f"name=^{volume_name}$"],
+                        [
+                            *docker_prefix,
+                            "volume",
+                            "ls",
+                            "-q",
+                            "-f",
+                            f"name=^{volume_name}$",
+                        ],
                         check=False,
                     )
                     if res.strip():
@@ -613,7 +654,8 @@ class OrchestrationService(BaseHandler):
                             f"  - Removing Docker volume {UI.CYAN}{volume_name}{UI.COLOR_OFF}..."
                         )
                         self.manager.run_command(
-                            ["docker", "volume", "rm", "-f", volume_name], check=False
+                            [*docker_prefix, "volume", "rm", "-f", volume_name],
+                            check=False,
                         )
                 except Exception as e:
                     UI.detail(f"Warning removing docker volume {volume_name}: {e}")

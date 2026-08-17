@@ -142,9 +142,13 @@ class TestOrchestration(unittest.TestCase):
 
             self.assertEqual(res, "my-project-db-1")
 
-    @patch("ldm_core.runtime.orchestration.get_compose_cmd")
-    def test_cmd_stop_basic(self, mock_compose):
-        mock_compose.return_value = ["docker", "compose"]
+    @patch("ldm_core.docker_service.get_active_target")
+    def test_cmd_stop_basic(self, mock_target):
+        from ldm_core.config import TargetNode
+
+        mock_target.return_value = TargetNode(
+            name="local", host="localhost", is_default=True
+        )
         with patch.object(BaseHandler, "run_command") as mock_run:
             self.handler.cmd_stop("test")
             # Verify stop command was issued
@@ -152,19 +156,67 @@ class TestOrchestration(unittest.TestCase):
             call_args = mock_run.call_args[0][0]
             self.assertIn("stop", call_args)
 
-    @patch("ldm_core.runtime.orchestration.get_compose_cmd")
-    def test_cmd_restart_basic(self, mock_compose):
-        mock_compose.return_value = ["docker", "compose"]
+    @patch("ldm_core.docker_service.get_active_target")
+    def test_cmd_stop_remote_target(self, mock_target):
+        """LDM-#1090/#1133: cmd_stop must resolve the project's own target
+        (via meta["target"]), not always the local daemon -- previously it
+        used the non-target-aware get_compose_cmd(), which always
+        hardcoded a local prefix regardless of where the project actually
+        runs."""
+        from ldm_core.config import TargetNode
+
+        mock_target.return_value = TargetNode(name="aws-1", host="34.1.1.1")
+        with (
+            patch.object(
+                self.handler.manager, "read_meta", return_value={"target": "aws-1"}
+            ),
+            patch.object(BaseHandler, "run_command") as mock_run,
+        ):
+            self.handler.cmd_stop("test")
+            call_args = mock_run.call_args[0][0]
+            self.assertIn("--context", call_args)
+            self.assertIn("aws-1", call_args)
+            self.assertIn("stop", call_args)
+
+    @patch("ldm_core.docker_service.get_active_target")
+    def test_cmd_restart_basic(self, mock_target):
+        from ldm_core.config import TargetNode
+
+        mock_target.return_value = TargetNode(
+            name="local", host="localhost", is_default=True
+        )
         with patch.object(BaseHandler, "run_command") as mock_run:
             self.handler.cmd_restart("test")
             mock_run.assert_called()
             call_args = mock_run.call_args[0][0]
             self.assertIn("restart", call_args)
 
-    @patch("ldm_core.runtime.orchestration.get_compose_cmd")
+    @patch("ldm_core.docker_service.get_active_target")
+    def test_cmd_restart_remote_target(self, mock_target):
+        """LDM-#1090/#1133: same issue/fix as test_cmd_stop_remote_target."""
+        from ldm_core.config import TargetNode
+
+        mock_target.return_value = TargetNode(name="aws-2", host="5.6.7.8")
+        with (
+            patch.object(
+                self.handler.manager, "read_meta", return_value={"target": "aws-2"}
+            ),
+            patch.object(BaseHandler, "run_command") as mock_run,
+        ):
+            self.handler.cmd_restart("test")
+            call_args = mock_run.call_args[0][0]
+            self.assertIn("--context", call_args)
+            self.assertIn("aws-2", call_args)
+            self.assertIn("restart", call_args)
+
+    @patch("ldm_core.docker_service.get_active_target")
     @patch("ldm_core.runtime.orchestration.shutil.rmtree")
-    def test_cmd_down_with_delete(self, mock_rmtree, mock_compose):
-        mock_compose.return_value = ["docker", "compose"]
+    def test_cmd_down_with_delete(self, mock_rmtree, mock_target):
+        from ldm_core.config import TargetNode
+
+        mock_target.return_value = TargetNode(
+            name="local", host="localhost", is_default=True
+        )
         with (
             patch.object(BaseHandler, "run_command"),
             patch.object(Path, "exists", return_value=True),
@@ -173,10 +225,40 @@ class TestOrchestration(unittest.TestCase):
             # Verify down command AND directory deletion
             self.assertTrue(mock_rmtree.called)
 
-    @patch("ldm_core.runtime.orchestration.get_compose_cmd")
+    @patch("ldm_core.docker_service.get_active_target")
+    def test_cmd_down_remote_target(self, mock_target):
+        """LDM-#1090/#1133: cmd_down's compose-down and orphan-sweep docker
+        ps/rm calls must all target the project's own resolved target, not
+        always the local daemon."""
+        from ldm_core.config import TargetNode
+
+        mock_target.return_value = TargetNode(name="aws-1", host="34.1.1.1")
+        with (
+            patch.object(
+                self.handler.manager, "read_meta", return_value={"target": "aws-1"}
+            ),
+            patch.object(BaseHandler, "run_command") as mock_run,
+            patch.object(Path, "exists", return_value=True),
+        ):
+            mock_run.return_value = ""
+            self.handler.cmd_down("test")
+            calls_with_context = [
+                c for c in mock_run.call_args_list if "--context" in c.args[0]
+            ]
+            self.assertTrue(
+                calls_with_context, "No run_command call used --context aws-1"
+            )
+            for c in calls_with_context:
+                self.assertIn("aws-1", c.args[0])
+
+    @patch("ldm_core.docker_service.get_active_target")
     @patch("ldm_core.runtime.orchestration.shutil.rmtree")
-    def test_cmd_down_dry_run(self, mock_rmtree, mock_compose):
-        mock_compose.return_value = ["docker", "compose"]
+    def test_cmd_down_dry_run(self, mock_rmtree, mock_target):
+        from ldm_core.config import TargetNode
+
+        mock_target.return_value = TargetNode(
+            name="local", host="localhost", is_default=True
+        )
         self.handler.dry_run = True
 
     def test_cmd_start_remote_target(self) -> None:
@@ -281,6 +363,42 @@ class TestOrchestration(unittest.TestCase):
             self.assertTrue(res)
             self.assertFalse(mock_rmtree.called)
             self.assertFalse(mock_down.called)
+
+    @patch("ldm_core.docker_service.get_active_target")
+    def test_cmd_reset_remote_target(self, mock_target) -> None:
+        """LDM-#1090/#1133: cmd_reset's is_running check and volume ls/rm
+        calls must resolve the project's own target, not always the local
+        daemon."""
+        from ldm_core.config import TargetNode
+
+        mock_target.return_value = TargetNode(name="aws-1", host="34.1.1.1")
+        with (
+            patch.object(
+                self.handler, "detect_project_path", return_value=self.tmp_dir
+            ),
+            patch.object(
+                self.handler.manager,
+                "read_meta",
+                return_value={"target": "aws-1", "container_name": "test-runtime"},
+            ),
+            patch.object(
+                self.handler,
+                "setup_paths",
+                return_value={"data": self.tmp_dir / "nonexistent"},
+            ),
+            patch.object(BaseHandler, "run_command") as mock_run,
+        ):
+            mock_run.return_value = ""
+            self.handler.handler.orchestration.cmd_reset("test", target="data")
+
+            calls_with_context = [
+                c for c in mock_run.call_args_list if "--context" in c.args[0]
+            ]
+            self.assertTrue(
+                calls_with_context, "No run_command call used --context aws-1"
+            )
+            for c in calls_with_context:
+                self.assertIn("aws-1", c.args[0])
 
     @patch("ldm_core.ui.UI.error")
     @patch("ldm_core.ui.UI.confirm", return_value=True)
