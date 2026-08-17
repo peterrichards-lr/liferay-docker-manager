@@ -203,6 +203,65 @@ class TestReadiness(unittest.TestCase):
             # Verify it completed successfully
             mock_success.assert_any_call("Liferay is ready  (2m 15s)")
 
+    @patch("ldm_core.ui.UI.raw")
+    @patch("ldm_core.ui.UI.warning")
+    @patch("ldm_core.ui.UI.success")
+    def test_wait_for_ready_masks_admin_password_in_completion_banner(
+        self, mock_success, mock_warning, mock_raw
+    ):
+        """LDM-#1161: the completion banner used to interpolate the real
+        password wrapped in the ANSI 'conceal' escape (UI.HIDDEN,
+        \\033[8m), relying on terminal support that many common terminals
+        don't have -- so a custom admin password sourced from
+        portal-ext.properties (or anywhere else) could render in fully
+        visible clear text. The banner must never pass the real password
+        to UI.raw() at all; it should print a fixed placeholder mask
+        instead, regardless of the password's origin/value."""
+
+        def mock_time_side_effect():
+            yield 1000
+            yield 1035
+            yield 1035
+            yield 1035
+            yield 1035
+
+        def mock_run_command_side_effect(cmd, **kwargs):
+            if "logs" in cmd:
+                return "INFO: starting\n"
+            if "inspect" in cmd:
+                return "healthy"
+            return ""
+
+        secret_password = "correct-horse-battery-staple"  # pragma: allowlist secret
+        self.handler.args.total_start = "900"
+        self.handler.args.browser = False
+        with (
+            patch("time.time") as mock_time,
+            patch.object(
+                self.handler, "run_command", side_effect=mock_run_command_side_effect
+            ),
+            patch.object(self.handler.infra, "thaw_elasticsearch", return_value=True),
+        ):
+            mock_time.side_effect = mock_time_side_effect()
+
+            project_meta = {
+                "container_name": "test-container",
+                "credentials": [
+                    {
+                        "type": "admin",
+                        "email": "test@liferay.com",
+                        "password": secret_password,  # pragma: allowlist secret
+                    }
+                ],
+            }
+            self.handler.handler.readiness._wait_for_ready(project_meta, "test.local")
+
+        all_output = "\n".join(
+            str(call.args[0]) if call.args else "" for call in mock_raw.call_args_list
+        )
+        self.assertNotIn(secret_password, all_output)
+        self.assertIn("••••••••", all_output)
+
     @patch("ldm_core.ui.UI.success")
     @patch("ldm_core.ui.UI.info")
     def test_wait_for_ready_with_reindex(self, mock_info, mock_success):
