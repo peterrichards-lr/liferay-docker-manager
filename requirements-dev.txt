@@ -1,4 +1,4 @@
-ruff==0.16.2
+ruff==0.16.3
 pre-commit
 bandit
 pip-audit
