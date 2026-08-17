@@ -290,7 +290,7 @@ class TestTargetCLIHandlers(unittest.TestCase):
 class TestTargetContext(unittest.TestCase):
     """Unit tests for TargetContext / resolve_target_context() -- the single
     resolver every command is meant to call, per
-    docs/design/remote-node-architecture.md. Every test isolates
+    docs/explanation/remote-node-architecture.md. Every test isolates
     config_path so it never depends on the real ~/.ldmrc."""
 
     def setUp(self) -> None:
@@ -350,13 +350,62 @@ class TestTargetContext(unittest.TestCase):
         save_target_node(node, self.config_path)
 
         meta: dict = {}
-        with patch("ldm_core.utils.write_meta") as mock_write_meta:
+        with (
+            patch("ldm_core.utils.write_meta") as mock_write_meta,
+            # Avoid a real (slow, environment-dependent) SSH round trip to
+            # this fixture's fake IP -- this test is about the pinning
+            # write-back, not remote home-directory resolution.
+            patch(
+                "ldm_core.config.get_remote_project_root",
+                return_value="/home/ec2-user/.liferay-docker/projects/myproj",
+            ),
+        ):
             resolve_target_context(
                 meta=meta,
                 project_root=self.project_root,
                 config_path=self.config_path,
             )
-            mock_write_meta.assert_called_once_with(self.project_root, meta)
+            # write_meta() takes the actual meta *file* path, not the bare
+            # project directory -- project_root must be resolved through
+            # resolve_meta_file_path() first (see LDM-#1147 Phase 2; this
+            # test used to assert the pre-fix, directory-clobbering call).
+            mock_write_meta.assert_called_once_with(self.project_root / "meta", meta)
+
+    def test_pin_false_resolves_correctly_without_writing_back(self) -> None:
+        """pin=False must still resolve correctly (falling through to the
+        persisted default, honoring an explicit target, etc.) but must
+        never write into `meta` or touch disk -- for callers (like
+        ComposerService.write_docker_compose()'s standalone fallback) that
+        need a correct resolution without taking on the pinning
+        decision."""
+        from ldm_core.config import resolve_target_context
+
+        node = TargetNode(name="aws-2", host="13.1.1.1", is_default=True)
+        save_target_node(node, self.config_path)
+
+        meta: dict = {}
+        with (
+            patch("ldm_core.utils.write_meta") as mock_write_meta,
+            # Avoid a real SSH round trip to the fixture's fake IP -- this
+            # test is about the pin=False write-back behavior, not remote
+            # home-directory resolution (covered separately).
+            patch(
+                "ldm_core.config.get_remote_project_root",
+                return_value="/home/ec2-user/.liferay-docker/projects/myproj",
+            ),
+        ):
+            ctx = resolve_target_context(
+                meta=meta,
+                project_root=self.project_root,
+                config_path=self.config_path,
+                pin=False,
+            )
+            mock_write_meta.assert_not_called()
+
+        self.assertEqual(ctx.target.name, "aws-2")
+        self.assertTrue(ctx.is_remote)
+        self.assertFalse(ctx.newly_pinned)
+        self.assertNotIn("target", meta)
 
     def test_already_pinned_project_is_not_rewritten(self) -> None:
         from ldm_core.config import resolve_target_context

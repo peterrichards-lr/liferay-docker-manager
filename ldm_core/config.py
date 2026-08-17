@@ -325,6 +325,7 @@ def resolve_target_context(
     meta: dict | None = None,
     project_root: Path | None = None,
     config_path: Path | None = None,
+    pin: bool = True,
 ) -> TargetContext:
     """The one function every command calls to find out what compute target
     it's running against. Nothing else should re-implement this precedence
@@ -360,6 +361,16 @@ def resolve_target_context(
     would appear to move to a different node the moment someone runs `ldm
     target use` for something unrelated, even though its actual files and
     volumes never moved.
+
+    `pin=False` resolves and returns the same answer but skips the
+    write-back entirely (not even into the in-memory `meta` dict). This is
+    for callers that need a correct resolution -- e.g. to compute remote
+    bind-mount paths -- but aren't the command's designated pinning point.
+    Pinning should happen exactly once per command, at the earliest point
+    the project's metadata is known (see `docs/explanation/
+    remote-node-architecture.md`); a utility function generating one
+    artifact shouldn't also be deciding, as a side effect, where a project
+    lives forever.
     """
     meta = meta if isinstance(meta, dict) else {}
     pinned_target = meta.get("target")
@@ -379,13 +390,21 @@ def resolve_target_context(
     active_target = get_active_target(chosen, config_path=config_path)
 
     newly_pinned = False
-    if not pinned_target:
+    if not pinned_target and pin:
         meta["target"] = active_target.name
         newly_pinned = True
         if project_root is not None:
-            from ldm_core.utils import write_meta
+            # write_meta() treats its `path` argument literally as the file
+            # to write -- project_root is the project's *directory*, not
+            # its meta file, so this must go through the same
+            # directory-to-meta-file resolution BaseHandler.write_meta()
+            # uses. Passing project_root straight to write_meta() silently
+            # clobbers the project directory itself with a file.
+            from ldm_core.utils import resolve_meta_file_path, safe_mkdir, write_meta
 
-            write_meta(project_root, meta)
+            target = resolve_meta_file_path(project_root)
+            safe_mkdir(target.parent, parents=True, exist_ok=True)
+            write_meta(target, meta)
 
     is_remote = active_target.name != "local" and active_target.host not in (
         "localhost",

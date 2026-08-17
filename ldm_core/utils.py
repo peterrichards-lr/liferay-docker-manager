@@ -1417,8 +1417,31 @@ def read_meta(path):  # noqa: C901, PLR0912, PLR0915
     return meta
 
 
+def resolve_meta_file_path(path) -> Path:
+    """Resolves a project root directory (or an already-specific meta file
+    path) to the actual metadata file path, preserving an existing
+    alternate filename (`.liferay-docker.meta`) if present.
+
+    `write_meta()` below treats `path` literally as the file to write --
+    passing it a bare project directory silently clobbers that directory
+    with a file (exactly the bug this function exists to prevent; see
+    LDM-#1147 Phase 2). Shared by `BaseHandler.write_meta()` and
+    `resolve_target_context()`'s pinning write-back so both agree on the
+    same file.
+    """
+    p = Path(path)
+    if p.name in ["meta", ".liferay-docker.meta", ".ldm.meta"] or p.suffix == ".meta":
+        return p
+    target = p / "meta"
+    if (p / ".liferay-docker.meta").exists():
+        target = p / ".liferay-docker.meta"
+    return target
+
+
 def write_meta(path, meta):
-    """Writes project metadata to a file (atomically)."""
+    """Writes project metadata to a file (atomically). `path` must already
+    be the specific meta file path -- use `resolve_meta_file_path()` first
+    if you only have a project root directory."""
     path = Path(path)
     is_dry_run = os.environ.get("LDM_DRY_RUN", "").lower() == "true"
     if is_dry_run:
