@@ -281,6 +281,63 @@ class TestOrchestration(unittest.TestCase):
             self.assertIn("aws-1", called_cmd)
 
     @patch("ldm_core.ui.UI.die")
+    @patch("ldm_core.config.get_active_target")
+    def test_cmd_deploy_single_artifact_rejects_remote_target(
+        self, mock_target, mock_die
+    ):
+        """LDM-#1090/#1133: a single-artifact deploy (jar/war/zip) only
+        copies into the LOCAL project directory -- silently doing that for
+        a project on a remote target would update a copy the running
+        remote container never sees. Must fail loudly instead."""
+        from ldm_core.config import TargetNode
+
+        mock_target.return_value = TargetNode(name="aws-1", host="34.1.1.1")
+        mock_die.side_effect = SystemExit
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            jar_path = Path(tmpdir) / "custom.jar"
+            jar_path.write_text("fake jar")
+
+            with (
+                patch.object(
+                    self.handler.manager,
+                    "read_meta",
+                    return_value={"target": "aws-1"},
+                ),
+                patch("ldm_core.utils.atomic_copy") as mock_copy,
+            ):
+                with self.assertRaises(SystemExit):
+                    self.handler.handler.orchestration.cmd_deploy(
+                        "test", targets=[str(jar_path)]
+                    )
+
+        mock_die.assert_called_once()
+        self.assertIn("aws-1", mock_die.call_args[0][0])
+        mock_copy.assert_not_called()
+
+    @patch("ldm_core.config.get_active_target")
+    def test_cmd_deploy_service_uses_remote_context(self, mock_target):
+        """A named-service deploy (already exists wherever the project
+        runs, from a prior `ldm run`) is safely redirectable -- unlike a
+        single-artifact copy."""
+        from ldm_core.config import TargetNode
+
+        mock_target.return_value = TargetNode(name="aws-1", host="34.1.1.1")
+
+        with (
+            patch.object(
+                self.handler.manager, "read_meta", return_value={"target": "aws-1"}
+            ),
+            patch.object(BaseHandler, "run_command") as mock_run,
+        ):
+            self.handler.handler.orchestration.cmd_deploy("test", targets=["liferay"])
+
+        call_args = mock_run.call_args[0][0]
+        self.assertIn("--context", call_args)
+        self.assertIn("aws-1", call_args)
+        self.assertIn("up", call_args)
+
+    @patch("ldm_core.ui.UI.die")
     def test_cmd_reseed_no_tag_dies(self, mock_die):
         mock_die.side_effect = SystemExit
         with (
