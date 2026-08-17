@@ -68,6 +68,7 @@ select = [
 ignore = [
     "E501",    # Line too long (fix gradually)
     "PLC0415", # localized imports (intentional for performance/dependency isolation)
+    "PLR0917", # Too many positional arguments
     "PLR2004", # Magic value in comparison
     "B904",    # Within an except clause, raise exceptions with raise ... from err
     "N806",    # Variable name should be lowercase
