@@ -10,13 +10,28 @@ class SearchSnapshotService:
         self.manager = facade.manager
         self.args = facade.manager.args
 
+    def _resolve_docker_prefix(self, project_meta=None):
+        """Resolves the docker CLI prefix for the project's active target.
+
+        Shared infra containers (e.g. `liferay-search-global`) live on
+        whichever node the project resolves to -- see
+        docs/explanation/remote-node-architecture.md.
+        """
+        target_name = getattr(self.manager, "target", None) or (
+            project_meta.get("target") if isinstance(project_meta, dict) else None
+        )
+        from ldm_core.docker_service import DockerService
+
+        return DockerService.get_docker_cmd_prefix(target_name)
+
     def _snapshot_search(self, project_meta, root, timestamp, container_name):
         search_snapshot_name = None
         search_name = "liferay-search-global"
+        docker_prefix = self._resolve_docker_prefix(project_meta)
 
         if str(project_meta.get("use_shared_search", "false")).lower() == "true":
             if self.manager.run_command(
-                ["docker", "ps", "-q", "-f", f"name={search_name}"]
+                [*docker_prefix, "ps", "-q", "-f", f"name={search_name}"]
             ):
                 search_snapshot_name = f"{container_name}_{timestamp}"
                 UI.detail(
@@ -24,7 +39,7 @@ class SearchSnapshotService:
                 )
                 self.manager.run_command(
                     [
-                        "docker",
+                        *docker_prefix,
                         "exec",
                         search_name,
                         "curl",
@@ -43,20 +58,21 @@ class SearchSnapshotService:
     def _restore_search(self, choice_path, meta, container_name):
         search_snapshot_name = meta.get("search_snapshot")
         search_name = "liferay-search-global"
+        docker_prefix = self._resolve_docker_prefix(meta)
 
         if search_snapshot_name and search_snapshot_name != "None":
             if self.manager.run_command(
-                ["docker", "ps", "-q", "-f", f"name={search_name}"]
+                [*docker_prefix, "ps", "-q", "-f", f"name={search_name}"]
             ):
                 UI.detail(
                     f"Triggering orchestrated search restore: {search_snapshot_name}..."
                 )
 
-                self._delete_project_indices(container_name)
+                self._delete_project_indices(container_name, docker_prefix)
 
                 self.manager.run_command(
                     [
-                        "docker",
+                        *docker_prefix,
                         "exec",
                         search_name,
                         "curl",
@@ -76,7 +92,9 @@ class SearchSnapshotService:
                     ]
                 )
 
-                if self._wait_for_search_restore(search_snapshot_name, container_name):
+                if self._wait_for_search_restore(
+                    search_snapshot_name, container_name, docker_prefix=docker_prefix
+                ):
                     UI.success("Search restore completed.")
                 else:
                     UI.warning(
@@ -87,13 +105,14 @@ class SearchSnapshotService:
                     "Global search service not running. Could not restore search indices."
                 )
 
-    def _wait_for_search_snapshot(self, snapshot_name, timeout=120):
+    def _wait_for_search_snapshot(self, snapshot_name, timeout=120, docker_prefix=None):
+        docker_prefix = docker_prefix or self._resolve_docker_prefix()
         search_name = "liferay-search-global"
         start_time = time.time()
         while time.time() - start_time < timeout:
             res = self.manager.run_command(
                 [
-                    "docker",
+                    *docker_prefix,
                     "exec",
                     search_name,
                     "curl",
@@ -109,13 +128,16 @@ class SearchSnapshotService:
             time.sleep(5)
         return False
 
-    def _wait_for_search_restore(self, snapshot_name, container_name, timeout=60):
+    def _wait_for_search_restore(
+        self, snapshot_name, container_name, timeout=60, docker_prefix=None
+    ):
+        docker_prefix = docker_prefix or self._resolve_docker_prefix()
         search_name = "liferay-search-global"
         start_time = time.time()
         while time.time() - start_time < timeout:
             res = self.manager.run_command(
                 [
-                    "docker",
+                    *docker_prefix,
                     "exec",
                     search_name,
                     "curl",
@@ -130,11 +152,12 @@ class SearchSnapshotService:
             time.sleep(5)
         return False
 
-    def _delete_project_indices(self, container_name):
+    def _delete_project_indices(self, container_name, docker_prefix=None):
+        docker_prefix = docker_prefix or self._resolve_docker_prefix()
         search_name = "liferay-search-global"
         self.manager.run_command(
             [
-                "docker",
+                *docker_prefix,
                 "exec",
                 search_name,
                 "curl",

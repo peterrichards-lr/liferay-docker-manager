@@ -71,12 +71,22 @@ class UtilsSnapshotService:
             # Delete global search snapshot if it exists
             if search_snap:
                 search_name = "liferay-search-global"
+                project_meta = self.manager.read_meta(paths["root"]) or {}
+                target_name = getattr(self.manager, "target", None) or (
+                    project_meta.get("target")
+                    if isinstance(project_meta, dict)
+                    else None
+                )
+                from ldm_core.docker_service import DockerService
+
+                docker_prefix = DockerService.get_docker_cmd_prefix(target_name)
+
                 if self.manager.run_command(
-                    ["docker", "ps", "-q", "-f", f"name={search_name}"]
+                    [*docker_prefix, "ps", "-q", "-f", f"name={search_name}"]
                 ):
                     self.manager.run_command(
                         [
-                            "docker",
+                            *docker_prefix,
                             "exec",
                             search_name,
                             "curl",

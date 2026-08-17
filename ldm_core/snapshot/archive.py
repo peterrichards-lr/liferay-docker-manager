@@ -337,8 +337,15 @@ class ArchiveSnapshotService:
             from ldm_core.utils import sanitize_id
 
             safe_name = sanitize_id(project_meta.get("container_name") or root.name)
+            target_name = getattr(self.manager, "target", None) or (
+                project_meta.get("target") if isinstance(project_meta, dict) else None
+            )
+            from ldm_core.docker_service import DockerService
+
+            docker_prefix = DockerService.get_docker_cmd_prefix(target_name)
+
             cmd = [
-                "docker",
+                *docker_prefix,
                 "ps",
                 "--filter",
                 f"label=com.liferay.ldm.project={safe_name}",
