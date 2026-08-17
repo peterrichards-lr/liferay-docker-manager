@@ -48,6 +48,7 @@ Check out our **[Video Showcase](showcase/README.md)** to see short demonstratio
 - **[Operational Playbook & CI Release Specs](PLAYBOOK.md)** — Build pipelines, branch workflows, and release tags.
 - **[Testing & Validation](TESTING.md)** — Unit tests, mock suites, and multi-OS E2E validation.
 - **[Architecture Overview](explanation/architecture.md)** — LDM micro-architecture, abstraction layers, and directory layouts.
+- **[Remote Node Architecture: Target Resolution](explanation/remote-node-architecture.md)** — How `--node`/`--target` precedence, pinning, and conflict handling work under the hood.
 - **[Security Posture & Disclosures](reference/security.md)** — Safe secrets handling and security policy.
 - **[Third-Party Tools List](reference/third_party_tools.md)** — Internal and external dependencies (mkcert, Traefik, etc.).
 - **[Future Roadmap](ROADMAP.md)** — Planned features and strategic milestones.
