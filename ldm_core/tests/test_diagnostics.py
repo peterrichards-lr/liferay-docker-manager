@@ -355,11 +355,20 @@ class TestDiagnostics(unittest.TestCase):
             self.assertIn("Running", output)
             self.assertIn("http://localhost:8080", output)
 
+    @patch("ldm_core.config.get_active_target")
     @patch("ldm_core.diagnostics.info.run_command")
-    def test_cmd_list_json(self, mock_run):
+    def test_cmd_list_json(self, mock_run, mock_get_active_target):
         # LDM-#1093: --json must emit a stable, parseable array instead of
         # the color-coded table -- this is what a caller reported having to
         # fragile-parse before this existed.
+        #
+        # LDM-#1135: get_active_target() is mocked here (rather than left
+        # to read the real ~/.ldmrc) since this test isn't about target
+        # resolution and must not depend on whether the machine running it
+        # happens to have a persisted default target configured.
+        from ldm_core.config import TargetNode
+
+        mock_get_active_target.return_value = TargetNode(name="local", host="localhost")
         with (
             patch.object(
                 self.manager,

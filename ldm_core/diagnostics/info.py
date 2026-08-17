@@ -104,9 +104,18 @@ def run_info(  # noqa: C901, PLR0912, PLR0915
         f"Project Metadata: {meta.get('liferay_container_name', meta.get('container_name', root.name))}"
     )
     UI.raw(f"  {UI.WHITE}Path:{UI.COLOR_OFF}           {root}")
-    target_node = getattr(handler.manager, "target", None) or meta.get(
-        "target", "local"
-    )
+    # LDM-#1090/#1135: passing the literal string "local" (a .get()
+    # default) into get_active_target() as an explicit project_target
+    # makes it treat that as a deliberate user choice and skip its own
+    # persisted-default (`ldm target use`) fallback -- pass None instead
+    # so a project with no explicit target correctly reflects the
+    # persisted default, not always "local" regardless of what's
+    # actually configured. Reported: `ldm info`/`ldm list` displayed
+    # "local" while the actual run used the persisted "aws-2" default.
+    from ldm_core.config import get_active_target
+
+    raw_target = getattr(handler.manager, "target", None) or meta.get("target")
+    target_node = get_active_target(raw_target).name
     UI.raw(
         f"  {UI.WHITE}Compute Target:{UI.COLOR_OFF} {UI.BCYAN}{target_node}{UI.COLOR_OFF}"
     )
@@ -420,9 +429,16 @@ def run_status(  # noqa: C901, PLR0912, PLR0915
             # --context, not always the local Docker daemon -- a project
             # running on a remote --node was silently checked against the
             # orchestrating host's local containers instead.
-            target_node = meta.get("target", "local")
+            #
+            # LDM-#1135: pass None (not the literal string "local") when
+            # meta has no explicit target, so get_active_target() consults
+            # its own persisted-default (`ldm target use`) fallback
+            # instead of always resolving to "local" regardless of what's
+            # actually configured.
+            from ldm_core.config import get_active_target
             from ldm_core.docker_service import DockerService
 
+            target_node = get_active_target(meta.get("target")).name
             docker_prefix = DockerService.get_docker_cmd_prefix(target_node)
 
             # Query all containers matching label com.liferay.ldm.project={safe_name}
@@ -558,9 +574,14 @@ def run_status(  # noqa: C901, PLR0912, PLR0915
             # LDM-#1090: same as the --detailed branch above -- resolve the
             # project's own target --context rather than always querying
             # the local Docker daemon.
-            target_node = meta.get("target", "local")
+            #
+            # LDM-#1135: pass None (not the literal string "local") when
+            # meta has no explicit target, so get_active_target() consults
+            # its own persisted-default (`ldm target use`) fallback.
+            from ldm_core.config import get_active_target
             from ldm_core.docker_service import DockerService
 
+            target_node = get_active_target(meta.get("target")).name
             docker_prefix = DockerService.get_docker_cmd_prefix(target_node)
 
             # Query all containers matching label com.liferay.ldm.project={safe_name}
@@ -884,7 +905,15 @@ def run_list(handler, as_json=False):  # noqa: C901, PLR0912, PLR0915
             or path.name
         )
         version = r["version"]
-        target_node = meta.get("target", "local")
+        # LDM-#1135: pass None (not the literal string "local") when meta
+        # has no explicit target, so get_active_target() consults its own
+        # persisted-default (`ldm target use`) fallback instead of always
+        # resolving to "local" regardless of what's actually configured.
+        # Reported: `ldm list` displayed "local" while the actual run
+        # used the persisted "aws-2" default.
+        from ldm_core.config import get_active_target
+
+        target_node = get_active_target(meta.get("target")).name
 
         from ldm_core.docker_service import DockerService
 
