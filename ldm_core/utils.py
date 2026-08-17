@@ -330,15 +330,46 @@ def load_env_blacklist(path):
 
 def sanitize_id(identifier):
     """
-    Sanitizes a string to be used as a safe identifier (e.g. project ID, container name).
-    Allows only alphanumeric characters, dashes, underscores, and dots.
+    Sanitizes a string to be used as a safe identifier (e.g. project ID, container name, volume prefix).
+    Transcodes German umlauts & special characters, normalizes Unicode diacritics, and enforces
+    RFC-1123 safe ASCII alphanumeric characters, dashes, underscores, and dots.
     """
     if not identifier:
         return identifier
+    import hashlib
     import re
+    import unicodedata
 
-    ident = str(identifier).replace(" ", "-")
-    return re.sub(r"[^a-zA-Z0-9\-_.]", "", ident)
+    s = str(identifier)
+
+    # Transcode German umlauts & Eszett
+    replacements = {
+        "ä": "ae",
+        "Ä": "AE",
+        "ö": "oe",
+        "Ö": "OE",
+        "ü": "ue",
+        "Ü": "UE",
+        "ß": "ss",
+    }
+    for char, repl in replacements.items():
+        s = s.replace(char, repl)
+
+    # Normalize remaining Unicode diacritics (e.g. é -> e, ñ -> n)
+    s = unicodedata.normalize("NFKD", s).encode("ASCII", "ignore").decode("utf-8")
+
+    # Replace spaces with dashes
+    s = s.replace(" ", "-")
+
+    # Strip non-alphanumeric/dash/underscore/dot chars
+    sanitized = re.sub(r"[^a-zA-Z0-9\-_.]", "", s)
+
+    # Fallback for non-latin scripts (e.g. CJK script)
+    if not sanitized:
+        short_hash = hashlib.sha256(str(identifier).encode("utf-8")).hexdigest()[:8]
+        return f"project-{short_hash}"
+
+    return sanitized
 
 
 def is_env_var_blacklisted(key, blacklist):
