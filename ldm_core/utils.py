@@ -2370,24 +2370,38 @@ def safe_rmtree(path):
             raise e
 
 
-def reclaim_volume_permissions(path, uid=None, gid=None, chmod_val="750"):
+def reclaim_volume_permissions(
+    path, uid=None, gid=None, chmod_val="750", docker_prefix=None
+):
     """Forces ownership and permissions of a directory via Docker (Linux/macOS).
 
     Uses chmod 750 (owner full, group read/execute, others nothing) by default
     to prevent world-writable project directories that violate least-privilege.
+
+    `docker_prefix` (e.g. `["docker", "--context", "aws-1"]`, from
+    `TargetContext.docker_prefix`) lets a caller redirect this to a remote
+    target -- pass `path` already remapped onto the remote filesystem (e.g.
+    via `TargetContext.map_path()`) when doing so. When given, this skips
+    the local-machine platform/existence checks below: they'd otherwise
+    check *this* host's OS/filesystem for a path that only needs to exist
+    on the remote engine (already ensured by `sync_project_to_target()`),
+    not here.
     """
     is_dry_run = os.environ.get("LDM_DRY_RUN", "").lower() == "true"
     if is_dry_run:
         return True
-    import platform
-    from pathlib import Path
 
-    system_type = platform.system().lower()
-    if system_type not in ["darwin", "linux"]:
-        return True
+    is_remote = docker_prefix is not None
+    if not is_remote:
+        import platform
+        from pathlib import Path
 
-    if not Path(path).exists():
-        return True
+        system_type = platform.system().lower()
+        if system_type not in ["darwin", "linux"]:
+            return True
+
+        if not Path(path).exists():
+            return True
 
     if uid is None:
         uid = str(os.getuid()) if hasattr(os, "getuid") else "1000"
@@ -2402,15 +2416,19 @@ def reclaim_volume_permissions(path, uid=None, gid=None, chmod_val="750"):
         )
 
     docker_cmd = f"chown -R {uid}:{gid} /workspace; chmod -R {chmod_val} /workspace; "
+    # str(), not Path(path).as_posix() -- path may already be a PurePosixPath
+    # (the remote-mapped case), and re-wrapping it in a local Path type
+    # would resolve it against this host's path conventions instead.
+    mount_source = str(path) if is_remote else Path(path).as_posix()
 
     try:
         res = run_command(
             [
-                "docker",
+                *(docker_prefix or ["docker"]),
                 "run",
                 "--rm",
                 "-v",
-                f"{Path(path).as_posix()}:/workspace",
+                f"{mount_source}:/workspace",
                 "alpine",
                 "sh",
                 "-c",
