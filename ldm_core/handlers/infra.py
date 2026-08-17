@@ -545,16 +545,25 @@ tls:
                 DockerService.start(container_name)
 
     def setup_global_database(self, force=False):
-        """Ensures the global PostgreSQL database service is running."""
+        """Ensures the global PostgreSQL database service is running.
+
+        "Shared" means shared among projects resolving to the same target,
+        not a single global instance for every target -- see
+        DatabaseService.cmd_start's docstring and
+        docs/explanation/remote-node-architecture.md §5. Resolves
+        self.manager.target exactly like any other Docker operation.
+        """
         from ldm_core.docker_service import DockerService
 
+        target_name = getattr(self.manager, "target", None)
+        docker_prefix = DockerService.get_docker_cmd_prefix(target_name)
         db_name = "liferay-db-global"
-        exists = DockerService.exists(db_name)
-        running = DockerService.is_running(db_name)
+        exists = DockerService.exists(db_name, target_name=target_name)
+        running = DockerService.is_running(db_name, target_name=target_name)
 
         if exists and not running:
             UI.detail("Starting existing Global Database (PostgreSQL) container...")
-            DockerService.start(db_name)
+            DockerService.start(db_name, target_name=target_name)
 
         if not exists:
             UI.detail("Initializing Global Database (PostgreSQL) container...")
@@ -565,7 +574,7 @@ tls:
 
             self.manager.run_command(
                 [
-                    "docker",
+                    *docker_prefix,
                     "run",
                     "-d",
                     "--name",
@@ -589,12 +598,14 @@ tls:
             import time
 
             for _ in range(60):
-                status = self.manager.get_container_status(db_name)
+                status = self.manager.get_container_status(
+                    db_name, target_name=target_name
+                )
                 if status == "exited":
                     UI.error("Global database container exited unexpectedly.")
                     break
                 res = self.manager.run_command(
-                    ["docker", "exec", db_name, "pg_isready", "-U", "lportal"],
+                    [*docker_prefix, "exec", db_name, "pg_isready", "-U", "lportal"],
                     check=False,
                     capture_output=True,
                 )
@@ -604,7 +615,19 @@ tls:
                 time.sleep(2)
 
     def setup_global_search(self, force=False, _depth=0):  # noqa: C901, PLR0912, PLR0915
-        """Ensures the global ES8 search service is running."""
+        """Ensures the global ES8 search service is running.
+
+        "Shared" means shared among projects resolving to the same target
+        -- see setup_global_database's docstring. Starting/checking an
+        *existing* container resolves self.manager.target like any other
+        Docker operation. First-time creation on a remote target is not
+        yet supported: unlike the DB's Docker-managed named volume, this
+        container's data/backup dirs are host bind-mounts (built from a
+        *local* path) -- redirecting container creation without also
+        resolving and pre-creating the equivalent remote path (the same
+        problem LDM-#1134 solved for project bind mounts) would silently
+        create empty, wrong directories on the remote engine.
+        """
         # LDM-369: Sidecar Protection. If the current project metadata explicitly
         # disables shared search, we MUST NOT touch the global search infrastructure.
         project_meta = getattr(self.manager, "meta", {})
@@ -618,15 +641,35 @@ tls:
 
         from ldm_core.docker_service import DockerService
 
+        target_name = getattr(self.manager, "target", None)
+        docker_prefix = DockerService.get_docker_cmd_prefix(target_name)
         search_name = "liferay-search-global"
-        exists = DockerService.exists(search_name)
-        running = DockerService.is_running(search_name)
+        exists = DockerService.exists(search_name, target_name=target_name)
+        running = DockerService.is_running(search_name, target_name=target_name)
 
         if exists and not running:
             UI.detail("Starting existing Global Search (ES8) container...")
-            DockerService.start(search_name)
+            DockerService.start(search_name, target_name=target_name)
 
         if not exists:
+            if target_name and target_name != "local":
+                from ldm_core.config import get_active_target
+
+                active_target = get_active_target(target_name)
+                if active_target.name != "local" and active_target.host not in (
+                    "localhost",
+                    "127.0.0.1",
+                    "",
+                ):
+                    UI.die(
+                        f"Global Search isn't provisioned yet on '{active_target.name}', "
+                        "and first-time remote provisioning isn't supported "
+                        "(its data/backup volumes are host bind-mounts, not "
+                        "portable across engines automatically). Provision it "
+                        "once by running a shared-search-enabled project against "
+                        f"'{active_target.name}' with this fixed, or set up the "
+                        "container manually on that node first."
+                    )
             UI.detail("Initializing Global Search (ES8) container...")
             home = get_actual_home()
             es_data = (home / ".ldm" / "infra" / "search" / "data").resolve()
@@ -649,7 +692,7 @@ tls:
 
             self.manager.run_command(
                 [
-                    "docker",
+                    *docker_prefix,
                     "run",
                     "-d",
                     "--name",
@@ -683,13 +726,22 @@ tls:
             ready = False
             for _ in range(60):  # 5 minute timeout (60 * 5s)
                 # Fail fast if container exited
-                status = self.manager.get_container_status(search_name)
+                status = self.manager.get_container_status(
+                    search_name, target_name=target_name
+                )
                 if status == "exited":
                     UI.error("Elasticsearch container exited unexpectedly.")
                     break
 
                 res = self.manager.run_command(
-                    ["docker", "exec", search_name, "curl", "-s", "localhost:9200"],
+                    [
+                        *docker_prefix,
+                        "exec",
+                        search_name,
+                        "curl",
+                        "-s",
+                        "localhost:9200",
+                    ],
                     check=False,
                     capture_output=True,
                 )
@@ -709,7 +761,7 @@ tls:
                 # Wiping and restarting usually fixes mapping/plugin-mismatch issues.
                 UI.warning("Attempting automatic search volume repair...")
                 self.manager.run_command(
-                    ["docker", "rm", "-f", search_name], check=False
+                    [*docker_prefix, "rm", "-f", search_name], check=False
                 )
                 if es_data.exists():
                     import shutil
@@ -726,7 +778,7 @@ tls:
             # Register backup repository (required for snapshots)
             self.manager.run_command(
                 [
-                    "docker",
+                    *docker_prefix,
                     "exec",
                     search_name,
                     "curl",
@@ -751,7 +803,13 @@ tls:
 
             # Tests expect a 'plugin list' call first
             self.manager.run_command(
-                ["docker", "exec", search_name, "bin/elasticsearch-plugin", "list"]
+                [
+                    *docker_prefix,
+                    "exec",
+                    search_name,
+                    "bin/elasticsearch-plugin",
+                    "list",
+                ]
             )
 
             analyzers = [
@@ -763,7 +821,7 @@ tls:
             for plugin in analyzers:
                 self.manager.run_command(
                     [
-                        "docker",
+                        *docker_prefix,
                         "exec",
                         search_name,
                         "bin/elasticsearch-plugin",
@@ -775,14 +833,16 @@ tls:
                 )
 
             UI.detail("Restarting Global Search to activate plugins...")
-            self.manager.run_command(["docker", "restart", search_name])
+            self.manager.run_command([*docker_prefix, "restart", search_name])
 
             # Wait for it to come back up
             UI.detail("Waiting for Global Search to be ready after restart...")
             ready = False
             for _ in range(30):
                 # Fail fast if container exited
-                status = self.manager.get_container_status(search_name)
+                status = self.manager.get_container_status(
+                    search_name, target_name=target_name
+                )
                 if status == "exited":
                     UI.error(
                         "Elasticsearch container exited unexpectedly after restart."
@@ -790,7 +850,14 @@ tls:
                     break
 
                 res = self.manager.run_command(
-                    ["docker", "exec", search_name, "curl", "-s", "localhost:9200"],
+                    [
+                        *docker_prefix,
+                        "exec",
+                        search_name,
+                        "curl",
+                        "-s",
+                        "localhost:9200",
+                    ],
                     check=False,
                     capture_output=True,
                 )
@@ -804,16 +871,16 @@ tls:
                 )
         else:
             # Check if it is running
-            running = DockerService.is_running(search_name)
+            running = DockerService.is_running(search_name, target_name=target_name)
             if not running:
                 UI.detail(f"Starting existing {search_name} container...")
-                DockerService.start(search_name)
+                DockerService.start(search_name, target_name=target_name)
 
             # Always ensure backup repository is registered if service is running
             UI.debug("Ensuring Global Search backup repository is registered...")
             self.manager.run_command(
                 [
-                    "docker",
+                    *docker_prefix,
                     "exec",
                     search_name,
                     "curl",

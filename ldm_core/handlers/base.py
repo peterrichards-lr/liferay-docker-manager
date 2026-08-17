@@ -837,18 +837,18 @@ class BaseHandler:
         # Fallback to standard naming convention
         return f"{safe_name}-{service}-1"
 
-    def get_container_status(self, container_name):
+    def get_container_status(self, container_name, target_name=None):
         """Returns the health or status of a container."""
         from ldm_core.docker_service import DockerService
 
         try:
             # First try to get health status
-            health = DockerService.get_health(container_name)
+            health = DockerService.get_health(container_name, target_name=target_name)
             if health and health != "unknown":
                 return health
 
             # Fallback to general state
-            status = DockerService.get_status(container_name)
+            status = DockerService.get_status(container_name, target_name=target_name)
             if status and status != "unknown":
                 return status
         except Exception:
