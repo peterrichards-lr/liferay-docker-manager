@@ -10,7 +10,9 @@ from ldm_core.ui import UI
 from ldm_core.utils import (
     ProjectLock,
     get_actual_home,
-    get_compose_cmd,
+    get_compose_cmd,  # noqa: F401 -- kept as the mock injection point several
+    # test files patch (`ldm_core.runtime.orchestration.get_compose_cmd`),
+    # even though no code in this module calls it directly anymore.
 )
 
 
@@ -430,6 +432,26 @@ class OrchestrationService(BaseHandler):
             )
             return
 
+        # LDM-#1090/#1133: whether this project runs on a remote target.
+        # get_active_target() is always called -- even with node_target
+        # falsy -- so its own persisted-default (`ldm target use`)
+        # fallback runs; short-circuiting on a falsy node_target here would
+        # be the exact "hardcoded local before checking" bug this session
+        # has fixed repeatedly elsewhere (#1121/#1135/#1145/#1149/etc.).
+        meta = self.manager.read_meta(root)
+        node_target = getattr(self.manager, "target", None) or (
+            meta.get("target") if meta else None
+        )
+        from ldm_core.config import get_active_target
+        from ldm_core.docker_service import DockerService
+
+        active_target = get_active_target(node_target)
+        is_remote_target = active_target.name != "local" and active_target.host not in (
+            "localhost",
+            "127.0.0.1",
+            "",
+        )
+
         # Handle specific targets (services or files)
         from ldm_core.utils import atomic_copy
 
@@ -439,10 +461,36 @@ class OrchestrationService(BaseHandler):
             if t_path.exists() and t_path.is_file():
                 ext = t_path.suffix.lower()
                 if ext in [".jar", ".war"]:
+                    if is_remote_target:
+                        # Open design question (docs/explanation/
+                        # remote-node-architecture.md §4): whether/how a
+                        # single-artifact deploy should incrementally sync
+                        # to a remote target isn't resolved yet -- rather
+                        # than silently copy the artifact only into the
+                        # LOCAL project directory (where the remote
+                        # container would never see it), fail loudly with
+                        # guidance instead.
+                        UI.die(
+                            f"Single-artifact deploy ('{t_path.name}') to a remote "
+                            f"target ('{node_target}') isn't supported yet -- it "
+                            "would only update the local copy, not the running "
+                            f"remote container. Use 'ldm run {project_id or root.name}' "
+                            "for a full resync instead."
+                        )
+                        return
                     dest = paths["modules"] / t_path.name
                     UI.detail(f"Syncing Module: {t_path.name}")
                     atomic_copy(t_path, dest)
                 elif ext == ".zip":
+                    if is_remote_target:
+                        UI.die(
+                            f"Single-artifact deploy ('{t_path.name}') to a remote "
+                            f"target ('{node_target}') isn't supported yet -- it "
+                            "would only update the local copy, not the running "
+                            f"remote container. Use 'ldm run {project_id or root.name}' "
+                            "for a full resync instead."
+                        )
+                        return
                     # Potentially a CX or Fragment
                     from ldm_core.handlers.workspace import WorkspaceService
 
@@ -451,14 +499,17 @@ class OrchestrationService(BaseHandler):
                 else:
                     UI.warning(f"Unsupported file type for deployment: {t}")
             else:
-                # Treat as service name
+                # Treat as service name -- the compose file/service already
+                # exists wherever this project runs (from a prior `ldm
+                # run`), so starting it there is safely redirectable.
                 services_to_up.add(t)
 
         if services_to_up:
+            compose_base = DockerService.get_compose_cmd_prefix(node_target)
             for svc in sorted(services_to_up):
                 UI.detail(f"Deploying service '{svc}'...")
                 self.manager.run_command(
-                    [*get_compose_cmd(), "up", "-d", svc],
+                    [*compose_base, "up", "-d", svc],
                     capture_output=False,
                     cwd=str(root),
                 )
