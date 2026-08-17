@@ -42,6 +42,7 @@ class MockDiagManager(BaseHandler):
         self.verbose = False
         self.non_interactive = True
         self.dry_run = False
+        self.target: str | None = None
         self.args = MockArgs()
         self.diagnostics = DiagnosticsService(self)
         self.cloud = MagicMock()
@@ -149,6 +150,50 @@ class TestDiagnostics(unittest.TestCase):
         self.assertTrue(any("Docker Engine" in r[0] for r in runner.results))
         self.assertTrue(any("Docker Compose" in r[0] for r in runner.results))
 
+    @patch("ldm_core.config.get_active_target")
+    @patch("subprocess.run")
+    @patch("shutil.which")
+    def test_check_docker_runtime_redirects_to_remote_node(
+        self, mock_which, mock_sub_run, mock_target
+    ):
+        """LDM-#1090: 'ldm system doctor --node aws-1' used to report this
+        machine's local Docker/Colima info, ignoring --node entirely. The
+        Docker Engine/Context/Provider lines must reflect the resolved
+        remote target instead."""
+        from ldm_core.config import TargetNode
+
+        mock_which.side_effect = lambda x: "/usr/bin/" + x
+        mock_target.return_value = TargetNode(name="aws-1", host="34.1.1.1")
+
+        mock_res = MagicMock()
+        mock_res.returncode = 0
+        mock_res.stdout = "24.0.0"
+        mock_sub_run.return_value = mock_res
+
+        self.manager.target = "aws-1"
+        with patch.object(self.manager, "run_command", return_value=""):
+            runner = DoctorRunner(self.manager.diagnostics)
+            runner._check_docker_runtime()
+
+        # The remote-context subprocess call must have been made.
+        call_args = mock_sub_run.call_args[0][0]
+        self.assertIn("--context", call_args)
+        self.assertIn("aws-1", call_args)
+
+        self.assertTrue(any("Docker Engine (aws-1)" in r[0] for r in runner.results))
+        self.assertTrue(
+            any(r[0] == "Docker Context" and r[1] == "aws-1" for r in runner.results)
+        )
+        self.assertTrue(
+            any(
+                r[0] == "Docker Provider" and "34.1.1.1" in str(r[1])
+                for r in runner.results
+            )
+        )
+        # None of the local-machine-only provider heuristics should fire.
+        self.assertFalse(any("Colima" in str(r) for r in runner.results))
+        self.assertFalse(any("OrbStack" in str(r) for r in runner.results))
+
     @patch("ldm_core.diagnostics.doctor.DoctorRunner.add_hint")
     @patch("ldm_core.diagnostics.doctor.run_command")
     def test_check_elasticsearch_watermarks_blocked(self, mock_run, mock_hint):
@@ -216,17 +261,64 @@ class TestDiagnostics(unittest.TestCase):
         self.assertTrue(any("mkcert" in r[0] for r in runner.results))
         self.assertTrue(any("Volume Permissions" in r[0] for r in runner.results))
 
+    @patch("ldm_core.docker_service.get_active_target")
     @patch("ldm_core.diagnostics.doctor.run_command", return_value="")
     @patch(
         "ldm_core.diagnostics.doctor.validate_lcp_json",
         return_value=("Valid", True, []),
     )
-    def test_check_project_specific(self, mock_lcp, mock_run):
+    def test_check_project_specific(self, mock_lcp, mock_run, mock_target):
+        # Isolate from whatever persisted default target a real ~/.ldmrc on
+        # the machine running the tests happens to have -- _check_project_
+        # specific now resolves each project's own target via
+        # DockerService.get_docker_cmd_prefix(), which always consults
+        # get_active_target().
+        from ldm_core.config import TargetNode
+
+        mock_target.return_value = TargetNode(
+            name="local", host="localhost", is_default=True
+        )
         runner = DoctorRunner(self.manager.diagnostics)
         runner.project_paths = [Path("/tmp/proj1")]
         runner._check_project_specific()
         self.assertTrue(any("[proj1] Metadata" in r[0] for r in runner.results))
         self.assertTrue(any("[proj1] Config" in r[0] for r in runner.results))
+
+    @patch("ldm_core.docker_service.get_active_target")
+    @patch("ldm_core.diagnostics.doctor.run_command")
+    @patch(
+        "ldm_core.diagnostics.doctor.validate_lcp_json",
+        return_value=("Valid", True, []),
+    )
+    def test_check_project_specific_uses_project_target(
+        self, mock_lcp, mock_run, mock_target
+    ):
+        """LDM-#1090/#1133: a project's own containers may be running on a
+        remote target -- the container-discovery docker ps call must use
+        that target, not always the local daemon."""
+        from ldm_core.config import TargetNode
+
+        mock_target.return_value = TargetNode(name="aws-1", host="34.1.1.1")
+        mock_run.return_value = ""
+
+        with patch.object(
+            self.manager,
+            "read_meta",
+            return_value={"tag": "2026.q1.4-lts", "env_args": [], "target": "aws-1"},
+        ):
+            runner = DoctorRunner(self.manager.diagnostics)
+            runner.project_paths = [Path("/tmp/proj1")]
+            runner._check_project_specific()
+
+        ps_calls = [
+            c.args[0]
+            for c in mock_run.call_args_list
+            if isinstance(c.args[0], list) and "ps" in c.args[0]
+        ]
+        self.assertTrue(ps_calls, "Expected at least one docker ps call")
+        for call_args in ps_calls:
+            self.assertIn("--context", call_args)
+            self.assertIn("aws-1", call_args)
 
     def test_check_dangling_and_print(self):
         runner = DoctorRunner(self.manager.diagnostics)

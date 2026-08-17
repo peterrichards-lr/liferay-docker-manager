@@ -343,6 +343,27 @@ class DoctorRunner:
                 )
 
     def _check_docker_runtime(self):  # noqa: C901, PLR0912, PLR0915
+        # LDM-#1090/#1133: an explicit --node/--target means the user wants
+        # to know about THAT node's Docker engine, not this machine's local
+        # Colima/OrbStack/Docker Desktop setup. Route to a deliberately
+        # narrower check that only covers what genuinely reflects the
+        # remote engine (version, context, resource allocation) -- the
+        # local-machine-only provider-detection heuristics below (Colima/
+        # OrbStack/Docker Desktop app versions, WSL socket symlink checks)
+        # have no remote equivalent LDM can query and stay local-only.
+        explicit_target_name = getattr(self.manager, "target", None)
+        if explicit_target_name and explicit_target_name != "local":
+            from ldm_core.config import get_active_target
+
+            active_target = get_active_target(explicit_target_name)
+            if active_target.name != "local" and active_target.host not in (
+                "localhost",
+                "127.0.0.1",
+                "",
+            ):
+                self._check_docker_runtime_remote(active_target)
+                return
+
         # 2. Docker Check
         # Perform a silent check first to avoid double error reporting in the UI
         self.docker_version = None
@@ -543,6 +564,69 @@ class DoctorRunner:
                 self.add_hint(
                     "WSL: To use Docker Desktop, ensure 'WSL Integration' is enabled in the Docker Desktop dashboard."
                 )
+
+    def _check_docker_runtime_remote(self, active_target):
+        """Docker engine checks for an explicit --node/--target.
+        Deliberately narrower than _check_docker_runtime's local path: only
+        checks that genuinely reflect the remote engine (version, context,
+        resource allocation), skipping this-machine-only provider-detection
+        heuristics that have no remote equivalent (Colima/OrbStack/Docker
+        Desktop app versions, WSL socket symlink checks, credential store)."""
+        import subprocess
+
+        self.docker_version = None
+        docker_bin = shutil.which("docker")
+        try:
+            if docker_bin:
+                res = subprocess.run(
+                    [
+                        docker_bin,
+                        "--context",
+                        active_target.name,
+                        "version",
+                        "--format",
+                        "{{.Server.Version}}",
+                    ],
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+                if res.returncode == 0:
+                    self.docker_version = res.stdout.strip()
+        except Exception:
+            pass
+
+        engine_label = f"Docker Engine ({active_target.name})"
+        if not self.docker_version:
+            self.results.append((engine_label, "Not reachable", False))
+            self.add_hint(
+                f"Could not reach Docker on remote target '{active_target.name}' "
+                f"({active_target.host}). Check SSH connectivity and that "
+                "Docker is running there.",
+            )
+            return
+
+        self.results.append((engine_label, f"Running (v{self.docker_version})", True))
+        self.results.append(("Docker Context", active_target.name, True))
+        self.provider = f"Remote ({active_target.host})"
+        self.results.append(("Docker Provider", self.provider, True))
+
+        from ldm_core.docker_service import DockerService
+
+        docker_prefix = DockerService.get_docker_cmd_prefix(active_target.name)
+        docker_info_raw = self.handler.manager.run_command(
+            [*docker_prefix, "info", "--format", "{{json .}}"], check=False
+        )
+        if docker_info_raw:
+            res_results = _check_docker_resources(self.handler, docker_info_raw)
+            for comp, stat, ok in res_results:
+                self.results.append((comp, stat, ok))
+                if ok is not True:
+                    res_type = "CPU cores" if "CPU" in comp else "RAM"
+                    self.add_hint(
+                        f"Allocate more {res_type} on the remote Docker engine "
+                        f"'{active_target.name}'.",
+                    )
 
     def _check_global_config_and_network(self):  # noqa: C901, PLR0912, PLR0915
         # 3. mkcert Check
@@ -1230,7 +1314,24 @@ class DoctorRunner:
                 )
 
             # --- Liferay Log Health ---
+            # LDM-#1090/#1133: this project's own containers may be running
+            # on a remote target -- resolve it the same way every other
+            # command does (explicit --node, then the project's own pin),
+            # instead of always querying the local Docker daemon.
+            from ldm_core.docker_service import DockerService
             from ldm_core.utils import sanitize_id
+
+            project_target_name = getattr(self.manager, "target", None) or meta.get(
+                "target"
+            )
+            docker_prefix = DockerService.get_docker_cmd_prefix(project_target_name)
+            from ldm_core.config import get_active_target
+
+            _active_project_target = get_active_target(project_target_name)
+            is_remote_project = (
+                _active_project_target.name != "local"
+                and _active_project_target.host not in ("localhost", "127.0.0.1", "")
+            )
 
             p_id = sanitize_id(
                 meta.get("liferay_container_name")
@@ -1241,14 +1342,14 @@ class DoctorRunner:
             possible_names = [p_id, f"{p_id}-liferay", f"{p_id}-liferay-1"]
             for name in possible_names:
                 if run_command(
-                    ["docker", "ps", "-q", "-f", f"name=^{name}$"], check=False
+                    [*docker_prefix, "ps", "-q", "-f", f"name=^{name}$"], check=False
                 ):
                     liferay_container = name
                     break
 
             if liferay_container:
                 log_status, log_ok = _check_liferay_health_logs(
-                    self.handler, liferay_container
+                    self.handler, liferay_container, target_name=project_target_name
                 )
                 self.results.append(
                     (f"[{p_path.name}] Liferay Logs", log_status, log_ok)
@@ -1617,12 +1718,19 @@ class DoctorRunner:
                 db_container = meta.get("db_container_name") or f"{p_id}-db"
                 # Check if running
                 is_db_running = run_command(
-                    ["docker", "ps", "-q", "-f", f"name=^{db_container}$"], check=False
+                    [*docker_prefix, "ps", "-q", "-f", f"name=^{db_container}$"],
+                    check=False,
                 )
                 if is_db_running:
                     target_db_ver = resolve_dependency_version(meta.get("tag"), db_type)
                     running_db_ver = run_command(
-                        ["docker", "inspect", "-f", "{{.Config.Image}}", db_container],
+                        [
+                            *docker_prefix,
+                            "inspect",
+                            "-f",
+                            "{{.Config.Image}}",
+                            db_container,
+                        ],
                         check=False,
                     )
                     if (
@@ -1668,7 +1776,13 @@ class DoctorRunner:
                         f"Move your project to the native Linux filesystem (e.g. ~/repos/{p_path.name}).",
                         f"{GITHUB_DOCS_URL}/INSTALLATION.md#linux--wsl-docker-permissions",
                     )
-                elif platform.system().lower() == "darwin":
+                elif platform.system().lower() == "darwin" and not is_remote_project:
+                    # LDM-#1090/#1133: this check writes a token to a LOCAL
+                    # host path and verifies it appears inside the
+                    # container via bind mount -- meaningless (and always a
+                    # false-positive "BROKEN") for a remote project, whose
+                    # container bind-mounts from the *remote* host's
+                    # filesystem, not this one.
                     if liferay_container:
                         import uuid
 
@@ -2505,12 +2619,16 @@ def validate_lcp_json(self, file_path):
         return f"Check Failed ({e})", "warn", [str(e)]
 
 
-def _check_container_health_logs(self, container_name, add_hint=None, tail=20):  # noqa: C901, PLR0912
+def _check_container_health_logs(  # noqa: C901, PLR0912
+    self, container_name, add_hint=None, tail=20, target_name=None
+):
     """Checks the last N lines of container logs for errors or warnings."""
     from ldm_core.docker_service import DockerService
 
     try:
-        logs = DockerService.get_logs(container_name, tail=tail)
+        logs = DockerService.get_logs(
+            container_name, tail=tail, target_name=target_name
+        )
         if not logs:
             return None, None
 
@@ -2618,14 +2736,16 @@ def _check_container_health_logs(self, container_name, add_hint=None, tail=20): 
         return None, None
 
 
-def _check_liferay_health_logs(self, container_name, tail=50):  # noqa: PLR0911
+def _check_liferay_health_logs(self, container_name, tail=50, target_name=None):  # noqa: PLR0911
     """Checks the last N lines of Liferay logs for startup status and errors."""
     from ldm_core.docker_service import DockerService
 
     try:
         import re
 
-        logs = DockerService.get_logs(container_name, tail=tail)
+        logs = DockerService.get_logs(
+            container_name, tail=tail, target_name=target_name
+        )
         if not logs:
             return "Initializing...", True
 
@@ -2730,7 +2850,12 @@ def _generate_debug_bundle(self, results, project_paths):
             # Use project label to find liferay container
             from ldm_core.docker_service import DockerService
 
-            logs = DockerService.get_logs(f"{p_id}-liferay", tail=500)
+            bundle_target_name = getattr(self.manager, "target", None) or meta.get(
+                "target"
+            )
+            logs = DockerService.get_logs(
+                f"{p_id}-liferay", tail=500, target_name=bundle_target_name
+            )
             if logs:
                 z.writestr(
                     f"projects/{p_name}/liferay-redacted.log",
