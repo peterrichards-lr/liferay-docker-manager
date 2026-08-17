@@ -3,6 +3,7 @@
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from ldm_core.config import (
     TargetNode,
@@ -284,6 +285,174 @@ class TestTargetCLIHandlers(unittest.TestCase):
             mock_down.assert_called_once()
             mock_sync.assert_called_once()
             mock_run.assert_called_once()
+
+
+class TestTargetContext(unittest.TestCase):
+    """Unit tests for TargetContext / resolve_target_context() -- the single
+    resolver every command is meant to call, per
+    docs/design/remote-node-architecture.md. Every test isolates
+    config_path so it never depends on the real ~/.ldmrc."""
+
+    def setUp(self) -> None:
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.config_path = Path(self.temp_dir.name) / ".ldmrc"
+        self.project_root = Path(self.temp_dir.name) / "myproj"
+        self.project_root.mkdir()
+
+    def tearDown(self) -> None:
+        self.temp_dir.cleanup()
+
+    def test_resolves_local_when_nothing_configured(self) -> None:
+        from ldm_core.config import resolve_target_context
+
+        ctx = resolve_target_context(config_path=self.config_path)
+        self.assertEqual(ctx.target.name, "local")
+        self.assertFalse(ctx.is_remote)
+        self.assertEqual(ctx.docker_prefix, ["docker"])
+
+    def test_explicit_target_wins_and_gets_pinned_for_unpinned_project(
+        self,
+    ) -> None:
+        from ldm_core.config import TargetContext, resolve_target_context
+
+        node = TargetNode(name="aws-1", host="34.1.1.1", user="ec2-user")
+        save_target_node(node, self.config_path)
+
+        meta: dict = {}
+        ctx = resolve_target_context(
+            explicit_target="aws-1", meta=meta, config_path=self.config_path
+        )
+        self.assertIsInstance(ctx, TargetContext)
+        self.assertEqual(ctx.target.name, "aws-1")
+        self.assertTrue(ctx.is_remote)
+        self.assertTrue(ctx.newly_pinned)
+        self.assertFalse(ctx.conflict_overridden)
+        # Pinning must mutate the meta dict handed in, so the caller's own
+        # meta (which it will likely write to disk itself) reflects it.
+        self.assertEqual(meta["target"], "aws-1")
+
+    def test_falls_through_to_persisted_default_and_pins_it(self) -> None:
+        from ldm_core.config import resolve_target_context
+
+        node = TargetNode(name="aws-2", host="13.1.1.1", is_default=True)
+        save_target_node(node, self.config_path)
+
+        meta: dict = {}
+        ctx = resolve_target_context(meta=meta, config_path=self.config_path)
+        self.assertEqual(ctx.target.name, "aws-2")
+        self.assertTrue(ctx.newly_pinned)
+        self.assertEqual(meta["target"], "aws-2")
+
+    def test_pinning_persists_to_disk_when_project_root_given(self) -> None:
+        from ldm_core.config import resolve_target_context
+
+        node = TargetNode(name="aws-2", host="13.1.1.1", is_default=True)
+        save_target_node(node, self.config_path)
+
+        meta: dict = {}
+        with patch("ldm_core.utils.write_meta") as mock_write_meta:
+            resolve_target_context(
+                meta=meta,
+                project_root=self.project_root,
+                config_path=self.config_path,
+            )
+            mock_write_meta.assert_called_once_with(self.project_root, meta)
+
+    def test_already_pinned_project_is_not_rewritten(self) -> None:
+        from ldm_core.config import resolve_target_context
+
+        node = TargetNode(name="aws-2", host="13.1.1.1", is_default=True)
+        save_target_node(node, self.config_path)
+
+        meta = {"target": "local"}
+        with patch("ldm_core.utils.write_meta") as mock_write_meta:
+            ctx = resolve_target_context(meta=meta, config_path=self.config_path)
+            # The project was explicitly pinned to "local" -- the global
+            # default being remote must NOT override an existing pin.
+            self.assertEqual(ctx.target.name, "local")
+            self.assertFalse(ctx.newly_pinned)
+            mock_write_meta.assert_not_called()
+
+    @patch("ldm_core.ui.UI.interruptible_pause")
+    @patch("ldm_core.ui.UI.warning")
+    def test_explicit_target_conflicting_with_pin_warns_and_overrides_for_this_run_only(
+        self, mock_warning, mock_pause
+    ) -> None:
+        from ldm_core.config import resolve_target_context
+
+        for name, host in (("aws-1", "34.1.1.1"), ("aws-2", "13.1.1.1")):
+            save_target_node(TargetNode(name=name, host=host), self.config_path)
+
+        meta = {"target": "aws-1"}
+        ctx = resolve_target_context(
+            explicit_target="aws-2", meta=meta, config_path=self.config_path
+        )
+
+        self.assertTrue(mock_warning.called)
+        self.assertTrue(mock_pause.called)
+        self.assertTrue(ctx.conflict_overridden)
+        # The override applies for this run...
+        self.assertEqual(ctx.target.name, "aws-2")
+        # ...but must NOT silently and permanently reassign the project.
+        self.assertEqual(meta["target"], "aws-1")
+        self.assertFalse(ctx.newly_pinned)
+
+    @patch("ldm_core.ui.UI.interruptible_pause")
+    @patch("ldm_core.ui.UI.warning")
+    def test_explicit_target_matching_pin_does_not_warn(
+        self, mock_warning, mock_pause
+    ) -> None:
+        from ldm_core.config import resolve_target_context
+
+        save_target_node(TargetNode(name="aws-1", host="34.1.1.1"), self.config_path)
+        meta = {"target": "aws-1"}
+        resolve_target_context(
+            explicit_target="aws-1", meta=meta, config_path=self.config_path
+        )
+        mock_warning.assert_not_called()
+        mock_pause.assert_not_called()
+
+    def test_map_path_identity_for_local_target(self) -> None:
+        from ldm_core.config import resolve_target_context
+
+        ctx = resolve_target_context(
+            project_root=self.project_root, config_path=self.config_path
+        )
+        deploy_path = self.project_root / "deploy"
+        self.assertEqual(ctx.map_path(deploy_path), deploy_path)
+
+    def test_map_path_rewrites_onto_remote_root(self) -> None:
+        from ldm_core.config import TargetContext
+
+        ctx = TargetContext(
+            target=TargetNode(name="aws-1", host="34.1.1.1"),
+            is_remote=True,
+            docker_prefix=["docker", "--context", "aws-1"],
+            compose_prefix=["docker", "--context", "aws-1", "compose"],
+            local_root=self.project_root,
+            remote_root="/home/ec2-user/.liferay-docker/projects/myproj",
+        )
+        deploy_path = self.project_root / "deploy"
+        mapped = ctx.map_path(deploy_path)
+        self.assertEqual(
+            str(mapped), "/home/ec2-user/.liferay-docker/projects/myproj/deploy"
+        )
+
+    def test_map_path_falls_back_to_identity_when_remote_root_unresolved(
+        self,
+    ) -> None:
+        from ldm_core.config import TargetContext
+
+        ctx = TargetContext(
+            target=TargetNode(name="aws-1", host="34.1.1.1"),
+            is_remote=True,
+            docker_prefix=["docker", "--context", "aws-1"],
+            compose_prefix=["docker", "--context", "aws-1", "compose"],
+            local_root=self.project_root,
+            remote_root=None,
+        )
+        deploy_path = self.project_root / "deploy"
+        self.assertEqual(ctx.map_path(deploy_path), deploy_path)
 
 
 if __name__ == "__main__":

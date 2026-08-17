@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass
 from datetime import datetime
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from ldm_core.utils import (
     get_actual_home,
@@ -280,3 +280,138 @@ def sync_project_to_target(
         check=False,
     )
     return res is not None
+
+
+@dataclass
+class TargetContext:
+    """The single resolved answer to "what compute target does this command
+    use, and how do I reach it" -- see docs/explanation/remote-node-architecture.md
+    for the full design rationale.
+
+    Resolved exactly once per command via `resolve_target_context()`. Every
+    other module reads this object instead of independently re-deriving
+    target resolution -- that re-derivation is exactly what produced the
+    same "hardcoded local before checking the persisted default" bug
+    independently in base.py, composer.py, and info.py in the same session.
+    """
+
+    target: TargetNode
+    is_remote: bool
+    docker_prefix: list[str]
+    compose_prefix: list[str]
+    conflict_overridden: bool = False
+    newly_pinned: bool = False
+    local_root: Path | None = None
+    remote_root: str | None = None
+
+    def map_path(self, local_path: Path) -> Path | PurePosixPath:
+        """Local targets: identity. Remote targets: rewrite `local_path`
+        (which must be `local_root` or a descendant of it) onto the
+        already-synced remote project root. Replaces the hand-rolled
+        `mount_paths` dict composer.py built inline for the same purpose."""
+        if not self.is_remote or not self.remote_root or self.local_root is None:
+            return local_path
+        try:
+            rel = (
+                Path(local_path).resolve().relative_to(Path(self.local_root).resolve())
+            )
+        except ValueError:
+            return local_path
+        return PurePosixPath(self.remote_root) / rel.as_posix()
+
+
+def resolve_target_context(
+    explicit_target: str | None = None,
+    meta: dict | None = None,
+    project_root: Path | None = None,
+    config_path: Path | None = None,
+) -> TargetContext:
+    """The one function every command calls to find out what compute target
+    it's running against. Nothing else should re-implement this precedence
+    chain, the conflict check, or the pinning write -- see
+    docs/explanation/remote-node-architecture.md.
+
+    Precedence, most to least specific:
+      1. `explicit_target` -- an explicit --node/--target CLI flag for this
+         one invocation.
+      2. `meta["target"]` -- this project's own pinned assignment (set via
+         `ldm target set`, or pinned automatically by this function the
+         first time an unpinned project resolves a target -- see below).
+      3. The persisted global default (`ldm target use`), via
+         `get_active_target()`'s own fallback.
+      4. `local`.
+
+    Conflict handling: if `explicit_target` disagrees with an
+    ALREADY-PINNED `meta["target"]`, this warns and gives the user a
+    CTRL+C window before proceeding with the override for this run only --
+    the project's synced files/named volumes/state may only exist on the
+    pinned node, so silently switching is exactly the kind of thing that
+    produces confusing "it's not there" failures. The override is
+    deliberately NOT written back as a new pin; a one-off --node flag
+    should not silently and permanently reassign a project. Use `ldm
+    target set`/`ldm target migrate` for that.
+
+    Pinning: if the project has NO pinned target yet, whatever this
+    resolves to -- whether from `explicit_target` or from falling through
+    to the global default -- is written back into `meta` (and persisted to
+    disk if `project_root` is given). This stops a project's effective
+    target from silently drifting if the global default is changed later;
+    without this, a project that only ever inherited the ambient default
+    would appear to move to a different node the moment someone runs `ldm
+    target use` for something unrelated, even though its actual files and
+    volumes never moved.
+    """
+    meta = meta if isinstance(meta, dict) else {}
+    pinned_target = meta.get("target")
+    conflict_overridden = False
+
+    if explicit_target and pinned_target and explicit_target != pinned_target:
+        from ldm_core.ui import UI
+
+        UI.warning(
+            f"This project is assigned to target '{pinned_target}', but "
+            f"'{explicit_target}' was explicitly requested for this run."
+        )
+        UI.interruptible_pause(5, "Press CTRL+C to cancel ")
+        conflict_overridden = True
+
+    chosen = explicit_target or pinned_target
+    active_target = get_active_target(chosen, config_path=config_path)
+
+    newly_pinned = False
+    if not pinned_target:
+        meta["target"] = active_target.name
+        newly_pinned = True
+        if project_root is not None:
+            from ldm_core.utils import write_meta
+
+            write_meta(project_root, meta)
+
+    is_remote = active_target.name != "local" and active_target.host not in (
+        "localhost",
+        "127.0.0.1",
+        "",
+    )
+
+    # Local import: docker_service.py imports get_active_target/TargetNode
+    # from this module at module scope, so importing it back at module
+    # scope here would be circular.
+    from ldm_core.docker_service import DockerService
+
+    docker_prefix = DockerService.get_docker_cmd_prefix(active_target.name)
+    compose_prefix = [*docker_prefix, "compose"]
+
+    remote_root = None
+    if is_remote and project_root is not None:
+        remote_root = get_remote_project_root(active_target, project_root.name)
+
+    return TargetContext(
+        target=active_target,
+        is_remote=is_remote,
+        docker_prefix=docker_prefix,
+        compose_prefix=compose_prefix,
+        conflict_overridden=conflict_overridden,
+        newly_pinned=newly_pinned,
+        local_root=project_root,
+        remote_root=remote_root,
+    )
