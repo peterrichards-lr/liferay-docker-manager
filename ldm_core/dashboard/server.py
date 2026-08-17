@@ -168,10 +168,25 @@ def api_projects():
             or path.name
         )
 
+        # LDM-#1090/#1133: this used to always query the local Docker
+        # daemon and display the raw meta["target"] (defaulting to the
+        # literal string "local"), which -- like every other instance of
+        # this bug this session -- silently ignores a persisted default
+        # target (`ldm target use`) whenever the project has no explicit
+        # pin. Resolve once via get_active_target() (never a hardcoded
+        # "local" default) and use it for both the status query and the
+        # displayed target name, so they can't disagree.
+        from ldm_core.config import get_active_target
+        from ldm_core.docker_service import DockerService
+
+        project_target_name = getattr(manager, "target", None) or meta.get("target")
+        active_project_target = get_active_target(project_target_name)
+        docker_prefix = DockerService.get_docker_cmd_prefix(active_project_target.name)
+
         status = "Stopped"
         containers_status = run_command(
             [
-                "docker",
+                *docker_prefix,
                 "ps",
                 "-a",
                 "--filter",
@@ -259,7 +274,7 @@ def api_projects():
                 "path": str(path),
                 "db_type": meta.get("db_type", "N/A"),
                 "archetype": meta.get("archetype", "None"),
-                "target": meta.get("target", "local"),
+                "target": active_project_target.name,
                 "client_extensions": extensions_data,
             }
         )
@@ -425,6 +440,7 @@ def api_logs(project_name):
     project_path = None
     container_name = None
 
+    project_meta = None
     for r in roots:
         path = r["path"]
         meta = manager.read_meta(path)
@@ -436,14 +452,25 @@ def api_logs(project_name):
         if name == project_name:
             project_path = path
             container_name = str(name)
+            project_meta = meta
             break
 
     if not project_path or not container_name:
         return jsonify({"error": "Project not found"}), 404
 
-    logs = run_command(
-        ["docker", "logs", "--tail", "200", container_name],
-        check=False,
+    # LDM-#1090/#1133: this used to always query the local Docker daemon
+    # for logs -- resolve the project's own target the same way
+    # api_projects does, so a remote project's logs are actually fetched
+    # from where the container runs.
+    from ldm_core.config import get_active_target
+    from ldm_core.docker_service import DockerService
+
+    project_target_name = getattr(manager, "target", None) or (
+        project_meta.get("target") if project_meta else None
+    )
+    active_project_target = get_active_target(project_target_name)
+    logs = DockerService.get_logs(
+        container_name, tail=200, target_name=active_project_target.name
     )
     return jsonify({"logs": logs or "No logs available or container not running."})
 
