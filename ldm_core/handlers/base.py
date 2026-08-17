@@ -1520,6 +1520,23 @@ class BaseHandler:
                     )
                 return
 
+            # Regression fix: this call used check=True (the run_command
+            # default) with no guard for "docker isn't installed at all"
+            # -- only for "a remote target is active." On a machine/CI
+            # runner with no docker binary at all (e.g. GitHub Actions'
+            # macos-latest, which has never shipped Docker), this hit
+            # run_command's FileNotFoundError handler and hard sys.exit(127)
+            # ("Command not found: docker"), even for `ldm init --no-up`,
+            # which never intends to touch Docker at all. Matches the
+            # existing shutil.which("docker") guard pattern already used
+            # elsewhere (e.g. pipelines/run.py's compose-syntax validation).
+            if not shutil.which("docker"):
+                if self.verbose:
+                    UI.detail(
+                        "Skipping local host volume mount check -- docker is not installed."
+                    )
+                return
+
             if self.verbose:
                 UI.detail("Synchronizing directory permissions via Docker...")
 
