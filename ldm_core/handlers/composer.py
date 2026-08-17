@@ -203,8 +203,20 @@ class ComposerService:
 
                 env_file.write_text(env_content.strip() + "\n")
 
-    def write_docker_compose(self, paths, meta, liferay_env=None):  # noqa: C901, PLR0912, PLR0915
-        """Generates the docker-compose.yml file using the Builder Pattern."""
+    def write_docker_compose(  # noqa: C901, PLR0912, PLR0915
+        self, paths, meta, liferay_env=None, target_context=None
+    ):
+        """Generates the docker-compose.yml file using the Builder Pattern.
+
+        `target_context` (a `ldm_core.config.TargetContext`) is normally
+        supplied by the caller -- the `run`/`init` pipeline resolves it once
+        in `ProjectInitializationStage` and threads it through, exactly so
+        this function doesn't re-resolve (and re-pin) a target independently
+        of the rest of the command. Direct/legacy callers that don't have
+        one yet get a correct resolution here too (see below), just without
+        the pinning side effect -- that's the pipeline's job, not this
+        function's.
+        """
         # Ensure paths is a dictionary for subscripting
         if not isinstance(paths, dict):
             paths = self.manager.setup_paths(paths)
@@ -224,69 +236,36 @@ class ComposerService:
         host_name = meta.get("host_name", "localhost")
         ssl_enabled = self._is_ssl_active(host_name, meta)
 
-        # LDM-#1134: bind-mount sources must reference the *remote* host's
-        # filesystem when a --node target is active, not this host's --
-        # otherwise Docker auto-creates them empty (and root-owned) on the
-        # remote engine, matching the previously-reported bootstrap/deploy
-        # failures. `paths` is still used unchanged everywhere else in the
-        # builders below (local filesystem reads); `mount_paths` is the
-        # remote-mapped equivalent, used exclusively for bind-mount source
-        # strings.
-        mount_paths = paths
-        # LDM-#1121: meta["target"] is never populated during `ldm run`
-        # itself (only via `ldm target set`/migrate) -- the live
-        # CLI-resolved self.manager.target is authoritative and must be
-        # checked first, exactly like _pre_flight_checks's own fix.
-        #
-        # LDM-#1135: even when NEITHER self.manager.target NOR
-        # meta["target"] provide a value, get_active_target() must still
-        # be called (with None) rather than skipped -- it has its own
-        # fallback to the *persisted* default target set via
-        # `ldm target use`, which this code was silently bypassing by
-        # only calling get_active_target() inside an `if target_name:`
-        # guard. A user who set a remote default via `ldm target use`
-        # but passed no explicit --node/--target on this particular
-        # command would otherwise always get local (wrong) bind-mount
-        # paths.
-        target_name = getattr(self.manager, "target", None) or meta.get("target")
-        from ldm_core.config import get_active_target, get_remote_project_root
+        # LDM-#1134/#1121/#1135: bind-mount sources must reference the
+        # *remote* host's filesystem when a --node target is active, not
+        # this host's -- otherwise Docker auto-creates them empty (and
+        # root-owned) on the remote engine. `paths` is still used unchanged
+        # everywhere else in the builders below (local filesystem reads);
+        # `mount_paths` is the remote-mapped equivalent, used exclusively
+        # for bind-mount source strings. See
+        # docs/explanation/remote-node-architecture.md for why this goes
+        # through the shared resolver rather than an ad-hoc lookup here.
+        if target_context is None:
+            from ldm_core.config import resolve_target_context
 
-        active_target = get_active_target(target_name)
-        if active_target.name != "local" and active_target.host not in (
-            "localhost",
-            "127.0.0.1",
-            "",
-        ):
-            remote_root_str = get_remote_project_root(active_target, project_name)
-            if remote_root_str:
-                from pathlib import PurePosixPath
+            target_context = resolve_target_context(
+                explicit_target=getattr(self.manager, "target", None),
+                meta=meta,
+                project_root=paths["root"],
+                pin=False,
+            )
 
-                remote_root = PurePosixPath(remote_root_str)
-                mount_paths = {
-                    **paths,
-                    "root": remote_root,
-                    "data": remote_root / "data",
-                    "deploy": remote_root / "deploy",
-                    "files": remote_root / "files",
-                    "osgi": remote_root / "osgi",
-                    "configs": remote_root / "osgi" / "configs",
-                    "marketplace": remote_root / "osgi" / "marketplace",
-                    "state": remote_root / "osgi" / "state",
-                    "modules": remote_root / "osgi" / "modules",
-                    "backups": remote_root / "snapshots",
-                    "cx": remote_root / "osgi" / "client-extensions",
-                    "routes": remote_root / "routes",
-                    "scripts": remote_root / "scripts",
-                    "logs": remote_root / "logs",
-                    "log4j": remote_root / "osgi" / "log4j",
-                    "portal_log4j": remote_root / "osgi" / "portal-log4j",
-                }
-            else:
-                UI.warning(
-                    f"Could not resolve the home directory on remote target "
-                    f"'{active_target.name}' -- bind mounts may point at the "
-                    "wrong host's paths. Check SSH connectivity."
-                )
+        if target_context.is_remote and not target_context.remote_root:
+            UI.warning(
+                f"Could not resolve the home directory on remote target "
+                f"'{target_context.target.name}' -- bind mounts may point at the "
+                "wrong host's paths. Check SSH connectivity."
+            )
+
+        mount_paths = {
+            key: (target_context.map_path(value) if isinstance(value, Path) else value)
+            for key, value in paths.items()
+        }
 
         services = {}
 

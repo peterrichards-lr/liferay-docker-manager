@@ -764,29 +764,14 @@ class BaseHandler:
 
     def write_meta(self, path, meta):
         """Writes project metadata, preserving the existing filename if possible."""
-        from ldm_core.utils import write_meta
+        from ldm_core.utils import resolve_meta_file_path, safe_mkdir, write_meta
 
         # If passed a dict as path, skip (logic error in caller)
         if isinstance(path, dict):
             return
 
         try:
-            p = Path(path)
-            # Ensure we are targeting a file inside the directory
-            if (
-                p.name in ["meta", ".liferay-docker.meta", ".ldm.meta"]
-                or p.suffix == ".meta"
-            ):
-                # Assuming it's already a file path
-                target = p
-            else:
-                target = p / "meta"
-                if (p / ".liferay-docker.meta").exists():
-                    target = p / ".liferay-docker.meta"
-
-            # Ensure the parent directory exists
-            from ldm_core.utils import safe_mkdir
-
+            target = resolve_meta_file_path(path)
             safe_mkdir(target.parent, parents=True, exist_ok=True)
             write_meta(target, meta)
         except Exception:
