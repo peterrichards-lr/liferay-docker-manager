@@ -881,6 +881,36 @@ class TestBaseCompletion(unittest.TestCase):
                     "verify_runtime_environment raised UnboundLocalError unexpectedly!"
                 )
 
+    @patch("platform.system", return_value="Darwin")
+    @patch("ldm_core.config.get_active_target")
+    @patch("ldm_core.handlers.base.shutil.which", return_value=None)
+    def test_verify_runtime_environment_skips_when_docker_not_installed(
+        self, mock_which, mock_get_active_target, mock_system
+    ):
+        # Regression: this call previously used check=True (run_command's
+        # default) with no guard for "docker isn't installed at all" --
+        # only for "a remote target is active." On a machine/CI runner
+        # with no docker binary (e.g. GitHub Actions' macos-latest, which
+        # has never shipped Docker), this hit run_command's
+        # FileNotFoundError handler and hard sys.exit(127) ("Command not
+        # found: docker"), even for `ldm init --no-up`, which never
+        # intends to touch Docker at all.
+        from ldm_core.config import TargetNode
+        from ldm_core.handlers.base import BaseHandler
+
+        mock_get_active_target.return_value = TargetNode(name="local", host="localhost")
+
+        handler = BaseHandler(MagicMock())
+        handler.verbose = False
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            paths = {"root": root, "files": root / "files"}
+
+            with patch.object(handler, "run_command") as mock_run_command:
+                handler.verify_runtime_environment(paths)
+                mock_run_command.assert_not_called()
+
 
 class TestBasePortChecking(unittest.TestCase):
     def setUp(self):
