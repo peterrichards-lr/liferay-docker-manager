@@ -744,18 +744,38 @@ class ReadinessService(BaseHandler):
                         for cred in credentials:
                             ident = cred.get("email") or cred.get("username", "Unknown")
                             cred_type = cred.get("type", "user")
-                            pwd_key = "pass" + "word"  # pragma: allowlist secret
-                            pwd = cred.get(pwd_key, "")
                             desc = cred.get("description", "")
 
+                            # LDM-#1161: this used to interpolate the real
+                            # password wrapped in UI.HIDDEN (the ANSI
+                            # "conceal" escape, \033[8m), relying on the
+                            # terminal to render it invisibly. Many common
+                            # terminals (iTerm2, Terminal.app, VS Code,
+                            # Windows Terminal) don't implement conceal at
+                            # all and just print the raw text -- so the
+                            # password was shown in clear text precisely
+                            # where users would least expect it. UI.HIDDEN
+                            # was also hardcoded outside the NO_COLOR/
+                            # non-interactive handling every other color
+                            # goes through, so a piped/CI log could capture
+                            # the raw escape sequence around a fully visible
+                            # password too. A fixed-width placeholder never
+                            # carries the real value into the rendered
+                            # output at all, so there's nothing for any
+                            # terminal to fail to conceal.
+                            mask = (
+                                "********"
+                                if getattr(UI, "NO_UNICODE", False)
+                                else "••••••••"
+                            )
                             UI.raw(
-                                f"  👤  [{cred_type.upper()}] {ident} / [ {UI.HIDDEN}{pwd}{UI.COLOR_OFF} ]"
+                                f"  👤  [{cred_type.upper()}] {ident} / [ {UI.DIM}{mask}{UI.COLOR_OFF} ]"
                             )
                             if desc:
                                 UI.raw(f"      {desc}")
 
                         UI.raw(
-                            f"      {UI.DIM}(password hidden, highlight to copy or use 'ldm info --credentials'){UI.COLOR_OFF}"
+                            f"      {UI.DIM}(password masked -- use 'ldm info --credentials' to reveal it){UI.COLOR_OFF}"
                         )
                         UI.raw("")
 
