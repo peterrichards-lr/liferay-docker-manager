@@ -366,7 +366,7 @@ def sanitize_id(identifier):
 
     # Fallback for non-latin scripts (e.g. CJK script)
     if not sanitized:
-        short_hash = hashlib.md5(str(identifier).encode("utf-8")).hexdigest()[:8]
+        short_hash = hashlib.sha256(str(identifier).encode("utf-8")).hexdigest()[:8]
         return f"project-{short_hash}"
 
     return sanitized
