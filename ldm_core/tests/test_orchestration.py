@@ -252,6 +252,62 @@ class TestOrchestration(unittest.TestCase):
                 self.assertIn("aws-1", c.args[0])
 
     @patch("ldm_core.docker_service.get_active_target")
+    @patch("ldm_core.runtime.orchestration.subprocess.run")
+    @patch("ldm_core.runtime.orchestration.shutil.rmtree")
+    def test_cmd_down_delete_drops_shared_db_via_remote_target(
+        self, mock_rmtree, mock_sub_run, mock_target
+    ):
+        """cmd_down(delete=True)'s shared-DB-drop docker exec must honor the
+        project's resolved target (#1133) -- previously hardcoded "docker",
+        silently dropping the schema on the LOCAL daemon's shared container
+        instead of the remote one actually hosting it."""
+        from ldm_core.config import TargetNode
+
+        mock_target.return_value = TargetNode(name="aws-1", host="34.1.1.1")
+        with (
+            patch.object(
+                self.handler.manager,
+                "read_meta",
+                return_value={
+                    "target": "aws-1",
+                    "database_mode": "shared",
+                    "db_type": "postgresql",
+                    "project_name": "test",
+                },
+            ),
+            patch.object(BaseHandler, "run_command", return_value=""),
+            patch.object(Path, "exists", return_value=True),
+        ):
+            self.handler.cmd_down("test", delete=True)
+
+        self.assertTrue(mock_sub_run.called)
+        drop_cmd = mock_sub_run.call_args[0][0]
+        self.assertIn("--context", drop_cmd)
+        self.assertIn("aws-1", drop_cmd)
+        self.assertIn("dropdb", drop_cmd)
+
+    @patch("ldm_core.docker_service.get_active_target")
+    def test_cmd_shell_uses_remote_target_context(self, mock_target):
+        """cmd_shell's resolve_container()/exec must honor the project's
+        resolved target (#1133)."""
+        from ldm_core.config import TargetNode
+
+        mock_target.return_value = TargetNode(name="aws-1", host="34.1.1.1")
+        with (
+            patch.object(
+                self.handler.manager, "read_meta", return_value={"target": "aws-1"}
+            ),
+            patch.object(BaseHandler, "run_command", return_value="proj-liferay-1"),
+            patch("ldm_core.runtime.orchestration.subprocess.run") as mock_sub_run,
+        ):
+            self.handler.handler.orchestration.cmd_shell("test")
+
+        self.assertTrue(mock_sub_run.called)
+        exec_cmd = mock_sub_run.call_args[0][0]
+        self.assertIn("--context", exec_cmd)
+        self.assertIn("aws-1", exec_cmd)
+
+    @patch("ldm_core.docker_service.get_active_target")
     @patch("ldm_core.runtime.orchestration.shutil.rmtree")
     def test_cmd_down_dry_run(self, mock_rmtree, mock_target):
         from ldm_core.config import TargetNode

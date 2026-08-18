@@ -342,6 +342,33 @@ class TestBaseProject(unittest.TestCase):
     def test_get_container_status_healthy(self, mock_health):
         self.assertEqual(self.handler.get_container_status("c1"), "healthy")
 
+    def test_resolve_container_uses_remote_target_context(self):
+        """resolve_container()'s label-based lookup must honor a passed target (#1133).
+
+        Callers (cmd_shell, cmd_logs) resolve the project's target and pass
+        it through -- previously this method's own docker ps invocation
+        hardcoded "docker", silently looking at the LOCAL daemon even when
+        the caller's own resolved target was remote.
+        """
+        from ldm_core.config import TargetNode
+
+        with (
+            patch(
+                "ldm_core.docker_service.get_active_target",
+                return_value=TargetNode(name="aws-1", host="34.1.1.1"),
+            ),
+            patch.object(
+                self.handler, "run_command", return_value="proj-liferay-1"
+            ) as mock_run,
+        ):
+            result = self.handler.resolve_container(
+                "proj", "liferay", target_name="aws-1"
+            )
+            self.assertEqual(result, "proj-liferay-1")
+            called_cmd = mock_run.call_args[0][0]
+            self.assertIn("--context", called_cmd)
+            self.assertIn("aws-1", called_cmd)
+
     def test_select_project_interactively_basic(self):
         self.handler.non_interactive = False
         roots = [{"path": Path("/tmp/p1"), "version": "7.4"}]

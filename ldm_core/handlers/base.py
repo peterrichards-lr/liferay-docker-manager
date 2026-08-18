@@ -812,14 +812,16 @@ class BaseHandler:
             return False
         return True
 
-    def resolve_container(self, project_name, service="liferay"):
+    def resolve_container(self, project_name, service="liferay", target_name=None):
         """Resolves a service to an actual container name or ID via labels."""
+        from ldm_core.docker_service import DockerService
         from ldm_core.utils import sanitize_id
 
         safe_name = sanitize_id(project_name)
+        docker_prefix = DockerService.get_docker_cmd_prefix(target_name)
 
         cmd = [
-            "docker",
+            *docker_prefix,
             "ps",
             "-a",
             "--format",

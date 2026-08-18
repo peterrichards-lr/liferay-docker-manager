@@ -6,10 +6,7 @@ import time
 
 from ldm_core.handlers.base import BaseHandler
 from ldm_core.ui import UI
-from ldm_core.utils import (
-    get_compose_cmd,
-    strip_ansi,
-)
+from ldm_core.utils import strip_ansi
 
 
 class LogsService(BaseHandler):
@@ -88,16 +85,31 @@ class LogsService(BaseHandler):
             if not service or "es" in service:
                 containers.append("liferay-search-global")
 
+            # Global shared infra lives on whichever target it was provisioned
+            # on -- there's no per-project meta here, so only an explicit
+            # --node override is honored (falls back to the persisted
+            # default via get_active_target(), same as any other target
+            # resolution). See docs/explanation/remote-node-architecture.md.
+            infra_target_name = getattr(self.manager, "target", None)
+            from ldm_core.docker_service import DockerService
+
+            infra_docker_prefix = DockerService.get_docker_cmd_prefix(infra_target_name)
+
             for container in containers:
                 self.manager.run_command(
-                    ["docker", "ps", "-q", "-f", f"name=^{container}$"]
+                    [*infra_docker_prefix, "ps", "-q", "-f", f"name=^{container}$"]
                 )
 
             infra_compose = self.manager.get_resource_path("infra-compose.yml")
             if not infra_compose:
                 UI.die("Infrastructure compose file 'infra-compose.yml' not found.")
 
-            cmd = [*get_compose_cmd(), "-f", str(infra_compose), "logs"]
+            cmd = [
+                *DockerService.get_compose_cmd_prefix(infra_target_name),
+                "-f",
+                str(infra_compose),
+                "logs",
+            ]
             if follow:
                 cmd.append("-f")
 
@@ -152,7 +164,7 @@ class LogsService(BaseHandler):
 
                 # LDM-381: Resolve the actual container name using labels
                 actual_container = self.manager.resolve_container(
-                    root.name, target_service
+                    root.name, target_service, target_name=target_name
                 )
 
                 # Check if it exists
@@ -276,6 +288,11 @@ class LogsService(BaseHandler):
 
         project_name = sanitize_id(meta.get("container_name") or root.name)
 
+        target_name = getattr(self.manager, "target", None) or meta.get("target")
+        from ldm_core.docker_service import DockerService
+
+        docker_prefix = DockerService.get_docker_cmd_prefix(target_name)
+
         # Default service to 'liferay' when not specified
         svc = (
             service[0]
@@ -310,7 +327,7 @@ class LogsService(BaseHandler):
 
         # Confirm the container exists
         check = self.manager.run_command(
-            ["docker", "ps", "-a", "-q", "-f", f"name=^{container_name}$"],
+            [*docker_prefix, "ps", "-a", "-q", "-f", f"name=^{container_name}$"],
             check=False,
         )
         if not check:
@@ -325,7 +342,7 @@ class LogsService(BaseHandler):
             f"(instance {instance} of {max_instances})..."
         )
 
-        cmd = ["docker", "logs"]
+        cmd = [*docker_prefix, "logs"]
         if follow:
             cmd.append("-f")
         if tail:
@@ -533,16 +550,19 @@ class LogsService(BaseHandler):
                 except subprocess.TimeoutExpired:
                     process.kill()
 
-    def _print_ngrok_url(self, project_id):
+    def _print_ngrok_url(self, project_id, target_name=None):
         """Fetches and prints the public ngrok URL from the running container."""
 
         from ldm_core.ui import UI
 
         container_name = f"{project_id}-ngrok-1"
+        from ldm_core.docker_service import DockerService
+
+        docker_prefix = DockerService.get_docker_cmd_prefix(target_name)
         try:
             result = self.manager.run_command(
                 [
-                    "docker",
+                    *docker_prefix,
                     "exec",
                     container_name,
                     "curl",
