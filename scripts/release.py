@@ -238,6 +238,10 @@ def main():  # noqa: C901, PLR0912, PLR0915
         action="store_true",
         help="Promote the current pre-release/beta branch to a stable release",
     )
+    parser.add_argument(
+        "--issue",
+        help="Associated GitHub Issue or Epic number (e.g. 1204)",
+    )
     args = parser.parse_args()
 
     # 1. Fetch latest changes from master
@@ -611,12 +615,12 @@ def main():  # noqa: C901, PLR0912, PLR0915
         pr_url = f"https://github.com/peterrichards-lr/liferay-docker-manager/pull/{existing_pr_num}"
         print(f"Reusing existing tracking PR: {pr_url}")
     else:
-        print("Creating pull request...")
+        closes_line = f"\n\nCloses #{args.issue}" if args.issue else ""
         pr_body = (
-            f"Automated release bump to v{new_version}."
+            f"Automated release bump to v{new_version}.{closes_line}"
             if "-" not in new_version
             else (
-                f"Pre-release tracking PR for v{new_version}.\n\n"
+                f"Pre-release tracking PR for v{new_version}.{closes_line}\n\n"
                 "**Do not merge this PR manually.** It stays open and keeps "
                 "collecting commits (further `--bump beta` cycles, fixes, "
                 "verification results) for the duration of this pre-release "
@@ -672,7 +676,7 @@ def main():  # noqa: C901, PLR0912, PLR0915
 
     pr_num = pr_url.split("/")[-1]
 
-    if not is_continuing_release:
+    if not is_continuing_release and not args.issue:
         # LDM-#1005: release/promote PRs aren't tied to a tracked issue --
         # label them so the mandatory issue-link-check (see #987) doesn't
         # fail on every single release cycle, requiring manual intervention.

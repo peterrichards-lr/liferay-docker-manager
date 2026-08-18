@@ -11,8 +11,10 @@ description: Activate this skill whenever preparing a release, bumping versions,
   - To start a new pre-release cycle (run from `master`) or continue an already-open one (run from its existing `release/vX.Y.Z-pre.N` branch -- the script detects which by your current branch):
 
     ```bash
-    python3 scripts/release.py --bump beta
+    python3 scripts/release.py --bump beta --issue 1204
     ```
+
+    Passing `--issue <number>` automatically appends `Closes #<number>` to the PR description so GitHub links and auto-closes the tracked issue or epic upon promotion.
 
     Continuing a cycle bumps the `-pre.N` counter, commits and pushes to the *same* branch, and reuses its *same* open tracking PR -- it never creates a new branch or PR for a second/third/etc. beta increment, and it never merges that PR into `master`. A CI gate (`block-prerelease-on-master` in `.github/workflows/ci.yml`, part of the required checks on the `master` branch ruleset) independently rejects any attempt to merge a pre-release-versioned ref into `master`, so this can't be circumvented by manually running `gh pr merge` on the tracking PR either.
   - To promote pre-releases to stable releases (must be run from the active release branch):
