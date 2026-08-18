@@ -151,7 +151,9 @@ Use **only** for genuine user-actionable advisories where something unexpected o
 UI.warning(f"Port conflict detected! Using {new_port} instead of {orig_port}.")
 UI.warning("Version downgrade detected. A pre-upgrade backup has been created.")
 UI.warning(f"SSL certificate for {host} is not trusted by the system keychain.")
-UI.warning(f"Search restore timed out. Indices may be incomplete — run: ldm reindex {project_id}")
+UI.warning(
+    f"Search restore timed out. Indices may be incomplete — run: ldm reindex {project_id}"
+)
 UI.warning(f"Stale project lock auto-recovered (PID {pid} no longer running).")
 UI.warning("Using '.local' TLD — ensure mkcert is installed and trusted.")
 ```
@@ -182,7 +184,9 @@ UI.error("Elasticsearch failed to become ready in time.")
 Use when a failure is **unrecoverable and execution must stop**.
 
 ```python
-UI.die("Database restore failed after all retries. Original data preserved.", exit_code=3)
+UI.die(
+    "Database restore failed after all retries. Original data preserved.", exit_code=3
+)
 UI.die("Elasticsearch failed after 2 restart attempts.", exit_code=3)
 ```
 

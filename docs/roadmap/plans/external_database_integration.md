@@ -13,7 +13,7 @@ parser.add_argument(
     "--db",
     choices=["postgresql", "mysql", "hypersonic", "external"],
     default="postgresql",
-    help="Database engine to use"
+    help="Database engine to use",
 )
 ```
 
