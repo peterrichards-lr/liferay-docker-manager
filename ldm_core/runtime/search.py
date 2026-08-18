@@ -20,9 +20,15 @@ class SearchService(BaseHandler):
         p_id = root.name
         paths = self.manager.setup_paths(p_id)
 
+        meta = self.manager.read_meta(root) or {}
+        target_name = getattr(self.manager, "target", None) or meta.get("target")
+        from ldm_core.docker_service import DockerService
+
+        docker_prefix = DockerService.get_docker_cmd_prefix(target_name)
+
         # 1. Ensure Liferay is NOT running
         is_running = self.manager.run_command(
-            ["docker", "ps", "-q", "-f", f"name=^{p_id}$"], check=False
+            [*docker_prefix, "ps", "-q", "-f", f"name=^{p_id}$"], check=False
         )
         if is_running:
             UI.die(
@@ -33,7 +39,8 @@ class SearchService(BaseHandler):
 
         # 2. Check if Global Search is running
         search_running = self.manager.run_command(
-            ["docker", "ps", "-q", "-f", "name=^liferay-search-global$"], check=False
+            [*docker_prefix, "ps", "-q", "-f", "name=^liferay-search-global$"],
+            check=False,
         )
         if not search_running:
             if (

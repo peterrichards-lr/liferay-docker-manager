@@ -16,6 +16,7 @@ class MockSystemManager:
         self.verbose = False
         self.non_interactive = True
         self.dry_run = False
+        self.target: str | None = None
 
         # Mock services
         self.runtime = MagicMock()
@@ -527,6 +528,39 @@ class TestSystemService(unittest.TestCase):
             ],
             check=False,
         )
+
+    @patch("ldm_core.handlers.system.UI.ask", return_value="y")
+    def test_cmd_nuke_uses_remote_target_context(self, mock_ask):
+        """cmd_nuke's docker prune commands must honor active target context (#1133)."""
+        from ldm_core.config import TargetNode
+
+        with patch("ldm_core.docker_service.get_active_target") as mock_target:
+            mock_target.return_value = TargetNode(name="aws-1", host="34.1.1.1")
+            self.manager.target = "aws-1"
+
+            with patch.object(self.system, "_remove_hosts_entries"):
+                self.system.cmd_nuke(force=False, keep_config=True)
+
+        calls = [c[0][0] for c in self.manager.run_command.call_args_list]
+        for cmd in calls:
+            self.assertIn("--context", cmd)
+            self.assertIn("aws-1", cmd)
+
+    def test_cmd_rescue_uses_remote_target_context(self):
+        """cmd_rescue's network creation must honor active target context (#1133)."""
+        from ldm_core.config import TargetNode
+
+        with patch("ldm_core.docker_service.get_active_target") as mock_target:
+            mock_target.return_value = TargetNode(name="aws-1", host="34.1.1.1")
+            self.manager.target = "aws-1"
+
+            with patch("socket.socket"):
+                self.system.cmd_rescue()
+
+        calls = [c[0][0] for c in self.manager.run_command.call_args_list]
+        network_create_cmd = next(c for c in calls if "network" in c and "create" in c)
+        self.assertIn("--context", network_create_cmd)
+        self.assertIn("aws-1", network_create_cmd)
 
 
 if __name__ == "__main__":
