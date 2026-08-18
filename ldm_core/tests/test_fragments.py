@@ -18,6 +18,7 @@ class MockRuntime(BaseHandler):
         self.verbose = False
         self.non_interactive = True
         self.dry_run = False
+        self.target: str | None = None
 
         # Self-referential manager for service compatibility
         from typing import Any, cast
@@ -146,6 +147,55 @@ class TestFragments(unittest.TestCase):
                 self.handler.handler.fragments._patch_fragment_overrides(
                     project_meta, paths
                 )
+
+    @patch("time.sleep")
+    @patch("urllib.request.urlopen")
+    def test_patch_fragment_overrides_uses_remote_target_context(
+        self, mock_urlopen, mock_sleep
+    ):
+        """The docker port/inspect lookups in _patch_fragment_overrides must
+        honor the project's resolved target (#1133)."""
+        import json
+        import urllib.error
+
+        from ldm_core.config import TargetNode
+
+        project_meta = {
+            "tag": "2025.Q1.0",
+            "container_name": "liferay-demo",
+            "share": "false",
+            "target": "aws-1",
+        }
+        paths = {"root": self.tmp_dir}
+
+        configs_dir = self.tmp_dir / "configs"
+        configs_dir.mkdir(parents=True, exist_ok=True)
+        overrides_data = {"test-frag": {"url": "https://foo.example.com"}}
+        with open(configs_dir / "fragment-overrides.json", "w") as f:
+            json.dump(overrides_data, f)
+
+        mock_urlopen.side_effect = urllib.error.URLError("no network in test")
+
+        with (
+            patch.object(BaseHandler, "run_command", return_value="8080") as mock_run,
+            patch(
+                "ldm_core.docker_service.get_active_target",
+                return_value=TargetNode(name="aws-1", host="34.1.1.1"),
+            ),
+        ):
+            self.handler.handler.fragments._patch_fragment_overrides(
+                project_meta, paths
+            )
+
+        called_cmds = [call[0][0] for call in mock_run.call_args_list]
+        has_context = any(
+            "--context" in cmd and "aws-1" in cmd
+            for cmd in called_cmds
+            if isinstance(cmd, list)
+        )
+        self.assertTrue(
+            has_context, f"Expected --context aws-1 in one of {called_cmds}"
+        )
 
     @patch("time.sleep")
     @patch("urllib.request.urlopen")
@@ -1103,6 +1153,39 @@ class TestPatchDatabaseFragmentEntryLink(unittest.TestCase):
         query_arg = mock_run.call_args[0][0][-1]
         self.assertIn("SELECT ROW_COUNT();", query_arg)
         self.assertIn("-N", mock_run.call_args[0][0])
+
+    def test_uses_remote_target_context(self):
+        """_patch_database_fragmententrylink's docker exec calls (SQL patch
+        + OSGi cache flush) must honor the project's resolved target (#1133)."""
+        from ldm_core.config import TargetNode
+
+        with (
+            patch.object(
+                BaseHandler, "run_command", return_value="UPDATE 1\n"
+            ) as mock_run,
+            patch(
+                "ldm_core.docker_service.get_active_target",
+                return_value=TargetNode(name="aws-1", host="34.1.1.1"),
+            ),
+        ):
+            project_meta = {
+                "db_type": "postgresql",
+                "project_name": "aica",
+                "container_name": "aica",
+                "target": "aws-1",
+            }
+            self.handler.handler.fragments._patch_database_fragmententrylink(
+                project_meta, self.overrides
+            )
+            called_cmds = [call[0][0] for call in mock_run.call_args_list]
+            has_context = any(
+                "--context" in cmd and "aws-1" in cmd
+                for cmd in called_cmds
+                if isinstance(cmd, list)
+            )
+            self.assertTrue(
+                has_context, f"Expected --context aws-1 in one of {called_cmds}"
+            )
 
 
 class TestFragmentPatchTimeout(unittest.TestCase):

@@ -138,6 +138,13 @@ class FragmentsService(BaseHandler):
             "container_name"
         )
 
+        target_name = getattr(self.manager, "target", None) or project_meta.get(
+            "target"
+        )
+        from ldm_core.docker_service import DockerService
+
+        docker_prefix = DockerService.get_docker_cmd_prefix(target_name)
+
         admin_email = self.manager.config.get_global_config().get(
             "admin_email", "test@liferay.com"
         )
@@ -148,7 +155,7 @@ class FragmentsService(BaseHandler):
         lfr_port = "8080"
         try:
             inspect_output = self.manager.run_command(
-                ["docker", "port", container_name, "8080"],
+                [*docker_prefix, "port", container_name, "8080"],
                 check=False,
                 capture_output=True,
             )
@@ -216,7 +223,7 @@ class FragmentsService(BaseHandler):
             try:
                 inspect_output = self.manager.run_command(
                     [
-                        "docker",
+                        *docker_prefix,
                         "inspect",
                         "-f",
                         "{{range .Config.Env}}{{println .}}{{end}}",
@@ -917,10 +924,18 @@ class FragmentsService(BaseHandler):
                 "Please manually update fragment settings in Liferay Site Administration or configure PostgreSQL/MySQL."
             )
             return 0
+
+        target_name = getattr(self.manager, "target", None) or project_meta.get(
+            "target"
+        )
+        from ldm_core.docker_service import DockerService
+
+        docker_prefix = DockerService.get_docker_cmd_prefix(target_name)
+
         is_mysql = "mysql" in db_type or "mariadb" in db_type
         db_cmd_base = (
             [
-                "docker",
+                *docker_prefix,
                 "exec",
                 db_container,
                 "mysql",
@@ -936,7 +951,7 @@ class FragmentsService(BaseHandler):
             ]
             if is_mysql
             else [
-                "docker",
+                *docker_prefix,
                 "exec",
                 db_container,
                 "psql",
@@ -1016,7 +1031,7 @@ class FragmentsService(BaseHandler):
                 try:
                     self.manager.run_command(
                         [
-                            "docker",
+                            *docker_prefix,
                             "exec",
                             container_name,
                             "sh",
