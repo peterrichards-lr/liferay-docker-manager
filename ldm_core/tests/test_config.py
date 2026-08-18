@@ -23,6 +23,7 @@ class MockConfigManager:
         self.args = Args()
         self.verbose = False
         self.non_interactive = True
+        self.target: str | None = None
 
         from ldm_core.defaults import DefaultsManager
 
@@ -69,6 +70,18 @@ class TestConfigService(unittest.TestCase):
     def setUp(self):
         self.manager = MockConfigManager()
         self.config = ConfigService(self.manager)
+
+        # Isolate every test in this class from the tester's REAL ~/.ldmrc
+        # persisted default target -- get_docker_cmd_prefix() always calls
+        # get_active_target() even for a falsy target_name (see PR #1150).
+        from ldm_core.config import TargetNode
+
+        self.active_target_patcher = patch("ldm_core.docker_service.get_active_target")
+        self.mock_active_target = self.active_target_patcher.start()
+        self.mock_active_target.return_value = TargetNode(
+            name="local", host="localhost", is_default=True
+        )
+        self.addCleanup(self.active_target_patcher.stop)
 
     def test_get_properties_basic(self):
         content = "key1=val1\nkey2=val2"
@@ -1106,6 +1119,39 @@ class TestConfigService(unittest.TestCase):
             self.assertTrue(target_pe.exists())
             self.assertEqual(target_pe.read_text().strip(), "")
 
+    @patch("ldm_core.handlers.config.run_command")
+    def test_sync_common_assets_files_uses_remote_target_context(self, mock_run):
+        """_sync_common_assets_files' docker inspect (shared search image
+        check) must honor the project's resolved target (#1133)."""
+        import tempfile
+        from pathlib import Path
+
+        from ldm_core.config import TargetNode
+
+        self.mock_active_target.return_value = TargetNode(name="aws-1", host="34.1.1.1")
+        mock_run.return_value = "elastic/elasticsearch:8.11.0"
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            common_dir = tmp_path / "common"
+            common_dir.mkdir()
+            paths = {
+                "root": tmp_path,
+                "common_dirs": [common_dir],
+                "deploy": tmp_path / "deploy",
+                "configs": tmp_path / "configs",
+            }
+            paths["deploy"].mkdir()
+            paths["configs"].mkdir()
+
+            self.config._sync_common_assets_files(
+                paths, {"use_shared_search": "true", "target": "aws-1"}
+            )
+
+        called_cmd = mock_run.call_args[0][0]
+        self.assertIn("--context", called_cmd)
+        self.assertIn("aws-1", called_cmd)
+
     @patch("subprocess.run")
     def test_cmd_ssl_mode_hosts(self, mock_run):
         """Verify cmd_ssl_mode configures project for hosts-based SSL and syncs .env files."""
@@ -1173,6 +1219,50 @@ class TestConfigService(unittest.TestCase):
                 project_id=tmp_path.name
             )
             self.config.cmd_rebuild_properties.assert_called_once_with(tmp_path.name)
+
+    @patch("subprocess.run")
+    def test_cmd_ssl_mode_uses_remote_target_context(self, mock_run):
+        """cmd_ssl_mode's docker inspect (Running-state check) must honor
+        the project's resolved target (#1133)."""
+        import tempfile
+        from pathlib import Path
+        from unittest.mock import MagicMock
+
+        from ldm_core.config import TargetNode
+
+        self.mock_active_target.return_value = TargetNode(name="aws-1", host="34.1.1.1")
+        mock_inspect = MagicMock()
+        mock_inspect.stdout = "true\n"
+        mock_run.return_value = mock_inspect
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            files_dir = tmp_path / "files"
+            files_dir.mkdir(parents=True)
+            paths = {
+                "root": tmp_path,
+                "configs": tmp_path / "osgi" / "configs",
+                "files": files_dir,
+                "common_dirs": [],
+                "deploy": tmp_path / "deploy",
+            }
+
+            self.manager.detect_project_path = MagicMock(return_value=tmp_path)  # type: ignore[method-assign]
+            self.manager.setup_paths = MagicMock(return_value=paths)  # type: ignore[method-assign]
+            self.manager.read_meta = MagicMock(  # type: ignore[method-assign]
+                return_value={"container_name": "test-c", "target": "aws-1"}
+            )
+            self.manager.write_meta = MagicMock()  # type: ignore[method-assign]
+            self.manager.runtime.cmd_stop = MagicMock()  # type: ignore[method-assign]
+            self.manager.runtime.cmd_run = MagicMock()  # type: ignore[method-assign]
+            self.config.cmd_rebuild_properties = MagicMock()  # type: ignore[method-assign]
+            self.manager.args.no_restart = False
+
+            self.config.cmd_ssl_mode("hosts", project_id="test-p")
+
+        inspect_cmd = mock_run.call_args[0][0]
+        self.assertIn("--context", inspect_cmd)
+        self.assertIn("aws-1", inspect_cmd)
 
     @patch("subprocess.run")
     def test_cmd_ssl_mode_share(self, mock_run):

@@ -732,7 +732,9 @@ class ConfigResolutionStage(PipelineStage):
         )
 
         if not jvm_args:
-            jvm_args = manager.composer.get_default_jvm_args()
+            jvm_args = manager.composer.get_default_jvm_args(
+                target_name=project_meta.get("target")
+            )
 
         external_snapshot = getattr(manager.args, "snapshot", None)
         if external_snapshot:
