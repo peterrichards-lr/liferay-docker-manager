@@ -26,6 +26,7 @@ from ldm_core.utils import (
     check_for_updates,
     get_actual_home,
     is_continuation_line,
+    is_local_host,
     resolve_dependency_version,
     run_command,
     strip_ansi,
@@ -1359,7 +1360,7 @@ class DoctorRunner:
             _active_project_target = get_active_target(project_target_name)
             is_remote_project = (
                 _active_project_target.name != "local"
-                and _active_project_target.host not in ("localhost", "127.0.0.1", "")
+                and not is_local_host(_active_project_target.host)
             )
 
             p_id = sanitize_id(

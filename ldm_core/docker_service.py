@@ -1,5 +1,5 @@
 from ldm_core.config import get_active_target
-from ldm_core.utils import run_command
+from ldm_core.utils import is_local_host, run_command
 
 
 class DockerService:
@@ -22,11 +22,7 @@ class DockerService:
         this belongs to.
         """
         target = get_active_target(target_name)
-        if target.name != "local" and target.host not in (
-            "localhost",
-            "127.0.0.1",
-            "",
-        ):
+        if target.name != "local" and not is_local_host(target.host):
             return ["docker", "--context", target.name]
         return ["docker"]
 
