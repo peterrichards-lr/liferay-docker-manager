@@ -1,12 +1,12 @@
 === LDM BINARY VERIFICATION REPORT ===
-Timestamp:    Tue Aug 11 15:11:15 UTC 2026
+Timestamp:    Tue Aug 18 13:33:13 UTC 2026
 Hostname:  [ANONYMIZED]
 Platform:     Fedora Linux 44 (Container Image)
 Binary:    [ANONYMIZED]
-Version:      ldm 2.15.27
-Script Ver:   2.15.27
+Version:      ldm 2.15.28
+Script Ver:   2.15.28
 Docker:    28.0.4
-Compose:   5.3.1
+Compose:   5.4.0
 
 >> Initializing Infrastructure
 ✅  Infrastructure setup complete.
@@ -27,27 +27,38 @@ Compose:   5.3.1
 │ local  │ localhost       │ ONLINE │ v28.0.4        │ 4 CPUs / 15.6 GB │ 4                  │
 ╰────────┴─────────────────┴────────┴────────────────┴──────────────────┴────────────────────╯
 >> Target Add (Mock Node)
-✅  Target node 'e2e-target-49771' (127.0.0.1) registered successfully.
+✅  Target node 'e2e-target-36505' (127.0.0.1) registered successfully.
 >> Target Remove (Mock Node)
-✅  Target node 'e2e-target-49771' removed.
+✅  Target node 'e2e-target-36505' removed.
+>> Target Add (127.0.0.2 Loopback)
+✅  Target node 'loopback-node-36505' (127.0.0.2) registered successfully.
+>> Target Status (Loopback Node)
+=== Target Compute Nodes Status & Connectivity Probe ===
+╭─────────────────────┬─────────────────┬────────┬────────────────┬──────────────────┬────────────────────╮
+│ TARGET              │ HOST / ENDPOINT │ STATUS │ ENGINE VERSION │ CPUs / MEMORY    │ RUNNING CONTAINERS │
+├─────────────────────┼─────────────────┼────────┼────────────────┼──────────────────┼────────────────────┤
+│ loopback-node-36505 │ 127.0.0.2       │ ONLINE │ v28.0.4        │ 4 CPUs / 15.6 GB │ 4                  │
+╰─────────────────────┴─────────────────┴────────┴────────────────┴──────────────────┴────────────────────╯
+>> Target Remove (Loopback Node)
+✅  Target node 'loopback-node-36505' removed.
 >> Running LDM Project
-ℹ  The LDM project 'ldm-smoke-test-49771' already exists and this command will reconfigure it.
+ℹ  The LDM project 'ldm-smoke-test-36505' already exists and this command will reconfigure it.
 ▶  Synchronizing Assets
 ⚠️  Global or local 'common/' folder not found. Some baseline assets may be missing.
 ▶  Starting Container Stack
-✅  Project 'ldm-smoke-test-49771' started in background.
+✅  Project 'ldm-smoke-test-36505' started in background.
 >> Deploying artifact
 ✅  Artifact deployment complete.
 ✅ Hot Deploy verified.
 >> Creating Snapshot
 ✅  Database dump completed.
-✅  Snapshot saved: [HOME]/work/liferay-docker-manager/liferay-docker-manager/e2e-work-dir-49771/ldm-smoke-test-49771/snapshots/20260811_151651
+✅  Snapshot saved: [HOME]/work/liferay-docker-manager/liferay-docker-manager/e2e-work-dir-36505/ldm-smoke-test-36505/snapshots/20260818_133853
 >> Bypassing Integrity
-=== Snapshots for ldm-smoke-test-49771 ===
-[1] 20260811_151651 - Binary-Verify (1.0 GB) [DB,VOL,MOD]
-⚠️  Resetting ldm-smoke-test-49771 (all)...
-⚠️  Tearing down stack: ldm-smoke-test-49771
-✅  Project ldm-smoke-test-49771 reset successful.
+=== Snapshots for ldm-smoke-test-36505 ===
+[1] 20260818_133853 - Binary-Verify (1.0 GB) [DB,VOL,MOD]
+⚠️  Resetting ldm-smoke-test-36505 (all)...
+⚠️  Tearing down stack: ldm-smoke-test-36505
+✅  Project ldm-smoke-test-36505 reset successful.
 ⚠️  Integrity verification disabled via --no-verify.
 ▶  Restoring Workspace Data
 ▶  Finalizing Metadata
@@ -58,22 +69,22 @@ Compose:   5.3.1
 ✅  + Database restored successfully.
 ✅  Restore complete.
 >> Scaling Liferay
-✅  Updated scale factors for project ldm-smoke-test-49771
+✅  Updated scale factors for project ldm-smoke-test-36505
 >> Scaling Liferay back to 1 for logs export check
-✅  Updated scale factors for project ldm-smoke-test-49771
+✅  Updated scale factors for project ldm-smoke-test-36505
 >> Starting project for logs export check
-ℹ  The LDM project 'ldm-smoke-test-49771' already exists and this command will reconfigure it.
+ℹ  The LDM project 'ldm-smoke-test-36505' already exists and this command will reconfigure it.
 ▶  Synchronizing Assets
 ⚠️  Global or local 'common/' folder not found. Some baseline assets may be missing.
 ▶  Starting Container Stack
-✅  Project 'ldm-smoke-test-49771' started in background.
+✅  Project 'ldm-smoke-test-36505' started in background.
 >> Exporting project logs
 >> Stopping project to release file locks
 >> Rebuilding properties
-=== Rebuilding Properties for project: ldm-smoke-test-49771 ===
+=== Rebuilding Properties for project: ldm-smoke-test-36505 ===
 ✅  Properties successfully rebuilt.
 >> Resetting properties
-=== Resetting Properties for project: ldm-smoke-test-49771 ===
+=== Resetting Properties for project: ldm-smoke-test-36505 ===
 ✅  Properties successfully reset.
 >> Checking Status
 === LDM Service Status ===
