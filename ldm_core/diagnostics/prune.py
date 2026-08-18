@@ -81,6 +81,15 @@ def run_prune(handler):  # noqa: C901, PLR0912, PLR0915
     prune_samples = getattr(handler.manager.args, "samples", False) or prune_all
     prune_images = getattr(handler.manager.args, "images", False) or prune_all
 
+    # `ldm system prune --node <target>` inherits --node via base_sub_parent
+    # (wired into handler.manager.target by manager.py), but every docker
+    # call below hardcoded "docker" regardless -- always pruning the LOCAL
+    # daemon even when an explicit remote target was requested.
+    target_name = getattr(handler.manager, "target", None)
+    from ldm_core.docker_service import DockerService
+
+    docker_prefix = DockerService.get_docker_cmd_prefix(target_name)
+
     roots = handler.manager.find_dxp_roots()
     active_projects = set()
     active_hostnames = set()
@@ -102,7 +111,7 @@ def run_prune(handler):  # noqa: C901, PLR0912, PLR0915
     # LDM-381: We look for containers with our project label
     containers_raw = run_command(
         [
-            "docker",
+            *docker_prefix,
             "ps",
             "-a",
             "--filter",
@@ -144,7 +153,7 @@ def run_prune(handler):  # noqa: C901, PLR0912, PLR0915
             from ldm_core.docker_service import DockerService
 
             for o in orphans:
-                DockerService.rm(o, force=True)
+                DockerService.rm(o, force=True, target_name=target_name)
             UI.success(f"{len(orphans)} orphaned containers removed.")
     else:
         UI.detail("No orphaned containers found.")
@@ -153,7 +162,7 @@ def run_prune(handler):  # noqa: C901, PLR0912, PLR0915
     from ldm_core.docker_service import DockerService
 
     search_name = "liferay-search-global"
-    if DockerService.is_running(search_name):
+    if DockerService.is_running(search_name, target_name=target_name):
         snaps_raw = DockerService.exec(
             search_name,
             [
@@ -162,6 +171,7 @@ def run_prune(handler):  # noqa: C901, PLR0912, PLR0915
                 "localhost:9200/_snapshot/liferay_backup/_all",
             ],
             check=False,
+            target_name=target_name,
         )
         if snaps_raw:
             try:
@@ -204,6 +214,7 @@ def run_prune(handler):  # noqa: C901, PLR0912, PLR0915
                                     f"localhost:9200/_snapshot/liferay_backup/{s}",
                                 ],
                                 check=False,
+                                target_name=target_name,
                             )
                         UI.success(
                             f"{len(orphaned_snaps)} orphaned search snapshots removed."
@@ -327,7 +338,7 @@ def run_prune(handler):  # noqa: C901, PLR0912, PLR0915
     ):
         UI.detail("Pruning dangling Docker volumes...")
         UI.detail("Command: docker volume prune -f")
-        run_command(["docker", "volume", "prune", "-f"], check=False)
+        run_command([*docker_prefix, "volume", "prune", "-f"], check=False)
         UI.success("Volume pruning complete.")
 
     # 7b. Dangling/unused Docker images and unused build cache (LDM-#1086).
@@ -350,9 +361,11 @@ def run_prune(handler):  # noqa: C901, PLR0912, PLR0915
     ):
         UI.detail("Pruning unused Docker images and build cache...")
         UI.detail("Command: docker image prune -af")
-        image_res = run_command(["docker", "image", "prune", "-af"], check=False)
+        image_res = run_command([*docker_prefix, "image", "prune", "-af"], check=False)
         UI.detail("Command: docker builder prune -af")
-        cache_res = run_command(["docker", "builder", "prune", "-af"], check=False)
+        cache_res = run_command(
+            [*docker_prefix, "builder", "prune", "-af"], check=False
+        )
         reclaimed = _sum_reclaimed_space(image_res) + _sum_reclaimed_space(cache_res)
         if reclaimed:
             UI.success(

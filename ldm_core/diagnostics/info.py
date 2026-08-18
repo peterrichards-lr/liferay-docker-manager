@@ -313,14 +313,29 @@ def run_status(  # noqa: C901, PLR0912, PLR0915
     infra_rows = []
     any_infra = False
     if not detailed or not project_id:
+        # LDM-#1090/#1133/#1165: shared infra resolves to whichever target is
+        # active for this invocation (a project on a remote node has its
+        # shared search/proxy *on that node*, not always local -- see
+        # docs/explanation/remote-node-architecture.md §5), so this status
+        # check must ask the same engine setup_global_search()/
+        # setup_global_database() actually use, not always the local daemon.
+        # Matches the doctor.py precedent (PR #1174): only genuinely
+        # local-machine-specific deep checks (none exist in this shallow
+        # ps/inspect loop) would stay hardcoded local.
+        infra_target_name = getattr(handler.manager, "target", None)
+        from ldm_core.docker_service import DockerService
+
+        infra_docker_prefix = DockerService.get_docker_cmd_prefix(infra_target_name)
+
         for container, label in INFRA_SERVICES:
             res = run_command(
-                ["docker", "ps", "-q", "-f", f"name=^{container}$"], check=False
+                [*infra_docker_prefix, "ps", "-q", "-f", f"name=^{container}$"],
+                check=False,
             )
             if res:
                 inspect = run_command(
                     [
-                        "docker",
+                        *infra_docker_prefix,
                         "inspect",
                         "--format",
                         "{{.State.Status}} {{.Config.Image}}",
