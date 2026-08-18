@@ -735,6 +735,7 @@ class TestDiagnostics(unittest.TestCase):
         self.manager.args.images = True
         mock_run.side_effect = [
             "",  # orphaned containers query -> none found
+            "",  # fallback all containers query -> none found
             "Total reclaimed space: 1.5GB",  # docker image prune
             "Total reclaimed space: 500MB",  # docker builder prune
         ]
@@ -782,6 +783,7 @@ class TestDiagnostics(unittest.TestCase):
         self.manager.args.images = True
         mock_run.side_effect = [
             "",  # orphaned containers query -> none found
+            "",  # fallback all containers query -> none found
             "Total reclaimed space: 1.5GB",  # docker image prune
             "Total reclaimed space: 500MB",  # docker builder prune
         ]
