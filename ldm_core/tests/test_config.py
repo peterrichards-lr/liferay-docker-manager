@@ -1134,15 +1134,17 @@ class TestConfigService(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp_path = Path(tmp_dir)
             common_dir = tmp_path / "common"
+            deploy_dir = tmp_path / "deploy"
+            configs_dir = tmp_path / "configs"
             common_dir.mkdir()
+            deploy_dir.mkdir()
+            configs_dir.mkdir()
             paths = {
                 "root": tmp_path,
                 "common_dirs": [common_dir],
-                "deploy": tmp_path / "deploy",
-                "configs": tmp_path / "configs",
+                "deploy": deploy_dir,
+                "configs": configs_dir,
             }
-            paths["deploy"].mkdir()
-            paths["configs"].mkdir()
 
             self.config._sync_common_assets_files(
                 paths, {"use_shared_search": "true", "target": "aws-1"}
