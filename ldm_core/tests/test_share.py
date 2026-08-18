@@ -1419,3 +1419,23 @@ class TestShareService(unittest.TestCase):
         # Verify that UI.error was called for exit failure and logs printed
         mock_ui.error.assert_any_call("Failed to start tunnel (Exit 1)")
         mock_ui.error.assert_any_call("Tunnel Log Output:")
+
+    @patch("subprocess.run")
+    def test_share_uses_remote_target_context(self, mock_run):
+        """Share operations must honor active target context for docker commands (#1133)."""
+        from ldm_core.config import TargetNode
+
+        mock_res = MagicMock()
+        mock_res.returncode = 0
+        mock_res.stdout = "v1.2.3\ntrue"
+        mock_run.return_value = mock_res
+
+        with patch("ldm_core.docker_service.get_active_target") as mock_target:
+            mock_target.return_value = TargetNode(name="aws-1", host="34.1.1.1")
+
+            self.service._get_docker_installed_version(
+                "peterrichards/lfr-tunnel:latest", target_name="aws-1"
+            )
+            call_cmd = mock_run.call_args[0][0]
+            self.assertIn("--context", call_cmd)
+            self.assertIn("aws-1", call_cmd)
