@@ -49,6 +49,7 @@ nav:
     - Remote Node Architecture: explanation/remote-node-architecture.md
     - Properties: explanation/properties.md
     - Conventions: explanation/conventions.md
+    - Internationalization & Transcoding: explanation/i18n.md
     - FAQ: explanation/faq.md
   - Project Info:
     - Playbook: PLAYBOOK.md
