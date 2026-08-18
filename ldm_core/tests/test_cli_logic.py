@@ -277,6 +277,21 @@ class TestCLILogic(unittest.TestCase):
         self.assertEqual(args.command, "system")
         self.assertEqual(args.subcommand, "nuke")
 
+    def test_grouped_help_output(self):
+        """Verify that top-level parser format_help() outputs progressive disclosure category headers."""
+        help_text = self.parser.format_help()
+        self.assertIn("CORE COMMANDS (Start Here):", help_text)
+        self.assertIn("WORKSPACE & DATA MANAGEMENT:", help_text)
+        self.assertIn("DIAGNOSTICS & SYSTEM:", help_text)
+        self.assertIn("COMPUTE & INFRASTRUCTURE (Advanced):", help_text)
+        self.assertIn("run (up)", help_text)
+        self.assertIn("snapshot", help_text)
+        self.assertIn("doctor", help_text)
+        self.assertIn("target", help_text)
+        self.assertIn(
+            'Use "ldm guide" for an interactive onboarding tutorial.', help_text
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

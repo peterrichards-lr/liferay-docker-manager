@@ -168,6 +168,8 @@ def preprocess_args(args_list: list[str]) -> list[str]:
         "nuke",
         "rescue",
         "quickstart",
+        "guide",
+        "onboarding",
         "reset-admin",
         "set-version",
         "man",
@@ -284,6 +286,46 @@ def preprocess_args(args_list: list[str]) -> list[str]:
         processed_list = processed_list[1:]
 
     return processed_list
+
+
+class LDMHelpFormatter(argparse.RawDescriptionHelpFormatter):
+    """Custom HelpFormatter for LDM CLI offering progressive disclosure command grouping."""
+
+    def format_help(self):
+        if self._prog != "ldm":
+            return super().format_help()
+
+        from ldm_core.constants import VERSION
+
+        lines = [
+            "Usage: ldm <command> [options]\n",
+            f"Liferay Docker Manager (ldm) v{VERSION}\n",
+            "CORE COMMANDS (Start Here):",
+            "  run (up)        Start Liferay container environment in current folder",
+            "  link            Connect local client extensions or OSGi modules",
+            "  logs            Tail or filter Liferay container logs",
+            "  stop / down     Stop or destroy local container instance",
+            "  status (ps)     Show container and service status",
+            "  list (ls)       List all managed LDM workspaces\n",
+            "WORKSPACE & DATA MANAGEMENT:",
+            "  snapshot        Save and restore instant DB and volume checkpoints",
+            "  import          Import compiled hydrated data packages (.ldmp)",
+            "  package         Package workspace into reproducible archive",
+            "  clone           Clone and set up a remote Git workspace repository",
+            "  fork            Fork existing workspace state for isolated testing\n",
+            "DIAGNOSTICS & SYSTEM:",
+            "  doctor          Run host health, RAM, and Docker diagnostics",
+            "  info            Print workspace paths, URLs, and environment configuration",
+            "  system          Manage global Docker assets and perform container cleanup\n",
+            "COMPUTE & INFRASTRUCTURE (Advanced):",
+            "  target          Manage remote Docker compute nodes (add/ls/use/status)",
+            "  share           Expose local instance via lfr-tunnel",
+            "  cloud           Fetch logs and stacks from Liferay Cloud PaaS",
+            "  config          Manage global LDM configuration options\n",
+            'Use "ldm <command> --help" for detailed options on a specific command.',
+            'Use "ldm guide" for an interactive onboarding tutorial.\n',
+        ]
+        return "\n".join(lines)
 
 
 def get_parser():  # noqa: PLR0915
@@ -477,7 +519,8 @@ def get_parser():  # noqa: PLR0915
     parser = argparse.ArgumentParser(
         prog="ldm",
         description=f"Liferay Docker Manager (ldm) v{VERSION}",
-        parents=[base_sub_parent],
+        parents=[base_parent],
+        formatter_class=LDMHelpFormatter,
     )
     parser.add_argument("--version", action="version", version=f"%(prog)s {VERSION}")
     subparsers = parser.add_subparsers(dest="command")
@@ -1531,6 +1574,14 @@ def get_parser():  # noqa: PLR0915
     )
     ai.add_argument("query", help="What do you want to ask LDM AI?")
 
+    # Command: guide
+    subparsers.add_parser(
+        "guide",
+        aliases=["onboarding"],
+        parents=[base_sub_parent],
+        help="Interactive developer onboarding walkthrough & LDM conventions",
+    )
+
     # Command: quickstart
     quickstart_cmd = subparsers.add_parser(
         "quickstart",
@@ -2546,6 +2597,7 @@ def _build_command_map(args, manager):
         ),
         ("mcp", None): manager.mcp.cmd_mcp,
         ("ai", None): lambda: manager.ai.cmd_ai(args.query),
+        ("guide", None): manager.workspace.cmd_guide,
         ("quickstart", None): lambda: manager.workspace.cmd_quickstart(
             args.template,
             share=args.share,

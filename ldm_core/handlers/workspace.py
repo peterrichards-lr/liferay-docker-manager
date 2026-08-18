@@ -126,6 +126,11 @@ class WorkspaceService(BaseHandler):
 
         return cmd_quickstart(self, template_name, share, share_subdomain)
 
+    def cmd_guide(self):
+        from ldm_core.workspace.guide import cmd_guide
+
+        return cmd_guide(self)
+
     def cmd_fork(self, source, target, snapshot=None):
         from ldm_core.workspace.fork import cmd_fork
 
