@@ -56,7 +56,7 @@ class ComposerService:
         # Global fallback (16 GB)
         return 16 * 1024 * 1024 * 1024
 
-    def get_default_jvm_args(self):
+    def get_default_jvm_args(self, target_name=None):
         """Calculates recommended JVM arguments based on available host and Docker RAM."""
         # LDM-385: Support 'Lean' profile for CI or low-memory environments
         is_lean = (
@@ -75,9 +75,18 @@ class ComposerService:
             # Get Docker memory limit if available
             docker_mem = 0
             try:
+                # LDM-#1133: sizing must reflect the RAM of whichever daemon
+                # will actually run the container -- a remote target's host
+                # can have wildly different available memory than the
+                # orchestrating machine's local Docker Desktop/Colima VM.
+                target_name = getattr(self.manager, "target", None) or target_name
+                from ldm_core.docker_service import DockerService
+
+                docker_prefix = DockerService.get_docker_cmd_prefix(target_name)
+
                 # We use self.manager.run_command from the base mixin
                 docker_info_raw = self.manager.run_command(
-                    ["docker", "info", "--format", "{{json .}}"], check=False
+                    [*docker_prefix, "info", "--format", "{{json .}}"], check=False
                 )
                 if docker_info_raw:
                     info = json.loads(docker_info_raw)
@@ -203,8 +212,20 @@ class ComposerService:
 
                 env_file.write_text(env_content.strip() + "\n")
 
-    def write_docker_compose(self, paths, meta, liferay_env=None):  # noqa: C901, PLR0912, PLR0915
-        """Generates the docker-compose.yml file using the Builder Pattern."""
+    def write_docker_compose(  # noqa: C901, PLR0912, PLR0915
+        self, paths, meta, liferay_env=None, target_context=None
+    ):
+        """Generates the docker-compose.yml file using the Builder Pattern.
+
+        `target_context` (a `ldm_core.config.TargetContext`) is normally
+        supplied by the caller -- the `run`/`init` pipeline resolves it once
+        in `ProjectInitializationStage` and threads it through, exactly so
+        this function doesn't re-resolve (and re-pin) a target independently
+        of the rest of the command. Direct/legacy callers that don't have
+        one yet get a correct resolution here too (see below), just without
+        the pinning side effect -- that's the pipeline's job, not this
+        function's.
+        """
         # Ensure paths is a dictionary for subscripting
         if not isinstance(paths, dict):
             paths = self.manager.setup_paths(paths)
@@ -224,11 +245,42 @@ class ComposerService:
         host_name = meta.get("host_name", "localhost")
         ssl_enabled = self._is_ssl_active(host_name, meta)
 
+        # LDM-#1134/#1121/#1135: bind-mount sources must reference the
+        # *remote* host's filesystem when a --node target is active, not
+        # this host's -- otherwise Docker auto-creates them empty (and
+        # root-owned) on the remote engine. `paths` is still used unchanged
+        # everywhere else in the builders below (local filesystem reads);
+        # `mount_paths` is the remote-mapped equivalent, used exclusively
+        # for bind-mount source strings. See
+        # docs/explanation/remote-node-architecture.md for why this goes
+        # through the shared resolver rather than an ad-hoc lookup here.
+        if target_context is None:
+            from ldm_core.config import resolve_target_context
+
+            target_context = resolve_target_context(
+                explicit_target=getattr(self.manager, "target", None),
+                meta=meta,
+                project_root=paths["root"],
+                pin=False,
+            )
+
+        if target_context.is_remote and not target_context.remote_root:
+            UI.warning(
+                f"Could not resolve the home directory on remote target "
+                f"'{target_context.target.name}' -- bind mounts may point at the "
+                "wrong host's paths. Check SSH connectivity."
+            )
+
+        mount_paths = {
+            key: (target_context.map_path(value) if isinstance(value, Path) else value)
+            for key, value in paths.items()
+        }
+
         services = {}
 
         # Build individual services
         services["liferay"] = self._build_liferay_service(
-            paths, meta, host_name, project_name, ssl_enabled, liferay_env
+            paths, meta, host_name, project_name, ssl_enabled, liferay_env, mount_paths
         )
 
         search_service = self._build_search_service(meta)
@@ -246,7 +298,7 @@ class ComposerService:
 
         # Append Microservices/Client Extensions
         ext_services = self._build_extensions_services(
-            paths, meta, host_name, project_name, ssl_enabled
+            paths, meta, host_name, project_name, ssl_enabled, mount_paths
         )
         services.update(ext_services)
 
@@ -383,9 +435,29 @@ class ComposerService:
         return image
 
     def _build_liferay_service(  # noqa: C901, PLR0912, PLR0915
-        self, paths, meta, host_name, project_name, ssl_enabled, base_env
+        self,
+        paths,
+        meta,
+        host_name,
+        project_name,
+        ssl_enabled,
+        base_env,
+        mount_paths=None,
     ):
-        """Constructs the primary Liferay service definition."""
+        """Constructs the primary Liferay service definition.
+
+        LDM-#1134: `paths` is used for BOTH local filesystem reads (e.g.
+        checking whether a custom ES config file already exists on this
+        host) AND bind-mount source construction -- those must NOT be the
+        same thing when a remote --node target is active, since the
+        bind-mount source needs to be a path that exists on the *remote*
+        host, not this one. `mount_paths` (defaults to `paths` for local
+        targets/callers that don't pass it) is used exclusively for the
+        bind-mount source strings below; `paths` continues to be used for
+        every local filesystem check.
+        """
+        if mount_paths is None:
+            mount_paths = paths
         tag = str(meta.get("tag") or "latest")
         scale = int(meta.get("scale_liferay", 1))
         port = meta.get("port", 8080)
@@ -583,14 +655,14 @@ class ComposerService:
                 "com.liferay.ldm.managed=true",
             ],
             "volumes": [
-                f"{paths['deploy'].as_posix()}:/mnt/liferay/deploy{z_label}",
-                f"{paths['files'].as_posix()}:/mnt/liferay/files{z_label}",
-                f"{paths['scripts'].as_posix()}:/mnt/liferay/scripts{z_label}",
-                f"{paths.get('routes', paths['root'] / 'routes').as_posix()}:/workspace/routes{z_label}",
+                f"{mount_paths['deploy'].as_posix()}:/mnt/liferay/deploy{z_label}",
+                f"{mount_paths['files'].as_posix()}:/mnt/liferay/files{z_label}",
+                f"{mount_paths['scripts'].as_posix()}:/mnt/liferay/scripts{z_label}",
+                f"{mount_paths.get('routes', mount_paths['root'] / 'routes').as_posix()}:/workspace/routes{z_label}",
                 f"{project_name}-data:/opt/liferay/data",
-                f"{paths['modules'].as_posix()}:/opt/liferay/osgi/modules{z_label}",
-                f"{paths['cx'].as_posix()}:/opt/liferay/osgi/client-extensions{z_label}",
-                f"{paths['portal_log4j'].as_posix()}:/opt/liferay/osgi/log4j{z_label}",
+                f"{mount_paths['modules'].as_posix()}:/opt/liferay/osgi/modules{z_label}",
+                f"{mount_paths['cx'].as_posix()}:/opt/liferay/osgi/client-extensions{z_label}",
+                f"{mount_paths['portal_log4j'].as_posix()}:/opt/liferay/osgi/log4j{z_label}",
             ],
             "networks": ["liferay-net"],
         }
@@ -617,9 +689,7 @@ class ComposerService:
             # Host-mapped state if requested
             is_persist_osgi = str(meta.get("persist_osgi", "false")).lower() == "true"
             if is_persist_osgi:
-                state_mapping = (
-                    f"{paths['state'].as_posix()}:/opt/liferay/osgi/state{z_label}"
-                )
+                state_mapping = f"{mount_paths['state'].as_posix()}:/opt/liferay/osgi/state{z_label}"
             else:
                 safe_volume_prefix = sanitize_id(liferay_container)
                 state_mapping = f"{safe_volume_prefix}-state:/opt/liferay/osgi/state"
@@ -627,7 +697,7 @@ class ComposerService:
             service["volumes"].extend(
                 [
                     state_mapping,
-                    f"{paths['logs'].as_posix()}:/opt/liferay/logs{z_label}",
+                    f"{mount_paths['logs'].as_posix()}:/opt/liferay/logs{z_label}",
                 ]
             )
         else:
@@ -1398,8 +1468,15 @@ class ComposerService:
         return None
 
     def _build_extensions_services(  # noqa: C901, PLR0912
-        self, paths, meta, host_name, project_name, ssl_enabled
+        self, paths, meta, host_name, project_name, ssl_enabled, mount_paths=None
     ):
+        # LDM-#1134: see _build_liferay_service's docstring -- `paths` is
+        # used for local filesystem scanning (scan_client_extensions must
+        # read the actual extensions present on this host), `mount_paths`
+        # is used exclusively for the `routes` bind-mount source below.
+        if mount_paths is None:
+            mount_paths = paths
+
         # 4. Append Microservices/Client Extensions
         services = {}
         extensions = []
@@ -1446,7 +1523,7 @@ class ComposerService:
                     "networks": ["liferay-net"],
                     "labels": labels,
                     "volumes": [
-                        f"{paths.get('routes', paths['root'] / 'routes').as_posix()}:/workspace/routes",
+                        f"{mount_paths.get('routes', mount_paths['root'] / 'routes').as_posix()}:/workspace/routes",
                     ],
                 }
 

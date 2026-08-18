@@ -1,5 +1,6 @@
 import contextlib
 import hashlib
+import ipaddress
 import json
 import os
 import platform
@@ -22,6 +23,17 @@ from ldm_core.constants import SCRIPT_DIR, TAG_PATTERN
 from ldm_core.ui import UI
 
 _DRY_RUN_VFS: dict[str, str] = {}
+
+
+def is_local_host(host: str | None) -> bool:
+    """Returns True if host represents a local loopback interface (localhost, 127.0.0.0/8, ::1, or empty)."""
+    if not host or host.lower() in ("localhost", ""):
+        return True
+    try:
+        ip = ipaddress.ip_address(host)
+        return ip.is_loopback
+    except ValueError:
+        return False
 
 
 def reset_dry_run_vfs() -> None:
@@ -330,15 +342,46 @@ def load_env_blacklist(path):
 
 def sanitize_id(identifier):
     """
-    Sanitizes a string to be used as a safe identifier (e.g. project ID, container name).
-    Allows only alphanumeric characters, dashes, underscores, and dots.
+    Sanitizes a string to be used as a safe identifier (e.g. project ID, container name, volume prefix).
+    Transcodes German umlauts & special characters, normalizes Unicode diacritics, and enforces
+    RFC-1123 safe ASCII alphanumeric characters, dashes, underscores, and dots.
     """
     if not identifier:
         return identifier
+    import hashlib
     import re
+    import unicodedata
 
-    ident = str(identifier).replace(" ", "-")
-    return re.sub(r"[^a-zA-Z0-9\-_.]", "", ident)
+    s = str(identifier)
+
+    # Transcode German umlauts & Eszett
+    replacements = {
+        "ä": "ae",
+        "Ä": "AE",
+        "ö": "oe",
+        "Ö": "OE",
+        "ü": "ue",
+        "Ü": "UE",
+        "ß": "ss",
+    }
+    for char, repl in replacements.items():
+        s = s.replace(char, repl)
+
+    # Normalize remaining Unicode diacritics (e.g. é -> e, ñ -> n)
+    s = unicodedata.normalize("NFKD", s).encode("ASCII", "ignore").decode("utf-8")
+
+    # Replace spaces with dashes
+    s = s.replace(" ", "-")
+
+    # Strip non-alphanumeric/dash/underscore/dot chars
+    sanitized = re.sub(r"[^a-zA-Z0-9\-_.]", "", s)
+
+    # Fallback for non-latin scripts (e.g. CJK script)
+    if not sanitized:
+        short_hash = hashlib.sha256(str(identifier).encode("utf-8")).hexdigest()[:8]
+        return f"project-{short_hash}"
+
+    return sanitized
 
 
 def is_env_var_blacklisted(key, blacklist):
@@ -1417,8 +1460,31 @@ def read_meta(path):  # noqa: C901, PLR0912, PLR0915
     return meta
 
 
+def resolve_meta_file_path(path) -> Path:
+    """Resolves a project root directory (or an already-specific meta file
+    path) to the actual metadata file path, preserving an existing
+    alternate filename (`.liferay-docker.meta`) if present.
+
+    `write_meta()` below treats `path` literally as the file to write --
+    passing it a bare project directory silently clobbers that directory
+    with a file (exactly the bug this function exists to prevent; see
+    LDM-#1147 Phase 2). Shared by `BaseHandler.write_meta()` and
+    `resolve_target_context()`'s pinning write-back so both agree on the
+    same file.
+    """
+    p = Path(path)
+    if p.name in ["meta", ".liferay-docker.meta", ".ldm.meta"] or p.suffix == ".meta":
+        return p
+    target = p / "meta"
+    if (p / ".liferay-docker.meta").exists():
+        target = p / ".liferay-docker.meta"
+    return target
+
+
 def write_meta(path, meta):
-    """Writes project metadata to a file (atomically)."""
+    """Writes project metadata to a file (atomically). `path` must already
+    be the specific meta file path -- use `resolve_meta_file_path()` first
+    if you only have a project root directory."""
     path = Path(path)
     is_dry_run = os.environ.get("LDM_DRY_RUN", "").lower() == "true"
     if is_dry_run:
@@ -2316,24 +2382,38 @@ def safe_rmtree(path):
             raise e
 
 
-def reclaim_volume_permissions(path, uid=None, gid=None, chmod_val="750"):
+def reclaim_volume_permissions(
+    path, uid=None, gid=None, chmod_val="750", docker_prefix=None
+):
     """Forces ownership and permissions of a directory via Docker (Linux/macOS).
 
     Uses chmod 750 (owner full, group read/execute, others nothing) by default
     to prevent world-writable project directories that violate least-privilege.
+
+    `docker_prefix` (e.g. `["docker", "--context", "aws-1"]`, from
+    `TargetContext.docker_prefix`) lets a caller redirect this to a remote
+    target -- pass `path` already remapped onto the remote filesystem (e.g.
+    via `TargetContext.map_path()`) when doing so. When given, this skips
+    the local-machine platform/existence checks below: they'd otherwise
+    check *this* host's OS/filesystem for a path that only needs to exist
+    on the remote engine (already ensured by `sync_project_to_target()`),
+    not here.
     """
     is_dry_run = os.environ.get("LDM_DRY_RUN", "").lower() == "true"
     if is_dry_run:
         return True
-    import platform
-    from pathlib import Path
 
-    system_type = platform.system().lower()
-    if system_type not in ["darwin", "linux"]:
-        return True
+    is_remote = docker_prefix is not None
+    if not is_remote:
+        import platform
+        from pathlib import Path
 
-    if not Path(path).exists():
-        return True
+        system_type = platform.system().lower()
+        if system_type not in ["darwin", "linux"]:
+            return True
+
+        if not Path(path).exists():
+            return True
 
     if uid is None:
         uid = str(os.getuid()) if hasattr(os, "getuid") else "1000"
@@ -2348,15 +2428,19 @@ def reclaim_volume_permissions(path, uid=None, gid=None, chmod_val="750"):
         )
 
     docker_cmd = f"chown -R {uid}:{gid} /workspace; chmod -R {chmod_val} /workspace; "
+    # str(), not Path(path).as_posix() -- path may already be a PurePosixPath
+    # (the remote-mapped case), and re-wrapping it in a local Path type
+    # would resolve it against this host's path conventions instead.
+    mount_source = str(path) if is_remote else Path(path).as_posix()
 
     try:
         res = run_command(
             [
-                "docker",
+                *(docker_prefix or ["docker"]),
                 "run",
                 "--rm",
                 "-v",
-                f"{Path(path).as_posix()}:/workspace",
+                f"{mount_source}:/workspace",
                 "alpine",
                 "sh",
                 "-c",

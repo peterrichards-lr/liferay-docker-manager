@@ -104,9 +104,18 @@ def run_info(  # noqa: C901, PLR0912, PLR0915
         f"Project Metadata: {meta.get('liferay_container_name', meta.get('container_name', root.name))}"
     )
     UI.raw(f"  {UI.WHITE}Path:{UI.COLOR_OFF}           {root}")
-    target_node = getattr(handler.manager, "target", None) or meta.get(
-        "target", "local"
-    )
+    # LDM-#1090/#1135: passing the literal string "local" (a .get()
+    # default) into get_active_target() as an explicit project_target
+    # makes it treat that as a deliberate user choice and skip its own
+    # persisted-default (`ldm target use`) fallback -- pass None instead
+    # so a project with no explicit target correctly reflects the
+    # persisted default, not always "local" regardless of what's
+    # actually configured. Reported: `ldm info`/`ldm list` displayed
+    # "local" while the actual run used the persisted "aws-2" default.
+    from ldm_core.config import get_active_target
+
+    raw_target = getattr(handler.manager, "target", None) or meta.get("target")
+    target_node = get_active_target(raw_target).name
     UI.raw(
         f"  {UI.WHITE}Compute Target:{UI.COLOR_OFF} {UI.BCYAN}{target_node}{UI.COLOR_OFF}"
     )
@@ -233,7 +242,7 @@ def run_info(  # noqa: C901, PLR0912, PLR0915
     UI.raw("")
 
     # Determine specific colors for known keys
-    keys_to_skip = ["root", "custom_env"]
+    keys_to_skip = ["root", "custom_env", "credentials"]
 
     # Inject extension share subdomains into meta for display
     if is_shared and share_subdomain:
@@ -253,6 +262,8 @@ def run_info(  # noqa: C901, PLR0912, PLR0915
         val_str = str(value)
         if val_str.lower() == "true":
             val_str = f"{UI.GREEN}{val_str}{UI.COLOR_OFF}"
+        elif "password" in key.lower() or "secret" in key.lower():
+            val_str = f"{UI.DIM}[hidden]{UI.COLOR_OFF}"
         elif val_str.lower() == "false":
             val_str = f"{UI.BYELLOW}{val_str}{UI.COLOR_OFF}"
         else:
@@ -302,14 +313,29 @@ def run_status(  # noqa: C901, PLR0912, PLR0915
     infra_rows = []
     any_infra = False
     if not detailed or not project_id:
+        # LDM-#1090/#1133/#1165: shared infra resolves to whichever target is
+        # active for this invocation (a project on a remote node has its
+        # shared search/proxy *on that node*, not always local -- see
+        # docs/explanation/remote-node-architecture.md §5), so this status
+        # check must ask the same engine setup_global_search()/
+        # setup_global_database() actually use, not always the local daemon.
+        # Matches the doctor.py precedent (PR #1174): only genuinely
+        # local-machine-specific deep checks (none exist in this shallow
+        # ps/inspect loop) would stay hardcoded local.
+        infra_target_name = getattr(handler.manager, "target", None)
+        from ldm_core.docker_service import DockerService
+
+        infra_docker_prefix = DockerService.get_docker_cmd_prefix(infra_target_name)
+
         for container, label in INFRA_SERVICES:
             res = run_command(
-                ["docker", "ps", "-q", "-f", f"name=^{container}$"], check=False
+                [*infra_docker_prefix, "ps", "-q", "-f", f"name=^{container}$"],
+                check=False,
             )
             if res:
                 inspect = run_command(
                     [
-                        "docker",
+                        *infra_docker_prefix,
                         "inspect",
                         "--format",
                         "{{.State.Status}} {{.Config.Image}}",
@@ -420,9 +446,16 @@ def run_status(  # noqa: C901, PLR0912, PLR0915
             # --context, not always the local Docker daemon -- a project
             # running on a remote --node was silently checked against the
             # orchestrating host's local containers instead.
-            target_node = meta.get("target", "local")
+            #
+            # LDM-#1135: pass None (not the literal string "local") when
+            # meta has no explicit target, so get_active_target() consults
+            # its own persisted-default (`ldm target use`) fallback
+            # instead of always resolving to "local" regardless of what's
+            # actually configured.
+            from ldm_core.config import get_active_target
             from ldm_core.docker_service import DockerService
 
+            target_node = get_active_target(meta.get("target")).name
             docker_prefix = DockerService.get_docker_cmd_prefix(target_node)
 
             # Query all containers matching label com.liferay.ldm.project={safe_name}
@@ -558,9 +591,14 @@ def run_status(  # noqa: C901, PLR0912, PLR0915
             # LDM-#1090: same as the --detailed branch above -- resolve the
             # project's own target --context rather than always querying
             # the local Docker daemon.
-            target_node = meta.get("target", "local")
+            #
+            # LDM-#1135: pass None (not the literal string "local") when
+            # meta has no explicit target, so get_active_target() consults
+            # its own persisted-default (`ldm target use`) fallback.
+            from ldm_core.config import get_active_target
             from ldm_core.docker_service import DockerService
 
+            target_node = get_active_target(meta.get("target")).name
             docker_prefix = DockerService.get_docker_cmd_prefix(target_node)
 
             # Query all containers matching label com.liferay.ldm.project={safe_name}
@@ -884,7 +922,15 @@ def run_list(handler, as_json=False):  # noqa: C901, PLR0912, PLR0915
             or path.name
         )
         version = r["version"]
-        target_node = meta.get("target", "local")
+        # LDM-#1135: pass None (not the literal string "local") when meta
+        # has no explicit target, so get_active_target() consults its own
+        # persisted-default (`ldm target use`) fallback instead of always
+        # resolving to "local" regardless of what's actually configured.
+        # Reported: `ldm list` displayed "local" while the actual run
+        # used the persisted "aws-2" default.
+        from ldm_core.config import get_active_target
+
+        target_node = get_active_target(meta.get("target")).name
 
         from ldm_core.docker_service import DockerService
 

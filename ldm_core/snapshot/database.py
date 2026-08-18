@@ -174,6 +174,13 @@ class DatabaseSnapshotService:
                 "database_mode", project_meta, self.manager.defaults
             )
 
+            target_name = getattr(self.manager, "target", None) or (
+                project_meta.get("target") if isinstance(project_meta, dict) else None
+            )
+            from ldm_core.docker_service import DockerService
+
+            docker_prefix = DockerService.get_docker_cmd_prefix(target_name)
+
             db_container = project_meta.get("db_container_name")
             if db_mode == "shared":
                 db_container = (
@@ -186,21 +193,19 @@ class DatabaseSnapshotService:
                 for suffix in ["-db", "-db-1"]:
                     candidate = f"{container_name}{suffix}"
                     if self.manager.run_command(
-                        ["docker", "ps", "-q", "-f", f"name=^{candidate}$"]
+                        [*docker_prefix, "ps", "-q", "-f", f"name=^{candidate}$"]
                     ):
                         db_container = candidate
                         break
 
             if not db_container or not self.manager.run_command(
-                ["docker", "ps", "-q", "-f", f"name=^{db_container}$"]
+                [*docker_prefix, "ps", "-q", "-f", f"name=^{db_container}$"]
             ):
                 UI.detail("  + Starting database container for restore...")
                 if db_mode == "shared":
                     self.manager.infra.setup_global_database()
                 else:
-                    from ldm_core.utils import get_compose_cmd
-
-                    compose_base = get_compose_cmd()
+                    compose_base = DockerService.get_compose_cmd_prefix(target_name)
                     if compose_base:
                         db_svc = f"{paths['root'].name}-db"
                         self.manager.run_command(
@@ -212,7 +217,13 @@ class DatabaseSnapshotService:
                             for suffix in ["-db", "-db-1"]:
                                 candidate = f"{container_name}{suffix}"
                                 if self.manager.run_command(
-                                    ["docker", "ps", "-q", "-f", f"name=^{candidate}$"]
+                                    [
+                                        *docker_prefix,
+                                        "ps",
+                                        "-q",
+                                        "-f",
+                                        f"name=^{candidate}$",
+                                    ]
                                 ):
                                     db_container = candidate
                                     break
@@ -250,6 +261,13 @@ class DatabaseSnapshotService:
         import subprocess
 
         from ldm_core.utils import resolve_infrastructure_mode
+
+        target_name = getattr(self.manager, "target", None) or (
+            project_meta.get("target") if isinstance(project_meta, dict) else None
+        )
+        from ldm_core.docker_service import DockerService
+
+        docker_prefix = DockerService.get_docker_cmd_prefix(target_name)
 
         db_mode = resolve_infrastructure_mode(
             "database_mode", project_meta or {}, self.manager.defaults
@@ -302,7 +320,7 @@ class DatabaseSnapshotService:
                     try:
                         subprocess.run(
                             [
-                                "docker",
+                                *docker_prefix,
                                 "exec",
                                 "-i",
                                 db_container,
@@ -349,7 +367,7 @@ class DatabaseSnapshotService:
                 UI.detail("  - Wiping existing MySQL database...")
                 self.manager.run_command(
                     [
-                        "docker",
+                        *docker_prefix,
                         "exec",
                         db_container,
                         "mysql",
@@ -367,7 +385,7 @@ class DatabaseSnapshotService:
         if db_type == "postgresql":
             # LDM-410: Use standard user and enforce error stopping for reliability
             import_cmd = [
-                "docker",
+                *docker_prefix,
                 "exec",
                 "-i",
                 db_container,
@@ -381,7 +399,7 @@ class DatabaseSnapshotService:
             ]
         elif db_type in ["mysql", "mariadb"]:
             import_cmd = [
-                "docker",
+                *docker_prefix,
                 "exec",
                 "-i",
                 db_container,
@@ -399,7 +417,7 @@ class DatabaseSnapshotService:
             baseline_dump_cmd = []
             if db_type in ["mysql", "mariadb"]:
                 baseline_dump_cmd = [
-                    "docker",
+                    *docker_prefix,
                     "exec",
                     db_container,
                     "mysqldump",
@@ -412,7 +430,7 @@ class DatabaseSnapshotService:
                 ]
             elif db_type == "postgresql":
                 baseline_dump_cmd = [
-                    "docker",
+                    *docker_prefix,
                     "exec",
                     db_container,
                     "pg_dump",
@@ -534,7 +552,7 @@ class DatabaseSnapshotService:
                     UI.detail(f"  - Synchronizing Virtual Host entries to: {host_name}")
                     self.manager.run_command(
                         [
-                            "docker",
+                            *docker_prefix,
                             "exec",
                             db_container,
                             "psql",
@@ -551,7 +569,7 @@ class DatabaseSnapshotService:
                     UI.detail(f"  - Synchronizing Virtual Host entries to: {host_name}")
                     self.manager.run_command(
                         [
-                            "docker",
+                            *docker_prefix,
                             "exec",
                             db_container,
                             "mysql",

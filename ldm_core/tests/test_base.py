@@ -342,6 +342,33 @@ class TestBaseProject(unittest.TestCase):
     def test_get_container_status_healthy(self, mock_health):
         self.assertEqual(self.handler.get_container_status("c1"), "healthy")
 
+    def test_resolve_container_uses_remote_target_context(self):
+        """resolve_container()'s label-based lookup must honor a passed target (#1133).
+
+        Callers (cmd_shell, cmd_logs) resolve the project's target and pass
+        it through -- previously this method's own docker ps invocation
+        hardcoded "docker", silently looking at the LOCAL daemon even when
+        the caller's own resolved target was remote.
+        """
+        from ldm_core.config import TargetNode
+
+        with (
+            patch(
+                "ldm_core.docker_service.get_active_target",
+                return_value=TargetNode(name="aws-1", host="34.1.1.1"),
+            ),
+            patch.object(
+                self.handler, "run_command", return_value="proj-liferay-1"
+            ) as mock_run,
+        ):
+            result = self.handler.resolve_container(
+                "proj", "liferay", target_name="aws-1"
+            )
+            self.assertEqual(result, "proj-liferay-1")
+            called_cmd = mock_run.call_args[0][0]
+            self.assertIn("--context", called_cmd)
+            self.assertIn("aws-1", called_cmd)
+
     def test_select_project_interactively_basic(self):
         self.handler.non_interactive = False
         roots = [{"path": Path("/tmp/p1"), "version": "7.4"}]
@@ -880,6 +907,36 @@ class TestBaseCompletion(unittest.TestCase):
                 self.fail(
                     "verify_runtime_environment raised UnboundLocalError unexpectedly!"
                 )
+
+    @patch("platform.system", return_value="Darwin")
+    @patch("ldm_core.config.get_active_target")
+    @patch("ldm_core.handlers.base.shutil.which", return_value=None)
+    def test_verify_runtime_environment_skips_when_docker_not_installed(
+        self, mock_which, mock_get_active_target, mock_system
+    ):
+        # Regression: this call previously used check=True (run_command's
+        # default) with no guard for "docker isn't installed at all" --
+        # only for "a remote target is active." On a machine/CI runner
+        # with no docker binary (e.g. GitHub Actions' macos-latest, which
+        # has never shipped Docker), this hit run_command's
+        # FileNotFoundError handler and hard sys.exit(127) ("Command not
+        # found: docker"), even for `ldm init --no-up`, which never
+        # intends to touch Docker at all.
+        from ldm_core.config import TargetNode
+        from ldm_core.handlers.base import BaseHandler
+
+        mock_get_active_target.return_value = TargetNode(name="local", host="localhost")
+
+        handler = BaseHandler(MagicMock())
+        handler.verbose = False
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            paths = {"root": root, "files": root / "files"}
+
+            with patch.object(handler, "run_command") as mock_run_command:
+                handler.verify_runtime_environment(paths)
+                mock_run_command.assert_not_called()
 
 
 class TestBasePortChecking(unittest.TestCase):

@@ -57,6 +57,32 @@ class RunPipelineContext(PipelineContext):
         self.set("follow", kwargs.get("follow", False))
 
 
+def _resolve_pipeline_target_context(manager, project_meta, root):
+    """Resolves this command's TargetContext exactly once, as early as
+    ProjectInitializationStage knows the project's metadata -- pinning an
+    unpinned project's first-ever resolved target in the process. Every
+    later stage in this pipeline reads the result from
+    `context.get("target_context")` instead of independently re-deriving
+    it (the exact anti-pattern that produced the same "falsy value skips
+    the persisted-default fallback" bug three separate times in this
+    codebase). See docs/explanation/remote-node-architecture.md."""
+    from ldm_core.config import resolve_target_context
+
+    explicit_target = getattr(manager, "target", None)
+    # Test-safety: a bare MagicMock() manager (used throughout this
+    # pipeline's unit tests) auto-generates a `.target` attribute that is
+    # itself a MagicMock, not a real string/None -- mirrors the
+    # SafeArgsWrapper guard above for the identical class of problem.
+    if type(explicit_target).__name__ in ("MagicMock", "Mock"):
+        explicit_target = None
+
+    return resolve_target_context(
+        explicit_target=explicit_target,
+        meta=project_meta if isinstance(project_meta, dict) else None,
+        project_root=root,
+    )
+
+
 class ProjectInitializationStage(PipelineStage):
     """Handles project selection, discovery, and path setup."""
 
@@ -67,6 +93,12 @@ class ProjectInitializationStage(PipelineStage):
         project_meta = context.get("project_meta")
         if paths and project_meta:
             context.set("root", paths.get("root"))
+            context.set(
+                "target_context",
+                _resolve_pipeline_target_context(
+                    manager, project_meta, paths.get("root")
+                ),
+            )
             return
 
         project_id = context.get("project_id")
@@ -149,6 +181,10 @@ class ProjectInitializationStage(PipelineStage):
         context.set("is_new_project", is_new_project)
         context.set("paths", paths)
         context.set("project_meta", project_meta)
+        context.set(
+            "target_context",
+            _resolve_pipeline_target_context(manager, project_meta, paths["root"]),
+        )
         return
 
     def rollback(self, context: PipelineContext) -> None:
@@ -696,7 +732,9 @@ class ConfigResolutionStage(PipelineStage):
         )
 
         if not jvm_args:
-            jvm_args = manager.composer.get_default_jvm_args()
+            jvm_args = manager.composer.get_default_jvm_args(
+                target_name=project_meta.get("target")
+            )
 
         external_snapshot = getattr(manager.args, "snapshot", None)
         if external_snapshot:
@@ -1114,9 +1152,21 @@ class ComposerStage(PipelineStage):
             no_up = getattr(manager.args, "no_up", False)
 
         if shutil.which("docker") and not no_up:
-            target_name = getattr(manager, "target", None) or (
-                project_meta.get("target") if isinstance(project_meta, dict) else None
-            )
+            # Reads the TargetContext ProjectInitializationStage already
+            # resolved (and possibly pinned) for this command -- falls back
+            # to the pre-migration ad-hoc lookup only when this stage is
+            # invoked directly without running the full pipeline first
+            # (isolated unit tests), so a real target never gets resolved
+            # (and no pin ever written) outside the one real call site.
+            target_context = context.get("target_context")
+            if target_context is not None:
+                target_name = target_context.target.name
+            else:
+                target_name = getattr(manager, "target", None) or (
+                    project_meta.get("target")
+                    if isinstance(project_meta, dict)
+                    else None
+                )
             manager.infra._ensure_network(target_name)
 
         ssl_enabled = str(project_meta.get("ssl", "false")).lower() == "true"
@@ -1197,7 +1247,10 @@ class ComposerStage(PipelineStage):
         config_handler.remove_portal_ext(paths, ["include-and-override"])
 
         manager.composer.write_docker_compose(
-            paths, project_meta, liferay_env=liferay_env
+            paths,
+            project_meta,
+            liferay_env=liferay_env,
+            target_context=context.get("target_context"),
         )
 
         import shutil
@@ -1272,17 +1325,44 @@ class ExecutionStage(PipelineStage):
         is_samples = context.get("is_samples")
         external_snapshot = context.get("external_snapshot")
         no_up = context.get("no_up")
-        target_name = getattr(manager, "target", None) or (
-            project_meta.get("target") if isinstance(project_meta, dict) else None
-        )
-        if target_name:
-            from ldm_core.config import sync_project_to_target
 
-            sync_project_to_target(paths["root"], target_name=target_name)
+        # Reads the TargetContext ProjectInitializationStage already
+        # resolved (and possibly pinned) for this command. Falling back to
+        # a raw (possibly-None) target_name here -- as this used to -- was
+        # a real, live bug: DockerService.get_compose_cmd_prefix(None) used
+        # to short-circuit to a plain local `docker compose` prefix without
+        # ever consulting a persisted default target (see #1149), and the
+        # `if target_name:` guard below skipped the remote sync entirely
+        # for the same reason -- a project relying solely on a persisted
+        # `ldm target use` default (no explicit --node, no project-meta
+        # pin) would build a compose file with correctly remote-mapped
+        # bind mounts, then never actually rsync the project files there
+        # and start the containers against the *local* Docker daemon
+        # instead. The isolated-test fallback below (no target_context on
+        # context) mirrors the old ad-hoc lookup for stage-level unit tests
+        # that invoke this stage directly without running the full
+        # pipeline first.
+        target_context = context.get("target_context")
+        if target_context is not None:
+            if target_context.is_remote:
+                from ldm_core.config import sync_project_to_target
 
-        from ldm_core.docker_service import DockerService
+                sync_project_to_target(
+                    paths["root"], target_name=target_context.target.name
+                )
+            compose_base = target_context.compose_prefix
+        else:
+            target_name = getattr(manager, "target", None) or (
+                project_meta.get("target") if isinstance(project_meta, dict) else None
+            )
+            if target_name:
+                from ldm_core.config import sync_project_to_target
 
-        compose_base = DockerService.get_compose_cmd_prefix(target_name)
+                sync_project_to_target(paths["root"], target_name=target_name)
+
+            from ldm_core.docker_service import DockerService
+
+            compose_base = DockerService.get_compose_cmd_prefix(target_name)
         db_type = (
             project_meta.get("db_type", "postgresql")
             if isinstance(project_meta, dict)
@@ -1440,7 +1520,27 @@ class ExecutionStage(PipelineStage):
                         return None
                     time.sleep(2)
 
-            if platform.system().lower() == "linux" or getattr(
+            # LDM-#1090/#1133: this used to always reclaim permissions on
+            # the LOCAL path via a plain local `docker run`, gated only on
+            # *this* machine's OS -- for a project on a remote target, the
+            # files that matter are the already-synced remote copies (this
+            # host's OS is irrelevant to them), and a plain local `docker
+            # run` can't even see them. Redirect via the same
+            # docker_prefix/map_path the rest of this stage already uses
+            # for a remote target; otherwise keep the existing local-only
+            # gating unchanged.
+            target_context = context.get("target_context")
+            if target_context is not None and target_context.is_remote:
+                from ldm_core.utils import reclaim_volume_permissions
+
+                for p_key in ["deploy", "logs", "osgi", "files"]:
+                    if p_key in paths:
+                        reclaim_volume_permissions(
+                            target_context.map_path(paths[p_key]),
+                            chmod_val="777",
+                            docker_prefix=target_context.docker_prefix,
+                        )
+            elif platform.system().lower() == "linux" or getattr(
                 manager.args, "fix_permissions", False
             ):
                 from ldm_core.utils import reclaim_volume_permissions

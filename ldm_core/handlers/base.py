@@ -764,29 +764,14 @@ class BaseHandler:
 
     def write_meta(self, path, meta):
         """Writes project metadata, preserving the existing filename if possible."""
-        from ldm_core.utils import write_meta
+        from ldm_core.utils import resolve_meta_file_path, safe_mkdir, write_meta
 
         # If passed a dict as path, skip (logic error in caller)
         if isinstance(path, dict):
             return
 
         try:
-            p = Path(path)
-            # Ensure we are targeting a file inside the directory
-            if (
-                p.name in ["meta", ".liferay-docker.meta", ".ldm.meta"]
-                or p.suffix == ".meta"
-            ):
-                # Assuming it's already a file path
-                target = p
-            else:
-                target = p / "meta"
-                if (p / ".liferay-docker.meta").exists():
-                    target = p / ".liferay-docker.meta"
-
-            # Ensure the parent directory exists
-            from ldm_core.utils import safe_mkdir
-
+            target = resolve_meta_file_path(path)
             safe_mkdir(target.parent, parents=True, exist_ok=True)
             write_meta(target, meta)
         except Exception:
@@ -827,14 +812,16 @@ class BaseHandler:
             return False
         return True
 
-    def resolve_container(self, project_name, service="liferay"):
+    def resolve_container(self, project_name, service="liferay", target_name=None):
         """Resolves a service to an actual container name or ID via labels."""
+        from ldm_core.docker_service import DockerService
         from ldm_core.utils import sanitize_id
 
         safe_name = sanitize_id(project_name)
+        docker_prefix = DockerService.get_docker_cmd_prefix(target_name)
 
         cmd = [
-            "docker",
+            *docker_prefix,
             "ps",
             "-a",
             "--format",
@@ -852,18 +839,18 @@ class BaseHandler:
         # Fallback to standard naming convention
         return f"{safe_name}-{service}-1"
 
-    def get_container_status(self, container_name):
+    def get_container_status(self, container_name, target_name=None):
         """Returns the health or status of a container."""
         from ldm_core.docker_service import DockerService
 
         try:
             # First try to get health status
-            health = DockerService.get_health(container_name)
+            health = DockerService.get_health(container_name, target_name=target_name)
             if health and health != "unknown":
                 return health
 
             # Fallback to general state
-            status = DockerService.get_status(container_name)
+            status = DockerService.get_status(container_name, target_name=target_name)
             if status and status != "unknown":
                 return status
         except Exception:
@@ -1517,6 +1504,23 @@ class BaseHandler:
                 if self.verbose:
                     UI.detail(
                         f"Skipping local host volume mount check for remote target '{active_target.name}'."
+                    )
+                return
+
+            # Regression fix: this call used check=True (the run_command
+            # default) with no guard for "docker isn't installed at all"
+            # -- only for "a remote target is active." On a machine/CI
+            # runner with no docker binary at all (e.g. GitHub Actions'
+            # macos-latest, which has never shipped Docker), this hit
+            # run_command's FileNotFoundError handler and hard sys.exit(127)
+            # ("Command not found: docker"), even for `ldm init --no-up`,
+            # which never intends to touch Docker at all. Matches the
+            # existing shutil.which("docker") guard pattern already used
+            # elsewhere (e.g. pipelines/run.py's compose-syntax validation).
+            if not shutil.which("docker"):
+                if self.verbose:
+                    UI.detail(
+                        "Skipping local host volume mount check -- docker is not installed."
                     )
                 return
 

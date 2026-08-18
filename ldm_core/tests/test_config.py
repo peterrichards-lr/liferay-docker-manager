@@ -1,4 +1,5 @@
 import json
+import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -22,6 +23,7 @@ class MockConfigManager:
         self.args = Args()
         self.verbose = False
         self.non_interactive = True
+        self.target: str | None = None
 
         from ldm_core.defaults import DefaultsManager
 
@@ -68,6 +70,18 @@ class TestConfigService(unittest.TestCase):
     def setUp(self):
         self.manager = MockConfigManager()
         self.config = ConfigService(self.manager)
+
+        # Isolate every test in this class from the tester's REAL ~/.ldmrc
+        # persisted default target -- get_docker_cmd_prefix() always calls
+        # get_active_target() even for a falsy target_name (see PR #1150).
+        from ldm_core.config import TargetNode
+
+        self.active_target_patcher = patch("ldm_core.docker_service.get_active_target")
+        self.mock_active_target = self.active_target_patcher.start()
+        self.mock_active_target.return_value = TargetNode(
+            name="local", host="localhost", is_default=True
+        )
+        self.addCleanup(self.active_target_patcher.stop)
 
     def test_get_properties_basic(self):
         content = "key1=val1\nkey2=val2"
@@ -1036,6 +1050,28 @@ class TestConfigService(unittest.TestCase):
                 f"Created missing mount directory: {mock_deploy}"
             )
 
+    def test_validate_properties_creates_logs_and_routes_mounts(self):
+        # LDM-#1134: "logs" and "routes" were previously missing from the
+        # proactive mount-directory-creation list -- meaning they never
+        # existed locally before sync_project_to_target() rsyncs the
+        # project tree to a remote --node target (rsync only copies what
+        # exists on the source), so Docker auto-created them fresh on the
+        # remote engine as root-owned, live-verified against a real
+        # remote node.
+        mock_logs = MagicMock()
+        mock_logs.exists.return_value = False
+        mock_routes = MagicMock()
+        mock_routes.exists.return_value = False
+        paths = {
+            "root": Path("/tmp"),
+            "logs": mock_logs,
+            "routes": mock_routes,
+        }
+        with patch("ldm_core.ui.UI.detail"):
+            self.config.validate_properties(paths, {}, {}, is_dry_run=False)
+            mock_logs.mkdir.assert_called_once_with(parents=True, exist_ok=True)
+            mock_routes.mkdir.assert_called_once_with(parents=True, exist_ok=True)
+
     @patch("builtins.input")
     def test_cmd_edit_tui(self, mock_input):
         import tempfile
@@ -1082,6 +1118,41 @@ class TestConfigService(unittest.TestCase):
             target_pe = files_dir / "portal-ext.properties"
             self.assertTrue(target_pe.exists())
             self.assertEqual(target_pe.read_text().strip(), "")
+
+    @patch("ldm_core.handlers.config.run_command")
+    def test_sync_common_assets_files_uses_remote_target_context(self, mock_run):
+        """_sync_common_assets_files' docker inspect (shared search image
+        check) must honor the project's resolved target (#1133)."""
+        import tempfile
+        from pathlib import Path
+
+        from ldm_core.config import TargetNode
+
+        self.mock_active_target.return_value = TargetNode(name="aws-1", host="34.1.1.1")
+        mock_run.return_value = "elastic/elasticsearch:8.11.0"
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            common_dir = tmp_path / "common"
+            deploy_dir = tmp_path / "deploy"
+            configs_dir = tmp_path / "configs"
+            common_dir.mkdir()
+            deploy_dir.mkdir()
+            configs_dir.mkdir()
+            paths = {
+                "root": tmp_path,
+                "common_dirs": [common_dir],
+                "deploy": deploy_dir,
+                "configs": configs_dir,
+            }
+
+            self.config._sync_common_assets_files(
+                paths, {"use_shared_search": "true", "target": "aws-1"}
+            )
+
+        called_cmd = mock_run.call_args[0][0]
+        self.assertIn("--context", called_cmd)
+        self.assertIn("aws-1", called_cmd)
 
     @patch("subprocess.run")
     def test_cmd_ssl_mode_hosts(self, mock_run):
@@ -1150,6 +1221,50 @@ class TestConfigService(unittest.TestCase):
                 project_id=tmp_path.name
             )
             self.config.cmd_rebuild_properties.assert_called_once_with(tmp_path.name)
+
+    @patch("subprocess.run")
+    def test_cmd_ssl_mode_uses_remote_target_context(self, mock_run):
+        """cmd_ssl_mode's docker inspect (Running-state check) must honor
+        the project's resolved target (#1133)."""
+        import tempfile
+        from pathlib import Path
+        from unittest.mock import MagicMock
+
+        from ldm_core.config import TargetNode
+
+        self.mock_active_target.return_value = TargetNode(name="aws-1", host="34.1.1.1")
+        mock_inspect = MagicMock()
+        mock_inspect.stdout = "true\n"
+        mock_run.return_value = mock_inspect
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            files_dir = tmp_path / "files"
+            files_dir.mkdir(parents=True)
+            paths = {
+                "root": tmp_path,
+                "configs": tmp_path / "osgi" / "configs",
+                "files": files_dir,
+                "common_dirs": [],
+                "deploy": tmp_path / "deploy",
+            }
+
+            self.manager.detect_project_path = MagicMock(return_value=tmp_path)  # type: ignore[method-assign]
+            self.manager.setup_paths = MagicMock(return_value=paths)  # type: ignore[method-assign]
+            self.manager.read_meta = MagicMock(  # type: ignore[method-assign]
+                return_value={"container_name": "test-c", "target": "aws-1"}
+            )
+            self.manager.write_meta = MagicMock()  # type: ignore[method-assign]
+            self.manager.runtime.cmd_stop = MagicMock()  # type: ignore[method-assign]
+            self.manager.runtime.cmd_run = MagicMock()  # type: ignore[method-assign]
+            self.config.cmd_rebuild_properties = MagicMock()  # type: ignore[method-assign]
+            self.manager.args.no_restart = False
+
+            self.config.cmd_ssl_mode("hosts", project_id="test-p")
+
+        inspect_cmd = mock_run.call_args[0][0]
+        self.assertIn("--context", inspect_cmd)
+        self.assertIn("aws-1", inspect_cmd)
 
     @patch("subprocess.run")
     def test_cmd_ssl_mode_share(self, mock_run):
@@ -1355,6 +1470,69 @@ class TestConfigService(unittest.TestCase):
                 mock_parse_2.assert_called()
                 content_2 = target_ext.read_text()
                 self.assertIn("test.prop=2", content_2)
+
+
+class TestCmdConfigTargetKeyCollision(unittest.TestCase):
+    """LDM-#1151: `ldm config target <value>` used to silently write a
+    generic, unused config key -- get_active_target()/
+    resolve_target_context() never read it, only the `targets` registry's
+    `is_default` flag. This gave false confidence that a real routing
+    decision had changed when it hadn't."""
+
+    def setUp(self):
+        self.manager = MockConfigManager()
+        self.config = ConfigService(self.manager)
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp_dir.cleanup)
+        self.fake_home = Path(self.temp_dir.name)
+        self.home_patcher = patch(
+            "ldm_core.handlers.config.get_actual_home", return_value=self.fake_home
+        )
+        self.home_patcher.start()
+        self.addCleanup(self.home_patcher.stop)
+
+    def _config_path(self):
+        return self.fake_home / ".ldmrc"
+
+    @patch("ldm_core.handlers.config.UI.die", side_effect=SystemExit)
+    def test_setting_target_is_rejected_with_guidance(self, mock_die):
+        with self.assertRaises(SystemExit):
+            self.config.cmd_config(key="target", value="localhost")
+
+        mock_die.assert_called_once()
+        message = mock_die.call_args[0][0]
+        self.assertIn("ldm target use", message)
+        # Must not have written the decoy key.
+        self.assertFalse(self._config_path().exists())
+
+    @patch("ldm_core.handlers.config.UI.die", side_effect=SystemExit)
+    def test_setting_other_keys_is_unaffected(self, mock_die):
+        self.config.cmd_config(key="share_domain", value="dev.example.com")
+
+        mock_die.assert_not_called()
+        written = json.loads(self._config_path().read_text())
+        self.assertEqual(written["share_domain"], "dev.example.com")
+
+    @patch("ldm_core.handlers.config.UI.die", side_effect=SystemExit)
+    def test_removing_target_is_still_allowed(self, mock_die):
+        self._config_path().write_text(json.dumps({"target": "localhost"}))
+        self.manager.args.remove = True
+
+        self.config.cmd_config(key="target", value="localhost")
+
+        mock_die.assert_not_called()
+        written = json.loads(self._config_path().read_text())
+        self.assertNotIn("target", written)
+
+    @patch("ldm_core.handlers.config.UI.die", side_effect=SystemExit)
+    def test_unsetting_target_via_value_is_still_allowed(self, mock_die):
+        self._config_path().write_text(json.dumps({"target": "localhost"}))
+
+        self.config.cmd_config(key="target", value="unset")
+
+        mock_die.assert_not_called()
+        written = json.loads(self._config_path().read_text())
+        self.assertNotIn("target", written)
 
 
 if __name__ == "__main__":

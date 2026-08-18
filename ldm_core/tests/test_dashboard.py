@@ -47,7 +47,43 @@ class TestDashboard(unittest.TestCase):
         self.assertEqual(data[0]["version"], "7.4")
 
     @patch("ldm_core.dashboard.server.run_command")
-    def test_dashboard_api_logs_success(self, mock_run_command):
+    def test_dashboard_api_projects_uses_remote_target(self, mock_run_command):
+        """LDM-#1090/#1133: this used to always query the local Docker
+        daemon and display the raw meta["target"] (literally defaulting to
+        "local"), silently disagreeing with the persisted-default-aware
+        resolution every other command uses. Both the status query and the
+        displayed target must reflect the project's own pinned target."""
+        self.manager.target = None
+        self.manager.find_dxp_roots.return_value = [
+            {"path": Path("/dummy/project1"), "version": "7.4"}
+        ]
+        self.manager.read_meta.return_value = {
+            "liferay_container_name": "my-project1",
+            "host_name": "liferay.local",
+            "port": "8080",
+            "ssl": "false",
+            "db_type": "postgresql",
+            "target": "aws-1",
+        }
+        mock_run_command.return_value = "running\n"
+
+        response = self.client.get("/api/projects")
+        self.assertEqual(response.status_code, 200)
+        data = response.get_json()
+        self.assertEqual(data[0]["target"], "aws-1")
+
+        call_args = mock_run_command.call_args[0][0]
+        self.assertIn("--context", call_args)
+        self.assertIn("aws-1", call_args)
+
+    @patch("ldm_core.docker_service.get_active_target")
+    @patch("ldm_core.docker_service.run_command")
+    def test_dashboard_api_logs_success(self, mock_run_command, mock_target):
+        from ldm_core.config import TargetNode
+
+        mock_target.return_value = TargetNode(
+            name="local", host="localhost", is_default=True
+        )
         self.manager.find_dxp_roots.return_value = [
             {"path": Path("/dummy/project1"), "version": "7.4"}
         ]
@@ -59,8 +95,34 @@ class TestDashboard(unittest.TestCase):
         data = response.get_json()
         self.assertEqual(data["logs"], "some container logs\nline 2")
         mock_run_command.assert_called_with(
-            ["docker", "logs", "--tail", "200", "my-project1"], check=False
+            ["docker", "logs", "--tail", "200", "my-project1"],
+            check=False,
+            capture_output=True,
         )
+
+    @patch("ldm_core.docker_service.get_active_target")
+    @patch("ldm_core.docker_service.run_command")
+    def test_dashboard_api_logs_uses_remote_target(self, mock_run_command, mock_target):
+        """LDM-#1090/#1133: a project's own persisted target must be used
+        for fetching its logs, not always the local daemon."""
+        from ldm_core.config import TargetNode
+
+        mock_target.return_value = TargetNode(name="aws-1", host="34.1.1.1")
+        self.manager.find_dxp_roots.return_value = [
+            {"path": Path("/dummy/project1"), "version": "7.4"}
+        ]
+        self.manager.read_meta.return_value = {
+            "liferay_container_name": "my-project1",
+            "target": "aws-1",
+        }
+        mock_run_command.return_value = "remote logs"
+
+        response = self.client.get("/api/logs/my-project1")
+        self.assertEqual(response.status_code, 200)
+
+        call_args = mock_run_command.call_args[0][0]
+        self.assertIn("--context", call_args)
+        self.assertIn("aws-1", call_args)
 
     def test_dashboard_api_logs_invalid(self):
         response = self.client.get("/api/logs/invalid@name")

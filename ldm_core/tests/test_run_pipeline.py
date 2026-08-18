@@ -61,6 +61,61 @@ class TestRunPipeline(unittest.TestCase):
         args, kwargs = self.context.manager.composer.write_docker_compose.call_args
         pass  # is_dry_run is handled dynamically
 
+    def test_composer_stage_threads_target_context_into_write_docker_compose(self):
+        """ComposerStage must pass the TargetContext already resolved by
+        ProjectInitializationStage straight through to write_docker_compose()
+        rather than letting it re-resolve (and potentially re-pin) on its
+        own -- see docs/explanation/remote-node-architecture.md."""
+        from ldm_core.config import TargetContext, TargetNode
+
+        target_ctx = TargetContext(
+            target=TargetNode(name="aws-2", host="5.6.7.8"),
+            is_remote=True,
+            docker_prefix=["docker", "--context", "aws-2"],
+            compose_prefix=["docker", "--context", "aws-2", "compose"],
+        )
+
+        self.context.set("dry_run", True)
+        root_mock = MagicMock()
+        root_mock.__truediv__.return_value.exists.return_value = False
+        self.context.set("paths", {"root": root_mock, "configs": MagicMock()})
+        self.context.set("infra_ports", {})
+        self.context.set("target_context", target_ctx)
+
+        stage = ComposerStage()
+        stage.execute(self.context)
+
+        self.context.manager.composer.write_docker_compose.assert_called_once()
+        _, kwargs = self.context.manager.composer.write_docker_compose.call_args
+        self.assertIs(kwargs.get("target_context"), target_ctx)
+
+    def test_composer_stage_ensure_network_uses_resolved_target_context(self):
+        """Regression guard: _ensure_network must use the single resolved
+        TargetContext, not an independently re-derived (and possibly falsy,
+        silently-local) target_name."""
+        from ldm_core.config import TargetContext, TargetNode
+
+        target_ctx = TargetContext(
+            target=TargetNode(name="aws-2", host="5.6.7.8"),
+            is_remote=True,
+            docker_prefix=["docker", "--context", "aws-2"],
+            compose_prefix=["docker", "--context", "aws-2", "compose"],
+        )
+
+        self.context.set("dry_run", True)
+        self.context.set("no_up", False)
+        root_mock = MagicMock()
+        root_mock.__truediv__.return_value.exists.return_value = False
+        self.context.set("paths", {"root": root_mock, "configs": MagicMock()})
+        self.context.set("infra_ports", {})
+        self.context.set("target_context", target_ctx)
+
+        with patch("shutil.which", return_value="/usr/bin/docker"):
+            stage = ComposerStage()
+            stage.execute(self.context)
+
+        self.context.manager.infra._ensure_network.assert_called_once_with("aws-2")
+
     def test_execution_stage_dry_run(self):
         self.context.set("dry_run", True)
         self.context.set("no_up", True)
@@ -68,6 +123,119 @@ class TestRunPipeline(unittest.TestCase):
         stage = ExecutionStage()
         stage.execute(self.context)
         self.context.manager.run_command.assert_not_called()
+
+    def test_execution_stage_syncs_and_uses_compose_prefix_from_target_context(self):
+        """Regression guard for a real bug found migrating this stage:
+        DockerService.get_compose_cmd_prefix(target_name) used to silently
+        default to a local prefix (and sync_project_to_target was skipped
+        entirely) whenever target_name was falsy -- which is exactly what
+        happened for a project relying solely on a persisted `ldm target
+        use` default (no explicit --node, no project-meta pin). With a
+        resolved TargetContext on context, both must reflect the actual
+        (remote) resolved target."""
+        from ldm_core.config import TargetContext, TargetNode
+
+        target_ctx = TargetContext(
+            target=TargetNode(name="aws-2", host="5.6.7.8"),
+            is_remote=True,
+            docker_prefix=["docker", "--context", "aws-2"],
+            compose_prefix=["docker", "--context", "aws-2", "compose"],
+        )
+
+        self.context.set("dry_run", True)
+        self.context.set("no_up", True)
+        self.context.set("paths", {"root": Path("/tmp/proj")})
+        self.context.set("target_context", target_ctx)
+
+        with patch("ldm_core.config.sync_project_to_target") as mock_sync:
+            stage = ExecutionStage()
+            stage.execute(self.context)
+
+        mock_sync.assert_called_once_with(Path("/tmp/proj"), target_name="aws-2")
+        self.context.manager.run_command.assert_not_called()
+
+    def test_execution_stage_reclaims_permissions_on_remote_mapped_path(self):
+        """LDM-#1090/#1133: the permission-reclaim step used to always run
+        a plain local `docker run -v {local_path}:/workspace alpine ...`,
+        gated only on *this* machine's OS -- meaningless (and unreachable)
+        for a project on a remote target, whose relevant files are the
+        already-synced remote copies. With a remote TargetContext, this
+        must redirect via docker_prefix and the remote-mapped path."""
+        from ldm_core.config import TargetContext, TargetNode
+
+        target_ctx = TargetContext(
+            target=TargetNode(name="aws-1", host="34.1.1.1"),
+            is_remote=True,
+            docker_prefix=["docker", "--context", "aws-1"],
+            compose_prefix=["docker", "--context", "aws-1", "compose"],
+            local_root=Path("/tmp/proj"),
+            remote_root="/home/ec2-user/.liferay-docker/projects/proj",
+        )
+
+        self.context.set("dry_run", True)
+        self.context.set("no_up", False)
+        self.context.set(
+            "paths",
+            {
+                "root": Path("/tmp/proj"),
+                "deploy": Path("/tmp/proj/deploy"),
+                "logs": Path("/tmp/proj/logs"),
+                "osgi": Path("/tmp/proj/osgi"),
+                "files": Path("/tmp/proj/files"),
+            },
+        )
+        self.context.set("target_context", target_ctx)
+        # db_type="hypersonic" (no separate DB container) so this never
+        # enters the dependency-readiness wait loop -- avoids a 60s real
+        # sleep spin against a MagicMock container status in this test.
+        self.context.set(
+            "project_meta", {"container_name": "test-project", "db_type": "hypersonic"}
+        )
+        self.context.manager.args.force_recreate = False
+        self.context.manager.args.rebuild = False
+        self.context.manager.args.quiet = True
+        self.context.manager.args.no_wait = True
+        self.context.manager.args.follow = False
+
+        with (
+            patch("ldm_core.config.sync_project_to_target"),
+            patch(
+                "ldm_core.utils.reclaim_volume_permissions", return_value=True
+            ) as mock_reclaim,
+        ):
+            stage = ExecutionStage()
+            stage.execute(self.context)
+
+        self.assertEqual(mock_reclaim.call_count, 4)
+        for call in mock_reclaim.call_args_list:
+            reclaimed_path = call.args[0]
+            self.assertTrue(
+                str(reclaimed_path).startswith(
+                    "/home/ec2-user/.liferay-docker/projects/proj"
+                )
+            )
+            self.assertEqual(call.kwargs.get("docker_prefix"), target_ctx.docker_prefix)
+
+    def test_execution_stage_skips_sync_for_local_target_context(self):
+        from ldm_core.config import TargetContext, TargetNode
+
+        target_ctx = TargetContext(
+            target=TargetNode(name="local", host="localhost", is_default=True),
+            is_remote=False,
+            docker_prefix=["docker"],
+            compose_prefix=["docker", "compose"],
+        )
+
+        self.context.set("dry_run", True)
+        self.context.set("no_up", True)
+        self.context.set("paths", {"root": Path("/tmp/proj")})
+        self.context.set("target_context", target_ctx)
+
+        with patch("ldm_core.config.sync_project_to_target") as mock_sync:
+            stage = ExecutionStage()
+            stage.execute(self.context)
+
+        mock_sync.assert_not_called()
 
     # --- Exit code classification regression tests (LDM-#996) ---
     # Locks in that specific, deliberately-triaged UI.die() call sites use the
@@ -233,6 +401,73 @@ class TestRunPipeline(unittest.TestCase):
 
         mock_die.assert_called_once()
         self.assertEqual(mock_die.call_args.kwargs.get("exit_code"), 4)
+
+    def test_project_init_stage_sets_target_context_on_early_return(self):
+        """When paths/project_meta are already known (e.g. supplied directly
+        by the caller), ProjectInitializationStage's early-return branch
+        must still resolve and set target_context -- every later stage
+        depends on it being present."""
+        from ldm_core.config import TargetContext
+
+        sentinel_ctx = TargetContext(
+            target=MagicMock(name="local"),
+            is_remote=False,
+            docker_prefix=["docker"],
+            compose_prefix=["docker", "compose"],
+        )
+        root = Path("/tmp/existing-project")
+        self.context.set("paths", {"root": root})
+        self.context.set("project_meta", {"container_name": "existing-project"})
+        self.context.manager.target = None
+
+        with patch(
+            "ldm_core.config.resolve_target_context", return_value=sentinel_ctx
+        ) as mock_resolve:
+            stage = ProjectInitializationStage()
+            stage.execute(self.context)
+
+        self.assertIs(self.context.get("target_context"), sentinel_ctx)
+        self.assertEqual(self.context.get("root"), root)
+        mock_resolve.assert_called_once_with(
+            explicit_target=None,
+            meta={"container_name": "existing-project"},
+            project_root=root,
+        )
+
+
+class TestResolvePipelineTargetContext(unittest.TestCase):
+    """Direct unit coverage for the module-level target-context resolution
+    helper shared by ProjectInitializationStage, ComposerStage, and
+    ExecutionStage."""
+
+    @patch("ldm_core.config.resolve_target_context")
+    def test_guards_against_mock_contaminated_manager_target(self, mock_resolve):
+        """A bare MagicMock() manager -- used throughout this pipeline's
+        unit tests -- auto-generates a `.target` attribute that is itself a
+        MagicMock, not a real string/None. That must never leak into
+        resolve_target_context() as if it were an explicit --node value."""
+        from ldm_core.pipelines.run import _resolve_pipeline_target_context
+
+        manager = MagicMock()  # manager.target is an auto-generated MagicMock
+        _resolve_pipeline_target_context(
+            manager, {"container_name": "p"}, Path("/tmp/p")
+        )
+
+        mock_resolve.assert_called_once()
+        self.assertIsNone(mock_resolve.call_args.kwargs["explicit_target"])
+
+    @patch("ldm_core.config.resolve_target_context")
+    def test_passes_through_real_explicit_target(self, mock_resolve):
+        from ldm_core.pipelines.run import _resolve_pipeline_target_context
+
+        manager = MagicMock()
+        manager.target = "aws-2"
+        _resolve_pipeline_target_context(
+            manager, {"container_name": "p"}, Path("/tmp/p")
+        )
+
+        mock_resolve.assert_called_once()
+        self.assertEqual(mock_resolve.call_args.kwargs["explicit_target"], "aws-2")
 
 
 if __name__ == "__main__":

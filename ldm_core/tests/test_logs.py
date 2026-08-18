@@ -16,6 +16,7 @@ class MockRuntime(BaseHandler):
         self.verbose = False
         self.non_interactive = True
         self.dry_run = False
+        self.target: str | None = None
 
         # Self-referential manager for service compatibility
         from typing import Any, cast
@@ -492,3 +493,82 @@ class TestLogs(unittest.TestCase):
                 if isinstance(cmd, list)
             )
             self.assertTrue(has_context)
+
+    def test_cmd_logs_instance_uses_remote_target_context(self) -> None:
+        """_cmd_logs_instance's container-check/logs calls must honor the
+        project's resolved target (#1133)."""
+        with (
+            patch.object(
+                self.handler.manager,
+                "read_meta",
+                return_value={
+                    "target": "aws-1",
+                    "container_name": "test",
+                    "scale_liferay": 2,
+                    "container_name_pattern_liferay": "test-liferay-{index}",
+                },
+            ),
+            patch.object(BaseHandler, "run_command", return_value="c-id") as mock_run,
+            patch("ldm_core.docker_service.get_active_target") as mock_target,
+            patch.object(self.handler.handler.logs, "_run_log_command"),
+        ):
+            from ldm_core.config import TargetNode
+
+            mock_target.return_value = TargetNode(name="aws-1", host="34.1.1.1")
+            self.handler.handler.logs._cmd_logs_instance(
+                project_id="test", service="liferay", instance=1
+            )
+            called_cmds = [call[0][0] for call in mock_run.call_args_list]
+            has_context = any(
+                "--context" in cmd and "aws-1" in cmd
+                for cmd in called_cmds
+                if isinstance(cmd, list)
+            )
+            self.assertTrue(
+                has_context,
+                f"Expected --context aws-1 in one of {called_cmds}",
+            )
+
+    def test_print_ngrok_url_uses_remote_target_context(self) -> None:
+        """_print_ngrok_url's docker exec call must honor a passed target (#1133)."""
+        with (
+            patch.object(BaseHandler, "run_command", return_value="") as mock_run,
+            patch("ldm_core.docker_service.get_active_target") as mock_target,
+        ):
+            from ldm_core.config import TargetNode
+
+            mock_target.return_value = TargetNode(name="aws-1", host="34.1.1.1")
+            self.handler.handler.logs._print_ngrok_url("test", target_name="aws-1")
+            mock_run.assert_called_once()
+            called_cmd = mock_run.call_args[0][0]
+            self.assertIn("--context", called_cmd)
+            self.assertIn("aws-1", called_cmd)
+
+    def test_cmd_logs_infra_uses_remote_target_context(self) -> None:
+        """cmd_logs(infra=True)'s docker ps/compose logs calls honor an
+        explicit --node override for global shared infra (#1133)."""
+        self.handler.target = "aws-1"
+        with (
+            patch.object(BaseHandler, "run_command", return_value="") as mock_run,
+            patch("ldm_core.docker_service.get_active_target") as mock_target,
+            patch.object(
+                self.handler.manager,
+                "get_resource_path",
+                return_value=Path("/tmp/infra-compose.yml"),
+            ),
+        ):
+            from ldm_core.config import TargetNode
+
+            mock_target.return_value = TargetNode(name="aws-1", host="34.1.1.1")
+            self.handler.manager.infra._get_infra_env.return_value = {}  # type: ignore[attr-defined]
+            self.handler.cmd_logs(infra=True, no_wait=True)
+            called_cmds = [call[0][0] for call in mock_run.call_args_list]
+            has_context = any(
+                "--context" in cmd and "aws-1" in cmd
+                for cmd in called_cmds
+                if isinstance(cmd, list)
+            )
+            self.assertTrue(
+                has_context,
+                f"Expected --context aws-1 in one of {called_cmds}",
+            )

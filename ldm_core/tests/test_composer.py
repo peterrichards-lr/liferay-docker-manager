@@ -54,9 +54,28 @@ class TestComposerService(unittest.TestCase):
         # Ensure GITHUB_ACTIONS is not "true" during testing so that adaptive tier tests pass
         self.environ_patcher = patch.dict("os.environ", {"GITHUB_ACTIONS": "false"})
         self.environ_patcher.start()
+        # Isolate every write_docker_compose() call in this class from
+        # whatever persisted default target a *real* ~/.ldmrc on the
+        # machine running the tests happens to have -- write_docker_compose
+        # now always resolves via resolve_target_context()/get_active_target()
+        # when no target_context is passed in, and most of these tests
+        # don't care about target resolution at all. Without this, an
+        # unmocked call could resolve to a real remote host and attempt a
+        # real SSH round trip (via get_remote_project_root) purely to build
+        # a compose file in a unit test. Tests that DO care about target
+        # resolution (e.g. test_write_docker_compose_uses_persisted_default_target)
+        # override this with their own nested patch.
+        from ldm_core.config import TargetNode
+
+        self.target_patcher = patch(
+            "ldm_core.config.get_active_target",
+            return_value=TargetNode(name="local", host="localhost", is_default=True),
+        )
+        self.target_patcher.start()
 
     def tearDown(self):
         self.environ_patcher.stop()
+        self.target_patcher.stop()
 
     def test_build_extensions_services_basic(self):
         paths = {"root": Path("/tmp"), "cx": Path("/tmp/cx"), "ce_dir": Path("/tmp/ce")}
@@ -190,6 +209,51 @@ class TestComposerService(unittest.TestCase):
             paths, meta, "localhost", "proj", False, None
         )
         self.assertEqual(service["image"], "liferay/dxp:2026.q1.4-lts")
+
+    def test_write_docker_compose_uses_persisted_default_target(self):
+        """LDM-#1135: even with no explicit target on manager/meta, a
+        persisted default target (set via `ldm target use`) must still be
+        consulted -- get_active_target() must never be skipped just
+        because target_name starts out falsy (self.manager has no
+        `.target` attribute here, and meta has no "target" key -- exactly
+        the "no explicit override, rely on the persisted default" case)."""
+        paths = {"root": Path("/tmp/proj"), "compose": Path("/tmp/proj/compose.yml")}
+        meta = {"container_name": "proj"}
+
+        from ldm_core.config import TargetNode
+
+        remote_target = TargetNode(name="aws-1", host="1.2.3.4", user="ec2-user")
+
+        with (
+            patch("ldm_core.handlers.composer.dict_to_yaml", return_value="yaml"),
+            patch("ldm_core.utils.safe_write_text"),
+            patch(
+                "ldm_core.config.get_active_target", return_value=remote_target
+            ) as mock_get_active,
+            patch(
+                "ldm_core.config.get_remote_project_root",
+                return_value="/home/ec2-user/.liferay-docker/projects/proj",
+            ),
+            patch.object(
+                self.composer, "_build_liferay_service", return_value={}
+            ) as mock_build,
+            patch.object(self.composer, "_build_db_service", return_value={}),
+            patch.object(self.composer, "_build_search_service", return_value={}),
+            patch.object(self.composer, "_build_extensions_services", return_value={}),
+        ):
+            self.composer.write_docker_compose(paths, meta)
+
+            # get_active_target must have been called even though neither
+            # self.manager.target nor meta["target"] provided a value --
+            # now routed through resolve_target_context(), which passes
+            # config_path through explicitly.
+            mock_get_active.assert_called_once_with(None, config_path=None)
+
+            mount_paths_arg = mock_build.call_args[0][6]
+            self.assertEqual(
+                str(mount_paths_arg["root"]),
+                "/home/ec2-user/.liferay-docker/projects/proj",
+            )
 
     def test_explicit_volume_naming(self):
         """Verify that named volumes have an explicit 'name' property to prevent prefixing."""

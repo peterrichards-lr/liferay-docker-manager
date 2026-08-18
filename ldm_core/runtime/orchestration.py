@@ -10,7 +10,9 @@ from ldm_core.ui import UI
 from ldm_core.utils import (
     ProjectLock,
     get_actual_home,
-    get_compose_cmd,
+    get_compose_cmd,  # noqa: F401 -- kept as the mock injection point several
+    # test files patch (`ldm_core.runtime.orchestration.get_compose_cmd`),
+    # even though no code in this module calls it directly anymore.
 )
 
 
@@ -140,10 +142,20 @@ class OrchestrationService(BaseHandler):
             UI.detail("No projects found to stop.")
             return
 
-        compose_base = get_compose_cmd()
+        # LDM-#1090/#1133: get_compose_cmd() always returns a plain local
+        # ["docker", "compose"] prefix regardless of the project's target --
+        # a project running on a remote node would have this command sent
+        # to the LOCAL Docker daemon instead, where the containers don't
+        # exist. Resolve per-project, matching cmd_start's own (correct)
+        # pattern, which this was inconsistent with.
+        from ldm_core.docker_service import DockerService
+
         capture = not (UI.INFO_MODE or UI.VERBOSE)
         for root in targets:
             UI.detail(f"Stopping project: {root.name}...")
+            meta = self.manager.read_meta(root)
+            target_name = getattr(self.manager, "target", None) or meta.get("target")
+            compose_base = DockerService.get_compose_cmd_prefix(target_name)
             cmd = [*compose_base, "stop"]
             if service:
                 cmd.append(service)
@@ -165,10 +177,15 @@ class OrchestrationService(BaseHandler):
             UI.detail("No projects found to restart.")
             return
 
-        compose_base = get_compose_cmd()
+        # LDM-#1090/#1133: see cmd_stop above -- same issue, same fix.
+        from ldm_core.docker_service import DockerService
+
         capture = not (UI.INFO_MODE or UI.VERBOSE)
         for root in targets:
             UI.detail(f"Restarting project: {root.name}...")
+            meta = self.manager.read_meta(root)
+            target_name = getattr(self.manager, "target", None) or meta.get("target")
+            compose_base = DockerService.get_compose_cmd_prefix(target_name)
             if force_recreate:
                 cmd = [
                     *compose_base,
@@ -240,7 +257,19 @@ class OrchestrationService(BaseHandler):
                     f"  {UI.BYELLOW}- [Dry Run] Would run docker compose down{' -v' if volumes or delete else ''} --remove-orphans in {root.name}{UI.COLOR_OFF}"
                 )
             else:
-                compose_base = get_compose_cmd()
+                # LDM-#1090/#1133: get_compose_cmd()/raw "docker" calls below
+                # always target the local daemon regardless of this
+                # project's actual target -- a project running remotely
+                # would leave its containers running untouched while this
+                # reports success. Resolve per-project, matching cmd_start.
+                from ldm_core.docker_service import DockerService
+
+                meta_for_target = self.manager.read_meta(root)
+                target_name = getattr(self.manager, "target", None) or (
+                    meta_for_target.get("target") if meta_for_target else None
+                )
+                compose_base = DockerService.get_compose_cmd_prefix(target_name)
+                docker_prefix = DockerService.get_docker_cmd_prefix(target_name)
                 capture = not (UI.INFO_MODE or UI.VERBOSE)
                 cmd = [*compose_base, "down"]
                 if volumes or delete:
@@ -266,7 +295,7 @@ class OrchestrationService(BaseHandler):
                     ]:
                         ps_output = self.manager.run_command(
                             [
-                                "docker",
+                                *docker_prefix,
                                 "ps",
                                 "-a",
                                 "--filter",
@@ -283,7 +312,7 @@ class OrchestrationService(BaseHandler):
                             ]
                             if c_ids:
                                 self.manager.run_command(
-                                    ["docker", "rm", "-f", *c_ids],
+                                    [*docker_prefix, "rm", "-f", *c_ids],
                                     check=False,
                                     capture_output=True,
                                 )
@@ -331,7 +360,7 @@ class OrchestrationService(BaseHandler):
                             drop_cmd = []
                             if db_type == "postgresql":
                                 drop_cmd = [
-                                    "docker",
+                                    *docker_prefix,
                                     "exec",
                                     global_db_container,
                                     "dropdb",
@@ -342,7 +371,7 @@ class OrchestrationService(BaseHandler):
                                 ]
                             elif db_type in ["mysql", "mariadb"]:
                                 drop_cmd = [
-                                    "docker",
+                                    *docker_prefix,
                                     "exec",
                                     global_db_container,
                                     "mysql",
@@ -403,6 +432,26 @@ class OrchestrationService(BaseHandler):
             )
             return
 
+        # LDM-#1090/#1133: whether this project runs on a remote target.
+        # get_active_target() is always called -- even with node_target
+        # falsy -- so its own persisted-default (`ldm target use`)
+        # fallback runs; short-circuiting on a falsy node_target here would
+        # be the exact "hardcoded local before checking" bug this session
+        # has fixed repeatedly elsewhere (#1121/#1135/#1145/#1149/etc.).
+        meta = self.manager.read_meta(root)
+        node_target = getattr(self.manager, "target", None) or (
+            meta.get("target") if meta else None
+        )
+        from ldm_core.config import get_active_target
+        from ldm_core.docker_service import DockerService
+
+        active_target = get_active_target(node_target)
+        is_remote_target = active_target.name != "local" and active_target.host not in (
+            "localhost",
+            "127.0.0.1",
+            "",
+        )
+
         # Handle specific targets (services or files)
         from ldm_core.utils import atomic_copy
 
@@ -412,10 +461,36 @@ class OrchestrationService(BaseHandler):
             if t_path.exists() and t_path.is_file():
                 ext = t_path.suffix.lower()
                 if ext in [".jar", ".war"]:
+                    if is_remote_target:
+                        # Open design question (docs/explanation/
+                        # remote-node-architecture.md §4): whether/how a
+                        # single-artifact deploy should incrementally sync
+                        # to a remote target isn't resolved yet -- rather
+                        # than silently copy the artifact only into the
+                        # LOCAL project directory (where the remote
+                        # container would never see it), fail loudly with
+                        # guidance instead.
+                        UI.die(
+                            f"Single-artifact deploy ('{t_path.name}') to a remote "
+                            f"target ('{node_target}') isn't supported yet -- it "
+                            "would only update the local copy, not the running "
+                            f"remote container. Use 'ldm run {project_id or root.name}' "
+                            "for a full resync instead."
+                        )
+                        return
                     dest = paths["modules"] / t_path.name
                     UI.detail(f"Syncing Module: {t_path.name}")
                     atomic_copy(t_path, dest)
                 elif ext == ".zip":
+                    if is_remote_target:
+                        UI.die(
+                            f"Single-artifact deploy ('{t_path.name}') to a remote "
+                            f"target ('{node_target}') isn't supported yet -- it "
+                            "would only update the local copy, not the running "
+                            f"remote container. Use 'ldm run {project_id or root.name}' "
+                            "for a full resync instead."
+                        )
+                        return
                     # Potentially a CX or Fragment
                     from ldm_core.handlers.workspace import WorkspaceService
 
@@ -424,14 +499,17 @@ class OrchestrationService(BaseHandler):
                 else:
                     UI.warning(f"Unsupported file type for deployment: {t}")
             else:
-                # Treat as service name
+                # Treat as service name -- the compose file/service already
+                # exists wherever this project runs (from a prior `ldm
+                # run`), so starting it there is safely redirectable.
                 services_to_up.add(t)
 
         if services_to_up:
+            compose_base = DockerService.get_compose_cmd_prefix(node_target)
             for svc in sorted(services_to_up):
                 UI.detail(f"Deploying service '{svc}'...")
                 self.manager.run_command(
-                    [*get_compose_cmd(), "up", "-d", svc],
+                    [*compose_base, "up", "-d", svc],
                     capture_output=False,
                     cwd=str(root),
                 )
@@ -583,7 +661,14 @@ class OrchestrationService(BaseHandler):
         c_name = meta.get("container_name") or root.name
         from ldm_core.docker_service import DockerService
 
-        is_running = DockerService.is_running(c_name)
+        # LDM-#1090/#1133: is_running/volume ls/volume rm all used to run
+        # unconditionally against the local Docker daemon -- for a project
+        # running on a remote node, this would report "not running" (the
+        # container lives remotely) and silently fail to find/remove its
+        # volumes there.
+        node_target = getattr(self.manager, "target", None) or meta.get("target")
+        is_running = DockerService.is_running(c_name, target_name=node_target)
+        docker_prefix = DockerService.get_docker_cmd_prefix(node_target)
 
         # LDM-388: If target is 'all', we must 'down -v' to destroy anonymous DB volumes
         if target == "all":
@@ -605,7 +690,14 @@ class OrchestrationService(BaseHandler):
                 # Check if this volume exists in Docker
                 try:
                     res = self.manager.run_command(
-                        ["docker", "volume", "ls", "-q", "-f", f"name=^{volume_name}$"],
+                        [
+                            *docker_prefix,
+                            "volume",
+                            "ls",
+                            "-q",
+                            "-f",
+                            f"name=^{volume_name}$",
+                        ],
                         check=False,
                     )
                     if res.strip():
@@ -613,7 +705,8 @@ class OrchestrationService(BaseHandler):
                             f"  - Removing Docker volume {UI.CYAN}{volume_name}{UI.COLOR_OFF}..."
                         )
                         self.manager.run_command(
-                            ["docker", "volume", "rm", "-f", volume_name], check=False
+                            [*docker_prefix, "volume", "rm", "-f", volume_name],
+                            check=False,
                         )
                 except Exception as e:
                     UI.detail(f"Warning removing docker volume {volume_name}: {e}")
@@ -671,14 +764,16 @@ class OrchestrationService(BaseHandler):
             return
         service_name = service or "liferay"
 
-        # LDM-381: Resolve the actual container name using labels
-        target_container = self.manager.resolve_container(root.name, service_name)
-
         meta = self.manager.read_meta(root)
         target_name = getattr(self.manager, "target", None) or meta.get("target")
         from ldm_core.docker_service import DockerService
 
         docker_prefix = DockerService.get_docker_cmd_prefix(target_name)
+
+        # LDM-381: Resolve the actual container name using labels
+        target_container = self.manager.resolve_container(
+            root.name, service_name, target_name=target_name
+        )
 
         UI.detail(f"Entering container: {target_container}")
         try:

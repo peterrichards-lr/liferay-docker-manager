@@ -13,6 +13,7 @@ from ldm_core.utils import (
     atomic_copy,
     get_actual_home,
     is_continuation_line,
+    is_local_host,
     run_command,
     safe_write_text,
 )
@@ -271,6 +272,14 @@ class ConfigService:
                 )
 
         # 4. Missing Mount Paths check
+        # LDM-#1134: "logs" and "routes" were missing from this list, so
+        # they never got proactively created locally -- meaning they
+        # didn't exist yet when sync_project_to_target() rsyncs the
+        # project tree to a remote --node target (rsync only copies what
+        # exists on the source), and Docker then auto-created them fresh
+        # on the remote engine as root-owned when the container first
+        # bind-mounted them, causing permission errors distinct from
+        # (but related to) the ones #1117 already fixed for named volumes.
         mount_dirs = [
             ("deploy", paths.get("deploy")),
             ("files", paths.get("files")),
@@ -280,6 +289,8 @@ class ConfigService:
             ("scripts", paths.get("scripts")),
             ("log4j", paths.get("log4j")),
             ("portal_log4j", paths.get("portal_log4j")),
+            ("logs", paths.get("logs")),
+            ("routes", paths.get("routes")),
         ]
 
         for name, path in mount_dirs:
@@ -1029,9 +1040,16 @@ class ConfigService:
 
             search_inspect = None
             if not use_sidecar:
+                target_name = getattr(self.manager, "target", None) or (
+                    project_meta.get("target") if project_meta else None
+                )
+                from ldm_core.docker_service import DockerService
+
+                docker_prefix = DockerService.get_docker_cmd_prefix(target_name)
+
                 search_inspect = run_command(
                     [
-                        "docker",
+                        *docker_prefix,
                         "inspect",
                         "-f",
                         "{{.Config.Image}}",
@@ -1291,8 +1309,30 @@ class ConfigService:
             return
 
         if key and value:
+            is_removal = (
+                getattr(self.manager.args, "remove", False) or value.lower() == "unset"
+            )
+            # LDM-#1151: `target` is not a plain config value -- the actual
+            # default-target resolution (get_active_target()/
+            # resolve_target_context()) never reads this generic key at
+            # all, only the `targets` registry's `is_default` flag
+            # (maintained by `ldm target use`/`ldm target set`). Silently
+            # accepting `ldm config target <value>` here would print a
+            # convincing success message while having zero effect on which
+            # node commands actually run against -- worse than a no-op,
+            # since it gives false confidence a real routing decision
+            # changed. Removal is harmless (it's just clearing an inert,
+            # possibly stale key) so that's still allowed through.
+            if key == "target" and not is_removal:
+                UI.die(
+                    "'target' is not a plain config value -- it has no effect on "
+                    "which node commands run against. Use 'ldm target use "
+                    f"{value}' to change the default target, or 'ldm target set "
+                    f"<project> {value}' to pin a specific project."
+                )
+
             # Set specific key
-            if getattr(self.manager.args, "remove", False) or value.lower() == "unset":
+            if is_removal:
                 config.pop(key, None)
                 UI.success(f"Configuration key '{key}' removed.")
             else:
@@ -1928,8 +1968,15 @@ class ConfigService:
         try:
             import subprocess
 
+            target_name = getattr(self.manager, "target", None) or project_meta.get(
+                "target"
+            )
+            from ldm_core.docker_service import DockerService
+
+            docker_prefix = DockerService.get_docker_cmd_prefix(target_name)
+
             inspect_res = subprocess.run(
-                ["docker", "inspect", "-f", "{{.State.Running}}", container_name],
+                [*docker_prefix, "inspect", "-f", "{{.State.Running}}", container_name],
                 capture_output=True,
                 text=True,
                 check=False,
@@ -2045,19 +2092,29 @@ class ConfigService:
         image_name = args.image
         service_name = args.service_name or image_name.split(":")[0].split("/")[-1]
 
+        project_meta = self.manager.read_meta(root) or {}
+        target_name = getattr(self.manager, "target", None) or project_meta.get(
+            "target"
+        )
+        from ldm_core.docker_service import DockerService
+
+        docker_prefix = DockerService.get_docker_cmd_prefix(target_name)
+
         UI.detail(f"Inspecting image '{image_name}'...")
         try:
             output = subprocess.check_output(
-                ["docker", "image", "inspect", image_name],
+                [*docker_prefix, "image", "inspect", image_name],
                 text=True,
                 stderr=subprocess.STDOUT,
             )
         except subprocess.CalledProcessError:
-            UI.detail(f"Image '{image_name}' not found locally. Attempting to pull...")
+            UI.detail(
+                f"Image '{image_name}' not found on the target. Attempting to pull..."
+            )
             try:
-                subprocess.check_call(["docker", "pull", image_name])
+                subprocess.check_call([*docker_prefix, "pull", image_name])
                 output = subprocess.check_output(
-                    ["docker", "image", "inspect", image_name], text=True
+                    [*docker_prefix, "image", "inspect", image_name], text=True
                 )
             except Exception as e2:
                 UI.die(f"Failed to inspect or pull image '{image_name}': {e2}")
@@ -2176,7 +2233,7 @@ class ConfigService:
         save_target_node(node)
 
         # Auto-create/update Docker CLI context for remote SSH targets
-        if host not in ("localhost", "127.0.0.1", ""):
+        if not is_local_host(host):
             ssh_prefix = f"{user}@" if user else ""
             endpoint = f"ssh://{ssh_prefix}{host}"
             # Add SSH key to ssh-agent if key path provided

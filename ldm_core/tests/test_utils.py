@@ -8,12 +8,29 @@ from ldm_core.utils import (
     dict_to_yaml,
     get_json,
     get_raw,
+    is_local_host,
     verify_executable_checksum,
     version_to_tuple,
 )
 
 
 class TestUtils(unittest.TestCase):
+    def test_is_local_host(self):
+        """Verify is_local_host recognizes all 127.0.0.0/8 IPs, localhost, ::1, and empty values as local."""
+        self.assertTrue(is_local_host(None))
+        self.assertTrue(is_local_host(""))
+        self.assertTrue(is_local_host("localhost"))
+        self.assertTrue(is_local_host("LOCALHOST"))
+        self.assertTrue(is_local_host("127.0.0.1"))
+        self.assertTrue(is_local_host("127.0.0.2"))
+        self.assertTrue(is_local_host("127.0.1.1"))
+        self.assertTrue(is_local_host("127.255.255.254"))
+        self.assertTrue(is_local_host("::1"))
+
+        self.assertFalse(is_local_host("34.1.1.1"))
+        self.assertFalse(is_local_host("192.168.1.100"))
+        self.assertFalse(is_local_host("example.com"))
+
     def test_dict_to_yaml(self):
         data = {
             "services": {
@@ -1636,3 +1653,23 @@ class TestMetadataParsing(unittest.TestCase):
         json_meta = json.loads(new_content)
         self.assertEqual(json_meta["tag"], "2026.q1")
         self.assertEqual(json_meta["scale_liferay"], 3)
+
+    def test_sanitize_id_umlauts_and_unicode(self):
+        """Verify sanitize_id transcodes German umlauts and accents into RFC-1123 safe ASCII strings."""
+        from ldm_core.utils import sanitize_id
+
+        # German umlauts and Eszett
+        self.assertEqual(sanitize_id("Saarbrücken"), "Saarbruecken")
+        self.assertEqual(sanitize_id("München-Süd"), "Muenchen-Sued")
+        self.assertEqual(sanitize_id("Groß-Umstadt"), "Gross-Umstadt")
+        self.assertEqual(sanitize_id("Kölner-Liferay"), "Koelner-Liferay")
+
+        # Accented characters
+        self.assertEqual(sanitize_id("Café-Liferay"), "Cafe-Liferay")
+        self.assertEqual(sanitize_id("España_PR"), "Espana_PR")
+
+        # Non-latin script fallback
+        self.assertTrue(sanitize_id("日本語").startswith("project-"))
+
+        # Standard ASCII remains intact
+        self.assertEqual(sanitize_id("vanilla-7.4-app"), "vanilla-7.4-app")

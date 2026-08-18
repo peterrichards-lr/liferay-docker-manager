@@ -8,7 +8,7 @@ import sys
 
 from ldm_core.handlers.base import BaseHandler
 from ldm_core.ui import UI
-from ldm_core.utils import get_compose_cmd, resolve_infrastructure_mode, sanitize_id
+from ldm_core.utils import resolve_infrastructure_mode, sanitize_id
 
 
 class DatabaseService(BaseHandler):
@@ -89,7 +89,24 @@ class DatabaseService(BaseHandler):
         return True, None
 
     def cmd_start(self):
-        """Starts the shared global database."""
+        """Starts the shared global database.
+
+        "Shared" means shared among projects resolving to the *same*
+        target -- not a single global instance for every target. A
+        project running on aws-1 sharing a DB with other aws-1 projects
+        makes sense (same host, no cross-network DB latency, and the
+        orchestrating laptop that isn't even network-reachable from a
+        remote VPC never needs to be in the loop); a single shared
+        instance pinned to one node that every other node's projects
+        reach across the network would not. So this resolves --node/
+        --target exactly like any other command -- there's nothing
+        special about shared infra here, it's "which target is active for
+        this invocation," same as everything else. See
+        docs/explanation/remote-node-architecture.md §5.
+        """
+        from ldm_core.docker_service import DockerService
+
+        target_name = getattr(self.manager, "target", None)
         infra_compose = self.manager.get_resource_path("infra-compose.yml")
         if not infra_compose or not infra_compose.exists():
             UI.die(
@@ -97,14 +114,22 @@ class DatabaseService(BaseHandler):
             )
             return
 
-        cmd = [*get_compose_cmd(), "-f", str(infra_compose)]
+        cmd = [
+            *DockerService.get_compose_cmd_prefix(target_name),
+            "-f",
+            str(infra_compose),
+        ]
         cmd.extend(["start", "db"])
 
         UI.detail("Starting global shared database (db)...")
         self.manager.run_command(cmd, capture_output=False)
 
     def cmd_stop(self):
-        """Stops the shared global database."""
+        """Stops the shared global database. See cmd_start's docstring for
+        why this resolves --node/--target like any other command."""
+        from ldm_core.docker_service import DockerService
+
+        target_name = getattr(self.manager, "target", None)
         infra_compose = self.manager.get_resource_path("infra-compose.yml")
         if not infra_compose or not infra_compose.exists():
             UI.die(
@@ -112,7 +137,11 @@ class DatabaseService(BaseHandler):
             )
             return
 
-        cmd = [*get_compose_cmd(), "-f", str(infra_compose)]
+        cmd = [
+            *DockerService.get_compose_cmd_prefix(target_name),
+            "-f",
+            str(infra_compose),
+        ]
         cmd.extend(["stop", "db"])
 
         UI.detail("Stopping global shared database (db)...")

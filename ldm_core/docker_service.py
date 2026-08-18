@@ -1,5 +1,5 @@
 from ldm_core.config import get_active_target
-from ldm_core.utils import run_command
+from ldm_core.utils import is_local_host, run_command
 
 
 class DockerService:
@@ -10,18 +10,20 @@ class DockerService:
 
     @staticmethod
     def get_docker_cmd_prefix(target_name: str | None = None) -> list[str]:
-        """Returns the docker CLI command prefix, injecting --context for remote targets."""
-        if not target_name or target_name == "local":
-            return ["docker"]
+        """Returns the docker CLI command prefix, injecting --context for remote targets.
+
+        Always resolves via `get_active_target()`, even when `target_name` is
+        None/falsy -- this used to short-circuit straight to `["docker"]`
+        before ever calling `get_active_target()`, which silently ignored a
+        persisted default target (`ldm target use`) for every caller that
+        didn't have an explicit target name in hand (most call sites that
+        only know a possibly-unset project/CLI target). See
+        docs/explanation/remote-node-architecture.md for the broader pattern
+        this belongs to.
+        """
         target = get_active_target(target_name)
-        if (
-            target
-            and target.name != "local"
-            and target.host not in ("localhost", "127.0.0.1", "")
-        ):
+        if target.name != "local" and not is_local_host(target.host):
             return ["docker", "--context", target.name]
-        if target_name and target_name != "local":
-            return ["docker", "--context", target_name]
         return ["docker"]
 
     @staticmethod

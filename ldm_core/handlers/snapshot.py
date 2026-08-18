@@ -228,9 +228,17 @@ class SnapshotService(BaseHandler):
             or project_meta.get("container_name")
             or paths["root"].name
         )
+        target_name = getattr(self.manager, "target", None) or project_meta.get(
+            "target"
+        )
+        from ldm_core.docker_service import DockerService
+
+        docker_prefix = DockerService.get_docker_cmd_prefix(target_name)
+
         if (
             self.manager.run_command(
-                ["docker", "ps", "-q", "-f", f"name=^{container_name}$"], check=False
+                [*docker_prefix, "ps", "-q", "-f", f"name=^{container_name}$"],
+                check=False,
             )
             or (paths["root"] / "docker-compose.yml").exists()
         ):
@@ -321,7 +329,7 @@ class SnapshotService(BaseHandler):
 
         self.search._restore_search(choice_path, snap_meta, container_name)
 
-        self.custom_containers._restore_custom_images(choice_path)
+        self.custom_containers._restore_custom_images(choice_path, project_meta)
 
         UI.success("Restore complete.")
 

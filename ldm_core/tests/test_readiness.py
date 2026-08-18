@@ -114,9 +114,21 @@ class TestReadiness(unittest.TestCase):
         )
         self.update_patcher.start()
 
+        # Isolate every test in this class from the tester's REAL ~/.ldmrc
+        # persisted default target -- get_docker_cmd_prefix() always calls
+        # get_active_target() even for a falsy target_name (see PR #1150).
+        from ldm_core.config import TargetNode
+
+        self.active_target_patcher = patch("ldm_core.docker_service.get_active_target")
+        self.mock_active_target = self.active_target_patcher.start()
+        self.mock_active_target.return_value = TargetNode(
+            name="local", host="localhost", is_default=True
+        )
+
     def tearDown(self):
         self.req_patcher.stop()
         self.update_patcher.stop()
+        self.active_target_patcher.stop()
 
     @patch("ldm_core.ui.UI.info")
     @patch("ldm_core.ui.UI.success")
@@ -202,6 +214,146 @@ class TestReadiness(unittest.TestCase):
             )
             # Verify it completed successfully
             mock_success.assert_any_call("Liferay is ready  (2m 15s)")
+
+    @patch("ldm_core.ui.UI.success")
+    @patch("ldm_core.ui.UI.warning")
+    def test_wait_for_ready_uses_remote_target_context(
+        self, mock_warning, mock_success
+    ):
+        """_wait_for_ready's docker logs/inspect calls must honor the project's target (#1133)."""
+        from ldm_core.config import TargetNode
+
+        self.mock_active_target.return_value = TargetNode(name="aws-1", host="34.1.1.1")
+
+        def mock_time_side_effect():
+            yield 1000
+            yield 1035
+            yield 1035
+            yield 1035
+            yield 1035
+
+        called_cmds = []
+
+        def mock_run_command_side_effect(cmd, **kwargs):
+            called_cmds.append(cmd)
+            if "logs" in cmd:
+                return "INFO: starting\n"
+            if "inspect" in cmd:
+                return "healthy"
+            return ""
+
+        self.handler.args.total_start = "900"
+        self.handler.args.browser = False
+        with (
+            patch("time.time") as mock_time,
+            patch.object(
+                self.handler, "run_command", side_effect=mock_run_command_side_effect
+            ),
+        ):
+            mock_time.side_effect = mock_time_side_effect()
+            project_meta = {"container_name": "test-container", "target": "aws-1"}
+            self.handler.handler.readiness._wait_for_ready(project_meta, "test.local")
+
+        has_context = any(
+            "--context" in cmd and "aws-1" in cmd
+            for cmd in called_cmds
+            if isinstance(cmd, list)
+        )
+        self.assertTrue(
+            has_context, f"Expected --context aws-1 in one of {called_cmds}"
+        )
+
+    def test_cmd_wait_uses_remote_target_context(self):
+        """cmd_wait's docker stats CPU-idle poll must honor the project's target (#1133)."""
+        from ldm_core.config import TargetNode
+
+        self.mock_active_target.return_value = TargetNode(name="aws-1", host="34.1.1.1")
+        self.handler.read_meta = MagicMock(  # type: ignore[method-assign]
+            return_value={
+                "container_name": "test-runtime",
+                "host_name": "localhost",
+                "target": "aws-1",
+            }
+        )
+
+        with patch.object(
+            self.handler.handler.readiness, "_wait_for_ready", return_value=True
+        ) as mock_wfr:
+            with patch.object(
+                self.handler.manager, "run_command", return_value="10%"
+            ) as mock_run:
+                with patch("time.sleep"):
+                    self.handler.cmd_wait("test", timeout=5)
+
+        self.assertTrue(mock_wfr.called)
+        called_cmds = [c.args[0] for c in mock_run.call_args_list]
+        has_context = any(
+            "--context" in cmd and "aws-1" in cmd
+            for cmd in called_cmds
+            if isinstance(cmd, list)
+        )
+        self.assertTrue(
+            has_context, f"Expected --context aws-1 in one of {called_cmds}"
+        )
+
+    @patch("ldm_core.ui.UI.raw")
+    @patch("ldm_core.ui.UI.warning")
+    @patch("ldm_core.ui.UI.success")
+    def test_wait_for_ready_masks_admin_password_in_completion_banner(
+        self, mock_success, mock_warning, mock_raw
+    ):
+        """LDM-#1161: the completion banner used to interpolate the real
+        password wrapped in the ANSI 'conceal' escape (UI.HIDDEN,
+        \\033[8m), relying on terminal support that many common terminals
+        don't have -- so a custom admin password sourced from
+        portal-ext.properties (or anywhere else) could render in fully
+        visible clear text. The banner must never pass the real password
+        to UI.raw() at all; it should print a fixed placeholder mask
+        instead, regardless of the password's origin/value."""
+
+        def mock_time_side_effect():
+            yield 1000
+            yield 1035
+            yield 1035
+            yield 1035
+            yield 1035
+
+        def mock_run_command_side_effect(cmd, **kwargs):
+            if "logs" in cmd:
+                return "INFO: starting\n"
+            if "inspect" in cmd:
+                return "healthy"
+            return ""
+
+        secret_password = "correct-horse-battery-staple"  # pragma: allowlist secret
+        self.handler.args.total_start = "900"
+        self.handler.args.browser = False
+        with (
+            patch("time.time") as mock_time,
+            patch.object(
+                self.handler, "run_command", side_effect=mock_run_command_side_effect
+            ),
+            patch.object(self.handler.infra, "thaw_elasticsearch", return_value=True),
+        ):
+            mock_time.side_effect = mock_time_side_effect()
+
+            project_meta = {
+                "container_name": "test-container",
+                "credentials": [
+                    {
+                        "type": "admin",
+                        "email": "test@liferay.com",
+                        "password": secret_password,  # pragma: allowlist secret
+                    }
+                ],
+            }
+            self.handler.handler.readiness._wait_for_ready(project_meta, "test.local")
+
+        all_output = "\n".join(
+            str(call.args[0]) if call.args else "" for call in mock_raw.call_args_list
+        )
+        self.assertNotIn(secret_password, all_output)
+        self.assertIn("••••••••", all_output)
 
     @patch("ldm_core.ui.UI.success")
     @patch("ldm_core.ui.UI.info")
