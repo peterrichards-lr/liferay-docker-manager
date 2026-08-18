@@ -461,6 +461,20 @@ def main():  # noqa: C901, PLR0912, PLR0915
     parts = current_version.split("-", 1)
     base_version = parts[0]
 
+    from ldm_core.constants import RELEASE_ANNOUNCEMENTS
+
+    v_prefix = (
+        ".".join(base_version.split(".")[:2]) if "." in base_version else base_version
+    )
+    if v_prefix in RELEASE_ANNOUNCEMENTS:
+        print(
+            f"✅ Verified release announcements key for '{v_prefix}' series ({len(RELEASE_ANNOUNCEMENTS[v_prefix])} highlights registered)."
+        )
+    else:
+        print(
+            f"⚠️  Warning: RELEASE_ANNOUNCEMENTS in constants.py is missing key for minor series '{v_prefix}'. Please update constants.py!"
+        )
+
     tag_check = run_cmd(["git", "tag", "-l", f"v{base_version}"], capture=True)
     if tag_check.stdout.strip():
         if args.bump in ["beta", "pre"]:

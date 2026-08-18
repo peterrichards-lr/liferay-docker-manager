@@ -53,10 +53,16 @@ RELEASE_ANNOUNCEMENTS = {
             "ldm target <subcmd>",
             "Multi-node compute target management (add/ls/use/status)",
         ),
+        (
+            "ldm run --node <target>",
+            "Deploy & manage projects on remote Docker compute nodes",
+        ),
+        (
+            "ldm system prune",
+            "Reclaim orphaned database containers & system assets",
+        ),
         ("ldm link <path>", "Linked workspaces local integration (replaces init-from)"),
         ("ldm clone <url>", "Clone and setup a remote Git workspace repository"),
-        ("ldm import <pkg>", "Import compiled hydrated data packages (.ldmp) only"),
-        ("ldm init-from", "Deprecated (forwarded to ldm link)"),
     ],
 }
 

@@ -340,6 +340,33 @@ class TestArchitecturalContracts(unittest.TestCase):
                                         f"Subcommand '{sub_choice}' under namespace '{choice}' is missing from the subcmds bypass list in preprocess_args!",
                                     )
 
+    def test_release_announcements_contract(self):
+        """Mandate: RELEASE_ANNOUNCEMENTS must contain a valid, non-empty entry for the current VERSION's minor series."""
+        from ldm_core.constants import RELEASE_ANNOUNCEMENTS, VERSION
+
+        v_prefix = ".".join(VERSION.split(".")[:2]) if "." in VERSION else VERSION
+        self.assertIn(
+            v_prefix,
+            RELEASE_ANNOUNCEMENTS,
+            f"Quality Gate Violation: RELEASE_ANNOUNCEMENTS in constants.py is missing an entry for active minor version '{v_prefix}'.",
+        )
+        items = RELEASE_ANNOUNCEMENTS[v_prefix]
+        self.assertTrue(
+            len(items) > 0,
+            f"Quality Gate Violation: RELEASE_ANNOUNCEMENTS['{v_prefix}'] is empty.",
+        )
+        for item in items:
+            if isinstance(item, (tuple, list)):
+                self.assertEqual(
+                    len(item),
+                    2,
+                    f"Quality Gate Violation: RELEASE_ANNOUNCEMENTS item {item} must be a 2-tuple (command, description).",
+                )
+                self.assertTrue(
+                    item[0] and item[1],
+                    f"Quality Gate Violation: RELEASE_ANNOUNCEMENTS item {item} contains empty strings.",
+                )
+
 
 if __name__ == "__main__":
     unittest.main()
