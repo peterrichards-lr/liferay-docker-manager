@@ -78,10 +78,10 @@ Commands like `ldm deploy`/`ldm monitor` may need continuous/incremental remote 
 ```python
 @dataclass
 class TargetContext:
-    target: TargetNode            # the resolved node (local/remote)
+    target: TargetNode  # the resolved node (local/remote)
     is_remote: bool
-    docker_prefix: list[str]      # ["docker"] or ["docker", "--context", name]
-    compose_prefix: list[str]     # docker_prefix + ["compose"]
+    docker_prefix: list[str]  # ["docker"] or ["docker", "--context", name]
+    compose_prefix: list[str]  # docker_prefix + ["compose"]
     conflict_overridden: bool = False
     newly_pinned: bool = False
     local_root: Path | None = None

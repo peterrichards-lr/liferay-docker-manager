@@ -1,0 +1,101 @@
+=== LDM BINARY VERIFICATION REPORT ===
+Timestamp:    Tue 18 Aug 2026 12:08:36 BST
+Hostname:     peters.macbook.pro.2.lan
+Platform:     darwin25
+Binary:       /usr/local/bin/ldm
+Version:      ldm 2.15.28-pre.6
+Script Ver:   2.15.28-pre.6
+Docker:    29.2.1
+Compose:   5.2.0
+
+>> Initializing Infrastructure
+[0;32m✅  Infrastructure setup complete.[0m
+>> Custom SSL Port Setup
+[0;33m⚠️  Port conflict detected! Global HTTP proxy port 80 is in use on the host. Using 81 instead.[0m
+[0;33m⚠️  Port conflict detected! Global Admin proxy port 18080 is in use on the host. Using 18081 instead.[0m
+[0;32m✅  Infrastructure setup complete.[0m
+>> Target List
+[1;33m=== Registered Target Compute Nodes ===[0m
+[2m╭─────────────┬─────────────────┬──────────┬────────────────╮[0m
+│ [0;37m[1mTARGET NAME[0m │ [0;37m[1mHOST / ENDPOINT[0m │ [0;37m[1mSSH USER[0m │ [0;37m[1mACTIVE DEFAULT[0m │
+[2m├─────────────┼─────────────────┼──────────┼────────────────┤[0m
+│ local       │ localhost       │ -        │ YES [DEFAULT]  │
+│ aws-1       │ 51.20.52.201    │ ec2-user │ NO             │
+│ aws-2       │ 13.51.55.181    │ ec2-user │ NO             │
+[2m╰─────────────┴─────────────────┴──────────┴────────────────╯[0m
+>> Target Status (Local)
+[1;33m=== Target Compute Nodes Status & Connectivity Probe ===[0m
+[2m╭────────┬─────────────────┬────────┬────────────────┬─────────────────┬────────────────────╮[0m
+│ [0;37m[1mTARGET[0m │ [0;37m[1mHOST / ENDPOINT[0m │ [0;37m[1mSTATUS[0m │ [0;37m[1mENGINE VERSION[0m │ [0;37m[1mCPUs / MEMORY  [0m │ [0;37m[1mRUNNING CONTAINERS[0m │
+[2m├────────┼─────────────────┼────────┼────────────────┼─────────────────┼────────────────────┤[0m
+│ local  │ localhost       │ [0;32mONLINE[0m │ v29.2.1        │ 4 CPUs / 7.7 GB │ 7                  │
+[2m╰────────┴─────────────────┴────────┴────────────────┴─────────────────┴────────────────────╯[0m
+>> Target Add (Mock Node)
+[0;32m✅  Target node 'e2e-target-50189' (127.0.0.1) registered successfully.[0m
+>> Target Remove (Mock Node)
+[0;32m✅  Target node 'e2e-target-50189' removed.[0m
+>> Target Add (127.0.0.2 Loopback)
+[0;32m✅  Target node 'loopback-node-50189' (127.0.0.2) registered successfully.[0m
+>> Target Status (Loopback Node)
+[1;33m=== Target Compute Nodes Status & Connectivity Probe ===[0m
+[2m╭─────────────────────┬─────────────────┬────────┬────────────────┬─────────────────┬────────────────────╮[0m
+│ [0;37m[1mTARGET             [0m │ [0;37m[1mHOST / ENDPOINT[0m │ [0;37m[1mSTATUS[0m │ [0;37m[1mENGINE VERSION[0m │ [0;37m[1mCPUs / MEMORY  [0m │ [0;37m[1mRUNNING CONTAINERS[0m │
+[2m├─────────────────────┼─────────────────┼────────┼────────────────┼─────────────────┼────────────────────┤[0m
+│ loopback-node-50189 │ 127.0.0.2       │ [0;32mONLINE[0m │ v29.2.1        │ 4 CPUs / 7.7 GB │ 7                  │
+[2m╰─────────────────────┴─────────────────┴────────┴────────────────┴─────────────────┴────────────────────╯[0m
+>> Target Remove (Loopback Node)
+[0;32m✅  Target node 'loopback-node-50189' removed.[0m
+>> Running LDM Project
+[0;33mℹ  The LDM project 'ldm-smoke-test-50189' already exists and this command will reconfigure it.[0m
+[1;36m▶  Synchronizing Assets[0m
+[1;36m▶  Starting Container Stack[0m
+[0;32m✅  Project 'ldm-smoke-test-50189' started in background.[0m
+>> Deploying artifact
+[0;32m✅  Artifact deployment complete.[0m
+✅ Hot Deploy verified.
+>> Creating Snapshot
+[0;32m✅  Database dump completed.[0m
+[0;32m✅  Snapshot saved: /Users/peterrichards/ldm-verify/e2e-work-dir-50189/ldm-smoke-test-50189/snapshots/20260818_121435[0m
+>> Bypassing Integrity
+[1;33m=== Snapshots for ldm-smoke-test-50189 ===[0m
+[1] [0;36m20260818_121435[0m - [1mBinary-Verify[0m (1.0 GB)[2m [DB,VOL,MOD][0m
+[0;33m⚠️  Resetting [1mldm-smoke-test-50189[0m (all)...[0m
+[0;33m⚠️  Tearing down stack: ldm-smoke-test-50189[0m
+[0;32m✅  Project ldm-smoke-test-50189 reset successful.[0m
+[0;33m⚠️  Integrity verification disabled via --no-verify.[0m
+[1;36m▶  Restoring Workspace Data[0m
+[1;36m▶  Finalizing Metadata[0m
+[1;36m▶  Synchronizing Assets[0m
+[1;36m▶  Starting Container Stack[0m
+[1;36m▶  Restoring Database Components[0m
+[0;32m✅  + Database restored successfully.[0m
+[0;32m✅  Restore complete.[0m
+>> Scaling Liferay
+[0;32m✅  Updated scale factors for project ldm-smoke-test-50189[0m
+>> Scaling Liferay back to 1 for logs export check
+[0;32m✅  Updated scale factors for project ldm-smoke-test-50189[0m
+>> Starting project for logs export check
+[0;33mℹ  The LDM project 'ldm-smoke-test-50189' already exists and this command will reconfigure it.[0m
+[1;36m▶  Synchronizing Assets[0m
+[1;36m▶  Starting Container Stack[0m
+[0;32m✅  Project 'ldm-smoke-test-50189' started in background.[0m
+>> Exporting project logs
+>> Stopping project to release file locks
+>> Rebuilding properties
+[1;33m=== Rebuilding Properties for project: ldm-smoke-test-50189 ===[0m
+[0;32m✅  Properties successfully rebuilt.[0m
+>> Resetting properties
+[1;33m=== Resetting Properties for project: ldm-smoke-test-50189 ===[0m
+[0;32m✅  Properties successfully reset.[0m
+>> Checking Status
+[1;33m=== LDM Service Status ===[0m
+[0;37mGlobal Infrastructure:[0m
+[2m╭───────────────────────┬─────────┬───────────────────────────────╮[0m
+│ [0;32m●[0m SSL Proxy (Traefik) │ Running │ traefik:v3.6.1                │
+│ [0;32m●[0m Search (ES)         │ Running │ elasticsearch:8.19.1          │
+│ [0;32m●[0m macOS Socket Bridge │ Running │ tecnativa/docker-socket-proxy │
+[2m╰───────────────────────┴─────────┴───────────────────────────────╯[0m
+
+[0;37mNo projects are currently running.[0m
+
+🎯 ALL E2E VERIFICATIONS PASSED!
