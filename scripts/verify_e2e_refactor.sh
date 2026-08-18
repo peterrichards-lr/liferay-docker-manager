@@ -389,6 +389,18 @@ else
 fi
 log_and_run "Target Remove (Mock Node)" "$LDM_CMD" target rm "$TARGET_TEST_NODE"
 
+echo ">> Testing Loopback Subnet Target Registration & Local Context Resolution..."
+LOOPBACK_TEST_NODE="loopback-node-${TEST_PORT}"
+log_and_run "Target Add (127.0.0.2 Loopback)" "$LDM_CMD" target add "$LOOPBACK_TEST_NODE" --host 127.0.0.2
+if "$LDM_CMD" target ls | grep -q "$LOOPBACK_TEST_NODE"; then
+    echo "✅ Loopback target registration verified."
+else
+    echo "❌ ERROR: Target $LOOPBACK_TEST_NODE not found in registry." | tee -a "$RESULTS_FILE_TMP"
+    exit 1
+fi
+log_and_run "Target Status (Loopback Node)" "$LDM_CMD" target status "$LOOPBACK_TEST_NODE"
+log_and_run "Target Remove (Loopback Node)" "$LDM_CMD" target rm "$LOOPBACK_TEST_NODE"
+
 REMOTE_HOST="${LDM_TEST_REMOTE_HOST:-${LDM_REMOTE_TARGET}}"
 if [ -n "$REMOTE_HOST" ]; then
     echo ">> Probing Remote Compute Target ($REMOTE_HOST)..."
