@@ -86,6 +86,8 @@ def _print_conventions_defaults():
   • Search: Shared Elasticsearch 7 sidecar on localhost:9200 (--search-mode sidecar)
   • Web Server: Resolved at http://localhost:8080 (--port 8080)
   • OSGi State: Volume-backed persistent state across restarts
+  • Internationalization: Transcodes German umlauts (ä->ae, ö->oe, ü->ue, ß->ss),
+    accents (é->e, ñ->n), and CJK/Arabic scripts to valid RFC-1123 container IDs.
 """)
 
 

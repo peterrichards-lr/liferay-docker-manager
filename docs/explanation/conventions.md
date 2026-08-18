@@ -38,10 +38,11 @@ When running `ldm run <project-name>` (or creating a fresh stack targeting the l
 - **Lean JVM Profile**: Includes a resource-optimized JVM profile (`-Xms1536m -Xmx2048m`) designed for constrained environments. LDM **automatically detects** GitHub Actions and applies this profile to ensure reliable boots on 7GB runners. Use the `--lean` flag to trigger this manually.
 - **Atomic Project Initialization**: Employs a "Commit/Rollback" pattern for new projects. If initialization fails (e.g. DNS errors or image pull failures), LDM automatically cleans up the half-baked project directory and unregisters it to prevent zombie states.
 - **Zero-Race Atomic Deployments**: All file synchronizations (via `ldm deploy` or the `deploy/` bind mount) are staged, permission-fixed (`chmod 666`, `chown 1000:1000`), and atomically moved. This definitively eliminates `AutoDeployScanner` "Unable to write" errors.
+- **Internationalization & Unicode Transcoding**: Full multi-national support for developers across all regions. `ldm` automatically transcodes German umlauts (`ä`→`ae`, `ö`→`oe`, `ü`→`ue`, `ß`→`ss`), normalizes European accents/diacritics (`é`→`e`, `ñ`→`n`, `ç`→`c`, `å`→`a`, `ø`→`o`), and deterministically converts non-Latin scripts (CJK, Cyrillic, Arabic, Greek) into RFC-1123 safe Docker container identifiers, volume names, and hostnames.
 - **Architecture-Aware**: The tool detects your OS automatically to fetch the correct optimized binary during self-updates.
 - **Shell Autocompletion**: TAB completion for commands and project names across Bash, Zsh, and Fish.
 - **Fuzzy Interactive Selection**: Quickly filter through dozens of projects by typing a few characters in any interactive menu.
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-08-05* | *Last Reviewed: 2026-07-02*
+*Last Updated: 2026-08-18* | *Last Reviewed: 2026-08-18*
