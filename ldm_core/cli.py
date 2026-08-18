@@ -292,15 +292,9 @@ class LDMHelpFormatter(argparse.RawDescriptionHelpFormatter):
     """Custom HelpFormatter for LDM CLI offering progressive disclosure command grouping."""
 
     def format_help(self):
-        if (
-            self._prog != "ldm"
-            or len(
-                getattr(self, "_root_section", None).items
-                if getattr(self, "_root_section", None)
-                else []
-            )
-            <= 1
-        ):
+        root_sec = getattr(self, "_root_section", None)
+        items_len = len(root_sec.items) if root_sec is not None else 0
+        if self._prog != "ldm" or items_len <= 1:
             return super().format_help()
 
         from ldm_core.constants import VERSION
