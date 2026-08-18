@@ -86,6 +86,18 @@ class TestDiagnostics(unittest.TestCase):
     def setUp(self):
         self.manager = MockDiagManager()
 
+        # Isolate every test in this class from the tester's REAL ~/.ldmrc
+        # persisted default target -- get_docker_cmd_prefix() always calls
+        # get_active_target() even for a falsy target_name (see PR #1150).
+        from ldm_core.config import TargetNode
+
+        self.active_target_patcher = patch("ldm_core.docker_service.get_active_target")
+        self.mock_active_target = self.active_target_patcher.start()
+        self.mock_active_target.return_value = TargetNode(
+            name="local", host="localhost", is_default=True
+        )
+        self.addCleanup(self.active_target_patcher.stop)
+
     @patch("ldm_core.diagnostics.doctor._get_env_info")
     @patch("ldm_core.diagnostics.doctor.DoctorRunner")
     def test_cmd_doctor_calls_runner(self, mock_runner, mock_env):
@@ -750,6 +762,64 @@ class TestDiagnostics(unittest.TestCase):
         commands = [c.args[0] for c in mock_run.call_args_list]
         self.assertNotIn(["docker", "image", "prune", "-af"], commands)
         self.assertNotIn(["docker", "builder", "prune", "-af"], commands)
+
+    @patch("ldm_core.diagnostics.prune.run_command")
+    @patch.object(
+        MockDiagManager, "find_dxp_roots", return_value=[{"path": Path("/tmp/p1")}]
+    )
+    @patch("ldm_core.docker_service.DockerService.is_running", return_value=False)
+    def test_cmd_prune_uses_remote_target_context(
+        self, mock_running, mock_roots, mock_run
+    ):
+        """ldm system prune --node <target> must honor the explicit
+        override for every docker call (#1133) -- it inherits --node via
+        base_sub_parent, but every prune.py docker invocation previously
+        hardcoded "docker" regardless."""
+        from ldm_core.config import TargetNode
+
+        self.mock_active_target.return_value = TargetNode(name="aws-1", host="34.1.1.1")
+        self.manager.target = "aws-1"
+        self.manager.args.images = True
+        mock_run.side_effect = [
+            "",  # orphaned containers query -> none found
+            "Total reclaimed space: 1.5GB",  # docker image prune
+            "Total reclaimed space: 500MB",  # docker builder prune
+        ]
+        with patch("builtins.print"):
+            self.manager.diagnostics.cmd_prune()
+
+        commands = [c.args[0] for c in mock_run.call_args_list]
+        has_context = any("--context" in cmd and "aws-1" in cmd for cmd in commands)
+        self.assertTrue(has_context, f"Expected --context aws-1 in {commands}")
+
+    @patch("ldm_core.diagnostics.info.run_command")
+    def test_cmd_status_global_infra_uses_explicit_node_override(self, mock_run):
+        """The global-infra status block (liferay-proxy-global/
+        liferay-search-global/liferay-docker-proxy) has no per-project meta
+        to resolve a target from -- it must honor an explicit --node
+        override instead (#1133), matching the doctor.py precedent for
+        shared-infra health checks."""
+        from ldm_core.config import TargetNode
+
+        self.mock_active_target.return_value = TargetNode(name="aws-1", host="34.1.1.1")
+        self.manager.target = "aws-1"
+        mock_run.side_effect = [
+            "container-id\n",  # liferay-proxy-global ps
+            "running liferay/proxy:latest",  # liferay-proxy-global inspect
+            "",  # liferay-search-global ps (not running)
+            "",  # liferay-docker-proxy ps (not running)
+        ]
+        with patch.object(self.manager, "find_dxp_roots", return_value=[]):
+            with self.assertRaises(SystemExit):
+                self.manager.diagnostics.cmd_status()
+
+        called_cmds = [c.args[0] for c in mock_run.call_args_list]
+        has_context = any(
+            "--context" in cmd and "aws-1" in cmd
+            for cmd in called_cmds
+            if isinstance(cmd, list)
+        )
+        self.assertTrue(has_context, f"Expected --context aws-1 in {called_cmds}")
 
     def test_sum_reclaimed_space_parses_and_combines_units(self):
         from ldm_core.diagnostics.prune import _sum_reclaimed_space
