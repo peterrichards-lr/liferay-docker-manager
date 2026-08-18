@@ -69,10 +69,15 @@ def get_projects() -> str:
             or path.name
         )
 
+        target_name = getattr(_manager, "target", None) or meta.get("target")
+        from ldm_core.docker_service import DockerService
+
+        docker_prefix = DockerService.get_docker_cmd_prefix(target_name)
+
         status = "Stopped"
         containers_status = run_command(
             [
-                "docker",
+                *docker_prefix,
                 "ps",
                 "-a",
                 "--filter",
@@ -141,8 +146,13 @@ def get_logs(  # noqa: C901, PLR0911, PLR0912
     if not project_path or not container_name:
         return f"Error: Project '{project_id}' not found."
 
+    target_name = getattr(_manager, "target", None) or meta.get("target")
+    from ldm_core.docker_service import DockerService
+
+    docker_prefix = DockerService.get_docker_cmd_prefix(target_name)
+
     logs = run_command(
-        ["docker", "logs", "--tail", str(lines_int), container_name],
+        [*docker_prefix, "logs", "--tail", str(lines_int), container_name],
         check=False,
     )
     if not logs:

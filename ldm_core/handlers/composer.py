@@ -56,7 +56,7 @@ class ComposerService:
         # Global fallback (16 GB)
         return 16 * 1024 * 1024 * 1024
 
-    def get_default_jvm_args(self):
+    def get_default_jvm_args(self, target_name=None):
         """Calculates recommended JVM arguments based on available host and Docker RAM."""
         # LDM-385: Support 'Lean' profile for CI or low-memory environments
         is_lean = (
@@ -75,9 +75,18 @@ class ComposerService:
             # Get Docker memory limit if available
             docker_mem = 0
             try:
+                # LDM-#1133: sizing must reflect the RAM of whichever daemon
+                # will actually run the container -- a remote target's host
+                # can have wildly different available memory than the
+                # orchestrating machine's local Docker Desktop/Colima VM.
+                target_name = getattr(self.manager, "target", None) or target_name
+                from ldm_core.docker_service import DockerService
+
+                docker_prefix = DockerService.get_docker_cmd_prefix(target_name)
+
                 # We use self.manager.run_command from the base mixin
                 docker_info_raw = self.manager.run_command(
-                    ["docker", "info", "--format", "{{json .}}"], check=False
+                    [*docker_prefix, "info", "--format", "{{json .}}"], check=False
                 )
                 if docker_info_raw:
                     info = json.loads(docker_info_raw)
