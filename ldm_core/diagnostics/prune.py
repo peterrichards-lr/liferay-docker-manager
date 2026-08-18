@@ -108,7 +108,7 @@ def run_prune(handler):  # noqa: C901, PLR0912, PLR0915
         )
 
     # 1. Orphaned Containers
-    # LDM-381: We look for containers with our project label
+    # LDM-381: We look for containers with our project label as well as *-db containers
     containers_raw = run_command(
         [
             *docker_prefix,
@@ -123,6 +123,7 @@ def run_prune(handler):  # noqa: C901, PLR0912, PLR0915
     )
 
     orphans = []
+    seen_orphan_names = set()
     if containers_raw:
         for line in containers_raw.splitlines():
             line = line.strip()
@@ -134,7 +135,36 @@ def run_prune(handler):  # noqa: C901, PLR0912, PLR0915
             name = name.lstrip("/")
 
             if not project or project not in active_projects:
+                if name not in seen_orphan_names:
+                    orphans.append(name)
+                    seen_orphan_names.add(name)
+
+    # Fallback scan: query all containers to find un-labeled *-db or tmp* database containers
+    all_containers_raw = run_command(
+        [
+            *docker_prefix,
+            "ps",
+            "-a",
+            "--format",
+            "{{.Names}}",
+        ],
+        check=False,
+    )
+    if all_containers_raw:
+        for name in all_containers_raw.splitlines():
+            name = name.strip().lstrip("/")
+            if not name or name in seen_orphan_names:
+                continue
+
+            # Match LDM database naming pattern: <project>-db or tmp*
+            if name.endswith("-db"):
+                project_name = name[:-3]
+                if project_name not in active_projects:
+                    orphans.append(name)
+                    seen_orphan_names.add(name)
+            elif name.startswith("tmp") and ("-db" in name or name.startswith("tmp_")):
                 orphans.append(name)
+                seen_orphan_names.add(name)
 
     if orphans:
         UI.detail(f"Found {len(orphans)} orphaned containers from deleted projects.")

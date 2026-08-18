@@ -1378,6 +1378,7 @@ class ComposerService:
                 },
                 "networks": ["liferay-net"],
                 "volumes": [f"{db_container}-db-data:/var/lib/postgresql/data"],
+                "labels": [f"com.liferay.ldm.project={project_name}"],
             }
             if scale == 1:
                 service["container_name"] = db_container
@@ -1459,6 +1460,7 @@ class ComposerService:
                 },
                 "networks": ["liferay-net"],
                 "volumes": [f"{db_container}-db-data:/var/lib/mysql"],
+                "labels": [f"com.liferay.ldm.project={project_name}"],
             }
             if scale == 1:
                 service["container_name"] = db_container
