@@ -1,0 +1,89 @@
+=== LDM BINARY VERIFICATION REPORT ===
+Timestamp:    Tue Aug 11 15:11:15 UTC 2026
+Hostname:  [ANONYMIZED]
+Platform:     Fedora Linux 44 (Container Image)
+Binary:    [ANONYMIZED]
+Version:      ldm 2.15.27
+Script Ver:   2.15.27
+Docker:    28.0.4
+Compose:   5.3.1
+
+>> Initializing Infrastructure
+✅  Infrastructure setup complete.
+>> Custom SSL Port Setup
+✅  Infrastructure setup complete.
+>> Target List
+=== Registered Target Compute Nodes ===
+╭─────────────┬─────────────────┬──────────┬────────────────╮
+│ TARGET NAME │ HOST / ENDPOINT │ SSH USER │ ACTIVE DEFAULT │
+├─────────────┼─────────────────┼──────────┼────────────────┤
+│ local       │ localhost       │ -        │ YES [DEFAULT]  │
+╰─────────────┴─────────────────┴──────────┴────────────────╯
+>> Target Status (Local)
+=== Target Compute Nodes Status & Connectivity Probe ===
+╭────────┬─────────────────┬────────┬────────────────┬──────────────────┬────────────────────╮
+│ TARGET │ HOST / ENDPOINT │ STATUS │ ENGINE VERSION │ CPUs / MEMORY    │ RUNNING CONTAINERS │
+├────────┼─────────────────┼────────┼────────────────┼──────────────────┼────────────────────┤
+│ local  │ localhost       │ ONLINE │ v28.0.4        │ 4 CPUs / 15.6 GB │ 4                  │
+╰────────┴─────────────────┴────────┴────────────────┴──────────────────┴────────────────────╯
+>> Target Add (Mock Node)
+✅  Target node 'e2e-target-49771' (127.0.0.1) registered successfully.
+>> Target Remove (Mock Node)
+✅  Target node 'e2e-target-49771' removed.
+>> Running LDM Project
+ℹ  The LDM project 'ldm-smoke-test-49771' already exists and this command will reconfigure it.
+▶  Synchronizing Assets
+⚠️  Global or local 'common/' folder not found. Some baseline assets may be missing.
+▶  Starting Container Stack
+✅  Project 'ldm-smoke-test-49771' started in background.
+>> Deploying artifact
+✅  Artifact deployment complete.
+✅ Hot Deploy verified.
+>> Creating Snapshot
+✅  Database dump completed.
+✅  Snapshot saved: [HOME]/work/liferay-docker-manager/liferay-docker-manager/e2e-work-dir-49771/ldm-smoke-test-49771/snapshots/20260811_151651
+>> Bypassing Integrity
+=== Snapshots for ldm-smoke-test-49771 ===
+[1] 20260811_151651 - Binary-Verify (1.0 GB) [DB,VOL,MOD]
+⚠️  Resetting ldm-smoke-test-49771 (all)...
+⚠️  Tearing down stack: ldm-smoke-test-49771
+✅  Project ldm-smoke-test-49771 reset successful.
+⚠️  Integrity verification disabled via --no-verify.
+▶  Restoring Workspace Data
+▶  Finalizing Metadata
+▶  Synchronizing Assets
+⚠️  Global or local 'common/' folder not found. Some baseline assets may be missing.
+▶  Starting Container Stack
+▶  Restoring Database Components
+✅  + Database restored successfully.
+✅  Restore complete.
+>> Scaling Liferay
+✅  Updated scale factors for project ldm-smoke-test-49771
+>> Scaling Liferay back to 1 for logs export check
+✅  Updated scale factors for project ldm-smoke-test-49771
+>> Starting project for logs export check
+ℹ  The LDM project 'ldm-smoke-test-49771' already exists and this command will reconfigure it.
+▶  Synchronizing Assets
+⚠️  Global or local 'common/' folder not found. Some baseline assets may be missing.
+▶  Starting Container Stack
+✅  Project 'ldm-smoke-test-49771' started in background.
+>> Exporting project logs
+>> Stopping project to release file locks
+>> Rebuilding properties
+=== Rebuilding Properties for project: ldm-smoke-test-49771 ===
+✅  Properties successfully rebuilt.
+>> Resetting properties
+=== Resetting Properties for project: ldm-smoke-test-49771 ===
+✅  Properties successfully reset.
+>> Checking Status
+=== LDM Service Status ===
+Global Infrastructure:
+╭───────────────────────┬─────────┬───────────────────────────────╮
+│ ● SSL Proxy (Traefik) │ Running │ traefik:v3.6.1                │
+│ ● Search (ES)         │ Running │ elasticsearch:8.19.1          │
+│ ● macOS Socket Bridge │ Running │ tecnativa/docker-socket-proxy │
+╰───────────────────────┴─────────┴───────────────────────────────╯
+
+No projects are currently running.
+
+🎯 ALL E2E VERIFICATIONS PASSED!
