@@ -592,6 +592,13 @@ def main():  # noqa: C901, PLR0912, PLR0915
     pr_base = "master"
     pr_head = release_branch
 
+    base_release_version = new_version.split("-")[0]
+    pr_title = (
+        f"chore(release): release tracking PR for v{base_release_version} [release]"
+        if "-" in new_version
+        else commit_msg
+    )
+
     if is_continuing_release:
         existing_pr_num = get_pr_number(release_branch)
         if not existing_pr_num:
@@ -634,7 +641,7 @@ def main():  # noqa: C901, PLR0912, PLR0915
                 "--head",
                 pr_head,
                 "--title",
-                commit_msg,
+                pr_title,
                 "--body",
                 pr_body,
             ]
