@@ -49,7 +49,7 @@ def cmd_guide(manager):
                 title, fn = topics[idx]
                 UI.info(f"\n=== {title} ===")
                 fn()
-        elif choice == "Q" or choice == "":
+        elif choice in ("Q", ""):
             UI.info(
                 "Exiting LDM Onboarding Guide. Run 'ldm run' to start your first environment!"
             )
@@ -81,7 +81,7 @@ def _print_quickstart_workflow():
 def _print_conventions_defaults():
     print("""
   LDM relies on sane defaults to minimize initial setup overhead:
-  
+
   • Database: Shared PostgreSQL container on localhost:5432 (--db postgresql)
   • Search: Shared Elasticsearch 7 sidecar on localhost:9200 (--search-mode sidecar)
   • Web Server: Resolved at http://localhost:8080 (--port 8080)

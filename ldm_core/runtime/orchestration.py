@@ -160,6 +160,9 @@ class OrchestrationService(BaseHandler):
             if service:
                 cmd.append(service)
             self.manager.run_command(cmd, capture_output=capture, cwd=str(root))
+        UI.hint(
+            "Run 'ldm run' to restart the container, or 'ldm status' to view environment status."
+        )
 
     def cmd_restart(
         self, project_id=None, service=None, all_projects=False, force_recreate=False

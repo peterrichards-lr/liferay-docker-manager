@@ -36,6 +36,17 @@ To prevent "version fatigue" and ensure the stability of the main release channe
 - **Release Announcements Gate**: Before initiating or promoting any release, verify that `RELEASE_ANNOUNCEMENTS` in `ldm_core/constants.py` has an active, non-empty entry for the current minor release series (`X.Y`) with current feature highlights. This is enforced by `test_release_announcements_contract` in `ldm_core/tests/test_architectural_contracts.py`.
 - **Stable Promotion**: Stable releases (`[release]`) MUST be reserved for hardened features and verified bugfixes.
 
+## Release Pull Request Naming Conventions
+
+To ensure clarity and prevent title drift across multi-commit pre-release iterations:
+
+- **Pre-Release Tracking PR Title**: Pre-release tracking PRs MUST use the generic base release version format:
+  `chore(release): release tracking PR for vX.Y.Z [release]`
+  *(e.g., `chore(release): release tracking PR for v2.15.29 [release]`)*
+  This accurately reflects that the PR stays open across multiple `-pre.1`, `-pre.2`, `-pre.N` iterations before final promotion.
+- **Stable Promotion PR Title**: When promoted to stable (`python3 scripts/release.py --promote`), the PR title is updated to:
+  `chore(release): release vX.Y.Z [release]`
+
 <!-- markdownlint-disable MD049 -->
 ---
 *Last Updated: 2026-08-18* | *Last Reviewed: 2026-08-18*

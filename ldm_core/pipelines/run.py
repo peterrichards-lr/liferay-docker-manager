@@ -1593,6 +1593,9 @@ class ExecutionStage(PipelineStage):
                     == "true",
                 )
             UI.success(f"Project '{project_id}' started in background.")
+            UI.hint(
+                "Run 'ldm link <path-to-cx>' to attach client extensions, or 'ldm logs -f' to tail logs."
+            )
 
         return None
 
