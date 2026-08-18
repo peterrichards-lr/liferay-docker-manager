@@ -13,6 +13,7 @@ from ldm_core.utils import (
     atomic_copy,
     get_actual_home,
     is_continuation_line,
+    is_local_host,
     run_command,
     safe_write_text,
 )
@@ -2232,7 +2233,7 @@ class ConfigService:
         save_target_node(node)
 
         # Auto-create/update Docker CLI context for remote SSH targets
-        if host not in ("localhost", "127.0.0.1", ""):
+        if not is_local_host(host):
             ssh_prefix = f"{user}@" if user else ""
             endpoint = f"ssh://{ssh_prefix}{host}"
             # Add SSH key to ssh-agent if key path provided

@@ -6,6 +6,7 @@ from pathlib import Path, PurePosixPath
 
 from ldm_core.utils import (
     get_actual_home,
+    is_local_host,
     load_global_config_safe,
     run_command,
     save_global_config_safe,
@@ -200,7 +201,7 @@ def resolve_remote_home(target: TargetNode) -> str | None:
     real absolute string to hand to the Docker Engine API, so this
     resolves it explicitly, once, via a trivial `echo $HOME` round trip.
     """
-    if target.name == "local" or target.host in ("localhost", "127.0.0.1", ""):
+    if target.name == "local" or is_local_host(target.host):
         return None
     target_spec = f"{target.user}@{target.host}" if target.user else target.host
     ssh_opts = ["-i", target.key_path] if target.key_path else []
@@ -243,7 +244,7 @@ def sync_project_to_target(
     target = get_active_target(project_target=target_name, config_path=config_path)
 
     # Local execution needs no remote directory sync
-    if target.name == "local" or target.host in ("localhost", "127.0.0.1", ""):
+    if target.name == "local" or is_local_host(target.host):
         return True
 
     project_name = project_path.name

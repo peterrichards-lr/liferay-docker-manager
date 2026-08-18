@@ -1,5 +1,6 @@
 import contextlib
 import hashlib
+import ipaddress
 import json
 import os
 import platform
@@ -22,6 +23,17 @@ from ldm_core.constants import SCRIPT_DIR, TAG_PATTERN
 from ldm_core.ui import UI
 
 _DRY_RUN_VFS: dict[str, str] = {}
+
+
+def is_local_host(host: str | None) -> bool:
+    """Returns True if host represents a local loopback interface (localhost, 127.0.0.0/8, ::1, or empty)."""
+    if not host or host.lower() in ("localhost", ""):
+        return True
+    try:
+        ip = ipaddress.ip_address(host)
+        return ip.is_loopback
+    except ValueError:
+        return False
 
 
 def reset_dry_run_vfs() -> None:

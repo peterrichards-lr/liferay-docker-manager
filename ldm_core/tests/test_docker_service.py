@@ -184,6 +184,18 @@ class TestDockerService(unittest.TestCase):
         prefix = DockerService.get_compose_cmd_prefix("aws-ec2")
         self.assertEqual(prefix, ["docker", "--context", "aws-ec2", "compose"])
 
+    @patch("ldm_core.docker_service.get_active_target")
+    def test_get_docker_cmd_prefix_loopback(self, mock_get_target):
+        """Loopback target IPs (127.0.0.0/8 and ::1) must return plain docker prefix without --context."""
+        from ldm_core.config import TargetNode
+
+        for loopback_ip in ("127.0.0.1", "127.0.0.2", "127.0.1.1", "::1"):
+            mock_get_target.return_value = TargetNode(
+                name="local-node", host=loopback_ip
+            )
+            prefix = DockerService.get_docker_cmd_prefix("local-node")
+            self.assertEqual(prefix, ["docker"])
+
 
 if __name__ == "__main__":
     unittest.main()

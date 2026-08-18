@@ -8,12 +8,29 @@ from ldm_core.utils import (
     dict_to_yaml,
     get_json,
     get_raw,
+    is_local_host,
     verify_executable_checksum,
     version_to_tuple,
 )
 
 
 class TestUtils(unittest.TestCase):
+    def test_is_local_host(self):
+        """Verify is_local_host recognizes all 127.0.0.0/8 IPs, localhost, ::1, and empty values as local."""
+        self.assertTrue(is_local_host(None))
+        self.assertTrue(is_local_host(""))
+        self.assertTrue(is_local_host("localhost"))
+        self.assertTrue(is_local_host("LOCALHOST"))
+        self.assertTrue(is_local_host("127.0.0.1"))
+        self.assertTrue(is_local_host("127.0.0.2"))
+        self.assertTrue(is_local_host("127.0.1.1"))
+        self.assertTrue(is_local_host("127.255.255.254"))
+        self.assertTrue(is_local_host("::1"))
+
+        self.assertFalse(is_local_host("34.1.1.1"))
+        self.assertFalse(is_local_host("192.168.1.100"))
+        self.assertFalse(is_local_host("example.com"))
+
     def test_dict_to_yaml(self):
         data = {
             "services": {
