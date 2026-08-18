@@ -55,7 +55,7 @@ def cmd_guide(manager):
             )
             break
         else:
-            UI.warn(
+            UI.warning(
                 "Unrecognized selection. Please enter a choice between 1 and 5, A, or Q."
             )
 
