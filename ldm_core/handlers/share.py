@@ -9,6 +9,7 @@ import urllib.request
 from pathlib import Path
 from typing import ClassVar
 
+from ldm_core.docker_service import DockerService
 from ldm_core.ui import UI
 from ldm_core.utils import download_file, get_actual_home, run_command, version_to_tuple
 
@@ -148,11 +149,12 @@ class ShareService:
             pass
         return None
 
-    def _get_docker_installed_version(self, image):
+    def _get_docker_installed_version(self, image, target_name: str | None = None):
         """Queries the docker image version by running it with -version."""
         try:
+            docker_prefix = DockerService.get_docker_cmd_prefix(target_name)
             res = subprocess.run(
-                ["docker", "run", "--rm", image, "-version"],
+                [*docker_prefix, "run", "--rm", image, "-version"],
                 capture_output=True,
                 text=True,
                 timeout=10,
@@ -742,9 +744,13 @@ class ShareService:
             docker_image = image or project_meta.get(
                 "share_image", "peterrichards/lfr-tunnel:latest"
             )
-            installed_ver = self._get_docker_installed_version(docker_image)
+            target_name = project_meta.get("target")
+            docker_prefix = DockerService.get_docker_cmd_prefix(target_name)
+            installed_ver = self._get_docker_installed_version(
+                docker_image, target_name
+            )
             self._verify_compatibility(
-                ["docker", "run", "--rm", docker_image], installed_ver
+                [*docker_prefix, "run", "--rm", docker_image], installed_ver
             )
 
             self.manager.write_meta(root, project_meta)
@@ -791,7 +797,10 @@ class ShareService:
                     or f"{base_container}-lfr-tunnel"
                 )
                 success, err_msg = self._poll_tunnel_health(
-                    subdomain, container_name=container_name, domain=share_domain
+                    subdomain,
+                    container_name=container_name,
+                    domain=share_domain,
+                    target_name=target_name,
                 )
                 if success:
                     UI.success("Tunnel container started in the background.")
@@ -1009,8 +1018,10 @@ class ShareService:
                     project_meta.get("tunnel_container_name")
                     or f"{root.name}-lfr-tunnel"
                 )
+                target_name = project_meta.get("target")
+                docker_prefix = DockerService.get_docker_cmd_prefix(target_name)
                 json_cmd = [
-                    "docker",
+                    *docker_prefix,
                     "exec",
                     container_name,
                     "./lfr-tunnel",
@@ -1325,12 +1336,19 @@ class ShareService:
         )
 
     def _poll_tunnel_health(  # noqa: C901, PLR0912, PLR0915
-        self, subdomain, container_name=None, timeout=10, domain=None
+        self,
+        subdomain,
+        container_name=None,
+        timeout=10,
+        domain=None,
+        target_name=None,
     ):
         """Polls the lfr-tunnel status to verify connection health using -status-json."""
         import time
 
         import requests
+
+        docker_prefix = DockerService.get_docker_cmd_prefix(target_name)
 
         start_time = time.time()
         UI.detail("Verifying tunnel connectivity and subdomain lease...")
@@ -1339,7 +1357,7 @@ class ShareService:
                 if container_name:
                     # Query inside the container using docker exec and status-json
                     cmd = [
-                        "docker",
+                        *docker_prefix,
                         "exec",
                         container_name,
                         "./lfr-tunnel",
@@ -1376,7 +1394,7 @@ class ShareService:
                 elif is_legacy:
                     if container_name:
                         cmd_legacy = [
-                            "docker",
+                            *docker_prefix,
                             "exec",
                             container_name,
                             "wget",
@@ -1417,7 +1435,7 @@ class ShareService:
         try:
             if container_name:
                 inspect_cmd = [
-                    "docker",
+                    *docker_prefix,
                     "inspect",
                     "-f",
                     "{{.State.Running}}",
@@ -1433,7 +1451,7 @@ class ShareService:
                 info_parsed = False
                 if is_running:
                     cmd = [
-                        "docker",
+                        *docker_prefix,
                         "exec",
                         container_name,
                         "wget",
@@ -1452,7 +1470,7 @@ class ShareService:
                             pass
 
                 if not info_parsed:
-                    log_cmd = ["docker", "logs", "--tail", "20", container_name]
+                    log_cmd = [*docker_prefix, "logs", "--tail", "20", container_name]
                     log_res = subprocess.run(
                         log_cmd, capture_output=True, text=True, check=False
                     )
@@ -1647,9 +1665,11 @@ class ShareService:
             )
 
         container_name = f"{root.name}-lfr-tunnel"
+        target_name = project_meta.get("target")
+        docker_prefix = DockerService.get_docker_cmd_prefix(target_name)
 
         # Check if the tunnel container is actually running
-        cmd = ["docker", "inspect", "-f", "{{.State.Running}}", container_name]
+        cmd = [*docker_prefix, "inspect", "-f", "{{.State.Running}}", container_name]
         res = subprocess.run(cmd, capture_output=True, text=True, check=False)
         if res.returncode != 0 or "true" not in res.stdout.lower():
             UI.die(
@@ -1660,11 +1680,13 @@ class ShareService:
         proxy_name = f"{root.name}-lfr-tunnel-inspector-proxy"
         # In case a stale one exists, clean it up first
         subprocess.run(
-            ["docker", "rm", "-f", proxy_name], capture_output=True, check=False
+            [*docker_prefix, "rm", "-f", proxy_name],
+            capture_output=True,
+            check=False,
         )
 
         proxy_cmd = [
-            "docker",
+            *docker_prefix,
             "run",
             "--rm",
             "--name",
@@ -1693,7 +1715,9 @@ class ShareService:
         except KeyboardInterrupt:
             UI.detail("\nStopping port forwarding...")
             subprocess.run(
-                ["docker", "stop", proxy_name], capture_output=True, check=False
+                [*docker_prefix, "stop", proxy_name],
+                capture_output=True,
+                check=False,
             )
             UI.success("Port forwarding stopped.")
         except subprocess.CalledProcessError as e:
