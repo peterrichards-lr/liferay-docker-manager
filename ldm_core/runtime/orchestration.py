@@ -360,7 +360,7 @@ class OrchestrationService(BaseHandler):
                             drop_cmd = []
                             if db_type == "postgresql":
                                 drop_cmd = [
-                                    "docker",
+                                    *docker_prefix,
                                     "exec",
                                     global_db_container,
                                     "dropdb",
@@ -371,7 +371,7 @@ class OrchestrationService(BaseHandler):
                                 ]
                             elif db_type in ["mysql", "mariadb"]:
                                 drop_cmd = [
-                                    "docker",
+                                    *docker_prefix,
                                     "exec",
                                     global_db_container,
                                     "mysql",
@@ -764,14 +764,16 @@ class OrchestrationService(BaseHandler):
             return
         service_name = service or "liferay"
 
-        # LDM-381: Resolve the actual container name using labels
-        target_container = self.manager.resolve_container(root.name, service_name)
-
         meta = self.manager.read_meta(root)
         target_name = getattr(self.manager, "target", None) or meta.get("target")
         from ldm_core.docker_service import DockerService
 
         docker_prefix = DockerService.get_docker_cmd_prefix(target_name)
+
+        # LDM-381: Resolve the actual container name using labels
+        target_container = self.manager.resolve_container(
+            root.name, service_name, target_name=target_name
+        )
 
         UI.detail(f"Entering container: {target_container}")
         try:

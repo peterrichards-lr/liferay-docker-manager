@@ -807,7 +807,7 @@ class ReadinessService(BaseHandler):
                     )
                     if is_legacy_expose:
                         self.manager.runtime.logs._print_ngrok_url(
-                            project_meta.get("container_name")
+                            project_meta.get("container_name"), target_name=target_name
                         )
 
                     if str(project_meta.get("share", "false")).lower() == "true":
