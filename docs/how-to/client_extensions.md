@@ -14,6 +14,7 @@ ldm link /path/to/my-client-extension
 ```
 
 When `ldm link` is executed, LDM automatically performs the following actions:
+
 1. **Workspace & CX Discovery**: Scans the directory for `client-extension.yaml`, `LCP.json`, and `bnd.bnd` configurations.
 2. **Subdomain Route Generation**: Parses `client-extension.yaml` and `LCP.json` to generate virtual subdomains (e.g. `http://my-cx.my-project.local:8080`).
 3. **Container Link Storage**: Persists the link mapping in `.liferay-docker.meta` so the extension automatically re-attaches across container restarts.
@@ -26,6 +27,7 @@ When `ldm link` is executed, LDM automatically performs the following actions:
 Server-Side Client Extensions (such as Spring Boot OAuth2 resource servers or Node.js microservices) require dedicated container sidecars.
 
 LDM manages SSCE containers out of the box:
+
 - **`LCP.json` Parsing**: Reads port specifications, environment variables, and memory limits from `LCP.json`.
 - **Dynamic Docker Compose Sidecars**: Generates dynamic Compose fragments to spin up the SSCE microservice alongside Liferay on the same internal container network.
 - **Automated OAuth2 ERC Wiring**: Injects Liferay OAuth2 External Reference Codes (ERC) so the microservice and Liferay authenticate seamlessly.

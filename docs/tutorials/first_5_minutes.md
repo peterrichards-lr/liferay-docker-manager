@@ -14,6 +14,7 @@ ldm guide
 ```
 
 You will see an interactive menu covering:
+
 1. **Quickstart Workflow**: Standard 4-step developer lifecycle.
 2. **LDM Conventions & Defaults**: Out-of-the-box infrastructure settings (PostgreSQL, Elasticsearch, Traefik).
 3. **Customizing Defaults**: Config precedence levels (CLI flags > local `.liferay-docker.meta` > global `~/.liferay-docker/config.json`).
@@ -32,11 +33,13 @@ ldm run
 
 - **Interactive Prompts**: LDM will prompt for project name, Liferay version tag (defaults to latest LTS), database type, and search mode.
 - **Non-Interactive Mode**: To accept all sane defaults automatically, pass the `-y` flag:
+
   ```bash
   ldm run my-project -y
   ```
 
 Once complete, LDM will output your virtual hostname:
+
 ```text
 ✅ Project 'my-project' started in background.
 ℹ Access your environment at: http://localhost:8080 or http://my-project.local
@@ -54,6 +57,7 @@ ldm link ../my-client-extension
 ```
 
 LDM will:
+
 1. Parse `client-extension.yaml` and `LCP.json`.
 2. Configure dynamic routing subdomains (e.g. `http://my-cx.my-project.local:8080`).
 3. Start watching for build outputs and synchronize them atomically.

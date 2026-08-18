@@ -20,6 +20,7 @@ To prevent unnecessary code churn, sweeping reformatting, and out-of-scope chang
 ## Sub-Issue Lifecycle in Pre-Release Cycles
 
 Because release-tracking PRs stay open across multiple `--bump beta` iterations before final promotion:
+
 - Once a sub-issue's implementation is committed, tagged in a pre-release candidate, and verified, the agent MUST comment on the issue and explicitly close it via `gh issue close <issue-number> --reason "completed"`.
 - Do not leave verified sub-issues open waiting for the parent tracking PR to merge to `master`.
 
