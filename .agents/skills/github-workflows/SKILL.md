@@ -21,7 +21,8 @@ To prevent unnecessary code churn, sweeping reformatting, and out-of-scope chang
 
 Because release-tracking PRs stay open across multiple `--bump beta` iterations before final promotion:
 
-- Once a sub-issue's implementation is committed, tagged in a pre-release candidate, and verified, the agent MUST comment on the issue and explicitly close it via `gh issue close <issue-number> --reason "completed"`.
+- **Mandatory Issue Linking**: Every release bump created for a tracked issue or epic MUST pass `--issue <number>` to `scripts/release.py` (or specify `Closes #N` in the PR body). The `no-issue-needed` label is strictly forbidden when implementing tracked issues.
+- **Immediate Closure Upon Delivery**: Once a sub-issue's implementation is committed, tagged in a pre-release candidate, and verified, the agent MUST comment on the issue and explicitly close it via `gh issue close <issue-number> --reason "completed"` during that turn.
 - Do not leave verified sub-issues open waiting for the parent tracking PR to merge to `master`.
 
 <!-- markdownlint-disable MD049 -->
