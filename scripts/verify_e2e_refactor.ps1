@@ -6,8 +6,8 @@
 # by scripts/release.py on every bump) so a locally-held copy can be checked
 # against what actually shipped, rather than guessing from a file mtime -- git
 # checkout/pull doesn't preserve original commit timestamps.
-# LDM_MAGIC_VERSION: 2.15.28-pre.3
-$SCRIPT_VERSION = "2.15.28-pre.3"
+# LDM_MAGIC_VERSION: 2.15.28
+$SCRIPT_VERSION = "2.15.28"
 
 # LDM-#1058: extracted into a named function (still in this same file -- the
 # real verification workflow copies just this one file onto test rigs with
@@ -341,6 +341,19 @@ try {
         exit 1
     }
     Log-AndRun "Target Remove (Mock Node)" $LDM_CMD "target rm $TARGET_TEST_NODE"
+
+    Write-Host ">> Testing Loopback Subnet Target Registration & Local Context Resolution..."
+    $loopbackNode = "loopback-node-${TEST_PORT}"
+    Log-AndRun "Target Add (127.0.0.2 Loopback)" $LDM_CMD "target add $loopbackNode --host 127.0.0.2"
+    $loopbackLsRes = & $LDM_CMD target ls 2>&1
+    if ($loopbackLsRes -match $loopbackNode) {
+        Write-Host "[SUCCESS] Loopback target registration verified."
+    } else {
+        Write-Host "[ERROR] ERROR: Target $loopbackNode not found in registry." -ForegroundColor Red
+        exit 1
+    }
+    Log-AndRun "Target Status (Loopback Node)" $LDM_CMD "target status $loopbackNode"
+    Log-AndRun "Target Remove (Loopback Node)" $LDM_CMD "target rm $loopbackNode"
 
     $remoteHost = $env:LDM_TEST_REMOTE_HOST
     if (-not $remoteHost) { $remoteHost = $env:LDM_REMOTE_TARGET }
