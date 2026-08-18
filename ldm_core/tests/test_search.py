@@ -248,3 +248,47 @@ class TestSearch(unittest.TestCase):
             mock_success.assert_called_with(
                 f"Project '{self.tmp_dir.name}' scheduled for search reindex on next boot."
             )
+
+    def test_cmd_migrate_search_uses_remote_target_context(self):
+        """cmd_migrate_search must honor active target context for docker ps checks (#1133)."""
+        from ldm_core.config import TargetNode
+        from ldm_core.runtime.search import SearchService
+
+        search_svc = SearchService(self.handler)
+        self.handler.read_meta = MagicMock(return_value={"target": "aws-1"})  # type: ignore[method-assign]
+        self.handler.detect_project_path = MagicMock(return_value=self.tmp_dir)  # type: ignore[method-assign]
+
+        files_dir = self.tmp_dir / "files"
+        files_dir.mkdir(parents=True, exist_ok=True)
+        configs_dir = self.tmp_dir / "osgi" / "configs"
+        configs_dir.mkdir(parents=True, exist_ok=True)
+        data_dir = self.tmp_dir / "data"
+        data_dir.mkdir(parents=True, exist_ok=True)
+
+        paths = {
+            "root": self.tmp_dir,
+            "files": files_dir,
+            "configs": configs_dir,
+            "data": data_dir,
+            "deploy": self.tmp_dir / "deploy",
+            "common_dirs": [],
+        }
+        self.handler.setup_paths = MagicMock(return_value=paths)  # type: ignore[method-assign]
+        self.handler.run_command = MagicMock(return_value="")  # type: ignore[method-assign]
+
+        with patch("ldm_core.docker_service.get_active_target") as mock_target:
+            mock_target.return_value = TargetNode(name="aws-1", host="34.1.1.1")
+            with (
+                patch("ldm_core.ui.UI.heading"),
+                patch("ldm_core.ui.UI.ask", return_value="N"),
+                patch("ldm_core.ui.UI.die"),
+            ):
+                try:
+                    search_svc.cmd_migrate_search("test")
+                except SystemExit:
+                    pass
+
+        calls = [c[0][0] for c in self.handler.run_command.call_args_list]
+        for cmd in calls:
+            self.assertIn("--context", cmd)
+            self.assertIn("aws-1", cmd)

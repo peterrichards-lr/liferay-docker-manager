@@ -87,14 +87,21 @@ class SystemService(BaseHandler):
 
         # 4. Prune Docker networks/volumes
         UI.detail("Pruning dangling Docker resources...")
+        target_name = getattr(self.manager, "target", None) or getattr(
+            getattr(self.manager, "args", None), "target", None
+        )
+        from ldm_core.docker_service import DockerService
+
+        docker_prefix = DockerService.get_docker_cmd_prefix(target_name)
+
         try:
             self.manager.run_command(
-                ["docker", "network", "rm", "liferay-net"], check=False
+                [*docker_prefix, "network", "rm", "liferay-net"], check=False
             )
             if drop_global_vols:
                 self.manager.run_command(
                     [
-                        "docker",
+                        *docker_prefix,
                         "volume",
                         "rm",
                         "-f",
@@ -103,8 +110,12 @@ class SystemService(BaseHandler):
                     ],
                     check=False,
                 )
-            self.manager.run_command(["docker", "volume", "prune", "-f"], check=False)
-            self.manager.run_command(["docker", "network", "prune", "-f"], check=False)
+            self.manager.run_command(
+                [*docker_prefix, "volume", "prune", "-f"], check=False
+            )
+            self.manager.run_command(
+                [*docker_prefix, "network", "prune", "-f"], check=False
+            )
         except Exception as e:
             UI.warning(f"Error pruning docker: {e}")
 
@@ -218,8 +229,15 @@ class SystemService(BaseHandler):
 
             # Recreate shared network
             UI.detail("Restoring shared docker bridge network 'liferay-net'...")
+            target_name = getattr(self.manager, "target", None) or getattr(
+                getattr(self.manager, "args", None), "target", None
+            )
+            from ldm_core.docker_service import DockerService
+
+            docker_prefix = DockerService.get_docker_cmd_prefix(target_name)
+
             self.manager.run_command(
-                ["docker", "network", "create", "liferay-net"], check=False
+                [*docker_prefix, "network", "create", "liferay-net"], check=False
             )
 
             # Traefik SSL refresh
