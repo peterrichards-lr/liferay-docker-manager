@@ -168,27 +168,43 @@ def get_pr_state(pr_number):
 
 
 def run_pre_commit_checks(branch_name, delete_branch_on_failure=True):
+    import shutil
+
     print("Running code formatting and lint checks...")
-    pre_commit_bin = project_root / ".venv" / "bin" / "pre-commit"
-    if pre_commit_bin.exists():
-        print("Running pre-commit quality gate checks...")
-        res = run_cmd(
-            [str(pre_commit_bin), "run", "--all-files"], check=False, capture=True
-        )
+    pre_commit_bin = None
+    venv_pre_commit = project_root / ".venv" / "bin" / "pre-commit"
+    if venv_pre_commit.exists():
+        pre_commit_bin = str(venv_pre_commit)
+    elif shutil.which("pre-commit"):
+        pre_commit_bin = shutil.which("pre-commit")
+
+    if pre_commit_bin:
+        print(f"Running pre-commit quality gate checks via {pre_commit_bin}...")
+        res = run_cmd([pre_commit_bin, "run", "--all-files"], check=False, capture=True)
         if res.returncode != 0:
             print(
                 f"\n❌ Error: Pre-commit quality gate checks failed. Please resolve lint issues before release:\n{res.stdout}\n{res.stderr or ''}"
             )
-            run_cmd(["git", "checkout", "master"])
-            if delete_branch_on_failure:
-                # Only safe to delete when we're about to create a brand-new,
-                # single-commit branch. An existing release/* branch being
-                # continued may already have an open PR and prior history --
-                # deleting the *local* copy there just means re-fetching it,
-                # but never do it silently for a branch we didn't just create.
-                run_cmd(["git", "branch", "-D", branch_name])
+            run_cmd(["git", "checkout", "master"], check=False)
+            if delete_branch_on_failure and branch_name != "master":
+                run_cmd(["git", "branch", "-D", branch_name], check=False)
             sys.exit(res.returncode)
         print("✅ Pre-commit quality gate checks passed.")
+    elif (project_root / "lint.sh").exists():
+        print("Running quality gate via ./lint.sh...")
+        res = run_cmd(["./lint.sh"], check=False, capture=True)
+        if res.returncode != 0:
+            print(
+                f"\n❌ Error: Local quality gate (./lint.sh) failed. Please resolve lint issues before release:\n{res.stdout}\n{res.stderr or ''}"
+            )
+            run_cmd(["git", "checkout", "master"], check=False)
+            if delete_branch_on_failure and branch_name != "master":
+                run_cmd(["git", "branch", "-D", branch_name], check=False)
+            sys.exit(res.returncode)
+        print("✅ Quality gate (./lint.sh) passed.")
+    else:
+        print("❌ Error: Neither pre-commit nor ./lint.sh was found. Aborting release.")
+        sys.exit(1)
 
 
 def poll_pr_merge(pr_num):
@@ -560,7 +576,9 @@ def main():  # noqa: C901, PLR0912, PLR0915
         print(f"Creating release branch: {release_branch}...")
         run_cmd(["git", "checkout", "-b", release_branch])
 
-    # 7. Add, commit, and push
+    # 7. Quality Gate & Commit
+    run_pre_commit_checks(current_branch, delete_branch_on_failure=False)
+
     print("Staging and committing files...")
     run_cmd(
         [
