@@ -1,5 +1,6 @@
 import os
 import re
+import shutil
 import zipfile
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -226,13 +227,9 @@ def _rewrite_oauth_urls_in_zip(  # noqa: C901, PLR0912, PLR0915
                             arcname = file_path.relative_to(tmp_path)
                             new_zip.write(file_path, arcname)
 
-                # Atomically overwrite the original zip.  Writing to a
-                # temp file inside the same TemporaryDirectory and then
-                # calling Path.replace() ensures that an interruption
-                # (SIGINT, OOM, disk-full) never leaves the workspace in a
-                # state where the original archive is gone but the
-                # replacement has not yet landed.
-                temp_zip_path.replace(zip_path)
+                # Overwrite original zip. Use shutil.move to handle cross-device
+                # moves across different volume mount points (e.g. /tmp -> /Volumes/...)
+                shutil.move(temp_zip_path, zip_path)
                 UI.detail(
                     f"  + Dynamically rewrote OAuth profile URLs in {zip_path.name}"
                 )

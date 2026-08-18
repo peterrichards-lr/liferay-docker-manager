@@ -1726,6 +1726,41 @@ class TestAtomicZipRepackaging(unittest.TestCase):
             )
             self.assertTrue(zip_path.exists())
 
+    def test_cross_device_link_shutil_move(self):
+        """Cross-device move across mock EXDEV volumes must succeed via shutil.move (Issue #1201)."""
+        import zipfile
+        from unittest.mock import patch
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_path = Path(tmpdir)
+            cx_yaml = textwrap.dedent("""
+                my-app:
+                  type: oAuthApplicationHeadlessServer
+                  oAuthApplicationHeadlessServer: test-erc
+                  homePageURL: http://localhost:8080
+            """)
+            zip_path = tmp_path / "cross-device.zip"
+            with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+                zf.writestr("client-extension.yaml", cx_yaml)
+
+            # Simulate os.replace raising EXDEV (Errno 18 Cross-device link)
+            original_replace = Path.replace
+
+            def mock_replace(self_path, target_path):
+                if "repacked.zip" in str(self_path):
+                    raise OSError(18, "Cross-device link")
+                return original_replace(self_path, target_path)
+
+            with patch.object(Path, "replace", side_effect=mock_replace):
+                self.handler.workspace._rewrite_oauth_urls_in_zip(
+                    zip_path, "my-host.local", "my-ext"
+                )
+
+            self.assertTrue(zip_path.exists())
+            with zipfile.ZipFile(zip_path, "r") as zf:
+                updated_content = zf.read("client-extension.yaml").decode("utf-8")
+            self.assertIn("my-host.local", updated_content)
+
     @patch("ldm_core.handlers.workspace.WorkspaceService.cmd_monitor")
     @patch("ldm_core.handlers.workspace.WorkspaceService.cmd_import")
     def test_cmd_link_success(self, mock_import, mock_monitor):

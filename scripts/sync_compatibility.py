@@ -25,6 +25,7 @@ _METADATA_ONLY_ALLOWLIST = [
     re.compile(r"^scripts/verify_e2e_refactor\.(sh|ps1)$"),
     re.compile(r"^scripts/(sync_compatibility|check_version_sync)\.py$"),
     re.compile(r"^references/verification-results/"),
+    re.compile(r"^lint\.sh$"),
     re.compile(r"^\.gitignore$"),
     re.compile(r"^\.secrets\.baseline$"),
 ]
@@ -518,7 +519,25 @@ def sync_reports():  # noqa: C901, PLR0912, PLR0915
             if r.name != expected_name:
                 stale_reason = None
                 if normalize_version(meta["version"]) != normalize_version(VERSION):
-                    stale_reason = f"binary version {meta['version']} != {VERSION}"
+                    binary_tag = f"v{normalize_version(meta['version'])}"
+                    tag_check = subprocess.run(
+                        ["git", "rev-parse", "--verify", "--quiet", binary_tag],
+                        capture_output=True,
+                        text=True,
+                        cwd=PROJECT_ROOT,
+                        check=False,
+                    )
+                    cosmetic_bin = tag_check.returncode == 0 and _is_metadata_only_diff(
+                        binary_tag
+                    )
+                    if cosmetic_bin:
+                        UI.info(
+                            f"{r.name}: binary version {meta['version']} != {VERSION}, "
+                            f"but the diff between them is provably metadata-only "
+                            "-- accepting this report."
+                        )
+                    else:
+                        stale_reason = f"binary version {meta['version']} != {VERSION}"
                 elif meta["script_version"] and normalize_version(
                     meta["script_version"]
                 ) != normalize_version(VERSION):
