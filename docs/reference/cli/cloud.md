@@ -15,6 +15,10 @@ ldm cloud deploy <project> -e <env> [--apply] [--commit <sha>] [--force]
 Options:
 
 - `-e, --environment, --env`: Target environment ID (e.g. `dev`, `uat`, `prd`).
+- `-d, --direct`: Fast-path direct deployment via `lcp deploy`.
+- `-g, --git`: Force Git-driven push deployment.
+- `-s, --service`: Target service name (default: `liferay`).
+- `--no-wait`: Asynchronous deployment initiation without build log tailing.
 - `--apply`: Automatically apply changes.
 - `--commit`: Specify Git commit SHA to deploy.
 - `--force`: Force deployment without interactive prompt.
