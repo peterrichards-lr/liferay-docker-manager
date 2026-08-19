@@ -296,6 +296,38 @@ class TestReadiness(unittest.TestCase):
             has_context, f"Expected --context aws-1 in one of {called_cmds}"
         )
 
+    def test_cmd_wait_remote_target_http_probe_uses_node_host(self):
+        """Issue #1223: cmd_wait HTTP readiness probe must use remote node host IP instead of 127.0.0.1."""
+        from ldm_core.config import TargetContext, TargetNode
+
+        target_node = TargetNode(name="aws-1", host="51.20.52.201")
+        target_ctx = TargetContext(target=target_node, is_remote=True, docker_prefix=[], compose_prefix=[])
+
+        self.handler.read_meta = MagicMock(  # type: ignore[method-assign]
+            return_value={
+                "container_name": "test-runtime",
+                "host_name": "localhost",
+                "target": "aws-1",
+                "port": 8080,
+            }
+        )
+
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+
+        with patch("ldm_core.runtime.readiness.resolve_target_context", return_value=target_ctx):
+            with patch.object(self.handler.handler.readiness, "_wait_for_ready", return_value=True):
+                with patch.object(self.handler.manager, "run_command", return_value="5%"):
+                    with patch("requests.get", return_value=mock_resp) as mock_http_get:
+                        with patch("time.sleep"):
+                            res = self.handler.cmd_wait("test-project", timeout=5)
+
+        self.assertTrue(res)
+        self.assertTrue(mock_http_get.called)
+        called_url = mock_http_get.call_args[0][0]
+        self.assertIn("51.20.52.201", called_url)
+        self.assertNotIn("127.0.0.1", called_url)
+
     @patch("ldm_core.ui.UI.raw")
     @patch("ldm_core.ui.UI.warning")
     @patch("ldm_core.ui.UI.success")
