@@ -2,6 +2,7 @@ import json
 import shutil
 import subprocess
 import threading
+import time
 import urllib.request
 from pathlib import Path
 from typing import Any, cast
@@ -84,6 +85,134 @@ class CloudService:
         )
         conf_file.write_text(content)
         return conf_file
+
+    def _get_git_commit_sha(self, workspace_path: str | Path) -> str:
+        """Retrieves current Git commit SHA from target workspace directory."""
+        res = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=str(workspace_path),
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        return res.stdout.strip()
+
+    def _poll_jenkins_build_uid(
+        self,
+        project_id: str,
+        commit_sha: str,
+        max_retries: int = 30,
+        delay_seconds: int = 10,
+    ) -> str:
+        """Polls GET /projects/{project}/builds until a build matching commit_sha completes."""
+        token = self.get_auth_token()
+        if not token:
+            raise RuntimeError("Not authenticated to Liferay Cloud")
+
+        url = f"https://api.liferay.cloud/projects/{project_id}/builds"
+        req = urllib.request.Request(
+            url,
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Accept": "application/json",
+            },
+        )
+
+        for _ in range(max_retries):
+            try:
+                with urllib.request.urlopen(req) as resp:  # nosec B310
+                    payload = json.loads(resp.read().decode("utf-8"))
+                    builds = (
+                        payload
+                        if isinstance(payload, list)
+                        else payload.get("data", [])
+                    )
+                    for b in builds:
+                        b_git = b.get("gitCommitId", "")
+                        b_status = str(b.get("status", "")).upper()
+                        if b_git and (
+                            b_git == commit_sha or commit_sha.startswith(b_git)
+                        ):
+                            if b_status in ("COMPLETED", "SUCCESS"):
+                                build_uid = b.get("buildGroupUid") or b.get("id")
+                                return str(build_uid)
+                            if b_status in ("FAILED", "ERRORED"):
+                                raise RuntimeError(
+                                    f"Cloud Jenkins build failed for commit {commit_sha[:7]}"
+                                )
+            except RuntimeError:
+                raise
+            except Exception:
+                pass
+            time.sleep(delay_seconds)
+
+        raise TimeoutError(
+            f"Timed out waiting for Cloud build matching commit {commit_sha[:7]}"
+        )
+
+    def _trigger_cloud_deploy(
+        self, project_id: str, env_id: str, build_group_uid: str
+    ) -> dict[str, Any]:
+        """Triggers environment deployment via POST /projects/{project}/environments/{env}/deploy."""
+        token = self.get_auth_token()
+        if not token:
+            raise RuntimeError("Not authenticated to Liferay Cloud")
+
+        url = f"https://api.liferay.cloud/projects/{project_id}/environments/{env_id}/deploy"
+        body = json.dumps({"buildGroupUid": build_group_uid}).encode("utf-8")
+        req = urllib.request.Request(
+            url,
+            data=body,
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+            },
+            method="POST",
+        )
+
+        with urllib.request.urlopen(req) as resp:  # nosec B310
+            data = resp.read().decode("utf-8")
+            result: dict[str, Any] = json.loads(data)
+            return result
+
+    def deploy_project(
+        self,
+        project_id: str,
+        env_id: str,
+        workspace_path: str | Path,
+        override: bool = False,
+        force: bool = False,
+    ) -> bool:
+        """Builds and deploys an LDM workspace to target Liferay Cloud PaaS environment."""
+        self.ensure_cloud_auth()
+
+        if env_id.lower() == "prd" and not force:
+            UI.die(
+                "Deploying to Production ('prd') requires explicit confirmation via --force flag.",
+                exit_code=2,
+            )
+
+        UI.heading(
+            f"Preparing deployment for project '{project_id}' on environment '{env_id}'..."
+        )
+
+        # Inject LDM metadata & Nginx response headers
+        self.inject_ldm_metadata(workspace_path, project_id)
+        self.inject_nginx_header_config(workspace_path)
+
+        commit_sha = self._get_git_commit_sha(workspace_path)
+        UI.detail(f"Git commit SHA: {commit_sha[:7]}")
+
+        UI.detail("Waiting for Liferay Cloud build compilation...")
+        build_uid = self._poll_jenkins_build_uid(project_id, commit_sha)
+        UI.detail(f"Build artifact ready: {build_uid}")
+
+        UI.detail(f"Triggering deployment to environment '{env_id}'...")
+        self._trigger_cloud_deploy(project_id, env_id, build_uid)
+
+        UI.success(f"Deployment successfully triggered for '{project_id}' ({env_id})!")
+        return True
 
     def _is_cloud_authenticated(self):
         """Checks if the user is currently logged into Liferay Cloud."""

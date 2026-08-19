@@ -982,3 +982,32 @@ class TestCloudServiceRestAndMetadata(unittest.TestCase):
                 'add_header X-LDM-Provisioned "$LDM_PROVISIONED" always;', content
             )
             self.assertIn('add_header X-LDM-Project "$LDM_PROJECT" always;', content)
+
+    @patch("ldm_core.ui.UI.die")
+    @patch.object(CloudService, "ensure_cloud_auth")
+    def test_deploy_project_production_safety_lock(self, mock_auth, mock_die):
+        """Verifies deploy_project aborts when env_id is 'prd' and force is False."""
+        mock_die.side_effect = SystemExit
+        with self.assertRaises(SystemExit):
+            self.cloud.deploy_project("acme", "prd", "/tmp/ws", force=False)
+        mock_die.assert_called_once()
+        self.assertIn(
+            "requires explicit confirmation via --force flag", mock_die.call_args[0][0]
+        )
+
+    @patch.object(CloudService, "ensure_cloud_auth")
+    @patch.object(CloudService, "inject_ldm_metadata")
+    @patch.object(CloudService, "inject_nginx_header_config")
+    @patch.object(CloudService, "_get_git_commit_sha", return_value="abc123456789")
+    @patch.object(CloudService, "_poll_jenkins_build_uid", return_value="uid-999")
+    @patch.object(CloudService, "_trigger_cloud_deploy", return_value={"status": "ok"})
+    def test_deploy_project_success_flow(
+        self, mock_deploy, mock_poll, mock_sha, mock_nginx, mock_meta, mock_auth
+    ):
+        """Verifies end-to-end deploy_project execution flow."""
+        res = self.cloud.deploy_project("acme", "dev", "/tmp/ws")
+        self.assertTrue(res)
+        mock_meta.assert_called_once_with("/tmp/ws", "acme")
+        mock_nginx.assert_called_once_with("/tmp/ws")
+        mock_poll.assert_called_once_with("acme", "abc123456789")
+        mock_deploy.assert_called_once_with("acme", "dev", "uid-999")
