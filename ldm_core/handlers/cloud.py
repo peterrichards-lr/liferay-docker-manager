@@ -176,6 +176,81 @@ class CloudService:
             result: dict[str, Any] = json.loads(data)
             return result
 
+    def check_production_safety_lock(
+        self,
+        env_id: str,
+        action: str = "deploy",
+        force: bool = False,
+        override_lock: bool = False,
+    ) -> bool:
+        """Enforces Production ('prd') environment safety locks and confirmation prompts."""
+        if env_id.lower() != "prd":
+            return True
+
+        if action == "db-reset":
+            if not override_lock:
+                UI.die(
+                    "Database reset on Production ('prd') is locked. Pass --override-production-safety-lock to force.",
+                    exit_code=2,
+                )
+            return True
+
+        if action == "deploy":
+            if force:
+                return True
+
+            if self.manager and getattr(self.manager, "non_interactive", False):
+                UI.die(
+                    "Deploying to Production ('prd') requires explicit --force in non-interactive mode.",
+                    exit_code=2,
+                )
+
+            confirm_str = UI.ask(
+                "Deploying to Production ('prd')! Type 'prd' to confirm:"
+            )
+            if not confirm_str or confirm_str.strip().lower() != "prd":
+                UI.die(
+                    "Production deployment cancelled: Confirmation mismatch.",
+                    exit_code=2,
+                )
+            return True
+
+        return True
+
+    def validate_preflight_checklist(
+        self, workspace_path: str | Path, env_id: str
+    ) -> bool:
+        """Validates cloud authentication, LCP.json manifest presence, and Git workspace cleanliness."""
+        self.ensure_cloud_auth()
+
+        root = Path(workspace_path)
+        manifests = list(root.rglob("LCP.json"))
+        if not manifests:
+            UI.die(
+                f"No LCP.json manifests found in workspace '{root}'. "
+                "Ensure your workspace contains valid Liferay Cloud service definitions.",
+                exit_code=2,
+            )
+
+        if env_id.lower() == "prd":
+            try:
+                res = subprocess.run(
+                    ["git", "status", "--porcelain"],
+                    cwd=str(root),
+                    capture_output=True,
+                    text=True,
+                    check=True,
+                )
+                if res.stdout.strip():
+                    UI.die(
+                        "Production deployment requires a clean Git working tree. Uncommitted changes detected.",
+                        exit_code=2,
+                    )
+            except subprocess.CalledProcessError:
+                pass
+
+        return True
+
     def deploy_project(
         self,
         project_id: str,
@@ -185,13 +260,8 @@ class CloudService:
         force: bool = False,
     ) -> bool:
         """Builds and deploys an LDM workspace to target Liferay Cloud PaaS environment."""
-        self.ensure_cloud_auth()
-
-        if env_id.lower() == "prd" and not force:
-            UI.die(
-                "Deploying to Production ('prd') requires explicit confirmation via --force flag.",
-                exit_code=2,
-            )
+        self.check_production_safety_lock(env_id, action="deploy", force=force)
+        self.validate_preflight_checklist(workspace_path, env_id)
 
         UI.heading(
             f"Preparing deployment for project '{project_id}' on environment '{env_id}'..."

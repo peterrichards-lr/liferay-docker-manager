@@ -984,25 +984,27 @@ class TestCloudServiceRestAndMetadata(unittest.TestCase):
             self.assertIn('add_header X-LDM-Project "$LDM_PROJECT" always;', content)
 
     @patch("ldm_core.ui.UI.die")
-    @patch.object(CloudService, "ensure_cloud_auth")
-    def test_deploy_project_production_safety_lock(self, mock_auth, mock_die):
+    @patch.object(CloudService, "validate_preflight_checklist")
+    def test_deploy_project_production_safety_lock(self, mock_preflight, mock_die):
         """Verifies deploy_project aborts when env_id is 'prd' and force is False."""
+        self.manager.non_interactive = True
         mock_die.side_effect = SystemExit
         with self.assertRaises(SystemExit):
             self.cloud.deploy_project("acme", "prd", "/tmp/ws", force=False)
         mock_die.assert_called_once()
         self.assertIn(
-            "requires explicit confirmation via --force flag", mock_die.call_args[0][0]
+            "requires explicit --force in non-interactive mode",
+            mock_die.call_args[0][0],
         )
 
-    @patch.object(CloudService, "ensure_cloud_auth")
+    @patch.object(CloudService, "validate_preflight_checklist")
     @patch.object(CloudService, "inject_ldm_metadata")
     @patch.object(CloudService, "inject_nginx_header_config")
     @patch.object(CloudService, "_get_git_commit_sha", return_value="abc123456789")
     @patch.object(CloudService, "_poll_jenkins_build_uid", return_value="uid-999")
     @patch.object(CloudService, "_trigger_cloud_deploy", return_value={"status": "ok"})
     def test_deploy_project_success_flow(
-        self, mock_deploy, mock_poll, mock_sha, mock_nginx, mock_meta, mock_auth
+        self, mock_deploy, mock_poll, mock_sha, mock_nginx, mock_meta, mock_preflight
     ):
         """Verifies end-to-end deploy_project execution flow."""
         res = self.cloud.deploy_project("acme", "dev", "/tmp/ws")
@@ -1011,3 +1013,57 @@ class TestCloudServiceRestAndMetadata(unittest.TestCase):
         mock_nginx.assert_called_once_with("/tmp/ws")
         mock_poll.assert_called_once_with("acme", "abc123456789")
         mock_deploy.assert_called_once_with("acme", "dev", "uid-999")
+
+
+class TestCloudServiceSafetyLocksAndPreflight(unittest.TestCase):
+    def setUp(self):
+        self.manager = MockManager()
+        self.cloud = CloudService(self.manager)
+
+    @patch("ldm_core.ui.UI.die")
+    def test_check_production_safety_lock_db_reset_blocked(self, mock_die):
+        """Verifies db-reset on Production ('prd') dies unless override_lock is True."""
+        mock_die.side_effect = SystemExit
+        with self.assertRaises(SystemExit):
+            self.cloud.check_production_safety_lock(
+                "prd", action="db-reset", override_lock=False
+            )
+        mock_die.assert_called_once()
+        self.assertIn(
+            "Database reset on Production ('prd') is locked", mock_die.call_args[0][0]
+        )
+
+    def test_check_production_safety_lock_db_reset_allowed(self):
+        """Verifies db-reset on Production ('prd') succeeds when override_lock is True."""
+        self.assertTrue(
+            self.cloud.check_production_safety_lock(
+                "prd", action="db-reset", override_lock=True
+            )
+        )
+
+    @patch("ldm_core.ui.UI.die")
+    def test_check_production_safety_lock_deploy_non_interactive_die(self, mock_die):
+        """Verifies non-interactive Production deploy dies if force is False."""
+        self.manager.non_interactive = True
+        mock_die.side_effect = SystemExit
+        with self.assertRaises(SystemExit):
+            self.cloud.check_production_safety_lock("prd", action="deploy", force=False)
+        mock_die.assert_called_once()
+
+    @patch("ldm_core.ui.UI.ask", return_value="prd")
+    def test_check_production_safety_lock_deploy_interactive_confirm(self, mock_ask):
+        """Verifies interactive Production deploy succeeds when user types 'prd'."""
+        self.assertTrue(
+            self.cloud.check_production_safety_lock("prd", action="deploy", force=False)
+        )
+
+    @patch("ldm_core.ui.UI.die")
+    def test_validate_preflight_checklist_no_lcp_json(self, mock_die):
+        """Verifies pre-flight fails if workspace lacks LCP.json manifests."""
+        import tempfile
+
+        mock_die.side_effect = SystemExit
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            with patch.object(self.cloud, "ensure_cloud_auth"):
+                with self.assertRaises(SystemExit):
+                    self.cloud.validate_preflight_checklist(tmp_dir, "dev")
