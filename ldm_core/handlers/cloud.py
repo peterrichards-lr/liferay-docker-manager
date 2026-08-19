@@ -428,7 +428,9 @@ class CloudService:
         if target_project:
             try:
                 envs = self.get_environments(target_project)
-                UI.detail(f"Found {len(envs)} environment(s) for project '{target_project}':")
+                UI.detail(
+                    f"Found {len(envs)} environment(s) for project '{target_project}':"
+                )
                 for e in envs:
                     env_name = e.get("id", e.get("name", "unknown"))
                     UI.detail(f"  • {env_name}")
