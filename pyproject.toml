@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "liferay-docker-manager"
-# LDM_MAGIC_VERSION: 2.15.29-pre.18
-version = "2.15.29-pre.18"
+# LDM_MAGIC_VERSION: 2.15.29
+version = "2.15.29"
 
 
 
