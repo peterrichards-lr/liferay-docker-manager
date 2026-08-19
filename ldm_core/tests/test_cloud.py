@@ -1000,7 +1000,9 @@ class TestCloudServiceRestAndMetadata(unittest.TestCase):
     @patch.object(CloudService, "validate_preflight_checklist")
     @patch.object(CloudService, "inject_ldm_metadata")
     @patch.object(CloudService, "inject_nginx_header_config")
-    @patch.object(CloudService, "_get_git_commit_sha", return_value="abc123456789")
+    @patch.object(
+        CloudService, "_get_git_commit_sha", return_value="abc123456789"
+    )  # pragma: allowlist secret
     @patch.object(CloudService, "_poll_jenkins_build_uid", return_value="uid-999")
     @patch.object(CloudService, "_trigger_cloud_deploy", return_value={"status": "ok"})
     def test_deploy_project_success_flow(
