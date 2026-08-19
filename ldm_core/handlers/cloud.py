@@ -425,11 +425,20 @@ class CloudService:
         UI.heading(
             f"Querying status for Liferay Cloud project '{target_project or 'default'}' ({target_env})..."
         )
+        if target_project:
+            try:
+                envs = self.get_environments(target_project)
+                UI.detail(f"Found {len(envs)} environment(s) for project '{target_project}':")
+                for e in envs:
+                    env_name = e.get("id", e.get("name", "unknown"))
+                    UI.detail(f"  • {env_name}")
+                return True
+            except Exception:
+                pass
+
         res = self._run_lcp_cmd(
-            ["status"],
+            ["list"],
             capture_json=False,
-            project=target_project,
-            env=target_env,
         )
         if res:
             UI.raw(res)
