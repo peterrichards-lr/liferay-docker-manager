@@ -152,6 +152,18 @@ def test_restart_project(mock_manager):
     )
 
 
+def test_cloud_deploy_mcp_tool(mock_manager):
+    """Verifies cloud_deploy FastMCP tool delegates to manager.cloud.cmd_cloud_deploy."""
+    from ldm_core.handlers.mcp import cloud_deploy
+
+    mock_manager.cloud.cmd_cloud_deploy.return_value = True
+    res = cloud_deploy("acme", env_id="dev", force=True)
+    assert "Successfully triggered Liferay Cloud deployment" in res
+    mock_manager.cloud.cmd_cloud_deploy.assert_called_once_with(
+        project_id="acme", env_id="dev", force=True
+    )
+
+
 def test_get_cli_help():
     from ldm_core.handlers.mcp import get_cli_help
 

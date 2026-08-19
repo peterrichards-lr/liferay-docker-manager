@@ -417,6 +417,29 @@ def get_cli_help(command: str | None = None) -> str:
     return f"Error: Command '{command}' not found. Available commands: {', '.join(available)}"
 
 
+def cloud_deploy(project_id: str, env_id: str = "dev", force: bool = False) -> str:
+    """Triggers an automated build compilation and deployment to Liferay Cloud PaaS."""
+    cb_err = _check_circuit_breaker()
+    if cb_err:
+        return cb_err
+
+    if not _manager:
+        return "Error: Manager not initialized"
+
+    try:
+        success = _manager.cloud.cmd_cloud_deploy(
+            project_id=project_id, env_id=env_id, force=force
+        )
+        if success:
+            return (
+                f"Successfully triggered Liferay Cloud deployment for '{project_id}' "
+                f"on environment '{env_id}'."
+            )
+        return f"Failed to trigger Liferay Cloud deployment for '{project_id}'."
+    except Exception as e:
+        return f"Error triggering cloud deployment: {e}"
+
+
 def get_mcp_server():
     global _mcp_server_instance  # noqa: PLW0603  # noqa: PLW0603
     if _mcp_server_instance is not None:
@@ -442,6 +465,7 @@ def get_mcp_server():
     server.tool()(restart_project)
     server.tool()(get_config)
     server.tool()(get_cli_help)
+    server.tool()(cloud_deploy)
 
     _mcp_server_instance = server
     return server
