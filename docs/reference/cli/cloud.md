@@ -13,6 +13,7 @@ ldm cloud deploy <project> -e <env> [--apply] [--commit <sha>] [--force]
 ```
 
 Options:
+
 - `-e, --environment, --env`: Target environment ID (e.g. `dev`, `uat`, `prd`).
 - `--apply`: Automatically apply changes.
 - `--commit`: Specify Git commit SHA to deploy.
@@ -43,6 +44,7 @@ ldm cloud db-reset <project> -e <env> [--override] [--override-production-safety
 ```
 
 Options:
+
 - `--override, --override-production-safety-lock`: Required override to reset production database schema.
 
 ### `ldm cloud status`
