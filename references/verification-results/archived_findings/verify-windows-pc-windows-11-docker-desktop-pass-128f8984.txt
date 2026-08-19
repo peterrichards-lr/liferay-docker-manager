@@ -1,7 +1,7 @@
 ﻿=== LDM BINARY VERIFICATION REPORT ===
 Timestamp: 08/18/2026 13:20:25
 Platform:  
-Binary:    C:\Users\prichards\bin\ldm.exe
+Binary:    [ANONYMIZED]
 Version:   ldm 2.15.28-pre.6
 Script Ver: 2.15.28-pre.6
 Docker:    29.4.0

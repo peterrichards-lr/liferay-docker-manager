@@ -1,8 +1,8 @@
 === LDM BINARY VERIFICATION REPORT ===
 Timestamp:    Tue 18 Aug 13:32:44 BST 2026
-Hostname:     fedora.mac.lan
+Hostname:  [ANONYMIZED]
 Platform:     Fedora Linux 44 (Workstation Edition)
-Binary:       /usr/local/bin/ldm
+Binary:    [ANONYMIZED]
 Version:      ldm 2.15.28-pre.6
 Script Ver:   2.15.28-pre.6
 Docker:    29.7.2

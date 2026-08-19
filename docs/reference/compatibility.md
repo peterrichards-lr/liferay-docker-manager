@@ -5,11 +5,11 @@
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
 | **Apple Intel** | macOS 12 Monterey | **OrbStack** `v1.5.1` | `v25.0.5` | ![OrbStack](https://img.shields.io/badge/OrbStack-Hardening-00B0FF?style=flat-square&logo=apple) | `2.4.26-pre.13` | ✅ | [verify-apple-intel-macos-12-monterey-orbstack-pass.txt](../../references/verification-results/verify-apple-intel-macos-12-monterey-orbstack-pass.txt) |
 | **Apple Silicon** | macOS 16 Tahoe | **Colima** `v0.10.1` | `29.2.1` | ![Colima](https://img.shields.io/badge/Colima-Hardening-FFAB00?style=flat-square&logo=apple) | `2.15.28-pre.6` | ✅ | [verify-apple-silicon-macos-16-tahoe-colima-pass.txt](../../references/verification-results/verify-apple-silicon-macos-16-tahoe-colima-pass.txt) |
-| **Apple Silicon** | macOS 16 Tahoe | **OrbStack** `v2.1.1` | `29.4.0` | ![OrbStack](https://img.shields.io/badge/OrbStack-Hardening-00B0FF?style=flat-square&logo=apple) | `2.15.28-pre.6` | ✅ | [verify-apple-silicon-macos-16-tahoe-orbstack-pass.txt](../../references/verification-results/verify-apple-silicon-macos-16-tahoe-orbstack-pass.txt) |
-| **Linux Workstation** | Fedora 44 | **Native Docker** | `29.7.2` | ![Linux](https://img.shields.io/badge/Linux-Hardening-success?style=flat-square&logo=linux) | `2.15.28-pre.6` | ✅ | [verify-linux-workstation-fedora-44-native-docker-pass.txt](../../references/verification-results/verify-linux-workstation-fedora-44-native-docker-pass.txt) |
+| **Apple Silicon** | macOS 16 Tahoe | **OrbStack** `v2.1.1` | `29.4.0` | ![OrbStack](https://img.shields.io/badge/OrbStack-Hardening-00B0FF?style=flat-square&logo=apple) | `2.15.29-pre.18` | ✅ | [verify-apple-silicon-macos-16-tahoe-orbstack-pass.txt](../../references/verification-results/verify-apple-silicon-macos-16-tahoe-orbstack-pass.txt) |
+| **Linux Workstation** | Fedora 44 | **Native Docker** | `29.7.2` | ![Linux](https://img.shields.io/badge/Linux-Hardening-success?style=flat-square&logo=linux) | `2.15.29-pre.18` | ✅ | [verify-linux-workstation-fedora-44-native-docker-pass.txt](../../references/verification-results/verify-linux-workstation-fedora-44-native-docker-pass.txt) |
 | **Linux Workstation** | Ubuntu 24.04 | **Native Docker** | `28.0.4` | ![Linux](https://img.shields.io/badge/Linux-Hardening-success?style=flat-square&logo=linux) | `2.15.28` | ✅ | [verify-linux-workstation-ubuntu-24.04-native-docker-pass.txt](../../references/verification-results/verify-linux-workstation-ubuntu-24.04-native-docker-pass.txt) |
-| **Windows PC** | Windows 11 | **Docker Desktop** `v4.35.0` | `29.4.0` | ![DockerDesktop](https://img.shields.io/badge/Docker_Desktop-Hardening-00C853?style=flat-square&logo=windows) | `2.15.28-pre.6` | ✅ | [verify-windows-pc-windows-11-docker-desktop-pass.txt](../../references/verification-results/verify-windows-pc-windows-11-docker-desktop-pass.txt) |
-| **Windows PC** | Windows 11 | **Native WSL2** `WSL 2.4.4` | `29.3.0` | ![WSL2](https://img.shields.io/badge/WSL2-Hardening-blue?style=flat-square&logo=windows) | `2.15.28-pre.6` | ✅ | [verify-windows-pc-windows-11-native-wsl2-pass.txt](../../references/verification-results/verify-windows-pc-windows-11-native-wsl2-pass.txt) |
+| **Windows PC** | Windows 11 | **Docker Desktop** `v4.35.0` | `29.4.0` | ![DockerDesktop](https://img.shields.io/badge/Docker_Desktop-Hardening-00C853?style=flat-square&logo=windows) | `2.15.29-pre.18` | ✅ | [verify-windows-pc-windows-11-docker-desktop-pass.txt](../../references/verification-results/verify-windows-pc-windows-11-docker-desktop-pass.txt) |
+| **Windows PC** | Windows 11 | **Native WSL2** `WSL 2.4.4` | `29.3.0` | ![WSL2](https://img.shields.io/badge/WSL2-Hardening-blue?style=flat-square&logo=windows) | `2.15.29-pre.18` | ✅ | [verify-windows-pc-windows-11-native-wsl2-pass.txt](../../references/verification-results/verify-windows-pc-windows-11-native-wsl2-pass.txt) |
 
 ## Global Infrastructure
 
@@ -22,4 +22,4 @@
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-08-05* | *Last Reviewed: 2026-07-02*
+*Last Updated: 2026-08-19* | *Last Reviewed: 2026-08-19*
