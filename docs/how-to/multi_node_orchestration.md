@@ -212,7 +212,8 @@ When hosting LDM stacks on a remote AWS EC2 compute node, you can choose between
 ### A. Direct Inbound Routing (Public IP + Traefik)
 
 - **Security Group Inbound Rules**: Port `22` (SSH for `ldm target`), Port `80` (HTTP), and Port `443` (HTTPS).
-- **Access Flow**: Public users navigate directly to your EC2 public IP or wildcard domain (e.g. `https://my-project.34.200.10.5.nip.io`).
+- **Primary LDM Domain Resolution**: LDM automatically manages `/etc/hosts` entries on your local machine (`ldm doctor --fix-hosts`), allowing you to use **any custom domain structure** you want (`my-project.local`, `dev.company.test`, etc.) pointing to the remote node IP.
+- **Optional Wildcard DNS Alternative (`nip.io` / `sslip.io`)**: For developers who prefer not to modify their local `/etc/hosts` file or lack local elevated privileges, wildcard DNS services like `nip.io` or `sslip.io` (e.g. `https://my-project.34.200.10.5.nip.io`) automatically route traffic to the target IP without any system file edits.
 
 ### B. Outbound Tunnel Routing (`lfr-tunnel-docker` / `ngrok`)
 

@@ -1328,7 +1328,7 @@ class ConfigService:
                     "'target' is not a plain config value -- it has no effect on "
                     "which node commands run against. Use 'ldm target use "
                     f"{value}' to change the default target, or 'ldm target set "
-                    f"<project> {value}' to pin a specific project."
+                    f"{value} -p <project>' (or 'cd <project> && ldm target set {value}') to pin a specific project."
                 )
 
             # Set specific key
@@ -1714,7 +1714,7 @@ class ConfigService:
         if target_pe.exists() and not is_dry_run:
             temp_backup = target_pe.with_suffix(".properties.reset_tmp")
             try:
-                target_pe.rename(temp_backup)
+                shutil.move(str(target_pe), str(temp_backup))
             except Exception as e:
                 UI.die(f"Failed to start properties reset: {e}")
                 return
@@ -1725,12 +1725,12 @@ class ConfigService:
                 os.environ["LDM_DRY_RUN"] = "true"
                 if target_pe.exists():
                     temp_backup = target_pe.with_suffix(".properties.reset_tmp")
-                    target_pe.rename(temp_backup)
+                    shutil.move(str(target_pe), str(temp_backup))
                 try:
                     self.sync_common_assets(paths, project_meta=project_meta)
                 finally:
                     if temp_backup and temp_backup.exists():
-                        temp_backup.rename(target_pe)
+                        shutil.move(str(temp_backup), str(target_pe))
                     os.environ.pop("LDM_DRY_RUN", None)
             else:
                 self.sync_common_assets(paths, project_meta=project_meta)

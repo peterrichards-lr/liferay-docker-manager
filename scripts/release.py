@@ -168,27 +168,43 @@ def get_pr_state(pr_number):
 
 
 def run_pre_commit_checks(branch_name, delete_branch_on_failure=True):
+    import shutil
+
     print("Running code formatting and lint checks...")
-    pre_commit_bin = project_root / ".venv" / "bin" / "pre-commit"
-    if pre_commit_bin.exists():
-        print("Running pre-commit quality gate checks...")
-        res = run_cmd(
-            [str(pre_commit_bin), "run", "--all-files"], check=False, capture=True
-        )
+    pre_commit_bin = None
+    venv_pre_commit = project_root / ".venv" / "bin" / "pre-commit"
+    if venv_pre_commit.exists():
+        pre_commit_bin = str(venv_pre_commit)
+    elif shutil.which("pre-commit"):
+        pre_commit_bin = shutil.which("pre-commit")
+
+    if pre_commit_bin:
+        print(f"Running pre-commit quality gate checks via {pre_commit_bin}...")
+        res = run_cmd([pre_commit_bin, "run", "--all-files"], check=False, capture=True)
         if res.returncode != 0:
             print(
                 f"\n❌ Error: Pre-commit quality gate checks failed. Please resolve lint issues before release:\n{res.stdout}\n{res.stderr or ''}"
             )
-            run_cmd(["git", "checkout", "master"])
-            if delete_branch_on_failure:
-                # Only safe to delete when we're about to create a brand-new,
-                # single-commit branch. An existing release/* branch being
-                # continued may already have an open PR and prior history --
-                # deleting the *local* copy there just means re-fetching it,
-                # but never do it silently for a branch we didn't just create.
-                run_cmd(["git", "branch", "-D", branch_name])
+            run_cmd(["git", "checkout", "master"], check=False)
+            if delete_branch_on_failure and branch_name != "master":
+                run_cmd(["git", "branch", "-D", branch_name], check=False)
             sys.exit(res.returncode)
         print("✅ Pre-commit quality gate checks passed.")
+    elif (project_root / "lint.sh").exists():
+        print("Running quality gate via ./lint.sh...")
+        res = run_cmd(["./lint.sh"], check=False, capture=True)
+        if res.returncode != 0:
+            print(
+                f"\n❌ Error: Local quality gate (./lint.sh) failed. Please resolve lint issues before release:\n{res.stdout}\n{res.stderr or ''}"
+            )
+            run_cmd(["git", "checkout", "master"], check=False)
+            if delete_branch_on_failure and branch_name != "master":
+                run_cmd(["git", "branch", "-D", branch_name], check=False)
+            sys.exit(res.returncode)
+        print("✅ Quality gate (./lint.sh) passed.")
+    else:
+        print("❌ Error: Neither pre-commit nor ./lint.sh was found. Aborting release.")
+        sys.exit(1)
 
 
 def poll_pr_merge(pr_num):
@@ -237,6 +253,10 @@ def main():  # noqa: C901, PLR0912, PLR0915
         "--promote",
         action="store_true",
         help="Promote the current pre-release/beta branch to a stable release",
+    )
+    parser.add_argument(
+        "--issue",
+        help="Associated GitHub Issue or Epic number (e.g. 1204)",
     )
     args = parser.parse_args()
 
@@ -461,6 +481,20 @@ def main():  # noqa: C901, PLR0912, PLR0915
     parts = current_version.split("-", 1)
     base_version = parts[0]
 
+    from ldm_core.constants import RELEASE_ANNOUNCEMENTS
+
+    v_prefix = (
+        ".".join(base_version.split(".")[:2]) if "." in base_version else base_version
+    )
+    if v_prefix in RELEASE_ANNOUNCEMENTS:
+        print(
+            f"✅ Verified release announcements key for '{v_prefix}' series ({len(RELEASE_ANNOUNCEMENTS[v_prefix])} highlights registered)."
+        )
+    else:
+        print(
+            f"⚠️  Warning: RELEASE_ANNOUNCEMENTS in constants.py is missing key for minor series '{v_prefix}'. Please update constants.py!"
+        )
+
     tag_check = run_cmd(["git", "tag", "-l", f"v{base_version}"], capture=True)
     if tag_check.stdout.strip():
         if args.bump in ["beta", "pre"]:
@@ -542,7 +576,9 @@ def main():  # noqa: C901, PLR0912, PLR0915
         print(f"Creating release branch: {release_branch}...")
         run_cmd(["git", "checkout", "-b", release_branch])
 
-    # 7. Add, commit, and push
+    # 7. Quality Gate & Commit
+    run_pre_commit_checks(current_branch, delete_branch_on_failure=False)
+
     print("Staging and committing files...")
     run_cmd(
         [
@@ -578,6 +614,13 @@ def main():  # noqa: C901, PLR0912, PLR0915
     pr_base = "master"
     pr_head = release_branch
 
+    base_release_version = new_version.split("-")[0]
+    pr_title = (
+        f"chore(release): release tracking PR for v{base_release_version} [release]"
+        if "-" in new_version
+        else commit_msg
+    )
+
     if is_continuing_release:
         existing_pr_num = get_pr_number(release_branch)
         if not existing_pr_num:
@@ -590,12 +633,12 @@ def main():  # noqa: C901, PLR0912, PLR0915
         pr_url = f"https://github.com/peterrichards-lr/liferay-docker-manager/pull/{existing_pr_num}"
         print(f"Reusing existing tracking PR: {pr_url}")
     else:
-        print("Creating pull request...")
+        closes_line = f"\n\nCloses #{args.issue}" if args.issue else ""
         pr_body = (
-            f"Automated release bump to v{new_version}."
+            f"Automated release bump to v{new_version}.{closes_line}"
             if "-" not in new_version
             else (
-                f"Pre-release tracking PR for v{new_version}.\n\n"
+                f"Pre-release tracking PR for v{new_version}.{closes_line}\n\n"
                 "**Do not merge this PR manually.** It stays open and keeps "
                 "collecting commits (further `--bump beta` cycles, fixes, "
                 "verification results) for the duration of this pre-release "
@@ -620,7 +663,7 @@ def main():  # noqa: C901, PLR0912, PLR0915
                 "--head",
                 pr_head,
                 "--title",
-                commit_msg,
+                pr_title,
                 "--body",
                 pr_body,
             ]
@@ -651,7 +694,7 @@ def main():  # noqa: C901, PLR0912, PLR0915
 
     pr_num = pr_url.split("/")[-1]
 
-    if not is_continuing_release:
+    if not is_continuing_release and not args.issue:
         # LDM-#1005: release/promote PRs aren't tied to a tracked issue --
         # label them so the mandatory issue-link-check (see #987) doesn't
         # fail on every single release cycle, requiring manual intervention.

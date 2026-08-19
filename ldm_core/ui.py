@@ -424,6 +424,12 @@ class UI:
         UI._print(msg, UI.GREEN, "✅")
 
     @staticmethod
+    def hint(msg):
+        """Prints a contextual next-step suggestion (e.g. at the end of run, stop, link)."""
+        if not UI.QUIET_MODE:
+            UI._print(f"Next step: {msg}", UI.CYAN, "💡")
+
+    @staticmethod
     def warning(msg):
         UI._print(msg, UI.YELLOW, "⚠️")
 

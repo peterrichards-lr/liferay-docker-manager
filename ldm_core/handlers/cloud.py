@@ -567,7 +567,7 @@ class CloudService:
                 UI.detail(
                     f"Auto-resolving database backup from {db_matches[0].name} to database.gz"
                 )
-                db_matches[0].rename(db_target)
+                shutil.move(str(db_matches[0]), str(db_target))
 
         if not vol_target.exists():
             vol_matches = list(backup_dir.glob("*volume*.tgz")) + list(
@@ -577,7 +577,7 @@ class CloudService:
                 UI.detail(
                     f"Auto-resolving volume backup from {vol_matches[0].name} to volume.tgz"
                 )
-                vol_matches[0].rename(vol_target)
+                shutil.move(str(vol_matches[0]), str(vol_target))
 
         if not db_target.exists() and not vol_target.exists():
             UI.die(

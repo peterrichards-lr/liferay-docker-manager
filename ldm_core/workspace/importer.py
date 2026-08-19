@@ -674,6 +674,7 @@ def cmd_link(self, source_path):
 
     project_name = self.cmd_import(str(source), is_init_from=True)
     self.cmd_monitor(str(source), project_id=project_name)
+    UI.hint("Run 'ldm logs -f' to monitor client extension hot-reloading.")
 
 
 def cmd_clone(self, source_path):

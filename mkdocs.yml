@@ -12,6 +12,7 @@ plugins:
 nav:
   - Home: README.md
   - Tutorials:
+    - First 5 Minutes: tutorials/first_5_minutes.md
     - Quick Start: tutorials/quick_start.md
     - PaaS Local Dev: tutorials/paas_local_dev.md
     - Liferay Workspace Local Dev: tutorials/workspace_development.md
@@ -22,6 +23,7 @@ nav:
     - Fresh Vanilla Start: how-to/vanilla_start.md
     - Nightly & Master Builds: how-to/nightly_master_builds.md
     - Workspace Import: how-to/workspace_import.md
+    - Client Extensions: how-to/client_extensions.md
     - Version Upgrades: how-to/version_upgrades.md
     - Data Management: how-to/data_management.md
     - Sharing & Tunnels: how-to/sharing_tunnels.md
@@ -49,6 +51,8 @@ nav:
     - Remote Node Architecture: explanation/remote-node-architecture.md
     - Properties: explanation/properties.md
     - Conventions: explanation/conventions.md
+    - Conventions & Configuration: explanation/conventions_and_config.md
+    - Internationalization & Transcoding: explanation/i18n.md
     - FAQ: explanation/faq.md
   - Project Info:
     - Playbook: PLAYBOOK.md
