@@ -148,7 +148,12 @@ class ReadinessService(BaseHandler):
         )
         effective_host = (
             target_ctx.target.host
-            if (target_ctx and target_ctx.is_remote and target_ctx.target and target_ctx.target.host)
+            if (
+                target_ctx
+                and target_ctx.is_remote
+                and target_ctx.target
+                and target_ctx.target.host
+            )
             else host_name
         )
         target_host = "127.0.0.1" if effective_host == "localhost" else effective_host

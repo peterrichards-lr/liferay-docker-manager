@@ -301,7 +301,9 @@ class TestReadiness(unittest.TestCase):
         from ldm_core.config import TargetContext, TargetNode
 
         target_node = TargetNode(name="aws-1", host="51.20.52.201")
-        target_ctx = TargetContext(target=target_node, is_remote=True, docker_prefix=[], compose_prefix=[])
+        target_ctx = TargetContext(
+            target=target_node, is_remote=True, docker_prefix=[], compose_prefix=[]
+        )
 
         self.handler.read_meta = MagicMock(  # type: ignore[method-assign]
             return_value={
@@ -315,9 +317,15 @@ class TestReadiness(unittest.TestCase):
         mock_resp = MagicMock()
         mock_resp.status_code = 200
 
-        with patch("ldm_core.runtime.readiness.resolve_target_context", return_value=target_ctx):
-            with patch.object(self.handler.handler.readiness, "_wait_for_ready", return_value=True):
-                with patch.object(self.handler.manager, "run_command", return_value="5%"):
+        with patch(
+            "ldm_core.runtime.readiness.resolve_target_context", return_value=target_ctx
+        ):
+            with patch.object(
+                self.handler.handler.readiness, "_wait_for_ready", return_value=True
+            ):
+                with patch.object(
+                    self.handler.manager, "run_command", return_value="5%"
+                ):
                     with patch("requests.get", return_value=mock_resp) as mock_http_get:
                         with patch("time.sleep"):
                             res = self.handler.cmd_wait("test-project", timeout=5)
