@@ -2,7 +2,9 @@ import json
 import shutil
 import subprocess
 import threading
-from typing import cast
+import urllib.request
+from pathlib import Path
+from typing import Any, cast
 
 from ldm_core.constants import PROJECT_META_FILE
 from ldm_core.ui import UI
@@ -13,6 +15,75 @@ class CloudService:
 
     def __init__(self, manager=None):
         self.manager = manager
+
+    def get_auth_token(self) -> str | None:
+        """Retrieves the Bearer authentication token from 'lcp auth token'."""
+        lcp_bin = shutil.which("lcp")
+        if not lcp_bin:
+            return None
+
+        try:
+            res = subprocess.run(
+                [lcp_bin, "auth", "token"], capture_output=True, text=True, check=False
+            )
+            if res.returncode == 0 and "No token available" not in res.stdout:
+                token = res.stdout.strip()
+                return token if token else None
+            return None
+        except Exception:
+            return None
+
+    def get_environments(self, project_id: str) -> list[dict[str, Any]]:
+        """Queries the Liferay Cloud REST API for environments belonging to a project."""
+        token = self.get_auth_token()
+        if not token:
+            raise RuntimeError("Not authenticated to Liferay Cloud")
+
+        url = f"https://api.liferay.cloud/projects/{project_id}/environments"
+        req = urllib.request.Request(
+            url,
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Accept": "application/json",
+            },
+        )
+
+        with urllib.request.urlopen(req) as resp:  # nosec B310
+            data = resp.read().decode("utf-8")
+            result: list[dict[str, Any]] = json.loads(data)
+            return result
+
+    def inject_ldm_metadata(
+        self, workspace_path: str | Path, project_name: str
+    ) -> None:
+        """Injects LDM_PROVISIONED and LDM_PROJECT metadata into LCP.json files across services."""
+        root = Path(workspace_path)
+        for lcp_path in root.rglob("LCP.json"):
+            try:
+                data = json.loads(lcp_path.read_text())
+                if isinstance(data, dict):
+                    env_dict = data.setdefault("env", {})
+                    if isinstance(env_dict, dict):
+                        env_dict["LDM_PROVISIONED"] = "true"
+                        env_dict["LDM_PROJECT"] = project_name
+                        lcp_path.write_text(json.dumps(data, indent=2) + "\n")
+            except Exception as e:
+                UI.warning(f"Could not inject LDM metadata into {lcp_path}: {e}")
+
+    def inject_nginx_header_config(self, workspace_path: str | Path) -> Path:
+        """Provisions webserver/configs/common/conf.d/ldm-header.conf with dynamic response headers."""
+        root = Path(workspace_path)
+        conf_dir = root / "webserver" / "configs" / "common" / "conf.d"
+        conf_dir.mkdir(parents=True, exist_ok=True)
+        conf_file = conf_dir / "ldm-header.conf"
+
+        content = (
+            "# Automatically generated & validated by LDM (Liferay Docker Manager)\n"
+            'add_header X-LDM-Provisioned "$LDM_PROVISIONED" always;\n'
+            'add_header X-LDM-Project "$LDM_PROJECT" always;\n'
+        )
+        conf_file.write_text(content)
+        return conf_file
 
     def _is_cloud_authenticated(self):
         """Checks if the user is currently logged into Liferay Cloud."""

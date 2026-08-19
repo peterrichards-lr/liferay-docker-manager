@@ -900,3 +900,85 @@ class TestCloudHydrate(unittest.TestCase):
         self.manager.detect_project_path = MagicMock(return_value=None)  # type: ignore[method-assign]
         res = self.cloud.hydrate_cloud_backup("proj", Path("/tmp/backup"))
         self.assertFalse(res)
+
+
+class TestCloudServiceRestAndMetadata(unittest.TestCase):
+    def setUp(self):
+        self.manager = MockManager()
+        self.cloud = CloudService(self.manager)
+
+    @patch("shutil.which", return_value="/usr/local/bin/lcp")
+    @patch("subprocess.run")
+    def test_get_auth_token_success(self, mock_run, mock_which):
+        """Verifies CloudService extracts Bearer token from 'lcp auth token' output."""
+        mock_res = MagicMock()
+        mock_res.returncode = 0
+        mock_res.stdout = "  my-bearer-token-123 \n"
+        mock_run.return_value = mock_res
+
+        token = self.cloud.get_auth_token()
+        self.assertEqual(token, "my-bearer-token-123")
+
+    @patch("shutil.which", return_value=None)
+    def test_get_auth_token_missing_cli(self, mock_which):
+        """Verifies get_auth_token returns None if lcp CLI is missing."""
+        self.assertIsNone(self.cloud.get_auth_token())
+
+    @patch.object(CloudService, "get_auth_token", return_value="test-token")
+    @patch("urllib.request.urlopen")
+    def test_get_environments_success(self, mock_urlopen, mock_token):
+        """Verifies get_environments queries REST API with Authorization Bearer header."""
+        mock_response = MagicMock()
+        mock_response.read.return_value = b'[{"id": "dev", "name": "Development"}]'
+        mock_urlopen.return_value.__enter__.return_value = mock_response
+
+        envs = self.cloud.get_environments("my-project")
+        self.assertEqual(len(envs), 1)
+        self.assertEqual(envs[0]["id"], "dev")
+
+    @patch.object(CloudService, "get_auth_token", return_value=None)
+    def test_get_environments_unauthenticated(self, mock_token):
+        """Verifies get_environments raises RuntimeError if not authenticated."""
+        with self.assertRaises(RuntimeError):
+            self.cloud.get_environments("my-project")
+
+    def test_inject_ldm_metadata(self):
+        """Verifies inject_ldm_metadata updates env object in LCP.json files."""
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            ws_dir = Path(tmp_dir)
+            svc_dir = ws_dir / "webserver"
+            svc_dir.mkdir()
+            lcp_json = svc_dir / "LCP.json"
+            lcp_json.write_text(json.dumps({"id": "webserver", "env": {}}))
+
+            self.cloud.inject_ldm_metadata(ws_dir, "acme")
+
+            data = json.loads(lcp_json.read_text())
+            self.assertEqual(data["env"]["LDM_PROVISIONED"], "true")
+            self.assertEqual(data["env"]["LDM_PROJECT"], "acme")
+
+    def test_inject_nginx_header_config(self):
+        """Verifies inject_nginx_header_config creates webserver conf.d/ldm-header.conf."""
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            ws_dir = Path(tmp_dir)
+
+            self.cloud.inject_nginx_header_config(ws_dir)
+
+            conf_path = (
+                ws_dir
+                / "webserver"
+                / "configs"
+                / "common"
+                / "conf.d"
+                / "ldm-header.conf"
+            )
+            self.assertTrue(conf_path.exists())
+            content = conf_path.read_text()
+            self.assertIn(
+                'add_header X-LDM-Provisioned "$LDM_PROVISIONED" always;', content
+            )
+            self.assertIn('add_header X-LDM-Project "$LDM_PROJECT" always;', content)
