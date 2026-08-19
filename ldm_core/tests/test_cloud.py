@@ -1084,7 +1084,40 @@ class TestCloudServiceSubcommands(unittest.TestCase):
         ):
             self.cloud.cmd_cloud_deploy("acme", "dev", override=True, force=True)
             mock_deploy.assert_called_once_with(
-                "acme", "dev", Path("/tmp/ws"), override=True, force=True
+                "acme",
+                "dev",
+                Path("/tmp/ws"),
+                override=True,
+                force=True,
+                direct=False,
+                service="liferay",
+                git=False,
+                no_wait=False,
+            )
+
+    @patch.object(CloudService, "deploy_project", return_value=True)
+    def test_cmd_cloud_deploy_handler_direct_and_no_wait(self, mock_deploy):
+        """Verifies cmd_cloud_deploy forwards direct, service, and no_wait flags."""
+        with patch.object(
+            self.manager, "detect_project_path", return_value=Path("/tmp/ws")
+        ):
+            self.cloud.cmd_cloud_deploy(
+                "acme",
+                "stage",
+                direct=True,
+                service="webserver",
+                no_wait=True,
+            )
+            mock_deploy.assert_called_once_with(
+                "acme",
+                "stage",
+                Path("/tmp/ws"),
+                override=False,
+                force=False,
+                direct=True,
+                service="webserver",
+                git=False,
+                no_wait=True,
             )
 
     @patch.object(CloudService, "check_production_safety_lock", return_value=True)

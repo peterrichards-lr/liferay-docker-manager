@@ -1849,6 +1849,26 @@ def get_parser():  # noqa: PLR0915
     cloud_deploy.add_argument("-e", "--environment", dest="env_id")
     cloud_deploy.add_argument("--override", action="store_true")
     cloud_deploy.add_argument("--force", action="store_true")
+    cloud_deploy.add_argument(
+        "-d",
+        "--direct",
+        action="store_true",
+        help="Direct fast-path lcp deploy bypassing Jenkins",
+    )
+    cloud_deploy.add_argument(
+        "-s",
+        "--service",
+        default="liferay",
+        help="Target service name (default: liferay)",
+    )
+    cloud_deploy.add_argument(
+        "-g", "--git", action="store_true", help="Force Git-driven push deployment"
+    )
+    cloud_deploy.add_argument(
+        "--no-wait",
+        action="store_true",
+        help="Trigger deployment asynchronously without tailing build logs",
+    )
 
     cloud_tags = cloud_subparsers.add_parser(
         "update-tags", parents=[base_sub_parent], conflict_handler="resolve"
@@ -2855,6 +2875,10 @@ def _build_command_map(args, manager):
             getattr(args, "env_id", None),
             override=getattr(args, "override", False),
             force=getattr(args, "force", False),
+            direct=getattr(args, "direct", False),
+            service=getattr(args, "service", "liferay"),
+            git=getattr(args, "git", False),
+            no_wait=getattr(args, "no_wait", False),
         ),
         ("cloud", "update-tags"): lambda: manager.cloud.cmd_cloud_update_tags(
             getattr(args, "project", None),

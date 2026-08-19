@@ -365,7 +365,7 @@ class ArchiveSnapshotService:
         meta = {
             "name": name,
             "timestamp": timestamp,
-            "tag": project_meta.get("tag"),
+            "tag": project_meta.get("tag") or self.manager.defaults.get("tag"),
             "db_type": project_meta.get("db_type"),
             "host_name": getattr(self.manager.args, "host_name", None)
             or project_meta.get("host_name"),

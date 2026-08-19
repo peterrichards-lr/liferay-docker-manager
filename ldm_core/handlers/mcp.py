@@ -417,7 +417,15 @@ def get_cli_help(command: str | None = None) -> str:
     return f"Error: Command '{command}' not found. Available commands: {', '.join(available)}"
 
 
-def cloud_deploy(project_id: str, env_id: str = "dev", force: bool = False) -> str:
+def cloud_deploy(
+    project_id: str,
+    env_id: str = "dev",
+    force: bool = False,
+    direct: bool = False,
+    service: str = "liferay",
+    git: bool = False,
+    no_wait: bool = False,
+) -> str:
     """Triggers an automated build compilation and deployment to Liferay Cloud PaaS."""
     cb_err = _check_circuit_breaker()
     if cb_err:
@@ -428,7 +436,13 @@ def cloud_deploy(project_id: str, env_id: str = "dev", force: bool = False) -> s
 
     try:
         success = _manager.cloud.cmd_cloud_deploy(
-            project_id=project_id, env_id=env_id, force=force
+            project_id=project_id,
+            env_id=env_id,
+            force=force,
+            direct=direct,
+            service=service,
+            git=git,
+            no_wait=no_wait,
         )
         if success:
             return (

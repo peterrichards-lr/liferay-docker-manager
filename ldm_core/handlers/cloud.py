@@ -251,13 +251,17 @@ class CloudService:
 
         return True
 
-    def deploy_project(
+    def deploy_project(  # noqa: PLR0913
         self,
         project_id: str,
         env_id: str,
         workspace_path: str | Path,
         override: bool = False,
         force: bool = False,
+        direct: bool = False,
+        service: str = "liferay",
+        git: bool = False,
+        no_wait: bool = False,
     ) -> bool:
         """Builds and deploys an LDM workspace to target Liferay Cloud PaaS environment."""
         self.check_production_safety_lock(env_id, action="deploy", force=force)
@@ -271,8 +275,29 @@ class CloudService:
         self.inject_ldm_metadata(workspace_path, project_id)
         self.inject_nginx_header_config(workspace_path)
 
+        if direct:
+            UI.detail(
+                f"Executing direct CLI fast-path deployment for service '{service}'..."
+            )
+            self._run_lcp_cmd(
+                ["deploy", "--service", service],
+                capture_json=False,
+                project=project_id,
+                env=env_id,
+            )
+            UI.success(
+                f"Direct fast-path deployment submitted for service '{service}' ({env_id})!"
+            )
+            return True
+
         commit_sha = self._get_git_commit_sha(workspace_path)
         UI.detail(f"Git commit SHA: {commit_sha[:7]}")
+
+        if no_wait:
+            UI.success(
+                f"Git deployment initiated for commit {commit_sha[:7]} on '{project_id}' ({env_id}). Skipping build polling (--no-wait)."
+            )
+            return True
 
         UI.detail("Waiting for Liferay Cloud build compilation...")
         build_uid = self._poll_jenkins_build_uid(project_id, commit_sha)
@@ -290,6 +315,10 @@ class CloudService:
         env_id: str | None = None,
         override: bool = False,
         force: bool = False,
+        direct: bool = False,
+        service: str = "liferay",
+        git: bool = False,
+        no_wait: bool = False,
     ) -> bool:
         """Handler for 'ldm cloud deploy' command."""
         target_project = project_id or getattr(
@@ -309,7 +338,15 @@ class CloudService:
 
         p_name = target_project or Path(ws_path).name
         return self.deploy_project(
-            p_name, target_env, ws_path, override=override, force=force
+            p_name,
+            target_env,
+            ws_path,
+            override=override,
+            force=force,
+            direct=direct,
+            service=service,
+            git=git,
+            no_wait=no_wait,
         )
 
     def cmd_cloud_update_tags(

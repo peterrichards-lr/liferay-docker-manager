@@ -19,6 +19,7 @@ def cmd_guide(manager):
         "3": ("🔧 Customizing Defaults (DBs, Ports)", _print_customizing_defaults),
         "4": ("💾 Data Management & Snapshots", _print_data_snapshots),
         "5": ("🌐 Compute & Sharing (Advanced)", _print_compute_sharing),
+        "6": ("☁️ Liferay Cloud PaaS Deployment", _print_cloud_deployment),
     }
 
     if non_interactive:
@@ -36,7 +37,7 @@ def cmd_guide(manager):
         print("  [Q] Exit Guide")
 
         try:
-            choice = input("\nEnter choice [1-5/A/Q]: ").strip().upper()
+            choice = input("\nEnter choice [1-6/A/Q]: ").strip().upper()
         except (KeyboardInterrupt, EOFError):
             print()
             break
@@ -140,4 +141,19 @@ def _print_compute_sharing():
 
   • Share Local Instance via Public Tunnel:
     $ ldm share start --subdomain my-demo
+""")
+
+
+def _print_cloud_deployment():
+    print("""
+  Liferay Cloud PaaS Deployment (ldm cloud deploy):
+
+  • Git-Driven Jenkins Deployment (Default):
+    $ ldm cloud deploy my-project -e dev
+
+  • Direct Fast-Path CLI Deployment (--direct):
+    $ ldm cloud deploy my-project -e dev --direct --service liferay
+
+  • Production Deployments (--force / Safety Lock):
+    $ ldm cloud deploy my-project -e prd --force -y
 """)
