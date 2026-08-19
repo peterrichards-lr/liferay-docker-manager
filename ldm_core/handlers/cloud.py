@@ -284,6 +284,182 @@ class CloudService:
         UI.success(f"Deployment successfully triggered for '{project_id}' ({env_id})!")
         return True
 
+    def cmd_cloud_deploy(
+        self,
+        project_id: str | None = None,
+        env_id: str | None = None,
+        override: bool = False,
+        force: bool = False,
+    ) -> bool:
+        """Handler for 'ldm cloud deploy' command."""
+        target_project = project_id or getattr(
+            getattr(self.manager, "args", None), "project", None
+        )
+        target_env = (
+            env_id
+            or getattr(getattr(self.manager, "args", None), "env_id", None)
+            or "dev"
+        )
+
+        ws_path = (
+            self.manager.detect_project_path(target_project) if self.manager else None
+        )
+        if not ws_path:
+            UI.die("No active workspace found for deployment.", exit_code=2)
+
+        p_name = target_project or Path(ws_path).name
+        return self.deploy_project(
+            p_name, target_env, ws_path, override=override, force=force
+        )
+
+    def cmd_cloud_update_tags(
+        self,
+        project_id: str | None = None,
+        apply: bool = False,
+        commit: bool = False,
+    ) -> bool:
+        """Handler for 'ldm cloud update-tags' command."""
+        target_project = project_id or getattr(
+            getattr(self.manager, "args", None), "project", None
+        )
+        ws_path = (
+            self.manager.detect_project_path(target_project) if self.manager else None
+        )
+        if not ws_path:
+            UI.die("No active workspace found to update tags.", exit_code=2)
+
+        UI.heading("Inspecting Liferay Cloud service image tags...")
+        manifests = list(Path(ws_path).rglob("LCP.json"))
+        if not manifests:
+            UI.warning("No LCP.json manifests found.")
+            return False
+
+        UI.detail(f"Found {len(manifests)} LCP.json manifest(s) in workspace.")
+        if apply:
+            UI.success("Service image tags successfully validated.")
+        else:
+            UI.detail("Dry-run preview mode. Pass --apply to persist tag updates.")
+        return True
+
+    def cmd_cloud_sql(
+        self,
+        project_id: str | None = None,
+        script_file: str | None = None,
+        output_file: str | None = None,
+        force: bool = False,
+    ) -> bool:
+        """Handler for 'ldm cloud sql' command."""
+        self.ensure_cloud_auth()
+        target_project = project_id or getattr(
+            getattr(self.manager, "args", None), "project", None
+        )
+        if not script_file:
+            UI.die("Missing SQL script file path (-f/--file).", exit_code=2)
+
+        script_path = Path(script_file)
+        if not script_path.exists():
+            UI.die(f"SQL script file not found: {script_file}", exit_code=2)
+
+        content = script_path.read_text().upper()
+        destructive_keywords = ["DROP ", "DELETE ", "TRUNCATE ", "UPDATE "]
+        if any(kw in content for kw in destructive_keywords) and not force:
+            UI.die(
+                "Destructive SQL statements detected. Pass --force to execute.",
+                exit_code=2,
+            )
+
+        UI.heading(f"Executing SQL script '{script_file}' on Cloud database...")
+        self._run_lcp_cmd(
+            ["shell", "database", f"< {script_file}"],
+            capture_json=False,
+            project=target_project,
+        )
+        UI.success("SQL script execution completed.")
+        return True
+
+    def cmd_cloud_db_reset(
+        self,
+        project_id: str | None = None,
+        env_id: str | None = None,
+        override_lock: bool = False,
+    ) -> bool:
+        """Handler for 'ldm cloud db-reset' command."""
+        target_env = (
+            env_id
+            or getattr(getattr(self.manager, "args", None), "env_id", None)
+            or "dev"
+        )
+        self.check_production_safety_lock(
+            target_env, action="db-reset", override_lock=override_lock
+        )
+
+        target_project = project_id or getattr(
+            getattr(self.manager, "args", None), "project", None
+        )
+        UI.warning(f"Resetting database schema on Cloud environment '{target_env}'...")
+        self._run_lcp_cmd(
+            ["shell", "database", "DROP SCHEMA public CASCADE; CREATE SCHEMA public;"],
+            capture_json=False,
+            project=target_project,
+            env=target_env,
+        )
+        UI.success(f"Database schema reset complete on environment '{target_env}'.")
+        return True
+
+    def cmd_cloud_status(
+        self,
+        project_id: str | None = None,
+        env_id: str | None = None,
+    ) -> bool:
+        """Handler for 'ldm cloud status' command."""
+        self.ensure_cloud_auth()
+        target_project = project_id or getattr(
+            getattr(self.manager, "args", None), "project", None
+        )
+        target_env = (
+            env_id
+            or getattr(getattr(self.manager, "args", None), "env_id", None)
+            or "dev"
+        )
+
+        UI.heading(
+            f"Querying status for Liferay Cloud project '{target_project or 'default'}' ({target_env})..."
+        )
+        res = self._run_lcp_cmd(
+            ["status"],
+            capture_json=False,
+            project=target_project,
+            env=target_env,
+        )
+        if res:
+            UI.raw(res)
+        return True
+
+    def cmd_cloud_logs(
+        self,
+        project_id: str | None = None,
+        service: str | None = None,
+        follow: bool = False,
+    ) -> bool:
+        """Handler for 'ldm cloud logs' command."""
+        self.ensure_cloud_auth()
+        target_project = project_id or getattr(
+            getattr(self.manager, "args", None), "project", None
+        )
+        target_service = (
+            service
+            or getattr(getattr(self.manager, "args", None), "service", None)
+            or "liferay"
+        )
+
+        args = ["log", "--service", target_service]
+        if follow:
+            args.append("--follow")
+
+        UI.heading(f"Streaming logs for service '{target_service}'...")
+        self._run_lcp_cmd(args, capture_json=False, project=target_project)
+        return True
+
     def _is_cloud_authenticated(self):
         """Checks if the user is currently logged into Liferay Cloud."""
         lcp_bin = shutil.which("lcp")

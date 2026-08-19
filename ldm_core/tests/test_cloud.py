@@ -1067,3 +1067,36 @@ class TestCloudServiceSafetyLocksAndPreflight(unittest.TestCase):
             with patch.object(self.cloud, "ensure_cloud_auth"):
                 with self.assertRaises(SystemExit):
                     self.cloud.validate_preflight_checklist(tmp_dir, "dev")
+
+
+class TestCloudServiceSubcommands(unittest.TestCase):
+    def setUp(self):
+        self.manager = MockManager()
+        self.cloud = CloudService(self.manager)
+
+    @patch.object(CloudService, "deploy_project", return_value=True)
+    def test_cmd_cloud_deploy_handler(self, mock_deploy):
+        """Verifies cmd_cloud_deploy resolves workspace and delegates to deploy_project."""
+        with patch.object(
+            self.manager, "detect_project_path", return_value=Path("/tmp/ws")
+        ):
+            self.cloud.cmd_cloud_deploy("acme", "dev", override=True, force=True)
+            mock_deploy.assert_called_once_with(
+                "acme", "dev", Path("/tmp/ws"), override=True, force=True
+            )
+
+    @patch.object(CloudService, "check_production_safety_lock", return_value=True)
+    def test_cmd_cloud_db_reset_handler(self, mock_lock):
+        """Verifies cmd_cloud_db_reset checks safety lock for action='db-reset'."""
+        self.cloud.cmd_cloud_db_reset("acme", "prd", override_lock=True)
+        mock_lock.assert_called_once_with("prd", action="db-reset", override_lock=True)
+
+    @patch.object(CloudService, "_run_lcp_cmd")
+    def test_cmd_cloud_logs_handler(self, mock_run):
+        """Verifies cmd_cloud_logs delegates to _run_lcp_cmd log command."""
+        self.cloud.cmd_cloud_logs("acme", "webserver", follow=True)
+        mock_run.assert_called_once_with(
+            ["log", "--service", "webserver", "--follow"],
+            capture_json=False,
+            project="acme",
+        )
