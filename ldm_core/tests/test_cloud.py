@@ -1015,7 +1015,10 @@ class TestCloudServiceRestAndMetadata(unittest.TestCase):
         self.assertTrue(res)
         mock_meta.assert_called_once_with("/tmp/ws", "acme")
         mock_nginx.assert_called_once_with("/tmp/ws")
-        mock_poll.assert_called_once_with("acme", "abc123456789")  # pragma: allowlist secret
+        mock_poll.assert_called_once_with(
+            "acme",
+            "abc123456789",  # pragma: allowlist secret
+        )
         mock_deploy.assert_called_once_with("acme", "dev", "uid-999")
 
 
