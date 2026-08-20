@@ -45,9 +45,11 @@ def load_target_nodes() -> dict:
     # Auto-sync central config if missing locally
     if not CONFIG_FILE.exists():
         try:
+            import os
             import urllib.request
 
-            urllib.request.urlretrieve(CONFIG_URL, CONFIG_FILE)
+            target_url = os.getenv("NODE_POWER_CONFIG_URL", CONFIG_URL)
+            urllib.request.urlretrieve(target_url, CONFIG_FILE)
         except Exception:
             pass
 
