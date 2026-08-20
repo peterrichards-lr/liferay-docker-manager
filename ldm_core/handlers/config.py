@@ -2243,6 +2243,29 @@ class ConfigService:
                     run_command(
                         ["ssh-add", str(expanded_key)], check=False, capture_output=True
                     )
+            # Add target host key to known_hosts to prevent Docker SSH host key verification failure
+            try:
+                import subprocess
+
+                ssh_dir = Path.home() / ".ssh"
+                ssh_dir.mkdir(parents=True, exist_ok=True)
+                scan_res = subprocess.run(
+                    ["ssh-keyscan", "-H", host],
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+                if (
+                    scan_res
+                    and scan_res.returncode == 0
+                    and scan_res.stdout
+                    and scan_res.stdout.strip()
+                ):
+                    with (ssh_dir / "known_hosts").open("a") as kh:
+                        kh.write(scan_res.stdout.strip() + "\n")
+            except Exception:
+                pass
+
             # Remove existing context if updating
             run_command(
                 ["docker", "context", "rm", name], check=False, capture_output=True

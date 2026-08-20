@@ -131,6 +131,15 @@ Controls whether LDM provisions an isolated PostgreSQL database or connects to t
   - **`--image <image_name>`**: Required. The fully qualified Docker image name to add (e.g., `wordpress:latest`).
   - **`--service-name <name>`**: Optional. Overrides the extracted service name (e.g., `my-wordpress`).
 
+## Compute & Target Node Power Management ![Added in v2.15.30](https://img.shields.io/badge/Added%20in-v2.15.30-blue)
+
+- **`ldm node power wake <node>`**: Powers on or wakes a target compute node.
+  - **`--ttl <duration>`**: Specifies the wake duration before scheduled off-hours power enforcement (e.g., `--ttl 2h` or `--ttl 4h`). Default: `2h`.
+- **`ldm node power sleep <node>`**: Immediately shuts down a target compute node.
+- **`ldm node power status`**: Displays active compute node power states and wake TTLs.
+- **`ldm node power enforce`**: Enforces scheduled off-hours shutdowns.
+- **`ldm node power sync-dns`**: Queries AWS EC2 for live public IP/DNS names and updates local node configurations.
+
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-08-05* | *Last Reviewed: 2026-07-31*
+*Last Updated: 2026-08-20* | *Last Reviewed: 2026-08-20*
