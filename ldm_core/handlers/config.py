@@ -2245,10 +2245,15 @@ class ConfigService:
                     )
             # Add target host key to known_hosts to prevent Docker SSH host key verification failure
             try:
+                import subprocess
+
                 ssh_dir = Path.home() / ".ssh"
                 ssh_dir.mkdir(parents=True, exist_ok=True)
-                scan_res = run_command(
-                    ["ssh-keyscan", "-H", host], check=False, capture_output=True
+                scan_res = subprocess.run(
+                    ["ssh-keyscan", "-H", host],
+                    capture_output=True,
+                    text=True,
+                    check=False,
                 )
                 if (
                     scan_res
