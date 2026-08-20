@@ -1475,6 +1475,34 @@ class TestShareService(unittest.TestCase):
         self.assertIn("edge-central", mock_ui.success.call_args[0][0])
         self.mock_manager.workspace.resume_background_syncs.assert_called_once()
 
+    @patch.dict(
+        "os.environ",
+        {
+            "LFT_EVENT": "stopping",
+            "LFT_NODE_ID": "edge-eu",
+        },
+    )
+    @patch("ldm_core.handlers.share.UI")
+    def test_cmd_tunnel_event_stopping_and_stopped(self, mock_ui):
+        """test ldm tunnel-event stopping and stopped state handling."""
+        self.service.cmd_tunnel_event()
+        mock_ui.warning.assert_called_once()
+        self.assertIn("Reconnecting", mock_ui.warning.call_args[0][0])
+
+    @patch.dict(
+        "os.environ",
+        {
+            "LFT_EVENT": "custom_ping",
+            "LFT_NODE_ID": "edge-us",
+        },
+    )
+    @patch("ldm_core.handlers.share.UI")
+    def test_cmd_tunnel_event_unknown_fallback(self, mock_ui):
+        """test ldm tunnel-event fallback for unknown events."""
+        self.service.cmd_tunnel_event()
+        mock_ui.detail.assert_called_once()
+        self.assertIn("custom_ping", mock_ui.detail.call_args[0][0])
+
     def test_ensure_lfr_tunnel_config_hooks(self):
         """test auto-registration of hooks in ~/.lfr-tunnel/config.yaml."""
         with patch("pathlib.Path.home") as mock_home:
