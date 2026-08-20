@@ -18,6 +18,7 @@ class MockManager:
         self.config = MockConfig()
         self.args = MagicMock()
         self.runtime = MagicMock()
+        self.workspace = MagicMock()
 
     def detect_project_path(self, project_id=None):
         return None
