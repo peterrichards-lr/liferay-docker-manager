@@ -116,7 +116,7 @@ jobs:
             -w "${{ github.workspace }}" \
             -e GITHUB_ACTIONS="true" \
             rockylinux:9 \
-            bash -c "dnf config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo || true && dnf install -y python3-pip git hostname docker-ce-cli which && python3 -m venv .venv && source .venv/bin/activate && pip install . && bash scripts/verify_e2e_refactor.sh --ci"
+            bash -c "dnf install -y dnf-plugins-core && dnf config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo && dnf install -y python3-pip git hostname docker-ce-cli docker-compose-plugin which && python3 -m venv .venv && source .venv/bin/activate && pip install . && bash scripts/verify_e2e_refactor.sh --ci"
 
       - name: Run E2E Verification Suite (Alpine)
         if: matrix.distro == 'alpine'
@@ -128,7 +128,7 @@ jobs:
             -w "${{ github.workspace }}" \
             -e GITHUB_ACTIONS="true" \
             alpine:latest \
-            sh -c "apk add --no-cache python3 py3-pip git bash docker-cli gcc musl-dev libffi-dev python3-dev && python3 -m venv .venv && source .venv/bin/activate && pip install . && bash scripts/verify_e2e_refactor.sh --ci"
+            sh -c "apk add --no-cache python3 py3-pip git bash docker-cli docker-cli-compose gcc musl-dev libffi-dev python3-dev && python3 -m venv .venv && source .venv/bin/activate && pip install . && bash scripts/verify_e2e_refactor.sh --ci"
 
       - name: Run E2E Verification Suite (Debian)
         if: matrix.distro == 'debian'
@@ -140,7 +140,7 @@ jobs:
             -w "${{ github.workspace }}" \
             -e GITHUB_ACTIONS="true" \
             debian:bookworm \
-            bash -c "apt-get update && apt-get install -y python3-pip python3-venv git hostname docker.io && python3 -m venv .venv && source .venv/bin/activate && pip install . && bash scripts/verify_e2e_refactor.sh --ci"
+            bash -c "apt-get update && apt-get install -y python3-pip python3-venv git hostname docker.io docker-compose-plugin && python3 -m venv .venv && source .venv/bin/activate && pip install . && bash scripts/verify_e2e_refactor.sh --ci"
 
       - name: Upload Test Results
         if: always()
@@ -197,7 +197,8 @@ jobs:
 
       - name: Install Colima and Docker
         run: |
-          brew install colima docker || true
+          export HOMEBREW_NO_REQUIRE_TAP_TRUST=1
+          brew install colima docker docker-compose || true
 
       - name: Start Colima
         run: |
