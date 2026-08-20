@@ -213,6 +213,7 @@ def preprocess_args(args_list: list[str]) -> list[str]:
         "cloud",
         "system",
         "share",
+        "tunnel-event",
         "dashboard",
         "mcp",
         "ai",
