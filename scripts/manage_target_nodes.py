@@ -239,9 +239,13 @@ def cmd_sync_dns(args: argparse.Namespace) -> None:
             print(f"  • Node '{name}': Unable to query AWS EC2 or instance is stopped.")
 
     if changes_count > 0:
-        print(f"\n✅ Updated {changes_count} node configuration(s) in .node-power-config.json.")
+        print(
+            f"\n✅ Updated {changes_count} node configuration(s) in .node-power-config.json."
+        )
     else:
-        print("\nℹ No configuration updates required. All node IP/DNS entries are up to date.")
+        print(
+            "\nℹ No configuration updates required. All node IP/DNS entries are up to date."
+        )
 
 
 def wait_for_ssh(host: str, timeout: int = 60) -> bool:
