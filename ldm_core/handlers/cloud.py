@@ -335,6 +335,7 @@ class CloudService:
         )
         if not ws_path:
             UI.die("No active workspace found for deployment.", exit_code=2)
+        assert ws_path is not None
 
         p_name = target_project or Path(ws_path).name
         return self.deploy_project(
@@ -364,6 +365,7 @@ class CloudService:
         )
         if not ws_path:
             UI.die("No active workspace found to update tags.", exit_code=2)
+        assert ws_path is not None
 
         UI.heading("Inspecting Liferay Cloud service image tags...")
         manifests = list(Path(ws_path).rglob("LCP.json"))
@@ -392,6 +394,7 @@ class CloudService:
         )
         if not script_file:
             UI.die("Missing SQL script file path (-f/--file).", exit_code=2)
+        assert script_file is not None
 
         script_path = Path(script_file)
         if not script_path.exists():
