@@ -5,7 +5,6 @@ Last Updated: 2026-08-20 | Last Reviewed: 2026-08-20
 
 import unittest
 from datetime import datetime, timedelta
-from unittest.mock import MagicMock, patch
 
 from scripts.manage_target_nodes import (
     is_in_shutdown_window,

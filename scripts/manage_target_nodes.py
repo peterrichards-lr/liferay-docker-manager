@@ -98,11 +98,11 @@ def parse_duration(ttl_str: str) -> timedelta:
     val, unit = int(match.group(1)), match.group(2)
     if unit == "s":
         return timedelta(seconds=val)
-    elif unit == "m":
+    if unit == "m":
         return timedelta(minutes=val)
-    elif unit == "h":
+    if unit == "h":
         return timedelta(hours=val)
-    elif unit == "d":
+    if unit == "d":
         return timedelta(days=val)
     return timedelta(hours=2)
 
@@ -124,9 +124,9 @@ def is_in_shutdown_window(dt: datetime, schedule: str) -> bool:
 
     if schedule == "overnight":
         return is_overnight
-    elif schedule == "weekend":
+    if schedule == "weekend":
         return is_weekend
-    elif schedule in ("auto", "default"):
+    if schedule in ("auto", "default"):
         return is_overnight or is_weekend
 
     return False
@@ -142,12 +142,12 @@ def power_on_node(node_name: str, config: dict) -> bool:
         if res.returncode == 0:
             print(f"✅ Target node '{node_name}' successfully powered on.")
             return True
-        else:
-            print(f"⚠️ AWS CLI error for '{node_name}': {res.stderr.strip()}")
-            return False
-    else:
-        print(f"ℹ Node '{node_name}' has no EC2 instance ID configured. Set ec2_instance_id in .node-power-config.json.")
-        return True
+        print(f"⚠️ AWS CLI error for '{node_name}': {res.stderr.strip()}")
+        return False
+    print(
+        f"ℹ Node '{node_name}' has no EC2 instance ID configured. Set ec2_instance_id in .node-power-config.json."
+    )
+    return True
 
 
 def power_off_node(node_name: str, config: dict) -> bool:
@@ -155,14 +155,15 @@ def power_off_node(node_name: str, config: dict) -> bool:
     ec2_id = config.get("ec2_instance_id")
     if ec2_id:
         cmd = ["aws", "ec2", "stop-instances", "--instance-ids", ec2_id]
-        print(f"▶ Stopping AWS EC2 instance '{ec2_id}' for target node '{node_name}'...")
+        print(
+            f"▶ Stopping AWS EC2 instance '{ec2_id}' for target node '{node_name}'..."
+        )
         res = subprocess.run(cmd, capture_output=True, text=True)
         if res.returncode == 0:
             print(f"✅ Target node '{node_name}' successfully powered off.")
             return True
-        else:
-            print(f"⚠️ AWS CLI error for '{node_name}': {res.stderr.strip()}")
-            return False
+        print(f"⚠️ AWS CLI error for '{node_name}': {res.stderr.strip()}")
+        return False
 
     host = config.get("host")
     user = config.get("user", "ubuntu")
@@ -174,7 +175,9 @@ def power_off_node(node_name: str, config: dict) -> bool:
             print(f"✅ Target node '{node_name}' SSH shutdown command sent.")
             return True
 
-    print(f"⚠️ Unable to shut down node '{node_name}': No EC2 instance ID or SSH host configured.")
+    print(
+        f"⚠️ Unable to shut down node '{node_name}': No EC2 instance ID or SSH host configured."
+    )
     return False
 
 
@@ -183,7 +186,9 @@ def cmd_wake(args: argparse.Namespace) -> None:
     nodes = load_target_nodes()
     node_name = args.node
     if node_name not in nodes:
-        print(f"❌ Target node '{node_name}' not found. Available nodes: {', '.join(nodes.keys())}")
+        print(
+            f"❌ Target node '{node_name}' not found. Available nodes: {', '.join(nodes.keys())}"
+        )
         sys.exit(1)
 
     config = nodes[node_name]
@@ -201,7 +206,9 @@ def cmd_wake(args: argparse.Namespace) -> None:
     save_state(state)
 
     power_on_node(node_name, config)
-    print(f"⏰ Target node '{node_name}' woken until {wake_until_dt.strftime('%Y-%m-%d %H:%M:%S UTC')} (TTL: {args.ttl}).")
+    print(
+        f"⏰ Target node '{node_name}' woken until {wake_until_dt.strftime('%Y-%m-%d %H:%M:%S UTC')} (TTL: {args.ttl})."
+    )
 
 
 def cmd_sleep(args: argparse.Namespace) -> None:
@@ -209,7 +216,9 @@ def cmd_sleep(args: argparse.Namespace) -> None:
     nodes = load_target_nodes()
     node_name = args.node
     if node_name not in nodes:
-        print(f"❌ Target node '{node_name}' not found. Available nodes: {', '.join(nodes.keys())}")
+        print(
+            f"❌ Target node '{node_name}' not found. Available nodes: {', '.join(nodes.keys())}"
+        )
         sys.exit(1)
 
     config = nodes[node_name]
@@ -231,7 +240,9 @@ def cmd_enforce(args: argparse.Namespace) -> None:
     now = datetime.now(timezone.utc)
     now_local = datetime.now()
 
-    print(f"🔍 Evaluating node power enforcement at {now_local.strftime('%Y-%m-%d %H:%M:%S')}...")
+    print(
+        f"🔍 Evaluating node power enforcement at {now_local.strftime('%Y-%m-%d %H:%M:%S')}..."
+    )
 
     for name, config in nodes.items():
         schedule = config.get("schedule", "auto")
@@ -253,7 +264,9 @@ def cmd_enforce(args: argparse.Namespace) -> None:
 
         in_window = is_in_shutdown_window(now_local, schedule)
         if in_window:
-            print(f"  • Node '{name}': Shutdown window active (schedule: {schedule}). Enforcing shutdown.")
+            print(
+                f"  • Node '{name}': Shutdown window active (schedule: {schedule}). Enforcing shutdown."
+            )
             power_off_node(name, config)
             state[name] = {
                 "status": "shutdown",
@@ -273,11 +286,17 @@ def cmd_status(args: argparse.Namespace) -> None:
     now = datetime.now(timezone.utc)
     now_local = datetime.now()
 
-    print("\n==========================================================================")
+    print(
+        "\n=========================================================================="
+    )
     print("                TARGET COMPUTE NODE POWER CONTROL STATUS                  ")
     print("==========================================================================")
-    print(f"Local Time: {now_local.strftime('%Y-%m-%d %H:%M:%S')} | Schedule Window: {'ACTIVE' if is_in_shutdown_window(now_local, 'auto') else 'INACTIVE'}\n")
-    print(f"{'NODE':<10} {'SCHEDULE':<10} {'EC2 ID':<18} {'STATUS':<15} {'DETAILS':<25}")
+    print(
+        f"Local Time: {now_local.strftime('%Y-%m-%d %H:%M:%S')} | Schedule Window: {'ACTIVE' if is_in_shutdown_window(now_local, 'auto') else 'INACTIVE'}\n"
+    )
+    print(
+        f"{'NODE':<10} {'SCHEDULE':<10} {'EC2 ID':<18} {'STATUS':<15} {'DETAILS':<25}"
+    )
     print("-" * 78)
 
     for name, config in nodes.items():
@@ -306,25 +325,39 @@ def cmd_status(args: argparse.Namespace) -> None:
             status_label = "SHUTDOWN"
             details = "Scheduled off-hours"
 
-        print(f"{name:<10} {schedule:<10} {ec2_id:<18} {status_label:<15} {details:<25}")
+        print(
+            f"{name:<10} {schedule:<10} {ec2_id:<18} {status_label:<15} {details:<25}"
+        )
 
-    print("==========================================================================\n")
+    print(
+        "==========================================================================\n"
+    )
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Standalone Target Node Power & Cost Control Utility")
+    parser = argparse.ArgumentParser(
+        description="Standalone Target Node Power & Cost Control Utility"
+    )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    subparsers.add_parser("status", help="Display target node power status and active wake TTLs")
+    subparsers.add_parser(
+        "status", help="Display target node power status and active wake TTLs"
+    )
 
-    wake_p = subparsers.add_parser("wake", help="Temporarily wake a target node during shutdown hours")
+    wake_p = subparsers.add_parser(
+        "wake", help="Temporarily wake a target node during shutdown hours"
+    )
     wake_p.add_argument("node", help="Name of the target node (e.g. aws-1, aws-2)")
-    wake_p.add_argument("--ttl", default="2h", help="Wake duration (e.g. 2h, 30m, 4h). Default: 2h")
+    wake_p.add_argument(
+        "--ttl", default="2h", help="Wake duration (e.g. 2h, 30m, 4h). Default: 2h"
+    )
 
     sleep_p = subparsers.add_parser("sleep", help="Immediately shut down a target node")
     sleep_p.add_argument("node", help="Name of the target node (e.g. aws-1, aws-2)")
 
-    subparsers.add_parser("enforce", help="Enforce scheduled overnight/weekend shutdowns and expire TTLs")
+    subparsers.add_parser(
+        "enforce", help="Enforce scheduled overnight/weekend shutdowns and expire TTLs"
+    )
 
     args = parser.parse_args()
 
