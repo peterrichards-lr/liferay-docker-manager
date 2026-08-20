@@ -21,7 +21,7 @@ LDMRC_FILE = Path.home() / ".ldmrc"
 CONFIG_URL = "https://raw.githubusercontent.com/peterrichards-lr/liferay-docker-manager/master/.node-power-config.json"
 
 
-def load_target_nodes() -> dict:
+def load_target_nodes() -> dict:  # noqa: PLR0912
     """Loads target node definitions from .node-power-config.json or ~/.ldmrc fallback."""
     nodes = {
         "aws-1": {
@@ -44,14 +44,25 @@ def load_target_nodes() -> dict:
 
     # Auto-sync central config if missing locally
     if not CONFIG_FILE.exists():
-        try:
-            import os
-            import urllib.request
+        import os
+        import urllib.request
 
-            target_url = os.getenv("NODE_POWER_CONFIG_URL", CONFIG_URL)
-            urllib.request.urlretrieve(target_url, CONFIG_FILE)
-        except Exception:
-            pass
+        urls_to_try = [
+            os.getenv("NODE_POWER_CONFIG_URL"),
+            "https://raw.githubusercontent.com/peterrichards-lr/liferay-docker-manager/master/.node-power-config.json",
+            "https://raw.githubusercontent.com/peterrichards-lr/liferay-docker-manager/main/.node-power-config.json",
+            "https://raw.githubusercontent.com/peterrichards-lr/liferay-docker-manager/release/v2.15.30/.node-power-config.json",
+        ]
+        for url in urls_to_try:
+            if not url:
+                continue
+            try:
+                urllib.request.urlretrieve(url, CONFIG_FILE)
+                if CONFIG_FILE.exists() and CONFIG_FILE.stat().st_size > 20:
+                    print(f"✅ Auto-synced central target node config from {url}")
+                    break
+            except Exception:
+                pass
 
     # Override from ~/.ldmrc if present
     if LDMRC_FILE.exists():
@@ -149,12 +160,6 @@ def is_in_shutdown_window(dt: datetime, schedule: str) -> bool:
 
 def get_ec2_public_ip(ec2_id: str, region: str = "") -> str:
     """Queries AWS EC2 for the current public IP address of an instance."""
-    ip, _ = get_ec2_details(ec2_id, region)
-    return ip
-
-
-def get_ec2_details(ec2_id: str, region: str = "") -> tuple[str, str]:
-    """Queries AWS EC2 for the current public IP address and Public DNS name of an instance."""
     cmd = [
         "aws",
         "ec2",
@@ -162,42 +167,30 @@ def get_ec2_details(ec2_id: str, region: str = "") -> tuple[str, str]:
         "--instance-ids",
         ec2_id,
         "--query",
-        "Reservations[0].Instances[0].[PublicIpAddress,PublicDnsName]",
+        "Reservations[0].Instances[0].PublicIpAddress",
         "--output",
         "text",
     ]
     if region:
         cmd.extend(["--region", region])
     res = subprocess.run(cmd, capture_output=True, text=True, check=False)
-    if res.returncode == 0 and res.stdout.strip():
-        parts = res.stdout.strip().split()
-        ip = parts[0] if parts and parts[0] != "None" else ""
-        dns = parts[1] if len(parts) > 1 and parts[1] != "None" else ""
-        return ip, dns
-    return "", ""
+    if res.returncode == 0 and res.stdout.strip() and res.stdout.strip() != "None":
+        return res.stdout.strip()
+    return ""
 
 
 def update_node_host_ip(node_name: str, new_ip: str) -> None:
     """Updates .node-power-config.json and ~/.ldmrc host entry when public IP changes."""
-    update_node_dns_and_ip(node_name, new_ip, "")
+    if not new_ip:
+        return
 
-
-def update_node_dns_and_ip(node_name: str, new_ip: str, new_dns: str) -> bool:
-    """Updates .node-power-config.json and ~/.ldmrc entries with resolved IP and DNS names."""
-    updated = False
     if CONFIG_FILE.exists():
         try:
             custom_data = json.loads(CONFIG_FILE.read_text())
             nodes = custom_data.get("nodes", {})
             if node_name in nodes:
-                if new_ip and nodes[node_name].get("host") != new_ip:
-                    nodes[node_name]["host"] = new_ip
-                    updated = True
-                if new_dns and nodes[node_name].get("public_dns") != new_dns:
-                    nodes[node_name]["public_dns"] = new_dns
-                    updated = True
-                if updated:
-                    CONFIG_FILE.write_text(json.dumps(custom_data, indent=2) + "\n")
+                nodes[node_name]["host"] = new_ip
+                CONFIG_FILE.write_text(json.dumps(custom_data, indent=2) + "\n")
         except Exception:
             pass
 
@@ -206,46 +199,10 @@ def update_node_dns_and_ip(node_name: str, new_ip: str, new_dns: str) -> bool:
             ldmrc_data = json.loads(LDMRC_FILE.read_text())
             targets = ldmrc_data.get("targets", {})
             if node_name in targets:
-                if new_ip:
-                    targets[node_name]["host"] = new_ip
-                if new_dns:
-                    targets[node_name]["public_dns"] = new_dns
+                targets[node_name]["host"] = new_ip
                 LDMRC_FILE.write_text(json.dumps(ldmrc_data, indent=4) + "\n")
         except Exception:
             pass
-
-    return updated
-
-
-def cmd_sync_dns(args: argparse.Namespace) -> None:
-    """Queries AWS EC2 for all active target nodes, updating host IPv4 and Public DNS in config."""
-    nodes = load_target_nodes()
-    print("🌐 Querying AWS EC2 for target node public IPv4 & DNS names...")
-
-    changes_count = 0
-    for name, config in nodes.items():
-        ec2_id = config.get("ec2_instance_id")
-        region = config.get("region", "")
-        if not ec2_id:
-            continue
-
-        ip, dns = get_ec2_details(ec2_id, region)
-        if ip or dns:
-            print(f"  • Node '{name}': IP={ip or 'N/A'}, DNS={dns or 'N/A'}")
-            if update_node_dns_and_ip(name, ip, dns):
-                changes_count += 1
-                print(f"    ✅ Updated configuration for '{name}'.")
-        else:
-            print(f"  • Node '{name}': Unable to query AWS EC2 or instance is stopped.")
-
-    if changes_count > 0:
-        print(
-            f"\n✅ Updated {changes_count} node configuration(s) in .node-power-config.json."
-        )
-    else:
-        print(
-            "\nℹ No configuration updates required. All node IP/DNS entries are up to date."
-        )
 
 
 def wait_for_ssh(host: str, timeout: int = 60) -> bool:
@@ -546,11 +503,6 @@ def main() -> None:
         "enforce", help="Enforce scheduled overnight/weekend shutdowns and expire TTLs"
     )
 
-    subparsers.add_parser(
-        "sync-dns",
-        help="Query AWS EC2 for live public IPv4 and DNS names and update config",
-    )
-
     args = parser.parse_args()
 
     if args.command == "status":
@@ -561,8 +513,6 @@ def main() -> None:
         cmd_sleep(args)
     elif args.command == "enforce":
         cmd_enforce(args)
-    elif args.command == "sync-dns":
-        cmd_sync_dns(args)
 
 
 if __name__ == "__main__":

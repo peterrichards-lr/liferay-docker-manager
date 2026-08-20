@@ -1126,12 +1126,23 @@ class TestCloudServiceSubcommands(unittest.TestCase):
             )
 
     @patch.object(CloudService, "check_production_safety_lock", return_value=True)
-    def test_cmd_cloud_db_reset_handler(self, mock_lock):
+    @patch.object(CloudService, "_run_lcp_cmd", return_value=True)
+    def test_cmd_cloud_db_reset_handler(self, mock_run, mock_lock):
         """Verifies cmd_cloud_db_reset checks safety lock for action='db-reset'."""
         with patch.object(self.cloud, "ensure_cloud_auth", return_value=True):
             self.cloud.cmd_cloud_db_reset("acme", "prd", override_lock=True)
             mock_lock.assert_called_once_with(
                 "prd", action="db-reset", override_lock=True
+            )
+            mock_run.assert_called_once_with(
+                [
+                    "shell",
+                    "database",
+                    "DROP SCHEMA public CASCADE; CREATE SCHEMA public;",
+                ],
+                capture_json=False,
+                project="acme",
+                env="prd",
             )
 
     @patch.object(CloudService, "_run_lcp_cmd")
