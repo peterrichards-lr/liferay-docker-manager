@@ -9,6 +9,7 @@ Last Updated: 2026-08-20 | Last Reviewed: 2026-08-20
 
 import argparse
 import json
+import os
 import re
 import subprocess
 import sys
@@ -201,9 +202,9 @@ def power_on_node(node_name: str, config: dict) -> bool:
         print(f"⚠️ AWS CLI error for '{node_name}': {res.stderr.strip()}")
         return False
     print(
-        f"ℹ Node '{node_name}' has no EC2 instance ID configured. Set ec2_instance_id in .node-power-config.json."
+        f"❌ Node '{node_name}' has no EC2 instance ID configured. Set ec2_instance_id in .node-power-config.json."
     )
-    return True
+    return False
 
 
 def power_off_node(node_name: str, config: dict) -> bool:
@@ -255,6 +256,11 @@ def cmd_wake(args: argparse.Namespace) -> None:
     wake_until_dt = now + duration
     wake_until_str = wake_until_dt.isoformat()
 
+    ok = power_on_node(node_name, config)
+    if not ok:
+        print(f"❌ Failed to power on target node '{node_name}'. Exiting with error.")
+        sys.exit(1)
+
     state = load_state()
     state[node_name] = {
         "status": "woken",
@@ -263,7 +269,6 @@ def cmd_wake(args: argparse.Namespace) -> None:
     }
     save_state(state)
 
-    power_on_node(node_name, config)
     print(
         f"⏰ Target node '{node_name}' woken until {wake_until_dt.strftime('%Y-%m-%d %H:%M:%S UTC')} (TTL: {args.ttl})."
     )
@@ -280,6 +285,12 @@ def cmd_sleep(args: argparse.Namespace) -> None:
         sys.exit(1)
 
     config = nodes[node_name]
+
+    ok = power_off_node(node_name, config)
+    if not ok:
+        print(f"❌ Failed to power off target node '{node_name}'. Exiting with error.")
+        sys.exit(1)
+
     state = load_state()
     state[node_name] = {
         "status": "shutdown",
@@ -287,8 +298,6 @@ def cmd_sleep(args: argparse.Namespace) -> None:
         "shutdown_at": datetime.now(timezone.utc).isoformat(),
     }
     save_state(state)
-
-    power_off_node(node_name, config)
 
 
 def cmd_enforce(args: argparse.Namespace) -> None:
