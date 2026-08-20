@@ -194,6 +194,23 @@ def update_node_host_ip(node_name: str, new_ip: str) -> None:
             pass
 
 
+def wait_for_ssh(host: str, timeout: int = 60) -> bool:
+    """Polls TCP port 22 on the target host until SSH service is ready."""
+    import socket
+    import time
+    start_time = time.time()
+    print(f"⏳ Waiting for SSH service (TCP 22) on {host}...")
+    while time.time() - start_time < timeout:
+        try:
+            with socket.create_connection((host, 22), timeout=3):
+                print(f"✅ SSH service ready on {host}:22.")
+                return True
+        except (socket.timeout, OSError):
+            time.sleep(3)
+    print(f"⚠️ Timed out waiting for SSH on {host}:22.")
+    return False
+
+
 def power_on_node(node_name: str, config: dict) -> bool:
     """Boots or resumes the specified target node using AWS CLI or SSH."""
     ec2_id = config.get("ec2_instance_id")
@@ -209,6 +226,7 @@ def power_on_node(node_name: str, config: dict) -> bool:
             if new_ip:
                 print(f"🌐 Resolved updated public IP for '{node_name}': {new_ip}")
                 update_node_host_ip(node_name, new_ip)
+                wait_for_ssh(new_ip)
             return True
         print(f"⚠️ AWS CLI error for '{node_name}': {res.stderr.strip()}")
         return False
