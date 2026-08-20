@@ -18,6 +18,7 @@ from pathlib import Path
 CONFIG_FILE = Path(__file__).parent.parent / ".node-power-config.json"
 STATE_FILE = Path(__file__).parent.parent / ".node-power-state.json"
 LDMRC_FILE = Path.home() / ".ldmrc"
+CONFIG_URL = "https://raw.githubusercontent.com/peterrichards-lr/liferay-docker-manager/master/.node-power-config.json"
 
 
 def load_target_nodes() -> dict:
@@ -40,6 +41,15 @@ def load_target_nodes() -> dict:
             "user": "ubuntu",
         },
     }
+
+    # Auto-sync central config if missing locally
+    if not CONFIG_FILE.exists():
+        try:
+            import urllib.request
+
+            urllib.request.urlretrieve(CONFIG_URL, CONFIG_FILE)
+        except Exception:
+            pass
 
     # Override from ~/.ldmrc if present
     if LDMRC_FILE.exists():
