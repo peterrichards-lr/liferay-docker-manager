@@ -340,7 +340,15 @@ def cmd_enforce(args: argparse.Namespace) -> None:
                 "shutdown_at": now.isoformat(),
             }
         else:
-            print(f"  • Node '{name}': Outside shutdown window. Node active.")
+            print(
+                f"  • Node '{name}': Business hours active (schedule: {schedule}). Ensuring node is powered ON."
+            )
+            ok = power_on_node(name, config)
+            state[name] = {
+                "status": "active" if ok else "error",
+                "wake_until": "",
+                "powered_on_at": now.isoformat(),
+            }
 
     save_state(state)
 
@@ -367,32 +375,60 @@ def cmd_status(args: argparse.Namespace) -> None:
 
     for name, config in nodes.items():
         schedule = config.get("schedule", "auto")
-        ec2_id = config.get("ec2_instance_id", "N/A")
+        ec2_id = config.get("ec2_instance_id") or ""
+        region = config.get("region")
+        region_flags = ["--region", region] if region else []
         node_state = state.get(name, {})
         wake_until_str = node_state.get("wake_until", "")
 
-        status_label = "ACTIVE"
-        details = "Normal operation"
+        status_label = "OFFLINE"
+        details = "Local node"
 
-        if wake_until_str:
+        if ec2_id:
+            check_cmd = [
+                "aws",
+                "ec2",
+                "describe-instances",
+                "--instance-ids",
+                ec2_id,
+                "--query",
+                "Reservations[0].Instances[0].[State.Name,PublicIpAddress]",
+                "--output",
+                "text",
+                *region_flags,
+            ]
+            check_res = subprocess.run(
+                check_cmd, capture_output=True, text=True, check=False
+            )
+            if check_res.returncode == 0:
+                parts = check_res.stdout.strip().split()
+                aws_state = parts[0].upper() if parts else "UNKNOWN"
+                public_ip = parts[1] if len(parts) > 1 else ""
+                status_label = f"EC2:{aws_state}"
+                if public_ip:
+                    details = f"IP: {public_ip}"
+                else:
+                    details = "No Public IP"
+            else:
+                status_label = "AWS ERROR"
+                details = check_res.stderr.strip()[:24]
+        elif name == "local":
+            status_label = "ACTIVE"
+            details = "Local operation"
+
+        if wake_until_str and "EC2:" in status_label:
             try:
                 wake_until_dt = datetime.fromisoformat(wake_until_str)
                 if wake_until_dt > now:
                     rem = wake_until_dt - now
                     mins = int(rem.total_seconds() // 60)
-                    status_label = "WOKEN (TTL)"
-                    details = f"{mins} mins remaining"
-                else:
-                    status_label = "TTL EXPIRED"
-                    details = "Awaiting enforcement"
+                    details += f" (TTL: {mins}m)"
             except Exception:
                 pass
-        elif is_in_shutdown_window(now_local, schedule):
-            status_label = "SHUTDOWN"
-            details = "Scheduled off-hours"
 
+        disp_ec2_id = ec2_id if ec2_id else "N/A"
         print(
-            f"{name:<10} {schedule:<10} {ec2_id:<18} {status_label:<15} {details:<25}"
+            f"{name:<10} {schedule:<10} {disp_ec2_id:<18} {status_label:<15} {details:<25}"
         )
 
     print(
