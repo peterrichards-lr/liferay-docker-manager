@@ -3249,12 +3249,16 @@ def main():
     cmd = getattr(args, "command", None)
     if cmd is not None and not isinstance(cmd, str):
         cmd = None
-    subcommand = (
-        getattr(args, "power_command", None)
-        or getattr(args, "node_command", None)
-        or getattr(args, "subcommand", None)
-        or getattr(args, "target_command", None)
-    )
+
+    if cmd == "node":
+        subcommand = getattr(args, "power_command", None) or getattr(
+            args, "node_command", None
+        )
+    elif cmd == "target":
+        subcommand = getattr(args, "target_command", None)
+    else:
+        subcommand = getattr(args, "subcommand", None)
+
     if subcommand is not None and not isinstance(subcommand, str):
         subcommand = None
     current_cmd = (cmd, subcommand)
