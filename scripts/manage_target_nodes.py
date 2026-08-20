@@ -205,6 +205,29 @@ def update_node_host_ip(node_name: str, new_ip: str) -> None:
             pass
 
 
+def add_ssh_known_host(host: str) -> None:
+    """Queries target host SSH key via ssh-keyscan and appends to ~/.ssh/known_hosts."""
+    if not host or host in ("127.0.0.1", "localhost"):
+        return
+
+    try:
+        ssh_dir = Path.home() / ".ssh"
+        ssh_dir.mkdir(parents=True, exist_ok=True)
+        known_hosts = ssh_dir / "known_hosts"
+
+        scan_res = subprocess.run(
+            ["ssh-keyscan", "-H", host],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if scan_res.returncode == 0 and scan_res.stdout.strip():
+            with known_hosts.open("a") as f:
+                f.write(scan_res.stdout.strip() + "\n")
+    except Exception:
+        pass
+
+
 def wait_for_ssh(host: str, timeout: int = 60) -> bool:
     """Polls TCP port 22 on the target host until SSH service is ready."""
     import socket
@@ -216,6 +239,7 @@ def wait_for_ssh(host: str, timeout: int = 60) -> bool:
         try:
             with socket.create_connection((host, 22), timeout=3):
                 print(f"✅ SSH service ready on {host}:22.")
+                add_ssh_known_host(host)
                 return True
         except (TimeoutError, OSError):
             time.sleep(3)

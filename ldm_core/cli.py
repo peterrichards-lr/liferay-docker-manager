@@ -213,6 +213,7 @@ def preprocess_args(args_list: list[str]) -> list[str]:
         "cloud",
         "system",
         "share",
+        "node",
         "tunnel-event",
         "dashboard",
         "mcp",
@@ -2104,6 +2105,49 @@ def get_parser():  # noqa: PLR0915
         "dest", help="Destination target node identifier (or 'local')"
     )
 
+    node = subparsers.add_parser(
+        "node",
+        parents=[base_sub_parent],
+        help="Target node power management and cost control utility",
+    )
+    node_subparsers = node.add_subparsers(dest="node_command")
+    node_power = node_subparsers.add_parser(
+        "power",
+        parents=[base_sub_parent],
+        help="Target compute node power lifecycle commands",
+    )
+    node_power_subparsers = node_power.add_subparsers(dest="power_command")
+    node_power_subparsers.add_parser(
+        "status",
+        parents=[base_sub_parent],
+        help="Display target compute node power status and active wake TTLs",
+    )
+    node_wake = node_power_subparsers.add_parser(
+        "wake",
+        parents=[base_sub_parent],
+        help="Wake a target compute node during off-hours",
+    )
+    node_wake.add_argument("name", help="Target node name (e.g. aws-1, aws-2)")
+    node_wake.add_argument(
+        "--ttl", default="2h", help="Wake duration (e.g. 2h, 4h). Default: 2h"
+    )
+    node_sleep = node_power_subparsers.add_parser(
+        "sleep",
+        parents=[base_sub_parent],
+        help="Immediately shut down a target compute node",
+    )
+    node_sleep.add_argument("name", help="Target node name (e.g. aws-1, aws-2)")
+    node_power_subparsers.add_parser(
+        "enforce",
+        parents=[base_sub_parent],
+        help="Enforce scheduled off-hours shutdowns and expire TTLs",
+    )
+    node_power_subparsers.add_parser(
+        "sync-dns",
+        parents=[base_sub_parent],
+        help="Query AWS EC2 for live public IPv4 and DNS names and update config",
+    )
+
     reset_props = config_subparsers.add_parser(
         "reset-properties",
         parents=[base_sub_parent],
@@ -3039,6 +3083,16 @@ def _build_command_map(args, manager):
         ("target", "migrate"): lambda: manager.config.cmd_target_migrate(
             args.source, args.dest
         ),
+        # node namespace:
+        ("node", "power", "status"): manager.node.cmd_node_power_status,
+        ("node", "power", "wake"): lambda: manager.node.cmd_node_power_wake(
+            args.name, ttl=getattr(args, "ttl", "2h")
+        ),
+        ("node", "power", "sleep"): lambda: manager.node.cmd_node_power_sleep(
+            args.name
+        ),
+        ("node", "power", "enforce"): manager.node.cmd_node_power_enforce,
+        ("node", "power", "sync-dns"): manager.node.cmd_node_power_sync_dns,
     }
     return cmds
 
@@ -3156,11 +3210,21 @@ def main():
         parser.print_help()
         return
 
-    namespaces = ["infra", "cloud", "config", "system"]
+    namespaces = ["infra", "cloud", "config", "system", "node"]
     if args.command in namespaces and not getattr(args, "subcommand", None):
-        sub_parser = subparsers.choices[args.command]
-        sub_parser.print_help()
-        return
+        if args.command == "node" and getattr(args, "node_command", None) == "power":
+            if not getattr(args, "power_command", None):
+                sub_parser = subparsers.choices["node"]
+                sub_parser.print_help()
+                return
+        elif args.command == "node" and not getattr(args, "node_command", None):
+            sub_parser = subparsers.choices["node"]
+            sub_parser.print_help()
+            return
+        elif args.command != "node":
+            sub_parser = subparsers.choices[args.command]
+            sub_parser.print_help()
+            return
 
     # Set environment variable LDM_DRY_RUN if dry-run is specified
     if getattr(args, "dry_run", False) is True:
@@ -3184,7 +3248,13 @@ def main():
     )
     if subcommand is not None and not isinstance(subcommand, str):
         subcommand = None
-    current_cmd = (cmd, subcommand)
+    current_cmd: tuple = (cmd, subcommand)
+    if cmd == "node":
+        current_cmd = (
+            cmd,
+            getattr(args, "node_command", None),
+            getattr(args, "power_command", None),
+        )
     if current_cmd in docker_required and not manager.check_docker():
         UI.die("Docker not accessible.")
 

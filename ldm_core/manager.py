@@ -53,11 +53,13 @@ class LiferayManager(
         self.runtime = RuntimeService(self)
         self.system = SystemService(self)
 
+        from ldm_core.handlers.node import NodeService
         from ldm_core.handlers.share import ShareService
         from ldm_core.handlers.tray import TrayService
 
         self.share = ShareService(self)
         self.tray = TrayService(self)
+        self.node = NodeService(self)
 
         # Automatic CI detection
         # LDM-#1092: only checking these 3 vars missed automation harnesses
