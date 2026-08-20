@@ -5,7 +5,7 @@
       "ec2_instance_id": "i-049889a61ec29e7ce",
       "region": "eu-north-1",
       "host": "51.20.52.201",
-      "user": "ec2-user",
+      "user": "ldm-automation",
       "schedule": "auto"
     },
     "aws-2": {
@@ -13,7 +13,7 @@
       "ec2_instance_id": "i-01194b1b4476dd3d7",
       "region": "eu-north-1",
       "host": "13.51.55.181",
-      "user": "ec2-user",
+      "user": "ldm-automation",
       "schedule": "auto"
     }
   }
