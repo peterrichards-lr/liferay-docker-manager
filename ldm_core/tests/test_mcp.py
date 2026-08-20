@@ -152,6 +152,24 @@ def test_restart_project(mock_manager):
     )
 
 
+def test_cloud_deploy_mcp_tool(mock_manager):
+    """Verifies cloud_deploy FastMCP tool delegates to manager.cloud.cmd_cloud_deploy."""
+    from ldm_core.handlers.mcp import cloud_deploy
+
+    mock_manager.cloud.cmd_cloud_deploy.return_value = True
+    res = cloud_deploy("acme", env_id="dev", force=True)
+    assert "Successfully triggered Liferay Cloud deployment" in res
+    mock_manager.cloud.cmd_cloud_deploy.assert_called_once_with(
+        project_id="acme",
+        env_id="dev",
+        force=True,
+        direct=False,
+        service="liferay",
+        git=False,
+        no_wait=False,
+    )
+
+
 def test_get_cli_help():
     from ldm_core.handlers.mcp import get_cli_help
 
@@ -303,3 +321,20 @@ def test_mcp_service_cmd_mcp(mock_get_logger, mock_get_mcp_server, mock_manager)
     mock_get_logger.assert_called_with("mcp")
     logger_mock.setLevel.assert_called_with(mcp_module.logging.CRITICAL)
     server_mock.run.assert_called_once()
+
+
+def test_cloud_deploy_mcp_tool_direct_options(mock_manager):
+    mock_manager.cloud.cmd_cloud_deploy.return_value = True
+    res = mcp_module.cloud_deploy(
+        "acme", "stage", direct=True, service="webserver", no_wait=True
+    )
+    assert "Successfully triggered Liferay Cloud deployment" in res
+    mock_manager.cloud.cmd_cloud_deploy.assert_called_once_with(
+        project_id="acme",
+        env_id="stage",
+        force=False,
+        direct=True,
+        service="webserver",
+        git=False,
+        no_wait=True,
+    )

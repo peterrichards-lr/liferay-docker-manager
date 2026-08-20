@@ -213,6 +213,7 @@ def preprocess_args(args_list: list[str]) -> list[str]:
         "cloud",
         "system",
         "share",
+        "tunnel-event",
         "dashboard",
         "mcp",
         "ai",
@@ -238,6 +239,9 @@ def preprocess_args(args_list: list[str]) -> list[str]:
         "use",
         "select",
         "migrate",
+        "update-tags",
+        "db-reset",
+        "sql",
     }
 
     if first.startswith("-") or first in all_cmds:
@@ -1812,6 +1816,12 @@ def get_parser():  # noqa: PLR0915
     share_stop.add_argument("project", nargs="?")
     share_stop.add_argument("-p", "--project", dest="project_flag")
 
+    subparsers.add_parser(
+        "tunnel-event",
+        parents=[base_sub_parent],
+        help="Handle lfr-tunnel hook protocol events (internal hook handler)",
+    )
+
     # Namespace: cloud
     cloud = subparsers.add_parser(
         "cloud", parents=[base_sub_parent], help="Liferay Cloud integrations"
@@ -1837,6 +1847,77 @@ def get_parser():  # noqa: PLR0915
     )
     cloud_fetch.add_argument("--logs", action="store_true")
     cloud_fetch.add_argument("-f", "--follow", action="store_true")
+
+    cloud_deploy = cloud_subparsers.add_parser(
+        "deploy", parents=[base_sub_parent], conflict_handler="resolve"
+    )
+    cloud_deploy.add_argument("project", nargs="?")
+    cloud_deploy.add_argument("-p", "--project", dest="project_flag")
+    cloud_deploy.add_argument("-e", "--environment", dest="env_id")
+    cloud_deploy.add_argument("--override", action="store_true")
+    cloud_deploy.add_argument("--force", action="store_true")
+    cloud_deploy.add_argument(
+        "-d",
+        "--direct",
+        action="store_true",
+        help="Direct fast-path lcp deploy bypassing Jenkins",
+    )
+    cloud_deploy.add_argument(
+        "-s",
+        "--service",
+        default="liferay",
+        help="Target service name (default: liferay)",
+    )
+    cloud_deploy.add_argument(
+        "-g", "--git", action="store_true", help="Force Git-driven push deployment"
+    )
+    cloud_deploy.add_argument(
+        "--no-wait",
+        action="store_true",
+        help="Trigger deployment asynchronously without tailing build logs",
+    )
+
+    cloud_tags = cloud_subparsers.add_parser(
+        "update-tags", parents=[base_sub_parent], conflict_handler="resolve"
+    )
+    cloud_tags.add_argument("project", nargs="?")
+    cloud_tags.add_argument("-p", "--project", dest="project_flag")
+    cloud_tags.add_argument("--apply", action="store_true")
+    cloud_tags.add_argument("--commit", action="store_true")
+
+    cloud_sql = cloud_subparsers.add_parser(
+        "sql", parents=[base_sub_parent], conflict_handler="resolve"
+    )
+    cloud_sql.add_argument("project", nargs="?")
+    cloud_sql.add_argument("-p", "--project", dest="project_flag")
+    cloud_sql.add_argument("-f", "--file", dest="script_file")
+    cloud_sql.add_argument("-o", "--out", dest="output_file")
+    cloud_sql.add_argument("--force", action="store_true")
+
+    cloud_db_reset = cloud_subparsers.add_parser(
+        "db-reset", parents=[base_sub_parent], conflict_handler="resolve"
+    )
+    cloud_db_reset.add_argument("project", nargs="?")
+    cloud_db_reset.add_argument("-p", "--project", dest="project_flag")
+    cloud_db_reset.add_argument("-e", "--environment", dest="env_id")
+    cloud_db_reset.add_argument(
+        "--override-production-safety-lock", action="store_true"
+    )
+
+    cloud_status = cloud_subparsers.add_parser(
+        "status", parents=[base_sub_parent], conflict_handler="resolve"
+    )
+    cloud_status.add_argument("project", nargs="?")
+    cloud_status.add_argument("-p", "--project", dest="project_flag")
+    cloud_status.add_argument("-e", "--environment", dest="env_id")
+
+    cloud_logs = cloud_subparsers.add_parser(
+        "logs", parents=[base_sub_parent], conflict_handler="resolve"
+    )
+    cloud_logs.add_argument("project", nargs="?")
+    cloud_logs.add_argument("-p", "--project", dest="project_flag")
+    cloud_logs.add_argument("-s", "--service", dest="service")
+    cloud_logs.add_argument("-f", "--follow", action="store_true")
 
     # Namespace: config
     config_parser = subparsers.add_parser(
@@ -2778,6 +2859,7 @@ def _build_command_map(args, manager):
             project_id=getattr(args, "project", None)
             or getattr(args, "project_flag", None),
         ),
+        ("tunnel-event", None): manager.share.cmd_tunnel_event,
         # infra namespace:
         ("infra", "setup"): manager.infra.cmd_infra_setup,
         ("infra", "down"): manager.infra.cmd_infra_down,
@@ -2794,6 +2876,41 @@ def _build_command_map(args, manager):
         ("cloud", "fetch"): lambda: manager.cloud.cmd_cloud_fetch(
             getattr(args, "project", None),
             getattr(args, "env_id", None),
+            follow=getattr(args, "follow", False),
+        ),
+        ("cloud", "deploy"): lambda: manager.cloud.cmd_cloud_deploy(
+            getattr(args, "project", None),
+            getattr(args, "env_id", None),
+            override=getattr(args, "override", False),
+            force=getattr(args, "force", False),
+            direct=getattr(args, "direct", False),
+            service=getattr(args, "service", "liferay"),
+            git=getattr(args, "git", False),
+            no_wait=getattr(args, "no_wait", False),
+        ),
+        ("cloud", "update-tags"): lambda: manager.cloud.cmd_cloud_update_tags(
+            getattr(args, "project", None),
+            apply=getattr(args, "apply", False),
+            commit=getattr(args, "commit", False),
+        ),
+        ("cloud", "sql"): lambda: manager.cloud.cmd_cloud_sql(
+            getattr(args, "project", None),
+            script_file=getattr(args, "script_file", None),
+            output_file=getattr(args, "output_file", None),
+            force=getattr(args, "force", False),
+        ),
+        ("cloud", "db-reset"): lambda: manager.cloud.cmd_cloud_db_reset(
+            getattr(args, "project", None),
+            getattr(args, "env_id", None),
+            override_lock=getattr(args, "override_production_safety_lock", False),
+        ),
+        ("cloud", "status"): lambda: manager.cloud.cmd_cloud_status(
+            getattr(args, "project", None),
+            getattr(args, "env_id", None),
+        ),
+        ("cloud", "logs"): lambda: manager.cloud.cmd_cloud_logs(
+            getattr(args, "project", None),
+            service=getattr(args, "service", None),
             follow=getattr(args, "follow", False),
         ),
         # config namespace:

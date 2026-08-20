@@ -1722,3 +1722,100 @@ class ShareService:
             UI.success("Port forwarding stopped.")
         except subprocess.CalledProcessError as e:
             UI.error(f"Failed to start port forwarding proxy: {e}")
+
+    def ensure_lfr_tunnel_config_hooks(self) -> None:
+        """Auto-registers LDM tunnel-event hooks in ~/.lfr-tunnel/config.yaml."""
+        config_dir = Path.home() / ".lfr-tunnel"
+        config_file = config_dir / "config.yaml"
+        config_dir.mkdir(parents=True, exist_ok=True)
+
+        try:
+            import yaml
+        except ImportError:
+            yaml = None  # type: ignore[assignment]
+
+        hooks_spec = {
+            "warning_received": "ldm tunnel-event",
+            "stopping": "ldm tunnel-event",
+            "stopped": "ldm tunnel-event",
+            "starting": "ldm tunnel-event",
+            "started": "ldm tunnel-event",
+        }
+
+        if config_file.exists():
+            content = config_file.read_text(encoding="utf-8")
+            if (
+                'warning_received: "ldm tunnel-event"' in content
+                or "warning_received: ldm tunnel-event" in content
+            ):
+                return
+            if yaml:
+                try:
+                    data = yaml.safe_load(content) or {}
+                    if not isinstance(data, dict):
+                        data = {}
+                    data.setdefault("hooks", {}).update(hooks_spec)
+                    config_file.write_text(
+                        yaml.dump(data, default_flow_style=False), encoding="utf-8"
+                    )
+                    return
+                except Exception:
+                    pass
+
+        lines = ["hooks:"]
+        for evt, cmd in hooks_spec.items():
+            lines.append(f'  {evt}: "{cmd}"')
+        config_file.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+    def cmd_tunnel_event(self) -> None:
+        """Subcommand 'ldm tunnel-event' handling lfr-tunnel hook protocol injected env vars."""
+        event = os.environ.get("LFT_EVENT", "").strip().lower()
+        node_id = os.environ.get("LFT_NODE_ID", "gateway")
+        seconds_remaining = os.environ.get("LFT_SECONDS_REMAINING", "0")
+        failover_region = os.environ.get("LFT_FAILOVER_REGION", "secondary")
+        subdomain = os.environ.get("LFT_SUBDOMAIN", "")
+
+        state_file = Path.home() / ".ldm" / "tunnel-status.json"
+        state_file.parent.mkdir(parents=True, exist_ok=True)
+
+        if event == "warning_received":
+            UI.warning(
+                f"⚠️ Regional gateway [{node_id}] shutting down in {seconds_remaining}s. "
+                f"Failover to [{failover_region}] queued."
+            )
+            tunnel_state = "WarningReceived"
+            if hasattr(self.manager, "workspace") and hasattr(
+                self.manager.workspace, "pause_background_syncs"
+            ):
+                self.manager.workspace.pause_background_syncs()
+        elif event in ["stopping", "stopped"]:
+            UI.warning(
+                f"🔄 Regional gateway [{node_id}] is {event}. Tunnel state: Reconnecting."
+            )
+            tunnel_state = "Reconnecting"
+        elif event in ["starting", "started"]:
+            UI.success(
+                f"✅ Regional gateway [{node_id}] is {event}. Tunnel state: Online."
+            )
+            tunnel_state = "Online"
+            if hasattr(self.manager, "workspace") and hasattr(
+                self.manager.workspace, "resume_background_syncs"
+            ):
+                self.manager.workspace.resume_background_syncs()
+        else:
+            UI.detail(
+                f"ℹ Received lfr-tunnel event '{event}' from gateway [{node_id}]."
+            )
+            tunnel_state = event.capitalize() if event else "Unknown"
+
+        status_data = {
+            "event": event,
+            "state": tunnel_state,
+            "node_id": node_id,
+            "seconds_remaining": seconds_remaining,
+            "failover_region": failover_region,
+            "subdomain": subdomain,
+        }
+        state_file.write_text(
+            json.dumps(status_data, indent=2) + "\n", encoding="utf-8"
+        )

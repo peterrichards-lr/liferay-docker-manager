@@ -18,6 +18,7 @@ class MockManager:
         self.config = MockConfig()
         self.args = MagicMock()
         self.runtime = MagicMock()
+        self.workspace = MagicMock()
 
     def detect_project_path(self, project_id=None):
         return None
@@ -1439,3 +1440,80 @@ class TestShareService(unittest.TestCase):
             call_cmd = mock_run.call_args[0][0]
             self.assertIn("--context", call_cmd)
             self.assertIn("aws-1", call_cmd)
+
+    @patch.dict(
+        "os.environ",
+        {
+            "LFT_EVENT": "warning_received",
+            "LFT_NODE_ID": "edge-us",
+            "LFT_SECONDS_REMAINING": "300",
+            "LFT_FAILOVER_REGION": "central",
+        },
+    )
+    @patch("ldm_core.handlers.share.UI")
+    def test_cmd_tunnel_event_warning_received(self, mock_ui):
+        """test ldm tunnel-event warning_received handling."""
+        self.mock_manager.workspace = MagicMock()
+        self.service.cmd_tunnel_event()
+        mock_ui.warning.assert_called_once()
+        self.assertIn("edge-us", mock_ui.warning.call_args[0][0])
+        self.mock_manager.workspace.pause_background_syncs.assert_called_once()
+
+    @patch.dict(
+        "os.environ",
+        {
+            "LFT_EVENT": "started",
+            "LFT_NODE_ID": "edge-central",
+            "LFT_SUBDOMAIN": "my-dev-sub",
+        },
+    )
+    @patch("ldm_core.handlers.share.UI")
+    def test_cmd_tunnel_event_started(self, mock_ui):
+        """test ldm tunnel-event started handling."""
+        self.mock_manager.workspace = MagicMock()
+        self.service.cmd_tunnel_event()
+        mock_ui.success.assert_called_once()
+        self.assertIn("edge-central", mock_ui.success.call_args[0][0])
+        self.mock_manager.workspace.resume_background_syncs.assert_called_once()
+
+    @patch.dict(
+        "os.environ",
+        {
+            "LFT_EVENT": "stopping",
+            "LFT_NODE_ID": "edge-eu",
+        },
+    )
+    @patch("ldm_core.handlers.share.UI")
+    def test_cmd_tunnel_event_stopping_and_stopped(self, mock_ui):
+        """test ldm tunnel-event stopping and stopped state handling."""
+        self.service.cmd_tunnel_event()
+        mock_ui.warning.assert_called_once()
+        self.assertIn("Reconnecting", mock_ui.warning.call_args[0][0])
+
+    @patch.dict(
+        "os.environ",
+        {
+            "LFT_EVENT": "custom_ping",
+            "LFT_NODE_ID": "edge-us",
+        },
+    )
+    @patch("ldm_core.handlers.share.UI")
+    def test_cmd_tunnel_event_unknown_fallback(self, mock_ui):
+        """test ldm tunnel-event fallback for unknown events."""
+        self.service.cmd_tunnel_event()
+        mock_ui.detail.assert_called_once()
+        self.assertIn("custom_ping", mock_ui.detail.call_args[0][0])
+
+    def test_ensure_lfr_tunnel_config_hooks(self):
+        """test auto-registration of hooks in ~/.lfr-tunnel/config.yaml."""
+        with patch("pathlib.Path.home") as mock_home:
+            import tempfile
+
+            with tempfile.TemporaryDirectory() as tmp_dir:
+                mock_home.return_value = Path(tmp_dir)
+                self.service.ensure_lfr_tunnel_config_hooks()
+                cfg = Path(tmp_dir) / ".lfr-tunnel" / "config.yaml"
+                self.assertTrue(cfg.exists())
+                content = cfg.read_text()
+                self.assertIn("warning_received", content)
+                self.assertIn("ldm tunnel-event", content)

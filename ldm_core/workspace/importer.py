@@ -293,9 +293,9 @@ def _hydrate_ldm_package_to_project(
     self.manager.verify_runtime_environment(paths)
 
     project_meta = self.manager.read_meta(project_path) or {}
-    if "tag" in manifest:
+    if manifest.get("tag"):
         project_meta["tag"] = manifest["tag"]
-    if "db_type" in manifest:
+    if manifest.get("db_type"):
         project_meta["db_type"] = manifest["db_type"]
 
     from ldm_core.utils import sanitize_id

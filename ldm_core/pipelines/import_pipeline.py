@@ -211,9 +211,9 @@ class ProjectSetupStage(PipelineStage):
         manager.verify_runtime_environment(paths)
 
         project_meta = manager.read_meta(project_path) or {}
-        if "tag" in manifest:
+        if manifest.get("tag"):
             project_meta["tag"] = manifest["tag"]
-        if "db_type" in manifest:
+        if manifest.get("db_type"):
             project_meta["db_type"] = manifest["db_type"]
 
         from ldm_core.utils import sanitize_id

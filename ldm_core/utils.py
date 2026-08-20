@@ -2496,6 +2496,7 @@ def verify_cli_drift():
         project_root / "docs" / "reference" / "cli" / "core.md",
         project_root / "docs" / "reference" / "cli" / "data.md",
         project_root / "docs" / "reference" / "cli" / "system.md",
+        project_root / "docs" / "reference" / "cli" / "cloud.md",
         project_root / "docs" / "reference" / "advanced_cli.md",
     ]
 

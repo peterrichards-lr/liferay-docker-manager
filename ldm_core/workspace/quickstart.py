@@ -81,6 +81,8 @@ def cmd_quickstart(self, template_name, share=False, share_subdomain=None):  # n
 
     if not tag:
         tag = "2026.q1.4-lts"  # sensible fallback version
+        project_meta["tag"] = tag
+        self.manager.write_meta(project_path, project_meta)
         UI.warning(
             f"Project metadata missing 'tag'. Falling back to default Liferay tag: {tag}"
         )

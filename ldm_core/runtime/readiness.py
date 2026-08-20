@@ -3,6 +3,7 @@ import os
 import time
 from datetime import datetime
 
+from ldm_core.config import resolve_target_context
 from ldm_core.docker_service import DockerService
 from ldm_core.handlers.base import BaseHandler
 from ldm_core.ui import UI
@@ -138,8 +139,24 @@ class ReadinessService(BaseHandler):
             protocol = "http"
             port = meta.get("port", 8080)
 
-        # LDM-388: Use explicit IP for local checks to avoid CI IPv6 quirks
-        target_host = "127.0.0.1" if host_name == "localhost" else host_name
+        # LDM-388 / Issue #1223: Resolve active compute target context to use target_node host for remote nodes
+        target_ctx = resolve_target_context(
+            explicit_target=target_name,
+            meta=meta,
+            project_root=root,
+            pin=False,
+        )
+        effective_host = (
+            target_ctx.target.host
+            if (
+                target_ctx
+                and target_ctx.is_remote
+                and target_ctx.target
+                and target_ctx.target.host
+            )
+            else host_name
+        )
+        target_host = "127.0.0.1" if effective_host == "localhost" else effective_host
         url = f"{protocol}://{target_host}"
         if protocol == "https":
             if port != 443:

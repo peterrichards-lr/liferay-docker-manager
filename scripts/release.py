@@ -572,8 +572,9 @@ def main():  # noqa: C901, PLR0912, PLR0915
         release_branch = current_branch
         print(f"Reusing existing release branch: {release_branch}")
     else:
-        release_branch = f"release/v{new_version}"
-        print(f"Creating release branch: {release_branch}...")
+        target_base = new_version.split("-")[0]
+        release_branch = f"release/v{target_base}"
+        print(f"Creating generic release branch: {release_branch}...")
         run_cmd(["git", "checkout", "-b", release_branch])
 
     # 7. Quality Gate & Commit

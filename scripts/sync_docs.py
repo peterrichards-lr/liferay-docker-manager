@@ -31,9 +31,8 @@ def sync_table():
 
     # 2. Update TARGET files
     targets = [
-        script_dir / "docs" / "README.md",
+        script_dir / "README.md",
         script_dir / "docs" / "TESTING.md",
-        script_dir / "docs" / "INSTALLATION.md",
     ]
 
     for target in targets:
@@ -52,8 +51,6 @@ def sync_table():
         )
 
         if "<!-- COMPATIBILITY_START -->" in content:
-            # First, collapse any nested or duplicate markers in the target content
-            # by replacing the entire range from the FIRST start to the LAST end.
             first_start = content.find("<!-- COMPATIBILITY_START -->")
             last_end = content.rfind("<!-- COMPATIBILITY_END -->")
 
@@ -68,8 +65,6 @@ def sync_table():
                     UI.success(f"Updated {target.name}")
                 else:
                     UI.info(f"{target.name} already in sync.")
-        else:
-            UI.warning(f"Marker not found in {target.name}")
 
 
 if __name__ == "__main__":

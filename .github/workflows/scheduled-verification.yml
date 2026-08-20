@@ -75,7 +75,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        distro: [ubuntu, fedora]
+        distro: [ubuntu, fedora, rockylinux, alpine, debian]
     runs-on: ubuntu-latest
     
     steps:
@@ -93,7 +93,7 @@ jobs:
           source .venv/bin/activate
           pip install .
           bash scripts/verify_e2e_refactor.sh --ci
-          
+
       - name: Run E2E Verification Suite (Fedora)
         if: matrix.distro == 'fedora'
         run: |
@@ -106,6 +106,42 @@ jobs:
             fedora:latest \
             bash -c "dnf install -y python3-pip git docker-compose hostname which && python3 -m venv .venv && source .venv/bin/activate && pip install . && bash scripts/verify_e2e_refactor.sh --ci"
 
+      - name: Run E2E Verification Suite (RockyLinux)
+        if: matrix.distro == 'rockylinux'
+        run: |
+          docker run --rm --privileged \
+            --network host \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            -v "${{ github.workspace }}:${{ github.workspace }}" \
+            -w "${{ github.workspace }}" \
+            -e GITHUB_ACTIONS="true" \
+            rockylinux:9 \
+            bash -c "dnf install -y python3-pip git hostname which && python3 -m venv .venv && source .venv/bin/activate && pip install . && bash scripts/verify_e2e_refactor.sh --ci"
+
+      - name: Run E2E Verification Suite (Alpine)
+        if: matrix.distro == 'alpine'
+        run: |
+          docker run --rm --privileged \
+            --network host \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            -v "${{ github.workspace }}:${{ github.workspace }}" \
+            -w "${{ github.workspace }}" \
+            -e GITHUB_ACTIONS="true" \
+            alpine:latest \
+            sh -c "apk add --no-cache python3 py3-pip git bash hostname gcc musl-dev libffi-dev python3-dev && python3 -m venv .venv && source .venv/bin/activate && pip install . && bash scripts/verify_e2e_refactor.sh --ci"
+
+      - name: Run E2E Verification Suite (Debian)
+        if: matrix.distro == 'debian'
+        run: |
+          docker run --rm --privileged \
+            --network host \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            -v "${{ github.workspace }}:${{ github.workspace }}" \
+            -w "${{ github.workspace }}" \
+            -e GITHUB_ACTIONS="true" \
+            debian:bookworm \
+            bash -c "apt-get update && apt-get install -y python3-pip python3-venv git hostname && python3 -m venv .venv && source .venv/bin/activate && pip install . && bash scripts/verify_e2e_refactor.sh --ci"
+
       - name: Upload Test Results
         if: always()
         uses: actions/upload-artifact@v7
@@ -114,9 +150,79 @@ jobs:
           path: verify-*.txt
           retention-days: 7
 
+  verify-windows:
+    needs: validate-tag
+    name: Verify Windows Native
+    runs-on: windows-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Install LDM
+        run: |
+          python -m pip install --upgrade pip
+          pip install .
+
+      - name: Run E2E Verification Suite (Windows)
+        env:
+          GITHUB_ACTIONS: "true"
+        run: |
+          powershell scripts/verify_e2e_refactor.ps1
+
+      - name: Upload Test Results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: verification-results-windows
+          path: verify-*.txt
+          retention-days: 7
+
+  verify-macos:
+    needs: validate-tag
+    name: Verify macOS (Colima)
+    runs-on: macos-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Install Colima and Docker
+        run: |
+          brew install colima docker || true
+
+      - name: Start Colima
+        run: |
+          colima start --cpu 2 --memory 4
+
+      - name: Run E2E Verification Suite (macOS)
+        env:
+          GITHUB_ACTIONS: "true"
+        run: |
+          python3 -m venv .venv
+          source .venv/bin/activate
+          pip install .
+          bash scripts/verify_e2e_refactor.sh --ci
+
+      - name: Upload Test Results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: verification-results-macos
+          path: verify-*.txt
+          retention-days: 7
+
   sync-compatibility:
     name: Sync Compatibility Table
-    needs: [verify-linux]
+    needs: [verify-linux, verify-windows, verify-macos]
     runs-on: ubuntu-latest
     # Only sync on STABLE release tag pushes -- not nightly cron, manual
     # dispatch, or pre-release tags. This job checks out master (which only

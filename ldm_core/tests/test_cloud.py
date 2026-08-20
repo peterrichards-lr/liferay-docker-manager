@@ -900,3 +900,258 @@ class TestCloudHydrate(unittest.TestCase):
         self.manager.detect_project_path = MagicMock(return_value=None)  # type: ignore[method-assign]
         res = self.cloud.hydrate_cloud_backup("proj", Path("/tmp/backup"))
         self.assertFalse(res)
+
+
+class TestCloudServiceRestAndMetadata(unittest.TestCase):
+    def setUp(self):
+        self.manager = MockManager()
+        self.cloud = CloudService(self.manager)
+
+    @patch("shutil.which", return_value="/usr/local/bin/lcp")
+    @patch("subprocess.run")
+    def test_get_auth_token_success(self, mock_run, mock_which):
+        """Verifies CloudService extracts Bearer token from 'lcp auth token' output."""
+        mock_res = MagicMock()
+        mock_res.returncode = 0
+        mock_res.stdout = "  my-bearer-token-123 \n"
+        mock_run.return_value = mock_res
+
+        token = self.cloud.get_auth_token()
+        self.assertEqual(token, "my-bearer-token-123")
+
+    @patch("shutil.which", return_value=None)
+    def test_get_auth_token_missing_cli(self, mock_which):
+        """Verifies get_auth_token returns None if lcp CLI is missing."""
+        self.assertIsNone(self.cloud.get_auth_token())
+
+    @patch.object(CloudService, "get_auth_token", return_value="test-token")
+    @patch("urllib.request.urlopen")
+    def test_get_environments_success(self, mock_urlopen, mock_token):
+        """Verifies get_environments queries REST API with Authorization Bearer header."""
+        mock_response = MagicMock()
+        mock_response.read.return_value = b'[{"id": "dev", "name": "Development"}]'
+        mock_urlopen.return_value.__enter__.return_value = mock_response
+
+        envs = self.cloud.get_environments("my-project")
+        self.assertEqual(len(envs), 1)
+        self.assertEqual(envs[0]["id"], "dev")
+
+    @patch.object(CloudService, "get_auth_token", return_value=None)
+    def test_get_environments_unauthenticated(self, mock_token):
+        """Verifies get_environments raises RuntimeError if not authenticated."""
+        with self.assertRaises(RuntimeError):
+            self.cloud.get_environments("my-project")
+
+    def test_inject_ldm_metadata(self):
+        """Verifies inject_ldm_metadata updates env object in LCP.json files."""
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            ws_dir = Path(tmp_dir)
+            svc_dir = ws_dir / "webserver"
+            svc_dir.mkdir()
+            lcp_json = svc_dir / "LCP.json"
+            lcp_json.write_text(json.dumps({"id": "webserver", "env": {}}))
+
+            self.cloud.inject_ldm_metadata(ws_dir, "acme")
+
+            data = json.loads(lcp_json.read_text())
+            self.assertEqual(data["env"]["LDM_PROVISIONED"], "true")
+            self.assertEqual(data["env"]["LDM_PROJECT"], "acme")
+
+    def test_inject_nginx_header_config(self):
+        """Verifies inject_nginx_header_config creates webserver conf.d/ldm-header.conf."""
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            ws_dir = Path(tmp_dir)
+
+            self.cloud.inject_nginx_header_config(ws_dir)
+
+            conf_path = (
+                ws_dir
+                / "webserver"
+                / "configs"
+                / "common"
+                / "conf.d"
+                / "ldm-header.conf"
+            )
+            self.assertTrue(conf_path.exists())
+            content = conf_path.read_text()
+            self.assertIn(
+                'add_header X-LDM-Provisioned "$LDM_PROVISIONED" always;', content
+            )
+            self.assertIn('add_header X-LDM-Project "$LDM_PROJECT" always;', content)
+
+    @patch("ldm_core.ui.UI.die")
+    @patch.object(CloudService, "validate_preflight_checklist")
+    def test_deploy_project_production_safety_lock(self, mock_preflight, mock_die):
+        """Verifies deploy_project aborts when env_id is 'prd' and force is False."""
+        self.manager.non_interactive = True
+        mock_die.side_effect = SystemExit
+        with self.assertRaises(SystemExit):
+            self.cloud.deploy_project("acme", "prd", "/tmp/ws", force=False)
+        mock_die.assert_called_once()
+        self.assertIn(
+            "requires explicit --force in non-interactive mode",
+            mock_die.call_args[0][0],
+        )
+
+    @patch.object(CloudService, "validate_preflight_checklist")
+    @patch.object(CloudService, "inject_ldm_metadata")
+    @patch.object(CloudService, "inject_nginx_header_config")
+    @patch.object(
+        CloudService,
+        "_get_git_commit_sha",
+        return_value="abc123456789",  # pragma: allowlist secret
+    )
+    @patch.object(CloudService, "_poll_jenkins_build_uid", return_value="uid-999")
+    @patch.object(CloudService, "_trigger_cloud_deploy", return_value={"status": "ok"})
+    def test_deploy_project_success_flow(
+        self, mock_deploy, mock_poll, mock_sha, mock_nginx, mock_meta, mock_preflight
+    ):
+        """Verifies end-to-end deploy_project execution flow."""
+        res = self.cloud.deploy_project("acme", "dev", "/tmp/ws")
+        self.assertTrue(res)
+        mock_meta.assert_called_once_with("/tmp/ws", "acme")
+        mock_nginx.assert_called_once_with("/tmp/ws")
+        mock_poll.assert_called_once_with(
+            "acme",
+            "abc123456789",  # pragma: allowlist secret
+        )
+        mock_deploy.assert_called_once_with("acme", "dev", "uid-999")
+
+
+class TestCloudServiceSafetyLocksAndPreflight(unittest.TestCase):
+    def setUp(self):
+        self.manager = MockManager()
+        self.cloud = CloudService(self.manager)
+
+    @patch("ldm_core.ui.UI.die")
+    def test_check_production_safety_lock_db_reset_blocked(self, mock_die):
+        """Verifies db-reset on Production ('prd') dies unless override_lock is True."""
+        mock_die.side_effect = SystemExit
+        with self.assertRaises(SystemExit):
+            self.cloud.check_production_safety_lock(
+                "prd", action="db-reset", override_lock=False
+            )
+        mock_die.assert_called_once()
+        self.assertIn(
+            "Database reset on Production ('prd') is locked", mock_die.call_args[0][0]
+        )
+
+    def test_check_production_safety_lock_db_reset_allowed(self):
+        """Verifies db-reset on Production ('prd') succeeds when override_lock is True."""
+        self.assertTrue(
+            self.cloud.check_production_safety_lock(
+                "prd", action="db-reset", override_lock=True
+            )
+        )
+
+    @patch("ldm_core.ui.UI.die")
+    def test_check_production_safety_lock_deploy_non_interactive_die(self, mock_die):
+        """Verifies non-interactive Production deploy dies if force is False."""
+        self.manager.non_interactive = True
+        mock_die.side_effect = SystemExit
+        with self.assertRaises(SystemExit):
+            self.cloud.check_production_safety_lock("prd", action="deploy", force=False)
+        mock_die.assert_called_once()
+
+    @patch("ldm_core.ui.UI.ask", return_value="prd")
+    def test_check_production_safety_lock_deploy_interactive_confirm(self, mock_ask):
+        """Verifies interactive Production deploy succeeds when user types 'prd'."""
+        self.assertTrue(
+            self.cloud.check_production_safety_lock("prd", action="deploy", force=False)
+        )
+
+    @patch("ldm_core.ui.UI.die")
+    def test_validate_preflight_checklist_no_lcp_json(self, mock_die):
+        """Verifies pre-flight fails if workspace lacks LCP.json manifests."""
+        import tempfile
+
+        mock_die.side_effect = SystemExit
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            with patch.object(self.cloud, "ensure_cloud_auth"):
+                with self.assertRaises(SystemExit):
+                    self.cloud.validate_preflight_checklist(tmp_dir, "dev")
+
+
+class TestCloudServiceSubcommands(unittest.TestCase):
+    def setUp(self):
+        self.manager = MockManager()
+        self.cloud = CloudService(self.manager)
+
+    @patch.object(CloudService, "deploy_project", return_value=True)
+    def test_cmd_cloud_deploy_handler(self, mock_deploy):
+        """Verifies cmd_cloud_deploy resolves workspace and delegates to deploy_project."""
+        with patch.object(
+            self.manager, "detect_project_path", return_value=Path("/tmp/ws")
+        ):
+            self.cloud.cmd_cloud_deploy("acme", "dev", override=True, force=True)
+            mock_deploy.assert_called_once_with(
+                "acme",
+                "dev",
+                Path("/tmp/ws"),
+                override=True,
+                force=True,
+                direct=False,
+                service="liferay",
+                git=False,
+                no_wait=False,
+            )
+
+    @patch.object(CloudService, "deploy_project", return_value=True)
+    def test_cmd_cloud_deploy_handler_direct_and_no_wait(self, mock_deploy):
+        """Verifies cmd_cloud_deploy forwards direct, service, and no_wait flags."""
+        with patch.object(
+            self.manager, "detect_project_path", return_value=Path("/tmp/ws")
+        ):
+            self.cloud.cmd_cloud_deploy(
+                "acme",
+                "stage",
+                direct=True,
+                service="webserver",
+                no_wait=True,
+            )
+            mock_deploy.assert_called_once_with(
+                "acme",
+                "stage",
+                Path("/tmp/ws"),
+                override=False,
+                force=False,
+                direct=True,
+                service="webserver",
+                git=False,
+                no_wait=True,
+            )
+
+    @patch.object(CloudService, "check_production_safety_lock", return_value=True)
+    @patch.object(CloudService, "_run_lcp_cmd", return_value=True)
+    def test_cmd_cloud_db_reset_handler(self, mock_run, mock_lock):
+        """Verifies cmd_cloud_db_reset checks safety lock for action='db-reset'."""
+        with patch.object(self.cloud, "ensure_cloud_auth", return_value=True):
+            self.cloud.cmd_cloud_db_reset("acme", "prd", override_lock=True)
+            mock_lock.assert_called_once_with(
+                "prd", action="db-reset", override_lock=True
+            )
+            mock_run.assert_called_once_with(
+                [
+                    "shell",
+                    "database",
+                    "DROP SCHEMA public CASCADE; CREATE SCHEMA public;",
+                ],
+                capture_json=False,
+                project="acme",
+                env="prd",
+            )
+
+    @patch.object(CloudService, "_run_lcp_cmd")
+    def test_cmd_cloud_logs_handler(self, mock_run):
+        """Verifies cmd_cloud_logs delegates to _run_lcp_cmd log command."""
+        with patch.object(self.cloud, "ensure_cloud_auth", return_value=True):
+            self.cloud.cmd_cloud_logs("acme", "webserver", follow=True)
+            mock_run.assert_called_once_with(
+                ["log", "--service", "webserver", "--follow"],
+                capture_json=False,
+                project="acme",
+            )

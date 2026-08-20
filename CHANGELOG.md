@@ -178,6 +178,126 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added runtime state-awareness checks to commands (run, import) to prevent unexpected container collisions.
 - Enabled non-interactive bypass for internal developer utility prompts.
 
+## [v2.15.30] - 2026-08-20
+
+### Added
+
+-
+
+## [v2.15.30-pre.19] - 2026-08-20
+
+### Added
+
+-
+
+## [v2.15.30-pre.18] - 2026-08-20
+
+### Added
+
+-
+
+## [v2.15.30-pre.17] - 2026-08-20
+
+### Added
+
+-
+
+## [v2.15.30-pre.16] - 2026-08-20
+
+### Added
+
+-
+
+## [v2.15.30-pre.15] - 2026-08-20
+
+### Added
+
+-
+
+## [v2.15.30-pre.14] - 2026-08-20
+
+### Added
+
+-
+
+## [v2.15.30-pre.13] - 2026-08-20
+
+### Added
+
+-
+
+## [v2.15.30-pre.12] - 2026-08-20
+
+### Added
+
+-
+
+## [v2.15.30-pre.11] - 2026-08-20
+
+### Added
+
+-
+
+## [v2.15.30-pre.10] - 2026-08-20
+
+### Added
+
+-
+
+## [v2.15.30-pre.9] - 2026-08-20
+
+### Added
+
+-
+
+## [v2.15.30-pre.8] - 2026-08-19
+
+### Added
+
+-
+
+## [v2.15.30-pre.7] - 2026-08-19
+
+### Added
+
+-
+
+## [v2.15.30-pre.6] - 2026-08-19
+
+### Added
+
+-
+
+## [v2.15.30-pre.5] - 2026-08-19
+
+### Added
+
+-
+
+## [v2.15.30-pre.4] - 2026-08-19
+
+### Added
+
+-
+
+## [v2.15.30-pre.3] - 2026-08-19
+
+### Added
+
+-
+
+## [v2.15.30-pre.2] - 2026-08-19
+
+### Added
+
+-
+
+## [v2.15.30-pre.1] - 2026-08-19
+
+### Added
+
+-
+
 ## [v2.15.29] - 2026-08-19
 
 ### Added

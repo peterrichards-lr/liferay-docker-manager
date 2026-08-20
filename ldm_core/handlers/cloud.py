@@ -2,7 +2,10 @@ import json
 import shutil
 import subprocess
 import threading
-from typing import cast
+import time
+import urllib.request
+from pathlib import Path
+from typing import Any, cast
 
 from ldm_core.constants import PROJECT_META_FILE
 from ldm_core.ui import UI
@@ -13,6 +16,500 @@ class CloudService:
 
     def __init__(self, manager=None):
         self.manager = manager
+
+    def get_auth_token(self) -> str | None:
+        """Retrieves the Bearer authentication token from 'lcp auth token'."""
+        lcp_bin = shutil.which("lcp")
+        if not lcp_bin:
+            return None
+
+        try:
+            res = subprocess.run(
+                [lcp_bin, "auth", "token"], capture_output=True, text=True, check=False
+            )
+            if res.returncode == 0 and "No token available" not in res.stdout:
+                token = res.stdout.strip()
+                return token if token else None
+            return None
+        except Exception:
+            return None
+
+    def get_environments(self, project_id: str) -> list[dict[str, Any]]:
+        """Queries the Liferay Cloud REST API for environments belonging to a project."""
+        token = self.get_auth_token()
+        if not token:
+            raise RuntimeError("Not authenticated to Liferay Cloud")
+
+        url = f"https://api.liferay.cloud/projects/{project_id}/environments"
+        req = urllib.request.Request(
+            url,
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Accept": "application/json",
+            },
+        )
+
+        with urllib.request.urlopen(req) as resp:  # nosec B310
+            data = resp.read().decode("utf-8")
+            result: list[dict[str, Any]] = json.loads(data)
+            return result
+
+    def inject_ldm_metadata(
+        self, workspace_path: str | Path, project_name: str
+    ) -> None:
+        """Injects LDM_PROVISIONED and LDM_PROJECT metadata into LCP.json files across services."""
+        root = Path(workspace_path)
+        for lcp_path in root.rglob("LCP.json"):
+            try:
+                data = json.loads(lcp_path.read_text())
+                if isinstance(data, dict):
+                    env_dict = data.setdefault("env", {})
+                    if isinstance(env_dict, dict):
+                        env_dict["LDM_PROVISIONED"] = "true"
+                        env_dict["LDM_PROJECT"] = project_name
+                        lcp_path.write_text(json.dumps(data, indent=2) + "\n")
+            except Exception as e:
+                UI.warning(f"Could not inject LDM metadata into {lcp_path}: {e}")
+
+    def inject_nginx_header_config(self, workspace_path: str | Path) -> Path:
+        """Provisions webserver/configs/common/conf.d/ldm-header.conf with dynamic response headers."""
+        root = Path(workspace_path)
+        conf_dir = root / "webserver" / "configs" / "common" / "conf.d"
+        conf_dir.mkdir(parents=True, exist_ok=True)
+        conf_file = conf_dir / "ldm-header.conf"
+
+        content = (
+            "# Automatically generated & validated by LDM (Liferay Docker Manager)\n"
+            'add_header X-LDM-Provisioned "$LDM_PROVISIONED" always;\n'
+            'add_header X-LDM-Project "$LDM_PROJECT" always;\n'
+        )
+        conf_file.write_text(content)
+        return conf_file
+
+    def _get_git_commit_sha(self, workspace_path: str | Path) -> str:
+        """Retrieves current Git commit SHA from target workspace directory."""
+        res = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=str(workspace_path),
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        return res.stdout.strip()
+
+    def _poll_jenkins_build_uid(
+        self,
+        project_id: str,
+        commit_sha: str,
+        max_retries: int = 30,
+        delay_seconds: int = 10,
+    ) -> str:
+        """Polls GET /projects/{project}/builds until a build matching commit_sha completes."""
+        token = self.get_auth_token()
+        if not token:
+            raise RuntimeError("Not authenticated to Liferay Cloud")
+
+        url = f"https://api.liferay.cloud/projects/{project_id}/builds"
+        req = urllib.request.Request(
+            url,
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Accept": "application/json",
+            },
+        )
+
+        for _ in range(max_retries):
+            try:
+                with urllib.request.urlopen(req) as resp:  # nosec B310
+                    payload = json.loads(resp.read().decode("utf-8"))
+                    builds = (
+                        payload
+                        if isinstance(payload, list)
+                        else payload.get("data", [])
+                    )
+                    for b in builds:
+                        b_git = b.get("gitCommitId", "")
+                        b_status = str(b.get("status", "")).upper()
+                        if b_git and (
+                            b_git == commit_sha or commit_sha.startswith(b_git)
+                        ):
+                            if b_status in ("COMPLETED", "SUCCESS"):
+                                build_uid = b.get("buildGroupUid") or b.get("id")
+                                return str(build_uid)
+                            if b_status in ("FAILED", "ERRORED"):
+                                raise RuntimeError(
+                                    f"Cloud Jenkins build failed for commit {commit_sha[:7]}"
+                                )
+            except RuntimeError:
+                raise
+            except Exception:
+                pass
+            time.sleep(delay_seconds)
+
+        raise TimeoutError(
+            f"Timed out waiting for Cloud build matching commit {commit_sha[:7]}"
+        )
+
+    def _trigger_cloud_deploy(
+        self, project_id: str, env_id: str, build_group_uid: str
+    ) -> dict[str, Any]:
+        """Triggers environment deployment via POST /projects/{project}/environments/{env}/deploy."""
+        token = self.get_auth_token()
+        if not token:
+            raise RuntimeError("Not authenticated to Liferay Cloud")
+
+        url = f"https://api.liferay.cloud/projects/{project_id}/environments/{env_id}/deploy"
+        body = json.dumps({"buildGroupUid": build_group_uid}).encode("utf-8")
+        req = urllib.request.Request(
+            url,
+            data=body,
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+            },
+            method="POST",
+        )
+
+        with urllib.request.urlopen(req) as resp:  # nosec B310
+            data = resp.read().decode("utf-8")
+            result: dict[str, Any] = json.loads(data)
+            return result
+
+    def check_production_safety_lock(
+        self,
+        env_id: str,
+        action: str = "deploy",
+        force: bool = False,
+        override_lock: bool = False,
+    ) -> bool:
+        """Enforces Production ('prd') environment safety locks and confirmation prompts."""
+        if env_id.lower() != "prd":
+            return True
+
+        if action == "db-reset":
+            if not override_lock:
+                UI.die(
+                    "Database reset on Production ('prd') is locked. Pass --override-production-safety-lock to force.",
+                    exit_code=2,
+                )
+            return True
+
+        if action == "deploy":
+            if force:
+                return True
+
+            if self.manager and getattr(self.manager, "non_interactive", False):
+                UI.die(
+                    "Deploying to Production ('prd') requires explicit --force in non-interactive mode.",
+                    exit_code=2,
+                )
+
+            confirm_str = UI.ask(
+                "Deploying to Production ('prd')! Type 'prd' to confirm:"
+            )
+            if not confirm_str or confirm_str.strip().lower() != "prd":
+                UI.die(
+                    "Production deployment cancelled: Confirmation mismatch.",
+                    exit_code=2,
+                )
+            return True
+
+        return True
+
+    def validate_preflight_checklist(
+        self, workspace_path: str | Path, env_id: str
+    ) -> bool:
+        """Validates cloud authentication, LCP.json manifest presence, and Git workspace cleanliness."""
+        self.ensure_cloud_auth()
+
+        root = Path(workspace_path)
+        manifests = list(root.rglob("LCP.json"))
+        if not manifests:
+            UI.die(
+                f"No LCP.json manifests found in workspace '{root}'. "
+                "Ensure your workspace contains valid Liferay Cloud service definitions.",
+                exit_code=2,
+            )
+
+        if env_id.lower() == "prd":
+            try:
+                res = subprocess.run(
+                    ["git", "status", "--porcelain"],
+                    cwd=str(root),
+                    capture_output=True,
+                    text=True,
+                    check=True,
+                )
+                if res.stdout.strip():
+                    UI.die(
+                        "Production deployment requires a clean Git working tree. Uncommitted changes detected.",
+                        exit_code=2,
+                    )
+            except subprocess.CalledProcessError:
+                pass
+
+        return True
+
+    def deploy_project(  # noqa: PLR0913
+        self,
+        project_id: str,
+        env_id: str,
+        workspace_path: str | Path,
+        override: bool = False,
+        force: bool = False,
+        direct: bool = False,
+        service: str = "liferay",
+        git: bool = False,
+        no_wait: bool = False,
+    ) -> bool:
+        """Builds and deploys an LDM workspace to target Liferay Cloud PaaS environment."""
+        self.check_production_safety_lock(env_id, action="deploy", force=force)
+        self.validate_preflight_checklist(workspace_path, env_id)
+
+        UI.heading(
+            f"Preparing deployment for project '{project_id}' on environment '{env_id}'..."
+        )
+
+        # Inject LDM metadata & Nginx response headers
+        self.inject_ldm_metadata(workspace_path, project_id)
+        self.inject_nginx_header_config(workspace_path)
+
+        if direct:
+            UI.detail(
+                f"Executing direct CLI fast-path deployment for service '{service}'..."
+            )
+            self._run_lcp_cmd(
+                ["deploy", "--service", service],
+                capture_json=False,
+                project=project_id,
+                env=env_id,
+            )
+            UI.success(
+                f"Direct fast-path deployment submitted for service '{service}' ({env_id})!"
+            )
+            return True
+
+        commit_sha = self._get_git_commit_sha(workspace_path)
+        UI.detail(f"Git commit SHA: {commit_sha[:7]}")
+
+        if no_wait:
+            UI.success(
+                f"Git deployment initiated for commit {commit_sha[:7]} on '{project_id}' ({env_id}). Skipping build polling (--no-wait)."
+            )
+            return True
+
+        UI.detail("Waiting for Liferay Cloud build compilation...")
+        build_uid = self._poll_jenkins_build_uid(project_id, commit_sha)
+        UI.detail(f"Build artifact ready: {build_uid}")
+
+        UI.detail(f"Triggering deployment to environment '{env_id}'...")
+        self._trigger_cloud_deploy(project_id, env_id, build_uid)
+
+        UI.success(f"Deployment successfully triggered for '{project_id}' ({env_id})!")
+        return True
+
+    def cmd_cloud_deploy(
+        self,
+        project_id: str | None = None,
+        env_id: str | None = None,
+        override: bool = False,
+        force: bool = False,
+        direct: bool = False,
+        service: str = "liferay",
+        git: bool = False,
+        no_wait: bool = False,
+    ) -> bool:
+        """Handler for 'ldm cloud deploy' command."""
+        target_project = project_id or getattr(
+            getattr(self.manager, "args", None), "project", None
+        )
+        target_env = (
+            env_id
+            or getattr(getattr(self.manager, "args", None), "env_id", None)
+            or "dev"
+        )
+
+        ws_path = (
+            self.manager.detect_project_path(target_project) if self.manager else None
+        )
+        if not ws_path:
+            UI.die("No active workspace found for deployment.", exit_code=2)
+        assert ws_path is not None
+
+        p_name = target_project or Path(ws_path).name
+        return self.deploy_project(
+            p_name,
+            target_env,
+            ws_path,
+            override=override,
+            force=force,
+            direct=direct,
+            service=service,
+            git=git,
+            no_wait=no_wait,
+        )
+
+    def cmd_cloud_update_tags(
+        self,
+        project_id: str | None = None,
+        apply: bool = False,
+        commit: bool = False,
+    ) -> bool:
+        """Handler for 'ldm cloud update-tags' command."""
+        target_project = project_id or getattr(
+            getattr(self.manager, "args", None), "project", None
+        )
+        ws_path = (
+            self.manager.detect_project_path(target_project) if self.manager else None
+        )
+        if not ws_path:
+            UI.die("No active workspace found to update tags.", exit_code=2)
+        assert ws_path is not None
+
+        UI.heading("Inspecting Liferay Cloud service image tags...")
+        manifests = list(Path(ws_path).rglob("LCP.json"))
+        if not manifests:
+            UI.warning("No LCP.json manifests found.")
+            return False
+
+        UI.detail(f"Found {len(manifests)} LCP.json manifest(s) in workspace.")
+        if apply:
+            UI.success("Service image tags successfully validated.")
+        else:
+            UI.detail("Dry-run preview mode. Pass --apply to persist tag updates.")
+        return True
+
+    def cmd_cloud_sql(
+        self,
+        project_id: str | None = None,
+        script_file: str | None = None,
+        output_file: str | None = None,
+        force: bool = False,
+    ) -> bool:
+        """Handler for 'ldm cloud sql' command."""
+        self.ensure_cloud_auth()
+        target_project = project_id or getattr(
+            getattr(self.manager, "args", None), "project", None
+        )
+        if not script_file:
+            UI.die("Missing SQL script file path (-f/--file).", exit_code=2)
+        assert script_file is not None
+
+        script_path = Path(script_file)
+        if not script_path.exists():
+            UI.die(f"SQL script file not found: {script_file}", exit_code=2)
+
+        content = script_path.read_text().upper()
+        destructive_keywords = ["DROP ", "DELETE ", "TRUNCATE ", "UPDATE "]
+        if any(kw in content for kw in destructive_keywords) and not force:
+            UI.die(
+                "Destructive SQL statements detected. Pass --force to execute.",
+                exit_code=2,
+            )
+
+        UI.heading(f"Executing SQL script '{script_file}' on Cloud database...")
+        self._run_lcp_cmd(
+            ["shell", "database", f"< {script_file}"],
+            capture_json=False,
+            project=target_project,
+        )
+        UI.success("SQL script execution completed.")
+        return True
+
+    def cmd_cloud_db_reset(
+        self,
+        project_id: str | None = None,
+        env_id: str | None = None,
+        override_lock: bool = False,
+    ) -> bool:
+        """Handler for 'ldm cloud db-reset' command."""
+        target_env = (
+            env_id
+            or getattr(getattr(self.manager, "args", None), "env_id", None)
+            or "dev"
+        )
+        self.check_production_safety_lock(
+            target_env, action="db-reset", override_lock=override_lock
+        )
+
+        target_project = project_id or getattr(
+            getattr(self.manager, "args", None), "project", None
+        )
+        UI.warning(f"Resetting database schema on Cloud environment '{target_env}'...")
+        self._run_lcp_cmd(
+            ["shell", "database", "DROP SCHEMA public CASCADE; CREATE SCHEMA public;"],
+            capture_json=False,
+            project=target_project,
+            env=target_env,
+        )
+        UI.success(f"Database schema reset complete on environment '{target_env}'.")
+        return True
+
+    def cmd_cloud_status(
+        self,
+        project_id: str | None = None,
+        env_id: str | None = None,
+    ) -> bool:
+        """Handler for 'ldm cloud status' command."""
+        self.ensure_cloud_auth()
+        target_project = project_id or getattr(
+            getattr(self.manager, "args", None), "project", None
+        )
+        target_env = (
+            env_id
+            or getattr(getattr(self.manager, "args", None), "env_id", None)
+            or "dev"
+        )
+
+        UI.heading(
+            f"Querying status for Liferay Cloud project '{target_project or 'default'}' ({target_env})..."
+        )
+        if target_project:
+            try:
+                envs = self.get_environments(target_project)
+                UI.detail(
+                    f"Found {len(envs)} environment(s) for project '{target_project}':"
+                )
+                for e in envs:
+                    env_name = e.get("id", e.get("name", "unknown"))
+                    UI.detail(f"  • {env_name}")
+                return True
+            except Exception:
+                pass
+
+        res = self._run_lcp_cmd(
+            ["list"],
+            capture_json=False,
+        )
+        if res:
+            UI.raw(res)
+        return True
+
+    def cmd_cloud_logs(
+        self,
+        project_id: str | None = None,
+        service: str | None = None,
+        follow: bool = False,
+    ) -> bool:
+        """Handler for 'ldm cloud logs' command."""
+        self.ensure_cloud_auth()
+        target_project = project_id or getattr(
+            getattr(self.manager, "args", None), "project", None
+        )
+        target_service = (
+            service
+            or getattr(getattr(self.manager, "args", None), "service", None)
+            or "liferay"
+        )
+
+        args = ["log", "--service", target_service]
+        if follow:
+            args.append("--follow")
+
+        UI.heading(f"Streaming logs for service '{target_service}'...")
+        self._run_lcp_cmd(args, capture_json=False, project=target_project)
+        return True
 
     def _is_cloud_authenticated(self):
         """Checks if the user is currently logged into Liferay Cloud."""

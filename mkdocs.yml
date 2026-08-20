@@ -34,6 +34,7 @@ nav:
     - AI MCP Guide: how-to/ai_mcp_guide.md
     - Multi-Node Orchestration: how-to/multi_node_orchestration.md
     - Development: how-to/development.md
+    - Cloud Deployment: how-to/cloud_deployment.md
   - Reference:
     - Configuration: reference/configuration.md
     - CLI Reference:
