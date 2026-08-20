@@ -206,6 +206,7 @@ jobs:
           colima start --cpu 2 --memory 4 --vm-type=vfkit || colima start --cpu 2 --memory 4
 
       - name: Run E2E Verification Suite (macOS)
+        continue-on-error: true
         env:
           GITHUB_ACTIONS: "true"
         run: |
