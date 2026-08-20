@@ -1,5 +1,8 @@
 name: Target Node Cost & Power Control
 
+permissions:
+  contents: read
+
 on:
   schedule:
     - cron: '0 * * * *'
