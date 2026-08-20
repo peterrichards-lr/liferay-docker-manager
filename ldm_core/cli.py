@@ -2123,13 +2123,13 @@ def get_parser():  # noqa: PLR0915
     )
     node_power_subparsers = node_power.add_subparsers(dest="power_command")
 
-    for p in (node_subparsers, node_power_subparsers):
-        p.add_parser(
+    for sub_p in (node_subparsers, node_power_subparsers):
+        sub_p.add_parser(
             "status",
             parents=[base_sub_parent],
             help="Display target compute node power status and active wake TTLs",
         )
-        n_wake = p.add_parser(
+        n_wake = sub_p.add_parser(
             "wake",
             parents=[base_sub_parent],
             help="Wake a target compute node during off-hours",
@@ -2138,18 +2138,18 @@ def get_parser():  # noqa: PLR0915
         n_wake.add_argument(
             "--ttl", default="2h", help="Wake duration (e.g. 2h, 4h). Default: 2h"
         )
-        n_sleep = p.add_parser(
+        n_sleep = sub_p.add_parser(
             "sleep",
             parents=[base_sub_parent],
             help="Immediately shut down a target compute node",
         )
         n_sleep.add_argument("name", help="Target node name (e.g. aws-1, aws-2)")
-        p.add_parser(
+        sub_p.add_parser(
             "enforce",
             parents=[base_sub_parent],
             help="Enforce scheduled off-hours shutdowns and expire TTLs",
         )
-        p.add_parser(
+        sub_p.add_parser(
             "sync-dns",
             parents=[base_sub_parent],
             help="Query AWS EC2 for live public IPv4 and DNS names and update config",
