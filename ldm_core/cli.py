@@ -1815,6 +1815,12 @@ def get_parser():  # noqa: PLR0915
     share_stop.add_argument("project", nargs="?")
     share_stop.add_argument("-p", "--project", dest="project_flag")
 
+    subparsers.add_parser(
+        "tunnel-event",
+        parents=[base_sub_parent],
+        help="Handle lfr-tunnel hook protocol events (internal hook handler)",
+    )
+
     # Namespace: cloud
     cloud = subparsers.add_parser(
         "cloud", parents=[base_sub_parent], help="Liferay Cloud integrations"
@@ -2852,6 +2858,7 @@ def _build_command_map(args, manager):
             project_id=getattr(args, "project", None)
             or getattr(args, "project_flag", None),
         ),
+        ("tunnel-event", None): manager.share.cmd_tunnel_event,
         # infra namespace:
         ("infra", "setup"): manager.infra.cmd_infra_setup,
         ("infra", "down"): manager.infra.cmd_infra_down,
