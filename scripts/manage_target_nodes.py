@@ -27,6 +27,7 @@ def load_target_nodes() -> dict:
             "name": "aws-1",
             "schedule": "auto",
             "ec2_instance_id": "",
+            "region": "",
             "host": "",
             "user": "ubuntu",
         },
@@ -34,6 +35,7 @@ def load_target_nodes() -> dict:
             "name": "aws-2",
             "schedule": "auto",
             "ec2_instance_id": "",
+            "region": "",
             "host": "",
             "user": "ubuntu",
         },
@@ -49,6 +51,7 @@ def load_target_nodes() -> dict:
                         "name": name,
                         "schedule": "auto",
                         "ec2_instance_id": node_info.get("ec2_instance_id", ""),
+                        "region": node_info.get("region", ""),
                         "host": node_info.get("host", ""),
                         "user": node_info.get("user", "ubuntu"),
                     }
@@ -132,15 +135,68 @@ def is_in_shutdown_window(dt: datetime, schedule: str) -> bool:
     return False
 
 
+def get_ec2_public_ip(ec2_id: str, region: str = "") -> str:
+    """Queries AWS EC2 for the current public IP address of an instance."""
+    cmd = [
+        "aws",
+        "ec2",
+        "describe-instances",
+        "--instance-ids",
+        ec2_id,
+        "--query",
+        "Reservations[0].Instances[0].PublicIpAddress",
+        "--output",
+        "text",
+    ]
+    if region:
+        cmd.extend(["--region", region])
+    res = subprocess.run(cmd, capture_output=True, text=True, check=False)
+    if res.returncode == 0 and res.stdout.strip() and res.stdout.strip() != "None":
+        return res.stdout.strip()
+    return ""
+
+
+def update_node_host_ip(node_name: str, new_ip: str) -> None:
+    """Updates .node-power-config.json and ~/.ldmrc host entry when public IP changes."""
+    if not new_ip:
+        return
+
+    if CONFIG_FILE.exists():
+        try:
+            custom_data = json.loads(CONFIG_FILE.read_text())
+            nodes = custom_data.get("nodes", {})
+            if node_name in nodes:
+                nodes[node_name]["host"] = new_ip
+                CONFIG_FILE.write_text(json.dumps(custom_data, indent=2) + "\n")
+        except Exception:
+            pass
+
+    if LDMRC_FILE.exists():
+        try:
+            ldmrc_data = json.loads(LDMRC_FILE.read_text())
+            targets = ldmrc_data.get("targets", {})
+            if node_name in targets:
+                targets[node_name]["host"] = new_ip
+                LDMRC_FILE.write_text(json.dumps(ldmrc_data, indent=4) + "\n")
+        except Exception:
+            pass
+
+
 def power_on_node(node_name: str, config: dict) -> bool:
     """Boots or resumes the specified target node using AWS CLI or SSH."""
     ec2_id = config.get("ec2_instance_id")
     if ec2_id:
         cmd = ["aws", "ec2", "start-instances", "--instance-ids", ec2_id]
+        if config.get("region"):
+            cmd.extend(["--region", config["region"]])
         print(f"▶ Booting AWS EC2 instance '{ec2_id}' for target node '{node_name}'...")
-        res = subprocess.run(cmd, capture_output=True, text=True)
+        res = subprocess.run(cmd, capture_output=True, text=True, check=False)
         if res.returncode == 0:
             print(f"✅ Target node '{node_name}' successfully powered on.")
+            new_ip = get_ec2_public_ip(ec2_id, config.get("region", ""))
+            if new_ip:
+                print(f"🌐 Resolved updated public IP for '{node_name}': {new_ip}")
+                update_node_host_ip(node_name, new_ip)
             return True
         print(f"⚠️ AWS CLI error for '{node_name}': {res.stderr.strip()}")
         return False
@@ -155,10 +211,12 @@ def power_off_node(node_name: str, config: dict) -> bool:
     ec2_id = config.get("ec2_instance_id")
     if ec2_id:
         cmd = ["aws", "ec2", "stop-instances", "--instance-ids", ec2_id]
+        if config.get("region"):
+            cmd.extend(["--region", config["region"]])
         print(
             f"▶ Stopping AWS EC2 instance '{ec2_id}' for target node '{node_name}'..."
         )
-        res = subprocess.run(cmd, capture_output=True, text=True)
+        res = subprocess.run(cmd, capture_output=True, text=True, check=False)
         if res.returncode == 0:
             print(f"✅ Target node '{node_name}' successfully powered off.")
             return True
@@ -170,7 +228,7 @@ def power_off_node(node_name: str, config: dict) -> bool:
     if host and host != "localhost":
         cmd = ["ssh", f"{user}@{host}", "sudo shutdown -h now"]
         print(f"▶ Sending SSH shutdown command to '{user}@{host}'...")
-        res = subprocess.run(cmd, capture_output=True, text=True)
+        res = subprocess.run(cmd, capture_output=True, text=True, check=False)
         if res.returncode == 0:
             print(f"✅ Target node '{node_name}' SSH shutdown command sent.")
             return True

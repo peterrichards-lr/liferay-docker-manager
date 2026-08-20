@@ -46,11 +46,12 @@ jobs:
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ secrets.AWS_REGION }}
+          aws-region: ${{ secrets.AWS_REGION || 'us-east-1' }}
 
       - name: Execute Node Power Command
         run: |
-          TARGET_NODE="${{ secrets.AWS_TARGET_NODE }}"
+          TARGET_NODE="${{ secrets.LDM_NODE_TARGET }}"
+          TARGET_NODE="${TARGET_NODE:-${{ secrets.AWS_TARGET_NODE }}}"
           TARGET_NODE="${TARGET_NODE:-${{ inputs.node }}}"
           TARGET_NODE="${TARGET_NODE:-aws-1}"
 

@@ -30,6 +30,7 @@ class MockRuntime(BaseHandler):
         self.share = MagicMock()
         self.license = MagicMock()
         self.diagnostics = MagicMock()
+        self.workspace = MagicMock()
         self.share.resolve_share_config.return_value = ("lfr-tunnel", "lfr-demo.online")
         from ldm_core.defaults import DefaultsManager
         from ldm_core.handlers.composer import ComposerService
@@ -265,25 +266,36 @@ class TestReadiness(unittest.TestCase):
 
     def test_cmd_wait_uses_remote_target_context(self):
         """cmd_wait's docker stats CPU-idle poll must honor the project's target (#1133)."""
-        from ldm_core.config import TargetNode
+        from ldm_core.config import TargetContext, TargetNode
 
-        self.mock_active_target.return_value = TargetNode(name="aws-1", host="34.1.1.1")
-        self.handler.read_meta = MagicMock(  # type: ignore[method-assign]
-            return_value={
-                "container_name": "test-runtime",
-                "host_name": "localhost",
-                "target": "aws-1",
-            }
+        target_node = TargetNode(name="aws-1", host="34.1.1.1")
+        self.mock_active_target.return_value = target_node
+        target_ctx = TargetContext(
+            target=target_node,
+            is_remote=True,
+            docker_prefix=["docker", "--context", "aws-1"],
+            compose_prefix=["docker-compose", "--context", "aws-1"],
         )
 
-        with patch.object(
-            self.handler.handler.readiness, "_wait_for_ready", return_value=True
-        ) as mock_wfr:
+        meta_val = {
+            "container_name": "test-runtime",
+            "host_name": "localhost",
+            "target": "aws-1",
+        }
+        self.handler.read_meta = MagicMock(return_value=meta_val)  # type: ignore[method-assign]
+        self.handler.manager.workspace.read_meta = MagicMock(return_value=meta_val)  # type: ignore[method-assign]
+
+        with patch(
+            "ldm_core.runtime.readiness.resolve_target_context", return_value=target_ctx
+        ):
             with patch.object(
-                self.handler.manager, "run_command", return_value="10%"
-            ) as mock_run:
-                with patch("time.sleep"):
-                    self.handler.cmd_wait("test", timeout=5)
+                self.handler.handler.readiness, "_wait_for_ready", return_value=True
+            ) as mock_wfr:
+                with patch.object(
+                    self.handler.manager, "run_command", return_value="10%"
+                ) as mock_run:
+                    with patch("time.sleep"):
+                        self.handler.cmd_wait("test", timeout=5)
 
         self.assertTrue(mock_wfr.called)
         called_cmds = [c.args[0] for c in mock_run.call_args_list]
