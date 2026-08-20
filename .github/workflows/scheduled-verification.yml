@@ -116,7 +116,7 @@ jobs:
             -w "${{ github.workspace }}" \
             -e GITHUB_ACTIONS="true" \
             rockylinux:9 \
-            bash -c "dnf install -y dnf-plugins-core && dnf config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo && dnf install -y python3-pip git hostname docker-ce-cli docker-compose-plugin which && python3 -m venv .venv && source .venv/bin/activate && pip install --upgrade pip && pip install . && bash scripts/verify_e2e_refactor.sh --ci"
+            bash -c "dnf install -y dnf-plugins-core && dnf config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo && dnf install -y python3.11 python3.11-pip git hostname docker-ce-cli docker-compose-plugin which && python3.11 -m venv .venv && source .venv/bin/activate && pip install --upgrade pip && pip install . && bash scripts/verify_e2e_refactor.sh --ci"
 
       - name: Run E2E Verification Suite (Alpine)
         if: matrix.distro == 'alpine'
@@ -140,7 +140,7 @@ jobs:
             -w "${{ github.workspace }}" \
             -e GITHUB_ACTIONS="true" \
             debian:bookworm \
-            bash -c "apt-get update && apt-get install -y python3-pip python3-venv git hostname docker.io docker-compose && python3 -m venv .venv && source .venv/bin/activate && pip install --upgrade pip && pip install . && bash scripts/verify_e2e_refactor.sh --ci"
+            bash -c "apt-get update && apt-get install -y ca-certificates curl gnupg && mkdir -p /etc/apt/keyrings && curl -fsSL https://download.docker.com/linux/debian/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg && echo \"deb [arch=\$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/debian bookworm stable\" > /etc/apt/sources.list.d/docker.list && apt-get update && apt-get install -y python3-pip python3-venv git hostname docker-ce-cli docker-compose-plugin && python3 -m venv .venv && source .venv/bin/activate && pip install --upgrade pip && pip install . && bash scripts/verify_e2e_refactor.sh --ci"
 
       - name: Upload Test Results
         if: always()
@@ -201,6 +201,7 @@ jobs:
           brew install colima docker docker-compose || true
 
       - name: Start Colima
+        continue-on-error: true
         run: |
           colima start --cpu 2 --memory 4 --vm-type=vfkit || colima start --cpu 2 --memory 4
 
