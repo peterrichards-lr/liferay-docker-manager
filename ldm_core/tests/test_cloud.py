@@ -1125,14 +1125,16 @@ class TestCloudServiceSubcommands(unittest.TestCase):
                 no_wait=True,
             )
 
+    @patch.object(CloudService, "ensure_cloud_auth", return_value=True)
     @patch.object(CloudService, "check_production_safety_lock", return_value=True)
-    def test_cmd_cloud_db_reset_handler(self, mock_lock):
+    def test_cmd_cloud_db_reset_handler(self, mock_lock, mock_auth):
         """Verifies cmd_cloud_db_reset checks safety lock for action='db-reset'."""
         self.cloud.cmd_cloud_db_reset("acme", "prd", override_lock=True)
         mock_lock.assert_called_once_with("prd", action="db-reset", override_lock=True)
 
+    @patch.object(CloudService, "ensure_cloud_auth", return_value=True)
     @patch.object(CloudService, "_run_lcp_cmd")
-    def test_cmd_cloud_logs_handler(self, mock_run):
+    def test_cmd_cloud_logs_handler(self, mock_run, mock_auth):
         """Verifies cmd_cloud_logs delegates to _run_lcp_cmd log command."""
         self.cloud.cmd_cloud_logs("acme", "webserver", follow=True)
         mock_run.assert_called_once_with(
