@@ -2696,7 +2696,7 @@ def _build_command_map(args, manager):
     from collections.abc import Callable
     from typing import Any
 
-    cmds: dict[tuple[str, ...], Callable[..., Any]] = {
+    cmds: dict[tuple[str, str | None] | tuple[str, str, str], Callable[..., Any]] = {
         ("run", None): lambda: (
             manager.runtime.cmd_run(getattr(args, "project", None)),
             manager.runtime.cmd_browser(getattr(args, "project", None))
