@@ -1130,7 +1130,9 @@ class TestCloudServiceSubcommands(unittest.TestCase):
         """Verifies cmd_cloud_db_reset checks safety lock for action='db-reset'."""
         with patch.object(self.cloud, "ensure_cloud_auth", return_value=True):
             self.cloud.cmd_cloud_db_reset("acme", "prd", override_lock=True)
-            mock_lock.assert_called_once_with("prd", action="db-reset", override_lock=True)
+            mock_lock.assert_called_once_with(
+                "prd", action="db-reset", override_lock=True
+            )
 
     @patch.object(CloudService, "_run_lcp_cmd")
     def test_cmd_cloud_logs_handler(self, mock_run):
