@@ -2122,36 +2122,38 @@ def get_parser():  # noqa: PLR0915
         help="Target compute node power lifecycle commands",
     )
     node_power_subparsers = node_power.add_subparsers(dest="power_command")
-    node_power_subparsers.add_parser(
-        "status",
-        parents=[base_sub_parent],
-        help="Display target compute node power status and active wake TTLs",
-    )
-    node_wake = node_power_subparsers.add_parser(
-        "wake",
-        parents=[base_sub_parent],
-        help="Wake a target compute node during off-hours",
-    )
-    node_wake.add_argument("name", help="Target node name (e.g. aws-1, aws-2)")
-    node_wake.add_argument(
-        "--ttl", default="2h", help="Wake duration (e.g. 2h, 4h). Default: 2h"
-    )
-    node_sleep = node_power_subparsers.add_parser(
-        "sleep",
-        parents=[base_sub_parent],
-        help="Immediately shut down a target compute node",
-    )
-    node_sleep.add_argument("name", help="Target node name (e.g. aws-1, aws-2)")
-    node_power_subparsers.add_parser(
-        "enforce",
-        parents=[base_sub_parent],
-        help="Enforce scheduled off-hours shutdowns and expire TTLs",
-    )
-    node_power_subparsers.add_parser(
-        "sync-dns",
-        parents=[base_sub_parent],
-        help="Query AWS EC2 for live public IPv4 and DNS names and update config",
-    )
+
+    for p in (node_subparsers, node_power_subparsers):
+        p.add_parser(
+            "status",
+            parents=[base_sub_parent],
+            help="Display target compute node power status and active wake TTLs",
+        )
+        n_wake = p.add_parser(
+            "wake",
+            parents=[base_sub_parent],
+            help="Wake a target compute node during off-hours",
+        )
+        n_wake.add_argument("name", help="Target node name (e.g. aws-1, aws-2)")
+        n_wake.add_argument(
+            "--ttl", default="2h", help="Wake duration (e.g. 2h, 4h). Default: 2h"
+        )
+        n_sleep = p.add_parser(
+            "sleep",
+            parents=[base_sub_parent],
+            help="Immediately shut down a target compute node",
+        )
+        n_sleep.add_argument("name", help="Target node name (e.g. aws-1, aws-2)")
+        p.add_parser(
+            "enforce",
+            parents=[base_sub_parent],
+            help="Enforce scheduled off-hours shutdowns and expire TTLs",
+        )
+        p.add_parser(
+            "sync-dns",
+            parents=[base_sub_parent],
+            help="Query AWS EC2 for live public IPv4 and DNS names and update config",
+        )
 
     reset_props = config_subparsers.add_parser(
         "reset-properties",
@@ -2696,7 +2698,7 @@ def _build_command_map(args, manager):
     from collections.abc import Callable
     from typing import Any
 
-    cmds: dict[tuple[str, str | None] | tuple[str, str, str], Callable[..., Any]] = {
+    cmds: dict[tuple[str, str | None], Callable[..., Any]] = {
         ("run", None): lambda: (
             manager.runtime.cmd_run(getattr(args, "project", None)),
             manager.runtime.cmd_browser(getattr(args, "project", None))
@@ -3089,15 +3091,14 @@ def _build_command_map(args, manager):
             args.source, args.dest
         ),
         # node namespace:
-        ("node", "power", "status"): manager.node.cmd_node_power_status,
-        ("node", "power", "wake"): lambda: manager.node.cmd_node_power_wake(
+        ("node", "power"): manager.node.cmd_node_power_status,
+        ("node", "status"): manager.node.cmd_node_power_status,
+        ("node", "wake"): lambda: manager.node.cmd_node_power_wake(
             args.name, ttl=getattr(args, "ttl", "2h")
         ),
-        ("node", "power", "sleep"): lambda: manager.node.cmd_node_power_sleep(
-            args.name
-        ),
-        ("node", "power", "enforce"): manager.node.cmd_node_power_enforce,
-        ("node", "power", "sync-dns"): manager.node.cmd_node_power_sync_dns,
+        ("node", "sleep"): lambda: manager.node.cmd_node_power_sleep(args.name),
+        ("node", "enforce"): manager.node.cmd_node_power_enforce,
+        ("node", "sync-dns"): manager.node.cmd_node_power_sync_dns,
     }
     return cmds
 
@@ -3248,18 +3249,15 @@ def main():
     cmd = getattr(args, "command", None)
     if cmd is not None and not isinstance(cmd, str):
         cmd = None
-    subcommand = getattr(args, "subcommand", None) or getattr(
-        args, "target_command", None
+    subcommand = (
+        getattr(args, "power_command", None)
+        or getattr(args, "node_command", None)
+        or getattr(args, "subcommand", None)
+        or getattr(args, "target_command", None)
     )
     if subcommand is not None and not isinstance(subcommand, str):
         subcommand = None
-    current_cmd: tuple = (cmd, subcommand)
-    if cmd == "node":
-        current_cmd = (
-            cmd,
-            getattr(args, "node_command", None),
-            getattr(args, "power_command", None),
-        )
+    current_cmd = (cmd, subcommand)
     if current_cmd in docker_required and not manager.check_docker():
         UI.die("Docker not accessible.")
 
