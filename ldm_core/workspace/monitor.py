@@ -226,19 +226,26 @@ def cmd_monitor(self, source_path=None, project_id=None):  # noqa: C901, PLR0912
             observer.schedule(handler, str(target), recursive=True)
         except OSError as e:
             if e.errno == 24:  # Too many open files
-                if not is_mac:
+                if not is_mac and not isinstance(observer, PollingObserverVFS):
                     UI.error("Hit system file limit. Switching to PollingObserver...")
-                    # Switch to polling for this and future targets
-                    if not isinstance(observer, PollingObserverVFS):
-                        observer.stop()
-                        observer = PollingObserverVFS(
-                            stat=os.stat,
-                            listdir=filtered_scandir,
-                            polling_interval=delay,
-                        )
-                        observer.schedule(handler, str(target), recursive=True)
-                        observer.start()
+                    # Switch to polling for this and future targets. Deliberately
+                    # do NOT start the replacement here: observers are Thread
+                    # subclasses, so the unconditional start() after this loop
+                    # would raise "threads can only be started once". Starting
+                    # mid-loop would also begin watching before the remaining
+                    # targets were registered.
+                    observer.stop()
+                    observer = PollingObserverVFS(
+                        stat=os.stat,
+                        listdir=filtered_scandir,
+                        polling_interval=delay,
+                    )
+                    observer.schedule(handler, str(target), recursive=True)
                 else:
+                    # Already polling (or on macOS, which polls by default):
+                    # there is no lower-cost watcher left to fall back to.
+                    # Fail loudly rather than silently leaving this target
+                    # unwatched, which would drop artifact syncs without a word.
                     UI.die(
                         f"Fatal: OS file limit reached even with Polling. Path: {target}"
                     )
