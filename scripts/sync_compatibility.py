@@ -1,7 +1,9 @@
+import argparse
 import hashlib
 import re
 import shutil
 import subprocess
+import sys
 from datetime import datetime
 from pathlib import Path
 
@@ -9,6 +11,22 @@ from ldm_core.constants import VERSION
 from ldm_core.ui import UI
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
+
+# LDM-#1252: when True, every filesystem mutation is logged and skipped.
+# This script previously had no argument parsing at all, so `--help` (and any
+# typo) fell straight through to a full sync -- archiving reports and rewriting
+# the compatibility table. For a tool the release runbook describes as able to
+# "discard real test data with no error", asking what it does must be safe.
+DRY_RUN = False
+
+
+def _mutate(description, action):
+    """Runs `action`, or logs what would have happened when DRY_RUN is set."""
+    if DRY_RUN:
+        UI.info(f"[dry-run] would {description}")
+        return
+    action()
+
 
 # Paths that scripts/release.py's `--promote` can *only* ever touch when
 # bumping a pre-release to stable: docs, version metadata, and the
@@ -585,7 +603,12 @@ def sync_reports():  # noqa: C901, PLR0912, PLR0915
                         f"Archiving outdated raw report {r.name} -> {archived_name} "
                         f"({stale_reason})."
                     )
-                    shutil.move(str(r), str(archive_dir / archived_name))
+                    _mutate(
+                        f"archive outdated raw report {r.name} -> {archived_name}",
+                        lambda r=r, n=archived_name: shutil.move(
+                            str(r), str(archive_dir / n)
+                        ),
+                    )
                     continue
 
             report_metas.append(meta)
@@ -619,7 +642,12 @@ def sync_reports():  # noqa: C901, PLR0912, PLR0915
         ).hexdigest()[:8]
         archived_name = f"{expected_name}-{name_hash}.txt"
         UI.info(f"Archiving old report: {meta['report_path'].name} -> {archived_name}")
-        shutil.move(str(meta["report_path"]), str(archive_dir / archived_name))
+        _mutate(
+            f"archive {meta['report_path'].name} -> {archived_name}",
+            lambda m=meta, n=archived_name: shutil.move(
+                str(m["report_path"]), str(archive_dir / n)
+            ),
+        )
 
     for meta in latest:
         new_name = f"verify-{meta['internal_slug']}-{meta['status_slug']}.txt"
@@ -631,10 +659,19 @@ def sync_reports():  # noqa: C901, PLR0912, PLR0915
 
         # Remove the old file if it has a different name
         if meta["report_path"].exists() and meta["report_path"] != target_path:
-            meta["report_path"].unlink()
+            _mutate(
+                f"remove superseded {meta['report_path'].name}",
+                lambda m=meta: m["report_path"].unlink(),
+            )
 
-        target_path.write_text(clean_content)
-        meta["report_path"] = target_path
+        _mutate(
+            f"write standardized report {target_path.name}",
+            lambda p=target_path, c=clean_content: p.write_text(c),
+        )
+        # In dry-run the file was not written, so leave report_path pointing at
+        # the real file on disk; the table pass below re-reads from disk.
+        if not DRY_RUN:
+            meta["report_path"] = target_path
 
     # 3. Table Generation Logic
     root_reports = list(results_dir.glob("*.txt"))
@@ -718,14 +755,20 @@ def sync_reports():  # noqa: C901, PLR0912, PLR0915
 | **Elasticsearch** | `8.19.1`, `7.17.24` | Dual support. ES 8.17.x+ required for Liferay 2025.Q2+ (ES 7 deprecated). |
 """
     new_block = f"<!-- COMPATIBILITY_START -->\n{new_table}\n{infra_block}\n<!-- COMPATIBILITY_END -->"
-    source_file.write_text(marker_regex.sub(new_block, content))
+    _mutate(
+        f"rewrite {source_file.name} compatibility block",
+        lambda: source_file.write_text(marker_regex.sub(new_block, content)),
+    )
     UI.success(
-        f"Updated COMPATIBILITY_TABLE.md. Unique environments in table: {len(table_metas)}"
+        f"{'[dry-run] would update' if DRY_RUN else 'Updated'} COMPATIBILITY_TABLE.md. "
+        f"Unique environments in table: {len(table_metas)}"
     )
 
-    try:
-        import sys
+    if DRY_RUN:
+        UI.info("[dry-run] skipping docs sync (sync_docs.sync_table)")
+        return
 
+    try:
         sys.path.insert(0, str(Path(__file__).parent))
         from sync_docs import sync_table
 
@@ -734,5 +777,49 @@ def sync_reports():  # noqa: C901, PLR0912, PLR0915
         UI.error(f"Sync docs failed: {e}")
 
 
-if __name__ == "__main__":
+def main(argv=None):
+    """Parses arguments and runs the sync.
+
+    LDM-#1252: this entry point previously called sync_reports() directly with
+    no argument handling, so `--help`, `--dry-run` or any typo silently ran a
+    full sync -- archiving reports and rewriting the compatibility table.
+    """
+    parser = argparse.ArgumentParser(
+        prog="sync_compatibility.py",
+        description=(
+            "Standardizes raw verification reports in "
+            "references/verification-results/, archives superseded ones, and "
+            "regenerates the compatibility table in the documentation."
+        ),
+        epilog=(
+            "Reports whose recorded version does not match this checkout's "
+            "VERSION are archived as stale. Run this from the branch whose "
+            "VERSION matches the reports you are syncing (e.g. the active "
+            "release branch), and preview with --dry-run first."
+        ),
+    )
+    parser.add_argument(
+        "-n",
+        "--dry-run",
+        action="store_true",
+        help="Report every rename, archive and table edit without changing anything.",
+    )
+    args = parser.parse_args(argv)
+
+    # Matches the existing convention for one-shot CLI state in this codebase
+    # (see ldm_core/utils.py:640, ldm_core/handlers/mcp.py).
+    global DRY_RUN  # noqa: PLW0603
+    DRY_RUN = args.dry_run
+
+    # The documented failure mode is a version mismatch between this checkout
+    # and the reports, and it is otherwise invisible until files start moving.
+    UI.info(f"Syncing against VERSION {VERSION}{' (dry run)' if DRY_RUN else ''}")
+
     sync_reports()
+
+    if DRY_RUN:
+        UI.info("[dry-run] no files were changed. Re-run without --dry-run to apply.")
+
+
+if __name__ == "__main__":
+    main()

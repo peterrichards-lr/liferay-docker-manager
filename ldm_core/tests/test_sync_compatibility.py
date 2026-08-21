@@ -2,8 +2,11 @@ import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "scripts"))
 
+import sync_compatibility
 from sync_compatibility import (
     _VERIFY_SCRIPT_SAFE_LINE,
     _is_verify_script_diff_cosmetic_only,
@@ -119,3 +122,52 @@ class TestIsVerifyScriptDiffCosmeticOnly:
     @patch("sync_compatibility.subprocess.run", side_effect=Exception("boom"))
     def test_exception_fails_safe(self, mock_run):
         assert _is_verify_script_diff_cosmetic_only("v2.15.26") is False
+
+
+class TestArgumentHandling:
+    """LDM-#1252: the script had no argument parsing, so `--help` -- and any
+    typo -- fell through to a full sync, archiving reports and rewriting the
+    compatibility table. Asking a destructive tool what it does must be safe."""
+
+    def teardown_method(self):
+        # DRY_RUN is module-level state; never leak it into another test.
+        sync_compatibility.DRY_RUN = False
+
+    @patch("sync_compatibility.sync_reports")
+    def test_help_prints_usage_without_syncing(self, mock_sync):
+        with pytest.raises(SystemExit) as exc:
+            sync_compatibility.main(["--help"])
+        assert exc.value.code == 0
+        mock_sync.assert_not_called()
+
+    @patch("sync_compatibility.sync_reports")
+    def test_unknown_argument_aborts_instead_of_syncing(self, mock_sync):
+        """A typo must fail loudly, not silently rewrite the matrix."""
+        with pytest.raises(SystemExit) as exc:
+            sync_compatibility.main(["--drynrun"])
+        assert exc.value.code != 0
+        mock_sync.assert_not_called()
+
+    @patch("sync_compatibility.sync_reports")
+    def test_dry_run_sets_the_flag(self, mock_sync):
+        sync_compatibility.main(["--dry-run"])
+        assert sync_compatibility.DRY_RUN is True
+        mock_sync.assert_called_once()
+
+    @patch("sync_compatibility.sync_reports")
+    def test_default_run_is_not_dry(self, mock_sync):
+        sync_compatibility.main([])
+        assert sync_compatibility.DRY_RUN is False
+        mock_sync.assert_called_once()
+
+    def test_mutate_skips_the_action_when_dry(self):
+        called = []
+        sync_compatibility.DRY_RUN = True
+        sync_compatibility._mutate("do a thing", lambda: called.append(1))
+        assert called == []
+
+    def test_mutate_performs_the_action_when_not_dry(self):
+        called = []
+        sync_compatibility.DRY_RUN = False
+        sync_compatibility._mutate("do a thing", lambda: called.append(1))
+        assert called == [1]
