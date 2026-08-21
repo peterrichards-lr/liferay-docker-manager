@@ -40,6 +40,11 @@ e2e-work-dir/
 test-results/
 .node-power-state.json
 /verify-*.txt
+# Transient results file written by scripts/verify_e2e_refactor.{sh,ps1}
+/.ldm-verify-tmp-*.txt
+# Downloaded GitHub Actions verification artifacts (see scheduled-verification.yml).
+# Real reports belong in references/verification-results/, never the repo root.
+/verification-results-*/
 
 # Local LDM Working Directories
 /modern-intranet/
