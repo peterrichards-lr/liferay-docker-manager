@@ -68,6 +68,10 @@ To support CI/CD pipelines and headless automation, all LDM commands MUST adhere
   branching on "did this actually change anything" needs a code that isn't
   the same generic bucket as a real validation failure. Added per
   [#1094](https://github.com/peterrichards-lr/liferay-docker-manager/issues/1094).
+  **Only returned in non-interactive mode** (`ldm_core/pipelines/run.py:246`):
+  interactively LDM prompts to reconfigure and restart instead, so a caller
+  that omits `-y`/`--non-interactive` gets a prompt rather than this code.
+  Automation and E2E assertions on this contract must pass `-y`.
 - **Low-level subprocess wrapper exception**: `ldm_core/utils.py`'s
   `run_command()` helper -- called from a very large number of sites across
   the codebase -- intentionally uses POSIX-standard shell conventions instead
@@ -78,8 +82,14 @@ To support CI/CD pipelines and headless automation, all LDM commands MUST adhere
   generic failure, since discarding that information would make wrapped-tool
   failures harder to diagnose. This is a deliberate, standard choice for a
   subprocess-wrapping utility, not a violation of the contract above -- the
-  0-4/126 contract governs LDM's own top-level command outcomes, not every
+  0-5/126 contract governs LDM's own top-level command outcomes, not every
   exit path of every subprocess it shells out to.
+- **`130` on user interrupt**: `Ctrl+C` exits `130` (`128 + SIGINT`), the POSIX
+  convention, standardized across the three places that catch `KeyboardInterrupt`
+  --- `ldm_core/utils.py:593` (inside `run_command()`), `ldm_core/ui.py:574`
+  (interactive prompts) and `ldm_core/cli.py:3139` (the top-level handler). Like
+  `124`/`127` this is a deliberate shell-convention exit, not an LDM-contract
+  code, so do not renumber it into the 0-5 range.
 
 ## Liferay Cloud Golden Path
 
@@ -96,4 +106,4 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-08-13* | *Last Reviewed: 2026-08-13*
+*Last Updated: 2026-08-21* | *Last Reviewed: 2026-08-21*

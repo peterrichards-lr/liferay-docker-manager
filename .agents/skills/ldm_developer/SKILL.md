@@ -101,19 +101,22 @@ Always run these commands from the repository root:
 
 ## 3. Exit Code Contract
 
-All CLI handler command routines must output consistent exit codes:
+**Canonical definition: [`.agents/skills/ldm-architecture/SKILL.md`](../ldm-architecture/SKILL.md).**
+Per `AGENTS.md`, exit codes are an architecture mandate and live there — do not
+restate the table here. This section previously carried its own copy, which
+drifted: it was missing `5` (Idempotent No-Op, shipped with
+[#1094](https://github.com/peterrichards-lr/liferay-docker-manager/issues/1094))
+long after that code was in use.
 
-- `0`: Success
+The one point worth repeating for day-to-day work, because it is easy to get
+wrong when writing automation or E2E assertions:
 
-- `1`: Generic/Validation Error
-
-- `2`: Authentication/Permission Error (e.g. LCP login required)
-
-- `3`: Infrastructure/Data Error (e.g. Backup download failure)
-
-- `4`: Orchestration/Deployment Error
-
-- `126`: Command Invocation Error
+> [!IMPORTANT]
+> **`5` (Idempotent No-Op) is only returned in non-interactive mode.**
+> `ldm run`/`ldm up` against an already-running project returns `5` *only* when
+> `-y`/`--non-interactive` is in effect (`ldm_core/pipelines/run.py:246`);
+> interactively it prompts to reconfigure and restart instead. Automation that
+> omits `-y` will hang on a prompt rather than receive the code.
 
 ---
 
