@@ -115,14 +115,19 @@ max-statements = 60
 [tool.pytest.ini_options]
 testpaths = ["ldm_core/tests"]
 python_files = "test_*.py"
-addopts = "--cov=ldm_core --cov-report=term-missing --cov-fail-under=40"
+# Deliberately no --cov-fail-under here: a command-line value overrides
+# [tool.coverage.report] fail_under, which previously left two conflicting
+# floors declared (40 here, 60 below) with only the looser one enforced.
+# The floor is defined in exactly one place -- see fail_under below. (#1239)
+addopts = "--cov=ldm_core --cov-report=term-missing"
 
 [tool.coverage.run]
 source = ["ldm_core"]
 omit = ["ldm_core/tests/*"]
 
 [tool.coverage.report]
-show_missing = true
+# THE single source of truth for the minimum coverage gate. Change it here and
+# nowhere else; do not reintroduce --cov-fail-under in addopts above.
 fail_under = 60
 
 [tool.deptry]
