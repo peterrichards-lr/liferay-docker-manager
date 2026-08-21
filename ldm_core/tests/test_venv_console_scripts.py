@@ -118,9 +118,37 @@ class TestReleaseGateNeverSilentlyDowngrades(unittest.TestCase):
 
         env = gate_call[1]["env"]
         self.assertIn("bump-docs-timestamps", env["SKIP"])
-        # gitleaks is deliberately NOT skipped: secret scanning must still run
-        # before an artifact is published.
-        self.assertNotIn("gitleaks", env["SKIP"])
+
+        # LDM-#1246: no security or lint scanner may be skipped at release time.
+        # These were skipped for years on the false premise that their binaries
+        # "may only be installed in CI"; they are repo:-based hooks that
+        # provision their own environments and pass in seconds.
+        for hook in ("semgrep", "detect-secrets", "actionlint", "gitleaks"):
+            self.assertNotIn(
+                hook,
+                env["SKIP"],
+                f"Regression (#1246): '{hook}' must not be skipped for a release",
+            )
+
+    def test_agent_push_and_release_skip_lists_agree(self):
+        """The wrapper and the release script must not drift apart (#1246).
+
+        `release.py` mirrors `agent_push.sh`; when the two disagree, one of the
+        two paths silently runs a weaker gate than the other.
+        """
+        import re
+
+        wrapper = (
+            Path(__file__).resolve().parent.parent.parent / "scripts" / "agent_push.sh"
+        ).read_text(encoding="utf-8")
+
+        found = set(re.findall(r"SKIP=(\S+)", wrapper))
+        self.assertTrue(found, "No SKIP= assignment found in agent_push.sh")
+        self.assertEqual(
+            {release.PRE_COMMIT_SKIP},
+            found,
+            "agent_push.sh and release.py PRE_COMMIT_SKIP have drifted apart",
+        )
 
 
 class TestDevSetupUsesModuleForm(unittest.TestCase):
