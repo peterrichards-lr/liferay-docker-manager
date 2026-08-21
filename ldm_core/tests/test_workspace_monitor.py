@@ -15,7 +15,7 @@ import errno
 import tempfile
 import unittest
 from pathlib import Path
-from typing import ClassVar
+from typing import Any, ClassVar
 from unittest.mock import MagicMock, patch
 
 from ldm_core.workspace.monitor import cmd_monitor
@@ -64,6 +64,25 @@ class _FakeObserver:
         self.join_calls += 1
 
 
+class _FakeNativeObserver(_FakeObserver):
+    """Stands in for watchdog.observers.Observer."""
+
+    schedule_effects: ClassVar[list] = []
+    instances: ClassVar[list] = []
+
+
+class _FakePollingObserver(_FakeObserver):
+    """Stands in for watchdog.observers.polling.PollingObserverVFS.
+
+    Declared as an explicit subclass rather than built via type(): mypy widens a
+    dynamically created class to bare `type`, losing every attribute and the
+    element type of `instances`.
+    """
+
+    schedule_effects: ClassVar[list] = []
+    instances: ClassVar[list] = []
+
+
 def _emfile():
     return OSError(errno.EMFILE, "Too many open files")
 
@@ -98,17 +117,13 @@ class TestMonitorFileLimitFallback(unittest.TestCase):
         self.handler_self.manager.read_meta.return_value = {}
 
         # Distinct subclasses so native and polling behaviour are configured
-        # independently and instances stay separate between tests.
-        self.native_cls = type(
-            "FakeNativeObserver",
-            (_FakeObserver,),
-            {"schedule_effects": [], "instances": []},
-        )
-        self.polling_cls = type(
-            "FakePollingObserver",
-            (_FakeObserver,),
-            {"schedule_effects": [], "instances": []},
-        )
+        # independently. The class-level queues and registries are shared state,
+        # so reset them per test rather than relying on construction order.
+        self.native_cls = _FakeNativeObserver
+        self.polling_cls = _FakePollingObserver
+        for cls in (_FakeNativeObserver, _FakePollingObserver):
+            cls.schedule_effects = []
+            cls.instances = []
 
         self.ui = MagicMock()
         # UI.die() calls sys.exit(); preserve that contract while staying quiet.
@@ -119,7 +134,9 @@ class TestMonitorFileLimitFallback(unittest.TestCase):
         fake_time = MagicMock()
         fake_time.sleep.side_effect = KeyboardInterrupt()
 
-        self.patchers = [
+        # Annotated: patch() returns a different _patch[...] specialisation per
+        # target, which mypy joins to bare `object` without this.
+        self.patchers: list[Any] = [
             patch("watchdog.observers.Observer", self.native_cls),
             patch("watchdog.observers.polling.PollingObserverVFS", self.polling_cls),
             patch("ldm_core.workspace.monitor.UI", self.ui),
