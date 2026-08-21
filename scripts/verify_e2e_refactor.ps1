@@ -656,9 +656,17 @@ zf.close()
 
     Write-Host ">> Verifying Idempotent Exit Code 5 (#1094)..."
     # Exit 5 is only returned in non-interactive mode
-    # (ldm_core/pipelines/run.py:246); interactively LDM prompts instead. '-y'
-    # is therefore required, and 5 is the only acceptable answer -- also
-    # accepting 0 would let a regression that silently re-ran the project pass.
+    # (ldm_core/pipelines/run.py:246); interactively LDM prompts instead, so
+    # '-y' is required.
+    #
+    # The project is STOPPED at this point -- "Stopping project to release file
+    # locks" above shuts it down and nothing restarts it. So the first 'up'
+    # legitimately starts it and returns 0; the idempotent contract only applies
+    # to a second invocation, when the project is genuinely already running.
+    # Asserting 5 on the first call fails on every platform, and tolerating
+    # "5 or 0" instead would verify nothing, since 0 is the only value the first
+    # call can return.
+    Log-AndRun "Starting project for idempotency check" $LDM_CMD "-y up ."
     & $LDM_CMD -y up . *> $null
     $upExitCode = $LASTEXITCODE
     if ($upExitCode -eq 5) {
