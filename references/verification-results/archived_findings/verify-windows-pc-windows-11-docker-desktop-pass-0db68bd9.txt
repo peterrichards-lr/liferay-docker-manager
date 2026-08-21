@@ -1,7 +1,7 @@
 ﻿=== LDM BINARY VERIFICATION REPORT ===
 Timestamp: 08/11/2026 09:40:37
 Platform:  
-Binary:    [ANONYMIZED]
+Binary:    C:\Users\prichards\bin\ldm.exe
 Version:   ldm 2.15.27-pre.3
 Script Ver: 2.15.26
 WARNING: this script (v2.15.26) does not match the installed ldm binary (v2.15.27-pre.3).
