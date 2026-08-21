@@ -1,6 +1,7 @@
 import importlib
 import inspect
 import pkgutil
+import re
 import tempfile
 import typing
 import unittest
@@ -366,6 +367,60 @@ class TestArchitecturalContracts(unittest.TestCase):
                     item[0] and item[1],
                     f"Quality Gate Violation: RELEASE_ANNOUNCEMENTS item {item} contains empty strings.",
                 )
+
+    def test_no_test_files_outside_suite_directory(self):
+        """Mandate: every test_*.py must live under ldm_core/tests/, the only directory the suite scans.
+
+        `testpaths` in pyproject.toml and the explicit `pytest ldm_core/tests/`
+        invocation in ci.yml both scan that directory alone, so a test file
+        placed anywhere else is silently never executed rather than failing
+        loudly. This guard makes the misplacement a test failure instead.
+        See #1235, where 4 tests covering node power-management scheduling sat
+        unexecuted in a root-level tests/ directory.
+        """
+        repo_root = Path(__file__).resolve().parent.parent.parent
+        suite_dir = repo_root / "ldm_core" / "tests"
+        skip_dirs = {
+            "node_modules",
+            "build",
+            "dist",
+            "site",
+            "e2e-work-dir",
+            "__pycache__",
+        }
+
+        # Matches what pytest would actually collect: the default
+        # python_functions = "test*" and python_classes = "Test*" patterns.
+        collectable = re.compile(r"^\s*(?:async\s+)?def\s+test|^\s*class\s+Test", re.M)
+
+        orphans = []
+        for path in repo_root.rglob("test_*.py"):
+            rel = path.relative_to(repo_root)
+            # Prune hidden directories (covers .git and every .*venv variant)
+            # and generated/vendored trees, none of which are ours to police.
+            if any(
+                part.startswith(".") or part in skip_dirs or part.endswith(".egg-info")
+                for part in rel.parts[:-1]
+            ):
+                continue
+            if suite_dir in path.parents:
+                continue
+            # A test_*.py-named file with nothing collectable in it is a
+            # standalone script, not a misplaced test -- e.g.
+            # scripts/test_ui.py is a manual Playwright driver requiring a live
+            # portal, documented as such in docs/TESTING.md. Only flag files
+            # that genuinely define tests which would never be executed.
+            if collectable.search(path.read_text(encoding="utf-8")):
+                orphans.append(str(rel))
+
+        self.assertEqual(
+            [],
+            sorted(orphans),
+            "Quality Gate Violation: test file(s) found outside ldm_core/tests/. "
+            "Files here are never executed by pytest (see the testpaths setting "
+            "in pyproject.toml and the explicit path in ci.yml). Move them into "
+            f"ldm_core/tests/: {sorted(orphans)}",
+        )
 
 
 if __name__ == "__main__":
