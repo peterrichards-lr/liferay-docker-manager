@@ -17,18 +17,48 @@ This skill guides you through the standards, commands, and scripts required to d
 
 ### Environment Layout
 
-The repository root holds more than one virtual environment. They are not interchangeable, and guessing between them is what caused [#1240](https://github.com/peterrichards-lr/liferay-docker-manager/issues/1240):
-
-| Path | Role |
-|---|---|
-| `.venv` | **Authoritative** for everything that actually runs. `scripts/run_python.sh` (the resolver behind every local pre-commit hook) prefers `.venv/bin/python3`; `lint.sh` resolves `.venv`; `scripts/agent_push.sh` uses `.venv/bin/python3 -m pre_commit`. |
-| `.pytest_venv` | Holds the `pre-commit` **console script**, which is why hook *installation* is documented as `.pytest_venv/bin/pre-commit install`. |
-| `.smoke_venv`, `.temp_venv` | Transient, created by tooling. Not used by any documented workflow. |
+`.venv` is **authoritative** for everything that actually runs: `scripts/run_python.sh` (the resolver behind every local pre-commit hook) prefers `.venv/bin/python3`, `lint.sh` resolves `.venv`, and `scripts/agent_push.sh` uses `.venv/bin/python3 -m pre_commit`. `.pytest_venv`, `.smoke_venv` and `.temp_venv` are auxiliary environments created by tooling; do not reach for them to work around a missing command (see below for why that is a trap).
 
 > [!IMPORTANT]
-> **`pre-commit` must be invoked as a module from `.venv`**: `.venv/bin/python3 -m pre_commit ...`
+> **Always invoke Python tooling as a module, never via its console script.**
 >
-> The package is installed in `.venv`, but **no `.venv/bin/pre-commit` console script exists**. Commands written in the console-script form fail with `no such file or directory`. The same applies to `pytest`, which is correctly documented throughout as `.venv/bin/python -m pytest`.
+> ```bash
+> .venv/bin/python3 -m pre_commit run --all-files   # correct
+> .venv/bin/pre-commit run --all-files              # fails: no such file or directory
+> ```
+>
+> The packages are installed and fully functional — it is the generated `.venv/bin/<tool>` wrapper scripts that are **not reliably present on developer machines**. The module form invokes the installed package directly and is immune to this, which is why `agent_push.sh` has kept working while documented console-script commands broke ([#1240](https://github.com/peterrichards-lr/liferay-docker-manager/issues/1240)).
+
+#### Why the console scripts disappear
+
+This is **not** a packaging quirk or an incomplete install — the wrappers were created and later removed. Endpoint protection (SentinelOne) deletes them by name when it terminates a Python process tree, and it targets the canonical tool names while leaving byte-identical aliases alone:
+
+| Package | Deleted | Survived | Identical content? |
+|---|---|---|---|
+| `pytest` | `pytest` | `py.test` | Yes — same SHA-256, both 229 bytes |
+| `pip` | `pip` | `pip3`, `pip3.14` | Yes — same SHA-256, both 219 bytes |
+
+Each package's `dist-info/RECORD` still lists the deleted file, which is how to confirm this rather than guess. Scripts observed removed from `.venv/bin`: `bandit`, `detect-secrets`, `detect-secrets-hook`, `mypy`, `pip`, `pre-commit`, `pysemgrep`, `pytest`, `semgrep` — overwhelmingly the security, analysis and test-runner names an EDR agent intercepts.
+
+Two consequences worth internalising:
+
+- **Reinstalling is not a durable fix.** The wrappers will be removed again. Use the module form.
+- **`.pytest_venv` is not a safe fallback.** It has lost its own `pytest` wrapper the same way. Any instruction of the form `.pytest_venv/bin/<tool>` may break at any time for the same reason.
+
+To audit the current damage:
+
+```bash
+# Lists every console script pip recorded as installed but which is now absent
+.venv/bin/python3 - <<'EOF'
+import pathlib
+root = pathlib.Path(".venv"); sp = next(root.glob("lib/*/site-packages"))
+for rec in sp.glob("*.dist-info/RECORD"):
+    for line in rec.read_text(errors="replace").splitlines():
+        p = line.split(",")[0]
+        if p.startswith("../../../bin/") and not (root / "bin" / p.split("/")[-1]).exists():
+            print(f"MISSING .venv/bin/{p.split('/')[-1]}  (from {rec.parent.name})")
+EOF
+```
 
 ---
 
