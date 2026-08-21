@@ -28,7 +28,7 @@ def check_links():
         dirnames[:] = [d for d in dirnames if d not in ignore_dirs]
 
         for filename in filenames:
-            if not filename.endswith(".md") or filename == "scratch.md":
+            if not filename.endswith(".md"):
                 continue
 
             file_path = Path(dirpath) / filename
