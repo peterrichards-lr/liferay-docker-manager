@@ -30,24 +30,26 @@ if len(sys.argv) > 1 and sys.argv[1] == "dev-setup":
 
     if os.name == "nt":
         venv_python = venv_dir / "Scripts" / "python.exe"
-        venv_pip = venv_dir / "Scripts" / "pip.exe"
     else:
         venv_python = venv_dir / "bin" / "python3"
-        venv_pip = venv_dir / "bin" / "pip"
 
     if not venv_python.exists():
         print(f"Error: Could not find python in venv: {venv_python}")
         sys.exit(1)
 
+    # LDM-#1245: invoke pip as a module rather than via the generated
+    # `.venv/bin/pip` console script, which is not reliably present -- endpoint
+    # protection removes it by name after installation, leaving pip itself
+    # intact. Calling the wrapper made this bootstrap fail at its first step.
+    pip = [str(venv_python), "-m", "pip"]
+
     print("Installing dependencies...")
-    subprocess.run([str(venv_pip), "install", "--upgrade", "pip"], check=True)
+    subprocess.run([*pip, "install", "--upgrade", "pip"], check=True)
     if (root / "requirements.txt").exists():
-        subprocess.run([str(venv_pip), "install", "-r", "requirements.txt"], check=True)
+        subprocess.run([*pip, "install", "-r", "requirements.txt"], check=True)
     if (root / "requirements-dev.txt").exists():
-        subprocess.run(
-            [str(venv_pip), "install", "-r", "requirements-dev.txt"], check=True
-        )
-    subprocess.run([str(venv_pip), "install", "-e", "."], check=True)
+        subprocess.run([*pip, "install", "-r", "requirements-dev.txt"], check=True)
+    subprocess.run([*pip, "install", "-e", "."], check=True)
 
     print("Generating UI Colors...")
     if (root / "scripts" / "sync_colors.py").exists():

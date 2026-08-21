@@ -41,6 +41,13 @@ class TestShareService(unittest.TestCase):
         self.service._poll_tunnel_health = MagicMock(return_value=(True, None))  # type: ignore[method-assign]
         # Mock resolve existing binary by default to keep unit tests isolated from host environment
         self.service._resolve_existing_binary = MagicMock(return_value=None)  # type: ignore[method-assign]
+        # LDM-#1248: cmd_status() queries the live lfr-tunnel client API on
+        # http://127.0.0.1:4040 before anything else. Left unmocked these tests
+        # issue real HTTP requests, so they passed only while no tunnel happened
+        # to be running on the host and failed the moment one was started --
+        # blocking every commit for anyone actually using `ldm share`. Default to
+        # "no live tunnel"; tests covering the API branch override this.
+        self.service._get_tunnel_api_state = MagicMock(return_value={})  # type: ignore[method-assign]
 
     @patch("ldm_core.handlers.share.get_actual_home")
     @patch("platform.system")
@@ -360,6 +367,60 @@ class TestShareService(unittest.TestCase):
         mock_run.return_value = mock_res
 
         self.service.cmd_status()
+        mock_run.assert_called_once_with(
+            ["/fake/bin/lfr-tunnel", "-status"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+    @patch("ldm_core.ui.UI.raw")
+    @patch("subprocess.run")
+    def test_cmd_status_prefers_live_api_over_binary(self, mock_run, mock_raw):
+        """LDM-#1248: when the client API answers, cmd_status must use it and not shell out.
+
+        This branch (share.py:935-973) previously had no coverage at all -- no
+        test ever supplied API data -- which is why nobody noticed the four
+        sibling tests were reaching the real network to get an empty result.
+        """
+        self.service._ensure_binary = MagicMock(  # type: ignore[method-assign]
+            return_value=Path("/fake/bin/lfr-tunnel")
+        )
+        self.service._get_tunnel_api_state = MagicMock(  # type: ignore[method-assign]
+            return_value={
+                "info": {"status": "healthy"},
+                "state": {
+                    "subdomain": "aica",
+                    "connected": True,
+                    "connection_state": "connected",
+                    "public_urls": ["https://aica.example.dev"],
+                },
+            }
+        )
+
+        self.service.cmd_status()
+
+        mock_run.assert_not_called()
+        rendered = " ".join(str(c[0][0]) for c in mock_raw.call_args_list)
+        self.assertIn("aica", rendered)
+        self.assertIn("healthy", rendered)
+        self.assertIn("https://aica.example.dev", rendered)
+
+    @patch("subprocess.run")
+    def test_cmd_status_falls_back_to_binary_when_api_silent(self, mock_run):
+        """LDM-#1248: with no live tunnel, cmd_status must still query the binary."""
+        self.service._ensure_binary = MagicMock(  # type: ignore[method-assign]
+            return_value=Path("/fake/bin/lfr-tunnel")
+        )
+        self.service._get_tunnel_api_state = MagicMock(return_value={})  # type: ignore[method-assign]
+
+        mock_res = MagicMock()
+        mock_res.returncode = 0
+        mock_res.stdout = "Tunnel is active."
+        mock_run.return_value = mock_res
+
+        self.service.cmd_status()
+
         mock_run.assert_called_once_with(
             ["/fake/bin/lfr-tunnel", "-status"],
             capture_output=True,
