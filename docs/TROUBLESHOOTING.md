@@ -225,6 +225,29 @@ To run LDM on macOS 12 Monterey, you must use a Docker provider that supports gR
 
 Once installed, simply uninstall Colima (`brew uninstall colima`) and start your new provider. LDM will detect it automatically.
 
+### **`ldm monitor`: "Fatal: OS file limit reached even with Polling"**
+
+`ldm monitor` watches your workspace for new build artifacts. Recursive watching needs one file descriptor per directory, so very large workspaces (deep `node_modules`, many `modules/*/build` trees) can exhaust the per-process limit and raise `OSError: [Errno 24] Too many open files`.
+
+LDM degrades in two steps before giving up:
+
+1. On Linux and Windows it starts with the native OS watcher, and on hitting the limit it automatically falls back to a **polling** watcher, which holds no per-directory descriptors. You will see `Hit system file limit. Switching to PollingObserver...` — this is a recovery, not a failure, and monitoring continues.
+2. macOS starts on the polling watcher already (the native Kqueue backend hits descriptor limits far too easily), and raises its own soft limit to 4096 at startup.
+
+If you see the **fatal** message, the limit was hit with polling already active — there is no cheaper watcher left, so LDM stops rather than silently leaving part of your workspace unwatched (which would drop artifact syncs without warning).
+
+To resolve it, raise the descriptor limit in the shell running `ldm monitor`:
+
+```bash
+# Inspect the current soft/hard limits
+ulimit -Sn; ulimit -Hn
+
+# Raise the soft limit for this shell (must not exceed the hard limit)
+ulimit -n 10240
+```
+
+Then narrow what is watched by keeping generated trees out of the workspace branches LDM scans (`client-extensions/`, `modules/`, `fragments/`). LDM already skips `node_modules`, `build`, `.gradle`, `.git`, `.idea`, and `.vscode` while polling, so a stray build output somewhere outside those names is the usual culprit.
+
 ---
 
 ## 🖥️ Platform Specifics
@@ -394,4 +417,4 @@ rm -f <project-path>/.liferay-docker/.ldm_lock
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-08-05* | *Last Reviewed: 2026-07-15*
+*Last Updated: 2026-08-21* | *Last Reviewed: 2026-08-21*
