@@ -15,6 +15,21 @@ This skill guides you through the standards, commands, and scripts required to d
 
 - **Hook Isolation**: Git hooks and pre-commit checks rely on packages installed in the virtual environment. Running operations outside the virtual environment (e.g. using global system Python) will trigger hook failures.
 
+### Environment Layout
+
+The repository root holds more than one virtual environment. They are not interchangeable, and guessing between them is what caused [#1240](https://github.com/peterrichards-lr/liferay-docker-manager/issues/1240):
+
+| Path | Role |
+|---|---|
+| `.venv` | **Authoritative** for everything that actually runs. `scripts/run_python.sh` (the resolver behind every local pre-commit hook) prefers `.venv/bin/python3`; `lint.sh` resolves `.venv`; `scripts/agent_push.sh` uses `.venv/bin/python3 -m pre_commit`. |
+| `.pytest_venv` | Holds the `pre-commit` **console script**, which is why hook *installation* is documented as `.pytest_venv/bin/pre-commit install`. |
+| `.smoke_venv`, `.temp_venv` | Transient, created by tooling. Not used by any documented workflow. |
+
+> [!IMPORTANT]
+> **`pre-commit` must be invoked as a module from `.venv`**: `.venv/bin/python3 -m pre_commit ...`
+>
+> The package is installed in `.venv`, but **no `.venv/bin/pre-commit` console script exists**. Commands written in the console-script form fail with `no such file or directory`. The same applies to `pytest`, which is correctly documented throughout as `.venv/bin/python -m pytest`.
+
 ---
 
 ## 2. Standard Developer Commands
@@ -48,7 +63,8 @@ Always run these commands from the repository root:
 
 ```bash
 # Run all pre-commit hooks across the codebase (runs Ruff, MyPy, ShellCheck, Pytest, bandit, markdownlint-cli2, etc.)
-.venv/bin/pre-commit run --all-files
+# NOTE the module form: there is no `pre-commit` console script in .venv -- see Environment Layout in section 1.
+.venv/bin/python3 -m pre_commit run --all-files
 ```
 
 ---
@@ -99,4 +115,4 @@ Do not manually bump versions or tag releases. Instead, use the automated releas
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-08-06* | *Last Reviewed: 2026-08-06*
+*Last Updated: 2026-08-21* | *Last Reviewed: 2026-08-21*

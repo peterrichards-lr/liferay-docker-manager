@@ -72,7 +72,7 @@ LDM integrates Yelp's `detect-secrets` scanner into its pre-commit hook suite to
 - **Manual Scanning**: To scan all tracked files in the workspace at any time:
 
   ```bash
-  .venv/bin/pre-commit run detect-secrets --all-files
+  .venv/bin/python3 -m pre_commit run detect-secrets --all-files
   ```
 
 - **Updating Exceptions**: If a new safe mock key is flagged as a false positive, append it to the baseline:
@@ -125,4 +125,4 @@ f7e5b56e5e4e6e94fe5de5424e66fef84be863f385
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-08-05* | *Last Reviewed: 2026-07-14*
+*Last Updated: 2026-08-21* | *Last Reviewed: 2026-08-21*
