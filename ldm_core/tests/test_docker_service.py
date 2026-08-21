@@ -196,6 +196,71 @@ class TestDockerService(unittest.TestCase):
             prefix = DockerService.get_docker_cmd_prefix("local-node")
             self.assertEqual(prefix, ["docker"])
 
+    # --- LDM-#1242: Gogo shell helper -------------------------------------
+
+    # Verbatim shape of a real Gogo rejection, captured from
+    # liferay/dxp:2026.q1.12-lts.
+    _GOGO_REJECTION = (
+        "Trying 127.0.0.1...\n"
+        "Connected to localhost.\n"
+        "Escape character is '^]'.\n"
+        "____________________________\n"
+        "Welcome to Apache Felix Gogo\n"
+        "\n"
+        "g! gogo: IOException: no matches found: "
+        "com.liferay.portal.kernel.cache.MultiVMPoolUtil.clear()\n"
+        "g! Connection closed by foreign host.\n"
+    )
+
+    _GOGO_SUCCESS = (
+        "Trying 127.0.0.1...\n"
+        "Connected to localhost.\n"
+        "Escape character is '^]'.\n"
+        "____________________________\n"
+        "Welcome to Apache Felix Gogo\n"
+        "\n"
+        "g! START LEVEL 20\n"
+        "   ID|State      |Level|Symbolic name\n"
+        "    0|Active     |    0|org.eclipse.osgi (3.13.0)|3.13.0\n"
+    )
+
+    @patch("ldm_core.docker_service.run_command")
+    def test_gogo_holds_pipe_open_for_reply(self, mock_run):
+        """The command must keep stdin open, or Gogo's reply is never read.
+
+        A bare `echo 'cmd' | telnet` closes stdin immediately and telnet tears
+        the socket down before Gogo writes anything back -- the caller gets only
+        the connection banner.
+        """
+        mock_run.return_value = self._GOGO_SUCCESS
+        out, err = DockerService.gogo("liferay-1", "lb -s")
+
+        self.assertIsNone(err)
+        self.assertIn("|", out)
+
+        shell_cmd = mock_run.call_args[0][0][-1]
+        self.assertIn("sleep", shell_cmd)
+        self.assertIn("telnet localhost 11311", shell_cmd)
+        self.assertIn("lb -s", shell_cmd)
+
+    @patch("ldm_core.docker_service.run_command")
+    def test_gogo_detects_rejection_despite_zero_exit(self, mock_run):
+        """A `gogo:` line means the command failed, even though telnet exits 0."""
+        mock_run.return_value = self._GOGO_REJECTION
+        _out, err = DockerService.gogo("liferay-1", "com.example.Foo.bar()")
+
+        self.assertIsNotNone(err)
+        self.assertIn("no matches found", err or "")
+
+    @patch("ldm_core.docker_service.run_command")
+    def test_gogo_handles_no_output(self, mock_run):
+        """A silent container must not be mistaken for a successful command."""
+        mock_run.return_value = None
+        out, err = DockerService.gogo("liferay-1", "lb -s")
+
+        self.assertEqual("", out)
+        self.assertIsNone(err)
+
 
 if __name__ == "__main__":
     unittest.main()

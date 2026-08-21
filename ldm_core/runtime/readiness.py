@@ -234,12 +234,21 @@ class ReadinessService(BaseHandler):
             gogo_start = time.time()
             while (time.time() - overall_start) < overall_timeout:
                 try:
-                    res = DockerService.exec(
+                    # LDM-#1242: must go through DockerService.gogo(), which
+                    # holds the telnet pipe open long enough for Gogo to write
+                    # its reply. The previous `echo 'lb -s' | telnet` form
+                    # returned only telnet's connection banner (157 bytes, no
+                    # bundle table), so the `"|" in res` test below never
+                    # matched and the `elif res: break` path fired on the very
+                    # first iteration -- meaning bundle and Client Extension
+                    # state was never actually verified on any run.
+                    res, gogo_err = DockerService.gogo(
                         container_name,
-                        ["sh", "-c", "echo 'lb -s' | telnet localhost 11311"],
-                        check=False,
+                        "lb -s",
                         target_name=target_name,
                     )
+                    if gogo_err:
+                        UI.debug(f"Gogo rejected 'lb -s': {gogo_err}")
                     if res and "|" in res:
                         # Parse lb -s output
                         bundles = {}

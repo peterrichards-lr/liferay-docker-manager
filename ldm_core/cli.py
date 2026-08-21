@@ -1315,7 +1315,7 @@ def get_parser():  # noqa: PLR0915
         "--force-boot",
         action="store_true",
         dest="force_boot",
-        help="Force a container reboot instead of immediate runtime reindexing",
+        help="Restart the container immediately to apply the scheduled reindex, without prompting",
     )
 
     # Command: snapshot, restore

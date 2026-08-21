@@ -138,52 +138,20 @@ class TestSearch(unittest.TestCase):
             )
 
     @patch("ldm_core.ui.UI.success")
-    @patch("ldm_core.ui.UI.info")
+    @patch("ldm_core.ui.UI.detail")
     @patch("ldm_core.docker_service.DockerService.exec")
     @patch("ldm_core.docker_service.DockerService.is_running", return_value=True)
-    def test_cmd_reindex_immediate_running(
-        self, mock_is_running, mock_exec, mock_info, mock_success
+    def test_cmd_reindex_running_schedules_for_boot_without_gogo(
+        self, mock_is_running, mock_exec, mock_detail, mock_success
     ):
-        """Verify that ldm reindex triggers immediate reindex when container is running."""
-        self.handler.args.force_boot = False
-        with (
-            patch.object(
-                self.handler, "detect_project_path", return_value=self.tmp_dir
-            ),
-            patch.object(
-                self.handler,
-                "read_meta",
-                return_value={"liferay_container_name": "test-container"},
-            ),
-            patch.object(self.handler.handler.search, "flag_reindex") as mock_flag,
-            patch.object(self.handler.handler.orchestration, "cmd_run") as mock_run,
-        ):
-            self.handler.handler.search.cmd_reindex("test")
+        """LDM-#1242: a running container must schedule a boot reindex, not attempt Gogo.
 
-            # Verify DockerService.exec was called to run telnet command
-            mock_is_running.assert_called_once_with("test-container")
-            mock_exec.assert_called_once()
-            args = mock_exec.call_args[0][1]
-            self.assertIn("telnet localhost 11311", args[2])
-
-            # Verify it did NOT flag or restart
-            mock_flag.assert_not_called()
-            mock_run.assert_not_called()
-            mock_success.assert_called_with(
-                "Successfully triggered immediate runtime reindex on 'test-container'."
-            )
-
-    @patch("ldm_core.ui.UI.success")
-    @patch("ldm_core.ui.UI.warning")
-    @patch(
-        "ldm_core.docker_service.DockerService.exec",
-        side_effect=Exception("Failed connection"),
-    )
-    @patch("ldm_core.docker_service.DockerService.is_running", return_value=True)
-    def test_cmd_reindex_immediate_failure_fallback(
-        self, mock_is_running, mock_exec, mock_warning, mock_success
-    ):
-        """Verify fallback to boot scheduling if immediate reindex command fails."""
+        This test previously asserted the opposite -- that a telnet/Gogo command
+        was issued and that reindex had been "triggered". It passed while the
+        feature was entirely broken, because it only checked that a command was
+        *issued*, never that Gogo accepted it. Gogo answered
+        `PatternSyntaxException` and no reindex ever ran.
+        """
         self.handler.args.force_boot = False
         self.handler.non_interactive = True
         self.handler.handler.non_interactive = True
@@ -203,16 +171,67 @@ class TestSearch(unittest.TestCase):
             self.handler.handler.search.cmd_reindex("test")
 
             mock_is_running.assert_called_once_with("test-container")
-            mock_exec.assert_called_once()
-            mock_warning.assert_called_once()
-            self.assertIn(
-                "Failed to execute immediate reindex", mock_warning.call_args[0][0]
-            )
 
-            # Verify we fell back to scheduling for next boot
+            # No Gogo/telnet attempt at all -- there is no Gogo command capable
+            # of triggering a reindex, so issuing one was pure noise.
+            mock_exec.assert_not_called()
+
+            # It must fall through to the boot-time path that actually works.
             mock_flag.assert_called_once_with(self.tmp_dir)
             mock_success.assert_called_with(
                 f"Project '{self.tmp_dir.name}' scheduled for search reindex on next boot."
+            )
+
+            # And it must explain why, rather than staying silent.
+            self.assertTrue(
+                any(
+                    "immediate" in str(c[0][0]).lower()
+                    for c in mock_detail.call_args_list
+                ),
+                "Expected an explanation that an immediate reindex is unavailable. "
+                f"Got: {[str(c[0][0]) for c in mock_detail.call_args_list]}",
+            )
+
+    @patch("ldm_core.ui.UI.success")
+    @patch("ldm_core.docker_service.DockerService.exec")
+    @patch("ldm_core.docker_service.DockerService.is_running", return_value=True)
+    def test_cmd_reindex_never_claims_immediate_success(
+        self, mock_is_running, mock_exec, mock_success
+    ):
+        """LDM-#1242 regression guard: the false success message must never return.
+
+        telnet exits 0 whenever the connection succeeds, regardless of whether
+        Gogo understood the input, so the old code reported
+        "Successfully triggered immediate runtime reindex" every single time
+        while doing nothing at all.
+        """
+        self.handler.args.force_boot = False
+        self.handler.non_interactive = True
+        self.handler.handler.non_interactive = True
+        with (
+            patch.object(
+                self.handler, "detect_project_path", return_value=self.tmp_dir
+            ),
+            patch.object(
+                self.handler,
+                "read_meta",
+                return_value={"liferay_container_name": "test-container"},
+            ),
+            patch.object(
+                self.handler.handler.search, "flag_reindex", return_value=True
+            ),
+        ):
+            self.handler.handler.search.cmd_reindex("test")
+
+            claims = [
+                str(c[0][0])
+                for c in mock_success.call_args_list
+                if "immediate" in str(c[0][0]).lower()
+            ]
+            self.assertEqual(
+                [],
+                claims,
+                f"Regression (#1242): reindex claimed immediate success: {claims}",
             )
 
     @patch("ldm_core.ui.UI.success")

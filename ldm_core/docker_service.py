@@ -147,6 +147,50 @@ class DockerService:
         return run_command(cmd, check=check, capture_output=capture_output)
 
     @staticmethod
+    def gogo(
+        container_name: str,
+        command: str,
+        settle_seconds: int = 6,
+        target_name: str | None = None,
+    ) -> tuple[str, str | None]:
+        """Runs a command in Liferay's Gogo shell and returns (output, error).
+
+        `error` is None when Gogo accepted the command, otherwise the Gogo
+        rejection line.
+
+        LDM-#1242: two subtleties make the naive `echo 'cmd' | telnet localhost
+        11311` form silently useless, and both are handled here:
+
+        1. Piping a bare `echo` closes stdin immediately, so telnet tears the
+           socket down before Gogo has written its reply -- the caller always
+           receives only telnet's own connection banner and never the command
+           output. Keeping the pipe open for `settle_seconds` lets Gogo answer.
+        2. telnet exits 0 whenever the *connection* succeeded, regardless of
+           whether Gogo understood the command. Callers that trusted the exit
+           code treated `gogo: IOException: no matches found: ...` as success.
+           Gogo reports rejection on its own output as a `gogo: <Exception>`
+           line, so that is what gets detected.
+        """
+        payload = f"(echo '{command}'; sleep {settle_seconds}) | telnet localhost 11311"
+        res = (
+            DockerService.exec(
+                container_name,
+                ["sh", "-c", payload],
+                check=False,
+                target_name=target_name,
+            )
+            or ""
+        )
+
+        # Gogo prefixes its own failures with "gogo: ", e.g.
+        #   g! gogo: IOException: no matches found: <command>
+        for line in res.splitlines():
+            stripped = line.strip().removeprefix("g!").strip()
+            if stripped.startswith("gogo:"):
+                return res, stripped
+        return res, None
+
+    @staticmethod
     def get_logs(
         container_name: str,
         tail: int = 100,
