@@ -179,6 +179,10 @@ To prevent test-runner hangs, memory exhaustion, and side-effect leakage in CI p
    * Let LDM interact with real, lightweight files on disk. The cleanups inside LDM and `TemporaryDirectory` contexts will automatically ensure that no files are left behind.
 3. **Use Mock Side-Effects for Specific Interceptions**:
    * If files need to be simulated, write a side effect for a specific dependency (like mocking `safe_extract` to write dummy meta files directly to the temporary directory).
+4. **All Test Files MUST Live Under `ldm_core/tests/`**:
+   * `testpaths` in `pyproject.toml` and the explicit `python -m pytest ldm_core/tests/` invocation in `.github/workflows/ci.yml` both scan that single directory. A test file placed anywhere else is **silently never executed** — it does not fail, it simply never runs.
+   * This applies even to tests covering code outside the package. Tests for `scripts/` modules belong here too: see `ldm_core/tests/test_sync_compatibility.py` and `test_manage_target_nodes.py`, which reach their target via `sys.path.insert(0, <repo>/scripts)` and then import the module by its bare name.
+   * `test_no_test_files_outside_suite_directory` in `ldm_core/tests/test_architectural_contracts.py` enforces this, and fails the suite if a test-defining file appears elsewhere. Standalone scripts that merely *look* like tests (e.g. `scripts/test_ui.py`, a manual Playwright driver) are exempt, because they define no collectable test functions or classes.
 
 ---
 
@@ -212,4 +216,4 @@ powershell -ExecutionPolicy Bypass -File scripts/verify_e2e_refactor.ps1
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-08-19* | *Last Reviewed: 2026-08-19*
+*Last Updated: 2026-08-21* | *Last Reviewed: 2026-08-21*

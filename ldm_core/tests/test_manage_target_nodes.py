@@ -3,10 +3,14 @@
 Last Updated: 2026-08-20 | Last Reviewed: 2026-08-20
 """
 
+import sys
 import unittest
 from datetime import datetime, timedelta
+from pathlib import Path
 
-from scripts.manage_target_nodes import (
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "scripts"))
+
+from manage_target_nodes import (
     is_in_shutdown_window,
     parse_duration,
 )
