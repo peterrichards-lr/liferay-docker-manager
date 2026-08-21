@@ -56,4 +56,12 @@ site/
 # Transient AI Agent State (Git Ignored)
 .agent-state.md
 
+# Auxiliary virtual environments (see Environment Layout in
+# .agents/skills/ldm_developer/SKILL.md). Python's venv already writes a
+# self-ignoring .gitignore inside each of these; these rules are defence in
+# depth in case one is ever created by a tool that omits it.
+/.pytest_venv/
+/.smoke_venv/
+/.temp_venv/
+
 
