@@ -13,10 +13,10 @@ project_root = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(project_root))
 
 
-def run_cmd(cmd, cwd=project_root, check=True, capture=False):
+def run_cmd(cmd, cwd=project_root, check=True, capture=False, env=None):
     """Helper to run a shell command."""
     res = subprocess.run(
-        cmd, cwd=str(cwd), capture_output=capture, text=True, check=False
+        cmd, cwd=str(cwd), capture_output=capture, text=True, check=False, env=env
     )
     if check and res.returncode != 0:
         print(f"Error executing command: {' '.join(cmd)}")
@@ -167,44 +167,91 @@ def get_pr_state(pr_number):
     return api_get_pr_state(pr_number)
 
 
-def run_pre_commit_checks(branch_name, delete_branch_on_failure=True):
+# Mirrors the default in scripts/agent_push.sh. `semgrep`/`detect-secrets`/
+# `actionlint` are skipped because their binaries may be unavailable locally;
+# `bump-docs-timestamps` is skipped deliberately, since it rewrites every
+# markdown file's footer on any --all-files run and would otherwise sweep dozens
+# of unrelated docs into the release commit. Secret scanning is still covered at
+# release time by the `gitleaks` hook, which is not skipped.
+PRE_COMMIT_SKIP = "bump-docs-timestamps,actionlint,semgrep,detect-secrets"
+
+
+def resolve_pre_commit_cmd():
+    """Returns the argv prefix that runs pre-commit, or None if it is unavailable.
+
+    LDM-#1244: this resolves pre-commit as an importable *module* rather than
+    probing for the generated `.venv/bin/pre-commit` console script. Those
+    wrappers are not reliably present -- endpoint protection removes them by
+    name after installation, leaving the package itself fully functional -- so
+    testing for the file answered the wrong question. When it answered "no",
+    the caller fell through to a much weaker `./lint.sh` gate without saying so.
+    """
     import shutil
 
-    print("Running code formatting and lint checks...")
-    pre_commit_bin = None
-    venv_pre_commit = project_root / ".venv" / "bin" / "pre-commit"
-    if venv_pre_commit.exists():
-        pre_commit_bin = str(venv_pre_commit)
-    elif shutil.which("pre-commit"):
-        pre_commit_bin = shutil.which("pre-commit")
-
-    if pre_commit_bin:
-        print(f"Running pre-commit quality gate checks via {pre_commit_bin}...")
-        res = run_cmd([pre_commit_bin, "run", "--all-files"], check=False, capture=True)
-        if res.returncode != 0:
-            print(
-                f"\n❌ Error: Pre-commit quality gate checks failed. Please resolve lint issues before release:\n{res.stdout}\n{res.stderr or ''}"
-            )
-            run_cmd(["git", "checkout", "master"], check=False)
-            if delete_branch_on_failure and branch_name != "master":
-                run_cmd(["git", "branch", "-D", branch_name], check=False)
-            sys.exit(res.returncode)
-        print("✅ Pre-commit quality gate checks passed.")
-    elif (project_root / "lint.sh").exists():
-        print("Running quality gate via ./lint.sh...")
-        res = run_cmd(["./lint.sh"], check=False, capture=True)
-        if res.returncode != 0:
-            print(
-                f"\n❌ Error: Local quality gate (./lint.sh) failed. Please resolve lint issues before release:\n{res.stdout}\n{res.stderr or ''}"
-            )
-            run_cmd(["git", "checkout", "master"], check=False)
-            if delete_branch_on_failure and branch_name != "master":
-                run_cmd(["git", "branch", "-D", branch_name], check=False)
-            sys.exit(res.returncode)
-        print("✅ Quality gate (./lint.sh) passed.")
+    if os.name == "nt":
+        venv_python = project_root / ".venv" / "Scripts" / "python.exe"
     else:
-        print("❌ Error: Neither pre-commit nor ./lint.sh was found. Aborting release.")
-        sys.exit(1)
+        venv_python = project_root / ".venv" / "bin" / "python3"
+
+    for python_bin in (venv_python, Path(sys.executable)):
+        if not python_bin.exists():
+            continue
+        probe = subprocess.run(
+            [str(python_bin), "-c", "import pre_commit"],
+            capture_output=True,
+            check=False,
+        )
+        if probe.returncode == 0:
+            return [str(python_bin), "-m", "pre_commit"]
+
+    # A console script genuinely on PATH remains acceptable; it was only the
+    # unconditional `.venv/bin/` file probe that was unsafe.
+    on_path = shutil.which("pre-commit")
+    return [on_path] if on_path else None
+
+
+def abort_release(branch_name, delete_branch_on_failure, exit_code):
+    """Returns to master, discards the release branch, and exits."""
+    run_cmd(["git", "checkout", "master"], check=False)
+    if delete_branch_on_failure and branch_name != "master":
+        run_cmd(["git", "branch", "-D", branch_name], check=False)
+    sys.exit(exit_code)
+
+
+def run_pre_commit_checks(branch_name, delete_branch_on_failure=True):
+    print("Running code formatting and lint checks...")
+
+    pre_commit_cmd = resolve_pre_commit_cmd()
+    if not pre_commit_cmd:
+        # LDM-#1244: never silently downgrade the release gate. `./lint.sh` does
+        # not run check-version-sync, gitleaks, mypy, check-cli-drift,
+        # validate-compose, deptry or shellcheck, and it auto-fixes rather than
+        # validates -- so accepting it here let a release be cut, and the working
+        # tree rewritten, behind a green "quality gate passed" message.
+        print(
+            "\n❌ Error: the pre-commit quality gate is unavailable, so this release "
+            "cannot be verified. Aborting.\n"
+            "   Install it into the project virtual environment and retry:\n"
+            "       ldm dev-setup\n"
+            "   or: .venv/bin/python3 -m pip install pre-commit\n"
+            "   Refusing to fall back to ./lint.sh, which does not check version "
+            "synchronization or run gitleaks/mypy (see LDM-#1244)."
+        )
+        abort_release(branch_name, delete_branch_on_failure, 1)
+
+    env = os.environ.copy()
+    env.setdefault("SKIP", PRE_COMMIT_SKIP)
+
+    print(f"Running pre-commit quality gate checks via {' '.join(pre_commit_cmd)}...")
+    res = run_cmd(
+        [*pre_commit_cmd, "run", "--all-files"], check=False, capture=True, env=env
+    )
+    if res.returncode != 0:
+        print(
+            f"\n❌ Error: Pre-commit quality gate checks failed. Please resolve lint issues before release:\n{res.stdout}\n{res.stderr or ''}"
+        )
+        abort_release(branch_name, delete_branch_on_failure, res.returncode)
+    print("✅ Pre-commit quality gate checks passed.")
 
 
 def poll_pr_merge(pr_num):

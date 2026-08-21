@@ -33,13 +33,11 @@ class DevService:
         else:
             UI.detail("Virtual environment already exists.")
 
-        # 2. Identify venv python/pip
+        # 2. Identify venv python
         if platform.system().lower() == "windows":
             venv_python = venv_dir / "Scripts" / "python.exe"
-            venv_pip = venv_dir / "Scripts" / "pip.exe"
         else:
             venv_python = venv_dir / "bin" / "python3"
-            venv_pip = venv_dir / "bin" / "pip"
 
         if not venv_python.exists():
             UI.die(f"Could not find python in venv: {venv_python}")
@@ -48,10 +46,18 @@ class DevService:
         UI.detail("Installing dependencies...")
         from ldm_core.utils import run_command
 
-        run_command([str(venv_pip), "install", "--upgrade", "pip"])
-        run_command([str(venv_pip), "install", "-r", "requirements.txt"])
-        run_command([str(venv_pip), "install", "-r", "requirements-dev.txt"])
-        run_command([str(venv_pip), "install", "-e", "."])
+        # LDM-#1245: invoke pip as a module rather than via the generated
+        # `.venv/bin/pip` console script. That wrapper is not reliably present
+        # -- endpoint protection removes it by name after installation, leaving
+        # pip itself intact -- so calling it made `ldm dev-setup` fail at its
+        # first step on exactly the machines whose environment needed repairing.
+        # `python -m pip` is also the form pip itself documents for upgrades,
+        # since replacing pip's own wrapper mid-run is unreliable on Windows.
+        pip = [str(venv_python), "-m", "pip"]
+        run_command([*pip, "install", "--upgrade", "pip"])
+        run_command([*pip, "install", "-r", "requirements.txt"])
+        run_command([*pip, "install", "-r", "requirements-dev.txt"])
+        run_command([*pip, "install", "-e", "."])
         UI.success("Dependencies installed.")
 
         # 4. Install pre-commit hooks
