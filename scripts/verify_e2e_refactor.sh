@@ -129,6 +129,38 @@ capture_logs_on_failure() {
     done
 }
 
+# LDM-#1255: Liferay writes its OSGi runtime state (state, modules, configs,
+# marketplace, client-extensions, log4j) into the bind-mounted workspace as the
+# *container's* UID. On Linux and WSL that ownership is preserved on the host,
+# so the invoking user cannot unlink those directories and a plain `rm -rf`
+# fails -- previously in silence, leaving an undeletable work dir behind.
+#
+# LDM already solves this internally: safe_rmtree() retries after
+# reclaim_volume_permissions(), which fixes ownership via a throwaway
+# container. This applies the same mechanism to the script's own fallback.
+remove_workspace_dir() {
+    local target="$1"
+    [ -d "$target" ] || return 0
+
+    if rm -rf "$target" 2>/dev/null && [ ! -d "$target" ]; then
+        return 0
+    fi
+
+    local parent base
+    parent="$(cd "$(dirname "$target")" && pwd)"
+    base="$(basename "$target")"
+
+    echo "ℹ  Permission denied removing ${target}; reclaiming ownership via container..."
+    docker run --rm -v "${parent}:/target" alpine:3 rm -rf "/target/${base}" >/dev/null 2>&1 || true
+
+    if [ -d "$target" ]; then
+        echo "⚠  Could not remove ${target}. Remove it manually with:"
+        echo "     docker run --rm -v \"${parent}:/target\" alpine:3 rm -rf \"/target/${base}\""
+        return 1
+    fi
+    return 0
+}
+
 cleanup_test_projects() {
     local EXIT_CODE=$?
     set +e
@@ -172,10 +204,17 @@ cleanup_test_projects() {
             echo "ℹ  Other LDM projects are running (${other_containers//$'\n'/, }). Skipping global infrastructure cleanup."
         fi
 
-        LDM_WORKSPACE="${LDM_WORKSPACE}" "$LDM_CMD" -y rm "${PROJECT_NAME}" --delete >/dev/null 2>&1 || true
+        # LDM-#1255: do not discard the result. Previously this was
+        # `>/dev/null 2>&1 || true`, which swallowed stdout, stderr *and* the
+        # exit code -- so a failed project removal was completely invisible and
+        # only surfaced later as an undeletable directory.
+        if ! LDM_WORKSPACE="${LDM_WORKSPACE}" "$LDM_CMD" -y rm "${PROJECT_NAME}" --delete >/dev/null 2>&1; then
+            echo "⚠  'ldm rm ${PROJECT_NAME} --delete' failed; the project directory may remain."
+        fi
+
         # Keep the venv if we are in the repository for developer convenience, otherwise delete
         if [ ! -f "pyproject.toml" ]; then
-            rm -rf "${LDM_WORKSPACE}"
+            remove_workspace_dir "${LDM_WORKSPACE}"
         fi
     fi
 }
