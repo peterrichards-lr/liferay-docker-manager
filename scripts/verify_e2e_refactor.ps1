@@ -602,6 +602,84 @@ zf.close()
     # Clean up temporary test files
     Remove-Item $commonDir -Recurse -Force -ErrorAction SilentlyContinue
 
+    Write-Host ">> Verifying --json Output Schemas (#1091 / #1115)..."
+    # stderr is deliberately discarded rather than merged: '2>&1' folds any
+    # warning into the payload and makes ConvertFrom-Json fail, reporting a
+    # schema break that never happened.
+    $listJsonRaw = & $LDM_CMD list --json 2>$null
+    try {
+        $listData = @($listJsonRaw | ConvertFrom-Json)
+        # Must not be vacuous: a project exists by this point in the run, so an
+        # empty array means the contract is broken, not that there is nothing
+        # to check.
+        if (-not $listData -or $listData.Count -eq 0) {
+            throw "list --json returned an empty array; expected the test project"
+        }
+        foreach ($item in $listData) {
+            foreach ($key in @("http_ready", "http_status", "db_unhealthy")) {
+                if ($item.PSObject.Properties.Name -notcontains $key) {
+                    throw "$key missing from list --json entry '$($item.project)'"
+                }
+            }
+        }
+        Write-Host "[SUCCESS] ldm list --json schema verified."
+    } catch {
+        throw "ldm list --json schema verification failed: $_"
+    }
+
+    # 'status --json' is shaped differently from 'list --json' (see
+    # ldm_core/diagnostics/info.py: run_status vs run_list). It returns an
+    # object with 'infrastructure' and 'projects', and the health keys live on
+    # each entry in 'projects' -- not at the top level. It also does NOT emit
+    # 'db_unhealthy', which is a list-only field.
+    $statusJsonRaw = & $LDM_CMD status . --json 2>$null
+    try {
+        $statusData = $statusJsonRaw | ConvertFrom-Json
+        if ($statusData.PSObject.Properties.Name -notcontains "projects") {
+            throw "projects missing from status --json"
+        }
+        $statusProjects = @($statusData.projects)
+        if (-not $statusProjects -or $statusProjects.Count -eq 0) {
+            throw "status --json returned no projects; expected the test project"
+        }
+        foreach ($item in $statusProjects) {
+            foreach ($key in @("http_ready", "http_status")) {
+                if ($item.PSObject.Properties.Name -notcontains $key) {
+                    throw "$key missing from status --json project '$($item.project)'"
+                }
+            }
+        }
+        Write-Host "[SUCCESS] ldm status --json schema verified."
+    } catch {
+        throw "ldm status --json schema verification failed: $_"
+    }
+
+    Write-Host ">> Verifying Idempotent Exit Code 5 (#1094)..."
+    # Exit 5 is only returned in non-interactive mode
+    # (ldm_core/pipelines/run.py:246); interactively LDM prompts instead. '-y'
+    # is therefore required, and 5 is the only acceptable answer -- also
+    # accepting 0 would let a regression that silently re-ran the project pass.
+    & $LDM_CMD -y up . *> $null
+    $upExitCode = $LASTEXITCODE
+    if ($upExitCode -eq 5) {
+        Write-Host "[SUCCESS] Idempotent Exit Code 5 verified."
+    } else {
+        throw "Expected exit code 5 (Idempotent No-Op) from 'ldm -y up' on an already-running project, got $upExitCode."
+    }
+
+    Write-Host ">> Verifying Synthetic Client Extension (CX) Deploy (#1097)..."
+    New-Item -ItemType Directory -Path "synthetic-cx" -Force | Out-Null
+    @"
+assemble:
+  - from: build/assets
+    into: static
+"@ | Set-Content -Path "synthetic-cx\client-extension.yaml" -Encoding UTF8
+    # Log-AndRun fails the run on a non-zero exit. This asserts the deploy
+    # pipeline accepts a real client-extension.yaml end to end; it deliberately
+    # does not claim to verify OSGi staging, which would need container state.
+    Log-AndRun "Deploying Synthetic CX" $LDM_CMD "-y deploy . synthetic-cx\"
+    Remove-Item "synthetic-cx" -Recurse -Force -ErrorAction SilentlyContinue
+
     Log-AndRun "Checking Status" $LDM_CMD "-y status"
 
     # Clean up any potential orphans from the run

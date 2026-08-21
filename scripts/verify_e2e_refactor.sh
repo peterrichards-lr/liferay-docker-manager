@@ -643,6 +643,81 @@ fi
 # Clean up temporary test files
 rm -rf "$LDM_WORKSPACE/common"
 
+echo ">> Verifying --json Output Schemas (#1091 / #1115)..."
+# NB stderr is deliberately NOT merged into these captures: `2>&1` would fold any
+# warning into the payload and make json.loads() fail, reporting a schema break
+# that never happened.
+LIST_JSON_OUT=$("$LDM_CMD" list --json 2>/dev/null || true)
+if "$VENV_PYTHON" -c "
+import json, sys
+data = json.loads(sys.stdin.read())
+assert isinstance(data, list), 'list --json must return array'
+# Must NOT be vacuous: a project exists at this point in the run, so an empty
+# array means the contract is broken, not that there is nothing to check.
+assert data, 'list --json returned an empty array; expected the test project'
+for item in data:
+    for key in ('http_ready', 'http_status', 'db_unhealthy'):
+        assert key in item, f'{key} missing from list --json entry {item.get(\"project\")!r}'
+" <<< "$LIST_JSON_OUT"; then
+    echo "✅ ldm list --json schema verified."
+else
+    echo "❌ ERROR: ldm list --json schema verification failed. Output: $LIST_JSON_OUT" | tee -a "$RESULTS_FILE_TMP"
+    exit 1
+fi
+
+# `status --json` is shaped differently from `list --json` (see
+# ldm_core/diagnostics/info.py: run_status vs run_list). It returns an object
+# with `infrastructure` and `projects`, and the health keys live on each entry
+# in `projects` -- not at the top level. It also does NOT emit `db_unhealthy`,
+# which is a `list`-only field.
+STATUS_JSON_OUT=$("$LDM_CMD" status . --json 2>/dev/null || true)
+if "$VENV_PYTHON" -c "
+import json, sys
+data = json.loads(sys.stdin.read())
+assert isinstance(data, dict), 'status --json must return an object'
+assert 'projects' in data, 'projects missing from status --json'
+projects = data['projects']
+assert isinstance(projects, list), 'status --json projects must be an array'
+assert projects, 'status --json returned no projects; expected the test project'
+for item in projects:
+    for key in ('http_ready', 'http_status'):
+        assert key in item, f'{key} missing from status --json project {item.get(\"project\")!r}'
+" <<< "$STATUS_JSON_OUT"; then
+    echo "✅ ldm status --json schema verified."
+else
+    echo "❌ ERROR: ldm status --json schema verification failed. Output: $STATUS_JSON_OUT" | tee -a "$RESULTS_FILE_TMP"
+    exit 1
+fi
+
+echo ">> Verifying Idempotent Exit Code 5 (#1094)..."
+# Exit 5 is only returned in non-interactive mode (ldm_core/pipelines/run.py:246);
+# interactively LDM prompts instead. `-y` is therefore required, and 5 is the
+# only acceptable answer -- accepting 0 as well would let a regression that
+# silently re-ran the project pass unnoticed.
+set +e
+"$LDM_CMD" -y up . >/dev/null 2>&1
+UP_EXIT_CODE=$?
+set -e
+if [ "$UP_EXIT_CODE" -eq 5 ]; then
+    echo "✅ Idempotent Exit Code 5 verified."
+else
+    echo "❌ ERROR: expected exit code 5 (Idempotent No-Op) from 'ldm -y up' on an already-running project, got $UP_EXIT_CODE." | tee -a "$RESULTS_FILE_TMP"
+    exit 1
+fi
+
+echo ">> Verifying Synthetic Client Extension (CX) Deploy (#1097)..."
+mkdir -p synthetic-cx
+cat << 'EOF' > synthetic-cx/client-extension.yaml
+assemble:
+  - from: build/assets
+    into: static
+EOF
+# log_and_run fails the run on a non-zero exit. This asserts the deploy pipeline
+# accepts a real client-extension.yaml end to end; it deliberately does not claim
+# to verify OSGi staging, which would need to inspect container state.
+log_and_run "Deploying Synthetic CX" "$LDM_CMD" -y deploy . synthetic-cx/
+rm -rf synthetic-cx
+
 # Final
 log_and_run "Checking Status" "$LDM_CMD" -y status
 
