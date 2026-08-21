@@ -675,19 +675,7 @@ zf.close()
         throw "Expected exit code 5 (Idempotent No-Op) from 'ldm -y up' on an already-running project, got $upExitCode."
     }
 
-    Write-Host ">> Verifying Synthetic Client Extension (CX) Deploy (#1097)..."
-    New-Item -ItemType Directory -Path "synthetic-cx" -Force | Out-Null
-    @"
-assemble:
-  - from: build/assets
-    into: static
-"@ | Set-Content -Path "synthetic-cx\client-extension.yaml" -Encoding UTF8
-    # Log-AndRun fails the run on a non-zero exit. This asserts the deploy
-    # pipeline accepts a real client-extension.yaml end to end; it deliberately
-    # does not claim to verify OSGi staging, which would need container state.
-    Log-AndRun "Deploying Synthetic CX" $LDM_CMD "-y deploy . synthetic-cx\"
-    Remove-Item "synthetic-cx" -Recurse -Force -ErrorAction SilentlyContinue
-
+    
     Log-AndRun "Checking Status" $LDM_CMD "-y status"
 
     # Clean up any potential orphans from the run

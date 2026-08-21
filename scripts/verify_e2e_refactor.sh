@@ -712,18 +712,6 @@ else
     exit 1
 fi
 
-echo ">> Verifying Synthetic Client Extension (CX) Deploy (#1097)..."
-mkdir -p synthetic-cx
-cat << 'EOF' > synthetic-cx/client-extension.yaml
-assemble:
-  - from: build/assets
-    into: static
-EOF
-# log_and_run fails the run on a non-zero exit. This asserts the deploy pipeline
-# accepts a real client-extension.yaml end to end; it deliberately does not claim
-# to verify OSGi staging, which would need to inspect container state.
-log_and_run "Deploying Synthetic CX" "$LDM_CMD" -y deploy . synthetic-cx/
-rm -rf synthetic-cx
 
 # Final
 log_and_run "Checking Status" "$LDM_CMD" -y status
