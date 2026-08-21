@@ -167,13 +167,19 @@ def get_pr_state(pr_number):
     return api_get_pr_state(pr_number)
 
 
-# Mirrors the default in scripts/agent_push.sh. `semgrep`/`detect-secrets`/
-# `actionlint` are skipped because their binaries may be unavailable locally;
-# `bump-docs-timestamps` is skipped deliberately, since it rewrites every
-# markdown file's footer on any --all-files run and would otherwise sweep dozens
-# of unrelated docs into the release commit. Secret scanning is still covered at
-# release time by the `gitleaks` hook, which is not skipped.
-PRE_COMMIT_SKIP = "bump-docs-timestamps,actionlint,semgrep,detect-secrets"
+# Mirrors the default in scripts/agent_push.sh. Only `bump-docs-timestamps` is
+# skipped, and deliberately: it rewrites every markdown file's `Last Updated`
+# footer on any --all-files run, which would otherwise sweep dozens of unrelated
+# docs into the release commit.
+#
+# LDM-#1246: `actionlint`, `semgrep` and `detect-secrets` used to be skipped here
+# too, on the grounds that their binaries "may only be installed in CI". That was
+# wrong -- all three are `repo:`-based hooks, so pre-commit provisions its own
+# isolated environment for each and nothing need be installed locally. Measured
+# on a clean machine including one-time provisioning: detect-secrets 3s,
+# actionlint 6s, semgrep 21s, all passing. Two security scanners were being
+# skipped on every release for no reason.
+PRE_COMMIT_SKIP = "bump-docs-timestamps"
 
 
 def resolve_pre_commit_cmd():

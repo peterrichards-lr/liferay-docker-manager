@@ -22,11 +22,11 @@ else
 fi
 
 echo "=> Running pre-commit hooks (Quality Gate)..."
-if ! SKIP=bump-docs-timestamps,actionlint,semgrep,detect-secrets .venv/bin/python3 -m pre_commit run --all-files; then
+if ! SKIP=bump-docs-timestamps .venv/bin/python3 -m pre_commit run --all-files; then
   echo "=> [WARN] Pre-commit hooks failed or auto-formatted files."
   echo "=> Automatically staging any hook modifications and retrying..."
   git add .
-  if ! SKIP=bump-docs-timestamps,actionlint,semgrep,detect-secrets .venv/bin/python3 -m pre_commit run --all-files; then
+  if ! SKIP=bump-docs-timestamps .venv/bin/python3 -m pre_commit run --all-files; then
     echo "=> [ERROR] Pre-commit hooks failed again. Manual intervention required."
     exit 1
   fi
@@ -43,7 +43,7 @@ echo "=> [SUCCESS] All Quality Gates Passed!"
 # Only commit if there are staged changes (prevent empty commits)
 if ! git diff --cached --quiet; then
     echo "=> Committing changes..."
-    SKIP=bump-docs-timestamps,actionlint,semgrep,detect-secrets git commit -m "$COMMIT_MSG"
+    SKIP=bump-docs-timestamps git commit -m "$COMMIT_MSG"
 else
     echo "=> No staged changes to commit. Proceeding to push..."
 fi
