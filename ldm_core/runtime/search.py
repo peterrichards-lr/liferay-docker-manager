@@ -85,7 +85,12 @@ class SearchService(BaseHandler):
                 self.manager.runtime.cmd_run(project_id)
 
     def cmd_reindex(self, project_id=None):
-        """Triggers search reindexing (immediately if running, otherwise on next boot)."""
+        """Schedules a search reindex for the project's next boot.
+
+        LDM-#1242: a reindex cannot be triggered on a running portal from
+        outside it, so this always schedules for next boot and then offers (or,
+        with --force-boot, performs) the restart that applies it.
+        """
         root = self.manager.detect_project_path(project_id)
         if not root:
             return
@@ -103,31 +108,36 @@ class SearchService(BaseHandler):
         is_running = DockerService.is_running(container_name)
 
         if is_running and not force_boot:
+            # LDM-#1242: this previously piped a fully-qualified
+            # IndexWriterHelperUtil.reindex(...) call into the Gogo shell and
+            # reported success. Gogo is a command shell, not a Java evaluator --
+            # it answered `gogo: PatternSyntaxException: Unclosed character
+            # class` and no reindex ever ran. telnet still exits 0 (the
+            # connection succeeded), so even check=True could not catch it, and
+            # the false success return skipped the boot-time fallback below.
+            # No Gogo command on any supported DXP version can trigger a
+            # reindex (`updateIndexes*` are database indexes), so the honest
+            # path is to schedule it for the next boot.
             UI.detail(
-                f"Liferay container '{container_name}' is running. Triggering immediate runtime reindex..."
+                f"Liferay container '{container_name}' is running, but an immediate "
+                "runtime reindex cannot be triggered from outside the portal. "
+                "Scheduling the reindex for the next boot instead."
             )
-            groovy_code = 'com.liferay.portal.kernel.search.IndexWriterHelperUtil.reindex(0, "reindex", [com.liferay.portal.kernel.util.PortalUtil.getDefaultCompanyId()] as long[], null)'
-            command_list = [
-                "sh",
-                "-c",
-                f"echo '{groovy_code}' | telnet localhost 11311",
-            ]
-            try:
-                DockerService.exec(container_name, command_list, check=True)
-                UI.success(
-                    f"Successfully triggered immediate runtime reindex on '{container_name}'."
-                )
-                return
-            except Exception as e:
-                UI.warning(
-                    f"Failed to execute immediate reindex via Gogo shell ({e}). Falling back to boot-time scheduling."
-                )
 
         if self.flag_reindex(root):
             UI.success(
                 f"Project '{root.name}' scheduled for search reindex on next boot."
             )
-            if not self.manager.non_interactive:
+            # LDM-#1242: --force-boot used to mean "skip the immediate runtime
+            # reindex attempt". That attempt never worked, so the flag now
+            # carries the meaning its name always implied: restart right away to
+            # apply the reindex, without prompting. This is also what automation
+            # needs, since the interactive prompt below is skipped entirely in
+            # non-interactive mode.
+            if force_boot:
+                UI.detail("Restarting now to apply the reindex (--force-boot).")
+                self.manager.runtime.cmd_run(root.name)
+            elif not self.manager.non_interactive:
                 if UI.confirm("Do you want to restart the project now to apply?", "Y"):
                     self.manager.runtime.cmd_run(root.name)
         else:

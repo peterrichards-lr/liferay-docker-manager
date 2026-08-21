@@ -360,7 +360,7 @@ The following is a comprehensive index of all registered CLI option flags and th
 - **`--download`**: Force downloading of dependencies.
 - **`--dry-run`**: Preview execution without mutations.
 - **`--files-only`**: Extract or backup files/folders only.
-- **`--force-boot`**: Force a container reboot instead of immediate runtime reindexing.
+- **`--force-boot`**: Restart the container immediately to apply the scheduled reindex, without prompting.
 - **`--force-downgrade`**: Force a version downgrade (bypassing safety validations).
 - **`--grep`**: Grep search pattern for filtering log lines.
 - **`--grep-i`**: Case-insensitive grep search.
@@ -496,4 +496,4 @@ ldm target migrate win-wsl aws-1
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-08-13* | *Last Reviewed: 2026-08-13*
+*Last Updated: 2026-08-21* | *Last Reviewed: 2026-08-21*

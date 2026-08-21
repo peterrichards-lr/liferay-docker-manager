@@ -899,7 +899,7 @@ class FragmentsService(BaseHandler):
                 )
         return patched_count
 
-    def _patch_database_fragmententrylink(self, project_meta, overrides):  # noqa: PLR0912
+    def _patch_database_fragmententrylink(self, project_meta, overrides):
         """Fallback direct database patcher for fragmententrylink editablevalues.
 
         Updates editablevalues directly in PostgreSQL/MySQL when DXP Headless REST
@@ -1024,28 +1024,25 @@ class FragmentsService(BaseHandler):
                     UI.debug(f"Direct DB patch for '{setting_key}' failed: {e}")
 
         if patched_db_count > 0:
-            container_name = project_meta.get("container_name") or project_meta.get(
-                "liferay_container_name"
+            # LDM-#1242: this previously piped MultiVMPoolUtil.clear() into the
+            # Gogo shell and then logged "Flushed Liferay OSGi MultiVMPool
+            # cache" unconditionally. Gogo cannot evaluate Java -- it answers
+            # `gogo: IOException: no matches found: ...` -- so the cache was
+            # never actually invalidated, and no Gogo command on any supported
+            # DXP version can invalidate it. Liferay holds fragment
+            # configuration in memory, so the patched rows stay invisible until
+            # the portal reloads them. Say so plainly rather than claiming a
+            # flush that never happened.
+            UI.warning(
+                f"Patched {patched_db_count} fragment setting(s) directly in the database "
+                "because the Headless REST API rejected the update (see upstream #883). "
+                "Liferay caches fragment configuration in memory, so this change is not "
+                "visible until the portal reloads it -- restart the project to apply it:"
             )
-            if container_name:
-                try:
-                    self.manager.run_command(
-                        [
-                            *docker_prefix,
-                            "exec",
-                            container_name,
-                            "sh",
-                            "-c",
-                            "echo 'com.liferay.portal.kernel.cache.MultiVMPoolUtil.clear();' | telnet localhost 11311",
-                        ],
-                        check=False,
-                        capture_output=True,
-                    )
-                    UI.debug(
-                        "Flushed Liferay OSGi MultiVMPool cache after direct DB patch."
-                    )
-                except Exception as e:
-                    UI.debug(f"Failed to flush OSGi cache via telnet: {e}")
+            project_id = project_meta.get("project_name") or project_meta.get(
+                "container_name"
+            )
+            UI.detail(f"    ldm restart {project_id or '<project>'}")
 
         return patched_db_count
 

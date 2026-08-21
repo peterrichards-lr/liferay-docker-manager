@@ -66,6 +66,26 @@ Create an `.ldm/fragment-overrides.json` file in the root of your project worksp
 
 When LDM imports this `.ldmp` package, it will dynamically calculate these values and update the fragment configuration in Liferay via the headless API.
 
+## When the Headless API Refuses: the Database Fallback
+
+On **published Site Initializer pages**, Liferay rejects `PUT` on page specifications with `UnsupportedOperationException` — an upstream limitation tracked in [#883](https://github.com/peterrichards-lr/liferay-docker-manager/issues/883) ([LPD-99955](https://liferay.atlassian.net/browse/LPD-99955)).
+
+When the headless attempt patches nothing, LDM falls back to updating `fragmententrylink.editablevalues` directly in PostgreSQL/MySQL.
+
+> [!IMPORTANT]
+> **A database-fallback patch requires a restart to become visible.** Liferay holds fragment configuration in memory, so the updated rows are not served until the portal reloads them:
+>
+> ```bash
+> ldm restart <project>
+> ```
+>
+> LDM tells you when this applies. Note that whether the old value is still on screen depends on whether that page had already been rendered and cached, so an un-restarted patch can *appear* to have worked intermittently — always restart before concluding an override is broken.
+
+Two further limitations of the fallback are worth knowing, since it is a regex rewrite rather than a JSON-aware edit:
+
+* A setting whose **current value is empty** (`"key":""`) is not matched and stays unpatched — LDM reports `0 rows` for it.
+* The `WHERE` clause matches on the key name alone, so a **generic key** (e.g. `url`) is rewritten in every fragment carrying that key across the whole instance. Prefer distinctive key names.
+
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-08-05* | *Last Reviewed: 2026-07-07*
+*Last Updated: 2026-08-21* | *Last Reviewed: 2026-08-21*

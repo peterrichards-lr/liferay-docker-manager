@@ -1155,8 +1155,11 @@ class TestPatchDatabaseFragmentEntryLink(unittest.TestCase):
         self.assertIn("-N", mock_run.call_args[0][0])
 
     def test_uses_remote_target_context(self):
-        """_patch_database_fragmententrylink's docker exec calls (SQL patch
-        + OSGi cache flush) must honor the project's resolved target (#1133)."""
+        """_patch_database_fragmententrylink's docker exec calls (the SQL patch)
+        must honor the project's resolved target (#1133).
+
+        Previously this also covered an OSGi cache-flush exec, removed in #1242
+        because Gogo cannot evaluate Java and the flush never happened."""
         from ldm_core.config import TargetNode
 
         with (
@@ -1186,6 +1189,46 @@ class TestPatchDatabaseFragmentEntryLink(unittest.TestCase):
             self.assertTrue(
                 has_context, f"Expected --context aws-1 in one of {called_cmds}"
             )
+
+    def test_no_gogo_cache_flush_attempted(self):
+        """LDM-#1242: must not attempt (nor claim) an OSGi cache flush via Gogo.
+
+        The old code piped MultiVMPoolUtil.clear() into the Gogo shell and then
+        logged "Flushed Liferay OSGi MultiVMPool cache" unconditionally. Gogo is
+        a command shell and answers `gogo: IOException: no matches found`, so the
+        cache was never invalidated -- meaning the patched rows stayed invisible
+        while LDM reported the flush as done.
+        """
+        with (
+            patch.object(BaseHandler, "run_command", return_value="UPDATE 1\n") as m,
+            patch("ldm_core.ui.UI.warning") as mock_warning,
+            patch("ldm_core.ui.UI.detail") as mock_detail,
+        ):
+            project_meta = {
+                "db_type": "postgresql",
+                "project_name": "aica",
+                "container_name": "aica",
+            }
+            count = self.handler.handler.fragments._patch_database_fragmententrylink(
+                project_meta, self.overrides
+            )
+            self.assertEqual(1, count)
+
+            flat = " ".join(
+                str(part)
+                for call in m.call_args_list
+                for part in (
+                    call[0][0] if isinstance(call[0][0], list) else [call[0][0]]
+                )
+            )
+            self.assertNotIn("MultiVMPoolUtil", flat)
+            self.assertNotIn("11311", flat)
+
+            # The user must be told a restart is required for it to take effect.
+            warned = " ".join(str(c[0][0]) for c in mock_warning.call_args_list)
+            self.assertIn("restart", warned.lower())
+            hinted = " ".join(str(c[0][0]) for c in mock_detail.call_args_list)
+            self.assertIn("ldm restart", hinted)
 
 
 class TestFragmentPatchTimeout(unittest.TestCase):
