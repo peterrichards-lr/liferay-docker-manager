@@ -21,6 +21,40 @@ description: Activate this skill whenever writing tests, running linters, or com
 - **Fix or triage, then re-trigger**: If the failure is caused by the change under review, fix it, push, and watch the re-run. If it is a genuine one-off infra hiccup unrelated to the diff (verify by re-reading the actual error, not by guessing), rerun the failed jobs (`gh run rerun --failed`) rather than leaving them red -- but only after confirming the failure isn't a real regression the rerun would just mask.
 - **A failure on `master` is not "someone else's problem"**: If a push/merge you performed triggers a CI run on `master` and it fails, that failure must be investigated and resolved (fix + re-push, or rerun if transient) before considering the task done -- do not treat PR-merge as the finish line while a resulting `master`-branch CI run sits failed and unexamined.
 
+## Assertions About Runtime Behaviour MUST Be Observed Before Being Committed
+
+**Hard rule: assertions about runtime behaviour must be empirically executed and observed locally before being committed.** Reading the implementation is *not* sufficient evidence that an assertion is correct.
+
+This is not a style preference — it is the single most expensive class of mistake made in this repository. On 2026-08-21 it cost **two permanently burned release tags** (`v2.15.33-pre.1`, `v2.15.33-pre.2`), three red CI runs across five platforms each, and several hours:
+
+1. An E2E check asserted `ldm -y up` returns exit `5` on an already-running project. That is exactly what `ldm_core/pipelines/run.py:246` does — but the suite **stops the project** at `verify_e2e_refactor.sh:625` first, so the call correctly returned `0`. The assertion was right about the code and wrong about the state.
+2. The fix let execution reach the next check *for the first time ever* (the previous failure had aborted before it), revealing that block was also broken — it passed a directory to `ldm deploy` where `cmd_deploy` expects a service name or artifact file (#1262).
+
+The one time the behaviour was actually measured, it was correct first time and took about thirty seconds.
+
+### What "observed" means
+
+Run the exact command, on the exact state, and look at the result:
+
+```bash
+# Establish the state the assertion depends on, then measure it.
+ldm -y up .            # observe: 0 when stopped
+ldm -y up .            # observe: 5 when already running
+echo "exit=$?"
+```
+
+Cheap observation is usually available if you look for it. To confirm exit `5` without booting anything, a throwaway project directory whose hand-written `meta` sets `container_name` to an **already-running** container is enough -- `RuntimeValidationStage` is stage 3 of 7 and short-circuits before `ComposerStage`/`ExecutionStage`, so nothing is created or started.
+
+### Applies to
+
+- Any new or tightened assertion in `scripts/verify_e2e_refactor.{sh,ps1}`.
+- Any claim about an exit code, a JSON schema, or CLI output shape. Verify against **real output** (`ldm list --json | ...`), not against the code that produces it -- `status --json` and `list --json` have different shapes, and an assertion written from the source asserted keys that only ever existed in the other command.
+- Any assertion whose outcome depends on ordering or prior state. State is invisible in the function you are reading.
+
+### Corollary: read every failing run, not the first one
+
+A release tag fires three to four workflows. Reporting "the" failure after reading one is how a transient infrastructure error gets mistaken for a code defect, and vice versa. On `v2.15.33-pre.2`, two workflows failed on a genuine defect while `LDM CI & Release` failed independently on `HttpError: other side closed` from `softprops/action-gh-release` -- rerunnable via `gh run rerun --failed`, needing no new tag. Enumerate every non-passing run before diagnosing.
+
 ## Runtime-Sensitive Changes Need Live Verification, Not Just Green CI
 
 - **Unit-test-green and CI-green are not the same claim as "this works."** A unit test that mocks Docker/Liferay can only prove "this code produces the artifact I intended" (e.g. the right compose YAML). It cannot prove the artifact behaves correctly at runtime -- container boot timing, OSGi bundle activation races, and mount-semantics differences (bind-mount vs. Named Volume) are invisible to a mocked test by construction. Treat any change to container-boot sequencing, OSGi/client-extension mount strategy, or Docker volume semantics as its own category that requires an actual live run (real containers, real boot, the real repro scenario) before you consider it verified -- 100% unit coverage on the new code is not a substitute and does not lower this bar.
